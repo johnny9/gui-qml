@@ -6,7 +6,6 @@
 
 #include <init.h>
 #include <interfaces/node.h>
-#include <logging.h>
 #include <node/context.h>
 #include <node/ui_interface.h>
 #include <noui.h>
@@ -16,23 +15,20 @@
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
 #include <util/system.h>
+#include <util/threadnames.h>
 #include <util/translation.h>
 
 #include <boost/signals2/connection.hpp>
 #include <memory>
+#include <tuple>
 
 #include <QDebug>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
-#include <QString>
 #include <QStringLiteral>
 #include <QUrl>
-
-QT_BEGIN_NAMESPACE
-class QMessageLogContext;
-QT_END_NAMESPACE
 
 #if defined(QT_STATICPLUGIN)
 #include <QtPlugin>
@@ -41,7 +37,6 @@ Q_IMPORT_PLUGIN(QtQuick2Plugin);
 Q_IMPORT_PLUGIN(QtQuick2WindowPlugin);
 Q_IMPORT_PLUGIN(QtQuickControls1Plugin);
 Q_IMPORT_PLUGIN(QtQuickControls2Plugin);
-Q_IMPORT_PLUGIN(QtQuickLayoutsPlugin);
 Q_IMPORT_PLUGIN(QtQuickTemplates2Plugin);
 #endif
 
@@ -68,22 +63,19 @@ bool InitErrorMessageBox(
     qGuiApp->exec();
     return false;
 }
-
-/* qDebug() message handler --> debug.log */
-void DebugMessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& msg)
-{
-    Q_UNUSED(context);
-    if (type == QtDebugMsg) {
-        LogPrint(BCLog::QT, "GUI: %s\n", msg.toStdString());
-    } else {
-        LogPrintf("GUI: %s\n", msg.toStdString());
-    }
-}
 } // namespace
 
 
 int QmlGuiMain(int argc, char* argv[])
 {
+#ifdef WIN32
+    util::WinCmdLineArgs winArgs;
+    std::tie(argc, argv) = winArgs.get();
+#endif // WIN32
+
+    SetupEnvironment();
+    util::ThreadSetInternalName("main");
+
     Q_INIT_RESOURCE(bitcoin_qml);
 
     QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
@@ -171,9 +163,6 @@ int QmlGuiMain(int argc, char* argv[])
     if (!window) {
         return EXIT_FAILURE;
     }
-
-    // Install qDebug() message handler to route to debug.log
-    qInstallMessageHandler(DebugMessageHandler);
 
     qInfo() << "Graphics API in use:" << QmlUtil::GraphicsApi(window);
 
