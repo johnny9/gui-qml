@@ -12,8 +12,8 @@ Page {
     background: null
     clip: true
     Layout.fillWidth: true
-    header: NavigationBar {
-        leftDetail: NavButton {
+    header: OnboardingNav {
+        navButton: NavButton {
             iconSource: "image://images/caret-left"
             text: "Back"
             onClicked: {
@@ -23,21 +23,17 @@ Page {
         }
     }
     ColumnLayout {
-        width: Math.min(parent.width, 600)
+        width: 600
         spacing: 0
         anchors.top: parent.top
         anchors.horizontalCenter: parent.horizontalCenter
         Header {
             Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
             bold: true
             header: "Developer options"
         }
         DeveloperOptions {
             Layout.topMargin: 30
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
         }
     }
 }

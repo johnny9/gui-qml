@@ -11,25 +11,24 @@ Page {
     background: null
     clip: true
     Layout.fillWidth: true
-    header: NavigationBar {
-        leftDetail: NavButton {
+    header: OnboardingNav {
+        navButton: NavButton {
             iconSource: "image://images/caret-left"
             text: "Back"
             onClicked: swipeView.currentIndex -= 1
         }
     }
     OnboardingInfo {
-        height: parent.height
-        width: Math.min(parent.width, 600)
-        anchors.horizontalCenter: parent.horizontalCenter
-        banner: Image {
-            source: Theme.image.network
-            sourceSize.width: 200
-            sourceSize.height: 200
-        }
-        bold: true
-        header: qsTr("Strengthen bitcoin")
-        description: qsTr("Bitcoin Core runs a full Bitcoin node which verifies the rules of the network are being followed.\n\nUsers running nodes is what makes bitcoin\nso resilient and trustworthy.")
-        buttonText: "Next"
+      anchors.top: parent.top
+      anchors.horizontalCenter: parent.horizontalCenter
+      banner: Image {
+          source: Theme.image.network
+          sourceSize.width: 200
+          sourceSize.height: 200
+      }
+      bold: true
+      header: qsTr("Strengthen bitcoin")
+      description: qsTr("Bitcoin Core runs a full Bitcoin node which verifies the rules of the network are being followed.\n\nUsers running nodes is what makes bitcoin\nso resilient and trustworthy.")
+      buttonText: "Next"
     }
 }

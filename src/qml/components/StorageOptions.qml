@@ -13,10 +13,9 @@ ColumnLayout {
     }
     spacing: 15
     OptionButton {
-        Layout.fillWidth: true
         ButtonGroup.group: group
         text: qsTr("Reduce storage")
-        description: qsTr("Uses about 2GB.")
+        description: qsTr("Uses about 75GB.")
         recommended: true
         checked: true
         detail: ProgressIndicator {
@@ -25,7 +24,6 @@ ColumnLayout {
         }
     }
     OptionButton {
-        Layout.fillWidth: true
         ButtonGroup.group: group
         text: qsTr("Default")
         description: qsTr("Uses about 423GB.")
