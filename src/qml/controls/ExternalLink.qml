@@ -6,45 +6,14 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
-AbstractButton {
+Control {
     id: root
-    required property string parentState
     required property string link
     property string description: ""
     property int descriptionSize: 18
     property url iconSource: ""
     property int iconWidth: 18
     property int iconHeight: 18
-    property color iconColor
-    property color textColor
-    state: root.parentState
-
-    states: [
-        State {
-            name: "FILLED"
-            PropertyChanges {
-                target: root
-                iconColor: Theme.color.neutral9
-                textColor: Theme.color.neutral7
-            }
-        },
-        State {
-            name: "HOVER"
-            PropertyChanges {
-                target: root
-                iconColor: Theme.color.orangeLight1
-                textColor: Theme.color.orangeLight1
-            }
-        },
-        State {
-            name: "ACTIVE"
-            PropertyChanges {
-                target: root
-                iconColor: Theme.color.orange
-                textColor: Theme.color.orange
-            }
-        }
-    ]
 
     contentItem: RowLayout {
         spacing: 0
@@ -57,13 +26,10 @@ AbstractButton {
                 font.family: "Inter"
                 font.styleName: "Regular"
                 font.pixelSize: root.descriptionSize
-                color: root.textColor
+                color: Theme.color.neutral7
                 textFormat: Text.RichText
-                text: root.description
-
-                Behavior on color {
-                    ColorAnimation { duration: 150 }
-                }
+                text: "<style>a:link { color: " + Theme.color.neutral7 + "; text-decoration: none;}</style>" + "<a href=\"" + link + "\">" + root.description + "</a>"
+                onLinkActivated: Qt.openUrlExternally(link)
             }
         }
         Loader {
@@ -72,17 +38,12 @@ AbstractButton {
             visible: active
             sourceComponent: Button {
                 icon.source: root.iconSource
-                icon.color: root.iconColor
+                icon.color: Theme.color.neutral9
                 icon.height: root.iconHeight
                 icon.width: root.iconWidth
                 background: null
-                onClicked: root.clicked()
-
-                Behavior on icon.color {
-                    ColorAnimation { duration: 150 }
-                }
+                onClicked: Qt.openUrlExternally(link)
             }
         }
     }
-    onClicked: Qt.openUrlExternally(link)
 }

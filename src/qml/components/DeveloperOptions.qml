@@ -10,39 +10,28 @@ import "../controls"
 ColumnLayout {
     spacing: 20
     Setting {
-        id: devDocsLink
         Layout.fillWidth: true
         header: qsTr("Developer documentation")
         actionItem: ExternalLink {
-            parentState: devDocsLink.state
             iconSource: "qrc:/icons/export"
             iconWidth: 30
             iconHeight: 30
             link: "https://bitcoin.org/en/bitcoin-core/contribute/documentation"
         }
-        onClicked: loadedItem.clicked()
     }
     Setting {
-        id: dbcacheSetting
         Layout.fillWidth: true
-        header: qsTr("Database cache size (MiB)")
+        header: qsTr("Database cache size")
         actionItem: ValueInput {
-            parentState: dbcacheSetting.state
-            description: optionsModel.dbcacheSizeMiB
-            onEditingFinished: optionsModel.dbcacheSizeMiB = parseInt(text)
+            description: ("450 MiB")
         }
-        onClicked: loadedItem.forceActiveFocus()
     }
     Setting {
-        id: parSetting
         Layout.fillWidth: true
         header: qsTr("Script verification threads")
         actionItem: ValueInput {
-            parentState: parSetting.state
-            description: optionsModel.scriptThreads
-            onEditingFinished: optionsModel.scriptThreads = parseInt(text)
+            description: ("0")
         }
-        onClicked: loadedItem.forceActiveFocus()
     }
     Setting {
         Layout.fillWidth: true
@@ -51,6 +40,5 @@ ColumnLayout {
             checked: Theme.dark
             onToggled: Theme.toggleDark()
         }
-        onClicked: loadedItem.toggled()
     }
 }

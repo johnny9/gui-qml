@@ -16,20 +16,13 @@ ColumnLayout {
             checked: optionsModel.prune
             onToggled: optionsModel.prune = checked
         }
-        onClicked: {
-          loadedItem.toggle()
-          loadedItem.toggled()
-        }
     }
     Setting {
-        id: pruneTargetSetting
         Layout.fillWidth: true
         header: qsTr("Storage limit (GB)")
         actionItem: ValueInput {
-            parentState: pruneTargetSetting.state
             description: optionsModel.pruneSizeGB
             onEditingFinished: optionsModel.pruneSizeGB = parseInt(text)
         }
-        onClicked: loadedItem.forceActiveFocus()
     }
 }

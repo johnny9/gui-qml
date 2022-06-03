@@ -16,10 +16,8 @@ Page {
     property alias navMiddleDetail: navbar.middleDetail
     property alias navRightDetail: navbar.rightDetail
     property string buttonText: ""
-    property int buttonMargin: 40
     property bool bannerActive: true
     property bool detailActive: false
-    property int detailTopMargin: 30
     property bool lastPage: false
     property bool bold: false
     property bool center: true
@@ -85,7 +83,7 @@ Page {
                 visible: active
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignCenter
-                Layout.topMargin: root.detailTopMargin
+                Layout.topMargin: 30
                 Layout.leftMargin: 20
                 Layout.rightMargin: 20
                 Layout.maximumWidth: detailMaximumWidth
@@ -97,7 +95,7 @@ Page {
             visible: root.buttonText.length > 0
             enabled: visible
             width: Math.min(300, parent.width - 2 * anchors.leftMargin)
-            anchors.topMargin: root.buttonMargin
+            anchors.topMargin: 40
             anchors.bottomMargin: 60
             anchors.leftMargin: 20
             anchors.rightMargin: 20
