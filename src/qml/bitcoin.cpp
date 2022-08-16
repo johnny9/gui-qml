@@ -14,7 +14,6 @@
 #include <qml/appmode.h>
 #include <qml/imageprovider.h>
 #include <qml/nodemodel.h>
-#include <qml/options_model.h>
 #include <qml/util.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
@@ -185,9 +184,6 @@ int QmlGuiMain(int argc, char* argv[])
     engine.addImageProvider(QStringLiteral("images"), new ImageProvider{network_style.data()});
 
     engine.rootContext()->setContextProperty("nodeModel", &node_model);
-
-    OptionsQmlModel options_model{*node};
-    engine.rootContext()->setContextProperty("optionsModel", &options_model);
 
 #ifdef __ANDROID__
     AppMode app_mode(AppMode::MOBILE);
