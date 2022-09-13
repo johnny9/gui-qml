@@ -185,7 +185,11 @@ int QmlGuiMain(int argc, char* argv[])
 
     engine.rootContext()->setContextProperty("nodeModel", &node_model);
 
+#ifdef __ANDROID__
     AppMode app_mode(AppMode::MOBILE);
+#else
+    AppMode app_mode(AppMode::DESKTOP);
+#endif // __ANDROID__
     engine.rootContext()->setContextProperty("appMode", &app_mode);
 
     engine.load(QUrl(QStringLiteral("qrc:///qml/pages/main.qml")));
