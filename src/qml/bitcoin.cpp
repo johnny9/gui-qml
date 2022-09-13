@@ -13,6 +13,7 @@
 #include <noui.h>
 #include <qml/imageprovider.h>
 #include <qml/nodemodel.h>
+#include <qml/appmode.h>
 #include <qml/util.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
@@ -183,6 +184,9 @@ int QmlGuiMain(int argc, char* argv[])
     engine.addImageProvider(QStringLiteral("images"), new ImageProvider{network_style.data()});
 
     engine.rootContext()->setContextProperty("nodeModel", &node_model);
+
+    AppMode app_mode(AppMode::MOBILE);
+    engine.rootContext()->setContextProperty("appMode", &app_mode);
 
     engine.load(QUrl(QStringLiteral("qrc:///qml/pages/main.qml")));
     if (engine.rootObjects().isEmpty()) {
