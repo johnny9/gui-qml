@@ -5,7 +5,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import org.bitcoincore.qt 1.0
 import "../../controls"
 import "../../components"
 
@@ -21,7 +20,6 @@ Page {
         }
     }
     ColumnLayout {
-        id: selections
         width: 600
         spacing: 0
         anchors.top: parent.top
@@ -30,47 +28,18 @@ Page {
             Layout.fillWidth: true
             bold: true
             header: qsTr("Storage location")
-            description: qsTr("Where do you want to store the downloaded block data?")
+            description: qsTr("On which drive do you want to store the downloaded block data?")
             descriptionMargin: 20
         }
         StorageLocations {
             Layout.topMargin: 30
             Layout.alignment: Qt.AlignCenter
         }
-    }
-    ContinueButton {
-        id: continueButton
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.topMargin: 40
-        anchors.bottomMargin: 60
-        anchors.rightMargin: 20
-        anchors.leftMargin: 20
-        text: "Next"
-        onClicked: swipeView.incrementCurrentIndex()
-    }
-
-    state: AppMode.state
-
-    states: [
-        State {
-            name: "MOBILE"
-            AnchorChanges {
-                target: continueButton
-                anchors.top: undefined
-                anchors.bottom: continueButton.parent.bottom
-                anchors.left: continueButton.parent.left
-                anchors.right: continueButton.parent.right
-            }
-        },
-        State {
-            name: "DESKTOP"
-            AnchorChanges {
-                target: continueButton
-                anchors.top: selections.bottom
-                anchors.bottom: undefined
-                anchors.left: undefined
-                anchors.right: undefined
-            }
+        ContinueButton {
+            Layout.alignment: Qt.AlignCenter
+            Layout.topMargin: 40
+            text: "Next"
+            onClicked: swipeView.incrementCurrentIndex()
         }
-    ]
+    }
 }

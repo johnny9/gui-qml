@@ -19,16 +19,14 @@ ColumnLayout {
     }
     Setting {
         Layout.fillWidth: true
-        header: qsTr("Database cache size")
-        actionItem: ValueInput {
-            description: ("450 MiB")
-        }
+        header: qsTr("Storage limit")
+        actionItem: OptionSwitch {}
     }
     Setting {
         Layout.fillWidth: true
-        header: qsTr("Script verification threads")
+        header: qsTr("Network")
         actionItem: ValueInput {
-            description: ("0")
+            description: qsTr("Mainnet")
         }
     }
     Setting {
@@ -37,6 +35,20 @@ ColumnLayout {
         actionItem: OptionSwitch {
             checked: Theme.dark
             onToggled: Theme.toggleDark()
+        }
+    }
+    Setting {
+        Layout.fillWidth: true
+        header: qsTr("Other option...")
+        actionItem: ValueInput {
+            description: qsTr("42")
+        }
+    }
+    Setting {
+        Layout.fillWidth: true
+        header: qsTr("Other option...")
+        actionItem: ValueInput {
+            description: qsTr("Description...")
         }
     }
 }

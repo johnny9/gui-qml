@@ -5,9 +5,8 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import org.bitcoincore.qt 1.0
 
-Item {
+Control {
     id: root
     property alias banner: banner_loader.sourceComponent
     required property string buttonText
@@ -26,10 +25,7 @@ Item {
 
     implicitWidth: 600
 
-    ColumnLayout {
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: parent.width
-        id: information
+    contentItem: ColumnLayout {
         spacing: 0
         Loader {
             id: banner_loader
@@ -53,40 +49,11 @@ Item {
             subtextMargin: root.subtextMargin
             subtextSize: root.subtextSize
         }
-    }
-    ContinueButton {
-        id: continueButton
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.topMargin: 40
-        anchors.bottomMargin: 60
-        anchors.leftMargin: 20
-        anchors.rightMargin: 20
-        text: root.buttonText
-        onClicked: swipeView.incrementCurrentIndex()
-    }
-
-    state: AppMode.state
-
-    states: [
-        State {
-            name: "MOBILE"
-            AnchorChanges {
-                target: continueButton
-                anchors.top: undefined
-                anchors.bottom: continueButton.parent.bottom
-                anchors.right: continueButton.parent.right
-                anchors.left: continueButton.parent.left
-            }
-        },
-        State {
-            name: "DESKTOP"
-            AnchorChanges {
-                target: continueButton
-                anchors.top: information.bottom
-                anchors.bottom: undefined
-                anchors.left: undefined
-                anchors.right: undefined
-            }
+        ContinueButton {
+            Layout.alignment: Qt.AlignCenter
+            Layout.topMargin: 40
+            text: root.buttonText
+            onClicked: swipeView.incrementCurrentIndex()
         }
-    ]
+    }
 }
