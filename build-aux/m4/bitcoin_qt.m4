@@ -442,6 +442,10 @@ AC_DEFUN([_BITCOIN_QT_FIND_LIBS],[
     PKG_CHECK_MODULES([QT_NETWORK], [${qt_lib_prefix}Network${qt_lib_suffix} $qt_version], [QT_INCLUDES="$QT_NETWORK_CFLAGS $QT_INCLUDES" QT_LIBS="$QT_NETWORK_LIBS $QT_LIBS"],
                       [BITCOIN_QT_FAIL([${qt_lib_prefix}Network${qt_lib_suffix} $qt_version not found])])
   ])
+  BITCOIN_QT_CHECK([
+    PKG_CHECK_MODULES([QT_SVG], [${qt_lib_prefix}Svg${qt_lib_suffix} $qt_version], [QT_INCLUDES="$QT_SVG_CFLAGS $QT_INCLUDES" QT_LIBS="$QT_SVG_LIBS $QT_LIBS"],
+                      [BITCOIN_QT_FAIL([${qt_lib_prefix}Svg${qt_lib_suffix} $qt_version not found])])
+  ])
 
   BITCOIN_QT_CHECK([
     PKG_CHECK_MODULES([QT_TEST], [${qt_lib_prefix}Test${qt_lib_suffix} $qt_version], [QT_TEST_INCLUDES="$QT_TEST_CFLAGS"; have_qt_test=yes], [have_qt_test=no])
