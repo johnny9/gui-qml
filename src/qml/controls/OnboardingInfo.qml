@@ -41,8 +41,6 @@ Item {
         }
         Header {
             Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
             bold: root.bold
             center: root.center
             header: root.header
@@ -58,6 +56,7 @@ Item {
     }
     ContinueButton {
         id: continueButton
+        anchors.horizontalCenter: parent.horizontalCenter
         anchors.topMargin: 40
         anchors.bottomMargin: 60
         anchors.leftMargin: 20
@@ -77,7 +76,6 @@ Item {
                 anchors.bottom: continueButton.parent.bottom
                 anchors.right: continueButton.parent.right
                 anchors.left: continueButton.parent.left
-                anchors.horizontalCenter: undefined
             }
         },
         State {
@@ -88,7 +86,6 @@ Item {
                 anchors.bottom: undefined
                 anchors.left: undefined
                 anchors.right: undefined
-                anchors.horizontalCenter: parent.horizontalCenter
             }
         }
     ]

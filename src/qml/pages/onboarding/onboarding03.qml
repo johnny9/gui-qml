@@ -12,7 +12,7 @@ Page {
     clip: true
     Layout.fillWidth: true
     header: OnboardingNav {
-        navButton: NavButton {
+        leftDetail: NavButton {
             iconSource: "image://images/caret-left"
             text: "Back"
             onClicked: swipeView.currentIndex -= 1
@@ -20,7 +20,6 @@ Page {
     }
     OnboardingInfo {
         height: parent.height
-        width: Math.min(parent.width, 600)
         anchors.horizontalCenter: parent.horizontalCenter
         banner: Image {
             source: Theme.image.blocktime

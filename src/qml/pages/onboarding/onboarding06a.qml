@@ -14,7 +14,7 @@ Page {
     Layout.fillWidth: true
     clip: true
     header: OnboardingNav {
-        navButton: NavButton {
+        leftDetail: NavButton {
             iconSource: "image://images/caret-left"
             text: "Back"
             onClicked: swipeView.currentIndex -= 1
@@ -22,7 +22,7 @@ Page {
     }
     ColumnLayout {
         id: selections
-        width: Math.min(parent.width, 600)
+        width: 600
         spacing: 0
         anchors.top: parent.top
         anchors.horizontalCenter: parent.horizontalCenter
@@ -35,9 +35,6 @@ Page {
         }
         Header {
             Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-
             bold: true
             header: qsTr("Starting initial download")
             headerMargin: 30
@@ -47,9 +44,6 @@ Page {
         TextButton {
             Layout.alignment: Qt.AlignCenter
             Layout.topMargin: 30
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-
             text: "Connection settings"
             textSize: 18
             textColor: Theme.color.orange
@@ -65,6 +59,7 @@ Page {
         anchors.leftMargin: 20
         anchors.rightMargin: 20
         anchors.bottomMargin: 60
+        anchors.horizontalCenter: parent.horizontalCenter
         text: "Next"
         onClicked: swipeView.finished = true
     }
@@ -80,7 +75,6 @@ Page {
                 anchors.bottom: continueButton.parent.bottom
                 anchors.right: continueButton.parent.right
                 anchors.left: continueButton.parent.left
-                anchors.horizontalCenter: undefined
             }
         },
         State {
@@ -91,7 +85,6 @@ Page {
                 anchors.bottom: undefined
                 anchors.right: undefined
                 anchors.left: undefined
-                anchors.horizontalCenter: parent.horizontalCenter
             }
         }
     ]

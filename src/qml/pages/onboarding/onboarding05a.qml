@@ -14,7 +14,7 @@ Page {
     Layout.fillWidth: true
     clip: true
     header: OnboardingNav {
-        navButton: NavButton {
+        leftDetail: NavButton {
             iconSource: "image://images/caret-left"
             text: "Back"
             onClicked: swipeView.currentIndex -= 1
@@ -22,23 +22,18 @@ Page {
     }
     ColumnLayout {
         id: selections
-        width: Math.min(parent.width, 600)
+        width: 600
         spacing: 0
         anchors.top: parent.top
         anchors.horizontalCenter: parent.horizontalCenter
         Header {
             Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
             bold: true
             header: qsTr("Storage")
-            description: qsTr("Data retrieved from the Bitcoin network is stored on your device.\nYou have 500GB of storage available.")
+            description: qsTr("Data retrieved from the Bitcoin network is stored\non your device.\n\nYou have 500GB of storage available.")
         }
         StorageOptions {
-            Layout.maximumWidth: 450
             Layout.topMargin: 30
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
             Layout.alignment: Qt.AlignCenter
         }
         TextButton {
@@ -59,6 +54,7 @@ Page {
         anchors.leftMargin: 20
         anchors.rightMargin: 20
         anchors.bottomMargin: 60
+        anchors.horizontalCenter: parent.horizontalCenter
         text: "Next"
         onClicked: swipeView.incrementCurrentIndex()
     }
@@ -74,7 +70,6 @@ Page {
                 anchors.bottom: continueButton.parent.bottom
                 anchors.left: continueButton.parent.left
                 anchors.right: continueButton.parent.right
-                anchors.horizontalCenter: undefined
             }
         },
         State {
@@ -85,7 +80,6 @@ Page {
                 anchors.bottom: undefined
                 anchors.left: undefined
                 anchors.right: undefined
-                anchors.horizontalCenter: parent.horizontalCenter
             }
         }
     ]

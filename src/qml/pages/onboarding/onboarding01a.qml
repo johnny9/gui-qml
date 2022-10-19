@@ -15,8 +15,7 @@ Page {
     clip: true
     Layout.fillWidth: true
     header: OnboardingNav {
-        alignLeft: false
-        navButton: NavButton {
+        rightDetail: NavButton {
             iconSource: "image://images/info"
             iconHeight: 24
             onClicked: {
@@ -27,7 +26,6 @@ Page {
     }
     OnboardingInfo {
         height: parent.height
-        width: Math.min(parent.width, 600)
         anchors.horizontalCenter: parent.horizontalCenter
         banner: Image {
             Layout.fillWidth: true

@@ -13,8 +13,7 @@ Page {
     Layout.fillWidth: true
     clip: true
     header: OnboardingNav {
-        alignLeft: false
-        navButton: NavButton {
+        rightDetail: NavButton {
             text: "Done"
             onClicked: {
                 storages.decrementCurrentIndex()
@@ -23,22 +22,17 @@ Page {
         }
     }
     ColumnLayout {
-        width: Math.min(parent.width, 450)
+        width: 450
         spacing: 0
         anchors.top: parent.top
         anchors.horizontalCenter: parent.horizontalCenter
         Header {
             Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
             bold: true
             header: "Storage settings"
         }
         StorageSettings {
-            Layout.fillWidth: true
             Layout.topMargin: 30
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
         }
     }
 }

@@ -13,7 +13,7 @@ Page {
     clip: true
     Layout.fillWidth: true
     header: OnboardingNav {
-        navButton: NavButton {
+        leftDetail: NavButton {
             iconSource: "image://images/caret-left"
             text: "Back"
             onClicked: {
@@ -23,14 +23,12 @@ Page {
         }
     }
     ColumnLayout {
-        width: Math.min(parent.width, 600)
+        width: 600
         spacing: 0
         anchors.top: parent.top
         anchors.horizontalCenter: parent.horizontalCenter
         Header {
             Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
             bold: true
             header: "About"
             description: qsTr("Bitcoin Core is an open source project.\nIf you find it useful, please contribute.\n\n This is experimental software.")
@@ -38,8 +36,6 @@ Page {
         }
         AboutOptions {
             Layout.topMargin: 30
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
         }
     }
 }
