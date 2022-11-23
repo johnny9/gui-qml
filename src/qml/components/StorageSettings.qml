@@ -25,7 +25,7 @@ ColumnLayout {
         Layout.fillWidth: true
         header: qsTr("Data location")
         actionItem: ValueInput {
-            description: "c://.../data"
+            description: qsTr("c://.../data")
         }
     }
 }
