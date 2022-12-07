@@ -7,20 +7,29 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "../../controls"
 
-InformationPage {
+Page {
+    background: null
+    clip: true
     Layout.fillWidth: true
-    navLeftDetail: NavButton {
-        iconSource: "image://images/caret-left"
-        text: qsTr("Back")
-        onClicked: swipeView.decrementCurrentIndex()
+    header: NavigationBar {
+        leftDetail: NavButton {
+            iconSource: "image://images/caret-left"
+            text: "Back"
+            onClicked: swipeView.currentIndex -= 1
+        }
     }
-    bannerItem: Image {
-        source: Theme.image.network
-        sourceSize.width: 200
-        sourceSize.height: 200
+    OnboardingInfo {
+        height: parent.height
+        width: Math.min(parent.width, 600)
+        anchors.horizontalCenter: parent.horizontalCenter
+        bannerItem: Image {
+            source: Theme.image.network
+            sourceSize.width: 200
+            sourceSize.height: 200
+        }
+        bold: true
+        header: qsTr("Strengthen bitcoin")
+        description: qsTr("Bitcoin Core runs a full Bitcoin node which verifies the rules of the network are being followed.\n\nUsers running nodes is what makes bitcoin\nso resilient and trustworthy.")
+        buttonText: "Next"
     }
-    bold: true
-    headerText: qsTr("Strengthen bitcoin")
-    description: qsTr("Bitcoin Core runs a full Bitcoin node which verifies the rules of the network are being followed.\n\nUsers running nodes is what makes bitcoin\nso resilient and trustworthy.")
-    buttonText: qsTr("Next")
 }

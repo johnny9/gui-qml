@@ -5,12 +5,14 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import org.bitcoincore.qt 1.0
 import "../../controls"
+import "../../components"
 
 Page {
     background: null
-    clip: true
     Layout.fillWidth: true
+    clip: true
     header: NavigationBar {
         leftDetail: NavButton {
             iconSource: "image://images/caret-left"
@@ -23,13 +25,28 @@ Page {
         width: Math.min(parent.width, 600)
         anchors.horizontalCenter: parent.horizontalCenter
         bannerItem: Image {
-            source: Theme.image.blocktime
+            Layout.topMargin: 20
+            Layout.alignment: Qt.AlignCenter
+            source: Theme.image.storage
             sourceSize.width: 200
             sourceSize.height: 200
         }
         bold: true
-        header: qsTr("The block clock")
-        description: qsTr("The Bitcoin network targets a new block every\n10 minutes. Sometimes it's faster and sometimes slower.\n\nThe block clock indicates each block on a dial\nthat represents the current day.")
+        header: qsTr("Starting initial download")
+        headerMargin: 30
+        description: qsTr("The application will connect to the Bitcoin network and start downloading and verifying transactions.\n\nThis may take several hours, or even days, based on your connection.")
+        descriptionMargin: 20
+        detailActive: true
+        detailItem: TextButton {
+            text: "Connection settings"
+            textSize: 18
+            textColor: Theme.color.orange
+            onClicked: {
+              connections.incrementCurrentIndex()
+              swipeView.inSubPage = true
+            }
+        }
+        lastPage: true
         buttonText: "Next"
     }
 }

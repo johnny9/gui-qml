@@ -9,26 +9,31 @@ import org.bitcoincore.qt 1.0
 import "../../controls"
 import "../../components"
 
-InformationPage {
+Page {
+    background: null
     Layout.fillWidth: true
-    navLeftDetail: NavButton {
-        iconSource: "image://images/caret-left"
-        text: qsTr("Back")
-        onClicked: swipeView.decrementCurrentIndex()
-    }
-    bannerActive: false
-    bold: true
-    headerText: qsTr("Storage location")
-    headerMargin: 0
-    description: qsTr("Where do you want to store the downloaded block data?")
-    descriptionMargin: 20
-    detailActive: true
-    detailItem: ColumnLayout {
-        spacing: 0
-        StorageLocations {
-            Layout.maximumWidth: 450
-            Layout.alignment: Qt.AlignCenter
+    clip: true
+    header: NavigationBar {
+        leftDetail: NavButton {
+            iconSource: "image://images/caret-left"
+            text: "Back"
+            onClicked: swipeView.currentIndex -= 1
         }
     }
-    buttonText: qsTr("Next")
+    OnboardingInfo {
+        height: parent.height
+        width: Math.min(parent.width, 600)
+        anchors.horizontalCenter: parent.horizontalCenter
+        bannerActive: false
+        bold: true
+        header: qsTr("Storage location")
+        headerMargin: 0
+        description: qsTr("Where do you want to store the downloaded block data?")
+        descriptionMargin: 20
+        detailActive: true
+        detailItem: StorageLocations {
+            Layout.maximumWidth: 450
+        }
+        buttonText: qsTr("Next")
+    }
 }
