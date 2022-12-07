@@ -12,6 +12,7 @@ Button {
     id: button
     padding: 15
     checkable: true
+    property alias detail: detail_loader.sourceComponent
     implicitWidth: 450
     background: Rectangle {
         border.width: 1
@@ -66,15 +67,7 @@ Button {
         }
         Loader {
             id: detail_loader
-            visible: button.checked
-            active: true
-            sourceComponent: Button {
-                icon.source: "image://images/check"
-                icon.color: Theme.color.neutral9
-                icon.height: 24
-                icon.width: 24
-                background: null
-            }
+            visible: item
         }
     }
 }

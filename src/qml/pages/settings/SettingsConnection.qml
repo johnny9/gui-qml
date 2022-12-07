@@ -16,5 +16,11 @@ InformationPage {
     headerText: qsTr("Connection settings")
     headerMargin: 0
     detailActive: true
-    detailItem: ConnectionSettings {}
+    detailItem: ColumnLayout {
+        spacing: 0
+        ConnectionSettings {
+            Layout.maximumWidth: 450
+            Layout.alignment: Qt.AlignCenter
+        }
+    }
 }

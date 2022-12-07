@@ -26,8 +26,6 @@
         <file>controls/ValueInput.qml</file>
         <file>pages/initerrormessage.qml</file>
         <file>pages/main.qml</file>
-        <file>pages/node/NodeRunner.qml</file>
-        <file>pages/node/NodeSettings.qml</file>
         <file>pages/onboarding/OnboardingBlockclock.qml</file>
         <file>pages/onboarding/OnboardingConnection.qml</file>
         <file>pages/onboarding/OnboardingCover.qml</file>
@@ -48,7 +46,6 @@
         <file alias="bitcoin">../qt/res/icons/bitcoin.png</file>
         <file alias="caret-left">res/icons/caret-left.png</file>
         <file alias="caret-right">res/icons/caret-right.png</file>
-        <file alias="check">res/icons/check.png</file>
         <file alias="cross">res/icons/cross.png</file>
         <file alias="export">res/icons/export.png</file>
         <file alias="gear">res/icons/gear.png</file>

@@ -19,9 +19,15 @@ InformationPage {
     bold: true
     headerText: qsTr("Storage location")
     headerMargin: 0
-    description: qsTr("Where do you want to store the downloaded block data?\nYou need a minimum of 1GB of storage.")
+    description: qsTr("Where do you want to store the downloaded block data?")
     descriptionMargin: 20
     detailActive: true
-    detailItem: StorageLocations {}
+    detailItem: ColumnLayout {
+        spacing: 0
+        StorageLocations {
+            Layout.maximumWidth: 450
+            Layout.alignment: Qt.AlignCenter
+        }
+    }
     buttonText: qsTr("Next")
 }

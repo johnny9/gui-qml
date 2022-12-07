@@ -14,5 +14,11 @@ InformationPage {
     headerText: qsTr("Developer options")
     headerMargin: 0
     detailActive: true
-    detailItem: DeveloperOptions {}
+    detailItem: ColumnLayout {
+        spacing: 0
+        DeveloperOptions {
+            Layout.maximumWidth: 450
+            Layout.alignment: Qt.AlignCenter
+        }
+    }
 }

@@ -30,8 +30,6 @@ Page {
     property string subtext: ""
     property int subtextMargin: 30
     property int subtextSize: 15
-    property real maximumWidth: 600
-    property real detailMaximumWidth: 450
 
     background: null
     clip: true
@@ -42,7 +40,7 @@ Page {
 
     ColumnLayout {
         id: information
-        width: Math.min(parent.width, maximumWidth)
+        width: Math.min(parent.width, 600)
         anchors.horizontalCenter: parent.horizontalCenter
         spacing: 0
         Loader {
@@ -73,12 +71,10 @@ Page {
             id: detail_loader
             active: root.detailActive
             visible: active
-            Layout.alignment: Qt.AlignCenter
+            Layout.fillWidth: true
             Layout.topMargin: 30
             Layout.leftMargin: 20
             Layout.rightMargin: 20
-            Layout.fillWidth: true
-            Layout.maximumWidth: detailMaximumWidth
             sourceComponent: root.detailItem
         }
     }
