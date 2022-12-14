@@ -23,6 +23,7 @@ Page {
                 iconHeight: 24
                 onClicked: {
                     introductions.incrementCurrentIndex()
+                    swipeView.inSubPage = true
                 }
             }
             bannerItem: Image {
@@ -49,6 +50,7 @@ Page {
                 text: qsTr("Back")
                 onClicked: {
                     introductions.decrementCurrentIndex()
+                    swipeView.inSubPage = false
                 }
             }
         }
@@ -58,6 +60,7 @@ Page {
                 text: qsTr("Back")
                 onClicked: {
                     introductions.decrementCurrentIndex()
+                    swipeView.inSubPage = true
                 }
             }
         }
