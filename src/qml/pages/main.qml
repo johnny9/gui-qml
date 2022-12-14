@@ -8,7 +8,6 @@ import QtQuick.Layouts 1.15
 import "../components"
 import "../controls"
 import "./onboarding"
-import "./node"
 
 ApplicationWindow {
     id: appWindow
@@ -29,6 +28,7 @@ ApplicationWindow {
         SwipeView {
             id: swipeView
             property bool finished: false
+            anchors.fill: parent
             interactive: false
 
             OnboardingCover {}
@@ -44,28 +44,30 @@ ApplicationWindow {
 
     Component {
         id: node
-        SwipeView {
-            id: node_swipe
-            interactive: false
-            orientation: Qt.Vertical
-            NodeRunner {
-                navRightDetail: NavButton {
-                    iconSource: "image://images/gear"
-                    iconHeight: 24
-                    onClicked: node_swipe.incrementCurrentIndex()
+        Page {
+            anchors.fill: parent
+            background: null
+            ColumnLayout {
+                width: 600
+                spacing: 0
+                anchors.centerIn: parent
+                Component.onCompleted: nodeModel.startNodeInitializionThread();
+                Image {
+                    Layout.alignment: Qt.AlignCenter
+                    source: "image://images/app"
+                    sourceSize.width: 64
+                    sourceSize.height: 64
+                }
+                BlockCounter {
+                    Layout.alignment: Qt.AlignCenter
+                    blockHeight: nodeModel.blockTipHeight
+                }
+                ProgressIndicator {
+                    width: 200
+                    Layout.alignment: Qt.AlignCenter
+                    progress: nodeModel.verificationProgress
                 }
             }
-            NodeSettings {
-                navMiddleDetail: Header {
-                    bold: true
-                    headerSize: 18
-                    header: "Settings"
-                }
-                navRightDetail: NavButton {
-                    text: qsTr("Done")
-                    onClicked: node_swipe.decrementCurrentIndex()
-                }
-            }
-        }
+         }
     }
 }
