@@ -6,6 +6,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 
 Button {
+    id: root
     font.family: "Inter"
     font.styleName: "Semi Bold"
     font.pixelSize: 18
@@ -21,5 +22,15 @@ Button {
         implicitWidth: 300
         color: Theme.color.orange
         radius: 5
+
+        Rectangle {
+            visible: root.visualFocus
+            anchors.fill: parent
+            anchors.margins: -4
+            border.width: 2
+            border.color: Theme.color.purple
+            radius: 9
+            color: "transparent"
+        }
     }
 }
