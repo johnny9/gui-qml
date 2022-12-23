@@ -14,7 +14,18 @@ AbstractButton {
     property url iconSource: ""
 
     padding: 0
-    background: null
+    background: Rectangle {
+        visible: root.visualFocus
+        anchors.fill: parent
+        anchors.topMargin: -4
+        anchors.rightMargin: -4
+        anchors.bottomMargin: -4
+        border.width: 2
+        border.color: Theme.color.purple
+        radius: 9
+        color: "transparent"
+    }
+
     contentItem: RowLayout {
         anchors.fill: parent
         spacing: 0
