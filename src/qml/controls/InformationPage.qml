@@ -12,8 +12,11 @@ Page {
     property alias bannerItem: banner_loader.sourceComponent
     property alias detailItem: detail_loader.sourceComponent
     property alias navLeftDetail: navbar.leftDetail
+    property alias navLeftItem: navbar.leftDetailItem
     property alias navMiddleDetail: navbar.middleDetail
+    property alias navMiddleItem: navbar.middleDetailItem
     property alias navRightDetail: navbar.rightDetail
+    property alias navRightItem: navbar.rightDetailItem
     property string buttonText: ""
     property bool bannerActive: true
     property bool detailActive: false
@@ -32,6 +35,8 @@ Page {
     property int subtextSize: 15
     property real maximumWidth: 600
     property real detailMaximumWidth: 450
+    property Item tabOutItem: null
+    property Item tabInItem: continueButton
 
     background: null
     clip: true
@@ -86,6 +91,7 @@ Page {
         id: continueButton
         visible: root.buttonText.length > 0
         enabled: visible
+        focus: true
         width: Math.min(300, parent.width - 2 * anchors.leftMargin)
         anchors.topMargin: 40
         anchors.bottomMargin: 60
@@ -94,6 +100,7 @@ Page {
         anchors.horizontalCenter: parent.horizontalCenter
         text: root.buttonText
         onClicked: root.lastPage ? swipeView.finished = true : swipeView.incrementCurrentIndex()
+        KeyNavigation.tab: tabOutItem
     }
 
     state: AppMode.state

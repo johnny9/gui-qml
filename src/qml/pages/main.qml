@@ -38,6 +38,7 @@ ApplicationWindow {
             OnboardingStorageAmount {}
             OnboardingConnection {}
 
+            onCurrentIndexChanged: swipeView.currentItem.forceActiveFocus()
             onFinishedChanged: main.push(node)
         }
     }

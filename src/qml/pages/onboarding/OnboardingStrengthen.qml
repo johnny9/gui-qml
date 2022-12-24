@@ -8,10 +8,12 @@ import QtQuick.Layouts 1.15
 import "../../controls"
 
 InformationPage {
+    id: root
     navLeftDetail: NavButton {
         iconSource: "image://images/caret-left"
         text: qsTr("Back")
         onClicked: swipeView.decrementCurrentIndex()
+        KeyNavigation.tab: root.tabInItem
     }
     bannerItem: Image {
         source: Theme.image.network
@@ -22,4 +24,5 @@ InformationPage {
     headerText: qsTr("Strengthen bitcoin")
     description: qsTr("Bitcoin Core runs a full Bitcoin node which verifies the rules of the network are being followed.\n\nUsers running nodes is what makes bitcoin\nso resilient and trustworthy.")
     buttonText: qsTr("Next")
+    tabOutItem: root.navLeftItem
 }

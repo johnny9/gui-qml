@@ -8,10 +8,12 @@ import QtQuick.Layouts 1.15
 import "../../controls"
 
 InformationPage {
+    id: root
     navLeftDetail: NavButton {
         iconSource: "image://images/caret-left"
         text: qsTr("Back")
         onClicked: swipeView.decrementCurrentIndex()
+        KeyNavigation.tab: root.tabInItem
     }
     bannerItem: Image {
         source: Theme.image.blocktime
@@ -22,4 +24,5 @@ InformationPage {
     headerText: qsTr("The block clock")
     description: qsTr("The Bitcoin network targets a new block every\n10 minutes. Sometimes it's faster and sometimes slower.\n\nThe block clock indicates each block on a dial\nthat represents the current day.")
     buttonText: qsTr("Next")
+    tabOutItem: root.navLeftItem
 }

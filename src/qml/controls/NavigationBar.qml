@@ -9,8 +9,11 @@ import QtQuick.Layouts 1.15
 RowLayout {
     id: root
     property alias leftDetail: left_detail.sourceComponent
+    property alias leftDetailItem: left_detail.item
     property alias middleDetail: middle_detail.sourceComponent
+    property alias middleDetailItem: middle_detail.item
     property alias rightDetail: right_detail.sourceComponent
+    property alias rightDetailItem: right_detail.item
 
     height: 46
     spacing: 0

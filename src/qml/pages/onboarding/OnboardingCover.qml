@@ -18,12 +18,15 @@ Page {
         interactive: false
         orientation: Qt.Horizontal
         InformationPage {
+            id: information
             navRightDetail: NavButton {
+                id: navButton
                 iconSource: "image://images/info"
                 iconHeight: 24
                 onClicked: {
                     introductions.incrementCurrentIndex()
                 }
+                KeyNavigation.tab: information.tabInItem
             }
             bannerItem: Image {
                 Layout.fillWidth: true
@@ -42,6 +45,7 @@ Page {
             descriptionSize: 24
             subtext: qsTr("100% open-source & open-design")
             buttonText: qsTr("Start")
+            tabOutItem: information.navRightItem
         }
         SettingsAbout {
             navLeftDetail: NavButton {
