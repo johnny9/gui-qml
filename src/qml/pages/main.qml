@@ -21,9 +21,9 @@ ApplicationWindow {
 
 
     BlockClockDial {
-		anchors.centerIn: parent
-		width: 300
-        height: 300
+        anchors.centerIn: parent
+        width: 200
+        height: 200
     }
 
     Component {

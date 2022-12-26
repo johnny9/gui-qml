@@ -12,12 +12,12 @@ BlockClockDial::BlockClockDial(QQuickItem *parent)
 
 void BlockClockDial::paint(QPainter * painter)
 {
-	if (width() <= 0 || height() <= 0)
+    if (width() <= 0 || height() <= 0)
         return;
 
-    QPen pen(QColor("red"));
-    pen.setWidth(8);
-    pen.setCapStyle(Qt::FlatCap);
+    QPen pen(QColor("yellow"));
+    pen.setWidth(4);
+    pen.setCapStyle(Qt::RoundCap);
     painter->setPen(pen);
 
     const QRectF bounds = boundingRect();
@@ -37,19 +37,27 @@ void BlockClockDial::paint(QPainter * painter)
 
     painter->setRenderHint(QPainter::Antialiasing);
 
-    const qreal startAngle = (140 + 90);
-    const qreal spanAngle = (.5 * 280) * -1;
-    QPainterPath path;
-    path.arcMoveTo(rect, startAngle);
-    path.arcTo(rect, startAngle, spanAngle);
-    painter->drawPath(path);
+    int numberOfBlocks = 30;
+    for (int i = 0; i < numberOfBlocks; i++) {
+        if (numberOfBlocks - i == 6) {
+            QPen pen(QColor("orange"));
+            pen.setWidth(4);
+            pen.setCapStyle(Qt::RoundCap);
+            painter->setPen(pen);
+        }
+        if (numberOfBlocks - i == 1) {
+            QPen pen(QColor("red"));
+            pen.setWidth(4);
+            pen.setCapStyle(Qt::RoundCap);
+            painter->setPen(pen);
+        }
 
-    rect.adjust(-pen.widthF() / 2.0, -pen.widthF() / 2.0, pen.widthF() / 2.0, pen.widthF() / 2.0);
-    pen.setWidth(1);
-    painter->setPen(pen);
 
-    path = QPainterPath();
-    path.arcMoveTo(rect, 0);
-    path.arcTo(rect, 0, 360);
-    painter->drawPath(path);
+        const qreal startAngle = 90 + (-8 * i);
+        const qreal spanAngle = -5;
+        QPainterPath path;
+        path.arcMoveTo(rect, startAngle);
+        path.arcTo(rect, startAngle, spanAngle);
+        painter->drawPath(path);
+    }
 }
