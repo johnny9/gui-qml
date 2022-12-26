@@ -5,6 +5,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import org.bitcoincore.qt 1.0
 import "../components"
 import "../controls"
 import "./onboarding"
@@ -18,10 +19,11 @@ ApplicationWindow {
     color: Theme.color.background
     visible: true
 
-    StackView {
-        id: main
-        initialItem: onboardingWizard
-        anchors.fill: parent
+
+    BlockClockDial {
+		anchors.centerIn: parent
+		width: 300
+        height: 300
     }
 
     Component {
