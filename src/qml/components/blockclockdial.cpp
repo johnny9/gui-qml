@@ -37,21 +37,23 @@ void BlockClockDial::paint(QPainter * painter)
 
     painter->setRenderHint(QPainter::Antialiasing);
 
+    QColor confirmationColors[] = {
+        QColor("#FF1C1C"), // red
+        QColor("#ED6E46"),
+		QColor("#EE8847"),
+		QColor("#EFA148"),
+		QColor("#F0BB49"),
+		QColor("#F1D54A"), // yellow
+    };
+
     int numberOfBlocks = 30;
     for (int i = 0; i < numberOfBlocks; i++) {
-        if (numberOfBlocks - i == 6) {
-            QPen pen(QColor("orange"));
+        if (numberOfBlocks - i <= 6) {
+            QPen pen(confirmationColors[numberOfBlocks - i - 1]);
             pen.setWidth(4);
             pen.setCapStyle(Qt::RoundCap);
             painter->setPen(pen);
         }
-        if (numberOfBlocks - i == 1) {
-            QPen pen(QColor("red"));
-            pen.setWidth(4);
-            pen.setCapStyle(Qt::RoundCap);
-            painter->setPen(pen);
-        }
-
 
         const qreal startAngle = 90 + (-8 * i);
         const qreal spanAngle = -5;
