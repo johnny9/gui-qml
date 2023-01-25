@@ -85,20 +85,6 @@ Item {
                     }
                     onClicked: loadedItem.clicked()
                 }
-                Separator { Layout.fillWidth: true }
-                Setting {
-                    id: gotoPeers
-                    Layout.fillWidth: true
-                    header: qsTr("Peers")
-                    actionItem: CaretRightButton {
-                        stateColor: gotoPeers.stateColor
-                        onClicked: {
-                            peerTableModel.startAutoRefresh();
-                            nodeSettingsView.push(peers_page)
-                        }
-                    }
-                    onClicked: loadedItem.clicked()
-                }
             }
         }
     }
@@ -134,19 +120,6 @@ Item {
                 text: qsTr("Back")
                 onClicked: {
                     nodeSettingsView.pop()
-                }
-            }
-        }
-    }
-    Component {
-        id: peers_page
-        Peers {
-            navLeftDetail: NavButton {
-                iconSource: "image://images/caret-left"
-                text: qsTr("Back")
-                onClicked: {
-                    nodeSettingsView.pop()
-                    peerTableModel.stopAutoRefresh();
                 }
             }
         }
