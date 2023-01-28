@@ -5,7 +5,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import org.bitcoincore.qt 1.0
 import "../components"
 import "../controls"
 import "./onboarding"
@@ -58,7 +57,7 @@ ApplicationWindow {
             }
             NodeSettings {
                 navMiddleDetail: Header {
-                    headerBold: true
+                    bold: true
                     headerSize: 18
                     header: "Settings"
                 }
