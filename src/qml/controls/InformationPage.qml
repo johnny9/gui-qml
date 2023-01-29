@@ -65,7 +65,7 @@ Page {
                 Layout.fillWidth: true
                 Layout.leftMargin: 20
                 Layout.rightMargin: 20
-                headerBold: root.bold
+                bold: root.bold
                 center: root.center
                 header: root.headerText
                 headerMargin: root.headerMargin
