@@ -13,34 +13,22 @@ ColumnLayout {
         Layout.fillWidth: true
         header: qsTr("Enable listening")
         description: qsTr("Allows incoming connections")
-        actionItem: OptionSwitch {
-            checked: optionsModel.listen
-            onToggled: optionsModel.listen = checked
-        }
+        actionItem: OptionSwitch {}
     }
     Setting {
         Layout.fillWidth: true
         header: qsTr("Map port using UPnP")
-        actionItem: OptionSwitch {
-            checked: optionsModel.upnp
-            onToggled: optionsModel.upnp = checked
-        }
+        actionItem: OptionSwitch {}
     }
     Setting {
         Layout.fillWidth: true
         header: qsTr("Map port using NAT-PMP")
-        actionItem: OptionSwitch {
-            checked: optionsModel.natpmp
-            onToggled: optionsModel.natpmp = checked
-        }
+        actionItem: OptionSwitch {}
     }
     Setting {
         Layout.fillWidth: true
         header: qsTr("Enable RPC server")
-        actionItem: OptionSwitch {
-            checked: optionsModel.server
-            onToggled: optionsModel.server = checked
-        }
+        actionItem: OptionSwitch {}
     }
     Setting {
         last: true
