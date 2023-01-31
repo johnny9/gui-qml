@@ -18,7 +18,6 @@ ColumnLayout {
             iconHeight: 30
             link: "https://bitcoin.org/en/bitcoin-core/contribute/documentation"
         }
-        onClicked: loadedItem.clicked()
     }
     Setting {
         Layout.fillWidth: true
@@ -26,7 +25,6 @@ ColumnLayout {
         actionItem: ValueInput {
             description: ("450 MiB")
         }
-        onClicked: loadedItem.forceActiveFocus()
     }
     Setting {
         Layout.fillWidth: true
@@ -34,7 +32,6 @@ ColumnLayout {
         actionItem: ValueInput {
             description: ("0")
         }
-        onClicked: loadedItem.forceActiveFocus()
     }
     Setting {
         Layout.fillWidth: true
@@ -43,6 +40,5 @@ ColumnLayout {
             checked: Theme.dark
             onToggled: Theme.toggleDark()
         }
-        onClicked: loadedItem.toggled()
     }
 }

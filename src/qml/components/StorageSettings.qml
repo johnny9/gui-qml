@@ -16,10 +16,6 @@ ColumnLayout {
             checked: optionsModel.prune
             onToggled: optionsModel.prune = checked
         }
-        onClicked: {
-          loadedItem.toggle()
-          loadedItem.toggled()
-        }
     }
     Setting {
         Layout.fillWidth: true
@@ -28,6 +24,5 @@ ColumnLayout {
             description: optionsModel.pruneSizeGB
             onEditingFinished: optionsModel.pruneSizeGB = parseInt(text)
         }
-        onClicked: loadedItem.forceActiveFocus()
     }
 }
