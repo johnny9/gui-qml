@@ -37,14 +37,13 @@ Page {
                     Layout.alignment: Qt.AlignCenter
                 }
                 TextButton {
-                    Layout.topMargin: 10
-                    Layout.alignment: Qt.AlignCenter
+                    Layout.topMargin: 30
+                    Layout.fillWidth: true
                     text: qsTr("Detailed settings")
                     onClicked: storages.incrementCurrentIndex()
                 }
             }
             buttonText: qsTr("Next")
-            buttonMargin: 20
         }
         SettingsStorage {
             navRightDetail: NavButton {
