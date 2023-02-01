@@ -9,6 +9,7 @@ import QtQuick.Layouts 1.15
 Button {
     property string description
     property bool recommended: false
+    property string customDir: ""
     id: button
     padding: 15
     checkable: true
@@ -63,6 +64,27 @@ Button {
 
                     Behavior on color {
                         ColorAnimation { duration: 150 }
+                    }
+                }
+            }
+            Loader {
+                Layout.topMargin: 12
+                Layout.fillWidth: true
+                active: button.customDir.length > 0
+                visible: active
+                sourceComponent: Button {
+                    id: container
+                    background: Rectangle {
+                        color: Theme.color.neutral2
+                        radius: 5
+                    }
+                    font.family: "Inter"
+                    font.styleName: "Semi Bold"
+                    font.pixelSize: 13
+                    contentItem: Text {
+                        font: container.font
+                        color: Theme.color.neutral9
+                        text: button.customDir
                     }
                 }
             }
