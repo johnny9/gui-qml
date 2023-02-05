@@ -7,12 +7,15 @@ import QtQuick.Controls 2.15
 
 Button {
     id: root
-    hoverEnabled: true
-    contentItem: CoreText {
+    font.family: "Inter"
+    font.styleName: "Semi Bold"
+    font.pixelSize: 18
+    contentItem: Text {
         text: parent.text
-        bold: true
-        font.pixelSize: 18
+        font: parent.font
         color: Theme.color.neutral9
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
     }
     background: Rectangle {
         id: bg
@@ -20,24 +23,44 @@ Button {
         implicitWidth: 340
         color: Theme.color.background
         radius: 5
+        state:"DEFAULT"
         border {
             width: 1
-            color: Theme.color.neutral6
-
             Behavior on color {
                 ColorAnimation { duration: 150 }
             }
         }
-    }
 
-    states: [
-        State {
-            name: "PRESSED"; when: root.pressed
-            PropertyChanges { target: bg; border.color: Theme.color.orangeLight2 }
-        },
-        State {
-            name: "HOVER"; when: root.hovered
-            PropertyChanges { target: bg; border.color: Theme.color.neutral9 }
+        states: [
+            State {
+                name: "DEFAULT"
+                PropertyChanges { target: bg; border.color: Theme.color.neutral6}
+            },
+            State {
+                name: "HOVER"
+                PropertyChanges { target: bg; border.color: Theme.color.neutral9 }
+            },
+            State {
+                name: "PRESSED"
+                PropertyChanges { target: bg; border.color: Theme.color.orangeLight2 }
+            }
+        ]
+    }
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        onEntered: {
+            root.background.state = "HOVER"
         }
-    ]
+        onExited: {
+            root.background.state = "DEFAULT"
+        }
+        onPressed: {
+            root.background.state = "PRESSED"
+        }
+        onReleased: {
+            root.background.state = "DEFAULT"
+            root.clicked()
+        }
+    }
 }

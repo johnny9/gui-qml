@@ -8,7 +8,7 @@ import QtQuick.Layouts 1.15
 import "../controls"
 
 ColumnLayout {
-    spacing: 4
+    spacing: 20
     Setting {
         Layout.fillWidth: true
         header: qsTr("Enable listening")
@@ -22,7 +22,6 @@ ColumnLayout {
           loadedItem.toggled()
         }
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         Layout.fillWidth: true
         header: qsTr("Map port using UPnP")
@@ -35,7 +34,6 @@ ColumnLayout {
           loadedItem.toggled()
         }
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         Layout.fillWidth: true
         header: qsTr("Map port using NAT-PMP")
@@ -48,7 +46,6 @@ ColumnLayout {
           loadedItem.toggled()
         }
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         Layout.fillWidth: true
         header: qsTr("Enable RPC server")
@@ -61,15 +58,16 @@ ColumnLayout {
           loadedItem.toggled()
         }
     }
-    Separator { Layout.fillWidth: true }
     Setting {
-        id: gotoProxy
         last: true
         Layout.fillWidth: true
         header: qsTr("Proxy settings")
-        actionItem: CaretRightButton {
-            stateColor: gotoProxy.stateColor
+        actionItem: Button {
+            icon.source: "image://images/caret-right"
+            icon.color: Theme.color.neutral9
+            icon.height: 18
+            icon.width: 18
+            background: null
         }
-        onClicked: connectionSwipe.incrementCurrentIndex()
     }
 }

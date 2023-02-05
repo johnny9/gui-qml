@@ -13,82 +13,36 @@ AbstractButton {
     property alias actionItem: action_loader.sourceComponent
     property alias loadedItem: action_loader.item
     property string description
-    property color stateColor
-    hoverEnabled: true
-    state: "FILLED"
 
-    states: [
-        State {
-            name: "FILLED"
-            PropertyChanges {
-                target: root
-                enabled: true
-                stateColor: Theme.color.neutral9
+    contentItem: ColumnLayout {
+        spacing: 20
+        width: parent.width
+        RowLayout {
+            Header {
+                Layout.fillWidth: true
+                center: false
+                header: root.header
+                headerSize: 18
+                description: root.description
+                descriptionSize: 15
+                descriptionMargin: 0
             }
-        },
-        State {
-            name: "HOVER"
-            PropertyChanges { target: root; stateColor: Theme.color.orangeLight1 }
-        },
-        State {
-            name: "ACTIVE"
-            PropertyChanges { target: root; stateColor: Theme.color.orange }
-        },
-        State {
-            name: "DISABLED"
-            PropertyChanges {
-                target: root
-                enabled: false
-                stateColor: Theme.color.neutral4
+            Loader {
+                id: action_loader
+                active: true
+                visible: active
+                sourceComponent: root.actionItem
             }
-        }
-    ]
-
-    background: FocusBorder {
-        visible: root.visualFocus
-        topMargin: -4
-        bottomMargin: -4
-        leftMargin: -6
-        rightMargin: -6
-    }
-
-    MouseArea {
-        id: mouseArea
-        anchors.fill: root
-        hoverEnabled: true
-        onEntered: {
-            root.state = "HOVER"
-        }
-        onExited: {
-            root.state = "FILLED"
-        }
-        onPressed: {
-            root.state = "ACTIVE"
-        }
-        onReleased: {
-            root.state = "HOVER"
-            root.clicked()
-        }
-    }
-
-    contentItem: RowLayout {
-        Header {
-            Layout.topMargin: 14
-            Layout.bottomMargin: 14
-            Layout.fillWidth: true
-            center: false
-            header: root.header
-            headerSize: 18
-            headerColor: root.stateColor
-            description: root.description
-            descriptionSize: 15
-            descriptionMargin: 0
         }
         Loader {
-            id: action_loader
-            active: true
+            Layout.fillWidth: true
+            Layout.columnSpan: 2
+            active: !last
             visible: active
-            sourceComponent: root.actionItem
+            sourceComponent: Rectangle {
+                height: 1
+                color: Theme.color.neutral5
+            }
         }
     }
 }

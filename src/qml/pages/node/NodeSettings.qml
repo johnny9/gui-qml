@@ -34,7 +34,7 @@ Item {
                 id: navbar
             }
             ColumnLayout {
-                spacing: 4
+                spacing: 20
                 width: Math.min(parent.width, 450)
                 anchors.horizontalCenter: parent.horizontalCenter
                 Setting {
@@ -46,55 +46,47 @@ Item {
                     }
                     onClicked: loadedItem.toggled()
                 }
-                Separator { Layout.fillWidth: true }
                 Setting {
-                    id: gotoAbout
                     Layout.fillWidth: true
                     header: qsTr("About")
-                    actionItem: CaretRightButton {
-                        stateColor: gotoAbout.stateColor
+                    actionItem: Button {
+                        icon.source: "image://images/caret-right"
+                        icon.color: Theme.color.neutral9
+                        icon.height: 18
+                        icon.width: 18
+                        background: null
                         onClicked: {
                             nodeSettingsView.push(about_page)
                         }
                     }
                     onClicked: loadedItem.clicked()
                 }
-                Separator { Layout.fillWidth: true }
                 Setting {
-                    id: gotoStorage
                     Layout.fillWidth: true
                     header: qsTr("Storage")
-                    actionItem: CaretRightButton {
-                        stateColor: gotoStorage.stateColor
+                    actionItem: Button {
+                        icon.source: "image://images/caret-right"
+                        icon.color: Theme.color.neutral9
+                        icon.height: 18
+                        icon.width: 18
+                        background: null
                         onClicked: {
                             nodeSettingsView.push(storage_page)
                         }
                     }
                     onClicked: loadedItem.clicked()
                 }
-                Separator { Layout.fillWidth: true }
                 Setting {
-                    id: gotoConnection
                     Layout.fillWidth: true
                     header: qsTr("Connection")
-                    actionItem: CaretRightButton {
-                        stateColor: gotoConnection.stateColor
+                    actionItem: Button {
+                        icon.source: "image://images/caret-right"
+                        icon.color: Theme.color.neutral9
+                        icon.height: 18
+                        icon.width: 18
+                        background: null
                         onClicked: {
                             nodeSettingsView.push(connection_page)
-                        }
-                    }
-                    onClicked: loadedItem.clicked()
-                }
-                Separator { Layout.fillWidth: true }
-                Setting {
-                    id: gotoPeers
-                    Layout.fillWidth: true
-                    header: qsTr("Peers")
-                    actionItem: CaretRightButton {
-                        stateColor: gotoPeers.stateColor
-                        onClicked: {
-                            peerTableModel.startAutoRefresh();
-                            nodeSettingsView.push(peers_page)
                         }
                     }
                     onClicked: loadedItem.clicked()
@@ -134,19 +126,6 @@ Item {
                 text: qsTr("Back")
                 onClicked: {
                     nodeSettingsView.pop()
-                }
-            }
-        }
-    }
-    Component {
-        id: peers_page
-        Peers {
-            navLeftDetail: NavButton {
-                iconSource: "image://images/caret-left"
-                text: qsTr("Back")
-                onClicked: {
-                    nodeSettingsView.pop()
-                    peerTableModel.stopAutoRefresh();
                 }
             }
         }

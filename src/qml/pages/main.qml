@@ -21,16 +21,8 @@ ApplicationWindow {
 
     StackView {
         id: main
-        initialItem: onboardingWizard
+        initialItem: needOnboarding ? onboardingWizard : node
         anchors.fill: parent
-    }
-
-    Connections {
-        target: nodeModel
-        function onRequestedShutdown() {
-            main.clear()
-            main.push(shutdown)
-        }
     }
 
     Component {
@@ -52,11 +44,6 @@ ApplicationWindow {
     }
 
     Component {
-        id: shutdown
-        Shutdown {}
-    }
-
-    Component {
         id: node
         SwipeView {
             id: node_swipe
@@ -66,7 +53,6 @@ ApplicationWindow {
                 navRightDetail: NavButton {
                     iconSource: "image://images/gear"
                     iconHeight: 24
-                    iconWidth: 24
                     onClicked: node_swipe.incrementCurrentIndex()
                 }
             }

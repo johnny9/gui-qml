@@ -3,21 +3,14 @@
         <file>components/AboutOptions.qml</file>
         <file>components/BlockClock.qml</file>
         <file>components/BlockCounter.qml</file>
-        <file>components/CaretRightButton.qml</file>
         <file>components/ConnectionOptions.qml</file>
         <file>components/ConnectionSettings.qml</file>
-        <file>components/PeersIndicator.qml</file>
         <file>components/DeveloperOptions.qml</file>
-        <file>components/NetworkIndicator.qml</file>
-        <file>components/ProxySettings.qml</file>
         <file>components/StorageLocations.qml</file>
-        <file>components/Separator.qml</file>
         <file>components/StorageOptions.qml</file>
         <file>components/StorageSettings.qml</file>
         <file>controls/ContinueButton.qml</file>
-        <file>controls/CoreText.qml</file>
         <file>controls/ExternalLink.qml</file>
-        <file>controls/FocusBorder.qml</file>
         <file>controls/Header.qml</file>
         <file>controls/InformationPage.qml</file>
         <file>controls/NavButton.qml</file>
@@ -31,14 +24,11 @@
         <file>controls/Setting.qml</file>
         <file>controls/TextButton.qml</file>
         <file>controls/Theme.qml</file>
-        <file>controls/ToggleButton.qml</file>
         <file>controls/ValueInput.qml</file>
         <file>pages/initerrormessage.qml</file>
         <file>pages/main.qml</file>
         <file>pages/node/NodeRunner.qml</file>
         <file>pages/node/NodeSettings.qml</file>
-        <file>pages/node/Peers.qml</file>
-        <file>pages/node/Shutdown.qml</file>
         <file>pages/onboarding/OnboardingBlockclock.qml</file>
         <file>pages/onboarding/OnboardingConnection.qml</file>
         <file>pages/onboarding/OnboardingCover.qml</file>
@@ -48,7 +38,6 @@
         <file>pages/settings/SettingsAbout.qml</file>
         <file>pages/settings/SettingsConnection.qml</file>
         <file>pages/settings/SettingsDeveloper.qml</file>
-        <file>pages/settings/SettingsProxy.qml</file>
         <file>pages/settings/SettingsStorage.qml</file>
     </qresource>
     <qresource prefix="/icons">
@@ -67,7 +56,6 @@
         <file alias="info">res/icons/info.png</file>
         <file alias="network-dark">res/icons/network-dark.png</file>
         <file alias="network-light">res/icons/network-light.png</file>
-        <file alias="shutdown">res/icons/shutdown.png</file>
         <file alias="storage-dark">res/icons/storage-dark.png</file>
         <file alias="storage-light">res/icons/storage-light.png</file>
     </qresource>

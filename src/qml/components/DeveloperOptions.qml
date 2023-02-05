@@ -8,13 +8,11 @@ import QtQuick.Layouts 1.15
 import "../controls"
 
 ColumnLayout {
-    spacing: 4
+    spacing: 20
     Setting {
-        id: devDocsLink
         Layout.fillWidth: true
         header: qsTr("Developer documentation")
         actionItem: ExternalLink {
-            parentState: devDocsLink.state
             iconSource: "qrc:/icons/export"
             iconWidth: 30
             iconHeight: 30
@@ -22,43 +20,22 @@ ColumnLayout {
         }
         onClicked: loadedItem.clicked()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
-        id: dbcacheSetting
         Layout.fillWidth: true
-        header: qsTr("Database cache size (MiB)")
+        header: qsTr("Database cache size")
         actionItem: ValueInput {
-            parentState: dbcacheSetting.state
-            description: optionsModel.dbcacheSizeMiB
-            onEditingFinished: {
-                optionsModel.dbcacheSizeMiB = parseInt(text)
-                dbcacheSetting.forceActiveFocus()
-            }
+            description: ("450 MiB")
         }
-        onClicked: {
-            loadedItem.filled = true
-            loadedItem.forceActiveFocus()
-        }
+        onClicked: loadedItem.forceActiveFocus()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
-        id: parSetting
         Layout.fillWidth: true
         header: qsTr("Script verification threads")
         actionItem: ValueInput {
-            parentState: parSetting.state
-            description: optionsModel.scriptThreads
-            onEditingFinished: {
-                optionsModel.scriptThreads = parseInt(text)
-                parSetting.forceActiveFocus()
-            }
+            description: ("0")
         }
-        onClicked: {
-            loadedItem.filled = true
-            loadedItem.forceActiveFocus()
-        }
+        onClicked: loadedItem.forceActiveFocus()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         Layout.fillWidth: true
         header: qsTr("Dark Mode")

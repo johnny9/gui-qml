@@ -12,13 +12,8 @@ AbstractButton {
     property int iconWidth: 30
     property int textSize: 18
     property url iconSource: ""
-    property Rectangle iconBackground: null
-    property color iconColor: Theme.color.neutral9
-    hoverEnabled: true
-    topPadding: text_background.active ? 7 : 14
-    bottomPadding: text_background.active ? 7 : 14
-    rightPadding: text_background.active ? 22 : 14
-    leftPadding: text_background.active ? 2 : 14
+
+    padding: 0
     background: Rectangle {
         id: bg
         height: root.height
@@ -41,15 +36,12 @@ AbstractButton {
             }
         ]
 
-        FocusBorder {
-            visible: root.visualFocus
-        }
-
         Behavior on color {
             ColorAnimation { duration: 150 }
         }
     }
     contentItem: RowLayout {
+        anchors.fill: parent
         spacing: 0
         Loader {
            id: button_background
@@ -62,30 +54,29 @@ AbstractButton {
                height: root.iconHeight
                width: root.iconWidth
                icon.source: root.iconSource
-               icon.color: root.iconColor
+               icon.color: Theme.color.neutral9
                icon.height: root.iconHeight
                icon.width: root.iconWidth
-               background: root.iconBackground
+               background: null
            }
         }
         Loader {
-            id: text_background
-            active: root.text.length > 0
-            visible: active
-            sourceComponent: AbstractButton {
-                id: container
-                topPadding: button_background.active ? 0 : 4
-                bottomPadding: button_background.active ? 0 : 4
-                rightPadding: 0
-                leftPadding: button_background.active ? 0 : 20
-                contentItem: CoreText {
-                    anchors.verticalCenter: parent.verticalCenter
-                    bold: true
-                    font.pixelSize: root.textSize
-                    color: Theme.color.neutral9
-                    text: root.text
-                }
-            }
+           active: root.text.length > 0
+           visible: active
+           sourceComponent: AbstractButton {
+               id: container
+               padding: 0
+               font.family: "Inter"
+               font.styleName: "Semi Bold"
+               font.pixelSize: root.textSize
+               background: null
+               contentItem: Text {
+                   anchors.verticalCenter: parent.verticalCenter
+                   font: container.font
+                   color: Theme.color.neutral9
+                   text: root.text
+              }
+          }
         }
     }
     MouseArea {

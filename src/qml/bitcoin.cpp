@@ -18,13 +18,11 @@
 #include <qml/imageprovider.h>
 #include <qml/nodemodel.h>
 #include <qml/options_model.h>
-#include <qml/peerlistsortproxy.h>
 #include <qml/util.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
 #include <qt/networkstyle.h>
-#include <qt/peertablemodel.h>
 #include <util/system.h>
 #include <util/threadnames.h>
 #include <util/translation.h>
@@ -92,6 +90,26 @@ void DebugMessageHandler(QtMsgType type, const QMessageLogContext& context, cons
         LogPrintf("GUI: %s\n", msg.toStdString());
     }
 }
+
+bool ConfigurationFileExists(ArgsManager& argsman)
+{
+    fs::path settings_path;
+    if (!argsman.GetSettingsPath(&settings_path)) {
+        // settings file is disabled
+        return true;
+    }
+    if (fs::exists(settings_path)) {
+        return true;
+    }
+
+    const fs::path rel_config_path = argsman.GetPathArg("-conf", BITCOIN_CONF_FILENAME);
+    const fs::path abs_config_path = AbsPathForConfigVal(rel_config_path, true);
+    if (fs::exists(abs_config_path)) {
+        return true;
+    }
+
+    return false;
+}
 } // namespace
 
 
@@ -146,11 +164,19 @@ int QmlGuiMain(int argc, char* argv[])
     }
 
     /// Read and parse settings.json file.
-    if (!gArgs.InitSettings(error)) {
+    std::vector<std::string> errors;
+    if (!gArgs.ReadSettingsFile(&errors)) {
+        error = strprintf("Failed loading settings file:\n%s\n", MakeUnorderedList(errors));
         InitError(Untranslated(error));
         return EXIT_FAILURE;
     }
 
+    QVariant need_onboarding(true);
+    if (gArgs.IsArgSet("-datadir") && !gArgs.GetPathArg("-datadir").empty()) {
+        need_onboarding.setValue(false);
+    } else if (ConfigurationFileExists(gArgs)) {
+        need_onboarding.setValue(false);
+    }
     // Default printtoconsole to false for the GUI. GUI programs should not
     // print to the console unnecessarily.
     gArgs.SoftSetBoolArg("-printtoconsole", false);
@@ -177,7 +203,6 @@ int QmlGuiMain(int argc, char* argv[])
     // QObject::connect(&init_executor, &InitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     ChainModel chain_model{*chain};
-    chain_model.setCurrentNetworkName(QString::fromStdString(gArgs.GetChainName()));
 
     QObject::connect(&node_model, &NodeModel::setTimeRatioList, &chain_model, &ChainModel::setTimeRatioList);
     QObject::connect(&node_model, &NodeModel::setTimeRatioListInitial, &chain_model, &ChainModel::setTimeRatioListInitial);
@@ -186,10 +211,6 @@ int QmlGuiMain(int argc, char* argv[])
     QObject::connect(qGuiApp, &QGuiApplication::lastWindowClosed, [&] {
         node->startShutdown();
     });
-
-    PeerTableModel peer_model{*node, nullptr};
-    PeerListSortProxy peer_model_sort_proxy{nullptr};
-    peer_model_sort_proxy.setSourceModel(&peer_model);
 
     GUIUtil::LoadFont(":/fonts/inter/regular");
     GUIUtil::LoadFont(":/fonts/inter/semibold");
@@ -202,12 +223,11 @@ int QmlGuiMain(int argc, char* argv[])
 
     engine.rootContext()->setContextProperty("nodeModel", &node_model);
     engine.rootContext()->setContextProperty("chainModel", &chain_model);
-    engine.rootContext()->setContextProperty("peerTableModel", &peer_model);
-    engine.rootContext()->setContextProperty("peerListModelProxy", &peer_model_sort_proxy);
 
     OptionsQmlModel options_model{*node};
     engine.rootContext()->setContextProperty("optionsModel", &options_model);
 
+    engine.rootContext()->setContextProperty("needOnboarding", need_onboarding);
 #ifdef __ANDROID__
     AppMode app_mode(AppMode::MOBILE);
 #else

@@ -5,47 +5,16 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 
-TextInput {
+TextEdit {
     id: root
-    required property string parentState
     property string description: ""
-    property bool filled: false
     property int descriptionSize: 18
-    property color textColor: root.filled ? Theme.color.neutral9 : Theme.color.neutral5
-    enabled: true
-    state: root.parentState
-
-    states: [
-        State {
-            name: "ACTIVE"
-            PropertyChanges { target: root; textColor: Theme.color.orange }
-        },
-        State {
-            name: "HOVER"
-            PropertyChanges {
-                target: root
-                textColor: root.filled ? Theme.color.orangeLight1 : Theme.color.neutral5
-            }
-        },
-        State {
-            name: "DISABLED"
-            PropertyChanges {
-                target: root
-                enabled: false
-                textColor: Theme.color.neutral4
-            }
-        }
-    ]
 
     font.family: "Inter"
     font.styleName: "Regular"
     font.pixelSize: root.descriptionSize
-    color: root.textColor
-    text: root.description
+    color: Theme.color.neutral8
+    text: description
     horizontalAlignment: Text.AlignRight
     wrapMode: Text.WordWrap
-
-    Behavior on color {
-        ColorAnimation { duration: 150 }
-    }
 }
