@@ -34,7 +34,6 @@ Item {
         synced: nodeModel.verificationProgress > 0.999
         backgroundColor: Theme.color.neutral2
         timeTickColor: Theme.color.neutral5
-        confirmationColors: Theme.color.confirmationColors
     }
 
     Button {
@@ -77,7 +76,6 @@ Item {
 
     MouseArea {
         anchors.fill: dial
-        cursorShape: Qt.PointingHandCursor
         onClicked: {
             root.paused = !root.paused
             nodeModel.pause = root.paused
@@ -86,7 +84,7 @@ Item {
 
     states: [
         State {
-            name: "IBD"; when: !synced && !paused && conns
+            name: "intialBlockDownload"; when: !synced && !paused && conns
             PropertyChanges {
                 target: root
                 header: Math.round(nodeModel.verificationProgress * 100) + "%"
@@ -95,7 +93,7 @@ Item {
         },
 
         State {
-            name: "BLOCKCLOCK"; when: synced && !paused && conns
+            name: "blockClock"; when: synced && !paused && conns
             PropertyChanges {
                 target: root
                 header: Number(nodeModel.blockTipHeight).toLocaleString(Qt.locale(), 'f', 0)
@@ -104,7 +102,7 @@ Item {
         },
 
         State {
-            name: "PAUSE"; when: paused
+            name: "Manual Pause"; when: paused
             PropertyChanges {
                 target: root
                 header: "Paused"
@@ -122,7 +120,7 @@ Item {
         },
 
         State {
-            name: "CONNECTING"; when: !paused && !conns
+            name: "Connecting"; when: !paused && !conns
             PropertyChanges {
                 target: root
                 header: "Connecting"
