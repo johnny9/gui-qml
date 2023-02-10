@@ -8,7 +8,7 @@ import QtQuick.Layouts 1.15
 import "../controls"
 
 ColumnLayout {
-    spacing: 4
+    spacing: 20
     Setting {
         id: devDocsLink
         Layout.fillWidth: true
@@ -22,7 +22,6 @@ ColumnLayout {
         }
         onClicked: loadedItem.clicked()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         id: dbcacheSetting
         Layout.fillWidth: true
@@ -34,7 +33,6 @@ ColumnLayout {
         }
         onClicked: loadedItem.forceActiveFocus()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         id: parSetting
         Layout.fillWidth: true
@@ -46,7 +44,6 @@ ColumnLayout {
         }
         onClicked: loadedItem.forceActiveFocus()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         Layout.fillWidth: true
         header: qsTr("Dark Mode")

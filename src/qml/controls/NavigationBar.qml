@@ -39,6 +39,7 @@ RowLayout {
         Layout.preferredWidth: parent.width / 3
         Loader {
             id: right_detail
+            Layout.rightMargin: 10
             Layout.alignment: Qt.AlignRight
             active: true
             visible: active
