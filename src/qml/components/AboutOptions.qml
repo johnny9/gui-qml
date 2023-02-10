@@ -17,6 +17,7 @@ ColumnLayout {
             parentState: websiteLink.state
             description: "bitcoincore.org"
             link: "https://bitcoincore.org"
+            iconSource: "image://images/caret-right"
         }
         onClicked: loadedItem.clicked()
     }
@@ -28,6 +29,7 @@ ColumnLayout {
             parentState: sourceLink.state
             description: "github.com/bitcoin/bitcoin"
             link: "https://github.com/bitcoin/bitcoin"
+            iconSource: "image://images/caret-right"
         }
         onClicked: loadedItem.clicked()
     }
@@ -39,6 +41,7 @@ ColumnLayout {
             parentState: licenseLink.state
             description: "MIT"
             link: "https://opensource.org/licenses/MIT"
+            iconSource: "image://images/caret-right"
         }
         onClicked: loadedItem.clicked()
     }
@@ -51,8 +54,6 @@ ColumnLayout {
             description: "v22.99.0-1e7564eca8a6"
             link: "https://bitcoin.org/en/download"
             iconSource: "image://images/caret-right"
-            iconWidth: 18
-            iconHeight: 18
         }
         onClicked: loadedItem.clicked()
     }
