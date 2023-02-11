@@ -31,10 +31,6 @@ Button {
         Behavior on color {
             ColorAnimation { duration: 150 }
         }
-
-        FocusBorder {
-            visible: root.visualFocus
-        }
     }
     states: [
         State {

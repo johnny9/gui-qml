@@ -16,98 +16,51 @@ Page {
         id: navbar
     }
 
-    CoreText {
+    Text {
         anchors.top: parent.top
         anchors.horizontalCenter: parent.horizontalCenter
         id: description
+        height: 75
         width: Math.min(parent.width - 40, 450)
+        wrapMode: Text.WordWrap
         text: qsTr("Peers are nodes you are connected to. You want to ensure that you are connected to x, y and z, but not a, b, and c. Learn more.")
+        font.family: "Inter"
+        font.styleName: "Regular"
         font.pixelSize: 13
         color: Theme.color.neutral7
-    }
-
-    Flow {
-        id: sortSelection
-        anchors.top: description.bottom
-        anchors.topMargin: 20
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.min(parent.width - 40, 450)
-        spacing: 10
-        ToggleButton {
-            text: qsTr("ID")
-            autoExclusive: true
-            checked: true
-            onClicked: {
-                peerListModelProxy.sortBy = "nodeId"
-            }
-        }
-        ToggleButton {
-            text: qsTr("Direction")
-            autoExclusive: true
-            onClicked: {
-                peerListModelProxy.sortBy = "direction"
-            }
-        }
-        ToggleButton {
-            text: qsTr("User Agent")
-            autoExclusive: true
-            onClicked: {
-                peerListModelProxy.sortBy = "subversion"
-            }
-        }
-        ToggleButton {
-            text: qsTr("Type")
-            autoExclusive: true
-            onClicked: {
-                peerListModelProxy.sortBy = "connectionType"
-            }
-        }
-        ToggleButton {
-            text: qsTr("Ip")
-            autoExclusive: true
-            onClicked: {
-                peerListModelProxy.sortBy = "address"
-            }
-        }
-        ToggleButton {
-            text: qsTr("Network")
-            autoExclusive: true
-            onClicked: {
-                peerListModelProxy.sortBy = "network"
-            }
-        }
+        horizontalAlignment: Text.AlignHCenter
     }
 
     ListView {
         id: listView
         clip: true
         width: Math.min(parent.width - 40, 450)
-        anchors.top: sortSelection.bottom
-        anchors.topMargin: 30
+        anchors.top: description.bottom
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
         model: peerListModelProxy
         spacing: 15
 
         footer: Loader {
+            anchors.centerIn: parent
             height: 75
             active: nodeModel.numOutboundPeers < nodeModel.maxNumOutboundPeers
-            width: listView.width
             visible: active
-            sourceComponent: Item {
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 20
-                    PeersIndicator {
-                        numOutboundPeers: nodeModel.numOutboundPeers
-                        maxNumOutboundPeers: nodeModel.maxNumOutboundPeers
-                    }
-                    CoreText {
-                        text: qsTr("Looking for %1 more peer(s)").arg(
-                                nodeModel.maxNumOutboundPeers - nodeModel.numOutboundPeers)
-                        font.pixelSize: 15
-                        color: Theme.color.neutral7
-                    }
+            sourceComponent: RowLayout {
+                spacing: 20
+                PeersIndicator {
+                    Layout.alignment: Qt.AlignHCenter
+                    numOutboundPeers: nodeModel.numOutboundPeers
+                    maxNumOutboundPeers: nodeModel.maxNumOutboundPeers
+                }
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: qsTr("Looking for %1 more peer(s)").arg(
+                            nodeModel.maxNumOutboundPeers - nodeModel.numOutboundPeers)
+                    font.family: "Inter"
+                    font.styleName: "Regular"
+                    font.pixelSize: 15
+                    color: Theme.color.neutral7
                 }
             }
         }
@@ -117,90 +70,47 @@ Page {
             required property string address;
             required property string subversion;
             required property string direction;
-            required property string connectionType;
-            required property string network;
-            implicitHeight: 60
+            implicitHeight: 65
             implicitWidth: listView.width
-
-            Connections {
-                target: peerListModelProxy
-                function onSortByChanged(roleName) {
-                    setTextByRole(roleName)
-                }
-                function onDataChanged(startIndex, endIndex) {
-                    setTextByRole(peerListModelProxy.sortBy)
-                }
-            }
-
-            Component.onCompleted: {
-                setTextByRole(peerListModelProxy.sortBy)
-            }
-
-            function setTextByRole(roleName) {
-                if (roleName == "nodeId") {
-                    primary.text = "#" + nodeId
-                    secondary.text = direction
-                    tertiary.text = address
-                    quaternary.text = subversion
-                } else if (roleName == "direction") {
-                    primary.text = direction
-                    secondary.text = "#" + nodeId
-                    tertiary.text = address
-                    quaternary.text = subversion
-                } else if (roleName == "subversion") {
-                    primary.text = subversion
-                    secondary.text = "#" + nodeId
-                    tertiary.text = address
-                    quaternary.text = direction
-                } else if (roleName == "address") {
-                    primary.text = address
-                    secondary.text = direction
-                    tertiary.text = "#" + nodeId
-                    quaternary.text = subversion
-                } else if (roleName == "connectionType") {
-                    primary.text = connectionType
-                    secondary.text = direction
-                    tertiary.text = address
-                    quaternary.text = subversion
-                } else if (roleName == "network") {
-                    primary.text = network
-                    secondary.text = direction
-                    tertiary.text = address
-                    quaternary.text = subversion
-                } else {
-                    primary.text = "#" + nodeId
-                    secondary.text = direction
-                    tertiary.text = address
-                    quaternary.text = subversion
-                }
-            }
 
             ColumnLayout {
                 anchors.left: parent.left
-                CoreText {
+                Label {
                     Layout.alignment: Qt.AlignLeft
                     id: primary
+                    text: "#" + nodeId
+                    font.family: "Inter"
+                    font.styleName: "Regular"
                     font.pixelSize: 18
                     color: Theme.color.neutral9
                 }
-                CoreText {
+                Label {
                     Layout.alignment: Qt.AlignLeft
                     id: tertiary
+                    text: address
+                    font.family: "Inter"
+                    font.styleName: "Regular"
                     font.pixelSize: 15
                     color: Theme.color.neutral7
                 }
             }
             ColumnLayout {
                 anchors.right: parent.right
-                CoreText {
+                Label {
                     Layout.alignment: Qt.AlignRight
-                    id: secondary
+                    id:secondary
+                    text: direction
+                    font.family: "Inter"
+                    font.styleName: "Regular"
                     font.pixelSize: 18
                     color: Theme.color.neutral9
                 }
-                CoreText {
+                Label {
                     Layout.alignment: Qt.AlignRight
                     id: quaternary
+                    text: subversion
+                    font.family: "Inter"
+                    font.styleName: "Regular"
                     font.pixelSize: 15
                     color: Theme.color.neutral7
                 }

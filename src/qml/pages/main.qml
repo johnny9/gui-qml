@@ -21,16 +21,8 @@ ApplicationWindow {
 
     StackView {
         id: main
-        initialItem: needOnboarding ? onboardingWizard : node
+        initialItem: onboardingWizard
         anchors.fill: parent
-    }
-
-    Connections {
-        target: nodeModel
-        function onRequestedShutdown() {
-            main.clear()
-            main.push(shutdown)
-        }
     }
 
     Component {
@@ -49,11 +41,6 @@ ApplicationWindow {
 
             onFinishedChanged: main.push(node)
         }
-    }
-
-    Component {
-        id: shutdown
-        Shutdown {}
     }
 
     Component {

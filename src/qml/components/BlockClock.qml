@@ -24,8 +24,6 @@ Item {
     property bool synced: nodeModel.verificationProgress > 0.999
     property bool paused: false
 
-    activeFocusOnTab: true
-
     BlockClockDial {
         id: dial
         anchors.fill: parent
@@ -83,9 +81,6 @@ Item {
             root.paused = !root.paused
             nodeModel.pause = root.paused
         }
-        FocusBorder {
-            visible: root.activeFocus
-        }
     }
 
     states: [
@@ -93,7 +88,7 @@ Item {
             name: "IBD"; when: !synced && !paused && connected
             PropertyChanges {
                 target: root
-                header: formatProgressPercentage(nodeModel.verificationProgress * 100)
+                header: Math.round(nodeModel.verificationProgress * 100) + "%"
                 subText: formatRemainingSyncTime(nodeModel.remainingSyncTime)
             }
         },
@@ -131,7 +126,7 @@ Item {
                 target: root
                 header: "Connecting"
                 headerSize: 24
-                subText: "Please wait"
+                subText: "Please Wait"
             }
             PropertyChanges {
                 target: bitcoinIcon
@@ -143,18 +138,6 @@ Item {
             }
         }
     ]
-
-    function formatProgressPercentage(progress) {
-        if (progress >= 1) {
-            return Math.round(progress) + "%"
-        } else if (progress >= 0.1) {
-            return progress.toFixed(1) + "%"
-        } else if (progress >= 0.01) {
-            return progress.toFixed(2) + "%"
-        } else {
-            return "0%"
-        }
-    }
 
     function formatRemainingSyncTime(milliseconds) {
         var minutes = Math.floor(milliseconds / 60000);
@@ -188,6 +171,6 @@ Item {
             return "~" + seconds + (seconds === 1 ? " second" : " seconds") + " left";
         }
 
-        return "Estimating";
+        return "~0 seconds left";
     }
 }
