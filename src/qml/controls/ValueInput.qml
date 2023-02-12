@@ -16,11 +16,7 @@ TextEdit {
     states: [
         State {
             name: "FILLED"
-            PropertyChanges {
-                target: root
-                enabled: true
-                textColor: Theme.color.neutral9
-            }
+            PropertyChanges { target: root; textColor: Theme.color.neutral9 }
         },
         State {
             name: "HOVER"
@@ -29,14 +25,6 @@ TextEdit {
         State {
             name: "ACTIVE"
             PropertyChanges { target: root; textColor: Theme.color.orange }
-        },
-        State {
-            name: "DISABLED"
-            PropertyChanges {
-                target: root
-                enabled: false
-                textColor: Theme.color.neutral4
-            }
         }
     ]
 
