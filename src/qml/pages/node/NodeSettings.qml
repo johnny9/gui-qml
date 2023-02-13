@@ -34,7 +34,7 @@ Item {
                 id: navbar
             }
             ColumnLayout {
-                spacing: 4
+                spacing: 20
                 width: Math.min(parent.width, 450)
                 anchors.horizontalCenter: parent.horizontalCenter
                 Setting {
@@ -46,7 +46,6 @@ Item {
                     }
                     onClicked: loadedItem.toggled()
                 }
-                Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoAbout
                     Layout.fillWidth: true
@@ -59,7 +58,6 @@ Item {
                     }
                     onClicked: loadedItem.clicked()
                 }
-                Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoStorage
                     Layout.fillWidth: true
@@ -72,7 +70,6 @@ Item {
                     }
                     onClicked: loadedItem.clicked()
                 }
-                Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoConnection
                     Layout.fillWidth: true

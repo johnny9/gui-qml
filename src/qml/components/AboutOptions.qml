@@ -8,7 +8,7 @@ import QtQuick.Layouts 1.15
 import "../controls"
 
 ColumnLayout {
-    spacing: 4
+    spacing: 20
     Setting {
         id: websiteLink
         Layout.fillWidth: true
@@ -20,7 +20,6 @@ ColumnLayout {
         }
         onClicked: loadedItem.clicked()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         id: sourceLink
         Layout.fillWidth: true
@@ -32,7 +31,6 @@ ColumnLayout {
         }
         onClicked: loadedItem.clicked()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         id: licenseLink
         Layout.fillWidth: true
@@ -44,7 +42,6 @@ ColumnLayout {
         }
         onClicked: loadedItem.clicked()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         id: versionLink
         Layout.fillWidth: true
@@ -59,7 +56,6 @@ ColumnLayout {
         }
         onClicked: loadedItem.clicked()
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         id: gotoDeveloper
         Layout.fillWidth: true

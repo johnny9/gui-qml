@@ -8,27 +8,19 @@ import QtQuick.Layouts 1.15
 import "../controls"
 
 ColumnLayout {
-    spacing: 4
+    spacing: 20
     Setting {
         Layout.fillWidth: true
         header: qsTr("Store recent blocks only")
         actionItem: OptionSwitch {
             checked: optionsModel.prune
             onToggled: optionsModel.prune = checked
-            onCheckedChanged: {
-                if (checked == false) {
-                    pruneTargetSetting.state = "DISABLED"
-                } else {
-                    pruneTargetSetting.state = "FILLED"
-                }
-            }
         }
         onClicked: {
           loadedItem.toggle()
           loadedItem.toggled()
         }
     }
-    Separator { Layout.fillWidth: true }
     Setting {
         id: pruneTargetSetting
         Layout.fillWidth: true
@@ -36,10 +28,7 @@ ColumnLayout {
         actionItem: ValueInput {
             parentState: pruneTargetSetting.state
             description: optionsModel.pruneSizeGB
-            onEditingFinished: {
-                optionsModel.pruneSizeGB = parseInt(text)
-                pruneTargetSetting.forceActiveFocus()
-            }
+            onEditingFinished: optionsModel.pruneSizeGB = parseInt(text)
         }
         onClicked: loadedItem.forceActiveFocus()
     }
