@@ -15,13 +15,6 @@ ColumnLayout {
         actionItem: OptionSwitch {
             checked: optionsModel.prune
             onToggled: optionsModel.prune = checked
-            onCheckedChanged: {
-                if (checked == false) {
-                    pruneTargetSetting.state = "DISABLED"
-                } else {
-                    pruneTargetSetting.state = "FILLED"
-                }
-            }
         }
         onClicked: {
           loadedItem.toggle()
