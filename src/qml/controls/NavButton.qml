@@ -14,7 +14,7 @@ AbstractButton {
     property url iconSource: ""
     property Rectangle iconBackground: null
     property color iconColor: Theme.color.neutral9
-    hoverEnabled: true
+
     topPadding: text_background.active ? 7 : 14
     bottomPadding: text_background.active ? 7 : 14
     rightPadding: text_background.active ? 22 : 14
@@ -74,10 +74,12 @@ AbstractButton {
                 bottomPadding: button_background.active ? 0 : 4
                 rightPadding: 0
                 leftPadding: button_background.active ? 0 : 20
-                contentItem: CoreText {
+                font.family: "Inter"
+                font.styleName: "Semi Bold"
+                font.pixelSize: root.textSize
+                contentItem: Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    bold: true
-                    font.pixelSize: root.textSize
+                    font: container.font
                     color: Theme.color.neutral9
                     text: root.text
                 }

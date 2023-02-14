@@ -8,18 +8,21 @@ import QtQuick.Controls 2.15
 Button {
     id: root
     property int textSize: 18
-    property color textColor: Theme.color.orange
-    property color bgColor: Theme.color.background
+    property color textColor
+    property color bgColor
     property bool bold: true
     property bool rightalign: false
+    font.family: "Inter"
+    font.styleName: bold ? "Semi Bold" : "Regular"
+    font.pixelSize: root.textSize
     padding: 15
-    hoverEnabled: true
-    contentItem: CoreText {
+    state: "DEFAULT"
+    contentItem: Text {
         text: root.text
-        bold: root.bold
-        font.pixelSize: root.textSize
+        font: root.font
         color: root.textColor
         horizontalAlignment: rightalign ? Text.AlignRight : Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
         Behavior on color {
             ColorAnimation { duration: 150 }
         }
@@ -34,20 +37,45 @@ Button {
     }
     states: [
         State {
-            name: "PRESSED"; when: root.pressed
+            name: "DEFAULT"
             PropertyChanges {
                 target: root
-                textColor: Theme.color.orangeLight2
-                bgColor: Theme.color.neutral3
+                textColor: Theme.color.orange
+                bgColor: Theme.color.background
             }
         },
         State {
-            name: "HOVER"; when: root.hovered
+            name: "HOVER"
             PropertyChanges {
                 target: root
                 textColor: Theme.color.orangeLight1
                 bgColor: Theme.color.neutral2
             }
+        },
+        State {
+            name: "PRESSED"
+            PropertyChanges {
+                target: root
+                textColor: Theme.color.orangeLight2
+                bgColor: Theme.color.neutral3
+            }
         }
     ]
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        onEntered: {
+            root.state = "HOVER"
+        }
+        onExited: {
+            root.state = "DEFAULT"
+        }
+        onPressed: {
+            root.state = "PRESSED"
+        }
+        onReleased: {
+            root.state = "DEFAULT"
+            root.clicked()
+        }
+    }
 }

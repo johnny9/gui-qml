@@ -9,13 +9,11 @@
         <file>components/PeersIndicator.qml</file>
         <file>components/DeveloperOptions.qml</file>
         <file>components/NetworkIndicator.qml</file>
-        <file>components/ProxySettings.qml</file>
         <file>components/StorageLocations.qml</file>
         <file>components/Separator.qml</file>
         <file>components/StorageOptions.qml</file>
         <file>components/StorageSettings.qml</file>
         <file>controls/ContinueButton.qml</file>
-        <file>controls/CoreText.qml</file>
         <file>controls/ExternalLink.qml</file>
         <file>controls/Header.qml</file>
         <file>controls/InformationPage.qml</file>
@@ -35,7 +33,6 @@
         <file>pages/main.qml</file>
         <file>pages/node/NodeRunner.qml</file>
         <file>pages/node/NodeSettings.qml</file>
-        <file>pages/node/Peers.qml</file>
         <file>pages/onboarding/OnboardingBlockclock.qml</file>
         <file>pages/onboarding/OnboardingConnection.qml</file>
         <file>pages/onboarding/OnboardingCover.qml</file>
@@ -45,7 +42,6 @@
         <file>pages/settings/SettingsAbout.qml</file>
         <file>pages/settings/SettingsConnection.qml</file>
         <file>pages/settings/SettingsDeveloper.qml</file>
-        <file>pages/settings/SettingsProxy.qml</file>
         <file>pages/settings/SettingsStorage.qml</file>
     </qresource>
     <qresource prefix="/icons">

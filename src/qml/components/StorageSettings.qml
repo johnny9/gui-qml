@@ -36,14 +36,8 @@ ColumnLayout {
         actionItem: ValueInput {
             parentState: pruneTargetSetting.state
             description: optionsModel.pruneSizeGB
-            onEditingFinished: {
-                optionsModel.pruneSizeGB = parseInt(text)
-                pruneTargetSetting.forceActiveFocus()
-            }
+            onEditingFinished: optionsModel.pruneSizeGB = parseInt(text)
         }
-        onClicked: {
-            loadedItem.filled = true
-            loadedItem.forceActiveFocus()
-        }
+        onClicked: loadedItem.forceActiveFocus()
     }
 }

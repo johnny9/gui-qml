@@ -30,15 +30,9 @@ ColumnLayout {
         actionItem: ValueInput {
             parentState: dbcacheSetting.state
             description: optionsModel.dbcacheSizeMiB
-            onEditingFinished: {
-                optionsModel.dbcacheSizeMiB = parseInt(text)
-                dbcacheSetting.forceActiveFocus()
-            }
+            onEditingFinished: optionsModel.dbcacheSizeMiB = parseInt(text)
         }
-        onClicked: {
-            loadedItem.filled = true
-            loadedItem.forceActiveFocus()
-        }
+        onClicked: loadedItem.forceActiveFocus()
     }
     Separator { Layout.fillWidth: true }
     Setting {
@@ -48,15 +42,9 @@ ColumnLayout {
         actionItem: ValueInput {
             parentState: parSetting.state
             description: optionsModel.scriptThreads
-            onEditingFinished: {
-                optionsModel.scriptThreads = parseInt(text)
-                parSetting.forceActiveFocus()
-            }
+            onEditingFinished: optionsModel.scriptThreads = parseInt(text)
         }
-        onClicked: {
-            loadedItem.filled = true
-            loadedItem.forceActiveFocus()
-        }
+        onClicked: loadedItem.forceActiveFocus()
     }
     Separator { Layout.fillWidth: true }
     Setting {

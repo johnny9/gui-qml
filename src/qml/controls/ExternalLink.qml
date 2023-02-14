@@ -15,17 +15,17 @@ AbstractButton {
     property url iconSource: "image://images/export"
     property int iconWidth: 22
     property int iconHeight: 22
-    property color iconColor: Theme.color.neutral9
-    property color textColor: Theme.color.neutral7
+    property color iconColor
+    property color textColor
     state: root.parentState
 
     states: [
         State {
-            name: "ACTIVE"
+            name: "FILLED"
             PropertyChanges {
                 target: root
-                iconColor: Theme.color.orange
-                textColor: Theme.color.orange
+                iconColor: Theme.color.neutral9
+                textColor: Theme.color.neutral7
             }
         },
         State {
@@ -34,6 +34,14 @@ AbstractButton {
                 target: root
                 iconColor: Theme.color.orangeLight1
                 textColor: Theme.color.orangeLight1
+            }
+        },
+        State {
+            name: "ACTIVE"
+            PropertyChanges {
+                target: root
+                iconColor: Theme.color.orange
+                textColor: Theme.color.orange
             }
         }
     ]
@@ -45,12 +53,13 @@ AbstractButton {
             Layout.fillWidth: true
             active: root.description.length > 0
             visible: active
-            sourceComponent: CoreText {
+            sourceComponent: Text {
+                font.family: "Inter"
+                font.styleName: "Regular"
                 font.pixelSize: root.descriptionSize
                 color: root.textColor
                 textFormat: Text.RichText
                 text: root.description
-                wrap: false
 
                 Behavior on color {
                     ColorAnimation { duration: 150 }

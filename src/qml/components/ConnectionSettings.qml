@@ -70,6 +70,5 @@ ColumnLayout {
         actionItem: CaretRightButton {
             stateColor: gotoProxy.stateColor
         }
-        onClicked: connectionSwipe.incrementCurrentIndex()
     }
 }
