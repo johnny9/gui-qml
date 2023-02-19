@@ -15,9 +15,7 @@
         <file>components/StorageOptions.qml</file>
         <file>components/StorageSettings.qml</file>
         <file>controls/ContinueButton.qml</file>
-        <file>controls/CoreText.qml</file>
         <file>controls/ExternalLink.qml</file>
-        <file>controls/FocusBorder.qml</file>
         <file>controls/Header.qml</file>
         <file>controls/InformationPage.qml</file>
         <file>controls/NavButton.qml</file>
@@ -31,7 +29,6 @@
         <file>controls/Setting.qml</file>
         <file>controls/TextButton.qml</file>
         <file>controls/Theme.qml</file>
-        <file>controls/ToggleButton.qml</file>
         <file>controls/ValueInput.qml</file>
         <file>pages/initerrormessage.qml</file>
         <file>pages/main.qml</file>
@@ -66,6 +63,7 @@
         <file alias="info">res/icons/info.png</file>
         <file alias="network-dark">res/icons/network-dark.png</file>
         <file alias="network-light">res/icons/network-light.png</file>
+        <file alias="shutdown">res/icons/shutdown.png</file>
         <file alias="storage-dark">res/icons/storage-dark.png</file>
         <file alias="storage-light">res/icons/storage-light.png</file>
     </qresource>

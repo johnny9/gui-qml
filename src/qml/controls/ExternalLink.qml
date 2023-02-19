@@ -45,12 +45,13 @@ AbstractButton {
             Layout.fillWidth: true
             active: root.description.length > 0
             visible: active
-            sourceComponent: CoreText {
+            sourceComponent: Text {
+                font.family: "Inter"
+                font.styleName: "Regular"
                 font.pixelSize: root.descriptionSize
                 color: root.textColor
                 textFormat: Text.RichText
                 text: root.description
-                wrap: false
 
                 Behavior on color {
                     ColorAnimation { duration: 150 }

@@ -35,10 +35,7 @@ ColumnLayout {
                 dbcacheSetting.forceActiveFocus()
             }
         }
-        onClicked: {
-            loadedItem.filled = true
-            loadedItem.forceActiveFocus()
-        }
+        onClicked: loadedItem.forceActiveFocus()
     }
     Separator { Layout.fillWidth: true }
     Setting {
@@ -53,10 +50,7 @@ ColumnLayout {
                 parSetting.forceActiveFocus()
             }
         }
-        onClicked: {
-            loadedItem.filled = true
-            loadedItem.forceActiveFocus()
-        }
+        onClicked: loadedItem.forceActiveFocus()
     }
     Separator { Layout.fillWidth: true }
     Setting {

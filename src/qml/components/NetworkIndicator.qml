@@ -13,14 +13,17 @@ Button {
     id: root
     property color bgColor
     property int textSize: 15
+    font.family: "Inter"
+    font.styleName: "Regular"
+    font.pixelSize: root.textSize
     topPadding: 2
     bottomPadding: 2
     leftPadding: 7
     rightPadding: 7
     state: chainModel.currentNetworkName
-    contentItem: CoreText {
+    contentItem: Text {
         text: root.text
-        font.pixelSize: root.textSize
+        font: root.font
         color: Theme.color.white
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter

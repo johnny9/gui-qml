@@ -7,11 +7,16 @@ import QtQuick.Controls 2.15
 
 Button {
     id: root
+    font.family: "Inter"
+    font.styleName: "Semi Bold"
+    font.pixelSize: 18
     hoverEnabled: true
-    contentItem: CoreText {
+    contentItem: Text {
         text: parent.text
-        bold: true
-        font.pixelSize: 18
+        font: parent.font
+        color: Theme.color.white
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
     }
     background: Rectangle {
         id: bg
@@ -33,10 +38,6 @@ Button {
 
         Behavior on color {
             ColorAnimation { duration: 150 }
-        }
-
-        FocusBorder {
-            visible: root.visualFocus
         }
     }
 }
