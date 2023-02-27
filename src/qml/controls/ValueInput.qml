@@ -9,9 +9,8 @@ TextInput {
     id: root
     required property string parentState
     property string description: ""
-    property bool filled: false
     property int descriptionSize: 18
-    property color textColor: root.filled ? Theme.color.neutral9 : Theme.color.neutral5
+    property color textColor: Theme.color.neutral9
     enabled: true
     state: root.parentState
 
@@ -22,10 +21,7 @@ TextInput {
         },
         State {
             name: "HOVER"
-            PropertyChanges {
-                target: root
-                textColor: root.filled ? Theme.color.orangeLight1 : Theme.color.neutral5
-            }
+            PropertyChanges { target: root; textColor: Theme.color.orangeLight1 }
         },
         State {
             name: "DISABLED"

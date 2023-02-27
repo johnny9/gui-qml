@@ -12,14 +12,17 @@ Button {
     property color bgColor: Theme.color.background
     property bool bold: true
     property bool rightalign: false
+    font.family: "Inter"
+    font.styleName: bold ? "Semi Bold" : "Regular"
+    font.pixelSize: root.textSize
     padding: 15
     hoverEnabled: true
-    contentItem: CoreText {
+    contentItem: Text {
         text: root.text
-        bold: root.bold
-        font.pixelSize: root.textSize
+        font: root.font
         color: root.textColor
         horizontalAlignment: rightalign ? Text.AlignRight : Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
         Behavior on color {
             ColorAnimation { duration: 150 }
         }
@@ -30,10 +33,6 @@ Button {
         radius: 5
         Behavior on color {
             ColorAnimation { duration: 150 }
-        }
-
-        FocusBorder {
-            visible: root.visualFocus
         }
     }
     states: [

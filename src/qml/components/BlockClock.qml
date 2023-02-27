@@ -24,8 +24,6 @@ Item {
     property bool synced: nodeModel.verificationProgress > 0.999
     property bool paused: false
 
-    activeFocusOnTab: true
-
     BlockClockDial {
         id: dial
         anchors.fill: parent
@@ -82,9 +80,6 @@ Item {
         onClicked: {
             root.paused = !root.paused
             nodeModel.pause = root.paused
-        }
-        FocusBorder {
-            visible: root.activeFocus
         }
     }
 
@@ -176,6 +171,6 @@ Item {
             return "~" + seconds + (seconds === 1 ? " second" : " seconds") + " left";
         }
 
-        return "~0 seconds left";
+        return "Estimating";
     }
 }

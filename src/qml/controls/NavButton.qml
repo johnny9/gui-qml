@@ -41,10 +41,6 @@ AbstractButton {
             }
         ]
 
-        FocusBorder {
-            visible: root.visualFocus
-        }
-
         Behavior on color {
             ColorAnimation { duration: 150 }
         }
@@ -78,10 +74,12 @@ AbstractButton {
                 bottomPadding: button_background.active ? 0 : 4
                 rightPadding: 0
                 leftPadding: button_background.active ? 0 : 20
-                contentItem: CoreText {
+                font.family: "Inter"
+                font.styleName: "Semi Bold"
+                font.pixelSize: root.textSize
+                contentItem: Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    bold: true
-                    font.pixelSize: root.textSize
+                    font: container.font
                     color: Theme.color.neutral9
                     text: root.text
                 }
