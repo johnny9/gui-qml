@@ -99,19 +99,6 @@ Item {
                     }
                     onClicked: loadedItem.clicked()
                 }
-                Separator { Layout.fillWidth: true }
-                Setting {
-                    id: gotoNetworkTraffic
-                    Layout.fillWidth: true
-                    header: qsTr("Network Traffic")
-                    actionItem: CaretRightButton {
-                        stateColor: gotoNetworkTraffic.stateColor
-                        onClicked: {
-                            nodeSettingsView.push(networktraffic_page)
-                        }
-                    }
-                    onClicked: loadedItem.clicked()
-                }
             }
         }
     }
@@ -160,18 +147,6 @@ Item {
                 onClicked: {
                     nodeSettingsView.pop()
                     peerTableModel.stopAutoRefresh();
-                }
-            }
-        }
-    }
-    Component {
-        id: networktraffic_page
-        NetworkTraffic {
-            navLeftDetail: NavButton {
-                iconSource: "image://images/caret-left"
-                text: qsTr("Back")
-                onClicked: {
-                    nodeSettingsView.pop()
                 }
             }
         }
