@@ -236,6 +236,7 @@ AC_DEFUN([BITCOIN_QT_CONFIGURE],[
         _BITCOIN_QT_CHECK_STATIC_PLUGIN([QtQuickLayoutsPlugin], [-lqml_QtQuick_Layouts_qquicklayoutsplugin])
         dnl qtquickcontrols module plugins
         _BITCOIN_QT_CHECK_STATIC_PLUGIN([QtQuick2DialogsPlugin], [-lqml_QtQuick_Dialogs_dialogplugin])
+        _BITCOIN_QT_CHECK_STATIC_PLUGIN([QtQuick2DialogsPrivatePlugin], [-lqml_QtQuick_Dialogs_Private_dialogsprivateplugin])
         _BITCOIN_QT_CHECK_STATIC_PLUGIN([QtQuickControls1Plugin], [-lqml_QtQuick_Controls_qtquickcontrolsplugin])
         _BITCOIN_QT_CHECK_STATIC_PLUGIN([QmlFolderListModelPlugin], [-lqml_Qt_labs_folderlistmodel_qmlfolderlistmodelplugin])
         _BITCOIN_QT_CHECK_STATIC_PLUGIN([QmlSettingsPlugin], [-lqml_Qt_labs_settings_qmlsettingsplugin])
