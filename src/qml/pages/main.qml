@@ -47,7 +47,10 @@ ApplicationWindow {
             OnboardingStorageAmount {}
             OnboardingConnection {}
 
-            onFinishedChanged: main.push(node)
+            onFinishedChanged: {
+                optionsModel.onboard()
+                main.push(node)
+            }
         }
     }
 
