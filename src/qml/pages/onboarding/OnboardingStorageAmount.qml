@@ -33,8 +33,6 @@ Page {
             detailItem: ColumnLayout {
                 spacing: 0
                 StorageOptions {
-                    customStorage: advancedStorage.loadedDetailItem.customStorage
-                    customStorageAmount: advancedStorage.loadedDetailItem.customStorageAmount
                     Layout.maximumWidth: 450
                     Layout.alignment: Qt.AlignCenter
                 }
@@ -49,7 +47,6 @@ Page {
             buttonMargin: 20
         }
         SettingsStorage {
-            id: advancedStorage
             navRightDetail: NavButton {
                 text: qsTr("Done")
                 onClicked: {

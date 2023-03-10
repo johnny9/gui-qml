@@ -22,7 +22,6 @@ ColumnLayout {
     property string subtext: ""
     property int subtextMargin
     property int subtextSize: 15
-    property color subtextColor: Theme.color.neutral9
     property bool wrap: true
 
     spacing: 0
@@ -65,7 +64,7 @@ ColumnLayout {
             font.family: "Inter"
             font.styleName: "Regular"
             font.pixelSize: root.subtextSize
-            color: root.subtextColor
+            color: Theme.color.neutral9
             text: root.subtext
             horizontalAlignment: root.center ? Text.AlignHCenter : Text.AlignLeft
             wrapMode: wrap ? Text.WordWrap : Text.NoWrap

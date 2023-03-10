@@ -13,8 +13,6 @@ AbstractButton {
     property alias actionItem: action_loader.sourceComponent
     property alias loadedItem: action_loader.item
     property string description
-    property string errorText: ""
-    property bool showErrorText: false
     property color stateColor
     hoverEnabled: true
     state: "FILLED"
@@ -68,12 +66,8 @@ AbstractButton {
             root.state = "ACTIVE"
         }
         onReleased: {
-            if (mouseArea.containsMouse) {
-                root.state = "HOVER"
-                root.clicked()
-            } else {
-                root.state = "FILLED"
-            }
+            root.state = "HOVER"
+            root.clicked()
         }
     }
 
@@ -89,8 +83,6 @@ AbstractButton {
             description: root.description
             descriptionSize: 15
             descriptionMargin: 0
-            subtext: root.showErrorText ? root.errorText : ""
-            subtextColor: Theme.color.blue
         }
         Loader {
             id: action_loader

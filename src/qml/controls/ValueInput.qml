@@ -14,8 +14,6 @@ TextInput {
     property color textColor: root.filled ? Theme.color.neutral9 : Theme.color.neutral5
     enabled: true
     state: root.parentState
-    validator: IntValidator{}
-    maximumLength: 5
 
     states: [
         State {
@@ -49,13 +47,5 @@ TextInput {
 
     Behavior on color {
         ColorAnimation { duration: 150 }
-    }
-
-    function checkValidity(minVal, maxVal, input) {
-        if (input < minVal || input > maxVal) {
-            return false
-        } else {
-            return true
-        }
     }
 }
