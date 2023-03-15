@@ -182,11 +182,6 @@ Item {
                     peerTableModel.stopAutoRefresh();
                 }
             }
-            navMiddleDetail: Header {
-                headerBold: true
-                headerSize: 18
-                header: qsTr("Peers")
-            }
         }
     }
     Component {
