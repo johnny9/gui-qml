@@ -6,8 +6,6 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
-import org.bitcoincore.qt 1.0
-
 AbstractButton {
     id: root
     property bool last: parent && root === parent.children[parent.children.length - 1]
@@ -18,7 +16,7 @@ AbstractButton {
     property string errorText: ""
     property bool showErrorText: false
     property color stateColor
-    hoverEnabled: AppMode.isDesktop
+    hoverEnabled: true
     state: "FILLED"
 
     states: [
@@ -59,7 +57,7 @@ AbstractButton {
     MouseArea {
         id: mouseArea
         anchors.fill: root
-        hoverEnabled: AppMode.isDesktop
+        hoverEnabled: true
         onEntered: {
             root.state = "HOVER"
         }
