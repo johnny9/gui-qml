@@ -28,10 +28,6 @@ RowLayout {
                 SmoothedAnimation { to: 0; velocity: 2.2 }
                 SmoothedAnimation { to: 1; velocity: 2.2 }
             }
-
-            Behavior on color {
-                ColorAnimation { duration: 150 }
-            }
         }
     }
 }

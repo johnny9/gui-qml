@@ -15,8 +15,4 @@ Text {
     horizontalAlignment: Text.AlignHCenter
     verticalAlignment: Text.AlignVCenter
     wrapMode: wrap ? Text.WordWrap : Text.NoWrap
-
-    Behavior on color {
-        ColorAnimation { duration: 150 }
-    }
 }

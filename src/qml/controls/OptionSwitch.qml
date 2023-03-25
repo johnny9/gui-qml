@@ -12,10 +12,6 @@ Switch {
     background: Rectangle {
         radius: Math.floor(height / 2)
         color: root.checked ? Theme.color.orange : Theme.color.neutral4
-
-        Behavior on color {
-            ColorAnimation { duration: 150 }
-        }
     }
     indicator: Rectangle {
         property real _margin: Math.round((parent.height - height) / 2)
@@ -28,10 +24,6 @@ Switch {
         Behavior on x {
             SmoothedAnimation {
             }
-        }
-
-        Behavior on color {
-            ColorAnimation { duration: 150 }
         }
     }
 }

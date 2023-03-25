@@ -19,10 +19,6 @@ ApplicationWindow {
     color: Theme.color.background
     visible: true
 
-    Behavior on color {
-        ColorAnimation { duration: 150 }
-    }
-
     StackView {
         id: main
         initialItem: needOnboarding ? onboardingWizard : node
