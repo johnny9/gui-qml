@@ -29,10 +29,6 @@ Button {
         id: bg
         color: root.bgColor
         radius: 2
-
-        Behavior on color {
-            ColorAnimation { duration: 150 }
-        }
     }
     states: [
         State {

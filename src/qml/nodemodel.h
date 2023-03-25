@@ -50,7 +50,6 @@ public:
     Q_INVOKABLE float getTotalBytesSent() const { return (float)m_node.getTotalBytesSent(); }
 
     Q_INVOKABLE void startNodeInitializionThread();
-    Q_INVOKABLE void requestShutdown();
 
     void startShutdownPolling();
     void stopShutdownPolling();

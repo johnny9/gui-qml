@@ -19,21 +19,10 @@ ApplicationWindow {
     color: Theme.color.background
     visible: true
 
-    Behavior on color {
-        ColorAnimation { duration: 150 }
-    }
-
     StackView {
         id: main
         initialItem: needOnboarding ? onboardingWizard : node
         anchors.fill: parent
-        focus: true
-        Keys.onReleased: {
-            if (event.key == Qt.Key_Back) {
-                nodeModel.requestShutdown()
-                event.accepted = true
-            }
-        }
     }
 
     Connections {

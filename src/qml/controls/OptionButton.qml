@@ -47,10 +47,6 @@ Button {
                     background: Rectangle {
                         color: Theme.color.neutral9
                         radius: 3
-
-                        Behavior on color {
-                            ColorAnimation { duration: 150 }
-                        }
                     }
                     font.styleName: "Regular"
                     font.pixelSize: 13
@@ -60,10 +56,6 @@ Button {
                     leftPadding: 7
                     color: Theme.color.neutral0
                     text: qsTr("Recommended")
-
-                    Behavior on color {
-                        ColorAnimation { duration: 150 }
-                    }
                 }
             }
         }
@@ -78,10 +70,6 @@ Button {
                 icon.height: 24
                 icon.width: 24
                 background: null
-
-                Behavior on icon.color {
-                    ColorAnimation { duration: 150 }
-                }
             }
         }
     }
