@@ -289,8 +289,10 @@ int QmlGuiMain(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
+#ifndef __ANDROID__
     // Install qDebug() message handler to route to debug.log
     qInstallMessageHandler(DebugMessageHandler);
+#endif
 
     qInfo() << "Graphics API in use:" << QmlUtil::GraphicsApi(window);
 

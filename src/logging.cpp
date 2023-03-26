@@ -13,6 +13,7 @@
 #include <array>
 #include <mutex>
 #include <optional>
+#include <android/log.h>
 
 const char * const DEFAULT_DEBUGLOGFILE = "debug.log";
 constexpr auto MAX_USER_SETABLE_SEVERITY_LEVEL{BCLog::Level::Info};
@@ -76,6 +77,8 @@ bool BCLog::Logger::StartLogging()
         for (const auto& cb : m_print_callbacks) {
             cb(s);
         }
+
+        __android_log_write(ANDROID_LOG_DEBUG, "BitcoinCore", s.c_str());
 
         m_msgs_before_open.pop_front();
     }
@@ -455,6 +458,7 @@ void BCLog::Logger::LogPrintStr(const std::string& str, const std::string& loggi
         }
         FileWriteStr(str_prefixed, m_fileout);
     }
+    __android_log_write(ANDROID_LOG_DEBUG, "BitcoinCore", str_prefixed.c_str());
 }
 
 void BCLog::Logger::ShrinkDebugFile()
