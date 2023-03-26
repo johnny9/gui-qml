@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.system.ErrnoException;
 import android.system.Os;
+import android.view.WindowManager;
 
 import org.qtproject.qt5.android.bindings.QtActivity;
 
@@ -28,6 +29,7 @@ public class BitcoinQtActivity extends QtActivity
                 startService(intent);
         }
 
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         super.onCreate(savedInstanceState);
     }
 }
