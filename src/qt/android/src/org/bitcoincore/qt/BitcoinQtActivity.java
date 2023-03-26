@@ -2,6 +2,7 @@ package org.bitcoincore.qt;
 
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.system.ErrnoException;
 import android.system.Os;
@@ -28,7 +29,11 @@ public class BitcoinQtActivity extends QtActivity
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN);
         Intent intent = new Intent(this, BitcoinQtService.class);
-        startForegroundService(intent);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent);
+        } else {
+                startService(intent);
+        }
 
         super.onCreate(savedInstanceState);
     }
