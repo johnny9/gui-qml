@@ -35,6 +35,7 @@ public class BitcoinQtActivity extends QtActivity
                 startService(intent);
         }
 
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         super.onCreate(savedInstanceState);
     }
 }
