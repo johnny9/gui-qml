@@ -1,0 +1,11 @@
+--- old/qtbase/src/android/jar/src/org/qtproject/qt5/android/QtActivityDelegate.java
++++ new/qtbase/src/android/jar/src/org/qtproject/qt5/android/QtActivityDelegate.java
+@@ -1209,7 +1209,7 @@
+             if (attr.type >= TypedValue.TYPE_FIRST_COLOR_INT && attr.type <= TypedValue.TYPE_LAST_COLOR_INT) {
+                 m_activity.getWindow().setBackgroundDrawable(new ColorDrawable(attr.data));
+             } else {
+-                m_activity.getWindow().setBackgroundDrawable(m_activity.getResources().getDrawable(attr.resourceId));
++                m_activity.getWindow().setBackgroundDrawable(m_activity.getResources().getDrawable(attr.resourceId, m_activity.getTheme()));
+             }
+             if (m_dummyView != null) {
+                 m_layout.removeView(m_dummyView);
