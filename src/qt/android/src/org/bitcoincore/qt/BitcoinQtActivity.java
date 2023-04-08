@@ -22,6 +22,14 @@ public class BitcoinQtActivity extends QtActivity
         if (!bitcoinDir.exists()) {
             bitcoinDir.mkdir();
         }
+        final File confFile = new File(getFilesDir().getAbsolutePath() + "/.bitcoin/bitcoin.conf");
+        if (!confFile.exists()) {
+            try {
+                confFile.createNewFile();
+            } catch (Exception e) {
+                // do nothing
+            }
+        }
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
