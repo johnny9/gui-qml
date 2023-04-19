@@ -51,7 +51,7 @@ ColumnLayout {
         header: qsTr("Version")
         actionItem: ExternalLink {
             parentState: versionLink.state
-            description: nodeModel.fullClientVersion
+            description: "v22.99.0-1e7564eca8a6"
             link: "https://bitcoin.org/en/download"
             iconSource: "image://images/caret-right"
             iconWidth: 18

@@ -5,7 +5,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import Qt.labs.settings 1.0
 
 import org.bitcoincore.qt 1.0
 
@@ -13,11 +12,9 @@ import "../controls"
 
 Item {
     id: root
-    property real parentWidth: 600
-    property real parentHeight: 600
 
-    width: dial.width
-    height: dial.height + networkIndicator.height + networkIndicator.anchors.topMargin
+    implicitWidth: 200
+    implicitHeight: 200
 
     property alias header: mainText.text
     property alias headerSize: mainText.font.pixelSize
@@ -25,22 +22,17 @@ Item {
     property int headerSize: 32
     property bool connected: nodeModel.numOutboundPeers > 0
     property bool synced: nodeModel.verificationProgress > 0.999
+    property string syncProgress: formatProgressPercentage(nodeModel.verificationProgress * 100)
     property bool paused: false
+    property var syncState: formatRemainingSyncTime(nodeModel.remainingSyncTime)
+    property string syncTime: syncState.text
+    property bool estimating: syncState.estimating
 
     activeFocusOnTab: true
 
-    Settings {
-        id: settings
-        property alias blockclocksize: dial.scale
-    }
-
     BlockClockDial {
         id: dial
-        anchors.horizontalCenter: root.horizontalCenter
-        scale: Theme.blockclocksize
-        width: Math.min((root.parentWidth * dial.scale), (root.parentHeight * dial.scale))
-        height: dial.width
-        penWidth: dial.width / 50
+        anchors.fill: parent
         timeRatioList: chainModel.timeRatioList
         verificationProgress: nodeModel.verificationProgress
         paused: root.paused
@@ -68,8 +60,8 @@ Item {
         background: null
         icon.source: "image://images/bitcoin-circle"
         icon.color: Theme.color.neutral9
-        icon.width: Math.max(dial.width / 5, 1)
-        icon.height: Math.max(dial.width / 5, 1)
+        icon.width: 40
+        icon.height: 40
         anchors.bottom: mainText.top
         anchors.horizontalCenter: root.horizontalCenter
 
@@ -80,10 +72,10 @@ Item {
 
     Label {
         id: mainText
-        anchors.centerIn: dial
+        anchors.centerIn: parent
         font.family: "Inter"
         font.styleName: "Semi Bold"
-        font.pixelSize: dial.width * (4/25)
+        font.pixelSize: 32
         color: Theme.color.neutral9
 
         Behavior on color {
@@ -94,33 +86,53 @@ Item {
     Label {
         id: subText
         anchors.top: mainText.bottom
+        property bool estimating: root.estimating
         anchors.horizontalCenter: root.horizontalCenter
         font.family: "Inter"
         font.styleName: "Semi Bold"
-        font.pixelSize: dial.width * (9/100)
+        font.pixelSize: 18
         color: Theme.color.neutral4
 
-        Behavior on color {
-            ColorAnimation { duration: 150 }
+        Component.onCompleted: {
+            colorChanged.connect(function() {
+                if (!subText.estimating) {
+                    themeChange.restart();
+                }
+            });
+
+            estimatingChanged.connect(function() {
+                if (subText.estimating) {
+                    estimatingTime.start();
+                } else {
+                    estimatingTime.stop();
+                }
+            });
+
+            subText.estimatingChanged(subText.estimating);
         }
+
+        ColorAnimation on color{
+            id: themeChange
+            target: subText
+            duration: 150
+        }
+
+        SequentialAnimation {
+            id: estimatingTime
+            loops: Animation.Infinite
+            ColorAnimation { target: subText; property: "color"; from: subText.color; to: Theme.color.neutral6; duration: 1000 }
+            ColorAnimation { target: subText; property: "color"; from: Theme.color.neutral6; to: subText.color; duration: 1000 }
+        }
+
     }
 
     PeersIndicator {
         anchors.top: subText.bottom
-        anchors.topMargin: dial.width / 10
+        anchors.topMargin: 20
         anchors.horizontalCenter: root.horizontalCenter
         numOutboundPeers: nodeModel.numOutboundPeers
         maxNumOutboundPeers: nodeModel.maxNumOutboundPeers
-        indicatorDimensions: dial.width * (3/200)
-        indicatorSpacing: dial.width / 40
         paused: root.paused
-    }
-
-    NetworkIndicator {
-        id: networkIndicator
-        anchors.top: dial.bottom
-        anchors.topMargin: networkIndicator.visible ? 30 : 0
-        anchors.horizontalCenter: root.horizontalCenter
     }
 
     MouseArea {
@@ -140,17 +152,17 @@ Item {
             name: "IBD"; when: !synced && !paused && connected
             PropertyChanges {
                 target: root
-                header: formatProgressPercentage(nodeModel.verificationProgress * 100)
-                subText: formatRemainingSyncTime(nodeModel.remainingSyncTime)
+                header: root.syncProgress
+                subText: root.syncTime
             }
         },
-
         State {
             name: "BLOCKCLOCK"; when: synced && !paused && connected
             PropertyChanges {
                 target: root
                 header: Number(nodeModel.blockTipHeight).toLocaleString(Qt.locale(), 'f', 0)
                 subText: "Blocktime"
+                estimating: false
             }
         },
 
@@ -159,16 +171,17 @@ Item {
             PropertyChanges {
                 target: root
                 header: "Paused"
-                headerSize: dial.width * (3/25)
+                headerSize: 24
                 subText: "Tap to resume"
+                estimating: false
             }
             PropertyChanges {
                 target: bitcoinIcon
-                anchors.bottomMargin: dial.width / 40
+                anchors.bottomMargin: 5
             }
             PropertyChanges {
                 target: subText
-                anchors.topMargin: dial.width / 50
+                anchors.topMargin: 4
             }
         },
 
@@ -177,16 +190,17 @@ Item {
             PropertyChanges {
                 target: root
                 header: "Connecting"
-                headerSize: dial.width * (3/25)
+                headerSize: 24
                 subText: "Please wait"
+                estimating: false
             }
             PropertyChanges {
                 target: bitcoinIcon
-                anchors.bottomMargin: dial.width / 40
+                anchors.bottomMargin: 5
             }
             PropertyChanges {
                 target: subText
-                anchors.topMargin: dial.width / 50
+                anchors.topMargin: 4
             }
         }
     ]
@@ -212,29 +226,55 @@ Item {
         minutes %= 1440;
         var hours = Math.floor(minutes / 60);
         minutes %= 60;
+        var result = "";
+        var estimatingStatus = false;
 
         if (weeks > 0) {
-            return "~" + weeks + (weeks === 1 ? " week" : " weeks") + " left";
+            return {
+                text: "~" + weeks + (weeks === 1 ? " week" : " weeks") + " left",
+                estimating: false
+            };
         }
         if (days > 0) {
-            return "~" + days + (days === 1 ? " day" : " days") + " left";
+            return {
+                text: "~" + days + (days === 1 ? " day" : " days") + " left",
+                estimating: false
+            };
         }
         if (hours >= 5) {
-            return "~" + hours + (hours === 1 ? " hour" : " hours") + " left";
+            return {
+                text: "~" + hours + (hours === 1 ? " hour" : " hours") + " left",
+                estimating: false
+            };
         }
         if (hours > 0) {
-            return "~" + hours + "h " + minutes + "m" + " left";
+            return {
+                text: "~" + hours + "h " + minutes + "m" + " left",
+                estimating: false
+            };
         }
         if (minutes >= 5) {
-            return "~" + minutes + (minutes === 1 ? " minute" : " minutes") + " left";
+            return {
+                text: "~" + minutes + (minutes === 1 ? " minute" : " minutes") + " left",
+                estimating: false
+            };
         }
         if (minutes > 0) {
-            return "~" + minutes + "m " + seconds + "s" + " left";
+            return {
+                text: "~" + minutes + "m " + seconds + "s" + " left",
+                estimating: false
+            };
         }
         if (seconds > 0) {
-            return "~" + seconds + (seconds === 1 ? " second" : " seconds") + " left";
+            return {
+                text: "~" + seconds + (seconds === 1 ? " second" : " seconds") + " left",
+                estimating: false
+            };
+        } else {
+            return {
+                text: "Estimating",
+                estimating: true
+            };
         }
-
-        return "Estimating";
     }
 }

@@ -3,25 +3,22 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import QtQuick 2.15
+import QtQuick.Layouts 1.15
 import "../controls"
 
-Row {
+RowLayout {
     id: root
     required property int numOutboundPeers
     required property int maxNumOutboundPeers
     required property bool paused
     property int size: 5
-    property real indicatorDimensions: 3
-    property real indicatorSpacing: 5
 
-    height: root.indicatorDimensions
-
-    spacing: root.indicatorSpacing
+    spacing: 5
     Repeater {
         model: 5
         Rectangle {
-            width: root.indicatorDimensions
-            height: root.indicatorDimensions
+            width: 3
+            height: 3
             radius: width / 2
             color: Theme.color.neutral9
             opacity: (index === 0 && root.numOutboundPeers > 0) || (index + 1 <= root.size * root.numOutboundPeers / root.maxNumOutboundPeers) ? 0.95 : 0.45

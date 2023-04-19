@@ -4,7 +4,6 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import org.bitcoincore.qt 1.0
 
 Button {
     property int bgRadius: 5
@@ -17,7 +16,7 @@ Button {
 
     id: root
     checkable: true
-    hoverEnabled: AppMode.isDesktop
+    hoverEnabled: true
     leftPadding: 12
     rightPadding: 12
     topPadding: 5
