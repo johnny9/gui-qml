@@ -44,7 +44,6 @@ Control {
         required property url blocktime
         required property url network
         required property url storage
-        required property url tooltipArrow
     }
 
     ColorSet {
@@ -116,7 +115,6 @@ Control {
         blocktime: "image://images/blocktime-dark"
         network: "image://images/network-dark"
         storage: "image://images/storage-dark"
-        tooltipArrow: "qrc:/icons/tooltip-arrow-dark"
     }
 
     ImageSet {
@@ -124,7 +122,6 @@ Control {
         blocktime: "image://images/blocktime-light"
         network: "image://images/network-light"
         storage: "image://images/storage-light"
-        tooltipArrow: "qrc:/icons/tooltip-arrow-light"
     }
 
     function toggleDark() {

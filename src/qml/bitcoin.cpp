@@ -20,16 +20,14 @@
 #endif
 #include <qml/components/blockclockdial.h>
 #include <qml/controls/linegraph.h>
-#include <qml/guiconstants.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/networktraffictower.h>
 #include <qml/models/nodemodel.h>
 #include <qml/models/options_model.h>
 #include <qml/models/peerlistsortproxy.h>
-#include <qml/models/walletlistmodel.h>
 #include <qml/imageprovider.h>
 #include <qml/util.h>
-#include <qml/walletcontroller.h>
+#include <qt/guiconstants.h>
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
 #include <qt/networkstyle.h>
@@ -59,12 +57,9 @@ QT_END_NAMESPACE
 #include <QtPlugin>
 Q_IMPORT_PLUGIN(QtQmlPlugin)
 Q_IMPORT_PLUGIN(QtQmlModelsPlugin)
-Q_IMPORT_PLUGIN(QtQuick2DialogsPlugin)
-Q_IMPORT_PLUGIN(QtQuick2DialogsPrivatePlugin)
 Q_IMPORT_PLUGIN(QtQuick2Plugin)
 Q_IMPORT_PLUGIN(QtQuick2WindowPlugin)
 Q_IMPORT_PLUGIN(QtQuickControls1Plugin)
-Q_IMPORT_PLUGIN(QmlFolderListModelPlugin)
 Q_IMPORT_PLUGIN(QmlSettingsPlugin)
 Q_IMPORT_PLUGIN(QtQuickLayoutsPlugin)
 Q_IMPORT_PLUGIN(QtQuickControls2Plugin)
@@ -77,25 +72,7 @@ void SetupUIArgs(ArgsManager& argsman)
     argsman.AddArg("-lang=<lang>", "Set language, for example \"de_DE\" (default: system locale)", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-min", "Start minimized", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-resetguisettings", "Reset all settings changed in the GUI", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
-}
-
-AppMode SetupAppMode()
-{
-    bool wallet_enabled;
-    AppMode::Mode mode;
-    #ifdef __ANDROID__
-        mode = AppMode::MOBILE;
-    #else
-        mode = AppMode::DESKTOP;
-    #endif // __ANDROID__
-
-    #ifdef ENABLE_WALLET
-        wallet_enabled = true;
-    #else
-        wallet_enabled = false;
-    #endif // ENABLE_WALLET
-
-    return AppMode(mode, wallet_enabled);
+    argsman.AddArg("-splash", strprintf("Show splash screen on startup (default: %u)", DEFAULT_SPLASHSCREEN), ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
 }
 
 bool InitErrorMessageBox(
@@ -104,8 +81,11 @@ bool InitErrorMessageBox(
     [[maybe_unused]] unsigned int style)
 {
     QQmlApplicationEngine engine;
-
-    AppMode app_mode = SetupAppMode();
+#ifdef __ANDROID__
+    AppMode app_mode(AppMode::MOBILE);
+#else
+    AppMode app_mode(AppMode::DESKTOP);
+#endif // __ANDROID__
 
     qmlRegisterSingletonInstance<AppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
     engine.rootContext()->setContextProperty("message", QString::fromStdString(message.translated));
@@ -184,13 +164,6 @@ int QmlGuiMain(int argc, char* argv[])
     SetupEnvironment();
     util::ThreadSetInternalName("main");
 
-    // must be set before parsing command-line options; otherwise,
-    // if invalid parameters were passed, QSetting initialization would fail
-    // and the error will be displayed on terminal
-    app.setOrganizationName(QAPP_ORG_NAME);
-    app.setOrganizationDomain(QAPP_ORG_DOMAIN);
-    app.setApplicationName(QAPP_APP_NAME_DEFAULT);
-
     /// Parse command-line options. We do this after qt in order to show an error if there are problems parsing these.
     SetupServerArgs(gArgs);
     SetupUIArgs(gArgs);
@@ -199,6 +172,12 @@ int QmlGuiMain(int argc, char* argv[])
         InitError(strprintf(Untranslated("Cannot parse command line arguments: %s\n"), error));
         return EXIT_FAILURE;
     }
+
+    // must be set before OptionsModel is initialized or translations are loaded,
+    // as it is used to locate QSettings
+    app.setOrganizationName(QAPP_ORG_NAME);
+    app.setOrganizationDomain(QAPP_ORG_DOMAIN);
+    app.setApplicationName(QAPP_APP_NAME_DEFAULT);
 
     /// Determine availability of data directory.
     if (!CheckDataDirOption(gArgs)) {
@@ -288,29 +267,27 @@ int QmlGuiMain(int argc, char* argv[])
     GUIUtil::LoadFont(":/fonts/inter/regular");
     GUIUtil::LoadFont(":/fonts/inter/semibold");
 
-    WalletController wallet_controller(*node);
-
     QQmlApplicationEngine engine;
 
     QScopedPointer<const NetworkStyle> network_style{NetworkStyle::instantiate(Params().GetChainType())};
     assert(!network_style.isNull());
     engine.addImageProvider(QStringLiteral("images"), new ImageProvider{network_style.data()});
 
-    WalletListModel wallet_list_model{*node, nullptr};
-
     engine.rootContext()->setContextProperty("networkTrafficTower", &network_traffic_tower);
     engine.rootContext()->setContextProperty("nodeModel", &node_model);
     engine.rootContext()->setContextProperty("chainModel", &chain_model);
     engine.rootContext()->setContextProperty("peerTableModel", &peer_model);
     engine.rootContext()->setContextProperty("peerListModelProxy", &peer_model_sort_proxy);
-    engine.rootContext()->setContextProperty("walletController", &wallet_controller);
-    engine.rootContext()->setContextProperty("walletListModel", &wallet_list_model);
 
-    OptionsQmlModel options_model(*node, !need_onboarding.toBool());
+    OptionsQmlModel options_model{*node};
     engine.rootContext()->setContextProperty("optionsModel", &options_model);
-    engine.rootContext()->setContextProperty("needOnboarding", need_onboarding);
 
-    AppMode app_mode = SetupAppMode();
+    engine.rootContext()->setContextProperty("needOnboarding", need_onboarding);
+#ifdef __ANDROID__
+    AppMode app_mode(AppMode::MOBILE);
+#else
+    AppMode app_mode(AppMode::DESKTOP);
+#endif // __ANDROID__
 
     qmlRegisterSingletonInstance<AppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
     qmlRegisterType<BlockClockDial>("org.bitcoincore.qt", 1, 0, "BlockClockDial");

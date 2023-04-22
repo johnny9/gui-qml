@@ -14,24 +14,15 @@ ColumnLayout {
         center: false
         header: qsTr("Default Proxy")
         headerSize: 24
-        description: qsTr("Run peer connections through a proxy (SOCKS5) for improved privacy. The default proxy supports connections via IPv4, IPv6 and Tor.")
+        description: qsTr("Run peer connections through a proxy (SOCKS5) for improved privacy. The default proxy supports connections via IPv4, IPv6 and Tor. Tor connections can also be run through a separate Tor proxy.")
         descriptionSize: 15
         Layout.bottomMargin: 10
     }
     Separator { Layout.fillWidth: true }
     Setting {
-        id: defaultProxyEnable
         Layout.fillWidth: true
         header: qsTr("Enable")
-        actionItem: OptionSwitch {
-            onCheckedChanged: {
-                if (checked == false) {
-                    defaultProxy.state = "DISABLED"
-                } else {
-                    defaultProxy.state = "FILLED"
-                }
-            }
-        }
+        actionItem: OptionSwitch {}
         onClicked: {
             loadedItem.toggle()
             loadedItem.toggled()
@@ -42,18 +33,14 @@ ColumnLayout {
         id: defaultProxy
         Layout.fillWidth: true
         header: qsTr("IP and Port")
-        errorText: qsTr("Invalid IP address or port format. Please use the format '255.255.255.255:65535'.")
-        state: !defaultProxyEnable.loadedItem.checked ? "DISABLED" : "FILLED"
-        showErrorText: !defaultProxy.loadedItem.validInput && defaultProxyEnable.loadedItem.checked
-        actionItem: IPAddressValueInput {
+        actionItem: ValueInput {
             parentState: defaultProxy.state
             description: "127.0.0.1:9050"
-            activeFocusOnTab: true
+            onEditingFinished: {
+                defaultProxy.forceActiveFocus()
+            }
         }
-        onClicked: {
-            loadedItem.filled = true
-            loadedItem.forceActiveFocus()
-        }
+        onClicked: loadedItem.forceActiveFocus()
     }
     Separator { Layout.fillWidth: true }
     Header {
@@ -61,25 +48,17 @@ ColumnLayout {
         center: false
         header: qsTr("Tor Proxy")
         headerSize: 24
-        description: qsTr("Run Tor connections through a dedicated proxy.")
+        description: qsTr("Enable to run Tor connections through a dedicated proxy.")
         descriptionSize: 15
         Layout.topMargin: 35
         Layout.bottomMargin: 10
     }
     Separator { Layout.fillWidth: true }
     Setting {
-        id: torProxyEnable
         Layout.fillWidth: true
         header: qsTr("Enable")
-        actionItem: OptionSwitch {
-            onCheckedChanged: {
-                if (checked == false) {
-                    torProxy.state = "DISABLED"
-                } else {
-                    torProxy.state = "FILLED"
-                }
-            }
-        }
+        actionItem: OptionSwitch {}
+        description: qsTr("When disabled, Tor connections will use the default proxy (if enabled).")
         onClicked: {
             loadedItem.toggle()
             loadedItem.toggled()
@@ -90,18 +69,14 @@ ColumnLayout {
         id: torProxy
         Layout.fillWidth: true
         header: qsTr("IP and Port")
-        errorText: qsTr("Invalid IP address or port format. Please use the format '255.255.255.255:65535'.")
-        state: !torProxyEnable.loadedItem.checked ? "DISABLED" : "FILLED"
-        showErrorText: !torProxy.loadedItem.validInput && torProxyEnable.loadedItem.checked
-        actionItem: IPAddressValueInput {
+        actionItem: ValueInput {
             parentState: torProxy.state
             description: "127.0.0.1:9050"
-            activeFocusOnTab: true
+            onEditingFinished: {
+                torProxy.forceActiveFocus()
+            }
         }
-        onClicked: {
-            loadedItem.filled = true
-            loadedItem.forceActiveFocus()
-        }
+        onClicked: loadedItem.forceActiveFocus()
     }
     Separator { Layout.fillWidth: true }
 }

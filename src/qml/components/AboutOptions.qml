@@ -18,7 +18,7 @@ ColumnLayout {
             description: "bitcoincore.org"
             link: "https://bitcoincore.org"
         }
-        onClicked: openPopup(loadedItem.link)
+        onClicked: loadedItem.clicked()
     }
     Separator { Layout.fillWidth: true }
     Setting {
@@ -30,7 +30,7 @@ ColumnLayout {
             description: "github.com/bitcoin/bitcoin"
             link: "https://github.com/bitcoin/bitcoin"
         }
-        onClicked: openPopup(loadedItem.link)
+        onClicked: loadedItem.clicked()
     }
     Separator { Layout.fillWidth: true }
     Setting {
@@ -42,7 +42,7 @@ ColumnLayout {
             description: "MIT"
             link: "https://opensource.org/licenses/MIT"
         }
-        onClicked: openPopup(loadedItem.link)
+        onClicked: loadedItem.clicked()
     }
     Separator { Layout.fillWidth: true }
     Setting {
@@ -57,7 +57,7 @@ ColumnLayout {
             iconWidth: 18
             iconHeight: 18
         }
-        onClicked: openPopup(loadedItem.link)
+        onClicked: loadedItem.clicked()
     }
     Separator { Layout.fillWidth: true }
     Setting {
@@ -71,15 +71,5 @@ ColumnLayout {
         onClicked: {
             aboutSwipe.incrementCurrentIndex()
         }
-    }
-    ExternalPopup {
-        id: confirmPopup
-        anchors.centerIn: Overlay.overlay
-        width: parent.width
-    }
-
-    function openPopup(link) {
-        confirmPopup.link = link
-        confirmPopup.open()
     }
 }

@@ -10,13 +10,11 @@ import Qt.labs.settings 1.0
 import org.bitcoincore.qt 1.0
 
 import "../controls"
-import "../controls/utils.js" as Utils
 
 Item {
     id: root
     property real parentWidth: 600
     property real parentHeight: 600
-    property bool showNetworkIndicator: true
 
     width: dial.width
     height: dial.height + networkIndicator.height + networkIndicator.anchors.topMargin
@@ -29,9 +27,10 @@ Item {
     property bool synced: nodeModel.verificationProgress > 0.999
     property string syncProgress: formatProgressPercentage(nodeModel.verificationProgress * 100)
     property bool paused: false
-    property var syncState: Utils.formatRemainingSyncTime(nodeModel.remainingSyncTime)
+    property var syncState: formatRemainingSyncTime(nodeModel.remainingSyncTime)
     property string syncTime: syncState.text
     property bool estimating: syncState.estimating
+    property bool faulted: nodeModel.faulted
 
     activeFocusOnTab: true
 
@@ -44,13 +43,12 @@ Item {
         id: dial
         anchors.horizontalCenter: root.horizontalCenter
         scale: Theme.blockclocksize
-        width: {Math.max(Math.min(200, Math.min(root.parentWidth - 30, root.parentHeight - 30)), 
-                Math.min((root.parentWidth * dial.scale), (root.parentHeight * dial.scale)))}
+        width: Math.min((root.parentWidth * dial.scale), (root.parentHeight * dial.scale))
         height: dial.width
         penWidth: dial.width / 50
         timeRatioList: chainModel.timeRatioList
         verificationProgress: nodeModel.verificationProgress
-        paused: root.paused
+        paused: root.paused || root.faulted
         connected: root.connected
         synced: nodeModel.verificationProgress > 0.999
         backgroundColor: Theme.color.neutral2
@@ -143,12 +141,11 @@ Item {
         maxNumOutboundPeers: nodeModel.maxNumOutboundPeers
         indicatorDimensions: dial.width * (3/200)
         indicatorSpacing: dial.width / 40
-        paused: root.paused
+        paused: root.paused || root.faulted
     }
 
     NetworkIndicator {
         id: networkIndicator
-        show: root.showNetworkIndicator
         anchors.top: dial.bottom
         anchors.topMargin: networkIndicator.visible ? 30 : 0
         anchors.horizontalCenter: root.horizontalCenter
@@ -156,10 +153,13 @@ Item {
 
     MouseArea {
         anchors.fill: dial
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: root.faulted ? Qt.ArrowCursor : Qt.PointingHandCursor
+        enabled: !root.faulted
         onClicked: {
-            root.paused = !root.paused
-            nodeModel.pause = root.paused
+            if (!root.faulted) {
+                root.paused = !root.paused
+                nodeModel.pause = root.paused
+            }
         }
         FocusBorder {
             visible: root.activeFocus
@@ -175,6 +175,7 @@ Item {
                 subText: root.syncTime
             }
         },
+
         State {
             name: "BLOCKCLOCK"; when: synced && !paused && connected
             PropertyChanges {
@@ -186,7 +187,7 @@ Item {
         },
 
         State {
-            name: "PAUSE"; when: paused
+            name: "PAUSE"; when: paused && !faulted
             PropertyChanges {
                 target: root
                 header: "Paused"
@@ -201,6 +202,20 @@ Item {
             PropertyChanges {
                 target: subText
                 anchors.topMargin: dial.width / 50
+            }
+        },
+
+        State {
+            name: "ERROR"; when: faulted
+            PropertyChanges {
+                target: root
+                header: "Error"
+                headerSize: dial.width * (3/25)
+            }
+            PropertyChanges {
+                target: bitcoinIcon
+                anchors.bottomMargin: dial.width / 40
+                icon.source: "image://images/error"
             }
         },
 
@@ -224,6 +239,7 @@ Item {
         }
     ]
 
+
     function formatProgressPercentage(progress) {
         if (progress >= 1) {
             return Math.round(progress) + "%"
@@ -233,6 +249,67 @@ Item {
             return progress.toFixed(2) + "%"
         } else {
             return "0%"
+        }
+    }
+
+    function formatRemainingSyncTime(milliseconds) {
+        var minutes = Math.floor(milliseconds / 60000);
+        var seconds = Math.floor((milliseconds % 60000) / 1000);
+        var weeks = Math.floor(minutes / 10080);
+        minutes %= 10080;
+        var days = Math.floor(minutes / 1440);
+        minutes %= 1440;
+        var hours = Math.floor(minutes / 60);
+        minutes %= 60;
+        var result = "";
+        var estimatingStatus = false;
+
+        if (weeks > 0) {
+            return {
+                text: "~" + weeks + (weeks === 1 ? " week" : " weeks") + " left",
+                estimating: false
+            };
+        }
+        if (days > 0) {
+            return {
+                text: "~" + days + (days === 1 ? " day" : " days") + " left",
+                estimating: false
+            };
+        }
+        if (hours >= 5) {
+            return {
+                text: "~" + hours + (hours === 1 ? " hour" : " hours") + " left",
+                estimating: false
+            };
+        }
+        if (hours > 0) {
+            return {
+                text: "~" + hours + "h " + minutes + "m" + " left",
+                estimating: false
+            };
+        }
+        if (minutes >= 5) {
+            return {
+                text: "~" + minutes + (minutes === 1 ? " minute" : " minutes") + " left",
+                estimating: false
+            };
+        }
+        if (minutes > 0) {
+            return {
+                text: "~" + minutes + "m " + seconds + "s" + " left",
+                estimating: false
+            };
+        }
+        if (seconds > 0) {
+            return {
+                text: "~" + seconds + (seconds === 1 ? " second" : " seconds") + " left",
+                estimating: false
+            };
+        } else {
+            return {
+                text: "Estimating",
+                estimating: true
+            };
         }
     }
 }

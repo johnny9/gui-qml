@@ -11,7 +11,6 @@ import "../components"
 import "../controls"
 import "./onboarding"
 import "./node"
-import "./wallet"
 
 ApplicationWindow {
     id: appWindow
@@ -34,17 +33,7 @@ ApplicationWindow {
 
     StackView {
         id: main
-        initialItem: {
-            if (needOnboarding) {
-                onboardingWizard
-            } else {
-                if (AppMode.walletEnabled && AppMode.isDesktop) {
-                    desktopWallets
-                } else {
-                    node
-                }
-            }
-        }
+        initialItem: needOnboarding ? onboardingWizard : node
         anchors.fill: parent
         focus: true
         Keys.onReleased: {
@@ -77,29 +66,7 @@ ApplicationWindow {
             OnboardingStorageAmount {}
             OnboardingConnection {}
 
-            onFinishedChanged: {
-                optionsModel.onboard()
-                if (AppMode.walletEnabled && AppMode.isDesktop) {
-                    main.push(desktopWallets)
-                    main.push(addWallet)
-                } else {
-                    main.push(node)
-                }
-            }
-        }
-    }
-
-    Component {
-        id: desktopWallets
-        DesktopWallets {}
-    }
-
-    Component {
-        id: addWallet
-        AddWallet {
-            onFinished: {
-                main.pop()
-            }
+            onFinishedChanged: main.push(node)
         }
     }
 

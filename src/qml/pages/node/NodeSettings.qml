@@ -12,8 +12,6 @@ import "../settings"
 Item {
     signal doneClicked
 
-    property alias showDoneButton: doneButton.visible
-
     id: root
 
     StackView {
@@ -35,7 +33,6 @@ Item {
                     header: "Settings"
                 }
                 rightItem: NavButton {
-                    id: doneButton
                     text: qsTr("Done")
                     onClicked: root.doneClicked()
                 }
