@@ -28,13 +28,13 @@ ColumnLayout {
         recommended: true
         checked: true
     }
+
     OptionButton {
         id: customDirOption
         Layout.fillWidth: true
         ButtonGroup.group: group
         text: qsTr("Custom")
         description: qsTr("Choose the directory and storage device.")
-        customDir: fileDialog.folder
         onClicked: fileDialog.open()
     }
 
