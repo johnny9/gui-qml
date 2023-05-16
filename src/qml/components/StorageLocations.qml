@@ -44,8 +44,9 @@ ColumnLayout {
         selectFolder: true
         folder: shortcuts.home
         onAccepted: {
-            customDirOption.customDir = fileDilog.folder
+            var folderPath = fileDialog.fileUrl.toString().replace("file://", "")
+            customDirOption.customDir = folderPath
+            settings.setValue("strDataDir", folderPath)
         }
     }
-
 }
