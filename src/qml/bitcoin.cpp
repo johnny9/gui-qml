@@ -13,9 +13,6 @@
 #include <node/interface_ui.h>
 #include <noui.h>
 #include <qml/appmode.h>
-#ifdef __ANDROID__
-#include <qml/androidnotifier.h>
-#endif
 #include <qml/components/blockclockdial.h>
 #include <qml/controls/linegraph.h>
 #include <qml/models/chainmodel.h>
@@ -80,6 +77,13 @@ bool InitErrorMessageBox(
     [[maybe_unused]] unsigned int style)
 {
     QQmlApplicationEngine engine;
+#ifdef __ANDROID__
+    AppMode app_mode(AppMode::MOBILE);
+#else
+    AppMode app_mode(AppMode::DESKTOP);
+#endif // __ANDROID__
+
+    qmlRegisterSingletonInstance<AppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
     engine.rootContext()->setContextProperty("message", QString::fromStdString(message.translated));
     engine.load(QUrl(QStringLiteral("qrc:///qml/pages/initerrormessage.qml")));
     if (engine.rootObjects().isEmpty()) {
@@ -236,9 +240,6 @@ int QmlGuiMain(int argc, char* argv[])
     // QObject::connect(&init_executor, &InitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     NetworkTrafficTower network_traffic_tower{node_model};
-#ifdef __ANDROID__
-    AndroidNotifier android_notifier{node_model};
-#endif
 
     ChainModel chain_model{*chain};
     chain_model.setCurrentNetworkName(QString::fromStdString(gArgs.GetChainName()));
