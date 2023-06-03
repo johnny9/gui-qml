@@ -10,32 +10,28 @@ import "../../components"
 import "../settings"
 
 Item {
-    signal doneClicked
-
-    id: root
+    id: nodeSettings
+    property alias navMiddleDetail: nodeSettingsView.navMiddleDetail
+    property alias navRightDetail: nodeSettingsView.navRightDetail
 
     StackView {
         id: nodeSettingsView
+        property alias navMiddleDetail: node_settings.navMiddleDetail
+        property alias navRightDetail: node_settings.navRightDetail
         anchors.fill: parent
 
         initialItem: Page {
             id: node_settings
+            property alias navMiddleDetail: navbar.middleDetail
+            property alias navRightDetail: navbar.rightDetail
             background: null
             implicitWidth: 450
             leftPadding: 20
             rightPadding: 20
             topPadding: 30
 
-            header: NavigationBar2 {
-                centerItem: Header {
-                    headerBold: true
-                    headerSize: 18
-                    header: "Settings"
-                }
-                rightItem: NavButton {
-                    text: qsTr("Done")
-                    onClicked: root.doneClicked()
-                }
+            header: NavigationBar {
+                id: navbar
             }
             ColumnLayout {
                 spacing: 4
@@ -45,73 +41,79 @@ Item {
                     id: gotoAbout
                     Layout.fillWidth: true
                     header: qsTr("About")
-                    actionItem: CaretRightIcon {
-                        color: gotoAbout.stateColor
+                    actionItem: CaretRightButton {
+                        stateColor: gotoAbout.stateColor
+                        onClicked: {
+                            nodeSettingsView.push(about_page)
+                        }
                     }
-                    onClicked: {
-                        nodeSettingsView.push(about_page)
-                    }
+                    onClicked: loadedItem.clicked()
                 }
                 Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoDisplay
                     Layout.fillWidth: true
                     header: qsTr("Display")
-                    actionItem: CaretRightIcon {
-                        color: gotoDisplay.stateColor
+                    actionItem: CaretRightButton {
+                        stateColor: gotoDisplay.stateColor
+                        onClicked: {
+                            nodeSettingsView.push(display_page)
+                        }
                     }
-                    onClicked: {
-                        nodeSettingsView.push(display_page)
-                    }
+                    onClicked: loadedItem.clicked()
                 }
                 Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoStorage
                     Layout.fillWidth: true
                     header: qsTr("Storage")
-                    actionItem: CaretRightIcon {
-                        color: gotoStorage.stateColor
+                    actionItem: CaretRightButton {
+                        stateColor: gotoStorage.stateColor
+                        onClicked: {
+                            nodeSettingsView.push(storage_page)
+                        }
                     }
-                    onClicked: {
-                        nodeSettingsView.push(storage_page)
-                    }
+                    onClicked: loadedItem.clicked()
                 }
                 Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoConnection
                     Layout.fillWidth: true
                     header: qsTr("Connection")
-                    actionItem: CaretRightIcon {
-                        color: gotoConnection.stateColor
+                    actionItem: CaretRightButton {
+                        stateColor: gotoConnection.stateColor
+                        onClicked: {
+                            nodeSettingsView.push(connection_page)
+                        }
                     }
-                    onClicked: {
-                        nodeSettingsView.push(connection_page)
-                    }
+                    onClicked: loadedItem.clicked()
                 }
                 Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoPeers
                     Layout.fillWidth: true
                     header: qsTr("Peers")
-                    actionItem: CaretRightIcon {
-                        color: gotoPeers.stateColor
+                    actionItem: CaretRightButton {
+                        stateColor: gotoPeers.stateColor
+                        onClicked: {
+                            peerTableModel.startAutoRefresh();
+                            nodeSettingsView.push(peers_page)
+                        }
                     }
-                    onClicked: {
-                        peerTableModel.startAutoRefresh();
-                        nodeSettingsView.push(peers_page)
-                    }
+                    onClicked: loadedItem.clicked()
                 }
                 Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoNetworkTraffic
                     Layout.fillWidth: true
                     header: qsTr("Network Traffic")
-                    actionItem: CaretRightIcon {
-                        color: gotoNetworkTraffic.stateColor
+                    actionItem: CaretRightButton {
+                        stateColor: gotoNetworkTraffic.stateColor
+                        onClicked: {
+                            nodeSettingsView.push(networktraffic_page)
+                        }
                     }
-                    onClicked: {
-                        nodeSettingsView.push(networktraffic_page)
-                    }
+                    onClicked: loadedItem.clicked()
                 }
             }
         }
@@ -142,8 +144,17 @@ Item {
     Component {
         id: display_page
         SettingsDisplay {
-            onBackClicked: {
-                nodeSettingsView.pop()
+            navLeftDetail: NavButton {
+                iconSource: "image://images/caret-left"
+                text: qsTr("Back")
+                onClicked: {
+                    nodeSettingsView.pop()
+                }
+            }
+            navMiddleDetail: Header {
+                headerBold: true
+                headerSize: 18
+                header: qsTr("Display settings")
             }
         }
     }
@@ -186,9 +197,18 @@ Item {
     Component {
         id: peers_page
         Peers {
-            onBackClicked: {
-                nodeSettingsView.pop()
-                peerTableModel.stopAutoRefresh();
+            navLeftDetail: NavButton {
+                iconSource: "image://images/caret-left"
+                text: qsTr("Back")
+                onClicked: {
+                    nodeSettingsView.pop()
+                    peerTableModel.stopAutoRefresh();
+                }
+            }
+            navMiddleDetail: Header {
+                headerBold: true
+                headerSize: 18
+                header: qsTr("Peers")
             }
         }
     }

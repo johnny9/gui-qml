@@ -9,33 +9,28 @@ import "../../controls"
 import "../../components"
 
 Item {
-    signal backClicked
-
-    id: root
-
+    property alias navLeftDetail: displaySettingsView.navLeftDetail
+    property alias navMiddleDetail: displaySettingsView.navMiddleDetail
     StackView {
         id: displaySettingsView
+        property alias navLeftDetail: displaySettings.navLeftDetail
+        property alias navMiddleDetail: displaySettings.navMiddleDetail
+        property bool newcompilebool: false
         anchors.fill: parent
+
 
         initialItem: Page {
             id: displaySettings
+            property alias navLeftDetail: navbar.leftDetail
+            property alias navMiddleDetail: navbar.middleDetail
             background: null
             implicitWidth: 450
             leftPadding: 20
             rightPadding: 20
             topPadding: 30
 
-            header: NavigationBar2 {
-                leftItem: NavButton {
-                    iconSource: "image://images/caret-left"
-                    text: qsTr("Back")
-                    onClicked: root.backClicked()
-                }
-                centerItem: Header {
-                    headerBold: true
-                    headerSize: 18
-                    header: qsTr("Display settings")
-                }
+            header: NavigationBar {
+                id: navbar
             }
             ColumnLayout {
                 spacing: 4
@@ -45,24 +40,26 @@ Item {
                     id: gotoTheme
                     Layout.fillWidth: true
                     header: qsTr("Theme")
-                    actionItem: CaretRightIcon {
-                        color: gotoTheme.stateColor
+                    actionItem: CaretRightButton {
+                        stateColor: gotoTheme.stateColor
+                        onClicked: {
+                            nodeSettingsView.push(theme_page)
+                        }
                     }
-                    onClicked: {
-                        nodeSettingsView.push(theme_page)
-                    }
+                    onClicked: loadedItem.clicked()
                 }
                 Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoBlockClockSize
                     Layout.fillWidth: true
                     header: qsTr("Block clock display mode")
-                    actionItem: CaretRightIcon {
-                        color: gotoBlockClockSize.stateColor
+                    actionItem: CaretRightButton {
+                        stateColor: gotoBlockClockSize.stateColor
+                        onClicked: {
+                            nodeSettingsView.push(blockclocksize_page)
+                        }
                     }
-                    onClicked: {
-                        nodeSettingsView.push(blockclocksize_page)
-                    }
+                    onClicked: loadedItem.clicked()
                 }
             }
         }
@@ -70,16 +67,34 @@ Item {
     Component {
         id: theme_page
         SettingsTheme {
-            onBackClicked: {
-                nodeSettingsView.pop()
+            navLeftDetail: NavButton {
+                iconSource: "image://images/caret-left"
+                text: qsTr("Back")
+                onClicked: {
+                    nodeSettingsView.pop()
+                }
+            }
+            navMiddleDetail: Header {
+                headerBold: true
+                headerSize: 18
+                header: qsTr("Theme")
             }
         }
     }
     Component {
         id: blockclocksize_page
         SettingsBlockClockDisplayMode {
-            onBackClicked: {
-                nodeSettingsView.pop()
+            navLeftDetail: NavButton {
+                iconSource: "image://images/caret-left"
+                text: qsTr("Back")
+                onClicked: {
+                    nodeSettingsView.pop()
+                }
+            }
+            navMiddleDetail: Header {
+                headerBold: true
+                headerSize: 18
+                header: qsTr("Block clock display mode")
             }
         }
     }
