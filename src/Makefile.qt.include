@@ -330,6 +330,7 @@ QML_RES_ICONS = \
   qml/res/icons/export.png \
   qml/res/icons/gear.png \
   qml/res/icons/info.png \
+  qml/res/icons/notifications-dark.png \
   qml/res/icons/network-dark.png \
   qml/res/icons/network-light.png \
   qml/res/icons/shutdown.png \
@@ -383,6 +384,7 @@ QML_RES_QML = \
   qml/pages/node/NodeSettings.qml \
   qml/pages/node/Peers.qml \
   qml/pages/node/Shutdown.qml \
+  qml/pages/onboarding/OnboardingAndroidNotifications.qml \
   qml/pages/onboarding/OnboardingBlockclock.qml \
   qml/pages/onboarding/OnboardingConnection.qml \
   qml/pages/onboarding/OnboardingCover.qml \

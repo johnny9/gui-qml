@@ -243,10 +243,6 @@ int QmlGuiMain(int argc, char* argv[])
     // QObject::connect(&init_executor, &InitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     NetworkTrafficTower network_traffic_tower{node_model};
-#ifdef __ANDROID__
-    AndroidNotifier android_notifier{node_model};
-#endif
-
     ChainModel chain_model{*chain};
     chain_model.setCurrentNetworkName(QString::fromStdString(gArgs.GetChainName()));
     setupChainQSettings(&app, chain_model.currentNetworkName());
@@ -284,6 +280,8 @@ int QmlGuiMain(int argc, char* argv[])
     engine.rootContext()->setContextProperty("needOnboarding", need_onboarding);
 #ifdef __ANDROID__
     AppMode app_mode(AppMode::MOBILE);
+    AndroidNotifier android_notifier{node_model};
+    QObject::connect(&options_model, &OptionsQmlModel::notificationsEnabledChanged, &android_notifier, &AndroidNotifier::notificationsEnabledChanged);
 #else
     AppMode app_mode(AppMode::DESKTOP);
 #endif // __ANDROID__

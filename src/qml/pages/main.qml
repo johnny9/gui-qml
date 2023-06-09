@@ -33,7 +33,7 @@ ApplicationWindow {
 
     StackView {
         id: main
-        initialItem: needOnboarding ? onboardingWizard : node
+        initialItem: OnboardingMobileWizard {}
         anchors.fill: parent
         focus: true
         Keys.onReleased: {
@@ -73,6 +73,15 @@ ApplicationWindow {
     Component {
         id: shutdown
         Shutdown {}
+    }
+
+    Component {
+        id: notificationOnboarding
+        OnboardingAndroidNotifications {
+            onContinueClicked: {
+                main.replace(onboardingWizard)
+            }
+        }
     }
 
     Component {

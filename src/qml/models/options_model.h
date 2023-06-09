@@ -11,6 +11,7 @@
 #include <validation.h>
 
 #include <QObject>
+#include <QSettings>
 
 namespace interfaces {
 class Node;
@@ -32,6 +33,7 @@ class OptionsQmlModel : public QObject
     Q_PROPERTY(int scriptThreads READ scriptThreads WRITE setScriptThreads NOTIFY scriptThreadsChanged)
     Q_PROPERTY(bool server READ server WRITE setServer NOTIFY serverChanged)
     Q_PROPERTY(bool upnp READ upnp WRITE setUpnp NOTIFY upnpChanged)
+    Q_PROPERTY(bool notificationsEnabled READ notificationsEnabled WRITE setNotificationsEnabled NOTIFY notificationsEnabledChanged)
 
 public:
     explicit OptionsQmlModel(interfaces::Node& node);
@@ -56,6 +58,8 @@ public:
     void setServer(bool new_server);
     bool upnp() const { return m_upnp; }
     void setUpnp(bool new_upnp);
+    void setNotificationsEnabled(bool enabled);
+    bool notificationsEnabled() const { return m_notifications_enabled; }
 
 Q_SIGNALS:
     void dbcacheSizeMiBChanged(int new_dbcache_size_mib);
@@ -66,9 +70,12 @@ Q_SIGNALS:
     void scriptThreadsChanged(int new_script_threads);
     void serverChanged(bool new_server);
     void upnpChanged(bool new_upnp);
+    void showNotificationOnboarding();
+    void notificationsEnabledChanged(bool new_enabled);
 
 private:
     interfaces::Node& m_node;
+    QSettings settings;
 
     // Properties that are exposed to QML.
     int m_dbcache_size_mib;
@@ -83,6 +90,7 @@ private:
     int m_script_threads;
     bool m_server;
     bool m_upnp;
+    bool m_notifications_enabled;
 
     util::SettingsValue pruneSetting() const;
 };

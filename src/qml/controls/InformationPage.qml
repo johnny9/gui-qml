@@ -20,7 +20,6 @@ Page {
     property bool bannerActive: true
     property bool detailActive: false
     property int detailTopMargin: 30
-    property bool lastPage: false
     property bool bold: false
     property bool center: true
     property int bannerMargin: 20
@@ -35,6 +34,8 @@ Page {
     property int subtextSize: 15
     property real maximumWidth: 600
     property real detailMaximumWidth: 450
+
+    signal continueClicked();
 
     background: null
     clip: true
@@ -103,7 +104,14 @@ Page {
             anchors.rightMargin: 20
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.buttonText
-            onClicked: root.lastPage ? swipeView.finished = true : swipeView.incrementCurrentIndex()
+            onClicked: {
+                continueClicked()
+                if (swipeView.currentIndex == swipeView.count - 1) {
+                    swipeView.finished = true;
+                } else {
+                    swipeView.incrementCurrentIndex();
+                }
+            }
         }
     }
 

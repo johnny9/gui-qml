@@ -97,6 +97,11 @@ QPixmap ImageProvider::requestPixmap(const QString& id, QSize* size, const QSize
         return QIcon(":/icons/info").pixmap(requested_size);
     }
 
+    if (id == "notifications-dark") {
+        *size = requested_size;
+        return QIcon(":/icons/notifications-dark").pixmap(requested_size);
+    }
+
     if (id == "network-dark") {
         *size = requested_size;
         return QIcon(":/icons/network-dark").pixmap(requested_size);

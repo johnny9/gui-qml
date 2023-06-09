@@ -12,12 +12,17 @@ class AndroidNotifier : public QObject
 
 public:
     explicit AndroidNotifier(const NodeModel & node_model, QObject * parent = nullptr);
+    void triggerOnboardingMessage();
+
+Q_SIGNALS:
+    void showNotificationOnboarding();
 
 public Q_SLOTS:
     void onBlockTipHeightChanged();
     void onNumOutboundPeersChanged();
     void onVerificationProgressChanged();
     void onPausedChanged();
+    void notificationsEnabledChanged(bool enabled);
 
 private:
     const NodeModel & m_node_model;

@@ -5,13 +5,28 @@
 #include <qml/androidnotifier.h>
 
 #include <jni.h>
+#include <android/log.h>
 
 extern "C" {
-  JNIEXPORT jboolean JNICALL Java_org_bitcoincore_qt_BitcoinQtService_register(JNIEnv *env, jobject obj);
+    JNIEXPORT jboolean JNICALL Java_org_bitcoincore_qt_BitcoinQtService_register(JNIEnv * env, jobject obj);
+    JNIEXPORT jboolean JNICALL Java_org_bitcoincore_qt_BitcoinQtActivity_register(JNIEnv * env, jobject obj);
+    JNIEXPORT jboolean JNICALL Java_org_bitcoincore_qt_BitcoinQtActivity_showNotificationOnboarding(JNIEnv * env, jobject obj);
 }
 
 static JavaVM * g_vm = nullptr;
+static jobject g_activity_obj;
 static jobject g_obj;
+static AndroidNotifier * g_notifier = nullptr;
+
+JNIEXPORT jboolean JNICALL Java_org_bitcoincore_qt_BitcoinQtActivity_register(JNIEnv * env, jobject obj)
+{
+    __android_log_print(ANDROID_LOG_INFO, "AndroidNotifier", "JVM IS REGISTERED");
+    env->GetJavaVM(&g_vm);
+    g_activity_obj = env->NewGlobalRef(obj);
+    assert(g_activity_obj);
+
+    return (jboolean) true;
+}
 
 JNIEXPORT jboolean JNICALL Java_org_bitcoincore_qt_BitcoinQtService_register(JNIEnv * env, jobject obj)
 {
@@ -52,11 +67,15 @@ AndroidNotifier::AndroidNotifier(const NodeModel & node_model,
                      this, &AndroidNotifier::onPausedChanged);
     QObject::connect(&node_model, &NodeModel::verificationProgressChanged,
                      this, &AndroidNotifier::onVerificationProgressChanged);
+
+    if (g_notifier == nullptr) {
+        g_notifier = this;
+    }
 }
 
 void AndroidNotifier::onBlockTipHeightChanged()
 {
-    if (g_vm != nullptr) {
+    if (g_vm != nullptr && g_obj != NULL) {
         JNIEnv * env = getJNIEnv(g_vm);
         if (env == nullptr) {
             return;
@@ -69,7 +88,7 @@ void AndroidNotifier::onBlockTipHeightChanged()
 
 void AndroidNotifier::onNumOutboundPeersChanged()
 {
-    if (g_vm != nullptr) {
+    if (g_vm != nullptr && g_obj != NULL) {
         JNIEnv * env = getJNIEnv(g_vm);
         if (env == nullptr) {
             return;
@@ -82,7 +101,7 @@ void AndroidNotifier::onNumOutboundPeersChanged()
 
 void AndroidNotifier::onVerificationProgressChanged()
 {
-    if (g_vm != nullptr) {
+    if (g_vm != nullptr && g_obj != NULL) {
         JNIEnv * env = getJNIEnv(g_vm);
         if (env == nullptr) {
             return;
@@ -95,7 +114,7 @@ void AndroidNotifier::onVerificationProgressChanged()
 
 void AndroidNotifier::onPausedChanged()
 {
-    if (g_vm != nullptr) {
+    if (g_vm != nullptr && g_obj != NULL) {
         JNIEnv * env = getJNIEnv(g_vm);
         if (env == nullptr) {
             return;
@@ -103,6 +122,24 @@ void AndroidNotifier::onPausedChanged()
         jclass clazz = env->GetObjectClass(g_obj);
         jmethodID mid = env->GetMethodID(clazz, "updatePaused", "(Z)V");
         env->CallVoidMethod(g_obj, mid, static_cast<jboolean>(m_node_model.pause()));
+    }
+}
+
+void AndroidNotifier::triggerOnboardingMessage()
+{
+    Q_EMIT showNotificationOnboarding();
+}
+
+void AndroidNotifier::notificationsEnabledChanged(bool enabled)
+{
+    if (g_vm != nullptr) {
+        JNIEnv * env = getJNIEnv(g_vm);
+        if (env == nullptr) {
+            return;
+        }
+        jclass clazz = env->GetObjectClass(g_activity_obj);
+        jmethodID mid = env->GetMethodID(clazz, "notificationsEnabledChanged", "(Z)V");
+        env->CallVoidMethod(g_activity_obj, mid, static_cast<jboolean>(enabled));
     }
 }
 

@@ -44,7 +44,6 @@ Page {
                     onClicked: connections.incrementCurrentIndex()
                 }
             }
-            lastPage: true
             buttonText: qsTr("Next")
             buttonMargin: 20
         }

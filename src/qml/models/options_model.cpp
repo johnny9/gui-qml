@@ -15,6 +15,8 @@
 
 #include <cassert>
 
+#include <android/log.h>
+
 OptionsQmlModel::OptionsQmlModel(interfaces::Node& node)
     : m_node{node}
 {
@@ -103,4 +105,14 @@ util::SettingsValue OptionsQmlModel::pruneSetting() const
 {
     assert(!m_prune || m_prune_size_gb >= 1);
     return m_prune ? PruneGBtoMiB(m_prune_size_gb) : 0;
+}
+
+void OptionsQmlModel::setNotificationsEnabled(bool enabled)
+{
+    __android_log_print(ANDROID_LOG_INFO, "OPTIONS MODEL", "NOTIFICATION CHANGED");
+    if (enabled != m_notifications_enabled) {
+        __android_log_print(ANDROID_LOG_INFO, "OPTIONS MODEL", "NOTIFICATION CHANGED");
+        settings.setValue("notificationsEnabled", enabled);
+        Q_EMIT notificationsEnabledChanged(enabled);
+    }
 }
