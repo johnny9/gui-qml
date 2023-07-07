@@ -66,8 +66,8 @@ ColumnLayout {
         id: gotoProxy
         Layout.fillWidth: true
         header: qsTr("Proxy settings")
-        actionItem: CaretRightIcon {
-            color: gotoProxy.stateColor
+        actionItem: CaretRightButton {
+            stateColor: gotoProxy.stateColor
         }
         onClicked: connectionSwipe.incrementCurrentIndex()
     }
