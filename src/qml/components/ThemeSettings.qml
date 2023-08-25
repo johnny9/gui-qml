@@ -19,12 +19,18 @@ ColumnLayout {
     Setting {
         Layout.fillWidth: true
         header: qsTr("Light")
-        actionItem: Icon {
+        actionItem: Button {
             anchors.centerIn: parent
             visible: !Theme.dark
-            source: "image://images/check"
-            color: Theme.color.neutral9
-            size: 24
+            icon.source: "image://images/check"
+            icon.color: Theme.color.neutral9
+            icon.height: 24
+            icon.width: 24
+            background: null
+
+            Behavior on icon.color {
+                ColorAnimation { duration: 150 }
+            }
         }
         onClicked: {
             Theme.dark = false
@@ -34,12 +40,18 @@ ColumnLayout {
     Setting {
         Layout.fillWidth: true
         header: qsTr("Dark")
-        actionItem: Icon {
+        actionItem: Button {
             anchors.centerIn: parent
             visible: Theme.dark
-            source: "image://images/check"
-            color: Theme.color.neutral9
-            size: 24
+            icon.source: "image://images/check"
+            icon.color: Theme.color.neutral9
+            icon.height: 24
+            icon.width: 24
+            background: null
+
+            Behavior on icon.color {
+                ColorAnimation { duration: 150 }
+            }
         }
         onClicked: {
             Theme.dark = true;
