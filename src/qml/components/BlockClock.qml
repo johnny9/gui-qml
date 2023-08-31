@@ -42,8 +42,7 @@ Item {
         id: dial
         anchors.horizontalCenter: root.horizontalCenter
         scale: Theme.blockclocksize
-        width: {Math.max(Math.min(200, Math.min(root.parentWidth - 30, root.parentHeight - 30)), 
-                Math.min((root.parentWidth * dial.scale), (root.parentHeight * dial.scale)))}
+        width: Math.min((root.parentWidth * dial.scale), (root.parentHeight * dial.scale))
         height: dial.width
         penWidth: dial.width / 50
         timeRatioList: chainModel.timeRatioList

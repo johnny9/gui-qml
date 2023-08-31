@@ -5,37 +5,16 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import Qt.labs.settings 1.0
-import org.bitcoincore.qt 1.0
 import "../../controls"
 import "../../components"
 
 Page {
-    signal backClicked
-
-    id: root
     background: null
+    property alias navLeftDetail: navbar.leftDetail
+    property alias navMiddleDetail: navbar.middleDetail
 
-    header: NavigationBar2 {
-        leftItem: NavButton {
-            iconSource: "image://images/caret-left"
-            text: qsTr("Back")
-            onClicked: root.backClicked()
-        }
-        centerItem: Header {
-            headerBold: true
-            headerSize: 18
-            header: qsTr("Peers")
-        }
-    }
-
-    Settings {
-        id: settings
-        property string peerListSortBy: "nodeId"
-    }
-
-    Component.onCompleted: {
-        peerListModelProxy.sortBy = settings.peerListSortBy
+    header: NavigationBar {
+        id: navbar
     }
 
     ListView {
@@ -74,55 +53,44 @@ Page {
                     ToggleButton {
                         text: qsTr("ID")
                         autoExclusive: true
-                        checked: settings.peerListSortBy === "nodeId"
+                        checked: true
                         onClicked: {
                             peerListModelProxy.sortBy = "nodeId"
-                            settings.peerListSortBy = "nodeId"
                         }
                     }
                     ToggleButton {
                         text: qsTr("Direction")
                         autoExclusive: true
-                        checked: settings.peerListSortBy === "direction"
                         onClicked: {
                             peerListModelProxy.sortBy = "direction"
-                            settings.peerListSortBy = "direction"
                         }
                     }
                     ToggleButton {
                         text: qsTr("User Agent")
                         autoExclusive: true
-                        checked: settings.peerListSortBy === "subversion"
                         onClicked: {
                             peerListModelProxy.sortBy = "subversion"
-                            settings.peerListSortBy = "subversion"
                         }
                     }
                     ToggleButton {
                         text: qsTr("Type")
                         autoExclusive: true
-                        checked: settings.peerListSortBy === "connectionType"
                         onClicked: {
                             peerListModelProxy.sortBy = "connectionType"
-                            settings.peerListSortBy = "connectionType"
                         }
                     }
                     ToggleButton {
                         text: qsTr("Ip")
                         autoExclusive: true
-                        checked: settings.peerListSortBy === "address"
                         onClicked: {
                             peerListModelProxy.sortBy = "address"
-                            settings.peerListSortBy = "address"
                         }
                     }
                     ToggleButton {
                         text: qsTr("Network")
                         autoExclusive: true
-                        checked: settings.peerListSortBy === "network"
                         onClicked: {
                             peerListModelProxy.sortBy = "network"
-                            settings.peerListSortBy = "network"
                         }
                     }
                 }
@@ -153,22 +121,16 @@ Page {
             }
         }
 
-        delegate: ItemDelegate {
-            id: delegate
+        delegate: Item {
             required property int nodeId;
             required property string address;
             required property string subversion;
             required property string direction;
             required property string connectionType;
             required property string network;
-            readonly property color stateColor: {
-                if (delegate.down) {
-                    return Theme.color.orange
-                } else if (delegate.hovered) {
-                    return Theme.color.orangeLight1
-                }
-                return Theme.color.neutral9
-            }
+            implicitHeight: 60
+            implicitWidth: listView.width
+
             Connections {
                 target: peerListModelProxy
                 function onSortByChanged(roleName) {
@@ -221,58 +183,40 @@ Page {
                     quaternary.text = subversion
                 }
             }
-            leftPadding: 0
-            rightPadding: 0
-            topPadding: 0
-            bottomPadding: 14
-            width: listView.width
-            background: Item {
-                Separator {
-                    anchors.bottom: parent.bottom
-                    width: parent.width
+
+            ColumnLayout {
+                anchors.left: parent.left
+                CoreText {
+                    Layout.alignment: Qt.AlignLeft
+                    id: primary
+                    font.pixelSize: 18
+                    color: Theme.color.neutral9
+                }
+                CoreText {
+                    Layout.alignment: Qt.AlignLeft
+                    id: tertiary
+                    font.pixelSize: 15
+                    color: Theme.color.neutral7
                 }
             }
-            contentItem: ColumnLayout {
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 15
-                    CoreText {
-                        Layout.alignment: Qt.AlignLeft
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 0
-                        id: primary
-                        font.pixelSize: 18
-                        color: delegate.stateColor
-                        elide: Text.ElideMiddle
-                        wrapMode: Text.NoWrap
-                        horizontalAlignment: Text.AlignLeft
-                    }
-                    CoreText {
-                        Layout.alignment: Qt.AlignRight
-                        id: secondary
-                        font.pixelSize: 18
-                        color: delegate.stateColor
-                    }
+            ColumnLayout {
+                anchors.right: parent.right
+                CoreText {
+                    Layout.alignment: Qt.AlignRight
+                    id: secondary
+                    font.pixelSize: 18
+                    color: Theme.color.neutral9
                 }
-                RowLayout {
-                    CoreText {
-                        Layout.alignment: Qt.AlignLeft
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 0
-                        id: tertiary
-                        font.pixelSize: 15
-                        color: Theme.color.neutral7
-                        elide: Text.ElideMiddle
-                        wrapMode: Text.NoWrap
-                        horizontalAlignment: Text.AlignLeft
-                    }
-                    CoreText {
-                        Layout.alignment: Qt.AlignRight
-                        id: quaternary
-                        font.pixelSize: 15
-                        color: Theme.color.neutral7
-                    }
+                CoreText {
+                    Layout.alignment: Qt.AlignRight
+                    id: quaternary
+                    font.pixelSize: 15
+                    color: Theme.color.neutral7
                 }
+            }
+            Separator {
+                anchors.bottom: parent.bottom
+                width: parent.width
             }
         }
     }
