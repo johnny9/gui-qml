@@ -9,22 +9,12 @@ import "../../controls"
 import "../../components"
 
 Page {
-    signal backClicked
-
-    id: root
     background: null
+    property alias navLeftDetail: navbar.leftDetail
+    property alias navMiddleDetail: navbar.middleDetail
 
-    header: NavigationBar2 {
-        leftItem: NavButton {
-            iconSource: "image://images/caret-left"
-            text: qsTr("Back")
-            onClicked: root.backClicked()
-        }
-        centerItem: Header {
-            headerBold: true
-            headerSize: 18
-            header: qsTr("Peers")
-        }
+    header: NavigationBar {
+        id: navbar
     }
 
     ListView {

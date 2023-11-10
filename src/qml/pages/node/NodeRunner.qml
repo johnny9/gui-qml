@@ -9,17 +9,11 @@ import "../../controls"
 import "../../components"
 
 Page {
-    signal settingsClicked
-    id: root
     background: null
     clip: true
-    header: NavigationBar2 {
-        rightItem: NavButton {
-            iconSource: "image://images/gear"
-            iconHeight: 24
-            iconWidth: 24
-            onClicked: root.settingsClicked()
-        }
+    property alias navRightDetail: navbar.rightDetail
+    header: NavigationBar {
+        id: navbar
     }
 
     Component.onCompleted: nodeModel.startNodeInitializionThread();
