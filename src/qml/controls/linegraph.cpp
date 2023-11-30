@@ -130,6 +130,8 @@ void LineGraph::paintTraffic(QPainter * painter)
         painter->drawPath(p);
         painter->fillPath(p, QBrush(m_fill_gradient));
     }
+
+    update();
 }
 
 void LineGraph::setupGradient(QPainterPath * painter_path)
