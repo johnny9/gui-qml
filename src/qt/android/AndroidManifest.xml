@@ -19,11 +19,28 @@
                   android:icon="@drawable/bitcoin"
                   android:screenOrientation="unspecified"
                   android:launchMode="singleTop">
+            <meta-data android:name="android.app.arguments" android:value=""/>
+            <meta-data android:name="android.app.lib_name" android:value="bitcoin-qt"/>
+            <meta-data android:name="android.app.repository" android:value="default"/>
+            <meta-data android:name="android.app.bundle_local_qt_libs" android:value="1"/>
+            <meta-data android:name="android.app.use_local_qt_libs" android:value="1"/>
+            <meta-data android:name="android.app.libs_prefix" android:value="/data/local/tmp/qt/"/>
+            <meta-data android:name="android.app.system_libs_prefix" android:value="/system/lib/"/>
+            <meta-data android:name="android.app.background_running" android:value="true"/>
+            <meta-data android:name="android.app.auto_screen_scale_factor" android:value="true"/>
+            <meta-data android:name="android.app.extract_android_style" android:value="default"/>
+            <meta-data android:name="android.app.load_local_libs_resource_id" android:resource="@array/load_local_libs"/>
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
 
+        <activity-alias
+            android:name=".BitcoinQtActivitySignet"
+            android:targetActivity="org.bitcoincore.qt.BitcoinQtActivity"
+            android:icon="@drawable/bitcoin"
+            android:label="Signet">
             <meta-data android:name="android.app.arguments" android:value="-signet"/>
             <meta-data android:name="android.app.lib_name" android:value="bitcoin-qt"/>
             <meta-data android:name="android.app.repository" android:value="default"/>
@@ -35,7 +52,11 @@
             <meta-data android:name="android.app.auto_screen_scale_factor" android:value="true"/>
             <meta-data android:name="android.app.extract_android_style" android:value="default"/>
             <meta-data android:name="android.app.load_local_libs_resource_id" android:resource="@array/load_local_libs"/>
-        </activity>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <service android:name="org.bitcoincore.qt.BitcoinQtService" android:exported="true">
             <meta-data android:name="android.app.background_running" android:value="true"/>
         </service>
