@@ -97,6 +97,35 @@ Page {
                 PeerKeyValueRow { key: qsTr("Min ping"); value: details.pingMin }
                 PeerKeyValueRow { key: qsTr("Time offset"); value: details.timeOffset }
             }
+
+            SettingsButton {
+                text: qsTr("Disconnect")
+                width: 150
+                height: 30
+            }
+
+            CoreText { text: "Ban this peer"; bold: true; font.pixelSize: 18; horizontalAlignment: Qt.AlignLeft; }
+
+            Row {
+                PeerRadioButton {
+                    text: qsTr("1 hour")
+                }
+                PeerRadioButton {
+                    text: qsTr("1 day")
+                }
+                PeerRadioButton {
+                    text: qsTr("1 week")
+                }
+                PeerRadioButton {
+                    text: qsTr("1 year")
+                }
+            }
+
+            SettingsButton {
+                text: qsTr("Ban")
+                width: 150
+                height: 30
+            }
         }
     }
 }
