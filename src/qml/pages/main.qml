@@ -45,7 +45,7 @@ ApplicationWindow {
     }
 
     Connections {
-        target: nodeModel
+        target: onboardingModel
         function onRequestedShutdown() {
             main.clear()
             main.push(shutdown)
@@ -66,7 +66,13 @@ ApplicationWindow {
             OnboardingStorageAmount {}
             OnboardingConnection {}
 
-            onFinishedChanged: main.push(node)
+            onFinishedChanged:{
+                if (swipeView.finished) {
+                    onboardingModel.onboardingFinished()
+                    optionsModel.onboard()
+                    main.push(node)
+                }
+            }
         }
     }
 
