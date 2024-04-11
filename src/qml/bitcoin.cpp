@@ -27,7 +27,7 @@
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/imageprovider.h>
 #include <qml/util.h>
-#include <qt/guiconstants.h>
+#include <qml/guiconstants.h>
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
 #include <qt/networkstyle.h>
@@ -57,12 +57,9 @@ QT_END_NAMESPACE
 #include <QtPlugin>
 Q_IMPORT_PLUGIN(QtQmlPlugin)
 Q_IMPORT_PLUGIN(QtQmlModelsPlugin)
-Q_IMPORT_PLUGIN(QtQuick2DialogsPlugin)
-Q_IMPORT_PLUGIN(QtQuick2DialogsPrivatePlugin)
 Q_IMPORT_PLUGIN(QtQuick2Plugin)
 Q_IMPORT_PLUGIN(QtQuick2WindowPlugin)
 Q_IMPORT_PLUGIN(QtQuickControls1Plugin)
-Q_IMPORT_PLUGIN(QmlFolderListModelPlugin)
 Q_IMPORT_PLUGIN(QmlSettingsPlugin)
 Q_IMPORT_PLUGIN(QtQuickLayoutsPlugin)
 Q_IMPORT_PLUGIN(QtQuickControls2Plugin)
@@ -75,26 +72,6 @@ void SetupUIArgs(ArgsManager& argsman)
     argsman.AddArg("-lang=<lang>", "Set language, for example \"de_DE\" (default: system locale)", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-min", "Start minimized", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-resetguisettings", "Reset all settings changed in the GUI", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
-    argsman.AddArg("-splash", strprintf("Show splash screen on startup (default: %u)", DEFAULT_SPLASHSCREEN), ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
-}
-
-AppMode SetupAppMode()
-{
-    bool wallet_enabled;
-    AppMode::Mode mode;
-    #ifdef __ANDROID__
-        mode = AppMode::MOBILE;
-    #else
-        mode = AppMode::DESKTOP;
-    #endif // __ANDROID__
-
-    #ifdef ENABLE_WALLET
-        wallet_enabled = true;
-    #else
-        wallet_enabled = false;
-    #endif // ENABLE_WALLET
-
-    return AppMode(mode, wallet_enabled);
 }
 
 bool InitErrorMessageBox(
@@ -103,8 +80,11 @@ bool InitErrorMessageBox(
     [[maybe_unused]] unsigned int style)
 {
     QQmlApplicationEngine engine;
-
-    AppMode app_mode = SetupAppMode();
+#ifdef __ANDROID__
+    AppMode app_mode(AppMode::MOBILE);
+#else
+    AppMode app_mode(AppMode::DESKTOP);
+#endif // __ANDROID__
 
     qmlRegisterSingletonInstance<AppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
     engine.rootContext()->setContextProperty("message", QString::fromStdString(message.translated));
@@ -303,8 +283,11 @@ int QmlGuiMain(int argc, char* argv[])
     engine.rootContext()->setContextProperty("optionsModel", &options_model);
 
     engine.rootContext()->setContextProperty("needOnboarding", need_onboarding);
-
-    AppMode app_mode = SetupAppMode();
+#ifdef __ANDROID__
+    AppMode app_mode(AppMode::MOBILE);
+#else
+    AppMode app_mode(AppMode::DESKTOP);
+#endif // __ANDROID__
 
     qmlRegisterSingletonInstance<AppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
     qmlRegisterType<BlockClockDial>("org.bitcoincore.qt", 1, 0, "BlockClockDial");
