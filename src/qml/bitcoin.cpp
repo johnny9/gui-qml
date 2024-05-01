@@ -298,8 +298,9 @@ int QmlGuiMain(int argc, char* argv[])
     engine.rootContext()->setContextProperty("peerTableModel", &peer_model);
     engine.rootContext()->setContextProperty("peerListModelProxy", &peer_model_sort_proxy);
 
-    OptionsQmlModel options_model(*node, !need_onboarding.toBool());
+    OptionsQmlModel options_model{*node};
     engine.rootContext()->setContextProperty("optionsModel", &options_model);
+
     engine.rootContext()->setContextProperty("needOnboarding", need_onboarding);
 
     AppMode app_mode = SetupAppMode();
