@@ -132,5 +132,10 @@ QPixmap ImageProvider::requestPixmap(const QString& id, QSize* size, const QSize
         return QIcon(":/icons/storage-light").pixmap(requested_size);
     }
 
+    if (id == "add-wallet-dark") {
+        *size = requested_size;
+        return QIcon(":/icons/add-wallet-dark").pixmap(requested_size);
+    }
+
     return {};
 }
