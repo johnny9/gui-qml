@@ -316,6 +316,7 @@ QML_RES_FONTS = \
   qml/res/fonts/Inter-SemiBold.otf
 
 QML_RES_ICONS = \
+  qml/res/icons/add-wallet-dark.png \
   qml/res/icons/arrow-down.png \
   qml/res/icons/arrow-up.png \
   qml/res/icons/bitcoin-circle.png \
@@ -336,7 +337,9 @@ QML_RES_ICONS = \
   qml/res/icons/shutdown.png \
   qml/res/icons/singlesig-wallet.png \
   qml/res/icons/storage-dark.png \
-  qml/res/icons/storage-light.png
+  qml/res/icons/storage-light.png \
+  qml/res/icons/wallet.png \
+  qml/res/icons/visible.png
 
 QML_QRC_CPP = qml/qrc_bitcoin.cpp
 QML_QRC = qml/bitcoin_qml.qrc
@@ -345,7 +348,6 @@ QML_RES_QML = \
   qml/components/BlockClock.qml \
   qml/components/BlockClockDisplayMode.qml \
   qml/components/BlockCounter.qml \
-  qml/controls/CaretRightIcon.qml \
   qml/components/ConnectionOptions.qml \
   qml/components/ConnectionSettings.qml \
   qml/components/DeveloperOptions.qml \
@@ -360,6 +362,7 @@ QML_RES_QML = \
   qml/components/StorageSettings.qml \
   qml/components/ThemeSettings.qml \
   qml/components/TotalBytesIndicator.qml \
+  qml/controls/CaretRightIcon.qml \
   qml/controls/ContinueButton.qml \
   qml/controls/CoreText.qml \
   qml/controls/ExternalLink.qml \
@@ -403,7 +406,10 @@ QML_RES_QML = \
   qml/pages/settings/SettingsProxy.qml \
   qml/pages/settings/SettingsStorage.qml \
   qml/pages/settings/SettingsTheme.qml \
-  qml/pages/wallet/DesktopWallets.qml
+  qml/pages/wallet/AddWallet.qml \
+  qml/pages/wallet/DesktopWallets.qml \
+  qml/pages/wallet/ImportWallet.qml \
+  qml/pages/wallet/ImportComplete.qml
 
 if TARGET_ANDROID
 BITCOIN_QT_H += qml/androidnotifier.h

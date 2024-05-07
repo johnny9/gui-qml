@@ -80,6 +80,7 @@ ApplicationWindow {
             onFinishedChanged: {
                 if (AppMode.walletEnabled && AppMode.isDesktop) {
                     main.push(desktopWallets)
+                    main.push(addWallet)
                 } else {
                     main.push(node)
                 }
@@ -90,6 +91,15 @@ ApplicationWindow {
     Component {
         id: desktopWallets
         DesktopWallets {}
+    }
+
+    Component {
+        id: addWallet
+        AddWallet {
+            onFinished: {
+                main.pop()
+            }
+        }
     }
 
     Component {
