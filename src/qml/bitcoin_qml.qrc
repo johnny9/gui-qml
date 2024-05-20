@@ -21,6 +21,7 @@
         <file>components/TotalBytesIndicator.qml</file>
         <file>controls/ContinueButton.qml</file>
         <file>controls/CoreText.qml</file>
+        <file>controls/CoreTextField.qml</file>
         <file>controls/ExternalLink.qml</file>
         <file>controls/FocusBorder.qml</file>
         <file>controls/Header.qml</file>
@@ -64,6 +65,11 @@
         <file>pages/settings/SettingsStorage.qml</file>
         <file>pages/settings/SettingsTheme.qml</file>
         <file>pages/wallet/AddWallet.qml</file>
+        <file>pages/wallet/CreateBackup.qml</file>
+        <file>pages/wallet/CreateConfirm.qml</file>
+        <file>pages/wallet/CreateIntro.qml</file>
+        <file>pages/wallet/CreateName.qml</file>
+        <file>pages/wallet/CreatePassword.qml</file>
         <file>pages/wallet/DesktopWallets.qml</file>
         <file>pages/wallet/ImportWallet.qml</file>
         <file>pages/wallet/ImportComplete.qml</file>
@@ -85,6 +91,7 @@
         <file alias="export">res/icons/export.png</file>
         <file alias="gear">res/icons/gear.png</file>
         <file alias="gear-outline">res/icons/gear-outline.png</file>
+        <file alias="hidden">res/icons/hidden.png</file>
         <file alias="info">res/icons/info.png</file>
         <file alias="network-dark">res/icons/network-dark.png</file>
         <file alias="network-light">res/icons/network-light.png</file>

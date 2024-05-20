@@ -43,6 +43,7 @@ QT_MOC_CPP = \
   qml/models/moc_options_model.cpp \
   qml/models/moc_peerlistsortproxy.cpp \
   qml/moc_appmode.cpp \
+  qml/moc_walletcontroller.cpp \
   qt/moc_addressbookpage.cpp \
   qt/moc_addresstablemodel.cpp \
   qt/moc_askpassphrasedialog.cpp \
@@ -309,7 +310,8 @@ BITCOIN_QML_BASE_CPP = \
   qml/models/options_model.cpp \
   qml/models/peerlistsortproxy.cpp \
   qml/imageprovider.cpp \
-  qml/util.cpp
+  qml/util.cpp \
+  qml/walletcontroller.cpp
 
 QML_RES_FONTS = \
   qml/res/fonts/Inter-Regular.otf \
@@ -331,6 +333,7 @@ QML_RES_ICONS = \
   qml/res/icons/export.png \
   qml/res/icons/gear.png \
   qml/res/icons/gear-outline.png \
+  qml/res/icons/hidden.png \
   qml/res/icons/info.png \
   qml/res/icons/network-dark.png \
   qml/res/icons/network-light.png \
@@ -365,6 +368,7 @@ QML_RES_QML = \
   qml/controls/CaretRightIcon.qml \
   qml/controls/ContinueButton.qml \
   qml/controls/CoreText.qml \
+  qml/controls/CoreTextField.qml \
   qml/controls/ExternalLink.qml \
   qml/controls/FocusBorder.qml \
   qml/controls/Header.qml \
@@ -407,6 +411,11 @@ QML_RES_QML = \
   qml/pages/settings/SettingsStorage.qml \
   qml/pages/settings/SettingsTheme.qml \
   qml/pages/wallet/AddWallet.qml \
+  qml/pages/wallet/CreateBackup.qml \
+  qml/pages/wallet/CreateConfirm.qml \
+  qml/pages/wallet/CreateIntro.qml \
+  qml/pages/wallet/CreateName.qml \
+  qml/pages/wallet/CreatePassword.qml \
   qml/pages/wallet/DesktopWallets.qml \
   qml/pages/wallet/ImportWallet.qml \
   qml/pages/wallet/ImportComplete.qml
