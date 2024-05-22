@@ -12,6 +12,8 @@ import android.view.View;
 import org.qtproject.qt5.android.bindings.QtActivity;
 
 import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 
 public class BitcoinQtActivity extends QtActivity
 {
@@ -21,6 +23,27 @@ public class BitcoinQtActivity extends QtActivity
         final File bitcoinDir = new File(getFilesDir().getAbsolutePath() + "/.bitcoin");
         if (!bitcoinDir.exists()) {
             bitcoinDir.mkdir();
+        }
+
+        File bitcoinConf = new File(bitcoinDir, "bitcoin.conf");
+        if (!bitcoinConf.exists()) {
+            try {
+                bitcoinConf.createNewFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        String configContent = "[signet]\n" +
+                               "rpcauth=bitcoin:59d94c82dddb126b1aa5b1c9111f1eee$6e19cca78d04cd6175a5a5a59a2262e2aa8eeebee5682d79d7b548fde9af0063\n" +
+                               "server=1\n" +
+                               "rpcallowip=0.0.0.0/0\n" +
+                               "rpcbind=0.0.0.0\n";
+
+        try (FileWriter writer = new FileWriter(bitcoinConf)) {
+            writer.write(configContent);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
 
         Intent intent = new Intent(this, BitcoinQtService.class);
