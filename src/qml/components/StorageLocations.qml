@@ -17,52 +17,33 @@ ColumnLayout {
     }
     spacing: 15
     OptionButton {
-        id: defaultDirOption
         Layout.fillWidth: true
         ButtonGroup.group: group
         text: qsTr("Default")
         description: qsTr("Your application directory.")
-        customDir: optionsModel.getDefaultDataDirString
-        checked: optionsModel.dataDir === optionsModel.getDefaultDataDirString
-        onClicked: {
-            defaultDirOption.checked = true
-            optionsModel.dataDir = optionsModel.getDefaultDataDirString
-        }
+        recommended: true
+        checked: true
     }
     OptionButton {
-        id: customDirOption
         Layout.fillWidth: true
         ButtonGroup.group: group
         text: qsTr("Custom")
         description: qsTr("Choose the directory and storage device.")
-        customDir: customDirOption.checked ? fileDialog.folder : ""
-        checked: optionsModel.dataDir !== optionsModel.getDefaultDataDirString
         onClicked: fileDialog.open()
     }
     FileDialog {
         id: fileDialog
         selectFolder: true
-        folder: shortcuts.home
+        folder: optionsModel.getDefaultDataDirectory
         onAccepted: {
             optionsModel.setCustomDataDirString(fileDialog.fileUrls[0].toString())
             var customDataDir = fileDialog.fileUrl.toString();
             if (customDataDir !== "") {
-                optionsModel.setCustomDataDirArgs(customDataDir)
-                customDirOption.customDir = optionsModel.getCustomDataDirString()
-                if (optionsModel.dataDir !== optionsModel.getDefaultDataDirString) {
-                    customDirOption.checked = true
-                    defaultDirOption.checked = false
-                }
+                optionsModel.setCustomDataDirArgs(customDataDir);
             }
         }
         onRejected: {
             console.log("Custom datadir selection canceled")
-            if (optionsModel.dataDir !== optionsModel.getDefaultDataDirString) {
-                customDirOption.checked = true
-                defaultDirOption.checked = false
-            } else {
-                defaultDirOption.checked = true
-            }
         }
     }
 }
