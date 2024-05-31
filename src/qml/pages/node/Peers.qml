@@ -11,7 +11,7 @@ import "../../controls"
 import "../../components"
 
 Page {
-    signal back
+    signal backClicked
     signal peerSelected(PeerDetailsModel peerDetails)
 
     id: root
@@ -21,7 +21,7 @@ Page {
         leftItem: NavButton {
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
-            onClicked: root.back()
+            onClicked: root.backClicked()
         }
         centerItem: Header {
             headerBold: true

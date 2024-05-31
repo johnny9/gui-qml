@@ -38,7 +38,6 @@
         <file>controls/OptionButton.qml</file>
         <file>controls/OptionSwitch.qml</file>
         <file>controls/OutlineButton.qml</file>
-        <file>controls/PageStack.qml</file>
         <file>controls/ProgressIndicator.qml</file>
         <file>controls/qmldir</file>
         <file>controls/Setting.qml</file>
@@ -61,7 +60,6 @@
         <file>pages/onboarding/OnboardingStorageAmount.qml</file>
         <file>pages/onboarding/OnboardingStorageLocation.qml</file>
         <file>pages/onboarding/OnboardingStrengthen.qml</file>
-        <file>pages/onboarding/OnboardingWizard.qml</file>
         <file>pages/settings/SettingsAbout.qml</file>
         <file>pages/settings/SettingsBlockClockDisplayMode.qml</file>
         <file>pages/settings/SettingsConnection.qml</file>
@@ -70,12 +68,12 @@
         <file>pages/settings/SettingsProxy.qml</file>
         <file>pages/settings/SettingsStorage.qml</file>
         <file>pages/settings/SettingsTheme.qml</file>
+        <file>pages/wallet/AddWallet.qml</file>
         <file>pages/wallet/CreateBackup.qml</file>
         <file>pages/wallet/CreateConfirm.qml</file>
         <file>pages/wallet/CreateIntro.qml</file>
         <file>pages/wallet/CreateName.qml</file>
         <file>pages/wallet/CreatePassword.qml</file>
-        <file>pages/wallet/CreateWalletWizard.qml</file>
         <file>pages/wallet/DesktopWallets.qml</file>
         <file>pages/wallet/WalletBadge.qml</file>
         <file>pages/wallet/WalletSelect.qml</file>

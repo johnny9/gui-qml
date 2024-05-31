@@ -16,7 +16,7 @@ Item {
 
     id: root
 
-    PageStack {
+    StackView {
         id: nodeSettingsView
         anchors.fill: parent
 
@@ -122,13 +122,30 @@ Item {
     Component {
         id: about_page
         SettingsAbout {
-            onBack: nodeSettingsView.pop()
+            showHeader: false
+            navLeftDetail: NavButton {
+                iconSource: "image://images/caret-left"
+                text: qsTr("Back")
+                onClicked: {
+                    nodeSettingsView.pop()
+                }
+            }
+            navMiddleDetail: Header {
+                headerBold: true
+                headerSize: 18
+                header: qsTr("About")
+            }
+            devMiddleDetail: Header {
+                headerBold: true
+                headerSize: 18
+                header: qsTr("Developer settings")
+            }
         }
     }
     Component {
         id: display_page
         SettingsDisplay {
-            onBack: {
+            onBackClicked: {
                 nodeSettingsView.pop()
             }
         }
@@ -136,19 +153,43 @@ Item {
     Component {
         id: storage_page
         SettingsStorage {
-            onBack: nodeSettingsView.pop()
+            showHeader: false
+            navLeftDetail: NavButton {
+                iconSource: "image://images/caret-left"
+                text: qsTr("Back")
+                onClicked: {
+                    nodeSettingsView.pop()
+                }
+            }
+            navMiddleDetail: Header {
+                headerBold: true
+                headerSize: 18
+                header: qsTr("Storage settings")
+            }
         }
     }
     Component {
         id: connection_page
         SettingsConnection {
-            onBack: nodeSettingsView.pop()
+            showHeader: false
+            navLeftDetail: NavButton {
+                iconSource: "image://images/caret-left"
+                text: qsTr("Back")
+                onClicked: {
+                    nodeSettingsView.pop()
+                }
+            }
+            navMiddleDetail: Header {
+                headerBold: true
+                headerSize: 18
+                header: qsTr("Connection settings")
+            }
         }
     }
     Component {
         id: peers_page
         Peers {
-            onBack: {
+            onBackClicked: {
                 nodeSettingsView.pop()
                 peerTableModel.stopAutoRefresh();
             }
@@ -160,7 +201,7 @@ Item {
     Component {
         id: peer_details
         PeerDetails {
-            onBack: {
+            onBackClicked: {
                 nodeSettingsView.pop()
             }
         }
@@ -169,7 +210,18 @@ Item {
         id: networktraffic_page
         NetworkTraffic {
             showHeader: false
-            onBack: nodeSettingsView.pop()
+            navLeftDetail: NavButton {
+                iconSource: "image://images/caret-left"
+                text: qsTr("Back")
+                onClicked: {
+                    nodeSettingsView.pop()
+                }
+            }
+            navMiddleDetail: Header {
+                headerBold: true
+                headerSize: 18
+                header: qsTr("Network traffic")
+            }
         }
     }
 }

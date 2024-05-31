@@ -11,14 +11,14 @@ import "../../components"
 
 Page {
     id: root
-    signal back()
+    signal backClicked()
 
     property PeerDetailsModel details
 
     Connections {
         target: details
         function onDisconnected() {
-            root.back()
+            root.backClicked()
         }
     }
 
@@ -27,7 +27,7 @@ Page {
         leftItem: NavButton {
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
-            onClicked: root.back()
+            onClicked: root.backClicked()
         }
         centerItem: Header {
             headerBold: true

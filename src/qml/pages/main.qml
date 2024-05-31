@@ -32,7 +32,7 @@ ApplicationWindow {
         ColorAnimation { duration: 150 }
     }
 
-    PageStack {
+    StackView {
         id: main
         initialItem: {
             if (needOnboarding) {
@@ -65,12 +65,23 @@ ApplicationWindow {
 
     Component {
         id: onboardingWizard
-        OnboardingWizard {
-            onFinished: {
+        SwipeView {
+            id: swipeView
+            property bool finished: false
+            interactive: false
+
+            OnboardingCover {}
+            OnboardingStrengthen {}
+            OnboardingBlockclock {}
+            OnboardingStorageLocation {}
+            OnboardingStorageAmount {}
+            OnboardingConnection {}
+
+            onFinishedChanged: {
                 optionsModel.onboard()
                 if (AppMode.walletEnabled && AppMode.isDesktop) {
                     main.push(desktopWallets)
-                    main.push(createWalletWizard)
+                    main.push(addWallet)
                 } else {
                     main.push(node)
                 }
@@ -84,8 +95,8 @@ ApplicationWindow {
     }
 
     Component {
-        id: createWalletWizard
-        CreateWalletWizard {
+        id: addWallet
+        AddWallet {
             onFinished: {
                 main.pop()
             }
@@ -99,24 +110,18 @@ ApplicationWindow {
 
     Component {
         id: node
-        PageStack {
-            id: nodeStack
-            vertical: true
-            initialItem: node
-            Component {
-                id: node
-                NodeRunner {
-                    onSettingsClicked: {
-                        nodeStack.push(nodeSettings)
-                    }
+        SwipeView {
+            id: node_swipe
+            interactive: false
+            orientation: Qt.Vertical
+            NodeRunner {
+                onSettingsClicked: {
+                    node_swipe.incrementCurrentIndex()
                 }
             }
-            Component {
-                id: nodeSettings
-                 NodeSettings {
-                    onDoneClicked: {
-                        nodeStack.pop()
-                    }
+            NodeSettings {
+                onDoneClicked: {
+                    node_swipe.decrementCurrentIndex()
                 }
             }
         }

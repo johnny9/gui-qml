@@ -9,17 +9,21 @@ import "../../controls"
 import "../../components"
 
 Page {
-    signal back
+    signal backClicked
 
     id: root
 
     background: null
+    implicitWidth: 450
+    leftPadding: 20
+    rightPadding: 20
+    topPadding: 30
 
     header: NavigationBar2 {
         leftItem: NavButton {
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
-            onClicked: root.back()
+            onClicked: root.backClicked()
         }
         centerItem: Header {
             headerBold: true

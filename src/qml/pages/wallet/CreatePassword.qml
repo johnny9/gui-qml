@@ -12,8 +12,6 @@ import "../settings"
 
 Page {
     id: root
-    signal back
-    signal next
     background: null
 
     required property string walletName;
@@ -24,14 +22,14 @@ Page {
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
             onClicked: {
-                root.back()
+                root.StackView.view.pop()
             }
         }
         rightItem: NavButton {
             text: qsTr("Skip")
             onClicked: {
                 walletController.createSingleSigWallet(walletName, "")
-                root.next()
+                root.StackView.view.push("qrc:/qml/pages/wallet/CreateConfirm.qml")
             }
         }
     }
@@ -110,7 +108,7 @@ Page {
             enabled: password.text != "" && passwordRepeat.text != "" && password.text == passwordRepeat.text && confirmToggle.loadedItem.checked
             onClicked: {
                 walletController.createSingleSigWallet(walletName, password.text)
-                root.next()
+                root.StackView.view.push("qrc:/qml/pages/wallet/CreateConfirm.qml")
             }
         }
     }

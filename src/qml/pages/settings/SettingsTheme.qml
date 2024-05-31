@@ -9,7 +9,7 @@ import "../../controls"
 import "../../components"
 
 Page {
-    signal back
+    signal backClicked
 
     id: root
     background: null
@@ -22,7 +22,7 @@ Page {
         leftItem: NavButton {
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
-            onClicked: root.back()
+            onClicked: root.backClicked()
         }
         centerItem: Header {
             headerBold: true
