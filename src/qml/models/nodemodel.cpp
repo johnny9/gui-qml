@@ -15,7 +15,6 @@
 #include <QDateTime>
 #include <QMetaObject>
 #include <QTimerEvent>
-#include <QString>
 
 NodeModel::NodeModel(interfaces::Node& node)
     : m_node{node}
@@ -94,14 +93,6 @@ void NodeModel::setPause(bool new_pause)
     }
 }
 
-void NodeModel::setErrorState(bool faulted)
-{
-    if (m_faulted != faulted) {
-        m_faulted = faulted;
-        Q_EMIT errorStateChanged(faulted);
-    }
-}
-
 void NodeModel::startNodeInitializionThread()
 {
     Q_EMIT requestedInitialize();
@@ -112,11 +103,9 @@ void NodeModel::requestShutdown()
     Q_EMIT requestedShutdown();
 }
 
-void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info)
+void NodeModel::initializeResult([[maybe_unused]] bool success, interfaces::BlockAndHeaderTipInfo tip_info)
 {
-    if (!success) {
-        setErrorState(true);
-    }
+    // TODO: Handle the `success` parameter,
     setBlockTipHeight(tip_info.block_height);
     setVerificationProgress(tip_info.verification_progress);
 
