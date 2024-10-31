@@ -8,75 +8,70 @@ import QtQuick.Layouts 1.15
 import "../../controls"
 import "../../components"
 
-Page {
+Item {
     id: root
     signal back
     property bool onboarding: false
-    background: null
-    PageStack {
-        id: stack
+    SwipeView {
+        id: aboutSwipe
         anchors.fill: parent
-        initialItem: aboutPage
-        Component {
-            id: aboutPage
-            InformationPage {
-                id: about_settings
-                bannerActive: false
-                bannerMargin: 0
-                bold: true
-                showHeader: root.onboarding
-                headerText: qsTr("About")
-                headerMargin: 0
-                description: qsTr("Bitcoin Core is an open source project.\nIf you find it useful, please contribute.\n\n This is experimental software.")
-                descriptionMargin: 20
-                detailActive: true
-                detailItem: AboutOptions {
-                    onNext: stack.push(developerSettings)
-                }
+        interactive: false
+        orientation: Qt.Horizontal
+        InformationPage {
+            id: about_settings
+            bannerActive: false
+            bannerMargin: 0
+            bold: true
+            showHeader: root.onboarding
+            headerText: qsTr("About")
+            headerMargin: 0
+            description: qsTr("Bitcoin Core is an open source project.\nIf you find it useful, please contribute.\n\n This is experimental software.")
+            descriptionMargin: 20
+            detailActive: true
+            detailItem: AboutOptions {
+                onNext: aboutSwipe.incrementCurrentIndex()
+            }
 
-                states: [
-                    State {
-                        when: root.onboarding
-                        PropertyChanges {
-                            target: about_settings
-                            navLeftDetail: backButton
-                            navMiddleDetail: null
-                        }
-                    },
-                    State {
-                        when: !root.onboarding
-                        PropertyChanges {
-                            target: about_settings
-                            navLeftDetail: backButton
-                            navMiddleDetail: header
-                        }
+            states: [
+                State {
+                    when: root.onboarding
+                    PropertyChanges {
+                        target: about_settings
+                        navLeftDetail: backButton
+                        navMiddleDetail: null
                     }
-                ]
-
-                Component {
-                    id: backButton
-                    NavButton {
-                        iconSource: "image://images/caret-left"
-                        text: qsTr("Back")
-                        onClicked: root.back()
+                },
+                State {
+                    when: !root.onboarding
+                    PropertyChanges {
+                        target: about_settings
+                        navLeftDetail: backButton
+                        navMiddleDetail: header
                     }
                 }
-                Component {
-                    id: header
-                    Header {
-                        headerBold: true
-                        headerSize: 18
-                        header: qsTr("About")
-                    }
+            ]
+
+            Component {
+                id: backButton
+                NavButton {
+                    iconSource: "image://images/caret-left"
+                    text: qsTr("Back")
+                    onClicked: root.back()
+                }
+            }
+            Component {
+                id: header
+                Header {
+                    headerBold: true
+                    headerSize: 18
+                    header: qsTr("About")
                 }
             }
         }
-        Component {
-            id: developerSettings
-            SettingsDeveloper {
-                onboarding: root.onboarding
-                onBack: stack.pop()
-            }
+        SettingsDeveloper {
+            id: about_developer
+            onboarding: root.onboarding
+            onBack: aboutSwipe.decrementCurrentIndex()
         }
     }
 }

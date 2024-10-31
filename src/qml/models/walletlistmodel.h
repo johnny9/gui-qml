@@ -16,6 +16,7 @@ class Node;
 class WalletListModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(QString selectedWallet READ selectedWallet WRITE setSelectedWallet NOTIFY selectedWalletChanged)
 
 public:
     WalletListModel(interfaces::Node& node, QObject *parent = nullptr);
@@ -29,8 +30,14 @@ public:
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
 
+    void setSelectedWallet(QString wallet_name);
+    QString selectedWallet() const;
+
 public Q_SLOTS:
     void listWalletDir();
+
+Q_SIGNALS:
+    void selectedWalletChanged();
 
 private:
     struct Item {
@@ -41,6 +48,8 @@ private:
 
     QList<Item> m_items;
     interfaces::Node& m_node;
+    QString m_selected_wallet;
+
 };
 
 #endif // BITCOIN_QML_MODELS_WALLETLISTMODEL_H

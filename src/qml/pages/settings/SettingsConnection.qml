@@ -8,83 +8,79 @@ import QtQuick.Layouts 1.15
 import "../../controls"
 import "../../components"
 
-Page {
+Item {
     id: root
     signal back
     property bool onboarding: false
-    background: null
-    PageStack {
-        id: stack
+    SwipeView {
+        id: connectionSwipe
+        property bool onboarding: false
         anchors.fill: parent
-        initialItem: connectionSettings
-        Component {
-            id: connectionSettings
-            InformationPage {
-                id: connection_settings
-                background: null
-                clip: true
-                bannerActive: false
-                bold: true
-                showHeader: root.onboarding
-                headerText: qsTr("Connection settings")
-                headerMargin: 0
-                detailActive: true
-                detailItem: ConnectionSettings {
-                    onNext: stack.push(proxySettings)
-                }
+        interactive: false
+        orientation: Qt.Horizontal
+        InformationPage {
+            id: connection_settings
+            background: null
+            clip: true
+            bannerActive: false
+            bold: true
+            showHeader: root.onboarding
+            headerText: qsTr("Connection settings")
+            headerMargin: 0
+            detailActive: true
+            detailItem: ConnectionSettings {
+                onNext: connectionSwipe.incrementCurrentIndex()
+            }
 
-                states: [
-                    State {
-                        when: root.onboarding
-                        PropertyChanges {
-                            target: connection_settings
-                            navLeftDetail: null
-                            navMiddleDetail: null
-                            navRightDetail: doneButton
-                        }
-                    },
-                    State {
-                        when: !root.onboarding
-                        PropertyChanges {
-                            target: connection_settings
-                            navLeftDetail: backButton
-                            navMiddleDetail: header
-                            navRightDetail: null
-                        }
+            states: [
+                State {
+                    when: root.onboarding
+                    PropertyChanges {
+                        target: connection_settings
+                        navLeftDetail: null
+                        navMiddleDetail: null
+                        navRightDetail: doneButton
                     }
-
-                ]
-
-                Component {
-                    id: backButton
-                    NavButton {
-                        iconSource: "image://images/caret-left"
-                        text: qsTr("Back")
-                        onClicked: root.back()
+                },
+                State {
+                    when: !root.onboarding
+                    PropertyChanges {
+                        target: connection_settings
+                        navLeftDetail: backButton
+                        navMiddleDetail: header
+                        navRightDetail: null
                     }
                 }
-                Component {
-                    id: header
-                    Header {
-                        headerBold: true
-                        headerSize: 18
-                        header: qsTr("Connection settings")
-                    }
-                }
+            ]
 
-                Component {
-                    id: doneButton
-                    NavButton {
-                        text: qsTr("Done")
-                        onClicked: root.back()
-                    }
+            Component {
+                id: backButton
+                NavButton {
+                    iconSource: "image://images/caret-left"
+                    text: qsTr("Back")
+                    onClicked: root.back()
+                }
+            }
+            Component {
+                id: header
+                Header {
+                    headerBold: true
+                    headerSize: 18
+                    header: qsTr("Connection settings")
+                }
+            }
+
+            Component {
+                id: doneButton
+                NavButton {
+                    text: qsTr("Done")
+                    onClicked: root.back()
                 }
             }
         }
-        Component {
-            id: proxySettings
-            SettingsProxy {
-                onBack: stack.pop()
+        SettingsProxy {
+            onBack: {
+                connectionSwipe.decrementCurrentIndex()
             }
         }
     }

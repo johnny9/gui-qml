@@ -78,12 +78,11 @@ Popup {
                 width: 220
                 height: 32
                 text: name
-                checked: walletController.selectedWallet.name == name
                 ButtonGroup.group: buttonGroup
                 showBalance: false
                 showIcon: false
                 onClicked: {
-                    walletController.setSelectedWallet(name)
+                    walletListModel.selectedWallet = name
                     root.close()
                 }
             }

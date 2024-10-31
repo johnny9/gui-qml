@@ -10,7 +10,7 @@ import "../../components"
 import "../settings"
 import "../wallet"
 
-PageStack {
+StackView {
     id: root
 
     signal finished()

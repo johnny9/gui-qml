@@ -24,8 +24,7 @@ Page {
         leftItem: WalletBadge {
             implicitWidth: 154
             implicitHeight: 46
-            text: walletController.selectedWallet.name
-            balance: walletController.selectedWallet.balance
+            text: walletListModel.selectedWallet
 
             MouseArea {
                 anchors.fill: parent

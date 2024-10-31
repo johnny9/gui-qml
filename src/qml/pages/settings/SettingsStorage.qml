@@ -10,8 +10,6 @@ import "../../components"
 
 InformationPage {
     id: root
-    property bool customStorage: false
-    property bool customStorageAmount
     property bool onboarding: false
     bannerActive: false
     bold: true
@@ -19,15 +17,7 @@ InformationPage {
     headerText: qsTr("Storage settings")
     headerMargin: 0
     detailActive: true
-    detailItem: StorageSettings {
-        id: storageSettings
-        onCustomStorageChanged: {
-            root.customStorage = storageSettings.customStorage
-        }
-        onCustomStorageAmountChanged: {
-            root.customStorageAmount = storageSettings.customStorageAmount
-        }
-    }
+    detailItem: StorageSettings {}
     states: [
         State {
             when: root.onboarding

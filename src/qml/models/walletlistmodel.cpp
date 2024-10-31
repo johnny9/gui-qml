@@ -12,6 +12,7 @@ WalletListModel::WalletListModel(interfaces::Node& node, QObject *parent)
 : QAbstractListModel(parent)
 , m_node(node)
 {
+    setSelectedWallet("Singlesig Wallet");
 }
 
 void WalletListModel::listWalletDir()
@@ -29,6 +30,19 @@ void WalletListModel::listWalletDir()
             addItem({ qname });
         }
     }
+}
+
+void WalletListModel::setSelectedWallet(QString wallet_name)
+{
+    if (m_selected_wallet != wallet_name) {
+        m_selected_wallet = wallet_name;
+        Q_EMIT selectedWalletChanged();
+    }
+}
+
+QString WalletListModel::selectedWallet() const
+{
+    return m_selected_wallet;
 }
 
 int WalletListModel::rowCount(const QModelIndex &parent) const
