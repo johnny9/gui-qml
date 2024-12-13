@@ -121,9 +121,8 @@ Page {
         width: parent.width
         height: parent.height
         currentIndex: navigationTabs.checkedButton.index
-        Item {
+        Activity {
             id: activityTab
-            CoreText { text: "Activity" }
         }
         Item {
             id: sendTab
