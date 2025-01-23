@@ -4,7 +4,12 @@
 
 #include <qml/models/walletqmlmodel.h>
 
+#include <qml/models/activitylistmodel.h>
+
+#include <outputtype.h>
 #include <qt/bitcoinunits.h>
+
+#include <key_io.h>
 
 #include <QTimer>
 
@@ -33,4 +38,37 @@ QString WalletQmlModel::name() const
         return QString();
     }
     return QString::fromStdString(m_wallet->getWalletName());
+}
+
+
+std::set<interfaces::WalletTx> WalletQmlModel::getWalletTxs() const
+{
+    if (!m_wallet) {
+        return {};
+    }
+    return m_wallet->getWalletTxs();
+}
+
+bool WalletQmlModel::tryGetTxStatus(const uint256& txid,
+                                    interfaces::WalletTxStatus& tx_status,
+                                    int& num_blocks,
+                                    int64_t& block_time) const
+{
+    if (!m_wallet) {
+        return false;
+    }
+    return m_wallet->tryGetTxStatus(txid, tx_status, num_blocks, block_time);
+}
+
+WalletQmlModel::~WalletQmlModel()
+{
+    delete m_activity_list_model;
+}
+
+std::unique_ptr<interfaces::Handler> WalletQmlModel::handleTransactionChanged(TransactionChangedFn fn)
+{
+    if (!m_wallet) {
+        return nullptr;
+    }
+    return m_wallet->handleTransactionChanged(fn);
 }
