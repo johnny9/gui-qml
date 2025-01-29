@@ -48,6 +48,7 @@ QT_MOC_CPP = \
   qml/models/moc_walletlistmodel.cpp \
   qml/models/moc_walletqmlmodel.cpp \
   qml/moc_appmode.cpp \
+  qml/moc_clipboard.cpp \
   qml/moc_walletqmlcontroller.cpp \
   qt/moc_addressbookpage.cpp \
   qt/moc_addresstablemodel.cpp \
@@ -134,6 +135,7 @@ BITCOIN_QT_H = \
   qml/models/walletqmlmodel.h \
   qml/appmode.h \
   qml/bitcoin.h \
+  qml/clipboard.h \
   qml/guiconstants.h \
   qml/imageprovider.h \
   qml/util.h \
