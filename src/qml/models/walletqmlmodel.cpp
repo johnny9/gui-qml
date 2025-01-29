@@ -17,11 +17,13 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObje
     : QObject(parent)
 {
     m_wallet = std::move(wallet);
+    m_activity_list_model = new ActivityListModel(this);
 }
 
 WalletQmlModel::WalletQmlModel(QObject *parent)
     : QObject(parent)
 {
+    m_activity_list_model = new ActivityListModel(this);
 }
 
 QString WalletQmlModel::balance() const
