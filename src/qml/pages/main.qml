@@ -110,6 +110,11 @@ ApplicationWindow {
         }
     }
 
+    SendResult {
+        id: sendResult
+        closePolicy: Popup.CloseOnPressOutside
+    }
+
     Component {
         id: shutdown
         Shutdown {}
