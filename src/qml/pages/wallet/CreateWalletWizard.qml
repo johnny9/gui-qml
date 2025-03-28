@@ -13,11 +13,8 @@ import "../wallet"
 PageStack {
     id: root
 
-    enum Context { Onboarding, Main }
-
     signal finished()
     property string walletName: ""
-    property int launchContext: CreateWalletWizard.Context.Onboarding
 
     initialItem: Page {
         background: null
@@ -25,15 +22,7 @@ PageStack {
         header: NavigationBar2 {
             id: navbar
             rightItem: NavButton {
-                text: {
-                    switch (root.launchContext) {
-                        case CreateWalletWizard.Context.Main:
-                            return qsTr("Cancel");
-                        case CreateWalletWizard.Context.Onboarding:
-                        default:
-                            return qsTr("Skip");
-                    }
-                }
+                text: qsTr("Skip")
                 onClicked: {
                     root.finished()
                 }
