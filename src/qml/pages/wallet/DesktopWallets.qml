@@ -29,7 +29,6 @@ Page {
             implicitHeight: 46
             text: walletController.selectedWallet.name
             balance: walletController.selectedWallet.balance
-            loading: !walletController.initialized
 
             MouseArea {
                 anchors.fill: parent

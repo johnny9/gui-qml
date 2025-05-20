@@ -22,7 +22,6 @@ Button {
     property bool showBalance: true
     property bool showIcon: true
     property string balance: "0.0 000 000"
-    property bool loading: false
 
     checkable: true
     hoverEnabled: AppMode.isDesktop
@@ -32,81 +31,39 @@ Button {
     topPadding: 0
     clip: true
 
-    contentItem: Item {
-        RowLayout {
-            visible: root.loading
-            anchors.leftMargin: 5
-            anchors.rightMargin: 5
-            anchors.centerIn: parent
-            spacing: 5
-
-            Skeleton {
-                Layout.preferredHeight: 30
-                Layout.preferredWidth: 30
-                loading: root.loading
-            }
-            ColumnLayout {
-                spacing: 2
-                Layout.preferredHeight: 30
-                Layout.fillWidth: true
-
-                Skeleton {
-                    Layout.preferredHeight: 15
-                    Layout.preferredWidth: 50
-                    loading: root.loading
-                }
-
-                Skeleton {
-                    Layout.preferredHeight: 15
-                    Layout.preferredWidth: 114
-                    loading: root.loading
-                }
-            }
+    contentItem: RowLayout {
+        anchors.leftMargin: 5
+        anchors.rightMargin: 5
+        clip: true
+        spacing: 5
+        Icon {
+            id: icon
+            visible: root.showIcon
+            source: "image://images/singlesig-wallet"
+            color: Theme.color.neutral8
+            size: 30
+            Layout.minimumWidth: 30
+            Layout.preferredWidth: 30
+            Layout.maximumWidth: 30
         }
-
-        RowLayout {
-            visible: !root.loading
-
-            opacity: visible ? 1 : 0
-
-            Behavior on opacity {
-                NumberAnimation { duration: 400 }
+        ColumnLayout {
+            spacing: 2
+            CoreText {
+                horizontalAlignment: Text.AlignLeft
+                Layout.fillWidth: true
+                wrap: false
+                id: buttonText
+                font.pixelSize: 13
+                text: root.text
+                color: root.textColor
+                bold: true
+                visible: root.text !== ""
             }
-
-            anchors.leftMargin: 5
-            anchors.rightMargin: 5
-            anchors.centerIn: parent
-            clip: true
-            spacing: 5
-            Icon {
-                id: icon
-                visible: root.showIcon
-                source: "image://images/singlesig-wallet"
-                color: Theme.color.neutral8
-                size: 30
-                Layout.minimumWidth: 30
-                Layout.preferredWidth: 30
-                Layout.maximumWidth: 30
-            }
-            ColumnLayout {
-                spacing: 2
-                CoreText {
-                    horizontalAlignment: Text.AlignLeft
-                    Layout.fillWidth: true
-                    wrap: false
-                    id: buttonText
-                    font.pixelSize: 13
-                    text: root.text
-                    color: root.textColor
-                    bold: true
-                    visible: root.text !== ""
-                }
-                CoreText {
-                    id: balanceText
-                    visible: root.showBalance
-                    text: "₿ " + root.balance
-                    color: Theme.color.neutral7
-                }
+            CoreText {
+                id: balanceText
+                visible: root.showBalance
+                text: "₿ " + root.balance
+                color: Theme.color.neutral7
             }
         }
     }
