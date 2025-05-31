@@ -28,7 +28,6 @@ class WalletQmlModel : public QObject
     Q_PROPERTY(CoinsListModel* coinsListModel READ coinsListModel CONSTANT)
     Q_PROPERTY(SendRecipient* sendRecipient READ sendRecipient CONSTANT)
     Q_PROPERTY(WalletQmlModelTransaction* currentTransaction READ currentTransaction NOTIFY currentTransactionChanged)
-    Q_PROPERTY(unsigned int targetBlocks READ feeTargetBlocks WRITE setFeeTargetBlocks NOTIFY feeTargetBlocksChanged)
 
 public:
     WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObject* parent = nullptr);
@@ -64,14 +63,11 @@ public:
     void unselectCoin(const COutPoint& output);
     bool isSelectedCoin(const COutPoint& output);
     std::vector<COutPoint> listSelectedCoins() const;
-    unsigned int feeTargetBlocks() const;
-    void setFeeTargetBlocks(unsigned int target_blocks);
 
 Q_SIGNALS:
     void nameChanged();
     void balanceChanged();
     void currentTransactionChanged();
-    void feeTargetBlocksChanged();
 
 private:
     std::unique_ptr<interfaces::Wallet> m_wallet;
