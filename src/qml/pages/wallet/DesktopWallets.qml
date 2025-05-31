@@ -126,22 +126,28 @@ Page {
         }
     }
 
-    contentItem: StackLayout {
+    StackLayout {
+        width: parent.width
+        height: parent.height
         currentIndex: navigationTabs.checkedButton.index
         clip: true
         Activity {
+            id: activityTab
         }
         Send {
+            id: sendTab
             onTransactionPrepared: root.sendTransaction()
         }
         RequestPayment {
+            id: receiveTab
         }
         Item {
             id: blockClockTab
+            anchors.fill: parent
             BlockClock {
-                parentWidth: blockClockTab.width - 40
-                parentHeight: blockClockTab.height
-                anchors.centerIn: blockClockTab
+                parentWidth: parent.width - 40
+                parentHeight: parent.height
+                anchors.centerIn: parent
                 showNetworkIndicator: false
             }
         }
