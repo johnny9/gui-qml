@@ -30,20 +30,12 @@ Page {
             text: walletController.selectedWallet.name
             balance: walletController.selectedWallet.balance
             loading: !walletController.initialized
-            noWalletLoaded: !walletController.isWalletLoaded
-            noWalletsFound: walletController.noWalletsFound
 
             MouseArea {
                 anchors.fill: parent
                 onClicked: {
-                    if (walletController.initialized) {
-                        walletListModel.listWalletDir()
-                        if (walletController.noWalletsFound) {
-                            root.addWallet()
-                        } else {
-                            walletSelect.opened ? walletSelect.close() : walletSelect.open()
-                        }
-                    }
+                    walletListModel.listWalletDir()
+                    walletSelect.opened ? walletSelect.close() : walletSelect.open()
                 }
             }
 
@@ -60,9 +52,9 @@ Page {
             }
         }
         centerItem: RowLayout {
-            visible: walletController.isWalletLoaded
             NavigationTab {
                 id: activityTabButton
+                checked: true
                 text: qsTr("Activity")
                 property int index: 0
                 ButtonGroup.group: navigationTabs
@@ -87,7 +79,6 @@ Page {
             }
             NavigationTab {
                 id: blockClockTabButton
-                checked: true
                 Layout.preferredWidth: 30
                 Layout.rightMargin: 10
                 property int index: 3
