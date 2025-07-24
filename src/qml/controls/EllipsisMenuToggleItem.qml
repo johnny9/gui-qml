@@ -39,6 +39,7 @@ Button {
         anchors.centerIn: parent
         anchors.margins: 10
         CoreText {
+            id: buttonText
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
             horizontalAlignment: Text.AlignLeft

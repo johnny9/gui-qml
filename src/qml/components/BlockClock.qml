@@ -117,7 +117,7 @@ Item {
                 }
             });
 
-            subText.estimatingChanged();
+            subText.estimatingChanged(subText.estimating);
         }
 
         ColorAnimation on color{
