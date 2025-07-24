@@ -152,6 +152,12 @@ void SendRecipientsListModel::clear()
 
 void SendRecipientsListModel::clearToFront()
 {
+    if (m_current != 0) {
+        m_current = 0;
+        Q_EMIT currentRecipientChanged();
+        Q_EMIT currentIndexChanged();
+    }
+
     bool count_changed = false;
     while (m_recipients.size() > 1) {
         delete m_recipients.at(1);
@@ -166,11 +172,5 @@ void SendRecipientsListModel::clearToFront()
     if (m_totalAmount != m_recipients[0]->amount()->satoshi()) {
         m_totalAmount = m_recipients[0]->amount()->satoshi();
         Q_EMIT totalAmountChanged();
-    }
-
-    if (m_current != 0) {
-        m_current = 0;
-        Q_EMIT currentRecipientChanged();
-        Q_EMIT currentIndexChanged();
     }
 }
