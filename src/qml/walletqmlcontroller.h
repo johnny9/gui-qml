@@ -54,6 +54,7 @@ private:
 
     bool m_initialized{false};
     interfaces::Node& m_node;
+    WalletQmlModel* m_empty_wallet;
     WalletQmlModel* m_selected_wallet;
     QObject* m_worker;
     QThread* m_worker_thread;

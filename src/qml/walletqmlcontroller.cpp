@@ -16,7 +16,8 @@
 WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent)
     : QObject(parent)
     , m_node(node)
-    , m_selected_wallet(new WalletQmlModel(parent))
+    , m_empty_wallet(new WalletQmlModel(this))
+    , m_selected_wallet(m_empty_wallet)
     , m_worker(new QObject)
     , m_worker_thread(new QThread(this))
 {
@@ -35,6 +36,7 @@ WalletQmlController::~WalletQmlController()
     m_worker_thread->quit();
     m_worker_thread->wait();
     delete m_worker;
+    delete m_empty_wallet;
 }
 
 void WalletQmlController::setSelectedWallet(QString path)
@@ -63,6 +65,8 @@ WalletQmlModel* WalletQmlController::selectedWallet() const
 void WalletQmlController::unloadWallets()
 {
     m_handler_load_wallet->disconnect();
+    m_selected_wallet = m_empty_wallet;
+    Q_EMIT selectedWalletChanged();
     QMutexLocker locker(&m_wallets_mutex);
     for (WalletQmlModel* wallet : m_wallets) {
         delete wallet;

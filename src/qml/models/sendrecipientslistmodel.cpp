@@ -93,15 +93,17 @@ void SendRecipientsListModel::remove()
         return;
     }
     beginRemoveRows(QModelIndex(), m_current, m_current);
-    delete m_recipients.takeAt(m_current);
+    if (m_current > 0) {
+        int index_to_remove = m_current;
+        setCurrentIndex(m_current - 1);
+        delete m_recipients.takeAt(index_to_remove);
+    } else {
+        auto removed_recipient = m_recipients.takeAt(m_current);
+        Q_EMIT currentRecipientChanged();
+        delete removed_recipient;
+    }
     endRemoveRows();
     Q_EMIT countChanged();
-
-    if (m_current > 0) {
-        setCurrentIndex(m_current - 1);
-    } else {
-        Q_EMIT currentRecipientChanged();
-    }
 }
 
 SendRecipient* SendRecipientsListModel::currentRecipient() const
@@ -152,6 +154,12 @@ void SendRecipientsListModel::clear()
 
 void SendRecipientsListModel::clearToFront()
 {
+    if (m_current != 0) {
+        m_current = 0;
+        Q_EMIT currentRecipientChanged();
+        Q_EMIT currentIndexChanged();
+    }
+
     bool count_changed = false;
     while (m_recipients.size() > 1) {
         delete m_recipients.at(1);
@@ -166,11 +174,5 @@ void SendRecipientsListModel::clearToFront()
     if (m_totalAmount != m_recipients[0]->amount()->satoshi()) {
         m_totalAmount = m_recipients[0]->amount()->satoshi();
         Q_EMIT totalAmountChanged();
-    }
-
-    if (m_current != 0) {
-        m_current = 0;
-        Q_EMIT currentRecipientChanged();
-        Q_EMIT currentIndexChanged();
     }
 }
