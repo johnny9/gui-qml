@@ -14,6 +14,7 @@ Popup {
     property string link: ""
     modal: true
     padding: 0
+    anchors.centerIn: parent
 
     background: Rectangle {
         color: Theme.color.background
@@ -24,86 +25,50 @@ Popup {
         anchors.fill: parent
         spacing: 0
 
-        NavigationBar {
+        CoreText {
+            Layout.fillWidth: true
             Layout.preferredHeight: 55
-            middleDetail: Header {
-                Layout.fillWidth: true
-                header: qsTr("External Link")
-                headerBold: true
-                headerSize: 24
-            }
+            text: qsTr("External Link")
+            bold: true
+            font.pixelSize: 24
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
         }
 
         Separator {
             Layout.fillWidth: true
         }
 
-        ColumnLayout {
-            id: popupContent
+        Header {
             Layout.fillWidth: true
-            Layout.rightMargin: 20
-            Layout.leftMargin: 20
+            Layout.margins: 20
             Layout.topMargin: 20
-            Layout.bottomMargin: 20
-            spacing: 30
-            Header {
-                Layout.fillWidth: true
-                header: qsTr("Do you want to open the following website in your browser?")
-                headerBold: false
-                headerSize: 18
-                description: ("\"" + externalConfirmPopup.link + "\"")
-                descriptionMargin: 3
-            }
-            Loader {
-                id: layoutLoader
-                Layout.fillWidth: true
-                sourceComponent: AppMode.isDesktop ? desktopLayout : mobileLayout
-            }
+            header: qsTr("Do you want to open the following website in your browser?")
+            headerBold: false
+            headerSize: 16
+            description: ("\"" + externalConfirmPopup.link + "\"")
+            descriptionMargin: 8
         }
-    }
 
-    Component {
-        id: desktopLayout
-        RowLayout {
+        GridLayout {
             Layout.fillWidth: true
-            spacing: 15
+            Layout.margins: 20
+            Layout.topMargin: 0
+            columns: AppMode.isDesktop ? 2 : 1
+            columnSpacing: 15
+            rowSpacing: 10
+
             OutlineButton {
                 text: qsTr("Cancel")
                 Layout.fillWidth: true
-                Layout.minimumWidth: 150
-                onClicked: {
-                    externalConfirmPopup.close()
-                }
+                Layout.minimumWidth: 120
+                onClicked: externalConfirmPopup.close()
             }
-            ContinueButton {
-                text: qsTr("Ok")
-                Layout.fillWidth: true
-                Layout.minimumWidth: 150
-                onClicked: {
-                    Qt.openUrlExternally(externalConfirmPopup.link)
-                    externalConfirmPopup.close()
-                }
-            }
-        }
-    }
 
-    Component {
-        id: mobileLayout
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 15
-            OutlineButton {
-                text: qsTr("Cancel")
-                Layout.fillWidth: true
-                Layout.minimumWidth: 150
-                onClicked: {
-                    externalConfirmPopup.close()
-                }
-            }
             ContinueButton {
                 text: qsTr("Ok")
                 Layout.fillWidth: true
-                Layout.minimumWidth: 150
+                Layout.minimumWidth: 120
                 onClicked: {
                     Qt.openUrlExternally(externalConfirmPopup.link)
                     externalConfirmPopup.close()
