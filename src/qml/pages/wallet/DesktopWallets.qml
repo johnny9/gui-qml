@@ -141,9 +141,7 @@ Page {
         Activity {
         }
         Send {
-            onTransactionPrepared: (multipleRecipientsEnabled) => {
-                root.sendTransaction(multipleRecipientsEnabled)
-            }
+            onTransactionPrepared: root.sendTransaction(multipleRecipientsEnabled)
         }
         RequestPayment {
         }
