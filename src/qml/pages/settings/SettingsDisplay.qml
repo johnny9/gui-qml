@@ -49,7 +49,7 @@ Item {
                         color: gotoTheme.stateColor
                     }
                     onClicked: {
-                        displaySettingsView.push(theme_page)
+                        nodeSettingsView.push(theme_page)
                     }
                 }
                 Separator { Layout.fillWidth: true }
@@ -61,7 +61,7 @@ Item {
                         color: gotoBlockClockSize.stateColor
                     }
                     onClicked: {
-                        displaySettingsView.push(blockclocksize_page)
+                        nodeSettingsView.push(blockclocksize_page)
                     }
                 }
             }
@@ -71,7 +71,7 @@ Item {
         id: theme_page
         SettingsTheme {
             onBack: {
-                displaySettingsView.pop()
+                nodeSettingsView.pop()
             }
         }
     }
@@ -79,7 +79,7 @@ Item {
         id: blockclocksize_page
         SettingsBlockClockDisplayMode {
             onBack: {
-                displaySettingsView.pop()
+                nodeSettingsView.pop()
             }
         }
     }
