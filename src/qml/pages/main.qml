@@ -47,7 +47,7 @@ ApplicationWindow {
         }
         anchors.fill: parent
         focus: true
-        Keys.onReleased: {
+        Keys.onReleased: (event) => {
             if (event.key == Qt.Key_Back) {
                 nodeModel.requestShutdown()
                 event.accepted = true
@@ -86,7 +86,7 @@ ApplicationWindow {
             onAddWallet: {
                 main.push(createWalletWizard, { "launchContext": CreateWalletWizard.Context.Main })
             }
-            onSendTransaction: {
+            onSendTransaction: (multipleRecipientsEnabled) => {
                 if (multipleRecipientsEnabled) {
                     main.push(multipleSendReviewPage)
                 } else {
