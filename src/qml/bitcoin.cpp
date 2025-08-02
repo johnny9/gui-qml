@@ -35,6 +35,7 @@
 #include <qml/models/options_model.h>
 #include <qml/models/peerdetailsmodel.h>
 #include <qml/models/peerlistsortproxy.h>
+#include <qml/models/peertableqmlmodel.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/walletlistmodel.h>
 #include <qml/models/walletqmlmodel.h>
@@ -289,7 +290,7 @@ int QmlGuiMain(int argc, char* argv[])
         node->startShutdown();
     });
 
-    PeerTableModel peer_model{*node, nullptr};
+    PeerTableQmlModel peer_model{*node, nullptr};
     PeerListSortProxy peer_model_sort_proxy{nullptr};
     peer_model_sort_proxy.setSourceModel(&peer_model);
 
