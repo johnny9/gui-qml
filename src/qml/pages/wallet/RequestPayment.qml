@@ -208,6 +208,14 @@ Page {
                     }
                 }
 
+                function clear() {
+                    clearRequest.visible = false
+                    title.text = qsTr("Request a payment")
+                    address.text = ""
+                    qrImage.code = ""
+                    continueButton.text = qsTr("Create bitcoin address")
+                }
+
                 ContinueButton {
                     id: clearRequest
                     Layout.fillWidth: true
@@ -221,11 +229,14 @@ Page {
                     backgroundPressedColor: "transparent"
                     text: qsTr("Clear")
                     onClicked: {
-                        clearRequest.visible = false
-                        title.text = qsTr("Request a payment")
-                        address.text = ""
-                        qrImage.code = ""
-                        continueButton.text = qsTr("Create bitcoin address")
+                        columnLayout.clear()
+                    }
+                }
+
+                Connections {
+                    target: walletController
+                    function onSelectedWalletChanged() {
+                        columnLayout.clear()
                     }
                 }
             }
