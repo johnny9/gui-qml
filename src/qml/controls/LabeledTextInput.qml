@@ -13,8 +13,6 @@ Item {
     property alias iconSource: icon.source
     property alias customIcon: iconContainer.data
     property alias enabled: input.enabled
-    property alias validator: input.validator
-    property alias maximumLength: input.maximumLength
 
     signal iconClicked
     signal textEdited
