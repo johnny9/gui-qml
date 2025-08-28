@@ -55,30 +55,12 @@ QString WalletQmlModel::balance() const
     return BitcoinUnits::format(BitcoinUnits::Unit::BTC, m_wallet->getBalance());
 }
 
-CAmount WalletQmlModel::balanceSatoshi() const
-{
-    if (!m_wallet) {
-        return 0;
-    }
-    return m_wallet->getBalance();
-}
-
 QString WalletQmlModel::name() const
 {
     if (!m_wallet) {
         return QString();
     }
     return QString::fromStdString(m_wallet->getWalletName());
-}
-
-QString WalletQmlModel::newAddress(QString label)
-{
-    if (!m_wallet) {
-        return QString();
-    }
-    OutputType output_type = m_wallet->getDefaultAddressType();
-    util::Result<CTxDestination> dest{m_wallet->getNewDestination(output_type, label.toStdString())};
-    return QString::fromStdString(EncodeDestination(dest.value()));
 }
 
 std::set<interfaces::WalletTx> WalletQmlModel::getWalletTxs() const

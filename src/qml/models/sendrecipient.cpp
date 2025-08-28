@@ -5,14 +5,10 @@
 #include <qml/models/sendrecipient.h>
 
 #include <qml/bitcoinamount.h>
-#include <qml/models/walletqmlmodel.h>
 
-#include <key_io.h>
-
-SendRecipient::SendRecipient(WalletQmlModel* wallet, QObject* parent)
-    : QObject(parent), m_wallet(wallet), m_amount(new BitcoinAmount(this))
+SendRecipient::SendRecipient(QObject* parent)
+    : QObject(parent), m_amount(new BitcoinAmount(this))
 {
-    connect(m_amount, &BitcoinAmount::amountChanged, this, &SendRecipient::validateAmount);
 }
 
 QString SendRecipient::address() const
@@ -25,20 +21,6 @@ void SendRecipient::setAddress(const QString& address)
     if (m_address != address) {
         m_address = address;
         Q_EMIT addressChanged();
-        validateAddress();
-    }
-}
-
-QString SendRecipient::addressError() const
-{
-    return m_addressError;
-}
-
-void SendRecipient::setAddressError(const QString& error)
-{
-    if (m_addressError != error) {
-        m_addressError = error;
-        Q_EMIT addressErrorChanged();
     }
 }
 
@@ -58,19 +40,6 @@ void SendRecipient::setLabel(const QString& label)
 BitcoinAmount* SendRecipient::amount() const
 {
     return m_amount;
-}
-
-QString SendRecipient::amountError() const
-{
-    return m_amountError;
-}
-
-void SendRecipient::setAmountError(const QString& error)
-{
-    if (m_amountError != error) {
-        m_amountError = error;
-        Q_EMIT amountErrorChanged();
-    }
 }
 
 QString SendRecipient::message() const
@@ -98,52 +67,13 @@ CAmount SendRecipient::cAmount() const
 
 void SendRecipient::clear()
 {
+    m_address = "";
     m_label = "";
+    m_amount->setSatoshi(0);
     m_message = "";
     m_subtractFeeFromAmount = false;
-    setAddress("");
-    m_amount->clear();
+    Q_EMIT addressChanged();
     Q_EMIT labelChanged();
     Q_EMIT messageChanged();
-}
-
-void SendRecipient::validateAddress()
-{
-    if (!m_address.isEmpty() && !IsValidDestinationString(m_address.toStdString())) {
-        if (IsValidDestinationString(m_address.toStdString(), *CChainParams::Main())) {
-            setAddressError(tr("Address is valid for mainnet, not the current network"));
-        } else if (IsValidDestinationString(m_address.toStdString(), *CChainParams::TestNet())) {
-            setAddressError(tr("Address is valid for testnet, not the current network"));
-        } else {
-            setAddressError(tr("Invalid address format"));
-        }
-    } else {
-        setAddressError("");
-    }
-
-    Q_EMIT isValidChanged();
-}
-
-void SendRecipient::validateAmount()
-{
-    if (m_amount->isSet()) {
-        if (m_amount->satoshi() <= 0) {
-            setAmountError(tr("Amount must be greater than zero"));
-        } else if (m_amount->satoshi() > MAX_MONEY) {
-            setAmountError(tr("Amount exceeds maximum limit of 21,000,000 BTC"));
-        } else if (m_wallet && m_amount->satoshi() > m_wallet->balanceSatoshi()) {
-            setAmountError(tr("Amount exceeds available balance"));
-        } else {
-            setAmountError("");
-        }
-    } else {
-        setAmountError("");
-    }
-
-    Q_EMIT isValidChanged();
-}
-
-bool SendRecipient::isValid() const
-{
-    return m_addressError.isEmpty() && m_amountError.isEmpty() && m_amount->satoshi() > 0 && !m_address.isEmpty();
+    Q_EMIT amount()->amountChanged();
 }

@@ -5,21 +5,20 @@
 #ifndef BITCOIN_QML_MODELS_WALLETQMLMODEL_H
 #define BITCOIN_QML_MODELS_WALLETQMLMODEL_H
 
+#include <interfaces/handler.h>
+#include <interfaces/wallet.h>
 #include <qml/models/activitylistmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
-
-#include <consensus/amount.h>
-#include <interfaces/handler.h>
-#include <interfaces/wallet.h>
 #include <wallet/coincontrol.h>
 
+#include <QObject>
 #include <memory>
 #include <vector>
 
-#include <QObject>
+class ActivityListModel;
 
 class WalletQmlModel : public QObject
 {
@@ -40,15 +39,12 @@ public:
 
     QString name() const;
     QString balance() const;
-    CAmount balanceSatoshi() const;
-
     ActivityListModel* activityListModel() const { return m_activity_list_model; }
     CoinsListModel* coinsListModel() const { return m_coins_list_model; }
     SendRecipientsListModel* sendRecipientList() const { return m_send_recipients; }
     WalletQmlModelTransaction* currentTransaction() const { return m_current_transaction; }
     Q_INVOKABLE bool prepareTransaction();
     Q_INVOKABLE void sendTransaction();
-    Q_INVOKABLE QString newAddress(QString label);
 
     std::set<interfaces::WalletTx> getWalletTxs() const;
     interfaces::WalletTx getWalletTx(const uint256& hash) const;
