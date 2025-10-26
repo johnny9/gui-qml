@@ -1,0 +1,150 @@
+From 30a791ca524db44c93b57da5110696e5797c1b6a Mon Sep 17 00:00:00 2001
+From: johnny9 <johnny9dev@pm.me>
+Date: Sat, 25 Oct 2025 01:24:30 -0400
+Subject: [PATCH 1/3] Add qtdeclarative and qtshadertools
+
+---
+ depends/packages/native_qt.mk  | 16 ++++++++++++++++
+ depends/packages/qt.mk         | 22 ++++++++++++++++++++++
+ depends/packages/qt_details.mk |  6 ++++++
+ 3 files changed, 44 insertions(+)
+
+diff --git a/depends/packages/native_qt.mk b/depends/packages/native_qt.mk
+index fc59c4d3cc..12e7c4a0a5 100644
+--- a/depends/packages/native_qt.mk
++++ b/depends/packages/native_qt.mk
+@@ -17,8 +17,16 @@ $(package)_qttranslations_sha256_hash=$(qt_details_qttranslations_sha256_hash)
+ $(package)_qttools_file_name=$(qt_details_qttools_file_name)
+ $(package)_qttools_sha256_hash=$(qt_details_qttools_sha256_hash)
+ 
++$(package)_qtdeclarative_file_name=$(qt_details_qtdeclarative_file_name)
++$(package)_qtdeclarative_sha256_hash=$(qt_details_qtdeclarative_sha256_hash)
++
++$(package)_qtshadertools_file_name=$(qt_details_qtshadertools_file_name)
++$(package)_qtshadertools_sha256_hash=$(qt_details_qtshadertools_sha256_hash)
++
+ $(package)_extra_sources := $($(package)_qttranslations_file_name)
+ $(package)_extra_sources += $($(package)_qttools_file_name)
++$(package)_extra_sources += $($(package)_qtdeclarative_file_name)
++$(package)_extra_sources += $($(package)_qtshadertools_file_name)
+ 
+ $(package)_top_download_path=$(qt_details_top_download_path)
+ $(package)_top_cmakelists_file_name=$(qt_details_top_cmakelists_file_name)
+@@ -103,6 +111,8 @@ define $(package)_fetch_cmds
+ $(call fetch_file,$(package),$($(package)_download_path),$($(package)_download_file),$($(package)_file_name),$($(package)_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_download_path),$($(package)_qttranslations_file_name),$($(package)_qttranslations_file_name),$($(package)_qttranslations_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_download_path),$($(package)_qttools_file_name),$($(package)_qttools_file_name),$($(package)_qttools_sha256_hash)) && \
++$(call fetch_file,$(package),$($(package)_download_path),$($(package)_qtdeclarative_file_name),$($(package)_qtdeclarative_file_name),$($(package)_qtdeclarative_sha256_hash)) && \
++$(call fetch_file,$(package),$($(package)_download_path),$($(package)_qtshadertools_file_name),$($(package)_qtshadertools_file_name),$($(package)_qtshadertools_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_top_download_path),$($(package)_top_cmakelists_download_file),$($(package)_top_cmakelists_file_name)-$($(package)_version),$($(package)_top_cmakelists_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_top_cmake_download_path),$($(package)_top_cmake_ecmoptionaladdsubdirectory_download_file),$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version),$($(package)_top_cmake_ecmoptionaladdsubdirectory_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_top_cmake_download_path),$($(package)_top_cmake_qttoplevelhelpers_download_file),$($(package)_top_cmake_qttoplevelhelpers_file_name)-$($(package)_version),$($(package)_top_cmake_qttoplevelhelpers_sha256_hash))
+@@ -113,6 +123,8 @@ define $(package)_extract_cmds
+   echo "$($(package)_sha256_hash)  $($(package)_source)" > $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_qttranslations_sha256_hash)  $($(package)_source_dir)/$($(package)_qttranslations_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_qttools_sha256_hash)  $($(package)_source_dir)/$($(package)_qttools_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
++  echo "$($(package)_qtdeclarative_sha256_hash)  $($(package)_source_dir)/$($(package)_qtdeclarative_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
++  echo "$($(package)_qtshadertools_sha256_hash)  $($(package)_source_dir)/$($(package)_qtshadertools_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmakelists_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmakelists_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmake_ecmoptionaladdsubdirectory_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmake_qttoplevelhelpers_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmake_qttoplevelhelpers_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+@@ -123,6 +135,10 @@ define $(package)_extract_cmds
+   $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qttranslations_file_name) -C qttranslations && \
+   mkdir qttools && \
+   $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qttools_file_name) -C qttools && \
++  mkdir qtdeclarative && \
++  $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qtdeclarative_file_name) -C qtdeclarative && \
++  mkdir qtshadertools && \
++  $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qtshadertools_file_name) -C qtshadertools && \
+   cp $($(package)_source_dir)/$($(package)_top_cmakelists_file_name)-$($(package)_version) ./$($(package)_top_cmakelists_file_name) && \
+   mkdir cmake && \
+   cp $($(package)_source_dir)/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version) cmake/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name) && \
+diff --git a/depends/packages/qt.mk b/depends/packages/qt.mk
+index 4daffeb1aa..146ef7f5b4 100644
+--- a/depends/packages/qt.mk
++++ b/depends/packages/qt.mk
+@@ -26,8 +26,16 @@ $(package)_qttranslations_sha256_hash=$(qt_details_qttranslations_sha256_hash)
+ $(package)_qttools_file_name=$(qt_details_qttools_file_name)
+ $(package)_qttools_sha256_hash=$(qt_details_qttools_sha256_hash)
+ 
++$(package)_qtdeclarative_file_name=$(qt_details_qtdeclarative_file_name)
++$(package)_qtdeclarative_sha256_hash=$(qt_details_qtdeclarative_sha256_hash)
++
++$(package)_qtshadertools_file_name=$(qt_details_qtshadertools_file_name)
++$(package)_qtshadertools_sha256_hash=$(qt_details_qtshadertools_sha256_hash)
++
+ $(package)_extra_sources := $($(package)_qttranslations_file_name)
+ $(package)_extra_sources += $($(package)_qttools_file_name)
++$(package)_extra_sources += $($(package)_qtdeclarative_file_name)
++$(package)_extra_sources += $($(package)_qtshadertools_file_name)
+ 
+ $(package)_top_download_path=$(qt_details_top_download_path)
+ $(package)_top_cmakelists_file_name=$(qt_details_top_cmakelists_file_name)
+@@ -211,6 +219,8 @@ define $(package)_fetch_cmds
+ $(call fetch_file,$(package),$($(package)_download_path),$($(package)_download_file),$($(package)_file_name),$($(package)_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_download_path),$($(package)_qttranslations_file_name),$($(package)_qttranslations_file_name),$($(package)_qttranslations_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_download_path),$($(package)_qttools_file_name),$($(package)_qttools_file_name),$($(package)_qttools_sha256_hash)) && \
++$(call fetch_file,$(package),$($(package)_download_path),$($(package)_qtdeclarative_file_name),$($(package)_qtdeclarative_file_name),$($(package)_qtdeclarative_sha256_hash)) && \
++$(call fetch_file,$(package),$($(package)_download_path),$($(package)_qtshadertools_file_name),$($(package)_qtshadertools_file_name),$($(package)_qtshadertools_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_top_download_path),$($(package)_top_cmakelists_download_file),$($(package)_top_cmakelists_file_name)-$($(package)_version),$($(package)_top_cmakelists_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_top_cmake_download_path),$($(package)_top_cmake_ecmoptionaladdsubdirectory_download_file),$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version),$($(package)_top_cmake_ecmoptionaladdsubdirectory_sha256_hash)) && \
+ $(call fetch_file,$(package),$($(package)_top_cmake_download_path),$($(package)_top_cmake_qttoplevelhelpers_download_file),$($(package)_top_cmake_qttoplevelhelpers_file_name)-$($(package)_version),$($(package)_top_cmake_qttoplevelhelpers_sha256_hash))
+@@ -222,6 +232,8 @@ define $(package)_extract_cmds
+   echo "$($(package)_sha256_hash)  $($(package)_source)" > $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_qttranslations_sha256_hash)  $($(package)_source_dir)/$($(package)_qttranslations_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_qttools_sha256_hash)  $($(package)_source_dir)/$($(package)_qttools_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
++  echo "$($(package)_qtdeclarative_sha256_hash)  $($(package)_source_dir)/$($(package)_qtdeclarative_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
++  echo "$($(package)_qtshadertools_sha256_hash)  $($(package)_source_dir)/$($(package)_qtshadertools_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmakelists_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmakelists_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmake_ecmoptionaladdsubdirectory_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmake_qttoplevelhelpers_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmake_qttoplevelhelpers_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+@@ -232,6 +244,10 @@ define $(package)_extract_cmds
+   $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qttranslations_file_name) -C qttranslations && \
+   mkdir qttools && \
+   $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qttools_file_name) -C qttools && \
++  mkdir qtdeclarative && \
++  $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qtdeclarative_file_name) -C qtdeclarative && \
++  mkdir qtshadertools && \
++  $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qtshadertools_file_name) -C qtshadertools && \
+   cp $($(package)_source_dir)/$($(package)_top_cmakelists_file_name)-$($(package)_version) ./$($(package)_top_cmakelists_file_name) && \
+   mkdir cmake && \
+   cp $($(package)_source_dir)/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version) cmake/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name) && \
+@@ -241,12 +257,18 @@ else
+ define $(package)_extract_cmds
+   mkdir -p $($(package)_extract_dir) && \
+   echo "$($(package)_sha256_hash)  $($(package)_source)" > $($(package)_extract_dir)/.$($(package)_file_name).hash && \
++  echo "$($(package)_qtdeclarative_sha256_hash)  $($(package)_source_dir)/$($(package)_qtdeclarative_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
++  echo "$($(package)_qtshadertools_sha256_hash)  $($(package)_source_dir)/$($(package)_qtshadertools_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmakelists_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmakelists_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmake_ecmoptionaladdsubdirectory_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmake_qttoplevelhelpers_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmake_qttoplevelhelpers_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   $(build_SHA256SUM) -c $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   mkdir qtbase && \
+   $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source) -C qtbase && \
++  mkdir qtdeclarative && \
++  $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qtdeclarative_file_name) -C qtdeclarative && \
++  mkdir qtshadertools && \
++  $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qtshadertools_file_name) -C qtshadertools && \
+   cp $($(package)_source_dir)/$($(package)_top_cmakelists_file_name)-$($(package)_version) ./$($(package)_top_cmakelists_file_name) && \
+   mkdir cmake && \
+   cp $($(package)_source_dir)/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version) cmake/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name) && \
+diff --git a/depends/packages/qt_details.mk b/depends/packages/qt_details.mk
+index 341448149e..eec114c177 100644
+--- a/depends/packages/qt_details.mk
++++ b/depends/packages/qt_details.mk
+@@ -11,6 +11,12 @@ qt_details_qttranslations_sha256_hash := dcc762acac043b9bb5e4d369b6d6f53e0ecfcf7
+ qt_details_qttools_file_name := qttools-$(qt_details_suffix)
+ qt_details_qttools_sha256_hash := f03bb7df619cd9ac9dba110e30b7bcab5dd88eb8bdc9cc752563b4367233203f
+ 
++qt_details_qtdeclarative_file_name := qtdeclarative-$(qt_details_suffix)
++qt_details_qtdeclarative_sha256_hash := 937b70e441abf5bc4e50d44d26610e2714a28514acf3885cd36116cd610b9875
++
++qt_details_qtshadertools_file_name := qtshadertools-$(qt_details_suffix)
++qt_details_qtshadertools_sha256_hash := 74e512798c7ddbda354a2d8d975211454bbabb47afb7e598892067a5828c0995
++
+ qt_details_patches_path := $(PATCHES_PATH)/qt
+ 
+ qt_details_top_download_path := https://code.qt.io/cgit/qt/qt5.git/plain
+-- 
+2.43.0
+

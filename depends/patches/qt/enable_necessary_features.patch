@@ -1,0 +1,43 @@
+From 88076ffce44d0317800349db38168fabd8b7c411 Mon Sep 17 00:00:00 2001
+From: johnny9 <johnny9dev@pm.me>
+Date: Sat, 25 Oct 2025 01:25:38 -0400
+Subject: [PATCH 2/3] Re-enable necessary features
+
+---
+ depends/packages/native_qt.mk | 3 ---
+ depends/packages/qt.mk        | 2 +-
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/depends/packages/native_qt.mk b/depends/packages/native_qt.mk
+index 12e7c4a0a5..6f8e84de0c 100644
+--- a/depends/packages/native_qt.mk
++++ b/depends/packages/native_qt.mk
+@@ -56,12 +56,9 @@ $(package)_config_opts += -static
+ 
+ # Modules.
+ $(package)_config_opts += -no-feature-concurrent
+-$(package)_config_opts += -no-feature-network
+ $(package)_config_opts += -no-feature-printsupport
+ $(package)_config_opts += -no-feature-sql
+-$(package)_config_opts += -no-feature-testlib
+ $(package)_config_opts += -no-feature-xml
+-$(package)_config_opts += -no-gui
+ $(package)_config_opts += -no-widgets
+ 
+ $(package)_config_opts += -no-glib
+diff --git a/depends/packages/qt.mk b/depends/packages/qt.mk
+index 146ef7f5b4..854a95f8dc 100644
+--- a/depends/packages/qt.mk
++++ b/depends/packages/qt.mk
+@@ -69,7 +69,7 @@ $(package)_config_opts += -no-libjpeg
+ $(package)_config_opts += -no-libproxy
+ $(package)_config_opts += -no-libudev
+ $(package)_config_opts += -no-mtdev
+-$(package)_config_opts += -no-opengl
++$(package)_config_opts += -opengl desktop
+ $(package)_config_opts += -no-openssl
+ $(package)_config_opts += -no-openvg
+ $(package)_config_opts += -no-reduce-relocations
+-- 
+2.43.0
+

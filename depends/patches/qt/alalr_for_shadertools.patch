@@ -1,0 +1,44 @@
+From 8d6ff87c62cc2840273db76ec05b424ccbae35f3 Mon Sep 17 00:00:00 2001
+From: johnny9 <johnny9dev@pm.me>
+Date: Sat, 25 Oct 2025 01:28:33 -0400
+Subject: [PATCH 3/3] Add back alalr for building shadertools
+
+---
+ depends/packages/native_qt.mk              |  1 +
+ depends/patches/qt/qtbase_skip_tools.patch | 11 -----------
+ 2 files changed, 1 insertion(+), 11 deletions(-)
+
+diff --git a/depends/packages/native_qt.mk b/depends/packages/native_qt.mk
+index 6f8e84de0c..e289f3b777 100644
+--- a/depends/packages/native_qt.mk
++++ b/depends/packages/native_qt.mk
+@@ -72,6 +72,7 @@ $(package)_config_opts += -no-feature-backtrace
+ $(package)_config_opts += -no-feature-permissions
+ $(package)_config_opts += -no-feature-process
+ $(package)_config_opts += -no-feature-settings
++$(package)_config_opts += -no-feature-vulkan
+ 
+ # Core tools.
+ $(package)_config_opts += -no-feature-androiddeployqt
+diff --git a/depends/patches/qt/qtbase_skip_tools.patch b/depends/patches/qt/qtbase_skip_tools.patch
+index bbd87e8689..42c33cd723 100644
+--- a/depends/patches/qt/qtbase_skip_tools.patch
++++ b/depends/patches/qt/qtbase_skip_tools.patch
+@@ -48,14 +48,3 @@ Skip building/installing unneeded tools:
+      add_subdirectory(tools/cmake_automoc_parser)
+  endfunction()
+  
+---- a/qtbase/src/tools/CMakeLists.txt
+-+++ b/qtbase/src/tools/CMakeLists.txt
+-@@ -11,8 +11,6 @@ if (QT_FEATURE_dbus)
+-     add_subdirectory(qdbuscpp2xml)
+-     add_subdirectory(qdbusxml2cpp)
+- endif()
+--add_subdirectory(qlalr)
+--add_subdirectory(qvkgen)
+- if (QT_FEATURE_commandlineparser)
+-     add_subdirectory(qtpaths)
+- endif()
+-- 
+2.43.0
+
