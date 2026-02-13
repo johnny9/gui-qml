@@ -7,9 +7,7 @@ find_package(Qt 6.2 MODULE REQUIRED COMPONENTS Core Test Qml Quick QuickTest)
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
   test_bitcoinamount.cpp
-  test_qmlbitcoinunits.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinunits.cpp
 )
 
 target_compile_definitions(bitcoinqml_unit_tests

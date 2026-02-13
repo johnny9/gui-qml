@@ -9,8 +9,6 @@ import "../../controls"
 
 InformationPage {
     id: root
-    objectName: "onboardingBlockclock"
-    buttonObjectName: "onboardingBlockclockButton"
     navLeftDetail: NavButton {
         iconSource: "image://images/caret-left"
         text: qsTr("Back")

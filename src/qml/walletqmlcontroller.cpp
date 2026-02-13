@@ -64,9 +64,7 @@ WalletQmlModel* WalletQmlController::selectedWallet() const
 
 void WalletQmlController::unloadWallets()
 {
-    if (m_handler_load_wallet) {
-        m_handler_load_wallet->disconnect();
-    }
+    m_handler_load_wallet->disconnect();
     m_selected_wallet = m_empty_wallet;
     Q_EMIT selectedWalletChanged();
     QMutexLocker locker(&m_wallets_mutex);

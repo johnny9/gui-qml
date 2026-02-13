@@ -11,13 +11,11 @@ import "../../components"
 
 Page {
     id: root
-    objectName: "bannedPeers"
     signal back()
     background: null
 
     header: NavigationBar2 {
         leftItem: NavButton {
-            objectName: "bannedPeersBackButton"
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
             onClicked: root.back()
@@ -91,7 +89,6 @@ Page {
                     }
                 }
                 OutlineButton {
-                    objectName: "unbanButton_" + index
                     bold: false
                     horizontalPadding: 24
                     text: qsTr("Unban")

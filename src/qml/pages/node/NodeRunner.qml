@@ -15,7 +15,6 @@ Page {
     clip: true
     header: NavigationBar2 {
         rightItem: NavButton {
-            objectName: "nodeSettingsButton"
             iconSource: "image://images/gear"
             iconHeight: 24
             iconWidth: 24

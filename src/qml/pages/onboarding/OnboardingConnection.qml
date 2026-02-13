@@ -11,7 +11,6 @@ import "../settings"
 
 Page {
     id: root
-    objectName: "onboardingConnection"
     signal back
     signal next
     background: null
@@ -24,7 +23,6 @@ Page {
         Component {
             id: onboardingConnection
             InformationPage {
-                buttonObjectName: "onboardingConnectionButton"
                 navLeftDetail: NavButton {
                     iconSource: "image://images/caret-left"
                     text: qsTr("Back")
