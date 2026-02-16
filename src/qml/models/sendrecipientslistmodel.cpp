@@ -1,4 +1,4 @@
-// Copyright (c) 2025 The Bitcoin Core developers
+// Copyright (c) 2025-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -29,7 +29,7 @@ QVariant SendRecipientsListModel::data(const QModelIndex& index, int role) const
 
     const auto& r = m_recipients[index.row()];
     switch (role) {
-    case AddressRole: return r->address();
+    case AddressRole: return r->address()->ellipsesAddress();
     case LabelRole: return r->label();
     case AmountRole: return r->amount()->toDisplay();
     case MessageRole: return r->message();

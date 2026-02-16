@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -15,9 +15,13 @@ Item {
     property alias enabled: input.enabled
     property alias validator: input.validator
     property alias maximumLength: input.maximumLength
+    property alias cursorPosition: input.cursorPosition
+    property alias inputActiveFocus: input.activeFocus
 
     signal iconClicked
     signal textEdited
+    signal editingFinished
+    signal inputFocusChanged
 
     id: root
     implicitHeight: input.height
@@ -45,6 +49,8 @@ Item {
         background: Item {}
         selectByMouse: true
         onTextEdited: root.textEdited()
+        onEditingFinished: root.editingFinished()
+        onActiveFocusChanged: root.inputFocusChanged()
     }
 
     Item {

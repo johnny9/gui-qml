@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2025 The Bitcoin Core developers
+// Copyright (c) 2011-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,7 +10,7 @@
 #include <policy/policy.h>
 
 WalletQmlModelTransaction::WalletQmlModelTransaction(const SendRecipientsListModel* recipient, QObject* parent)
-    : QObject(parent), m_address(recipient->recipients().at(0)->address()), m_amount(recipient->totalAmountSatoshi()), m_fee(0), m_label(recipient->recipients().at(0)->label()), m_wtx(nullptr)
+    : QObject(parent), m_address(recipient->recipients().at(0)->address()->address()), m_amount(recipient->totalAmountSatoshi()), m_fee(0), m_label(recipient->recipients().at(0)->label()), m_wtx(nullptr)
 {
 }
 

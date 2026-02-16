@@ -1,29 +1,31 @@
-// Copyright (c) 2025 The Bitcoin Core developers
+// Copyright (c) 2025-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/sendrecipient.h>
 
 #include <qml/bitcoinamount.h>
+#include <qml/models/bitcoinaddress.h>
 #include <qml/models/walletqmlmodel.h>
 
 #include <key_io.h>
 
 SendRecipient::SendRecipient(WalletQmlModel* wallet, QObject* parent)
-    : QObject(parent), m_wallet(wallet), m_amount(new BitcoinAmount(this))
+    : QObject(parent), m_wallet(wallet), m_address(new BitcoinAddress(this)), m_amount(new BitcoinAmount(this))
 {
     connect(m_amount, &BitcoinAmount::amountChanged, this, &SendRecipient::validateAmount);
+    connect(m_address, &BitcoinAddress::formattedAddressChanged, this, &SendRecipient::validateAddress);
 }
 
-QString SendRecipient::address() const
+BitcoinAddress* SendRecipient::address() const
 {
     return m_address;
 }
 
 void SendRecipient::setAddress(const QString& address)
 {
-    if (m_address != address) {
-        m_address = address;
+    if (m_address->address() != address) {
+        m_address->setAddress(address, 0);
         Q_EMIT addressChanged();
         validateAddress();
     }
@@ -101,18 +103,19 @@ void SendRecipient::clear()
     m_label = "";
     m_message = "";
     m_subtractFeeFromAmount = false;
-    setAddress("");
+    m_address->setAddress("", 0);
     m_amount->clear();
+    Q_EMIT addressChanged();
     Q_EMIT labelChanged();
     Q_EMIT messageChanged();
 }
 
 void SendRecipient::validateAddress()
 {
-    if (!m_address.isEmpty() && !IsValidDestinationString(m_address.toStdString())) {
-        if (IsValidDestinationString(m_address.toStdString(), *CChainParams::Main())) {
+    if (!m_address->isEmpty() && !IsValidDestinationString(m_address->address().toStdString())) {
+        if (IsValidDestinationString(m_address->address().toStdString(), *CChainParams::Main())) {
             setAddressError(tr("Address is valid for mainnet, not the current network"));
-        } else if (IsValidDestinationString(m_address.toStdString(), *CChainParams::TestNet())) {
+        } else if (IsValidDestinationString(m_address->address().toStdString(), *CChainParams::TestNet())) {
             setAddressError(tr("Address is valid for testnet, not the current network"));
         } else {
             setAddressError(tr("Invalid address format"));
@@ -145,5 +148,5 @@ void SendRecipient::validateAmount()
 
 bool SendRecipient::isValid() const
 {
-    return m_addressError.isEmpty() && m_amountError.isEmpty() && m_amount->satoshi() > 0 && !m_address.isEmpty();
+    return m_addressError.isEmpty() && m_amountError.isEmpty() && m_amount->satoshi() > 0 && !m_address->isEmpty();
 }
