@@ -71,6 +71,16 @@ QString WalletQmlModel::name() const
     return QString::fromStdString(m_wallet->getWalletName());
 }
 
+QString WalletQmlModel::newAddress(QString label)
+{
+    if (!m_wallet) {
+        return QString();
+    }
+    OutputType output_type = m_wallet->getDefaultAddressType();
+    util::Result<CTxDestination> dest{m_wallet->getNewDestination(output_type, label.toStdString())};
+    return QString::fromStdString(EncodeDestination(dest.value()));
+}
+
 std::set<interfaces::WalletTx> WalletQmlModel::getWalletTxs() const
 {
     if (!m_wallet) {
