@@ -4,6 +4,8 @@
 
 #include <qml/bitcoinamount.h>
 
+#include <limits>
+
 #include <QRegularExpression>
 #include <QStringList>
 
@@ -40,8 +42,8 @@ qint64 BitcoinAmount::satoshi() const
 
 void BitcoinAmount::setSatoshi(qint64 new_amount)
 {
-    m_isSet = true;
-    if (m_satoshi != new_amount) {
+    if (m_satoshi != new_amount || !m_isSet) {
+        m_isSet = true;
         m_satoshi = new_amount;
         Q_EMIT amountChanged();
     }
@@ -129,6 +131,10 @@ qint64 BitcoinAmount::btcToSats(const QString& btcSanitized)
     qint64 frac = 0;
     if (parts.size() == 2) {
         frac = parts[1].leftJustified(8, '0').toLongLong();
+    }
+
+    if (whole > std::numeric_limits<qint64>::max() / COIN) {
+        return std::numeric_limits<qint64>::max();
     }
 
     return whole * COIN + frac;
