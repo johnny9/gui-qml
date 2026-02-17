@@ -105,6 +105,7 @@
         <file alias="arrow-down">res/icons/arrow-down.png</file>
         <file alias="arrow-up">res/icons/arrow-up.png</file>
         <file alias="bitcoin-circle">res/icons/bitcoin-circle.png</file>
+        <file alias="blockclock-icon">res/icons/blockclock-icon.png</file>
         <file alias="blockclock-size-compact">res/icons/blockclock-size-compact.png</file>
         <file alias="blockclock-size-showcase">res/icons/blockclock-size-showcase.png</file>
         <file alias="blocktime-dark">res/icons/blocktime-dark.png</file>
@@ -115,6 +116,9 @@
         <file alias="caret-right">res/icons/caret-right.png</file>
         <file alias="check">res/icons/check.png</file>
         <file alias="copy">res/icons/copy.png</file>
+        <file alias="circle-file">res/icons/circle-file.png</file>
+        <file alias="circle-green-check">res/icons/circle-green-check.png</file>
+        <file alias="circle-red-cross">res/icons/circle-red-cross.png</file>
         <file alias="coinbase">res/icons/coinbase.png</file>
         <file alias="cross">res/icons/cross.png</file>
         <file alias="ellipsis">res/icons/ellipsis.png</file>
@@ -123,12 +127,15 @@
         <file alias="flip-vertical">res/icons/flip-vertical.png</file>
         <file alias="gear">res/icons/gear.png</file>
         <file alias="gear-outline">res/icons/gear-outline.png</file>
+        <file alias="green-check">res/icons/green-check.png</file>
         <file alias="hidden">res/icons/hidden.png</file>
         <file alias="info">res/icons/info.png</file>
         <file alias="lock">res/icons/lock.png</file>
         <file alias="minus">res/icons/minus.png</file>
         <file alias="network-dark">res/icons/network-dark.png</file>
         <file alias="network-light">res/icons/network-light.png</file>
+        <file alias="pending-dark">res/icons/pending-dark.png</file>
+        <file alias="pending-light">res/icons/pending-light.png</file>
         <file alias="plus">res/icons/plus.png</file>
         <file alias="plus-big-filled">res/icons/plus-big-filled.png</file>
         <file alias="pending">res/icons/pending.png</file>
