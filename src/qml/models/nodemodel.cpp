@@ -6,8 +6,6 @@
 
 #include <interfaces/node.h>
 #include <net.h>
-#include <net_processing.h>
-#include <netbase.h>
 #include <node/interface_ui.h>
 #include <validation.h>
 
@@ -24,7 +22,6 @@ NodeModel::NodeModel(interfaces::Node& node)
 {
     ConnectToBlockTipSignal();
     ConnectToNumConnectionsChangedSignal();
-    ConnectToBannedListChangedSignal();
 }
 
 void NodeModel::setBlockTipHeight(int new_height)
@@ -124,7 +121,6 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
     setVerificationProgress(tip_info.verification_progress);
 
     Q_EMIT setTimeRatioListInitial();
-    Q_EMIT nodeInitialized();
 }
 
 void NodeModel::startShutdownPolling()
@@ -193,30 +189,4 @@ bool NodeModel::validateProxyAddress(QString address_port)
 QString NodeModel::defaultProxyAddress()
 {
     return QString::fromStdString(std::string(DEFAULT_PROXY_HOST) + ":" + util::ToString(DEFAULT_PROXY_PORT));
-}
-
-bool NodeModel::disconnectPeer(int nodeId)
-{
-    return m_node.disconnectById(nodeId);
-}
-
-bool NodeModel::banPeer(const QString& rawAddress, int64_t banDuration)
-{
-    auto addr = LookupHost(rawAddress.toStdString(), /*fAllowLookup=*/false);
-    if (!addr) return false;
-    bool result = m_node.ban(*addr, banDuration);
-    if (result) {
-        m_node.disconnectByAddress(*addr);
-    }
-    return result;
-}
-
-void NodeModel::ConnectToBannedListChangedSignal()
-{
-    assert(!m_handler_notify_banned_list_changed);
-    m_handler_notify_banned_list_changed = m_node.handleBannedListChanged([this]() {
-        QMetaObject::invokeMethod(this, [this] {
-            Q_EMIT bannedListChanged();
-        });
-    });
 }

@@ -11,7 +11,6 @@ import "../settings"
 
 Page {
     id: root
-    objectName: "onboardingStorageAmount"
     signal back
     signal next
     property bool customStorage: false
@@ -26,7 +25,6 @@ Page {
         Component {
             id: onboardingStorageAmount
             InformationPage {
-                buttonObjectName: "onboardingStorageAmountButton"
                 navLeftDetail: NavButton {
                     iconSource: "image://images/caret-left"
                     text: qsTr("Back")

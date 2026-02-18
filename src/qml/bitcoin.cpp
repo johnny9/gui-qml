@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2026 The Bitcoin Core developers
+// Copyright (c) 2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -18,9 +18,6 @@
 #include <node/context.h>
 #include <node/interface_ui.h>
 #include <noui.h>
-#include <qt/guiutil.h>
-#include <qt/initexecutor.h>
-#include <qt/networkstyle.h>
 #include <qml/appmode.h>
 #include <qml/bitcoinamount.h>
 #include <qml/clipboard.h>
@@ -32,15 +29,13 @@
 #include <qml/guiconstants.h>
 #include <qml/imageprovider.h>
 #include <qml/models/activitylistmodel.h>
-#include <qml/models/banlistmodel.h>
-#include <qml/models/bitcoinaddress.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/networktraffictower.h>
 #include <qml/models/nodemodel.h>
 #include <qml/models/options_model.h>
 #include <qml/models/peerdetailsmodel.h>
 #include <qml/models/peerlistsortproxy.h>
-#include <qml/models/peerlistmodel.h>
+#include <qml/models/peertableqmlmodel.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/walletlistmodel.h>
 #include <qml/models/walletqmlmodel.h>
@@ -48,12 +43,10 @@
 #include <qml/qrimageprovider.h>
 #include <qml/util.h>
 #include <qml/walletqmlcontroller.h>
-#ifdef ENABLE_TEST_AUTOMATION
-#include <qml/test/testbridge.h>
-#endif
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
 #include <qt/networkstyle.h>
+#include <qt/peertablemodel.h>
 #include <util/threadnames.h>
 #include <util/translation.h>
 
@@ -97,9 +90,6 @@ void SetupUIArgs(ArgsManager& argsman)
     argsman.AddArg("-lang=<lang>", "Set language, for example \"de_DE\" (default: system locale)", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-min", "Start minimized", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-resetguisettings", "Reset all settings changed in the GUI", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
-#ifdef ENABLE_TEST_AUTOMATION
-    argsman.AddArg("-test-automation=<path>", "Enable test automation bridge on the given Unix socket path", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
-#endif
 }
 
 AppMode SetupAppMode()
@@ -113,7 +103,7 @@ AppMode SetupAppMode()
     #endif // __ANDROID__
 
     #ifdef ENABLE_WALLET
-        wallet_enabled = !gArgs.GetBoolArg("-disablewallet", false);
+        wallet_enabled = true;
     #else
         wallet_enabled = false;
     #endif // ENABLE_WALLET
@@ -266,9 +256,7 @@ int QmlGuiMain(int argc, char* argv[])
     InitExecutor init_executor{*node};
 #ifdef ENABLE_WALLET
     WalletQmlController wallet_controller(*node);
-    if (!gArgs.GetBoolArg("-disablewallet", false)) {
-        QObject::connect(&init_executor, &InitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
-    }
+    QObject::connect(&init_executor, &InitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &InitExecutor::initialize);
     QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
@@ -302,15 +290,9 @@ int QmlGuiMain(int argc, char* argv[])
         node->startShutdown();
     });
 
-    PeerListModel peer_model{*node, nullptr};
+    PeerTableQmlModel peer_model{*node, nullptr};
     PeerListSortProxy peer_model_sort_proxy{nullptr};
     peer_model_sort_proxy.setSourceModel(&peer_model);
-
-    BanListModel ban_list_model{*node, nullptr};
-    QObject::connect(&node_model, &NodeModel::bannedListChanged,
-                     &ban_list_model, &BanListModel::refresh);
-    QObject::connect(&node_model, &NodeModel::nodeInitialized,
-                     &ban_list_model, &BanListModel::refresh);
 
     GUIUtil::LoadFont(":/fonts/inter/regular");
     GUIUtil::LoadFont(":/fonts/inter/semibold");
@@ -327,7 +309,6 @@ int QmlGuiMain(int argc, char* argv[])
     engine.rootContext()->setContextProperty("chainModel", &chain_model);
     engine.rootContext()->setContextProperty("peerTableModel", &peer_model);
     engine.rootContext()->setContextProperty("peerListModelProxy", &peer_model_sort_proxy);
-    engine.rootContext()->setContextProperty("banListModel", &ban_list_model);
 #ifdef ENABLE_WALLET
     WalletListModel wallet_list_model{*node, nullptr};
     engine.rootContext()->setContextProperty("walletController", &wallet_controller);
@@ -347,7 +328,6 @@ int QmlGuiMain(int argc, char* argv[])
     qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
     qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");
     qmlRegisterType<BitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
-    qmlRegisterType<BitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
     qmlRegisterUncreatableType<Transaction>("org.bitcoincore.qt", 1, 0, "Transaction", "");
     qmlRegisterUncreatableType<SendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "");
 
@@ -367,19 +347,6 @@ int QmlGuiMain(int argc, char* argv[])
     if (!window) {
         return EXIT_FAILURE;
     }
-
-#ifdef ENABLE_TEST_AUTOMATION
-    std::unique_ptr<TestBridge> test_bridge;
-    if (gArgs.IsArgSet("-test-automation")) {
-        QString socket_path = QString::fromStdString(gArgs.GetArg("-test-automation", ""));
-        if (socket_path.isEmpty()) {
-            // Default to a socket in the data directory.
-            socket_path = QString::fromStdString(
-                (gArgs.GetDataDirNet() / "test_bridge.sock").utf8string());
-        }
-        test_bridge = std::make_unique<TestBridge>(&engine, socket_path);
-    }
-#endif
 
     // Install qDebug() message handler to route to debug.log
     qInstallMessageHandler(DebugMessageHandler);

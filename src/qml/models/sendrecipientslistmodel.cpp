@@ -1,17 +1,15 @@
-// Copyright (c) 2025-2026 The Bitcoin Core developers
+// Copyright (c) 2025 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/sendrecipientslistmodel.h>
-#include <qml/models/walletqmlmodel.h>
 
 #include <qml/models/sendrecipient.h>
 
 SendRecipientsListModel::SendRecipientsListModel(QObject* parent)
     : QAbstractListModel(parent)
 {
-    m_wallet = qobject_cast<WalletQmlModel*>(parent);
-    auto* recipient = new SendRecipient(m_wallet, this);
+    auto* recipient = new SendRecipient(this);
     connect(recipient->amount(), &BitcoinAmount::amountChanged,
             this, &SendRecipientsListModel::updateTotalAmount);
     m_recipients.append(recipient);
@@ -29,7 +27,7 @@ QVariant SendRecipientsListModel::data(const QModelIndex& index, int role) const
 
     const auto& r = m_recipients[index.row()];
     switch (role) {
-    case AddressRole: return r->address()->ellipsesAddress();
+    case AddressRole: return r->address();
     case LabelRole: return r->label();
     case AmountRole: return r->amount()->toDisplay();
     case MessageRole: return r->message();
@@ -52,7 +50,7 @@ void SendRecipientsListModel::add()
 {
     const int row = m_recipients.size();
     beginInsertRows(QModelIndex(), row, row);
-    auto* recipient = new SendRecipient(m_wallet, this);
+    auto* recipient = new SendRecipient(this);
     connect(recipient->amount(), &BitcoinAmount::amountChanged,
             this, &SendRecipientsListModel::updateTotalAmount);
     if (m_recipients.size() > 0) {
@@ -141,7 +139,7 @@ void SendRecipientsListModel::clear()
     m_current = 0;
     m_totalAmount = 0;
 
-    auto* recipient = new SendRecipient(m_wallet, this);
+    auto* recipient = new SendRecipient(this);
     connect(recipient->amount(), &BitcoinAmount::amountChanged,
             this, &SendRecipientsListModel::updateTotalAmount);
     m_recipients.append(recipient);
