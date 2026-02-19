@@ -11,6 +11,8 @@ import "../../components"
 
 InformationPage {
     id: root
+    objectName: "onboardingStorageLocation"
+    buttonObjectName: "onboardingStorageLocationButton"
     navLeftDetail: NavButton {
         iconSource: "image://images/caret-left"
         text: qsTr("Back")
