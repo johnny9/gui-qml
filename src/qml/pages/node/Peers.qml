@@ -13,7 +13,6 @@ import "../../components"
 Page {
     signal back
     signal peerSelected(PeerDetailsModel peerDetails)
-    signal bannedPeers
 
     id: root
     background: null
@@ -131,48 +130,26 @@ Page {
             }
         }
 
-        footer: Item {
+        footer: Loader {
+            height: 75
+            active: nodeModel.numOutboundPeers < nodeModel.maxNumOutboundPeers
             width: listView.width
-            height: footerColumn.height + 10
-
-            ColumnLayout {
-                id: footerColumn
-                width: parent.width
-                spacing: 0
-
-                Loader {
-                    Layout.fillWidth: true
-                    height: 75
-                    active: nodeModel.numOutboundPeers < nodeModel.maxNumOutboundPeers
-                    visible: active
-                    sourceComponent: Item {
-                        width: parent.width
-                        height: 75
-                        RowLayout {
-                            anchors.centerIn: parent
-                            spacing: 20
-                            PeersIndicator {
-                                paused: false
-                                numOutboundPeers: nodeModel.numOutboundPeers
-                                maxNumOutboundPeers: nodeModel.maxNumOutboundPeers
-                            }
-                            CoreText {
-                                text: qsTr("Looking for %1 more peer(s)").arg(
-                                        nodeModel.maxNumOutboundPeers - nodeModel.numOutboundPeers)
-                                font.pixelSize: 15
-                                color: Theme.color.neutral7
-                            }
-                        }
+            visible: active
+            sourceComponent: Item {
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: 20
+                    PeersIndicator {
+                        paused: false
+                        numOutboundPeers: nodeModel.numOutboundPeers
+                        maxNumOutboundPeers: nodeModel.maxNumOutboundPeers
                     }
-                }
-
-                TextButton {
-                    Layout.alignment: Qt.AlignHCenter
-                    visible: banListModel.count > 0
-                    text: qsTr("View %1 banned %2").arg(banListModel.count).arg(banListModel.count === 1 ? qsTr("peer") : qsTr("peers"))
-                    textSize: 13
-                    bold: false
-                    onClicked: root.bannedPeers()
+                    CoreText {
+                        text: qsTr("Looking for %1 more peer(s)").arg(
+                                nodeModel.maxNumOutboundPeers - nodeModel.numOutboundPeers)
+                        font.pixelSize: 15
+                        color: Theme.color.neutral7
+                    }
                 }
             }
         }

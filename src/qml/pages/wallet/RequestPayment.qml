@@ -16,7 +16,6 @@ Page {
     background: null
 
     property int requestCounter: 0
-    property WalletQmlModel wallet: walletController.selectedWallet
 
     ScrollView {
         clip: true
@@ -199,21 +198,11 @@ Page {
                             requestCounter = requestCounter + 1
                             clearRequest.visible = true
                             title.text = qsTr("Payment request #" + requestCounter)
-                            var newAddress = root.wallet.newAddress(label.text)
-                            var groupedAddress = newAddress.replace(/(.{4})/g, "$1 ").trim()
-                            address.text = groupedAddress
-                            qrImage.code = newAddress
+                            address.text = "bc1q f5xe y2tf 89k9 zy6k gnru wszy 5fsa truy 9te1 bu"
+                            qrImage.code = "bc1qf5xey2tf89k9zy6kgnruwszy5fsatruy9te1bu"
                             continueButton.text = qsTr("Copy payment request")
                         }
                     }
-                }
-
-                function clear() {
-                    clearRequest.visible = false
-                    title.text = qsTr("Request a payment")
-                    address.text = ""
-                    qrImage.code = ""
-                    continueButton.text = qsTr("Create bitcoin address")
                 }
 
                 ContinueButton {
@@ -229,14 +218,11 @@ Page {
                     backgroundPressedColor: "transparent"
                     text: qsTr("Clear")
                     onClicked: {
-                        columnLayout.clear()
-                    }
-                }
-
-                Connections {
-                    target: walletController
-                    function onSelectedWalletChanged() {
-                        columnLayout.clear()
+                        clearRequest.visible = false
+                        title.text = qsTr("Request a payment")
+                        address.text = ""
+                        qrImage.code = ""
+                        continueButton.text = qsTr("Create bitcoin address")
                     }
                 }
             }
