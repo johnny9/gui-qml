@@ -5,11 +5,10 @@
 #ifndef BITCOIN_QML_MODELS_PEERDETAILSMODEL_H
 #define BITCOIN_QML_MODELS_PEERDETAILSMODEL_H
 
-#include <QObject>
+#include <qml/peerstatsutil.h>
 
-#include <qt/guiutil.h>
+#include <QObject>
 #include <qt/peertablemodel.h>
-#include <qt/rpcconsole.h>
 #include <util/time.h>
 
 class PeerDetailsModel : public QObject
@@ -46,25 +45,25 @@ public:
     int nodeId() const { return m_combinedStats->nodeStats.nodeid; }
     QString address() const { return QString::fromStdString(m_combinedStats->nodeStats.m_addr_name); }
     QString addressLocal() const { return QString::fromStdString(m_combinedStats->nodeStats.addrLocal); }
-    QString type() const { return GUIUtil::ConnectionTypeToQString(m_combinedStats->nodeStats.m_conn_type, /*prepend_direction=*/true); }
+    QString type() const { return PeerStatsUtil::ConnectionTypeToQString(m_combinedStats->nodeStats.m_conn_type, /*prepend_direction=*/true); }
     QString version() const { return QString::number(m_combinedStats->nodeStats.nVersion); }
     QString userAgent() const { return QString::fromStdString(m_combinedStats->nodeStats.cleanSubVer); }
-    QString services() const { return GUIUtil::formatServicesStr(m_combinedStats->nodeStateStats.their_services); }
+    QString services() const { return PeerStatsUtil::FormatServicesStr(m_combinedStats->nodeStateStats.their_services); }
     bool transactionRelay() const { return m_combinedStats->nodeStateStats.m_relay_txs; }
     bool addressRelay() const { return m_combinedStats->nodeStateStats.m_addr_relay_enabled; }
     QString startingHeight() const { return QString::number(m_combinedStats->nodeStateStats.m_starting_height); }
     QString syncedHeaders() const { return QString::number(m_combinedStats->nodeStateStats.nSyncHeight); }
     QString syncedBlocks() const { return QString::number(m_combinedStats->nodeStateStats.nCommonHeight); }
     QString direction() const { return QString::fromStdString(m_combinedStats->nodeStats.fInbound ? "Inbound" : "Outbound"); }
-    QString connectionDuration() const { return GUIUtil::formatDurationStr(GetTime<std::chrono::seconds>() - m_combinedStats->nodeStats.m_connected); }
-    QString lastSend() const { return GUIUtil::formatDurationStr(GetTime<std::chrono::seconds>() - m_combinedStats->nodeStats.m_last_send); }
-    QString lastReceived() const { return GUIUtil::formatDurationStr(GetTime<std::chrono::seconds>() - m_combinedStats->nodeStats.m_last_recv); }
-    QString bytesSent() const { return GUIUtil::formatBytes(m_combinedStats->nodeStats.nSendBytes); }
-    QString bytesReceived() const { return GUIUtil::formatBytes(m_combinedStats->nodeStats.nRecvBytes); }
-    QString pingTime() const { return GUIUtil::formatPingTime(m_combinedStats->nodeStats.m_last_ping_time); }
-    QString pingMin() const { return GUIUtil::formatPingTime(m_combinedStats->nodeStats.m_min_ping_time); }
-    QString pingWait() const { return GUIUtil::formatPingTime(m_combinedStats->nodeStateStats.m_ping_wait); }
-    QString timeOffset() const { return GUIUtil::formatTimeOffset(Ticks<std::chrono::seconds>(m_combinedStats->nodeStateStats.time_offset)); }
+    QString connectionDuration() const { return PeerStatsUtil::FormatDurationStr(GetTime<std::chrono::seconds>() - m_combinedStats->nodeStats.m_connected); }
+    QString lastSend() const { return PeerStatsUtil::FormatDurationStr(GetTime<std::chrono::seconds>() - m_combinedStats->nodeStats.m_last_send); }
+    QString lastReceived() const { return PeerStatsUtil::FormatDurationStr(GetTime<std::chrono::seconds>() - m_combinedStats->nodeStats.m_last_recv); }
+    QString bytesSent() const { return PeerStatsUtil::FormatBytes(m_combinedStats->nodeStats.nSendBytes); }
+    QString bytesReceived() const { return PeerStatsUtil::FormatBytes(m_combinedStats->nodeStats.nRecvBytes); }
+    QString pingTime() const { return PeerStatsUtil::FormatPingTime(m_combinedStats->nodeStats.m_last_ping_time); }
+    QString pingMin() const { return PeerStatsUtil::FormatPingTime(m_combinedStats->nodeStats.m_min_ping_time); }
+    QString pingWait() const { return PeerStatsUtil::FormatPingTime(m_combinedStats->nodeStateStats.m_ping_wait); }
+    QString timeOffset() const { return PeerStatsUtil::FormatTimeOffset(Ticks<std::chrono::seconds>(m_combinedStats->nodeStateStats.time_offset)); }
     QString mappedAS() const { return m_combinedStats->nodeStats.m_mapped_as != 0 ? QString::number(m_combinedStats->nodeStats.m_mapped_as) : tr("N/A"); }
     QString permission() const {
         if (m_combinedStats->nodeStats.m_permission_flags == NetPermissionFlags::None) {
