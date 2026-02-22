@@ -5,13 +5,13 @@
 #ifndef BITCOIN_QML_MODELS_PEERLISTSORTPROXY_H
 #define BITCOIN_QML_MODELS_PEERLISTSORTPROXY_H
 
-#include <qt/peertablesortproxy.h>
 #include <QByteArray>
 #include <QHash>
 #include <QModelIndex>
+#include <QSortFilterProxyModel>
 #include <QVariant>
 
-class PeerListSortProxy : public PeerTableSortProxy
+class PeerListSortProxy : public QSortFilterProxyModel
 {
     Q_OBJECT
     Q_PROPERTY(QString sortBy READ sortBy WRITE setSortBy NOTIFY sortByChanged)
@@ -31,6 +31,7 @@ Q_SIGNALS:
     void sortByChanged(const QString & roleName);
 
 private:
+    bool lessThan(const QModelIndex& left_index, const QModelIndex& right_index) const override;
     int RoleNameToIndex(const QString & name) const;
     QString m_sort_by;
 };
