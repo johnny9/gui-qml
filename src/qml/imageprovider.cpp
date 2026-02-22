@@ -4,7 +4,7 @@
 
 #include <qml/imageprovider.h>
 
-#include <qt/networkstyle.h>
+#include <qml/networkstyle.h>
 
 #include <QFile>
 #include <QIcon>

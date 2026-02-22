@@ -149,10 +149,15 @@ PageStack {
                                 Layout.fillWidth: true
                                 Layout.preferredWidth: 0
                                 Layout.margins: 6
-                                wrap: false
                                 color: delegate.hovered ? Theme.color.orange : Theme.color.neutral9
                                 elide: Text.ElideMiddle
-                                text: delegate.label !== "" ? delegate.label : delegate.address
+                                text: {
+                                    if (delegate.label != "") {
+                                        delegate.label
+                                    } else {
+                                        delegate.address
+                                    }
+                                }
                                 font.pixelSize: 15
                                 horizontalAlignment: Text.AlignLeft
                                 clip: true
@@ -160,9 +165,7 @@ PageStack {
 
                             CoreText {
                                 Layout.alignment: Qt.AlignCenter
-                                Layout.preferredWidth: 110
                                 Layout.margins: 6
-                                wrap: false
                                 text: delegate.date
                                 font.pixelSize: 15
                                 horizontalAlignment: Text.AlignRight
@@ -170,9 +173,7 @@ PageStack {
 
                             CoreText {
                                 Layout.alignment: Qt.AlignCenter
-                                Layout.preferredWidth: 140
                                 Layout.margins: 6
-                                wrap: false
                                 text: delegate.amount
                                 font.pixelSize: 15
                                 horizontalAlignment: Text.AlignRight
@@ -196,7 +197,6 @@ PageStack {
                                     type: delegate.type
                                     status: delegate.status
                                     address: delegate.address
-                                    label: delegate.label
                                 }
                             }
                         }

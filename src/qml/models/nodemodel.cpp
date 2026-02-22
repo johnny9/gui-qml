@@ -7,7 +7,6 @@
 #include <interfaces/node.h>
 #include <net.h>
 #include <net_processing.h>
-#include <netbase.h>
 #include <node/interface_ui.h>
 #include <validation.h>
 
@@ -200,15 +199,21 @@ bool NodeModel::disconnectPeer(int nodeId)
     return m_node.disconnectById(nodeId);
 }
 
-bool NodeModel::banPeer(const QString& rawAddress, int64_t banDuration)
+bool NodeModel::banPeer(int nodeId, int banDuration)
 {
-    auto addr = LookupHost(rawAddress.toStdString(), /*fAllowLookup=*/false);
-    if (!addr) return false;
-    bool result = m_node.ban(*addr, banDuration);
-    if (result) {
-        m_node.disconnectByAddress(*addr);
+    interfaces::Node::NodesStats stats;
+    if (!m_node.getNodesStats(stats)) return false;
+    for (const auto& entry : stats) {
+        const CNodeStats& nodeStats = std::get<0>(entry);
+        if (nodeStats.nodeid == nodeId) {
+            bool result = m_node.ban(nodeStats.addr, banDuration);
+            if (result) {
+                m_node.disconnectByAddress(nodeStats.addr);
+            }
+            return result;
+        }
     }
-    return result;
+    return false;
 }
 
 void NodeModel::ConnectToBannedListChangedSignal()

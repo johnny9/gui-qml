@@ -1,4 +1,4 @@
-// Copyright (c) 2025-2026 The Bitcoin Core developers
+// Copyright (c) 2025 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,7 +6,6 @@
 #define BITCOIN_QML_MODELS_SENDRECIPIENT_H
 
 #include <qml/bitcoinamount.h>
-#include <qml/models/bitcoinaddress.h>
 
 #include <QObject>
 #include <QString>
@@ -16,7 +15,7 @@ class WalletQmlModel;
 class SendRecipient : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(BitcoinAddress* address READ address CONSTANT)
+    Q_PROPERTY(QString address READ address WRITE setAddress NOTIFY addressChanged)
     Q_PROPERTY(QString label READ label WRITE setLabel NOTIFY labelChanged)
     Q_PROPERTY(QString message READ message WRITE setMessage NOTIFY messageChanged)
     Q_PROPERTY(BitcoinAmount* amount READ amount CONSTANT)
@@ -28,7 +27,7 @@ class SendRecipient : public QObject
 public:
     explicit SendRecipient(WalletQmlModel* wallet, QObject* parent = nullptr);
 
-    BitcoinAddress* address() const;
+    QString address() const;
     void setAddress(const QString& address);
     QString addressError() const;
     void setAddressError(const QString& error);
@@ -65,7 +64,7 @@ private:
     void validateAmount();
 
     const WalletQmlModel* m_wallet;
-    BitcoinAddress* m_address;
+    QString m_address{""};
     QString m_addressError{""};
     QString m_label{""};
     QString m_message{""};

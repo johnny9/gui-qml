@@ -42,7 +42,6 @@ public:
 private:
     void refreshWallet();
     void updateTransactionStatus(QSharedPointer<Transaction> tx) const;
-    void updateTransactionLabel(QSharedPointer<Transaction> tx) const;
     void subsctribeToCoreSignals();
     void unsubscribeFromCoreSignals();
     void updateTransaction(const uint256& hash, const interfaces::WalletTxStatus& wtx,

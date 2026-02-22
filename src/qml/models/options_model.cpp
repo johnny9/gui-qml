@@ -8,12 +8,10 @@
 #include <common/settings.h>
 #include <common/system.h>
 #include <interfaces/node.h>
+#include <mapport.h>
 #include <node/caches.h>
 #include <node/chainstatemanager_args.h>
-#include <mapport.h>
-#include <qt/guiconstants.h>
-#include <qt/guiutil.h>
-#include <qt/optionsmodel.h>
+#include <qml/guiconstants.h>
 #include <txdb.h>
 #include <univalue.h>
 #include <util/fs.h>
@@ -25,6 +23,18 @@
 #include <QDebug>
 #include <QDir>
 #include <QSettings>
+
+namespace {
+int PruneMiBtoGB(int64_t mib)
+{
+    return (mib * 1024 * 1024 + GB_BYTES - 1) / GB_BYTES;
+}
+
+int64_t PruneGBtoMiB(int gb)
+{
+    return gb * GB_BYTES / 1024 / 1024;
+}
+} // namespace
 
 OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, bool is_onboarded)
     : m_node{node}

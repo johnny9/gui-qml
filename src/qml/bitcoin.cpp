@@ -20,7 +20,6 @@
 #include <noui.h>
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
-#include <qt/networkstyle.h>
 #include <qml/appmode.h>
 #include <qml/bitcoinamount.h>
 #include <qml/clipboard.h>
@@ -33,7 +32,6 @@
 #include <qml/imageprovider.h>
 #include <qml/models/activitylistmodel.h>
 #include <qml/models/banlistmodel.h>
-#include <qml/models/bitcoinaddress.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/networktraffictower.h>
 #include <qml/models/nodemodel.h>
@@ -46,14 +44,12 @@
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/qrimageprovider.h>
+#include <qml/networkstyle.h>
 #include <qml/util.h>
 #include <qml/walletqmlcontroller.h>
 #ifdef ENABLE_TEST_AUTOMATION
 #include <qml/test/testbridge.h>
 #endif
-#include <qt/guiutil.h>
-#include <qt/initexecutor.h>
-#include <qt/networkstyle.h>
 #include <util/threadnames.h>
 #include <util/translation.h>
 
@@ -63,6 +59,7 @@
 #include <tuple>
 
 #include <QDebug>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -113,7 +110,7 @@ AppMode SetupAppMode()
     #endif // __ANDROID__
 
     #ifdef ENABLE_WALLET
-        wallet_enabled = !gArgs.GetBoolArg("-disablewallet", false);
+        wallet_enabled = true;
     #else
         wallet_enabled = false;
     #endif // ENABLE_WALLET
@@ -181,6 +178,13 @@ void setupChainQSettings(QGuiApplication* app, QString chain)
         app->setApplicationName(QAPP_APP_NAME_SIGNET);
     } else if (chain.compare("REGTEST") == 0) {
         app->setApplicationName(QAPP_APP_NAME_REGTEST);
+    }
+}
+
+void LoadFontResource(const QString& path)
+{
+    if (QFontDatabase::addApplicationFont(path) < 0) {
+        qWarning() << "Failed to load font resource:" << path;
     }
 }
 } // namespace
@@ -266,9 +270,7 @@ int QmlGuiMain(int argc, char* argv[])
     InitExecutor init_executor{*node};
 #ifdef ENABLE_WALLET
     WalletQmlController wallet_controller(*node);
-    if (!gArgs.GetBoolArg("-disablewallet", false)) {
-        QObject::connect(&init_executor, &InitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
-    }
+    QObject::connect(&init_executor, &InitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &InitExecutor::initialize);
     QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
@@ -312,8 +314,8 @@ int QmlGuiMain(int argc, char* argv[])
     QObject::connect(&node_model, &NodeModel::nodeInitialized,
                      &ban_list_model, &BanListModel::refresh);
 
-    GUIUtil::LoadFont(":/fonts/inter/regular");
-    GUIUtil::LoadFont(":/fonts/inter/semibold");
+    LoadFontResource(":/fonts/inter/regular");
+    LoadFontResource(":/fonts/inter/semibold");
 
     QQmlApplicationEngine engine;
 
@@ -347,7 +349,6 @@ int QmlGuiMain(int argc, char* argv[])
     qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
     qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");
     qmlRegisterType<BitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
-    qmlRegisterType<BitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
     qmlRegisterUncreatableType<Transaction>("org.bitcoincore.qt", 1, 0, "Transaction", "");
     qmlRegisterUncreatableType<SendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "");
 

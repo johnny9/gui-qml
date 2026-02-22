@@ -42,15 +42,6 @@ void ActivityListModel::updateTransactionStatus(QSharedPointer<Transaction> tx) 
     }
 }
 
-void ActivityListModel::updateTransactionLabel(QSharedPointer<Transaction> tx) const
-{
-    if (m_wallet_model == nullptr) {
-        return;
-    }
-
-    tx->label = m_wallet_model->getAddressLabel(tx->address);
-}
-
 QVariant ActivityListModel::data(const QModelIndex &index, int role) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_transactions.size())
@@ -69,7 +60,6 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
     case DepthRole:
         return tx->depth;
     case LabelRole:
-        updateTransactionLabel(tx);
         return tx->label;
     case StatusRole:
         return tx->status;
