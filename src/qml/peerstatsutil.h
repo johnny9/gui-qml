@@ -14,7 +14,9 @@
 namespace PeerStatsUtil {
 
 QString ConnectionTypeToQString(ConnectionType conn_type, bool prepend_direction);
+QString NetworkToQString(Network net);
 QString FormatDurationStr(std::chrono::seconds dur);
+QString FormatPeerAge(std::chrono::seconds time_connected);
 QString FormatServicesStr(quint64 mask);
 QString FormatPingTime(std::chrono::microseconds ping_time);
 QString FormatTimeOffset(int64_t time_offset);

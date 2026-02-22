@@ -4,7 +4,7 @@
 
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/peerdetailsmodel.h>
-#include <qt/peertablemodel.h>
+#include <qml/models/qmlpeertablemodel.h>
 #include <util/check.h>
 
 PeerListSortProxy::PeerListSortProxy(QObject* parent)

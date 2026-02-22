@@ -36,6 +36,21 @@ QString ConnectionTypeToQString(ConnectionType conn_type, bool prepend_direction
     assert(false);
 }
 
+QString NetworkToQString(Network net)
+{
+    switch (net) {
+    case NET_UNROUTABLE: return QObject::tr("Unroutable");
+    case NET_IPV4: return QObject::tr("IPv4", "network name");
+    case NET_IPV6: return QObject::tr("IPv6", "network name");
+    case NET_ONION: return QObject::tr("Onion", "network name");
+    case NET_I2P: return QObject::tr("I2P", "network name");
+    case NET_CJDNS: return QObject::tr("CJDNS", "network name");
+    case NET_INTERNAL: return "Internal";
+    case NET_MAX: assert(false);
+    }
+    assert(false);
+}
+
 QString FormatDurationStr(std::chrono::seconds dur)
 {
     const auto d{std::chrono::duration_cast<std::chrono::days>(dur)};
@@ -50,6 +65,16 @@ QString FormatDurationStr(std::chrono::seconds dur)
     const auto s2{s.count()};
     if (s2 || str_list.empty()) str_list.append(QObject::tr("%1 s").arg(s2));
     return str_list.join(" ");
+}
+
+QString FormatPeerAge(std::chrono::seconds time_connected)
+{
+    const auto time_now{GetTime<std::chrono::seconds>()};
+    const auto age{time_now - time_connected};
+    if (age >= 24h) return QObject::tr("%1 d").arg(age / 24h);
+    if (age >= 1h) return QObject::tr("%1 h").arg(age / 1h);
+    if (age >= 1min) return QObject::tr("%1 m").arg(age / 1min);
+    return QObject::tr("%1 s").arg(age / 1s);
 }
 
 QString FormatServicesStr(quint64 mask)

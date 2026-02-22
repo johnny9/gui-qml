@@ -18,6 +18,9 @@
 #include <node/context.h>
 #include <node/interface_ui.h>
 #include <noui.h>
+#include <qt/guiutil.h>
+#include <qt/initexecutor.h>
+#include <qt/networkstyle.h>
 #include <qml/appmode.h>
 #include <qml/bitcoinamount.h>
 #include <qml/clipboard.h>
@@ -50,7 +53,6 @@
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
 #include <qt/networkstyle.h>
-#include <qt/peertablemodel.h>
 #include <util/threadnames.h>
 #include <util/translation.h>
 

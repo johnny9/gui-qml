@@ -5,10 +5,10 @@
 #ifndef BITCOIN_QML_MODELS_PEERDETAILSMODEL_H
 #define BITCOIN_QML_MODELS_PEERDETAILSMODEL_H
 
+#include <qml/models/qmlpeertablemodel.h>
 #include <qml/peerstatsutil.h>
 
 #include <QObject>
-#include <qt/peertablemodel.h>
 #include <util/time.h>
 
 class PeerDetailsModel : public QObject

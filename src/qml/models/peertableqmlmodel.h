@@ -5,7 +5,7 @@
 #ifndef BITCOIN_QML_MODELS_PEERTABLEQMLMODEL_H
 #define BITCOIN_QML_MODELS_PEERTABLEQMLMODEL_H
 
-#include <bitcoin/src/qt/peertablemodel.h>
+#include <qml/models/qmlpeertablemodel.h>
 
 #include <QObject>
 
