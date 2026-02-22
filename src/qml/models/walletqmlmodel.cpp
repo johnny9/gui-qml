@@ -14,7 +14,9 @@
 #include <interfaces/wallet.h>
 #include <key_io.h>
 #include <outputtype.h>
-#include <qt/bitcoinunits.h>
+#include <qml/bitcoinunits.h>
+#include <serialize.h>
+#include <streams.h>
 #include <wallet/coincontrol.h>
 #include <wallet/wallet.h>
 
@@ -52,7 +54,7 @@ QString WalletQmlModel::balance() const
     if (!m_wallet) {
         return "0";
     }
-    return BitcoinUnits::format(BitcoinUnits::Unit::BTC, m_wallet->getBalance());
+    return QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::BTC, m_wallet->getBalance());
 }
 
 CAmount WalletQmlModel::balanceSatoshi() const
