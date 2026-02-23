@@ -29,6 +29,26 @@ target_link_libraries(bitcoinqml_unit_tests
 
 add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests)
 
+add_executable(bitcoinqml_peerstatsutil_tests
+  test_peerstatsutil.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/peerstatsutil.cpp
+)
+
+target_include_directories(bitcoinqml_peerstatsutil_tests
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src
+)
+
+target_link_libraries(bitcoinqml_peerstatsutil_tests
+  PRIVATE
+    bitcoin_common
+    Qt6::Core
+    Qt6::Test
+)
+
+add_test(NAME bitcoinqml_peerstatsutil_tests COMMAND bitcoinqml_peerstatsutil_tests)
+
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
 )
