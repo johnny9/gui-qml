@@ -230,6 +230,23 @@ Page {
                 KeyValueRow { key: KeyText { text: qsTr("Min ping"); } value: NetStatValue { text: details.pingMin; }}
                 KeyValueRow { key: KeyText {text: qsTr("Time offset"); } value: NetStatValue { text: details.timeOffset; }}
             }
+
+            ContinueButton {
+                Layout.preferredWidth: parent.width / 4
+                Layout.topMargin: 10
+                text: qsTr("Disconnect")
+                borderColor: Theme.color.neutral6
+                borderHoverColor: Theme.color.orangeLight1
+                borderPressedColor: Theme.color.orangeLight2
+                bold: false
+                textColor: Theme.color.white
+                textHoverColor: Theme.color.orangeLight1
+                textPressedColor: Theme.color.orangeLight2
+                backgroundColor: "transparent"
+                backgroundHoverColor: "transparent"
+                backgroundPressedColor: "transparent"
+                onClicked: nodeModel.disconnectPeer(details.nodeId)
+            }
         }
     }
 

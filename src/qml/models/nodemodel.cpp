@@ -190,3 +190,8 @@ QString NodeModel::defaultProxyAddress()
 {
     return QString::fromStdString(std::string(DEFAULT_PROXY_HOST) + ":" + util::ToString(DEFAULT_PROXY_PORT));
 }
+
+bool NodeModel::disconnectPeer(int nodeId)
+{
+    return m_node.disconnectById(nodeId);
+}
