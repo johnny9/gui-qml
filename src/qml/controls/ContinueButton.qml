@@ -11,17 +11,20 @@ Button {
     hoverEnabled: AppMode.isDesktop
 
     property color textColor: Theme.color.white
+    property color textHoverColor: textColor
+    property color textPressedColor: textColor
     property color backgroundColor: Theme.color.orange
     property color backgroundHoverColor: Theme.color.orangeLight1
     property color backgroundPressedColor: Theme.color.orangeLight2
     property color borderColor: "transparent"
     property color borderHoverColor: "transparent"
     property color borderPressedColor: "transparent"
+    property bool bold: true
 
     contentItem: CoreText {
         text: parent.text
         color: root.textColor
-        bold: true
+        bold: bold
         font.pixelSize: 18
     }
     background: Rectangle {
@@ -42,11 +45,13 @@ Button {
                 name: "PRESSED"; when: root.pressed
                 PropertyChanges { target: bg; color: backgroundPressedColor }
                 PropertyChanges { target: bg; border.color: borderPressedColor }
+                PropertyChanges { target: root; textColor: textPressedColor }
             },
             State {
                 name: "HOVER"; when: root.hovered
                 PropertyChanges { target: bg; color: backgroundHoverColor }
                 PropertyChanges { target: bg; border.color: borderHoverColor }
+                PropertyChanges { target: root; textColor: textHoverColor }
             }
         ]
 
