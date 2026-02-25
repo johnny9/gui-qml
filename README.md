@@ -77,6 +77,7 @@ sudo apt install \
   qt6-tools-dev-tools \
   qt6-declarative-dev \
   qml6-module-qtquick \
+  qml6-module-qtquick-controls \
   qml6-module-qtquick-window \
   qml6-module-qtqml \
   libgl-dev \
@@ -135,4 +136,3 @@ ctest --test-dir build --output-on-failure
 
   - Debian/Ubuntu: `qt6-base-dev` provides the Qt Test module (already listed above).
   - macOS: set `CMAKE_PREFIX_PATH` as shown so CMake can locate Qt 6 modules.
-
