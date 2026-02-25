@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,6 +10,9 @@
 #include <QObject>
 #include <QQmlApplicationEngine>
 #include <QString>
+#include <QHash>
+#include <QJsonValue>
+#include <QSet>
 
 #include <vector>
 
@@ -23,7 +26,9 @@
 ///   {"cmd": "click", "objectName": "<name>"}
 ///   {"cmd": "set_text", "objectName": "<name>", "text": "<value>"}
 ///   {"cmd": "wait_for_page", "page": "<objectName>", "timeout": <ms>}
+///   {"cmd": "wait_for_property", "objectName": "<name>", "prop": "<property>", ...}
 ///   {"cmd": "get_text", "objectName": "<name>"}
+///   {"cmd": "save_screenshot", "path": "<png_path>"}
 ///   {"cmd": "list_objects"}
 class TestBridge : public QObject
 {
@@ -41,11 +46,17 @@ private Q_SLOTS:
     void handleClientDisconnected();
 
 private:
+    struct NamedObjectEntry {
+        QString object_name;
+        QString class_name;
+        int depth;
+    };
+
     /// Find a QObject by objectName, searching the entire QML tree.
     QObject* findObjectByName(const QString& name) const;
 
     /// Recursively collect all named objects from the QML tree.
-    void collectNamedObjects(QObject* root, std::vector<std::pair<QString, QString>>& results) const;
+    void collectNamedObjects(QObject* root, std::vector<NamedObjectEntry>& results, QSet<const QObject*>& visited, int depth) const;
 
     /// Process a single JSON command and return the JSON response.
     QByteArray processCommand(const QByteArray& json_cmd);
@@ -56,7 +67,9 @@ private:
     QByteArray cmdClick(const QString& object_name);
     QByteArray cmdSetText(const QString& object_name, const QString& text);
     QByteArray cmdWaitForPage(const QString& page_name, int timeout_ms);
+    QByteArray cmdWaitForProperty(const QString& object_name, const QString& prop, int timeout_ms, const QJsonValue& expected, bool has_expected, const QString& contains, bool non_empty);
     QByteArray cmdGetText(const QString& object_name);
+    QByteArray cmdSaveScreenshot(const QString& path);
     QByteArray cmdListObjects();
 
     /// Build a JSON error response.
@@ -65,7 +78,7 @@ private:
     QQmlApplicationEngine* m_engine;
     QLocalServer* m_server;
     std::vector<QLocalSocket*> m_clients;
-    QByteArray m_read_buffer;
+    QHash<QLocalSocket*, QByteArray> m_read_buffers;
 };
 
 #endif // BITCOIN_QML_TEST_TESTBRIDGE_H

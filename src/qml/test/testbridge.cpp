@@ -11,7 +11,6 @@
 #include <QMetaObject>
 #include <QMetaProperty>
 #include <QImage>
-#include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QThread>
