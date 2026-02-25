@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Bitcoin Core developers
+// Copyright (c) 2021-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -39,7 +39,7 @@
 #include <qml/models/options_model.h>
 #include <qml/models/peerdetailsmodel.h>
 #include <qml/models/peerlistsortproxy.h>
-#include <qml/models/peertableqmlmodel.h>
+#include <qml/models/peerlistmodel.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/walletlistmodel.h>
 #include <qml/models/walletqmlmodel.h>
@@ -299,7 +299,7 @@ int QmlGuiMain(int argc, char* argv[])
         node->startShutdown();
     });
 
-    PeerTableQmlModel peer_model{*node, nullptr};
+    QmlPeerTableModel peer_model{*node, nullptr};
     PeerListSortProxy peer_model_sort_proxy{nullptr};
     peer_model_sort_proxy.setSourceModel(&peer_model);
 

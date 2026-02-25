@@ -1,11 +1,11 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_QML_MODELS_PEERDETAILSMODEL_H
 #define BITCOIN_QML_MODELS_PEERDETAILSMODEL_H
 
-#include <qml/models/qmlpeertablemodel.h>
+#include <qml/models/peerlistmodel.h>
 #include <qml/peerstatsutil.h>
 
 #include <QObject>
@@ -40,7 +40,7 @@ class PeerDetailsModel : public QObject
     Q_PROPERTY(QString permission READ permission NOTIFY dataChanged)
 
 public:
-    explicit PeerDetailsModel(CNodeCombinedStats* nodeStats, PeerTableModel* model);
+    explicit PeerDetailsModel(CNodeCombinedStats* nodeStats, QmlPeerTableModel* model);
 
     int nodeId() const { return m_combinedStats->nodeStats.nodeid; }
     QString address() const { return QString::fromStdString(m_combinedStats->nodeStats.m_addr_name); }
@@ -87,7 +87,7 @@ private Q_SLOTS:
 private:
     int m_row;
     CNodeCombinedStats* m_combinedStats;
-    PeerTableModel* m_model;
+    QmlPeerTableModel* m_model;
     bool m_disconnected;
 };
 

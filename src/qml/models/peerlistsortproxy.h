@@ -1,4 +1,4 @@
-// Copyright (c) 2023 The Bitcoin Core developers
+// Copyright (c) 2023-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -32,7 +32,8 @@ Q_SIGNALS:
 
 private:
     bool lessThan(const QModelIndex& left_index, const QModelIndex& right_index) const override;
-    int RoleNameToIndex(const QString & name) const;
+    int RoleNameToRole(const QString & name) const;
+    int m_sort_role{0};
     QString m_sort_by;
 };
 
