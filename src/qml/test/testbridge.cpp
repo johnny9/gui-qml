@@ -10,6 +10,7 @@
 #include <QMetaMethod>
 #include <QMetaObject>
 #include <QMetaProperty>
+#include <QImage>
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -49,6 +50,7 @@ void TestBridge::handleNewConnection()
 {
     while (QLocalSocket* client = m_server->nextPendingConnection()) {
         m_clients.push_back(client);
+        m_read_buffers.insert(client, QByteArray{});
         connect(client, &QLocalSocket::readyRead, this, &TestBridge::handleClientData);
         connect(client, &QLocalSocket::disconnected, this, &TestBridge::handleClientDisconnected);
         qInfo("TestBridge: client connected");
@@ -60,13 +62,14 @@ void TestBridge::handleClientData()
     auto* client = qobject_cast<QLocalSocket*>(sender());
     if (!client) return;
 
-    m_read_buffer.append(client->readAll());
+    QByteArray& read_buffer = m_read_buffers[client];
+    read_buffer.append(client->readAll());
 
     // Process newline-delimited JSON commands.
     int newline_pos;
-    while ((newline_pos = m_read_buffer.indexOf('\n')) != -1) {
-        QByteArray line = m_read_buffer.left(newline_pos);
-        m_read_buffer.remove(0, newline_pos + 1);
+    while ((newline_pos = read_buffer.indexOf('\n')) != -1) {
+        QByteArray line = read_buffer.left(newline_pos);
+        read_buffer.remove(0, newline_pos + 1);
 
         if (line.trimmed().isEmpty()) continue;
 
@@ -86,6 +89,7 @@ void TestBridge::handleClientDisconnected()
     if (it != m_clients.end()) {
         m_clients.erase(it);
     }
+    m_read_buffers.remove(client);
     client->deleteLater();
     qInfo("TestBridge: client disconnected");
 }
@@ -112,24 +116,27 @@ QObject* TestBridge::findObjectByName(const QString& name) const
     return nullptr;
 }
 
-void TestBridge::collectNamedObjects(QObject* root, std::vector<std::pair<QString, QString>>& results) const
+void TestBridge::collectNamedObjects(QObject* root, std::vector<NamedObjectEntry>& results, QSet<const QObject*>& visited, int depth) const
 {
     if (!root) return;
+    if (visited.contains(root)) return;
+    visited.insert(root);
+
     if (!root->objectName().isEmpty()) {
-        results.emplace_back(root->objectName(),
-                             QString::fromLatin1(root->metaObject()->className()));
+        NamedObjectEntry named_entry;
+        named_entry.object_name = root->objectName();
+        named_entry.class_name = QString::fromLatin1(root->metaObject()->className());
+        named_entry.depth = depth;
+        results.push_back(named_entry);
     }
     for (QObject* child : root->children()) {
-        collectNamedObjects(child, results);
+        collectNamedObjects(child, results, visited, depth + 1);
     }
     // Also traverse visual children for QQuickItem-based trees.
     auto* item = qobject_cast<QQuickItem*>(root);
     if (item) {
         for (QQuickItem* visual_child : item->childItems()) {
-            // Avoid duplicates — only traverse if not already a QObject child.
-            if (visual_child->parent() != root) {
-                collectNamedObjects(visual_child, results);
-            }
+            collectNamedObjects(visual_child, results, visited, depth + 1);
         }
     }
 }
@@ -161,8 +168,19 @@ QByteArray TestBridge::processCommand(const QByteArray& json_cmd)
         return cmdWaitForPage(
             obj.value(QStringLiteral("page")).toString(),
             obj.value(QStringLiteral("timeout")).toInt(5000));
+    } else if (cmd == QLatin1String("wait_for_property")) {
+        return cmdWaitForProperty(
+            obj.value(QStringLiteral("objectName")).toString(),
+            obj.value(QStringLiteral("prop")).toString(),
+            obj.value(QStringLiteral("timeout")).toInt(5000),
+            obj.value(QStringLiteral("value")),
+            obj.contains(QStringLiteral("value")),
+            obj.value(QStringLiteral("contains")).toString(),
+            obj.value(QStringLiteral("nonEmpty")).toBool(false));
     } else if (cmd == QLatin1String("get_text")) {
         return cmdGetText(obj.value(QStringLiteral("objectName")).toString());
+    } else if (cmd == QLatin1String("save_screenshot")) {
+        return cmdSaveScreenshot(obj.value(QStringLiteral("path")).toString());
     } else if (cmd == QLatin1String("list_objects")) {
         return cmdListObjects();
     }
@@ -276,21 +294,38 @@ QByteArray TestBridge::cmdClick(const QString& object_name)
     // For QQuickItem-based controls, we can also simulate a mouse click.
     auto* item = qobject_cast<QQuickItem*>(obj);
 
-    // First, try to find and invoke a "clicked" signal.
     const QMetaObject* meta = obj->metaObject();
-    int clicked_index = meta->indexOfSignal("clicked()");
-    if (clicked_index >= 0) {
-        meta->method(clicked_index).invoke(obj, Qt::DirectConnection);
+
+    // Prefer real click()/trigger()/toggle() methods so buttons update state
+    // (e.g. checked tabs in a ButtonGroup) rather than only emitting signals.
+    int click_method_index = meta->indexOfMethod("click()");
+    if (click_method_index >= 0) {
+        meta->method(click_method_index).invoke(obj, Qt::DirectConnection);
         QJsonObject resp;
         resp[QStringLiteral("ok")] = true;
         return QJsonDocument(resp).toJson(QJsonDocument::Compact);
     }
 
-    // Fallback: for QQuickItems, try the "toggle" or "trigger" method
-    // or directly invoke via AbstractButton's clicked().
+    int trigger_index = meta->indexOfMethod("trigger()");
+    if (trigger_index >= 0) {
+        meta->method(trigger_index).invoke(obj, Qt::DirectConnection);
+        QJsonObject resp;
+        resp[QStringLiteral("ok")] = true;
+        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+    }
+
     int toggle_index = meta->indexOfMethod("toggle()");
     if (toggle_index >= 0) {
         meta->method(toggle_index).invoke(obj, Qt::DirectConnection);
+        QJsonObject resp;
+        resp[QStringLiteral("ok")] = true;
+        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+    }
+
+    // Then try to find and invoke a "clicked" signal.
+    int clicked_index = meta->indexOfSignal("clicked()");
+    if (clicked_index >= 0) {
+        meta->method(clicked_index).invoke(obj, Qt::DirectConnection);
         QJsonObject resp;
         resp[QStringLiteral("ok")] = true;
         return QJsonDocument(resp).toJson(QJsonDocument::Compact);
@@ -335,6 +370,19 @@ QByteArray TestBridge::cmdSetText(const QString& object_name, const QString& tex
     // Try "text" property first (covers TextField, TextInput, TextArea, etc.)
     if (obj->property("text").isValid()) {
         obj->setProperty("text", text);
+
+        // Trigger edit hooks so model-backed fields that update on textEdited
+        // or editingFinished are deterministic under test automation.
+        const QMetaObject* meta = obj->metaObject();
+        if (int idx = meta->indexOfSignal("textEdited(QString)"); idx >= 0) {
+            meta->method(idx).invoke(obj, Qt::DirectConnection, Q_ARG(QString, text));
+        }
+        if (int idx = meta->indexOfSignal("editingFinished()"); idx >= 0) {
+            meta->method(idx).invoke(obj, Qt::DirectConnection);
+        } else if (int idx = meta->indexOfMethod("editingFinished()"); idx >= 0) {
+            meta->method(idx).invoke(obj, Qt::DirectConnection);
+        }
+
         QJsonObject resp;
         resp[QStringLiteral("ok")] = true;
         return QJsonDocument(resp).toJson(QJsonDocument::Compact);
@@ -358,7 +406,9 @@ QByteArray TestBridge::cmdWaitForPage(const QString& page_name, int timeout_ms)
         QObject* obj = findObjectByName(page_name);
         if (obj) {
             auto* item = qobject_cast<QQuickItem*>(obj);
-            if (!item || item->isVisible()) {
+            const QVariant visible = obj->property("visible");
+            const bool is_visible = item ? item->isVisible() : (!visible.isValid() || visible.toBool());
+            if (is_visible) {
                 QJsonObject resp;
                 resp[QStringLiteral("ok")] = true;
                 return QJsonDocument(resp).toJson(QJsonDocument::Compact);
@@ -372,6 +422,47 @@ QByteArray TestBridge::cmdWaitForPage(const QString& page_name, int timeout_ms)
     }
 
     return errorResponse(QStringLiteral("Timed out waiting for page: %1").arg(page_name));
+}
+
+QByteArray TestBridge::cmdWaitForProperty(const QString& object_name, const QString& prop, int timeout_ms, const QJsonValue& expected, bool has_expected, const QString& contains, bool non_empty)
+{
+    if (object_name.isEmpty() || prop.isEmpty()) {
+        return errorResponse(QStringLiteral("objectName and prop are required"));
+    }
+
+    const int poll_interval_ms = 50;
+    int elapsed = 0;
+
+    while (elapsed < timeout_ms) {
+        QObject* obj = findObjectByName(object_name);
+        if (obj) {
+            QVariant value = obj->property(prop.toLatin1().constData());
+            if (value.isValid()) {
+                bool matched = true;
+
+                if (!contains.isEmpty()) {
+                    matched = value.toString().contains(contains);
+                } else if (non_empty) {
+                    matched = !value.toString().trimmed().isEmpty();
+                } else if (has_expected) {
+                    matched = (QJsonValue::fromVariant(value) == expected);
+                }
+
+                if (matched) {
+                    QJsonObject resp;
+                    resp[QStringLiteral("ok")] = true;
+                    resp[QStringLiteral("value")] = QJsonValue::fromVariant(value);
+                    return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+                }
+            }
+        }
+
+        QCoreApplication::processEvents(QEventLoop::AllEvents, poll_interval_ms);
+        QThread::msleep(poll_interval_ms);
+        elapsed += poll_interval_ms;
+    }
+
+    return errorResponse(QStringLiteral("Timed out waiting for property: %1.%2").arg(object_name, prop));
 }
 
 QByteArray TestBridge::cmdGetText(const QString& object_name)
@@ -395,19 +486,58 @@ QByteArray TestBridge::cmdGetText(const QString& object_name)
     return QJsonDocument(resp).toJson(QJsonDocument::Compact);
 }
 
+QByteArray TestBridge::cmdSaveScreenshot(const QString& path)
+{
+    if (path.isEmpty()) {
+        return errorResponse(QStringLiteral("path is required"));
+    }
+
+    QQuickWindow* window = nullptr;
+    for (QObject* root : m_engine->rootObjects()) {
+        window = qobject_cast<QQuickWindow*>(root);
+        if (window) break;
+    }
+    if (!window) {
+        return errorResponse(QStringLiteral("No QQuickWindow root object found"));
+    }
+
+    // Let pending UI updates settle before capturing.
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QThread::msleep(50);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    const QImage image = window->grabWindow();
+    if (image.isNull()) {
+        return errorResponse(QStringLiteral("Failed to capture screenshot"));
+    }
+
+    if (!image.save(path, "PNG")) {
+        return errorResponse(QStringLiteral("Failed to save screenshot: %1").arg(path));
+    }
+
+    QJsonObject resp;
+    resp[QStringLiteral("ok")] = true;
+    resp[QStringLiteral("path")] = path;
+    resp[QStringLiteral("width")] = image.width();
+    resp[QStringLiteral("height")] = image.height();
+    return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+}
+
 QByteArray TestBridge::cmdListObjects()
 {
-    std::vector<std::pair<QString, QString>> objects;
+    std::vector<NamedObjectEntry> objects;
+    QSet<const QObject*> visited;
     for (QObject* root : m_engine->rootObjects()) {
-        collectNamedObjects(root, objects);
+        collectNamedObjects(root, objects, visited, 0);
     }
 
     QJsonArray arr;
-    for (const auto& [name, class_name] : objects) {
-        QJsonObject entry;
-        entry[QStringLiteral("objectName")] = name;
-        entry[QStringLiteral("className")] = class_name;
-        arr.append(entry);
+    for (const auto& obj_entry : objects) {
+        QJsonObject json_entry;
+        json_entry[QStringLiteral("objectName")] = obj_entry.object_name;
+        json_entry[QStringLiteral("className")] = obj_entry.class_name;
+        json_entry[QStringLiteral("depth")] = obj_entry.depth;
+        arr.append(json_entry);
     }
 
     QJsonObject resp;
