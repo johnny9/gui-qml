@@ -35,6 +35,7 @@ jobs:
             qt6-declarative-dev \
             qml6-module-qtquick \
             qml6-module-qtqml \
+            qml6-module-qtqml-workerscript \
             libgl-dev \
             libqrencode-dev
 
@@ -49,4 +50,3 @@ jobs:
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
-
