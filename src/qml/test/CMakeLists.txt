@@ -2,14 +2,17 @@ cmake_minimum_required(VERSION 3.22)
 
 # Tests for the QML/Qt6 app
 
-find_package(Qt 6.2 MODULE REQUIRED COMPONENTS Core Test Qml Quick QuickTest)
+find_package(Qt 6.2 MODULE REQUIRED COMPONENTS Core Gui Test Qml Quick QuickTest)
 
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
   test_bitcoinamount.cpp
   test_qmlbitcoinunits.cpp
+  test_networkstyle.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinunits.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/networkstyle.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
 )
 
 target_compile_definitions(bitcoinqml_unit_tests
@@ -26,6 +29,8 @@ target_include_directories(bitcoinqml_unit_tests
 target_link_libraries(bitcoinqml_unit_tests
   PRIVATE
     Qt6::Core
+    Qt6::Gui
+    Qt6::Quick
     Qt6::Test
 )
 
