@@ -8,9 +8,11 @@ add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
   test_bitcoinamount.cpp
   test_qmlbitcoinunits.cpp
+  test_imageprovider.cpp
   test_networkstyle.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinunits.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/imageprovider.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/networkstyle.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
 )
