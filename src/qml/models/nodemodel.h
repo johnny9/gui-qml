@@ -85,6 +85,7 @@ Q_SIGNALS:
 
     void setTimeRatioList(int new_time);
     void setTimeRatioListInitial();
+    void nodeInitialized();
     void bannedListChanged();
 
 protected:

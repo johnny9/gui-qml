@@ -123,6 +123,7 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
     setVerificationProgress(tip_info.verification_progress);
 
     Q_EMIT setTimeRatioListInitial();
+    Q_EMIT nodeInitialized();
 }
 
 void NodeModel::startShutdownPolling()

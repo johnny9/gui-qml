@@ -29,7 +29,7 @@
 #include <qml/guiconstants.h>
 #include <qml/imageprovider.h>
 #include <qml/models/activitylistmodel.h>
-#include <qml/models/bantableqmlmodel.h>
+#include <qml/models/banlistmodel.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/networktraffictower.h>
 #include <qml/models/nodemodel.h>
@@ -295,11 +295,11 @@ int QmlGuiMain(int argc, char* argv[])
     PeerListSortProxy peer_model_sort_proxy{nullptr};
     peer_model_sort_proxy.setSourceModel(&peer_model);
 
-    BanTableQmlModel ban_table_model{*node, nullptr};
+    BanListModel ban_list_model{*node, nullptr};
     QObject::connect(&node_model, &NodeModel::bannedListChanged,
-                     &ban_table_model, &BanTableQmlModel::refresh);
-    QObject::connect(&node_model, &NodeModel::setTimeRatioListInitial,
-                     &ban_table_model, &BanTableQmlModel::refresh);
+                     &ban_list_model, &BanListModel::refresh);
+    QObject::connect(&node_model, &NodeModel::nodeInitialized,
+                     &ban_list_model, &BanListModel::refresh);
 
     GUIUtil::LoadFont(":/fonts/inter/regular");
     GUIUtil::LoadFont(":/fonts/inter/semibold");
@@ -316,7 +316,7 @@ int QmlGuiMain(int argc, char* argv[])
     engine.rootContext()->setContextProperty("chainModel", &chain_model);
     engine.rootContext()->setContextProperty("peerTableModel", &peer_model);
     engine.rootContext()->setContextProperty("peerListModelProxy", &peer_model_sort_proxy);
-    engine.rootContext()->setContextProperty("banTableModel", &ban_table_model);
+    engine.rootContext()->setContextProperty("banListModel", &ban_list_model);
 #ifdef ENABLE_WALLET
     WalletListModel wallet_list_model{*node, nullptr};
     engine.rootContext()->setContextProperty("walletController", &wallet_controller);

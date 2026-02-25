@@ -1,4 +1,4 @@
-// Copyright (c) 2025 The Bitcoin Core developers
+// Copyright (c) 2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -33,7 +33,7 @@ Page {
         width: Math.min(parent.width - 40, 450)
         height: parent.height
         anchors.horizontalCenter: parent.horizontalCenter
-        model: banTableModel
+        model: banListModel
         spacing: 15
 
         header: ColumnLayout {
@@ -92,7 +92,7 @@ Page {
                     bold: false
                     horizontalPadding: 24
                     text: qsTr("Unban")
-                    onClicked: banTableModel.unbanAt(index)
+                    onClicked: banListModel.unbanAt(index)
                 }
             }
         }

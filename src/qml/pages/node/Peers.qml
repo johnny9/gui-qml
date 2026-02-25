@@ -168,8 +168,8 @@ Page {
 
                 TextButton {
                     Layout.alignment: Qt.AlignHCenter
-                    visible: banTableModel.count > 0
-                    text: qsTr("View %1 banned %2").arg(banTableModel.count).arg(banTableModel.count === 1 ? qsTr("peer") : qsTr("peers"))
+                    visible: banListModel.count > 0
+                    text: qsTr("View %1 banned %2").arg(banListModel.count).arg(banListModel.count === 1 ? qsTr("peer") : qsTr("peers"))
                     textSize: 13
                     bold: false
                     onClicked: root.bannedPeers()

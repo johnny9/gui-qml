@@ -24,7 +24,7 @@ Button {
     contentItem: CoreText {
         text: parent.text
         color: root.textColor
-        bold: bold
+        bold: root.bold
         font.pixelSize: 18
     }
     background: Rectangle {
