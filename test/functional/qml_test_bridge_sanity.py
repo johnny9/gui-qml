@@ -26,12 +26,16 @@ def run_tests():
         print("\nTest 1: list_objects")
         objects = gui.list_objects()
         assert isinstance(objects, list), "list_objects should return a list"
+        object_names = {obj["objectName"] for obj in objects}
+        assert "mainPageStack" in object_names, \
+            "Expected mainPageStack in list_objects output"
         print(f"  Found {len(objects)} named object(s) in QML tree.")
         if objects:
             for obj in objects[:10]:
                 print(f"    - {obj['objectName']} ({obj['className']})")
             if len(objects) > 10:
                 print(f"    ... and {len(objects) - 10} more")
+        print("  Found mainPageStack")
         print("  PASSED")
 
         # ── Test 2: get_current_page ─────────────────────────────

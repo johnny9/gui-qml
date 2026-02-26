@@ -147,6 +147,32 @@ QObject* TestBridge::findObjectByName(const QString& name) const
     return nullptr;
 }
 
+QObject* TestBridge::resolveCurrentLeafItem(QObject* item) const
+{
+    QObject* current = item;
+    QSet<const QObject*> seen;
+    int guard = 0;
+
+    while (current && guard < 64 && !seen.contains(current)) {
+        seen.insert(current);
+        ++guard;
+
+        const QVariant depth = current->property("depth");
+        const QVariant current_item = current->property("currentItem");
+        if (!depth.isValid() || !current_item.isValid()) {
+            return current;
+        }
+
+        QObject* next = current_item.value<QObject*>();
+        if (!next) {
+            return current;
+        }
+        current = next;
+    }
+
+    return current;
+}
+
 void TestBridge::collectNamedObjects(QObject* root, std::vector<NamedObjectEntry>& results, QSet<const QObject*>& visited, int depth) const
 {
     if (!root) return;
@@ -231,19 +257,14 @@ QByteArray TestBridge::cmdGetCurrentPage()
         return QJsonDocument(resp).toJson(QJsonDocument::Compact);
     };
 
-    // Preferred path: read precomputed page information exposed by main.qml.
+    // Preferred path: resolve from the named main PageStack in main.qml.
     for (QObject* root : m_engine->rootObjects()) {
-        QVariant page_item = root->property("testCurrentPageItem");
-        QObject* page_obj = page_item.value<QObject*>();
+        QObject* main_stack = root->findChild<QObject*>(QStringLiteral("mainPageStack"));
+        if (!main_stack) continue;
+
+        QObject* page_obj = resolveCurrentLeafItem(main_stack->property("currentItem").value<QObject*>());
         if (page_obj) {
             return pageResponse(page_obj);
-        }
-
-        const QString page_name = root->property("testCurrentPageName").toString();
-        if (!page_name.isEmpty()) {
-            QJsonObject resp;
-            resp[QStringLiteral("page")] = page_name;
-            return QJsonDocument(resp).toJson(QJsonDocument::Compact);
         }
     }
 
@@ -253,13 +274,13 @@ QByteArray TestBridge::cmdGetCurrentPage()
         QVariant current = root->property("currentItem");
         if (!depth.isValid() || !current.isValid()) continue;
 
-        QObject* current_obj = current.value<QObject*>();
+        QObject* current_obj = resolveCurrentLeafItem(current.value<QObject*>());
         if (current_obj) {
             return pageResponse(current_obj);
         }
     }
 
-    return errorResponse(QStringLiteral("Could not determine current page; missing testCurrentPageItem/testCurrentPageName"));
+    return errorResponse(QStringLiteral("Could not determine current page; missing mainPageStack/current page item"));
 }
 
 QByteArray TestBridge::cmdGetProperty(const QString& object_name, const QString& prop)

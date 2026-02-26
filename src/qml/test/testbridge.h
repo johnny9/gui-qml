@@ -54,6 +54,7 @@ private:
 
     /// Find a QObject by objectName, searching the entire QML tree.
     QObject* findObjectByName(const QString& name) const;
+    QObject* resolveCurrentLeafItem(QObject* item) const;
 
     /// Recursively collect all named objects from the QML tree.
     void collectNamedObjects(QObject* root, std::vector<NamedObjectEntry>& results, QSet<const QObject*>& visited, int depth) const;
