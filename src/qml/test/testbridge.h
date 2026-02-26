@@ -60,6 +60,7 @@ private:
 
     /// Process a single JSON command and return the JSON response.
     QByteArray processCommand(const QByteArray& json_cmd);
+    void processClientCommands(QLocalSocket* client);
 
     /// Dispatch individual command handlers.
     QByteArray cmdGetCurrentPage();
@@ -79,6 +80,8 @@ private:
     QLocalServer* m_server;
     std::vector<QLocalSocket*> m_clients;
     QHash<QLocalSocket*, QByteArray> m_read_buffers;
+    bool m_processing_client_data{false};
+    bool m_pending_client_data{false};
 };
 
 #endif // BITCOIN_QML_TEST_TESTBRIDGE_H

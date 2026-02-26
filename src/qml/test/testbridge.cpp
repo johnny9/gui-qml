@@ -10,9 +10,12 @@
 #include <QMetaMethod>
 #include <QMetaObject>
 #include <QMetaProperty>
+#include <QEventLoop>
 #include <QImage>
+#include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScopedValueRollback>
 #include <QThread>
 #include <QTimer>
 #include <QVariant>
@@ -58,11 +61,37 @@ void TestBridge::handleNewConnection()
 
 void TestBridge::handleClientData()
 {
-    auto* client = qobject_cast<QLocalSocket*>(sender());
+    if (m_processing_client_data) {
+        // A nested event loop is active while executing a command. Defer any
+        // re-entrant readyRead delivery until the active command completes.
+        m_pending_client_data = true;
+        return;
+    }
+
+    QScopedValueRollback<bool> processing_guard(m_processing_client_data, true);
+
+    do {
+        m_pending_client_data = false;
+        std::vector<QPointer<QLocalSocket>> clients_snapshot;
+        clients_snapshot.reserve(m_clients.size());
+        for (QLocalSocket* client : m_clients) {
+            clients_snapshot.emplace_back(client);
+        }
+        for (const QPointer<QLocalSocket>& client : clients_snapshot) {
+            if (!client) continue;
+            processClientCommands(client.data());
+        }
+    } while (m_pending_client_data);
+}
+
+void TestBridge::processClientCommands(QLocalSocket* client)
+{
     if (!client) return;
 
     QByteArray& read_buffer = m_read_buffers[client];
-    read_buffer.append(client->readAll());
+    if (client->bytesAvailable() > 0) {
+        read_buffer.append(client->readAll());
+    }
 
     // Process newline-delimited JSON commands.
     int newline_pos;
@@ -73,6 +102,9 @@ void TestBridge::handleClientData()
         if (line.trimmed().isEmpty()) continue;
 
         QByteArray response = processCommand(line);
+        if (client->state() != QLocalSocket::ConnectedState) {
+            return;
+        }
         response.append('\n');
         client->write(response);
         client->flush();
@@ -369,28 +401,44 @@ QByteArray TestBridge::cmdWaitForPage(const QString& page_name, int timeout_ms)
         return errorResponse(QStringLiteral("page is required"));
     }
 
-    // Poll for the page to appear. We process events between checks.
-    const int poll_interval_ms = 50;
-    int elapsed = 0;
-
-    while (elapsed < timeout_ms) {
-        // Check if the requested page/object exists and is visible.
+    auto conditionMatched = [&]() {
         QObject* obj = findObjectByName(page_name);
-        if (obj) {
-            auto* item = qobject_cast<QQuickItem*>(obj);
-            const QVariant visible = obj->property("visible");
-            const bool is_visible = item ? item->isVisible() : (!visible.isValid() || visible.toBool());
-            if (is_visible) {
-                QJsonObject resp;
-                resp[QStringLiteral("ok")] = true;
-                return QJsonDocument(resp).toJson(QJsonDocument::Compact);
-            }
-        }
+        if (!obj) return false;
 
-        // Process pending events to let the UI update.
-        QCoreApplication::processEvents(QEventLoop::AllEvents, poll_interval_ms);
-        QThread::msleep(poll_interval_ms);
-        elapsed += poll_interval_ms;
+        auto* item = qobject_cast<QQuickItem*>(obj);
+        const QVariant visible = obj->property("visible");
+        return item ? item->isVisible() : (!visible.isValid() || visible.toBool());
+    };
+
+    if (conditionMatched()) {
+        QJsonObject resp;
+        resp[QStringLiteral("ok")] = true;
+        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+    }
+
+    QEventLoop wait_loop;
+    QTimer timeout_timer;
+    timeout_timer.setSingleShot(true);
+    timeout_timer.setInterval(std::max(0, timeout_ms));
+
+    QTimer poll_timer;
+    poll_timer.setInterval(50);
+
+    QObject::connect(&timeout_timer, &QTimer::timeout, &wait_loop, &QEventLoop::quit);
+    QObject::connect(&poll_timer, &QTimer::timeout, &wait_loop, [&]() {
+        if (conditionMatched()) {
+            wait_loop.quit();
+        }
+    });
+
+    timeout_timer.start();
+    poll_timer.start();
+    wait_loop.exec();
+
+    if (conditionMatched()) {
+        QJsonObject resp;
+        resp[QStringLiteral("ok")] = true;
+        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
     }
 
     return errorResponse(QStringLiteral("Timed out waiting for page: %1").arg(page_name));
@@ -402,36 +450,62 @@ QByteArray TestBridge::cmdWaitForProperty(const QString& object_name, const QStr
         return errorResponse(QStringLiteral("objectName and prop are required"));
     }
 
-    const int poll_interval_ms = 50;
-    int elapsed = 0;
-
-    while (elapsed < timeout_ms) {
+    auto conditionMatched = [&](QVariant* out_value) {
         QObject* obj = findObjectByName(object_name);
-        if (obj) {
-            QVariant value = obj->property(prop.toLatin1().constData());
-            if (value.isValid()) {
-                bool matched = true;
+        if (!obj) return false;
 
-                if (!contains.isEmpty()) {
-                    matched = value.toString().contains(contains);
-                } else if (non_empty) {
-                    matched = !value.toString().trimmed().isEmpty();
-                } else if (has_expected) {
-                    matched = (QJsonValue::fromVariant(value) == expected);
-                }
+        QVariant value = obj->property(prop.toLatin1().constData());
+        if (!value.isValid()) return false;
 
-                if (matched) {
-                    QJsonObject resp;
-                    resp[QStringLiteral("ok")] = true;
-                    resp[QStringLiteral("value")] = QJsonValue::fromVariant(value);
-                    return QJsonDocument(resp).toJson(QJsonDocument::Compact);
-                }
-            }
+        bool matched = true;
+        if (!contains.isEmpty()) {
+            matched = value.toString().contains(contains);
+        } else if (non_empty) {
+            matched = !value.toString().trimmed().isEmpty();
+        } else if (has_expected) {
+            matched = (QJsonValue::fromVariant(value) == expected);
         }
 
-        QCoreApplication::processEvents(QEventLoop::AllEvents, poll_interval_ms);
-        QThread::msleep(poll_interval_ms);
-        elapsed += poll_interval_ms;
+        if (!matched) return false;
+
+        if (out_value) {
+            *out_value = value;
+        }
+        return true;
+    };
+
+    QVariant matched_value;
+    if (conditionMatched(&matched_value)) {
+        QJsonObject resp;
+        resp[QStringLiteral("ok")] = true;
+        resp[QStringLiteral("value")] = QJsonValue::fromVariant(matched_value);
+        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+    }
+
+    QEventLoop wait_loop;
+    QTimer timeout_timer;
+    timeout_timer.setSingleShot(true);
+    timeout_timer.setInterval(std::max(0, timeout_ms));
+
+    QTimer poll_timer;
+    poll_timer.setInterval(50);
+
+    QObject::connect(&timeout_timer, &QTimer::timeout, &wait_loop, &QEventLoop::quit);
+    QObject::connect(&poll_timer, &QTimer::timeout, &wait_loop, [&]() {
+        if (conditionMatched(nullptr)) {
+            wait_loop.quit();
+        }
+    });
+
+    timeout_timer.start();
+    poll_timer.start();
+    wait_loop.exec();
+
+    if (conditionMatched(&matched_value)) {
+        QJsonObject resp;
+        resp[QStringLiteral("ok")] = true;
+        resp[QStringLiteral("value")] = QJsonValue::fromVariant(matched_value);
+        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
     }
 
     return errorResponse(QStringLiteral("Timed out waiting for property: %1.%2").arg(object_name, prop));
