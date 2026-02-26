@@ -68,6 +68,9 @@ void TestBridge::handleClientData()
         return;
     }
 
+   // Keep this guard on while handling commands. wait_for_page and
+   // wait_for_property run a nested event loop, which, if not guarded,
+   // could allow a second command to begin.
     QScopedValueRollback<bool> processing_guard(m_processing_client_data, true);
 
     do {
