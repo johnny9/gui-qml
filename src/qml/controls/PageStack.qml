@@ -7,6 +7,28 @@ import QtQuick.Controls 2.15
 
 StackView {
     property bool vertical: false
+    // Expose the deepest active page in nested PageStack hierarchies.
+    readonly property var currentLeafItem: resolveCurrentLeafItem(currentItem)
+    readonly property string currentLeafObjectName: {
+        const leaf = currentLeafItem
+        return leaf && leaf.objectName ? leaf.objectName : ""
+    }
+
+    function resolveCurrentLeafItem(item) {
+        let current = item
+        let guard = 0
+        while (current && guard < 64) {
+            guard += 1
+            if (current.currentItem !== undefined &&
+                current.depth !== undefined &&
+                current.currentItem) {
+                current = current.currentItem
+                continue
+            }
+            return current
+        }
+        return current
+    }
 
     pushEnter: Transition {
         NumberAnimation {

@@ -189,72 +189,45 @@ QByteArray TestBridge::processCommand(const QByteArray& json_cmd)
 
 QByteArray TestBridge::cmdGetCurrentPage()
 {
-    // Walk the visual tree looking for StackView instances (which have both
-    // "currentItem" and "depth" properties).  Drill into nested StackViews
-    // (e.g. OnboardingWizard is a PageStack inside the main PageStack) to
-    // return the deepest page.  We check for "depth" to distinguish StackView
-    // from StackLayout, which also has "currentItem" but is not a page stack.
+    auto pageResponse = [](QObject* page_obj) {
+        QString name = page_obj->objectName();
+        if (name.isEmpty()) {
+            name = QString::fromLatin1(page_obj->metaObject()->className());
+        }
+        QJsonObject resp;
+        resp[QStringLiteral("page")] = name;
+        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+    };
+
+    // Preferred path: read precomputed page information exposed by main.qml.
     for (QObject* root : m_engine->rootObjects()) {
-        auto* window = qobject_cast<QQuickWindow*>(root);
-        if (!window) continue;
-
-        // Breadth-first search through the visual item tree.
-        std::vector<QQuickItem*> queue;
-        queue.push_back(window->contentItem());
-
-        QObject* deepest_page = nullptr;
-        QObject* deepest_named_page = nullptr;
-
-        while (!queue.empty()) {
-            QQuickItem* item = queue.back();
-            queue.pop_back();
-            if (!item) continue;
-
-            // Only consider items that look like a StackView: they must
-            // have both "currentItem" and "depth" properties.
-            QVariant depth = item->property("depth");
-            QVariant current = item->property("currentItem");
-            if (depth.isValid() && current.isValid()) {
-                QObject* current_obj = current.value<QObject*>();
-                if (current_obj) {
-                    deepest_page = current_obj;
-                    if (!current_obj->objectName().isEmpty()) {
-                        deepest_named_page = current_obj;
-                    }
-                    // Push the current item itself back into the queue
-                    // so that if it is a nested StackView (e.g.
-                    // OnboardingWizard) it gets checked for its own
-                    // currentItem on the next iteration.  Its children
-                    // will be explored when it is popped and either
-                    // matched (StackView) or falls through to the
-                    // childItems loop below.
-                    auto* current_item = qobject_cast<QQuickItem*>(current_obj);
-                    if (current_item) {
-                        queue.push_back(current_item);
-                    }
-                    continue;
-                }
-            }
-
-            for (QQuickItem* child : item->childItems()) {
-                queue.push_back(child);
-            }
+        QVariant page_item = root->property("testCurrentPageItem");
+        QObject* page_obj = page_item.value<QObject*>();
+        if (page_obj) {
+            return pageResponse(page_obj);
         }
 
-        // Prefer the deepest page that has an objectName.  Fall back
-        // to the class name of the absolute deepest page otherwise.
-        QObject* result_page = deepest_named_page ? deepest_named_page : deepest_page;
-        if (result_page) {
-            QString name = result_page->objectName();
-            if (name.isEmpty()) {
-                name = QString::fromLatin1(result_page->metaObject()->className());
-            }
+        const QString page_name = root->property("testCurrentPageName").toString();
+        if (!page_name.isEmpty()) {
             QJsonObject resp;
-            resp[QStringLiteral("page")] = name;
+            resp[QStringLiteral("page")] = page_name;
             return QJsonDocument(resp).toJson(QJsonDocument::Compact);
         }
     }
-    return errorResponse(QStringLiteral("Could not determine current page"));
+
+    // Compatibility fallback for roots that directly expose currentItem.
+    for (QObject* root : m_engine->rootObjects()) {
+        QVariant depth = root->property("depth");
+        QVariant current = root->property("currentItem");
+        if (!depth.isValid() || !current.isValid()) continue;
+
+        QObject* current_obj = current.value<QObject*>();
+        if (current_obj) {
+            return pageResponse(current_obj);
+        }
+    }
+
+    return errorResponse(QStringLiteral("Could not determine current page; missing testCurrentPageItem/testCurrentPageName"));
 }
 
 QByteArray TestBridge::cmdGetProperty(const QString& object_name, const QString& prop)

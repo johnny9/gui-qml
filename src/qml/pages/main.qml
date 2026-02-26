@@ -20,6 +20,9 @@ ApplicationWindow {
     minimumHeight: 665
     color: Theme.color.background
     visible: true
+    // Exposed for test automation bridge lookups.
+    property var testCurrentPageItem: main.currentLeafItem
+    property string testCurrentPageName: main.currentLeafObjectName
 
     Settings {
         property alias x: appWindow.x
