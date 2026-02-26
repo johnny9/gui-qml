@@ -67,6 +67,8 @@ public:
 
     Q_INVOKABLE bool validateProxyAddress(QString addr_port);
     Q_INVOKABLE QString defaultProxyAddress();
+    Q_INVOKABLE bool disconnectPeer(int nodeId);
+    Q_INVOKABLE bool banPeer(int nodeId, int banDuration);
 
 public Q_SLOTS:
     void initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info);
@@ -83,6 +85,8 @@ Q_SIGNALS:
 
     void setTimeRatioList(int new_time);
     void setTimeRatioListInitial();
+    void nodeInitialized();
+    void bannedListChanged();
 
 protected:
     void timerEvent(QTimerEvent* event) override;
@@ -104,9 +108,11 @@ private:
     interfaces::Node& m_node;
     std::unique_ptr<interfaces::Handler> m_handler_notify_block_tip;
     std::unique_ptr<interfaces::Handler> m_handler_notify_num_peers_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_notify_banned_list_changed;
 
     void ConnectToBlockTipSignal();
     void ConnectToNumConnectionsChangedSignal();
+    void ConnectToBannedListChangedSignal();
 };
 
 #endif // BITCOIN_QML_MODELS_NODEMODEL_H

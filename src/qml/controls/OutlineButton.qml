@@ -9,9 +9,12 @@ import org.bitcoincore.qt 1.0
 Button {
     id: root
     hoverEnabled: AppMode.isDesktop
+
+    property bool bold: true
+
     contentItem: CoreText {
         text: parent.text
-        bold: true
+        bold: root.bold
         font.pixelSize: 18
         color: Theme.color.neutral9
     }

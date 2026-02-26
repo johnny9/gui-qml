@@ -153,6 +153,9 @@ PageStack {
             onPeerSelected: (peerDetails) => {
                 root.push(peer_details, {"details": peerDetails})
             }
+            onBannedPeers: {
+                root.push(banned_peers_page)
+            }
         }
     }
     Component {
@@ -161,6 +164,12 @@ PageStack {
             onBack: {
                 root.pop()
             }
+        }
+    }
+    Component {
+        id: banned_peers_page
+        BannedPeers {
+            onBack: root.pop()
         }
     }
     Component {

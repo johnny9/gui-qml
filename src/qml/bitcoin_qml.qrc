@@ -60,6 +60,7 @@
         <file>controls/ValueInput.qml</file>
         <file>pages/initerrormessage.qml</file>
         <file>pages/main.qml</file>
+        <file>pages/node/BannedPeers.qml</file>
         <file>pages/node/NetworkTraffic.qml</file>
         <file>pages/node/NodeRunner.qml</file>
         <file>pages/node/NodeSettings.qml</file>

@@ -230,6 +230,141 @@ Page {
                 KeyValueRow { key: KeyText { text: qsTr("Min ping"); } value: NetStatValue { text: details.pingMin; }}
                 KeyValueRow { key: KeyText {text: qsTr("Time offset"); } value: NetStatValue { text: details.timeOffset; }}
             }
+
+            RowLayout {
+                width: parent.width
+                spacing: 10
+
+                ContinueButton {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    text: qsTr("Disconnect")
+                    borderColor: Theme.color.neutral6
+                    borderHoverColor: Theme.color.orangeLight1
+                    borderPressedColor: Theme.color.orangeLight2
+                    bold: false
+                    textColor: Theme.color.white
+                    textHoverColor: Theme.color.orangeLight1
+                    textPressedColor: Theme.color.orangeLight2
+                    backgroundColor: "transparent"
+                    backgroundHoverColor: "transparent"
+                    backgroundPressedColor: "transparent"
+                    onClicked: nodeModel.disconnectPeer(details.nodeId)
+                }
+
+                ContinueButton {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    text: qsTr("Ban")
+                    bold: false
+                    backgroundColor: "transparent"
+                    backgroundHoverColor: "transparent"
+                    backgroundPressedColor: "transparent"
+                    borderColor: Theme.color.neutral6
+                    borderHoverColor: Theme.color.orangeLight1
+                    borderPressedColor: Theme.color.orangeLight2
+                    textColor: Theme.color.white
+                    textHoverColor: Theme.color.orangeLight1
+                    textPressedColor: Theme.color.orangeLight2
+                    onClicked: banPopup.open()
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: banPopup
+        anchors.centerIn: parent
+        modal: true
+        padding: 20
+        width: Math.min(root.width - 40, 350)
+        background: Rectangle {
+            color: Theme.color.background
+            radius: 8
+            border.color: Theme.color.neutral3
+            border.width: 1
+        }
+
+        property int selectedDuration: 3600
+
+        readonly property var durations: [
+            { label: qsTr("1 hour"),  secs: 3600 },
+            { label: qsTr("1 day"),   secs: 86400 },
+            { label: qsTr("1 week"),  secs: 604800 },
+            { label: qsTr("1 year"),  secs: 31536000 }
+        ]
+
+        ColumnLayout {
+            width: parent.width
+            spacing: 0
+
+            CoreText {
+                Layout.fillWidth: true
+                Layout.bottomMargin: 16
+                text: qsTr("Ban this peer")
+                bold: true
+                font.pixelSize: 18
+                color: Theme.color.neutral9
+                horizontalAlignment: Qt.AlignHCenter
+            }
+
+            Repeater {
+                model: banPopup.durations
+                delegate: Column {
+                    Layout.fillWidth: true
+
+                    Separator { width: parent.width }
+
+                    ItemDelegate {
+                        id: durationRow
+                        width: parent.width
+                        leftPadding: 8
+                        rightPadding: 8
+                        hoverEnabled: AppMode.isDesktop
+                        background: null
+                        contentItem: RowLayout {
+                            CoreText {
+                                Layout.fillWidth: true
+                                text: modelData.label
+                                font.pixelSize: 16
+                                color: durationRow.hovered ? Theme.color.orangeLight1 : Theme.color.neutral9
+                                horizontalAlignment: Text.AlignLeft
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            IconButton {
+                                opacity: banPopup.selectedDuration === modelData.secs ? 1 : 0
+                                iconLocation: "image://images/check"
+                                icon.color: durationRow.hovered ? Theme.color.orangeLight1 : Theme.color.neutral9
+                            }
+                        }
+                        onClicked: banPopup.selectedDuration = modelData.secs
+                    }
+                }
+            }
+
+            Separator { Layout.fillWidth: true; Layout.bottomMargin: 16 }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                OutlineButton {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    text: qsTr("Cancel")
+                    onClicked: banPopup.close()
+                }
+
+                ContinueButton {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    text: qsTr("Ban")
+                    onClicked: {
+                        nodeModel.banPeer(details.nodeId, banPopup.selectedDuration)
+                        banPopup.close()
+                    }
+                }
+            }
         }
     }
 
