@@ -324,39 +324,51 @@ QByteArray TestBridge::cmdClick(const QString& object_name)
 
     const QMetaObject* meta = obj->metaObject();
 
-    // Prefer real click()/trigger()/toggle() methods so buttons update state
-    // (e.g. checked tabs in a ButtonGroup) rather than only emitting signals.
+    // Prefer real click() when available.
+    // If click() is missing, use a conservative fallback order that preserves
+    // existing onClicked handlers and checkable-button state updates.
+    auto okResponse = []() {
+        QJsonObject resp;
+        resp[QStringLiteral("ok")] = true;
+        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+    };
+
+    bool invoked = false;
     int click_method_index = meta->indexOfMethod("click()");
     if (click_method_index >= 0) {
-        meta->method(click_method_index).invoke(obj, Qt::DirectConnection);
-        QJsonObject resp;
-        resp[QStringLiteral("ok")] = true;
-        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+        invoked = meta->method(click_method_index).invoke(obj, Qt::DirectConnection);
+        if (invoked) {
+            return okResponse();
+        }
     }
 
-    int trigger_index = meta->indexOfMethod("trigger()");
-    if (trigger_index >= 0) {
-        meta->method(trigger_index).invoke(obj, Qt::DirectConnection);
-        QJsonObject resp;
-        resp[QStringLiteral("ok")] = true;
-        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
-    }
-
+    // If the control is checkable and click() is unavailable, try toggling
+    // first so selection state (e.g. ButtonGroup) changes under automation.
+    const bool checkable = obj->property("checkable").toBool();
     int toggle_index = meta->indexOfMethod("toggle()");
-    if (toggle_index >= 0) {
-        meta->method(toggle_index).invoke(obj, Qt::DirectConnection);
-        QJsonObject resp;
-        resp[QStringLiteral("ok")] = true;
-        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+    if (checkable && toggle_index >= 0) {
+        invoked = meta->method(toggle_index).invoke(obj, Qt::DirectConnection);
     }
 
-    // Then try to find and invoke a "clicked" signal.
+    // Invoke clicked() so QML onClicked handlers run for controls without
+    // click() support.
     int clicked_index = meta->indexOfSignal("clicked()");
     if (clicked_index >= 0) {
-        meta->method(clicked_index).invoke(obj, Qt::DirectConnection);
-        QJsonObject resp;
-        resp[QStringLiteral("ok")] = true;
-        return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+        if (meta->method(clicked_index).invoke(obj, Qt::DirectConnection)) {
+            return okResponse();
+        }
+    }
+
+    // Last meta-object fallback for action-like objects.
+    int trigger_index = meta->indexOfMethod("trigger()");
+    if (trigger_index >= 0) {
+        if (meta->method(trigger_index).invoke(obj, Qt::DirectConnection)) {
+            return okResponse();
+        }
+    }
+
+    if (invoked) {
+        return okResponse();
     }
 
     // Last resort: if it's a QQuickItem, synthesize pointer events.
