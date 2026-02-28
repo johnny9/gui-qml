@@ -10,10 +10,13 @@ add_executable(bitcoinqml_unit_tests
   test_qmlbitcoinunits.cpp
   test_imageprovider.cpp
   test_networkstyle.cpp
+  test_qmlinitexecutor_api.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinunits.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/imageprovider.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/networkstyle.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
 )
 
@@ -30,6 +33,7 @@ target_include_directories(bitcoinqml_unit_tests
 
 target_link_libraries(bitcoinqml_unit_tests
   PRIVATE
+    bitcoin_util
     Qt6::Core
     Qt6::Gui
     Qt6::Quick

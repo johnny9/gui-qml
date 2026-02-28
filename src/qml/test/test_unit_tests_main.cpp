@@ -4,10 +4,15 @@
 
 #include <QGuiApplication>
 
+#include <util/translation.h>
+
+const TranslateFn G_TRANSLATION_FUN{nullptr};
+
 int RunBitcoinAmountTests(int argc, char* argv[]);
 int RunQmlBitcoinUnitsTests(int argc, char* argv[]);
 int RunImageProviderTests(int argc, char* argv[]);
 int RunNetworkStyleTests(int argc, char* argv[]);
+int RunQmlInitExecutorApiTests(int argc, char* argv[]);
 
 int main(int argc, char* argv[])
 {
@@ -18,6 +23,7 @@ int main(int argc, char* argv[])
     status |= RunQmlBitcoinUnitsTests(argc, argv);
     status |= RunImageProviderTests(argc, argv);
     status |= RunNetworkStyleTests(argc, argv);
+    status |= RunQmlInitExecutorApiTests(argc, argv);
 
     return status;
 }
