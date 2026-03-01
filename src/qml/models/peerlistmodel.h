@@ -29,14 +29,13 @@ struct CNodeCombinedStats {
 };
 Q_DECLARE_METATYPE(CNodeCombinedStats*)
 
-/** QML runtime peer list model. */
-class QmlPeerTableModel : public QAbstractListModel
+class PeerListModel : public QAbstractListModel
 {
     Q_OBJECT
 
 public:
-    explicit QmlPeerTableModel(interfaces::Node& node, QObject* parent);
-    ~QmlPeerTableModel();
+    explicit PeerListModel(interfaces::Node& node, QObject* parent);
+    ~PeerListModel();
 
     Q_INVOKABLE
     void startAutoRefresh();

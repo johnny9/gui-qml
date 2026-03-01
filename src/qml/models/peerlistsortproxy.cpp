@@ -10,7 +10,7 @@
 PeerListSortProxy::PeerListSortProxy(QObject* parent)
     : QSortFilterProxyModel(parent)
 {
-    m_sort_role = QmlPeerTableModel::NetNodeId;
+    m_sort_role = PeerListModel::NetNodeId;
     setSortRole(m_sort_role);
     setDynamicSortFilter(true);
 }
@@ -30,15 +30,15 @@ int PeerListSortProxy::RoleNameToRole(const QString & name) const
     if (!keys.empty()) {
         return keys.first();
     } else {
-        return QmlPeerTableModel::NetNodeId;
+        return PeerListModel::NetNodeId;
     }
 }
 
 QVariant PeerListSortProxy::data(const QModelIndex& index, int role) const
 {
-    if (role == QmlPeerTableModel::StatsRole) {
+    if (role == PeerListModel::StatsRole) {
         auto stats = QSortFilterProxyModel::data(index, role);
-        auto details = new PeerDetailsModel(stats.value<CNodeCombinedStats*>(), qobject_cast<QmlPeerTableModel*>(sourceModel()));
+        auto details = new PeerDetailsModel(stats.value<CNodeCombinedStats*>(), qobject_cast<PeerListModel*>(sourceModel()));
         return QVariant::fromValue(details);
     }
 
@@ -63,29 +63,29 @@ void PeerListSortProxy::setSortBy(const QString & roleName)
 
 bool PeerListSortProxy::lessThan(const QModelIndex& left_index, const QModelIndex& right_index) const
 {
-    const CNodeStats left_stats = Assert(sourceModel()->data(left_index, QmlPeerTableModel::StatsRole).value<CNodeCombinedStats*>())->nodeStats;
-    const CNodeStats right_stats = Assert(sourceModel()->data(right_index, QmlPeerTableModel::StatsRole).value<CNodeCombinedStats*>())->nodeStats;
+    const CNodeStats left_stats = Assert(sourceModel()->data(left_index, PeerListModel::StatsRole).value<CNodeCombinedStats*>())->nodeStats;
+    const CNodeStats right_stats = Assert(sourceModel()->data(right_index, PeerListModel::StatsRole).value<CNodeCombinedStats*>())->nodeStats;
 
     switch (m_sort_role) {
-    case QmlPeerTableModel::NetNodeId:
+    case PeerListModel::NetNodeId:
         return left_stats.nodeid < right_stats.nodeid;
-    case QmlPeerTableModel::Age:
+    case PeerListModel::Age:
         return left_stats.m_connected > right_stats.m_connected;
-    case QmlPeerTableModel::Address:
+    case PeerListModel::Address:
         return left_stats.m_addr_name.compare(right_stats.m_addr_name) < 0;
-    case QmlPeerTableModel::Direction:
+    case PeerListModel::Direction:
         return left_stats.fInbound > right_stats.fInbound;
-    case QmlPeerTableModel::ConnectionType:
+    case PeerListModel::ConnectionType:
         return left_stats.m_conn_type < right_stats.m_conn_type;
-    case QmlPeerTableModel::Network:
+    case PeerListModel::Network:
         return left_stats.m_network < right_stats.m_network;
-    case QmlPeerTableModel::Ping:
+    case PeerListModel::Ping:
         return left_stats.m_min_ping_time < right_stats.m_min_ping_time;
-    case QmlPeerTableModel::Sent:
+    case PeerListModel::Sent:
         return left_stats.nSendBytes < right_stats.nSendBytes;
-    case QmlPeerTableModel::Received:
+    case PeerListModel::Received:
         return left_stats.nRecvBytes < right_stats.nRecvBytes;
-    case QmlPeerTableModel::Subversion:
+    case PeerListModel::Subversion:
         return left_stats.cleanSubVer.compare(right_stats.cleanSubVer) < 0;
     }
     return false;

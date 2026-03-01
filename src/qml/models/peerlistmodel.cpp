@@ -18,35 +18,35 @@ namespace {
 constexpr auto MODEL_UPDATE_DELAY{std::chrono::milliseconds{250}};
 }
 
-QmlPeerTableModel::QmlPeerTableModel(interfaces::Node& node, QObject* parent)
+PeerListModel::PeerListModel(interfaces::Node& node, QObject* parent)
     : QAbstractListModel(parent), m_node(node)
 {
     m_timer = new QTimer(this);
-    connect(m_timer, &QTimer::timeout, this, &QmlPeerTableModel::refresh);
+    connect(m_timer, &QTimer::timeout, this, &PeerListModel::refresh);
     m_timer->setInterval(MODEL_UPDATE_DELAY);
 
     refresh();
 }
 
-QmlPeerTableModel::~QmlPeerTableModel() = default;
+PeerListModel::~PeerListModel() = default;
 
-void QmlPeerTableModel::startAutoRefresh()
+void PeerListModel::startAutoRefresh()
 {
     m_timer->start();
 }
 
-void QmlPeerTableModel::stopAutoRefresh()
+void PeerListModel::stopAutoRefresh()
 {
     m_timer->stop();
 }
 
-int QmlPeerTableModel::rowCount(const QModelIndex& parent) const
+int PeerListModel::rowCount(const QModelIndex& parent) const
 {
     if (parent.isValid()) return 0;
     return m_peers_data.size();
 }
 
-QVariant QmlPeerTableModel::data(const QModelIndex& index, int role) const
+QVariant PeerListModel::data(const QModelIndex& index, int role) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_peers_data.size()) return {};
     CNodeCombinedStats* rec = const_cast<CNodeCombinedStats*>(&m_peers_data.at(index.row()));
@@ -79,7 +79,7 @@ QVariant QmlPeerTableModel::data(const QModelIndex& index, int role) const
     return {};
 }
 
-QHash<int, QByteArray> QmlPeerTableModel::roleNames() const
+QHash<int, QByteArray> PeerListModel::roleNames() const
 {
     QHash<int, QByteArray> roles;
     roles[NetNodeId] = "nodeId";
@@ -96,13 +96,13 @@ QHash<int, QByteArray> QmlPeerTableModel::roleNames() const
     return roles;
 }
 
-Qt::ItemFlags QmlPeerTableModel::flags(const QModelIndex& index) const
+Qt::ItemFlags PeerListModel::flags(const QModelIndex& index) const
 {
     if (!index.isValid()) return Qt::NoItemFlags;
     return Qt::ItemIsSelectable | Qt::ItemIsEnabled;
 }
 
-void QmlPeerTableModel::refresh()
+void PeerListModel::refresh()
 {
     interfaces::Node::NodesStats nodes_stats;
     m_node.getNodesStats(nodes_stats);

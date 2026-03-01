@@ -40,7 +40,7 @@ class PeerDetailsModel : public QObject
     Q_PROPERTY(QString permission READ permission NOTIFY dataChanged)
 
 public:
-    explicit PeerDetailsModel(CNodeCombinedStats* nodeStats, QmlPeerTableModel* model);
+    explicit PeerDetailsModel(CNodeCombinedStats* nodeStats, PeerListModel* model);
 
     int nodeId() const { return m_combinedStats->nodeStats.nodeid; }
     QString address() const { return QString::fromStdString(m_combinedStats->nodeStats.m_addr_name); }
@@ -87,7 +87,7 @@ private Q_SLOTS:
 private:
     int m_row;
     CNodeCombinedStats* m_combinedStats;
-    QmlPeerTableModel* m_model;
+    PeerListModel* m_model;
     bool m_disconnected;
 };
 

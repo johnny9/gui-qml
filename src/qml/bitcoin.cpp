@@ -299,7 +299,7 @@ int QmlGuiMain(int argc, char* argv[])
         node->startShutdown();
     });
 
-    QmlPeerTableModel peer_model{*node, nullptr};
+    PeerListModel peer_model{*node, nullptr};
     PeerListSortProxy peer_model_sort_proxy{nullptr};
     peer_model_sort_proxy.setSourceModel(&peer_model);
 
