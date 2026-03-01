@@ -3,11 +3,16 @@ cmake_minimum_required(VERSION 3.22)
 # Tests for the QML/Qt6 app
 
 find_package(Qt 6.2 MODULE REQUIRED COMPONENTS Core Test Qml Quick QuickTest)
+find_package(GTest REQUIRED)
 
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
   test_bitcoinamount.cpp
+  test_peerlistmodel.cpp
+  test_peerstatsutil.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/peerstatsutil.cpp
 )
 
 target_compile_definitions(bitcoinqml_unit_tests
@@ -19,35 +24,19 @@ target_include_directories(bitcoinqml_unit_tests
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/univalue/include
 )
 
 target_link_libraries(bitcoinqml_unit_tests
   PRIVATE
+    bitcoin_common
+    GTest::gmock
+    GTest::gtest
     Qt6::Core
     Qt6::Test
 )
 
 add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests)
-
-add_executable(bitcoinqml_peerstatsutil_tests
-  test_peerstatsutil.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/peerstatsutil.cpp
-)
-
-target_include_directories(bitcoinqml_peerstatsutil_tests
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src
-)
-
-target_link_libraries(bitcoinqml_peerstatsutil_tests
-  PRIVATE
-    bitcoin_common
-    Qt6::Core
-    Qt6::Test
-)
-
-add_test(NAME bitcoinqml_peerstatsutil_tests COMMAND bitcoinqml_peerstatsutil_tests)
 
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
