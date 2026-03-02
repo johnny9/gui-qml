@@ -15,7 +15,6 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QScopedValueRollback>
-#include <QThread>
 #include <QTimer>
 #include <QVariant>
 
@@ -129,24 +128,42 @@ void TestBridge::handleClientDisconnected()
 
 QObject* TestBridge::findObjectByName(const QString& name) const
 {
-    for (QObject* root : m_engine->rootObjects()) {
-        if (root->objectName() == name) return root;
+    // Traverse both QObject children and visual childItems so that items
+    // pushed into a StackView (which are visual children before QObject
+    // parenting is fully settled) are also reachable.
+    QList<QObject*> matches;
+    QSet<const QObject*> visited;
 
-        // Collect all children with this name.
-        QList<QObject*> matches = root->findChildren<QObject*>(name);
-        if (matches.isEmpty()) continue;
-
-        // Prefer a visible QQuickItem (important when StackView keeps
-        // hidden pages in the tree with duplicate objectNames).
-        for (QObject* obj : matches) {
-            auto* item = qobject_cast<QQuickItem*>(obj);
-            if (item && item->isVisible()) return obj;
+    struct Visitor {
+        const QString& name;
+        QList<QObject*>& matches;
+        QSet<const QObject*>& visited;
+        void visit(QObject* root) {
+            if (!root || visited.contains(root)) return;
+            visited.insert(root);
+            if (root->objectName() == name) matches.append(root);
+            for (QObject* child : root->children()) visit(child);
+            if (auto* item = qobject_cast<QQuickItem*>(root)) {
+                for (QQuickItem* vchild : item->childItems()) visit(vchild);
+            }
         }
+    } visitor{name, matches, visited};
 
-        // Fall back to the first match.
-        return matches.first();
+    for (QObject* root : m_engine->rootObjects()) {
+        visitor.visit(root);
     }
-    return nullptr;
+
+    if (matches.isEmpty()) return nullptr;
+
+    // Prefer a visible QQuickItem (important when StackView keeps
+    // hidden pages in the tree with duplicate objectNames).
+    for (QObject* obj : matches) {
+        auto* item = qobject_cast<QQuickItem*>(obj);
+        if (item && item->isVisible()) return obj;
+    }
+
+    // Fall back to the first match.
+    return matches.first();
 }
 
 QObject* TestBridge::resolveCurrentLeafItem(QObject* item) const
@@ -317,10 +334,7 @@ QByteArray TestBridge::cmdClick(const QString& object_name)
         return errorResponse(QStringLiteral("Object not found: %1").arg(object_name));
     }
 
-    // Try invoking the clicked() signal or onClicked handler.
-    // For QQuickItem-based controls, we can also simulate a mouse click.
     auto* item = qobject_cast<QQuickItem*>(obj);
-
     const QMetaObject* meta = obj->metaObject();
 
     // Prefer real click() when available.
@@ -373,7 +387,7 @@ QByteArray TestBridge::cmdClick(const QString& object_name)
     // Last resort: if it's a QQuickItem, synthesize pointer events.
     if (item) {
         QQuickWindow* window = item->window();
-        if (window) {
+        if (window && item->width() > 0 && item->height() > 0) {
             QPointF center = item->mapToScene(
                 QPointF(item->width() / 2.0, item->height() / 2.0));
             QPoint pos = center.toPoint();
@@ -584,7 +598,11 @@ QByteArray TestBridge::cmdSaveScreenshot(const QString& path)
 
     // Let pending UI updates settle before capturing.
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    QThread::msleep(50);
+    {
+        QEventLoop settle_loop;
+        QTimer::singleShot(50, &settle_loop, &QEventLoop::quit);
+        settle_loop.exec();
+    }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
     const QImage image = window->grabWindow();
