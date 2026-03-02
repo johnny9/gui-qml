@@ -88,6 +88,7 @@ PageStack {
                 Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoPeers
+                    objectName: "settingsPeers"
                     Layout.fillWidth: true
                     header: qsTr("Peers")
                     actionItem: CaretRightIcon {
