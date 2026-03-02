@@ -68,7 +68,7 @@ public:
     Q_INVOKABLE bool validateProxyAddress(QString addr_port);
     Q_INVOKABLE QString defaultProxyAddress();
     Q_INVOKABLE bool disconnectPeer(int nodeId);
-    Q_INVOKABLE bool banPeer(int nodeId, int banDuration);
+    Q_INVOKABLE bool banPeer(int nodeId, int64_t banDuration);
 
 public Q_SLOTS:
     void initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info);

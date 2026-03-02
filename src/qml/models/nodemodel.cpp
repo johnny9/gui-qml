@@ -199,7 +199,7 @@ bool NodeModel::disconnectPeer(int nodeId)
     return m_node.disconnectById(nodeId);
 }
 
-bool NodeModel::banPeer(int nodeId, int banDuration)
+bool NodeModel::banPeer(int nodeId, int64_t banDuration)
 {
     interfaces::Node::NodesStats stats;
     if (!m_node.getNodesStats(stats)) return false;
