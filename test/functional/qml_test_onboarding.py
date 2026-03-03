@@ -19,6 +19,7 @@ from qml_test_harness import QmlTestHarness, QmlDriverError, dump_qml_tree, pars
 def run_tests():
     args = parse_args()
     harness = QmlTestHarness(socket_path=args.socket_path)
+    gui = None
     try:
         harness.start()
         gui = harness.driver
@@ -70,7 +71,8 @@ def run_tests():
         print(f"\nFAILED: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
-        dump_qml_tree(gui)
+        if gui is not None:
+            dump_qml_tree(gui)
         sys.exit(1)
     finally:
         harness.stop()
