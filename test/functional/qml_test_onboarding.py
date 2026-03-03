@@ -54,11 +54,14 @@ def run_tests():
         print("Click onboardingConnectionButton (finish onboarding) ...")
         gui.click("onboardingConnectionButton")
 
-        # After onboarding completes, we should no longer be on an
-        # onboarding page. The app navigates to either the desktop
-        # wallets view or the node runner, depending on configuration.
-        time.sleep(1)  # Allow navigation to settle.
+        # Wait until onboarding has actually transitioned out of onboarding
+        # pages; this avoids flaky fixed sleeps on slower machines.
+        deadline = time.time() + 10
         final_page = gui.get_current_page()
+        while "onboarding" in final_page.lower() and time.time() < deadline:
+            time.sleep(0.1)
+            final_page = gui.get_current_page()
+
         print(f"  -> post-onboarding page: {final_page}")
         assert "onboarding" not in final_page.lower(), \
             f"Still on an onboarding page after finishing: {final_page}"
