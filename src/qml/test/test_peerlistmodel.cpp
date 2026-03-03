@@ -10,6 +10,7 @@
 #include <util/translation.h>
 
 #include <algorithm>
+#include <map>
 #include <utility>
 
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -233,6 +234,11 @@ void PeerListModelTests::sortProxySortsByRoles()
 
     const QVector<CNodeStats> source_stats{stats_b, stats_c, stats_a};
     const auto stats{MakeStats({stats_b, stats_c, stats_a})};
+    const std::map<qint64, CNodeStats> stats_by_id{
+        {stats_a.nodeid, stats_a},
+        {stats_b.nodeid, stats_b},
+        {stats_c.nodeid, stats_c},
+    };
 
     NiceMock<MockNode> node;
     EXPECT_CALL(node, getNodesStats(_))
@@ -244,15 +250,6 @@ void PeerListModelTests::sortProxySortsByRoles()
     proxy.setSourceModel(&model);
 
     const auto assert_sort = [&](const QString& role_name, auto less_than) {
-        QVector<CNodeStats> expected = source_stats;
-        std::sort(expected.begin(), expected.end(), less_than);
-
-        QVector<qint64> expected_ids;
-        expected_ids.reserve(expected.size());
-        for (const auto& node_stats : expected) {
-            expected_ids.append(node_stats.nodeid);
-        }
-
         proxy.setSortBy(role_name);
 
         QVector<qint64> actual_ids;
@@ -261,7 +258,26 @@ void PeerListModelTests::sortProxySortsByRoles()
             actual_ids.append(proxy.data(proxy.index(row, 0), PeerListModel::NetNodeId).toLongLong());
         }
 
-        QCOMPARE(actual_ids, expected_ids);
+        QVector<qint64> expected_ids;
+        expected_ids.reserve(source_stats.size());
+        for (const auto& node_stats : source_stats) {
+            expected_ids.append(node_stats.nodeid);
+        }
+        std::sort(expected_ids.begin(), expected_ids.end());
+
+        QVector<qint64> sorted_actual_ids = actual_ids;
+        std::sort(sorted_actual_ids.begin(), sorted_actual_ids.end());
+        QCOMPARE(sorted_actual_ids, expected_ids);
+
+        for (int i = 1; i < actual_ids.size(); ++i) {
+            const auto prev_it = stats_by_id.find(actual_ids.at(i - 1));
+            const auto cur_it = stats_by_id.find(actual_ids.at(i));
+            QVERIFY(prev_it != stats_by_id.end());
+            QVERIFY(cur_it != stats_by_id.end());
+
+            // Allow equal-key items in any order, but disallow an inversion.
+            QVERIFY(!less_than(cur_it->second, prev_it->second));
+        }
     };
 
     assert_sort("nodeId", [](const CNodeStats& left, const CNodeStats& right) { return left.nodeid < right.nodeid; });
