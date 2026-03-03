@@ -34,6 +34,7 @@ ApplicationWindow {
 
     PageStack {
         id: main
+        objectName: "mainPageStack"
         initialItem: {
             if (needOnboarding) {
                 onboardingWizard

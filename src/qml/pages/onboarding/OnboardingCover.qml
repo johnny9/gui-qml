@@ -11,6 +11,7 @@ import "../settings"
 
 Page {
     id: root
+    objectName: "onboardingCover"
     signal next
     background: null
     clip: true
@@ -21,6 +22,7 @@ Page {
         Component {
             id: onboardingCover
             InformationPage {
+                buttonObjectName: "onboardingCoverButton"
                 navRightDetail: NavButton {
                     iconSource: "image://images/info"
                     iconHeight: 24

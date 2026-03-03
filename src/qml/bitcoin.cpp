@@ -44,6 +44,9 @@
 #include <qml/qrimageprovider.h>
 #include <qml/util.h>
 #include <qml/walletqmlcontroller.h>
+#ifdef ENABLE_TEST_AUTOMATION
+#include <qml/test/testbridge.h>
+#endif
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
 #include <qt/networkstyle.h>
@@ -91,6 +94,9 @@ void SetupUIArgs(ArgsManager& argsman)
     argsman.AddArg("-lang=<lang>", "Set language, for example \"de_DE\" (default: system locale)", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-min", "Start minimized", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-resetguisettings", "Reset all settings changed in the GUI", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
+#ifdef ENABLE_TEST_AUTOMATION
+    argsman.AddArg("-test-automation=<path>", "Enable test automation bridge on the given Unix socket path", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
+#endif
 }
 
 AppMode SetupAppMode()
@@ -355,6 +361,19 @@ int QmlGuiMain(int argc, char* argv[])
     if (!window) {
         return EXIT_FAILURE;
     }
+
+#ifdef ENABLE_TEST_AUTOMATION
+    std::unique_ptr<TestBridge> test_bridge;
+    if (gArgs.IsArgSet("-test-automation")) {
+        QString socket_path = QString::fromStdString(gArgs.GetArg("-test-automation", ""));
+        if (socket_path.isEmpty()) {
+            // Default to a socket in the data directory.
+            socket_path = QString::fromStdString(
+                (gArgs.GetDataDirNet() / "test_bridge.sock").utf8string());
+        }
+        test_bridge = std::make_unique<TestBridge>(&engine, socket_path);
+    }
+#endif
 
     // Install qDebug() message handler to route to debug.log
     qInstallMessageHandler(DebugMessageHandler);
