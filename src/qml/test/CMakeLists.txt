@@ -36,7 +36,7 @@ target_link_libraries(bitcoinqml_unit_tests
     Qt6::Test
 )
 
-add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests)
+add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests -platform offscreen)
 
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
