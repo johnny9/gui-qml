@@ -9,7 +9,6 @@
 #include <QJsonObject>
 #include <QMetaMethod>
 #include <QMetaObject>
-#include <QMetaProperty>
 #include <QEventLoop>
 #include <QImage>
 #include <QPointer>

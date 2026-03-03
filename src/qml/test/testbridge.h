@@ -5,14 +5,15 @@
 #ifndef BITCOIN_QML_TEST_TESTBRIDGE_H
 #define BITCOIN_QML_TEST_TESTBRIDGE_H
 
+#include <QByteArray>
+#include <QHash>
+#include <QJsonValue>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QObject>
 #include <QQmlApplicationEngine>
-#include <QString>
-#include <QHash>
-#include <QJsonValue>
 #include <QSet>
+#include <QString>
 
 #include <vector>
 
