@@ -10,6 +10,7 @@ bridge enabled and connects a QmlDriver instance.
 
 import argparse
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -146,6 +147,9 @@ class QmlTestHarness:
                 self.process.wait()
         if self.driver:
             self.driver.close()
+        if self.tmpdir:
+            shutil.rmtree(self.tmpdir, ignore_errors=True)
+            self.tmpdir = None
 
 
 def dump_qml_tree(driver):
