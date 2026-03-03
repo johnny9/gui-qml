@@ -497,6 +497,8 @@ def test_disconnect_specific_peer(gui, harness):
     remaining_ids = [p["id"] for p in peers]
     assert target_id not in remaining_ids, \
         f"Peer {target_id} should be disconnected"
+    assert len(peers) == 1, \
+        f"Expected exactly 1 peer remaining, got {len(peers)}: {remaining_ids}"
     assert other_id in remaining_ids, \
         f"Peer {other_id} should still be connected"
     print(f"  PASSED: peer {target_id} gone; peer {other_id} still present")
