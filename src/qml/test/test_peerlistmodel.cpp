@@ -5,9 +5,11 @@
 #include <QtTest/QtTest>
 
 #include <test/mocks/mocknode.h>
+#include <qml/models/peerlistsortproxy.h>
 #include <qml/models/peerlistmodel.h>
 #include <util/translation.h>
 
+#include <algorithm>
 #include <utility>
 
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -37,6 +39,9 @@ CNodeStats MakeNodeStats(NodeId node_id, std::string address, bool inbound, Conn
     stats.cleanSubVer = "/Satoshi:28.0.0/";
     return stats;
 }
+
+constexpr auto AUTO_REFRESH_TRIGGER_TIMEOUT{2'000};
+constexpr auto AUTO_REFRESH_STOP_WAIT{450};
 } // namespace
 
 class PeerListModelTests : public QObject
@@ -46,7 +51,9 @@ class PeerListModelTests : public QObject
 private Q_SLOTS:
     void mapsRoleData();
     void refreshUpdatesRows();
+    void refreshHandlesGetNodesStatsFailure();
     void startStopAutoRefresh();
+    void sortProxySortsByRoles();
 };
 
 void PeerListModelTests::mapsRoleData()
@@ -87,7 +94,7 @@ void PeerListModelTests::mapsRoleData()
     QCOMPARE(model.data(index, PeerListModel::Subversion).toString(), QString{"/Satoshi:28.0.0/"});
     QVERIFY(!model.data(index, PeerListModel::Age).toString().isEmpty());
 
-    CNodeCombinedStats* stats_ptr = model.data(index, PeerListModel::StatsRole).value<CNodeCombinedStats*>();
+    const CNodeCombinedStats* stats_ptr = model.data(index, PeerListModel::StatsRole).value<const CNodeCombinedStats*>();
     QVERIFY(stats_ptr != nullptr);
     QCOMPARE(stats_ptr->nodeStats.nodeid, 7);
 
@@ -138,6 +145,31 @@ void PeerListModelTests::refreshUpdatesRows()
     QCOMPARE(model.data(model.index(1, 0), PeerListModel::NetNodeId).toLongLong(), 3LL);
 }
 
+void PeerListModelTests::refreshHandlesGetNodesStatsFailure()
+{
+    using ::testing::_;
+    using ::testing::DoAll;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+    using ::testing::SetArgReferee;
+
+    const auto stats{MakeStats({MakeNodeStats(1, "10.0.0.1:8333", true, ConnectionType::INBOUND, NET_IPV4)})};
+
+    NiceMock<MockNode> node;
+    EXPECT_CALL(node, getNodesStats(_))
+        .Times(2)
+        .WillOnce(DoAll(SetArgReferee<0>(stats), Return(true)))
+        .WillOnce(Return(false));
+
+    PeerListModel model{node, nullptr};
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.data(model.index(0, 0), PeerListModel::NetNodeId).toLongLong(), 1LL);
+
+    model.refresh();
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.data(model.index(0, 0), PeerListModel::NetNodeId).toLongLong(), 1LL);
+}
+
 void PeerListModelTests::startStopAutoRefresh()
 {
     using ::testing::_;
@@ -162,12 +194,86 @@ void PeerListModelTests::startStopAutoRefresh()
     QCOMPARE(calls_after_ctor, 1);
 
     model.startAutoRefresh();
-    QTRY_VERIFY_WITH_TIMEOUT(get_nodes_stats_calls > calls_after_ctor, 1200);
+    QTRY_VERIFY_WITH_TIMEOUT(get_nodes_stats_calls > calls_after_ctor, AUTO_REFRESH_TRIGGER_TIMEOUT);
 
     model.stopAutoRefresh();
     const int calls_after_stop = get_nodes_stats_calls;
-    QTest::qWait(450);
+    QTest::qWait(AUTO_REFRESH_STOP_WAIT);
     QCOMPARE(get_nodes_stats_calls, calls_after_stop);
+}
+
+void PeerListModelTests::sortProxySortsByRoles()
+{
+    using ::testing::_;
+    using ::testing::DoAll;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+    using ::testing::SetArgReferee;
+
+    auto stats_a = MakeNodeStats(10, "10.0.0.20:8333", false, ConnectionType::MANUAL, NET_IPV6);
+    stats_a.m_connected = std::chrono::seconds{200};
+    stats_a.m_min_ping_time = std::chrono::microseconds{5'000};
+    stats_a.nSendBytes = 400;
+    stats_a.nRecvBytes = 300;
+    stats_a.cleanSubVer = "/Satoshi:27.0.0/";
+
+    auto stats_b = MakeNodeStats(20, "10.0.0.10:8333", true, ConnectionType::OUTBOUND_FULL_RELAY, NET_IPV4);
+    stats_b.m_connected = std::chrono::seconds{400};
+    stats_b.m_min_ping_time = std::chrono::microseconds{2'000};
+    stats_b.nSendBytes = 100;
+    stats_b.nRecvBytes = 500;
+    stats_b.cleanSubVer = "/Satoshi:26.0.0/";
+
+    auto stats_c = MakeNodeStats(30, "10.0.0.30:8333", false, ConnectionType::BLOCK_RELAY, NET_ONION);
+    stats_c.m_connected = std::chrono::seconds{100};
+    stats_c.m_min_ping_time = std::chrono::microseconds{8'000};
+    stats_c.nSendBytes = 700;
+    stats_c.nRecvBytes = 200;
+    stats_c.cleanSubVer = "/Satoshi:28.0.0/";
+
+    const QVector<CNodeStats> source_stats{stats_b, stats_c, stats_a};
+    const auto stats{MakeStats({stats_b, stats_c, stats_a})};
+
+    NiceMock<MockNode> node;
+    EXPECT_CALL(node, getNodesStats(_))
+        .Times(1)
+        .WillOnce(DoAll(SetArgReferee<0>(stats), Return(true)));
+
+    PeerListModel model{node, nullptr};
+    PeerListSortProxy proxy{nullptr};
+    proxy.setSourceModel(&model);
+
+    const auto assert_sort = [&](const QString& role_name, auto less_than) {
+        QVector<CNodeStats> expected = source_stats;
+        std::sort(expected.begin(), expected.end(), less_than);
+
+        QVector<qint64> expected_ids;
+        expected_ids.reserve(expected.size());
+        for (const auto& node_stats : expected) {
+            expected_ids.append(node_stats.nodeid);
+        }
+
+        proxy.setSortBy(role_name);
+
+        QVector<qint64> actual_ids;
+        actual_ids.reserve(proxy.rowCount());
+        for (int row = 0; row < proxy.rowCount(); ++row) {
+            actual_ids.append(proxy.data(proxy.index(row, 0), PeerListModel::NetNodeId).toLongLong());
+        }
+
+        QCOMPARE(actual_ids, expected_ids);
+    };
+
+    assert_sort("nodeId", [](const CNodeStats& left, const CNodeStats& right) { return left.nodeid < right.nodeid; });
+    assert_sort("age", [](const CNodeStats& left, const CNodeStats& right) { return left.m_connected > right.m_connected; });
+    assert_sort("address", [](const CNodeStats& left, const CNodeStats& right) { return left.m_addr_name.compare(right.m_addr_name) < 0; });
+    assert_sort("direction", [](const CNodeStats& left, const CNodeStats& right) { return left.fInbound > right.fInbound; });
+    assert_sort("connectionType", [](const CNodeStats& left, const CNodeStats& right) { return left.m_conn_type < right.m_conn_type; });
+    assert_sort("network", [](const CNodeStats& left, const CNodeStats& right) { return left.m_network < right.m_network; });
+    assert_sort("ping", [](const CNodeStats& left, const CNodeStats& right) { return left.m_min_ping_time < right.m_min_ping_time; });
+    assert_sort("sent", [](const CNodeStats& left, const CNodeStats& right) { return left.nSendBytes < right.nSendBytes; });
+    assert_sort("received", [](const CNodeStats& left, const CNodeStats& right) { return left.nRecvBytes < right.nRecvBytes; });
+    assert_sort("subversion", [](const CNodeStats& left, const CNodeStats& right) { return left.cleanSubVer.compare(right.cleanSubVer) < 0; });
 }
 
 int RunPeerListModelTests(int argc, char* argv[])

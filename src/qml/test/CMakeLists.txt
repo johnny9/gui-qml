@@ -11,7 +11,9 @@ add_executable(bitcoinqml_unit_tests
   test_peerlistmodel.cpp
   test_peerstatsutil.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerdetailsmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistsortproxy.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/peerstatsutil.cpp
 )
 
