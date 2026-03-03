@@ -60,49 +60,18 @@ BAN_DURATIONS = [
 def find_bitcoind():
     """Locate the bitcoind binary.
 
-    Search order:
-      1. BITCOIND environment variable
-      2. Same directory as bitcoin-core-app
-      3. build/bin/bitcoind relative to repo root
-      4. Sibling bitcoin repository: <repo_root>/../bitcoin/build/bin/bitcoind
-      5. Fall back to bitcoin-core-app itself (it is a full node)
+    Checks the BITCOIND environment variable first; falls back to
+    build/bin/bitcoind relative to the repo root.
     """
-    env_path = os.getenv("BITCOIND")
-    if env_path and os.path.isfile(env_path):
-        return env_path
-
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-
-    try:
-        gui_bin = find_gui_binary()
-        candidate = os.path.join(os.path.dirname(gui_bin), "bitcoind")
-        if os.path.isfile(candidate):
-            return candidate
-    except FileNotFoundError:
-        pass
-
-    build_path = os.path.join(repo_root, 'build', 'bin', 'bitcoind')
-    if os.path.isfile(build_path):
-        return build_path
-
-    # gui-qml has a 'bitcoin' submodule; also check a sibling 'bitcoin' repo.
-    for sibling in ('bitcoin', '../bitcoin'):
-        candidate = os.path.join(repo_root, sibling, 'build', 'bin', 'bitcoind')
-        if os.path.isfile(os.path.normpath(candidate)):
-            return os.path.normpath(candidate)
-
-    # Last resort: bitcoin-core-app is itself a full node.
-    try:
-        gui_bin = find_gui_binary()
-        print("  Note: bitcoind not found; using bitcoin-core-app as peer node.")
-        return gui_bin
-    except FileNotFoundError:
-        pass
-
-    raise FileNotFoundError(
-        "Cannot find bitcoind binary. "
-        "Set BITCOIND env var or ensure it is built alongside bitcoin-core-app."
-    )
+    default = os.path.join(repo_root, 'build', 'bin', 'bitcoind')
+    path = os.getenv('BITCOIND', default)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            f"bitcoind not found at {path}. "
+            "Set the BITCOIND environment variable or ensure it is built at build/bin/bitcoind."
+        )
+    return path
 
 
 # ── Harness ───────────────────────────────────────────────────────────────────
