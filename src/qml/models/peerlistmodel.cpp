@@ -49,31 +49,31 @@ int PeerListModel::rowCount(const QModelIndex& parent) const
 QVariant PeerListModel::data(const QModelIndex& index, int role) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_peers_data.size()) return {};
-    CNodeCombinedStats* rec = const_cast<CNodeCombinedStats*>(&m_peers_data.at(index.row()));
+    const CNodeCombinedStats& rec = m_peers_data.at(index.row());
 
     switch (role) {
     case NetNodeId:
-        return static_cast<qint64>(rec->nodeStats.nodeid);
+        return static_cast<qint64>(rec.nodeStats.nodeid);
     case Age:
-        return PeerStatsUtil::FormatPeerAge(rec->nodeStats.m_connected);
+        return PeerStatsUtil::FormatPeerAge(rec.nodeStats.m_connected);
     case Address:
-        return QString::fromStdString(rec->nodeStats.m_addr_name);
+        return QString::fromStdString(rec.nodeStats.m_addr_name);
     case Direction:
-        return QString(rec->nodeStats.fInbound ? tr("Inbound") : tr("Outbound"));
+        return QString(rec.nodeStats.fInbound ? tr("Inbound") : tr("Outbound"));
     case ConnectionType:
-        return PeerStatsUtil::ConnectionTypeToQString(rec->nodeStats.m_conn_type, /*prepend_direction=*/false);
+        return PeerStatsUtil::ConnectionTypeToQString(rec.nodeStats.m_conn_type, /*prepend_direction=*/false);
     case Network:
-        return PeerStatsUtil::NetworkToQString(rec->nodeStats.m_network);
+        return PeerStatsUtil::NetworkToQString(rec.nodeStats.m_network);
     case Ping:
-        return PeerStatsUtil::FormatPingTime(rec->nodeStats.m_min_ping_time);
+        return PeerStatsUtil::FormatPingTime(rec.nodeStats.m_min_ping_time);
     case Sent:
-        return PeerStatsUtil::FormatBytes(rec->nodeStats.nSendBytes);
+        return PeerStatsUtil::FormatBytes(rec.nodeStats.nSendBytes);
     case Received:
-        return PeerStatsUtil::FormatBytes(rec->nodeStats.nRecvBytes);
+        return PeerStatsUtil::FormatBytes(rec.nodeStats.nRecvBytes);
     case Subversion:
-        return QString::fromStdString(rec->nodeStats.cleanSubVer);
+        return QString::fromStdString(rec.nodeStats.cleanSubVer);
     case StatsRole:
-        return QVariant::fromValue(rec);
+        return QVariant::fromValue(&rec);
     }
 
     return {};
@@ -105,7 +105,8 @@ Qt::ItemFlags PeerListModel::flags(const QModelIndex& index) const
 void PeerListModel::refresh()
 {
     interfaces::Node::NodesStats nodes_stats;
-    m_node.getNodesStats(nodes_stats);
+    if (!m_node.getNodesStats(nodes_stats)) return;
+
     decltype(m_peers_data) new_peers_data;
     new_peers_data.reserve(nodes_stats.size());
     for (const auto& node_stats : nodes_stats) {
@@ -113,23 +114,25 @@ void PeerListModel::refresh()
         new_peers_data.append(stats);
     }
 
-    for (int i = 0; i < m_peers_data.size();) {
-        if (i < new_peers_data.size() && m_peers_data.at(i).nodeStats.nodeid == new_peers_data.at(i).nodeStats.nodeid) {
-            ++i;
-            continue;
+    const bool count_changed = m_peers_data.size() != new_peers_data.size();
+    bool order_changed{false};
+    if (!count_changed) {
+        for (int i = 0; i < m_peers_data.size(); ++i) {
+            if (m_peers_data.at(i).nodeStats.nodeid != new_peers_data.at(i).nodeStats.nodeid) {
+                order_changed = true;
+                break;
+            }
         }
-        beginRemoveRows(QModelIndex(), i, i);
-        m_peers_data.erase(m_peers_data.begin() + i);
-        endRemoveRows();
     }
 
-    if (m_peers_data.size() < new_peers_data.size()) {
-        beginInsertRows(QModelIndex(), m_peers_data.size(), new_peers_data.size() - 1);
-        m_peers_data.swap(new_peers_data);
-        endInsertRows();
-    } else {
-        m_peers_data.swap(new_peers_data);
+    if (count_changed || order_changed) {
+        beginResetModel();
+        m_peers_data = std::move(new_peers_data);
+        endResetModel();
+        return;
     }
+
+    m_peers_data = std::move(new_peers_data);
 
     if (rowCount() > 0) {
         const auto top_left = index(0, 0);

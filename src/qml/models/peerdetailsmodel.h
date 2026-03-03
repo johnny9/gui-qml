@@ -40,7 +40,7 @@ class PeerDetailsModel : public QObject
     Q_PROPERTY(QString permission READ permission NOTIFY dataChanged)
 
 public:
-    explicit PeerDetailsModel(CNodeCombinedStats* nodeStats, PeerListModel* model);
+    explicit PeerDetailsModel(const CNodeCombinedStats* nodeStats, PeerListModel* model);
 
     int nodeId() const { return m_combinedStats->nodeStats.nodeid; }
     QString address() const { return QString::fromStdString(m_combinedStats->nodeStats.m_addr_name); }
@@ -83,12 +83,13 @@ Q_SIGNALS:
 private Q_SLOTS:
     void onModelRowsRemoved(const QModelIndex& parent, int first, int last);
     void onModelDataChanged(const QModelIndex& top_left, const QModelIndex& bottom_right);
+    void onModelReset();
 
 private:
-    int m_row;
-    CNodeCombinedStats* m_combinedStats;
-    PeerListModel* m_model;
-    bool m_disconnected;
+    int m_row{-1};
+    const CNodeCombinedStats* m_combinedStats{nullptr};
+    PeerListModel* m_model{nullptr};
+    bool m_disconnected{false};
 };
 
 #endif // BITCOIN_QML_MODELS_PEERDETAILSMODEL_H

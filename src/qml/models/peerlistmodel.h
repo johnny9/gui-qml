@@ -27,7 +27,7 @@ struct CNodeCombinedStats {
     CNodeStateStats nodeStateStats;
     bool fNodeStateStatsAvailable;
 };
-Q_DECLARE_METATYPE(CNodeCombinedStats*)
+Q_DECLARE_METATYPE(const CNodeCombinedStats*)
 
 class PeerListModel : public QAbstractListModel
 {
@@ -43,6 +43,7 @@ public:
     void stopAutoRefresh();
 
     enum Role {
+        StatsRole = Qt::UserRole,
         NetNodeId = Qt::UserRole + 1,
         Age,
         Address,
@@ -53,7 +54,6 @@ public:
         Sent,
         Received,
         Subversion,
-        StatsRole = Qt::UserRole,
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;

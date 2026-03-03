@@ -38,7 +38,7 @@ QVariant PeerListSortProxy::data(const QModelIndex& index, int role) const
 {
     if (role == PeerListModel::StatsRole) {
         auto stats = QSortFilterProxyModel::data(index, role);
-        auto details = new PeerDetailsModel(stats.value<CNodeCombinedStats*>(), qobject_cast<PeerListModel*>(sourceModel()));
+        auto details = new PeerDetailsModel(stats.value<const CNodeCombinedStats*>(), qobject_cast<PeerListModel*>(sourceModel()));
         return QVariant::fromValue(details);
     }
 
@@ -63,8 +63,8 @@ void PeerListSortProxy::setSortBy(const QString & roleName)
 
 bool PeerListSortProxy::lessThan(const QModelIndex& left_index, const QModelIndex& right_index) const
 {
-    const CNodeStats left_stats = Assert(sourceModel()->data(left_index, PeerListModel::StatsRole).value<CNodeCombinedStats*>())->nodeStats;
-    const CNodeStats right_stats = Assert(sourceModel()->data(right_index, PeerListModel::StatsRole).value<CNodeCombinedStats*>())->nodeStats;
+    const CNodeStats left_stats = Assert(sourceModel()->data(left_index, PeerListModel::StatsRole).value<const CNodeCombinedStats*>())->nodeStats;
+    const CNodeStats right_stats = Assert(sourceModel()->data(right_index, PeerListModel::StatsRole).value<const CNodeCombinedStats*>())->nodeStats;
 
     switch (m_sort_role) {
     case PeerListModel::NetNodeId:

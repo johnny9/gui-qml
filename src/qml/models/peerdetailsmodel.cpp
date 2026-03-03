@@ -4,10 +4,9 @@
 
 #include <qml/models/peerdetailsmodel.h>
 
-PeerDetailsModel::PeerDetailsModel(CNodeCombinedStats* nodeStats, PeerListModel* parent)
+PeerDetailsModel::PeerDetailsModel(const CNodeCombinedStats* nodeStats, PeerListModel* parent)
 : m_combinedStats{nodeStats}
 , m_model{parent}
-, m_disconnected{false}
 {
     for (int row = 0; row < m_model->rowCount(); ++row) {
         QModelIndex index = m_model->index(row, 0);
@@ -19,6 +18,7 @@ PeerDetailsModel::PeerDetailsModel(CNodeCombinedStats* nodeStats, PeerListModel*
     }
     connect(parent, &PeerListModel::rowsRemoved, this, &PeerDetailsModel::onModelRowsRemoved);
     connect(parent, &PeerListModel::dataChanged, this, &PeerDetailsModel::onModelDataChanged);
+    connect(parent, &PeerListModel::modelReset, this, &PeerDetailsModel::onModelReset);
 }
 
 void PeerDetailsModel::onModelRowsRemoved(const QModelIndex&  parent, int first, int last)
@@ -47,10 +47,32 @@ void PeerDetailsModel::onModelDataChanged(const QModelIndex& /* top_left */, con
         return;
     }
 
-    m_combinedStats = m_model->data(m_model->index(m_row, 0), PeerListModel::StatsRole).value<CNodeCombinedStats*>();
+    m_combinedStats = m_model->data(m_model->index(m_row, 0), PeerListModel::StatsRole).value<const CNodeCombinedStats*>();
 
     // Only update when all information is available
     if (m_combinedStats && m_combinedStats->fNodeStateStatsAvailable) {
         Q_EMIT dataChanged();
     }
+}
+
+void PeerDetailsModel::onModelReset()
+{
+    if (!m_combinedStats || m_disconnected) return;
+
+    const int tracked_node_id = m_combinedStats->nodeStats.nodeid;
+    for (int row = 0; row < m_model->rowCount(); ++row) {
+        const QModelIndex index = m_model->index(row, 0);
+        const int node_id_in_row = m_model->data(index, PeerListModel::NetNodeId).toInt();
+        if (node_id_in_row == tracked_node_id) {
+            m_row = row;
+            m_combinedStats = m_model->data(index, PeerListModel::StatsRole).value<const CNodeCombinedStats*>();
+            if (m_combinedStats && m_combinedStats->fNodeStateStatsAvailable) {
+                Q_EMIT dataChanged();
+            }
+            return;
+        }
+    }
+
+    m_disconnected = true;
+    Q_EMIT disconnected();
 }
