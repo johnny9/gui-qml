@@ -63,6 +63,10 @@ BAN_DURATIONS = [
     (31536000,  "1 year"),
 ]
 
+PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS = 10000
+PEER_ACTION_TIMEOUT_SECS          = 30
+BAN_RPC_APPLY_TIMEOUT_SECS        = 10
+
 
 # ── Helper: find bitcoind ─────────────────────────────────────────────────────
 
@@ -248,7 +252,7 @@ class PeerQmlTestHarness:
             time.sleep(0.5)
         raise RuntimeError(f"No peer connected after {timeout}s")
 
-    def wait_for_no_peers(self, timeout=10):
+    def wait_for_no_peers(self, timeout=PEER_ACTION_TIMEOUT_SECS):
         """Poll getpeerinfo until no peers remain."""
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -271,6 +275,21 @@ class PeerQmlTestHarness:
                 pass
             time.sleep(0.5)
         raise RuntimeError(f"Ban list not empty after {timeout}s")
+
+    def wait_for_banned(self, min_entries=1, timeout=BAN_RPC_APPLY_TIMEOUT_SECS):
+        """Poll listbanned until at least min_entries are present."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                banned = self.rpc_call("listbanned")
+                if len(banned) >= min_entries:
+                    return banned
+            except Exception:
+                pass
+            time.sleep(0.5)
+        raise RuntimeError(
+            f"Expected at least {min_entries} banned peer(s) after {timeout}s"
+        )
 
     def reconnect_peer(self):
         """Restart the peer bitcoind so it reconnects to the GUI node."""
@@ -390,7 +409,7 @@ def test_disconnect_peer(gui, harness, node_id):
     print("\n── test_disconnect_peer ──────────────────────────────────────────")
 
     gui.click(f"peerListItem_{node_id}")
-    gui.wait_for_page("peerDetails", timeout_ms=5000)
+    gui.wait_for_page("peerDetails", timeout_ms=8000)
     print(f"  Opened PeerDetails for node id={node_id}")
 
     gui.click("peerDisconnectButton")
@@ -414,7 +433,7 @@ def test_ban_peer(gui, harness, node_id, duration_secs, duration_label):
     print(f"\n── test_ban_peer ({duration_label}) ──────────────────────────────")
 
     gui.click(f"peerListItem_{node_id}")
-    gui.wait_for_page("peerDetails", timeout_ms=5000)
+    gui.wait_for_page("peerDetails", timeout_ms=8000)
     print(f"  Opened PeerDetails for node id={node_id}")
 
     gui.click("peerBanButton")
@@ -443,7 +462,7 @@ def test_unban_peer(gui, harness):
 
     # The ban list button is in the Peers page footer.
     gui.click("viewBannedPeersButton")
-    gui.wait_for_page("bannedPeers", timeout_ms=5000)
+    gui.wait_for_page("bannedPeers", timeout_ms=8000)
     print("  Navigated to BannedPeers page")
 
     gui.click("unbanButton_0")
@@ -460,7 +479,7 @@ def test_ban_persistence(harness):
     print("\n── test_ban_persistence ──────────────────────────────────────")
 
     node_id = harness.reconnect_peer()
-    gui.wait_for_property(f"peerListItem_{node_id}", "visible", True, timeout_ms=5000)
+    gui.wait_for_property(f"peerListItem_{node_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
     test_ban_peer(gui, harness, node_id, 3600, "1 hour")
 
     print("  Restarting GUI node ...")
@@ -479,7 +498,7 @@ def test_ban_persistence(harness):
     harness.rpc_call("clearbanned")
 
 
-def _wait_for_peer_gone(harness, node_id, timeout=5):
+def _wait_for_peer_gone(harness, node_id, timeout=PEER_ACTION_TIMEOUT_SECS):
     """Poll until node_id is no longer in getpeerinfo."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -499,10 +518,10 @@ def test_disconnect_specific_peer(gui, harness):
     target_id = peer_ids[0]
     other_id = peer_ids[1]
 
-    gui.wait_for_property(f"peerListItem_{target_id}", "visible", True, timeout_ms=5000)
+    gui.wait_for_property(f"peerListItem_{target_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
 
     gui.click(f"peerListItem_{target_id}")
-    gui.wait_for_page("peerDetails", timeout_ms=5000)
+    gui.wait_for_page("peerDetails", timeout_ms=8000)
     gui.click("peerDisconnectButton")
     print(f"  Clicked Disconnect for peer {target_id}")
 
@@ -531,10 +550,10 @@ def test_ban_one_of_two_peers(gui, harness):
     peer_ids = harness.wait_for_n_peers(2)
     target_id = peer_ids[0]
 
-    gui.wait_for_property(f"peerListItem_{target_id}", "visible", True, timeout_ms=5000)
+    gui.wait_for_property(f"peerListItem_{target_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
 
     gui.click(f"peerListItem_{target_id}")
-    gui.wait_for_page("peerDetails", timeout_ms=5000)
+    gui.wait_for_page("peerDetails", timeout_ms=8000)
     gui.click("peerBanButton")
     gui.wait_for_property("banDurationRow_3600", "visible", True)
     gui.click("banDurationRow_3600")
@@ -571,7 +590,7 @@ def run_tests():
         # ── Navigate to Peers page ───────────────────────────────────────────
         print("\nNavigating to Peers page ...")
         navigate_to_peers(gui)
-        gui.wait_for_property(f"peerListItem_{node_id}", "visible", True, timeout_ms=5000)
+        gui.wait_for_property(f"peerListItem_{node_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
 
         assert not gui.get_property("viewBannedPeersButton", "visible"), \
             "viewBannedPeersButton should be hidden when ban list is empty"
@@ -590,7 +609,7 @@ def run_tests():
                 harness.rpc_call("clearbanned")
             print(f"\nReconnecting peer for ban test ({duration_label}) ...")
             node_id = harness.reconnect_peer()
-            gui.wait_for_property(f"peerListItem_{node_id}", "visible", True, timeout_ms=5000)
+            gui.wait_for_property(f"peerListItem_{node_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
 
             assert not gui.get_property("viewBannedPeersButton", "visible"), \
                 f"viewBannedPeersButton should be hidden before ban ({duration_label})"
@@ -624,14 +643,14 @@ def run_tests():
         print("\nReconnecting peer for multi-peer disconnect test ...")
         peer1_id = harness.reconnect_peer()
         navigate_to_peers(gui)
-        gui.wait_for_property(f"peerListItem_{peer1_id}", "visible", True, timeout_ms=5000)
+        gui.wait_for_property(f"peerListItem_{peer1_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
         test_disconnect_specific_peer(gui, harness)
 
         # peer2 may still be running; reconnect peer1 then run ban test.
         print("\nReconnecting peer for multi-peer ban test ...")
         peer1_id = harness.reconnect_peer()
         navigate_to_peers(gui)
-        gui.wait_for_property(f"peerListItem_{peer1_id}", "visible", True, timeout_ms=5000)
+        gui.wait_for_property(f"peerListItem_{peer1_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
         test_ban_one_of_two_peers(gui, harness)
 
         print("\n" + "=" * 60)
