@@ -396,6 +396,12 @@ def test_disconnect_peer(gui, harness, node_id):
     gui.click("peerDisconnectButton")
     print("  Clicked Disconnect")
 
+    # Stop the peer process so it cannot reconnect before we poll.
+    # (The peer is configured with connect=, so it retries immediately.)
+    if harness.peer_process and harness.peer_process.poll() is None:
+        harness.peer_process.send_signal(signal.SIGTERM)
+        harness.peer_process.wait(timeout=10)
+
     harness.wait_for_no_peers()
     peers = harness.rpc_call("getpeerinfo")
     assert peers == [], f"Expected no peers after disconnect, got: {peers}"
