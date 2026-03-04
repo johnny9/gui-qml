@@ -36,13 +36,22 @@ from qml_test_harness import (
 from qml_driver import QmlDriver
 
 
-# ── Ports used by this test (chosen to avoid conflicts with default regtest) ──
-GUI_P2P_PORT = 18555
-GUI_RPC_PORT = 18556
-PEER_P2P_PORT = 18557
-PEER_RPC_PORT = 18558
-PEER2_P2P_PORT = 18559
-PEER2_RPC_PORT = 18560
+# ── Port allocation ───────────────────────────────────────────────────────────
+# Ports are laid out as consecutive pairs (P2P, RPC) per node, indexed from 0:
+#   Node 0 (GUI):   P2P = base+0, RPC = base+1
+#   Node 1 (peer):  P2P = base+2, RPC = base+3
+#   Node 2 (peer2): P2P = base+4, RPC = base+5
+#
+# Set TEST_RUNNER_PORT_MIN to a different base to avoid conflicts when running
+# multiple test instances on the same machine (e.g. in parallel CI jobs).
+_PORT_BASE_DEFAULT = 18555
+
+def _p2p_port(node_idx: int) -> int:
+    base = int(os.getenv("TEST_RUNNER_PORT_MIN", _PORT_BASE_DEFAULT))
+    return base + node_idx * 2
+
+def _rpc_port(node_idx: int) -> int:
+    return _p2p_port(node_idx) + 1
 
 GUI_RPC_USER = "qmltest"
 GUI_RPC_PASS = "qmltestpass"
@@ -69,7 +78,7 @@ def find_bitcoind():
     if not os.path.isfile(path):
         raise FileNotFoundError(
             f"bitcoind not found at {path}. "
-            "Set the BITCOIND environment variable or ensure it is built at build/bin/bitcoind."
+            "Build it alongside the app with -DBUILD_DAEMON=ON, or set the BITCOIND environment variable."
         )
     return path
 
@@ -106,8 +115,8 @@ class PeerQmlTestHarness:
             f.write("server=1\n")
             f.write(f"rpcuser={GUI_RPC_USER}\n")
             f.write(f"rpcpassword={GUI_RPC_PASS}\n")
-            f.write(f"rpcport={GUI_RPC_PORT}\n")
-            f.write(f"port={GUI_P2P_PORT}\n")
+            f.write(f"rpcport={_rpc_port(0)}\n")
+            f.write(f"port={_p2p_port(0)}\n")
             f.write("bind=127.0.0.1\n")
             f.write("listen=1\n")
             f.write("discover=0\n")
@@ -128,10 +137,10 @@ class PeerQmlTestHarness:
             f.write("server=1\n")
             f.write(f"rpcuser={GUI_RPC_USER}\n")
             f.write(f"rpcpassword={GUI_RPC_PASS}\n")
-            f.write(f"rpcport={PEER_RPC_PORT}\n")
-            f.write(f"port={PEER_P2P_PORT}\n")
+            f.write(f"rpcport={_rpc_port(1)}\n")
+            f.write(f"port={_p2p_port(1)}\n")
             f.write("listen=0\n")
-            f.write(f"connect=127.0.0.1:{GUI_P2P_PORT}\n")
+            f.write(f"connect=127.0.0.1:{_p2p_port(0)}\n")
             f.write("discover=0\n")
             f.write("dnsseed=0\n")
             f.write("fixedseeds=0\n")
@@ -206,7 +215,7 @@ class PeerQmlTestHarness:
             "params": params or [],
         }).encode("utf-8")
 
-        conn = http.client.HTTPConnection("127.0.0.1", GUI_RPC_PORT, timeout=10)
+        conn = http.client.HTTPConnection("127.0.0.1", _rpc_port(0), timeout=10)
         credentials = base64.b64encode(
             f"{GUI_RPC_USER}:{GUI_RPC_PASS}".encode("utf-8")
         ).decode("ascii")
@@ -332,10 +341,10 @@ class PeerQmlTestHarness:
             f.write("server=1\n")
             f.write(f"rpcuser={GUI_RPC_USER}\n")
             f.write(f"rpcpassword={GUI_RPC_PASS}\n")
-            f.write(f"rpcport={PEER2_RPC_PORT}\n")
-            f.write(f"port={PEER2_P2P_PORT}\n")
+            f.write(f"rpcport={_rpc_port(2)}\n")
+            f.write(f"port={_p2p_port(2)}\n")
             f.write("listen=0\n")
-            f.write(f"connect=127.0.0.1:{GUI_P2P_PORT}\n")
+            f.write(f"connect=127.0.0.1:{_p2p_port(0)}\n")
             f.write("discover=0\ndnsseed=0\nfixedseeds=0\nlistenonion=0\n")
             f.write("printtoconsole=0\nshrinkdebugfile=0\n")
         peer2_args = [self.bitcoind_binary, f"-datadir={datadir}"]
@@ -505,7 +514,12 @@ def test_disconnect_specific_peer(gui, harness):
 
 
 def test_ban_one_of_two_peers(gui, harness):
-    """Banning a peer bans its IP subnet, disconnecting all peers from that IP."""
+    """Ban one peer and verify the other is also disconnected due to subnet ban.
+
+    Bitcoin Core bans by /32 subnet for IPv4 loopback addresses. Since both
+    peer nodes connect from 127.0.0.1, banning one causes the node to reject
+    and disconnect all connections from that subnet — including the second peer.
+    """
     print("\n── test_ban_one_of_two_peers ─────────────────────────────────")
 
     peer_ids = harness.wait_for_n_peers(2)
