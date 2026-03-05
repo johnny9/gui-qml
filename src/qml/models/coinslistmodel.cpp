@@ -8,8 +8,8 @@
 #include <interfaces/wallet.h>
 #include <key_io.h>
 #include <primitives/transaction.h>
+#include <qml/bitcoinunits.h>
 #include <qml/models/walletqmlmodel.h>
-#include <qt/bitcoinunits.h>
 #include <vector>
 
 CoinsListModel::CoinsListModel(WalletQmlModel* parent)
@@ -35,7 +35,7 @@ QVariant CoinsListModel::data(const QModelIndex& index, int role) const
     case AddressRole:
         return QString::fromStdString(EncodeDestination(destination));
     case AmountRole:
-        return BitcoinUnits::format(BitcoinUnits::Unit::BTC, coin.txout.nValue);
+        return QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::BTC, coin.txout.nValue);
     case LabelRole:
         return QString::fromStdString("");
     case LockedRole:
@@ -117,14 +117,14 @@ unsigned int CoinsListModel::selectedCoinsCount() const
 
 QString CoinsListModel::totalSelected() const
 {
-    return BitcoinUnits::format(BitcoinUnits::Unit::BTC, m_total_amount);
+    return QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::BTC, m_total_amount);
 }
 
 QString CoinsListModel::changeAmount() const
 {
     CAmount change = m_total_amount - m_wallet_model->sendRecipientList()->totalAmountSatoshi();
     change = std::abs(change);
-    return BitcoinUnits::format(BitcoinUnits::Unit::BTC, change);
+    return QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::BTC, change);
 }
 
 bool CoinsListModel::overRequiredAmount() const
