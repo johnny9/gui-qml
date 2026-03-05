@@ -12,8 +12,7 @@ and verifies the result via JSON-RPC.
 This test requires:
   - bitcoin-core-app built with -DENABLE_TEST_AUTOMATION=ON
   - bitcoind binary (searched alongside bitcoin-core-app, in build/bin/,
-    in a sibling 'bitcoin' repo, or set BITCOIND env var); falls back to
-    using bitcoin-core-app itself as the peer node if no bitcoind is found
+    in a sibling 'bitcoin' repo, or set BITCOIND env var)
 """
 
 import base64
@@ -21,17 +20,16 @@ import http.client
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 
 from qml_test_harness import (
-    QmlDriverError,
     GUI_STARTUP_TIMEOUT,
     dump_qml_tree,
     find_gui_binary,
-    parse_args,
 )
 from qml_driver import QmlDriver
 
@@ -53,6 +51,20 @@ def _p2p_port(node_idx: int) -> int:
 def _rpc_port(node_idx: int) -> int:
     return _p2p_port(node_idx) + 1
 
+_COMMON_CONF = (
+    "discover=0\n"
+    "dnsseed=0\n"
+    "fixedseeds=0\n"
+    "listenonion=0\n"
+    "printtoconsole=0\n"
+    "shrinkdebugfile=0\n"
+)
+
+def _terminate_process(proc) -> None:
+    if proc and proc.poll() is None:
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=10)
+
 GUI_RPC_USER = "qmltest"
 GUI_RPC_PASS = "qmltestpass"
 
@@ -66,6 +78,20 @@ BAN_DURATIONS = [
 PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS = 10000
 PEER_ACTION_TIMEOUT_SECS          = 30
 BAN_RPC_APPLY_TIMEOUT_SECS        = 10
+
+
+# ── Helper: port readiness ────────────────────────────────────────────────────
+
+def _wait_for_port(host, port, timeout=10):
+    """Block until a TCP port accepts connections or timeout expires."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                return
+        except OSError:
+            time.sleep(0.2)
+    raise RuntimeError(f"Port {host}:{port} did not open within {timeout}s")
 
 
 # ── Helper: find bitcoind ─────────────────────────────────────────────────────
@@ -123,12 +149,7 @@ class PeerQmlTestHarness:
             f.write(f"port={_p2p_port(0)}\n")
             f.write("bind=127.0.0.1\n")
             f.write("listen=1\n")
-            f.write("discover=0\n")
-            f.write("dnsseed=0\n")
-            f.write("fixedseeds=0\n")
-            f.write("listenonion=0\n")
-            f.write("printtoconsole=0\n")
-            f.write("shrinkdebugfile=0\n")
+            f.write(_COMMON_CONF)
         return datadir
 
     def _setup_peer_datadir(self):
@@ -145,12 +166,7 @@ class PeerQmlTestHarness:
             f.write(f"port={_p2p_port(1)}\n")
             f.write("listen=0\n")
             f.write(f"connect=127.0.0.1:{_p2p_port(0)}\n")
-            f.write("discover=0\n")
-            f.write("dnsseed=0\n")
-            f.write("fixedseeds=0\n")
-            f.write("listenonion=0\n")
-            f.write("printtoconsole=0\n")
-            f.write("shrinkdebugfile=0\n")
+            f.write(_COMMON_CONF)
         return datadir
 
     # ── start / stop ──────────────────────────────────────────────────────────
@@ -181,8 +197,8 @@ class PeerQmlTestHarness:
         self.driver = QmlDriver(self.socket_path, timeout=GUI_STARTUP_TIMEOUT)
         print("QmlDriver connected to test bridge.")
 
-        # Give the GUI node's P2P listener a moment to bind.
-        time.sleep(2)
+        # Wait until the GUI node's P2P listener is ready to accept connections.
+        _wait_for_port("127.0.0.1", _p2p_port(0))
 
         peer_args = [
             self.bitcoind_binary,
@@ -293,9 +309,7 @@ class PeerQmlTestHarness:
 
     def reconnect_peer(self):
         """Restart the peer bitcoind so it reconnects to the GUI node."""
-        if self.peer_process and self.peer_process.poll() is None:
-            self.peer_process.send_signal(signal.SIGTERM)
-            self.peer_process.wait(timeout=10)
+        _terminate_process(self.peer_process)
 
         peer_args = [
             self.bitcoind_binary,
@@ -319,9 +333,7 @@ class PeerQmlTestHarness:
         if self.driver:
             self.driver.close()
             self.driver = None
-        if self.gui_process and self.gui_process.poll() is None:
-            self.gui_process.send_signal(signal.SIGTERM)
-            self.gui_process.wait(timeout=10)
+        _terminate_process(self.gui_process)
 
         # Remove the stale socket file so the new GUI can bind to the same path.
         if os.path.exists(self.socket_path):
@@ -364,8 +376,7 @@ class PeerQmlTestHarness:
             f.write(f"port={_p2p_port(2)}\n")
             f.write("listen=0\n")
             f.write(f"connect=127.0.0.1:{_p2p_port(0)}\n")
-            f.write("discover=0\ndnsseed=0\nfixedseeds=0\nlistenonion=0\n")
-            f.write("printtoconsole=0\nshrinkdebugfile=0\n")
+            f.write(_COMMON_CONF)
         peer2_args = [self.bitcoind_binary, f"-datadir={datadir}"]
         print(f"  Starting second peer: {' '.join(peer2_args)}")
         self.peer2_process = subprocess.Popen(
@@ -377,7 +388,7 @@ class PeerQmlTestHarness:
     def wait_for_n_peers(self, n, timeout=30):
         """Poll getpeerinfo until at least n peers are connected.
 
-        Returns a list of node IDs in connection order.
+        Returns a list of node IDs as reported by getpeerinfo (sorted by peer id).
         """
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -403,23 +414,25 @@ def navigate_to_peers(gui):
     gui.wait_for_page("peers")
 
 
+def _open_peer_details(gui, node_id: int) -> None:
+    gui.click(f"peerListItem_{node_id}")
+    gui.wait_for_page("peerDetails", timeout_ms=8000)
+    print(f"  Opened PeerDetails for node id={node_id}")
+
+
 # ── Individual test cases ─────────────────────────────────────────────────────
 
 def test_disconnect_peer(gui, harness, node_id):
     print("\n── test_disconnect_peer ──────────────────────────────────────────")
 
-    gui.click(f"peerListItem_{node_id}")
-    gui.wait_for_page("peerDetails", timeout_ms=8000)
-    print(f"  Opened PeerDetails for node id={node_id}")
+    _open_peer_details(gui, node_id)
 
     gui.click("peerDisconnectButton")
     print("  Clicked Disconnect")
 
     # Stop the peer process so it cannot reconnect before we poll.
     # (The peer is configured with connect=, so it retries immediately.)
-    if harness.peer_process and harness.peer_process.poll() is None:
-        harness.peer_process.send_signal(signal.SIGTERM)
-        harness.peer_process.wait(timeout=10)
+    _terminate_process(harness.peer_process)
 
     harness.wait_for_no_peers()
     peers = harness.rpc_call("getpeerinfo")
@@ -432,9 +445,7 @@ def test_disconnect_peer(gui, harness, node_id):
 def test_ban_peer(gui, harness, node_id, duration_secs, duration_label):
     print(f"\n── test_ban_peer ({duration_label}) ──────────────────────────────")
 
-    gui.click(f"peerListItem_{node_id}")
-    gui.wait_for_page("peerDetails", timeout_ms=8000)
-    print(f"  Opened PeerDetails for node id={node_id}")
+    _open_peer_details(gui, node_id)
 
     gui.click("peerBanButton")
     gui.wait_for_property(f"banDurationRow_{duration_secs}", "visible", True)
@@ -443,6 +454,12 @@ def test_ban_peer(gui, harness, node_id, duration_secs, duration_label):
 
     gui.click("banConfirmButton")
     print(f"  Confirmed ban ({duration_label})")
+
+    # Verify ban was recorded before stopping the peer.
+    harness.wait_for_banned(min_entries=1)
+
+    # Kill peer to stop reconnection; peer uses connect=, retries immediately.
+    _terminate_process(harness.peer_process)
 
     harness.wait_for_no_peers()
 
@@ -456,9 +473,18 @@ def test_ban_peer(gui, harness, node_id, duration_secs, duration_label):
         f"Expected ban duration ~{duration_secs}s, got {entry['ban_duration']}s"
     print(f"  PASSED: peer banned ({entry['address']}) for ~{duration_label}")
 
+    # Wait for PeerDetails to navigate back via its onDisconnected handler.
+    gui.wait_for_page("peers", timeout_ms=PEER_ACTION_TIMEOUT_SECS * 1000)
+
 
 def test_unban_peer(gui, harness):
     print("\n── test_unban_peer ───────────────────────────────────────────────")
+
+    # StackView disables input during transitions (500ms pop animation for
+    # PeerDetails→Peers). Wait for it to finish; pushing BannedPeers while
+    # the StackView is busy is silently ignored by Qt.
+    gui.wait_for_property("viewBannedPeersButton", "enabled", True,
+                          timeout_ms=PEER_ACTION_TIMEOUT_SECS * 1000)
 
     # The ban list button is in the Peers page footer.
     gui.click("viewBannedPeersButton")
@@ -502,9 +528,12 @@ def _wait_for_peer_gone(harness, node_id, timeout=PEER_ACTION_TIMEOUT_SECS):
     """Poll until node_id is no longer in getpeerinfo."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        peers = harness.rpc_call("getpeerinfo")
-        if not any(p["id"] == node_id for p in peers):
-            return
+        try:
+            peers = harness.rpc_call("getpeerinfo")
+            if not any(p["id"] == node_id for p in peers):
+                return
+        except Exception:
+            pass
         time.sleep(0.3)
     raise RuntimeError(f"Peer {node_id} did not disconnect in time")
 
@@ -520,10 +549,13 @@ def test_disconnect_specific_peer(gui, harness):
 
     gui.wait_for_property(f"peerListItem_{target_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
 
-    gui.click(f"peerListItem_{target_id}")
-    gui.wait_for_page("peerDetails", timeout_ms=8000)
+    _open_peer_details(gui, target_id)
     gui.click("peerDisconnectButton")
     print(f"  Clicked Disconnect for peer {target_id}")
+
+    # Stop peer_process so it cannot reconnect before we poll.
+    # (peer_process is configured with connect=, so it retries immediately.)
+    _terminate_process(harness.peer_process)
 
     _wait_for_peer_gone(harness, target_id)
 
@@ -547,20 +579,26 @@ def test_ban_one_of_two_peers(gui, harness):
     """
     print("\n── test_ban_one_of_two_peers ─────────────────────────────────")
 
+    harness.start_additional_peer()
     peer_ids = harness.wait_for_n_peers(2)
     target_id = peer_ids[0]
 
     gui.wait_for_property(f"peerListItem_{target_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
 
-    gui.click(f"peerListItem_{target_id}")
-    gui.wait_for_page("peerDetails", timeout_ms=8000)
+    _open_peer_details(gui, target_id)
     gui.click("peerBanButton")
     gui.wait_for_property("banDurationRow_3600", "visible", True)
     gui.click("banDurationRow_3600")
     gui.click("banConfirmButton")
     print(f"  Banned peer {target_id} (subnet: 127.0.0.1/32)")
 
-    # Both peers share 127.0.0.1, so banning one peer's subnet disconnects both.
+    # Verify ban was recorded before stopping the peers.
+    harness.wait_for_banned(min_entries=1)
+
+    # Kill both peer processes — both share 127.0.0.1 and retry immediately.
+    for proc_attr in ("peer_process", "peer2_process"):
+        _terminate_process(getattr(harness, proc_attr, None))
+
     harness.wait_for_no_peers()
 
     peers = harness.rpc_call("getpeerinfo")
@@ -640,13 +678,13 @@ def run_tests():
         gui = harness.driver
 
         # ── Tests 8–9: Multi-peer isolation ──────────────────────────────
+        # test_ban_persistence already navigated to the peers page after
+        # restarting the GUI, so no additional navigation is needed here.
         print("\nReconnecting peer for multi-peer disconnect test ...")
         peer1_id = harness.reconnect_peer()
-        navigate_to_peers(gui)
         gui.wait_for_property(f"peerListItem_{peer1_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
         test_disconnect_specific_peer(gui, harness)
 
-        # peer2 may still be running; reconnect peer1 then run ban test.
         print("\nReconnecting peer for multi-peer ban test ...")
         peer1_id = harness.reconnect_peer()
         navigate_to_peers(gui)

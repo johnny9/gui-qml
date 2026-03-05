@@ -5,7 +5,8 @@
 #include <qml/models/peerdetailsmodel.h>
 
 PeerDetailsModel::PeerDetailsModel(const CNodeCombinedStats* nodeStats, PeerListModel* parent)
-: m_combinedStats{nodeStats}
+: m_addr{nodeStats->nodeStats.addr}
+, m_combinedStats{nodeStats}
 , m_model{parent}
 {
     for (int row = 0; row < m_model->rowCount(); ++row) {

@@ -347,7 +347,7 @@ Page {
                     Layout.preferredWidth: 0
                     text: qsTr("Ban")
                     onClicked: {
-                        nodeModel.banPeer(details.nodeId, banPopup.selectedDuration)
+                        nodeModel.banPeer(details.rawAddress, banPopup.selectedDuration)
                         banPopup.close()
                     }
                 }

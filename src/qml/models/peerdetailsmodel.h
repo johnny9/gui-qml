@@ -8,6 +8,7 @@
 #include <qml/models/peerlistmodel.h>
 #include <qml/peerstatsutil.h>
 
+#include <netaddress.h>
 #include <QObject>
 #include <util/time.h>
 
@@ -15,6 +16,7 @@ class PeerDetailsModel : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(int nodeId READ nodeId NOTIFY dataChanged)
+    Q_PROPERTY(QString rawAddress READ rawAddress CONSTANT)
     Q_PROPERTY(QString address READ address NOTIFY dataChanged)
     Q_PROPERTY(QString addressLocal READ addressLocal NOTIFY dataChanged)
     Q_PROPERTY(QString type READ type NOTIFY dataChanged)
@@ -43,6 +45,7 @@ public:
     explicit PeerDetailsModel(const CNodeCombinedStats* nodeStats, PeerListModel* model);
 
     int nodeId() const { return m_combinedStats->nodeStats.nodeid; }
+    QString rawAddress() const { return QString::fromStdString(m_addr.ToStringAddr()); }
     QString address() const { return QString::fromStdString(m_combinedStats->nodeStats.m_addr_name); }
     QString addressLocal() const { return QString::fromStdString(m_combinedStats->nodeStats.addrLocal); }
     QString type() const { return PeerStatsUtil::ConnectionTypeToQString(m_combinedStats->nodeStats.m_conn_type, /*prepend_direction=*/true); }
@@ -87,6 +90,7 @@ private Q_SLOTS:
 
 private:
     int m_row{-1};
+    CNetAddr m_addr;
     const CNodeCombinedStats* m_combinedStats{nullptr};
     PeerListModel* m_model{nullptr};
     bool m_disconnected{false};
