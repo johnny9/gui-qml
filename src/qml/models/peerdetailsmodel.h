@@ -44,7 +44,7 @@ class PeerDetailsModel : public QObject
 public:
     explicit PeerDetailsModel(const CNodeCombinedStats* nodeStats, PeerListModel* model);
 
-    int nodeId() const { return m_combinedStats->nodeStats.nodeid; }
+    int nodeId() const { return m_node_id; }
     QString rawAddress() const { return QString::fromStdString(m_addr.ToStringAddr()); }
     QString address() const { return QString::fromStdString(m_combinedStats->nodeStats.m_addr_name); }
     QString addressLocal() const { return QString::fromStdString(m_combinedStats->nodeStats.addrLocal); }
@@ -90,6 +90,7 @@ private Q_SLOTS:
 
 private:
     int m_row{-1};
+    int m_node_id{-1};
     CNetAddr m_addr;
     const CNodeCombinedStats* m_combinedStats{nullptr};
     PeerListModel* m_model{nullptr};
