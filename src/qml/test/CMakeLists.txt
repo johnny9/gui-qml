@@ -42,6 +42,7 @@ target_include_directories(bitcoinqml_unit_tests
 target_link_libraries(bitcoinqml_unit_tests
   PRIVATE
     bitcoin_common
+    GTest::gmock
     bitcoin_util
     GTest::gmock
     Qt6::Core
