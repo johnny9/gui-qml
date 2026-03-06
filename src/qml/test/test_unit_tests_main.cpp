@@ -9,6 +9,8 @@
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 
 int RunBitcoinAmountTests(int argc, char* argv[]);
+int RunPeerListModelTests(int argc, char* argv[]);
+int RunPeerStatsUtilTests(int argc, char* argv[]);
 int RunQmlBitcoinUnitsTests(int argc, char* argv[]);
 int RunImageProviderTests(int argc, char* argv[]);
 int RunNetworkStyleTests(int argc, char* argv[]);
@@ -20,6 +22,8 @@ int main(int argc, char* argv[])
 
     int status = 0;
     status |= RunBitcoinAmountTests(argc, argv);
+    status |= RunPeerListModelTests(argc, argv);
+    status |= RunPeerStatsUtilTests(argc, argv);
     status |= RunQmlBitcoinUnitsTests(argc, argv);
     status |= RunImageProviderTests(argc, argv);
     status |= RunNetworkStyleTests(argc, argv);

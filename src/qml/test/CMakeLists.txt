@@ -3,10 +3,13 @@ cmake_minimum_required(VERSION 3.22)
 # Tests for the QML/Qt6 app
 
 find_package(Qt 6.2 MODULE REQUIRED COMPONENTS Core Gui Test Qml Quick QuickTest)
+find_package(GTest REQUIRED)
 
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
   test_bitcoinamount.cpp
+  test_peerlistmodel.cpp
+  test_peerstatsutil.cpp
   test_qmlbitcoinunits.cpp
   test_imageprovider.cpp
   test_networkstyle.cpp
@@ -18,6 +21,10 @@ add_executable(bitcoinqml_unit_tests
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerdetailsmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistsortproxy.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/peerstatsutil.cpp
 )
 
 target_compile_definitions(bitcoinqml_unit_tests
@@ -29,11 +36,14 @@ target_include_directories(bitcoinqml_unit_tests
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/univalue/include
 )
 
 target_link_libraries(bitcoinqml_unit_tests
   PRIVATE
+    bitcoin_common
     bitcoin_util
+    GTest::gmock
     Qt6::Core
     Qt6::Gui
     Qt6::Quick
