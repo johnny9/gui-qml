@@ -4,7 +4,6 @@
 
 #include <QtTest/QtTest>
 
-#include <test/gmocktestfixture.h>
 #include <net_processing.h>
 #include <test/mocks/mocknode.h>
 #include <qml/initexecutor.h>
@@ -19,7 +18,7 @@ namespace {
 constexpr auto SIGNAL_TIMEOUT{5'000};
 }
 
-class QmlInitExecutorApiTests : public GmockTestFixture
+class QmlInitExecutorApiTests : public QObject
 {
     Q_OBJECT
 

@@ -11,8 +11,12 @@
 
 #include <memory>
 
+#include <QFileSystemWatcher>
+#include <QList>
 #include <QObject>
 #include <QString>
+#include <QVariantList>
+#include <QVariantMap>
 
 const char DEFAULT_PROXY_HOST[] = "127.0.0.1";
 constexpr uint16_t DEFAULT_PROXY_PORT = 9050;
@@ -37,6 +41,17 @@ class NodeModel : public QObject
     Q_PROPERTY(double verificationProgress READ verificationProgress NOTIFY verificationProgressChanged)
     Q_PROPERTY(bool pause READ pause WRITE setPause NOTIFY pauseChanged)
     Q_PROPERTY(bool faulted READ errorState WRITE setErrorState NOTIFY errorStateChanged)
+    // CONSTANT assumes LogInstance().m_file_path is fixed after startup.
+    Q_PROPERTY(QString debugLogPath READ debugLogPath CONSTANT)
+    Q_PROPERTY(QString debugLogOpenError READ debugLogOpenError NOTIFY debugLogOpenErrorChanged)
+    Q_PROPERTY(QString formattedDebugLog READ formattedDebugLog NOTIFY formattedDebugLogChanged)
+    Q_PROPERTY(int debugLogLineCount READ debugLogLineCount NOTIFY formattedDebugLogChanged)
+    Q_PROPERTY(bool debugLogHasMoreLines READ debugLogHasMoreLines NOTIFY debugLogHasMoreLinesChanged)
+    Q_PROPERTY(int debugLogLoadLimit READ debugLogLoadLimit WRITE setDebugLogLoadLimit NOTIFY debugLogLoadLimitChanged)
+    Q_PROPERTY(QString debugLogFilter READ debugLogFilter WRITE setDebugLogFilter NOTIFY formattedDebugLogChanged)
+    Q_PROPERTY(QString debugLogLineNumColor WRITE setDebugLogLineNumColor)
+    Q_PROPERTY(QString debugLogMessageColor WRITE setDebugLogMessageColor)
+    Q_PROPERTY(QString debugLogTimestampColor WRITE setDebugLogTimestampColor)
 
 public:
     explicit NodeModel(interfaces::Node& node);
@@ -65,6 +80,24 @@ public:
     void startShutdownPolling();
     void stopShutdownPolling();
 
+    QString debugLogPath() const;
+    Q_INVOKABLE bool openDebugLogFile();
+    QString debugLogOpenError() const { return m_debug_log_open_error; }
+    Q_INVOKABLE QVariantList debugLogLines(int max_lines = 10000);
+
+    QString formattedDebugLog() const { return m_formatted_debug_log; }
+    int debugLogLineCount() const { return m_debug_log_line_count; }
+    bool debugLogHasMoreLines() const { return m_has_more_lines; }
+    int debugLogLoadLimit() const { return m_debug_log_load_limit; }
+    QString debugLogFilter() const { return m_debug_log_filter; }
+    void setDebugLogLoadLimit(int limit);
+    void setDebugLogFilter(const QString& filter);
+    void setDebugLogLineNumColor(const QString& color);
+    void setDebugLogMessageColor(const QString& color);
+    void setDebugLogTimestampColor(const QString& color);
+    Q_INVOKABLE void refreshDebugLog(bool full_load = false);
+    Q_INVOKABLE void updateDebugLogTimestamps();
+
     Q_INVOKABLE bool validateProxyAddress(QString addr_port);
     Q_INVOKABLE QString defaultProxyAddress();
     Q_INVOKABLE bool disconnectPeer(int nodeId);
@@ -87,6 +120,12 @@ Q_SIGNALS:
     void setTimeRatioListInitial();
     void nodeInitialized();
     void bannedListChanged();
+    void debugLogChanged();
+    void debugLogOpenErrorChanged();
+    void formattedDebugLogChanged();
+    void debugLogHasMoreLinesChanged();
+    void debugLogLoadLimitChanged();
+    void newDebugLogLines(int count);
 
 protected:
     void timerEvent(QTimerEvent* event) override;
@@ -100,6 +139,18 @@ private:
     double m_verification_progress{0.0};
     bool m_pause{false};
     bool m_faulted{false};
+    QString m_debug_log_open_error;
+    QFileSystemWatcher m_log_watcher;
+
+    QList<QVariantMap> m_all_lines;
+    QString m_debug_log_filter;
+    int m_debug_log_load_limit{1000};
+    bool m_has_more_lines{false};
+    int m_debug_log_line_count{0};
+    QString m_debug_log_line_num_color;
+    QString m_debug_log_message_color;
+    QString m_debug_log_timestamp_color;
+    QString m_formatted_debug_log;
 
     int m_shutdown_polling_timer_id{0};
 
@@ -113,6 +164,9 @@ private:
     void ConnectToBlockTipSignal();
     void ConnectToNumConnectionsChangedSignal();
     void ConnectToBannedListChangedSignal();
+    void ConnectToDebugLogSignal();
+    void buildFormattedDebugLog();
+    QString relativeTimeLabel(qint64 timestamp_ms, qint64 now_ms) const;
 };
 
 #endif // BITCOIN_QML_MODELS_NODEMODEL_H
