@@ -56,6 +56,7 @@ public:
                         interfaces::WalletTxStatus& tx_status,
                         int& num_blocks,
                         int64_t& block_time) const;
+    QString getAddressLabel(const QString& address) const;
 
     using TransactionChangedFn = std::function<void(const uint256& txid, ChangeType status)>;
     virtual std::unique_ptr<interfaces::Handler> handleTransactionChanged(TransactionChangedFn fn);

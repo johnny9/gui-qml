@@ -13,6 +13,7 @@
 #include <consensus/amount.h>
 #include <interfaces/wallet.h>
 #include <key_io.h>
+#include <addresstype.h>
 #include <outputtype.h>
 #include <qml/bitcoinunits.h>
 #include <serialize.h>
@@ -108,6 +109,25 @@ bool WalletQmlModel::tryGetTxStatus(const uint256& txid,
         return false;
     }
     return m_wallet->tryGetTxStatus(Txid::FromUint256(txid), tx_status, num_blocks, block_time);
+}
+
+QString WalletQmlModel::getAddressLabel(const QString& address) const
+{
+    if (!m_wallet || address.isEmpty()) {
+        return {};
+    }
+
+    const CTxDestination destination = DecodeDestination(address.toStdString());
+    if (!IsValidDestination(destination)) {
+        return {};
+    }
+
+    std::string label;
+    if (!m_wallet->getAddress(destination, &label, nullptr, nullptr)) {
+        return {};
+    }
+
+    return QString::fromStdString(label);
 }
 
 std::unique_ptr<interfaces::Handler> WalletQmlModel::handleTransactionChanged(TransactionChangedFn fn)
