@@ -10,6 +10,7 @@ import "../../components"
 
 InformationPage {
     id: root
+    objectName: "settingsDeveloper"
     property bool onboarding: false
     navLeftDetail: NavButton {
         iconSource: "image://images/caret-left"
@@ -24,7 +25,9 @@ InformationPage {
     headerText: qsTr("Developer options")
     headerMargin: 0
     detailActive: true
-    detailItem: DeveloperOptions {}
+    detailItem: DeveloperOptions {
+        onDebugLogViewerRequested: root.StackView.view.push(debugLogPage)
+    }
 
     states: [
         State {
@@ -49,6 +52,13 @@ InformationPage {
             headerBold: true
             headerSize: 18
             header: qsTr("Developer settings")
+        }
+    }
+
+    Component {
+        id: debugLogPage
+        SettingsDebugLog {
+            onBack: root.StackView.view.pop()
         }
     }
 }

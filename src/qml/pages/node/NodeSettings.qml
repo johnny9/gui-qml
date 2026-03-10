@@ -41,6 +41,7 @@ PageStack {
                 spacing: 4
                 Setting {
                     id: gotoAbout
+                    objectName: "gotoAboutSetting"
                     Layout.fillWidth: true
                     header: qsTr("About")
                     actionItem: CaretRightIcon {

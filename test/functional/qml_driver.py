@@ -105,6 +105,24 @@ class QmlDriver:
             )
         return resp["value"]
 
+    def wait_for_property(self, object_name, prop, predicate, timeout_ms=2000):
+        """Poll get_property until predicate(value) is True or timeout is reached.
+
+        Returns the value that satisfied the predicate.
+        Raises QmlDriverError if the timeout expires.
+        """
+        deadline = time.time() + timeout_ms / 1000
+        while time.time() < deadline:
+            value = self.get_property(object_name, prop)
+            if predicate(value):
+                return value
+            time.sleep(0.05)
+        value = self.get_property(object_name, prop)
+        raise QmlDriverError(
+            f"wait_for_property({object_name!r}, {prop!r}) timed out; "
+            f"last value: {value!r}"
+        )
+
     def wait_for_page(self, page_name, timeout_ms=5000):
         """Block until the named page/object is visible.
 
