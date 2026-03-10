@@ -112,7 +112,7 @@ AppMode SetupAppMode()
     #endif // __ANDROID__
 
     #ifdef ENABLE_WALLET
-        wallet_enabled = true;
+        wallet_enabled = !gArgs.GetBoolArg("-disablewallet", false);
     #else
         wallet_enabled = false;
     #endif // ENABLE_WALLET
@@ -265,7 +265,9 @@ int QmlGuiMain(int argc, char* argv[])
     InitExecutor init_executor{*node};
 #ifdef ENABLE_WALLET
     WalletQmlController wallet_controller(*node);
-    QObject::connect(&init_executor, &InitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
+    if (!gArgs.GetBoolArg("-disablewallet", false)) {
+        QObject::connect(&init_executor, &InitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
+    }
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &InitExecutor::initialize);
     QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {

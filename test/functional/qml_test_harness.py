@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 from qml_driver import QmlDriver, QmlDriverError
 
@@ -150,6 +151,27 @@ class QmlTestHarness:
         if self.tmpdir:
             shutil.rmtree(self.tmpdir, ignore_errors=True)
             self.tmpdir = None
+
+
+def complete_onboarding(gui):
+    """Click through all onboarding pages to reach the main node/wallet screen.
+
+    Assumes the app was started with -resetguisettings or a fresh datadir so
+    that onboarding is active.
+    """
+    gui.wait_for_page("onboardingCover", timeout_ms=10000)
+    steps = [
+        ("onboardingCoverButton",           "onboardingStrengthen"),
+        ("onboardingStrengthenButton",      "onboardingBlockclock"),
+        ("onboardingBlockclockButton",      "onboardingStorageLocation"),
+        ("onboardingStorageLocationButton", "onboardingStorageAmount"),
+        ("onboardingStorageAmountButton",   "onboardingConnection"),
+    ]
+    for button, expected_page in steps:
+        gui.click(button)
+        gui.wait_for_page(expected_page, timeout_ms=5000)
+    gui.click("onboardingConnectionButton")
+    time.sleep(1)  # Allow navigation to the post-onboarding screen to settle.
 
 
 def dump_qml_tree(driver):

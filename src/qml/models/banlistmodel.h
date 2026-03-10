@@ -5,7 +5,7 @@
 #ifndef BITCOIN_QML_MODELS_BANLISTMODEL_H
 #define BITCOIN_QML_MODELS_BANLISTMODEL_H
 
-#include <bitcoin/src/qt/bantablemodel.h>
+#include <qt/bantablemodel.h>
 
 #include <QAbstractListModel>
 #include <QList>

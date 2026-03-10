@@ -11,6 +11,7 @@ import "../../components"
 
 Page {
     id: root
+    objectName: "peerDetails"
     signal back()
 
     property PeerDetailsModel details
@@ -32,7 +33,7 @@ Page {
         centerItem: Header {
             headerBold: true
             headerSize: 18
-            header: qsTr("Peer " + details.nodeId)
+            header: qsTr("Peer %1").arg(details.nodeId)
         }
     }
 
@@ -235,37 +236,21 @@ Page {
                 width: parent.width
                 spacing: 10
 
-                ContinueButton {
+                OutlineButton {
+                    objectName: "peerDisconnectButton"
                     Layout.fillWidth: true
                     Layout.preferredWidth: 0
                     text: qsTr("Disconnect")
-                    borderColor: Theme.color.neutral6
-                    borderHoverColor: Theme.color.orangeLight1
-                    borderPressedColor: Theme.color.orangeLight2
                     bold: false
-                    textColor: Theme.color.white
-                    textHoverColor: Theme.color.orangeLight1
-                    textPressedColor: Theme.color.orangeLight2
-                    backgroundColor: "transparent"
-                    backgroundHoverColor: "transparent"
-                    backgroundPressedColor: "transparent"
                     onClicked: nodeModel.disconnectPeer(details.nodeId)
                 }
 
-                ContinueButton {
+                OutlineButton {
+                    objectName: "peerBanButton"
                     Layout.fillWidth: true
                     Layout.preferredWidth: 0
                     text: qsTr("Ban")
                     bold: false
-                    backgroundColor: "transparent"
-                    backgroundHoverColor: "transparent"
-                    backgroundPressedColor: "transparent"
-                    borderColor: Theme.color.neutral6
-                    borderHoverColor: Theme.color.orangeLight1
-                    borderPressedColor: Theme.color.orangeLight2
-                    textColor: Theme.color.white
-                    textHoverColor: Theme.color.orangeLight1
-                    textPressedColor: Theme.color.orangeLight2
                     onClicked: banPopup.open()
                 }
             }
@@ -317,6 +302,7 @@ Page {
 
                     ItemDelegate {
                         id: durationRow
+                        objectName: "banDurationRow_" + modelData.secs
                         width: parent.width
                         leftPadding: 8
                         rightPadding: 8
@@ -356,11 +342,12 @@ Page {
                 }
 
                 ContinueButton {
+                    objectName: "banConfirmButton"
                     Layout.fillWidth: true
                     Layout.preferredWidth: 0
                     text: qsTr("Ban")
                     onClicked: {
-                        nodeModel.banPeer(details.nodeId, banPopup.selectedDuration)
+                        nodeModel.banPeer(details.rawAddress, banPopup.selectedDuration)
                         banPopup.close()
                     }
                 }
@@ -417,5 +404,3 @@ Page {
         }
     }
 }
-
-

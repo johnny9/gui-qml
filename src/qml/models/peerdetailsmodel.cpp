@@ -5,13 +5,15 @@
 #include <qml/models/peerdetailsmodel.h>
 
 PeerDetailsModel::PeerDetailsModel(const CNodeCombinedStats* nodeStats, PeerListModel* parent)
-: m_combinedStats{nodeStats}
+: m_node_id{static_cast<int>(nodeStats->nodeStats.nodeid)}
+, m_addr{nodeStats->nodeStats.addr}
+, m_combinedStats{nodeStats}
 , m_model{parent}
 {
     for (int row = 0; row < m_model->rowCount(); ++row) {
         QModelIndex index = m_model->index(row, 0);
         int nodeIdInRow = m_model->data(index, PeerListModel::NetNodeId).toInt();
-        if (nodeIdInRow == m_combinedStats->nodeStats.nodeid) {
+        if (nodeIdInRow == m_node_id) {
             m_row = row;
             break;
         }
@@ -57,9 +59,9 @@ void PeerDetailsModel::onModelDataChanged(const QModelIndex& /* top_left */, con
 
 void PeerDetailsModel::onModelReset()
 {
-    if (!m_combinedStats || m_disconnected) return;
+    if (m_disconnected) return;
 
-    const int tracked_node_id = m_combinedStats->nodeStats.nodeid;
+    const int tracked_node_id = m_node_id;
     for (int row = 0; row < m_model->rowCount(); ++row) {
         const QModelIndex index = m_model->index(row, 0);
         const int node_id_in_row = m_model->data(index, PeerListModel::NetNodeId).toInt();

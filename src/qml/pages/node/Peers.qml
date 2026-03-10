@@ -16,6 +16,7 @@ Page {
     signal bannedPeers
 
     id: root
+    objectName: "peers"
     background: null
 
     header: NavigationBar2 {
@@ -167,6 +168,7 @@ Page {
                 }
 
                 TextButton {
+                    objectName: "viewBannedPeersButton"
                     Layout.alignment: Qt.AlignHCenter
                     visible: banListModel.count > 0
                     text: qsTr("View %1 banned %2").arg(banListModel.count).arg(banListModel.count === 1 ? qsTr("peer") : qsTr("peers"))
@@ -179,6 +181,7 @@ Page {
 
         delegate: ItemDelegate {
             id: delegate
+            objectName: "peerListItem_" + nodeId
             required property int nodeId;
             required property string address;
             required property string subversion;
