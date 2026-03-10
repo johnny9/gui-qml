@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -169,42 +169,11 @@ PageStack {
                     Layout.fillWidth: true
                 }
 
-                ColumnLayout {
+                BitcoinAddressInputField {
                     Layout.fillWidth: true
-
-                    LabeledTextInput {
-                        id: address
-                        Layout.fillWidth: true
-                        labelText: qsTr("Send to")
-                        placeholderText: qsTr("Enter address...")
-                        text: root.recipient.address
-                        onTextEdited: root.recipient.address = address.text
-                        validator: RegularExpressionValidator {
-                            regularExpression: /^[0-9A-HJ-NP-Za-z]+$/
-                        }
-                        maximumLength: 62
-                    }
-
-                    RowLayout {
-                        id: addressIssue
-                        Layout.fillWidth: true
-                        visible: root.recipient.addressError.length > 0
-
-                        Icon {
-                            source: "image://images/alert-filled"
-                            size: 22
-                            color: Theme.color.red
-                        }
-
-                        CoreText {
-                            id: warningText
-                            text: root.recipient.addressError
-                            font.pixelSize: 15
-                            color: Theme.color.red
-                            horizontalAlignment: Text.AlignLeft
-                            Layout.fillWidth: true
-                        }
-                    }
+                    enabled: walletController.initialized
+                    address: root.recipient.address
+                    errorText: root.recipient.addressError
                 }
 
                 Separator {
