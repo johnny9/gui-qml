@@ -55,6 +55,16 @@ OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, bool is_onboarded)
     m_server = SettingToBool(m_node.getPersistentSetting("server"), false);
 
     m_dataDir = getDefaultDataDirString();
+
+    QString proxy_setting = QString::fromStdString(SettingToString(m_node.getPersistentSetting("proxy"), ""));
+    if (proxy_setting == "0") proxy_setting.clear();
+    m_proxy_enabled = !proxy_setting.isEmpty();
+    m_proxy_address = proxy_setting;
+
+    QString onion_setting = QString::fromStdString(SettingToString(m_node.getPersistentSetting("onion"), ""));
+    if (onion_setting == "0") onion_setting.clear();
+    m_tor_enabled = !onion_setting.isEmpty();
+    m_tor_address = onion_setting;
 }
 
 void OptionsQmlModel::setDbcacheSizeMiB(int new_dbcache_size_mib)
@@ -131,6 +141,58 @@ void OptionsQmlModel::setServer(bool new_server)
             m_node.updateRwSetting("server", new_server);
         }
         Q_EMIT serverChanged(new_server);
+    }
+}
+
+void OptionsQmlModel::setProxyEnabled(bool enabled)
+{
+    if (enabled != m_proxy_enabled) {
+        m_proxy_enabled = enabled;
+        if (m_onboarded) {
+            if (enabled && !m_proxy_address.isEmpty()) {
+                m_node.updateRwSetting("proxy", m_proxy_address.toStdString());
+            } else {
+                m_node.updateRwSetting("proxy", std::string{});
+            }
+        }
+        Q_EMIT proxyEnabledChanged(enabled);
+    }
+}
+
+void OptionsQmlModel::setProxyAddress(QString address)
+{
+    if (address != m_proxy_address) {
+        m_proxy_address = address;
+        if (m_onboarded && m_proxy_enabled) {
+            m_node.updateRwSetting("proxy", address.toStdString());
+        }
+        Q_EMIT proxyAddressChanged(address);
+    }
+}
+
+void OptionsQmlModel::setTorEnabled(bool enabled)
+{
+    if (enabled != m_tor_enabled) {
+        m_tor_enabled = enabled;
+        if (m_onboarded) {
+            if (enabled && !m_tor_address.isEmpty()) {
+                m_node.updateRwSetting("onion", m_tor_address.toStdString());
+            } else {
+                m_node.updateRwSetting("onion", std::string{});
+            }
+        }
+        Q_EMIT torEnabledChanged(enabled);
+    }
+}
+
+void OptionsQmlModel::setTorAddress(QString address)
+{
+    if (address != m_tor_address) {
+        m_tor_address = address;
+        if (m_onboarded && m_tor_enabled) {
+            m_node.updateRwSetting("onion", address.toStdString());
+        }
+        Q_EMIT torAddressChanged(address);
     }
 }
 
@@ -220,6 +282,12 @@ void OptionsQmlModel::onboard()
     }
     if (m_server) {
         m_node.updateRwSetting("server", m_server);
+    }
+    if (m_proxy_enabled && !m_proxy_address.isEmpty()) {
+        m_node.updateRwSetting("proxy", m_proxy_address.toStdString());
+    }
+    if (m_tor_enabled && !m_tor_address.isEmpty()) {
+        m_node.updateRwSetting("onion", m_tor_address.toStdString());
     }
     m_onboarded = true;
 }

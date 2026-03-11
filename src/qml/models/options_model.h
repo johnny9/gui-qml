@@ -38,6 +38,10 @@ class OptionsQmlModel : public QObject
     Q_PROPERTY(QString dataDir READ dataDir WRITE setDataDir NOTIFY dataDirChanged)
     Q_PROPERTY(QString getDefaultDataDirString READ getDefaultDataDirString CONSTANT)
     Q_PROPERTY(QUrl getDefaultDataDirectory READ getDefaultDataDirectory CONSTANT)
+    Q_PROPERTY(bool proxyEnabled READ proxyEnabled WRITE setProxyEnabled NOTIFY proxyEnabledChanged)
+    Q_PROPERTY(QString proxyAddress READ proxyAddress WRITE setProxyAddress NOTIFY proxyAddressChanged)
+    Q_PROPERTY(bool torEnabled READ torEnabled WRITE setTorEnabled NOTIFY torEnabledChanged)
+    Q_PROPERTY(QString torAddress READ torAddress WRITE setTorAddress NOTIFY torAddressChanged)
 
 public:
     explicit OptionsQmlModel(interfaces::Node& node, bool is_onboarded);
@@ -66,6 +70,14 @@ public:
     QUrl getDefaultDataDirectory();
     Q_INVOKABLE bool setCustomDataDirArgs(QString path);
     Q_INVOKABLE QString getCustomDataDirString();
+    bool proxyEnabled() const { return m_proxy_enabled; }
+    void setProxyEnabled(bool enabled);
+    QString proxyAddress() const { return m_proxy_address; }
+    void setProxyAddress(QString address);
+    bool torEnabled() const { return m_tor_enabled; }
+    void setTorEnabled(bool enabled);
+    QString torAddress() const { return m_tor_address; }
+    void setTorAddress(QString address);
 
 public Q_SLOTS:
     void setCustomDataDirString(const QString &new_custom_datadir_string) {
@@ -83,6 +95,10 @@ Q_SIGNALS:
     void serverChanged(bool new_server);
     void customDataDirStringChanged(QString new_custom_datadir_string);
     void dataDirChanged(QString new_data_dir);
+    void proxyEnabledChanged(bool enabled);
+    void proxyAddressChanged(QString address);
+    void torEnabledChanged(bool enabled);
+    void torAddressChanged(QString address);
 
 private:
     interfaces::Node& m_node;
@@ -102,6 +118,10 @@ private:
     bool m_server;
     QString m_custom_datadir_string;
     QString m_dataDir;
+    bool m_proxy_enabled;
+    QString m_proxy_address;
+    bool m_tor_enabled;
+    QString m_tor_address;
 
     common::SettingsValue pruneSetting() const;
 };
