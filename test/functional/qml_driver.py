@@ -125,7 +125,11 @@ class QmlDriver:
         )
         deadline = time.time() + timeout_ms / 1000
         while time.time() < deadline:
-            value = self.get_property(object_name, prop)
+            try:
+                value = self.get_property(object_name, prop)
+            except QmlDriverError:
+                time.sleep(0.05)
+                continue
             if predicate(value):
                 return value
             time.sleep(0.05)
