@@ -27,8 +27,31 @@ Page {
             header: qsTr("Proxy Settings")
         }
     }
-    ProxySettings {
-        width: Math.min(parent.width, 450)
-        anchors.horizontalCenter: parent.horizontalCenter
+
+    ScrollView {
+        anchors.fill: parent
+        contentWidth: width
+        clip: true
+
+        ColumnLayout {
+            width: Math.min(parent.width, 450)
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: 0
+
+            ProxySettings {
+                Layout.fillWidth: true
+            }
+
+            CoreText {
+                Layout.fillWidth: true
+                Layout.topMargin: 20
+                Layout.bottomMargin: 20
+                Layout.leftMargin: 10
+                Layout.rightMargin: 10
+                text: qsTr("Proxy changes take effect after restarting the application.")
+                color: Theme.color.neutral5
+                wrapMode: Text.WordWrap
+            }
+        }
     }
 }
