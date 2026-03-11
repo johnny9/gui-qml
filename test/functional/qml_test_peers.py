@@ -459,13 +459,22 @@ def navigate_to_peers(gui):
     """From the NodeRunner main screen, navigate to the Peers list page."""
     gui.click("nodeSettingsButton")
     gui.wait_for_page("settingsPeers", timeout_ms=3000)
+    _wait_for_node_settings_idle(gui)
     gui.click("settingsPeers")
     gui.wait_for_page("peers")
+    _wait_for_node_settings_idle(gui)
+
+
+def _wait_for_node_settings_idle(gui, timeout_ms=PEER_ACTION_TIMEOUT_SECS * 1000) -> None:
+    """Wait until the nested NodeSettings stack has finished animating."""
+    gui.wait_for_property("nodeSettingsStack", "busy", False, timeout_ms=timeout_ms)
 
 
 def _open_peer_details(gui, node_id: int) -> None:
+    _wait_for_node_settings_idle(gui)
     gui.click(f"peerListItem_{node_id}")
     gui.wait_for_page("peerDetails", timeout_ms=8000)
+    _wait_for_node_settings_idle(gui)
     print(f"  Opened PeerDetails for node id={node_id}")
 
 
@@ -524,6 +533,7 @@ def test_ban_peer(gui, harness, node_id, duration_secs, duration_label):
 
     # Wait for PeerDetails to navigate back via its onDisconnected handler.
     gui.wait_for_page("peers", timeout_ms=PEER_ACTION_TIMEOUT_SECS * 1000)
+    _wait_for_node_settings_idle(gui)
 
 
 def test_unban_peer(gui, harness):
@@ -532,12 +542,14 @@ def test_unban_peer(gui, harness):
     # StackView disables input during transitions (500ms pop animation for
     # PeerDetails→Peers). Wait for it to finish; pushing BannedPeers while
     # the StackView is busy is silently ignored by Qt.
+    _wait_for_node_settings_idle(gui)
     gui.wait_for_property("viewBannedPeersButton", "enabled", True,
                           timeout_ms=PEER_ACTION_TIMEOUT_SECS * 1000)
 
     # The ban list button is in the Peers page footer.
     gui.click("viewBannedPeersButton")
     gui.wait_for_page("bannedPeers", timeout_ms=8000)
+    _wait_for_node_settings_idle(gui)
     print("  Navigated to BannedPeers page")
 
     gui.click("unbanButton_0")
@@ -725,8 +737,10 @@ def run_tests():
         # The 1-year ban from the last iteration is still in the ban list.
         test_unban_peer(gui, harness)
 
+        _wait_for_node_settings_idle(gui)
         gui.click("bannedPeersBackButton")
         gui.wait_for_page("peers")
+        _wait_for_node_settings_idle(gui)
 
         assert not gui.get_property("viewBannedPeersButton", "visible"), \
             "viewBannedPeersButton should be hidden after UI unban"
