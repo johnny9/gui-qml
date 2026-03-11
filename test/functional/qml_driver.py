@@ -105,12 +105,24 @@ class QmlDriver:
             )
         return resp["value"]
 
-    def wait_for_property(self, object_name, prop, predicate, timeout_ms=2000):
-        """Poll get_property until predicate(value) is True or timeout is reached.
+    def wait_for_property(self, object_name, prop, predicate_or_value, timeout_ms=5000):
+        """Poll get_property until the condition is met or timeout expires.
 
-        Returns the value that satisfied the predicate.
+        Args:
+            object_name: objectName of the QML object.
+            prop: Property name to check.
+            predicate_or_value: A callable predicate(value)->bool, or an exact
+                value to compare against (equality check).
+            timeout_ms: Maximum wait time in milliseconds.
+
+        Returns the value that satisfied the condition.
         Raises QmlDriverError if the timeout expires.
         """
+        predicate = (
+            predicate_or_value
+            if callable(predicate_or_value)
+            else lambda v: v == predicate_or_value
+        )
         deadline = time.time() + timeout_ms / 1000
         while time.time() < deadline:
             value = self.get_property(object_name, prop)
@@ -137,28 +149,6 @@ class QmlDriver:
             raise QmlDriverError(
                 f"wait_for_page({page_name!r}) failed: {resp['error']}"
             )
-
-    def wait_for_property(self, object_name, prop, value, timeout_ms=5000):
-        """Block until object's property equals value.
-
-        Args:
-            object_name: objectName of the QML object.
-            prop: Property name to check.
-            value: Expected value (JSON-serialisable).
-            timeout_ms: Maximum wait time in milliseconds.
-        """
-        resp = self._send({
-            "cmd": "wait_for_property",
-            "objectName": object_name,
-            "prop": prop,
-            "value": value,
-            "timeout": timeout_ms,
-        })
-        if "error" in resp:
-            raise QmlDriverError(
-                f"wait_for_property({object_name!r}, {prop!r}={value!r}) failed: {resp['error']}"
-            )
-        return resp.get("value")
 
     def list_objects(self):
         """Return a list of dicts with objectName and className for all
