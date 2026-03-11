@@ -228,6 +228,10 @@ class PeerQmlTestHarness:
 
     def rpc_call(self, method, params=None):
         """Make a JSON-RPC call to the GUI node and return the result."""
+        return self._rpc_call_to_port(_rpc_port(0), method, params)
+
+    def _rpc_call_to_port(self, port, method, params=None):
+        """Make a JSON-RPC call to a specific node RPC port."""
         payload = json.dumps({
             "jsonrpc": "1.0",
             "id": "qml_test",
@@ -235,7 +239,7 @@ class PeerQmlTestHarness:
             "params": params or [],
         }).encode("utf-8")
 
-        conn = http.client.HTTPConnection("127.0.0.1", _rpc_port(0), timeout=10)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
         credentials = base64.b64encode(
             f"{GUI_RPC_USER}:{GUI_RPC_PASS}".encode("utf-8")
         ).decode("ascii")
@@ -253,6 +257,15 @@ class PeerQmlTestHarness:
         if body.get("error"):
             raise RuntimeError(f"RPC error: {body['error']}")
         return body["result"]
+
+    def peer_rpc_call(self, peer_idx, method, params=None):
+        """Make a JSON-RPC call to a peer node.
+
+        peer_idx:
+          1 -> harness.peer_process
+          2 -> harness.peer2_process
+        """
+        return self._rpc_call_to_port(_rpc_port(peer_idx), method, params)
 
     def wait_for_peer(self, timeout=30):
         """Poll getpeerinfo until at least one peer is connected."""
@@ -363,6 +376,8 @@ class PeerQmlTestHarness:
 
     def start_additional_peer(self):
         """Start a second peer bitcoind that connects to the GUI node."""
+        _terminate_process(self.peer2_process)
+
         datadir = os.path.join(self.tmpdir, "peer2_node")
         os.makedirs(datadir, exist_ok=True)
         conf_path = os.path.join(datadir, "bitcoin.conf")
@@ -395,13 +410,47 @@ class PeerQmlTestHarness:
             try:
                 peers = self.rpc_call("getpeerinfo")
                 if len(peers) >= n:
-                    ids = [p["id"] for p in peers]
+                    ids = sorted(p["id"] for p in peers)
                     print(f"  {n} peer(s) connected: ids={ids}")
                     return ids
             except Exception:
                 pass
             time.sleep(0.5)
         raise RuntimeError(f"Expected {n} peers after {timeout}s")
+
+    def wait_for_exact_peer_ids(self, expected_ids, timeout=PEER_ACTION_TIMEOUT_SECS):
+        """Poll getpeerinfo until the peer set matches expected_ids."""
+        expected = sorted(expected_ids)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                actual = sorted(p["id"] for p in self.rpc_call("getpeerinfo"))
+                if actual == expected:
+                    return
+            except Exception:
+                pass
+            time.sleep(0.3)
+        raise RuntimeError(
+            f"Expected peer ids {expected} after {timeout}s, "
+            f"got {sorted(p['id'] for p in self.rpc_call('getpeerinfo'))}"
+        )
+
+    def gui_peer_for_process(self, peer_idx):
+        """Return the GUI-side getpeerinfo entry for a peer process via session_id."""
+        peer_connections = self.peer_rpc_call(peer_idx, "getpeerinfo")
+        if len(peer_connections) != 1:
+            raise RuntimeError(
+                f"Expected peer {peer_idx} to have exactly 1 connection, got: {peer_connections}"
+            )
+
+        session_id = peer_connections[0]["session_id"]
+        for peer in self.rpc_call("getpeerinfo"):
+            if peer.get("session_id") == session_id:
+                return peer
+
+        raise RuntimeError(
+            f"Could not match peer {peer_idx} session {session_id} to GUI peer list"
+        )
 
 
 # ── Navigation helpers ────────────────────────────────────────────────────────
@@ -543,9 +592,15 @@ def test_disconnect_specific_peer(gui, harness):
     print("\n── test_disconnect_specific_peer ────────────────────────────")
 
     harness.start_additional_peer()
-    peer_ids = harness.wait_for_n_peers(2)
-    target_id = peer_ids[0]
-    other_id = peer_ids[1]
+    harness.wait_for_n_peers(2)
+
+    # Use session_id to map the GUI-side node id back to a specific peer
+    # process. Relying on getpeerinfo ordering is brittle and can disconnect
+    # the correct peer while terminating the wrong process.
+    target_peer = harness.gui_peer_for_process(1)
+    other_peer = harness.gui_peer_for_process(2)
+    target_id = target_peer["id"]
+    other_id = other_peer["id"]
 
     gui.wait_for_property(f"peerListItem_{target_id}", "visible", True, timeout_ms=PEER_LIST_ITEM_VISIBLE_TIMEOUT_MS)
 
@@ -558,6 +613,7 @@ def test_disconnect_specific_peer(gui, harness):
     _terminate_process(harness.peer_process)
 
     _wait_for_peer_gone(harness, target_id)
+    harness.wait_for_exact_peer_ids([other_id])
 
     peers = harness.rpc_call("getpeerinfo")
     remaining_ids = [p["id"] for p in peers]
@@ -568,6 +624,10 @@ def test_disconnect_specific_peer(gui, harness):
     assert other_id in remaining_ids, \
         f"Peer {other_id} should still be connected"
     print(f"  PASSED: peer {target_id} gone; peer {other_id} still present")
+
+    # Leave the harness in a clean state for subsequent tests and future runs.
+    _terminate_process(harness.peer2_process)
+    harness.wait_for_no_peers()
 
 
 def test_ban_one_of_two_peers(gui, harness):
