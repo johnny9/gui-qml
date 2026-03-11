@@ -46,6 +46,7 @@ Page {
                 detailTopMargin: 10
                 detailItem: RowLayout {
                     TextButton {
+                        objectName: "connectionSettingsButton"
                         Layout.alignment: Qt.AlignCenter
                         text: qsTr("Connection settings")
                         onClicked: connectionStack.push(connectionSettings)

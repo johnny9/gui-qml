@@ -29,6 +29,7 @@ ColumnLayout {
         Layout.fillWidth: true
         header: qsTr("Enable")
         actionItem: OptionSwitch {
+            objectName: "proxyEnableSwitch"
             checked: optionsModel.proxyEnabled
             onCheckedChanged: {
                 // Default to the standard SOCKS5 proxy address (port 9050).
@@ -55,6 +56,7 @@ ColumnLayout {
         state: !defaultProxyEnable.loadedItem.checked ? "DISABLED" : "FILLED"
         showErrorText: !defaultProxy.loadedItem.validInput && defaultProxyEnable.loadedItem.checked
         actionItem: IPAddressValueInput {
+            objectName: "proxyAddressInput"
             parentState: defaultProxy.state
             description: optionsModel.proxyAddress.length > 0
                          ? optionsModel.proxyAddress
@@ -93,6 +95,7 @@ ColumnLayout {
         Layout.fillWidth: true
         header: qsTr("Enable")
         actionItem: OptionSwitch {
+            objectName: "torEnableSwitch"
             checked: optionsModel.torEnabled
             onCheckedChanged: {
                 // Default to the standard SOCKS5 proxy address (port 9050).
@@ -119,6 +122,7 @@ ColumnLayout {
         state: !torProxyEnable.loadedItem.checked ? "DISABLED" : "FILLED"
         showErrorText: !torProxy.loadedItem.validInput && torProxyEnable.loadedItem.checked
         actionItem: IPAddressValueInput {
+            objectName: "torAddressInput"
             parentState: torProxy.state
             description: optionsModel.torAddress.length > 0
                          ? optionsModel.torAddress

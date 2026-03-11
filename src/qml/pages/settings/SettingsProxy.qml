@@ -12,11 +12,13 @@ Page {
     signal back
 
     id: root
+    objectName: "settingsProxy"
 
     background: null
 
     header: NavigationBar2 {
         leftItem: NavButton {
+            objectName: "settingsProxyBack"
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
             onClicked: root.back()

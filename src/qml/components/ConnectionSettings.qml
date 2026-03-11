@@ -53,6 +53,7 @@ ColumnLayout {
     Separator { Layout.fillWidth: true }
     Setting {
         id: gotoProxy
+        objectName: "gotoProxy"
         Layout.fillWidth: true
         header: qsTr("Proxy settings")
         actionItem: CaretRightIcon {

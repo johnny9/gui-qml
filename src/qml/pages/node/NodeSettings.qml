@@ -77,6 +77,7 @@ PageStack {
                 Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoConnection
+                    objectName: "settingsConnection"
                     Layout.fillWidth: true
                     header: qsTr("Connection")
                     actionItem: CaretRightIcon {
