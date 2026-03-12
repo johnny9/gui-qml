@@ -13,6 +13,7 @@ class QmlTestsSetup : public QObject
 public Q_SLOTS:
     void qmlEngineAvailable(QQmlEngine* engine)
     {
+        engine->addImportPath(QStringLiteral(BITCOINQML_QML_TEST_MOCKS_DIR));
         engine->addImportPath(QStringLiteral(BITCOINQML_QML_SOURCE_DIR));
     }
 };

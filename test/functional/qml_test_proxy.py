@@ -66,19 +66,33 @@ def test_default_proxy_toggle(gui):
     checked = gui.get_property("proxyEnableSwitch", "checked")
     assert not checked, f"Expected proxy disabled by default, got checked={checked}"
 
+    # Advisory box should report no pending changes before any modification.
+    modified = gui.get_property("settingsProxy", "settingsModified")
+    assert not modified, "Expected settingsModified=False before any change"
+
     # Enable proxy.
     gui.click("proxyEnableSwitch")
-    time.sleep(0.1)
+    gui.wait_for_property("proxyEnableSwitch", "checked", True, timeout_ms=2000)
     checked = gui.get_property("proxyEnableSwitch", "checked")
     assert checked, "Expected proxyEnableSwitch to be checked after click"
     print("  Default proxy toggled ON: OK")
 
-    # Disable proxy.
+    # Advisory box should now signal a pending change (grey → blue).
+    modified = gui.get_property("settingsProxy", "settingsModified")
+    assert modified, "Expected settingsModified=True after enabling proxy"
+    print("  settingsModified=True after enable: OK")
+
+    # Disable proxy (back to initial state).
     gui.click("proxyEnableSwitch")
-    time.sleep(0.1)
+    gui.wait_for_property("proxyEnableSwitch", "checked", False, timeout_ms=2000)
     checked = gui.get_property("proxyEnableSwitch", "checked")
     assert not checked, "Expected proxyEnableSwitch to be unchecked after second click"
     print("  Default proxy toggled OFF: OK")
+
+    # Advisory box should revert to grey once the setting is back to its initial state.
+    modified = gui.get_property("settingsProxy", "settingsModified")
+    assert not modified, "Expected settingsModified=False after reverting proxy to initial state"
+    print("  settingsModified=False after revert: OK")
 
 
 def test_proxy_valid_address(gui):
@@ -87,10 +101,10 @@ def test_proxy_valid_address(gui):
     # Enable proxy so the address field becomes active.
     if not gui.get_property("proxyEnableSwitch", "checked"):
         gui.click("proxyEnableSwitch")
-        time.sleep(0.1)
+        gui.wait_for_property("proxyEnableSwitch", "checked", True, timeout_ms=2000)
 
     gui.set_text("proxyAddressInput", "10.0.0.1:9050")
-    time.sleep(0.15)  # Allow onTextChanged to process.
+    gui.wait_for_property("proxyAddressInput", "validInput", True, timeout_ms=2000)
 
     valid = gui.get_property("proxyAddressInput", "validInput")
     assert valid, f"Expected '10.0.0.1:9050' to pass validation, got validInput={valid}"
@@ -103,11 +117,11 @@ def test_proxy_invalid_address(gui):
     # Enable proxy so the address field becomes active.
     if not gui.get_property("proxyEnableSwitch", "checked"):
         gui.click("proxyEnableSwitch")
-        time.sleep(0.1)
+        gui.wait_for_property("proxyEnableSwitch", "checked", True, timeout_ms=2000)
 
     # Enter an address with invalid IP octets.
     gui.set_text("proxyAddressInput", "999.999.999.999:9050")
-    time.sleep(0.15)
+    gui.wait_for_property("proxyAddressInput", "validInput", False, timeout_ms=2000)
 
     valid = gui.get_property("proxyAddressInput", "validInput")
     assert not valid, f"Expected invalid address to fail validation, got validInput={valid}"
@@ -115,7 +129,7 @@ def test_proxy_invalid_address(gui):
 
     # Restore to a valid address for subsequent tests.
     gui.set_text("proxyAddressInput", "127.0.0.1:9050")
-    time.sleep(0.15)
+    gui.wait_for_property("proxyAddressInput", "validInput", True, timeout_ms=2000)
 
 
 def test_tor_proxy_toggle(gui):
@@ -127,14 +141,14 @@ def test_tor_proxy_toggle(gui):
 
     # Enable Tor proxy.
     gui.click("torEnableSwitch")
-    time.sleep(0.1)
+    gui.wait_for_property("torEnableSwitch", "checked", True, timeout_ms=2000)
     checked = gui.get_property("torEnableSwitch", "checked")
     assert checked, "Expected torEnableSwitch to be checked after click"
     print("  Tor proxy toggled ON: OK")
 
     # Disable Tor proxy.
     gui.click("torEnableSwitch")
-    time.sleep(0.1)
+    gui.wait_for_property("torEnableSwitch", "checked", False, timeout_ms=2000)
     checked = gui.get_property("torEnableSwitch", "checked")
     assert not checked, "Expected torEnableSwitch to be unchecked after second click"
     print("  Tor proxy toggled OFF: OK")
@@ -167,6 +181,11 @@ def test_proxy_settings_persist(datadir, settings):
     )
     print(f"  settings.json proxy entry '{settings['proxy']}': OK")
 
+    assert settings.get("onion") == "127.0.0.1:9150", (
+        f"Expected onion='127.0.0.1:9150' in settings.json, got: {settings}"
+    )
+    print(f"  settings.json onion entry '{settings['onion']}': OK")
+
 
 def run_tests():
     args = parse_args()
@@ -184,15 +203,21 @@ def run_tests():
         test_proxy_invalid_address(gui)
         test_tor_proxy_toggle(gui)
 
-        # Prepare state for the persistence test: enable proxy and set a
-        # specific address before completing onboarding (which triggers
+        # Prepare state for the persistence test: enable proxy and Tor proxy
+        # with specific addresses before completing onboarding (which triggers
         # optionsModel.onboard() and writes settings to disk).
         if harness.datadir:
             if not gui.get_property("proxyEnableSwitch", "checked"):
                 gui.click("proxyEnableSwitch")
-                time.sleep(0.1)
+                gui.wait_for_property("proxyEnableSwitch", "checked", True, timeout_ms=2000)
             gui.set_text("proxyAddressInput", "10.0.0.1:9050")
-            time.sleep(0.2)
+            gui.wait_for_property("proxyAddressInput", "validInput", True, timeout_ms=2000)
+
+            if not gui.get_property("torEnableSwitch", "checked"):
+                gui.click("torEnableSwitch")
+                gui.wait_for_property("torEnableSwitch", "checked", True, timeout_ms=2000)
+            gui.set_text("torAddressInput", "127.0.0.1:9150")
+            gui.wait_for_property("torAddressInput", "validInput", True, timeout_ms=2000)
 
         navigate_back_from_proxy_settings(gui)
 

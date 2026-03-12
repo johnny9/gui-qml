@@ -60,10 +60,10 @@ AbstractButton {
         anchors.fill: root
         hoverEnabled: AppMode.isDesktop
         onEntered: {
-            root.state = "HOVER"
+            if (root.state !== "DISABLED") root.state = "HOVER"
         }
         onExited: {
-            root.state = "FILLED"
+            if (root.state !== "DISABLED") root.state = "FILLED"
         }
         onPressed: {
             root.state = "ACTIVE"

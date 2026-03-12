@@ -152,14 +152,14 @@ void OptionsQmlModel::setProxyEnabled(bool enabled)
             if (enabled && !m_proxy_address.isEmpty()) {
                 m_node.updateRwSetting("proxy", m_proxy_address.toStdString());
             } else {
-                m_node.updateRwSetting("proxy", std::string{});
+                m_node.updateRwSetting("proxy", common::SettingsValue{});
             }
         }
         Q_EMIT proxyEnabledChanged(enabled);
     }
 }
 
-void OptionsQmlModel::setProxyAddress(QString address)
+void OptionsQmlModel::setProxyAddress(const QString& address)
 {
     if (address != m_proxy_address) {
         m_proxy_address = address;
@@ -178,14 +178,14 @@ void OptionsQmlModel::setTorEnabled(bool enabled)
             if (enabled && !m_tor_address.isEmpty()) {
                 m_node.updateRwSetting("onion", m_tor_address.toStdString());
             } else {
-                m_node.updateRwSetting("onion", std::string{});
+                m_node.updateRwSetting("onion", common::SettingsValue{});
             }
         }
         Q_EMIT torEnabledChanged(enabled);
     }
 }
 
-void OptionsQmlModel::setTorAddress(QString address)
+void OptionsQmlModel::setTorAddress(const QString& address)
 {
     if (address != m_tor_address) {
         m_tor_address = address;

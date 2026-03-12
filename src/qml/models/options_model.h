@@ -73,11 +73,11 @@ public:
     bool proxyEnabled() const { return m_proxy_enabled; }
     void setProxyEnabled(bool enabled);
     QString proxyAddress() const { return m_proxy_address; }
-    void setProxyAddress(QString address);
+    void setProxyAddress(const QString& address);
     bool torEnabled() const { return m_tor_enabled; }
     void setTorEnabled(bool enabled);
     QString torAddress() const { return m_tor_address; }
-    void setTorAddress(QString address);
+    void setTorAddress(const QString& address);
 
 public Q_SLOTS:
     void setCustomDataDirString(const QString &new_custom_datadir_string) {

@@ -9,7 +9,13 @@ if(NOT TARGET GTest::gmock)
   message(FATAL_ERROR "GTest::gmock target is required for app unit tests. Ensure gmock is installed and exported by the active GTest package.")
 endif()
 
-add_executable(bitcoinqml_unit_tests
+# C++ model tests that require GoogleMock — included in bitcoinqml_unit_tests.
+# When GTest::gmock is available we link the bitcoinqml library (which already
+# contains bitcoinamount and bitcoinunits), so we must NOT also compile those
+# sources directly or the linker will see duplicate symbols.
+find_package(GTest QUIET)
+
+set(UNIT_TEST_SOURCES
   test_unit_tests_main.cpp
   test_bitcoinamount.cpp
   test_peerlistmodel.cpp
@@ -18,18 +24,26 @@ add_executable(bitcoinqml_unit_tests
   test_imageprovider.cpp
   test_networkstyle.cpp
   test_qmlinitexecutor_api.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinunits.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/imageprovider.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/networkstyle.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerdetailsmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistsortproxy.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/peerstatsutil.cpp
 )
+if(TARGET GTest::gmock)
+  list(APPEND UNIT_TEST_SOURCES test_options_model.cpp)
+else()
+  list(APPEND UNIT_TEST_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinunits.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/imageprovider.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/networkstyle.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerdetailsmodel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistmodel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistsortproxy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../qml/peerstatsutil.cpp
+  )
+endif()
+
+add_executable(bitcoinqml_unit_tests ${UNIT_TEST_SOURCES})
 
 target_compile_definitions(bitcoinqml_unit_tests
   PRIVATE
@@ -64,6 +78,7 @@ target_compile_definitions(bitcoinqml_qmltests
   PRIVATE
     BITCOINQML_QML_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../qml"
     QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    BITCOINQML_QML_TEST_MOCKS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/mocks/qml"
 )
 
 target_link_libraries(bitcoinqml_qmltests
@@ -75,3 +90,15 @@ target_link_libraries(bitcoinqml_qmltests
 )
 
 add_test(NAME bitcoinqml_qmltests COMMAND bitcoinqml_qmltests -platform offscreen)
+
+if(TARGET GTest::gmock)
+  target_compile_definitions(bitcoinqml_unit_tests PRIVATE BITCOINQML_HAS_GMOCK)
+  target_include_directories(bitcoinqml_unit_tests PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}/../bitcoin/src
+  )
+  target_link_libraries(bitcoinqml_unit_tests PRIVATE
+    bitcoinqml
+    bitcoin_wallet
+    GTest::gmock
+  )
+endif()
