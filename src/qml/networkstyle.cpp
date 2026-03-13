@@ -6,11 +6,7 @@
 
 #include <qml/guiconstants.h>
 
-#include <tinyformat.h>
-#include <util/chaintype.h>
-
 #include <QColor>
-#include <QCoreApplication>
 #include <QImage>
 #include <QPixmap>
 
@@ -27,13 +23,10 @@ static const struct {
     {ChainType::REGTEST, QAPP_APP_NAME_REGTEST, 160, 30},
 };
 
-// titleAddText needs to be const char* for tr()
 NetworkStyle::NetworkStyle(const QString& appName,
                            const int iconColorHueShift,
-                           const int iconColorSaturationReduction,
-                           const char* titleAddText)
+                           const int iconColorSaturationReduction)
     : appName(appName)
-    , titleAddText(QCoreApplication::translate("SplashScreen", titleAddText))
 {
     QPixmap pixmap(":/icons/bitcoin");
 
@@ -65,17 +58,12 @@ NetworkStyle::NetworkStyle(const QString& appName,
 
 const NetworkStyle* NetworkStyle::instantiate(const ChainType networkId)
 {
-    const std::string titleAddText = networkId == ChainType::MAIN
-        ? ""
-        : strprintf("[%s]", ChainTypeToString(networkId));
-
     for (const auto& network_style : network_styles) {
         if (networkId == network_style.networkId) {
             return new NetworkStyle(
                 network_style.appName,
                 network_style.iconColorHueShift,
-                network_style.iconColorSaturationReduction,
-                titleAddText.c_str());
+                network_style.iconColorSaturationReduction);
         }
     }
     return nullptr;

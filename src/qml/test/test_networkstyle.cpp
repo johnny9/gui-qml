@@ -13,7 +13,6 @@ class NetworkStyleTests : public QObject
 
 private Q_SLOTS:
     void instantiate_knownNetworks_haveExpectedNames();
-    void instantiate_nonMainNetwork_hasBracketedChainTitleSuffix();
 };
 
 void NetworkStyleTests::instantiate_knownNetworks_haveExpectedNames()
@@ -21,24 +20,16 @@ void NetworkStyleTests::instantiate_knownNetworks_haveExpectedNames()
     const NetworkStyle* mainnet_style = NetworkStyle::instantiate(ChainType::MAIN);
     QVERIFY(mainnet_style != nullptr);
     QCOMPARE(mainnet_style->getAppName(), QString(QAPP_APP_NAME_DEFAULT));
-    QCOMPARE(mainnet_style->getTitleAddText(), QString());
     delete mainnet_style;
 
     const NetworkStyle* signet_style = NetworkStyle::instantiate(ChainType::SIGNET);
     QVERIFY(signet_style != nullptr);
     QCOMPARE(signet_style->getAppName(), QString(QAPP_APP_NAME_SIGNET));
     delete signet_style;
-}
 
-void NetworkStyleTests::instantiate_nonMainNetwork_hasBracketedChainTitleSuffix()
-{
     const NetworkStyle* regtest_style = NetworkStyle::instantiate(ChainType::REGTEST);
     QVERIFY(regtest_style != nullptr);
-
-    const QString title_suffix = regtest_style->getTitleAddText();
-    QVERIFY(title_suffix.startsWith('['));
-    QVERIFY(title_suffix.endsWith(']'));
-    QVERIFY(title_suffix.contains(QStringLiteral("regtest")));
+    QCOMPARE(regtest_style->getAppName(), QString(QAPP_APP_NAME_REGTEST));
     delete regtest_style;
 }
 
