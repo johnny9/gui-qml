@@ -6,6 +6,7 @@
 #define BITCOIN_QML_TEST_MOCKS_MOCKNODE_H
 
 #include <gmock/gmock.h>
+#include <net_processing.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 

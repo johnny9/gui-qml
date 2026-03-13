@@ -8,6 +8,7 @@ int RunBitcoinAmountTests(int argc, char* argv[]);
 int RunQmlBitcoinUnitsTests(int argc, char* argv[]);
 int RunImageProviderTests(int argc, char* argv[]);
 int RunNetworkStyleTests(int argc, char* argv[]);
+int RunBanListModelTests(int argc, char* argv[]);
 
 int main(int argc, char* argv[])
 {
@@ -18,6 +19,7 @@ int main(int argc, char* argv[])
     status |= RunQmlBitcoinUnitsTests(argc, argv);
     status |= RunImageProviderTests(argc, argv);
     status |= RunNetworkStyleTests(argc, argv);
+    status |= RunBanListModelTests(argc, argv);
 
     return status;
 }

@@ -3,19 +3,28 @@ cmake_minimum_required(VERSION 3.22)
 # Tests for the QML/Qt6 app
 
 find_package(Qt 6.2 MODULE REQUIRED COMPONENTS Core Gui Test Qml Quick QuickTest)
+find_package(GTest REQUIRED)
 
-add_executable(bitcoinqml_unit_tests
+if(NOT TARGET GTest::gmock)
+  message(FATAL_ERROR "GTest::gmock target is required for app unit tests. Ensure gmock is installed and exported by the active GTest package.")
+endif()
+
+set(bitcoinqml_unit_tests_sources
   test_unit_tests_main.cpp
   test_bitcoinamount.cpp
   test_qmlbitcoinunits.cpp
   test_imageprovider.cpp
   test_networkstyle.cpp
+  test_banlistmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinunits.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/imageprovider.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/networkstyle.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/banlistmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
 )
+
+add_executable(bitcoinqml_unit_tests ${bitcoinqml_unit_tests_sources})
 
 target_compile_definitions(bitcoinqml_unit_tests
   PRIVATE
@@ -26,15 +35,21 @@ target_include_directories(bitcoinqml_unit_tests
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/univalue/include
 )
 
 target_link_libraries(bitcoinqml_unit_tests
   PRIVATE
+    GTest::gmock
     Qt6::Core
     Qt6::Gui
     Qt6::Quick
     Qt6::Test
 )
+
+if(TARGET bitcoin_common)
+  target_link_libraries(bitcoinqml_unit_tests PRIVATE bitcoin_common)
+endif()
 
 add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests -platform offscreen)
 
