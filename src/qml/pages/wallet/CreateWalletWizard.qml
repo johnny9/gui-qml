@@ -12,6 +12,7 @@ import "../wallet"
 
 PageStack {
     id: root
+    objectName: "createWalletWizard"
 
     enum Context { Onboarding, Main }
 
@@ -24,7 +25,14 @@ PageStack {
 
         header: NavigationBar2 {
             id: navbar
+            leftItem: NavButton {
+                objectName: "createWalletWizardBackButton"
+                iconSource: "image://images/caret-left"
+                text: qsTr("Back")
+                onClicked: root.finished()
+            }
             rightItem: NavButton {
+                objectName: "createWalletWizardExitButton"
                 text: {
                     switch (root.launchContext) {
                         case CreateWalletWizard.Context.Main:
@@ -59,10 +67,11 @@ PageStack {
                 Layout.rightMargin: 20
                 header: qsTr("Add a wallet")
                 headerBold: true
-                description: qsTr("In this early stage of development, only wallet.dat files are supported.")
+                description: qsTr("Supported wallet types are view-only, single-key,\nand multi-key.")
             }
 
             ContinueButton {
+                objectName: "createWalletButton"
                 Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
                 Layout.topMargin: 40
                 Layout.leftMargin: 20
@@ -76,6 +85,7 @@ PageStack {
             }
 
             ContinueButton {
+                objectName: "importWalletButton"
                 Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
                 Layout.leftMargin: 20
                 Layout.rightMargin: Layout.leftMargin
@@ -88,7 +98,18 @@ PageStack {
                 backgroundColor: "transparent"
                 backgroundHoverColor: "transparent"
                 backgroundPressedColor: "transparent"
+                onClicked: {
+                    walletController.clearWalletLoadStatus()
+                    root.push(import_options)
+                }
             }
+        }
+    }
+    Component {
+        id: import_options
+        ImportWalletOptions {
+            onBack: root.pop()
+            onNext: root.finished()
         }
     }
     Component {
