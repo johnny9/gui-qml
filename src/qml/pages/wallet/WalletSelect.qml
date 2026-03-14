@@ -78,6 +78,7 @@ Popup {
 
             delegate: WalletBadge {
                 required property string name;
+                objectName: "walletSelectItem_" + name
 
                 width: 220
                 height: 32
