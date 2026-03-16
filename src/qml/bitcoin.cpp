@@ -20,7 +20,6 @@
 #include <noui.h>
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
-#include <qt/networkstyle.h>
 #include <qml/appmode.h>
 #include <qml/bitcoinamount.h>
 #include <qml/clipboard.h>
@@ -46,14 +45,12 @@
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/qrimageprovider.h>
+#include <qml/networkstyle.h>
 #include <qml/util.h>
 #include <qml/walletqmlcontroller.h>
 #ifdef ENABLE_TEST_AUTOMATION
 #include <qml/test/testbridge.h>
 #endif
-#include <qt/guiutil.h>
-#include <qt/initexecutor.h>
-#include <qt/networkstyle.h>
 #include <util/threadnames.h>
 #include <util/translation.h>
 
@@ -63,6 +60,7 @@
 #include <tuple>
 
 #include <QDebug>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -181,6 +179,13 @@ void setupChainQSettings(QGuiApplication* app, QString chain)
         app->setApplicationName(QAPP_APP_NAME_SIGNET);
     } else if (chain.compare("REGTEST") == 0) {
         app->setApplicationName(QAPP_APP_NAME_REGTEST);
+    }
+}
+
+void LoadFontResource(const QString& path)
+{
+    if (QFontDatabase::addApplicationFont(path) < 0) {
+        qWarning() << "Failed to load font resource:" << path;
     }
 }
 } // namespace
@@ -312,8 +317,8 @@ int QmlGuiMain(int argc, char* argv[])
     QObject::connect(&node_model, &NodeModel::nodeInitialized,
                      &ban_list_model, &BanListModel::refresh);
 
-    GUIUtil::LoadFont(":/fonts/inter/regular");
-    GUIUtil::LoadFont(":/fonts/inter/semibold");
+    LoadFontResource(":/fonts/inter/regular");
+    LoadFontResource(":/fonts/inter/semibold");
 
     QQmlApplicationEngine engine;
 

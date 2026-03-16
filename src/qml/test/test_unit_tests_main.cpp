@@ -2,18 +2,22 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <QCoreApplication>
+#include <QGuiApplication>
 
 int RunBitcoinAmountTests(int argc, char* argv[]);
 int RunQmlBitcoinUnitsTests(int argc, char* argv[]);
+int RunImageProviderTests(int argc, char* argv[]);
+int RunNetworkStyleTests(int argc, char* argv[]);
 
 int main(int argc, char* argv[])
 {
-    QCoreApplication app(argc, argv);
+    QGuiApplication app(argc, argv);
 
     int status = 0;
     status |= RunBitcoinAmountTests(argc, argv);
     status |= RunQmlBitcoinUnitsTests(argc, argv);
+    status |= RunImageProviderTests(argc, argv);
+    status |= RunNetworkStyleTests(argc, argv);
 
     return status;
 }
