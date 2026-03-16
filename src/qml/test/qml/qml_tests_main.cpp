@@ -8,6 +8,7 @@
 #include <QQmlEngine>
 #include <QQmlContext>
 #include <QRegularExpression>
+#include <QStringList>
 #include <qqml.h>
 
 #include <algorithm>
@@ -759,6 +760,11 @@ class MockOptionsModel : public QObject
     Q_PROPERTY(int pruneSizeGB MEMBER m_prune_size_gb NOTIFY pruneSizeGBChanged)
     Q_PROPERTY(QString dataDir MEMBER m_data_dir NOTIFY dataDirChanged)
     Q_PROPERTY(QString getDefaultDataDirString READ getDefaultDataDirString CONSTANT)
+    Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
+    Q_PROPERTY(QString displayUnitLabel READ displayUnitLabel NOTIFY displayUnitChanged)
+    Q_PROPERTY(QString languageSummary READ languageSummary NOTIFY languageChanged)
+    Q_PROPERTY(QString language READ language WRITE setLanguage NOTIFY languageChanged)
+    Q_PROPERTY(QStringList availableLanguages READ availableLanguages CONSTANT)
 
 public:
     bool m_listen{true};
@@ -775,6 +781,25 @@ public:
     Q_INVOKABLE void setCustomDataDirArgs(const QString& dir) { m_data_dir = dir; }
     Q_INVOKABLE void onboard() {}
 
+    int displayUnit() const { return m_displayUnit; }
+    void setDisplayUnit(int u) {
+        if (u != m_displayUnit) { m_displayUnit = u; Q_EMIT displayUnitChanged(u); }
+    }
+    QString displayUnitLabel() const { return m_displayUnit == 1 ? "sat" : "BTC"; }
+    QString language() const { return m_language; }
+    void setLanguage(const QString& l) {
+        if (l != m_language) { m_language = l; Q_EMIT languageChanged(); }
+    }
+    QString languageSummary() const { return m_language.isEmpty() ? "System default" : m_language; }
+    QStringList availableLanguages() const { return {"", "de", "es", "fr"}; }
+    Q_INVOKABLE QString languageLabel(const QString& tag) const {
+        if (tag.isEmpty()) return "System default";
+        if (tag == "de") return "Deutsch — German";
+        if (tag == "es") return "Español — Spanish";
+        if (tag == "fr") return "Français — French";
+        return tag;
+    }
+
 Q_SIGNALS:
     void listenChanged();
     void natpmpChanged();
@@ -782,6 +807,12 @@ Q_SIGNALS:
     void pruneChanged();
     void pruneSizeGBChanged();
     void dataDirChanged();
+    void displayUnitChanged(int unit);
+    void languageChanged();
+
+private:
+    int m_displayUnit{0};
+    QString m_language;
 };
 
 class MockChainModel : public QObject
