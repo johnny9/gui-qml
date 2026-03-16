@@ -15,6 +15,7 @@ PageStack {
     property alias showDoneButton: doneButton.visible
 
     id: root
+    objectName: "nodeSettingsStack"
 
     initialItem: Page {
         background: null
