@@ -109,7 +109,18 @@ PageStack {
         id: import_options
         ImportWalletOptions {
             onBack: root.pop()
-            onNext: root.finished()
+            onNext: root.push(import_success)
+        }
+    }
+    Component {
+        id: import_success
+        ImportWalletSuccess {
+            onBack: root.pop()
+            onDone: root.finished()
+            onViewSettings: {
+                walletController.requestOpenWalletSettings()
+                root.finished()
+            }
         }
     }
     Component {

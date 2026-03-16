@@ -18,11 +18,22 @@ Page {
     signal back
     signal next
     background: null
+    readonly property bool hasImportError: walletController.walletLoadError.length > 0
+    readonly property real heroWidth: Math.min(parent.width - 40, 520)
+    readonly property int heroTopMargin: 64
+    readonly property int importHeroTopMargin: heroTopMargin + 10
+    readonly property int heroIconSize: 60
+    readonly property int heroTitleTopMargin: 28
 
     header: NavigationBar2 {
         leftItem: NavButton {
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
+            onClicked: root.back()
+        }
+        rightItem: NavButton {
+            visible: root.hasImportError
+            text: qsTr("Done")
             onClicked: root.back()
         }
     }
@@ -35,38 +46,65 @@ Page {
             if (fileDialog.selectedFile.toString().length === 0) {
                 return
             }
-            pathField.text = walletController.normalizeWalletPath(fileDialog.selectedFile.toString())
-            walletController.importWallet(pathField.text)
+            walletController.importWallet(walletController.normalizeWalletPath(fileDialog.selectedFile.toString()))
         }
+    }
+
+    // Kept hidden so functional tests can inject a path until the native file
+    // dialog is automatable through the QML test bridge.
+    TextField {
+        id: automationPathField
+        objectName: "importWalletPathField"
+        visible: false
     }
 
     Connections {
         target: walletController
-        function onWalletLoadSucceeded() {
+        function onWalletImportSucceeded() {
             root.next()
         }
     }
 
     ColumnLayout {
-        width: Math.min(parent.width, 450)
+        visible: !root.hasImportError
+        width: root.heroWidth
         anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: root.importHeroTopMargin
+        spacing: 0
 
-        Image {
-            Layout.alignment: Qt.AlignCenter
-            Layout.topMargin: 20
-            source: "image://images/circle-file"
-            sourceSize.width: 60
-            sourceSize.height: 60
+        Item {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: root.heroIconSize
+            Layout.preferredHeight: root.heroIconSize
+
+            Rectangle {
+                anchors.fill: parent
+                radius: width / 2
+                color: Theme.color.blue
+                opacity: 0.2
+            }
+
+            Icon {
+                anchors.centerIn: parent
+                source: "qrc:/icons/file"
+                color: Theme.color.blue
+                size: 22
+                opacity: 1.0
+            }
         }
 
-        Header {
-            Layout.topMargin: 18
+        CoreText {
+            objectName: "importWalletTitle"
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: root.heroTitleTopMargin
             Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-            header: qsTr("Import wallet")
-            headerBold: true
-            description: qsTr("Choose a wallet backup file to restore into the app.")
+            text: qsTr("Import wallet")
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            font.pixelSize: 28
+            bold: true
+            color: Theme.color.neutral9
         }
 
         ContinueButton {
@@ -78,103 +116,16 @@ Page {
             Layout.rightMargin: 20
             Layout.alignment: Qt.AlignCenter
             enabled: !walletController.walletLoadInProgress
-            text: walletController.walletLoadInProgress ? qsTr("Importing...") : qsTr("Choose a backup file")
-            onClicked: fileDialog.open()
-        }
-
-        Item {
-            Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-            Layout.topMargin: 18
-            Layout.preferredHeight: 25
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: orLabel.left
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.rightMargin: 8
-                height: 1
-                color: Theme.color.neutral3
-            }
-
-            CoreText {
-                id: orLabel
-                anchors.centerIn: parent
-                text: qsTr("or")
-                color: Theme.color.neutral7
-                font.pixelSize: 18
-            }
-
-            Rectangle {
-                anchors.left: orLabel.right
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: 8
-                height: 1
-                color: Theme.color.neutral3
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-            Layout.topMargin: 30
-            implicitHeight: 60
-            radius: 5
-            color: Theme.color.neutral2
-
-            TextField {
-                id: pathField
-                objectName: "importWalletPathField"
-                anchors.fill: parent
-                anchors.leftMargin: 20
-                anchors.rightMargin: 52
-                leftPadding: 0
-                rightPadding: 0
-                font.family: "Inter"
-                font.styleName: "Regular"
-                font.pixelSize: 18
-                color: Theme.color.neutral9
-                placeholderTextColor: Theme.color.neutral5
-                placeholderText: qsTr("Enter wallet backup path")
-                background: Item {}
-                selectByMouse: true
-                enabled: !walletController.walletLoadInProgress
-                onTextEdited: walletController.clearWalletLoadStatus()
-                onAccepted: {
-                    if (nextButton.enabled) {
-                        walletController.importWallet(pathField.text)
-                    }
+            text: walletController.walletLoadInProgress ? qsTr("Importing...") : qsTr("Choose a wallet file")
+            onClicked: {
+                if (automationPathField.text.length > 0) {
+                    const automatedPath = walletController.normalizeWalletPath(automationPathField.text)
+                    automationPathField.text = ""
+                    walletController.importWallet(automatedPath)
+                    return
                 }
+                fileDialog.open()
             }
-
-            Icon {
-                anchors.right: parent.right
-                anchors.rightMargin: 14
-                anchors.verticalCenter: parent.verticalCenter
-                source: "image://images/copy"
-                color: walletController.walletLoadInProgress ? Theme.color.neutral4 : Theme.color.neutral7
-                enabled: !walletController.walletLoadInProgress
-                onClicked: {
-                    pathField.text = Clipboard.text()
-                    pathField.cursorPosition = pathField.text.length
-                    walletController.clearWalletLoadStatus()
-                }
-            }
-        }
-
-        CoreText {
-            Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-            Layout.topMargin: 14
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.WordWrap
-            text: qsTr("Enter a backup file path such as wallet.dat or a .bak file.")
-            color: Theme.color.neutral7
-            font.pixelSize: 18
         }
 
         CoreText {
@@ -191,18 +142,94 @@ Page {
             color: walletController.walletLoadError.length > 0 ? Theme.color.red : Theme.color.blue
             font.pixelSize: 16
         }
+    }
+
+    ColumnLayout {
+        id: errorLayout
+        objectName: "importWalletErrorView"
+        visible: root.hasImportError
+        width: root.heroWidth
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: root.heroTopMargin
+        spacing: 0
+
+        Item {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: root.heroIconSize
+            Layout.preferredHeight: root.heroIconSize
+
+            Rectangle {
+                anchors.fill: parent
+                radius: width / 2
+                color: Theme.color.red
+            }
+
+            Icon {
+                anchors.centerIn: parent
+                source: "qrc:/icons/cross"
+                color: Theme.color.white
+                size: 22
+                opacity: 1.0
+            }
+        }
+
+        CoreText {
+            objectName: "importWalletErrorTitle"
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: root.heroTitleTopMargin
+            Layout.fillWidth: true
+            text: walletController.walletImportErrorTitle
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            font.pixelSize: 28
+            bold: true
+            color: Theme.color.neutral9
+        }
+
+        CoreText {
+            objectName: "importWalletErrorDescription"
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: 18
+            Layout.fillWidth: true
+            text: walletController.walletImportErrorDescription
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            font.pixelSize: 18
+            color: Theme.color.neutral7
+        }
+
+        CoreText {
+            objectName: "importWalletErrorHelpText"
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: 28
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: walletController.walletImportErrorHelpText
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            font.pixelSize: 16
+            color: Theme.color.neutral6
+        }
 
         ContinueButton {
-            id: nextButton
-            objectName: "importWalletNextButton"
-            Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
-            Layout.topMargin: statusText.visible ? 20 : 40
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-            Layout.alignment: Qt.AlignCenter
-            enabled: pathField.text.length > 0 && !walletController.walletLoadInProgress
-            text: walletController.walletLoadInProgress ? qsTr("Importing...") : qsTr("Next")
-            onClicked: walletController.importWallet(pathField.text)
+            id: chooseAnotherFileButton
+            objectName: "importWalletChooseAnotherFileButton"
+            Layout.preferredWidth: Math.min(340, parent.width)
+            Layout.topMargin: 32
+            Layout.alignment: Qt.AlignHCenter
+            text: qsTr("Choose another file")
+            onClicked: {
+                if (automationPathField.text.length > 0) {
+                    const automatedPath = walletController.normalizeWalletPath(automationPathField.text)
+                    automationPathField.text = ""
+                    walletController.clearWalletLoadStatus()
+                    walletController.importWallet(automatedPath)
+                    return
+                }
+                walletController.clearWalletLoadStatus()
+                fileDialog.open()
+            }
         }
     }
 }

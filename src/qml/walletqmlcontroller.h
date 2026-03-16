@@ -27,8 +27,13 @@ class WalletQmlController : public QObject
     Q_PROPERTY(bool walletLoadInProgress READ walletLoadInProgress NOTIFY walletLoadInProgressChanged)
     Q_PROPERTY(QString walletLoadError READ walletLoadError NOTIFY walletLoadErrorChanged)
     Q_PROPERTY(QString walletLoadWarnings READ walletLoadWarnings NOTIFY walletLoadWarningsChanged)
+    Q_PROPERTY(QString walletImportErrorTitle READ walletImportErrorTitle NOTIFY walletLoadErrorChanged)
+    Q_PROPERTY(QString walletImportErrorDescription READ walletImportErrorDescription NOTIFY walletLoadErrorChanged)
+    Q_PROPERTY(QString walletImportErrorHelpText READ walletImportErrorHelpText NOTIFY walletLoadErrorChanged)
     Q_PROPERTY(bool walletMigrationInProgress READ walletMigrationInProgress NOTIFY walletMigrationInProgressChanged)
     Q_PROPERTY(QString walletMigrationError READ walletMigrationError NOTIFY walletMigrationErrorChanged)
+    Q_PROPERTY(QString lastImportedWalletName READ lastImportedWalletName NOTIFY lastImportedWalletInfoChanged)
+    Q_PROPERTY(QString lastImportedWalletKeyScheme READ lastImportedWalletKeyScheme NOTIFY lastImportedWalletInfoChanged)
 
 public:
     explicit WalletQmlController(interfaces::Node& node, QObject *parent = nullptr);
@@ -42,6 +47,7 @@ public:
     Q_INVOKABLE void clearWalletMigrationStatus();
     Q_INVOKABLE QString normalizeWalletPath(const QString& path) const;
     Q_INVOKABLE bool walletPathExists(const QString& path) const;
+    Q_INVOKABLE void requestOpenWalletSettings();
 
     WalletQmlModel* selectedWallet() const;
     void unloadWallets();
@@ -53,8 +59,13 @@ public:
     bool walletLoadInProgress() const { return m_wallet_load_in_progress; }
     QString walletLoadError() const { return m_wallet_load_error; }
     QString walletLoadWarnings() const { return m_wallet_load_warnings; }
+    QString walletImportErrorTitle() const;
+    QString walletImportErrorDescription() const;
+    QString walletImportErrorHelpText() const;
     bool walletMigrationInProgress() const { return m_wallet_migration_in_progress; }
     QString walletMigrationError() const { return m_wallet_migration_error; }
+    QString lastImportedWalletName() const { return m_last_imported_wallet_name; }
+    QString lastImportedWalletKeyScheme() const { return m_last_imported_wallet_key_scheme; }
 
 Q_SIGNALS:
     void selectedWalletChanged();
@@ -65,16 +76,25 @@ Q_SIGNALS:
     void walletLoadErrorChanged();
     void walletLoadWarningsChanged();
     void walletLoadSucceeded();
+    void walletImportSucceeded();
     void walletMigrationInProgressChanged();
     void walletMigrationErrorChanged();
     void walletMigrationRequired(const QString& path);
     void walletMigrationSucceeded();
     void walletMigrationFailed();
+    void lastImportedWalletInfoChanged();
+    void openWalletSettingsRequested();
 
 public Q_SLOTS:
     void initialize();
 
 private:
+    enum class WalletLoadAction {
+        None,
+        Load,
+        Import,
+    };
+
     void handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet);
     void startWalletImport(const QString& path);
     void startWalletLoad(const QString& path);
@@ -82,11 +102,14 @@ private:
     QString resolveManagedWalletReference(const QString& path) const;
     QString inferWalletLoadTarget(const QString& normalized_path) const;
     QString inferRestoreWalletName(const QString& normalized_path) const;
+    QString describeImportedWalletKeyScheme(interfaces::Wallet& wallet) const;
     void setWalletLoadInProgress(bool in_progress);
     void setWalletLoadError(const QString& error);
     void setWalletLoadWarnings(const QString& warnings);
     void setWalletMigrationInProgress(bool in_progress);
     void setWalletMigrationError(const QString& error);
+    void setLastImportedWalletInfo(const QString& wallet_name, const QString& key_scheme);
+    void clearLastImportedWalletInfo();
 
     bool m_initialized{false};
     interfaces::Node& m_node;
@@ -103,8 +126,11 @@ private:
     bool m_wallet_load_requested{false};
     QString m_wallet_load_error;
     QString m_wallet_load_warnings;
+    WalletLoadAction m_pending_wallet_load_action{WalletLoadAction::None};
     bool m_wallet_migration_in_progress{false};
     QString m_wallet_migration_error;
+    QString m_last_imported_wallet_name;
+    QString m_last_imported_wallet_key_scheme;
 
     bilingual_str m_error_message;
     std::vector<bilingual_str> m_warning_messages;
