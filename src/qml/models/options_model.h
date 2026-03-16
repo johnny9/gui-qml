@@ -12,8 +12,11 @@
 #include <common/system.h>
 #include <validation.h>
 
+#include <qml/models/settings_keys.h>
+
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 
 namespace interfaces {
@@ -45,6 +48,11 @@ class OptionsQmlModel : public QObject
     Q_PROPERTY(QString externalSignerPath READ externalSignerPath WRITE setExternalSignerPath NOTIFY externalSignerPathChanged)
     Q_PROPERTY(bool proxySettingsDirty READ proxySettingsDirty NOTIFY proxySettingsDirtyChanged)
     Q_PROPERTY(bool walletSettingsDirty READ walletSettingsDirty NOTIFY walletSettingsDirtyChanged)
+    Q_PROPERTY(QString language READ language WRITE setLanguage NOTIFY languageChanged)
+    Q_PROPERTY(QString languageSummary READ languageSummary NOTIFY languageChanged)
+    Q_PROPERTY(QStringList availableLanguages READ availableLanguages CONSTANT)
+    Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
+    Q_PROPERTY(QString displayUnitLabel READ displayUnitLabel NOTIFY displayUnitChanged)
 
 public:
     explicit OptionsQmlModel(interfaces::Node& node, bool is_onboarded);
@@ -96,6 +104,14 @@ public:
         if (!m_onboarded) return false;
         return m_external_signer_path != m_initial_external_signer_path;
     }
+    QString language() const { return m_language; }
+    void setLanguage(const QString& new_language);
+    QString languageSummary() const;
+    QStringList availableLanguages() const { return m_available_languages; }
+    Q_INVOKABLE QString languageLabel(const QString& locale_tag) const;
+    int displayUnit() const { return m_display_unit; }
+    void setDisplayUnit(int new_display_unit);
+    QString displayUnitLabel() const;
 
 public Q_SLOTS:
     void setCustomDataDirString(const QString &new_custom_datadir_string) {
@@ -120,6 +136,8 @@ Q_SIGNALS:
     void externalSignerPathChanged(QString path);
     void proxySettingsDirtyChanged();
     void walletSettingsDirtyChanged();
+    void languageChanged();
+    void displayUnitChanged(int new_display_unit);
 
 private:
     interfaces::Node& m_node;
@@ -149,8 +167,12 @@ private:
     bool m_initial_tor_enabled;
     QString m_initial_tor_address;
     QString m_initial_external_signer_path;
+    QString m_language;
+    QStringList m_available_languages;
+    int m_display_unit{0};
 
     common::SettingsValue pruneSetting() const;
+    void buildAvailableLanguages();
 };
 
 #endif // BITCOIN_QML_MODELS_OPTIONS_MODEL_H
