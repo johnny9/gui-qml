@@ -32,6 +32,13 @@ PageStack {
         }
     }
 
+    Binding {
+        target: walletController.selectedWallet
+        property: "displayUnit"
+        value: optionsModel.displayUnit
+        when: walletController.selectedWallet !== null
+    }
+
     initialItem: RowLayout {
         Page {
             Layout.alignment: Qt.AlignCenter

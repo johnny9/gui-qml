@@ -45,6 +45,7 @@ class WalletQmlModel : public QObject
     Q_PROPERTY(int feeEstimateRevision READ feeEstimateRevision NOTIFY feeEstimateRevisionChanged)
     Q_PROPERTY(BumpTransactionModel* bumpModel READ bumpModel CONSTANT)
     Q_PROPERTY(bool isWalletLoaded READ isWalletLoaded NOTIFY walletIsLoadedChanged)
+    Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
 
 public:
     WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObject* parent = nullptr);
@@ -108,6 +109,8 @@ public:
 
     bool isWalletLoaded() const { return m_is_wallet_loaded; }
     void setWalletLoaded(bool loaded);
+    int displayUnit() const { return m_display_unit; }
+    void setDisplayUnit(int unit);
 
 Q_SIGNALS:
     void nameChanged();
@@ -123,6 +126,7 @@ Q_SIGNALS:
     void walletIsLoadedChanged();
     void externalSignerApprovalSucceeded();
     void externalSignerApprovalFailed(const QString& message, bool signerNotFound);
+    void displayUnitChanged(int unit);
 
 private:
     void initializeFeeEstimator();
@@ -156,6 +160,7 @@ private:
     bool m_is_wallet_loaded{false};
     std::unique_ptr<interfaces::Handler> m_handler_status_changed;
     std::unique_ptr<interfaces::Handler> m_handler_transaction_changed;
+    int m_display_unit{0};
 };
 
 #endif // BITCOIN_QML_MODELS_WALLETQMLMODEL_H
