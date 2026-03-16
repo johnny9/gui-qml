@@ -15,8 +15,8 @@ Page {
     id: root
     background: null
 
-    property int requestCounter: 0
     property WalletQmlModel wallet: walletController.selectedWallet
+    property PaymentRequest request: wallet ? wallet.currentPaymentRequest : null
 
     ScrollView {
         clip: true
@@ -29,7 +29,9 @@ Page {
             anchors.left: contentRow.left
             anchors.top: parent.top
             anchors.topMargin: 20
-            text: qsTr("Request a payment")
+            text: root.request !== null && root.request.id !== ""
+                ? qsTr("Payment request #") + root.request.id
+                : qsTr("Request a payment")
             font.pixelSize: 21
             bold: true
         }
@@ -37,7 +39,7 @@ Page {
         RowLayout {
             id: contentRow
 
-            enabled: walletController.initialized
+            enabled: walletController.initialized && root.request !== null
 
             anchors.top: title.bottom
             anchors.topMargin: 40
@@ -51,10 +53,6 @@ Page {
                 spacing: 5
 
                 Item {
-                    BitcoinAmount {
-                        id: bitcoinAmount
-                    }
-
                     height: amountInput.height
                     Layout.fillWidth: true
                     CoreText {
@@ -63,7 +61,7 @@ Page {
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
                         horizontalAlignment: Text.AlignLeft
-                        text: "Amount"
+                        text: qsTr("Amount")
                         font.pixelSize: 18
                     }
 
@@ -80,9 +78,28 @@ Page {
                         background: Item {}
                         placeholderText: "0.00000000"
                         selectByMouse: true
+                        text: root.request ? root.request.amount.display : ""
                         onTextEdited: {
-                            amountInput.text = bitcoinAmount.sanitize(amountInput.text)
+                            if (root.request) {
+                                root.request.amount.display = text
+                            }
                         }
+                        onEditingFinished: {
+                            if (root.request) {
+                                root.request.amount.format()
+                            }
+                        }
+                        onActiveFocusChanged: {
+                            if (!activeFocus && root.request) {
+                                root.request.amount.format()
+                            }
+                        }
+                        validator: RegularExpressionValidator {
+                            regularExpression: !root.request || root.request.amount.unit === BitcoinAmount.BTC
+                                ? /^(0|[1-9]\d{0,7})(\.\d{0,8})?$/
+                                : /^(0|[1-9]\d{0,15})$/
+                        }
+                        maximumLength: !root.request || root.request.amount.unit === BitcoinAmount.BTC ? 17 : 16
                     }
                     Item {
                         width: unitLabel.width + flipIcon.width
@@ -92,12 +109,8 @@ Page {
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                if (bitcoinAmount.unit == BitcoinAmount.BTC) {
-                                    amountInput.text = bitcoinAmount.convert(amountInput.text, BitcoinAmount.BTC)
-                                    bitcoinAmount.unit = BitcoinAmount.SAT
-                                } else {
-                                    amountInput.text = bitcoinAmount.convert(amountInput.text, BitcoinAmount.SAT)
-                                    bitcoinAmount.unit = BitcoinAmount.BTC
+                                if (root.request) {
+                                    root.request.amount.flipUnit()
                                 }
                             }
                         }
@@ -105,7 +118,7 @@ Page {
                             id: unitLabel
                             anchors.right: flipIcon.left
                             anchors.verticalCenter: parent.verticalCenter
-                            text: bitcoinAmount.unitLabel
+                            text: root.request ? root.request.amount.unitLabel : ""
                             font.pixelSize: 18
                             color: enabled ? Theme.color.neutral7 : Theme.color.neutral4
                         }
@@ -120,6 +133,25 @@ Page {
                     }
                 }
 
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.request !== null && root.request.amountError.length > 0
+
+                    Icon {
+                        source: "image://images/alert-filled"
+                        size: 22
+                        color: Theme.color.red
+                    }
+
+                    CoreText {
+                        text: root.request ? root.request.amountError : ""
+                        font.pixelSize: 15
+                        color: Theme.color.red
+                        horizontalAlignment: Text.AlignLeft
+                        Layout.fillWidth: true
+                    }
+                }
+
                 Separator {
                     Layout.fillWidth: true
                 }
@@ -129,6 +161,12 @@ Page {
                     Layout.fillWidth: true
                     labelText: qsTr("Label")
                     placeholderText: qsTr("Enter label...")
+                    text: root.request ? root.request.label : ""
+                    onTextEdited: {
+                        if (root.request) {
+                            root.request.label = label.text
+                        }
+                    }
                 }
 
                 Separator {
@@ -140,6 +178,12 @@ Page {
                     Layout.fillWidth: true
                     labelText: qsTr("Message")
                     placeholderText: qsTr("Enter message...")
+                    text: root.request ? root.request.message : ""
+                    onTextEdited: {
+                        if (root.request) {
+                            root.request.message = message.text
+                        }
+                    }
                 }
 
                 Separator {
@@ -168,7 +212,7 @@ Page {
                         width: 110
                         text: qsTr("copy")
                         font.pixelSize: 18
-                        color: enabled ? Theme.color.neutral7 : Theme.color.neutral4
+                        color: copyArea.enabled ? Theme.color.orange : Theme.color.neutral4
                     }
 
                     Rectangle {
@@ -184,8 +228,33 @@ Page {
                             anchors.leftMargin: 5
                             horizontalAlignment: Text.AlignLeft
                             font.pixelSize: 18
-                            wrap: true
+                            wrapMode: Text.WordWrap
+                            text: root.request ? root.request.addressFormatted : ""
                         }
+                    }
+
+                    MouseArea {
+                        id: copyArea
+                        anchors.left: parent.left
+                        anchors.top: addressLabel.bottom
+                        anchors.right: addressLabel.right
+                        anchors.bottom: parent.bottom
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        enabled: root.request !== null && root.request.address !== ""
+                        onClicked: Clipboard.setText(root.request.address)
+                    }
+
+                    MouseArea {
+                        id: addressArea
+                        anchors.left: addressLabel.right
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        enabled: root.request !== null && root.request.address !== ""
+                        onClicked: Clipboard.setText(root.request.address)
                     }
                 }
 
@@ -193,34 +262,26 @@ Page {
                     id: continueButton
                     Layout.fillWidth: true
                     Layout.topMargin: 30
-                    text: qsTr("Create bitcoin address")
+                    text: root.request !== null && root.request.id !== ""
+                        ? qsTr("Copy payment request")
+                        : qsTr("Create bitcoin address")
                     onClicked: {
-                        if (!clearRequest.visible) {
-                            requestCounter = requestCounter + 1
-                            clearRequest.visible = true
-                            title.text = qsTr("Payment request #" + requestCounter)
-                            var newAddress = root.wallet.newAddress(label.text)
-                            var groupedAddress = newAddress.replace(/(.{4})/g, "$1 ").trim()
-                            address.text = groupedAddress
-                            qrImage.code = newAddress
-                            continueButton.text = qsTr("Copy payment request")
+                        if (!root.request) {
+                            return
+                        }
+                        if (root.request.address === "") {
+                            root.wallet.commitPaymentRequest()
+                        } else {
+                            Clipboard.setText(root.request.address)
                         }
                     }
-                }
-
-                function clear() {
-                    clearRequest.visible = false
-                    title.text = qsTr("Request a payment")
-                    address.text = ""
-                    qrImage.code = ""
-                    continueButton.text = qsTr("Create bitcoin address")
                 }
 
                 ContinueButton {
                     id: clearRequest
                     Layout.fillWidth: true
                     Layout.topMargin: 10
-                    visible: false
+                    visible: root.request !== null && root.request.id !== ""
                     borderColor: Theme.color.neutral6
                     borderHoverColor: Theme.color.orangeLight1
                     borderPressedColor: Theme.color.orangeLight2
@@ -229,14 +290,18 @@ Page {
                     backgroundPressedColor: "transparent"
                     text: qsTr("Clear")
                     onClicked: {
-                        columnLayout.clear()
+                        if (root.request) {
+                            root.request.clear()
+                        }
                     }
                 }
 
                 Connections {
                     target: walletController
                     function onSelectedWalletChanged() {
-                        columnLayout.clear()
+                        if (root.request) {
+                            root.request.clear()
+                        }
                     }
                 }
             }
@@ -254,6 +319,7 @@ Page {
                     id: qrImage
                     backgroundColor: "transparent"
                     foregroundColor: Theme.color.neutral9
+                    code: root.request ? root.request.address : ""
                 }
             }
         }
