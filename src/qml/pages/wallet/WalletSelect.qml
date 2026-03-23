@@ -10,6 +10,7 @@ import "../../controls"
 
 Popup {
     id: root
+    objectName: "walletSelectPopup"
 
     property alias model: listView.model
     implicitHeight: layout.height + arrow.height + 11
@@ -93,6 +94,7 @@ Popup {
 
         AddWalletButton {
             id: addWallet
+            objectName: "walletSelectAddWalletButton"
 
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: 220

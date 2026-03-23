@@ -35,7 +35,7 @@ ColumnLayout {
         ButtonGroup.group: group
         text: qsTr("Custom")
         description: qsTr("Choose the directory and storage device.")
-        customDir: customDirOption.checked ? fileDialog.folder : ""
+        customDir: customDirOption.checked ? fileDialog.currentFolder.toString() : ""
         checked: optionsModel.dataDir !== optionsModel.getDefaultDataDirString
         onClicked: fileDialog.open()
     }
@@ -43,8 +43,8 @@ ColumnLayout {
         id: fileDialog
         currentFolder: shortcuts.home
         onAccepted: {
-            optionsModel.setCustomDataDirString(fileDialog.fileUrls[0].toString())
-            var customDataDir = fileDialog.fileUrl.toString();
+            optionsModel.setCustomDataDirString(fileDialog.selectedFile.toString())
+            var customDataDir = fileDialog.selectedFile.toString();
             if (customDataDir !== "") {
                 optionsModel.setCustomDataDirArgs(customDataDir)
                 customDirOption.customDir = optionsModel.getCustomDataDirString()

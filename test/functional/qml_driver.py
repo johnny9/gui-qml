@@ -10,6 +10,7 @@ interface for functional tests to observe and drive the QML UI.
 """
 
 import json
+import os
 import socket
 import time
 
@@ -148,6 +149,48 @@ class QmlDriver:
         if "error" in resp:
             raise QmlDriverError(f"list_objects failed: {resp['error']}")
         return resp["objects"]
+
+    def save_screenshot(self, path):
+        """Save a screenshot of the current QML window to a PNG file."""
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        resp = self._send({"cmd": "save_screenshot", "path": path})
+        if "error" in resp:
+            raise QmlDriverError(
+                f"save_screenshot({path!r}) failed: {resp['error']}"
+            )
+        return resp
+
+    def settle(self, timeout_ms=5000, stack_view_names=("mainPageStack", "createWalletWizard")):
+        """Wait for relevant StackView transitions to finish.
+
+        The wallet flow transitions run through the app's main page stack and,
+        once opened, the nested create-wallet wizard stack. Waiting for their
+        `busy` property to become false is more reliable than sleeping.
+        Missing stack views are ignored so this remains safe before nested
+        flows have been created.
+        """
+        deadline = time.time() + (timeout_ms / 1000)
+        last_busy = {}
+        while time.time() < deadline:
+            any_busy = False
+            for object_name in stack_view_names:
+                try:
+                    busy = self.get_property(object_name, "busy")
+                except QmlDriverError as err:
+                    if f"Object not found: {object_name}" in str(err):
+                        continue
+                    raise
+                last_busy[object_name] = busy
+                if busy:
+                    any_busy = True
+            if not any_busy:
+                return
+            time.sleep(0.05)
+        raise QmlDriverError(
+            f"Timed out waiting for stack views to become idle: {last_busy}"
+        )
 
     # ── Transport layer ──────────────────────────────────────────────
 

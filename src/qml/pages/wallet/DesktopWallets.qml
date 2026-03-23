@@ -22,9 +22,17 @@ Page {
     signal addWallet()
     signal sendTransaction(bool multipleRecipientsEnabled)
 
+    Connections {
+        target: walletController
+        function onOpenWalletSettingsRequested() {
+            settingsTabButton.checked = true
+        }
+    }
+
     header: NavigationBar2 {
         id: navBar
         leftItem: WalletBadge {
+            objectName: "walletBadge"
             implicitWidth: 154
             implicitHeight: 46
             text: walletController.selectedWallet.name
@@ -33,16 +41,13 @@ Page {
             noWalletLoaded: !walletController.isWalletLoaded
             noWalletsFound: walletController.noWalletsFound
 
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                    if (walletController.initialized) {
-                        walletListModel.listWalletDir()
-                        if (walletController.noWalletsFound) {
-                            root.addWallet()
-                        } else {
-                            walletSelect.opened ? walletSelect.close() : walletSelect.open()
-                        }
+            onClicked: {
+                if (walletController.initialized) {
+                    walletListModel.listWalletDir()
+                    if (walletController.noWalletsFound) {
+                        root.addWallet()
+                    } else {
+                        walletSelect.opened ? walletSelect.close() : walletSelect.open()
                     }
                 }
             }
@@ -119,6 +124,7 @@ Page {
                 }
             }
             NavigationTab {
+                id: settingsTabButton
                 iconSource: "image://images/gear-outline"
                 iconColor: Theme.color.neutral7
                 Layout.preferredWidth: 30

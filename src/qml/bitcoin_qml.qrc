@@ -92,6 +92,8 @@
         <file>pages/wallet/CreateIntro.qml</file>
         <file>pages/wallet/CreateName.qml</file>
         <file>pages/wallet/CreatePassword.qml</file>
+        <file>pages/wallet/ImportWalletOptions.qml</file>
+        <file>pages/wallet/ImportWalletSuccess.qml</file>
         <file>pages/wallet/CreateWalletWizard.qml</file>
         <file>pages/wallet/DesktopWallets.qml</file>
         <file>pages/wallet/MultipleSendReview.qml</file>
@@ -127,6 +129,7 @@
         <file alias="ellipsis">res/icons/ellipsis.png</file>
         <file alias="error">res/icons/error.png</file>
         <file alias="export">res/icons/export.png</file>
+        <file alias="file">res/icons/file.png</file>
         <file alias="flip-vertical">res/icons/flip-vertical.png</file>
         <file alias="gear">res/icons/gear.png</file>
         <file alias="gear-outline">res/icons/gear-outline.png</file>
