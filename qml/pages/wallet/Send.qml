@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2026 The Bitcoin Core developers
+// Copyright (c) 2024 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -13,6 +13,7 @@ import "../../components"
 
 PageStack {
     id: root
+    objectName: "walletSendPage"
     vertical: true
 
     property WalletQmlModel wallet: walletController.selectedWallet
@@ -28,12 +29,33 @@ PageStack {
     }
 
     Connections {
-        target: root.wallet.recipients
+        target: root.wallet ? root.wallet.recipients : null
         function onListCleared() {
             settings.multipleRecipientsEnabled = false
+            if (root.wallet) {
+                root.wallet.scheduleFeeEstimates()
+            }
+        }
+        function onCountChanged() {
+            if (root.wallet) {
+                root.wallet.scheduleFeeEstimates()
+            }
+        }
+        function onCurrentRecipientChanged() {
+            if (root.wallet) {
+                root.wallet.scheduleFeeEstimates()
+            }
         }
     }
 
+    Connections {
+        target: root.wallet ? root.wallet.coinsListModel : null
+        function onSelectedCoinsCountChanged() {
+            if (root.wallet) {
+                root.wallet.scheduleFeeEstimates()
+            }
+        }
+    }
 
     initialItem: Page {
         background: null
@@ -171,9 +193,12 @@ PageStack {
 
                 BitcoinAddressInputField {
                     Layout.fillWidth: true
+                    inputObjectName: "sendAddressInput"
                     enabled: walletController.initialized
                     address: root.recipient.address
                     errorText: root.recipient.addressError
+                    onTextChanged: if (root.wallet) root.wallet.scheduleFeeEstimates()
+                    onEditingFinished: if (root.wallet) root.wallet.scheduleFeeEstimates()
                 }
 
                 Separator {
@@ -198,6 +223,7 @@ PageStack {
 
                         TextField {
                             id: amountInput
+                            objectName: "sendAmountInput"
                             anchors.left: amountLabel.right
                             anchors.verticalCenter: parent.verticalCenter
                             leftPadding: 0
@@ -210,11 +236,25 @@ PageStack {
                             placeholderText: "0.00000000"
                             selectByMouse: true
                             text: root.recipient.amount.display
+                            onTextChanged: {
+                                root.recipient.amount.display = text
+                                if (root.wallet) {
+                                    root.wallet.scheduleFeeEstimates()
+                                }
+                            }
                             onTextEdited: root.recipient.amount.display = text
-                            onEditingFinished: root.recipient.amount.format()
+                            onEditingFinished: {
+                                root.recipient.amount.format()
+                                if (root.wallet) {
+                                    root.wallet.scheduleFeeEstimates()
+                                }
+                            }
                             onActiveFocusChanged: {
                                 if (!activeFocus) {
                                     root.recipient.amount.format()
+                                    if (root.wallet) {
+                                        root.wallet.scheduleFeeEstimates()
+                                    }
                                 }
                             }
                             validator: RegularExpressionValidator {
@@ -278,6 +318,7 @@ PageStack {
 
                 LabeledTextInput {
                     id: label
+                    inputObjectName: "sendNoteInput"
                     Layout.fillWidth: true
                     labelText: qsTr("Note to self")
                     placeholderText: qsTr("Enter ...")
@@ -308,14 +349,21 @@ PageStack {
                 FeeSelection {
                     id: feeSelection
                     Layout.fillWidth: true
+                    walletModel: root.wallet
+                    currentTarget: root.wallet ? root.wallet.targetBlocks : 2
 
-                    onFeeChanged: {
+                    onFeeChanged: function(target) {
                         root.wallet.targetBlocks = target
                     }
                 }
 
+                Separator {
+                    Layout.fillWidth: true
+                }
+
                 ContinueButton {
                     id: continueButton
+                    objectName: "sendContinueButton"
                     Layout.fillWidth: true
                     Layout.topMargin: 30
                     text: qsTr("Review")
