@@ -7,13 +7,6 @@ import QtQuick.Controls 2.15
 
 StackView {
     property bool vertical: false
-    readonly property bool canGoBack: depth > 1 && currentItem && currentItem.navigationBackEnabled !== false
-
-    function goBack() {
-        if (canGoBack) {
-            pop()
-        }
-    }
 
     pushEnter: Transition {
         NumberAnimation {

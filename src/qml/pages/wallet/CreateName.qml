@@ -12,12 +12,20 @@ import "../settings"
 
 Page {
     id: root
+    signal back
     signal next
     property string walletName: ""
     background: null
 
     header: NavigationBar2 {
-        navigationStack: root.StackView.view
+        id: navbar
+        leftItem: NavButton {
+            iconSource: "image://images/caret-left"
+            text: qsTr("Back")
+            onClicked: {
+                root.back()
+            }
+        }
     }
 
     ColumnLayout {
