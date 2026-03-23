@@ -5,9 +5,26 @@
 #ifndef BITCOIN_QML_TEST_MOCKS_MOCKNODE_H
 #define BITCOIN_QML_TEST_MOCKS_MOCKNODE_H
 
+// Bitcoin's util/check.h defines Assert(val), while gMock declares internal
+// Assert(bool, file, line[, msg]) helpers. Some tests include Bitcoin headers
+// before this mock header, so temporarily hide the macro while parsing gMock
+// and restore it afterward.
+#ifdef Assert
+#pragma push_macro("Assert")
+#undef Assert
+#define BITCOIN_QML_RESTORE_ASSERT_MACRO
+#endif
+
 #include <gmock/gmock.h>
+
+#ifdef BITCOIN_QML_RESTORE_ASSERT_MACRO
+#pragma pop_macro("Assert")
+#undef BITCOIN_QML_RESTORE_ASSERT_MACRO
+#endif
+
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
+#include <net_processing.h>
 
 #include <coins.h>
 #include <node/types.h>

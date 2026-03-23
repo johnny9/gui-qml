@@ -13,8 +13,6 @@
 #include <map>
 #include <utility>
 
-const TranslateFn G_TRANSLATION_FUN{nullptr};
-
 namespace {
 interfaces::Node::NodesStats MakeStats(std::initializer_list<CNodeStats> node_stats)
 {

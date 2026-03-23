@@ -19,7 +19,6 @@
 #include <node/interface_ui.h>
 #include <noui.h>
 #include <qt/guiutil.h>
-#include <qt/initexecutor.h>
 #include <qml/appmode.h>
 #include <qml/bitcoinamount.h>
 #include <qml/clipboard.h>
@@ -30,6 +29,7 @@
 #include <qml/controls/linegraph.h>
 #include <qml/guiconstants.h>
 #include <qml/imageprovider.h>
+#include <qml/initexecutor.h>
 #include <qml/models/activitylistmodel.h>
 #include <qml/models/banlistmodel.h>
 #include <qml/models/bitcoinaddress.h>
@@ -269,22 +269,22 @@ int QmlGuiMain(int argc, char* argv[])
     handler_message_box.disconnect();
 
     NodeModel node_model{*node};
-    InitExecutor init_executor{*node};
+    QmlInitExecutor init_executor{*node};
 #ifdef ENABLE_WALLET
     WalletQmlController wallet_controller(*node);
     if (!gArgs.GetBoolArg("-disablewallet", false)) {
-        QObject::connect(&init_executor, &InitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
+        QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
     }
 #endif
-    QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &InitExecutor::initialize);
+    QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
     QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
 #ifdef ENABLE_WALLET
         wallet_controller.unloadWallets();
 #endif
         init_executor.shutdown();
     });
-    QObject::connect(&init_executor, &InitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
-    QObject::connect(&init_executor, &InitExecutor::shutdownResult, qGuiApp, &QGuiApplication::quit, Qt::QueuedConnection);
+    QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
+    QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, &QGuiApplication::quit, Qt::QueuedConnection);
     // QObject::connect(&init_executor, &InitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     NetworkTrafficTower network_traffic_tower{node_model};
