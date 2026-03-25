@@ -309,6 +309,7 @@ Page {
 
     Component.onCompleted: {
         nodeModel.debugLogLoadLimit = 1000
+        nodeModel.debugLogFilter = ""
         root.refreshLog(true)
     }
 }

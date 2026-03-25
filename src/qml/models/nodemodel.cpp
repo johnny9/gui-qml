@@ -383,8 +383,9 @@ void NodeModel::refreshDebugLog(bool full_load)
 
     if (full_load || m_all_lines.isEmpty()) {
         // Full (re-)load: initial load or Load More — use doubling loop to ensure
-        // we get m_debug_log_load_limit actual non-blank lines.
-        int fetch_size = m_debug_log_load_limit;
+        // we get load_limit actual non-blank lines.
+        const int load_limit = m_debug_log_load_limit;
+        int fetch_size = load_limit;
         QVariantList filtered;
         while (true) {
             const QVariantList raw_lines = debugLogLines(fetch_size);
@@ -393,14 +394,14 @@ void NodeModel::refreshDebugLog(bool full_load)
                 if (!v.toMap()[QStringLiteral("raw")].toString().trimmed().isEmpty())
                     filtered.append(v);
             }
-            if (filtered.size() >= m_debug_log_load_limit || raw_lines.size() < fetch_size)
+            if (filtered.size() > load_limit || raw_lines.size() < fetch_size)
                 break;
             fetch_size *= 2;
         }
-        const bool new_has_more = filtered.size() > m_debug_log_load_limit;
-        const int start = new_has_more ? filtered.size() - m_debug_log_load_limit : 0;
+        const bool new_has_more = filtered.size() > load_limit;
+        const int start = new_has_more ? filtered.size() - load_limit : 0;
         m_all_lines.clear();
-        m_all_lines.reserve(m_debug_log_load_limit);
+        m_all_lines.reserve(load_limit);
         for (int i = filtered.size() - 1; i >= start; i--)
             m_all_lines.append(filtered[i].toMap());
         if (m_has_more_lines != new_has_more) {
