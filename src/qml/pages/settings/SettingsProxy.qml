@@ -71,7 +71,7 @@ Page {
                     }
                     CoreText {
                         Layout.fillWidth: true
-                        text: qsTr("For changes on this screen to take effect, press 'Done' and restart the application.")
+                        text: qsTr("Restart the application for these changes to take effect.")
                         color: optionsModel.proxySettingsDirty ? Theme.color.blue : Theme.color.neutral9
                         wrapMode: Text.WordWrap
                     }
