@@ -23,6 +23,10 @@ private Q_SLOTS:
     void torDisabledRemovesKey();
     void proxyEnabledWritesAddress();
     void onboardWritesProxy();
+    void proxyDirtySetWhenOnboarded();
+    void proxyDirtyNotSetDuringOnboarding();
+    void proxyDirtyResetWhenReverted();
+    void proxyDirtyNotSetAfterOnboard();
 };
 
 // Convenience: set up a NiceMock whose getPersistentSetting returns null for
@@ -130,6 +134,89 @@ void OptionsModelTests::onboardWritesProxy()
         })));
 
     model.onboard();
+}
+
+void OptionsModelTests::proxyDirtySetWhenOnboarded()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+
+    OptionsQmlModel model(node, /*is_onboarded=*/true);
+    QVERIFY(!model.proxySettingsDirty());
+
+    model.setProxyEnabled(true);
+    QVERIFY(model.proxySettingsDirty());
+}
+
+void OptionsModelTests::proxyDirtyNotSetDuringOnboarding()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+
+    // During onboarding the node has not started yet, so no restart is needed.
+    OptionsQmlModel model(node, /*is_onboarded=*/false);
+    model.setProxyEnabled(true);
+    model.setProxyAddress("127.0.0.1:9050");
+    QVERIFY(!model.proxySettingsDirty());
+}
+
+void OptionsModelTests::proxyDirtyResetWhenReverted()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+
+    // Start onboarded with proxy disabled (no saved proxy).
+    OptionsQmlModel model(node, /*is_onboarded=*/true);
+    QVERIFY(!model.proxySettingsDirty());
+
+    // Simulate what ProxySettings.qml does: set address before enabling.
+    model.setProxyAddress("127.0.0.1:9050");
+    // Address changed but proxy is still disabled — should NOT be dirty since
+    // the address is irrelevant when proxy is off.
+    QVERIFY(!model.proxySettingsDirty());
+
+    // Enable proxy — now dirty (enabled differs from initial disabled).
+    model.setProxyEnabled(true);
+    QVERIFY(model.proxySettingsDirty());
+
+    // Revert enable state — dirty should clear even though address is populated,
+    // because the address is ignored when proxy is disabled.
+    model.setProxyEnabled(false);
+    QVERIFY(!model.proxySettingsDirty());
+}
+
+void OptionsModelTests::proxyDirtyNotSetAfterOnboard()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+    ON_CALL(node, resetSettings()).WillByDefault(Return());
+
+    // Configure proxy during onboarding.
+    OptionsQmlModel model(node, /*is_onboarded=*/false);
+    model.setProxyEnabled(true);
+    model.setProxyAddress("127.0.0.1:9050");
+    QVERIFY(!model.proxySettingsDirty());
+
+    // After onboard() the node starts with those settings applied —
+    // no restart is needed, so dirty must be false.
+    model.onboard();
+    QVERIFY(!model.proxySettingsDirty());
 }
 
 int RunOptionsModelTests(int argc, char* argv[])

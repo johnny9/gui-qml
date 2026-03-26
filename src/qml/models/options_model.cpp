@@ -65,6 +65,11 @@ OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, bool is_onboarded)
     if (onion_setting == "0") onion_setting.clear();
     m_tor_enabled = !onion_setting.isEmpty();
     m_tor_address = onion_setting;
+
+    m_initial_proxy_enabled = m_proxy_enabled;
+    m_initial_proxy_address = m_proxy_address;
+    m_initial_tor_enabled   = m_tor_enabled;
+    m_initial_tor_address   = m_tor_address;
 }
 
 void OptionsQmlModel::setDbcacheSizeMiB(int new_dbcache_size_mib)
@@ -147,6 +152,7 @@ void OptionsQmlModel::setServer(bool new_server)
 void OptionsQmlModel::setProxyEnabled(bool enabled)
 {
     if (enabled != m_proxy_enabled) {
+        bool was_dirty = proxySettingsDirty();
         m_proxy_enabled = enabled;
         if (m_onboarded) {
             if (enabled && !m_proxy_address.isEmpty()) {
@@ -155,6 +161,9 @@ void OptionsQmlModel::setProxyEnabled(bool enabled)
                 m_node.updateRwSetting("proxy", common::SettingsValue{});
             }
         }
+        if (proxySettingsDirty() != was_dirty) {
+            Q_EMIT proxySettingsDirtyChanged();
+        }
         Q_EMIT proxyEnabledChanged(enabled);
     }
 }
@@ -162,9 +171,13 @@ void OptionsQmlModel::setProxyEnabled(bool enabled)
 void OptionsQmlModel::setProxyAddress(const QString& address)
 {
     if (address != m_proxy_address) {
+        bool was_dirty = proxySettingsDirty();
         m_proxy_address = address;
         if (m_onboarded && m_proxy_enabled) {
             m_node.updateRwSetting("proxy", address.toStdString());
+        }
+        if (proxySettingsDirty() != was_dirty) {
+            Q_EMIT proxySettingsDirtyChanged();
         }
         Q_EMIT proxyAddressChanged(address);
     }
@@ -173,6 +186,7 @@ void OptionsQmlModel::setProxyAddress(const QString& address)
 void OptionsQmlModel::setTorEnabled(bool enabled)
 {
     if (enabled != m_tor_enabled) {
+        bool was_dirty = proxySettingsDirty();
         m_tor_enabled = enabled;
         if (m_onboarded) {
             if (enabled && !m_tor_address.isEmpty()) {
@@ -181,6 +195,9 @@ void OptionsQmlModel::setTorEnabled(bool enabled)
                 m_node.updateRwSetting("onion", common::SettingsValue{});
             }
         }
+        if (proxySettingsDirty() != was_dirty) {
+            Q_EMIT proxySettingsDirtyChanged();
+        }
         Q_EMIT torEnabledChanged(enabled);
     }
 }
@@ -188,9 +205,13 @@ void OptionsQmlModel::setTorEnabled(bool enabled)
 void OptionsQmlModel::setTorAddress(const QString& address)
 {
     if (address != m_tor_address) {
+        bool was_dirty = proxySettingsDirty();
         m_tor_address = address;
         if (m_onboarded && m_tor_enabled) {
             m_node.updateRwSetting("onion", address.toStdString());
+        }
+        if (proxySettingsDirty() != was_dirty) {
+            Q_EMIT proxySettingsDirtyChanged();
         }
         Q_EMIT torAddressChanged(address);
     }
@@ -290,4 +311,8 @@ void OptionsQmlModel::onboard()
         m_node.updateRwSetting("onion", m_tor_address.toStdString());
     }
     m_onboarded = true;
+    m_initial_proxy_enabled = m_proxy_enabled;
+    m_initial_proxy_address = m_proxy_address;
+    m_initial_tor_enabled   = m_tor_enabled;
+    m_initial_tor_address   = m_tor_address;
 }

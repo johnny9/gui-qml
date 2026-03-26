@@ -14,24 +14,7 @@ Page {
     id: root
     objectName: "settingsProxy"
 
-    // Snapshot of proxy state at page-open time; used to detect pending changes.
-    property bool initialProxyEnabled: false
-    property string initialProxyAddress: ""
-    property bool initialTorEnabled: false
-    property string initialTorAddress: ""
-
-    readonly property bool settingsModified:
-        optionsModel.proxyEnabled !== initialProxyEnabled ||
-        optionsModel.proxyAddress !== initialProxyAddress ||
-        optionsModel.torEnabled !== initialTorEnabled ||
-        optionsModel.torAddress !== initialTorAddress
-
-    Component.onCompleted: {
-        initialProxyEnabled = optionsModel.proxyEnabled
-        initialProxyAddress = optionsModel.proxyAddress
-        initialTorEnabled = optionsModel.torEnabled
-        initialTorAddress = optionsModel.torAddress
-    }
+    readonly property bool proxySettingsDirty: optionsModel.proxySettingsDirty
 
     background: null
 
@@ -59,32 +42,44 @@ Page {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 0
 
-            ProxySettings {
-                Layout.fillWidth: true
-            }
-
             Rectangle {
                 Layout.fillWidth: true
-                Layout.topMargin: 20
+                Layout.topMargin: 10
                 Layout.bottomMargin: 20
                 Layout.leftMargin: 10
                 Layout.rightMargin: 10
                 // Note: this advisory is only shown in the post-onboarding settings
                 // context. No restart is needed when configuring proxy during onboarding
                 // since the node has not started yet.
-                implicitHeight: advisoryText.implicitHeight + 20
+                implicitHeight: advisoryRow.implicitHeight + 20
                 radius: 5
-                color: root.settingsModified ? Theme.color.blue : Theme.color.neutral2
-                CoreText {
-                    id: advisoryText
+                color: optionsModel.proxySettingsDirty
+                    ? Qt.rgba(Theme.color.blue.r, Theme.color.blue.g, Theme.color.blue.b, 0.25)
+                    : Qt.rgba(Theme.color.neutral2.r, Theme.color.neutral2.g, Theme.color.neutral2.b, 0.5)
+                RowLayout {
+                    id: advisoryRow
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
                     anchors.margins: 10
-                    text: qsTr("Proxy changes take effect after restarting the application.")
-                    color: root.settingsModified ? Theme.color.white : Theme.color.neutral5
-                    wrapMode: Text.WordWrap
+                    spacing: 8
+                    Icon {
+                        source: "image://images/info-filled"
+                        color: optionsModel.proxySettingsDirty ? Theme.color.blue : Theme.color.neutral9
+                        size: 16
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+                    CoreText {
+                        Layout.fillWidth: true
+                        text: qsTr("For changes on this screen to take effect, press 'Done' and restart the application.")
+                        color: optionsModel.proxySettingsDirty ? Theme.color.blue : Theme.color.neutral9
+                        wrapMode: Text.WordWrap
+                    }
                 }
+            }
+
+            ProxySettings {
+                Layout.fillWidth: true
             }
         }
     }

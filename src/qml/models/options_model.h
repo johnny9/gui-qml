@@ -42,6 +42,7 @@ class OptionsQmlModel : public QObject
     Q_PROPERTY(QString proxyAddress READ proxyAddress WRITE setProxyAddress NOTIFY proxyAddressChanged)
     Q_PROPERTY(bool torEnabled READ torEnabled WRITE setTorEnabled NOTIFY torEnabledChanged)
     Q_PROPERTY(QString torAddress READ torAddress WRITE setTorAddress NOTIFY torAddressChanged)
+    Q_PROPERTY(bool proxySettingsDirty READ proxySettingsDirty NOTIFY proxySettingsDirtyChanged)
 
 public:
     explicit OptionsQmlModel(interfaces::Node& node, bool is_onboarded);
@@ -78,6 +79,14 @@ public:
     void setTorEnabled(bool enabled);
     QString torAddress() const { return m_tor_address; }
     void setTorAddress(const QString& address);
+    bool proxySettingsDirty() const {
+        if (!m_onboarded) return false;
+        if (m_proxy_enabled != m_initial_proxy_enabled) return true;
+        if (m_proxy_enabled && m_proxy_address != m_initial_proxy_address) return true;
+        if (m_tor_enabled != m_initial_tor_enabled) return true;
+        if (m_tor_enabled && m_tor_address != m_initial_tor_address) return true;
+        return false;
+    }
 
 public Q_SLOTS:
     void setCustomDataDirString(const QString &new_custom_datadir_string) {
@@ -99,6 +108,7 @@ Q_SIGNALS:
     void proxyAddressChanged(QString address);
     void torEnabledChanged(bool enabled);
     void torAddressChanged(QString address);
+    void proxySettingsDirtyChanged();
 
 private:
     interfaces::Node& m_node;
@@ -122,6 +132,10 @@ private:
     QString m_proxy_address;
     bool m_tor_enabled;
     QString m_tor_address;
+    bool m_initial_proxy_enabled;
+    QString m_initial_proxy_address;
+    bool m_initial_tor_enabled;
+    QString m_initial_tor_address;
 
     common::SettingsValue pruneSetting() const;
 };

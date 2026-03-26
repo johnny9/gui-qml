@@ -66,9 +66,10 @@ def test_default_proxy_toggle(gui):
     checked = gui.get_property("proxyEnableSwitch", "checked")
     assert not checked, f"Expected proxy disabled by default, got checked={checked}"
 
-    # Advisory box should report no pending changes before any modification.
-    modified = gui.get_property("settingsProxy", "settingsModified")
-    assert not modified, "Expected settingsModified=False before any change"
+    # During onboarding the node has not started yet, so no restart is needed
+    # and proxySettingsDirty must remain false regardless of user changes.
+    dirty = gui.get_property("settingsProxy", "proxySettingsDirty")
+    assert not dirty, "Expected proxySettingsDirty=False before any change"
 
     # Enable proxy.
     gui.click("proxyEnableSwitch")
@@ -77,22 +78,21 @@ def test_default_proxy_toggle(gui):
     assert checked, "Expected proxyEnableSwitch to be checked after click"
     print("  Default proxy toggled ON: OK")
 
-    # Advisory box should now signal a pending change (grey → blue).
-    modified = gui.get_property("settingsProxy", "settingsModified")
-    assert modified, "Expected settingsModified=True after enabling proxy"
-    print("  settingsModified=True after enable: OK")
+    # proxySettingsDirty stays false during onboarding.
+    dirty = gui.get_property("settingsProxy", "proxySettingsDirty")
+    assert not dirty, "Expected proxySettingsDirty=False during onboarding"
+    print("  proxySettingsDirty=False during onboarding: OK")
 
-    # Disable proxy (back to initial state).
+    # Disable proxy.
     gui.click("proxyEnableSwitch")
     gui.wait_for_property("proxyEnableSwitch", "checked", False, timeout_ms=2000)
     checked = gui.get_property("proxyEnableSwitch", "checked")
     assert not checked, "Expected proxyEnableSwitch to be unchecked after second click"
     print("  Default proxy toggled OFF: OK")
 
-    # Advisory box should revert to grey once the setting is back to its initial state.
-    modified = gui.get_property("settingsProxy", "settingsModified")
-    assert not modified, "Expected settingsModified=False after reverting proxy to initial state"
-    print("  settingsModified=False after revert: OK")
+    dirty = gui.get_property("settingsProxy", "proxySettingsDirty")
+    assert not dirty, "Expected proxySettingsDirty=False after toggle off"
+    print("  proxySettingsDirty=False after toggle off: OK")
 
 
 def test_proxy_valid_address(gui):
