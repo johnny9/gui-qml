@@ -15,9 +15,7 @@ int RunQmlBitcoinUnitsTests(int argc, char* argv[]);
 int RunImageProviderTests(int argc, char* argv[]);
 int RunNetworkStyleTests(int argc, char* argv[]);
 int RunQmlInitExecutorApiTests(int argc, char* argv[]);
-#ifdef BITCOINQML_HAS_GMOCK
 int RunOptionsModelTests(int argc, char* argv[]);
-#endif
 
 int main(int argc, char* argv[])
 {
@@ -31,9 +29,7 @@ int main(int argc, char* argv[])
     status |= RunImageProviderTests(argc, argv);
     status |= RunNetworkStyleTests(argc, argv);
     status |= RunQmlInitExecutorApiTests(argc, argv);
-#ifdef BITCOINQML_HAS_GMOCK
     status |= RunOptionsModelTests(argc, argv);
-#endif
 
     return status;
 }
