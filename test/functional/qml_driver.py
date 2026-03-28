@@ -190,6 +190,8 @@ class QmlDriver:
                 f"wait_for_page({page_name!r}) failed: {resp['error']}"
             )
 
+
+
     def list_objects(self):
         """Return a list of dicts with objectName and className for all
         named objects in the QML tree.  Useful for debugging."""
@@ -250,6 +252,12 @@ class QmlDriver:
         resp = self._send({"cmd": "close_window"})
         if "error" in resp:
             raise QmlDriverError(f"close_window failed: {resp['error']}")
+
+    def set_clipboard_text(self, text):
+        """Set the system clipboard to the given text string."""
+        resp = self._send({"cmd": "set_clipboard_text", "text": text})
+        if "error" in resp:
+            raise QmlDriverError(f"set_clipboard_text failed: {resp['error']}")
 
     def settle(
         self,

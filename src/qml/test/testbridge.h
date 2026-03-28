@@ -8,6 +8,7 @@
 #include <QByteArray>
 #include <QHash>
 #include <QJsonValue>
+#include <QList>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QObject>
@@ -37,6 +38,7 @@
 ///   {"cmd": "answer_runtime_dialog", "button": <uint>}
 ///   {"cmd": "list_objects"}
 ///   {"cmd": "close_window"}
+///   {"cmd": "set_clipboard_text", "text": "<value>"}
 class TestBridge : public QObject
 {
     Q_OBJECT
@@ -88,6 +90,7 @@ private:
     QByteArray cmdAnswerRuntimeDialog(unsigned int button);
     QByteArray cmdListObjects();
     QByteArray cmdCloseWindow();
+    QByteArray cmdSetClipboardText(const QString& text);
 
     /// Build a JSON error response.
     static QByteArray errorResponse(const QString& message);
