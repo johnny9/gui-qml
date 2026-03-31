@@ -4,7 +4,6 @@
 
 #include <QtTest/QtTest>
 
-#include <test/gmocktestfixture.h>
 #include <test/mocks/mocknode.h>
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/peerlistmodel.h>
@@ -44,7 +43,7 @@ constexpr auto AUTO_REFRESH_TRIGGER_TIMEOUT{2'000};
 constexpr auto AUTO_REFRESH_STOP_WAIT{450};
 } // namespace
 
-class PeerListModelTests : public GmockTestFixture
+class PeerListModelTests : public QObject
 {
     Q_OBJECT
 

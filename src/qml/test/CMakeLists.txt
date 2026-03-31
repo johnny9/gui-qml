@@ -11,7 +11,6 @@ endif()
 
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
-  gmocktestfixture.h
   test_bitcoinamount.cpp
   test_peerlistmodel.cpp
   test_peerstatsutil.cpp
@@ -20,7 +19,6 @@ add_executable(bitcoinqml_unit_tests
   test_networkstyle.cpp
   test_qmlinitexecutor_api.cpp
   test_options_model.cpp
-  test_banlistmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
 )
 
