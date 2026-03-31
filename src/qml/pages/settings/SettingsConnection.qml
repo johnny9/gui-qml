@@ -75,6 +75,7 @@ Page {
                 Component {
                     id: doneButton
                     NavButton {
+                        objectName: "connectionSettingsDoneButton"
                         text: qsTr("Done")
                         onClicked: root.back()
                     }

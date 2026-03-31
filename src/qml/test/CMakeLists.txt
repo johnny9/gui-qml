@@ -18,17 +18,8 @@ add_executable(bitcoinqml_unit_tests
   test_imageprovider.cpp
   test_networkstyle.cpp
   test_qmlinitexecutor_api.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinunits.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/imageprovider.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/networkstyle.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.h
+  test_options_model.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerdetailsmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistsortproxy.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/peerstatsutil.cpp
 )
 
 target_compile_definitions(bitcoinqml_unit_tests
@@ -41,10 +32,13 @@ target_include_directories(bitcoinqml_unit_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/univalue/include
+    ${CMAKE_CURRENT_BINARY_DIR}/../bitcoin/src
 )
 
 target_link_libraries(bitcoinqml_unit_tests
   PRIVATE
+    bitcoinqml
+    bitcoin_wallet
     bitcoin_common
     bitcoin_util
     GTest::gmock
@@ -64,6 +58,7 @@ target_compile_definitions(bitcoinqml_qmltests
   PRIVATE
     BITCOINQML_QML_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../qml"
     QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    BITCOINQML_QML_TEST_MOCKS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/mocks/qml"
 )
 
 target_link_libraries(bitcoinqml_qmltests

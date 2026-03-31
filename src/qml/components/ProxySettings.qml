@@ -29,12 +29,17 @@ ColumnLayout {
         Layout.fillWidth: true
         header: qsTr("Enable")
         actionItem: OptionSwitch {
+            objectName: "proxyEnableSwitch"
+            checked: optionsModel.proxyEnabled
             onCheckedChanged: {
-                if (checked == false) {
-                    defaultProxy.state = "DISABLED"
-                } else {
-                    defaultProxy.state = "FILLED"
+                // Default to the standard SOCKS5 proxy address (port 9050).
+                // The Tor daemon also defaults to port 9050; the user can
+                // edit the address after enabling.
+                if (checked && optionsModel.proxyAddress === "") {
+                    optionsModel.proxyAddress = nodeModel.defaultProxyAddress()
                 }
+                optionsModel.proxyEnabled = checked
+                defaultProxy.state = checked ? "FILLED" : "DISABLED"
             }
         }
         onClicked: {
@@ -51,11 +56,21 @@ ColumnLayout {
         state: !defaultProxyEnable.loadedItem.checked ? "DISABLED" : "FILLED"
         showErrorText: !defaultProxy.loadedItem.validInput && defaultProxyEnable.loadedItem.checked
         actionItem: IPAddressValueInput {
+            objectName: "proxyAddressInput"
             parentState: defaultProxy.state
-            description: nodeModel.defaultProxyAddress()
+            description: optionsModel.proxyAddress.length > 0
+                         ? optionsModel.proxyAddress
+                         : nodeModel.defaultProxyAddress()
             activeFocusOnTab: true
+            // IPAddressValueInput.text is initially bound to `description`.
+            // If a stored address was loaded, text is non-empty here and we
+            // mark the field as filled so it renders in the active style.
+            Component.onCompleted: {
+                if (text !== "") filled = true
+            }
             onTextChanged: {
-                validInput = nodeModel.validateProxyAddress(text);
+                validInput = nodeModel.validateProxyAddress(text)
+                if (validInput) optionsModel.proxyAddress = text
             }
         }
         onClicked: {
@@ -80,12 +95,17 @@ ColumnLayout {
         Layout.fillWidth: true
         header: qsTr("Enable")
         actionItem: OptionSwitch {
+            objectName: "torEnableSwitch"
+            checked: optionsModel.torEnabled
             onCheckedChanged: {
-                if (checked == false) {
-                    torProxy.state = "DISABLED"
-                } else {
-                    torProxy.state = "FILLED"
+                // Default to the standard SOCKS5 proxy address (port 9050).
+                // The Tor daemon also defaults to port 9050; the user can
+                // edit the address after enabling.
+                if (checked && optionsModel.torAddress === "") {
+                    optionsModel.torAddress = nodeModel.defaultProxyAddress()
                 }
+                optionsModel.torEnabled = checked
+                torProxy.state = checked ? "FILLED" : "DISABLED"
             }
         }
         onClicked: {
@@ -102,11 +122,21 @@ ColumnLayout {
         state: !torProxyEnable.loadedItem.checked ? "DISABLED" : "FILLED"
         showErrorText: !torProxy.loadedItem.validInput && torProxyEnable.loadedItem.checked
         actionItem: IPAddressValueInput {
+            objectName: "torAddressInput"
             parentState: torProxy.state
-            description: nodeModel.defaultProxyAddress()
+            description: optionsModel.torAddress.length > 0
+                         ? optionsModel.torAddress
+                         : nodeModel.defaultProxyAddress()
             activeFocusOnTab: true
+            // IPAddressValueInput.text is initially bound to `description`.
+            // If a stored address was loaded, text is non-empty here and we
+            // mark the field as filled so it renders in the active style.
+            Component.onCompleted: {
+                if (text !== "") filled = true
+            }
             onTextChanged: {
-                validInput = nodeModel.validateProxyAddress(text);
+                validInput = nodeModel.validateProxyAddress(text)
+                if (validInput) optionsModel.torAddress = text
             }
         }
         onClicked: {
