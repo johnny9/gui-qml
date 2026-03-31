@@ -4,6 +4,7 @@
 
 #include <qml/models/walletqmlmodeltransaction.h>
 
+#include <qml/bitcoinunits.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 
@@ -32,6 +33,21 @@ BitcoinAmount* WalletQmlModelTransaction::amountAmount() const
     return m_amount_amount;
 }
 
+QString WalletQmlModelTransaction::formatWithUnit(CAmount value, int display_unit)
+{
+    auto unit = (display_unit == 1) ? QmlBitcoinUnits::Unit::SAT : QmlBitcoinUnits::Unit::BTC;
+    QString num = QmlBitcoinUnits::format(unit, value, false, QmlBitcoinUnits::SeparatorStyle::STANDARD);
+    if (display_unit == 1) {
+        return num + " " + ((qAbs(value) == 1) ? QStringLiteral("sat") : QStringLiteral("sats"));
+    }
+    return num + " ₿";
+}
+
+QString WalletQmlModelTransaction::amount() const
+{
+    return formatWithUnit(m_amount, m_display_unit);
+}
+
 BitcoinAmount* WalletQmlModelTransaction::feeAmount() const
 {
     return m_fee_amount;
@@ -42,6 +58,31 @@ BitcoinAmount* WalletQmlModelTransaction::totalAmount() const
     return m_total_amount;
 }
 
+QString WalletQmlModelTransaction::fee() const
+{
+    return formatWithUnit(m_fee, m_display_unit);
+}
+
+QString WalletQmlModelTransaction::total() const
+{
+    return formatWithUnit(m_amount + m_fee, m_display_unit);
+}
+
+QString WalletQmlModelTransaction::label() const
+{
+    return m_label;
+}
+
+void WalletQmlModelTransaction::setDisplayUnit(int unit)
+{
+    if (unit != m_display_unit) {
+        m_display_unit = unit;
+        Q_EMIT amountChanged();
+        Q_EMIT feeChanged();
+        Q_EMIT totalChanged();
+    }
+}
+
 CTransactionRef& WalletQmlModelTransaction::getWtx()
 {
     return m_wtx;
@@ -50,6 +91,16 @@ CTransactionRef& WalletQmlModelTransaction::getWtx()
 void WalletQmlModelTransaction::setWtx(const CTransactionRef& newTx)
 {
     m_wtx = newTx;
+}
+
+CAmount WalletQmlModelTransaction::getTransactionFee() const
+{
+    return m_fee;
+}
+
+CAmount WalletQmlModelTransaction::getTotalTransactionAmount() const
+{
+    return m_amount + m_fee;
 }
 
 void WalletQmlModelTransaction::setTransactionFee(const CAmount& newFee)

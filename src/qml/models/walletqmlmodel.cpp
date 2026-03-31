@@ -722,6 +722,7 @@ bool WalletQmlModel::prepareTransaction()
         if (subtract_fee_from_amount) {
             m_current_transaction->reassignAmounts(nChangePosRet);
         }
+        m_current_transaction->setDisplayUnit(m_display_unit);
         Q_EMIT currentTransactionChanged();
         return true;
     } else {
@@ -929,6 +930,9 @@ void WalletQmlModel::setDisplayUnit(int unit)
         m_display_unit = unit;
         if (m_activity_list_model) {
             m_activity_list_model->setDisplayUnit(unit);
+        }
+        if (m_current_transaction) {
+            m_current_transaction->setDisplayUnit(unit);
         }
         Q_EMIT balanceChanged();
         Q_EMIT displayUnitChanged(unit);
