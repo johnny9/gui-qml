@@ -66,6 +66,8 @@ private Q_SLOTS:
     void initTestCase();
     void feeTargetIndex_mapsStandardTargets();
     void estimatedFeeForTarget_returnsDashWhenUnavailable();
+    void importDescriptors_mapsBatchRequestsAndResults();
+    void importDescriptors_keepsLocalValidationErrorsIndexed();
     void scheduleFeeEstimates_populatesFormattedEstimates();
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
     void scheduleFeeEstimates_debouncesRapidRestarts();
@@ -93,6 +95,112 @@ void WalletQmlModelTests::estimatedFeeForTarget_returnsDashWhenUnavailable()
     QCOMPARE(model.estimatedFeeForTarget(1), QStringLiteral("—"));
     QCOMPARE(model.estimatedFeeForTarget(2), QStringLiteral("—"));
     QCOMPARE(model.estimatedFee(), QStringLiteral("—"));
+}
+
+void WalletQmlModelTests::importDescriptors_mapsBatchRequestsAndResults()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+
+    EXPECT_CALL(*wallet, importDescriptors(testing::_)).WillOnce(Invoke([](const std::vector<interfaces::ImportDescriptorRequest>& requests) -> std::vector<wallet::ImportDescriptorResult> {
+        EXPECT_EQ(requests.size(), 2U);
+        EXPECT_EQ(requests.at(0).descriptor, std::string{"wpkh([deadbeef/84h/0h/0h]xpub661MyMwAqRbcF7example/0/*)#qqqqqqqq"});
+        EXPECT_TRUE(requests.at(0).active.has_value());
+        if (requests.at(0).active.has_value()) EXPECT_TRUE(requests.at(0).active.value());
+        EXPECT_TRUE(requests.at(0).range.has_value());
+        if (requests.at(0).range.has_value()) {
+            EXPECT_EQ(requests.at(0).range->first, 0);
+            EXPECT_EQ(requests.at(0).range->second, 100);
+        }
+        EXPECT_TRUE(requests.at(0).next_index.has_value());
+        if (requests.at(0).next_index.has_value()) EXPECT_EQ(requests.at(0).next_index.value(), 5);
+
+        EXPECT_EQ(requests.at(1).descriptor, std::string{"tr([f00dbabe/86h/0h/0h]xpub661MyMwAqRbcF7example/0/*)#pppppppp"});
+        EXPECT_TRUE(requests.at(1).internal.has_value());
+        if (requests.at(1).internal.has_value()) EXPECT_TRUE(requests.at(1).internal.value());
+        EXPECT_TRUE(requests.at(1).label.has_value());
+        if (requests.at(1).label.has_value()) EXPECT_EQ(requests.at(1).label.value(), std::string{"cold storage"});
+
+        wallet::ImportDescriptorResult success;
+        success.success = true;
+        success.used_default_range = true;
+        success.warnings = {"Range not given, using default keypool range"};
+
+        wallet::ImportDescriptorResult failure;
+        failure.success = false;
+        failure.error = "Descriptor import failed";
+        failure.reason = wallet::ImportDescriptorResult::FailureReason::WALLET_ERROR;
+
+        return std::vector<wallet::ImportDescriptorResult>{success, failure};
+    }));
+
+    const QVariantList requests{
+        QVariantMap{
+            {QStringLiteral("desc"), QStringLiteral("wpkh([deadbeef/84h/0h/0h]xpub661MyMwAqRbcF7example/0/*)#qqqqqqqq")},
+            {QStringLiteral("timestamp"), 123LL},
+            {QStringLiteral("active"), true},
+            {QStringLiteral("range"), QVariantList{0, 100}},
+            {QStringLiteral("nextIndex"), 5LL},
+        },
+        QVariantMap{
+            {QStringLiteral("descriptor"), QStringLiteral("tr([f00dbabe/86h/0h/0h]xpub661MyMwAqRbcF7example/0/*)#pppppppp")},
+            {QStringLiteral("timestamp"), 456LL},
+            {QStringLiteral("internal"), true},
+            {QStringLiteral("label"), QStringLiteral("cold storage")},
+        },
+    };
+
+    const QVariantList results = model->importDescriptors(requests);
+    QCOMPARE(results.size(), 2);
+
+    const QVariantMap first_result = results.at(0).toMap();
+    QCOMPARE(first_result.value(QStringLiteral("success")).toBool(), true);
+    QCOMPARE(first_result.value(QStringLiteral("usedDefaultRange")).toBool(), true);
+    QCOMPARE(first_result.value(QStringLiteral("reason")).toString(), QStringLiteral("none"));
+    const QStringList expected_warnings{QStringLiteral("Range not given, using default keypool range")};
+    QCOMPARE(first_result.value(QStringLiteral("warnings")).toStringList(), expected_warnings);
+
+    const QVariantMap second_result = results.at(1).toMap();
+    QCOMPARE(second_result.value(QStringLiteral("success")).toBool(), false);
+    QCOMPARE(second_result.value(QStringLiteral("error")).toString(), QStringLiteral("Descriptor import failed"));
+    QCOMPARE(second_result.value(QStringLiteral("reason")).toString(), QStringLiteral("wallet_error"));
+}
+
+void WalletQmlModelTests::importDescriptors_keepsLocalValidationErrorsIndexed()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+
+    EXPECT_CALL(*wallet, importDescriptors(testing::_)).WillOnce(Invoke([](const std::vector<interfaces::ImportDescriptorRequest>& requests) -> std::vector<wallet::ImportDescriptorResult> {
+        EXPECT_EQ(requests.size(), 1U);
+        EXPECT_EQ(requests.front().descriptor, std::string{"raw(deadbeef)#llllllll"});
+
+        wallet::ImportDescriptorResult result;
+        result.success = true;
+        return std::vector<wallet::ImportDescriptorResult>{result};
+    }));
+
+    const QVariantList requests{
+        QVariantMap{
+            {QStringLiteral("descriptor"), QStringLiteral("missing-timestamp")},
+        },
+        QVariantMap{
+            {QStringLiteral("descriptor"), QStringLiteral("raw(deadbeef)#llllllll")},
+            {QStringLiteral("timestamp"), 42LL},
+        },
+    };
+
+    const QVariantList results = model->importDescriptors(requests);
+    QCOMPARE(results.size(), 2);
+
+    const QVariantMap first_result = results.at(0).toMap();
+    QCOMPARE(first_result.value(QStringLiteral("success")).toBool(), false);
+    QCOMPARE(first_result.value(QStringLiteral("reason")).toString(), QStringLiteral("invalid_parameter"));
+    QVERIFY(first_result.value(QStringLiteral("error")).toString().contains(QStringLiteral("timestamp")));
+
+    const QVariantMap second_result = results.at(1).toMap();
+    QCOMPARE(second_result.value(QStringLiteral("success")).toBool(), true);
+    QCOMPARE(second_result.value(QStringLiteral("reason")).toString(), QStringLiteral("none"));
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_populatesFormattedEstimates()

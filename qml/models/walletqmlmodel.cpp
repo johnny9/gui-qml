@@ -35,6 +35,130 @@ constexpr unsigned int DEFAULT_STANDARD_FEE_TARGET{2};
 constexpr int FEE_ESTIMATE_DEBOUNCE_MS{250};
 constexpr std::array<unsigned int, 3> STANDARD_FEE_TARGETS{1, DEFAULT_STANDARD_FEE_TARGET, 6};
 
+QString FailureReasonString(const wallet::ImportDescriptorResult::FailureReason reason)
+{
+    switch (reason) {
+    case wallet::ImportDescriptorResult::FailureReason::NONE:
+        return QStringLiteral("none");
+    case wallet::ImportDescriptorResult::FailureReason::INVALID_DESCRIPTOR:
+        return QStringLiteral("invalid_descriptor");
+    case wallet::ImportDescriptorResult::FailureReason::INVALID_PARAMETER:
+        return QStringLiteral("invalid_parameter");
+    case wallet::ImportDescriptorResult::FailureReason::WALLET_ERROR:
+        return QStringLiteral("wallet_error");
+    case wallet::ImportDescriptorResult::FailureReason::MISC_ERROR:
+        return QStringLiteral("misc_error");
+    }
+    return QStringLiteral("unknown");
+}
+
+QVariantMap ImportDescriptorError(const QString& error)
+{
+    return {
+        {QStringLiteral("success"), false},
+        {QStringLiteral("error"), error},
+        {QStringLiteral("warnings"), QStringList{}},
+        {QStringLiteral("usedDefaultRange"), false},
+        {QStringLiteral("reason"), QStringLiteral("invalid_parameter")},
+    };
+}
+
+QVariantMap ImportDescriptorResultMap(const wallet::ImportDescriptorResult& result)
+{
+    QStringList warnings;
+    warnings.reserve(static_cast<qsizetype>(result.warnings.size()));
+    for (const auto& warning : result.warnings) {
+        warnings.append(QString::fromStdString(warning));
+    }
+
+    return {
+        {QStringLiteral("success"), result.success},
+        {QStringLiteral("error"), QString::fromStdString(result.error)},
+        {QStringLiteral("warnings"), warnings},
+        {QStringLiteral("usedDefaultRange"), result.used_default_range},
+        {QStringLiteral("reason"), FailureReasonString(result.reason)},
+    };
+}
+
+std::optional<interfaces::ImportDescriptorRequest> ParseImportDescriptorRequest(const QVariant& value, QString& error)
+{
+    const QVariantMap request_map = value.toMap();
+    if (request_map.isEmpty() && !value.canConvert<QVariantMap>()) {
+        error = QStringLiteral("Each descriptor import request must be an object.");
+        return std::nullopt;
+    }
+
+    const QVariant descriptor_value = request_map.contains(QStringLiteral("descriptor"))
+        ? request_map.value(QStringLiteral("descriptor"))
+        : request_map.value(QStringLiteral("desc"));
+    const QString descriptor = descriptor_value.toString().trimmed();
+    if (descriptor.isEmpty()) {
+        error = QStringLiteral("Each descriptor import request needs a non-empty 'descriptor' string.");
+        return std::nullopt;
+    }
+
+    const QVariant timestamp_value = request_map.value(QStringLiteral("timestamp"));
+    bool ok = false;
+    const qlonglong timestamp = timestamp_value.toLongLong(&ok);
+    if (!timestamp_value.isValid() || !ok) {
+        error = QStringLiteral("Each descriptor import request needs an integer 'timestamp'.");
+        return std::nullopt;
+    }
+
+    interfaces::ImportDescriptorRequest request;
+    request.descriptor = descriptor.toStdString();
+    request.timestamp = timestamp;
+
+    const QVariant active_value = request_map.value(QStringLiteral("active"));
+    if (active_value.isValid() && !active_value.isNull()) {
+        request.active = active_value.toBool();
+    }
+
+    const QVariant internal_value = request_map.value(QStringLiteral("internal"));
+    if (internal_value.isValid() && !internal_value.isNull()) {
+        request.internal = internal_value.toBool();
+    }
+
+    const QVariant label_value = request_map.value(QStringLiteral("label"));
+    if (label_value.isValid() && !label_value.isNull()) {
+        request.label = label_value.toString().toStdString();
+    }
+
+    const QVariant range_value = request_map.value(QStringLiteral("range"));
+    if (range_value.isValid() && !range_value.isNull()) {
+        const QVariantList range_list = range_value.toList();
+        if (range_list.size() != 2) {
+            error = QStringLiteral("Descriptor import 'range' must be a two-element array.");
+            return std::nullopt;
+        }
+
+        bool start_ok = false;
+        bool end_ok = false;
+        const qlonglong range_start = range_list.at(0).toLongLong(&start_ok);
+        const qlonglong range_end = range_list.at(1).toLongLong(&end_ok);
+        if (!start_ok || !end_ok) {
+            error = QStringLiteral("Descriptor import 'range' values must be integers.");
+            return std::nullopt;
+        }
+        request.range = std::make_pair<int64_t, int64_t>(range_start, range_end);
+    }
+
+    const QVariant next_index_value = request_map.contains(QStringLiteral("nextIndex"))
+        ? request_map.value(QStringLiteral("nextIndex"))
+        : request_map.value(QStringLiteral("next_index"));
+    if (next_index_value.isValid() && !next_index_value.isNull()) {
+        bool next_ok = false;
+        const qlonglong next_index = next_index_value.toLongLong(&next_ok);
+        if (!next_ok) {
+            error = QStringLiteral("Descriptor import 'nextIndex' must be an integer.");
+            return std::nullopt;
+        }
+        request.next_index = next_index;
+    }
+
+    return request;
+}
+
 QString FormatFeeEstimate(CAmount amount)
 {
     BitcoinAmount bitcoin_amount;
@@ -216,6 +340,48 @@ QString WalletQmlModel::newAddress(QString label)
     OutputType output_type = m_wallet->getDefaultAddressType();
     util::Result<CTxDestination> dest{m_wallet->getNewDestination(output_type, label.toStdString())};
     return QString::fromStdString(EncodeDestination(dest.value()));
+}
+
+QVariantList WalletQmlModel::importDescriptors(const QVariantList& requests)
+{
+    QVariantList response;
+    if (!m_wallet) {
+        return response;
+    }
+
+    std::vector<interfaces::ImportDescriptorRequest> parsed_requests;
+    parsed_requests.reserve(static_cast<size_t>(requests.size()));
+    std::vector<int> request_indexes;
+    request_indexes.reserve(static_cast<size_t>(requests.size()));
+    response.reserve(requests.size());
+
+    for (int i = 0; i < requests.size(); ++i) {
+        QString error;
+        std::optional<interfaces::ImportDescriptorRequest> request = ParseImportDescriptorRequest(requests.at(i), error);
+        if (!request) {
+            response.append(ImportDescriptorError(error));
+            continue;
+        }
+
+        request_indexes.push_back(i);
+        parsed_requests.push_back(std::move(*request));
+        response.append(QVariantMap{});
+    }
+
+    if (parsed_requests.empty()) {
+        return response;
+    }
+
+    const std::vector<wallet::ImportDescriptorResult> results = m_wallet->importDescriptors(parsed_requests);
+    for (size_t i = 0; i < results.size() && i < request_indexes.size(); ++i) {
+        response[request_indexes[i]] = ImportDescriptorResultMap(results[i]);
+    }
+
+    for (size_t i = results.size(); i < request_indexes.size(); ++i) {
+        response[request_indexes[i]] = ImportDescriptorError(QStringLiteral("Descriptor import returned no result."));
+    }
+
+    return response;
 }
 
 void WalletQmlModel::commitPaymentRequest()

@@ -24,6 +24,7 @@
 #include <QObject>
 #include <QThread>
 #include <QTimer>
+#include <QVariantList>
 
 class WalletQmlModel : public QObject
 {
@@ -62,6 +63,7 @@ public:
     Q_INVOKABLE bool prepareTransaction();
     Q_INVOKABLE void sendTransaction();
     Q_INVOKABLE QString newAddress(QString label);
+    Q_INVOKABLE QVariantList importDescriptors(const QVariantList& requests);
     Q_INVOKABLE QString estimatedFeeForTarget(unsigned int target_blocks) const;
     Q_INVOKABLE int feeTargetIndex(unsigned int target_blocks) const;
     Q_INVOKABLE void scheduleFeeEstimates();

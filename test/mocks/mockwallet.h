@@ -67,6 +67,7 @@ public:
     bool tryGetTxStatus(const Txid&, interfaces::WalletTxStatus&, int&, int64_t&) override { return false; }
     interfaces::WalletTx getWalletTxDetails(const Txid&, interfaces::WalletTxStatus&, interfaces::WalletOrderForm&, bool&, int&) override { return {}; }
     std::optional<common::PSBTError> fillPSBT(std::optional<int>, bool, bool, size_t*, PartiallySignedTransaction&, bool&) override { return std::nullopt; }
+    std::vector<wallet::ImportDescriptorResult> importDescriptors(const std::vector<interfaces::ImportDescriptorRequest>&) override { return {}; }
     interfaces::WalletBalances getBalances() override { return {}; }
     bool tryGetBalances(interfaces::WalletBalances&, uint256&) override { return false; }
     CAmount getBalance() override { return 0; }
@@ -122,6 +123,7 @@ public:
     MOCK_METHOD((std::set<interfaces::WalletTx>), getWalletTxs, (), (override));
     MOCK_METHOD(CAmount, getBalance, (), (override));
     MOCK_METHOD(CoinsList, listCoins, (), (override));
+    MOCK_METHOD((std::vector<wallet::ImportDescriptorResult>), importDescriptors, ((const std::vector<interfaces::ImportDescriptorRequest>& requests)), (override));
     MOCK_METHOD(OutputType, getDefaultAddressType, (), (override));
     MOCK_METHOD((std::unique_ptr<interfaces::Handler>), handleTransactionChanged, (TransactionChangedFn), (override));
 };
