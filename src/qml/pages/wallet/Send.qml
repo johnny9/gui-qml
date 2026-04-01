@@ -548,6 +548,8 @@ PageStack {
                         objectName: "clearPaymentRequestStatusButton"
                         size: 22
                         iconSource: "image://images/cross"
+                        Accessible.name: qsTr("Clear status")
+                        Accessible.role: Accessible.Button
                         onClicked: {
                             sendPage.paymentRequestStatus = ""
                             sendPage.paymentRequestIsError = false
