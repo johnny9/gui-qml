@@ -542,7 +542,7 @@ public:
             return estimate;
         }
 
-        return m_fee_estimate_pending ? QStringLiteral("…") : QStringLiteral("—");
+        return {};
     }
     Q_INVOKABLE int feeTargetIndex(const int target) const
     {
@@ -578,6 +578,22 @@ public:
     {
         ++m_schedule_fee_estimates_calls;
         Q_EMIT scheduleFeeEstimatesCallsChanged();
+    }
+    Q_INVOKABLE void setFeeEstimate(const int target, const QString& estimate)
+    {
+        if (estimate.isEmpty()) {
+            m_fee_estimates.remove(target);
+        } else {
+            m_fee_estimates.insert(target, estimate);
+        }
+        ++m_fee_estimate_revision;
+        Q_EMIT feeEstimateRevisionChanged();
+    }
+    Q_INVOKABLE void clearFeeEstimates()
+    {
+        m_fee_estimates.clear();
+        ++m_fee_estimate_revision;
+        Q_EMIT feeEstimateRevisionChanged();
     }
     Q_INVOKABLE void sendTransaction()
     {

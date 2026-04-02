@@ -21,11 +21,48 @@ RowLayout {
     property int selectedTarget: feeModel.get(root.selectedIndex).target
     property string selectedEstimate: walletModel
         ? (walletModel.feeEstimateRevision, walletModel.estimatedFeeForTarget(selectedTarget))
-        : qsTr("—")
+        : ""
+    readonly property bool hasFeeEstimate: {
+        const feeEstimateRevision = walletModel ? walletModel.feeEstimateRevision : 0
+        if (!walletModel || feeEstimateRevision < 0) {
+            return false
+        }
+
+        for (let i = 0; i < feeModel.count; ++i) {
+            const option = feeModel.get(i)
+            if (walletModel.estimatedFeeForTarget(option.target).length > 0) {
+                return true
+            }
+        }
+
+        return false
+    }
+    readonly property int estimateColumnWidth: {
+        const feeEstimateRevision = walletModel ? walletModel.feeEstimateRevision : 0
+        if (!walletModel || feeEstimateRevision < 0) {
+            return 0
+        }
+
+        let maxWidth = 0
+        for (let i = 0; i < feeModel.count; ++i) {
+            const option = feeModel.get(i)
+            const estimate = walletModel.estimatedFeeForTarget(option.target)
+            if (estimate.length > 0) {
+                maxWidth = Math.max(maxWidth, estimateFontMetrics.advanceWidth(estimate))
+            }
+        }
+
+        return Math.ceil(maxWidth)
+    }
 
     signal feeChanged(int target)
 
     spacing: 16
+
+    FontMetrics {
+        id: estimateFontMetrics
+        font.pixelSize: 18
+    }
 
     CoreText {
         Layout.preferredWidth: 110
@@ -101,7 +138,7 @@ RowLayout {
         objectName: "feeSelectionPopup"
         modal: true
         dim: false
-        width: 360
+        width: root.hasFeeEstimate ? 360 : 280
         height: Math.min(feeModel.count * 44 + 12, 300)
         x: feePopup.parent.width - feePopup.width
         y: feePopup.parent.height + 6
@@ -153,11 +190,13 @@ RowLayout {
                     }
                 }
 
-                contentItem: RowLayout {
-                    spacing: 8
-
-                    RowLayout {
-                        Layout.fillWidth: true
+                contentItem: Item {
+                    Row {
+                        id: feeDetails
+                        anchors.left: parent.left
+                        anchors.right: estimateText.left
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
                         spacing: 4
 
                         CoreText {
@@ -174,19 +213,34 @@ RowLayout {
                     }
 
                     CoreText {
+                        id: estimateText
                         objectName: "feeSelectionOptionEstimate" + delegate.index
+                        anchors.right: selectionIconSlot.left
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: root.estimateColumnWidth
+                        horizontalAlignment: Text.AlignRight
                         text: root.walletModel
                             ? (root.walletModel.feeEstimateRevision, root.walletModel.estimatedFeeForTarget(target))
-                            : qsTr("—")
+                            : ""
                         font.pixelSize: 18
                         color: Theme.color.neutral7
                     }
 
-                    Icon {
-                        visible: delegate.index === root.selectedIndex
-                        source: "image://images/check"
-                        color: Theme.color.orange
-                        size: 20
+                    Item {
+                        id: selectionIconSlot
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 20
+                        height: 20
+
+                        Icon {
+                            anchors.centerIn: parent
+                            opacity: delegate.index === root.selectedIndex ? 1 : 0
+                            source: "image://images/check"
+                            color: Theme.color.orange
+                            size: 20
+                        }
                     }
                 }
 

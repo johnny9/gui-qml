@@ -28,6 +28,14 @@ TestCase {
         id: feeChangedSpy
     }
 
+    function init() {
+        testWalletModel.clearFeeEstimates()
+        testWalletModel.setFeeEstimate(1, "0.00000750 ₿")
+        testWalletModel.setFeeEstimate(2, "0.00000500 ₿")
+        testWalletModel.setFeeEstimate(6, "0.00000250 ₿")
+        testWalletModel.targetBlocks = 2
+    }
+
     function test_feeSelection_has_stable_selectors() {
         const control = createTemporaryObject(feeSelectionComponent, this)
         verify(control !== null)
@@ -91,6 +99,52 @@ TestCase {
         compare(feeChangedSpy.count, 1)
         compare(feeChangedSpy.signalArguments[0][0], 6)
         compare(popup.visible, false)
+    }
+
+    function test_feeSelection_popup_width_matches_estimate_availability() {
+        const control = createTemporaryObject(feeSelectionComponent, this)
+        verify(control !== null)
+
+        const popup = findChild(control, "feeSelectionPopup")
+        verify(popup !== null)
+
+        testWalletModel.clearFeeEstimates()
+        compare(popup.width, 280)
+
+        testWalletModel.setFeeEstimate(2, "0.00000500 ₿")
+
+        tryVerify(function() {
+            return popup.width === 360
+        })
+    }
+
+    function test_feeSelection_popup_estimates_stay_aligned_when_selection_changes() {
+        testWalletModel.targetBlocks = 2
+
+        const control = createTemporaryObject(feeSelectionComponent, this)
+        verify(control !== null)
+
+        const popup = findChild(control, "feeSelectionPopup")
+        const list = findChild(control, "feeSelectionList")
+        verify(popup !== null)
+        verify(list !== null)
+
+        popup.open()
+        tryVerify(function() {
+            return list.itemAtIndex(0) !== null
+                && list.itemAtIndex(1) !== null
+                && list.itemAtIndex(2) !== null
+        })
+
+        const highFeeEstimate = findChild(list.itemAtIndex(0), "feeSelectionOptionEstimate0")
+        const defaultFeeEstimate = findChild(list.itemAtIndex(1), "feeSelectionOptionEstimate1")
+        const lowFeeEstimate = findChild(list.itemAtIndex(2), "feeSelectionOptionEstimate2")
+        verify(highFeeEstimate !== null)
+        verify(defaultFeeEstimate !== null)
+        verify(lowFeeEstimate !== null)
+
+        compare(highFeeEstimate.x + highFeeEstimate.width, defaultFeeEstimate.x + defaultFeeEstimate.width)
+        compare(defaultFeeEstimate.x + defaultFeeEstimate.width, lowFeeEstimate.x + lowFeeEstimate.width)
     }
 
     function test_feeSelection_current_target_syncs_selected_preset() {
