@@ -22,6 +22,14 @@ TestCase {
         id: transactionPreparedSpy
     }
 
+    function init() {
+        testWalletModel.customFeeEnabled = false
+        testWalletModel.customFeeRate = ""
+        testWalletModel.targetBlocks = 2
+        testWalletModel.prepareTransactionResult = true
+        testSendRecipient.isValid = true
+    }
+
     function test_send_has_stable_selectors() {
         const page = createTemporaryObject(sendComponent, this)
         verify(page !== null)
@@ -31,6 +39,8 @@ TestCase {
         verify(findChild(page, "sendAmountInput") !== null)
         verify(findChild(page, "sendNoteInput") !== null)
         verify(findChild(page, "feeSelectionEstimateLabel") !== null)
+        verify(findChild(page, "feeSelectionCustomRateInput") !== null)
+        verify(findChild(page, "feeSelectionCustomEstimateLabel") !== null)
         verify(findChild(page, "sendContinueButton") !== null)
     }
 
@@ -118,5 +128,61 @@ TestCase {
         const estimateLabel = findChild(page, "feeSelectionEstimateLabel")
         verify(estimateLabel !== null)
         compare(estimateLabel.text, "0.00000500 ₿")
+    }
+
+    function test_send_custom_fee_selection_updates_wallet_mode() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const popup = findChild(page, "feeSelectionPopup")
+        const list = findChild(page, "feeSelectionList")
+        const customInput = findChild(page, "feeSelectionCustomRateInput")
+        verify(popup !== null)
+        verify(list !== null)
+        verify(customInput !== null)
+
+        popup.open()
+        tryVerify(function() {
+            return list.itemAtIndex(3) !== null
+        })
+        list.itemAtIndex(3).clicked()
+
+        compare(testWalletModel.customFeeEnabled, true)
+
+        popup.open()
+        tryVerify(function() {
+            return list.itemAtIndex(0) !== null
+        })
+        list.itemAtIndex(0).clicked()
+
+        compare(testWalletModel.customFeeEnabled, false)
+        compare(testWalletModel.targetBlocks, 1)
+    }
+
+    function test_send_continue_button_requires_valid_custom_fee() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const popup = findChild(page, "feeSelectionPopup")
+        const list = findChild(page, "feeSelectionList")
+        const continueButton = findChild(page, "sendContinueButton")
+        const customInput = findChild(page, "feeSelectionCustomRateInput")
+        verify(popup !== null)
+        verify(list !== null)
+        verify(continueButton !== null)
+        verify(customInput !== null)
+
+        testSendRecipient.isValid = true
+
+        popup.open()
+        tryVerify(function() {
+            return list.itemAtIndex(3) !== null
+        })
+        list.itemAtIndex(3).clicked()
+
+        compare(continueButton.enabled, false)
+
+        customInput.text = "2"
+        tryCompare(continueButton, "enabled", true)
     }
 }

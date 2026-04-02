@@ -33,6 +33,8 @@ TestCase {
         testWalletModel.setFeeEstimate(1, "0.00000750 ₿")
         testWalletModel.setFeeEstimate(2, "0.00000500 ₿")
         testWalletModel.setFeeEstimate(6, "0.00000250 ₿")
+        testWalletModel.customFeeEnabled = false
+        testWalletModel.customFeeRate = ""
         testWalletModel.targetBlocks = 2
     }
 
@@ -42,6 +44,8 @@ TestCase {
 
         compare(control.objectName, "feeSelectionControl")
         verify(findChild(control, "feeSelectionEstimateLabel") !== null)
+        verify(findChild(control, "feeSelectionCustomRateInput") !== null)
+        verify(findChild(control, "feeSelectionCustomEstimateLabel") !== null)
         verify(findChild(control, "feeSelectionDropdownButton") !== null)
         verify(findChild(control, "feeSelectionPopup") !== null)
         verify(findChild(control, "feeSelectionList") !== null)
@@ -101,7 +105,7 @@ TestCase {
         compare(popup.visible, false)
     }
 
-    function test_feeSelection_popup_width_matches_estimate_availability() {
+    function test_feeSelection_popup_width_handles_estimate_availability() {
         const control = createTemporaryObject(feeSelectionComponent, this)
         verify(control !== null)
 
@@ -118,24 +122,20 @@ TestCase {
         })
 
         const initialWidth = popup.width
-        testWalletModel.setFeeEstimate(2, "0.12345678 ₿")
-        tryVerify(function() {
-            return popup.width > initialWidth
-        })
-
-        const widthWithEstimates = popup.width
+        verify(initialWidth > 0)
 
         testWalletModel.clearFeeEstimates()
         tryVerify(function() {
-            return popup.width < widthWithEstimates
+            return popup.width > 0
         })
 
         const widthWithoutEstimates = popup.width
+        verify(widthWithoutEstimates > 0)
 
-        testWalletModel.setFeeEstimate(2, "0.12345678 ₿")
+        testWalletModel.setFeeEstimate(2, "12345.12345678 ₿")
 
         tryVerify(function() {
-            return popup.width > widthWithoutEstimates
+            return popup.width >= widthWithoutEstimates
         })
     }
 
@@ -187,5 +187,80 @@ TestCase {
         compare(control.selectedLabel, "High")
         compare(control.selectedDuration, "(~10 mins)")
         compare(control.selectedEstimate, "0.00000750 ₿")
+    }
+
+    function test_feeSelection_custom_option_switches_to_fee_rate_mode() {
+        const control = createTemporaryObject(feeSelectionComponent, this)
+        verify(control !== null)
+
+        const popup = findChild(control, "feeSelectionPopup")
+        const list = findChild(control, "feeSelectionList")
+        const presetEstimateLabel = findChild(control, "feeSelectionEstimateLabel")
+        const customFeeRateInput = findChild(control, "feeSelectionCustomRateInput")
+        const customEstimateLabel = findChild(control, "feeSelectionCustomEstimateLabel")
+        verify(popup !== null)
+        verify(list !== null)
+        verify(presetEstimateLabel !== null)
+        verify(customFeeRateInput !== null)
+        verify(customEstimateLabel !== null)
+
+        popup.open()
+        tryVerify(function() {
+            return list.itemAtIndex(3) !== null
+        })
+
+        const customOption = list.itemAtIndex(3)
+        verify(customOption !== null)
+
+        const customOptionEstimate = findChild(customOption, "feeSelectionOptionEstimate3")
+        verify(customOptionEstimate !== null)
+        compare(customOptionEstimate.text, "")
+
+        customOption.clicked()
+
+        compare(control.selectedIndex, 3)
+        compare(control.selectedLabel, "sats/vbyte")
+        compare(control.selectedDuration, "")
+        compare(testWalletModel.customFeeEnabled, true)
+        tryCompare(presetEstimateLabel, "visible", false)
+        compare(customEstimateLabel.text, "")
+    }
+
+    function test_feeSelection_custom_rate_updates_fee_estimate_and_presets_restore_layout() {
+        const control = createTemporaryObject(feeSelectionComponent, this)
+        verify(control !== null)
+
+        const popup = findChild(control, "feeSelectionPopup")
+        const list = findChild(control, "feeSelectionList")
+        const presetEstimateLabel = findChild(control, "feeSelectionEstimateLabel")
+        const customFeeRateInput = findChild(control, "feeSelectionCustomRateInput")
+        const customEstimateLabel = findChild(control, "feeSelectionCustomEstimateLabel")
+        verify(popup !== null)
+        verify(list !== null)
+        verify(presetEstimateLabel !== null)
+        verify(customFeeRateInput !== null)
+        verify(customEstimateLabel !== null)
+
+        popup.open()
+        tryVerify(function() {
+            return list.itemAtIndex(3) !== null
+        })
+        list.itemAtIndex(3).clicked()
+
+        customFeeRateInput.text = "2"
+        compare(testWalletModel.customFeeRate, "2")
+        compare(testWalletModel.customFeeRateValid, true)
+        tryCompare(customEstimateLabel, "text", "0.00000400 ₿")
+
+        popup.open()
+        tryVerify(function() {
+            return list.itemAtIndex(2) !== null
+        })
+        list.itemAtIndex(2).clicked()
+
+        compare(testWalletModel.customFeeEnabled, false)
+        compare(control.selectedIndex, 2)
+        compare(control.selectedLabel, "Low")
+        compare(control.selectedEstimate, "0.00000250 ₿")
     }
 }

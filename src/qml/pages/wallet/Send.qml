@@ -368,6 +368,7 @@ PageStack {
                     Layout.topMargin: 30
                     text: qsTr("Review")
                     enabled: root.recipient.isValid
+                        && (!root.wallet || !root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                     onClicked: {
                         if (root.wallet.prepareTransaction()) {
                             root.transactionPrepared(settings.multipleRecipientsEnabled);

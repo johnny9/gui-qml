@@ -508,6 +508,10 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QObject* currentTransaction READ currentTransaction CONSTANT)
     Q_PROPERTY(QObject* currentPaymentRequest READ currentPaymentRequest CONSTANT)
     Q_PROPERTY(int targetBlocks READ targetBlocks WRITE setTargetBlocks NOTIFY targetBlocksChanged)
+    Q_PROPERTY(QString estimatedFee READ estimatedFee NOTIFY feeEstimateRevisionChanged)
+    Q_PROPERTY(bool customFeeEnabled READ customFeeEnabled WRITE setCustomFeeEnabled NOTIFY customFeeEnabledChanged)
+    Q_PROPERTY(QString customFeeRate READ customFeeRate WRITE setCustomFeeRate NOTIFY customFeeRateChanged)
+    Q_PROPERTY(bool customFeeRateValid READ customFeeRateValid NOTIFY customFeeRateValidChanged)
     Q_PROPERTY(bool feeEstimatePending MEMBER m_fee_estimate_pending NOTIFY feeEstimatePendingChanged)
     Q_PROPERTY(int feeEstimateRevision MEMBER m_fee_estimate_revision NOTIFY feeEstimateRevisionChanged)
     Q_PROPERTY(bool prepareTransactionResult MEMBER m_prepare_transaction_result NOTIFY prepareTransactionResultChanged)
@@ -532,6 +536,19 @@ public:
     QObject* currentTransaction() const { return m_current_transaction; }
     QObject* currentPaymentRequest() const { return m_current_payment_request; }
     int targetBlocks() const { return m_target_blocks; }
+    QString estimatedFee() const
+    {
+        return m_custom_fee_enabled ? m_custom_fee_estimate : estimatedFeeForTarget(m_target_blocks);
+    }
+    bool customFeeEnabled() const { return m_custom_fee_enabled; }
+    QString customFeeRate() const { return m_custom_fee_rate; }
+    bool customFeeRateValid() const
+    {
+        static const QRegularExpression pattern{
+            QStringLiteral(R"(^[0-9]+(?:\.[0-9]{0,3})?$)")
+        };
+        return pattern.match(m_custom_fee_rate).hasMatch() && m_custom_fee_rate != QStringLiteral("0");
+    }
     int prepareTransactionCalls() const { return m_prepare_transaction_calls; }
     int scheduleFeeEstimatesCalls() const { return m_schedule_fee_estimates_calls; }
     int sendTransactionCalls() const { return m_send_transaction_calls; }
@@ -565,6 +582,29 @@ public:
         m_target_blocks = value;
         ++m_fee_estimate_revision;
         Q_EMIT targetBlocksChanged();
+        Q_EMIT feeEstimateRevisionChanged();
+        scheduleFeeEstimates();
+    }
+    void setCustomFeeEnabled(const bool value)
+    {
+        if (m_custom_fee_enabled == value) return;
+        m_custom_fee_enabled = value;
+        ++m_fee_estimate_revision;
+        Q_EMIT customFeeEnabledChanged();
+        Q_EMIT feeEstimateRevisionChanged();
+        scheduleFeeEstimates();
+    }
+    void setCustomFeeRate(const QString& value)
+    {
+        const bool was_valid = customFeeRateValid();
+        if (m_custom_fee_rate == value) return;
+        m_custom_fee_rate = value;
+        m_custom_fee_estimate = customFeeRateValid() ? QStringLiteral("0.00000400 ₿") : QString{};
+        ++m_fee_estimate_revision;
+        Q_EMIT customFeeRateChanged();
+        if (was_valid != customFeeRateValid()) {
+            Q_EMIT customFeeRateValidChanged();
+        }
         Q_EMIT feeEstimateRevisionChanged();
         scheduleFeeEstimates();
     }
@@ -614,6 +654,9 @@ Q_SIGNALS:
     void nameChanged();
     void balanceChanged();
     void targetBlocksChanged();
+    void customFeeEnabledChanged();
+    void customFeeRateChanged();
+    void customFeeRateValidChanged();
     void feeEstimatePendingChanged();
     void feeEstimateRevisionChanged();
     void prepareTransactionResultChanged();
@@ -623,6 +666,9 @@ Q_SIGNALS:
 
 private:
     QHash<int, QString> m_fee_estimates{{1, QStringLiteral("0.00000750 ₿")}, {2, QStringLiteral("0.00000500 ₿")}, {6, QStringLiteral("0.00000250 ₿")}};
+    bool m_custom_fee_enabled{false};
+    QString m_custom_fee_rate;
+    QString m_custom_fee_estimate;
     bool m_fee_estimate_pending{false};
     int m_fee_estimate_revision{1};
     int m_prepare_transaction_calls{0};

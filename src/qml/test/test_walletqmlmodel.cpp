@@ -15,6 +15,7 @@
 
 #include <QSemaphore>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <vector>
@@ -90,7 +91,9 @@ private Q_SLOTS:
     void scheduleFeeEstimates_populatesFormattedEstimates();
     void scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesUnavailable();
     void scheduleFeeEstimates_usesStaticRegtestFeeOverride();
+    void scheduleFeeEstimates_usesCustomFeeRateWhenEnabled();
     void prepareTransaction_usesStaticRegtestFeeOverride();
+    void prepareTransaction_usesCustomFeeRateWithoutRegtestOverride();
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
     void scheduleFeeEstimates_debouncesRapidRestarts();
 };
@@ -268,6 +271,44 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesStaticRegtestFeeOverride()
     QCOMPARE(requested_fee_rates.at(2), CAmount{wallet::DEFAULT_TRANSACTION_MINFEE});
 }
 
+void WalletQmlModelTests::scheduleFeeEstimates_usesCustomFeeRateWhenEnabled()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetValidRecipient(*model);
+
+    std::vector<unsigned int> requested_targets;
+    std::vector<CAmount> requested_fee_rates;
+
+    EXPECT_CALL(*wallet, getNewDestinationValue(OutputType::BECH32, "qml-fee-preview")).Times(1);
+    wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
+                                           const wallet::CCoinControl& coin_control,
+                                           bool,
+                                           int& change_pos,
+                                           CAmount& fee) -> util::Result<CTransactionRef> {
+        requested_targets.push_back(coin_control.m_confirm_target.value_or(0));
+        requested_fee_rates.push_back(coin_control.m_feerate.has_value() ? coin_control.m_feerate->GetFeePerK() : 0);
+        change_pos = -1;
+        fee = coin_control.m_feerate.has_value()
+            ? coin_control.m_feerate->GetFee(250)
+            : coin_control.m_confirm_target.value_or(0) * 100;
+        return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+    };
+
+    model->setCustomFeeEnabled(true);
+    model->setCustomFeeRate(QStringLiteral("2"));
+    model->scheduleFeeEstimates();
+
+    QTRY_COMPARE_WITH_TIMEOUT(model->estimatedFee(), QStringLiteral("0.00000500 ₿"), FEE_ESTIMATE_TIMEOUT_MS);
+    QCOMPARE(requested_targets.size(), 4U);
+    QCOMPARE(requested_fee_rates.size(), 4U);
+    QVERIFY(std::find(requested_fee_rates.begin(), requested_fee_rates.end(), CAmount{2000}) != requested_fee_rates.end());
+    QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 1U) != requested_targets.end());
+    QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 2U) != requested_targets.end());
+    QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 6U) != requested_targets.end());
+    QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 0U) != requested_targets.end());
+}
+
 void WalletQmlModelTests::prepareTransaction_usesStaticRegtestFeeOverride()
 {
     ChainSelectionGuard chain_guard{ChainType::REGTEST};
@@ -304,6 +345,46 @@ void WalletQmlModelTests::prepareTransaction_usesStaticRegtestFeeOverride()
     QCOMPARE(requested_targets.at(0), 0U);
     QCOMPARE(requested_fee_rates.size(), 1U);
     QCOMPARE(requested_fee_rates.at(0), CAmount{wallet::DEFAULT_TRANSACTION_MINFEE});
+}
+
+void WalletQmlModelTests::prepareTransaction_usesCustomFeeRateWithoutRegtestOverride()
+{
+    ChainSelectionGuard chain_guard{ChainType::REGTEST};
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetValidRecipient(*model, VALID_REGTEST_ADDRESS);
+
+    std::vector<unsigned int> requested_targets;
+    std::vector<CAmount> requested_fee_rates;
+
+    EXPECT_CALL(*wallet, getRequiredFee(1000)).Times(0);
+    wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
+                                           const wallet::CCoinControl& coin_control,
+                                           bool,
+                                           int& change_pos,
+                                           CAmount& fee) -> util::Result<CTransactionRef> {
+        requested_targets.push_back(coin_control.m_confirm_target.value_or(0));
+        requested_fee_rates.push_back(coin_control.m_feerate.has_value() ? coin_control.m_feerate->GetFeePerK() : 0);
+        change_pos = -1;
+
+        if (!coin_control.m_feerate.has_value()) {
+            return util::Error{Untranslated("missing custom fee override")};
+        }
+
+        fee = coin_control.m_feerate->GetFee(250);
+        return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+    };
+
+    model->setCustomFeeEnabled(true);
+    model->setCustomFeeRate(QStringLiteral("2"));
+
+    QVERIFY(model->prepareTransaction());
+    QVERIFY(model->currentTransaction() != nullptr);
+    QCOMPARE(model->currentTransaction()->getTransactionFee(), CAmount{500});
+    QCOMPARE(requested_targets.size(), 1U);
+    QCOMPARE(requested_targets.at(0), 0U);
+    QCOMPARE(requested_fee_rates.size(), 1U);
+    QCOMPARE(requested_fee_rates.at(0), CAmount{2000});
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()
