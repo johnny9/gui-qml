@@ -12,6 +12,7 @@
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 
+#include <chainparams.h>
 #include <consensus/amount.h>
 #include <interfaces/wallet.h>
 #include <key_io.h>
@@ -67,6 +68,18 @@ void ApplyPreviewChangeDestination(wallet::CCoinControl& coin_control, const QSt
     }
 }
 
+void ApplyRegtestStaticFeeOverride(wallet::CCoinControl& coin_control)
+{
+    if (Params().GetChainType() != ChainType::REGTEST) {
+        return;
+    }
+
+    // Regtest commonly runs without fee estimation, so use a fixed static fee
+    // rate instead of target-based estimation.
+    coin_control.m_confirm_target.reset();
+    coin_control.m_feerate = CFeeRate{wallet::DEFAULT_TRANSACTION_MINFEE};
+}
+
 std::optional<CAmount> TryPreviewFee(interfaces::Wallet& wallet,
                                      const std::vector<wallet::CRecipient>& recipients,
                                      const wallet::CCoinControl& coin_control)
@@ -91,9 +104,14 @@ std::optional<QString> EstimatePreviewFee(interfaces::Wallet& wallet,
     coin_control.m_feerate.reset();
     coin_control.m_confirm_target = target;
     ApplyPreviewChangeDestination(coin_control, preview_change_address);
+    ApplyRegtestStaticFeeOverride(coin_control);
 
     if (const auto fee = TryPreviewFee(wallet, recipients, coin_control)) {
         return FormatFeeEstimate(*fee);
+    }
+
+    if (Params().GetChainType() == ChainType::REGTEST) {
+        return std::nullopt;
     }
 
     const CAmount required_fee_per_k = wallet.getRequiredFee(FEE_RATE_BASIS_VBYTES);
@@ -549,10 +567,12 @@ bool WalletQmlModel::prepareTransaction()
         total += recipient.nAmount;
     }
 
-    m_coin_control.m_feerate.reset();
-    if (!m_coin_control.m_confirm_target.has_value()) {
-        m_coin_control.m_confirm_target = DEFAULT_STANDARD_FEE_TARGET;
+    wallet::CCoinControl coin_control{m_coin_control};
+    coin_control.m_feerate.reset();
+    if (!coin_control.m_confirm_target.has_value()) {
+        coin_control.m_confirm_target = DEFAULT_STANDARD_FEE_TARGET;
     }
+    ApplyRegtestStaticFeeOverride(coin_control);
 
     CAmount balance = m_wallet->getBalance();
     if (balance < total) {
@@ -561,12 +581,12 @@ bool WalletQmlModel::prepareTransaction()
 
     int nChangePosRet = -1;
     CAmount nFeeRequired = 0;
-    const auto& res = m_wallet->createTransaction(*vec_send, m_coin_control, true, nChangePosRet, nFeeRequired);
-    if (res) {
+    const auto& result = m_wallet->createTransaction(*vec_send, coin_control, true, nChangePosRet, nFeeRequired);
+    if (result) {
         if (m_current_transaction) {
             delete m_current_transaction;
         }
-        CTransactionRef newTx = *res;
+        const CTransactionRef& newTx = *result;
         m_current_transaction = new WalletQmlModelTransaction(m_send_recipients, this);
         m_current_transaction->setWtx(newTx);
         m_current_transaction->setTransactionFee(nFeeRequired);
