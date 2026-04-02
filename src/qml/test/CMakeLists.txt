@@ -22,27 +22,7 @@ add_executable(bitcoinqml_unit_tests
   test_options_model.cpp
   test_banlistmodel.cpp
   test_walletqmlmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinamount.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/bitcoinunits.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/imageprovider.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/networkstyle.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/initexecutor.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/wallet/coincontrol.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/activitylistmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/bitcoinaddress.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/coinslistmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/paymentrequest.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/sendrecipient.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/sendrecipientslistmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/transaction.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/walletqmlmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/walletqmlmodeltransaction.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerdetailsmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/peerlistsortproxy.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/peerstatsutil.cpp
 )
 
 target_compile_definitions(bitcoinqml_unit_tests
@@ -56,7 +36,6 @@ target_include_directories(bitcoinqml_unit_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/univalue/include
     ${CMAKE_CURRENT_BINARY_DIR}/../bitcoin/src
-    ${PROJECT_BINARY_DIR}/bitcoin/src
 )
 
 target_link_libraries(bitcoinqml_unit_tests
