@@ -16,6 +16,10 @@ from qml_wallet_test_lib import WalletFlowHarness, rpc_call
 SEND_AMOUNT = "1.00000000"
 GUI_WALLET_NAME = "send_flow_wallet"
 RECEIVER_WALLET_NAME = "send_flow_receiver"
+DEFAULT_FEE_LABEL = "Default"
+DEFAULT_FEE_DURATION = "(~20 mins)"
+LOW_FEE_LABEL = "Low"
+LOW_FEE_DURATION = "(~60 mins)"
 LOW_FEE_OPTION_INDEX = 2
 LOW_FEE_TARGET_BLOCKS = 6
 
@@ -134,11 +138,22 @@ def run_test():
         gui.set_text("sendAmountInput", SEND_AMOUNT)
         gui.wait_for_property("sendContinueButton", "enabled", True, timeout_ms=20000)
 
+        gui.wait_for_property("feeSelectionControl", "selectedLabel", DEFAULT_FEE_LABEL, timeout_ms=5000)
+        gui.wait_for_property("feeSelectionControl", "selectedDuration", DEFAULT_FEE_DURATION, timeout_ms=5000)
+        gui.wait_for_property("feeSelectionControl", "selectedTarget", 2, timeout_ms=5000)
+
         gui.click("feeSelectionDropdownButton")
         gui.wait_for_property("feeSelectionPopup", "opened", True, timeout_ms=5000)
+        high_fee_option_estimate = wait_for_non_empty_text(gui, "feeSelectionOptionEstimate0")
+        default_fee_option_estimate = wait_for_non_empty_text(gui, "feeSelectionOptionEstimate1")
         low_fee_option_estimate = wait_for_non_empty_text(gui, f"feeSelectionOptionEstimate{LOW_FEE_OPTION_INDEX}")
+        assert high_fee_option_estimate, "Expected High option estimate to render in the dropdown"
+        assert default_fee_option_estimate, "Expected Default option estimate to render in the dropdown"
         gui.click(f"feeSelectionOption{LOW_FEE_OPTION_INDEX}")
         gui.wait_for_property("feeSelectionPopup", "opened", False, timeout_ms=5000)
+        gui.wait_for_property("feeSelectionControl", "selectedIndex", LOW_FEE_OPTION_INDEX, timeout_ms=5000)
+        gui.wait_for_property("feeSelectionControl", "selectedLabel", LOW_FEE_LABEL, timeout_ms=5000)
+        gui.wait_for_property("feeSelectionControl", "selectedDuration", LOW_FEE_DURATION, timeout_ms=5000)
         gui.wait_for_property("feeSelectionControl", "selectedTarget", LOW_FEE_TARGET_BLOCKS, timeout_ms=5000)
         gui.wait_for_property("feeSelectionEstimateLabel", "text", low_fee_option_estimate, timeout_ms=20000)
 
