@@ -44,7 +44,6 @@ ColumnLayout {
         font.family: "Inter"
         font.styleName: "Regular"
         font.pixelSize: 18
-        font.features: { "tnum": 1 }
     }
 
     RowLayout {
@@ -64,7 +63,6 @@ ColumnLayout {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignLeft
             font.pixelSize: 18
-            font.features: { "tnum": 1 }
             color: Theme.color.neutral7
             text: root.selectedEstimate
             visible: !root.customSelected
@@ -166,7 +164,6 @@ ColumnLayout {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignLeft
             font.pixelSize: 18
-            font.features: { "tnum": 1 }
             color: Theme.color.neutral7
             text: root.walletModel ? (root.walletModel.feeEstimateRevision, root.walletModel.estimatedFee) : ""
         }
@@ -306,7 +303,6 @@ ColumnLayout {
                                 ? ""
                                 : (root.walletModel.feeEstimateRevision, root.walletModel.estimatedFeeForTarget(target))
                             font.pixelSize: 18
-                            font.features: { "tnum": 1 }
                             color: Theme.color.neutral7
                         }
                     }
