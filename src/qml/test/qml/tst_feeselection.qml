@@ -106,15 +106,36 @@ TestCase {
         verify(control !== null)
 
         const popup = findChild(control, "feeSelectionPopup")
+        const list = findChild(control, "feeSelectionList")
         verify(popup !== null)
+        verify(list !== null)
+
+        popup.open()
+        tryVerify(function() {
+            return list.itemAtIndex(0) !== null
+                && list.itemAtIndex(1) !== null
+                && list.itemAtIndex(2) !== null
+        })
+
+        const initialWidth = popup.width
+        testWalletModel.setFeeEstimate(2, "0.12345678 ₿")
+        tryVerify(function() {
+            return popup.width > initialWidth
+        })
+
+        const widthWithEstimates = popup.width
 
         testWalletModel.clearFeeEstimates()
-        compare(popup.width, 280)
+        tryVerify(function() {
+            return popup.width < widthWithEstimates
+        })
 
-        testWalletModel.setFeeEstimate(2, "0.00000500 ₿")
+        const widthWithoutEstimates = popup.width
+
+        testWalletModel.setFeeEstimate(2, "0.12345678 ₿")
 
         tryVerify(function() {
-            return popup.width === 360
+            return popup.width > widthWithoutEstimates
         })
     }
 
@@ -145,6 +166,9 @@ TestCase {
 
         compare(highFeeEstimate.x + highFeeEstimate.width, defaultFeeEstimate.x + defaultFeeEstimate.width)
         compare(defaultFeeEstimate.x + defaultFeeEstimate.width, lowFeeEstimate.x + lowFeeEstimate.width)
+        verify(highFeeEstimate.width >= highFeeEstimate.contentWidth)
+        verify(defaultFeeEstimate.width >= defaultFeeEstimate.contentWidth)
+        verify(lowFeeEstimate.width >= lowFeeEstimate.contentWidth)
     }
 
     function test_feeSelection_current_target_syncs_selected_preset() {

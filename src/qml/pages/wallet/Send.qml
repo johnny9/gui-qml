@@ -83,7 +83,7 @@ PageStack {
 
             ColumnLayout {
                 id: columnLayout
-                width: 450
+                width: 520
                 anchors.horizontalCenter: parent.horizontalCenter
 
                 spacing: 10

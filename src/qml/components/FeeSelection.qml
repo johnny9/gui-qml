@@ -22,38 +22,10 @@ RowLayout {
     property string selectedEstimate: walletModel
         ? (walletModel.feeEstimateRevision, walletModel.estimatedFeeForTarget(selectedTarget))
         : ""
-    readonly property bool hasFeeEstimate: {
-        const feeEstimateRevision = walletModel ? walletModel.feeEstimateRevision : 0
-        if (!walletModel || feeEstimateRevision < 0) {
-            return false
-        }
-
-        for (let i = 0; i < feeModel.count; ++i) {
-            const option = feeModel.get(i)
-            if (walletModel.estimatedFeeForTarget(option.target).length > 0) {
-                return true
-            }
-        }
-
-        return false
-    }
-    readonly property int estimateColumnWidth: {
-        const feeEstimateRevision = walletModel ? walletModel.feeEstimateRevision : 0
-        if (!walletModel || feeEstimateRevision < 0) {
-            return 0
-        }
-
-        let maxWidth = 0
-        for (let i = 0; i < feeModel.count; ++i) {
-            const option = feeModel.get(i)
-            const estimate = walletModel.estimatedFeeForTarget(option.target)
-            if (estimate.length > 0) {
-                maxWidth = Math.max(maxWidth, estimateFontMetrics.advanceWidth(estimate))
-            }
-        }
-
-        return Math.ceil(maxWidth)
-    }
+    readonly property int optionSpacing: 8
+    readonly property int detailsSpacing: 4
+    readonly property int selectionColumnWidth: 20
+    readonly property int estimateColumnWidth: Math.ceil(estimateFontMetrics.advanceWidth("0.00000000 ₿"))
 
     signal feeChanged(int target)
 
@@ -61,7 +33,10 @@ RowLayout {
 
     FontMetrics {
         id: estimateFontMetrics
+        font.family: "Inter"
+        font.styleName: "Regular"
         font.pixelSize: 18
+        font.features: { "tnum": 1 }
     }
 
     CoreText {
@@ -77,6 +52,7 @@ RowLayout {
         Layout.fillWidth: true
         horizontalAlignment: Text.AlignLeft
         font.pixelSize: 18
+        font.features: { "tnum": 1 }
         color: Theme.color.neutral7
         text: root.selectedEstimate
     }
@@ -138,9 +114,9 @@ RowLayout {
         objectName: "feeSelectionPopup"
         modal: true
         dim: false
-        width: root.hasFeeEstimate ? 360 : 280
-        height: Math.min(feeModel.count * 44 + 12, 300)
-        x: feePopup.parent.width - feePopup.width
+        width: Math.ceil(Math.max(dropDownButton.implicitWidth + 24, feeList.maxItemImplicitWidth + leftPadding + rightPadding))
+        height: Math.min(feeList.implicitHeight + topPadding + bottomPadding, 300)
+        x: dropDownButton.x + dropDownButton.width - width
         y: feePopup.parent.height + 6
         padding: 6
 
@@ -150,107 +126,131 @@ RowLayout {
             border.color: Theme.color.neutral4
         }
 
-        contentItem: ListView {
+        contentItem: Column {
             id: feeList
             objectName: "feeSelectionList"
-            model: feeModel
-            interactive: false
+            readonly property int maxItemImplicitWidth: {
+                const feeEstimateRevision = root.walletModel ? root.walletModel.feeEstimateRevision : 0
+                return Math.ceil(Math.max(
+                    feeOptionsRepeater.itemAt(0) ? feeOptionsRepeater.itemAt(0).implicitWidth : 0,
+                    feeOptionsRepeater.itemAt(1) ? feeOptionsRepeater.itemAt(1).implicitWidth : 0,
+                    feeOptionsRepeater.itemAt(2) ? feeOptionsRepeater.itemAt(2).implicitWidth : 0))
+            }
             width: feePopup.availableWidth
-            height: contentHeight
+            spacing: 0
 
-            delegate: ItemDelegate {
-                id: delegate
-                objectName: "feeSelectionOption" + index
-                required property string feeLabel
-                required property string feeDuration
-                required property int index
-                required property int target
+            function itemAtIndex(index) {
+                return feeOptionsRepeater.itemAt(index)
+            }
 
-                width: ListView.view.width
-                height: 44
-                leftPadding: 12
-                rightPadding: 12
-                topPadding: 0
-                bottomPadding: 0
+            Repeater {
+                id: feeOptionsRepeater
+                model: feeModel
 
-                background: Item {
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 6
-                        color: Theme.color.neutral2
-                        visible: delegate.hovered
+                delegate: ItemDelegate {
+                    id: delegate
+                    objectName: "feeSelectionOption" + index
+                    required property string feeLabel
+                    required property string feeDuration
+                    required property int index
+                    required property int target
+
+                    implicitWidth: delegateContent.implicitWidth + leftPadding + rightPadding
+                    width: feeList.width
+                    height: 44
+                    leftPadding: 12
+                    rightPadding: 12
+                    topPadding: 0
+                    bottomPadding: 0
+
+                    background: Item {
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 6
+                            color: Theme.color.neutral2
+                            visible: delegate.hovered
+                        }
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: delegate.index === feeModel.count - 1 ? 0 : 1
+                            color: Theme.color.neutral4
+                        }
                     }
 
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        height: delegate.index === feeModel.count - 1 ? 0 : 1
-                        color: Theme.color.neutral4
-                    }
-                }
+                    contentItem: Item {
+                        id: delegateContent
+                        implicitWidth: selectionSlot.width
+                            + root.optionSpacing
+                            + feeDetails.implicitWidth
+                            + (estimateText.visible ? root.optionSpacing + root.estimateColumnWidth : 0)
+                        implicitHeight: Math.max(selectionSlot.height, feeDetails.implicitHeight, estimateText.implicitHeight)
 
-                contentItem: Item {
-                    Row {
-                        id: feeDetails
-                        anchors.left: parent.left
-                        anchors.right: estimateText.left
-                        anchors.rightMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 4
+                        Item {
+                            id: selectionSlot
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: root.selectionColumnWidth
+                            height: 20
 
-                        CoreText {
-                            text: feeLabel
-                            font.pixelSize: 18
-                            color: Theme.color.neutral9
+                            CoreText {
+                                anchors.centerIn: parent
+                                visible: delegate.index === root.selectedIndex
+                                text: "\u2713"
+                                font.pixelSize: 18
+                                color: Theme.color.orange
+                            }
+                        }
+
+                        Row {
+                            id: feeDetails
+                            anchors.left: selectionSlot.right
+                            anchors.leftMargin: root.optionSpacing
+                            anchors.right: estimateText.visible ? estimateText.left : parent.right
+                            anchors.rightMargin: estimateText.visible ? root.optionSpacing : 0
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: root.detailsSpacing
+
+                            CoreText {
+                                text: feeLabel
+                                font.pixelSize: 18
+                                color: Theme.color.neutral9
+                            }
+
+                            CoreText {
+                                text: feeDuration
+                                font.pixelSize: 18
+                                color: Theme.color.neutral7
+                            }
                         }
 
                         CoreText {
-                            text: feeDuration
+                            id: estimateText
+                            objectName: "feeSelectionOptionEstimate" + delegate.index
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: text.length > 0
+                            width: visible ? root.estimateColumnWidth : 0
+                            horizontalAlignment: Text.AlignRight
+                            text: root.walletModel
+                                ? (root.walletModel.feeEstimateRevision, root.walletModel.estimatedFeeForTarget(target))
+                                : ""
                             font.pixelSize: 18
+                            font.features: { "tnum": 1 }
                             color: Theme.color.neutral7
                         }
                     }
 
-                    CoreText {
-                        id: estimateText
-                        objectName: "feeSelectionOptionEstimate" + delegate.index
-                        anchors.right: selectionIconSlot.left
-                        anchors.rightMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: root.estimateColumnWidth
-                        horizontalAlignment: Text.AlignRight
-                        text: root.walletModel
-                            ? (root.walletModel.feeEstimateRevision, root.walletModel.estimatedFeeForTarget(target))
-                            : ""
-                        font.pixelSize: 18
-                        color: Theme.color.neutral7
+                    HoverHandler {
+                        cursorShape: Qt.PointingHandCursor
                     }
 
-                    Item {
-                        id: selectionIconSlot
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 20
-                        height: 20
-
-                        Icon {
-                            anchors.centerIn: parent
-                            opacity: delegate.index === root.selectedIndex ? 1 : 0
-                            source: "image://images/check"
-                            color: Theme.color.orange
-                            size: 20
-                        }
+                    onClicked: {
+                        root.feeChanged(target)
+                        feePopup.close()
                     }
-                }
-
-                HoverHandler {
-                    cursorShape: Qt.PointingHandCursor
-                }
-
-                onClicked: {
-                    root.feeChanged(target)
-                    feePopup.close()
                 }
             }
         }
