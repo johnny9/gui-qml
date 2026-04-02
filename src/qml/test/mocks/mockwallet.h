@@ -121,6 +121,7 @@ public:
     MOCK_METHOD(CTxDestination, getNewDestinationValue, (OutputType, const std::string&));
     MOCK_METHOD((std::set<interfaces::WalletTx>), getWalletTxs, (), (override));
     MOCK_METHOD(CAmount, getBalance, (), (override));
+    MOCK_METHOD(CAmount, getRequiredFee, (unsigned int), (override));
     MOCK_METHOD(CoinsList, listCoins, (), (override));
     MOCK_METHOD(OutputType, getDefaultAddressType, (), (override));
     MOCK_METHOD((std::unique_ptr<interfaces::Handler>), handleTransactionChanged, (TransactionChangedFn), (override));

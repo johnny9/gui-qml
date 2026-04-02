@@ -23,6 +23,7 @@ namespace {
 using ::testing::Invoke;
 using ::testing::NiceMock;
 using ::testing::Return;
+using ::testing::AtLeast;
 
 constexpr auto FEE_ESTIMATE_TIMEOUT_MS{3'000};
 const auto VALID_MAINNET_ADDRESS = QStringLiteral("1BoatSLRHtKNngkdXEeobR76b53LETtpyT");
@@ -35,6 +36,7 @@ std::unique_ptr<WalletQmlModel> MakeWalletModel(NiceMock<MockWallet>*& wallet_ou
     ON_CALL(*wallet_out, getWalletTxs()).WillByDefault(Return(std::set<interfaces::WalletTx>{}));
     ON_CALL(*wallet_out, listCoins()).WillByDefault(Return(interfaces::Wallet::CoinsList{}));
     ON_CALL(*wallet_out, getBalance()).WillByDefault(Return(10 * COIN));
+    ON_CALL(*wallet_out, getRequiredFee(testing::_)).WillByDefault(Return(1000));
     ON_CALL(*wallet_out, getDefaultAddressType()).WillByDefault(Return(OutputType::BECH32));
     ON_CALL(*wallet_out, handleTransactionChanged(testing::_)).WillByDefault(Invoke([](interfaces::Wallet::TransactionChangedFn) {
         return std::unique_ptr<interfaces::Handler>{};
@@ -65,8 +67,9 @@ class WalletQmlModelTests : public QObject
 private Q_SLOTS:
     void initTestCase();
     void feeTargetIndex_mapsStandardTargets();
-    void estimatedFeeForTarget_returnsDashWhenUnavailable();
+    void estimatedFeeForTarget_returnsEmptyWhenUnavailable();
     void scheduleFeeEstimates_populatesFormattedEstimates();
+    void scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesUnavailable();
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
     void scheduleFeeEstimates_debouncesRapidRestarts();
 };
@@ -86,13 +89,13 @@ void WalletQmlModelTests::feeTargetIndex_mapsStandardTargets()
     QCOMPARE(model.feeTargetIndex(42), 1);
 }
 
-void WalletQmlModelTests::estimatedFeeForTarget_returnsDashWhenUnavailable()
+void WalletQmlModelTests::estimatedFeeForTarget_returnsEmptyWhenUnavailable()
 {
     WalletQmlModel model;
 
-    QCOMPARE(model.estimatedFeeForTarget(1), QStringLiteral("—"));
-    QCOMPARE(model.estimatedFeeForTarget(2), QStringLiteral("—"));
-    QCOMPARE(model.estimatedFee(), QStringLiteral("—"));
+    QCOMPARE(model.estimatedFeeForTarget(1), QString());
+    QCOMPARE(model.estimatedFeeForTarget(2), QString());
+    QCOMPARE(model.estimatedFee(), QString());
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_populatesFormattedEstimates()
@@ -135,7 +138,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_populatesFormattedEstimates()
 
     QTRY_VERIFY_WITH_TIMEOUT(first_call_started.load(), FEE_ESTIMATE_TIMEOUT_MS);
     QTRY_VERIFY_WITH_TIMEOUT(model->feeEstimatePending(), FEE_ESTIMATE_TIMEOUT_MS);
-    QCOMPARE(model->estimatedFeeForTarget(2), QStringLiteral("…"));
+    QCOMPARE(model->estimatedFeeForTarget(2), QString());
 
     release_first_call.release();
 
@@ -152,6 +155,50 @@ void WalletQmlModelTests::scheduleFeeEstimates_populatesFormattedEstimates()
     QCOMPARE(model->estimatedFeeForTarget(2), QStringLiteral("0.00000200 ₿"));
     QCOMPARE(model->estimatedFeeForTarget(6), QStringLiteral("0.00000600 ₿"));
     QCOMPARE(model->estimatedFee(), QStringLiteral("0.00000200 ₿"));
+}
+
+void WalletQmlModelTests::scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesUnavailable()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetValidRecipient(*model);
+
+    std::atomic<bool> saw_fallback_feerate{false};
+    std::vector<CAmount> fallback_fee_rates;
+
+    EXPECT_CALL(*wallet, getNewDestinationValue(OutputType::BECH32, "qml-fee-preview")).Times(1);
+    EXPECT_CALL(*wallet, getRequiredFee(1000)).Times(AtLeast(3)).WillRepeatedly(Return(1000));
+    wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
+                                           const wallet::CCoinControl& coin_control,
+                                           bool,
+                                           int& change_pos,
+                                           CAmount& fee) -> util::Result<CTransactionRef> {
+        change_pos = -1;
+
+        if (!coin_control.m_feerate.has_value()) {
+            return util::Error{Untranslated("fee estimation unavailable")};
+        }
+
+        saw_fallback_feerate = true;
+        fallback_fee_rates.push_back(coin_control.m_feerate->GetFeePerK());
+        fee = coin_control.m_feerate->GetFee(250);
+        return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+    };
+
+    model->scheduleFeeEstimates();
+
+    QTRY_COMPARE_WITH_TIMEOUT(model->estimatedFeeForTarget(2), QStringLiteral("0.00000500 ₿"), FEE_ESTIMATE_TIMEOUT_MS);
+    QTRY_VERIFY_WITH_TIMEOUT(!model->feeEstimatePending(), FEE_ESTIMATE_TIMEOUT_MS);
+    QVERIFY(saw_fallback_feerate.load());
+    QVERIFY(!fallback_fee_rates.empty());
+    QCOMPARE(model->estimatedFeeForTarget(1), QStringLiteral("0.00000750 ₿"));
+    QCOMPARE(model->estimatedFeeForTarget(2), QStringLiteral("0.00000500 ₿"));
+    QCOMPARE(model->estimatedFeeForTarget(6), QStringLiteral("0.00000250 ₿"));
+    QCOMPARE(model->estimatedFee(), QStringLiteral("0.00000500 ₿"));
+    QCOMPARE(fallback_fee_rates.size(), 3U);
+    QCOMPARE(fallback_fee_rates.at(0), CAmount{3000});
+    QCOMPARE(fallback_fee_rates.at(1), CAmount{2000});
+    QCOMPARE(fallback_fee_rates.at(2), CAmount{1000});
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()

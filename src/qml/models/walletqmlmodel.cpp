@@ -17,6 +17,7 @@
 #include <key_io.h>
 #include <addresstype.h>
 #include <outputtype.h>
+#include <policy/feerate.h>
 #include <qml/bitcoinunits.h>
 #include <serialize.h>
 #include <streams.h>
@@ -33,13 +34,84 @@
 namespace {
 constexpr unsigned int DEFAULT_STANDARD_FEE_TARGET{2};
 constexpr int FEE_ESTIMATE_DEBOUNCE_MS{250};
+constexpr unsigned int FEE_RATE_BASIS_VBYTES{1000};
 constexpr std::array<unsigned int, 3> STANDARD_FEE_TARGETS{1, DEFAULT_STANDARD_FEE_TARGET, 6};
+
+int FallbackFeeMultiplier(const unsigned int target)
+{
+    for (size_t i = 0; i < STANDARD_FEE_TARGETS.size(); ++i) {
+        if (STANDARD_FEE_TARGETS[i] == target) {
+            return static_cast<int>(STANDARD_FEE_TARGETS.size() - i);
+        }
+    }
+
+    return 1;
+}
 
 QString FormatFeeEstimate(CAmount amount)
 {
     BitcoinAmount bitcoin_amount;
     bitcoin_amount.setSatoshi(amount);
     return bitcoin_amount.toDisplay() + QStringLiteral(" ") + bitcoin_amount.unitLabel();
+}
+
+void ApplyPreviewChangeDestination(wallet::CCoinControl& coin_control, const QString& preview_change_address)
+{
+    if (preview_change_address.isEmpty()) {
+        return;
+    }
+
+    const CTxDestination change_destination = DecodeDestination(preview_change_address.toStdString());
+    if (IsValidDestination(change_destination)) {
+        coin_control.destChange = change_destination;
+    }
+}
+
+std::optional<CAmount> TryPreviewFee(interfaces::Wallet& wallet,
+                                     const std::vector<wallet::CRecipient>& recipients,
+                                     const wallet::CCoinControl& coin_control)
+{
+    int change_position{-1};
+    CAmount fee{0};
+    const auto result = wallet.createTransaction(recipients, coin_control, /*sign=*/false, change_position, fee);
+    if (!result) {
+        return std::nullopt;
+    }
+
+    return fee;
+}
+
+std::optional<QString> EstimatePreviewFee(interfaces::Wallet& wallet,
+                                          const std::vector<wallet::CRecipient>& recipients,
+                                          const wallet::CCoinControl& base_coin_control,
+                                          const QString& preview_change_address,
+                                          const unsigned int target)
+{
+    wallet::CCoinControl coin_control{base_coin_control};
+    coin_control.m_feerate.reset();
+    coin_control.m_confirm_target = target;
+    ApplyPreviewChangeDestination(coin_control, preview_change_address);
+
+    if (const auto fee = TryPreviewFee(wallet, recipients, coin_control)) {
+        return FormatFeeEstimate(*fee);
+    }
+
+    const CAmount required_fee_per_k = wallet.getRequiredFee(FEE_RATE_BASIS_VBYTES);
+    if (required_fee_per_k <= 0) {
+        return std::nullopt;
+    }
+
+    wallet::CCoinControl fallback_coin_control{coin_control};
+    fallback_coin_control.m_confirm_target.reset();
+    // Keep fallback previews distinct across presets even when the backend can
+    // only provide a minimum required feerate.
+    fallback_coin_control.m_feerate = CFeeRate{required_fee_per_k * FallbackFeeMultiplier(target)};
+
+    if (const auto fee = TryPreviewFee(wallet, recipients, fallback_coin_control)) {
+        return FormatFeeEstimate(*fee);
+    }
+
+    return std::nullopt;
 }
 
 std::optional<std::vector<wallet::CRecipient>> BuildRecipients(const SendRecipientsListModel& recipients)
@@ -186,7 +258,7 @@ QString WalletQmlModel::estimatedFeeForTarget(const unsigned int target_blocks) 
         return estimate;
     }
 
-    return m_fee_estimate_pending ? QStringLiteral("…") : QStringLiteral("—");
+    return {};
 }
 
 int WalletQmlModel::feeTargetIndex(const unsigned int target_blocks) const
@@ -400,22 +472,12 @@ void WalletQmlModel::requestFeeEstimatesNow()
         QHash<unsigned int, QString> estimates;
 
         for (const unsigned int target : STANDARD_FEE_TARGETS) {
-            wallet::CCoinControl coin_control{base_coin_control};
-            coin_control.m_feerate.reset();
-            coin_control.m_confirm_target = target;
-
-            if (!preview_change_address.isEmpty()) {
-                const CTxDestination change_destination = DecodeDestination(preview_change_address.toStdString());
-                if (IsValidDestination(change_destination)) {
-                    coin_control.destChange = change_destination;
-                }
-            }
-
-            int change_position{-1};
-            CAmount fee{0};
-            const auto result = wallet->createTransaction(recipients, coin_control, /*sign=*/false, change_position, fee);
-            if (result) {
-                estimates.insert(target, FormatFeeEstimate(fee));
+            if (const auto estimate = EstimatePreviewFee(*wallet,
+                                                         recipients,
+                                                         base_coin_control,
+                                                         preview_change_address,
+                                                         target)) {
+                estimates.insert(target, *estimate);
             }
         }
 
