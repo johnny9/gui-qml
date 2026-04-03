@@ -230,6 +230,7 @@ class MockSendRecipient : public QObject
     Q_PROPERTY(QObject* amount READ amount CONSTANT)
     Q_PROPERTY(QString amountError MEMBER m_amount_error NOTIFY amountErrorChanged)
     Q_PROPERTY(QString label MEMBER m_label NOTIFY labelChanged)
+    Q_PROPERTY(bool subtractFeeFromAmount READ subtractFeeFromAmount WRITE setSubtractFeeFromAmount NOTIFY subtractFeeFromAmountChanged)
     Q_PROPERTY(bool isValid MEMBER m_is_valid NOTIFY isValidChanged)
 
 public:
@@ -238,15 +239,24 @@ public:
     MockBitcoinAmount m_amount{};
     QString m_amount_error;
     QString m_label;
+    bool m_subtract_fee_from_amount{false};
     bool m_is_valid{true};
 
     QObject* amount() { return &m_amount; }
+    bool subtractFeeFromAmount() const { return m_subtract_fee_from_amount; }
+    void setSubtractFeeFromAmount(bool value)
+    {
+        if (m_subtract_fee_from_amount == value) return;
+        m_subtract_fee_from_amount = value;
+        Q_EMIT subtractFeeFromAmountChanged();
+    }
 
 Q_SIGNALS:
     void addressChanged();
     void addressErrorChanged();
     void amountErrorChanged();
     void labelChanged();
+    void subtractFeeFromAmountChanged();
     void isValidChanged();
 };
 
@@ -287,6 +297,7 @@ public:
     {
         m_current = recipient;
         Q_EMIT currentChanged();
+        Q_EMIT currentRecipientChanged();
     }
 
     void setCurrentIndex(int index)
@@ -370,6 +381,7 @@ public:
 
 Q_SIGNALS:
     void currentChanged();
+    void currentRecipientChanged();
     void currentIndexChanged();
     void countChanged();
     void listCleared();

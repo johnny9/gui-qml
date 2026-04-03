@@ -25,6 +25,7 @@ Page {
     header: NavigationBar2 {
         id: navbar
         leftItem: NavButton {
+            objectName: "sendReviewBackButton"
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
             onClicked: {

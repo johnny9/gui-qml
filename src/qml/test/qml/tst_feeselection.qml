@@ -28,6 +28,10 @@ TestCase {
         id: feeChangedSpy
     }
 
+    SignalSpy {
+        id: includeFeeInAmountToggledSpy
+    }
+
     function init() {
         testWalletModel.clearFeeEstimates()
         testWalletModel.setFeeEstimate(1, "0.00000750 ₿")
@@ -36,6 +40,8 @@ TestCase {
         testWalletModel.customFeeEnabled = false
         testWalletModel.customFeeRate = ""
         testWalletModel.targetBlocks = 2
+        includeFeeInAmountToggledSpy.target = null
+        includeFeeInAmountToggledSpy.signalName = ""
     }
 
     function test_feeSelection_has_stable_selectors() {
@@ -49,6 +55,7 @@ TestCase {
         verify(findChild(control, "feeSelectionDropdownButton") !== null)
         verify(findChild(control, "feeSelectionPopup") !== null)
         verify(findChild(control, "feeSelectionList") !== null)
+        verify(findChild(control, "feeSelectionIncludeFeeToggle") !== null)
     }
 
     function test_feeSelection_matches_standard_fee_spec_labels_and_estimate() {
@@ -262,5 +269,32 @@ TestCase {
         compare(control.selectedIndex, 2)
         compare(control.selectedLabel, "Low")
         compare(control.selectedEstimate, "0.00000250 ₿")
+    }
+
+    function test_feeSelection_include_fee_toggle_tracks_state_and_emits() {
+        const control = createTemporaryObject(feeSelectionComponent, this, {
+            "includeFeeInAmount": false
+        })
+        verify(control !== null)
+
+        const popup = findChild(control, "feeSelectionPopup")
+        const list = findChild(control, "feeSelectionList")
+        const toggle = findChild(control, "feeSelectionIncludeFeeToggle")
+        verify(popup !== null)
+        verify(list !== null)
+        verify(toggle !== null)
+
+        includeFeeInAmountToggledSpy.target = control
+        includeFeeInAmountToggledSpy.signalName = "includeFeeInAmountToggled"
+        includeFeeInAmountToggledSpy.clear()
+
+        popup.open()
+        tryCompare(popup, "opened", true)
+
+        toggle.clicked()
+
+        compare(includeFeeInAmountToggledSpy.count, 1)
+        compare(includeFeeInAmountToggledSpy.signalArguments[0][0], true)
+        compare(popup.visible, false)
     }
 }

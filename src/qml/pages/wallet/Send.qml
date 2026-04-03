@@ -368,6 +368,7 @@ PageStack {
                 }
 
                 RowLayout {
+                    objectName: "sendFeeIncludedNote"
                     Layout.fillWidth: true
                     visible: root.recipient && root.recipient.subtractFeeFromAmount
 
@@ -378,6 +379,7 @@ PageStack {
                     }
 
                     CoreText {
+                        objectName: "sendFeeIncludedNoteText"
                         Layout.fillWidth: true
                         text: qsTr("Fees are included in the amount")
                         font.pixelSize: 15
