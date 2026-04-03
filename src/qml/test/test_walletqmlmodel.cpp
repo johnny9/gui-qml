@@ -8,11 +8,13 @@
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/walletqmlmodel.h>
+#include <qml/models/walletqmlmodeltransaction.h>
 
 #include <chainparams.h>
 #include <key_io.h>
 #include <primitives/transaction.h>
 
+#include <QSignalSpy>
 #include <QSemaphore>
 
 #include <algorithm>
@@ -68,13 +70,16 @@ std::unique_ptr<WalletQmlModel> MakeWalletModel(NiceMock<MockWallet>*& wallet_ou
     return std::make_unique<WalletQmlModel>(std::move(wallet));
 }
 
-void SetValidRecipient(WalletQmlModel& model, const QString& address = VALID_MAINNET_ADDRESS)
+void SetValidRecipient(WalletQmlModel& model,
+                       const QString& address = VALID_MAINNET_ADDRESS,
+                       const bool subtract_fee_from_amount = false)
 {
     auto* recipient = model.sendRecipientList()->currentRecipient();
     QVERIFY(recipient != nullptr);
 
     recipient->address()->setAddress(address, 0);
     recipient->amount()->setSatoshi(50'000);
+    recipient->setSubtractFeeFromAmount(subtract_fee_from_amount);
 
     QVERIFY2(recipient->isValid(), "Recipient must be valid before scheduling fee estimates");
 }
@@ -94,6 +99,8 @@ private Q_SLOTS:
     void scheduleFeeEstimates_usesCustomFeeRateWhenEnabled();
     void prepareTransaction_usesStaticRegtestFeeOverride();
     void prepareTransaction_usesCustomFeeRateWithoutRegtestOverride();
+    void prepareTransaction_reassignsAmountWhenFeeIncluded();
+    void walletQmlModelTransaction_reassignAmounts_excludesChangeOutput();
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
     void scheduleFeeEstimates_debouncesRapidRestarts();
 };
@@ -385,6 +392,76 @@ void WalletQmlModelTests::prepareTransaction_usesCustomFeeRateWithoutRegtestOver
     QCOMPARE(requested_targets.at(0), 0U);
     QCOMPARE(requested_fee_rates.size(), 1U);
     QCOMPARE(requested_fee_rates.at(0), CAmount{2000});
+}
+
+void WalletQmlModelTests::prepareTransaction_reassignsAmountWhenFeeIncluded()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetValidRecipient(*model, VALID_MAINNET_ADDRESS, /*subtract_fee_from_amount=*/true);
+
+    bool saw_subtract_fee_from_amount{false};
+    bool saw_wrong_recipient_count{false};
+    wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>& recipients,
+                                           const wallet::CCoinControl&,
+                                           bool,
+                                           int& change_pos,
+                                           CAmount& fee) -> util::Result<CTransactionRef> {
+        if (recipients.size() != 1U) {
+            saw_wrong_recipient_count = true;
+            return util::Error{Untranslated("unexpected recipient count")};
+        }
+        saw_subtract_fee_from_amount = recipients.at(0).fSubtractFeeFromAmount;
+        change_pos = -1;
+        fee = 200;
+
+        CMutableTransaction tx;
+        tx.vout.emplace_back(/*nValue=*/49'800, CScript{});
+        return util::Result<CTransactionRef>{MakeTransactionRef(std::move(tx))};
+    };
+
+    QVERIFY(model->prepareTransaction());
+    QVERIFY(!saw_wrong_recipient_count);
+    QVERIFY(saw_subtract_fee_from_amount);
+    QVERIFY(model->currentTransaction() != nullptr);
+    QCOMPARE(model->currentTransaction()->amount(), QStringLiteral("49800"));
+    QCOMPARE(model->currentTransaction()->fee(), QStringLiteral("200"));
+    QCOMPARE(model->currentTransaction()->total(), QStringLiteral("50000"));
+    QCOMPARE(model->currentTransaction()->getTotalTransactionAmount(), CAmount{50'000});
+}
+
+void WalletQmlModelTests::walletQmlModelTransaction_reassignAmounts_excludesChangeOutput()
+{
+    SendRecipientsListModel recipients;
+    auto* recipient = recipients.currentRecipient();
+    QVERIFY(recipient != nullptr);
+
+    recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
+    recipient->amount()->setSatoshi(50'000);
+
+    WalletQmlModelTransaction transaction{&recipients};
+    QSignalSpy amount_changed_spy{&transaction, &WalletQmlModelTransaction::amountChanged};
+    QSignalSpy total_changed_spy{&transaction, &WalletQmlModelTransaction::totalChanged};
+    QSignalSpy fee_changed_spy{&transaction, &WalletQmlModelTransaction::feeChanged};
+
+    CMutableTransaction tx;
+    tx.vout.emplace_back(/*nValue=*/49'800, CScript{});
+    tx.vout.emplace_back(/*nValue=*/1'000, CScript{}); // change
+    transaction.setWtx(MakeTransactionRef(std::move(tx)));
+
+    transaction.setTransactionFee(200);
+    QCOMPARE(fee_changed_spy.count(), 1);
+    QCOMPARE(total_changed_spy.count(), 1);
+    QCOMPARE(transaction.total(), QStringLiteral("50200"));
+
+    transaction.reassignAmounts(/*nChangePosRet=*/1);
+
+    QCOMPARE(amount_changed_spy.count(), 1);
+    QCOMPARE(total_changed_spy.count(), 2);
+    QCOMPARE(transaction.amount(), QStringLiteral("49800"));
+    QCOMPARE(transaction.fee(), QStringLiteral("200"));
+    QCOMPARE(transaction.total(), QStringLiteral("50000"));
+    QCOMPARE(transaction.getTotalTransactionAmount(), CAmount{50'000});
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()
