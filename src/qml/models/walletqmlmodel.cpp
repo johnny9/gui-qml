@@ -653,8 +653,12 @@ bool WalletQmlModel::prepareTransaction()
     }
 
     CAmount total = 0;
+    bool subtract_fee_from_amount = false;
     for (const auto& recipient : *vec_send) {
         total += recipient.nAmount;
+        if (recipient.fSubtractFeeFromAmount) {
+            subtract_fee_from_amount = true;
+        }
     }
 
     wallet::CCoinControl coin_control{m_coin_control};
@@ -689,6 +693,9 @@ bool WalletQmlModel::prepareTransaction()
         m_current_transaction = new WalletQmlModelTransaction(m_send_recipients, this);
         m_current_transaction->setWtx(newTx);
         m_current_transaction->setTransactionFee(nFeeRequired);
+        if (subtract_fee_from_amount) {
+            m_current_transaction->reassignAmounts(nChangePosRet);
+        }
         Q_EMIT currentTransactionChanged();
         return true;
     } else {

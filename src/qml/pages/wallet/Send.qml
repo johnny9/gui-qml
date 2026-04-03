@@ -350,10 +350,39 @@ PageStack {
                     id: feeSelection
                     Layout.fillWidth: true
                     walletModel: root.wallet
+                    includeFeeInAmount: root.recipient ? root.recipient.subtractFeeFromAmount : false
                     currentTarget: root.wallet ? root.wallet.targetBlocks : 2
 
                     onFeeChanged: function(target) {
                         root.wallet.targetBlocks = target
+                    }
+
+                    onIncludeFeeInAmountToggled: function(checked) {
+                        if (root.recipient && root.recipient.subtractFeeFromAmount !== checked) {
+                            root.recipient.subtractFeeFromAmount = checked
+                            if (root.wallet) {
+                                root.wallet.scheduleFeeEstimates()
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.recipient && root.recipient.subtractFeeFromAmount
+
+                    Icon {
+                        source: "image://images/check"
+                        size: 18
+                        color: Theme.color.green
+                    }
+
+                    CoreText {
+                        Layout.fillWidth: true
+                        text: qsTr("Fees are included in the amount")
+                        font.pixelSize: 15
+                        color: Theme.color.neutral7
+                        horizontalAlignment: Text.AlignLeft
                     }
                 }
 

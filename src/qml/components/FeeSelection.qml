@@ -14,6 +14,7 @@ ColumnLayout {
     objectName: "feeSelectionControl"
 
     property var walletModel: null
+    property bool includeFeeInAmount: false
     property int currentTarget: 2
     property bool customSelected: walletModel ? walletModel.customFeeEnabled : false
     property int selectedIndex: customSelected
@@ -36,6 +37,7 @@ ColumnLayout {
     readonly property int estimateColumnWidth: Math.ceil(estimateFontMetrics.advanceWidth("0.00000000 ₿"))
 
     signal feeChanged(int target)
+    signal includeFeeInAmountToggled(bool checked)
 
     spacing: 12
 
@@ -198,6 +200,7 @@ ColumnLayout {
                         maxWidth = Math.max(maxWidth, item.implicitWidth)
                     }
                 }
+                maxWidth = Math.max(maxWidth, includeFeeToggleItem.implicitWidth)
                 return Math.ceil(maxWidth)
             }
             width: feePopup.availableWidth
@@ -320,6 +323,59 @@ ColumnLayout {
                         }
                         feePopup.close()
                     }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: Theme.color.neutral4
+            }
+
+            ItemDelegate {
+                id: includeFeeToggleItem
+                objectName: "feeSelectionIncludeFeeToggle"
+                implicitWidth: includeFeeToggleContent.implicitWidth + leftPadding + rightPadding
+                width: feeList.width
+                height: 44
+                leftPadding: 12
+                rightPadding: 12
+                topPadding: 0
+                bottomPadding: 0
+
+                background: Item {
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 6
+                        color: Theme.color.neutral2
+                        visible: includeFeeToggleItem.hovered
+                    }
+                }
+
+                contentItem: RowLayout {
+                    id: includeFeeToggleContent
+                    spacing: 12
+
+                    CoreText {
+                        Layout.fillWidth: true
+                        text: qsTr("Include fee in amount")
+                        font.pixelSize: 18
+                        color: Theme.color.neutral9
+                    }
+
+                    OptionSwitch {
+                        enabled: false
+                        checked: root.includeFeeInAmount
+                    }
+                }
+
+                HoverHandler {
+                    cursorShape: Qt.PointingHandCursor
+                }
+
+                onClicked: {
+                    root.includeFeeInAmountToggled(!root.includeFeeInAmount)
+                    feePopup.close()
                 }
             }
         }
