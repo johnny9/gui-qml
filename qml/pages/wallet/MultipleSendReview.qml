@@ -12,6 +12,7 @@ import "../../components"
 
 Page {
     id: root
+    objectName: "multipleSendReviewPage"
     background: null
 
     property WalletQmlModel wallet: walletController.selectedWallet
@@ -43,12 +44,12 @@ Page {
             width: 450
             anchors.horizontalCenter: parent.horizontalCenter
 
-            spacing: 15
+            spacing: 10
 
             CoreText {
                 id: title
                 Layout.topMargin: 30
-                Layout.bottomMargin: 15
+                Layout.bottomMargin: 20
                 text: qsTr("Transaction details")
                 font.pixelSize: 21
                 bold: true
@@ -56,92 +57,121 @@ Page {
 
             ListView {
                 id: inputsList
+                objectName: "multipleSendReviewRecipientsList"
                 Layout.fillWidth: true
                 Layout.preferredHeight: contentHeight
                 model: root.wallet.recipients
+                clip: true
+
                 delegate: Item {
                     id: delegate
-                    height: 55
+                    implicitHeight: delegateColumn.implicitHeight
+                    height: implicitHeight
                     width: ListView.view.width
 
                     required property string address;
                     required property string label;
                     required property string amount;
+                    required property string formattedAddress;
+                    required property string amountUnitLabel;
 
-                    RowLayout {
-                        spacing: 10
-                        anchors.fill: parent
-                        CoreText {
-                            Layout.alignment: Qt.AlignVCenter | Qt.AlignLeft
+                    ColumnLayout {
+                        id: delegateColumn
+                        width: parent.width
+                        spacing: 0
+
+                        RowLayout {
+                            Layout.topMargin: 10
                             Layout.fillWidth: true
-                            horizontalAlignment: Text.AlignLeft
-                            text: label == "" ? address : label
-                            font.pixelSize: 18
-                            elide: Text.ElideMiddle
+                            spacing: 10
+
+                            CoreText {
+                                objectName: "multipleSendReviewRecipient" + index + "Label"
+                                Layout.fillWidth: true
+                                Layout.preferredWidth: 0
+                                horizontalAlignment: Text.AlignLeft
+                                text: label
+                                font.pixelSize: 18
+                                color: Theme.color.neutral9
+                                visible: label.length > 0
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                                visible: label.length === 0
+                            }
+
+                            Item {
+                                id: amountDisplay
+                                objectName: "multipleSendReviewRecipient" + index + "Amount"
+                                property string text: amountUnitLabel.length > 0 ? amount + " " + amountUnitLabel : amount
+                                implicitWidth: amountRow.implicitWidth
+                                implicitHeight: amountRow.implicitHeight
+                                Layout.alignment: Qt.AlignRight
+
+                                RowLayout {
+                                    id: amountRow
+                                    anchors.fill: parent
+                                    spacing: 6
+
+                                    CoreText {
+                                        text: amount
+                                        font.pixelSize: 18
+                                        wrap: false
+                                        color: Theme.color.neutral9
+                                    }
+
+                                    CoreText {
+                                        visible: amountUnitLabel.length > 0
+                                        text: amountUnitLabel
+                                        font.pixelSize: 18
+                                        color: Theme.color.neutral7
+                                    }
+                                }
+                            }
                         }
 
                         CoreText {
-                            Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
-                            text: amount
+                            objectName: "multipleSendReviewRecipient" + index + "Address"
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 110
+                            Layout.topMargin: label.length > 0 ? 4 : 0
+                            horizontalAlignment: Text.AlignLeft
+                            text: formattedAddress
                             font.pixelSize: 18
+                            color: Theme.color.neutral9
+                        }
+
+                        Separator {
+                            Layout.topMargin: 10
+                            Layout.fillWidth: true
                         }
                     }
-
-                    Separator {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        color: Theme.color.neutral3
-                    }
                 }
             }
 
-            RowLayout {
-                Layout.topMargin: 20
-                CoreText {
-                    text: qsTr("Total amount")
-                    font.pixelSize: 20
-                    color: Theme.color.neutral9
-                    horizontalAlignment: Text.AlignLeft
-                }
-                Item {
-                    Layout.fillWidth: true
-                }
-                CoreText {
-                    text: root.transaction.total
-                    font.pixelSize: 20
-                    color: Theme.color.neutral9
-                }
+            BitcoinAmountDisplayField {
+                objectName: "multipleSendReviewTotalField"
+                Layout.topMargin: 10
+                labelText: qsTr("Total")
+                amountText: root.transaction ? root.transaction.totalAmount.display : ""
+                unitText: root.transaction ? root.transaction.totalAmount.unitLabel : ""
             }
 
             Separator {
                 Layout.fillWidth: true
-                color: Theme.color.neutral3
             }
 
-            RowLayout {
-                CoreText {
-                    text: qsTr("Fee")
-                    font.pixelSize: 18
-                    Layout.preferredWidth: 110
-                    horizontalAlignment: Text.AlignLeft
-                }
-                Item {
-                    Layout.fillWidth: true
-                }
-                CoreText {
-                    text: root.transaction.fee
-                    font.pixelSize: 15
-                }
-            }
-
-            Separator {
-                Layout.fillWidth: true
-                color: Theme.color.neutral3
+            BitcoinAmountDisplayField {
+                objectName: "multipleSendReviewFeeField"
+                labelText: qsTr("Fee")
+                amountText: root.transaction ? root.transaction.feeAmount.display : ""
+                unitText: root.transaction ? root.transaction.feeAmount.unitLabel : ""
             }
 
             ContinueButton {
                 id: confirmationButton
+                objectName: "multipleSendReviewSendButton"
                 Layout.fillWidth: true
                 Layout.topMargin: 30
                 text: qsTr("Send")

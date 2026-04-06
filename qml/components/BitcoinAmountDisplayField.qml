@@ -1,0 +1,56 @@
+// Copyright (c) 2026 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Layouts 1.15
+
+import "../controls"
+
+Item {
+    id: root
+
+    property string labelText: qsTr("Amount")
+    property string amountText: ""
+    property string unitText: ""
+    property string text: unitText.length > 0 ? amountText + " " + unitText : amountText
+
+    Layout.fillWidth: true
+    implicitHeight: Math.max(label.implicitHeight, amountValue.implicitHeight, unitLabel.implicitHeight)
+
+    CoreText {
+        id: label
+        width: 110
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        horizontalAlignment: Text.AlignLeft
+        text: root.labelText
+        font.pixelSize: 18
+        color: Theme.color.neutral9
+    }
+
+    CoreText {
+        id: amountValue
+        anchors.left: label.right
+        anchors.right: unitLabel.left
+        anchors.rightMargin: unitLabel.visible ? 12 : 0
+        anchors.verticalCenter: parent.verticalCenter
+        horizontalAlignment: Text.AlignLeft
+        wrap: false
+        elide: Text.ElideRight
+        text: root.amountText
+        font.pixelSize: 18
+        color: Theme.color.neutral9
+    }
+
+    CoreText {
+        id: unitLabel
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.unitText.length > 0
+        text: root.unitText
+        font.pixelSize: 18
+        color: Theme.color.neutral7
+    }
+}

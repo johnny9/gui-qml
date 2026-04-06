@@ -23,7 +23,9 @@ public:
         AddressRole = Qt::UserRole + 1,
         LabelRole,
         AmountRole,
-        MessageRole
+        MessageRole,
+        FormattedAddressRole,
+        AmountUnitLabelRole,
     };
 
     explicit SendRecipientsListModel(QObject* parent = nullptr);
@@ -55,6 +57,8 @@ Q_SIGNALS:
     void listCleared();
 
 private:
+    void connectRecipientSignals(SendRecipient* recipient);
+    int recipientRow(const SendRecipient* recipient) const;
     void updateTotalAmount();
 
     WalletQmlModel* m_wallet;
