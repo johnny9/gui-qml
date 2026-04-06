@@ -425,8 +425,10 @@ void WalletQmlModelTests::prepareTransaction_reassignsAmountWhenFeeIncluded()
     QVERIFY(saw_subtract_fee_from_amount);
     QVERIFY(model->currentTransaction() != nullptr);
     QCOMPARE(model->currentTransaction()->amount(), QStringLiteral("49800"));
+    QCOMPARE(model->currentTransaction()->amountAmount()->satoshi(), CAmount{49'800});
     QCOMPARE(model->currentTransaction()->fee(), QStringLiteral("200"));
     QCOMPARE(model->currentTransaction()->total(), QStringLiteral("50000"));
+    QCOMPARE(model->currentTransaction()->totalAmount()->satoshi(), CAmount{50'000});
     QCOMPARE(model->currentTransaction()->getTotalTransactionAmount(), CAmount{50'000});
 }
 
@@ -459,8 +461,10 @@ void WalletQmlModelTests::walletQmlModelTransaction_reassignAmounts_excludesChan
     QCOMPARE(amount_changed_spy.count(), 1);
     QCOMPARE(total_changed_spy.count(), 2);
     QCOMPARE(transaction.amount(), QStringLiteral("49800"));
+    QCOMPARE(transaction.amountAmount()->satoshi(), CAmount{49'800});
     QCOMPARE(transaction.fee(), QStringLiteral("200"));
     QCOMPARE(transaction.total(), QStringLiteral("50000"));
+    QCOMPARE(transaction.totalAmount()->satoshi(), CAmount{50'000});
     QCOMPARE(transaction.getTotalTransactionAmount(), CAmount{50'000});
 }
 

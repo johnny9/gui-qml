@@ -10,6 +10,7 @@
 #include <common/settings.h>
 #include <interfaces/node.h>
 #include <support/allocators/secure.h>
+#include <univalue.h>
 #include <util/result.h>
 #include <wallet/walletutil.h>
 #include <wallet/scriptpubkeyman.h>

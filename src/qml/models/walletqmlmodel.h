@@ -9,16 +9,12 @@
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/paymentrequest.h>
-#include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 
-#include <common/args.h>
-#include <common/settings.h>
 #include <consensus/amount.h>
 #include <interfaces/handler.h>
 #include <interfaces/wallet.h>
-#include <univalue.h>
 #include <wallet/coincontrol.h>
 
 #include <memory>
@@ -88,6 +84,8 @@ public:
 
     using TransactionChangedFn = std::function<void(const uint256& txid, ChangeType status)>;
     virtual std::unique_ptr<interfaces::Handler> handleTransactionChanged(TransactionChangedFn fn);
+    using StatusChangedFn = std::function<void()>;
+    virtual std::unique_ptr<interfaces::Handler> handleStatusChanged(StatusChangedFn fn);
 
     bool canBumpTransaction(const uint256& txid) const;
 
@@ -151,6 +149,7 @@ private:
     bool m_custom_fee_enabled{false};
     bool m_fee_estimate_pending{false};
     bool m_is_wallet_loaded{false};
+    std::unique_ptr<interfaces::Handler> m_handler_status_changed;
 };
 
 #endif // BITCOIN_QML_MODELS_WALLETQMLMODEL_H

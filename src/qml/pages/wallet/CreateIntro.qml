@@ -12,6 +12,8 @@ import "../settings"
 
 Page {
     id: root
+    objectName: "createWalletIntroPage"
+    signal back
     signal next
     background: null
 
@@ -94,6 +96,7 @@ Page {
         }
 
         ContinueButton {
+            objectName: "createWalletIntroStartButton"
             Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
             Layout.topMargin: 30
             Layout.leftMargin: 20

@@ -12,6 +12,8 @@ import "../settings"
 
 Page {
     id: root
+    objectName: "createWalletPasswordPage"
+    signal back
     signal next
     background: null
 
@@ -22,7 +24,9 @@ Page {
     header: NavigationBar2 {
         navigationStack: root.StackView.view
         rightItem: NavButton {
+            objectName: "createWalletPasswordSkipButton"
             text: qsTr("Skip")
+            enabled: walletController.initialized
             onClicked: {
                 walletController.clearWalletLoadStatus()
                 if (walletController.createSingleSigWallet(walletName, "")) {
@@ -57,6 +61,7 @@ Page {
 
         CoreTextField {
             id: password
+            objectName: "createWalletPasswordInput"
             Layout.fillWidth: true
             Layout.topMargin: 5
             Layout.leftMargin: 20
@@ -76,6 +81,7 @@ Page {
         }
         CoreTextField {
             id: passwordRepeat
+            objectName: "createWalletPasswordRepeatInput"
             Layout.fillWidth: true
             Layout.leftMargin: 20
             Layout.rightMargin: 20
@@ -108,13 +114,18 @@ Page {
         }
 
         ContinueButton {
+            objectName: "createWalletPasswordContinueButton"
             Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
             Layout.topMargin: 40
             Layout.leftMargin: 20
             Layout.rightMargin: Layout.leftMargin
             Layout.alignment: Qt.AlignCenter
             text: qsTr("Continue")
-            enabled: password.text != "" && passwordRepeat.text != "" && password.text == passwordRepeat.text && confirmToggle.loadedItem.checked
+            enabled: walletController.initialized &&
+                password.text != "" &&
+                passwordRepeat.text != "" &&
+                password.text == passwordRepeat.text &&
+                confirmToggle.loadedItem.checked
             onClicked: {
                 walletController.clearWalletLoadStatus()
                 if (walletController.createSingleSigWallet(walletName, password.text)) {

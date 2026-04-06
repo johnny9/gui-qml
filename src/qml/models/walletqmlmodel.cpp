@@ -256,6 +256,11 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObje
     m_send_recipients = new SendRecipientsListModel(this);
     m_current_payment_request = new PaymentRequest(this);
     initializeFeeEstimator();
+    m_handler_status_changed = handleStatusChanged([this] {
+        QMetaObject::invokeMethod(this, [this] {
+            Q_EMIT balanceChanged();
+        });
+    });
 }
 
 WalletQmlModel::WalletQmlModel(QObject* parent)
@@ -641,6 +646,14 @@ void WalletQmlModel::clearFeeEstimates()
         ++m_fee_estimate_revision;
         Q_EMIT feeEstimateRevisionChanged();
     }
+}
+
+std::unique_ptr<interfaces::Handler> WalletQmlModel::handleStatusChanged(StatusChangedFn fn)
+{
+    if (!m_wallet) {
+        return nullptr;
+    }
+    return m_wallet->handleStatusChanged(fn);
 }
 
 bool WalletQmlModel::prepareTransaction()

@@ -12,6 +12,8 @@ import "../settings"
 
 Page {
     id: root
+    objectName: "createWalletNamePage"
+    signal back
     signal next
     enum WalletType { SingleSig, ExternalSigner }
     property string walletName: ""
@@ -51,6 +53,7 @@ Page {
 
         CoreTextField {
             id: walletNameInput
+            objectName: "createWalletNameInput"
             focus: true
             Layout.fillWidth: true
             Layout.leftMargin: 20
@@ -78,6 +81,7 @@ Page {
 
         ContinueButton {
             id: continueButton
+            objectName: "createWalletNameContinueButton"
             Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
             Layout.leftMargin: 20
             Layout.rightMargin: 20
