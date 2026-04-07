@@ -26,6 +26,7 @@ Page {
         target: walletController
         function onOpenWalletSettingsRequested() {
             settingsTabButton.checked = true
+            nodeSettings.openWalletSettings()
         }
     }
 
@@ -166,6 +167,7 @@ Page {
             }
         }
         NodeSettings {
+            id: nodeSettings
             showDoneButton: false
         }
     }
