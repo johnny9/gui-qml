@@ -13,10 +13,14 @@ import "../settings"
 Page {
     id: root
     property bool navigationBackEnabled: false
+    objectName: pageObjectName
+    signal back
     signal next
     property string headerText: qsTr("Your wallet has been created")
     property string descriptionText: qsTr("It is good practice to make a small test transaction before you actively use this wallet for larger amounts.")
     property string nextButtonText: qsTr("Next")
+    property string pageObjectName: ""
+    property string nextButtonObjectName: ""
     background: null
 
     header: NavigationBar2 {}
@@ -56,6 +60,7 @@ Page {
         }
 
         ContinueButton {
+            objectName: root.nextButtonObjectName
             Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
             Layout.topMargin: 30
             Layout.leftMargin: 20
