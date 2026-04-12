@@ -42,7 +42,7 @@ Item {
         rightPadding: 0
         bottomPadding: 0
         height: Math.max(contentHeight, 32)
-        font.family: "Inter"
+        font.family: "BitcoinCoreSans"
         font.styleName: "Regular"
         font.pixelSize: 18
         color: Theme.color.neutral9

@@ -70,7 +70,7 @@ Page {
                         anchors.left: amountLabel.right
                         anchors.verticalCenter: parent.verticalCenter
                         leftPadding: 0
-                        font.family: "Inter"
+                        font.family: "BitcoinCoreSans"
                         font.styleName: "Regular"
                         font.pixelSize: 18
                         color: Theme.color.neutral9

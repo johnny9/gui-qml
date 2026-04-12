@@ -170,7 +170,7 @@ Page {
                     anchors.right: copyIcon.left
                     anchors.top: addressLabel.bottom
                     leftPadding: 0
-                    font.family: "Inter"
+                    font.family: "BitcoinCoreSans"
                     font.styleName: "Regular"
                     font.pixelSize: 18
                     horizontalAlignment: Text.AlignLeft
