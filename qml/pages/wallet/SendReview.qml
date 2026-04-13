@@ -26,6 +26,7 @@ Page {
     header: NavigationBar2 {
         id: navbar
         leftItem: NavButton {
+            objectName: "sendReviewBackButton"
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
             onClicked: {
@@ -51,14 +52,18 @@ Page {
                 id: title
                 Layout.topMargin: 30
                 Layout.bottomMargin: 20
-                text: qsTr("Transaction details")
+                text: qsTr("Review transaction")
                 font.pixelSize: 21
                 bold: true
             }
 
             BitcoinAddressDisplayField {
                 objectName: "sendReviewAddressField"
-                text: root.recipient ? root.recipient.address.formattedAddress : ""
+                expandedObjectName: "sendReviewFullAddressField"
+                labelPixelSize: 15
+                labelColor: Theme.color.neutral7
+                text: root.recipient ? root.recipient.address.ellipsesAddress : ""
+                fullText: root.recipient ? root.recipient.address.formattedAddress : ""
             }
 
             Separator {
@@ -70,6 +75,8 @@ Page {
                 objectName: "sendReviewNoteField"
                 visible: text.length > 0
                 labelText: qsTr("Note")
+                labelPixelSize: 15
+                labelColor: Theme.color.neutral7
                 text: root.recipient ? root.recipient.label : ""
             }
 
@@ -81,6 +88,8 @@ Page {
             BitcoinAmountDisplayField {
                 objectName: "sendReviewAmountField"
                 labelText: qsTr("Amount")
+                labelPixelSize: 15
+                labelColor: Theme.color.neutral7
                 amountText: root.recipient ? root.recipient.amount.display : ""
                 unitText: root.recipient ? root.recipient.amount.unitLabel : ""
             }
@@ -92,6 +101,8 @@ Page {
             BitcoinAmountDisplayField {
                 objectName: "sendReviewFeeField"
                 labelText: qsTr("Fee")
+                labelPixelSize: 15
+                labelColor: Theme.color.neutral7
                 amountText: root.transaction ? root.transaction.feeAmount.display : ""
                 unitText: root.transaction ? root.transaction.feeAmount.unitLabel : ""
             }

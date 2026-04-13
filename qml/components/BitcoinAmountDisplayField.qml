@@ -15,6 +15,8 @@ Item {
     property string amountText: ""
     property string unitText: ""
     property string text: unitText.length > 0 ? amountText + " " + unitText : amountText
+    property int labelPixelSize: 18
+    property color labelColor: Theme.color.neutral9
 
     Layout.fillWidth: true
     implicitHeight: Math.max(label.implicitHeight, amountValue.implicitHeight, unitLabel.implicitHeight)
@@ -26,8 +28,8 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignLeft
         text: root.labelText
-        font.pixelSize: 18
-        color: Theme.color.neutral9
+        font.pixelSize: root.labelPixelSize
+        color: root.labelColor
     }
 
     CoreText {

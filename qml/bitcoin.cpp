@@ -320,6 +320,7 @@ int QmlGuiMain(int argc, char* argv[])
 
     LoadFontResource(":/fonts/bitcoincoresans/regular");
     LoadFontResource(":/fonts/bitcoincoresans/semibold");
+    LoadFontResource(":/fonts/robotomono/regular");
 
     QQmlApplicationEngine engine;
 

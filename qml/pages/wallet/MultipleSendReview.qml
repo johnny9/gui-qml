@@ -17,6 +17,12 @@ Page {
 
     property WalletQmlModel wallet: walletController.selectedWallet
     property WalletQmlModelTransaction transaction: walletController.selectedWallet.currentTransaction
+    property string recipient0AddressText: wallet.recipients.addressTextAt(0)
+    property string recipient0FullAddressText: wallet.recipients.fullAddressTextAt(0)
+    property string recipient0AmountText: wallet.recipients.amountTextAt(0)
+    property string recipient1AddressText: wallet.recipients.addressTextAt(1)
+    property string recipient1FullAddressText: wallet.recipients.fullAddressTextAt(1)
+    property string recipient1AmountText: wallet.recipients.amountTextAt(1)
 
     signal finished()
     signal back()
@@ -25,6 +31,7 @@ Page {
     header: NavigationBar2 {
         id: navbar
         leftItem: NavButton {
+            objectName: "multipleSendReviewBackButton"
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
             onClicked: {
@@ -50,7 +57,7 @@ Page {
                 id: title
                 Layout.topMargin: 30
                 Layout.bottomMargin: 20
-                text: qsTr("Transaction details")
+                text: qsTr("Review transaction")
                 font.pixelSize: 21
                 bold: true
             }
@@ -131,15 +138,15 @@ Page {
                             }
                         }
 
-                        CoreText {
+                        BitcoinAddressDisplayField {
                             objectName: "multipleSendReviewRecipient" + index + "Address"
+                            expandedObjectName: "multipleSendReviewRecipient" + index + "FullAddress"
                             Layout.fillWidth: true
                             Layout.leftMargin: 110
                             Layout.topMargin: label.length > 0 ? 4 : 0
-                            horizontalAlignment: Text.AlignLeft
-                            text: formattedAddress
-                            font.pixelSize: 18
-                            color: Theme.color.neutral9
+                            labelText: ""
+                            text: address
+                            fullText: formattedAddress
                         }
 
                         Separator {
@@ -165,6 +172,8 @@ Page {
             BitcoinAmountDisplayField {
                 objectName: "multipleSendReviewFeeField"
                 labelText: qsTr("Fee")
+                labelPixelSize: 15
+                labelColor: Theme.color.neutral7
                 amountText: root.transaction ? root.transaction.feeAmount.display : ""
                 unitText: root.transaction ? root.transaction.feeAmount.unitLabel : ""
             }

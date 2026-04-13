@@ -227,6 +227,8 @@ Page {
                             anchors.fill: parent
                             anchors.leftMargin: 5
                             horizontalAlignment: Text.AlignLeft
+                            font.family: "Roboto Mono"
+                            font.styleName: "Regular"
                             font.pixelSize: 18
                             wrapMode: Text.WordWrap
                             text: root.request ? root.request.addressFormatted : ""
