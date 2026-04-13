@@ -263,6 +263,11 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObje
             Q_EMIT balanceChanged();
         });
     });
+    m_handler_transaction_changed = handleTransactionChanged([this](const uint256&, ChangeType) {
+        QMetaObject::invokeMethod(this, [this] {
+            Q_EMIT balanceChanged();
+        });
+    });
 }
 
 WalletQmlModel::WalletQmlModel(QObject* parent)

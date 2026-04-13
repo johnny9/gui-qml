@@ -155,6 +155,7 @@ private:
     bool m_fee_estimate_pending{false};
     bool m_is_wallet_loaded{false};
     std::unique_ptr<interfaces::Handler> m_handler_status_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_transaction_changed;
 };
 
 #endif // BITCOIN_QML_MODELS_WALLETQMLMODEL_H

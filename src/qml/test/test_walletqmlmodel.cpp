@@ -103,6 +103,7 @@ private Q_SLOTS:
     void walletQmlModelTransaction_reassignAmounts_excludesChangeOutput();
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
     void scheduleFeeEstimates_debouncesRapidRestarts();
+    void transactionChangedEmitsBalanceChanged();
 };
 
 void WalletQmlModelTests::initTestCase()
@@ -546,13 +547,36 @@ void WalletQmlModelTests::scheduleFeeEstimates_debouncesRapidRestarts()
     QCOMPARE(model->estimatedFeeForTarget(6), QStringLiteral("0.00001500 ₿"));
 }
 
-int RunWalletQmlModelTests(int argc, char* argv[])
+void WalletQmlModelTests::transactionChangedEmitsBalanceChanged()
 {
-    WalletQmlModelTests tests;
-    return QTest::qExec(&tests, argc, argv);
+    auto wallet = std::make_unique<NiceMock<MockWallet>>();
+    auto* wallet_ptr = wallet.get();
+
+    CAmount balance{50 * COIN};
+    interfaces::Wallet::TransactionChangedFn transaction_changed;
+    ON_CALL(*wallet_ptr, getBalance()).WillByDefault(Invoke([&] { return balance; }));
+    ON_CALL(*wallet_ptr, handleTransactionChanged(testing::_)).WillByDefault(Invoke([&](interfaces::Wallet::TransactionChangedFn fn) {
+        transaction_changed = std::move(fn);
+        return std::unique_ptr<interfaces::Handler>{};
+    }));
+
+    WalletQmlModel model{std::move(wallet)};
+    QSignalSpy balance_spy{&model, &WalletQmlModel::balanceChanged};
+
+    QCOMPARE(model.balance(), QStringLiteral("50.00000000"));
+    QVERIFY(transaction_changed);
+
+    balance = 75 * COIN;
+    transaction_changed(Txid::FromUint256(uint256{}), CT_UPDATED);
+
+    QTRY_COMPARE(balance_spy.count(), 1);
+    QCOMPARE(model.balance(), QStringLiteral("75.00000000"));
 }
 
-#ifndef BITCOINQML_NO_TEST_MAIN
+#ifdef BITCOINQML_NO_TEST_MAIN
+#include <test/qt_test_registry.h>
+BITCOINQML_REGISTER_QT_TEST(WalletQmlModelTests)
+#else
 QTEST_MAIN(WalletQmlModelTests)
 #endif
 #include "test_walletqmlmodel.moc"
