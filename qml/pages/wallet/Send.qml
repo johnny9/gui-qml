@@ -243,12 +243,16 @@ PageStack {
                             height: Math.max(unitLabel.height, flipIcon.height)
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
+                            function click() {
+                                root.recipient.amount.flipUnit()
+                            }
                             MouseArea {
                                 anchors.fill: parent
                                 onClicked: root.recipient.amount.flipUnit()
                             }
                             CoreText {
                                 id: unitLabel
+                                objectName: "sendAmountUnitLabel"
                                 anchors.right: flipIcon.left
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.recipient.amount.unitLabel

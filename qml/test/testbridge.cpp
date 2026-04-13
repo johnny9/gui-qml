@@ -346,6 +346,14 @@ QByteArray TestBridge::cmdClick(const QString& object_name)
         return QJsonDocument(resp).toJson(QJsonDocument::Compact);
     };
 
+    const QString class_name = QString::fromLatin1(meta->className());
+    if (class_name.startsWith(QStringLiteral("EllipsisMenuToggleItem"))) {
+        int clicked_index = meta->indexOfSignal("clicked()");
+        if (clicked_index >= 0 && meta->method(clicked_index).invoke(obj, Qt::DirectConnection)) {
+            return okResponse();
+        }
+    }
+
     bool invoked = false;
     int click_method_index = meta->indexOfMethod("click()");
     if (click_method_index >= 0) {
@@ -427,8 +435,16 @@ QByteArray TestBridge::cmdSetText(const QString& object_name, const QString& tex
         // Trigger edit hooks so model-backed fields that update on textEdited
         // or editingFinished are deterministic under test automation.
         const QMetaObject* meta = obj->metaObject();
+        bool invoked_edit = false;
         if (int idx = meta->indexOfSignal("textEdited(QString)"); idx >= 0) {
-            meta->method(idx).invoke(obj, Qt::DirectConnection, Q_ARG(QString, text));
+            invoked_edit = meta->method(idx).invoke(obj, Qt::DirectConnection, Q_ARG(QString, text));
+        }
+        if (!invoked_edit) {
+            if (int idx = meta->indexOfSignal("textEdited()"); idx >= 0) {
+                meta->method(idx).invoke(obj, Qt::DirectConnection);
+            } else if (int idx = meta->indexOfMethod("textEdited()"); idx >= 0) {
+                meta->method(idx).invoke(obj, Qt::DirectConnection);
+            }
         }
         if (int idx = meta->indexOfSignal("editingFinished()"); idx >= 0) {
             meta->method(idx).invoke(obj, Qt::DirectConnection);
