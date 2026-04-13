@@ -19,6 +19,7 @@ PageStack {
     property WalletQmlModel wallet: walletController.selectedWallet
     property SendRecipient recipient: wallet.recipients.current
     property string prepareTransactionErrorText: ""
+    readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
 
     signal transactionPrepared(bool multipleRecipientsEnabled)
 
@@ -115,7 +116,7 @@ PageStack {
                     id: titleRow
                     Layout.fillWidth: true
                     Layout.topMargin: 30
-                    Layout.bottomMargin: 20
+                    Layout.bottomMargin: root.externalSignerWallet ? 10 : 20
 
                     CoreText {
                         id: title
@@ -148,6 +149,17 @@ PageStack {
                         x: menuButton.x - width + menuButton.width
                         y: menuButton.y + menuButton.height
                     }
+                }
+
+                CoreText {
+                    visible: root.externalSignerWallet
+                    Layout.fillWidth: true
+                    Layout.bottomMargin: 10
+                    horizontalAlignment: Text.AlignLeft
+                    wrap: true
+                    text: qsTr("Make sure you have your external signer at hand to approve this transaction.")
+                    font.pixelSize: 18
+                    color: Theme.color.neutral7
                 }
 
                 RowLayout {
@@ -455,7 +467,7 @@ PageStack {
                     objectName: "sendReviewButton"
                     Layout.fillWidth: true
                     Layout.topMargin: 30
-                    text: qsTr("Review")
+                    text: root.externalSignerWallet ? qsTr("Review transaction") : qsTr("Review")
                     enabled: root.recipient.isValid
                         && (!root.wallet || !root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                     onClicked: {

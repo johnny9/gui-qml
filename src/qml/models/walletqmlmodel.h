@@ -30,6 +30,7 @@ class WalletQmlModel : public QObject
     Q_OBJECT
     Q_PROPERTY(QString name READ name NOTIFY nameChanged)
     Q_PROPERTY(QString balance READ balance NOTIFY balanceChanged)
+    Q_PROPERTY(bool hasExternalSigner READ hasExternalSigner CONSTANT)
     Q_PROPERTY(ActivityListModel* activityListModel READ activityListModel CONSTANT)
     Q_PROPERTY(CoinsListModel* coinsListModel READ coinsListModel CONSTANT)
     Q_PROPERTY(SendRecipientsListModel* recipients READ sendRecipientList CONSTANT)
@@ -53,6 +54,7 @@ public:
     QString name() const;
     QString balance() const;
     CAmount balanceSatoshi() const;
+    bool hasExternalSigner() const { return m_wallet && m_wallet->hasExternalSigner(); }
     Q_INVOKABLE void commitPaymentRequest();
 
     ActivityListModel* activityListModel() const { return m_activity_list_model; }
@@ -68,6 +70,7 @@ public:
     bool feeEstimatePending() const { return m_fee_estimate_pending; }
     int feeEstimateRevision() const { return m_fee_estimate_revision; }
     Q_INVOKABLE bool prepareTransaction();
+    Q_INVOKABLE void approveExternalSignerTransaction();
     Q_INVOKABLE void sendTransaction();
     Q_INVOKABLE QString newAddress(QString label);
     Q_INVOKABLE QString estimatedFeeForTarget(unsigned int target_blocks) const;
@@ -118,6 +121,8 @@ Q_SIGNALS:
     void feeEstimatePendingChanged();
     void feeEstimateRevisionChanged();
     void walletIsLoadedChanged();
+    void externalSignerApprovalSucceeded();
+    void externalSignerApprovalFailed(const QString& message, bool signerNotFound);
 
 private:
     void initializeFeeEstimator();
