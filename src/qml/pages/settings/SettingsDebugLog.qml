@@ -7,6 +7,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import org.bitcoincore.qt 1.0
 import "../../controls"
+import "../../components"
 
 Page {
     signal back
@@ -18,57 +19,30 @@ Page {
     property int pendingNewLines: 0
     property int displayedLines: 0
     onPendingNewLinesChanged: if (pendingNewLines > 0) displayedLines = pendingNewLines
-    property bool duringRefresh: false
     property bool userIsScrolled: false
-    property bool scrolledToBottom: false
-
-    Binding { target: nodeModel; property: "debugLogLineNumColor"; value: Theme.color.neutral5 }
-    Binding { target: nodeModel; property: "debugLogMessageColor"; value: Theme.color.neutral9 }
-    Binding { target: nodeModel; property: "debugLogTimestampColor"; value: Theme.color.neutral5 }
-
-    // Coalesce rapid file writes (e.g. during node startup) into a single refresh.
-    Timer {
-        id: autoRefreshDebounce
-        interval: 500
-        repeat: false
-        onTriggered: root.refreshLog()
-    }
 
     Connections {
-        target: nodeModel
-        function onDebugLogChanged() { autoRefreshDebounce.restart() }
-        function onNewDebugLogLines(count) {
+        target: debugLogModel
+        function onNewLinesAdded(count) {
             if (root.userIsScrolled) root.pendingNewLines += count
         }
     }
 
-    // Debounce timer: delay propagating the search text so the C++ filter
-    // does not run synchronously on every key press for large log files.
+    // Debounce search text so the C++ filter does not run synchronously on
+    // every key press for large log files.
     Timer {
         id: searchDebounce
         interval: 150
         repeat: false
-        onTriggered: nodeModel.debugLogFilter = searchField.text
+        onTriggered: debugLogModel.filter = searchField.text
     }
 
+    // Periodically refresh the "N min ago" labels in-place.
     Timer {
         interval: 60000
         repeat: true
         running: true
-        onTriggered: nodeModel.updateDebugLogTimestamps()
-    }
-
-    function refreshLog(isFullLoad) {
-        var prevScrolled = root.userIsScrolled
-        root.duringRefresh = true
-        var atTop = logFlick.contentY === 0
-        var savedY = logFlick.contentY
-        nodeModel.refreshDebugLog(isFullLoad)
-        Qt.callLater(function() {
-            logFlick.contentY = atTop ? 0 : savedY
-            root.duringRefresh = false
-            root.userIsScrolled = atTop ? false : prevScrolled
-        })
+        onTriggered: debugLogModel.updateRelativeTimes()
     }
 
     header: NavigationBar2 {
@@ -85,31 +59,84 @@ Page {
         }
         rightItem: RowLayout {
             spacing: 0
-            NavButton {
+            // Both buttons use a bare Item + centred Icon (not NavButton).
+            // Rationale: NavButton's contentItem is a RowLayout that fills
+            // the button, placing its 24×24 icon at the left edge — the
+            // icon is visually off-centre inside the hover background, and
+            // rotating the NavButton swings it in an arc. A centred Icon
+            // rotates in place and keeps the visible symbol aligned with
+            // the hover box.
+            Item {
                 id: refreshBtn
                 objectName: "debugLogRefreshButton"
-                iconSource: "image://images/refresh"
-                iconHeight: 24
-                iconWidth: 24
-                onClicked: {
-                    root.refreshLog()
-                    spinAnimation.restart()
+                implicitWidth: 52
+                implicitHeight: 52
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 5
+                    color: refreshArea.containsMouse ? Theme.color.neutral2
+                                                     : Theme.color.background
+                    Behavior on color { ColorAnimation { duration: 150 } }
                 }
 
-                RotationAnimation on rotation {
-                    id: spinAnimation
-                    from: 0
-                    to: 360
-                    duration: 600
-                    running: false
-                    easing.type: Easing.InOutQuad
+                Icon {
+                    id: refreshIcon
+                    anchors.centerIn: parent
+                    source: "image://images/refresh"
+                    color: Theme.color.neutral9
+                    size: 24
+
+                    RotationAnimation on rotation {
+                        id: spinAnimation
+                        from: 0
+                        to: 360
+                        duration: 600
+                        running: false
+                        easing.type: Easing.InOutQuad
+                    }
+                }
+
+                MouseArea {
+                    id: refreshArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        debugLogModel.refresh()
+                        spinAnimation.restart()
+                    }
                 }
             }
-            NavButton {
-                iconSource: "image://images/export"
-                iconHeight: 24
-                iconWidth: 24
-                onClicked: nodeModel.openDebugLogFile()
+
+            Item {
+                id: exportBtn
+                objectName: "debugLogExportButton"
+                implicitWidth: 52
+                implicitHeight: 52
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 5
+                    color: exportArea.containsMouse ? Theme.color.neutral2
+                                                    : Theme.color.background
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                }
+
+                Icon {
+                    anchors.centerIn: parent
+                    source: "image://images/export"
+                    color: Theme.color.neutral9
+                    size: 24
+                }
+
+                MouseArea {
+                    id: exportArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: debugLogModel.openLogFile()
+                }
             }
         }
     }
@@ -231,85 +258,60 @@ Page {
                     id: pressHandler
                     acceptedButtons: Qt.LeftButton
                     onTapped: {
-                        logFlick.contentY = 0
+                        logView.scrollToTop()
                         root.pendingNewLines = 0
                     }
                 }
             }
         }
 
-        Item {
+        MonospaceOutputView {
+            id: logView
+            objectName: "debugLogListView"
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            Flickable {
-                id: logFlick
-                objectName: "debugLogListView"
-                property int count: nodeModel.debugLogLineCount
-                anchors.fill: parent
-                contentHeight: logTextEdit.height
-                clip: true
-                ScrollBar.vertical: ScrollBar {}
-                onContentYChanged: {
-                    if (!root.duringRefresh) {
-                        root.userIsScrolled = contentY > 0
-                        root.scrolledToBottom = atYEnd
-                        if (contentY <= 0 && root.pendingNewLines > 0) {
-                            root.pendingNewLines = 0
-                        }
-                    }
-                }
-                onHeightChanged: {
-                    if (!root.duringRefresh && root.scrolledToBottom) {
-                        root.duringRefresh = true
-                        contentY = Math.max(0, contentHeight - height)
-                        Qt.callLater(function() { root.duringRefresh = false })
-                    }
-                }
-                onContentHeightChanged: {
-                    if (!root.duringRefresh && root.scrolledToBottom) {
-                        root.duringRefresh = true
-                        contentY = Math.max(0, contentHeight - height)
-                        Qt.callLater(function() { root.duringRefresh = false })
-                    }
-                }
-
-                TextEdit {
-                    id: logTextEdit
-                    width: logFlick.width
-                    text: nodeModel.formattedDebugLog
-                    textFormat: TextEdit.RichText
-                    font.pixelSize: 11
-                    font.family: "monospace"
-                    wrapMode: Text.WrapAnywhere
-                    readOnly: true
-                    selectByMouse: true
-                    selectionColor: Theme.color.orange
-                    selectedTextColor: "white"
-                    bottomPadding: nodeModel.debugLogHasMoreLines ? 60 : 0
-                }
-            }
-
-            TextButton {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 8
-                visible: nodeModel.debugLogHasMoreLines && logFlick.atYEnd
-                text: qsTr("Load more")
-                textSize: 13
-                bold: false
-                onClicked: {
-                    nodeModel.debugLogLoadLimit += 1000
-                    root.refreshLog(true)
+            listModel: debugLogModel
+            contentRole: "content"
+            contentTextFormat: Text.RichText
+            leftColumnRole: "lineNumber"
+            rightColumnRole: "relativeTime"
+            leftColumnSample: "99999"
+            rightColumnSample: "99 hr ago"
+            fontPixelSize: 11
+            contentColor: Theme.color.neutral9
+            leftColumnColor: Theme.color.neutral5
+            rightColumnColor: Theme.color.neutral5
+            accessibleName: qsTr("Debug log entries")
+            autoScrollToBottom: false
+            // DebugLogModel renders newest-first at the top, so y > 0 means
+            // "scrolled away from the newest entries" — which is exactly when
+            // the "N new entries" pill should be offered.
+            onScrolled: {
+                root.userIsScrolled = (y > 0)
+                if (logView.atTop && root.pendingNewLines > 0) {
+                    root.pendingNewLines = 0
                 }
             }
         }
 
+        // Reserved slot so the log view's height does not jitter when the
+        // "Load more" affordance appears / disappears. Only the button
+        // itself toggles visibility.
+        Item {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 36
+
+            TextButton {
+                anchors.centerIn: parent
+                text: qsTr("Load more")
+                textSize: 13
+                bold: false
+                visible: debugLogModel.hasMoreLines && logView.atBottom
+                onClicked: debugLogModel.loadMore()
+            }
+        }
     }
 
-    Component.onCompleted: {
-        nodeModel.debugLogLoadLimit = 1000
-        nodeModel.debugLogFilter = ""
-        root.refreshLog(true)
-    }
+    Component.onCompleted: debugLogModel.refresh(true)
 }
