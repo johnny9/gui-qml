@@ -35,6 +35,8 @@ void PeerStatsUtilTests::connectionType_toQString()
     QCOMPARE(PeerStatsUtil::ConnectionTypeToQString(ConnectionType::INBOUND, true), QString("Inbound"));
     QCOMPARE(PeerStatsUtil::ConnectionTypeToQString(ConnectionType::OUTBOUND_FULL_RELAY, false), QString("Full Relay"));
     QCOMPARE(PeerStatsUtil::ConnectionTypeToQString(ConnectionType::OUTBOUND_FULL_RELAY, true), QString("Outbound Full Relay"));
+    QCOMPARE(PeerStatsUtil::ConnectionTypeToQString(ConnectionType::PRIVATE_BROADCAST, false), QString("Private Broadcast"));
+    QCOMPARE(PeerStatsUtil::ConnectionTypeToQString(ConnectionType::PRIVATE_BROADCAST, true), QString("Outbound Private Broadcast"));
 }
 
 void PeerStatsUtilTests::network_toQString()
