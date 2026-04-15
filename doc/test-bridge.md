@@ -34,6 +34,12 @@ is compiled into the binary.
 
 # Or use the default path (<datadir>/test_bridge.sock)
 ./build/bin/bitcoin-core-app -test-automation
+
+# Override the application window size when needed
+./build/bin/bitcoin-core-app \
+  -test-automation=/tmp/test_bridge.sock \
+  -window-width=640 \
+  -window-height=665
 ```
 
 For headless CI environments, combine with the Qt offscreen platform:
@@ -41,6 +47,11 @@ For headless CI environments, combine with the Qt offscreen platform:
 ```bash
 QT_QPA_PLATFORM=offscreen ./build/bin/bitcoin-core-app -test-automation=/tmp/test_bridge.sock
 ```
+
+When `QT_QPA_PLATFORM=offscreen` and `-test-automation` are both enabled, the
+app now resizes the test window to its minimum/default application size unless
+`-window-width` and/or `-window-height` are provided. When passed, these flags
+override the saved window geometry for the app.
 
 ## Architecture
 
@@ -212,6 +223,9 @@ python3 test/functional/qml_test_onboarding.py
 The harness starts `bitcoin-core-app` with `QT_QPA_PLATFORM=offscreen`,
 `-resetguisettings`, and a temporary datadir. The process is shut down
 automatically when the test finishes.
+
+All shared harness-based tests also accept `--window-width` and
+`--window-height`, which map to the corresponding GUI flags above.
 
 ### Attach to a running instance
 

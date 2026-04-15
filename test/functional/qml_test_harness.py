@@ -77,7 +77,39 @@ def parse_args():
              "this Unix socket path instead of launching a new one.  "
              "Start the app with: bitcoin-core-app -test-automation=<path>",
     )
+    add_offscreen_window_args(parser)
     return parser.parse_args()
+
+
+def add_offscreen_window_args(parser):
+    """Add optional offscreen window sizing arguments to a parser."""
+    parser.add_argument(
+        "--window-width",
+        type=int,
+        help="Offscreen test window width in pixels. Defaults to the app window minimum width.",
+    )
+    parser.add_argument(
+        "--window-height",
+        type=int,
+        help="Offscreen test window height in pixels. Defaults to the app window minimum height.",
+    )
+
+
+def append_offscreen_window_args(args, window_width=None, window_height=None):
+    """Append window sizing flags to a GUI argv list."""
+    if window_width is not None:
+        args.append(f"-window-width={window_width}")
+    if window_height is not None:
+        args.append(f"-window-height={window_height}")
+    return args
+
+
+def window_size_kwargs_from_args(args):
+    """Extract constructor kwargs for harness window sizing from parsed args."""
+    return {
+        "window_width": getattr(args, "window_width", None),
+        "window_height": getattr(args, "window_height", None),
+    }
 
 
 class QmlTestHarness:
@@ -87,10 +119,12 @@ class QmlTestHarness:
     instead of launching a new one.
     """
 
-    def __init__(self, socket_path=None):
+    def __init__(self, socket_path=None, window_width=None, window_height=None):
         self.external = socket_path is not None
         self.process = None
         self.driver = None
+        self.window_width = window_width
+        self.window_height = window_height
 
         if self.external:
             self.socket_path = socket_path
@@ -124,6 +158,11 @@ class QmlTestHarness:
             "-debugexclude=leveldb",
             "-nolisten",
         ]
+        append_offscreen_window_args(
+            args,
+            window_width=self.window_width,
+            window_height=self.window_height,
+        )
 
         print(f"Starting GUI: {' '.join(args)}")
         self.process = subprocess.Popen(

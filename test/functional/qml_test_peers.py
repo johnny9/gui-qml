@@ -15,6 +15,7 @@ This test requires:
     in a sibling 'bitcoin' repo, or set BITCOIND env var)
 """
 
+import argparse
 import base64
 import http.client
 import json
@@ -28,6 +29,8 @@ import time
 
 from qml_test_harness import (
     GUI_STARTUP_TIMEOUT,
+    add_offscreen_window_args,
+    append_offscreen_window_args,
     dump_qml_tree,
     find_gui_binary,
 )
@@ -120,7 +123,9 @@ class PeerQmlTestHarness:
     a QmlDriver for test automation plus an rpc_call() helper for verification.
     """
 
-    def __init__(self):
+    def __init__(self, window_width=None, window_height=None):
+        self.window_width = window_width
+        self.window_height = window_height
         self.gui_binary = find_gui_binary()
         self.bitcoind_binary = find_bitcoind()
         self.tmpdir = tempfile.mkdtemp(prefix="qml_test_peers_")
@@ -186,6 +191,11 @@ class PeerQmlTestHarness:
             "-debugexclude=libevent",
             "-debugexclude=leveldb",
         ]
+        append_offscreen_window_args(
+            gui_args,
+            window_width=self.window_width,
+            window_height=self.window_height,
+        )
         print(f"Starting GUI node: {' '.join(gui_args)}")
         self.gui_process = subprocess.Popen(
             gui_args,
@@ -364,6 +374,11 @@ class PeerQmlTestHarness:
             "-debugexclude=libevent",
             "-debugexclude=leveldb",
         ]
+        append_offscreen_window_args(
+            gui_args,
+            window_width=self.window_width,
+            window_height=self.window_height,
+        )
         print(f"  Restarting GUI: {' '.join(gui_args)}")
         self.gui_process = subprocess.Popen(
             gui_args,
@@ -451,6 +466,15 @@ class PeerQmlTestHarness:
         raise RuntimeError(
             f"Could not match peer {peer_idx} session {session_id} to GUI peer list"
         )
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Peer management QML functional test",
+        add_help=True,
+    )
+    add_offscreen_window_args(parser)
+    return parser.parse_args()
 
 
 # ── Navigation helpers ────────────────────────────────────────────────────────
@@ -688,7 +712,11 @@ def test_ban_one_of_two_peers(gui, harness):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run_tests():
-    harness = PeerQmlTestHarness()
+    args = parse_args()
+    harness = PeerQmlTestHarness(
+        window_width=args.window_width,
+        window_height=args.window_height,
+    )
     try:
         harness.start()
         gui = harness.driver

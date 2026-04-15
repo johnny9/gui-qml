@@ -12,12 +12,21 @@ This test requires the binary to be built with -DENABLE_TEST_AUTOMATION=ON.
 
 import sys
 
-from qml_test_harness import QmlTestHarness, QmlDriverError, dump_qml_tree, parse_args
+from qml_test_harness import (
+    QmlTestHarness,
+    QmlDriverError,
+    dump_qml_tree,
+    parse_args,
+    window_size_kwargs_from_args,
+)
 
 
 def run_tests():
     args = parse_args()
-    harness = QmlTestHarness(socket_path=args.socket_path)
+    harness = QmlTestHarness(
+        socket_path=args.socket_path,
+        **window_size_kwargs_from_args(args),
+    )
     gui = None
     try:
         harness.start()

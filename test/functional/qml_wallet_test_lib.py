@@ -16,7 +16,12 @@ import tempfile
 import time
 
 from qml_driver import QmlDriver
-from qml_test_harness import GUI_STARTUP_TIMEOUT, complete_onboarding, find_gui_binary
+from qml_test_harness import (
+    GUI_STARTUP_TIMEOUT,
+    append_offscreen_window_args,
+    complete_onboarding,
+    find_gui_binary,
+)
 
 
 RPC_USER = "qmlwallettest"
@@ -153,9 +158,11 @@ def update_settings_json(datadir, updates):
 class WalletFlowHarness:
     """Launches a source bitcoind and the QML GUI with isolated datadirs."""
 
-    def __init__(self, name, port_offset):
+    def __init__(self, name, port_offset, window_width=None, window_height=None):
         self.name = name
         self.port_offset = port_offset
+        self.window_width = window_width
+        self.window_height = window_height
         self.gui_binary = find_gui_binary()
         self.bitcoind_binary = None
         self.tmpdir = tempfile.mkdtemp(prefix=f"{name}_")
@@ -224,6 +231,11 @@ class WalletFlowHarness:
             args.insert(3, "-resetguisettings")
         if extra_args:
             args.extend(extra_args)
+        append_offscreen_window_args(
+            args,
+            window_width=self.window_width,
+            window_height=self.window_height,
+        )
         self.gui_process = subprocess.Popen(
             args,
             env=env,

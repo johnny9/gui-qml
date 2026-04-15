@@ -11,7 +11,7 @@ import sys
 import time
 from datetime import datetime
 
-from qml_test_harness import dump_qml_tree
+from qml_test_harness import add_offscreen_window_args, dump_qml_tree
 from qml_wallet_test_lib import WalletFlowHarness, rpc_call
 
 
@@ -25,6 +25,7 @@ def parse_args():
         action="store_true",
         help="Save a PNG at each GUI checkpoint under test/artifacts/",
     )
+    add_offscreen_window_args(parser)
     return parser.parse_args()
 
 
@@ -296,7 +297,12 @@ def run_tests(args):
         screenshot_root = make_screenshot_root()
         print(f"Checkpoint screenshots will be saved under: {screenshot_root}")
     case_name = "qml_send_review"
-    harness = WalletFlowHarness(case_name, port_offset=70)
+    harness = WalletFlowHarness(
+        case_name,
+        port_offset=70,
+        window_width=args.window_width,
+        window_height=args.window_height,
+    )
     checkpoints = CheckpointRecorder(case_name, args.save_screenshots, screenshot_root)
     gui = None
     try:

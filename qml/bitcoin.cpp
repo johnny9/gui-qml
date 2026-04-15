@@ -96,6 +96,8 @@ void SetupUIArgs(ArgsManager& argsman)
     argsman.AddArg("-lang=<lang>", "Set language, for example \"de_DE\" (default: system locale)", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-min", "Start minimized", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-resetguisettings", "Reset all settings changed in the GUI", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
+    argsman.AddArg("-window-width=<pixels>", "Override the saved application window width in pixels", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
+    argsman.AddArg("-window-height=<pixels>", "Override the saved application window height in pixels", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
 #ifdef ENABLE_TEST_AUTOMATION
     argsman.AddArg("-test-automation=<path>", "Enable test automation bridge on the given Unix socket path", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
 #endif
@@ -168,6 +170,29 @@ bool ConfigurationFileExists(ArgsManager& argsman)
     }
 
     return false;
+}
+
+void ApplyWindowSizeOverride(QQuickWindow* window)
+{
+    if (!window) return;
+
+    const bool width_override = gArgs.IsArgSet("-window-width");
+    const bool height_override = gArgs.IsArgSet("-window-height");
+#ifdef ENABLE_TEST_AUTOMATION
+    const bool test_automation_offscreen = gArgs.IsArgSet("-test-automation") &&
+        QGuiApplication::platformName() == QStringLiteral("offscreen");
+#else
+    constexpr bool test_automation_offscreen = false;
+#endif
+    if (!width_override && !height_override && !test_automation_offscreen) return;
+
+    const int requested_width = gArgs.GetIntArg("-window-width", static_cast<int64_t>(window->minimumWidth()));
+    const int requested_height = gArgs.GetIntArg("-window-height", static_cast<int64_t>(window->minimumHeight()));
+    const int width = requested_width > 0 ? requested_width : window->minimumWidth();
+    const int height = requested_height > 0 ? requested_height : window->minimumHeight();
+    if (width <= 0 || height <= 0) return;
+
+    window->resize(width, height);
 }
 
 void setupChainQSettings(QGuiApplication* app, QString chain)
@@ -375,6 +400,8 @@ int QmlGuiMain(int argc, char* argv[])
     if (!window) {
         return EXIT_FAILURE;
     }
+
+    ApplyWindowSizeOverride(window);
 
 #ifdef ENABLE_TEST_AUTOMATION
     std::unique_ptr<TestBridge> test_bridge;

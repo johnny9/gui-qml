@@ -22,6 +22,7 @@ from qml_test_harness import (
     QmlTestHarness,
     dump_qml_tree,
     parse_args,
+    window_size_kwargs_from_args,
 )
 
 
@@ -189,7 +190,10 @@ def test_proxy_settings_persist(datadir, settings):
 
 def run_tests():
     args = parse_args()
-    harness = QmlTestHarness(socket_path=args.socket_path)
+    harness = QmlTestHarness(
+        socket_path=args.socket_path,
+        **window_size_kwargs_from_args(args),
+    )
     gui = None
     try:
         harness.start()
