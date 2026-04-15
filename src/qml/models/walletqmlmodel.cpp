@@ -5,6 +5,7 @@
 
 #include <qml/models/walletqmlmodel.h>
 
+#include <common/messages.h>
 #include <qml/bitcoinamount.h>
 #include <qml/models/activitylistmodel.h>
 #include <qml/models/paymentrequest.h>
@@ -13,7 +14,6 @@
 #include <qml/models/walletqmlmodeltransaction.h>
 
 #include <chainparams.h>
-#include <common/messages.h>
 #include <consensus/amount.h>
 #include <interfaces/wallet.h>
 #include <key_io.h>
@@ -24,6 +24,8 @@
 #include <qml/bitcoinunits.h>
 #include <serialize.h>
 #include <streams.h>
+#include <support/allocators/secure.h>
+#include <util/result.h>
 #include <util/threadnames.h>
 #include <wallet/coincontrol.h>
 #include <wallet/wallet.h>
@@ -246,6 +248,12 @@ struct QmlRecentRequestEntry
         SER_READ(obj, obj.date = QDateTime::fromSecsSinceEpoch(date_timet));
     }
 };
+
+QString LocalizedString(const bilingual_str& value)
+{
+    return QString::fromStdString(value.translated.empty() ? value.original : value.translated);
+}
+
 } // namespace
 
 WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObject *parent)
@@ -258,16 +266,8 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObje
     m_send_recipients = new SendRecipientsListModel(this);
     m_current_payment_request = new PaymentRequest(this);
     initializeFeeEstimator();
-    m_handler_status_changed = handleStatusChanged([this] {
-        QMetaObject::invokeMethod(this, [this] {
-            Q_EMIT balanceChanged();
-        });
-    });
-    m_handler_transaction_changed = handleTransactionChanged([this](const uint256&, ChangeType) {
-        QMetaObject::invokeMethod(this, [this] {
-            Q_EMIT balanceChanged();
-        });
-    });
+    refreshSecurityState();
+    subscribeToWalletSignals();
 }
 
 WalletQmlModel::WalletQmlModel(QObject* parent)
@@ -283,6 +283,7 @@ WalletQmlModel::WalletQmlModel(QObject* parent)
 
 WalletQmlModel::~WalletQmlModel()
 {
+    unsubscribeFromWalletSignals();
     if (m_fee_estimation_timer) {
         m_fee_estimation_timer->stop();
     }
@@ -668,7 +669,29 @@ std::unique_ptr<interfaces::Handler> WalletQmlModel::handleStatusChanged(StatusC
 
 bool WalletQmlModel::prepareTransaction()
 {
+    return prepareTransactionInternal(std::nullopt);
+}
+
+bool WalletQmlModel::prepareTransactionWithPassphrase(const QString& passphrase)
+{
+    return prepareTransactionInternal(passphrase);
+}
+
+bool WalletQmlModel::prepareTransactionInternal(const std::optional<QString>& passphrase)
+{
+    clearTransactionStatus();
     if (!m_wallet || !m_send_recipients || m_send_recipients->recipients().empty()) {
+        setTransactionStatus(tr("Enter at least one valid recipient to continue."));
+        return false;
+    }
+    if (!m_wallet->privateKeysDisabled() && m_wallet->isCrypted() && m_wallet->isLocked() && !passphrase.has_value()) {
+        refreshSecurityState();
+        setTransactionStatus(tr("Enter your wallet password to prepare this transaction."), true);
+        return false;
+    }
+
+    bool relock{false};
+    if (!unlockForAction(passphrase, relock)) {
         return false;
     }
 
@@ -704,6 +727,11 @@ bool WalletQmlModel::prepareTransaction()
 
     CAmount balance = m_wallet->getBalance();
     if (balance < total) {
+        if (relock) {
+            m_wallet->lock();
+            refreshSecurityState();
+        }
+        setTransactionStatus(tr("The wallet does not have enough balance for this transaction."));
         return false;
     }
 
@@ -723,11 +751,20 @@ bool WalletQmlModel::prepareTransaction()
             m_current_transaction->reassignAmounts(nChangePosRet);
         }
         m_current_transaction->setDisplayUnit(m_display_unit);
+        if (relock) {
+            m_wallet->lock();
+            refreshSecurityState();
+        }
         Q_EMIT currentTransactionChanged();
         return true;
-    } else {
-        return false;
     }
+
+    if (relock) {
+        m_wallet->lock();
+        refreshSecurityState();
+    }
+    setTransactionStatus(LocalizedString(util::ErrorString(result)));
+    return false;
 }
 
 void WalletQmlModel::approveExternalSignerTransaction()
@@ -793,20 +830,36 @@ void WalletQmlModel::approveExternalSignerTransaction()
     }
 }
 
-void WalletQmlModel::sendTransaction()
+bool WalletQmlModel::sendTransaction()
 {
+    return sendTransactionInternal();
+}
+
+bool WalletQmlModel::sendTransactionInternal()
+{
+    clearTransactionStatus();
     if (!m_wallet || !m_current_transaction) {
-        return;
+        setTransactionStatus(tr("Review a transaction before sending it."));
+        return false;
     }
 
-    CTransactionRef newTx = m_current_transaction->getWtx();
-    if (!newTx) {
-        return;
+    CTransactionRef signed_tx = m_current_transaction->getWtx();
+    if (!signed_tx) {
+        setTransactionStatus(tr("Review a transaction before sending it."));
+        return false;
+    }
+
+    if (m_wallet->privateKeysDisabled() && !m_wallet->hasExternalSigner()) {
+        setTransactionStatus(tr("This wallet cannot sign transactions."));
+        return false;
     }
 
     interfaces::WalletValueMap value_map;
     interfaces::WalletOrderForm order_form;
-    m_wallet->commitTransaction(newTx, value_map, order_form);
+    m_wallet->commitTransaction(signed_tx, value_map, order_form);
+
+    clearTransactionStatus();
+    return true;
 }
 
 bool WalletQmlModel::canBumpTransaction(const uint256& txid) const
@@ -936,5 +989,82 @@ void WalletQmlModel::setDisplayUnit(int unit)
         }
         Q_EMIT balanceChanged();
         Q_EMIT displayUnitChanged(unit);
+    }
+}
+
+void WalletQmlModel::subscribeToWalletSignals()
+{
+    if (!m_wallet) {
+        return;
+    }
+    m_handler_status_changed = handleStatusChanged([this]() {
+        QMetaObject::invokeMethod(this, [this]() {
+            refreshSecurityState();
+            Q_EMIT balanceChanged();
+        }, Qt::QueuedConnection);
+    });
+    m_handler_transaction_changed = handleTransactionChanged([this](const uint256&, ChangeType) {
+        QMetaObject::invokeMethod(this, [this] {
+            Q_EMIT balanceChanged();
+        }, Qt::QueuedConnection);
+    });
+}
+
+void WalletQmlModel::unsubscribeFromWalletSignals()
+{
+    if (m_handler_status_changed) {
+        m_handler_status_changed->disconnect();
+    }
+    if (m_handler_transaction_changed) {
+        m_handler_transaction_changed->disconnect();
+    }
+}
+
+void WalletQmlModel::refreshSecurityState()
+{
+    const bool encrypted = m_wallet ? m_wallet->isCrypted() : false;
+    const bool locked = m_wallet ? m_wallet->isLocked() : false;
+    if (m_is_encrypted != encrypted || m_is_locked != locked) {
+        m_is_encrypted = encrypted;
+        m_is_locked = locked;
+        Q_EMIT securityStateChanged();
+    }
+}
+
+bool WalletQmlModel::unlockForAction(const std::optional<QString>& passphrase, bool& relock)
+{
+    relock = false;
+    if (!m_wallet || !m_wallet->isCrypted() || !m_wallet->isLocked()) {
+        return true;
+    }
+    if (!passphrase.has_value()) {
+        return true;
+    }
+
+    const SecureString secure_passphrase{passphrase->toStdString()};
+    if (!m_wallet->unlock(secure_passphrase)) {
+        setTransactionStatus(tr("The wallet password you entered was incorrect."));
+        return false;
+    }
+
+    relock = true;
+    refreshSecurityState();
+    return true;
+}
+
+void WalletQmlModel::clearTransactionStatus()
+{
+    setTransactionStatus(QString());
+}
+
+void WalletQmlModel::setTransactionStatus(const QString& error, bool needs_unlock)
+{
+    if (m_transaction_error != error) {
+        m_transaction_error = error;
+        Q_EMIT transactionErrorChanged();
+    }
+    if (m_transaction_needs_unlock != needs_unlock) {
+        m_transaction_needs_unlock = needs_unlock;
+        Q_EMIT transactionNeedsUnlockChanged();
     }
 }

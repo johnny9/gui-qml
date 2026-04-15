@@ -115,12 +115,15 @@ ApplicationWindow {
             }
             onTransactionSent: {
                 const externalSignerWallet = walletController.selectedWallet.hasExternalSigner
-                sendResult.descriptionText = externalSignerWallet
+                const descriptionText = externalSignerWallet
                     ? qsTr("Approved on external signer. It should be confirmed within the next 10 minutes.")
                     : qsTr("Based on your selected fee, it should be confirmed within the next 10 minutes.")
-                sendResult.actionText = externalSignerWallet ? qsTr("Done") : qsTr("Close window")
+                const actionText = externalSignerWallet ? qsTr("Done") : qsTr("Close window")
                 walletController.selectedWallet.recipients.clear()
-                main.push(sendResultPage)
+                main.push(sendResultPage, {
+                    "descriptionText": descriptionText,
+                    "actionText": actionText
+                })
             }
         }
     }
@@ -133,12 +136,15 @@ ApplicationWindow {
             }
             onTransactionSent: {
                 const externalSignerWallet = walletController.selectedWallet.hasExternalSigner
-                sendResult.descriptionText = externalSignerWallet
+                const descriptionText = externalSignerWallet
                     ? qsTr("Approved on external signer. It should be confirmed within the next 10 minutes.")
                     : qsTr("Based on your selected fee, it should be confirmed within the next 10 minutes.")
-                sendResult.actionText = externalSignerWallet ? qsTr("Done") : qsTr("Close window")
+                const actionText = externalSignerWallet ? qsTr("Done") : qsTr("Close window")
                 walletController.selectedWallet.recipients.clear()
-                main.push(sendResultPage)
+                main.push(sendResultPage, {
+                    "descriptionText": descriptionText,
+                    "actionText": actionText
+                })
             }
         }
     }

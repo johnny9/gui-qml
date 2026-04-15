@@ -11,7 +11,9 @@
 #include <qml/models/walletqmlmodeltransaction.h>
 
 #include <chainparams.h>
+#include <common/messages.h>
 #include <key_io.h>
+#include <psbt.h>
 #include <primitives/transaction.h>
 
 #include <QSignalSpy>
@@ -83,6 +85,111 @@ void SetValidRecipient(WalletQmlModel& model,
 
     QVERIFY2(recipient->isValid(), "Recipient must be valid before scheduling fee estimates");
 }
+
+class FakePasswordWallet : public StubWallet
+{
+public:
+    bool encrypted{true};
+    bool locked{true};
+    bool private_keys_disabled{false};
+    CAmount balance{50'000};
+    int unlock_calls{0};
+    int lock_calls{0};
+    int commit_calls{0};
+    std::vector<std::string> unlock_passphrases;
+    std::vector<bool> create_transaction_sign_args;
+    std::vector<bool> fill_psbt_sign_args;
+
+    std::function<util::Result<CTransactionRef>(const std::vector<wallet::CRecipient>&,
+                                                const wallet::CCoinControl&,
+                                                bool,
+                                                int&,
+                                                CAmount&)>
+        create_transaction_fn = [](const std::vector<wallet::CRecipient>&,
+                                   const wallet::CCoinControl&,
+                                   bool,
+                                   int& change_pos,
+                                   CAmount& fee) {
+            change_pos = -1;
+            fee = 250;
+            return MakeTransactionRef(CMutableTransaction{});
+        };
+    std::function<bool(const SecureString&)> unlock_fn = [this](const SecureString& passphrase) {
+        ++unlock_calls;
+        unlock_passphrases.emplace_back(passphrase.begin(), passphrase.end());
+        locked = false;
+        return true;
+    };
+    std::function<std::optional<common::PSBTError>(std::optional<int>,
+                                                   bool,
+                                                   bool,
+                                                   size_t*,
+                                                   PartiallySignedTransaction&,
+                                                   bool&)>
+        fill_psbt_fn = [this](std::optional<int>,
+                              bool sign,
+                              bool,
+                              size_t*,
+                              PartiallySignedTransaction&,
+                              bool& complete) {
+            fill_psbt_sign_args.push_back(sign);
+            complete = sign;
+            return std::nullopt;
+        };
+
+    bool isCrypted() override { return encrypted; }
+    bool lock() override
+    {
+        ++lock_calls;
+        locked = true;
+        return true;
+    }
+    bool unlock(const SecureString& wallet_passphrase) override { return unlock_fn(wallet_passphrase); }
+    bool isLocked() override { return locked; }
+    util::Result<CTransactionRef> createTransaction(const std::vector<wallet::CRecipient>& recipients,
+                                                    const wallet::CCoinControl& coin_control,
+                                                    bool sign,
+                                                    int& change_pos,
+                                                    CAmount& fee) override
+    {
+        create_transaction_sign_args.push_back(sign);
+        return create_transaction_fn(recipients, coin_control, sign, change_pos, fee);
+    }
+    void commitTransaction(CTransactionRef, interfaces::WalletValueMap, interfaces::WalletOrderForm) override
+    {
+        ++commit_calls;
+    }
+    std::optional<common::PSBTError> fillPSBT(std::optional<int> sighash_type,
+                                              bool sign,
+                                              bool bip32derivs,
+                                              size_t* n_signed,
+                                              PartiallySignedTransaction& psbtx,
+                                              bool& complete) override
+    {
+        return fill_psbt_fn(sighash_type, sign, bip32derivs, n_signed, psbtx, complete);
+    }
+    CAmount getBalance() override { return balance; }
+    bool privateKeysDisabled() override { return private_keys_disabled; }
+    OutputType getDefaultAddressType() override { return OutputType::BECH32; }
+};
+
+std::unique_ptr<WalletQmlModel> MakeWalletModel(FakePasswordWallet*& wallet_out)
+{
+    auto wallet = std::make_unique<FakePasswordWallet>();
+    wallet_out = wallet.get();
+    return std::make_unique<WalletQmlModel>(std::move(wallet));
+}
+
+void SetPasswordRecipient(WalletQmlModel& model, qint64 satoshis)
+{
+    auto* recipient = model.sendRecipientList()->currentRecipient();
+    QVERIFY(recipient != nullptr);
+
+    recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
+    recipient->amount()->setSatoshi(satoshis);
+
+    QVERIFY2(recipient->isValid(), "Recipient must be valid before preparing a transaction");
+}
 } // namespace
 
 class WalletQmlModelTests : public QObject
@@ -104,6 +211,10 @@ private Q_SLOTS:
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
     void scheduleFeeEstimates_debouncesRapidRestarts();
     void transactionChangedEmitsBalanceChanged();
+    void prepareTransactionOnLockedWalletRequiresPassword();
+    void prepareTransactionWithPrivateKeysDisabledDoesNotRequirePassword();
+    void sendTransactionCommitsPreparedTransactionWithoutUnlockingAgain();
+    void sendTransactionWithPrivateKeysDisabledDoesNotCommit();
 };
 
 void WalletQmlModelTests::initTestCase()
@@ -574,6 +685,75 @@ void WalletQmlModelTests::transactionChangedEmitsBalanceChanged()
 
     QTRY_COMPARE(balance_spy.count(), 1);
     QCOMPARE(model.balance(), QStringLiteral("75.00000000"));
+}
+
+void WalletQmlModelTests::prepareTransactionOnLockedWalletRequiresPassword()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetPasswordRecipient(*model, 1'000);
+
+    QVERIFY(!model->prepareTransaction());
+    QVERIFY(model->isEncrypted());
+    QVERIFY(model->isLocked());
+    QVERIFY(model->transactionNeedsUnlock());
+    QCOMPARE(model->transactionError(), QString("Enter your wallet password to prepare this transaction."));
+    QVERIFY(wallet->create_transaction_sign_args.empty());
+    QCOMPARE(wallet->unlock_calls, 0);
+    QCOMPARE(wallet->lock_calls, 0);
+}
+
+void WalletQmlModelTests::prepareTransactionWithPrivateKeysDisabledDoesNotRequirePassword()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetPasswordRecipient(*model, 1'000);
+    wallet->private_keys_disabled = true;
+
+    QVERIFY(model->prepareTransaction());
+    QVERIFY(model->isEncrypted());
+    QVERIFY(model->isLocked());
+    QVERIFY(!model->transactionNeedsUnlock());
+    QVERIFY(wallet->create_transaction_sign_args == std::vector<bool>{false});
+    QCOMPARE(wallet->unlock_calls, 0);
+    QCOMPARE(wallet->lock_calls, 0);
+}
+
+void WalletQmlModelTests::sendTransactionCommitsPreparedTransactionWithoutUnlockingAgain()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetPasswordRecipient(*model, 1'000);
+
+    QVERIFY(model->prepareTransactionWithPassphrase("secret"));
+    QVERIFY(wallet->locked);
+    QCOMPARE(wallet->unlock_calls, 1);
+    QCOMPARE(wallet->lock_calls, 1);
+
+    QVERIFY(model->sendTransaction());
+    QCOMPARE(wallet->unlock_calls, 1);
+    QCOMPARE(wallet->lock_calls, 1);
+    QCOMPARE(wallet->commit_calls, 1);
+    QVERIFY(wallet->locked);
+    QVERIFY(wallet->fill_psbt_sign_args.empty());
+    QVERIFY(model->transactionError().isEmpty());
+    QVERIFY(!model->transactionNeedsUnlock());
+}
+
+void WalletQmlModelTests::sendTransactionWithPrivateKeysDisabledDoesNotCommit()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetPasswordRecipient(*model, 1'000);
+    wallet->private_keys_disabled = true;
+
+    QVERIFY(model->prepareTransaction());
+    QVERIFY(wallet->locked);
+
+    QVERIFY(!model->sendTransaction());
+    QCOMPARE(model->transactionError(), QString("This wallet cannot sign transactions."));
+    QCOMPARE(wallet->commit_calls, 0);
+    QVERIFY(wallet->fill_psbt_sign_args.empty());
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

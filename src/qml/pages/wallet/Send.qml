@@ -480,9 +480,14 @@ PageStack {
                     onClicked: {
                         root.clearPrepareTransactionError()
                         if (root.wallet.prepareTransaction()) {
-                            root.transactionPrepared(settings.multipleRecipientsEnabled);
+                            root.transactionPrepared(settings.multipleRecipientsEnabled)
+                        } else if (root.wallet.transactionNeedsUnlock) {
+                            reviewPassphrasePopup.errorText = ""
+                            reviewPassphrasePopup.open()
                         } else {
-                            root.prepareTransactionErrorText = qsTr("Amount plus fee exceeds available balance")
+                            root.prepareTransactionErrorText = root.wallet.transactionError.length > 0
+                                ? root.wallet.transactionError
+                                : qsTr("Amount plus fee exceeds available balance")
                         }
                     }
                 }
@@ -494,6 +499,27 @@ PageStack {
         id: coinSelectionPage
         CoinSelection {
             onDone: root.pop()
+        }
+    }
+
+    WalletPassphrasePopup {
+        id: reviewPassphrasePopup
+        parent: Overlay.overlay
+        width: Math.min(420, root.width - 40)
+        titleText: qsTr("Enter wallet password")
+        descriptionText: qsTr("Enter your wallet password to prepare this transaction for review.")
+        confirmText: qsTr("Unlock and continue")
+        busyConfirmText: qsTr("Unlocking...")
+        onSubmitted: (passphrase) => {
+            reviewPassphrasePopup.busy = true
+            if (root.wallet.prepareTransactionWithPassphrase(passphrase)) {
+                reviewPassphrasePopup.busy = false
+                reviewPassphrasePopup.close()
+                root.transactionPrepared(settings.multipleRecipientsEnabled)
+                return
+            }
+            reviewPassphrasePopup.busy = false
+            reviewPassphrasePopup.errorText = root.wallet.transactionError
         }
     }
 }
