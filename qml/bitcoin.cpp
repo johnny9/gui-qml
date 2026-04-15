@@ -367,6 +367,20 @@ int QmlGuiMain(int argc, char* argv[])
 
 #ifdef ENABLE_WALLET
     WalletListModel wallet_list_model{*node, nullptr};
+    QObject::connect(&wallet_controller, &WalletQmlController::walletLoadStateChanged,
+                     &wallet_list_model, &WalletListModel::setWalletLoadState);
+    QObject::connect(&wallet_list_model, &WalletListModel::walletListChanged,
+                     &wallet_controller, [&wallet_controller](bool has_wallets) {
+                         wallet_controller.setNoWalletsFound(!has_wallets);
+                     });
+    if (!gArgs.GetBoolArg("-disablewallet", false)) {
+        QObject::connect(&wallet_controller, &WalletQmlController::initializedChanged,
+                         &wallet_list_model, [&wallet_controller, &wallet_list_model]() {
+                             if (wallet_controller.initialized()) {
+                                 wallet_list_model.listWalletDir();
+                             }
+                         });
+    }
     engine.rootContext()->setContextProperty("walletController", &wallet_controller);
     engine.rootContext()->setContextProperty("walletListModel", &wallet_list_model);
 #endif

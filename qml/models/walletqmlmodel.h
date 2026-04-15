@@ -84,6 +84,7 @@ public:
     Q_INVOKABLE QString estimatedFeeForTarget(unsigned int target_blocks) const;
     Q_INVOKABLE int feeTargetIndex(unsigned int target_blocks) const;
     Q_INVOKABLE void scheduleFeeEstimates();
+    void removeWallet();
 
     std::set<interfaces::WalletTx> getWalletTxs() const;
     interfaces::WalletTx getWalletTx(const uint256& hash) const;
@@ -97,6 +98,8 @@ public:
     virtual std::unique_ptr<interfaces::Handler> handleTransactionChanged(TransactionChangedFn fn);
     using StatusChangedFn = std::function<void()>;
     virtual std::unique_ptr<interfaces::Handler> handleStatusChanged(StatusChangedFn fn);
+    using UnloadFn = std::function<void()>;
+    virtual std::unique_ptr<interfaces::Handler> handleUnload(UnloadFn fn);
 
     bool canBumpTransaction(const uint256& txid) const;
 
@@ -141,6 +144,7 @@ Q_SIGNALS:
     void securityStateChanged();
     void transactionErrorChanged();
     void transactionNeedsUnlockChanged();
+    void walletUnloaded();
 
 private:
     void initializeFeeEstimator();
@@ -186,6 +190,7 @@ private:
     bool m_transaction_needs_unlock{false};
     std::unique_ptr<interfaces::Handler> m_handler_status_changed;
     std::unique_ptr<interfaces::Handler> m_handler_transaction_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_unload;
     int m_display_unit{0};
 };
 

@@ -39,7 +39,6 @@ Page {
             return
         }
 
-        walletListModel.listWalletDir()
         if (walletController.noWalletsFound) {
             root.addWallet()
         } else {
