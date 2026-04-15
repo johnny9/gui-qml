@@ -46,6 +46,8 @@ public:
     ~WalletQmlController();
 
     Q_INVOKABLE void setSelectedWallet(QString path, QString wallet_format = QString());
+    Q_INVOKABLE bool isWalletOpen(const QString& path);
+    Q_INVOKABLE void closeWallet(const QString& path);
     Q_INVOKABLE bool createSingleSigWallet(const QString &name, const QString &passphrase);
     Q_INVOKABLE bool createExternalSignerWallet(const QString& name);
     Q_INVOKABLE void importWallet(const QString& path);
@@ -86,6 +88,7 @@ Q_SIGNALS:
     void initializedChanged();
     void isWalletLoadedChanged();
     void noWalletsFoundChanged();
+    void walletLoadStateChanged(const QString& wallet_name, bool loaded);
     void walletLoadInProgressChanged();
     void walletLoadErrorChanged();
     void walletLoadWarningsChanged();
@@ -113,6 +116,8 @@ private:
     };
 
     void handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet);
+    void registerWalletModel(WalletQmlModel* wallet_model);
+    void removeWalletModel(WalletQmlModel* wallet_model);
     void startWalletImport(const QString& path);
     void startWalletLoad(const QString& path, const QString& wallet_format = QString());
     void startWalletMigration(const QString& path, SecureString passphrase);
@@ -137,7 +142,7 @@ private:
     WalletQmlModel* m_selected_wallet;
     QObject* m_worker;
     QThread* m_worker_thread;
-    QMutex m_wallets_mutex;
+    mutable QMutex m_wallets_mutex;
     std::vector<WalletQmlModel*> m_wallets;
     std::unique_ptr<interfaces::Handler> m_handler_load_wallet;
     bool m_is_wallet_loaded{false};

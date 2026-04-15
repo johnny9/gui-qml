@@ -28,12 +28,15 @@ Page {
         if (!walletController.initialized) {
             return
         }
-
+        if (walletSelect.opened) {
+            walletSelect.close()
+            return
+        }
         walletListModel.listWalletDir()
         if (walletController.noWalletsFound) {
             root.addWallet()
         } else {
-            walletSelect.opened ? walletSelect.close() : walletSelect.open()
+            walletSelect.open()
         }
     }
 

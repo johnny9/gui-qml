@@ -443,6 +443,14 @@ QString WalletQmlModel::newAddress(QString label)
     return QString::fromStdString(EncodeDestination(dest.value()));
 }
 
+void WalletQmlModel::removeWallet()
+{
+    if (!m_wallet) {
+        return;
+    }
+    m_wallet->remove();
+}
+
 void WalletQmlModel::commitPaymentRequest()
 {
     if (!m_wallet || !m_current_payment_request) {
@@ -720,6 +728,14 @@ std::unique_ptr<interfaces::Handler> WalletQmlModel::handleStatusChanged(StatusC
         return nullptr;
     }
     return m_wallet->handleStatusChanged(fn);
+}
+
+std::unique_ptr<interfaces::Handler> WalletQmlModel::handleUnload(UnloadFn fn)
+{
+    if (!m_wallet) {
+        return nullptr;
+    }
+    return m_wallet->handleUnload(fn);
 }
 
 bool WalletQmlModel::prepareTransaction()
@@ -1059,6 +1075,11 @@ void WalletQmlModel::subscribeToWalletSignals()
             Q_EMIT balanceChanged();
         }, Qt::QueuedConnection);
     });
+    m_handler_unload = handleUnload([this]() {
+        QMetaObject::invokeMethod(this, [this] {
+            Q_EMIT walletUnloaded();
+        }, Qt::QueuedConnection);
+    });
 }
 
 void WalletQmlModel::unsubscribeFromWalletSignals()
@@ -1068,6 +1089,9 @@ void WalletQmlModel::unsubscribeFromWalletSignals()
     }
     if (m_handler_transaction_changed) {
         m_handler_transaction_changed->disconnect();
+    }
+    if (m_handler_unload) {
+        m_handler_unload->disconnect();
     }
 }
 
