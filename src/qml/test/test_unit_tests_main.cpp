@@ -22,6 +22,5 @@ int main(int argc, char* argv[])
     for (const auto& test : qttestregistry::SortedEntries()) {
         status |= test.run(argc, argv);
     }
-
     return status;
 }

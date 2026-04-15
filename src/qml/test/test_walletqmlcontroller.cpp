@@ -4,8 +4,6 @@
 
 #include <QtTest/QtTest>
 
-#include <gmock/gmock.h>
-
 #include <common/settings.h>
 #include <interfaces/handler.h>
 #include <interfaces/wallet.h>
@@ -13,12 +11,22 @@
 #include <scheduler.h>
 #include <test/mocks/mocknode.h>
 #include <util/translation.h>
+#include <wallet/walletutil.h>
+
+#include <gmock/gmock.h>
 
 #ifndef BITCOINQML_NO_TEST_MAIN
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 #endif
 
 namespace {
+constexpr auto NOT_INITIALIZED_ERROR{"Wallets are still loading. Try again in a moment."};
+
+std::unique_ptr<interfaces::Handler> MakeNoopHandler()
+{
+    return interfaces::MakeCleanupHandler([] {});
+}
+
 class FakeExternalSigner : public interfaces::ExternalSigner
 {
 public:
@@ -39,19 +47,19 @@ std::vector<std::unique_ptr<interfaces::ExternalSigner>> MakeSigners(std::initia
     return signers;
 }
 
-std::unique_ptr<interfaces::Handler> MakeNoopHandler()
-{
-    return interfaces::MakeCleanupHandler([] {});
-}
-
 class FakeWalletLoader : public interfaces::WalletLoader
 {
 public:
+    int create_wallet_calls{0};
     int handle_load_wallet_calls{0};
     int get_wallets_calls{0};
     int list_wallet_dir_calls{0};
     int load_wallet_calls{0};
 
+    std::function<util::Result<std::unique_ptr<interfaces::Wallet>>(const std::string&, const SecureString&, uint64_t, std::vector<bilingual_str>&)>
+        create_wallet_fn = [](const std::string&, const SecureString&, uint64_t, std::vector<bilingual_str>&) {
+            return util::Error{Untranslated("Unexpected createWallet call")};
+        };
     std::function<std::vector<std::unique_ptr<interfaces::Wallet>>()> get_wallets_fn = [] {
         return std::vector<std::unique_ptr<interfaces::Wallet>>{};
     };
@@ -65,12 +73,13 @@ public:
     void setMockTime(int64_t) override {}
     void schedulerMockForward(std::chrono::seconds) override {}
     util::Result<std::unique_ptr<interfaces::Wallet>> createWallet(
-        const std::string&,
-        const SecureString&,
-        uint64_t,
-        std::vector<bilingual_str>&) override
+        const std::string& name,
+        const SecureString& passphrase,
+        uint64_t wallet_creation_flags,
+        std::vector<bilingual_str>& warnings) override
     {
-        return util::Error{Untranslated("Unexpected createWallet call")};
+        ++create_wallet_calls;
+        return create_wallet_fn(name, passphrase, wallet_creation_flags, warnings);
     }
     util::Result<std::unique_ptr<interfaces::Wallet>> loadWallet(const std::string&, std::vector<bilingual_str>&) override
     {
@@ -131,6 +140,10 @@ private Q_SLOTS:
     void externalSignerCreationRequiresExactlyOneSigner();
     void externalSignerSuggestionUsesSignerName();
     void initializedControllerSignalsMigrationForLegacyWallet();
+    void createWalletBeforeInitializationReturnsFalseAndSetsError();
+    void importWalletBeforeInitializationSetsLoadError();
+    void selectWalletBeforeInitializationSetsLoadError();
+    void initializedControllerPropagatesCreateErrors();
 };
 
 void WalletQmlControllerTests::externalSignerCreationRequiresConfiguredPath()
@@ -217,6 +230,74 @@ void WalletQmlControllerTests::initializedControllerSignalsMigrationForLegacyWal
     QCOMPARE(loader.load_wallet_calls, 0);
     QVERIFY(!controller.walletLoadInProgress());
     QVERIFY(controller.walletLoadError().isEmpty());
+}
+
+void WalletQmlControllerTests::createWalletBeforeInitializationReturnsFalseAndSetsError()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    WalletQmlController controller(node);
+
+    QVERIFY(!controller.createSingleSigWallet("test_wallet", "secret"));
+    QCOMPARE(controller.walletCreateError(), QString{NOT_INITIALIZED_ERROR});
+    QVERIFY(!controller.isWalletLoaded());
+}
+
+void WalletQmlControllerTests::importWalletBeforeInitializationSetsLoadError()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    WalletQmlController controller(node);
+
+    controller.importWallet("/tmp/test_wallet.dat");
+    QCOMPARE(controller.walletLoadError(), QString{NOT_INITIALIZED_ERROR});
+}
+
+void WalletQmlControllerTests::selectWalletBeforeInitializationSetsLoadError()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    WalletQmlController controller(node);
+
+    controller.setSelectedWallet("test_wallet");
+    QCOMPARE(controller.walletLoadError(), QString{NOT_INITIALIZED_ERROR});
+}
+
+void WalletQmlControllerTests::initializedControllerPropagatesCreateErrors()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QVERIFY(controller.initialized());
+    QVERIFY(controller.noWalletsFound());
+
+    bool saw_expected_passphrase{false};
+    bool saw_expected_flags{false};
+    loader.create_wallet_fn = [&](const std::string&,
+                                  const SecureString& passphrase,
+                                  uint64_t wallet_creation_flags,
+                                  std::vector<bilingual_str>&) {
+        saw_expected_passphrase = (passphrase == SecureString{"secret"});
+        saw_expected_flags = (wallet_creation_flags == wallet::WALLET_FLAG_DESCRIPTORS);
+        return util::Result<std::unique_ptr<interfaces::Wallet>>{
+            util::Error{Untranslated("Wallet creation failed.")}};
+    };
+
+    QVERIFY(!controller.createSingleSigWallet("test_wallet", "secret"));
+    QVERIFY(saw_expected_passphrase);
+    QVERIFY(saw_expected_flags);
+    QCOMPARE(loader.create_wallet_calls, 1);
+    QCOMPARE(controller.walletCreateError(), QString{"Wallet creation failed."});
+    QVERIFY(!controller.isWalletLoaded());
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

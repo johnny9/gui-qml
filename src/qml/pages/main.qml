@@ -160,6 +160,12 @@ ApplicationWindow {
         Shutdown {}
     }
 
+    Component.onCompleted: {
+        if (!needOnboarding && AppMode.walletEnabled && AppMode.isDesktop) {
+            nodeModel.startNodeInitializionThread()
+        }
+    }
+
     Component {
         id: node
         PageStack {
