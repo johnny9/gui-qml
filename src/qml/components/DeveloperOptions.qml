@@ -9,7 +9,6 @@ import "../controls"
 
 ColumnLayout {
     id: root
-    signal debugLogViewerRequested
     spacing: 4
     Setting {
         id: dbcacheSetting
@@ -69,15 +68,5 @@ ColumnLayout {
             onToggled: Theme.toggleDark()
         }
         onClicked: loadedItem.toggled()
-    }
-    Separator { Layout.fillWidth: true }
-    Setting {
-        id: debugLogSetting
-        objectName: "debugLogSetting"
-        Layout.fillWidth: true
-        header: qsTr("Open Debug Log")
-        description: qsTr("View the current node debug.log file")
-        actionItem: CaretRightIcon { color: debugLogSetting.stateColor }
-        onClicked: root.debugLogViewerRequested()
     }
 }

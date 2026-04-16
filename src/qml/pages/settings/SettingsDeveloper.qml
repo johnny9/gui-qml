@@ -25,9 +25,7 @@ InformationPage {
     headerText: qsTr("Developer options")
     headerMargin: 0
     detailActive: true
-    detailItem: DeveloperOptions {
-        onDebugLogViewerRequested: root.StackView.view.push(debugLogPage)
-    }
+    detailItem: DeveloperOptions {}
 
     states: [
         State {
@@ -52,13 +50,6 @@ InformationPage {
             headerBold: true
             headerSize: 18
             header: qsTr("Developer settings")
-        }
-    }
-
-    Component {
-        id: debugLogPage
-        SettingsDebugLog {
-            onBack: root.StackView.view.pop()
         }
     }
 }

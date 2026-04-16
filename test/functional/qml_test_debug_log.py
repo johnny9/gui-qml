@@ -4,8 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the in-app Debug Log viewer.
 
-Walks through Settings → About → Developer Options → Debug Log and
-verifies:
+Walks through Settings → Debug Log and verifies:
   1. The viewer page loads with a visible search bar and log list.
   2. The log list is non-empty (entries were actually loaded).
   3. Typing in the search field filters the list; clearing it restores
@@ -98,11 +97,7 @@ def navigate_to_debug_log(gui):
     gui.wait_for_page("nodeRunner", timeout_ms=10000)
     gui.click("nodeSettingsButton")
     gui.wait_for_page("nodeSettingsStack", timeout_ms=5000)
-    gui.click("gotoAboutSetting")
-    gui.wait_for_page("settingsAbout", timeout_ms=5000)
-    gui.click("gotoDeveloperSetting")
-    gui.wait_for_page("settingsDeveloper", timeout_ms=5000)
-    gui.click("debugLogSetting")
+    gui.click("settingsDebugLog")
     gui.wait_for_page("settingsDebugLog", timeout_ms=5000)
 
 
@@ -160,11 +155,11 @@ def test_auto_refresh(gui, datadir, current_count):
 
 
 def test_back_navigation(gui):
-    """Clicking Back returns to the developer settings page."""
+    """Clicking Back returns to the node settings page."""
     print("\n── test_back_navigation ──────────────────────────────────────────")
     gui.click("debugLogBackButton")
-    gui.wait_for_page("settingsDeveloper", timeout_ms=5000)
-    print("  PASSED: back navigation returned to settingsDeveloper")
+    gui.wait_for_page("nodeSettingsStack", timeout_ms=5000)
+    print("  PASSED: back navigation returned to nodeSettingsStack")
 
 
 def test_search_filter(gui, total_count):
