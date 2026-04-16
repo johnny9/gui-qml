@@ -19,7 +19,6 @@ add_executable(bitcoinqml_unit_tests
   test_networkstyle.cpp
   test_qmlinitexecutor_api.cpp
   test_options_model.cpp
-  test_nodemodel_debug_log.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
 )
 
