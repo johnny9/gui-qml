@@ -33,6 +33,7 @@
 ///   {"cmd": "get_list_item_property", "objectName": "<view>", "index": <zero-based-row>, "prop": "<delegate-root-property>"}
 ///   {"cmd": "save_screenshot", "path": "<png_path>"}
 ///   {"cmd": "list_objects"}
+///   {"cmd": "close_window"}
 class TestBridge : public QObject
 {
     Q_OBJECT
@@ -80,6 +81,7 @@ private:
     QByteArray cmdGetListItemProperty(const QString& view_object_name, int row_index, const QString& prop);
     QByteArray cmdSaveScreenshot(const QString& path);
     QByteArray cmdListObjects();
+    QByteArray cmdCloseWindow();
 
     /// Build a JSON error response.
     static QByteArray errorResponse(const QString& message);
