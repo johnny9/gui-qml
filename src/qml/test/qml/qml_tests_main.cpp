@@ -535,6 +535,12 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(int sendTransactionCalls READ sendTransactionCalls NOTIFY sendTransactionCallsChanged)
     Q_PROPERTY(bool isEncrypted MEMBER m_is_encrypted NOTIFY securityStateChanged)
     Q_PROPERTY(bool isLocked MEMBER m_is_locked NOTIFY securityStateChanged)
+    Q_PROPERTY(QString keyScheme MEMBER m_key_scheme NOTIFY walletInfoChanged)
+    Q_PROPERTY(QString privateKeysStatus MEMBER m_private_keys_status NOTIFY walletInfoChanged)
+    Q_PROPERTY(QString externalSignerStatus MEMBER m_external_signer_status NOTIFY walletInfoChanged)
+    Q_PROPERTY(QString settingsError MEMBER m_settings_error NOTIFY settingsErrorChanged)
+    Q_PROPERTY(QString lastBackupPath READ lastBackupPath NOTIFY backupWalletCallsChanged)
+    Q_PROPERTY(int backupWalletCalls READ backupWalletCalls NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(QString transactionError MEMBER m_transaction_error NOTIFY transactionErrorChanged)
     Q_PROPERTY(bool transactionNeedsUnlock MEMBER m_transaction_needs_unlock NOTIFY transactionNeedsUnlockChanged)
 
@@ -573,6 +579,8 @@ public:
     int prepareTransactionCalls() const { return m_prepare_transaction_calls; }
     int scheduleFeeEstimatesCalls() const { return m_schedule_fee_estimates_calls; }
     int sendTransactionCalls() const { return m_send_transaction_calls; }
+    QString lastBackupPath() const { return m_last_backup_path; }
+    int backupWalletCalls() const { return m_backup_wallet_calls; }
     Q_INVOKABLE QString estimatedFeeForTarget(const int target) const
     {
         const QString estimate = m_fee_estimates.value(target);
@@ -684,6 +692,27 @@ public:
         Q_EMIT request->idChanged();
         Q_EMIT request->addressChanged();
     }
+    Q_INVOKABLE void clearSettingsError()
+    {
+        if (m_settings_error.isEmpty()) return;
+        m_settings_error.clear();
+        Q_EMIT settingsErrorChanged();
+    }
+    Q_INVOKABLE bool backupWallet(const QString& path)
+    {
+        m_last_backup_path = path;
+        ++m_backup_wallet_calls;
+        clearSettingsError();
+        Q_EMIT backupWalletCallsChanged();
+        return true;
+    }
+    Q_INVOKABLE void resetWalletSettingsTestState()
+    {
+        m_last_backup_path.clear();
+        m_backup_wallet_calls = 0;
+        clearSettingsError();
+        Q_EMIT backupWalletCallsChanged();
+    }
 
 Q_SIGNALS:
     void nameChanged();
@@ -700,6 +729,9 @@ Q_SIGNALS:
     void scheduleFeeEstimatesCallsChanged();
     void sendTransactionCallsChanged();
     void securityStateChanged();
+    void walletInfoChanged();
+    void settingsErrorChanged();
+    void backupWalletCallsChanged();
     void transactionErrorChanged();
     void transactionNeedsUnlockChanged();
 
@@ -724,6 +756,12 @@ private:
     bool m_send_transaction_result{true};
     bool m_is_encrypted{false};
     bool m_is_locked{false};
+    QString m_key_scheme{QStringLiteral("Descriptor")};
+    QString m_private_keys_status{QStringLiteral("Enabled")};
+    QString m_external_signer_status{QStringLiteral("Not used")};
+    QString m_settings_error;
+    QString m_last_backup_path;
+    int m_backup_wallet_calls{0};
     QString m_transaction_error;
     bool m_transaction_needs_unlock{false};
     int m_fee_estimate_revision{1};
@@ -773,6 +811,9 @@ public:
     QString lastSelectedWalletName() const { return m_last_selected_wallet_name; }
     QString lastClosedWalletName() const { return m_last_closed_wallet_name; }
     int closeWalletCalls() const { return m_close_wallet_calls; }
+    Q_INVOKABLE QString homePath() const { return QStringLiteral("/tmp"); }
+    Q_INVOKABLE QString normalizeWalletPath(const QString& path) const { return path; }
+    Q_INVOKABLE bool walletPathExists(const QString&) const { return false; }
     void setSelectedWalletObject(QObject* wallet)
     {
         if (m_selected_wallet == wallet) return;

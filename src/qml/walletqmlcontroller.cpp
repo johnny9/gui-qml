@@ -154,6 +154,11 @@ bool WalletQmlController::isWalletOpen(const QString& path)
     return false;
 }
 
+QString WalletQmlController::homePath() const
+{
+    return QDir::homePath();
+}
+
 void WalletQmlController::closeWallet(const QString& path)
 {
     if (!m_initialized) {
@@ -710,6 +715,8 @@ void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> w
         }
     };
 
+    bool selected_existing_wallet{false};
+    bool load_was_requested{false};
     {
         QMutexLocker locker(&m_wallets_mutex);
         if (!m_wallets.empty()) {
@@ -717,18 +724,25 @@ void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> w
             for (WalletQmlModel* wallet_model : m_wallets) {
                 if (wallet_model->name() == name) {
                     m_selected_wallet = wallet_model;
-                    Q_EMIT selectedWalletChanged();
-                    setWalletLoaded(true);
-                    setNoWalletsFound(false);
+                    selected_existing_wallet = true;
                     if (m_wallet_load_requested) {
                         m_wallet_load_requested = false;
-                        setWalletLoadInProgress(false);
+                        load_was_requested = true;
                     }
-                    emit_load_completion();
-                    return;
+                    break;
                 }
             }
         }
+    }
+    if (selected_existing_wallet) {
+        Q_EMIT selectedWalletChanged();
+        setWalletLoaded(true);
+        setNoWalletsFound(false);
+        if (load_was_requested) {
+            setWalletLoadInProgress(false);
+        }
+        emit_load_completion();
+        return;
     }
 
     const QString loaded_wallet_name = QString::fromStdString(wallet->getWalletName());

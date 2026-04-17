@@ -234,8 +234,8 @@ def ensure_desktop_wallets_visible(gui):
 def open_wallet_settings(gui):
     ensure_desktop_wallets_visible(gui)
     gui.click("desktopWalletSettingsTabButton")
-    gui.wait_for_property("settingsWallet", "visible", True, timeout_ms=10000)
-    gui.click("settingsWallet")
+    gui.wait_for_property("settingsExternalSigner", "visible", True, timeout_ms=10000)
+    gui.click("settingsExternalSigner")
     gui.wait_for_property("externalSignerPathInput", "visible", True, timeout_ms=10000)
 
 

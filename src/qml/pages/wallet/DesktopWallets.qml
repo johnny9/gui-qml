@@ -24,12 +24,24 @@ Page {
     signal addWallet()
     signal sendTransaction(bool multipleRecipientsEnabled)
 
-    function handleWalletBadgeClicked() {
+    function toggleWalletSelection() {
         if (!walletController.initialized) {
             return
         }
         if (walletSelect.opened) {
             walletSelect.close()
+            return
+        }
+        walletListModel.listWalletDir()
+        if (walletController.noWalletsFound) {
+            root.addWallet()
+        } else {
+            walletSelect.open()
+        }
+    }
+
+    function openWalletSelection() {
+        if (!walletController.initialized) {
             return
         }
         walletListModel.listWalletDir()
@@ -95,7 +107,10 @@ Page {
             loading: !walletController.initialized
             noWalletLoaded: !walletController.isWalletLoaded
             noWalletsFound: walletController.noWalletsFound
-            onClicked: root.handleWalletBadgeClicked()
+
+            onClicked: {
+                root.toggleWalletSelection()
+            }
 
             WalletSelect {
                 id: walletSelect
@@ -214,6 +229,7 @@ Page {
         NodeSettings {
             id: nodeSettings
             showDoneButton: false
+            onSelectWalletRequested: root.openWalletSelection()
         }
     }
 

@@ -219,6 +219,13 @@ def close_wallet_from_selector(gui, wallet_name):
     gui.click(object_name)
 
 
+def open_wallet_settings_page(gui):
+    gui.click("desktopWalletSettingsTabButton")
+    gui.wait_for_property("settingsWallet", "visible", True, timeout_ms=10000)
+    gui.click("settingsWallet")
+    gui.wait_for_page("walletSettingsPage", timeout_ms=10000)
+
+
 def open_import_wallet_page(gui):
     gui.wait_for_property("importWalletButton", "visible", True, timeout_ms=10000)
     gui.wait_for_property("importWalletButton", "enabled", True, timeout_ms=25000)
@@ -525,6 +532,11 @@ def case_close_loaded_wallet_from_selector(harness, checkpoints):
     selected_wallet = gui.get_property("walletBadge", "text")
     assert selected_wallet in wallet_names, f"Unexpected initially selected wallet: {selected_wallet!r}"
     remaining_wallet = next(name for name in wallet_names if name != selected_wallet)
+
+    open_wallet_settings_page(gui)
+    gui.wait_for_property("walletSettingsPasswordRow", "visible", True, timeout_ms=10000)
+    gui.wait_for_property("walletSettingsBackupRow", "visible", True, timeout_ms=10000)
+    checkpoints.checkpoint("wallet settings opened", gui)
 
     open_wallet_selector(gui)
     gui.settle()

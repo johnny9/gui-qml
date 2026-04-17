@@ -58,4 +58,13 @@ TestCase {
         compare(walletListModel.listWalletDirCalls, 2)
         tryCompare(popup, "opened", true)
     }
+
+    function test_explicit_open_wallet_selection_refreshes_wallet_list() {
+        const page = createDesktopWallets()
+        const popup = findChild(page, "walletSelectPopup")
+
+        page.openWalletSelection()
+        compare(walletListModel.listWalletDirCalls, 1)
+        tryCompare(popup, "opened", true)
+    }
 }

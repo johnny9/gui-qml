@@ -57,6 +57,7 @@ public:
     Q_INVOKABLE void clearWalletMigrationStatus();
     Q_INVOKABLE QString normalizeWalletPath(const QString& path) const;
     Q_INVOKABLE bool walletPathExists(const QString& path) const;
+    Q_INVOKABLE QString homePath() const;
     Q_INVOKABLE void requestOpenWalletSettings();
     Q_INVOKABLE void refreshExternalSignerStatus();
 
