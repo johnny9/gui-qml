@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2026 The Bitcoin Core developers
+// Copyright (c) 2024 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -83,7 +83,7 @@ Popup {
             delegate: ItemDelegate {
                 id: delegate
                 required property string name;
-                required property string format;
+                required property string displayName;
                 required property int loadState;
 
                 objectName: "walletSelectItem_" + name.replace(/[^A-Za-z0-9_]/g, "_")
@@ -111,7 +111,7 @@ Popup {
                     CoreText {
                         objectName: "walletSelectName_" + delegate.name.replace(/[^A-Za-z0-9_]/g, "_")
                         Layout.fillWidth: true
-                        text: delegate.name
+                        text: delegate.displayName
                         horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         font.pixelSize: 14

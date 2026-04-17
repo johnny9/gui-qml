@@ -17,6 +17,8 @@ Page {
 
     property WalletQmlModel wallet: walletController.selectedWallet
     property string errorText: ""
+    property bool editingName: false
+    property string pendingDisplayName: ""
 
     signal back()
     signal selectWalletRequested()
@@ -74,6 +76,28 @@ Page {
         backupDialog.open()
     }
 
+    function beginNameEdit() {
+        if (!root.wallet) {
+            return
+        }
+        root.pendingDisplayName = root.wallet.displayName
+        root.editingName = true
+    }
+
+    function cancelNameEdit() {
+        root.pendingDisplayName = root.wallet ? root.wallet.displayName : ""
+        root.editingName = false
+    }
+
+    function confirmNameEdit() {
+        if (!root.wallet) {
+            return
+        }
+        if (walletController.setWalletDisplayName(root.wallet.name, root.pendingDisplayName)) {
+            root.editingName = false
+        }
+    }
+
     header: NavigationBar2 {
         leftItem: NavButton {
             objectName: "walletSettingsBackButton"
@@ -121,6 +145,19 @@ Page {
         function onSettingsErrorChanged() {
             root.errorText = root.wallet ? root.wallet.settingsError : ""
         }
+        function onDisplayNameChanged() {
+            if (!root.editingName) {
+                root.pendingDisplayName = root.wallet ? root.wallet.displayName : ""
+            }
+        }
+    }
+
+    Connections {
+        target: walletController
+        function onSelectedWalletChanged() {
+            root.editingName = false
+            root.pendingDisplayName = root.wallet ? root.wallet.displayName : ""
+        }
     }
 
     ColumnLayout {
@@ -157,19 +194,122 @@ Page {
         anchors.topMargin: 30
         spacing: 0
 
-        KeyValueRow {
+        Item {
             objectName: "walletSettingsNameRow"
-            keyWidth: 150
             Layout.fillWidth: true
             Layout.topMargin: 12
             Layout.bottomMargin: 15
-            key: KeyText {
-                objectName: "walletSettingsNameKey"
-                text: qsTr("Name")
-            }
-            value: ValueText {
-                objectName: "walletSettingsNameValue"
-                text: root.wallet ? root.wallet.name : ""
+            implicitHeight: 36
+
+            RowLayout {
+                anchors.fill: parent
+                spacing: 10
+
+                KeyText {
+                    objectName: "walletSettingsNameKey"
+                    Layout.preferredWidth: 150
+                    text: qsTr("Name")
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                Loader {
+                    Layout.alignment: Qt.AlignVCenter
+                    active: root.editingName
+                    visible: active
+                    sourceComponent: RowLayout {
+                        spacing: 8
+
+                        TextField {
+                            id: nameEditField
+                            objectName: "walletSettingsNameEditField"
+                            Layout.preferredWidth: 152
+                            implicitHeight: 36
+                            text: root.pendingDisplayName
+                            color: Theme.color.neutral9
+                            font.family: "Inter"
+                            font.styleName: "Regular"
+                            font.pixelSize: 18
+                            leftPadding: 12
+                            rightPadding: 12
+                            selectByMouse: true
+                            background: Rectangle {
+                                border.color: Theme.color.neutral5
+                                border.width: 1
+                                color: "transparent"
+                                radius: 5
+                            }
+                            onTextChanged: root.pendingDisplayName = text
+                            Component.onCompleted: forceActiveFocus()
+                            Keys.onReturnPressed: root.confirmNameEdit()
+                            Keys.onEnterPressed: root.confirmNameEdit()
+                            Keys.onEscapePressed: root.cancelNameEdit()
+                        }
+
+                        Button {
+                            objectName: "walletSettingsNameCancelButton"
+                            implicitWidth: 30
+                            implicitHeight: 30
+                            padding: 0
+                            background: null
+                            hoverEnabled: AppMode.isDesktop
+                            contentItem: Image {
+                                anchors.fill: parent
+                                source: "qrc:/icons/circle-red-cross"
+                                sourceSize.width: width
+                                sourceSize.height: height
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            onClicked: root.cancelNameEdit()
+                        }
+
+                        Button {
+                            objectName: "walletSettingsNameConfirmButton"
+                            implicitWidth: 30
+                            implicitHeight: 30
+                            padding: 0
+                            enabled: root.pendingDisplayName.trim().length > 0
+                            background: null
+                            hoverEnabled: AppMode.isDesktop
+                            contentItem: Image {
+                                anchors.fill: parent
+                                source: "qrc:/icons/circle-green-check"
+                                sourceSize.width: width
+                                sourceSize.height: height
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            onClicked: root.confirmNameEdit()
+                        }
+                    }
+                }
+
+                Loader {
+                    Layout.alignment: Qt.AlignVCenter
+                    active: !root.editingName
+                    visible: active
+                    sourceComponent: RowLayout {
+                        spacing: 6
+
+                        ValueText {
+                            objectName: "walletSettingsNameValue"
+                            text: root.wallet ? root.wallet.displayName : ""
+                        }
+
+                        IconButton {
+                            objectName: "walletSettingsNameEditButton"
+                            Layout.preferredWidth: 20
+                            Layout.preferredHeight: 20
+                            size: 20
+                            iconSource: "image://images/edit"
+                            iconColor: Theme.color.neutral9
+                            hoverColor: Theme.color.orange
+                            activeColor: Theme.color.orange
+                            onClicked: root.beginNameEdit()
+                        }
+                    }
+                }
             }
         }
 

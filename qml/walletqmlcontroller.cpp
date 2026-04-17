@@ -25,6 +25,7 @@
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QStringList>
 #include <QTimer>
 #include <QUrl>
@@ -205,9 +206,55 @@ bool WalletQmlController::deleteWallet(const QString& path)
         return false;
     }
 
+    QSettings settings;
+    settings.remove(walletDisplayNameKey(wallet_reference));
+    settings.sync();
+    Q_EMIT walletDisplayNamesChanged();
+
     if (m_node.walletLoader().listWalletDir().size() == 0) {
         setNoWalletsFound(true);
     }
+    return true;
+}
+
+QString WalletQmlController::walletDisplayName(const QString& path) const
+{
+    const QString trimmed_path = path.trimmed();
+    if (trimmed_path.isEmpty()) {
+        return {};
+    }
+
+    QSettings settings;
+    const QString display_name = settings.value(walletDisplayNameKey(trimmed_path)).toString().trimmed();
+    return display_name.isEmpty() ? trimmed_path : display_name;
+}
+
+bool WalletQmlController::setWalletDisplayName(const QString& path, const QString& display_name)
+{
+    const QString trimmed_path = path.trimmed();
+    if (trimmed_path.isEmpty()) {
+        return false;
+    }
+
+    const QString trimmed_name = display_name.trimmed();
+    QSettings settings;
+    if (trimmed_name.isEmpty() || trimmed_name == trimmed_path) {
+        settings.remove(walletDisplayNameKey(trimmed_path));
+    } else {
+        settings.setValue(walletDisplayNameKey(trimmed_path), trimmed_name);
+    }
+    settings.sync();
+
+    {
+        QMutexLocker locker(&m_wallets_mutex);
+        for (WalletQmlModel* wallet : m_wallets) {
+            if (wallet->name() == trimmed_path) {
+                applyWalletDisplayName(wallet);
+            }
+        }
+    }
+
+    Q_EMIT walletDisplayNamesChanged();
     return true;
 }
 
@@ -300,6 +347,7 @@ bool WalletQmlController::createSingleSigWallet(const QString &name, const QStri
             QMutexLocker locker(&m_wallets_mutex);
             m_selected_wallet = new WalletQmlModel(std::move(*wallet));
             registerWalletModel(m_selected_wallet);
+            applyWalletDisplayName(m_selected_wallet);
             m_wallets.push_back(m_selected_wallet);
         }
         Q_EMIT walletLoadStateChanged(loaded_wallet_name, true);
@@ -685,6 +733,19 @@ QString WalletQmlController::walletStoragePath(const QString& wallet_reference) 
     return QDir(wallet_dir_path).absoluteFilePath(wallet_reference);
 }
 
+QString WalletQmlController::walletDisplayNameKey(const QString& path) const
+{
+    return QStringLiteral("walletDisplayNames/%1").arg(path);
+}
+
+void WalletQmlController::applyWalletDisplayName(WalletQmlModel* wallet_model) const
+{
+    if (!wallet_model) {
+        return;
+    }
+    wallet_model->setDisplayName(walletDisplayName(wallet_model->name()));
+}
+
 void WalletQmlController::startWalletImport(const QString& path)
 {
     const QString normalized_path = normalizeWalletPath(path);
@@ -777,6 +838,7 @@ void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> w
         }
     }
     if (selected_existing_wallet) {
+        applyWalletDisplayName(m_selected_wallet);
         Q_EMIT selectedWalletChanged();
         setWalletLoaded(true);
         setNoWalletsFound(false);
@@ -793,6 +855,7 @@ void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> w
     registerWalletModel(wallet_model);
     {
         QMutexLocker locker(&m_wallets_mutex);
+        applyWalletDisplayName(wallet_model);
         m_selected_wallet = wallet_model;
         m_wallets.push_back(m_selected_wallet);
     }
@@ -824,6 +887,7 @@ void WalletQmlController::initialize()
         loaded_wallet_names.append(QString::fromStdString(wallet->getWalletName()));
         auto* wallet_model = new WalletQmlModel(std::move(wallet));
         registerWalletModel(wallet_model);
+        applyWalletDisplayName(wallet_model);
         m_wallets.push_back(wallet_model);
     }
     for (const QString& wallet_name : loaded_wallet_names) {

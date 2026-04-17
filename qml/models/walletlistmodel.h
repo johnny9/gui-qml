@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2026 The Bitcoin Core developers
+// Copyright (c) 2024 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -31,6 +31,7 @@ public:
     enum Roles {
         NameRole = Qt::UserRole + 1,
         FormatRole,
+        DisplayNameRole,
         LoadStateRole,
     };
 
@@ -44,6 +45,7 @@ Q_SIGNALS:
 public Q_SLOTS:
     void listWalletDir();
     void setWalletLoadState(const QString& wallet_name, bool loaded);
+    void refreshDisplayNames();
 
 private:
     struct Item {
