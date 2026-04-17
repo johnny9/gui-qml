@@ -24,6 +24,8 @@
 #include <memory>
 #include <vector>
 
+#include <QSettings>
+
 namespace {
 using ::testing::Invoke;
 using ::testing::NiceMock;
@@ -284,6 +286,7 @@ private Q_SLOTS:
     void prepareTransactionWithPassphraseReportsCreateErrorAndRelocks();
     void sendTransactionCommitsPreparedTransactionWithoutUnlockingAgain();
     void sendTransactionWithPrivateKeysDisabledDoesNotCommit();
+    void displayNameDefaultsToWalletName();
     void detailPropertiesReflectWalletCapabilities();
     void encryptWalletUpdatesSecurityState();
     void changeWalletPassphraseForwardsPasswords();
@@ -293,6 +296,16 @@ private Q_SLOTS:
 void WalletQmlModelTests::initTestCase()
 {
     SelectParams(ChainType::MAIN);
+}
+
+void WalletQmlModelTests::displayNameDefaultsToWalletName()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+
+    QCOMPARE(model->displayName(), QString("fake-wallet"));
+    model->setDisplayName("Personal");
+    QCOMPARE(model->displayName(), QString("Personal"));
 }
 
 void WalletQmlModelTests::detailPropertiesReflectWalletCapabilities()

@@ -48,6 +48,8 @@ public:
     Q_INVOKABLE void setSelectedWallet(QString path, QString wallet_format = QString());
     Q_INVOKABLE bool isWalletOpen(const QString& path);
     Q_INVOKABLE void closeWallet(const QString& path);
+    Q_INVOKABLE QString walletDisplayName(const QString& path) const;
+    Q_INVOKABLE bool setWalletDisplayName(const QString& path, const QString& display_name);
     Q_INVOKABLE bool createSingleSigWallet(const QString &name, const QString &passphrase);
     Q_INVOKABLE bool createExternalSignerWallet(const QString& name);
     Q_INVOKABLE void importWallet(const QString& path);
@@ -105,6 +107,7 @@ Q_SIGNALS:
     void lastImportedWalletInfoChanged();
     void openWalletSettingsRequested();
     void externalSignerStatusChanged();
+    void walletDisplayNamesChanged();
 
 public Q_SLOTS:
     void initialize();
@@ -125,6 +128,8 @@ private:
     QString resolveManagedWalletReference(const QString& path, QString* wallet_format = nullptr) const;
     QString inferWalletLoadTarget(const QString& normalized_path) const;
     QString inferRestoreWalletName(const QString& normalized_path) const;
+    QString walletDisplayNameKey(const QString& path) const;
+    void applyWalletDisplayName(WalletQmlModel* wallet_model) const;
     QString describeImportedWalletKeyScheme(interfaces::Wallet& wallet) const;
     void setWalletCreateError(const QString& error);
     void setWalletLoadInProgress(bool in_progress);

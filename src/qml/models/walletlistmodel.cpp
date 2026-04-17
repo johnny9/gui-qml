@@ -1,10 +1,26 @@
-// Copyright (c) 2024-2026 The Bitcoin Core developers
+// Copyright (c) 2024 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/walletlistmodel.h>
 
 #include <interfaces/node.h>
+
+#include <QSettings>
+
+namespace {
+QString WalletDisplayName(const QString& path)
+{
+    const QString trimmed_path = path.trimmed();
+    if (trimmed_path.isEmpty()) {
+        return {};
+    }
+
+    QSettings settings;
+    const QString display_name = settings.value(QStringLiteral("walletDisplayNames/%1").arg(trimmed_path)).toString().trimmed();
+    return display_name.isEmpty() ? trimmed_path : display_name;
+}
+} // namespace
 
 #include <algorithm>
 
@@ -90,6 +106,8 @@ QVariant WalletListModel::data(const QModelIndex &index, int role) const
     const auto &item = m_items[index.row()];
     switch (role) {
     case Qt::DisplayRole:
+    case DisplayNameRole:
+        return WalletDisplayName(item.name);
     case NameRole:
         return item.name;
     case FormatRole:
@@ -108,6 +126,7 @@ QHash<int, QByteArray> WalletListModel::roleNames() const
     QHash<int, QByteArray> roles;
     roles[NameRole] = "name";
     roles[FormatRole] = "format";
+    roles[DisplayNameRole] = "displayName";
     roles[LoadStateRole] = "loadState";
     return roles;
 }
@@ -174,4 +193,15 @@ int WalletListModel::rowForName(const QString& name) const
         }
     }
     return -1;
+}
+
+void WalletListModel::refreshDisplayNames()
+{
+    if (m_items.isEmpty()) {
+        return;
+    }
+
+    const QModelIndex first = index(0, 0);
+    const QModelIndex last = index(rowCount() - 1, 0);
+    Q_EMIT dataChanged(first, last, {Qt::DisplayRole, DisplayNameRole});
 }

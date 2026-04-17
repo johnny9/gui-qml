@@ -1069,6 +1069,7 @@ public:
     enum Roles {
         NameRole = Qt::UserRole + 1,
         FormatRole,
+        DisplayNameRole,
         LoadStateRole
     };
 
@@ -1081,6 +1082,7 @@ public:
     QVariant data(const QModelIndex& index, int role) const override
     {
         if (!index.isValid() || index.row() < 0 || index.row() >= m_wallet_names.size()) return {};
+        if (role == Qt::DisplayRole || role == DisplayNameRole) return m_wallet_names.at(index.row());
         if (role == NameRole) return m_wallet_names.at(index.row());
         if (role == FormatRole) return QStringLiteral("sqlite");
         if (role == LoadStateRole) return m_wallet_load_states.at(index.row());
@@ -1092,6 +1094,7 @@ public:
         return {
             {NameRole, "name"},
             {FormatRole, "format"},
+            {DisplayNameRole, "displayName"},
             {LoadStateRole, "loadState"},
         };
     }

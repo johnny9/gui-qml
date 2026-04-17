@@ -433,6 +433,22 @@ QString WalletQmlModel::name() const
     return QString::fromStdString(m_wallet->getWalletName());
 }
 
+QString WalletQmlModel::displayName() const
+{
+    if (!m_display_name.isEmpty()) {
+        return m_display_name;
+    }
+    return name();
+}
+
+void WalletQmlModel::setDisplayName(const QString& display_name)
+{
+    if (m_display_name != display_name) {
+        m_display_name = display_name;
+        Q_EMIT displayNameChanged();
+    }
+}
+
 QString WalletQmlModel::keyScheme() const
 {
     if (!m_wallet) {

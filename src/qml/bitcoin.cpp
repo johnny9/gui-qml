@@ -369,6 +369,8 @@ int QmlGuiMain(int argc, char* argv[])
     WalletListModel wallet_list_model{*node, nullptr};
     QObject::connect(&wallet_controller, &WalletQmlController::walletLoadStateChanged,
                      &wallet_list_model, &WalletListModel::setWalletLoadState);
+    QObject::connect(&wallet_controller, &WalletQmlController::walletDisplayNamesChanged,
+                     &wallet_list_model, &WalletListModel::refreshDisplayNames);
     QObject::connect(&wallet_list_model, &WalletListModel::walletListChanged,
                      &wallet_controller, [&wallet_controller](bool has_wallets) {
                          wallet_controller.setNoWalletsFound(!has_wallets);

@@ -13,6 +13,8 @@
 
 #include <gmock/gmock.h>
 
+#include <QSettings>
+
 namespace {
 class FakeWalletLoader : public interfaces::WalletLoader
 {
@@ -70,15 +72,24 @@ class WalletListModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void init();
     void listWalletDirMapsNameAndLoadStateRoles();
     void listWalletDirRemovesMissingEntries();
     void listWalletDirSortsCaseInsensitivelyAndPreservesDuplicateRows();
+    void displayNameRoleUsesStoredAlias();
     void setWalletLoadStateUpdatesLoadStateRole();
     void setWalletLoadStateSortsLoadedRowsFirst();
     void setWalletLoadStateBeforeListWalletDirSeedsInitialRows();
     void setWalletLoadStateAddsNewLoadedWalletAfterInitialList();
     void setWalletLoadStateRemovesOpenOnlyWalletOnUnload();
 };
+
+void WalletListModelTests::init()
+{
+    QSettings settings;
+    settings.remove("walletDisplayNames");
+    settings.sync();
+}
 
 void WalletListModelTests::listWalletDirMapsNameAndLoadStateRoles()
 {
@@ -159,6 +170,27 @@ void WalletListModelTests::listWalletDirSortsCaseInsensitivelyAndPreservesDuplic
     QCOMPARE(model.data(model.index(2, 0), WalletListModel::FormatRole).toString(), QString{"sqlite"});
     QCOMPARE(model.data(model.index(3, 0), WalletListModel::NameRole).toString(), QString{"bravo_wallet"});
     QCOMPARE(model.data(model.index(4, 0), WalletListModel::NameRole).toString(), QString{"zulu_wallet"});
+}
+
+void WalletListModelTests::displayNameRoleUsesStoredAlias()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    loader.wallet_dir_entries = {
+        {"alpha_wallet", "sqlite"},
+    };
+    ExpectWalletLoader(node, loader);
+
+    QSettings settings;
+    settings.setValue("walletDisplayNames/alpha_wallet", "Personal");
+    settings.sync();
+
+    WalletListModel model{node, nullptr};
+    model.listWalletDir();
+
+    QCOMPARE(model.data(model.index(0, 0), WalletListModel::DisplayNameRole).toString(), QString{"Personal"});
 }
 
 void WalletListModelTests::setWalletLoadStateUpdatesLoadStateRole()
