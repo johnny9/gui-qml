@@ -19,13 +19,16 @@ Button {
     property color borderColor: "transparent"
     property color borderHoverColor: "transparent"
     property color borderPressedColor: "transparent"
-    property bool bold: true
+    property bool bold: false
+    property int textFontPixelSize: 18
+    property string textFontStyleName: bold ? "Semi Bold" : "Medium"
 
     contentItem: CoreText {
         text: parent.text
         color: root.textColor
         bold: root.bold
-        font.pixelSize: 18
+        fontStyleName: root.textFontStyleName
+        font.pixelSize: root.textFontPixelSize
     }
     background: Rectangle {
         id: bg

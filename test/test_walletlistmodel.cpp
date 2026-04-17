@@ -72,6 +72,7 @@ class WalletListModelTests : public QObject
 private Q_SLOTS:
     void listWalletDirMapsNameAndLoadStateRoles();
     void listWalletDirSortsCaseInsensitivelyAndPreservesDuplicateRows();
+    void listWalletDirRemovesMissingEntries();
     void setWalletLoadStateUpdatesLoadStateRole();
     void setWalletLoadStateSortsLoadedRowsFirst();
     void setWalletLoadStateBeforeListWalletDirSeedsInitialRows();
@@ -132,6 +133,31 @@ void WalletListModelTests::listWalletDirSortsCaseInsensitivelyAndPreservesDuplic
     QCOMPARE(model.data(model.index(2, 0), WalletListModel::FormatRole).toString(), QString{"sqlite"});
     QCOMPARE(model.data(model.index(3, 0), WalletListModel::NameRole).toString(), QString{"bravo_wallet"});
     QCOMPARE(model.data(model.index(4, 0), WalletListModel::NameRole).toString(), QString{"zulu_wallet"});
+}
+
+void WalletListModelTests::listWalletDirRemovesMissingEntries()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    loader.wallet_dir_entries = {
+        {"alpha_wallet", "sqlite"},
+        {"beta_wallet", "sqlite"},
+    };
+    ExpectWalletLoader(node, loader);
+
+    WalletListModel model{node, nullptr};
+    model.listWalletDir();
+    QCOMPARE(model.rowCount(), 2);
+
+    loader.wallet_dir_entries = {
+        {"beta_wallet", "sqlite"},
+    };
+    model.listWalletDir();
+
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.data(model.index(0, 0), WalletListModel::NameRole).toString(), QString{"beta_wallet"});
 }
 
 void WalletListModelTests::setWalletLoadStateUpdatesLoadStateRole()

@@ -21,6 +21,7 @@
 #include <stdexcept>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QRegularExpression>
@@ -132,6 +133,11 @@ bool WalletQmlController::isWalletOpen(const QString& path)
     return false;
 }
 
+QString WalletQmlController::homePath() const
+{
+    return QDir::homePath();
+}
+
 void WalletQmlController::closeWallet(const QString& path)
 {
     if (!m_initialized) {
@@ -162,6 +168,47 @@ void WalletQmlController::closeWallet(const QString& path)
 
     wallet_to_close->removeWallet();
     removeWalletModel(wallet_to_close);
+}
+
+bool WalletQmlController::deleteWallet(const QString& path)
+{
+    if (!m_initialized) {
+        setWalletLoadError(tr("Wallets are still loading. Try again in a moment."));
+        return false;
+    }
+
+    const QString wallet_reference = resolveManagedWalletReference(path);
+    if (wallet_reference.isEmpty()) {
+        setWalletLoadError(tr("The selected wallet is not available in the wallet directory."));
+        return false;
+    }
+
+    const QString storage_path = walletStoragePath(wallet_reference);
+    if (storage_path.isEmpty()) {
+        setWalletLoadError(tr("The selected wallet could not be removed from the wallet directory."));
+        return false;
+    }
+
+    closeWallet(wallet_reference);
+
+    QFileInfo wallet_info(storage_path);
+    bool removed = false;
+    if (wallet_info.isDir()) {
+        QDir wallet_dir(storage_path);
+        removed = wallet_dir.removeRecursively();
+    } else if (wallet_info.exists()) {
+        removed = QFile::remove(storage_path);
+    }
+
+    if (!removed) {
+        setWalletLoadError(tr("The selected wallet could not be removed from the wallet directory."));
+        return false;
+    }
+
+    if (m_node.walletLoader().listWalletDir().size() == 0) {
+        setNoWalletsFound(true);
+    }
+    return true;
 }
 
 WalletQmlModel* WalletQmlController::selectedWallet() const
@@ -615,6 +662,29 @@ QString WalletQmlController::inferRestoreWalletName(const QString& normalized_pa
     return wallet_name;
 }
 
+QString WalletQmlController::walletStoragePath(const QString& wallet_reference) const
+{
+    if (wallet_reference.isEmpty()) {
+        return {};
+    }
+
+    const QString wallet_dir_path = QDir::cleanPath(
+        QFileInfo(QString::fromStdString(m_node.walletLoader().getWalletDir())).absoluteFilePath());
+    const QFileInfo reference_info(wallet_reference);
+    if (reference_info.isAbsolute()) {
+        return reference_info.absoluteFilePath();
+    }
+
+    const QString candidate_path = QDir(wallet_dir_path).absoluteFilePath(wallet_reference);
+    const QFileInfo candidate_info(candidate_path);
+    if (candidate_info.exists()) {
+        return candidate_info.absoluteFilePath();
+    }
+
+    // Legacy top-level wallet entries may be single files in -walletdir.
+    return QDir(wallet_dir_path).absoluteFilePath(wallet_reference);
+}
+
 void WalletQmlController::startWalletImport(const QString& path)
 {
     const QString normalized_path = normalizeWalletPath(path);
@@ -687,6 +757,8 @@ void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> w
         }
     };
 
+    bool selected_existing_wallet{false};
+    bool load_was_requested{false};
     {
         QMutexLocker locker(&m_wallets_mutex);
         if (!m_wallets.empty()) {
@@ -694,18 +766,25 @@ void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> w
             for (WalletQmlModel* wallet_model : m_wallets) {
                 if (wallet_model->name() == name) {
                     m_selected_wallet = wallet_model;
-                    Q_EMIT selectedWalletChanged();
-                    setWalletLoaded(true);
-                    setNoWalletsFound(false);
+                    selected_existing_wallet = true;
                     if (m_wallet_load_requested) {
                         m_wallet_load_requested = false;
-                        setWalletLoadInProgress(false);
+                        load_was_requested = true;
                     }
-                    emit_load_completion();
-                    return;
+                    break;
                 }
             }
         }
+    }
+    if (selected_existing_wallet) {
+        Q_EMIT selectedWalletChanged();
+        setWalletLoaded(true);
+        setNoWalletsFound(false);
+        if (load_was_requested) {
+            setWalletLoadInProgress(false);
+        }
+        emit_load_completion();
+        return;
     }
 
     const QString loaded_wallet_name = QString::fromStdString(wallet->getWalletName());
