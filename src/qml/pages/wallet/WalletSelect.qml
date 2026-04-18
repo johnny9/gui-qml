@@ -84,6 +84,7 @@ Popup {
                 id: delegate
                 required property string name;
                 required property string displayName;
+                required property string format;
                 required property int loadState;
 
                 objectName: "walletSelectItem_" + name.replace(/[^A-Za-z0-9_]/g, "_")

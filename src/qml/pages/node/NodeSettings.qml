@@ -16,9 +16,26 @@ PageStack {
     signal selectWalletRequested
 
     property alias showDoneButton: doneButton.visible
+    property bool closingWalletSettingsSubpage: false
 
     id: root
     objectName: "nodeSettingsStack"
+
+    function isWalletSettingsSubpage(page_name) {
+        return page_name === "walletPasswordSettingsPage"
+    }
+
+    function closeWalletSettingsSubpage() {
+        const current_name = root.currentItem && root.currentItem.objectName ? root.currentItem.objectName : ""
+        if (root.closingWalletSettingsSubpage || root.depth <= 1 || !isWalletSettingsSubpage(current_name)) {
+            return
+        }
+        root.closingWalletSettingsSubpage = true
+        root.pop()
+        Qt.callLater(function() {
+            root.closingWalletSettingsSubpage = false
+        })
+    }
 
     function openWalletSettings() {
         while (root.depth > 1) {
@@ -34,6 +51,16 @@ PageStack {
         target: typeof walletController !== "undefined" ? walletController : null
         function onOpenWalletSettingsRequested() {
             root.openWalletSettings()
+        }
+        function onSelectedWalletChanged() {
+            if (!walletController.selectedWallet || walletController.selectedWallet.name.length === 0) {
+                root.closeWalletSettingsSubpage()
+            }
+        }
+        function onIsWalletLoadedChanged() {
+            if (!walletController.isWalletLoaded) {
+                root.closeWalletSettingsSubpage()
+            }
         }
     }
     initialItem: Page {
