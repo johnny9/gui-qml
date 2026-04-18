@@ -164,7 +164,6 @@ Page {
         width: Math.min(parent.width, 450)
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: 30
         spacing: 24
 
         Header {
@@ -190,126 +189,27 @@ Page {
         width: Math.min(parent.width, 450)
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: 30
         spacing: 0
 
-        Item {
+        EditableKeyValueRow {
             objectName: "walletSettingsNameRow"
             Layout.fillWidth: true
             Layout.topMargin: 12
             Layout.bottomMargin: 15
-            implicitHeight: 36
-
-            RowLayout {
-                anchors.fill: parent
-                spacing: 10
-
-                KeyText {
-                    objectName: "walletSettingsNameKey"
-                    Layout.preferredWidth: 150
-                    text: qsTr("Name")
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                }
-
-                Loader {
-                    Layout.alignment: Qt.AlignVCenter
-                    active: root.editingName
-                    visible: active
-                    sourceComponent: RowLayout {
-                        spacing: 8
-
-                        TextField {
-                            id: nameEditField
-                            objectName: "walletSettingsNameEditField"
-                            Layout.preferredWidth: 152
-                            implicitHeight: 36
-                            text: root.pendingDisplayName
-                            color: Theme.color.neutral9
-                            font.family: "Inter"
-                            font.styleName: "Regular"
-                            font.pixelSize: 18
-                            leftPadding: 12
-                            rightPadding: 12
-                            selectByMouse: true
-                            background: Rectangle {
-                                border.color: Theme.color.neutral5
-                                border.width: 1
-                                color: "transparent"
-                                radius: 5
-                            }
-                            onTextChanged: root.pendingDisplayName = text
-                            Component.onCompleted: forceActiveFocus()
-                            Keys.onReturnPressed: root.confirmNameEdit()
-                            Keys.onEnterPressed: root.confirmNameEdit()
-                            Keys.onEscapePressed: root.cancelNameEdit()
-                        }
-
-                        Button {
-                            objectName: "walletSettingsNameCancelButton"
-                            implicitWidth: 30
-                            implicitHeight: 30
-                            padding: 0
-                            background: null
-                            hoverEnabled: AppMode.isDesktop
-                            contentItem: Image {
-                                anchors.fill: parent
-                                source: "qrc:/icons/circle-red-cross"
-                                sourceSize.width: width
-                                sourceSize.height: height
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            onClicked: root.cancelNameEdit()
-                        }
-
-                        Button {
-                            objectName: "walletSettingsNameConfirmButton"
-                            implicitWidth: 30
-                            implicitHeight: 30
-                            padding: 0
-                            enabled: root.pendingDisplayName.trim().length > 0
-                            background: null
-                            hoverEnabled: AppMode.isDesktop
-                            contentItem: Image {
-                                anchors.fill: parent
-                                source: "qrc:/icons/circle-green-check"
-                                sourceSize.width: width
-                                sourceSize.height: height
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            onClicked: root.confirmNameEdit()
-                        }
-                    }
-                }
-
-                Loader {
-                    Layout.alignment: Qt.AlignVCenter
-                    active: !root.editingName
-                    visible: active
-                    sourceComponent: RowLayout {
-                        spacing: 6
-
-                        ValueText {
-                            objectName: "walletSettingsNameValue"
-                            text: root.wallet ? root.wallet.displayName : ""
-                        }
-
-                        IconButton {
-                            objectName: "walletSettingsNameEditButton"
-                            Layout.preferredWidth: 20
-                            Layout.preferredHeight: 20
-                            size: 20
-                            iconSource: "image://images/edit"
-                            iconColor: Theme.color.neutral9
-                            hoverColor: Theme.color.orange
-                            activeColor: Theme.color.orange
-                            onClicked: root.beginNameEdit()
-                        }
-                    }
-                }
-            }
+            keyObjectName: "walletSettingsNameKey"
+            valueObjectName: "walletSettingsNameValue"
+            editFieldObjectName: "walletSettingsNameEditField"
+            editButtonObjectName: "walletSettingsNameEditButton"
+            cancelButtonObjectName: "walletSettingsNameCancelButton"
+            confirmButtonObjectName: "walletSettingsNameConfirmButton"
+            label: qsTr("Name")
+            displayValue: root.wallet ? root.wallet.displayName : ""
+            editValue: root.pendingDisplayName
+            editing: root.editingName
+            onEditRequested: root.beginNameEdit()
+            onCancelRequested: root.cancelNameEdit()
+            onConfirmRequested: root.confirmNameEdit()
+            onEditValueEdited: value => root.pendingDisplayName = value
         }
 
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.color.neutral4 }
@@ -365,19 +265,33 @@ Page {
 
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.color.neutral4 }
 
-        ActionRow {
+        Setting {
+            id: passwordSetting
             objectName: "walletSettingsPasswordRow"
             Layout.fillWidth: true
-            label: root.wallet && root.wallet.isEncrypted ? qsTr("Update password") : qsTr("Set password")
+            header: root.wallet && root.wallet.isEncrypted ? qsTr("Update password") : qsTr("Set password")
+            filledStateColor: Theme.color.neutral7
+            hoverStateColor: Theme.color.orange
+            activeStateColor: Theme.color.orange
+            actionItem: CaretRightIcon {
+                color: passwordSetting.stateColor
+            }
             onClicked: root.passwordRequested()
         }
 
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.color.neutral4 }
 
-        ActionRow {
+        Setting {
+            id: backupSetting
             objectName: "walletSettingsBackupRow"
             Layout.fillWidth: true
-            label: qsTr("Back up wallet")
+            header: qsTr("Back up wallet")
+            filledStateColor: Theme.color.neutral7
+            hoverStateColor: Theme.color.orange
+            activeStateColor: Theme.color.orange
+            actionItem: CaretRightIcon {
+                color: backupSetting.stateColor
+            }
             onClicked: root.startBackup()
         }
 
@@ -410,48 +324,5 @@ Page {
         horizontalAlignment: Qt.AlignRight
         verticalAlignment: Text.AlignVCenter
         wrapMode: Text.WordWrap
-    }
-
-    component ActionRow: Button {
-        id: row
-
-        property string label: ""
-
-        hoverEnabled: AppMode.isDesktop
-        topPadding: 15
-        bottomPadding: 15
-        leftPadding: 0
-        rightPadding: 0
-
-        HoverHandler {
-            objectName: row.objectName + "Hover"
-            enabled: row.enabled && AppMode.isDesktop
-            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-        }
-
-        contentItem: RowLayout {
-            spacing: 10
-
-            CoreText {
-                objectName: row.objectName + "Label"
-                Layout.fillWidth: true
-                text: row.label
-                font.pixelSize: 18
-                horizontalAlignment: Text.AlignLeft
-                color: row.hovered ? Theme.color.orange : Theme.color.neutral7
-            }
-
-            CaretRightIcon {
-                color: row.hovered ? Theme.color.orange : Theme.color.neutral7
-            }
-        }
-
-        background: FocusBorder {
-            visible: row.visualFocus
-            topMargin: -4
-            bottomMargin: -4
-            leftMargin: -6
-            rightMargin: -6
-        }
     }
 }
