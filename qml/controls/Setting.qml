@@ -17,6 +17,10 @@ AbstractButton {
     property string errorText: ""
     property bool showErrorText: false
     property color stateColor
+    property color filledStateColor: Theme.color.neutral9
+    property color hoverStateColor: Theme.color.orangeLight1
+    property color activeStateColor: Theme.color.orange
+    property color disabledStateColor: Theme.color.neutral4
     hoverEnabled: AppMode.isDesktop
     state: "FILLED"
 
@@ -26,23 +30,23 @@ AbstractButton {
             PropertyChanges {
                 target: root
                 enabled: true
-                stateColor: Theme.color.neutral9
+                stateColor: root.filledStateColor
             }
         },
         State {
             name: "HOVER"
-            PropertyChanges { target: root; stateColor: Theme.color.orangeLight1 }
+            PropertyChanges { target: root; stateColor: root.hoverStateColor }
         },
         State {
             name: "ACTIVE"
-            PropertyChanges { target: root; stateColor: Theme.color.orange }
+            PropertyChanges { target: root; stateColor: root.activeStateColor }
         },
         State {
             name: "DISABLED"
             PropertyChanges {
                 target: root
                 enabled: false
-                stateColor: Theme.color.neutral4
+                stateColor: root.disabledStateColor
             }
         }
     ]
@@ -59,6 +63,7 @@ AbstractButton {
         id: mouseArea
         anchors.fill: root
         hoverEnabled: AppMode.isDesktop
+        cursorShape: AppMode.isDesktop && root.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onEntered: {
             if (root.state !== "DISABLED") root.state = "HOVER"
         }
