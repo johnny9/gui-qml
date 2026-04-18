@@ -18,6 +18,7 @@ Page {
     required property bool updating
     property WalletQmlModel wallet: walletController.selectedWallet
     property string errorText: ""
+    property bool closingForDeselection: false
 
     signal back()
     signal saved()
@@ -48,6 +49,23 @@ Page {
         target: root.wallet
         function onSettingsErrorChanged() {
             root.errorText = root.wallet ? root.wallet.settingsError : ""
+        }
+    }
+
+    Connections {
+        target: walletController
+        function onSelectedWalletChanged() {
+            if (!root.closingForDeselection &&
+                (!walletController.selectedWallet || walletController.selectedWallet.name.length === 0)) {
+                root.closingForDeselection = true
+                Qt.callLater(root.back)
+            }
+        }
+        function onIsWalletLoadedChanged() {
+            if (!root.closingForDeselection && !walletController.isWalletLoaded) {
+                root.closingForDeselection = true
+                Qt.callLater(root.back)
+            }
         }
     }
 

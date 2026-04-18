@@ -15,7 +15,8 @@ Page {
     objectName: "walletDeletePage"
 
     property WalletQmlModel wallet: walletController.selectedWallet
-    readonly property bool confirmationMatches: wallet && wallet.name.length > 0 && confirmField.text === wallet.name
+    readonly property bool confirmationMatches: wallet && wallet.displayName.length > 0 && confirmField.text === wallet.displayName
+    property bool closingForDeselection: false
 
     signal back()
     signal deleted()
@@ -34,6 +35,23 @@ Page {
             headerBold: true
             headerSize: 18
             header: qsTr("Delete wallet")
+        }
+    }
+
+    Connections {
+        target: walletController
+        function onSelectedWalletChanged() {
+            if (!root.closingForDeselection &&
+                (!walletController.selectedWallet || walletController.selectedWallet.name.length === 0)) {
+                root.closingForDeselection = true
+                Qt.callLater(root.back)
+            }
+        }
+        function onIsWalletLoadedChanged() {
+            if (!root.closingForDeselection && !walletController.isWalletLoaded) {
+                root.closingForDeselection = true
+                Qt.callLater(root.back)
+            }
         }
     }
 
@@ -63,7 +81,7 @@ Page {
             Layout.topMargin: 12
             Layout.leftMargin: 20
             Layout.rightMargin: 20
-            text: qsTr("This permanently removes \"%1\" from this device. If you do not have a backup or recovery information, you may lose access to the bitcoin in this wallet.").arg(root.wallet ? root.wallet.name : "")
+            text: qsTr("This permanently removes \"%1\" from this device. If you do not have a backup or recovery information, you may lose access to the bitcoin in this wallet.").arg(root.wallet ? root.wallet.displayName : "")
             color: Theme.color.neutral8
             font.pixelSize: 15
             fontStyleName: "Regular"
@@ -103,6 +121,12 @@ Page {
                 objectName: "walletDeleteCancelButton"
                 Layout.fillWidth: true
                 text: qsTr("Cancel")
+
+                HoverHandler {
+                    enabled: parent.enabled && AppMode.isDesktop
+                    cursorShape: Qt.PointingHandCursor
+                }
+
                 onClicked: root.back()
             }
 
@@ -120,6 +144,12 @@ Page {
                 borderColor: Theme.color.red
                 borderHoverColor: Theme.color.red
                 borderPressedColor: Theme.color.red
+
+                HoverHandler {
+                    enabled: parent.enabled && AppMode.isDesktop
+                    cursorShape: Qt.PointingHandCursor
+                }
+
                 onClicked: {
                     if (!root.wallet || !root.confirmationMatches) return
                     if (walletController.deleteWallet(root.wallet.name)) {
