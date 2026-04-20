@@ -175,6 +175,19 @@ PageStack {
                 }
                 Separator { Layout.fillWidth: true }
                 Setting {
+                    id: gotoMempoolInformation
+                    objectName: "settingsMempoolInformation"
+                    Layout.fillWidth: true
+                    header: qsTr("Mempool information")
+                    actionItem: CaretRightIcon {
+                        color: gotoMempoolInformation.stateColor
+                    }
+                    onClicked: {
+                        root.push(mempool_information_page)
+                    }
+                }
+                Separator { Layout.fillWidth: true }
+                Setting {
                     id: gotoDebugLog
                     objectName: "settingsDebugLog"
                     Layout.fillWidth: true
@@ -271,6 +284,12 @@ PageStack {
         id: networktraffic_page
         NetworkTraffic {
             showHeader: false
+            onBack: root.pop()
+        }
+    }
+    Component {
+        id: mempool_information_page
+        MempoolInformationSettings {
             onBack: root.pop()
         }
     }
