@@ -861,6 +861,9 @@ class MockOptionsModel : public QObject
     Q_PROPERTY(bool listen MEMBER m_listen NOTIFY listenChanged)
     Q_PROPERTY(bool natpmp MEMBER m_natpmp NOTIFY natpmpChanged)
     Q_PROPERTY(bool server MEMBER m_server NOTIFY serverChanged)
+    Q_PROPERTY(int maxMempoolSizeMB READ maxMempoolSizeMB WRITE setMaxMempoolSizeMB NOTIFY maxMempoolSizeMBChanged)
+    Q_PROPERTY(int maxMaxMempoolSizeMB MEMBER m_max_max_mempool_size_mb CONSTANT)
+    Q_PROPERTY(int minMaxMempoolSizeMB MEMBER m_min_max_mempool_size_mb CONSTANT)
     Q_PROPERTY(bool prune MEMBER m_prune NOTIFY pruneChanged)
     Q_PROPERTY(int pruneSizeGB MEMBER m_prune_size_gb NOTIFY pruneSizeGBChanged)
     Q_PROPERTY(QString dataDir MEMBER m_data_dir NOTIFY dataDirChanged)
@@ -875,11 +878,21 @@ public:
     bool m_listen{true};
     bool m_natpmp{false};
     bool m_server{false};
+    int m_max_mempool_size_mb{300};
+    int m_max_max_mempool_size_mb{99999};
+    int m_min_max_mempool_size_mb{1};
     bool m_prune{true};
     int m_prune_size_gb{2};
     QString m_data_dir{QStringLiteral("/tmp/bitcoin-default")};
     QString m_custom_data_dir{QStringLiteral("/tmp/bitcoin-custom")};
 
+    int maxMempoolSizeMB() const { return m_max_mempool_size_mb; }
+    void setMaxMempoolSizeMB(int value)
+    {
+        if (value == m_max_mempool_size_mb) return;
+        m_max_mempool_size_mb = value;
+        Q_EMIT maxMempoolSizeMBChanged(value);
+    }
     QString getDefaultDataDirString() const { return QStringLiteral("/tmp/bitcoin-default"); }
     Q_INVOKABLE QString getCustomDataDirString() const { return m_custom_data_dir; }
     Q_INVOKABLE void setCustomDataDirString(const QString& dir) { m_custom_data_dir = dir; }
@@ -913,6 +926,7 @@ Q_SIGNALS:
     void listenChanged();
     void natpmpChanged();
     void serverChanged();
+    void maxMempoolSizeMBChanged(int value);
     void pruneChanged();
     void pruneSizeGBChanged();
     void dataDirChanged();
@@ -947,6 +961,9 @@ class MockNodeModel : public QObject
     Q_PROPERTY(int remainingSyncTime MEMBER m_remaining_sync_time NOTIFY remainingSyncTimeChanged)
     Q_PROPERTY(bool faulted MEMBER m_faulted NOTIFY faultedChanged)
     Q_PROPERTY(int blockTipHeight MEMBER m_block_tip_height NOTIFY blockTipHeightChanged)
+    Q_PROPERTY(int mempoolTransactionCount MEMBER m_mempool_transaction_count NOTIFY mempoolInfoChanged)
+    Q_PROPERTY(double mempoolUsageMB MEMBER m_mempool_usage_mb NOTIFY mempoolInfoChanged)
+    Q_PROPERTY(double mempoolMaxUsageMB MEMBER m_mempool_max_usage_mb NOTIFY mempoolInfoChanged)
 
 public:
     bool m_pause{false};
@@ -956,6 +973,9 @@ public:
     int m_remaining_sync_time{0};
     bool m_faulted{false};
     int m_block_tip_height{0};
+    int m_mempool_transaction_count{0};
+    double m_mempool_usage_mb{0.0};
+    double m_mempool_max_usage_mb{300.0};
 
     Q_INVOKABLE void startNodeInitializionThread() {}
     Q_INVOKABLE void requestShutdown() { Q_EMIT requestedShutdown(); }
@@ -978,6 +998,7 @@ Q_SIGNALS:
     void remainingSyncTimeChanged();
     void faultedChanged();
     void blockTipHeightChanged();
+    void mempoolInfoChanged();
 };
 
 class MockPeerTableModel : public QObject

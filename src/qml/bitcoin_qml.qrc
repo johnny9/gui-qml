@@ -10,6 +10,7 @@
         <file>components/BlockCounter.qml</file>
         <file>components/ConnectionOptions.qml</file>
         <file>components/ConnectionSettings.qml</file>
+        <file>components/MempoolInformationRows.qml</file>
         <file>components/DeveloperOptions.qml</file>
         <file>components/ExternalSignerReviewActions.qml</file>
         <file>components/ExternalPopup.qml</file>
@@ -74,6 +75,7 @@
         <file>pages/main.qml</file>
         <file>pages/node/BannedPeers.qml</file>
         <file>pages/node/NetworkTraffic.qml</file>
+        <file>pages/node/MempoolInformationSettings.qml</file>
         <file>pages/node/NodeRunner.qml</file>
         <file>pages/node/NodeSettings.qml</file>
         <file>pages/node/Peers.qml</file>

@@ -52,7 +52,7 @@ TextInput {
     }
 
     function checkValidity(minVal, maxVal, input) {
-        if (input < minVal || input > maxVal) {
+        if (isNaN(input) || input < minVal || input > maxVal) {
             return false
         } else {
             return true

@@ -41,6 +41,7 @@ TestCase {
         verify(input.checkValidity(5, 10, 10))
         verify(!input.checkValidity(5, 10, 4))
         verify(!input.checkValidity(5, 10, 11))
+        verify(!input.checkValidity(5, 10, parseInt("", 10)))
     }
 
     function test_valueInput_disabled_state_disables_input() {

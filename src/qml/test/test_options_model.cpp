@@ -30,6 +30,9 @@ private Q_SLOTS:
     void proxyDirtyNotSetDuringOnboarding();
     void proxyDirtyResetWhenReverted();
     void proxyDirtyNotSetAfterOnboard();
+    void mempoolSizeLoadedFromSettings();
+    void mempoolSizeWritesSetting();
+    void mempoolSizeDoesNotRewriteUnchangedSetting();
     void externalSignerPathWritesSigner();
     void externalSignerPathClearedRemovesKey();
     void onboardWritesExternalSignerPath();
@@ -50,6 +53,11 @@ private Q_SLOTS:
 static common::SettingsValue MakeAddress(const std::string& addr)
 {
     return common::SettingsValue{addr};
+}
+
+static common::SettingsValue MakeInt(int value)
+{
+    return common::SettingsValue{value};
 }
 
 void OptionsModelTests::proxyDisabledRemovesKey()
@@ -234,6 +242,61 @@ void OptionsModelTests::proxyDirtyNotSetAfterOnboard()
     // no restart is needed, so dirty must be false.
     model.onboard();
     QVERIFY(!model.proxySettingsDirty());
+}
+
+void OptionsModelTests::mempoolSizeLoadedFromSettings()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+    ON_CALL(node, getPersistentSetting(std::string{"maxmempool"}))
+        .WillByDefault(Return(MakeInt(456)));
+
+    OptionsQmlModel model(node, /*is_onboarded=*/true);
+    QCOMPARE(model.maxMempoolSizeMB(), 456);
+}
+
+void OptionsModelTests::mempoolSizeWritesSetting()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+    using ::testing::Truly;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+
+    OptionsQmlModel model(node, /*is_onboarded=*/true);
+
+    EXPECT_CALL(node, updateRwSetting(std::string{"maxmempool"},
+        Truly([](const common::SettingsValue& v) {
+            return v.isNum() && v.getInt<int64_t>() == 456;
+        })));
+
+    model.setMaxMempoolSizeMB(456);
+    QCOMPARE(model.maxMempoolSizeMB(), 456);
+}
+
+void OptionsModelTests::mempoolSizeDoesNotRewriteUnchangedSetting()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+    ON_CALL(node, getPersistentSetting(std::string{"maxmempool"}))
+        .WillByDefault(Return(MakeInt(456)));
+
+    OptionsQmlModel model(node, /*is_onboarded=*/true);
+
+    EXPECT_CALL(node, updateRwSetting(std::string{"maxmempool"}, _)).Times(0);
+
+    model.setMaxMempoolSizeMB(456);
+    QCOMPARE(model.maxMempoolSizeMB(), 456);
 }
 
 void OptionsModelTests::externalSignerPathWritesSigner()
