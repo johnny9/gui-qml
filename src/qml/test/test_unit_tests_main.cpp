@@ -4,6 +4,19 @@
 
 #include <QGuiApplication>
 
+#ifdef Assert
+#pragma push_macro("Assert")
+#undef Assert
+#define BITCOIN_QML_RESTORE_ASSERT_MACRO
+#endif
+
+#include <gmock/gmock.h>
+
+#ifdef BITCOIN_QML_RESTORE_ASSERT_MACRO
+#pragma pop_macro("Assert")
+#undef BITCOIN_QML_RESTORE_ASSERT_MACRO
+#endif
+
 #include <util/translation.h>
 
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -19,6 +32,7 @@ int RunOptionsModelTests(int argc, char* argv[]);
 
 int main(int argc, char* argv[])
 {
+    testing::InitGoogleMock(&argc, argv);
     QGuiApplication app(argc, argv);
 
     int status = 0;

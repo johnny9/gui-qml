@@ -59,6 +59,7 @@ void OptionsModelTests::proxyDisabledRemovesKey()
 
     model.setProxyEnabled(false);
     QVERIFY(!model.proxyEnabled());
+    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void OptionsModelTests::torDisabledRemovesKey()
@@ -81,6 +82,7 @@ void OptionsModelTests::torDisabledRemovesKey()
 
     model.setTorEnabled(false);
     QVERIFY(!model.torEnabled());
+    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void OptionsModelTests::proxyEnabledWritesAddress()
@@ -109,6 +111,7 @@ void OptionsModelTests::proxyEnabledWritesAddress()
 
     model.setProxyEnabled(true);
     QVERIFY(model.proxyEnabled());
+    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void OptionsModelTests::onboardWritesProxy()
@@ -127,6 +130,7 @@ void OptionsModelTests::onboardWritesProxy()
     model.setProxyEnabled(true);
     model.setProxyAddress("10.0.0.1:9050");
 
+    EXPECT_CALL(node, updateRwSetting(_, _)).Times(::testing::AnyNumber());
     // onboard() must write the proxy address to disk.
     EXPECT_CALL(node, updateRwSetting(std::string{"proxy"},
         Truly([](const common::SettingsValue& v) {
@@ -134,6 +138,7 @@ void OptionsModelTests::onboardWritesProxy()
         })));
 
     model.onboard();
+    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void OptionsModelTests::proxyDirtySetWhenOnboarded()
