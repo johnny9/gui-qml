@@ -10,6 +10,7 @@
 #include <qml/models/activitylistmodel.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/models/paymentrequest.h>
+#include <qml/models/receiverequestentry.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signverifymessagemodel.h>
@@ -223,41 +224,6 @@ std::optional<std::vector<wallet::CRecipient>> BuildRecipients(const SendRecipie
 
     return vec_send;
 }
-
-struct QmlReceiveRequestRecipient
-{
-    static constexpr int CURRENT_VERSION{1};
-    int nVersion{CURRENT_VERSION};
-    std::string address;
-    std::string label;
-    CAmount amount{0};
-    std::string message;
-    std::string sPaymentRequest;
-    std::string authenticatedMerchant;
-
-    SERIALIZE_METHODS(QmlReceiveRequestRecipient, obj)
-    {
-        READWRITE(obj.nVersion, obj.address, obj.label, obj.amount, obj.message, obj.sPaymentRequest, obj.authenticatedMerchant);
-    }
-};
-
-struct QmlRecentRequestEntry
-{
-    static constexpr int CURRENT_VERSION{1};
-    int nVersion{CURRENT_VERSION};
-    int64_t id{0};
-    QDateTime date;
-    QmlReceiveRequestRecipient recipient;
-
-    SERIALIZE_METHODS(QmlRecentRequestEntry, obj)
-    {
-        unsigned int date_timet;
-        SER_WRITE(obj, date_timet = obj.date.toSecsSinceEpoch());
-        READWRITE(obj.nVersion, obj.id, date_timet, obj.recipient);
-        SER_READ(obj, obj.date = QDateTime::fromSecsSinceEpoch(date_timet));
-    }
-};
-
 QString LocalizedString(const bilingual_str& value)
 {
     return QString::fromStdString(value.translated.empty() ? value.original : value.translated);
@@ -301,9 +267,7 @@ QString OutputTypeDescription(OutputType type)
     }
     return {};
 }
-
 } // namespace
-
 WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObject *parent)
     : QObject(parent)
 {
