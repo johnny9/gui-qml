@@ -251,6 +251,7 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObje
 {
     m_wallet = std::move(wallet);
     m_activity_list_model = new ActivityListModel(this);
+    m_bump_transaction_model = new BumpTransactionModel(m_wallet.get(), this);
     m_coins_list_model = new CoinsListModel(this);
     m_send_recipients = new SendRecipientsListModel(this);
     m_current_payment_request = new PaymentRequest(this);
@@ -261,6 +262,7 @@ WalletQmlModel::WalletQmlModel(QObject* parent)
     : QObject(parent)
 {
     m_activity_list_model = new ActivityListModel(this);
+    m_bump_transaction_model = new BumpTransactionModel(nullptr, this);
     m_coins_list_model = new CoinsListModel(this);
     m_send_recipients = new SendRecipientsListModel(this);
     m_current_payment_request = new PaymentRequest(this);
@@ -717,6 +719,14 @@ void WalletQmlModel::sendTransaction()
     interfaces::WalletValueMap value_map;
     interfaces::WalletOrderForm order_form;
     m_wallet->commitTransaction(newTx, value_map, order_form);
+}
+
+bool WalletQmlModel::canBumpTransaction(const uint256& txid) const
+{
+    if (!m_wallet) {
+        return false;
+    }
+    return m_wallet->transactionCanBeBumped(Txid::FromUint256(txid));
 }
 
 interfaces::Wallet::CoinsList WalletQmlModel::listCoins() const

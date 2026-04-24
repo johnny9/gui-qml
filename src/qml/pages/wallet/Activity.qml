@@ -13,6 +13,14 @@ import "../../components"
 PageStack {
     id: stackView
 
+    function navigateToTransaction(txid) {
+        if (!walletController.selectedWallet) return
+        var details = walletController.selectedWallet.activityListModel.transactionDetails(txid)
+        if (Object.keys(details).length === 0) return
+        var page = stackView.push("ActivityDetails.qml", details)
+        page.showTransaction.connect(stackView.navigateToTransaction)
+    }
+
     Connections {
         target: walletController
         function onSelectedWalletChanged() {
@@ -99,12 +107,20 @@ PageStack {
                         required property string label;
                         required property int status;
                         required property int type;
+                        required property string txid;
+                        required property bool canBump;
+                        required property string replacedByTxid;
 
                         HoverHandler {
                             cursorShape: Qt.PointingHandCursor
                         }
 
-                        onClicked: stackView.push(detailsPage)
+                        opacity: delegate.replacedByTxid !== "" ? 0.4 : 1.0
+
+                        onClicked: {
+                            var page = stackView.push(detailsPage)
+                            page.showTransaction.connect(stackView.navigateToTransaction)
+                        }
 
                         width: ListView.view.width
 
@@ -190,6 +206,9 @@ PageStack {
                             Component {
                                 id: detailsPage
                                 ActivityDetails {
+                                    txid: delegate.txid
+                                    canBump: delegate.canBump
+                                    replacedByTxid: delegate.replacedByTxid
                                     amount: delegate.amount
                                     date: delegate.date
                                     depth: delegate.depth
