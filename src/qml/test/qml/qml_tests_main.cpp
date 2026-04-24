@@ -515,6 +515,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString name MEMBER m_name NOTIFY nameChanged)
     Q_PROPERTY(QString balance MEMBER m_balance NOTIFY balanceChanged)
     Q_PROPERTY(QObject* activityListModel READ activityListModel CONSTANT)
+    Q_PROPERTY(QObject* bumpModel READ bumpModel CONSTANT)
     Q_PROPERTY(QObject* recipients READ recipients CONSTANT)
     Q_PROPERTY(QObject* coinsListModel READ coinsListModel CONSTANT)
     Q_PROPERTY(QObject* currentTransaction READ currentTransaction CONSTANT)
@@ -535,6 +536,7 @@ public:
     QString m_name{QStringLiteral("testwallet")};
     QString m_balance{QStringLiteral("1.00000000 BTC")};
     QObject* m_activity_list_model{nullptr};
+    QObject* m_bump_model{nullptr};
     QObject* m_recipients{nullptr};
     QObject* m_coins_list_model{nullptr};
     QObject* m_current_transaction{nullptr};
@@ -543,6 +545,7 @@ public:
     bool m_prepare_transaction_result{true};
 
     QObject* activityListModel() const { return m_activity_list_model; }
+    QObject* bumpModel() const { return m_bump_model; }
     QObject* recipients() const { return m_recipients; }
     QObject* coinsListModel() const { return m_coins_list_model; }
     QObject* currentTransaction() const { return m_current_transaction; }
@@ -584,6 +587,7 @@ public:
         }
     }
     void setActivityListModel(QObject* model) { m_activity_list_model = model; }
+    void setBumpModel(QObject* model) { m_bump_model = model; }
     void setRecipients(QObject* model) { m_recipients = model; }
     void setCoinsListModel(QObject* model) { m_coins_list_model = model; }
     void setCurrentTransaction(QObject* transaction) { m_current_transaction = transaction; }
@@ -949,6 +953,78 @@ private:
     QStringList m_wallet_names{QStringLiteral("testwallet"), QStringLiteral("secondarywallet")};
 };
 
+class MockBumpTransactionModel : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(int state READ state WRITE setState NOTIFY stateChanged)
+    Q_PROPERTY(QString oldFee MEMBER m_old_fee NOTIFY resultChanged)
+    Q_PROPERTY(QString newFee MEMBER m_new_fee NOTIFY resultChanged)
+    Q_PROPERTY(QString feeIncrease MEMBER m_fee_increase NOTIFY resultChanged)
+    Q_PROPERTY(QString oldTxid MEMBER m_old_txid NOTIFY resultChanged)
+    Q_PROPERTY(QString newTxid MEMBER m_new_txid NOTIFY resultChanged)
+    Q_PROPERTY(QString errorText MEMBER m_error_text NOTIFY resultChanged)
+
+public:
+    enum State { Idle, Preparing, NeedsConfirmation, Committing, Succeeded, Failed };
+    Q_ENUM(State)
+
+    enum ActionType { SpeedUp };
+    Q_ENUM(ActionType)
+
+    int state() const { return m_state; }
+    void setState(int state)
+    {
+        if (m_state == state) return;
+        m_state = state;
+        Q_EMIT stateChanged();
+    }
+
+    Q_INVOKABLE void prepareFeeBump(const QString& txid, unsigned int targetBlocks)
+    {
+        Q_UNUSED(targetBlocks);
+        m_old_txid = txid;
+        m_old_fee = QStringLiteral("0.00000500 ₿");
+        m_new_fee = QStringLiteral("0.00001000 ₿");
+        m_fee_increase = QStringLiteral("0.00000500 ₿");
+        setState(NeedsConfirmation);
+        Q_EMIT resultChanged();
+    }
+
+    Q_INVOKABLE void confirmFeeBump()
+    {
+        m_new_txid = QStringLiteral("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        setState(Succeeded);
+        Q_EMIT resultChanged();
+    }
+
+    Q_INVOKABLE void reset()
+    {
+        m_state = Idle;
+        m_old_fee.clear();
+        m_new_fee.clear();
+        m_fee_increase.clear();
+        m_old_txid.clear();
+        m_new_txid.clear();
+        m_error_text.clear();
+        Q_EMIT stateChanged();
+        Q_EMIT resultChanged();
+    }
+
+Q_SIGNALS:
+    void stateChanged();
+    void actionTypeChanged();
+    void resultChanged();
+
+private:
+    int m_state{Idle};
+    QString m_old_fee;
+    QString m_new_fee;
+    QString m_fee_increase;
+    QString m_old_txid;
+    QString m_new_txid;
+    QString m_error_text;
+};
+
 class MockActivityListModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -961,7 +1037,11 @@ public:
         DepthRole,
         LabelRole,
         StatusRole,
-        TypeRole
+        TypeRole,
+        TxidRole,
+        CanBumpRole,
+        ReplacesTxidRole,
+        ReplacedByTxidRole
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex{}) const override
@@ -982,6 +1062,10 @@ public:
             case LabelRole: return QStringLiteral("salary");
             case StatusRole: return MockTransaction::Confirmed;
             case TypeRole: return MockTransaction::RecvWithAddress;
+            case TxidRole: return QStringLiteral("aaaa");
+            case CanBumpRole: return false;
+            case ReplacesTxidRole: return QString{};
+            case ReplacedByTxidRole: return QString{};
             default: return {};
             }
         }
@@ -989,10 +1073,14 @@ public:
         case AddressRole: return QStringLiteral("bcrt1qsendaddress");
         case AmountRole: return QStringLiteral("-0.00100000 BTC");
         case DateRole: return QStringLiteral("2026-01-02 00:00");
-        case DepthRole: return 1;
+        case DepthRole: return 0;
         case LabelRole: return QStringLiteral("coffee");
-        case StatusRole: return MockTransaction::Confirming;
+        case StatusRole: return MockTransaction::Unconfirmed;
         case TypeRole: return MockTransaction::SendToAddress;
+        case TxidRole: return QStringLiteral("bbbb");
+        case CanBumpRole: return true;
+        case ReplacesTxidRole: return QString{};
+        case ReplacedByTxidRole: return QString{};
         default: return {};
         }
     }
@@ -1007,8 +1095,14 @@ public:
             {LabelRole, "label"},
             {StatusRole, "status"},
             {TypeRole, "type"},
+            {TxidRole, "txid"},
+            {CanBumpRole, "canBump"},
+            {ReplacesTxidRole, "replacesTxid"},
+            {ReplacedByTxidRole, "replacedByTxid"},
         };
     }
+
+    Q_INVOKABLE void reload() {}
 };
 
 class QmlTestsSetup : public QObject
@@ -1036,8 +1130,10 @@ public Q_SLOTS:
         static MockWalletController wallet_controller;
         static MockWalletListModel wallet_list_model;
         static MockActivityListModel activity_list_model;
+        static MockBumpTransactionModel bump_model;
         recipients_model.setCurrent(&send_recipient);
         wallet_model.setActivityListModel(&activity_list_model);
+        wallet_model.setBumpModel(&bump_model);
         wallet_model.setRecipients(&recipients_model);
         wallet_model.setCoinsListModel(&coins_list_model);
         wallet_model.setCurrentTransaction(&wallet_transaction);
@@ -1056,6 +1152,7 @@ public Q_SLOTS:
         qmlRegisterType<MockPaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
         qmlRegisterUncreatableType<MockTransaction>("org.bitcoincore.qt", 1, 0, "Transaction", "Test stub type");
         qmlRegisterUncreatableType<MockSendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "Test stub type");
+        qmlRegisterUncreatableType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModelTransaction>(
             "org.bitcoincore.qt",

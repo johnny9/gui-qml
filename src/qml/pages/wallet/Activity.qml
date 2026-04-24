@@ -100,6 +100,7 @@ PageStack {
                     model: walletController.selectedWallet.activityListModel
                     delegate: ItemDelegate {
                         id: delegate
+                        objectName: "activityItem_" + delegate.txid
                         required property string address;
                         required property string amount;
                         required property string date;

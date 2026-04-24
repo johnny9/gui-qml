@@ -205,7 +205,6 @@ Page {
                 Layout.fillWidth: true
                 Layout.topMargin: 20
                 bannerLayout: InfoBanner.Layout.Vertical
-                title: qsTr("Speed up")
                 message: qsTr("This transaction is still unconfirmed. You can speed it up by increasing the fee.")
                 primaryButtonText: qsTr("Speed up")
                 onPrimaryClicked: speedUpOverlay.open()
@@ -215,6 +214,7 @@ Page {
     }
 
     InfoBanner {
+        objectName: "replacedBanner"
         visible: root.replacedByTxid !== ""
         anchors.left: parent.left
         anchors.right: parent.right
