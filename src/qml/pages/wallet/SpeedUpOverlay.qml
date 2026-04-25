@@ -17,6 +17,10 @@ Popup {
     property string txid: ""
     property var bumpModel: walletController.selectedWallet
         ? walletController.selectedWallet.bumpModel : null
+    property int bumpState: root.bumpModel ? root.bumpModel.state : BumpTransactionModel.Idle
+    property string bumpErrorText: root.bumpModel ? root.bumpModel.errorText : ""
+    property bool readyToConfirm: root.bumpModel
+        && root.bumpModel.state === BumpTransactionModel.NeedsConfirmation
 
     signal done()
     signal viewNewTransaction(string newTxid)
@@ -140,6 +144,7 @@ Popup {
         }
 
         CoreText {
+            objectName: "speedUpErrorText"
             visible: root.bumpModel && root.bumpModel.state === BumpTransactionModel.Failed
             text: root.bumpModel ? root.bumpModel.errorText : ""
             font.pixelSize: 15
@@ -166,8 +171,7 @@ Popup {
                 text: qsTr("Update transaction")
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
-                enabled: root.bumpModel
-                    && root.bumpModel.state === BumpTransactionModel.NeedsConfirmation
+                enabled: root.readyToConfirm
                 //FIXME: Unlock wallet before confirming (PR #548)
                 onClicked: {
                     if (root.bumpModel) {

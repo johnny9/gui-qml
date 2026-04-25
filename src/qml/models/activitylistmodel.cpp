@@ -166,11 +166,17 @@ void ActivityListModel::updateTransaction(const uint256& hash, const interfaces:
         // new transaction
         interfaces::WalletTx wtx = m_wallet_model->getWalletTx(hash);
         auto transactions = Transaction::fromWalletTx(wtx);
+        if (transactions.isEmpty()) {
+            return;
+        }
         for (const auto& tx : transactions) {
             tx->updateStatus(tx_status, num_blocks, block_time);
-            m_transactions.push_front(tx);
         }
-        Q_EMIT dataChanged(this->index(0), this->index(m_transactions.size() - 1));
+        beginInsertRows(QModelIndex(), 0, transactions.size() - 1);
+        for (auto it = transactions.crbegin(); it != transactions.crend(); ++it) {
+            m_transactions.push_front(*it);
+        }
+        endInsertRows();
     }
 }
 

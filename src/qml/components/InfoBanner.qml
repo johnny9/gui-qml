@@ -79,12 +79,14 @@ Rectangle {
             }
 
             OutlineButton {
+                objectName: root.objectName !== "" ? root.objectName + "DismissButton" : ""
                 visible: root.dismissButtonText !== ""
                 text: root.dismissButtonText
                 onClicked: root.dismissClicked()
             }
 
             ContinueButton {
+                objectName: root.objectName !== "" ? root.objectName + "PrimaryButton" : ""
                 visible: root.primaryButtonText !== ""
                 text: root.primaryButtonText
                 onClicked: root.primaryClicked()
@@ -131,6 +133,7 @@ Rectangle {
                 spacing: 15
 
                 OutlineButton {
+                    objectName: root.objectName !== "" ? root.objectName + "DismissButton" : ""
                     visible: root.dismissButtonText !== ""
                     text: root.dismissButtonText
                     Layout.maximumWidth: 200
@@ -138,6 +141,7 @@ Rectangle {
                 }
 
                 ContinueButton {
+                    objectName: root.objectName !== "" ? root.objectName + "PrimaryButton" : ""
                     visible: root.primaryButtonText !== ""
                     text: root.primaryButtonText
                     Layout.maximumWidth: 200
