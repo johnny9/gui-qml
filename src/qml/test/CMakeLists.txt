@@ -31,6 +31,7 @@ add_executable(bitcoinqml_unit_tests
   test_display_settings.cpp
   test_addresslistmodel.cpp
   test_receiverequesthistorymodel.cpp
+  test_transaction.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
 )
 
