@@ -262,12 +262,12 @@ void NodeModel::ConnectToBlockTipSignal()
     assert(!m_handler_notify_block_tip);
 
     m_handler_notify_block_tip = m_node.handleNotifyBlockTip(
-        [this](SynchronizationState state, interfaces::BlockTip tip, double verification_progress) {
-            QMetaObject::invokeMethod(this, [this, tip, verification_progress] {
-                setBlockTipHeight(tip.block_height);
+        [this]([[maybe_unused]] SynchronizationState state, interfaces::BlockTip tip, double verification_progress) {
+            QMetaObject::invokeMethod(this, [this, block_height = tip.block_height, block_time = tip.block_time, verification_progress] {
+                setBlockTipHeight(block_height);
                 setVerificationProgress(verification_progress);
 
-                Q_EMIT setTimeRatioList(tip.block_time);
+                Q_EMIT setTimeRatioList(block_time);
             }, Qt::QueuedConnection);
         });
 }
