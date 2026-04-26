@@ -35,11 +35,14 @@ public:
         StatusRole,
         TypeRole,
         TxidRole,
+        TxIdRole = TxidRole,
         CanBumpRole,
         ReplacesTxidRole,
         ReplacedByTxidRole,
+        TimestampRole,
         IsPendingRequestRole,
-        RequestIdRole
+        RequestIdRole,
+        NetAmountSatRole
     };
 
     Q_INVOKABLE void reload();

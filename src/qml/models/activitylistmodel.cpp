@@ -7,6 +7,8 @@
 #include <qml/models/receiverequesthistorymodel.h>
 #include <qml/models/walletqmlmodel.h>
 
+#include <QDateTime>
+
 ActivityListModel::ActivityListModel(WalletQmlModel *parent)
     : QAbstractListModel(parent)
     , m_wallet_model(parent)
@@ -77,17 +79,21 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
     case TypeRole:
         return tx->type;
     case TxidRole:
-        return tx->txid;
+        return tx->isPendingRequest ? QString{} : tx->txid;
     case CanBumpRole:
         return m_wallet_model ? m_wallet_model->canBumpTransaction(tx->hash) : false;
     case ReplacesTxidRole:
         return tx->replacesTxid;
     case ReplacedByTxidRole:
         return tx->replacedByTxid;
+    case TimestampRole:
+        return tx->time;
     case IsPendingRequestRole:
         return tx->isPendingRequest;
     case RequestIdRole:
         return tx->requestId;
+    case NetAmountSatRole:
+        return QVariant::fromValue<qlonglong>(tx->credit + tx->debit);
     default:
         return QVariant();
     }
@@ -107,8 +113,10 @@ QHash<int, QByteArray> ActivityListModel::roleNames() const
     roles[CanBumpRole] = "canBump";
     roles[ReplacesTxidRole] = "replacesTxid";
     roles[ReplacedByTxidRole] = "replacedByTxid";
+    roles[TimestampRole] = "timestamp";
     roles[IsPendingRequestRole] = "isPendingRequest";
     roles[RequestIdRole] = "requestId";
+    roles[NetAmountSatRole] = "netAmountSat";
     return roles;
 }
 
