@@ -16,6 +16,8 @@
 
 #include <atomic>
 #include <functional>
+#include <thread>
+#include <vector>
 
 namespace {
 using ::testing::Invoke;
@@ -80,6 +82,7 @@ private Q_SLOTS:
     void refreshMempoolInfoUpdatesProperties();
     void activatingMempoolPollingEmitsSignalsAndRefreshesImmediately();
     void nodeNotificationHandlersUpdateModelThroughQueuedSignals();
+    void blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues();
 };
 
 void NodeModelTests::refreshMempoolInfoUpdatesProperties()
@@ -188,6 +191,65 @@ void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()
     QCOMPARE(model.verificationProgress(), 0.42);
     QCOMPARE(time_ratio_spy.takeFirst().at(0).toInt(), 1'700'000'000);
     QCOMPARE(model.numOutboundPeers(), 7);
+}
+
+void NodeModelTests::blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::NotifyBlockTipFn block_tip_fn;
+
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, handleNotifyBlockTip(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyBlockTipFn fn) {
+            block_tip_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+    ON_CALL(node, handleNotifyNumConnectionsChanged(testing::_))
+        .WillByDefault(Invoke([](interfaces::Node::NotifyNumConnectionsChangedFn) {
+            return MakeNoopHandler();
+        }));
+    ON_CALL(node, handleBannedListChanged(testing::_))
+        .WillByDefault(Invoke([](interfaces::Node::BannedListChangedFn) {
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(block_tip_fn);
+
+    std::vector<double> seen_progress;
+    std::vector<int> seen_heights;
+    std::vector<int> seen_times;
+
+    QObject::connect(&model, &NodeModel::verificationProgressChanged, &model, [&] {
+        seen_progress.push_back(model.verificationProgress());
+    });
+    QObject::connect(&model, &NodeModel::blockTipHeightChanged, &model, [&] {
+        seen_heights.push_back(model.blockTipHeight());
+    });
+    QObject::connect(&model, &NodeModel::setTimeRatioList, &model, [&](int block_time) {
+        seen_times.push_back(block_time);
+    });
+
+    std::thread worker([&] {
+        block_tip_fn(SynchronizationState::INIT_DOWNLOAD, interfaces::BlockTip{123, 1'700'000'001, uint256{}}, 0.51);
+        block_tip_fn(SynchronizationState::INIT_DOWNLOAD, interfaces::BlockTip{456, 1'700'000'099, uint256{}}, 0.75);
+    });
+    worker.join();
+
+    QTRY_COMPARE_WITH_TIMEOUT(seen_progress.size(), size_t{2}, ASYNC_TIMEOUT_MS);
+    QTRY_COMPARE_WITH_TIMEOUT(seen_heights.size(), size_t{2}, ASYNC_TIMEOUT_MS);
+    QTRY_COMPARE_WITH_TIMEOUT(seen_times.size(), size_t{2}, ASYNC_TIMEOUT_MS);
+
+    QVERIFY(qFuzzyCompare(seen_progress.at(0), 0.51));
+    QVERIFY(qFuzzyCompare(seen_progress.at(1), 0.75));
+    QCOMPARE(seen_heights.at(0), 123);
+    QCOMPARE(seen_heights.at(1), 456);
+    QCOMPARE(seen_times.at(0), 1'700'000'001);
+    QCOMPARE(seen_times.at(1), 1'700'000'099);
+    QCOMPARE(model.blockTipHeight(), 456);
+    QVERIFY(qFuzzyCompare(model.verificationProgress(), 0.75));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

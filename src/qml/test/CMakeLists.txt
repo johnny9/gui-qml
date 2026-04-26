@@ -20,8 +20,8 @@ add_executable(bitcoinqml_unit_tests
   test_walletqmlmodeltransaction.cpp
   test_qmlbitcoinunits.cpp
   test_imageprovider.cpp
-  test_networkstyle.cpp
   test_nodemodel.cpp
+  test_networkstyle.cpp
   test_qmlinitexecutor_api.cpp
   test_options_model.cpp
   test_banlistmodel.cpp
