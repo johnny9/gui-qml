@@ -202,7 +202,9 @@ Page {
             InfoBanner {
                 objectName: "speedUpBanner"
                 visible: root.canBump
+                Layout.alignment: Qt.AlignHCenter
                 Layout.fillWidth: true
+                Layout.maximumWidth: 600
                 Layout.topMargin: 20
                 bannerLayout: InfoBanner.Layout.Vertical
                 message: qsTr("This transaction is still unconfirmed. You can speed it up by increasing the fee.")

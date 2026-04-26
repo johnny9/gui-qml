@@ -14,9 +14,13 @@ PageStack {
     id: stackView
 
     function navigateToTransaction(txid) {
-        if (!walletController.selectedWallet) return
+        if (!walletController.selectedWallet)
+            return
+
         var details = walletController.selectedWallet.activityListModel.transactionDetails(txid)
-        if (Object.keys(details).length === 0) return
+        if (Object.keys(details).length === 0)
+            return
+
         var page = stackView.push("ActivityDetails.qml", details)
         page.showTransaction.connect(stackView.navigateToTransaction)
     }
@@ -116,7 +120,7 @@ PageStack {
                             cursorShape: Qt.PointingHandCursor
                         }
 
-                        opacity: delegate.replacedByTxid !== "" ? 0.4 : 1.0
+                        opacity: (delegate.replacedByTxid !== "" || delegate.status === Transaction.Conflicted) ? 0.4 : 1.0
 
                         onClicked: {
                             var page = stackView.push(detailsPage)

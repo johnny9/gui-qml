@@ -71,26 +71,12 @@ Popup {
         anchors.fill: parent
         spacing: 0
 
-        RowLayout {
+        CoreText {
+            text: qsTr("Speed up transaction")
+            font.pixelSize: 21
+            bold: true
+            horizontalAlignment: Text.AlignLeft
             Layout.fillWidth: true
-            CoreText {
-                text: qsTr("Speed up transaction")
-                font.pixelSize: 21
-                bold: true
-                horizontalAlignment: Text.AlignLeft
-                Layout.fillWidth: true
-            }
-            Icon {
-                source: "image://images/cross"
-                color: Theme.color.neutral8
-                size: 10
-                enabled: true
-                padding: 0
-                onClicked: root.close()
-                HoverHandler {
-                    cursorShape: Qt.PointingHandCursor
-                }
-            }
         }
 
         CoreText {

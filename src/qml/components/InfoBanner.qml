@@ -28,7 +28,7 @@ Rectangle {
     signal dismissClicked()
 
     radius: 10
-    color: Qt.rgba(Theme.color.blue.r, Theme.color.blue.g, Theme.color.blue.b, 0.3)
+    color: Qt.rgba(Theme.color.blue.r, Theme.color.blue.g, Theme.color.blue.b, 0.2)
     implicitHeight: contentLoader.item ? contentLoader.item.height + 60 : 60
 
     Loader {
