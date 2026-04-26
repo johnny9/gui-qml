@@ -172,18 +172,18 @@ def run_test():
         gui.settle()
 
         print("[rbf] waiting for unconfirmed tx in activity list")
-        activity_item_name = f"activityItem_{txid}"
-        try:
-            wait_for_gui_object(gui, activity_item_name, timeout=15)
-            gui.wait_for_property(activity_item_name, "visible", True, timeout_ms=5000)
-        except Exception:
-            print("[rbf] activity item not found, listing all named objects:")
-            for obj in gui.list_objects():
-                name = obj.get("objectName", "")
-                if name:
-                    print(f"  {name} ({obj.get('className', '')})")
-            raise
-        gui.click(activity_item_name)
+        if not gui.get_property("activitySearchToggle", "checked"):
+            gui.click("activitySearchToggle")
+        gui.wait_for_property("activitySearchToggle", "checked", True, timeout_ms=5000)
+        gui.click("activityTypeFilterButton")
+        gui.click("activityTypeSent")
+        gui.wait_for_property("activityFilterProxyModel", "count", 1, timeout_ms=15000)
+        wait_until(
+            lambda: gui.get_list_item_property("activityListView", 0, "txid") == txid,
+            timeout=10,
+            description=f"sent Activity row for {txid}",
+        )
+        gui.click_list_item("activityListView", 0)
         gui.settle()
 
         print("[rbf] verifying speed up banner")

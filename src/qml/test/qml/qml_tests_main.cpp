@@ -8,6 +8,7 @@
 #include <QQmlEngine>
 #include <QQmlContext>
 #include <QRegularExpression>
+#include <QSortFilterProxyModel>
 #include <QStringList>
 #include <QVariantList>
 #include <qqml.h>
@@ -1342,7 +1343,11 @@ public:
         TxidRole,
         CanBumpRole,
         ReplacesTxidRole,
-        ReplacedByTxidRole
+        ReplacedByTxidRole,
+        IsPendingRequestRole,
+        RequestIdRole,
+        TimestampRole,
+        NetAmountSatRole
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex{}) const override
@@ -1367,6 +1372,10 @@ public:
             case CanBumpRole: return false;
             case ReplacesTxidRole: return QString{};
             case ReplacedByTxidRole: return QString{};
+            case IsPendingRequestRole: return false;
+            case RequestIdRole: return QString{};
+            case TimestampRole: return 1767225600;
+            case NetAmountSatRole: return 1000000;
             default: return {};
             }
         }
@@ -1382,6 +1391,10 @@ public:
         case CanBumpRole: return true;
         case ReplacesTxidRole: return QString{};
         case ReplacedByTxidRole: return QString{};
+        case IsPendingRequestRole: return false;
+        case RequestIdRole: return QString{};
+        case TimestampRole: return 1767312000;
+        case NetAmountSatRole: return -100000;
         default: return {};
         }
     }
@@ -1400,10 +1413,101 @@ public:
             {CanBumpRole, "canBump"},
             {ReplacesTxidRole, "replacesTxid"},
             {ReplacedByTxidRole, "replacedByTxid"},
+            {IsPendingRequestRole, "isPendingRequest"},
+            {RequestIdRole, "requestId"},
+            {TimestampRole, "timestamp"},
+            {NetAmountSatRole, "netAmountSat"},
         };
     }
 
     Q_INVOKABLE void reload() {}
+};
+
+class MockActivityFilterProxyModel : public QSortFilterProxyModel
+{
+    Q_OBJECT
+    Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
+    Q_PROPERTY(DateFilter dateFilter READ dateFilter WRITE setDateFilter NOTIFY dateFilterChanged)
+    Q_PROPERTY(TypeFilter typeFilter READ typeFilter WRITE setTypeFilter NOTIFY typeFilterChanged)
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
+
+public:
+    enum DateFilter {
+        DateAll,
+        Today,
+        ThisWeek,
+        ThisMonth,
+        ThisYear
+    };
+    Q_ENUM(DateFilter)
+
+    enum TypeFilter {
+        TypeAll,
+        Received,
+        Sent,
+        SentToSelf,
+        Mined,
+        PaymentRequest
+    };
+    Q_ENUM(TypeFilter)
+
+    QHash<int, QByteArray> roleNames() const override
+    {
+        return sourceModel() ? sourceModel()->roleNames() : QHash<int, QByteArray>{};
+    }
+
+    void setSourceModel(QAbstractItemModel* source_model) override
+    {
+        if (sourceModel() == source_model) return;
+        QSortFilterProxyModel::setSourceModel(source_model);
+        Q_EMIT countChanged();
+    }
+
+    QString searchText() const { return m_search_text; }
+    void setSearchText(const QString& search_text)
+    {
+        if (m_search_text == search_text) return;
+        m_search_text = search_text;
+        Q_EMIT searchTextChanged();
+        Q_EMIT countChanged();
+    }
+
+    DateFilter dateFilter() const { return m_date_filter; }
+    void setDateFilter(DateFilter date_filter)
+    {
+        if (m_date_filter == date_filter) return;
+        m_date_filter = date_filter;
+        Q_EMIT dateFilterChanged();
+        Q_EMIT countChanged();
+    }
+
+    TypeFilter typeFilter() const { return m_type_filter; }
+    void setTypeFilter(TypeFilter type_filter)
+    {
+        if (m_type_filter == type_filter) return;
+        m_type_filter = type_filter;
+        Q_EMIT typeFilterChanged();
+        Q_EMIT countChanged();
+    }
+
+    int count() const { return rowCount(); }
+
+    Q_INVOKABLE bool exportCsv(const QString& path) const
+    {
+        Q_UNUSED(path);
+        return true;
+    }
+
+Q_SIGNALS:
+    void searchTextChanged();
+    void dateFilterChanged();
+    void typeFilterChanged();
+    void countChanged();
+
+private:
+    QString m_search_text;
+    DateFilter m_date_filter{DateAll};
+    TypeFilter m_type_filter{TypeAll};
 };
 
 class QmlTestsSetup : public QObject
@@ -1450,6 +1554,7 @@ public Q_SLOTS:
         );
         qmlRegisterType<MockBitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
         qmlRegisterType<MockBitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
+        qmlRegisterType<MockActivityFilterProxyModel>("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel");
         qmlRegisterUncreatableType<MockAddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "Test stub type");
         qmlRegisterType<MockPaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
         qmlRegisterUncreatableType<MockTransaction>("org.bitcoincore.qt", 1, 0, "Transaction", "Test stub type");
