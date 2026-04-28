@@ -123,6 +123,7 @@ PageStack {
                         required property string txid;
                         required property bool canBump;
                         required property string replacedByTxid;
+                        required property bool isPendingRequest;
 
                         HoverHandler {
                             cursorShape: Qt.PointingHandCursor
@@ -159,7 +160,9 @@ PageStack {
                                     }
                                 }
                                 color: {
-                                    if (delegate.status == Transaction.Confirmed) {
+                                    if (delegate.isPendingRequest) {
+                                        Theme.color.purple
+                                    } else if (delegate.status == Transaction.Confirmed) {
                                         if (delegate.type == Transaction.RecvWithAddress ||
                                             delegate.type == Transaction.RecvFromOther ||
                                             delegate.type == Transaction.Generated) {
@@ -229,6 +232,7 @@ PageStack {
                                     status: delegate.status
                                     address: delegate.address
                                     label: delegate.label
+                                    isPendingRequest: delegate.isPendingRequest
                                 }
                             }
                         }
