@@ -4,6 +4,7 @@
 
 #include <QtTest/QtTest>
 
+#include <test/gmocktestfixture.h>
 #include <test/mocks/mocknode.h>
 #include <qml/models/options_model.h>
 #include <net_processing.h>
@@ -14,7 +15,7 @@
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 #endif
 
-class OptionsModelTests : public QObject
+class OptionsModelTests : public GmockTestFixture
 {
     Q_OBJECT
 
@@ -59,7 +60,6 @@ void OptionsModelTests::proxyDisabledRemovesKey()
 
     model.setProxyEnabled(false);
     QVERIFY(!model.proxyEnabled());
-    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void OptionsModelTests::torDisabledRemovesKey()
@@ -82,7 +82,6 @@ void OptionsModelTests::torDisabledRemovesKey()
 
     model.setTorEnabled(false);
     QVERIFY(!model.torEnabled());
-    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void OptionsModelTests::proxyEnabledWritesAddress()
@@ -111,7 +110,6 @@ void OptionsModelTests::proxyEnabledWritesAddress()
 
     model.setProxyEnabled(true);
     QVERIFY(model.proxyEnabled());
-    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void OptionsModelTests::onboardWritesProxy()
@@ -138,7 +136,6 @@ void OptionsModelTests::onboardWritesProxy()
         })));
 
     model.onboard();
-    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void OptionsModelTests::proxyDirtySetWhenOnboarded()

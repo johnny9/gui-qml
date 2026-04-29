@@ -4,6 +4,7 @@
 
 #include <QtTest/QtTest>
 
+#include <test/gmocktestfixture.h>
 #include <test/mocks/mocknode.h>
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/peerlistmodel.h>
@@ -43,7 +44,7 @@ constexpr auto AUTO_REFRESH_TRIGGER_TIMEOUT{2'000};
 constexpr auto AUTO_REFRESH_STOP_WAIT{450};
 } // namespace
 
-class PeerListModelTests : public QObject
+class PeerListModelTests : public GmockTestFixture
 {
     Q_OBJECT
 
@@ -100,7 +101,6 @@ void PeerListModelTests::mapsRoleData()
     QCOMPARE(model.flags(QModelIndex{}), Qt::NoItemFlags);
     QVERIFY(model.flags(index).testFlag(Qt::ItemIsSelectable));
     QVERIFY(model.flags(index).testFlag(Qt::ItemIsEnabled));
-    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void PeerListModelTests::refreshUpdatesRows()
@@ -143,7 +143,6 @@ void PeerListModelTests::refreshUpdatesRows()
     QCOMPARE(model.rowCount(), 2);
     QCOMPARE(model.data(model.index(0, 0), PeerListModel::NetNodeId).toLongLong(), 2LL);
     QCOMPARE(model.data(model.index(1, 0), PeerListModel::NetNodeId).toLongLong(), 3LL);
-    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void PeerListModelTests::refreshHandlesGetNodesStatsFailure()
@@ -169,7 +168,6 @@ void PeerListModelTests::refreshHandlesGetNodesStatsFailure()
     model.refresh();
     QCOMPARE(model.rowCount(), 1);
     QCOMPARE(model.data(model.index(0, 0), PeerListModel::NetNodeId).toLongLong(), 1LL);
-    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void PeerListModelTests::startStopAutoRefresh()
@@ -202,7 +200,6 @@ void PeerListModelTests::startStopAutoRefresh()
     const int calls_after_stop = get_nodes_stats_calls;
     QTest::qWait(AUTO_REFRESH_STOP_WAIT);
     QCOMPARE(get_nodes_stats_calls, calls_after_stop);
-    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 void PeerListModelTests::sortProxySortsByRoles()
@@ -292,7 +289,6 @@ void PeerListModelTests::sortProxySortsByRoles()
     assert_sort("sent", [](const CNodeStats& left, const CNodeStats& right) { return left.nSendBytes < right.nSendBytes; });
     assert_sort("received", [](const CNodeStats& left, const CNodeStats& right) { return left.nRecvBytes < right.nRecvBytes; });
     assert_sort("subversion", [](const CNodeStats& left, const CNodeStats& right) { return left.cleanSubVer.compare(right.cleanSubVer) < 0; });
-    QVERIFY(testing::Mock::VerifyAndClearExpectations(&node));
 }
 
 int RunPeerListModelTests(int argc, char* argv[])
