@@ -4,6 +4,7 @@
 
 #include <QtTest/QtTest>
 
+#include <test/gmocktestfixture.h>
 #include <test/mocks/mocknode.h>
 #include <qml/models/options_model.h>
 #include <net_processing.h>
@@ -14,7 +15,7 @@
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 #endif
 
-class OptionsModelTests : public QObject
+class OptionsModelTests : public GmockTestFixture
 {
     Q_OBJECT
 
@@ -127,6 +128,7 @@ void OptionsModelTests::onboardWritesProxy()
     model.setProxyEnabled(true);
     model.setProxyAddress("10.0.0.1:9050");
 
+    EXPECT_CALL(node, updateRwSetting(_, _)).Times(::testing::AnyNumber());
     // onboard() must write the proxy address to disk.
     EXPECT_CALL(node, updateRwSetting(std::string{"proxy"},
         Truly([](const common::SettingsValue& v) {

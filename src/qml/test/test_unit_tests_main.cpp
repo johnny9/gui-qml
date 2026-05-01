@@ -4,6 +4,7 @@
 
 #include <QGuiApplication>
 
+#include <test/gmocktestfixture.h>
 #include <util/translation.h>
 
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -19,6 +20,8 @@ int RunOptionsModelTests(int argc, char* argv[]);
 
 int main(int argc, char* argv[])
 {
+    testing::InitGoogleMock(&argc, argv);
+    testing::UnitTest::GetInstance()->listeners().Append(new QtestGmockListener());
     QGuiApplication app(argc, argv);
 
     int status = 0;
