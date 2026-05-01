@@ -17,6 +17,7 @@ int RunImageProviderTests(int argc, char* argv[]);
 int RunNetworkStyleTests(int argc, char* argv[]);
 int RunQmlInitExecutorApiTests(int argc, char* argv[]);
 int RunOptionsModelTests(int argc, char* argv[]);
+int RunBanListModelTests(int argc, char* argv[]);
 
 int main(int argc, char* argv[])
 {
@@ -33,6 +34,7 @@ int main(int argc, char* argv[])
     status |= RunNetworkStyleTests(argc, argv);
     status |= RunQmlInitExecutorApiTests(argc, argv);
     status |= RunOptionsModelTests(argc, argv);
+    status |= RunBanListModelTests(argc, argv);
 
     return status;
 }
