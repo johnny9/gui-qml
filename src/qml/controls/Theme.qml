@@ -6,9 +6,10 @@ import Qt.labs.settings 1.0
 Control {
     id: root
     property bool dark: true
-    property real blockclocksize: (5/12)
+    property real blockclocksize: (5 / 12)
     readonly property ColorSet color: dark ? darkColorSet : lightColorSet
     readonly property ImageSet image: dark ? darkImageSet : lightImageSet
+    readonly property TextSet text: TextSet {}
 
     Settings {
         id: settings
@@ -45,6 +46,22 @@ Control {
         required property url network
         required property url storage
         required property url tooltipArrow
+    }
+
+    component TextStyle: QtObject {
+        required property string family
+        required property string styleName
+        required property int pixelSize
+
+        // Default line height is 140% of pixelSize; each role overrides with the spec value.
+        // Use with `lineHeightMode: Text.FixedHeight` on the consumer Text element.
+        property int lineHeight: Math.round(pixelSize * 1.4)
+
+        readonly property font font: Qt.font({
+            family: family,
+            styleName: styleName,
+            pixelSize: pixelSize
+        })
     }
 
     ColorSet {
@@ -125,6 +142,108 @@ Control {
         network: "image://images/network-light"
         storage: "image://images/storage-light"
         tooltipArrow: "qrc:/icons/tooltip-arrow-light"
+    }
+
+    component TextSet: QtObject {
+        id: textSetRoot
+        readonly property string family: "Inter"
+        readonly property string monoFamily: "Roboto Mono"
+
+        // Headers — Semi Bold
+        readonly property TextStyle display: TextStyle {
+            family: textSetRoot.family
+            styleName: "Semi Bold"
+            pixelSize: 36
+            lineHeight: 44
+        }
+        readonly property TextStyle headline: TextStyle {
+            family: textSetRoot.family
+            styleName: "Semi Bold"
+            pixelSize: 28
+            lineHeight: 34
+        }
+        readonly property TextStyle title: TextStyle {
+            family: textSetRoot.family
+            styleName: "Semi Bold"
+            pixelSize: 24
+            lineHeight: 28
+        }
+        readonly property TextStyle subtitle: TextStyle {
+            family: textSetRoot.family
+            styleName: "Semi Bold"
+            pixelSize: 21
+            lineHeight: 25
+        }
+        readonly property TextStyle heading: TextStyle {
+            family: textSetRoot.family
+            styleName: "Semi Bold"
+            pixelSize: 18
+            lineHeight: 21
+        }
+        readonly property TextStyle subheading: TextStyle {
+            family: textSetRoot.family
+            styleName: "Semi Bold"
+            pixelSize: 15
+            lineHeight: 18
+        }
+
+        // Body — Regular
+        readonly property TextStyle lead: TextStyle {
+            family: textSetRoot.family
+            styleName: "Regular"
+            pixelSize: 24
+            lineHeight: 36
+        }
+        readonly property TextStyle bodyLarge: TextStyle {
+            family: textSetRoot.family
+            styleName: "Regular"
+            pixelSize: 21
+            lineHeight: 31
+        }
+        readonly property TextStyle body: TextStyle {
+            family: textSetRoot.family
+            styleName: "Regular"
+            pixelSize: 18
+            lineHeight: 27
+        }
+        readonly property TextStyle description: TextStyle {
+            family: textSetRoot.family
+            styleName: "Regular"
+            pixelSize: 15
+            lineHeight: 22
+        }
+        readonly property TextStyle caption: TextStyle {
+            family: textSetRoot.family
+            styleName: "Regular"
+            pixelSize: 13
+            lineHeight: 19
+        }
+
+        // Mono — Roboto Mono Regular
+        readonly property TextStyle monoLead: TextStyle {
+            family: textSetRoot.monoFamily
+            styleName: "Regular"
+            pixelSize: 24
+            lineHeight: 36
+        }
+        readonly property TextStyle monoBody: TextStyle {
+            family: textSetRoot.monoFamily
+            styleName: "Regular"
+            pixelSize: 18
+            lineHeight: 27
+        }
+        readonly property TextStyle monoDescription: TextStyle {
+            family: textSetRoot.monoFamily
+            styleName: "Regular"
+            pixelSize: 15
+            lineHeight: 22
+        }
+        readonly property TextStyle monoCaption: TextStyle {
+            family: textSetRoot.monoFamily
+            styleName: "Regular"
+            pixelSize: 13
+            lineHeight: 19
+        }
     }
 
     function toggleDark() {
