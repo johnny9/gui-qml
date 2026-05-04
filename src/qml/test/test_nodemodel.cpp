@@ -159,6 +159,8 @@ private Q_SLOTS:
     void runawayExceptionSetsFatalStartupError();
     void nodeInformationRowsAvoidChainmanBeforeInitialization();
     void nodeInformationRowsExposeDiagnostics();
+    void initEmitsRequestedInitialize();
+    void initGuardBlocksSecondEmission();
 };
 
 void NodeModelTests::refreshMempoolInfoUpdatesProperties()
@@ -1227,6 +1229,29 @@ void NodeModelTests::nodeInformationRowsExposeDiagnostics()
     }
     QVERIFY(saw_network_active);
     QVERIFY(saw_peer_counts);
+}
+
+void NodeModelTests::initEmitsRequestedInitialize()
+{
+    NiceMock<MockNode> node;
+    InstallDefaultHandlers(node);
+    NodeModel model{node};
+
+    QSignalSpy spy{&model, &NodeModel::requestedInitialize};
+    model.startNodeInitializionThread();
+    QCOMPARE(spy.count(), 1);
+}
+
+void NodeModelTests::initGuardBlocksSecondEmission()
+{
+    NiceMock<MockNode> node;
+    InstallDefaultHandlers(node);
+    NodeModel model{node};
+
+    QSignalSpy spy{&model, &NodeModel::requestedInitialize};
+    model.startNodeInitializionThread();
+    model.startNodeInitializionThread();
+    QCOMPARE(spy.count(), 1);
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN
