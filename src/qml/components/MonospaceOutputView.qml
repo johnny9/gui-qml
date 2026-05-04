@@ -6,6 +6,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import org.bitcoincore.qt 1.0
+import "../controls"
 
 // MonospaceOutputView — a scrollable monospace text display backed by a
 // list model.
