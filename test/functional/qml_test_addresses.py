@@ -96,7 +96,15 @@ def open_address_list_from_settings(gui):
 
 
 def create_payment_request_from_first_unused_address(gui, expected_address):
-    gui.click("addressRowMenuButton")
+    gui.wait_for_property("addressListView", "count", lambda count: count > 0, timeout_ms=10000)
+    row_count = gui.get_property("addressListView", "count")
+    for row in range(row_count):
+        if gui.get_list_item_property("addressListView", row, "address") == expected_address:
+            gui.click_list_item("addressListView", row, "addressRowMenuButton")
+            break
+    else:
+        raise AssertionError(f"Expected address {expected_address!r} in address list")
+
     gui.wait_for_property("addressRowCreatePaymentRequestButton", "visible", True, timeout_ms=5000)
     gui.click("addressRowCreatePaymentRequestButton")
     gui.settle()
