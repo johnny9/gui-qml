@@ -64,12 +64,6 @@ Button {
 
     states: [
         State {
-            name: "DISABLED"; when: !root.enabled
-            PropertyChanges { target: bg; border.color: Theme.color.neutral4 }
-            PropertyChanges { target: icon; color: Theme.color.neutral4 }
-            PropertyChanges { target: label; color: Theme.color.neutral4 }
-        },
-        State {
             name: "PRESSED"; when: root.pressed
             PropertyChanges { target: bg; border.color: Theme.color.orangeLight2 }
         },

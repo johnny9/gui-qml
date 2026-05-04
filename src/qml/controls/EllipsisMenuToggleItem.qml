@@ -21,7 +21,9 @@ Button {
     property int contentBottomPadding: 10
 
     checkable: true
+    Accessible.role: Accessible.MenuItem
     hoverEnabled: AppMode.isDesktop
+    padding: 10
 
     implicitWidth: 280
     implicitHeight: optionSwitch.implicitHeight + root.contentTopPadding + root.contentBottomPadding
@@ -53,7 +55,11 @@ Button {
             Layout.preferredWidth: 40
             Layout.preferredHeight: 24
             checked: root.checked
-            onToggled: root.checked = checked
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.toggle()
+            }
         }
     }
 

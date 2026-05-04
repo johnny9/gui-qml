@@ -156,7 +156,7 @@ def mine_to_wallet(gui_rpc_port, wallet_name, blocks):
 
 
 def open_send_tab(gui):
-    gui.click("desktopWalletsSendTab")
+    gui.click("sendTabButton")
     gui.wait_for_property("walletSendTitle", "visible", True, timeout_ms=5000)
 
 
@@ -364,7 +364,7 @@ def case_created_wallet_send(harness, checkpoints):
     assert_wallet_locked(harness.gui_rpc_port, wallet_name)
     checkpoints.checkpoint("wallet restarted locked", gui)
 
-    gui.click("desktopWalletsActivityTab")
+    gui.click("activityTabButton")
     gui.wait_for_property("walletActivityTitle", "visible", True, timeout_ms=5000)
     checkpoints.checkpoint("locked wallet activity visible", gui)
 
@@ -452,7 +452,7 @@ def case_import_encrypted_wallet(harness, checkpoints):
     assert_wallet_locked(harness.gui_rpc_port, wallet_name)
     checkpoints.checkpoint("encrypted wallet imported locked", gui)
 
-    gui.click("desktopWalletsActivityTab")
+    gui.click("activityTabButton")
     gui.wait_for_property("walletActivityTitle", "visible", True, timeout_ms=5000)
     checkpoints.checkpoint("imported locked wallet activity visible", gui)
 

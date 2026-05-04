@@ -42,7 +42,7 @@ Button {
         anchors.fill: parent
         source: ""
         size: root.size
-        color: iconColor
+        color: root.iconColor
         hoverEnabled: false
 
         Behavior on color {
@@ -53,15 +53,15 @@ Button {
     states: [
         State {
             name: "HOVER"; when: root.hovered
-            PropertyChanges { target: icon; color: hoverColor }
+            PropertyChanges { target: icon; color: root.hoverColor }
         },
         State {
             name: "CHECKED"; when: root.checked
-            PropertyChanges { target: icon; color: activeColor }
+            PropertyChanges { target: icon; color: root.activeColor }
         },
         State {
             name: "PRESSED"; when: root.pressed
-            PropertyChanges { target: icon; color: activeColor }
+            PropertyChanges { target: icon; color: root.activeColor }
         },
         State {
             name: "DISABLED"; when: !root.enabled

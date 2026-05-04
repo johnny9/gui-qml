@@ -124,6 +124,7 @@ PageStack {
                         required property bool canBump;
                         required property string replacedByTxid;
                         required property bool isPendingRequest;
+                        required property string requestId;
 
                         HoverHandler {
                             cursorShape: Qt.PointingHandCursor
@@ -132,8 +133,13 @@ PageStack {
                         opacity: (delegate.replacedByTxid !== "" || delegate.status === Transaction.Conflicted) ? 0.4 : 1.0
 
                         onClicked: {
-                            var page = stackView.push(detailsPage)
-                            page.showTransaction.connect(stackView.navigateToTransaction)
+                            if (delegate.isPendingRequest) {
+                                walletController.selectedWallet.loadPaymentRequestDetail(delegate.requestId)
+                                stackView.push(paymentRequestDetailPage)
+                            } else {
+                                var page = stackView.push(detailsPage)
+                                page.showTransaction.connect(stackView.navigateToTransaction)
+                            }
                         }
 
                         width: ListView.view.width
@@ -162,7 +168,8 @@ PageStack {
                                 color: {
                                     if (delegate.isPendingRequest) {
                                         Theme.color.purple
-                                    } else if (delegate.status == Transaction.Confirmed) {
+                                    } else if (delegate.status == Transaction.Confirmed
+                                               || delegate.status == Transaction.Immature) {
                                         if (delegate.type == Transaction.RecvWithAddress ||
                                             delegate.type == Transaction.RecvFromOther ||
                                             delegate.type == Transaction.Generated) {
@@ -232,8 +239,12 @@ PageStack {
                                     status: delegate.status
                                     address: delegate.address
                                     label: delegate.label
-                                    isPendingRequest: delegate.isPendingRequest
                                 }
+                            }
+
+                            Component {
+                                id: paymentRequestDetailPage
+                                PaymentRequestDetail {}
                             }
                         }
                     }
