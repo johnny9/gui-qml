@@ -73,11 +73,22 @@ Item {
             onBack: {
                 displaySettingsView.pop()
             }
+            onDesignSystemRequested: {
+                displaySettingsView.push(design_system_page)
+            }
         }
     }
     Component {
         id: blockclocksize_page
         SettingsBlockClockDisplayMode {
+            onBack: {
+                displaySettingsView.pop()
+            }
+        }
+    }
+    Component {
+        id: design_system_page
+        SettingsDesignSystem {
             onBack: {
                 displaySettingsView.pop()
             }

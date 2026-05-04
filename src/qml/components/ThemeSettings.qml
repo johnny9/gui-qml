@@ -6,11 +6,14 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import Qt.labs.settings 1.0
+import org.bitcoincore.qt 1.0
 import "../controls"
 
 ColumnLayout {
     id: root
     spacing: 4
+
+    signal designSystemRequested
 
     Settings {
         id: settings
@@ -44,5 +47,30 @@ ColumnLayout {
         onClicked: {
             Theme.dark = true;
         }
+    }
+    CoreText {
+        Layout.topMargin: 36
+        Layout.fillWidth: true
+        Layout.leftMargin: 4
+        visible: BuildInfo.isDebug
+        horizontalAlignment: Text.AlignLeft
+        bold: true
+        font.pixelSize: 13
+        color: Theme.color.neutral7
+        text: qsTr("Developer")
+    }
+    Separator {
+        Layout.fillWidth: true
+        visible: BuildInfo.isDebug
+    }
+    Setting {
+        id: gotoDesignSystem
+        Layout.fillWidth: true
+        visible: BuildInfo.isDebug
+        header: qsTr("Design system")
+        actionItem: CaretRightIcon {
+            color: gotoDesignSystem.stateColor
+        }
+        onClicked: root.designSystemRequested()
     }
 }
