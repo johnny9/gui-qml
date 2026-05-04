@@ -58,9 +58,7 @@ QString Transaction::prettyAmount(int display_unit) const
 
 QString Transaction::dateTimeString() const
 {
-    if (isPendingRequest) {
-        return QStringLiteral("Pending receive");
-    }
+    if (isPendingRequest) return tr("Pending receive");
 
     QDateTime dateTime = QDateTime::fromSecsSinceEpoch(time);
     QDateTime now = QDateTime::currentDateTimeUtc();
@@ -68,16 +66,12 @@ QString Transaction::dateTimeString() const
     qint64 elapsedSeconds = dateTime.secsTo(now);
     const qint64 minutes = elapsedSeconds / 60;
     if (minutes < 60) {
-        return QString("%1 minute%2 ago")
-            .arg(minutes)
-            .arg(minutes == 1 ? "" : "s");
+        return minutes == 1 ? tr("1 minute ago") : tr("%1 minutes ago").arg(minutes);
     }
 
     const qint64 hours = minutes / 60;
     if (hours < 24) {
-        return QString("%1 hour%2 ago")
-            .arg(hours)
-            .arg(hours == 1 ? "" : "s");
+        return hours == 1 ? tr("1 hour ago") : tr("%1 hours ago").arg(hours);
     }
 
     int currentYear = QDate::currentDate().year();

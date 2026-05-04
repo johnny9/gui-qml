@@ -129,8 +129,11 @@ public:
     std::vector<std::string> unlock_passphrases;
     std::vector<OutputType> new_destination_types;
     std::vector<std::string> new_destination_labels;
+    std::vector<interfaces::WalletAddress> wallet_addresses;
     std::vector<bool> create_transaction_sign_args;
     std::vector<bool> fill_psbt_sign_args;
+    bool get_address_result{false};
+    std::string get_address_label;
     int sign_message_calls{0};
     std::string last_signed_message;
 
@@ -229,8 +232,14 @@ public:
     bool isSpendable(const CTxDestination&) override { return false; }
     bool setAddressBook(const CTxDestination&, const std::string&, const std::optional<wallet::AddressPurpose>&) override { return true; }
     bool delAddressBook(const CTxDestination&) override { return true; }
-    bool getAddress(const CTxDestination&, std::string*, wallet::isminetype*, wallet::AddressPurpose*) override { return false; }
-    std::vector<interfaces::WalletAddress> getAddresses() override { return {}; }
+    bool getAddress(const CTxDestination&, std::string* name, wallet::isminetype*, wallet::AddressPurpose*) override
+    {
+        if (name) {
+            *name = get_address_label;
+        }
+        return get_address_result;
+    }
+    std::vector<interfaces::WalletAddress> getAddresses() override { return wallet_addresses; }
     std::vector<std::string> getAddressReceiveRequests() override { return {}; }
     bool setAddressReceiveRequest(const CTxDestination&, const std::string&, const std::string&) override { return true; }
     util::Result<void> displayAddress(const CTxDestination&) override { return {}; }
@@ -329,6 +338,7 @@ private Q_SLOTS:
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
     void scheduleFeeEstimates_debouncesRapidRestarts();
     void transactionChangedEmitsBalanceChanged();
+    void setCurrentPaymentRequestAddressUsesAddressListLabel();
     void commitPaymentRequestUsesSelectedAddressType();
     void commitPaymentRequestOnLockedWalletSignalsNeedsUnlock();
     void commitPaymentRequestWithPassphraseUnlocksRetriesAndRelocks();
@@ -962,6 +972,22 @@ void WalletQmlModelTests::commitPaymentRequestUsesSelectedAddressType()
     QCOMPARE(wallet->new_destination_types.front(), OutputType::BECH32M);
     QCOMPARE(wallet->new_destination_labels.size(), size_t{1});
     QCOMPARE(wallet->new_destination_labels.front(), std::string{"typed receive"});
+}
+
+void WalletQmlModelTests::setCurrentPaymentRequestAddressUsesAddressListLabel()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    wallet->wallet_addresses.emplace_back(
+        DecodeDestination(VALID_MAINNET_ADDRESS.toStdString()),
+        wallet::ISMINE_SPENDABLE,
+        wallet::AddressPurpose::RECEIVE,
+        "invoice 1024");
+    wallet->get_address_result = true;
+
+    QVERIFY(model->setCurrentPaymentRequestAddress(VALID_MAINNET_ADDRESS));
+    QCOMPARE(model->currentPaymentRequest()->address(), VALID_MAINNET_ADDRESS);
+    QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("invoice 1024"));
 }
 
 void WalletQmlModelTests::commitPaymentRequestOnLockedWalletSignalsNeedsUnlock()
