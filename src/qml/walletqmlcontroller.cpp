@@ -19,6 +19,7 @@
 #include <wallet/walletutil.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
+#include <util/translation.h>
 #include <util/threadnames.h>
 
 #include <algorithm>
@@ -316,6 +317,12 @@ void WalletQmlController::createSingleSigWallet(const QString &name, const QStri
         return;
     }
 
+    const QString name_error = walletNameAvailabilityError(name);
+    if (!name_error.isEmpty()) {
+        setWalletCreateError(name_error);
+        return;
+    }
+
     SecureString secure_passphrase{QmlUtil::SecureStringFromQString(passphrase)};
     const std::string wallet_name{name.toStdString()};
 
@@ -366,9 +373,10 @@ bool WalletQmlController::createExternalSignerWallet(const QString& name)
         return false;
     }
 
-    const QString wallet_name = name.trimmed();
-    if (wallet_name.isEmpty()) {
-        setWalletLoadError(tr("Choose a wallet name."));
+    const QString wallet_name = name;
+    const QString name_error = walletNameAvailabilityError(wallet_name);
+    if (!name_error.isEmpty()) {
+        setWalletLoadError(name_error);
         return false;
     }
 
@@ -605,6 +613,51 @@ bool WalletQmlController::walletPathExists(const QString& path) const
 {
     const QString normalized = normalizeWalletPath(path);
     return !normalized.isEmpty() && QFileInfo::exists(normalized);
+}
+
+bool WalletQmlController::walletNameExists(const QString& name) const
+{
+    const QString candidate = QDir::cleanPath(name);
+    if (candidate.isEmpty()) {
+        return false;
+    }
+
+    for (const auto& [wallet_path, info] : m_node.walletLoader().listWalletDir()) {
+        Q_UNUSED(info);
+        const QString real_name = QDir::cleanPath(QString::fromStdString(wallet_path));
+        if (real_name.compare(candidate, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+        // Reject names that collide with another wallet's stored display alias.
+        if (walletDisplayName(real_name).compare(candidate, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+
+    QMutexLocker locker(&m_wallets_mutex);
+    for (WalletQmlModel* wallet : m_wallets) {
+        if (wallet->name().compare(candidate, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+        if (wallet->displayName().compare(candidate, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+QString WalletQmlController::walletNameAvailabilityError(const QString& name) const
+{
+    if (name.isEmpty()) {
+        return tr("Enter a wallet name.");
+    }
+
+    if (walletNameExists(name)) {
+        return tr("A wallet with this name already exists");
+    }
+
+    return {};
 }
 
 QString WalletQmlController::walletImportErrorTitle() const

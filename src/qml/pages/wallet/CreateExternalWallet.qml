@@ -15,6 +15,7 @@ Page {
     signal next
 
     property string defaultWalletName: ""
+    property string walletNameError: ""
     readonly property bool creatingWallet: walletController.walletLoadInProgress
 
     background: null
@@ -86,18 +87,21 @@ Page {
             enabled: !root.creatingWallet
             placeholderText: qsTr("Eg. hardware_wallet")
             text: root.defaultWalletName
-            validator: RegularExpressionValidator { regularExpression: /^[a-zA-Z0-9_]{1,20}$/ }
-            onTextChanged: walletController.clearWalletLoadStatus()
+            onTextChanged: {
+                root.walletNameError = ""
+                walletController.clearWalletLoadStatus()
+            }
         }
 
         CoreText {
+            objectName: "externalWalletNameError"
             Layout.fillWidth: true
             Layout.leftMargin: 20
             Layout.rightMargin: 20
-            visible: walletController.walletLoadError.length > 0
+            visible: root.walletNameError.length > 0 || walletController.walletLoadError.length > 0
             color: Theme.color.red
             wrapMode: Text.WordWrap
-            text: walletController.walletLoadError
+            text: root.walletNameError.length > 0 ? root.walletNameError : walletController.walletLoadError
         }
 
         RowLayout {
@@ -129,10 +133,15 @@ Page {
             Layout.leftMargin: 20
             Layout.rightMargin: 20
             Layout.alignment: Qt.AlignCenter
-            enabled: !root.creatingWallet && walletNameInput.acceptableInput && walletController.canCreateExternalSignerWallet
+            enabled: !root.creatingWallet && walletNameInput.text.length > 0 && walletController.canCreateExternalSignerWallet
             text: root.creatingWallet ? qsTr("Creating wallet...") : qsTr("Create wallet")
             onClicked: {
                 walletController.clearWalletLoadStatus()
+                const availabilityError = walletController.walletNameAvailabilityError(walletNameInput.text)
+                if (availabilityError.length > 0) {
+                    root.walletNameError = availabilityError
+                    return
+                }
                 walletController.createExternalSignerWallet(walletNameInput.text)
             }
         }

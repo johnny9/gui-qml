@@ -63,6 +63,7 @@ public:
     Q_INVOKABLE QString normalizeWalletPath(const QString& path) const;
     Q_INVOKABLE bool walletPathExists(const QString& path) const;
     Q_INVOKABLE QString homePath() const;
+    Q_INVOKABLE QString walletNameAvailabilityError(const QString& name) const;
     Q_INVOKABLE void requestOpenWalletSettings();
     Q_INVOKABLE void refreshExternalSignerStatus();
     Q_INVOKABLE void requestOpenReceive();
@@ -145,6 +146,7 @@ private:
     QString inferRestoreWalletName(const QString& normalized_path) const;
     QString walletDisplayNameKey(const QString& path) const;
     void applyWalletDisplayName(WalletQmlModel* wallet_model) const;
+    bool walletNameExists(const QString& name) const;
     QString describeImportedWalletKeyScheme(interfaces::Wallet& wallet) const;
     void setWalletCreateError(const QString& error);
     void setWalletLoadInProgress(bool in_progress);
