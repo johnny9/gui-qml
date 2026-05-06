@@ -1,4 +1,4 @@
- // Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -12,20 +12,11 @@ import "../settings"
 
 Page {
     id: root
-    signal back
+    property bool navigationBackEnabled: false
     signal next
     background: null
 
-    header: NavigationBar2 {
-        id: navbar
-        leftItem: NavButton {
-            iconSource: "image://images/caret-left"
-            text: qsTr("Back")
-            onClicked: {
-                root.back()
-            }
-        }
-    }
+    header: NavigationBar2 {}
 
     ColumnLayout {
         id: columnLayout

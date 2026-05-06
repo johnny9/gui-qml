@@ -8,7 +8,6 @@ import QtQuick.Layouts 1.15
 import "../controls"
 
 ColumnLayout {
-    id: root
     spacing: 4
     Setting {
         id: dbcacheSetting

@@ -12,20 +12,11 @@ import "../settings"
 
 Page {
     id: root
-    signal back
+    property bool navigationBackEnabled: false
     signal next
     background: null
 
-    header: NavigationBar2 {
-        id: navbar
-        leftItem: NavButton {
-            iconSource: "image://images/caret-left"
-            text: qsTr("Back")
-            onClicked: {
-                root.back()
-            }
-        }
-    }
+    header: NavigationBar2 {}
 
     ColumnLayout {
         id: columnLayout

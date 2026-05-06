@@ -11,7 +11,6 @@ import "../../components"
 Page {
     signal settingsClicked
     id: root
-    objectName: "nodeRunner"
     background: null
     clip: true
     header: NavigationBar2 {

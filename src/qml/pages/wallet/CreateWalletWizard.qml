@@ -22,6 +22,7 @@ PageStack {
 
     initialItem: Page {
         background: null
+        property bool navigationBackEnabled: false
 
         header: NavigationBar2 {
             id: navbar
@@ -108,14 +109,14 @@ PageStack {
     Component {
         id: import_options
         ImportWalletOptions {
-            onBack: root.pop()
+            onBack: root.goBack()
             onNext: root.push(import_success)
         }
     }
     Component {
         id: import_success
         ImportWalletSuccess {
-            onBack: root.pop()
+            onBack: root.goBack()
             onDone: root.finished()
             onViewSettings: {
                 walletController.requestOpenWalletSettings()
@@ -126,7 +127,6 @@ PageStack {
     Component {
         id: intro
         CreateIntro {
-            onBack: root.pop()
             onNext: root.push(name)
         }
     }
@@ -134,7 +134,6 @@ PageStack {
         id: name
         CreateName {
             id: createName
-            onBack: root.pop()
             onNext: {
                 root.walletName = createName.walletName
                 root.push(password)
@@ -145,21 +144,18 @@ PageStack {
         id: password
         CreatePassword {
             walletName: root.walletName
-            onBack: root.pop()
             onNext: root.push(confirm)
         }
     }
     Component {
         id: confirm
         CreateConfirm {
-            onBack: root.pop()
             onNext: root.push(backup)
         }
     }
     Component {
         id: backup
         CreateBackup {
-            onBack: root.pop()
             onNext: root.finished()
         }
     }

@@ -41,7 +41,6 @@ PageStack {
                 spacing: 4
                 Setting {
                     id: gotoAbout
-                    objectName: "gotoAboutSetting"
                     Layout.fillWidth: true
                     header: qsTr("About")
                     actionItem: CaretRightIcon {
@@ -114,19 +113,6 @@ PageStack {
                         root.push(networktraffic_page)
                     }
                 }
-                Separator { Layout.fillWidth: true }
-                Setting {
-                    id: gotoDebugLog
-                    objectName: "settingsDebugLog"
-                    Layout.fillWidth: true
-                    header: qsTr("Debug Log")
-                    actionItem: CaretRightIcon {
-                        color: gotoDebugLog.stateColor
-                    }
-                    onClicked: {
-                        root.push(debug_log_page)
-                    }
-                }
                 Item {
                     Layout.fillHeight: true
                 }
@@ -193,12 +179,6 @@ PageStack {
         id: networktraffic_page
         NetworkTraffic {
             showHeader: false
-            onBack: root.pop()
-        }
-    }
-    Component {
-        id: debug_log_page
-        SettingsDebugLog {
             onBack: root.pop()
         }
     }

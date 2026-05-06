@@ -10,7 +10,6 @@ import "../../components"
 
 InformationPage {
     id: root
-    objectName: "settingsDeveloper"
     property bool onboarding: false
     navLeftDetail: NavButton {
         iconSource: "image://images/caret-left"
