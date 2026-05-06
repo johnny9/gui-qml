@@ -45,6 +45,8 @@ TestCase {
         verify(findChild(page, "feeSelectionIncludeFeeToggle") !== null)
         verify(findChild(page, "sendFeeIncludedNote") !== null)
         verify(findChild(page, "sendFeeIncludedNoteText") !== null)
+        verify(findChild(page, "sendPrepareTransactionError") !== null)
+        verify(findChild(page, "sendPrepareTransactionErrorText") !== null)
         verify(findChild(page, "sendContinueButton") !== null)
     }
 
@@ -67,7 +69,11 @@ TestCase {
         verify(page !== null)
 
         const continueButton = findChild(page, "sendContinueButton")
+        const prepareError = findChild(page, "sendPrepareTransactionError")
+        const prepareErrorText = findChild(page, "sendPrepareTransactionErrorText")
         verify(continueButton !== null)
+        verify(prepareError !== null)
+        verify(prepareErrorText !== null)
 
         testSendRecipient.isValid = true
         transactionPreparedSpy.target = page
@@ -75,17 +81,23 @@ TestCase {
         transactionPreparedSpy.clear()
 
         const callsBefore = testWalletModel.prepareTransactionCalls
+        compare(page.prepareTransactionErrorText, "")
+        compare(prepareErrorText.text, "")
 
         testWalletModel.prepareTransactionResult = false
         continueButton.clicked()
         compare(testWalletModel.prepareTransactionCalls, callsBefore + 1)
         compare(transactionPreparedSpy.count, 0)
+        compare(page.prepareTransactionErrorText, "Amount plus fee exceeds available balance")
+        compare(prepareErrorText.text, "Amount plus fee exceeds available balance")
 
         testWalletModel.prepareTransactionResult = true
         continueButton.clicked()
         compare(testWalletModel.prepareTransactionCalls, callsBefore + 2)
         compare(transactionPreparedSpy.count, 1)
         compare(transactionPreparedSpy.signalArguments[0][0], false)
+        compare(page.prepareTransactionErrorText, "")
+        compare(prepareErrorText.text, "")
     }
 
     function test_send_fee_selection_updates_wallet_target_blocks() {
@@ -200,7 +212,7 @@ TestCase {
         verify(includedFeeNoteText !== null)
 
         compare(includedFeeNote.visible, false)
-        compare(includedFeeNoteText.text, "Fees are included in the amount")
+        compare(includedFeeNoteText.text, "Fee is included in the amount")
     }
 
     function test_send_include_fee_toggle_updates_recipient_and_schedules_fee_estimate() {

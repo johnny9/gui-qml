@@ -18,8 +18,21 @@ PageStack {
 
     property WalletQmlModel wallet: walletController.selectedWallet
     property SendRecipient recipient: wallet.recipients.current
+    property string prepareTransactionErrorText: ""
 
     signal transactionPrepared(bool multipleRecipientsEnabled)
+
+    function clearPrepareTransactionError() {
+        if (prepareTransactionErrorText.length > 0) {
+            prepareTransactionErrorText = ""
+        }
+    }
+
+    function scheduleFeeEstimates() {
+        if (root.wallet) {
+            root.wallet.scheduleFeeEstimates()
+        }
+    }
 
     Connections {
         target: walletController
@@ -31,29 +44,37 @@ PageStack {
     Connections {
         target: root.wallet ? root.wallet.recipients : null
         function onListCleared() {
+            root.clearPrepareTransactionError()
             settings.multipleRecipientsEnabled = false
             if (root.wallet) {
                 root.wallet.scheduleFeeEstimates()
             }
         }
         function onCountChanged() {
-            if (root.wallet) {
-                root.wallet.scheduleFeeEstimates()
-            }
+            root.clearPrepareTransactionError()
+            root.scheduleFeeEstimates()
         }
         function onCurrentRecipientChanged() {
-            if (root.wallet) {
-                root.wallet.scheduleFeeEstimates()
-            }
+            root.clearPrepareTransactionError()
+            root.scheduleFeeEstimates()
         }
     }
 
     Connections {
         target: root.wallet ? root.wallet.coinsListModel : null
         function onSelectedCoinsCountChanged() {
-            if (root.wallet) {
-                root.wallet.scheduleFeeEstimates()
-            }
+            root.clearPrepareTransactionError()
+            root.scheduleFeeEstimates()
+        }
+    }
+
+    Connections {
+        target: root.wallet
+        function onCustomFeeEnabledChanged() {
+            root.clearPrepareTransactionError()
+        }
+        function onCustomFeeRateChanged() {
+            root.clearPrepareTransactionError()
         }
     }
 
@@ -197,8 +218,11 @@ PageStack {
                     enabled: walletController.initialized
                     address: root.recipient.address
                     errorText: root.recipient.addressError
-                    onTextChanged: if (root.wallet) root.wallet.scheduleFeeEstimates()
-                    onEditingFinished: if (root.wallet) root.wallet.scheduleFeeEstimates()
+                    onTextChanged: {
+                        root.clearPrepareTransactionError()
+                        root.scheduleFeeEstimates()
+                    }
+                    onEditingFinished: root.scheduleFeeEstimates()
                 }
 
                 Separator {
@@ -237,24 +261,19 @@ PageStack {
                             selectByMouse: true
                             text: root.recipient.amount.display
                             onTextChanged: {
+                                root.clearPrepareTransactionError()
                                 root.recipient.amount.display = text
-                                if (root.wallet) {
-                                    root.wallet.scheduleFeeEstimates()
-                                }
+                                root.scheduleFeeEstimates()
                             }
                             onTextEdited: root.recipient.amount.display = text
                             onEditingFinished: {
                                 root.recipient.amount.format()
-                                if (root.wallet) {
-                                    root.wallet.scheduleFeeEstimates()
-                                }
+                                root.scheduleFeeEstimates()
                             }
                             onActiveFocusChanged: {
                                 if (!activeFocus) {
                                     root.recipient.amount.format()
-                                    if (root.wallet) {
-                                        root.wallet.scheduleFeeEstimates()
-                                    }
+                                    root.scheduleFeeEstimates()
                                 }
                             }
                             validator: RegularExpressionValidator {
@@ -354,15 +373,17 @@ PageStack {
                     currentTarget: root.wallet ? root.wallet.targetBlocks : 2
 
                     onFeeChanged: function(target) {
-                        root.wallet.targetBlocks = target
+                        root.clearPrepareTransactionError()
+                        if (root.wallet) {
+                            root.wallet.targetBlocks = target
+                        }
                     }
 
                     onIncludeFeeInAmountToggled: function(checked) {
+                        root.clearPrepareTransactionError()
                         if (root.recipient && root.recipient.subtractFeeFromAmount !== checked) {
                             root.recipient.subtractFeeFromAmount = checked
-                            if (root.wallet) {
-                                root.wallet.scheduleFeeEstimates()
-                            }
+                            root.scheduleFeeEstimates()
                         }
                     }
                 }
@@ -381,7 +402,7 @@ PageStack {
                     CoreText {
                         objectName: "sendFeeIncludedNoteText"
                         Layout.fillWidth: true
-                        text: qsTr("Fees are included in the amount")
+                        text: qsTr("Fee is included in the amount")
                         font.pixelSize: 15
                         color: Theme.color.neutral7
                         horizontalAlignment: Text.AlignLeft
@@ -390,6 +411,27 @@ PageStack {
 
                 Separator {
                     Layout.fillWidth: true
+                }
+
+                RowLayout {
+                    objectName: "sendPrepareTransactionError"
+                    Layout.fillWidth: true
+                    visible: root.prepareTransactionErrorText.length > 0
+
+                    Icon {
+                        source: "image://images/alert-filled"
+                        size: 22
+                        color: Theme.color.red
+                    }
+
+                    CoreText {
+                        objectName: "sendPrepareTransactionErrorText"
+                        text: root.prepareTransactionErrorText
+                        font.pixelSize: 15
+                        color: Theme.color.red
+                        horizontalAlignment: Text.AlignLeft
+                        Layout.fillWidth: true
+                    }
                 }
 
                 ContinueButton {
@@ -401,8 +443,11 @@ PageStack {
                     enabled: root.recipient.isValid
                         && (!root.wallet || !root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                     onClicked: {
+                        root.clearPrepareTransactionError()
                         if (root.wallet.prepareTransaction()) {
                             root.transactionPrepared(settings.multipleRecipientsEnabled);
+                        } else {
+                            root.prepareTransactionErrorText = qsTr("Amount plus fee exceeds available balance")
                         }
                     }
                 }

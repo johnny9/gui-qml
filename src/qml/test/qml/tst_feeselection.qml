@@ -56,6 +56,9 @@ TestCase {
         verify(findChild(control, "feeSelectionPopup") !== null)
         verify(findChild(control, "feeSelectionList") !== null)
         verify(findChild(control, "feeSelectionIncludeFeeToggle") !== null)
+
+        const customFeeRateInput = findChild(control, "feeSelectionCustomRateInput")
+        compare(customFeeRateInput.maximumLength, control.customFeeRateMaximumLength)
     }
 
     function test_feeSelection_matches_standard_fee_spec_labels_and_estimate() {
@@ -258,6 +261,10 @@ TestCase {
         compare(testWalletModel.customFeeRate, "2")
         compare(testWalletModel.customFeeRateValid, true)
         tryCompare(customEstimateLabel, "text", "0.00000400 ₿")
+
+        customFeeRateInput.text = "12345678901234567890"
+        compare(customFeeRateInput.text.length, control.customFeeRateMaximumLength)
+        compare(testWalletModel.customFeeRate, customFeeRateInput.text)
 
         popup.open()
         tryVerify(function() {

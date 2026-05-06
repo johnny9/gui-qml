@@ -34,6 +34,7 @@ ColumnLayout {
     readonly property int optionSpacing: 8
     readonly property int detailsSpacing: 4
     readonly property int selectionColumnWidth: 20
+    readonly property int customFeeRateMaximumLength: 12
     readonly property int estimateColumnWidth: Math.ceil(estimateFontMetrics.advanceWidth("0.00000000 ₿"))
 
     signal feeChanged(int target)
@@ -85,6 +86,7 @@ ColumnLayout {
             placeholderText: "0.000"
             selectByMouse: true
             text: root.walletModel ? root.walletModel.customFeeRate : ""
+            maximumLength: root.customFeeRateMaximumLength
             validator: RegularExpressionValidator {
                 regularExpression: /^(|[0-9]+(\.[0-9]{0,3})?)$/
             }
