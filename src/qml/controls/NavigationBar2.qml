@@ -10,6 +10,12 @@ Pane {
     property alias leftItem: left_section.contentItem
     property alias centerItem: center_section.contentItem
     property alias rightItem: right_section.contentItem
+    property var navigationStack: null
+    property bool showBackButton: navigationStack ? navigationStack.canGoBack : false
+    property string backButtonObjectName: ""
+    property string backButtonText: qsTr("Back")
+
+    signal backClicked
 
     background: null
     padding: 4
@@ -18,6 +24,18 @@ Pane {
             id: left_div
             Layout.preferredWidth: Math.floor(Math.max(left_div.implicitWidth, right_div.implicitWidth))
             contentItem: RowLayout {
+                NavButton {
+                    objectName: backButtonObjectName
+                    visible: showBackButton
+                    iconSource: "image://images/caret-left"
+                    text: backButtonText
+                    onClicked: {
+                        if (navigationStack) {
+                            navigationStack.goBack()
+                        }
+                        backClicked()
+                    }
+                }
                 Section {
                     id: left_section
                 }
