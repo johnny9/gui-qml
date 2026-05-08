@@ -63,8 +63,8 @@ TestCase {
         return null
     }
 
-    function waitForApproveCall(wallet) {
-        tryCompare(wallet, "approveCalls", 1, 1000)
+    function waitForApproveCalls(wallet, count) {
+        tryCompare(wallet, "approveCalls", count, 1000)
     }
 
     function test_waiting_state_persists_until_mock_completes() {
@@ -89,7 +89,7 @@ TestCase {
         compare(review.buttonText, "Waiting for approval...")
         verify(!button.enabled)
 
-        waitForApproveCall(wallet)
+        waitForApproveCalls(wallet, 1)
         compare(review.reviewState, "waiting")
 
         wallet.externalSignerApprovalSucceeded()
@@ -98,5 +98,84 @@ TestCase {
         compare(review.statusText, "Signed on external signer. Ready to send.")
         compare(review.buttonText, "Send")
         verify(button.enabled)
+    }
+
+    function test_error_state_retries_approval() {
+        const wallet = createTemporaryObject(walletComponent, this)
+        verify(wallet !== null)
+
+        const review = createTemporaryObject(reviewComponent, this, {wallet: wallet})
+        verify(review !== null)
+
+        const button = findObjectByName(review, "externalSignerApproveButton")
+        verify(button !== null)
+
+        review.beginApproval()
+        waitForApproveCalls(wallet, 1)
+        wallet.externalSignerApprovalFailed("External signer not found.", true)
+
+        compare(review.reviewState, "error")
+        compare(review.statusText, "External signer not found.")
+        compare(review.buttonText, "Retry external signer")
+        verify(button.enabled)
+
+        review.beginApproval()
+        waitForApproveCalls(wallet, 2)
+        compare(review.reviewState, "waiting")
+
+        wallet.externalSignerApprovalSucceeded()
+        compare(review.reviewState, "signed")
+        compare(review.statusText, "Signed on external signer. Ready to send.")
+    }
+
+    function test_reset_cancels_pending_approval() {
+        const wallet = createTemporaryObject(walletComponent, this)
+        verify(wallet !== null)
+
+        const review = createTemporaryObject(reviewComponent, this, {wallet: wallet})
+        verify(review !== null)
+
+        review.beginApproval()
+        review.reset()
+        wait(50)
+
+        compare(wallet.approveCalls, 0)
+        compare(review.reviewState, "initial")
+        compare(review.errorMessage, "")
+        compare(review.statusText, "Approve on external signer to broadcast this transaction.")
+    }
+
+    function test_destroy_cancels_pending_approval() {
+        const wallet = createTemporaryObject(walletComponent, this)
+        verify(wallet !== null)
+
+        const review = reviewComponent.createObject(this, {wallet: wallet})
+        verify(review !== null)
+
+        review.beginApproval()
+        review.destroy()
+        wait(50)
+
+        compare(wallet.approveCalls, 0)
+    }
+
+    function test_rapid_clicks_only_start_one_approval() {
+        const wallet = createTemporaryObject(walletComponent, this)
+        verify(wallet !== null)
+
+        const review = createTemporaryObject(reviewComponent, this, {wallet: wallet})
+        verify(review !== null)
+
+        const button = findObjectByName(review, "externalSignerApproveButton")
+        verify(button !== null)
+
+        review.beginApproval()
+        review.beginApproval()
+
+        waitForApproveCalls(wallet, 1)
+        wait(50)
+        compare(wallet.approveCalls, 1)
+        compare(review.reviewState, "waiting")
+        verify(!button.enabled)
     }
 }

@@ -256,12 +256,36 @@ def case_multi_review(harness, gui, wallet_name, checkpoints):
     checkpoints.checkpoint("multi review page displayed", gui)
 
     assert gui.get_text("multipleSendReviewRecipientCountText") == "There are 2 recipients."
-    assert gui.get_property("multipleSendReviewPage", "recipient0AddressText") == format_short_address(first_address)
-    assert gui.get_property("multipleSendReviewPage", "recipient0FullAddressText") == format_full_address(first_address)
-    assert gui.get_property("multipleSendReviewPage", "recipient0AmountText") == "0.50000000 ₿"
-    assert gui.get_property("multipleSendReviewPage", "recipient1AddressText") == format_short_address(second_address)
-    assert gui.get_property("multipleSendReviewPage", "recipient1FullAddressText") == format_full_address(second_address)
-    assert gui.get_property("multipleSendReviewPage", "recipient1AmountText") == "2000 sat"
+    assert gui.get_list_item_property(
+        view_object_name="multipleSendReviewRecipientsList",
+        row_index=0,
+        prop="address",
+    ) == format_short_address(first_address)
+    assert gui.get_list_item_property(
+        view_object_name="multipleSendReviewRecipientsList",
+        row_index=0,
+        prop="formattedAddress",
+    ) == format_full_address(first_address)
+    assert gui.get_list_item_property(
+        view_object_name="multipleSendReviewRecipientsList",
+        row_index=0,
+        prop="amountText",
+    ) == "0.50000000 ₿"
+    assert gui.get_list_item_property(
+        view_object_name="multipleSendReviewRecipientsList",
+        row_index=1,
+        prop="address",
+    ) == format_short_address(second_address)
+    assert gui.get_list_item_property(
+        view_object_name="multipleSendReviewRecipientsList",
+        row_index=1,
+        prop="formattedAddress",
+    ) == format_full_address(second_address)
+    assert gui.get_list_item_property(
+        view_object_name="multipleSendReviewRecipientsList",
+        row_index=1,
+        prop="amountText",
+    ) == "2000 sat"
     assert gui.get_list_item_property(
         view_object_name="multipleSendReviewRecipientsList",
         row_index=1,
