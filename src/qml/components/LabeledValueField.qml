@@ -17,6 +17,7 @@ Item {
     property color valueColor: Theme.color.neutral9
     property int labelPixelSize: 18
     property color labelColor: Theme.color.neutral9
+    property int valueHorizontalAlignment: Text.AlignLeft
 
     Layout.fillWidth: true
     implicitHeight: Math.max(label.implicitHeight, valueText.implicitHeight)
@@ -37,7 +38,7 @@ Item {
         anchors.left: label.right
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        horizontalAlignment: Text.AlignLeft
+        horizontalAlignment: root.valueHorizontalAlignment
         wrap: root.wrap
         font.pixelSize: 18
         color: root.valueColor

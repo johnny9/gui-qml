@@ -23,6 +23,12 @@ Page {
     signal back()
     signal transactionSent()
 
+    onVisibleChanged: {
+        if (!visible) {
+            externalSignerActions.reset()
+        }
+    }
+
     header: NavigationBar2 {
         id: navbar
         leftItem: NavButton {
@@ -30,6 +36,7 @@ Page {
             iconSource: "image://images/caret-left"
             text: root.wallet && root.wallet.hasExternalSigner ? qsTr("Edit") : qsTr("Back")
             onClicked: {
+                externalSignerActions.reset()
                 root.back()
             }
         }
@@ -73,6 +80,7 @@ Page {
                 labelText: qsTr("Note")
                 labelPixelSize: 15
                 labelColor: Theme.color.neutral7
+                valueHorizontalAlignment: Text.AlignRight
                 text: root.recipient ? root.recipient.label : ""
             }
 
@@ -107,6 +115,7 @@ Page {
             }
 
             ExternalSignerReviewActions {
+                id: externalSignerActions
                 visible: root.wallet && root.wallet.hasExternalSigner
                 wallet: root.wallet
                 buttonObjectName: "sendReviewExternalSignerButton"
@@ -120,7 +129,7 @@ Page {
             }
 
             ContinueButton {
-                id: confimationButton
+                id: confirmationButton
                 objectName: "sendReviewSendButton"
                 visible: !root.wallet || !root.wallet.hasExternalSigner
                 Layout.fillWidth: true

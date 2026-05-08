@@ -47,15 +47,25 @@ Item {
     }
 
     function beginApproval() {
+        if (reviewState === "waiting") {
+            return
+        }
         approveTimer.stop()
         reviewState = "waiting"
         errorMessage = ""
         approveTimer.start()
     }
 
+    Component.onDestruction: reset()
+    onVisibleChanged: {
+        if (!visible) {
+            reset()
+        }
+    }
+
     Timer {
         id: approveTimer
-        interval: 0
+        interval: 1
         onTriggered: {
             if (root.wallet) {
                 root.wallet.approveExternalSignerTransaction()
