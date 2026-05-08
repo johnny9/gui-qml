@@ -15,53 +15,28 @@
 class WalletQmlModelTransaction : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(QString address READ address CONSTANT)
-    Q_PROPERTY(QString amount READ amount NOTIFY amountChanged)
-    Q_PROPERTY(QString label READ label CONSTANT)
-    Q_PROPERTY(QString fee READ fee NOTIFY feeChanged)
-    Q_PROPERTY(QString total READ total NOTIFY totalChanged)
     Q_PROPERTY(BitcoinAmount* amountAmount READ amountAmount CONSTANT)
     Q_PROPERTY(BitcoinAmount* feeAmount READ feeAmount CONSTANT)
     Q_PROPERTY(BitcoinAmount* totalAmount READ totalAmount CONSTANT)
 public:
     explicit WalletQmlModelTransaction(const SendRecipientsListModel* recipient, QObject* parent = nullptr);
 
-    QString address() const;
-    QString amount() const;
-    QString fee() const;
     BitcoinAmount* amountAmount() const;
     BitcoinAmount* feeAmount() const;
-    QString label() const;
-    QString total() const;
     BitcoinAmount* totalAmount() const;
 
     CTransactionRef& getWtx();
     void setWtx(const CTransactionRef&);
 
-    unsigned int getTransactionSize();
-
     void setTransactionFee(const CAmount& newFee);
-    CAmount getTransactionFee() const;
-
-    CAmount getTotalTransactionAmount() const;
-
     void reassignAmounts(int nChangePosRet); // needed for the subtract-fee-from-amount feature
 
-Q_SIGNALS:
-    void addressChanged();
-    void labelChanged();
-    void amountChanged();
-    void feeChanged();
-    void totalChanged();
-
 private:
-    QString m_address;
     CAmount m_amount;
     CAmount m_fee;
     BitcoinAmount* m_amount_amount;
     BitcoinAmount* m_fee_amount;
     BitcoinAmount* m_total_amount;
-    QString m_label;
     CTransactionRef m_wtx;
 };
 

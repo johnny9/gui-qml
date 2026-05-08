@@ -40,9 +40,6 @@ public:
     Q_INVOKABLE void remove();
     Q_INVOKABLE void clear();
     Q_INVOKABLE void clearToFront();
-    Q_INVOKABLE QString addressTextAt(int row) const;
-    Q_INVOKABLE QString fullAddressTextAt(int row) const;
-    Q_INVOKABLE QString amountTextAt(int row) const;
 
     int currentIndex() const { return m_current + 1; }
     void setCurrentIndex(int row);

@@ -222,23 +222,3 @@ void SendRecipientsListModel::clearToFront()
         Q_EMIT totalAmountChanged();
     }
 }
-
-QString SendRecipientsListModel::addressTextAt(int row) const
-{
-    const QModelIndex model_index = index(row, 0);
-    return data(model_index, AddressRole).toString();
-}
-
-QString SendRecipientsListModel::fullAddressTextAt(int row) const
-{
-    const QModelIndex model_index = index(row, 0);
-    return data(model_index, FormattedAddressRole).toString();
-}
-
-QString SendRecipientsListModel::amountTextAt(int row) const
-{
-    const QModelIndex model_index = index(row, 0);
-    const QString amount = data(model_index, AmountRole).toString();
-    const QString unit = data(model_index, AmountUnitLabelRole).toString();
-    return unit.isEmpty() ? amount : amount + " " + unit;
-}

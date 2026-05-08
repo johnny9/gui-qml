@@ -21,16 +21,16 @@ Page {
     readonly property string recipientCountText: recipientCount === 1
         ? qsTr("There is 1 recipient.")
         : qsTr("There are %1 recipients.").arg(recipientCount)
-    property string recipient0AddressText: wallet.recipients.addressTextAt(0)
-    property string recipient0FullAddressText: wallet.recipients.fullAddressTextAt(0)
-    property string recipient0AmountText: wallet.recipients.amountTextAt(0)
-    property string recipient1AddressText: wallet.recipients.addressTextAt(1)
-    property string recipient1FullAddressText: wallet.recipients.fullAddressTextAt(1)
-    property string recipient1AmountText: wallet.recipients.amountTextAt(1)
 
     signal finished()
     signal back()
     signal transactionSent()
+
+    onVisibleChanged: {
+        if (!visible) {
+            externalSignerActions.reset()
+        }
+    }
 
     header: NavigationBar2 {
         id: navbar
@@ -39,6 +39,7 @@ Page {
             iconSource: "image://images/caret-left"
             text: root.wallet && root.wallet.hasExternalSigner ? qsTr("Edit") : qsTr("Back")
             onClicked: {
+                externalSignerActions.reset()
                 root.back()
             }
         }
@@ -107,6 +108,7 @@ Page {
                     required property string amountUnitLabel;
                     property bool expanded: false
                     readonly property bool expandable: formattedAddress.length > 0
+                    readonly property string amountText: amountUnitLabel.length > 0 ? amount + " " + amountUnitLabel : amount
                     readonly property string primaryText: label.length > 0 ? label : address
                     readonly property string secondaryText: expanded ? formattedAddress : ""
                     readonly property bool secondaryVisible: secondaryText.length > 0
@@ -163,7 +165,7 @@ Page {
                             Item {
                                 id: amountDisplay
                                 objectName: "multipleSendReviewRecipient" + index + "Amount"
-                                property string text: amountUnitLabel.length > 0 ? amount + " " + amountUnitLabel : amount
+                                property string text: delegate.amountText
                                 implicitWidth: amountRow.implicitWidth
                                 implicitHeight: amountRow.implicitHeight
                                 Layout.alignment: Qt.AlignRight | Qt.AlignTop
@@ -254,6 +256,7 @@ Page {
             }
 
             ExternalSignerReviewActions {
+                id: externalSignerActions
                 visible: root.wallet && root.wallet.hasExternalSigner
                 wallet: root.wallet
                 buttonObjectName: "multipleSendReviewExternalSignerButton"
