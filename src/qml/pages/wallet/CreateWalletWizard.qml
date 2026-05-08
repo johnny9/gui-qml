@@ -219,7 +219,6 @@ PageStack {
             descriptionText: qsTr("This wallet uses the connected external signer for addresses and signing.")
             nextButtonText: qsTr("Done")
             nextButtonObjectName: "externalWalletCreatedDoneButton"
-            onBack: root.pop()
             onNext: root.finished()
         }
     }
