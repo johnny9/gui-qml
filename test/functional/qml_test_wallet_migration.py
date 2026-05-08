@@ -68,7 +68,7 @@ def run_test():
         gui.wait_for_page("importWalletMigration", timeout_ms=10000)
         gui.wait_for_property("walletMigrationActionButton", "text", "Update wallet", timeout_ms=5000)
         gui.click("walletMigrationActionButton")
-        gui.wait_for_property("walletMigrationActionButton", "text", "Next", timeout_ms=30000)
+        gui.wait_for_property("walletMigrationActionButton", "text", "Done", timeout_ms=30000)
         gui.click("walletMigrationActionButton")
 
         gui.wait_for_property("walletBadge", "text", wallet_name, timeout_ms=20000)

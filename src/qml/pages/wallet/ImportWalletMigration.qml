@@ -15,7 +15,6 @@ Page {
     objectName: "importWalletMigration"
     required property string walletPath
     signal back
-    signal cancel
     signal next
 
     property string phase: "intro"
@@ -45,15 +44,6 @@ Page {
             onClicked: {
                 walletController.clearWalletMigrationStatus()
                 root.back()
-            }
-        }
-        rightItem: NavButton {
-            visible: root.introPhase || root.failedPhase
-            enabled: visible
-            text: qsTr("Cancel")
-            onClicked: {
-                walletController.clearWalletMigrationStatus()
-                root.cancel()
             }
         }
     }
@@ -95,7 +85,7 @@ Page {
             Layout.rightMargin: 20
             header: {
                 if (root.successPhase) {
-                    return qsTr("Update completed")
+                    return qsTr("Wallet successfully migrated")
                 }
                 if (root.failedPhase) {
                     return qsTr("Update failed")
@@ -133,7 +123,7 @@ Page {
             enabled: !root.updatingPhase
             text: {
                 if (root.successPhase) {
-                    return qsTr("Next")
+                    return qsTr("Done")
                 }
                 if (root.failedPhase) {
                     return qsTr("Back to overview")
@@ -151,7 +141,7 @@ Page {
                 }
                 if (root.failedPhase) {
                     walletController.clearWalletMigrationStatus()
-                    root.cancel()
+                    root.back()
                     return
                 }
                 root.startMigration()

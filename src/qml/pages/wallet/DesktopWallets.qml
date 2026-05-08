@@ -49,7 +49,6 @@ Page {
         id: walletMigrationPage
         ImportWalletMigration {
             onBack: root.StackView.view.pop()
-            onCancel: root.StackView.view.pop()
             onNext: root.StackView.view.pop()
         }
     }
