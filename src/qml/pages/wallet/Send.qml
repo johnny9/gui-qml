@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2026 The Bitcoin Core developers
+// Copyright (c) 2024 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -13,12 +13,26 @@ import "../../components"
 
 PageStack {
     id: root
+    objectName: "walletSendPage"
     vertical: true
 
     property WalletQmlModel wallet: walletController.selectedWallet
     property SendRecipient recipient: wallet.recipients.current
+    property string prepareTransactionErrorText: ""
 
     signal transactionPrepared(bool multipleRecipientsEnabled)
+
+    function clearPrepareTransactionError() {
+        if (prepareTransactionErrorText.length > 0) {
+            prepareTransactionErrorText = ""
+        }
+    }
+
+    function scheduleFeeEstimates() {
+        if (root.wallet) {
+            root.wallet.scheduleFeeEstimates()
+        }
+    }
 
     Connections {
         target: walletController
@@ -28,12 +42,41 @@ PageStack {
     }
 
     Connections {
-        target: root.wallet.recipients
+        target: root.wallet ? root.wallet.recipients : null
         function onListCleared() {
+            root.clearPrepareTransactionError()
             settings.multipleRecipientsEnabled = false
+            if (root.wallet) {
+                root.wallet.scheduleFeeEstimates()
+            }
+        }
+        function onCountChanged() {
+            root.clearPrepareTransactionError()
+            root.scheduleFeeEstimates()
+        }
+        function onCurrentRecipientChanged() {
+            root.clearPrepareTransactionError()
+            root.scheduleFeeEstimates()
         }
     }
 
+    Connections {
+        target: root.wallet ? root.wallet.coinsListModel : null
+        function onSelectedCoinsCountChanged() {
+            root.clearPrepareTransactionError()
+            root.scheduleFeeEstimates()
+        }
+    }
+
+    Connections {
+        target: root.wallet
+        function onCustomFeeEnabledChanged() {
+            root.clearPrepareTransactionError()
+        }
+        function onCustomFeeRateChanged() {
+            root.clearPrepareTransactionError()
+        }
+    }
 
     initialItem: Page {
         background: null
@@ -61,7 +104,7 @@ PageStack {
 
             ColumnLayout {
                 id: columnLayout
-                width: 450
+                width: 520
                 anchors.horizontalCenter: parent.horizontalCenter
 
                 spacing: 10
@@ -171,9 +214,15 @@ PageStack {
 
                 BitcoinAddressInputField {
                     Layout.fillWidth: true
+                    inputObjectName: "sendAddressInput"
                     enabled: walletController.initialized
                     address: root.recipient.address
                     errorText: root.recipient.addressError
+                    onTextChanged: {
+                        root.clearPrepareTransactionError()
+                        root.scheduleFeeEstimates()
+                    }
+                    onEditingFinished: root.scheduleFeeEstimates()
                 }
 
                 Separator {
@@ -198,6 +247,7 @@ PageStack {
 
                         TextField {
                             id: amountInput
+                            objectName: "sendAmountInput"
                             anchors.left: amountLabel.right
                             anchors.verticalCenter: parent.verticalCenter
                             leftPadding: 0
@@ -210,11 +260,20 @@ PageStack {
                             placeholderText: "0.00000000"
                             selectByMouse: true
                             text: root.recipient.amount.display
+                            onTextChanged: {
+                                root.clearPrepareTransactionError()
+                                root.recipient.amount.display = text
+                                root.scheduleFeeEstimates()
+                            }
                             onTextEdited: root.recipient.amount.display = text
-                            onEditingFinished: root.recipient.amount.format()
+                            onEditingFinished: {
+                                root.recipient.amount.format()
+                                root.scheduleFeeEstimates()
+                            }
                             onActiveFocusChanged: {
                                 if (!activeFocus) {
                                     root.recipient.amount.format()
+                                    root.scheduleFeeEstimates()
                                 }
                             }
                             validator: RegularExpressionValidator {
@@ -278,6 +337,7 @@ PageStack {
 
                 LabeledTextInput {
                     id: label
+                    inputObjectName: "sendNoteInput"
                     Layout.fillWidth: true
                     labelText: qsTr("Note to self")
                     placeholderText: qsTr("Enter ...")
@@ -308,21 +368,86 @@ PageStack {
                 FeeSelection {
                     id: feeSelection
                     Layout.fillWidth: true
+                    walletModel: root.wallet
+                    includeFeeInAmount: root.recipient ? root.recipient.subtractFeeFromAmount : false
+                    currentTarget: root.wallet ? root.wallet.targetBlocks : 2
 
-                    onFeeChanged: {
-                        root.wallet.targetBlocks = target
+                    onFeeChanged: function(target) {
+                        root.clearPrepareTransactionError()
+                        if (root.wallet) {
+                            root.wallet.targetBlocks = target
+                        }
+                    }
+
+                    onIncludeFeeInAmountToggled: function(checked) {
+                        root.clearPrepareTransactionError()
+                        if (root.recipient && root.recipient.subtractFeeFromAmount !== checked) {
+                            root.recipient.subtractFeeFromAmount = checked
+                            root.scheduleFeeEstimates()
+                        }
+                    }
+                }
+
+                RowLayout {
+                    objectName: "sendFeeIncludedNote"
+                    Layout.fillWidth: true
+                    visible: root.recipient && root.recipient.subtractFeeFromAmount
+
+                    Icon {
+                        source: "image://images/check"
+                        size: 18
+                        color: Theme.color.green
+                    }
+
+                    CoreText {
+                        objectName: "sendFeeIncludedNoteText"
+                        Layout.fillWidth: true
+                        text: qsTr("Fee is included in the amount")
+                        font.pixelSize: 15
+                        color: Theme.color.neutral7
+                        horizontalAlignment: Text.AlignLeft
+                    }
+                }
+
+                Separator {
+                    Layout.fillWidth: true
+                }
+
+                RowLayout {
+                    objectName: "sendPrepareTransactionError"
+                    Layout.fillWidth: true
+                    visible: root.prepareTransactionErrorText.length > 0
+
+                    Icon {
+                        source: "image://images/alert-filled"
+                        size: 22
+                        color: Theme.color.red
+                    }
+
+                    CoreText {
+                        objectName: "sendPrepareTransactionErrorText"
+                        text: root.prepareTransactionErrorText
+                        font.pixelSize: 15
+                        color: Theme.color.red
+                        horizontalAlignment: Text.AlignLeft
+                        Layout.fillWidth: true
                     }
                 }
 
                 ContinueButton {
                     id: continueButton
+                    objectName: "sendContinueButton"
                     Layout.fillWidth: true
                     Layout.topMargin: 30
                     text: qsTr("Review")
                     enabled: root.recipient.isValid
+                        && (!root.wallet || !root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                     onClicked: {
+                        root.clearPrepareTransactionError()
                         if (root.wallet.prepareTransaction()) {
                             root.transactionPrepared(settings.multipleRecipientsEnabled);
+                        } else {
+                            root.prepareTransactionErrorText = qsTr("Amount plus fee exceeds available balance")
                         }
                     }
                 }

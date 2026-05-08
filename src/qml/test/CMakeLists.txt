@@ -21,6 +21,7 @@ add_executable(bitcoinqml_unit_tests
   test_qmlinitexecutor_api.cpp
   test_options_model.cpp
   test_banlistmodel.cpp
+  test_walletqmlmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
 )
 
@@ -55,6 +56,8 @@ add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests -platform offs
 
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/components/blockclockdial.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/controls/linegraph.cpp
 )
 
 target_compile_definitions(bitcoinqml_qmltests
@@ -70,6 +73,11 @@ target_link_libraries(bitcoinqml_qmltests
     Qt6::Qml
     Qt6::Quick
     Qt6::QuickTest
+)
+
+target_include_directories(bitcoinqml_qmltests
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
 add_test(NAME bitcoinqml_qmltests COMMAND bitcoinqml_qmltests -platform offscreen)
