@@ -19,6 +19,7 @@ int RunQmlInitExecutorApiTests(int argc, char* argv[]);
 int RunOptionsModelTests(int argc, char* argv[]);
 int RunBanListModelTests(int argc, char* argv[]);
 int RunWalletQmlModelTests(int argc, char* argv[]);
+int RunBumpTransactionModelTests(int argc, char* argv[]);
 
 int main(int argc, char* argv[])
 {
@@ -37,6 +38,7 @@ int main(int argc, char* argv[])
     status |= RunOptionsModelTests(argc, argv);
     status |= RunBanListModelTests(argc, argv);
     status |= RunWalletQmlModelTests(argc, argv);
+    status |= RunBumpTransactionModelTests(argc, argv);
 
     return status;
 }

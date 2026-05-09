@@ -139,7 +139,17 @@ QList<QSharedPointer<Transaction>> Transaction::fromWalletTx(const interfaces::W
     CAmount nDebit = wtx.debit;
     CAmount nNet = nCredit - nDebit;
     uint256 hash = wtx.tx->GetHash();
+    QString txidStr = QString::fromStdString(hash.GetHex());
     std::map<std::string, std::string> mapValue = wtx.value_map;
+
+    QString replacesTxid;
+    QString replacedByTxid;
+    if (mapValue.count("replaces_txid")) {
+        replacesTxid = QString::fromStdString(mapValue["replaces_txid"]);
+    }
+    if (mapValue.count("replaced_by_txid")) {
+        replacedByTxid = QString::fromStdString(mapValue["replaced_by_txid"]);
+    }
 
     bool involvesWatchAddress = false;
     isminetype fAllFromMe = ISMINE_SPENDABLE;
@@ -175,6 +185,9 @@ QList<QSharedPointer<Transaction>> Transaction::fromWalletTx(const interfaces::W
 
                 QSharedPointer<Transaction> sub = QSharedPointer<Transaction>::create(hash, nTime);
                 sub->idx = i;
+                sub->txid = txidStr;
+                sub->replacesTxid = replacesTxid;
+                sub->replacedByTxid = replacedByTxid;
                 sub->involvesWatchAddress = involvesWatchAddress;
 
                 if (!std::get_if<CNoDestination>(&wtx.txout_address[i]))
@@ -194,6 +207,7 @@ QList<QSharedPointer<Transaction>> Transaction::fromWalletTx(const interfaces::W
                 /* Add fee to first output */
                 if (nTxFee > 0)
                 {
+                    sub->fee = nTxFee;
                     nValue += nTxFee;
                     nTxFee = 0;
                 }
@@ -211,6 +225,9 @@ QList<QSharedPointer<Transaction>> Transaction::fromWalletTx(const interfaces::W
 
                 QSharedPointer<Transaction> sub = QSharedPointer<Transaction>::create(hash, nTime);
                 sub->idx = i; // vout index
+                sub->txid = txidStr;
+                sub->replacesTxid = replacesTxid;
+                sub->replacedByTxid = replacedByTxid;
                 sub->credit = txout.nValue;
                 sub->involvesWatchAddress = false;
                 if (wtx.txout_address_is_mine[i])
@@ -239,6 +256,9 @@ QList<QSharedPointer<Transaction>> Transaction::fromWalletTx(const interfaces::W
         // Mixed debit transaction, can't break down payees
         //
         parts.append(QSharedPointer<Transaction>::create(hash, nTime, Transaction::Other, "", nNet, 0));
+        parts.last()->txid = txidStr;
+        parts.last()->replacesTxid = replacesTxid;
+        parts.last()->replacedByTxid = replacedByTxid;
         parts.last()->involvesWatchAddress = involvesWatchAddress;
     }
 

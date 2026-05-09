@@ -12,6 +12,7 @@
         <file>components/ExternalPopup.qml</file>
         <file>components/FeeSelection.qml</file>
         <file>components/MonospaceOutputView.qml</file>
+        <file>components/InfoBanner.qml</file>
         <file>components/NetworkTrafficGraph.qml</file>
         <file>components/NetworkIndicator.qml</file>
         <file>components/OptionPopup.qml</file>
@@ -103,6 +104,7 @@
         <file>pages/wallet/Send.qml</file>
         <file>pages/wallet/SendResult.qml</file>
         <file>pages/wallet/SendReview.qml</file>
+        <file>pages/wallet/SpeedUpOverlay.qml</file>
         <file>pages/wallet/WalletBadge.qml</file>
         <file>pages/wallet/WalletSelect.qml</file>
     </qresource>

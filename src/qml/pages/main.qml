@@ -114,8 +114,7 @@ ApplicationWindow {
             }
             onTransactionSent: {
                 walletController.selectedWallet.recipients.clear()
-                main.pop()
-                sendResult.open()
+                main.push(sendResultPage)
             }
         }
     }
@@ -128,15 +127,21 @@ ApplicationWindow {
             }
             onTransactionSent: {
                 walletController.selectedWallet.recipients.clear()
-                main.pop()
-                sendResult.open()
+                main.push(sendResultPage)
             }
         }
     }
 
-    SendResult {
-        id: sendResult
-        closePolicy: Popup.CloseOnPressOutside
+    Component {
+        id: sendResultPage
+        SendResult {
+            onDone: {
+                main.pop(null)
+            }
+            onViewNewTransaction: {
+                main.pop(null)
+            }
+        }
     }
 
     Component {
