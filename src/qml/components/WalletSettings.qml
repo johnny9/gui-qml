@@ -92,7 +92,7 @@ ColumnLayout {
                     ? Theme.color.green
                     : Theme.color.neutral9
                 size: 16
-                Layout.alignment: Qt.AlignTop
+                Layout.alignment: Qt.AlignVerticalCenter
             }
 
             CoreText {
@@ -126,7 +126,7 @@ ColumnLayout {
         objectName: "externalSignerCheckDeviceButton"
         Layout.topMargin: 20
         Layout.preferredWidth: Math.min(300, parent.width)
-        Layout.alignment: Qt.AlignLeft
+        Layout.alignment: Qt.AlignHCenter
         text: qsTr("Check device")
         enabled: root.signerPathError.length === 0
         onClicked: {
@@ -134,10 +134,5 @@ ColumnLayout {
                 walletController.refreshExternalSignerStatus()
             }
         }
-    }
-
-    Separator {
-        Layout.topMargin: 20
-        Layout.fillWidth: true
     }
 }
