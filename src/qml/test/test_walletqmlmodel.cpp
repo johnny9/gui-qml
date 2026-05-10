@@ -103,6 +103,7 @@ private Q_SLOTS:
     void walletQmlModelTransaction_reassignAmounts_excludesChangeOutput();
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
     void scheduleFeeEstimates_debouncesRapidRestarts();
+    void transactionChangedEmitsBalanceChanged();
 };
 
 void WalletQmlModelTests::initTestCase()
@@ -347,7 +348,7 @@ void WalletQmlModelTests::prepareTransaction_usesStaticRegtestFeeOverride()
     QVERIFY(model->prepareTransaction());
     QVERIFY(!saw_sign_false);
     QVERIFY(model->currentTransaction() != nullptr);
-    QCOMPARE(model->currentTransaction()->getTransactionFee(), CAmount{250});
+    QCOMPARE(model->currentTransaction()->feeAmount()->satoshi(), CAmount{250});
     QCOMPARE(requested_targets.size(), 1U);
     QCOMPARE(requested_targets.at(0), 0U);
     QCOMPARE(requested_fee_rates.size(), 1U);
@@ -387,7 +388,7 @@ void WalletQmlModelTests::prepareTransaction_usesCustomFeeRateWithoutRegtestOver
 
     QVERIFY(model->prepareTransaction());
     QVERIFY(model->currentTransaction() != nullptr);
-    QCOMPARE(model->currentTransaction()->getTransactionFee(), CAmount{500});
+    QCOMPARE(model->currentTransaction()->feeAmount()->satoshi(), CAmount{500});
     QCOMPARE(requested_targets.size(), 1U);
     QCOMPARE(requested_targets.at(0), 0U);
     QCOMPARE(requested_fee_rates.size(), 1U);
@@ -424,10 +425,9 @@ void WalletQmlModelTests::prepareTransaction_reassignsAmountWhenFeeIncluded()
     QVERIFY(!saw_wrong_recipient_count);
     QVERIFY(saw_subtract_fee_from_amount);
     QVERIFY(model->currentTransaction() != nullptr);
-    QCOMPARE(model->currentTransaction()->amount(), QStringLiteral("49800"));
-    QCOMPARE(model->currentTransaction()->fee(), QStringLiteral("200"));
-    QCOMPARE(model->currentTransaction()->total(), QStringLiteral("50000"));
-    QCOMPARE(model->currentTransaction()->getTotalTransactionAmount(), CAmount{50'000});
+    QCOMPARE(model->currentTransaction()->amountAmount()->satoshi(), CAmount{49'800});
+    QCOMPARE(model->currentTransaction()->feeAmount()->satoshi(), CAmount{200});
+    QCOMPARE(model->currentTransaction()->totalAmount()->satoshi(), CAmount{50'000});
 }
 
 void WalletQmlModelTests::walletQmlModelTransaction_reassignAmounts_excludesChangeOutput()
@@ -440,9 +440,9 @@ void WalletQmlModelTests::walletQmlModelTransaction_reassignAmounts_excludesChan
     recipient->amount()->setSatoshi(50'000);
 
     WalletQmlModelTransaction transaction{&recipients};
-    QSignalSpy amount_changed_spy{&transaction, &WalletQmlModelTransaction::amountChanged};
-    QSignalSpy total_changed_spy{&transaction, &WalletQmlModelTransaction::totalChanged};
-    QSignalSpy fee_changed_spy{&transaction, &WalletQmlModelTransaction::feeChanged};
+    QSignalSpy amount_changed_spy{transaction.amountAmount(), &BitcoinAmount::amountChanged};
+    QSignalSpy total_changed_spy{transaction.totalAmount(), &BitcoinAmount::amountChanged};
+    QSignalSpy fee_changed_spy{transaction.feeAmount(), &BitcoinAmount::amountChanged};
 
     CMutableTransaction tx;
     tx.vout.emplace_back(/*nValue=*/49'800, CScript{});
@@ -452,16 +452,15 @@ void WalletQmlModelTests::walletQmlModelTransaction_reassignAmounts_excludesChan
     transaction.setTransactionFee(200);
     QCOMPARE(fee_changed_spy.count(), 1);
     QCOMPARE(total_changed_spy.count(), 1);
-    QCOMPARE(transaction.total(), QStringLiteral("50200"));
+    QCOMPARE(transaction.totalAmount()->satoshi(), CAmount{50'200});
 
     transaction.reassignAmounts(/*nChangePosRet=*/1);
 
     QCOMPARE(amount_changed_spy.count(), 1);
     QCOMPARE(total_changed_spy.count(), 2);
-    QCOMPARE(transaction.amount(), QStringLiteral("49800"));
-    QCOMPARE(transaction.fee(), QStringLiteral("200"));
-    QCOMPARE(transaction.total(), QStringLiteral("50000"));
-    QCOMPARE(transaction.getTotalTransactionAmount(), CAmount{50'000});
+    QCOMPARE(transaction.amountAmount()->satoshi(), CAmount{49'800});
+    QCOMPARE(transaction.feeAmount()->satoshi(), CAmount{200});
+    QCOMPARE(transaction.totalAmount()->satoshi(), CAmount{50'000});
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()
@@ -542,13 +541,36 @@ void WalletQmlModelTests::scheduleFeeEstimates_debouncesRapidRestarts()
     QCOMPARE(model->estimatedFeeForTarget(6), QStringLiteral("0.00001500 ₿"));
 }
 
-int RunWalletQmlModelTests(int argc, char* argv[])
+void WalletQmlModelTests::transactionChangedEmitsBalanceChanged()
 {
-    WalletQmlModelTests tests;
-    return QTest::qExec(&tests, argc, argv);
+    auto wallet = std::make_unique<NiceMock<MockWallet>>();
+    auto* wallet_ptr = wallet.get();
+
+    CAmount balance{50 * COIN};
+    interfaces::Wallet::TransactionChangedFn transaction_changed;
+    ON_CALL(*wallet_ptr, getBalance()).WillByDefault(Invoke([&] { return balance; }));
+    ON_CALL(*wallet_ptr, handleTransactionChanged(testing::_)).WillByDefault(Invoke([&](interfaces::Wallet::TransactionChangedFn fn) {
+        transaction_changed = std::move(fn);
+        return std::unique_ptr<interfaces::Handler>{};
+    }));
+
+    WalletQmlModel model{std::move(wallet)};
+    QSignalSpy balance_spy{&model, &WalletQmlModel::balanceChanged};
+
+    QCOMPARE(model.balance(), QStringLiteral("50.00000000"));
+    QVERIFY(transaction_changed);
+
+    balance = 75 * COIN;
+    transaction_changed(Txid::FromUint256(uint256{}), CT_UPDATED);
+
+    QTRY_COMPARE(balance_spy.count(), 1);
+    QCOMPARE(model.balance(), QStringLiteral("75.00000000"));
 }
 
-#ifndef BITCOINQML_NO_TEST_MAIN
+#ifdef BITCOINQML_NO_TEST_MAIN
+#include <test/qt_test_registry.h>
+BITCOINQML_REGISTER_QT_TEST(WalletQmlModelTests)
+#else
 QTEST_MAIN(WalletQmlModelTests)
 #endif
 #include "test_walletqmlmodel.moc"

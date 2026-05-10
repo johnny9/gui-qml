@@ -12,6 +12,11 @@ import "../../components"
 
 Page {
     id: root
+    objectName: "sendResultPopup"
+    property bool opened: visible
+    property string descriptionText: qsTr("Based on your selected fee, it should be confirmed within the next 10 minutes.")
+    property string actionText: qsTr("Done")
+
     background: Rectangle {
         color: Theme.color.background
     }
@@ -68,7 +73,7 @@ Page {
             Layout.topMargin: 10
             Layout.bottomMargin: 20
             color: Theme.color.neutral7
-            text: qsTr("Based on your selected fee, it should be confirmed within the next 10 minutes.")
+            text: root.descriptionText
             font.pixelSize: 18
         }
 
@@ -90,7 +95,7 @@ Page {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 Layout.minimumWidth: 150
-                text: qsTr("Done")
+                text: root.actionText
                 onClicked: root.done()
             }
         }

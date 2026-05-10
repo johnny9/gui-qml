@@ -35,7 +35,7 @@ TestCase {
         const page = createTemporaryObject(sendComponent, this)
         verify(page !== null)
 
-        compare(page.objectName, "walletSendPage")
+        compare(page.objectName, "sendPage")
         verify(findChild(page, "sendAddressInput") !== null)
         verify(findChild(page, "sendAmountInput") !== null)
         verify(findChild(page, "sendNoteInput") !== null)
@@ -47,14 +47,14 @@ TestCase {
         verify(findChild(page, "sendFeeIncludedNoteText") !== null)
         verify(findChild(page, "sendPrepareTransactionError") !== null)
         verify(findChild(page, "sendPrepareTransactionErrorText") !== null)
-        verify(findChild(page, "sendContinueButton") !== null)
+        verify(findChild(page, "sendReviewButton") !== null)
     }
 
     function test_send_continue_button_tracks_recipient_validity() {
         const page = createTemporaryObject(sendComponent, this)
         verify(page !== null)
 
-        const continueButton = findChild(page, "sendContinueButton")
+        const continueButton = findChild(page, "sendReviewButton")
         verify(continueButton !== null)
 
         testSendRecipient.isValid = false
@@ -68,7 +68,7 @@ TestCase {
         const page = createTemporaryObject(sendComponent, this)
         verify(page !== null)
 
-        const continueButton = findChild(page, "sendContinueButton")
+        const continueButton = findChild(page, "sendReviewButton")
         const prepareError = findChild(page, "sendPrepareTransactionError")
         const prepareErrorText = findChild(page, "sendPrepareTransactionErrorText")
         verify(continueButton !== null)
@@ -181,7 +181,7 @@ TestCase {
 
         const popup = findChild(page, "feeSelectionPopup")
         const list = findChild(page, "feeSelectionList")
-        const continueButton = findChild(page, "sendContinueButton")
+        const continueButton = findChild(page, "sendReviewButton")
         const customInput = findChild(page, "feeSelectionCustomRateInput")
         verify(popup !== null)
         verify(list !== null)

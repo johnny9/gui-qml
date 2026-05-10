@@ -12,18 +12,26 @@ import "../settings"
 
 Page {
     id: root
+    objectName: "createWalletPasswordPage"
+    signal back
     signal next
     background: null
 
     required property string walletName;
 
+    Component.onCompleted: walletController.clearWalletLoadStatus()
+
     header: NavigationBar2 {
         navigationStack: root.StackView.view
         rightItem: NavButton {
+            objectName: "createWalletPasswordSkipButton"
             text: qsTr("Skip")
+            enabled: walletController.initialized
             onClicked: {
-                walletController.createSingleSigWallet(walletName, "")
-                root.next()
+                walletController.clearWalletLoadStatus()
+                if (walletController.createSingleSigWallet(walletName, "")) {
+                    root.next()
+                }
             }
         }
     }
@@ -53,6 +61,7 @@ Page {
 
         CoreTextField {
             id: password
+            objectName: "createWalletPasswordInput"
             Layout.fillWidth: true
             Layout.topMargin: 5
             Layout.leftMargin: 20
@@ -60,6 +69,7 @@ Page {
             focus: true
             hideText: true
             placeholderText: qsTr("Enter password...")
+            onTextChanged: walletController.clearWalletLoadStatus()
         }
         CoreText {
             Layout.topMargin: 20
@@ -71,11 +81,13 @@ Page {
         }
         CoreTextField {
             id: passwordRepeat
+            objectName: "createWalletPasswordRepeatInput"
             Layout.fillWidth: true
             Layout.leftMargin: 20
             Layout.rightMargin: 20
             hideText: true
             placeholderText: qsTr("Enter password again...")
+            onTextChanged: walletController.clearWalletLoadStatus()
         }
 
         Setting {
@@ -92,17 +104,33 @@ Page {
             }
         }
 
+        CoreText {
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            visible: walletController.walletLoadError.length > 0
+            color: Theme.color.red
+            wrapMode: Text.WordWrap
+            text: walletController.walletLoadError
+        }
+
         ContinueButton {
+            objectName: "createWalletPasswordContinueButton"
             Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
             Layout.topMargin: 40
             Layout.leftMargin: 20
             Layout.rightMargin: Layout.leftMargin
             Layout.alignment: Qt.AlignCenter
             text: qsTr("Continue")
-            enabled: password.text != "" && passwordRepeat.text != "" && password.text == passwordRepeat.text && confirmToggle.loadedItem.checked
+            enabled: walletController.initialized &&
+                password.text != "" &&
+                passwordRepeat.text != "" &&
+                password.text == passwordRepeat.text &&
+                confirmToggle.loadedItem.checked
             onClicked: {
-                walletController.createSingleSigWallet(walletName, password.text)
-                root.next()
+                walletController.clearWalletLoadStatus()
+                if (walletController.createSingleSigWallet(walletName, password.text)) {
+                    root.next()
+                }
             }
         }
     }

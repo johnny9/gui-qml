@@ -13,12 +13,13 @@ import "../../components"
 
 PageStack {
     id: root
-    objectName: "walletSendPage"
+    objectName: "sendPage"
     vertical: true
 
     property WalletQmlModel wallet: walletController.selectedWallet
     property SendRecipient recipient: wallet.recipients.current
     property string prepareTransactionErrorText: ""
+    readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
 
     signal transactionPrepared(bool multipleRecipientsEnabled)
 
@@ -115,7 +116,7 @@ PageStack {
                     id: titleRow
                     Layout.fillWidth: true
                     Layout.topMargin: 30
-                    Layout.bottomMargin: 20
+                    Layout.bottomMargin: root.externalSignerWallet ? 10 : 20
 
                     CoreText {
                         id: title
@@ -129,12 +130,17 @@ PageStack {
 
                     IconButton {
                         id: menuButton
+                        objectName: "sendOptionsButton"
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         checked: sendOptionsPopup.opened
                         iconSource: "image://images/ellipsis"
                         onClicked: {
-                            sendOptionsPopup.open()
+                            if (sendOptionsPopup.opened) {
+                                sendOptionsPopup.close()
+                            } else {
+                                sendOptionsPopup.open()
+                            }
                         }
                     }
 
@@ -143,6 +149,17 @@ PageStack {
                         x: menuButton.x - width + menuButton.width
                         y: menuButton.y + menuButton.height
                     }
+                }
+
+                CoreText {
+                    visible: root.externalSignerWallet
+                    Layout.fillWidth: true
+                    Layout.bottomMargin: 10
+                    horizontalAlignment: Text.AlignLeft
+                    wrap: true
+                    text: qsTr("Make sure you have your external signer at hand to approve this transaction.")
+                    font.pixelSize: 18
+                    color: Theme.color.neutral7
                 }
 
                 RowLayout {
@@ -163,6 +180,7 @@ PageStack {
                     }
 
                     IconButton {
+                        objectName: "sendRecipientPrevButton"
                         Layout.preferredWidth: 30
                         Layout.preferredHeight: 30
                         size: 30
@@ -174,6 +192,7 @@ PageStack {
                     }
 
                     IconButton {
+                        objectName: "sendRecipientNextButton"
                         Layout.preferredWidth: 30
                         Layout.preferredHeight: 30
                         size: 30
@@ -185,6 +204,7 @@ PageStack {
                     }
 
                     IconButton {
+                        objectName: "sendRecipientAddButton"
                         Layout.preferredWidth: 30
                         Layout.preferredHeight: 30
                         size: 30
@@ -196,6 +216,7 @@ PageStack {
                     }
 
                     IconButton {
+                        objectName: "sendRecipientRemoveButton"
                         Layout.preferredWidth: 30
                         Layout.preferredHeight: 30
                         size: 30
@@ -213,6 +234,7 @@ PageStack {
                 }
 
                 BitcoinAddressInputField {
+                    objectName: "sendAddressField"
                     Layout.fillWidth: true
                     inputObjectName: "sendAddressInput"
                     enabled: walletController.initialized
@@ -251,7 +273,7 @@ PageStack {
                             anchors.left: amountLabel.right
                             anchors.verticalCenter: parent.verticalCenter
                             leftPadding: 0
-                            font.family: "Inter"
+                            font.family: "BitcoinCoreSans"
                             font.styleName: "Regular"
                             font.pixelSize: 18
                             color: Theme.color.neutral9
@@ -284,16 +306,21 @@ PageStack {
                             maximumLength: root.recipient.amount.unit === BitcoinAmount.BTC ? 17 : 16
                         }
                         Item {
+                            objectName: "sendAmountUnitToggle"
                             width: unitLabel.width + flipIcon.width
                             height: Math.max(unitLabel.height, flipIcon.height)
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
+                            function click() {
+                                root.recipient.amount.flipUnit()
+                            }
                             MouseArea {
                                 anchors.fill: parent
                                 onClicked: root.recipient.amount.flipUnit()
                             }
                             CoreText {
                                 id: unitLabel
+                                objectName: "sendAmountUnitLabel"
                                 anchors.right: flipIcon.left
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.recipient.amount.unitLabel
@@ -337,6 +364,7 @@ PageStack {
 
                 LabeledTextInput {
                     id: label
+                    objectName: "sendNoteField"
                     inputObjectName: "sendNoteInput"
                     Layout.fillWidth: true
                     labelText: qsTr("Note to self")
@@ -436,10 +464,10 @@ PageStack {
 
                 ContinueButton {
                     id: continueButton
-                    objectName: "sendContinueButton"
+                    objectName: "sendReviewButton"
                     Layout.fillWidth: true
                     Layout.topMargin: 30
-                    text: qsTr("Review")
+                    text: root.externalSignerWallet ? qsTr("Review transaction") : qsTr("Review")
                     enabled: root.recipient.isValid
                         && (!root.wallet || !root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                     onClicked: {

@@ -106,6 +106,10 @@ void NodeModel::setErrorState(bool faulted)
 
 void NodeModel::startNodeInitializionThread()
 {
+    if (m_initialization_requested) {
+        return;
+    }
+    m_initialization_requested = true;
     Q_EMIT requestedInitialize();
 }
 

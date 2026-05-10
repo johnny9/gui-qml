@@ -15,8 +15,8 @@ ColumnLayout {
     property var address
     property string errorText: ""
     property string labelText: qsTr("Send to")
-    property string inputObjectName: ""
     property bool enabled: true
+    property alias inputObjectName: addressInput.objectName
 
     signal textChanged()
     signal editingFinished()
@@ -55,7 +55,7 @@ ColumnLayout {
             rightPadding: 0
             bottomPadding: 0
             height: Math.max(contentHeight, 32)
-            font.family: "Inter"
+            font.family: "Roboto Mono"
             font.styleName: "Regular"
             font.pixelSize: 18
             color: Theme.color.neutral9

@@ -7,36 +7,39 @@
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 
-#include <policy/policy.h>
-
 WalletQmlModelTransaction::WalletQmlModelTransaction(const SendRecipientsListModel* recipient, QObject* parent)
-    : QObject(parent), m_address(recipient->recipients().at(0)->address()->address()), m_amount(recipient->totalAmountSatoshi()), m_fee(0), m_label(recipient->recipients().at(0)->label()), m_wtx(nullptr)
+    : QObject(parent),
+      m_amount(recipient->totalAmountSatoshi()),
+      m_fee(0),
+      m_amount_amount(new BitcoinAmount(this)),
+      m_fee_amount(new BitcoinAmount(this)),
+      m_total_amount(new BitcoinAmount(this)),
+      m_wtx(nullptr)
 {
+    const BitcoinAmount::Unit display_unit = recipient->count() == 1
+        ? recipient->recipients().at(0)->amount()->unit()
+        : BitcoinAmount::Unit::BTC;
+    m_amount_amount->setUnit(display_unit);
+    m_amount_amount->setSatoshi(m_amount);
+    m_fee_amount->setUnit(display_unit);
+    m_fee_amount->setSatoshi(m_fee);
+    m_total_amount->setUnit(display_unit);
+    m_total_amount->setSatoshi(m_amount);
 }
 
-QString WalletQmlModelTransaction::amount() const
+BitcoinAmount* WalletQmlModelTransaction::amountAmount() const
 {
-    return QString::number(m_amount);
+    return m_amount_amount;
 }
 
-QString WalletQmlModelTransaction::address() const
+BitcoinAmount* WalletQmlModelTransaction::feeAmount() const
 {
-    return m_address;
+    return m_fee_amount;
 }
 
-QString WalletQmlModelTransaction::fee() const
+BitcoinAmount* WalletQmlModelTransaction::totalAmount() const
 {
-    return QString::number(m_fee);
-}
-
-QString WalletQmlModelTransaction::total() const
-{
-    return QString::number(m_amount + m_fee);
-}
-
-QString WalletQmlModelTransaction::label() const
-{
-    return m_label;
+    return m_total_amount;
 }
 
 CTransactionRef& WalletQmlModelTransaction::getWtx()
@@ -49,23 +52,13 @@ void WalletQmlModelTransaction::setWtx(const CTransactionRef& newTx)
     m_wtx = newTx;
 }
 
-CAmount WalletQmlModelTransaction::getTransactionFee() const
-{
-    return m_fee;
-}
-
 void WalletQmlModelTransaction::setTransactionFee(const CAmount& newFee)
 {
     if (m_fee != newFee) {
         m_fee = newFee;
-        Q_EMIT feeChanged();
-        Q_EMIT totalChanged();
+        m_fee_amount->setSatoshi(m_fee);
+        m_total_amount->setSatoshi(m_amount + m_fee);
     }
-}
-
-CAmount WalletQmlModelTransaction::getTotalTransactionAmount() const
-{
-    return m_amount + m_fee;
 }
 
 void WalletQmlModelTransaction::reassignAmounts(int nChangePosRet)
@@ -86,7 +79,7 @@ void WalletQmlModelTransaction::reassignAmounts(int nChangePosRet)
 
     if (m_amount != reassigned_amount) {
         m_amount = reassigned_amount;
-        Q_EMIT amountChanged();
-        Q_EMIT totalChanged();
+        m_amount_amount->setSatoshi(m_amount);
+        m_total_amount->setSatoshi(m_amount + m_fee);
     }
 }
