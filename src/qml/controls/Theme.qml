@@ -146,7 +146,7 @@ Control {
 
     component TextSet: QtObject {
         id: textSetRoot
-        readonly property string family: "Inter"
+        readonly property string family: "BitcoinCoreSans"
         readonly property string monoFamily: "Roboto Mono"
 
         // Headers — Semi Bold
