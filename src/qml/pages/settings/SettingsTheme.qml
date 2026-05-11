@@ -10,6 +10,7 @@ import "../../components"
 
 Page {
     signal back
+    signal designSystemRequested
 
     id: root
     background: null
@@ -33,5 +34,6 @@ Page {
     ThemeSettings {
         width: Math.min(parent.width, 450)
         anchors.horizontalCenter: parent.horizontalCenter
+        onDesignSystemRequested: root.designSystemRequested()
     }
 }

@@ -20,6 +20,7 @@
 #include <noui.h>
 #include <qml/appmode.h>
 #include <qml/bitcoinamount.h>
+#include <qml/buildinfo.h>
 #include <qml/clipboard.h>
 #ifdef __ANDROID__
 #include <qml/androidnotifier.h>
@@ -129,8 +130,10 @@ bool InitErrorMessageBox(
     QQmlApplicationEngine engine;
 
     AppMode app_mode = SetupAppMode();
+    BuildInfo build_info;
 
     qmlRegisterSingletonInstance<AppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
+    qmlRegisterSingletonInstance<BuildInfo>("org.bitcoincore.qt", 1, 0, "BuildInfo", &build_info);
     engine.rootContext()->setContextProperty("message", QString::fromStdString(message.translated));
     engine.load(QUrl(QStringLiteral("qrc:///qml/pages/initerrormessage.qml")));
     if (engine.rootObjects().isEmpty()) {
@@ -351,9 +354,11 @@ int QmlGuiMain(int argc, char* argv[])
     engine.rootContext()->setContextProperty("needOnboarding", need_onboarding);
 
     AppMode app_mode = SetupAppMode();
+    BuildInfo build_info;
     Clipboard clipboard;
 
     qmlRegisterSingletonInstance<AppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
+    qmlRegisterSingletonInstance<BuildInfo>("org.bitcoincore.qt", 1, 0, "BuildInfo", &build_info);
     qmlRegisterSingletonInstance<Clipboard>("org.bitcoincore.qt", 1, 0, "Clipboard", &clipboard);
     qmlRegisterType<BlockClockDial>("org.bitcoincore.qt", 1, 0, "BlockClockDial");
     qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
