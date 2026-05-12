@@ -2524,6 +2524,11 @@ Si lo encuentras útil, por favor contribuye.
         <translation type="unfinished">Se encontró más de un firmante externo. Conecta solo un dispositivo.</translation>
     </message>
     <message>
+        <location filename="../walletqmlcontroller.cpp" line="286"/>
+        <source>The signer command did not return valid output. Check that the path is correct.</source>
+        <translation type="unfinished">El comando del firmante no devolvió una salida válida. Verifica que la ruta sea correcta.</translation>
+    </message>
+    <message>
         <location filename="../walletqmlcontroller.cpp" line="317"/>
         <source>This wallet needs to be migrated</source>
         <translation type="unfinished">Esta billetera necesita ser migrada</translation>

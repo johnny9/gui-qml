@@ -282,8 +282,8 @@ void WalletQmlController::refreshExternalSignerStatus()
         } else if (signer_count > 1) {
             error = tr("More than one external signer was found. Connect only one device.");
         }
-    } catch (const std::runtime_error& e) {
-        error = QString::fromStdString(e.what());
+    } catch (const std::runtime_error&) {
+        error = tr("The signer command did not return valid output. Check that the path is correct.");
     }
 
     setExternalSignerStatus(path_configured, signer_count, signer_name, error);
