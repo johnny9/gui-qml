@@ -55,7 +55,7 @@ Page {
         centerItem: Header {
             headerBold: true
             headerSize: 18
-            header: qsTr("debug.log")
+            header: "debug.log"
         }
         rightItem: RowLayout {
             spacing: 0
