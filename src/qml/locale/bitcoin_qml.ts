@@ -24,12 +24,12 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/AboutOptions.qml" line="68"/>
+        <location filename="../components/AboutOptions.qml" line="69"/>
         <source>Developer options</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/AboutOptions.qml" line="69"/>
+        <location filename="../components/AboutOptions.qml" line="70"/>
         <source>Only use these if you have development experience</source>
         <translation type="unfinished"></translation>
     </message>
@@ -37,7 +37,7 @@
 <context>
     <name>Activity</name>
     <message>
-        <location filename="../pages/wallet/Activity.qml" line="54"/>
+        <location filename="../pages/wallet/Activity.qml" line="55"/>
         <source>Activity</source>
         <translation type="unfinished"></translation>
     </message>
@@ -45,33 +45,58 @@
 <context>
     <name>ActivityDetails</name>
     <message>
-        <location filename="../pages/wallet/ActivityDetails.qml" line="55"/>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="60"/>
         <source>Back</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/ActivityDetails.qml" line="66"/>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="71"/>
         <source>Transaction</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/ActivityDetails.qml" line="129"/>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="135"/>
         <source>%1 confirmations</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/ActivityDetails.qml" line="138"/>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="144"/>
         <source>Label</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/ActivityDetails.qml" line="148"/>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="154"/>
         <source>Message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/ActivityDetails.qml" line="163"/>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="169"/>
         <source>Address</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="210"/>
+        <source>This transaction is still unconfirmed. You can speed it up by increasing the fee.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="211"/>
+        <source>Speed up</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="226"/>
+        <source>This transaction was updated with a faster one</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="227"/>
+        <source>You increased the fee while this transaction was still unconfirmed. Only the new one will confirm on-chain.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ActivityDetails.qml" line="228"/>
+        <source>View updated transaction</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -117,6 +142,14 @@
     </message>
 </context>
 <context>
+    <name>BitcoinAddressDisplayField</name>
+    <message>
+        <location filename="../components/BitcoinAddressDisplayField.qml" line="14"/>
+        <source>Send to</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>BitcoinAddressInputField</name>
     <message>
         <location filename="../components/BitcoinAddressInputField.qml" line="17"/>
@@ -124,8 +157,16 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BitcoinAddressInputField.qml" line="47"/>
+        <location filename="../components/BitcoinAddressInputField.qml" line="50"/>
         <source>Enter address...</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>BitcoinAmountDisplayField</name>
+    <message>
+        <location filename="../components/BitcoinAmountDisplayField.qml" line="14"/>
+        <source>Amount</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -170,6 +211,39 @@
     <message>
         <location filename="../components/BlockClockDisplayMode.qml" line="35"/>
         <source>A larger block clock for public display on a tablet or other large screen.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>BumpTransactionModel</name>
+    <message>
+        <location filename="../models/bumptransactionmodel.cpp" line="72"/>
+        <source>No wallet available.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/bumptransactionmodel.cpp" line="78"/>
+        <source>Invalid transaction ID.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/bumptransactionmodel.cpp" line="95"/>
+        <source>Failed to create bump transaction.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/bumptransactionmodel.cpp" line="117"/>
+        <source>Transaction can no longer be bumped.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/bumptransactionmodel.cpp" line="122"/>
+        <source>Failed to sign transaction.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/bumptransactionmodel.cpp" line="129"/>
+        <source>Failed to commit transaction.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -257,7 +331,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ConnectionSettings.qml" line="57"/>
+        <location filename="../components/ConnectionSettings.qml" line="58"/>
         <source>Proxy settings</source>
         <translation type="unfinished"></translation>
     </message>
@@ -265,28 +339,23 @@
 <context>
     <name>CreateBackup</name>
     <message>
-        <location filename="../pages/wallet/CreateBackup.qml" line="23"/>
-        <source>Back</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../pages/wallet/CreateBackup.qml" line="59"/>
+        <location filename="../pages/wallet/CreateBackup.qml" line="52"/>
         <source>Back up your wallet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateBackup.qml" line="61"/>
+        <location filename="../pages/wallet/CreateBackup.qml" line="54"/>
         <source>Your wallet is a file stored on your hard disk.
 To prevent accidental loss, it is recommended you keep a copy of your wallet file in a secure place, like a dedicated USB Drive.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateBackup.qml" line="70"/>
+        <location filename="../pages/wallet/CreateBackup.qml" line="64"/>
         <source>View file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateBackup.qml" line="86"/>
+        <location filename="../pages/wallet/CreateBackup.qml" line="81"/>
         <source>Done</source>
         <translation type="unfinished"></translation>
     </message>
@@ -294,56 +363,94 @@ To prevent accidental loss, it is recommended you keep a copy of your wallet fil
 <context>
     <name>CreateConfirm</name>
     <message>
-        <location filename="../pages/wallet/CreateConfirm.qml" line="23"/>
-        <source>Back</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../pages/wallet/CreateConfirm.qml" line="59"/>
+        <location filename="../pages/wallet/CreateConfirm.qml" line="19"/>
         <source>Your wallet has been created</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateConfirm.qml" line="61"/>
+        <location filename="../pages/wallet/CreateConfirm.qml" line="20"/>
         <source>It is good practice to make a small test transaction before you actively use this wallet for larger amounts.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateConfirm.qml" line="70"/>
+        <location filename="../pages/wallet/CreateConfirm.qml" line="21"/>
         <source>Next</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>CreateExternalWallet</name>
+    <message>
+        <location filename="../pages/wallet/CreateExternalWallet.qml" line="35"/>
+        <source>Back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateExternalWallet.qml" line="60"/>
+        <source>Create an external wallet</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateExternalWallet.qml" line="65"/>
+        <source>Connected signer: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateExternalWallet.qml" line="66"/>
+        <source>Connect one external signer to continue.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateExternalWallet.qml" line="76"/>
+        <source>This wallet stores public descriptors and uses your external signer device for signing.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateExternalWallet.qml" line="87"/>
+        <source>Eg. hardware_wallet</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateExternalWallet.qml" line="119"/>
+        <source>Creating wallet with the connected signer...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateExternalWallet.qml" line="133"/>
+        <source>Creating wallet...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateExternalWallet.qml" line="133"/>
+        <source>Create wallet</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>CreateIntro</name>
     <message>
-        <location filename="../pages/wallet/CreateIntro.qml" line="23"/>
-        <source>Back</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../pages/wallet/CreateIntro.qml" line="58"/>
+        <location filename="../pages/wallet/CreateIntro.qml" line="52"/>
         <source>You are about to create 
 a single-key bitcoin wallet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateIntro.qml" line="67"/>
+        <location filename="../pages/wallet/CreateIntro.qml" line="61"/>
         <source>You can fully control it in this application.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateIntro.qml" line="83"/>
+        <location filename="../pages/wallet/CreateIntro.qml" line="77"/>
         <source>Wallet data will be stored locally on your hard drive.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateIntro.qml" line="99"/>
+        <location filename="../pages/wallet/CreateIntro.qml" line="93"/>
         <source>You can optionally protect it with a password.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateIntro.qml" line="110"/>
+        <location filename="../pages/wallet/CreateIntro.qml" line="105"/>
         <source>Start</source>
         <translation type="unfinished"></translation>
     </message>
@@ -351,35 +458,40 @@ a single-key bitcoin wallet</source>
 <context>
     <name>CreateName</name>
     <message>
-        <location filename="../pages/wallet/CreateName.qml" line="24"/>
-        <source>Back</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../pages/wallet/CreateName.qml" line="41"/>
+        <location filename="../pages/wallet/CreateName.qml" line="47"/>
         <source>Choose a wallet name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateName.qml" line="51"/>
+        <location filename="../pages/wallet/CreateName.qml" line="50"/>
+        <source>This wallet will use the connected external signer.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateName.qml" line="62"/>
+        <source>Eg. Hardware wallet...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateName.qml" line="63"/>
         <source>Eg. My bitcoin wallet...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateName.qml" line="65"/>
+        <location filename="../pages/wallet/CreateName.qml" line="90"/>
         <source>Continue</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateName.qml" line="90"/>
+        <source>Create wallet</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>CreatePassword</name>
     <message>
-        <location filename="../pages/wallet/CreatePassword.qml" line="25"/>
-        <source>Back</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../pages/wallet/CreatePassword.qml" line="31"/>
+        <location filename="../pages/wallet/CreatePassword.qml" line="28"/>
         <source>Skip</source>
         <translation type="unfinished"></translation>
     </message>
@@ -395,27 +507,27 @@ a single-key bitcoin wallet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreatePassword.qml" line="70"/>
+        <location filename="../pages/wallet/CreatePassword.qml" line="71"/>
         <source>Enter password...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreatePassword.qml" line="78"/>
+        <location filename="../pages/wallet/CreatePassword.qml" line="80"/>
         <source>Confirm password</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreatePassword.qml" line="86"/>
+        <location filename="../pages/wallet/CreatePassword.qml" line="89"/>
         <source>Enter password again...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreatePassword.qml" line="94"/>
+        <location filename="../pages/wallet/CreatePassword.qml" line="98"/>
         <source>I understand that if I lose or forget this password I might lose access to the bitcoin stored in this wallet.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreatePassword.qml" line="109"/>
+        <location filename="../pages/wallet/CreatePassword.qml" line="123"/>
         <source>Continue</source>
         <translation type="unfinished"></translation>
     </message>
@@ -423,60 +535,115 @@ a single-key bitcoin wallet</source>
 <context>
     <name>CreateWalletWizard</name>
     <message>
-        <location filename="../pages/wallet/CreateWalletWizard.qml" line="31"/>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="39"/>
+        <source>Back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="47"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateWalletWizard.qml" line="34"/>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="50"/>
         <source>Skip</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateWalletWizard.qml" line="60"/>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="76"/>
         <source>Add a wallet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateWalletWizard.qml" line="62"/>
-        <source>In this early stage of development, only wallet.dat files are supported.</source>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="79"/>
+        <source>Supported wallet types are external signer, view-only, single-key,
+and multi-key.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateWalletWizard.qml" line="72"/>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="80"/>
+        <source>Supported wallet types are view-only, single-key,
+and multi-key.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="91"/>
         <source>Create wallet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/CreateWalletWizard.qml" line="83"/>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="103"/>
         <source>Import wallet</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="125"/>
+        <source>Create external wallet</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="126"/>
+        <source>Create hardware wallet</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="155"/>
+        <source>No external signer is currently detected. Open Wallet settings to verify the signer path and rescan.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="218"/>
+        <source>Your external wallet has been created</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="219"/>
+        <source>This wallet uses the connected external signer for addresses and signing.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/CreateWalletWizard.qml" line="220"/>
+        <source>Done</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>DebugLogModel</name>
+    <message>
+        <location filename="../models/debuglogmodel.cpp" line="127"/>
+        <source>Debug log file not found: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/debuglogmodel.cpp" line="133"/>
+        <source>Could not open debug log file. No application is associated with this file type.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>DesktopWallets</name>
     <message>
-        <location filename="../pages/wallet/DesktopWallets.qml" line="66"/>
+        <location filename="../pages/wallet/DesktopWallets.qml" line="74"/>
         <source>Activity</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/DesktopWallets.qml" line="71"/>
+        <location filename="../pages/wallet/DesktopWallets.qml" line="80"/>
         <source>Send</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/DesktopWallets.qml" line="76"/>
+        <location filename="../pages/wallet/DesktopWallets.qml" line="86"/>
         <source>Receive</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/DesktopWallets.qml" line="110"/>
+        <location filename="../pages/wallet/DesktopWallets.qml" line="120"/>
         <source>Paused</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/DesktopWallets.qml" line="116"/>
+        <location filename="../pages/wallet/DesktopWallets.qml" line="126"/>
         <source>Connecting</source>
         <translation type="unfinished"></translation>
     </message>
@@ -484,27 +651,27 @@ a single-key bitcoin wallet</source>
 <context>
     <name>DeveloperOptions</name>
     <message>
-        <location filename="../components/DeveloperOptions.qml" line="15"/>
+        <location filename="../components/DeveloperOptions.qml" line="16"/>
         <source>Database cache size (MiB)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/DeveloperOptions.qml" line="16"/>
+        <location filename="../components/DeveloperOptions.qml" line="17"/>
         <source>This is not a valid cache size. Please choose a value between %1 and %2 MiB.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/DeveloperOptions.qml" line="40"/>
+        <location filename="../components/DeveloperOptions.qml" line="41"/>
         <source>Script verification threads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/DeveloperOptions.qml" line="41"/>
+        <location filename="../components/DeveloperOptions.qml" line="42"/>
         <source>This is not a valid thread count. Please choose a value between %1 and %2 threads.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/DeveloperOptions.qml" line="64"/>
+        <location filename="../components/DeveloperOptions.qml" line="65"/>
         <source>Dark Mode</source>
         <translation type="unfinished"></translation>
     </message>
@@ -533,40 +700,187 @@ a single-key bitcoin wallet</source>
     </message>
 </context>
 <context>
+    <name>ExternalSignerReviewActions</name>
+    <message>
+        <location filename="../components/ExternalSignerReviewActions.qml" line="21"/>
+        <source>Signed on external signer. Ready to send.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/ExternalSignerReviewActions.qml" line="22"/>
+        <source>Waiting for approval on external signer.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/ExternalSignerReviewActions.qml" line="24"/>
+        <source>Approve on external signer to broadcast this transaction.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/ExternalSignerReviewActions.qml" line="32"/>
+        <source>Send</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/ExternalSignerReviewActions.qml" line="33"/>
+        <source>Waiting for approval...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/ExternalSignerReviewActions.qml" line="34"/>
+        <source>Retry external signer</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/ExternalSignerReviewActions.qml" line="35"/>
+        <source>Approve on external signer</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>FeeSelection</name>
     <message>
-        <location filename="../components/FeeSelection.qml" line="27"/>
+        <location filename="../components/FeeSelection.qml" line="24"/>
+        <location filename="../components/FeeSelection.qml" line="391"/>
+        <source>sats/vbyte</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/FeeSelection.qml" line="60"/>
+        <location filename="../components/FeeSelection.qml" line="162"/>
         <source>Fee</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/FeeSelection.qml" line="202"/>
+        <location filename="../components/FeeSelection.qml" line="60"/>
+        <source>Fee Rate</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/FeeSelection.qml" line="363"/>
+        <source>Include fee in amount</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/FeeSelection.qml" line="388"/>
         <source>High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/FeeSelection.qml" line="202"/>
+        <location filename="../components/FeeSelection.qml" line="388"/>
         <source>(~10 mins)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/FeeSelection.qml" line="203"/>
+        <location filename="../components/FeeSelection.qml" line="389"/>
         <source>Default</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/FeeSelection.qml" line="203"/>
+        <location filename="../components/FeeSelection.qml" line="389"/>
+        <source>(~20 mins)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/FeeSelection.qml" line="390"/>
         <source>(~60 mins)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/FeeSelection.qml" line="204"/>
+        <location filename="../components/FeeSelection.qml" line="390"/>
         <source>Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/FeeSelection.qml" line="204"/>
-        <source>(~24 hrs)</source>
+        <location filename="../components/FeeSelection.qml" line="391"/>
+        <source>Custom</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>ImportWalletOptions</name>
+    <message>
+        <location filename="../pages/wallet/ImportWalletOptions.qml" line="31"/>
+        <source>Back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletOptions.qml" line="36"/>
+        <source>Done</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletOptions.qml" line="44"/>
+        <source>Wallet backup files (*.bak *.dat)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletOptions.qml" line="44"/>
+        <source>All files (*)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletOptions.qml" line="102"/>
+        <source>Import wallet</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletOptions.qml" line="119"/>
+        <source>Importing...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletOptions.qml" line="119"/>
+        <source>Choose a wallet file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletOptions.qml" line="221"/>
+        <source>Choose another file</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>ImportWalletSuccess</name>
+    <message>
+        <location filename="../pages/wallet/ImportWalletSuccess.qml" line="25"/>
+        <source>Back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletSuccess.qml" line="59"/>
+        <source>Import complete</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletSuccess.qml" line="62"/>
+        <source>Your wallet was added successfully. We recommend running a health check to make sure that everything works as expected.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletSuccess.qml" line="81"/>
+        <source>Wallet name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletSuccess.qml" line="87"/>
+        <location filename="../pages/wallet/ImportWalletSuccess.qml" line="108"/>
+        <source>Unknown</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletSuccess.qml" line="102"/>
+        <source>Key scheme</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletSuccess.qml" line="128"/>
+        <source>Go to wallet overview</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/ImportWalletSuccess.qml" line="136"/>
+        <source>View in settings</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -596,28 +910,51 @@ a single-key bitcoin wallet</source>
 <context>
     <name>MultipleSendReview</name>
     <message>
-        <location filename="../pages/wallet/MultipleSendReview.qml" line="28"/>
+        <location filename="../pages/wallet/MultipleSendReview.qml" line="40"/>
         <source>Back</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/MultipleSendReview.qml" line="52"/>
-        <source>Transaction details</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../pages/wallet/MultipleSendReview.qml" line="102"/>
+        <location filename="../pages/wallet/MultipleSendReview.qml" line="253"/>
         <source>Total amount</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/MultipleSendReview.qml" line="124"/>
+        <location filename="../pages/wallet/MultipleSendReview.qml" line="239"/>
         <source>Fee</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/MultipleSendReview.qml" line="147"/>
+        <location filename="../pages/wallet/MultipleSendReview.qml" line="22"/>
+        <source>There is 1 recipient.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/MultipleSendReview.qml" line="23"/>
+        <source>There are %1 recipients.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/MultipleSendReview.qml" line="40"/>
+        <source>Edit</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/MultipleSendReview.qml" line="69"/>
+        <source>Review transaction</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/MultipleSendReview.qml" line="278"/>
         <source>Send</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>NavigationBar2</name>
+    <message>
+        <location filename="../controls/NavigationBar2.qml" line="16"/>
+        <source>Back</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -710,43 +1047,53 @@ a single-key bitcoin wallet</source>
 <context>
     <name>NodeSettings</name>
     <message>
-        <location filename="../pages/node/NodeSettings.qml" line="25"/>
+        <location filename="../pages/node/NodeSettings.qml" line="41"/>
         <source>Settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/node/NodeSettings.qml" line="29"/>
+        <location filename="../pages/node/NodeSettings.qml" line="45"/>
         <source>Done</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/node/NodeSettings.qml" line="44"/>
+        <location filename="../pages/node/NodeSettings.qml" line="61"/>
         <source>About</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/node/NodeSettings.qml" line="57"/>
+        <location filename="../pages/node/NodeSettings.qml" line="74"/>
         <source>Display</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/node/NodeSettings.qml" line="69"/>
+        <location filename="../pages/node/NodeSettings.qml" line="86"/>
         <source>Storage</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/node/NodeSettings.qml" line="81"/>
+        <location filename="../pages/node/NodeSettings.qml" line="100"/>
+        <source>External Signer</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/node/NodeSettings.qml" line="116"/>
         <source>Connection</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/node/NodeSettings.qml" line="94"/>
+        <location filename="../pages/node/NodeSettings.qml" line="129"/>
         <source>Peers</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/node/NodeSettings.qml" line="107"/>
+        <location filename="../pages/node/NodeSettings.qml" line="142"/>
         <source>Network Traffic</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/node/NodeSettings.qml" line="155"/>
+        <source>Debug Log</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -795,12 +1142,12 @@ This may take several hours, or even days, based on your connection.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/onboarding/OnboardingConnection.qml" line="50"/>
+        <location filename="../pages/onboarding/OnboardingConnection.qml" line="51"/>
         <source>Connection settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/onboarding/OnboardingConnection.qml" line="55"/>
+        <location filename="../pages/onboarding/OnboardingConnection.qml" line="56"/>
         <source>Next</source>
         <translation type="unfinished"></translation>
     </message>
@@ -911,6 +1258,24 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
     <message>
         <location filename="../controls/OptionButton.qml" line="83"/>
         <source>Recommended</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>OptionsQmlModel</name>
+    <message>
+        <location filename="../models/options_model.cpp" line="321"/>
+        <source>The configured signer path does not exist.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/options_model.cpp" line="324"/>
+        <source>The configured signer path is not a file.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/options_model.cpp" line="327"/>
+        <source>The configured signer path is not executable.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1224,17 +1589,17 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
     </message>
     <message>
         <location filename="../components/ProxySettings.qml" line="30"/>
-        <location filename="../components/ProxySettings.qml" line="81"/>
+        <location filename="../components/ProxySettings.qml" line="96"/>
         <source>Enable</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ProxySettings.qml" line="70"/>
+        <location filename="../components/ProxySettings.qml" line="85"/>
         <source>Tor Proxy</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ProxySettings.qml" line="72"/>
+        <location filename="../components/ProxySettings.qml" line="87"/>
         <source>Run Tor connections through a dedicated proxy.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1242,8 +1607,7 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../pages/settings/SettingsDisplay.qml" line="98"/>
-        <location filename="../models/options_model.cpp" line="239"/>
+        <location filename="../models/options_model.cpp" line="437"/>
         <source>System default</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1377,58 +1741,96 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
         <source>%1 GB</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../models/debuglogmodel.cpp" line="171"/>
+        <source>Could not open debug log file: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/debuglogmodel.cpp" line="172"/>
+        <source>Debug log file not found: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/debuglogmodel.cpp" line="391"/>
+        <source>just now</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/debuglogmodel.cpp" line="392"/>
+        <source>%1 min ago</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/debuglogmodel.cpp" line="393"/>
+        <source>%1 hr ago</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/debuglogmodel.cpp" line="394"/>
+        <source>%1 d ago</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>RequestPayment</name>
     <message>
-        <location filename="../pages/wallet/RequestPayment.qml" line="32"/>
-        <location filename="../pages/wallet/RequestPayment.qml" line="221"/>
+        <location filename="../pages/wallet/RequestPayment.qml" line="40"/>
         <source>Request a payment</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/RequestPayment.qml" line="138"/>
-        <source>Label</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../pages/wallet/RequestPayment.qml" line="139"/>
-        <source>Enter label...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../pages/wallet/RequestPayment.qml" line="149"/>
-        <source>Message</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../pages/wallet/RequestPayment.qml" line="150"/>
-        <source>Enter message...</source>
+        <location filename="../pages/wallet/RequestPayment.qml" line="70"/>
+        <source>Amount</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../pages/wallet/RequestPayment.qml" line="168"/>
+        <source>Label</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/RequestPayment.qml" line="169"/>
+        <source>Enter label...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/RequestPayment.qml" line="185"/>
+        <source>Message</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/RequestPayment.qml" line="186"/>
+        <source>Enter message...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/RequestPayment.qml" line="210"/>
         <source>Address</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/RequestPayment.qml" line="177"/>
+        <location filename="../pages/wallet/RequestPayment.qml" line="219"/>
         <source>copy</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/RequestPayment.qml" line="204"/>
-        <location filename="../pages/wallet/RequestPayment.qml" line="224"/>
+        <location filename="../pages/wallet/RequestPayment.qml" line="275"/>
         <source>Create bitcoin address</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/RequestPayment.qml" line="214"/>
+        <location filename="../pages/wallet/RequestPayment.qml" line="274"/>
         <source>Copy payment request</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/RequestPayment.qml" line="238"/>
+        <location filename="../pages/wallet/RequestPayment.qml" line="39"/>
+        <source>Payment request #</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/RequestPayment.qml" line="299"/>
         <source>Clear</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1436,45 +1838,65 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
 <context>
     <name>Send</name>
     <message>
-        <location filename="../pages/wallet/Send.qml" line="97"/>
+        <location filename="../pages/wallet/Send.qml" line="132"/>
         <source>Send bitcoin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/Send.qml" line="132"/>
+        <location filename="../pages/wallet/Send.qml" line="167"/>
+        <source>Make sure you have your external signer at hand to approve this transaction.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/Send.qml" line="183"/>
         <source>Recipient %1 of %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/Send.qml" line="211"/>
+        <location filename="../pages/wallet/Send.qml" line="273"/>
         <source>Amount</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/Send.qml" line="298"/>
+        <location filename="../pages/wallet/Send.qml" line="377"/>
         <source>Note to self</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/Send.qml" line="299"/>
+        <location filename="../pages/wallet/Send.qml" line="378"/>
         <source>Enter ...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/Send.qml" line="337"/>
+        <location filename="../pages/wallet/Send.qml" line="440"/>
+        <source>Fee is included in the amount</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/Send.qml" line="477"/>
         <source>Review</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/Send.qml" line="477"/>
+        <source>Review transaction</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/Send.qml" line="485"/>
+        <source>Amount plus fee exceeds available balance</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>SendOptionsPopup</name>
     <message>
-        <location filename="../controls/SendOptionsPopup.qml" line="34"/>
+        <location filename="../controls/SendOptionsPopup.qml" line="36"/>
         <source>Enable Coin control</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../controls/SendOptionsPopup.qml" line="45"/>
+        <location filename="../controls/SendOptionsPopup.qml" line="48"/>
         <source>Multiple Recipients</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1482,32 +1904,32 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
 <context>
     <name>SendRecipient</name>
     <message>
-        <location filename="../models/sendrecipient.cpp" line="117"/>
+        <location filename="../models/sendrecipient.cpp" line="125"/>
         <source>Address is valid for mainnet, not the current network</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../models/sendrecipient.cpp" line="119"/>
+        <location filename="../models/sendrecipient.cpp" line="127"/>
         <source>Address is valid for testnet, not the current network</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../models/sendrecipient.cpp" line="121"/>
+        <location filename="../models/sendrecipient.cpp" line="129"/>
         <source>Invalid address format</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../models/sendrecipient.cpp" line="134"/>
+        <location filename="../models/sendrecipient.cpp" line="142"/>
         <source>Amount must be greater than zero</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../models/sendrecipient.cpp" line="136"/>
+        <location filename="../models/sendrecipient.cpp" line="144"/>
         <source>Amount exceeds maximum limit of 21,000,000 BTC</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../models/sendrecipient.cpp" line="138"/>
+        <location filename="../models/sendrecipient.cpp" line="146"/>
         <source>Amount exceeds available balance</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1515,60 +1937,75 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
 <context>
     <name>SendResult</name>
     <message>
-        <location filename="../pages/wallet/SendResult.qml" line="56"/>
-        <source>Transaction sent</source>
+        <location filename="../pages/wallet/SendResult.qml" line="64"/>
+        <source>Transaction updated</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../pages/wallet/SendResult.qml" line="65"/>
+        <source>Transaction sent</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/SendResult.qml" line="17"/>
         <source>Based on your selected fee, it should be confirmed within the next 10 minutes.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/SendResult.qml" line="74"/>
-        <source>Close window</source>
+        <location filename="../pages/wallet/SendResult.qml" line="86"/>
+        <source>View new transaction</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/SendResult.qml" line="87"/>
+        <source>View transaction</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/SendResult.qml" line="18"/>
+        <source>Done</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>SendReview</name>
     <message>
-        <location filename="../pages/wallet/SendReview.qml" line="28"/>
+        <location filename="../pages/wallet/SendReview.qml" line="37"/>
         <source>Back</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/SendReview.qml" line="52"/>
-        <source>Transaction details</source>
+        <location filename="../pages/wallet/SendReview.qml" line="37"/>
+        <source>Edit</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/SendReview.qml" line="59"/>
-        <source>Send to</source>
+        <location filename="../pages/wallet/SendReview.qml" line="62"/>
+        <source>Review transaction</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/SendReview.qml" line="73"/>
+        <location filename="../pages/wallet/SendReview.qml" line="80"/>
         <source>Note</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/SendReview.qml" line="87"/>
+        <location filename="../pages/wallet/SendReview.qml" line="89"/>
         <source>Amount</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/SendReview.qml" line="101"/>
+        <location filename="../pages/wallet/SendReview.qml" line="98"/>
         <source>Fee</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/SendReview.qml" line="115"/>
-        <source>Total</source>
+        <location filename="../pages/wallet/SendReview.qml" line="112"/>
+        <source>Total amount</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/SendReview.qml" line="131"/>
+        <location filename="../pages/wallet/SendReview.qml" line="137"/>
         <source>Send</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1576,13 +2013,13 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
 <context>
     <name>SettingsAbout</name>
     <message>
-        <location filename="../pages/settings/SettingsAbout.qml" line="18"/>
-        <location filename="../pages/settings/SettingsAbout.qml" line="59"/>
+        <location filename="../pages/settings/SettingsAbout.qml" line="19"/>
+        <location filename="../pages/settings/SettingsAbout.qml" line="60"/>
         <source>About</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsAbout.qml" line="20"/>
+        <location filename="../pages/settings/SettingsAbout.qml" line="21"/>
         <source>Bitcoin Core is an open source project.
 If you find it useful, please contribute.
 
@@ -1590,7 +2027,7 @@ If you find it useful, please contribute.
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsAbout.qml" line="50"/>
+        <location filename="../pages/settings/SettingsAbout.qml" line="51"/>
         <source>Back</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1622,25 +2059,91 @@ If you find it useful, please contribute.
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsConnection.qml" line="78"/>
+        <location filename="../pages/settings/SettingsConnection.qml" line="79"/>
         <source>Done</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>SettingsDebugLog</name>
+    <message>
+        <location filename="../pages/settings/SettingsDebugLog.qml" line="52"/>
+        <source>Back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDebugLog.qml" line="161"/>
+        <source>Search...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDebugLog.qml" line="162"/>
+        <source>Search debug log</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDebugLog.qml" line="215"/>
+        <source>1 new entry</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDebugLog.qml" line="216"/>
+        <source>%1 new entries</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDebugLog.qml" line="285"/>
+        <source>Debug log entries</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDebugLog.qml" line="307"/>
+        <source>Load more</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>SettingsDesignSystem</name>
+    <message>
+        <location filename="../pages/settings/SettingsDesignSystem.qml" line="50"/>
+        <source>Back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDesignSystem.qml" line="56"/>
+        <source>Design system</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDesignSystem.qml" line="78"/>
+        <source>Typography</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDesignSystem.qml" line="121"/>
+        <source>Colors</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsDesignSystem.qml" line="127"/>
+        <source>Palette tokens for the active theme. Toggle Theme to compare.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>SettingsDeveloper</name>
     <message>
-        <location filename="../pages/settings/SettingsDeveloper.qml" line="16"/>
+        <location filename="../pages/settings/SettingsDeveloper.qml" line="17"/>
         <source>Back</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsDeveloper.qml" line="24"/>
+        <location filename="../pages/settings/SettingsDeveloper.qml" line="25"/>
         <source>Developer options</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsDeveloper.qml" line="51"/>
+        <location filename="../pages/settings/SettingsDeveloper.qml" line="52"/>
         <source>Developer settings</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1668,17 +2171,17 @@ If you find it useful, please contribute.
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsDisplay.qml" line="71"/>
-        <source>Ask before opening links</source>
+        <location filename="../pages/settings/SettingsDisplay.qml" line="90"/>
+        <source>System default</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsDisplay.qml" line="83"/>
+        <location filename="../pages/settings/SettingsDisplay.qml" line="72"/>
         <source>Display unit</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsDisplay.qml" line="97"/>
+        <location filename="../pages/settings/SettingsDisplay.qml" line="86"/>
         <source>Language</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1696,22 +2199,22 @@ If you find it useful, please contribute.
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsDisplayUnit.qml" line="49"/>
+        <location filename="../pages/settings/SettingsDisplayUnit.qml" line="44"/>
         <source>BTC</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsDisplayUnit.qml" line="50"/>
+        <location filename="../pages/settings/SettingsDisplayUnit.qml" line="45"/>
         <source>8 decimal places (0.00000001 BTC = 1 sat)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsDisplayUnit.qml" line="59"/>
+        <location filename="../pages/settings/SettingsDisplayUnit.qml" line="53"/>
         <source>sat</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsDisplayUnit.qml" line="60"/>
+        <location filename="../pages/settings/SettingsDisplayUnit.qml" line="54"/>
         <source>Satoshi, the smallest unit (1 sat = 0.00000001 BTC)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1737,13 +2240,18 @@ If you find it useful, please contribute.
 <context>
     <name>SettingsProxy</name>
     <message>
-        <location filename="../pages/settings/SettingsProxy.qml" line="21"/>
+        <location filename="../pages/settings/SettingsProxy.qml" line="25"/>
         <source>Back</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsProxy.qml" line="27"/>
+        <location filename="../pages/settings/SettingsProxy.qml" line="31"/>
         <source>Proxy Settings</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsProxy.qml" line="74"/>
+        <source>Restart the application for these changes to take effect.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1773,13 +2281,26 @@ If you find it useful, please contribute.
 <context>
     <name>SettingsTheme</name>
     <message>
-        <location filename="../pages/settings/SettingsTheme.qml" line="24"/>
+        <location filename="../pages/settings/SettingsTheme.qml" line="25"/>
         <source>Back</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/settings/SettingsTheme.qml" line="30"/>
+        <location filename="../pages/settings/SettingsTheme.qml" line="31"/>
         <source>Theme</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>SettingsWallet</name>
+    <message>
+        <location filename="../pages/settings/SettingsWallet.qml" line="24"/>
+        <source>Back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/settings/SettingsWallet.qml" line="30"/>
+        <source>External Signer</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1793,6 +2314,39 @@ If you find it useful, please contribute.
     <message>
         <location filename="../pages/node/Shutdown.qml" line="31"/>
         <source>Do not shut down the computer until this is done.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>SpeedUpOverlay</name>
+    <message>
+        <location filename="../pages/wallet/SpeedUpOverlay.qml" line="75"/>
+        <source>Speed up transaction</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/SpeedUpOverlay.qml" line="87"/>
+        <source>Set a higher transaction fee if you want your transaction to be confirmed faster.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/SpeedUpOverlay.qml" line="96"/>
+        <source>Original fee</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/SpeedUpOverlay.qml" line="119"/>
+        <source>New fee</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/SpeedUpOverlay.qml" line="149"/>
+        <source>Cancel</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/SpeedUpOverlay.qml" line="157"/>
+        <source>Update transaction</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1878,34 +2432,272 @@ If you find it useful, please contribute.
 <context>
     <name>ThemeSettings</name>
     <message>
-        <location filename="../components/ThemeSettings.qml" line="21"/>
+        <location filename="../components/ThemeSettings.qml" line="24"/>
         <source>Light</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ThemeSettings.qml" line="36"/>
+        <location filename="../components/ThemeSettings.qml" line="39"/>
         <source>Dark</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/ThemeSettings.qml" line="60"/>
+        <source>Developer</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/ThemeSettings.qml" line="70"/>
+        <source>Design system</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>WalletBadge</name>
     <message>
-        <location filename="../pages/wallet/WalletBadge.qml" line="101"/>
+        <location filename="../pages/wallet/WalletBadge.qml" line="102"/>
         <source>Add Wallet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../pages/wallet/WalletBadge.qml" line="101"/>
+        <location filename="../pages/wallet/WalletBadge.qml" line="102"/>
         <source>Select Wallet</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/WalletBadge.qml" line="147"/>
+        <source>sat</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/wallet/WalletBadge.qml" line="147"/>
+        <source>sats</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>WalletQmlController</name>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="163"/>
+        <location filename="../walletqmlcontroller.cpp" line="223"/>
+        <source>Wallet creation failed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="176"/>
+        <source>Choose a wallet name.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="182"/>
+        <source>Set an external signer path in Wallet settings first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="190"/>
+        <source>Connect an external signer and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="194"/>
+        <source>More than one external signer was found. Connect only one device and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="283"/>
+        <source>More than one external signer was found. Connect only one device.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="317"/>
+        <source>This wallet needs to be migrated</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="320"/>
+        <source>We couldn&apos;t find that file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="323"/>
+        <source>A wallet with this name already exists</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="326"/>
+        <source>This wallet type is not supported</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="328"/>
+        <source>This wallet couldn&apos;t be imported</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="339"/>
+        <source>The selected backup appears to come from a legacy wallet format. It needs to be migrated before it can be used here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="342"/>
+        <source>The selected file is no longer available at that location. Choose the backup file again and retry.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="345"/>
+        <source>Importing this backup would create a wallet that already exists in your wallet directory. Remove or rename the existing wallet first, then try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="348"/>
+        <source>The file looks like a wallet backup, but this application could not verify or open it in a supported format.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="350"/>
+        <source>The selected file could not be restored as a wallet. Check that it is a valid wallet backup, then try another file.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="361"/>
+        <source>If this is a legacy wallet backup, migrate it with the wallet migration tool before importing it here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="485"/>
+        <source>Choose a wallet backup file.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="490"/>
+        <source>The selected wallet path does not exist.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="519"/>
+        <source>Wallet import failed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="635"/>
+        <source>Choose a wallet to open.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="644"/>
+        <location filename="../walletqmlcontroller.cpp" line="698"/>
+        <source>The selected wallet is not available in the wallet directory.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="674"/>
+        <source>Wallet could not be opened.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="691"/>
+        <source>Choose a wallet to update.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="713"/>
+        <source>Wallet update failed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="771"/>
+        <location filename="../walletqmlcontroller.cpp" line="786"/>
+        <source>Single-key</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="776"/>
+        <source>External signer</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="779"/>
+        <source>Watch-only</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../walletqmlcontroller.cpp" line="783"/>
+        <source>Multi-key</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>WalletQmlModel</name>
+    <message>
+        <location filename="../models/walletqmlmodel.cpp" line="736"/>
+        <source>External signer not available.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/walletqmlmodel.cpp" line="742"/>
+        <location filename="../models/walletqmlmodel.cpp" line="756"/>
+        <source>Couldn&apos;t prepare transaction for external signing.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/walletqmlmodel.cpp" line="768"/>
+        <source>External signer not found. Connect one device and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../models/walletqmlmodel.cpp" line="771"/>
+        <source>External signer failed to sign. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>WalletSelect</name>
     <message>
-        <location filename="../pages/wallet/WalletSelect.qml" line="59"/>
+        <location filename="../pages/wallet/WalletSelect.qml" line="60"/>
         <source>Wallets</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>WalletSettings</name>
+    <message>
+        <location filename="../components/WalletSettings.qml" line="33"/>
+        <source>Signer path</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/WalletSettings.qml" line="43"/>
+        <source>Enter external signer path</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/WalletSettings.qml" line="65"/>
+        <source>The add wallet flow can offer external wallets when exactly one supported signer is connected.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/WalletSettings.qml" line="108"/>
+        <source>Detected external signer: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/WalletSettings.qml" line="114"/>
+        <source>Path updated. Press Check device to rescan with the current signer command.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/WalletSettings.qml" line="117"/>
+        <source>No external signer is currently detected.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/WalletSettings.qml" line="119"/>
+        <source>Set the command path for HWI or another external signer tool.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/WalletSettings.qml" line="130"/>
+        <source>Check device</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1927,6 +2719,30 @@ If you find it useful, please contribute.
     <message>
         <location filename="../pages/main.qml" line="18"/>
         <source>Bitcoin Core App</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/main.qml" line="119"/>
+        <location filename="../pages/main.qml" line="137"/>
+        <source>Approved on external signer. It should be confirmed within the next 10 minutes.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/main.qml" line="120"/>
+        <location filename="../pages/main.qml" line="138"/>
+        <source>Based on your selected fee, it should be confirmed within the next 10 minutes.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/main.qml" line="121"/>
+        <location filename="../pages/main.qml" line="139"/>
+        <source>Done</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../pages/main.qml" line="121"/>
+        <location filename="../pages/main.qml" line="139"/>
+        <source>Close window</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

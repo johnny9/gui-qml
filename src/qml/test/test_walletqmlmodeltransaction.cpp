@@ -72,7 +72,7 @@ void WalletQmlModelTransactionTests::recipientRolesExposeFormattedAddressAndUnit
         QString("abcd 1234 efgh 5678"));
     QCOMPARE(
         recipients.data(index, SendRecipientsListModel::AmountUnitLabelRole).toString(),
-        QString("sat"));
+        QString("sats"));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN
