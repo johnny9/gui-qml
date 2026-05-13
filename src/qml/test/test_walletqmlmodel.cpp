@@ -428,6 +428,10 @@ void WalletQmlModelTests::prepareTransaction_reassignsAmountWhenFeeIncluded()
     QCOMPARE(model->currentTransaction()->amountAmount()->satoshi(), CAmount{49'800});
     QCOMPARE(model->currentTransaction()->feeAmount()->satoshi(), CAmount{200});
     QCOMPARE(model->currentTransaction()->totalAmount()->satoshi(), CAmount{50'000});
+    QCOMPARE(model->currentTransaction()->amount(), QString::fromUtf8("0.00049800 \xe2\x82\xbf"));
+    QCOMPARE(model->currentTransaction()->fee(), QString::fromUtf8("0.00000200 \xe2\x82\xbf"));
+    QCOMPARE(model->currentTransaction()->total(), QString::fromUtf8("0.00050000 \xe2\x82\xbf"));
+    QCOMPARE(model->currentTransaction()->getTotalTransactionAmount(), CAmount{50'000});
 }
 
 void WalletQmlModelTests::walletQmlModelTransaction_reassignAmounts_excludesChangeOutput()
@@ -453,6 +457,7 @@ void WalletQmlModelTests::walletQmlModelTransaction_reassignAmounts_excludesChan
     QCOMPARE(fee_changed_spy.count(), 1);
     QCOMPARE(total_changed_spy.count(), 1);
     QCOMPARE(transaction.totalAmount()->satoshi(), CAmount{50'200});
+    QCOMPARE(transaction.total(), QString::fromUtf8("0.00050200 \xe2\x82\xbf"));
 
     transaction.reassignAmounts(/*nChangePosRet=*/1);
 
@@ -461,6 +466,10 @@ void WalletQmlModelTests::walletQmlModelTransaction_reassignAmounts_excludesChan
     QCOMPARE(transaction.amountAmount()->satoshi(), CAmount{49'800});
     QCOMPARE(transaction.feeAmount()->satoshi(), CAmount{200});
     QCOMPARE(transaction.totalAmount()->satoshi(), CAmount{50'000});
+    QCOMPARE(transaction.amount(), QString::fromUtf8("0.00049800 \xe2\x82\xbf"));
+    QCOMPARE(transaction.fee(), QString::fromUtf8("0.00000200 \xe2\x82\xbf"));
+    QCOMPARE(transaction.total(), QString::fromUtf8("0.00050000 \xe2\x82\xbf"));
+    QCOMPARE(transaction.getTotalTransactionAmount(), CAmount{50'000});
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()

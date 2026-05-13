@@ -12,7 +12,7 @@ ActivityListModel::ActivityListModel(WalletQmlModel *parent)
 {
     if (m_wallet_model != nullptr) {
         refreshWallet();
-        subsctribeToCoreSignals();
+        subscribeToCoreSignals();
     }
 }
 
@@ -63,7 +63,7 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
     case AddressRole:
         return tx->address;
     case AmountRole:
-        return tx->prettyAmount();
+        return tx->prettyAmount(m_display_unit);
     case DateTimeRole:
         return tx->dateTimeString();
     case DepthRole:
@@ -136,6 +136,16 @@ QVariantMap ActivityListModel::transactionDetails(const QString& txid) const
     return {};
 }
 
+void ActivityListModel::setDisplayUnit(int unit)
+{
+    if (unit != m_display_unit) {
+        m_display_unit = unit;
+        if (!m_transactions.isEmpty()) {
+            Q_EMIT dataChanged(index(0), index(m_transactions.size() - 1), {AmountRole});
+        }
+    }
+}
+
 void ActivityListModel::refreshWallet()
 {
     if (m_wallet_model == nullptr) {
@@ -193,7 +203,7 @@ int ActivityListModel::findTransactionIndex(const uint256& hash) const
     return -1;
 }
 
-void ActivityListModel::subsctribeToCoreSignals()
+void ActivityListModel::subscribeToCoreSignals()
 {
     // Connect signals to wallet
     m_handler_transaction_changed = m_wallet_model->handleTransactionChanged([this](const uint256& hash, ChangeType status) {
