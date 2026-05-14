@@ -17,11 +17,10 @@ import os
 import sys
 import time
 
-from qml_driver import QmlDriverError
 from qml_test_harness import (
     QmlTestHarness,
-    dump_qml_tree,
     parse_args,
+    report_qml_test_failure,
 )
 
 
@@ -236,11 +235,7 @@ def run_tests():
         print("=" * 50)
 
     except Exception as e:
-        print(f"\nFAILED: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        if gui is not None:
-            dump_qml_tree(gui)
+        report_qml_test_failure(e, driver=gui, process=harness.process)
         sys.exit(1)
     finally:
         harness.stop()

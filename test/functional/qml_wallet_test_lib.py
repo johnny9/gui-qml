@@ -9,14 +9,18 @@ import http.client
 import json
 import os
 import shutil
-import signal
 import socket
 import subprocess
 import tempfile
 import time
 
 from qml_driver import QmlDriver
-from qml_test_harness import GUI_STARTUP_TIMEOUT, complete_onboarding, find_gui_binary
+from qml_test_harness import (
+    GUI_STARTUP_TIMEOUT,
+    complete_onboarding,
+    find_gui_binary,
+    terminate_process,
+)
 
 
 RPC_USER = "qmlwallettest"
@@ -199,13 +203,9 @@ class WalletFlowHarness:
         if self.source_process and self.source_process.poll() is None:
             try:
                 rpc_call(self.source_rpc_port, "stop")
-            except Exception:
-                self.source_process.send_signal(signal.SIGTERM)
-            try:
                 self.source_process.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                self.source_process.kill()
-                self.source_process.wait()
+            except Exception:
+                terminate_process(self.source_process, timeout=20)
         self.source_process = None
 
     def start_gui(self, reset_gui_settings=False, extra_args=None, cwd=None):
@@ -235,13 +235,7 @@ class WalletFlowHarness:
         self.driver = QmlDriver(self.socket_path, timeout=GUI_STARTUP_TIMEOUT)
 
     def stop_gui(self):
-        if self.gui_process and self.gui_process.poll() is None:
-            self.gui_process.send_signal(signal.SIGTERM)
-            try:
-                self.gui_process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.gui_process.kill()
-                self.gui_process.wait()
+        terminate_process(self.gui_process, timeout=10)
         self.gui_process = None
         if self.driver:
             self.driver.close()
@@ -261,15 +255,6 @@ class WalletFlowHarness:
             print(f"Preserving test directory: {self.tmpdir}")
         else:
             shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def process_output(self, process):
-        if not process:
-            return ""
-        stdout = process.stdout.read().decode("utf-8", errors="replace") if process.stdout else ""
-        stderr = process.stderr.read().decode("utf-8", errors="replace") if process.stderr else ""
-        if stdout and stderr:
-            return f"stdout:\n{stdout}\n\nstderr:\n{stderr}"
-        return stdout or stderr
 
     def finish_onboarding(self):
         complete_onboarding(self.driver)

@@ -21,7 +21,7 @@ import sys
 from qml_test_harness import (
     QmlTestHarness,
     complete_onboarding,
-    dump_qml_tree,
+    report_qml_test_failure,
 )
 
 
@@ -273,12 +273,12 @@ def run_tests():
         checkpoints.checkpoint("node settings closed", gui)
 
     except Exception as e:
-        print(f"\nFAILED: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        if harness.driver:
-            checkpoints.checkpoint("failure state", harness.driver)
-            dump_qml_tree(harness.driver)
+        report_qml_test_failure(
+            e,
+            driver=harness.driver,
+            process=harness.process,
+            checkpoint=checkpoints.checkpoint,
+        )
         sys.exit(1)
     finally:
         harness.stop()

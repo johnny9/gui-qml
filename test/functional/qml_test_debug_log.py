@@ -16,12 +16,17 @@ This test requires the binary to be built with -DENABLE_TEST_AUTOMATION=ON.
 import datetime
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
 
-from qml_test_harness import GUI_STARTUP_TIMEOUT, dump_qml_tree, find_gui_binary, setup_datadir
+from qml_test_harness import (
+    GUI_STARTUP_TIMEOUT,
+    find_gui_binary,
+    report_qml_test_failure,
+    setup_datadir,
+    terminate_process,
+)
 from qml_driver import QmlDriver
 
 
@@ -72,13 +77,7 @@ class DebugLogHarness:
         print("QmlDriver connected to test bridge.")
 
     def stop(self):
-        if self.process and self.process.poll() is None:
-            self.process.send_signal(signal.SIGTERM)
-            try:
-                self.process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
+        terminate_process(self.process, timeout=10)
         if self.driver:
             self.driver.close()
         if self.tmpdir:
@@ -216,25 +215,7 @@ def run_tests():
         print("=" * 50)
 
     except Exception as e:
-        print(f"\nFAILED: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        if harness.process:
-            try:
-                harness.process.send_signal(signal.SIGTERM)
-                try:
-                    stderr_bytes = harness.process.communicate(timeout=5)[1]
-                except Exception:
-                    harness.process.kill()
-                    stderr_bytes = harness.process.communicate()[1]
-                if stderr_bytes:
-                    print("\n--- GUI stderr ---", file=sys.stderr)
-                    print(stderr_bytes.decode("utf-8", errors="replace")[-4000:],
-                          file=sys.stderr)
-            except Exception:
-                pass
-        if harness.driver:
-            dump_qml_tree(harness.driver)
+        report_qml_test_failure(e, driver=harness.driver, process=harness.process)
         sys.exit(1)
     finally:
         harness.stop()

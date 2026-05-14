@@ -16,12 +16,15 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 
 from qml_driver import QmlDriver, QmlDriverError
 
 
 # How long to wait for the GUI process to start (seconds).
 GUI_STARTUP_TIMEOUT = 30
+PROCESS_OUTPUT_TAIL_BYTES = 4000
+PROCESS_TERMINATION_TIMEOUT = 5
 
 
 def find_gui_binary():
@@ -63,6 +66,115 @@ def setup_datadir(tmpdir):
         f.write("shrinkdebugfile=0\n")
         f.write("fallbackfee=0.0001\n")
     return datadir
+
+
+def _decode_process_output(output):
+    if output is None:
+        return ""
+    if isinstance(output, str):
+        return output
+    return output.decode("utf-8", errors="replace")
+
+
+def _tail_output(output):
+    if not output:
+        return ""
+    encoded = output.encode("utf-8", errors="replace")
+    if len(encoded) <= PROCESS_OUTPUT_TAIL_BYTES:
+        return output
+    return encoded[-PROCESS_OUTPUT_TAIL_BYTES:].decode("utf-8", errors="replace")
+
+
+def print_process_output(label, stdout, stderr):
+    """Print bounded stdout/stderr captured from a terminated process."""
+    stdout = _tail_output(stdout)
+    stderr = _tail_output(stderr)
+    if stdout:
+        print(f"\n--- {label} stdout ---", file=sys.stderr)
+        print(stdout, file=sys.stderr)
+    if stderr:
+        print(f"\n--- {label} stderr ---", file=sys.stderr)
+        print(stderr, file=sys.stderr)
+
+
+def terminate_process(process, timeout=PROCESS_TERMINATION_TIMEOUT, capture_output=False):
+    """Terminate a process, kill it on timeout, and optionally capture output."""
+    stdout = ""
+    stderr = ""
+    killed = False
+    if process is None:
+        return stdout, stderr, killed
+
+    try:
+        if process.poll() is None:
+            process.send_signal(signal.SIGTERM)
+            if capture_output:
+                try:
+                    stdout_bytes, stderr_bytes = process.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    stdout_bytes, stderr_bytes = process.communicate()
+                    killed = True
+                stdout = _decode_process_output(stdout_bytes)
+                stderr = _decode_process_output(stderr_bytes)
+            else:
+                try:
+                    process.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                    killed = True
+        elif capture_output:
+            stdout_bytes, stderr_bytes = process.communicate()
+            stdout = _decode_process_output(stdout_bytes)
+            stderr = _decode_process_output(stderr_bytes)
+    except Exception as err:  # noqa: BLE001 - diagnostics must not mask the original failure
+        stderr = f"(could not terminate or capture process output: {err})"
+
+    return stdout, stderr, killed
+
+
+def report_qml_test_failure(
+    error,
+    *,
+    driver=None,
+    process=None,
+    case_name=None,
+    checkpoint=None,
+    process_label="GUI process",
+    output_timeout=PROCESS_TERMINATION_TIMEOUT,
+):
+    """Emit consistent diagnostics for QML functional test failures."""
+    if case_name:
+        print(f"\nFAILED [{case_name}]: {error}", file=sys.stderr)
+    else:
+        print(f"\nFAILED: {error}", file=sys.stderr)
+    traceback.print_exception(type(error), error, error.__traceback__)
+
+    if driver is not None and checkpoint is not None:
+        try:
+            checkpoint("failure state", driver)
+        except Exception as checkpoint_err:  # noqa: BLE001 - preserve original failure context
+            context = f"[{case_name}] " if case_name else ""
+            print(
+                f"{context}failed to save failure checkpoint: {checkpoint_err}",
+                file=sys.stderr,
+            )
+
+    if driver is not None:
+        dump_qml_tree(driver)
+
+    stdout, stderr, killed = terminate_process(
+        process,
+        timeout=output_timeout,
+        capture_output=True,
+    )
+    if killed:
+        print(
+            f"\n--- {process_label} did not terminate within {output_timeout}s; killed ---",
+            file=sys.stderr,
+        )
+    print_process_output(process_label, stdout, stderr)
 
 
 def parse_args():
@@ -151,13 +263,7 @@ class QmlTestHarness:
         If cleanup is False, the tmpdir and datadir are preserved on disk so
         a second harness can reuse the same datadir for a restart-persistence test.
         """
-        if self.process and self.process.poll() is None:
-            self.process.send_signal(signal.SIGTERM)
-            try:
-                self.process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
+        terminate_process(self.process, timeout=10)
         if self.driver:
             self.driver.close()
         if cleanup and self.tmpdir:

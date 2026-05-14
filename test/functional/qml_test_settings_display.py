@@ -19,13 +19,11 @@ import sys
 import time
 
 from qml_test_harness import (
-    GUI_STARTUP_TIMEOUT,
     QmlTestHarness,
     complete_onboarding,
-    dump_qml_tree,
     parse_args,
+    report_qml_test_failure,
 )
-from qml_driver import QmlDriverError
 
 # The node must start up before post-onboarding pages are interactive.
 # Use a generous timeout for waits that follow onboarding completion.
@@ -203,6 +201,9 @@ def test_settings_persistence(datadir):
         )
         print(f"  Language (Español) persisted across restart  PASSED")
 
+    except Exception as e:
+        report_qml_test_failure(e, driver=harness2.driver, process=harness2.process)
+        raise
     finally:
         harness2.stop()
 
@@ -248,11 +249,7 @@ def run_tests():
         tmpdir = harness.tmpdir
 
     except Exception as e:
-        print(f"\nFAILED: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        if harness.driver:
-            dump_qml_tree(harness.driver)
+        report_qml_test_failure(e, driver=harness.driver, process=harness.process)
         sys.exit(1)
     finally:
         # Keep the datadir on disk so the second harness can reuse it.
@@ -261,10 +258,7 @@ def run_tests():
     # Phase 2: restart without -resetguisettings and verify persistence.
     try:
         test_settings_persistence(datadir)
-    except Exception as e:
-        print(f"\nFAILED: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
+    except Exception:
         sys.exit(1)
     finally:
         if tmpdir:

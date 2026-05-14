@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 
 from qml_driver import QmlDriverError
-from qml_test_harness import dump_qml_tree
+from qml_test_harness import report_qml_test_failure
 from qml_wallet_test_lib import WalletFlowHarness, rpc_call, wait_for_rpc
 
 
@@ -427,20 +427,13 @@ def assert_signer_status(gui, object_name, expected_text):
 
 
 def fail_case(case_name, harness, checkpoints, err):
-    print(f"\nFAILED [{case_name}]: {err}", file=sys.stderr)
-    import traceback
-    traceback.print_exc()
-    if harness.driver is not None:
-        try:
-            checkpoints.checkpoint("failure state", harness.driver)
-        except Exception as screenshot_err:  # noqa: BLE001 - preserve original failure context
-            print(f"[{case_name}] failed to save failure screenshot: {screenshot_err}", file=sys.stderr)
-    gui_output = harness.process_output(harness.gui_process)
-    if gui_output:
-        print("\n--- GUI process output ---", file=sys.stderr)
-        print(gui_output, file=sys.stderr)
-    if harness.driver is not None:
-        dump_qml_tree(harness.driver)
+    report_qml_test_failure(
+        err,
+        driver=harness.driver,
+        process=harness.gui_process,
+        case_name=case_name,
+        checkpoint=checkpoints.checkpoint,
+    )
 
 
 def run_test(args):

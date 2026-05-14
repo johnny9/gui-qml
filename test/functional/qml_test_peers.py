@@ -19,7 +19,6 @@ import base64
 import http.client
 import json
 import os
-import signal
 import socket
 import subprocess
 import sys
@@ -28,8 +27,9 @@ import time
 
 from qml_test_harness import (
     GUI_STARTUP_TIMEOUT,
-    dump_qml_tree,
     find_gui_binary,
+    report_qml_test_failure,
+    terminate_process,
 )
 from qml_driver import QmlDriver
 
@@ -61,9 +61,7 @@ _COMMON_CONF = (
 )
 
 def _terminate_process(proc) -> None:
-    if proc and proc.poll() is None:
-        proc.send_signal(signal.SIGTERM)
-        proc.wait(timeout=10)
+    terminate_process(proc, timeout=10)
 
 GUI_RPC_USER = "qmltest"
 GUI_RPC_PASS = "qmltestpass"
@@ -214,13 +212,7 @@ class PeerQmlTestHarness:
     def stop(self):
         """Terminate all processes."""
         for proc in (self.peer2_process, self.peer_process, self.gui_process):
-            if proc and proc.poll() is None:
-                proc.send_signal(signal.SIGTERM)
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
+            terminate_process(proc, timeout=10)
         if self.driver:
             self.driver.close()
 
@@ -770,24 +762,12 @@ def run_tests():
         print("=" * 60)
 
     except Exception as e:
-        print(f"\nFAILED: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        if harness.gui_process:
-            try:
-                harness.gui_process.send_signal(signal.SIGTERM)
-                try:
-                    stderr_bytes = harness.gui_process.communicate(timeout=5)[1]
-                except subprocess.TimeoutExpired:
-                    harness.gui_process.kill()
-                    stderr_bytes = harness.gui_process.communicate()[1]
-                if stderr_bytes:
-                    print("\n--- GUI node stderr ---", file=sys.stderr)
-                    print(stderr_bytes.decode("utf-8", errors="replace")[-4000:], file=sys.stderr)
-            except Exception:
-                pass
-        if harness.driver:
-            dump_qml_tree(harness.driver)
+        report_qml_test_failure(
+            e,
+            driver=harness.driver,
+            process=harness.gui_process,
+            process_label="GUI node",
+        )
         sys.exit(1)
     finally:
         harness.stop()

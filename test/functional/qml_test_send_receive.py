@@ -12,7 +12,7 @@ import re
 import sys
 import time
 
-from qml_test_harness import dump_qml_tree
+from qml_test_harness import report_qml_test_failure
 from qml_wallet_test_lib import WalletFlowHarness, rpc_call
 
 
@@ -323,20 +323,13 @@ def run_test(*, save_screenshots=False, screenshot_root=None):
         )
         return 0
     except Exception as err:  # noqa: BLE001 - preserve failure context for functional test output
-        print(f"\\nFAILED: {err}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        if gui is not None:
-            try:
-                checkpoints.checkpoint("failure state", gui)
-            except Exception as screenshot_err:  # noqa: BLE001 - preserve original failure context
-                print(f"[qml_test_send_receive] failed to save failure screenshot: {screenshot_err}", file=sys.stderr)
-        gui_output = harness.process_output(harness.gui_process)
-        if gui_output:
-            print("\\n--- GUI process output ---", file=sys.stderr)
-            print(gui_output, file=sys.stderr)
-        if gui is not None:
-            dump_qml_tree(gui)
+        report_qml_test_failure(
+            err,
+            driver=gui,
+            process=harness.gui_process,
+            case_name="qml_test_send_receive",
+            checkpoint=checkpoints.checkpoint,
+        )
         return 1
     finally:
         harness.stop()
