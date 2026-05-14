@@ -52,8 +52,11 @@ private:
         bool from_wallet_dir{false};
     };
 
+    bool itemLess(const Item& a, const Item& b) const;
+    void sortItems(QList<Item>& items) const;
+    bool applyUpdatedItems(QList<Item>&& updated_items);
+    void updateLoadStateForAllRows();
     int rowForName(const QString& name) const;
-    void addItem(const Item& item);
 
     QList<Item> m_items;
     QSet<QString> m_open_wallet_names;

@@ -600,6 +600,13 @@ void WalletQmlControllerTests::initializedControllerClosesSelectedWalletAndSelec
 
     QSignalSpy selected_spy(&controller, &WalletQmlController::selectedWalletChanged);
     QSignalSpy load_state_spy(&controller, &WalletQmlController::walletLoadStateChanged);
+    QStringList signal_order;
+    QObject::connect(&controller, &WalletQmlController::selectedWalletChanged, [&]() {
+        signal_order.append("selectedWalletChanged");
+    });
+    QObject::connect(&controller, &WalletQmlController::walletLoadStateChanged, [&]() {
+        signal_order.append("walletLoadStateChanged");
+    });
 
     controller.closeWallet("alpha_wallet");
 
@@ -609,6 +616,7 @@ void WalletQmlControllerTests::initializedControllerClosesSelectedWalletAndSelec
     QCOMPARE(load_state_spy.count(), 1);
     QCOMPARE(load_state_spy.at(0).at(0).toString(), QString{"alpha_wallet"});
     QCOMPARE(load_state_spy.at(0).at(1).toBool(), false);
+    QCOMPARE(signal_order, QStringList({"selectedWalletChanged", "walletLoadStateChanged"}));
     QCOMPARE(controller.selectedWallet()->name(), QString{"beta_wallet"});
     QVERIFY(controller.isWalletLoaded());
     QVERIFY(!controller.isWalletOpen("alpha_wallet"));

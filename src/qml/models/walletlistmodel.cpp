@@ -6,7 +6,7 @@
 
 #include <interfaces/node.h>
 
-#include <QHash>
+#include <algorithm>
 
 WalletListModel::WalletListModel(interfaces::Node& node, QObject *parent)
 : QAbstractListModel(parent)
@@ -16,34 +16,27 @@ WalletListModel::WalletListModel(interfaces::Node& node, QObject *parent)
 
 void WalletListModel::listWalletDir()
 {
-    QHash<QString, int> existing_rows;
-    for (int i = 0; i < rowCount(); ++i) {
-        QModelIndex index = this->index(i, 0);
-        QString name = data(index, NameRole).toString();
-        existing_rows.insert(name, i);
+    QList<Item> updated_items;
+    for (const auto& [path, format] : m_node.walletLoader().listWalletDir()) {
+        updated_items.append({
+            QString::fromStdString(path),
+            QString::fromStdString(format),
+            true,
+        });
     }
 
-    for (const auto& [path, format] : m_node.walletLoader().listWalletDir()) {
-        QString qname = QString::fromStdString(path);
-        QString qformat = QString::fromStdString(format);
-        if (existing_rows.contains(qname)) {
-            const int row = existing_rows.value(qname);
-            const bool format_changed = m_items[row].format != qformat;
-            m_items[row].format = qformat;
-            m_items[row].from_wallet_dir = true;
-            if (format_changed) {
-                Q_EMIT dataChanged(index(row, 0), index(row, 0), {FormatRole});
-            }
-        } else {
-            addItem({qname, qformat, true});
-        }
-    }
-    m_wallet_dir_loaded = true;
     for (const QString& wallet_name : m_open_wallet_names) {
-        if (rowForName(wallet_name) == -1) {
-            addItem({wallet_name, QString(), false});
+        const bool has_wallet = std::any_of(updated_items.cbegin(), updated_items.cend(), [&](const Item& item) {
+            return item.name == wallet_name;
+        });
+        if (!has_wallet) {
+            updated_items.append({wallet_name, QString(), false});
         }
     }
+
+    sortItems(updated_items);
+    applyUpdatedItems(std::move(updated_items));
+    m_wallet_dir_loaded = true;
     Q_EMIT walletListChanged(rowCount() > 0);
 }
 
@@ -60,24 +53,26 @@ void WalletListModel::setWalletLoadState(const QString& wallet_name, bool loaded
         m_open_wallet_names.remove(wallet_name);
     }
 
-    const int row = rowForName(wallet_name);
-    if (row == -1) {
-        if (loaded && m_wallet_dir_loaded) {
-            addItem({wallet_name, QString(), false});
+    QList<Item> updated_items{m_items};
+    if (loaded && m_wallet_dir_loaded && rowForName(wallet_name) == -1) {
+        updated_items.append({wallet_name, QString(), false});
+    } else if (!loaded) {
+        updated_items.erase(std::remove_if(updated_items.begin(), updated_items.end(), [&](const Item& item) {
+            return item.name == wallet_name && !item.from_wallet_dir;
+        }), updated_items.end());
+    }
+
+    const bool wallet_count_changed{updated_items.size() != m_items.size()};
+    sortItems(updated_items);
+    if (applyUpdatedItems(std::move(updated_items))) {
+        if (wallet_count_changed) {
+            Q_EMIT walletListChanged(rowCount() > 0);
         }
         return;
     }
 
-    if (!loaded && !m_items[row].from_wallet_dir) {
-        beginRemoveRows(QModelIndex(), row, row);
-        m_items.removeAt(row);
-        endRemoveRows();
-        Q_EMIT walletListChanged(rowCount() > 0);
-        return;
-    }
-
     if (was_loaded != loaded) {
-        Q_EMIT dataChanged(index(row, 0), index(row, 0), {LoadStateRole});
+        updateLoadStateForAllRows();
     }
 }
 
@@ -117,12 +112,58 @@ QHash<int, QByteArray> WalletListModel::roleNames() const
     return roles;
 }
 
-void WalletListModel::addItem(const Item &item)
+bool WalletListModel::itemLess(const Item& a, const Item& b) const
 {
-    beginInsertRows(QModelIndex(), rowCount(), rowCount());
-    m_items.append(item);
-    endInsertRows();
-    Q_EMIT walletListChanged(true);
+    const bool a_open{m_open_wallet_names.contains(a.name)};
+    const bool b_open{m_open_wallet_names.contains(b.name)};
+    if (a_open != b_open) return a_open;
+
+    const int name_compare = QString::compare(a.name, b.name, Qt::CaseInsensitive);
+    if (name_compare != 0) return name_compare < 0;
+
+    const int case_compare = QString::compare(a.name, b.name, Qt::CaseSensitive);
+    if (case_compare != 0) return case_compare < 0;
+
+    const int format_compare = QString::compare(a.format, b.format, Qt::CaseInsensitive);
+    if (format_compare != 0) return format_compare < 0;
+
+    return QString::compare(a.format, b.format, Qt::CaseSensitive) < 0;
+}
+
+void WalletListModel::sortItems(QList<Item>& items) const
+{
+    std::stable_sort(items.begin(), items.end(), [this](const Item& a, const Item& b) {
+        return itemLess(a, b);
+    });
+}
+
+bool WalletListModel::applyUpdatedItems(QList<Item>&& updated_items)
+{
+    bool unchanged{m_items.size() == updated_items.size()};
+    for (qsizetype i = 0; unchanged && i < m_items.size(); ++i) {
+        unchanged = m_items[i].name == updated_items[i].name &&
+            m_items[i].format == updated_items[i].format &&
+            m_items[i].from_wallet_dir == updated_items[i].from_wallet_dir;
+    }
+    if (unchanged) {
+        return false;
+    }
+
+    beginResetModel();
+    m_items = std::move(updated_items);
+    endResetModel();
+    return true;
+}
+
+void WalletListModel::updateLoadStateForAllRows()
+{
+    if (m_items.isEmpty()) {
+        return;
+    }
+
+    const QModelIndex first = index(0, 0);
+    const QModelIndex last = index(rowCount() - 1, 0);
+    Q_EMIT dataChanged(first, last, {LoadStateRole});
 }
 
 int WalletListModel::rowForName(const QString& name) const
