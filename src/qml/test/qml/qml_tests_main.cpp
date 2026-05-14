@@ -734,8 +734,9 @@ public:
         m_selected_wallet = wallet;
         Q_EMIT selectedWalletChanged();
     }
-    Q_INVOKABLE void setSelectedWallet(const QString& name)
+    Q_INVOKABLE void setSelectedWallet(const QString& name, const QString& format = QString())
     {
+        Q_UNUSED(format);
         if (m_last_selected_wallet_name == name) return;
         m_last_selected_wallet_name = name;
         Q_EMIT lastSelectedWalletNameChanged();
@@ -961,7 +962,8 @@ class MockWalletListModel : public QAbstractListModel
 
 public:
     enum Roles {
-        NameRole = Qt::UserRole + 1
+        NameRole = Qt::UserRole + 1,
+        FormatRole
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex{}) const override
@@ -974,12 +976,16 @@ public:
     {
         if (!index.isValid() || index.row() < 0 || index.row() >= m_wallet_names.size()) return {};
         if (role == NameRole) return m_wallet_names.at(index.row());
+        if (role == FormatRole) return QStringLiteral("sqlite");
         return {};
     }
 
     QHash<int, QByteArray> roleNames() const override
     {
-        return {{NameRole, "name"}};
+        return {
+            {NameRole, "name"},
+            {FormatRole, "format"},
+        };
     }
 
     Q_INVOKABLE void listWalletDir() {}

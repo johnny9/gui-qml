@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -43,7 +43,7 @@ public:
     explicit WalletQmlController(interfaces::Node& node, QObject *parent = nullptr);
     ~WalletQmlController();
 
-    Q_INVOKABLE void setSelectedWallet(QString path);
+    Q_INVOKABLE void setSelectedWallet(QString path, QString wallet_format = QString());
     Q_INVOKABLE bool createSingleSigWallet(const QString &name, const QString &passphrase);
     Q_INVOKABLE bool createExternalSignerWallet(const QString& name);
     Q_INVOKABLE void importWallet(const QString& path);
@@ -108,9 +108,9 @@ private:
 
     void handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet);
     void startWalletImport(const QString& path);
-    void startWalletLoad(const QString& path);
+    void startWalletLoad(const QString& path, const QString& wallet_format = QString());
     void startWalletMigration(const QString& path);
-    QString resolveManagedWalletReference(const QString& path) const;
+    QString resolveManagedWalletReference(const QString& path, QString* wallet_format = nullptr) const;
     QString inferWalletLoadTarget(const QString& normalized_path) const;
     QString inferRestoreWalletName(const QString& normalized_path) const;
     QString describeImportedWalletKeyScheme(interfaces::Wallet& wallet) const;
