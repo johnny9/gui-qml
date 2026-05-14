@@ -35,7 +35,9 @@
 #include <QRegularExpression>
 
 #include <array>
+#include <functional>
 #include <optional>
+#include <utility>
 
 namespace {
 constexpr unsigned int DEFAULT_STANDARD_FEE_TARGET{2};
@@ -253,6 +255,38 @@ QString LocalizedString(const bilingual_str& value)
 {
     return QString::fromStdString(value.translated.empty() ? value.original : value.translated);
 }
+
+class WalletRelockGuard
+{
+public:
+    WalletRelockGuard(interfaces::Wallet& wallet, std::function<void()> refresh_security_state, bool active)
+        : m_wallet{wallet}, m_refresh_security_state{std::move(refresh_security_state)}, m_active{active}
+    {
+    }
+
+    ~WalletRelockGuard()
+    {
+        relock();
+    }
+
+    WalletRelockGuard(const WalletRelockGuard&) = delete;
+    WalletRelockGuard& operator=(const WalletRelockGuard&) = delete;
+
+    void relock()
+    {
+        if (!m_active) {
+            return;
+        }
+        m_wallet.lock();
+        m_refresh_security_state();
+        m_active = false;
+    }
+
+private:
+    interfaces::Wallet& m_wallet;
+    std::function<void()> m_refresh_security_state;
+    bool m_active;
+};
 
 } // namespace
 
@@ -694,6 +728,7 @@ bool WalletQmlModel::prepareTransactionInternal(const std::optional<QString>& pa
     if (!unlockForAction(passphrase, relock)) {
         return false;
     }
+    WalletRelockGuard relock_guard{*m_wallet, [this] { refreshSecurityState(); }, relock};
 
     const auto vec_send = BuildRecipients(*m_send_recipients);
     if (!vec_send.has_value()) {
@@ -727,10 +762,7 @@ bool WalletQmlModel::prepareTransactionInternal(const std::optional<QString>& pa
 
     CAmount balance = m_wallet->getBalance();
     if (balance < total) {
-        if (relock) {
-            m_wallet->lock();
-            refreshSecurityState();
-        }
+        relock_guard.relock();
         setTransactionStatus(tr("The wallet does not have enough balance for this transaction."));
         return false;
     }
@@ -751,18 +783,12 @@ bool WalletQmlModel::prepareTransactionInternal(const std::optional<QString>& pa
             m_current_transaction->reassignAmounts(nChangePosRet);
         }
         m_current_transaction->setDisplayUnit(m_display_unit);
-        if (relock) {
-            m_wallet->lock();
-            refreshSecurityState();
-        }
+        relock_guard.relock();
         Q_EMIT currentTransactionChanged();
         return true;
     }
 
-    if (relock) {
-        m_wallet->lock();
-        refreshSecurityState();
-    }
+    relock_guard.relock();
     setTransactionStatus(LocalizedString(util::ErrorString(result)));
     return false;
 }

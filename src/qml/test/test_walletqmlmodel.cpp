@@ -213,6 +213,8 @@ private Q_SLOTS:
     void transactionChangedEmitsBalanceChanged();
     void prepareTransactionOnLockedWalletRequiresPassword();
     void prepareTransactionWithPrivateKeysDisabledDoesNotRequirePassword();
+    void prepareTransactionWithPassphraseRelocksWhenRecipientsInvalid();
+    void prepareTransactionWithPassphraseRelocksWhenCustomFeeInvalid();
     void sendTransactionCommitsPreparedTransactionWithoutUnlockingAgain();
     void sendTransactionWithPrivateKeysDisabledDoesNotCommit();
 };
@@ -717,6 +719,37 @@ void WalletQmlModelTests::prepareTransactionWithPrivateKeysDisabledDoesNotRequir
     QVERIFY(wallet->create_transaction_sign_args == std::vector<bool>{false});
     QCOMPARE(wallet->unlock_calls, 0);
     QCOMPARE(wallet->lock_calls, 0);
+}
+
+void WalletQmlModelTests::prepareTransactionWithPassphraseRelocksWhenRecipientsInvalid()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    auto* recipient = model->sendRecipientList()->currentRecipient();
+    QVERIFY(recipient != nullptr);
+    recipient->amount()->setSatoshi(1'000);
+    QVERIFY(!recipient->isValid());
+
+    QVERIFY(!model->prepareTransactionWithPassphrase("secret"));
+    QVERIFY(wallet->locked);
+    QCOMPARE(wallet->unlock_calls, 1);
+    QCOMPARE(wallet->lock_calls, 1);
+    QVERIFY(wallet->create_transaction_sign_args.empty());
+}
+
+void WalletQmlModelTests::prepareTransactionWithPassphraseRelocksWhenCustomFeeInvalid()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetPasswordRecipient(*model, 1'000);
+    model->setCustomFeeEnabled(true);
+    model->setCustomFeeRate(QStringLiteral("not-a-fee"));
+
+    QVERIFY(!model->prepareTransactionWithPassphrase("secret"));
+    QVERIFY(wallet->locked);
+    QCOMPARE(wallet->unlock_calls, 1);
+    QCOMPARE(wallet->lock_calls, 1);
+    QVERIFY(wallet->create_transaction_sign_args.empty());
 }
 
 void WalletQmlModelTests::sendTransactionCommitsPreparedTransactionWithoutUnlockingAgain()
