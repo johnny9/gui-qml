@@ -52,6 +52,7 @@ class FakeWalletLoader : public interfaces::WalletLoader
 public:
     int create_wallet_calls{0};
     int migrate_wallet_calls{0};
+    int is_encrypted_calls{0};
     int handle_load_wallet_calls{0};
     int get_wallets_calls{0};
     int list_wallet_dir_calls{0};
@@ -65,6 +66,9 @@ public:
         migrate_wallet_fn = [](const std::string&, const SecureString&) {
             return util::Error{Untranslated("Unexpected migrateWallet call")};
         };
+    std::function<bool(const std::string&)> is_encrypted_fn = [](const std::string&) {
+        return false;
+    };
     std::function<std::vector<std::unique_ptr<interfaces::Wallet>>()> get_wallets_fn = [] {
         return std::vector<std::unique_ptr<interfaces::Wallet>>{};
     };
@@ -101,7 +105,11 @@ public:
         ++migrate_wallet_calls;
         return migrate_wallet_fn(name, passphrase);
     }
-    bool isEncrypted(const std::string&) override { return false; }
+    bool isEncrypted(const std::string& name) override
+    {
+        ++is_encrypted_calls;
+        return is_encrypted_fn(name);
+    }
     std::vector<std::pair<std::string, std::string>> listWalletDir() override
     {
         ++list_wallet_dir_calls;
@@ -152,6 +160,8 @@ private Q_SLOTS:
     void selectWalletBeforeInitializationSetsLoadError();
     void initializedControllerPropagatesCreateErrors();
     void initializedControllerForwardsMigrationPassphrase();
+    void initializedControllerRequestsPassphraseBeforeEncryptedMigration();
+    void initializedControllerMigratesUnencryptedWalletWithoutPassphrase();
 };
 
 void WalletQmlControllerTests::externalSignerCreationRequiresConfiguredPath()
@@ -346,6 +356,65 @@ void WalletQmlControllerTests::initializedControllerForwardsMigrationPassphrase(
     QVERIFY(failed_spy.wait(5000));
     QVERIFY(saw_expected_name);
     QVERIFY(saw_expected_passphrase);
+    QCOMPARE(loader.migrate_wallet_calls, 1);
+    QCOMPARE(controller.walletMigrationError(), QString{"Migration failed."});
+    QVERIFY(!controller.walletMigrationInProgress());
+}
+
+void WalletQmlControllerTests::initializedControllerRequestsPassphraseBeforeEncryptedMigration()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    loader.wallet_dir_entries = {{"legacy_wallet", "bdb"}};
+    loader.is_encrypted_fn = [](const std::string& name) {
+        return name == "legacy_wallet";
+    };
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QSignalSpy passphrase_spy(&controller, &WalletQmlController::walletMigrationPassphraseRequired);
+
+    controller.migrateWallet("legacy_wallet", "");
+    QCOMPARE(passphrase_spy.count(), 1);
+    QCOMPARE(passphrase_spy.takeFirst().at(0).toString(), QString{"legacy_wallet"});
+    QCOMPARE(loader.is_encrypted_calls, 1);
+    QCOMPARE(loader.migrate_wallet_calls, 0);
+    QVERIFY(!controller.walletMigrationInProgress());
+    QVERIFY(controller.walletMigrationError().isEmpty());
+}
+
+void WalletQmlControllerTests::initializedControllerMigratesUnencryptedWalletWithoutPassphrase()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    loader.wallet_dir_entries = {{"legacy_wallet", "bdb"}};
+    loader.is_encrypted_fn = [](const std::string&) {
+        return false;
+    };
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QSignalSpy failed_spy(&controller, &WalletQmlController::walletMigrationFailed);
+
+    bool saw_empty_passphrase{false};
+    loader.migrate_wallet_fn = [&](const std::string& name, const SecureString& passphrase) {
+        saw_empty_passphrase = (name == "legacy_wallet" && passphrase.empty());
+        return util::Result<interfaces::WalletMigrationResult>{
+            util::Error{Untranslated("Migration failed.")}};
+    };
+
+    controller.migrateWallet("legacy_wallet", "");
+    QVERIFY(failed_spy.wait(5000));
+    QVERIFY(saw_empty_passphrase);
+    QCOMPARE(loader.is_encrypted_calls, 1);
     QCOMPARE(loader.migrate_wallet_calls, 1);
     QCOMPARE(controller.walletMigrationError(), QString{"Migration failed."});
     QVERIFY(!controller.walletMigrationInProgress());

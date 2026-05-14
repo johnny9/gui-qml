@@ -740,6 +740,11 @@ void WalletQmlController::startWalletMigration(const QString& path, const QStrin
         return;
     }
 
+    if (passphrase.isEmpty() && m_node.walletLoader().isEncrypted(wallet_reference.toStdString())) {
+        Q_EMIT walletMigrationPassphraseRequired(wallet_reference);
+        return;
+    }
+
     setWalletMigrationInProgress(true);
 
     QTimer::singleShot(0, m_worker, [this, wallet_reference, passphrase]() {

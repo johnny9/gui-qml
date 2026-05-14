@@ -94,6 +94,7 @@ Q_SIGNALS:
     void walletMigrationInProgressChanged();
     void walletMigrationErrorChanged();
     void walletMigrationRequired(const QString& path);
+    void walletMigrationPassphraseRequired(const QString& path);
     void walletMigrationSucceeded();
     void walletMigrationFailed();
     void lastImportedWalletInfoChanged();

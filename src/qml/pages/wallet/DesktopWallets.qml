@@ -48,6 +48,13 @@ Page {
             migrationRequiredPopup.errorText = ""
             migrationRequiredPopup.open()
         }
+        function onWalletMigrationPassphraseRequired(path) {
+            root.pendingMigrationPath = path
+            migrationRequiredPopup.close()
+            migrationPassphrasePopup.busy = false
+            migrationPassphrasePopup.errorText = ""
+            migrationPassphrasePopup.open()
+        }
         function onWalletMigrationSucceeded() {
             root.pendingMigrationPath = ""
             migrationRequiredPopup.close()
@@ -64,6 +71,8 @@ Page {
                 migrationPassphrasePopup.errorText = showPassphraseError ? walletController.walletMigrationError : ""
                 migrationPassphrasePopup.open()
             } else {
+                migrationPassphrasePopup.busy = false
+                migrationPassphrasePopup.close()
                 migrationRequiredPopup.busy = false
                 migrationRequiredPopup.errorText = walletController.walletMigrationError
                 migrationRequiredPopup.open()
