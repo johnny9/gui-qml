@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -37,16 +37,6 @@ QString JoinWarnings(const std::vector<bilingual_str>& warnings)
         }
     }
     return lines.join('\n');
-}
-
-bool NeedsWalletMigration(const bilingual_str& error)
-{
-    const QString original = QString::fromStdString(error.original);
-    const QString translated = QString::fromStdString(error.translated);
-    return (original.contains("legacy wallet", Qt::CaseInsensitive) ||
-            translated.contains("legacy wallet", Qt::CaseInsensitive)) &&
-           (original.contains("migrat", Qt::CaseInsensitive) ||
-            translated.contains("migrat", Qt::CaseInsensitive));
 }
 
 bool IsBackupLikeFile(const QFileInfo& file_info)
@@ -105,7 +95,7 @@ WalletQmlController::~WalletQmlController()
     delete m_empty_wallet;
 }
 
-void WalletQmlController::setSelectedWallet(QString path)
+void WalletQmlController::setSelectedWallet(QString path, QString wallet_format)
 {
     if (!m_wallets.empty()) {
         for (WalletQmlModel* wallet : m_wallets) {
@@ -118,7 +108,7 @@ void WalletQmlController::setSelectedWallet(QString path)
         }
     }
 
-    startWalletLoad(path);
+    startWalletLoad(path, wallet_format);
 }
 
 WalletQmlModel* WalletQmlController::selectedWallet() const
@@ -422,21 +412,28 @@ QString WalletQmlController::inferWalletLoadTarget(const QString& normalized_pat
     return {};
 }
 
-QString WalletQmlController::resolveManagedWalletReference(const QString& path) const
+QString WalletQmlController::resolveManagedWalletReference(const QString& path, QString* wallet_format) const
 {
+    if (wallet_format) {
+        wallet_format->clear();
+    }
+
     if (path.isEmpty()) {
         return {};
     }
 
     const QString candidate = QDir::cleanPath(path);
+    const auto wallet_dir_entries = m_node.walletLoader().listWalletDir();
 
     // Wallet selector entries come from listWalletDir(), which reports wallet
     // names relative to -walletdir. Accept those names directly before trying
     // to interpret the value as a filesystem path.
-    for (const auto& [wallet_path, info] : m_node.walletLoader().listWalletDir()) {
-        Q_UNUSED(info);
+    for (const auto& [wallet_path, format] : wallet_dir_entries) {
         const QString listed_wallet = QDir::cleanPath(QString::fromStdString(wallet_path));
         if (listed_wallet == candidate) {
+            if (wallet_format) {
+                *wallet_format = QString::fromStdString(format);
+            }
             return listed_wallet;
         }
     }
@@ -446,7 +443,23 @@ QString WalletQmlController::resolveManagedWalletReference(const QString& path) 
         return {};
     }
 
-    return inferWalletLoadTarget(normalized_path);
+    const QString load_target = inferWalletLoadTarget(normalized_path);
+    if (load_target.isEmpty()) {
+        return {};
+    }
+
+    const QString clean_load_target = QDir::cleanPath(load_target);
+    for (const auto& [wallet_path, format] : wallet_dir_entries) {
+        const QString listed_wallet = QDir::cleanPath(QString::fromStdString(wallet_path));
+        if (listed_wallet == clean_load_target) {
+            if (wallet_format) {
+                *wallet_format = QString::fromStdString(format);
+            }
+            break;
+        }
+    }
+
+    return load_target;
 }
 
 QString WalletQmlController::inferRestoreWalletName(const QString& normalized_path) const
@@ -625,7 +638,7 @@ void WalletQmlController::setNoWalletsFound(bool no_wallets_found)
     }
 }
 
-void WalletQmlController::startWalletLoad(const QString& path)
+void WalletQmlController::startWalletLoad(const QString& path, const QString& wallet_format)
 {
     clearWalletMigrationStatus();
     clearWalletLoadStatus();
@@ -639,9 +652,17 @@ void WalletQmlController::startWalletLoad(const QString& path)
     // Wallet selection can arrive either as a wallet name from listWalletDir()
     // or as a concrete path under -walletdir. Resolve both into the wallet
     // reference expected by loadWallet() and migrateWallet().
-    const QString load_target = resolveManagedWalletReference(path);
+    QString load_target_format = wallet_format;
+    const QString load_target = load_target_format.isEmpty()
+        ? resolveManagedWalletReference(path, &load_target_format)
+        : QDir::cleanPath(path);
     if (load_target.isEmpty()) {
         setWalletLoadError(tr("The selected wallet is not available in the wallet directory."));
+        return;
+    }
+
+    if (load_target_format == "bdb") {
+        Q_EMIT walletMigrationRequired(load_target);
         return;
     }
 
@@ -659,17 +680,10 @@ void WalletQmlController::startWalletLoad(const QString& path)
         if (!wallet) {
             const bilingual_str result_error = util::ErrorString(wallet);
             const QString error = QString::fromStdString(result_error.translated);
-            const bool migration_required = !load_target.isEmpty() && NeedsWalletMigration(result_error);
-            QMetaObject::invokeMethod(this, [this, error, warnings, migration_required, load_target]() {
+            QMetaObject::invokeMethod(this, [this, error, warnings]() {
                 m_wallet_load_requested = false;
                 m_pending_wallet_load_action = WalletLoadAction::None;
                 setWalletLoadInProgress(false);
-                if (migration_required) {
-                    clearWalletLoadStatus();
-                    Q_EMIT walletMigrationRequired(load_target);
-                    return;
-                }
-
                 setWalletLoadWarnings(warnings);
                 setWalletLoadError(error.isEmpty() ? tr("Wallet could not be opened.") : error);
             });

@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -78,7 +78,8 @@ Popup {
 
             delegate: WalletBadge {
                 required property string name;
-
+                required property string format;
+                objectName: "walletSelectItem_" + name
                 width: 220
                 height: 32
                 text: name
@@ -87,7 +88,7 @@ Popup {
                 showBalance: false
                 showIcon: false
                 onClicked: {
-                    walletController.setSelectedWallet(name)
+                    walletController.setSelectedWallet(name, format)
                     root.close()
                 }
             }

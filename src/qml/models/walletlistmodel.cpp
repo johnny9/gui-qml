@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,7 +6,7 @@
 
 #include <interfaces/node.h>
 
-#include <QSet>
+#include <QHash>
 
 WalletListModel::WalletListModel(interfaces::Node& node, QObject *parent)
 : QAbstractListModel(parent)
@@ -16,17 +16,24 @@ WalletListModel::WalletListModel(interfaces::Node& node, QObject *parent)
 
 void WalletListModel::listWalletDir()
 {
-    QSet<QString> existing_names;
+    QHash<QString, int> existing_rows;
     for (int i = 0; i < rowCount(); ++i) {
         QModelIndex index = this->index(i, 0);
         QString name = data(index, NameRole).toString();
-        existing_names.insert(name);
+        existing_rows.insert(name, i);
     }
 
-    for (const auto& [path, info] : m_node.walletLoader().listWalletDir()) {
+    for (const auto& [path, format] : m_node.walletLoader().listWalletDir()) {
         QString qname = QString::fromStdString(path);
-        if (!existing_names.contains(qname)) {
-            addItem({ qname });
+        QString qformat = QString::fromStdString(format);
+        if (existing_rows.contains(qname)) {
+            const int row = existing_rows.value(qname);
+            if (m_items[row].format != qformat) {
+                m_items[row].format = qformat;
+                Q_EMIT dataChanged(index(row, 0), index(row, 0), {FormatRole});
+            }
+        } else {
+            addItem({ qname, qformat });
         }
     }
 }
@@ -47,6 +54,8 @@ QVariant WalletListModel::data(const QModelIndex &index, int role) const
     case Qt::DisplayRole:
     case NameRole:
         return item.name;
+    case FormatRole:
+        return item.format;
     default:
         return QVariant();
     }
@@ -56,6 +65,7 @@ QHash<int, QByteArray> WalletListModel::roleNames() const
 {
     QHash<int, QByteArray> roles;
     roles[NameRole] = "name";
+    roles[FormatRole] = "format";
     return roles;
 }
 
