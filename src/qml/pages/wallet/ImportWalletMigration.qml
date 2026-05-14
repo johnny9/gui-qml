@@ -7,8 +7,6 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
 import "../../controls"
-import "../../components"
-import "../settings"
 
 Page {
     id: root
@@ -17,27 +15,23 @@ Page {
     signal back
     signal next
 
-    property string phase: "intro"
-    readonly property bool introPhase: phase === "intro"
-    readonly property bool updatingPhase: phase === "updating"
-    readonly property bool successPhase: phase === "success"
-    readonly property bool failedPhase: phase === "failed"
+    state: "intro"
 
     function startMigration() {
-        phase = "updating"
+        state = "updating"
         walletController.migrateWallet(walletPath)
     }
 
     Component.onCompleted: {
         walletController.clearWalletMigrationStatus()
-        phase = "intro"
+        state = "intro"
     }
 
     background: null
 
     header: NavigationBar2 {
         leftItem: NavButton {
-            visible: !root.updatingPhase
+            id: backButton
             enabled: visible
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
@@ -51,10 +45,10 @@ Page {
     Connections {
         target: walletController
         function onWalletMigrationSucceeded() {
-            root.phase = "success"
+            root.state = "success"
         }
         function onWalletMigrationFailed() {
-            root.phase = "failed"
+            root.state = "failed"
         }
     }
 
@@ -63,53 +57,23 @@ Page {
         anchors.horizontalCenter: parent.horizontalCenter
 
         Image {
+            id: statusImage
             Layout.alignment: Qt.AlignCenter
             Layout.topMargin: 20
-            source: {
-                if (root.successPhase) {
-                    return "image://images/circle-green-check"
-                }
-                if (root.failedPhase) {
-                    return "image://images/circle-red-cross"
-                }
-                return "image://images/pending"
-            }
+            source: "image://images/pending"
             sourceSize.width: 60
             sourceSize.height: 60
         }
 
         Header {
+            id: message
             Layout.topMargin: 18
             Layout.fillWidth: true
             Layout.leftMargin: 20
             Layout.rightMargin: 20
-            header: {
-                if (root.successPhase) {
-                    return qsTr("Wallet successfully migrated")
-                }
-                if (root.failedPhase) {
-                    return qsTr("Update failed")
-                }
-                if (root.updatingPhase) {
-                    return qsTr("Updating wallet")
-                }
-                return qsTr("Wallet update required")
-            }
+            header: qsTr("Wallet update required")
             headerBold: true
-            description: {
-                if (root.successPhase) {
-                    return qsTr("You can use your wallet as usual.")
-                }
-                if (root.failedPhase) {
-                    return walletController.walletMigrationError.length > 0
-                        ? walletController.walletMigrationError
-                        : qsTr("The wallet could not be updated.")
-                }
-                if (root.updatingPhase) {
-                    return qsTr("Updating your wallet now. This may take a moment.")
-                }
-                return qsTr("This wallet uses an outdated file format and needs to be updated. This does not impact security or any previously made transactions.")
-            }
+            description: qsTr("This wallet uses an outdated file format and needs to be updated. This does not impact security or any previously made transactions.")
         }
 
         ContinueButton {
@@ -120,26 +84,14 @@ Page {
             Layout.leftMargin: 20
             Layout.rightMargin: 20
             Layout.alignment: Qt.AlignCenter
-            enabled: !root.updatingPhase
-            text: {
-                if (root.successPhase) {
-                    return qsTr("Done")
-                }
-                if (root.failedPhase) {
-                    return qsTr("Back to overview")
-                }
-                if (root.updatingPhase) {
-                    return qsTr("Updating wallet...")
-                }
-                return qsTr("Update wallet")
-            }
+            text: qsTr("Update wallet")
             onClicked: {
-                if (root.successPhase) {
+                if (root.state === "success") {
                     walletController.clearWalletMigrationStatus()
                     root.next()
                     return
                 }
-                if (root.failedPhase) {
+                if (root.state === "failed") {
                     walletController.clearWalletMigrationStatus()
                     root.back()
                     return
@@ -148,4 +100,61 @@ Page {
             }
         }
     }
+
+    states: [
+        State {
+            name: "intro"
+        },
+        State {
+            name: "updating"
+            PropertyChanges {
+                target: backButton
+                visible: false
+            }
+            PropertyChanges {
+                target: message
+                header: qsTr("Updating wallet")
+                description: qsTr("Updating your wallet now. This may take a moment.")
+            }
+            PropertyChanges {
+                target: actionButton
+                enabled: false
+                text: qsTr("Updating wallet...")
+            }
+        },
+        State {
+            name: "success"
+            PropertyChanges {
+                target: statusImage
+                source: "image://images/circle-green-check"
+            }
+            PropertyChanges {
+                target: message
+                header: qsTr("Wallet successfully migrated")
+                description: qsTr("You can use your wallet as usual.")
+            }
+            PropertyChanges {
+                target: actionButton
+                text: qsTr("Done")
+            }
+        },
+        State {
+            name: "failed"
+            PropertyChanges {
+                target: statusImage
+                source: "image://images/circle-red-cross"
+            }
+            PropertyChanges {
+                target: message
+                header: qsTr("Update failed")
+                description: walletController.walletMigrationError.length > 0
+                    ? walletController.walletMigrationError
+                    : qsTr("The wallet could not be updated.")
+            }
+            PropertyChanges {
+                target: actionButton
+                text: qsTr("Back to overview")
+            }
+        }
+    ]
 }
