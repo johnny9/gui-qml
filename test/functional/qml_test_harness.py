@@ -93,6 +93,7 @@ class QmlTestHarness:
         self.driver = None
         self.extra_args = extra_args or []
         self.reset_settings = reset_settings
+        self.config_home = None
 
         if self.external:
             self.socket_path = socket_path
@@ -105,10 +106,12 @@ class QmlTestHarness:
                 self.tmpdir = None
                 self.datadir = datadir
                 self.socket_path = os.path.join(datadir, "test_bridge.sock")
+                self.config_home = os.path.join(os.path.dirname(datadir), "config")
             else:
                 self.tmpdir = tempfile.mkdtemp(prefix="qml_test_bridge_")
                 self.datadir = setup_datadir(self.tmpdir)
                 self.socket_path = os.path.join(self.tmpdir, "test_bridge.sock")
+                self.config_home = os.path.join(self.tmpdir, "config")
 
     def start(self):
         """Launch bitcoin-core-app or attach to an existing instance."""
@@ -120,6 +123,9 @@ class QmlTestHarness:
 
         env = dict(os.environ)
         env["QT_QPA_PLATFORM"] = "offscreen"
+        if self.config_home:
+            os.makedirs(self.config_home, exist_ok=True)
+            env["XDG_CONFIG_HOME"] = self.config_home
 
         args = [
             self.gui_binary,

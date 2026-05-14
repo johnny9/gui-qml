@@ -163,6 +163,7 @@ class WalletFlowHarness:
         self.socket_path = os.path.join(self.tmpdir, "test_bridge.sock")
         self.gui_datadir = os.path.join(self.tmpdir, "gui_node")
         self.source_datadir = os.path.join(self.tmpdir, "source_node")
+        self.config_home = os.path.join(self.tmpdir, "config")
         self.gui_process = None
         self.source_process = None
         self.driver = None
@@ -211,6 +212,8 @@ class WalletFlowHarness:
     def start_gui(self, reset_gui_settings=False, extra_args=None, cwd=None):
         env = dict(os.environ)
         env["QT_QPA_PLATFORM"] = "offscreen"
+        os.makedirs(self.config_home, exist_ok=True)
+        env["XDG_CONFIG_HOME"] = self.config_home
         args = [
             self.gui_binary,
             f"-datadir={self.gui_datadir}",
