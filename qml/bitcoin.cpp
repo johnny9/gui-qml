@@ -296,18 +296,26 @@ int QmlGuiMain(int argc, char* argv[])
 
     handler_message_box.disconnect();
 
+    AppMode app_mode = SetupAppMode();
+#ifdef ENABLE_WALLET
+    const bool wallet_enabled = app_mode.walletEnabled();
+#endif
+
     NodeModel node_model{*node};
     QmlInitExecutor init_executor{*node};
 #ifdef ENABLE_WALLET
-    WalletQmlController wallet_controller(*node);
-    if (!gArgs.GetBoolArg("-disablewallet", false)) {
-        QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
+    std::unique_ptr<WalletQmlController> wallet_controller;
+    if (wallet_enabled) {
+        wallet_controller = std::make_unique<WalletQmlController>(*node);
+        QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, wallet_controller.get(), &WalletQmlController::initialize);
     }
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
     QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
 #ifdef ENABLE_WALLET
-        wallet_controller.unloadWallets();
+        if (wallet_controller) {
+            wallet_controller->unloadWallets();
+        }
 #endif
         init_executor.shutdown();
     });
@@ -331,7 +339,9 @@ int QmlGuiMain(int argc, char* argv[])
     qGuiApp->setQuitOnLastWindowClosed(false);
     QObject::connect(qGuiApp, &QGuiApplication::lastWindowClosed, [&] {
 #ifdef ENABLE_WALLET
-        wallet_controller.unloadWallets();
+        if (wallet_controller) {
+            wallet_controller->unloadWallets();
+        }
 #endif
         node->startShutdown();
     });
@@ -368,25 +378,26 @@ int QmlGuiMain(int argc, char* argv[])
     engine.rootContext()->setContextProperty("debugLogModel", &debug_log_model);
 
 #ifdef ENABLE_WALLET
-    WalletListModel wallet_list_model{*node, nullptr};
-    QObject::connect(&wallet_controller, &WalletQmlController::walletLoadStateChanged,
-                     &wallet_list_model, &WalletListModel::setWalletLoadState);
-    QObject::connect(&wallet_controller, &WalletQmlController::walletDisplayNamesChanged,
-                     &wallet_list_model, &WalletListModel::refreshDisplayNames);
-    QObject::connect(&wallet_list_model, &WalletListModel::walletListChanged,
-                     &wallet_controller, [&wallet_controller](bool has_wallets) {
-                         wallet_controller.setNoWalletsFound(!has_wallets);
-                     });
-    if (!gArgs.GetBoolArg("-disablewallet", false)) {
-        QObject::connect(&wallet_controller, &WalletQmlController::initializedChanged,
-                         &wallet_list_model, [&wallet_controller, &wallet_list_model]() {
-                             if (wallet_controller.initialized()) {
-                                 wallet_list_model.listWalletDir();
+    std::unique_ptr<WalletListModel> wallet_list_model;
+    if (wallet_enabled) {
+        wallet_list_model = std::make_unique<WalletListModel>(*node, nullptr);
+        QObject::connect(wallet_controller.get(), &WalletQmlController::walletLoadStateChanged,
+                         wallet_list_model.get(), &WalletListModel::setWalletLoadState);
+        QObject::connect(wallet_controller.get(), &WalletQmlController::walletDisplayNamesChanged,
+                         wallet_list_model.get(), &WalletListModel::refreshDisplayNames);
+        QObject::connect(wallet_list_model.get(), &WalletListModel::walletListChanged,
+                         wallet_controller.get(), [controller = wallet_controller.get()](bool has_wallets) {
+                             controller->setNoWalletsFound(!has_wallets);
+                         });
+        QObject::connect(wallet_controller.get(), &WalletQmlController::initializedChanged,
+                         wallet_list_model.get(), [controller = wallet_controller.get(), list_model = wallet_list_model.get()]() {
+                             if (controller->initialized()) {
+                                 list_model->listWalletDir();
                              }
                          });
+        engine.rootContext()->setContextProperty("walletController", wallet_controller.get());
+        engine.rootContext()->setContextProperty("walletListModel", wallet_list_model.get());
     }
-    engine.rootContext()->setContextProperty("walletController", &wallet_controller);
-    engine.rootContext()->setContextProperty("walletListModel", &wallet_list_model);
 #endif
 
     OptionsQmlModel options_model(*node, !need_onboarding.toBool());
@@ -414,7 +425,6 @@ int QmlGuiMain(int argc, char* argv[])
         engine.retranslate();
     });
 
-    AppMode app_mode = SetupAppMode();
     BuildInfo build_info;
     Clipboard clipboard;
 
