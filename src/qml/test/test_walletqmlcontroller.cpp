@@ -160,6 +160,7 @@ private Q_SLOTS:
     void selectWalletBeforeInitializationSetsLoadError();
     void initializedControllerPropagatesCreateErrors();
     void initializedControllerForwardsMigrationPassphrase();
+    void initializedControllerForwardsUtf8CreatePassphrase();
     void initializedControllerRequestsPassphraseBeforeEncryptedMigration();
     void initializedControllerMigratesUnencryptedWalletWithoutPassphrase();
 };
@@ -359,6 +360,36 @@ void WalletQmlControllerTests::initializedControllerForwardsMigrationPassphrase(
     QCOMPARE(loader.migrate_wallet_calls, 1);
     QCOMPARE(controller.walletMigrationError(), QString{"Migration failed."});
     QVERIFY(!controller.walletMigrationInProgress());
+}
+
+void WalletQmlControllerTests::initializedControllerForwardsUtf8CreatePassphrase()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    const QString passphrase{QString::fromUtf8("pässwörd-₿")};
+    const std::string expected_passphrase{passphrase.toUtf8().toStdString()};
+
+    bool saw_expected_passphrase{false};
+    loader.create_wallet_fn = [&](const std::string&,
+                                  const SecureString& passphrase,
+                                  uint64_t,
+                                  std::vector<bilingual_str>&) {
+        saw_expected_passphrase = (std::string{passphrase.begin(), passphrase.end()} == expected_passphrase);
+        return util::Result<std::unique_ptr<interfaces::Wallet>>{
+            util::Error{Untranslated("Wallet creation failed.")}};
+    };
+
+    QVERIFY(!controller.createSingleSigWallet("test_wallet", passphrase));
+    QVERIFY(saw_expected_passphrase);
+    QCOMPARE(loader.create_wallet_calls, 1);
+    QCOMPARE(controller.walletCreateError(), QString{"Wallet creation failed."});
 }
 
 void WalletQmlControllerTests::initializedControllerRequestsPassphraseBeforeEncryptedMigration()

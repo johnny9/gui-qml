@@ -213,6 +213,7 @@ private Q_SLOTS:
     void transactionChangedEmitsBalanceChanged();
     void prepareTransactionOnLockedWalletRequiresPassword();
     void prepareTransactionWithPrivateKeysDisabledDoesNotRequirePassword();
+    void prepareTransactionWithPassphraseForwardsUtf8Bytes();
     void prepareTransactionWithPassphraseRelocksWhenRecipientsInvalid();
     void prepareTransactionWithPassphraseRelocksWhenCustomFeeInvalid();
     void sendTransactionCommitsPreparedTransactionWithoutUnlockingAgain();
@@ -719,6 +720,22 @@ void WalletQmlModelTests::prepareTransactionWithPrivateKeysDisabledDoesNotRequir
     QVERIFY(wallet->create_transaction_sign_args == std::vector<bool>{false});
     QCOMPARE(wallet->unlock_calls, 0);
     QCOMPARE(wallet->lock_calls, 0);
+}
+
+void WalletQmlModelTests::prepareTransactionWithPassphraseForwardsUtf8Bytes()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetPasswordRecipient(*model, 1'000);
+
+    const QString passphrase{QString::fromUtf8("pässwörd-₿")};
+    const std::string expected_passphrase{passphrase.toUtf8().toStdString()};
+
+    QVERIFY(model->prepareTransactionWithPassphrase(passphrase));
+    QCOMPARE(wallet->unlock_calls, 1);
+    QCOMPARE(wallet->unlock_passphrases.size(), size_t{1});
+    QCOMPARE(wallet->unlock_passphrases.front(), expected_passphrase);
+    QCOMPARE(wallet->lock_calls, 1);
 }
 
 void WalletQmlModelTests::prepareTransactionWithPassphraseRelocksWhenRecipientsInvalid()
