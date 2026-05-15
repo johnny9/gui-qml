@@ -30,6 +30,7 @@
 #include <wallet/coincontrol.h>
 #include <wallet/wallet.h>
 
+#include <QByteArray>
 #include <QDateTime>
 #include <QMetaObject>
 #include <QRegularExpression>
@@ -287,6 +288,26 @@ private:
     std::function<void()> m_refresh_security_state;
     bool m_active;
 };
+
+SecureString SecureStringFromQString(const QString& value)
+{
+    QByteArray bytes{value.toUtf8()};
+    SecureString secure;
+    secure.assign(bytes.constData(), bytes.constData() + bytes.size());
+    if (!bytes.isEmpty()) {
+        memory_cleanse(bytes.data(), static_cast<size_t>(bytes.size()));
+    }
+    return secure;
+}
+
+void ClearSecureString(SecureString& value)
+{
+    if (value.empty()) {
+        return;
+    }
+    memory_cleanse(value.data(), value.size());
+    value.clear();
+}
 
 } // namespace
 
@@ -708,13 +729,17 @@ bool WalletQmlModel::prepareTransaction()
 
 bool WalletQmlModel::prepareTransactionWithPassphrase(const QString& passphrase)
 {
-    return prepareTransactionInternal(passphrase);
+    return prepareTransactionInternal(std::optional<SecureString>{SecureStringFromQString(passphrase)});
 }
 
-bool WalletQmlModel::prepareTransactionInternal(const std::optional<QString>& passphrase)
+bool WalletQmlModel::prepareTransactionInternal(std::optional<SecureString> passphrase)
 {
     clearTransactionStatus();
     if (!m_wallet || !m_send_recipients || m_send_recipients->recipients().empty()) {
+        if (passphrase.has_value()) {
+            ClearSecureString(*passphrase);
+            passphrase.reset();
+        }
         setTransactionStatus(tr("Enter at least one valid recipient to continue."));
         return false;
     }
@@ -1057,18 +1082,24 @@ void WalletQmlModel::refreshSecurityState()
     }
 }
 
-bool WalletQmlModel::unlockForAction(const std::optional<QString>& passphrase, bool& relock)
+bool WalletQmlModel::unlockForAction(std::optional<SecureString>& passphrase, bool& relock)
 {
     relock = false;
     if (!m_wallet || !m_wallet->isCrypted() || !m_wallet->isLocked()) {
+        if (passphrase.has_value()) {
+            ClearSecureString(*passphrase);
+            passphrase.reset();
+        }
         return true;
     }
     if (!passphrase.has_value()) {
         return true;
     }
 
-    const SecureString secure_passphrase{passphrase->toStdString()};
-    if (!m_wallet->unlock(secure_passphrase)) {
+    const bool unlocked = m_wallet->unlock(*passphrase);
+    ClearSecureString(*passphrase);
+    passphrase.reset();
+    if (!unlocked) {
         setTransactionStatus(tr("The wallet password you entered was incorrect."));
         return false;
     }

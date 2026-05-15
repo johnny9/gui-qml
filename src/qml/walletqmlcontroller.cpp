@@ -18,7 +18,9 @@
 #include <util/threadnames.h>
 
 #include <stdexcept>
+#include <utility>
 
+#include <QByteArray>
 #include <QDir>
 #include <QFileInfo>
 #include <QMetaObject>
@@ -37,6 +39,26 @@ QString JoinWarnings(const std::vector<bilingual_str>& warnings)
         }
     }
     return lines.join('\n');
+}
+
+SecureString SecureStringFromQString(const QString& value)
+{
+    QByteArray bytes{value.toUtf8()};
+    SecureString secure;
+    secure.assign(bytes.constData(), bytes.constData() + bytes.size());
+    if (!bytes.isEmpty()) {
+        memory_cleanse(bytes.data(), static_cast<size_t>(bytes.size()));
+    }
+    return secure;
+}
+
+void ClearSecureString(SecureString& value)
+{
+    if (value.empty()) {
+        return;
+    }
+    memory_cleanse(value.data(), value.size());
+    value.clear();
 }
 
 bool IsBackupLikeFile(const QFileInfo& file_info)
@@ -145,9 +167,10 @@ bool WalletQmlController::createSingleSigWallet(const QString &name, const QStri
         setWalletCreateError(tr("Wallets are still loading. Try again in a moment."));
         return false;
     }
-    const SecureString secure_passphrase{passphrase.toStdString()};
+    SecureString secure_passphrase{SecureStringFromQString(passphrase)};
     const std::string wallet_name{name.toStdString()};
     auto wallet{m_node.walletLoader().createWallet(wallet_name, secure_passphrase, wallet::WALLET_FLAG_DESCRIPTORS, m_warning_messages)};
+    ClearSecureString(secure_passphrase);
     setWalletLoadWarnings(JoinWarnings(m_warning_messages));
     QMutexLocker locker(&m_wallets_mutex);
     if (wallet) {
@@ -262,7 +285,7 @@ void WalletQmlController::migrateWallet(const QString& path, const QString& pass
         setWalletMigrationError(tr("Wallets are still loading. Try again in a moment."));
         return;
     }
-    startWalletMigration(path, passphrase);
+    startWalletMigration(path, SecureStringFromQString(passphrase));
 }
 
 void WalletQmlController::clearWalletMigrationStatus()
@@ -722,12 +745,13 @@ void WalletQmlController::startWalletLoad(const QString& path, const QString& wa
     });
 }
 
-void WalletQmlController::startWalletMigration(const QString& path, const QString& passphrase)
+void WalletQmlController::startWalletMigration(const QString& path, SecureString passphrase)
 {
     clearWalletLoadStatus();
     clearWalletMigrationStatus();
 
     if (path.trimmed().isEmpty()) {
+        ClearSecureString(passphrase);
         setWalletMigrationError(tr("Choose a wallet to update."));
         Q_EMIT walletMigrationFailed();
         return;
@@ -735,21 +759,22 @@ void WalletQmlController::startWalletMigration(const QString& path, const QStrin
 
     const QString wallet_reference = resolveManagedWalletReference(path);
     if (wallet_reference.isEmpty()) {
+        ClearSecureString(passphrase);
         setWalletMigrationError(tr("The selected wallet is not available in the wallet directory."));
         Q_EMIT walletMigrationFailed();
         return;
     }
 
-    if (passphrase.isEmpty() && m_node.walletLoader().isEncrypted(wallet_reference.toStdString())) {
+    if (passphrase.empty() && m_node.walletLoader().isEncrypted(wallet_reference.toStdString())) {
         Q_EMIT walletMigrationPassphraseRequired(wallet_reference);
         return;
     }
 
     setWalletMigrationInProgress(true);
 
-    QTimer::singleShot(0, m_worker, [this, wallet_reference, passphrase]() {
-        const SecureString secure_passphrase{passphrase.toStdString()};
-        auto result = m_node.walletLoader().migrateWallet(wallet_reference.toStdString(), secure_passphrase);
+    QTimer::singleShot(0, m_worker, [this, wallet_reference, passphrase = std::move(passphrase)]() mutable {
+        auto result = m_node.walletLoader().migrateWallet(wallet_reference.toStdString(), passphrase);
+        ClearSecureString(passphrase);
 
         if (!result) {
             const QString error = QString::fromStdString(util::ErrorString(result).translated);

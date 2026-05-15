@@ -32,10 +32,25 @@ Popup {
     implicitHeight: columnLayout.implicitHeight
     anchors.centerIn: parent
 
+    function clearPassphraseField() {
+        if (passphraseField.text.length > 0) {
+            passphraseField.text = Array(passphraseField.text.length + 1).join(" ")
+            passphraseField.text = ""
+        }
+    }
+
+    function submitPassphrase() {
+        const passphrase = passphraseField.text
+        clearPassphraseField()
+        root.submitted(passphrase)
+    }
+
     onOpened: {
-        passphraseField.text = ""
+        clearPassphraseField()
         passphraseField.forceActiveFocus()
     }
+    onClosed: clearPassphraseField()
+    Component.onDestruction: clearPassphraseField()
 
     background: Rectangle {
         color: Theme.color.background
@@ -116,7 +131,7 @@ Popup {
                 Layout.minimumWidth: 120
                 enabled: !root.busy && passphraseField.text.length > 0
                 text: root.busy ? root.busyConfirmText : root.confirmText
-                onClicked: root.submitted(passphraseField.text)
+                onClicked: root.submitPassphrase()
             }
         }
     }

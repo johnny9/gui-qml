@@ -168,6 +168,22 @@ def assert_wallet_locked(gui_rpc_port, wallet_name):
     assert info["unlocked_until"] == 0, f"Expected locked wallet, got getwalletinfo={info}"
 
 
+def assert_passphrase_not_in_ui(gui, passphrase):
+    gui.settle()
+    leaks = []
+    for obj in gui.list_objects():
+        object_name = obj.get("objectName", "")
+        if not object_name:
+            continue
+        try:
+            text = gui.get_property(object_name, "text")
+        except QmlDriverError:
+            continue
+        if isinstance(text, str) and passphrase in text:
+            leaks.append(f"{object_name} ({obj.get('className', 'unknown')})")
+    assert not leaks, f"Passphrase leaked through QML text properties: {', '.join(leaks)}"
+
+
 def open_wallet_selector(gui):
     gui.wait_for_property("walletBadge", "loading", False, timeout_ms=20000)
     gui.click("walletBadge")
@@ -331,6 +347,7 @@ def case_created_wallet_send(harness, checkpoints):
     gui.set_text("reviewPassphraseField", WALLET_PASSWORD)
     gui.click("reviewPassphraseConfirmButton")
     gui.wait_for_property("sendReviewSendButton", "visible", True, timeout_ms=20000)
+    assert_passphrase_not_in_ui(gui, WALLET_PASSWORD)
     assert_wallet_locked(harness.gui_rpc_port, wallet_name)
     checkpoints.checkpoint("review built and wallet relocked", gui)
 
@@ -370,6 +387,7 @@ def case_locked_review_fallback(harness, checkpoints):
     gui.set_text("reviewPassphraseField", WALLET_PASSWORD)
     gui.click("reviewPassphraseConfirmButton")
     gui.wait_for_property("sendReviewSendButton", "visible", True, timeout_ms=20000)
+    assert_passphrase_not_in_ui(gui, WALLET_PASSWORD)
     assert_wallet_locked(harness.gui_rpc_port, wallet_name)
     checkpoints.checkpoint("review rebuilt and wallet relocked", gui)
 
@@ -444,11 +462,13 @@ def case_managed_legacy_migration(harness, checkpoints):
         lambda text: "passphrase" in text.lower(),
         timeout_ms=10000,
     )
+    assert_passphrase_not_in_ui(gui, "wrong password")
     checkpoints.checkpoint("wrong migration password rejected", gui)
 
     gui.set_text("walletMigrationPassphraseField", WALLET_PASSWORD)
     gui.click("walletMigrationPassphraseConfirmButton")
     gui.wait_for_property("walletBadge", "text", wallet_name, timeout_ms=20000)
+    assert_passphrase_not_in_ui(gui, WALLET_PASSWORD)
     assert_wallet_locked(harness.gui_rpc_port, wallet_name)
     checkpoints.checkpoint("legacy wallet migrated and loaded", gui)
 

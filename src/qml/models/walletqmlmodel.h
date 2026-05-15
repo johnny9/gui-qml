@@ -15,6 +15,7 @@
 #include <consensus/amount.h>
 #include <interfaces/handler.h>
 #include <interfaces/wallet.h>
+#include <support/allocators/secure.h>
 #include <wallet/coincontrol.h>
 
 #include <memory>
@@ -154,9 +155,9 @@ private:
     void subscribeToWalletSignals();
     void unsubscribeFromWalletSignals();
     void refreshSecurityState();
-    bool prepareTransactionInternal(const std::optional<QString>& passphrase);
+    bool prepareTransactionInternal(std::optional<SecureString> passphrase);
     bool sendTransactionInternal();
-    bool unlockForAction(const std::optional<QString>& passphrase, bool& relock);
+    bool unlockForAction(std::optional<SecureString>& passphrase, bool& relock);
     void clearTransactionStatus();
     void setTransactionStatus(const QString& error, bool needs_unlock = false);
 
