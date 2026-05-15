@@ -42,6 +42,7 @@
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/peerlistmodel.h>
 #include <qml/models/sendrecipient.h>
+#include <qml/models/settings_keys.h>
 #include <qml/models/walletlistmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
@@ -52,6 +53,8 @@
 #ifdef ENABLE_TEST_AUTOMATION
 #include <qml/test/testbridge.h>
 #endif
+#include <util/fs.h>
+#include <util/fs_helpers.h>
 #include <util/threadnames.h>
 #include <util/translation.h>
 
@@ -174,6 +177,21 @@ bool ConfigurationFileExists(ArgsManager& argsman)
     return false;
 }
 
+void ApplyPersistedDataDir(ArgsManager& argsman)
+{
+    if (argsman.IsArgSet("-datadir")) return;
+
+    const QString stored_data_dir = QSettings(QSettings::UserScope, QAPP_ORG_NAME, QAPP_APP_NAME_DEFAULT)
+                                        .value(SettingsKeys::DATA_DIR)
+                                        .toString();
+    if (stored_data_dir.isEmpty()) return;
+
+    if (stored_data_dir == QString::fromStdString(fs::PathToString(GetDefaultDataDir()))) return;
+
+    argsman.SoftSetArg("-datadir", fs::PathToString(fs::PathFromString(stored_data_dir.toStdString())));
+    argsman.ClearPathCache();
+}
+
 void setupChainQSettings(QGuiApplication* app, QString chain)
 {
     if (chain.compare("MAIN") == 0) {
@@ -211,6 +229,7 @@ int QmlGuiMain(int argc, char* argv[])
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);
     auto handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(InitErrorMessageBox);
+    (void)handler_message_box;
 
     SetupEnvironment();
     util::ThreadSetInternalName("main");
@@ -256,43 +275,45 @@ int QmlGuiMain(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    if (auto error = common::InitConfig(
-            gArgs,
-            [](const bilingual_str& msg, const std::vector<std::string>& details) {
-                return InitError(msg, details);
-            })) {
+    try {
+        SelectParams(gArgs.GetChainType());
+    } catch (const std::exception& e) {
+        InitError(Untranslated(e.what()));
         return EXIT_FAILURE;
+    }
+
+    ApplyPersistedDataDir(gArgs);
+    const bool has_data_dir_arg = gArgs.IsArgSet("-datadir") && !gArgs.GetPathArg("-datadir").empty();
+    const bool has_existing_configuration = ConfigurationFileExists(gArgs);
+    const bool should_defer_config = !has_data_dir_arg && !has_existing_configuration;
+
+    QVariant need_onboarding(should_defer_config);
+
+    if (gArgs.IsArgSet("-resetguisettings")) {
+        need_onboarding.setValue(true);
     }
 
     // legacy GUI: parameterSetup()
     // Default printtoconsole to false for the GUI. GUI programs should not
     // print to the console unnecessarily.
     gArgs.SoftSetBoolArg("-printtoconsole", false);
-    InitLogging(gArgs);
-    InitParameterInteraction(gArgs);
 
-    QVariant need_onboarding(true);
-    if (gArgs.IsArgSet("-datadir") && !gArgs.GetPathArg("-datadir").empty()) {
-        need_onboarding.setValue(false);
-    } else if (ConfigurationFileExists(gArgs)) {
-        need_onboarding.setValue(false);
-    }
+    if (!should_defer_config) {
+        if (auto error = common::InitConfig(
+                gArgs,
+                [](const bilingual_str& msg, const std::vector<std::string>& details) {
+                    return InitError(msg, details);
+                })) {
+            return EXIT_FAILURE;
+        }
 
-    if (gArgs.IsArgSet("-resetguisettings")) {
-        need_onboarding.setValue(true);
+        InitLogging(gArgs);
+        InitParameterInteraction(gArgs);
     }
 
     // legacy GUI: createNode()
     std::unique_ptr<interfaces::Node> node = init->makeNode();
     std::unique_ptr<interfaces::Chain> chain = init->makeChain();
-
-    // legacy GUI: baseInitialize()
-    if (!node->baseInitialize()) {
-        // A dialog with detailed error will have been shown by InitError().
-        return EXIT_FAILURE;
-    }
-
-    handler_message_box.disconnect();
 
     NodeModel node_model{*node};
     QmlInitExecutor init_executor{*node};
@@ -374,6 +395,9 @@ int QmlGuiMain(int argc, char* argv[])
     OptionsQmlModel options_model(*node, !need_onboarding.toBool());
     engine.rootContext()->setContextProperty("optionsModel", &options_model);
     engine.rootContext()->setContextProperty("needOnboarding", need_onboarding);
+    QObject::connect(&options_model, &OptionsQmlModel::dataDirCommitted, [&debug_log_model] {
+        debug_log_model.setLogPath(gArgs.GetDataDirNet() / "debug.log");
+    });
 
     // -lang CLI flag overrides the persisted setting (bitcoin-qt compatibility).
     // Must be after gArgs.ParseParameters() and after setupChainQSettings() so

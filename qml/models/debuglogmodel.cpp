@@ -25,6 +25,39 @@ DebugLogModel::DebugLogModel(const fs::path& log_path, QObject* parent)
     m_debounce.setSingleShot(true);
     m_debounce.setInterval(500);
     connect(&m_debounce, &QTimer::timeout, this, [this]() { refresh(); });
+    connect(&m_watcher, &QFileSystemWatcher::fileChanged,
+            this, [this](const QString& path) {
+                m_watcher.addPath(path); // re-add in case of log rotation
+                m_debounce.start();
+            });
+
+    connectFileWatcher();
+}
+
+void DebugLogModel::setLogPath(const fs::path& log_path)
+{
+    if (m_log_path == log_path) return;
+
+    m_debounce.stop();
+    const QStringList watched_files = m_watcher.files();
+    if (!watched_files.isEmpty()) {
+        m_watcher.removePaths(watched_files);
+    }
+
+    beginResetModel();
+    m_log_path = log_path;
+    m_all_lines.clear();
+    m_display_lines.clear();
+    endResetModel();
+
+    if (m_has_more_lines) {
+        m_has_more_lines = false;
+        Q_EMIT hasMoreLinesChanged();
+    }
+    if (!m_open_error.isEmpty()) {
+        m_open_error.clear();
+        Q_EMIT openErrorChanged();
+    }
 
     connectFileWatcher();
 }
@@ -349,12 +382,9 @@ void DebugLogModel::connectFileWatcher()
 {
     const QString path_str = QString::fromStdString(m_log_path.utf8string());
     if (path_str.isEmpty()) return;
-    m_watcher.addPath(path_str);
-    connect(&m_watcher, &QFileSystemWatcher::fileChanged,
-            this, [this](const QString& path) {
-                m_watcher.addPath(path); // re-add in case of log rotation
-                m_debounce.start();
-            });
+    if (!m_watcher.files().contains(path_str)) {
+        m_watcher.addPath(path_str);
+    }
 }
 
 void DebugLogModel::buildDisplayLines()

@@ -109,6 +109,10 @@ void NodeModel::startNodeInitializionThread()
     if (m_initialization_requested) {
         return;
     }
+    if (!m_node.baseInitialize()) {
+        setErrorState(true);
+        return;
+    }
     m_initialization_requested = true;
     Q_EMIT requestedInitialize();
 }

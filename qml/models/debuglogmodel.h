@@ -50,6 +50,7 @@ public:
     static constexpr int kMaxLoadLimit = 50'000;
 
     explicit DebugLogModel(const fs::path& log_path, QObject* parent = nullptr);
+    void setLogPath(const fs::path& log_path);
 
     // QAbstractListModel interface
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
