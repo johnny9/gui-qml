@@ -381,6 +381,11 @@ QByteArray TestBridge::processCommand(const QByteArray& json_cmd)
             obj.value(QStringLiteral("prop")).toString());
     } else if (cmd == QLatin1String("click")) {
         return cmdClick(obj.value(QStringLiteral("objectName")).toString());
+    } else if (cmd == QLatin1String("invoke_method")) {
+        return cmdInvokeMethod(
+            obj.value(QStringLiteral("objectName")).toString(),
+            obj.value(QStringLiteral("method")).toString(),
+            obj.value(QStringLiteral("args")).toArray());
     } else if (cmd == QLatin1String("set_text")) {
         return cmdSetText(
             obj.value(QStringLiteral("objectName")).toString(),
@@ -494,6 +499,49 @@ QByteArray TestBridge::cmdClick(const QString& object_name)
         return errorResponse(QStringLiteral("Cannot click object: %1").arg(object_name));
     }
     return response;
+}
+
+QByteArray TestBridge::cmdInvokeMethod(const QString& object_name, const QString& method, const QJsonArray& args)
+{
+    if (object_name.isEmpty() || method.isEmpty()) {
+        return errorResponse(QStringLiteral("objectName and method are required"));
+    }
+    if (args.size() > 1) {
+        return errorResponse(QStringLiteral("invoke_method currently supports at most one argument"));
+    }
+
+    QObject* obj = findObjectByName(object_name);
+    if (!obj) {
+        return errorResponse(QStringLiteral("Object not found: %1").arg(object_name));
+    }
+
+    QVariant return_value;
+    const QByteArray method_name = method.toLatin1();
+    bool invoked = false;
+    if (args.empty()) {
+        invoked = QMetaObject::invokeMethod(
+            obj,
+            method_name.constData(),
+            Qt::DirectConnection,
+            Q_RETURN_ARG(QVariant, return_value));
+    } else {
+        QVariant arg = args.first().toVariant();
+        invoked = QMetaObject::invokeMethod(
+            obj,
+            method_name.constData(),
+            Qt::DirectConnection,
+            Q_RETURN_ARG(QVariant, return_value),
+            Q_ARG(QVariant, arg));
+    }
+
+    if (!invoked) {
+        return errorResponse(QStringLiteral("Could not invoke method: %1.%2").arg(object_name, method));
+    }
+
+    QJsonObject resp;
+    resp[QStringLiteral("ok")] = true;
+    resp[QStringLiteral("value")] = QJsonValue::fromVariant(return_value);
+    return QJsonDocument(resp).toJson(QJsonDocument::Compact);
 }
 
 QByteArray TestBridge::cmdSetText(const QString& object_name, const QString& text)

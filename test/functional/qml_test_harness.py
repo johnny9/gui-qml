@@ -87,13 +87,24 @@ class QmlTestHarness:
     instead of launching a new one.
     """
 
-    def __init__(self, socket_path=None, extra_args=None, reset_settings=True, datadir=None):
+    def __init__(
+        self,
+        socket_path=None,
+        extra_args=None,
+        reset_settings=True,
+        datadir=None,
+        use_cli_datadir=True,
+        home_dir=None,
+        config_home=None,
+    ):
         self.external = socket_path is not None
         self.process = None
         self.driver = None
         self.extra_args = extra_args or []
         self.reset_settings = reset_settings
         self.config_home = None
+        self.home_dir = None
+        self.use_cli_datadir = use_cli_datadir
 
         if self.external:
             self.socket_path = socket_path
@@ -106,12 +117,19 @@ class QmlTestHarness:
                 self.tmpdir = None
                 self.datadir = datadir
                 self.socket_path = os.path.join(datadir, "test_bridge.sock")
-                self.config_home = os.path.join(os.path.dirname(datadir), "config")
+                self.config_home = config_home or os.path.join(os.path.dirname(datadir), "config")
+                self.home_dir = home_dir
             else:
                 self.tmpdir = tempfile.mkdtemp(prefix="qml_test_bridge_")
-                self.datadir = setup_datadir(self.tmpdir)
                 self.socket_path = os.path.join(self.tmpdir, "test_bridge.sock")
-                self.config_home = os.path.join(self.tmpdir, "config")
+                self.config_home = config_home or os.path.join(self.tmpdir, "config")
+                if self.use_cli_datadir:
+                    self.datadir = setup_datadir(self.tmpdir)
+                    self.home_dir = home_dir
+                else:
+                    self.home_dir = home_dir or os.path.join(self.tmpdir, "home")
+                    os.makedirs(self.home_dir, exist_ok=True)
+                    self.datadir = os.path.join(self.home_dir, ".bitcoin")
 
     def start(self):
         """Launch bitcoin-core-app or attach to an existing instance."""
@@ -126,12 +144,17 @@ class QmlTestHarness:
         if self.config_home:
             os.makedirs(self.config_home, exist_ok=True)
             env["XDG_CONFIG_HOME"] = self.config_home
+        if self.home_dir:
+            os.makedirs(self.home_dir, exist_ok=True)
+            env["HOME"] = self.home_dir
 
         args = [
             self.gui_binary,
-            f"-datadir={self.datadir}",
             f"-test-automation={self.socket_path}",
-        ] + (["-resetguisettings"] if self.reset_settings else []) + [
+        ]
+        if self.use_cli_datadir:
+            args.append(f"-datadir={self.datadir}")
+        args += (["-resetguisettings"] if self.reset_settings else []) + [
             "-logtimemicros",
             "-debug",
             "-debugexclude=libevent",

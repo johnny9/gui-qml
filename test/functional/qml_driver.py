@@ -77,6 +77,20 @@ class QmlDriver:
         if "error" in resp:
             raise QmlDriverError(f"click({object_name!r}) failed: {resp['error']}")
 
+    def invoke_method(self, object_name, method, *args):
+        """Invoke a named QML method on an object and return its value."""
+        resp = self._send({
+            "cmd": "invoke_method",
+            "objectName": object_name,
+            "method": method,
+            "args": list(args),
+        })
+        if "error" in resp:
+            raise QmlDriverError(
+                f"invoke_method({object_name!r}, {method!r}) failed: {resp['error']}"
+            )
+        return resp.get("value")
+
     def set_text(self, object_name, text):
         """Set the text property of the named QML object."""
         resp = self._send({"cmd": "set_text", "objectName": object_name, "text": text})

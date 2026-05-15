@@ -7,6 +7,7 @@
 
 #include <QByteArray>
 #include <QHash>
+#include <QJsonArray>
 #include <QJsonValue>
 #include <QLocalServer>
 #include <QLocalSocket>
@@ -25,6 +26,7 @@
 ///   {"cmd": "get_current_page"}
 ///   {"cmd": "get_property", "objectName": "<name>", "prop": "<property>"}
 ///   {"cmd": "click", "objectName": "<name>"}
+///   {"cmd": "invoke_method", "objectName": "<name>", "method": "<method>", "args": ["<optional-arg>"]}
 ///   {"cmd": "set_text", "objectName": "<name>", "text": "<value>"}
 ///   {"cmd": "wait_for_page", "page": "<objectName>", "timeout": <ms>}
 ///   {"cmd": "wait_for_property", "objectName": "<name>", "prop": "<property>", ...}
@@ -72,6 +74,7 @@ private:
     QByteArray cmdGetCurrentPage();
     QByteArray cmdGetProperty(const QString& object_name, const QString& prop);
     QByteArray cmdClick(const QString& object_name);
+    QByteArray cmdInvokeMethod(const QString& object_name, const QString& method, const QJsonArray& args);
     QByteArray cmdSetText(const QString& object_name, const QString& text);
     QByteArray cmdWaitForPage(const QString& page_name, int timeout_ms);
     QByteArray cmdWaitForProperty(const QString& object_name, const QString& prop, int timeout_ms, const QJsonValue& expected, bool has_expected, const QString& contains, bool non_empty);
