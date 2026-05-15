@@ -38,6 +38,7 @@ Page {
     property int subtextMargin: 30
     property int subtextSize: 15
     property string buttonObjectName: "continueButton"
+    property bool continueEnabled: true
     property real maximumWidth: 600
     property real detailMaximumWidth: 450
 
@@ -102,7 +103,7 @@ Page {
             id: continueButton
             objectName: root.buttonObjectName
             visible: root.buttonText.length > 0
-            enabled: visible
+            enabled: visible && root.continueEnabled
             width: Math.min(300, parent.width - 2 * anchors.leftMargin)
             anchors.topMargin: root.buttonMargin
             anchors.bottomMargin: 60

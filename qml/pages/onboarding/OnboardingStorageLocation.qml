@@ -27,4 +27,6 @@ InformationPage {
     detailActive: true
     detailItem: StorageLocations {}
     buttonText: qsTr("Next")
+    continueEnabled: optionsModel.dataDirError.length === 0
+    Component.onCompleted: optionsModel.validateDataDirSelection()
 }

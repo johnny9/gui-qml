@@ -101,6 +101,21 @@ QString CurrentDataDirString(ArgsManager& args)
     const fs::path data_dir = args.GetDataDirBase();
     return data_dir.empty() ? PathToQString(GetDefaultDataDir()) : PathToQString(data_dir);
 }
+
+fs::path NetworkDataDir(const fs::path& data_dir)
+{
+    const std::string network_dir{BaseParams().DataDir()};
+    return network_dir.empty() ? data_dir : data_dir / fs::PathFromString(network_dir);
+}
+
+bool ExistsNoThrow(const fs::path& path)
+{
+    try {
+        return fs::exists(path);
+    } catch (const fs::filesystem_error&) {
+        return false;
+    }
+}
 } // namespace
 
 OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, bool is_onboarded)
@@ -378,7 +393,7 @@ bool OptionsQmlModel::setCustomDataDirArgs(QString path)
         setDataDirError(tr("Select a data directory."));
         return false;
     }
-    if (!validateDataDirPath(normalized_path)) return false;
+    if (!validateFreshDataDirPath(normalized_path)) return false;
 
     if (m_custom_datadir_string != normalized_path) {
         m_custom_datadir_string = normalized_path;
@@ -404,6 +419,8 @@ void OptionsQmlModel::setDataDir(QString new_data_dir)
     const bool use_default = normalized_path.isEmpty() || normalized_path == default_data_dir;
     const QString selected_data_dir = use_default ? default_data_dir : normalized_path;
 
+    if (!validateFreshDataDirPath(selected_data_dir)) return;
+
     if (selected_data_dir == m_dataDir && (use_default ? m_custom_datadir_string.isEmpty() : m_custom_datadir_string == selected_data_dir)) {
         setDataDirError({});
         return;
@@ -412,8 +429,6 @@ void OptionsQmlModel::setDataDir(QString new_data_dir)
     if (use_default) {
         m_custom_datadir_string.clear();
         Q_EMIT customDataDirStringChanged(m_custom_datadir_string);
-    } else if (!validateDataDirPath(selected_data_dir)) {
-        return;
     } else if (m_custom_datadir_string != selected_data_dir) {
         m_custom_datadir_string = selected_data_dir;
         Q_EMIT customDataDirStringChanged(m_custom_datadir_string);
@@ -452,6 +467,17 @@ QString OptionsQmlModel::normalizeDataDirPath(const QString& path) const
     return QDir::cleanPath(normalized_path);
 }
 
+bool OptionsQmlModel::existingCoreDataDir(const QString& path) const
+{
+    const fs::path data_dir = fs::PathFromString(path.toStdString());
+    const fs::path network_dir = NetworkDataDir(data_dir);
+    return ExistsNoThrow(data_dir / BITCOIN_CONF_FILENAME) ||
+           ExistsNoThrow(network_dir / BITCOIN_SETTINGS_FILENAME) ||
+           ExistsNoThrow(network_dir / "blocks" / "index") ||
+           ExistsNoThrow(network_dir / "chainstate") ||
+           ExistsNoThrow(network_dir / "wallets");
+}
+
 bool OptionsQmlModel::validateDataDirPath(const QString& path)
 {
     QFileInfo info(path);
@@ -468,7 +494,11 @@ bool OptionsQmlModel::validateDataDirPath(const QString& path)
             if (parent_dir == previous_parent_dir) break;
             previous_parent_dir = parent_dir;
         }
-        (void)fs::space(parent_dir);
+        const auto space_info = fs::space(parent_dir);
+        if (space_info.available < MIN_DISK_SPACE_FOR_BLOCK_FILES) {
+            setDataDirError(tr("The selected data directory does not have enough free space."));
+            return false;
+        }
     } catch (const fs::filesystem_error&) {
         setDataDirError(tr("The selected data directory could not be created."));
         return false;
@@ -478,8 +508,25 @@ bool OptionsQmlModel::validateDataDirPath(const QString& path)
     return true;
 }
 
+bool OptionsQmlModel::validateFreshDataDirPath(const QString& path)
+{
+    if (!validateDataDirPath(path)) return false;
+    if (!m_onboarded && existingCoreDataDir(path)) {
+        setDataDirError(tr("This folder already contains Bitcoin Core data. Reusing existing profiles is not supported by this onboarding flow yet."));
+        return false;
+    }
+    return true;
+}
+
+bool OptionsQmlModel::validateDataDirSelection()
+{
+    return validateFreshDataDirPath(m_dataDir);
+}
+
 bool OptionsQmlModel::commitDataDir()
 {
+    if (!validateFreshDataDirPath(m_dataDir)) return false;
+
     const QString default_data_dir = getDefaultDataDirString();
     if (m_dataDir == default_data_dir) {
         m_args.LockSettings([](common::Settings& settings) {

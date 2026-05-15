@@ -86,6 +86,7 @@ public:
     QUrl getDefaultDataDirectory();
     Q_INVOKABLE bool setCustomDataDirArgs(QString path);
     Q_INVOKABLE QString getCustomDataDirString();
+    Q_INVOKABLE bool validateDataDirSelection();
     Q_INVOKABLE QString externalSignerPathValidationError(const QString& path) const;
     bool proxyEnabled() const { return m_proxy_enabled; }
     void setProxyEnabled(bool enabled);
@@ -186,7 +187,9 @@ private:
     void buildAvailableLanguages();
     void setDataDirError(const QString& error);
     QString normalizeDataDirPath(const QString& path) const;
+    bool existingCoreDataDir(const QString& path) const;
     bool validateDataDirPath(const QString& path);
+    bool validateFreshDataDirPath(const QString& path);
     bool commitDataDir();
 };
 
