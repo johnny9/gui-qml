@@ -12,56 +12,62 @@ import org.bitcoincore.qt 1.0
 import "../controls"
 
 ColumnLayout {
+    id: root
+    objectName: "storageLocations"
+    property bool hasError: optionsModel.dataDirError.length > 0
+
+    function selectDefaultDataDir() {
+        optionsModel.dataDir = optionsModel.getDefaultDataDirString
+    }
+
+    function selectCustomDataDir(path) {
+        return optionsModel.setCustomDataDirArgs(path)
+    }
+
     ButtonGroup {
         id: group
     }
     spacing: 15
     OptionButton {
         id: defaultDirOption
+        objectName: "storageDefaultOption"
         Layout.fillWidth: true
         ButtonGroup.group: group
         text: qsTr("Default")
         description: qsTr("Your application directory.")
         customDir: optionsModel.getDefaultDataDirString
         checked: optionsModel.dataDir === optionsModel.getDefaultDataDirString
-        onClicked: {
-            defaultDirOption.checked = true
-            optionsModel.dataDir = optionsModel.getDefaultDataDirString
-        }
+        onClicked: root.selectDefaultDataDir()
     }
     OptionButton {
         id: customDirOption
+        objectName: "storageCustomOption"
         Layout.fillWidth: true
         ButtonGroup.group: group
         text: qsTr("Custom")
         description: qsTr("Choose the directory and storage device.")
-        customDir: customDirOption.checked ? fileDialog.currentFolder.toString() : ""
+        customDir: checked ? optionsModel.getCustomDataDirString() : ""
         checked: optionsModel.dataDir !== optionsModel.getDefaultDataDirString
-        onClicked: fileDialog.open()
+        onClicked: folderDialog.open()
     }
-    FileDialog {
-        id: fileDialog
-        currentFolder: shortcuts.home
+    CoreText {
+        objectName: "storageLocationErrorText"
+        Layout.fillWidth: true
+        visible: root.hasError
+        text: optionsModel.dataDirError
+        color: Theme.color.red
+        font.pixelSize: 13
+        wrapMode: Text.WordWrap
+    }
+    FolderDialog {
+        id: folderDialog
+        objectName: "storageFolderDialog"
+        currentFolder: optionsModel.getDefaultDataDirectory
         onAccepted: {
-            optionsModel.setCustomDataDirString(fileDialog.selectedFile.toString())
-            var customDataDir = fileDialog.selectedFile.toString();
-            if (customDataDir !== "") {
-                optionsModel.setCustomDataDirArgs(customDataDir)
-                customDirOption.customDir = optionsModel.getCustomDataDirString()
-                if (optionsModel.dataDir !== optionsModel.getDefaultDataDirString) {
-                    customDirOption.checked = true
-                    defaultDirOption.checked = false
-                }
-            }
+            root.selectCustomDataDir(folderDialog.selectedFolder.toString())
         }
         onRejected: {
             console.log("Custom datadir selection canceled")
-            if (optionsModel.dataDir !== optionsModel.getDefaultDataDirString) {
-                customDirOption.checked = true
-                defaultDirOption.checked = false
-            } else {
-                defaultDirOption.checked = true
-            }
         }
     }
 }

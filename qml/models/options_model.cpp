@@ -7,8 +7,11 @@
 #include <common/args.h>
 #include <common/settings.h>
 #include <common/system.h>
+#include <common/init.h>
 #include <interfaces/node.h>
+#include <init.h>
 #include <mapport.h>
+#include <chainparamsbase.h>
 #include <node/caches.h>
 #include <node/chainstatemanager_args.h>
 #include <qml/guiconstants.h>
@@ -87,10 +90,28 @@ bool TokenLooksLikePath(const QString& token)
            token.contains(QLatin1Char('\\')) ||
            QDir::isAbsolutePath(token);
 }
+
+QString PathToQString(const fs::path &path)
+{
+    return QString::fromStdString(path.utf8string());
+}
+
+QString CurrentDataDirString(ArgsManager& args)
+{
+    const fs::path data_dir = args.GetDataDirBase();
+    return data_dir.empty() ? PathToQString(GetDefaultDataDir()) : PathToQString(data_dir);
+}
 } // namespace
 
 OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, bool is_onboarded)
+    : OptionsQmlModel(node, is_onboarded, gArgs, /*initialize_config_on_onboard=*/true)
+{
+}
+
+OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, bool is_onboarded, ArgsManager& args, bool initialize_config_on_onboard)
     : m_node{node}
+    , m_args{args}
+    , m_initialize_config_on_onboard{initialize_config_on_onboard}
     , m_onboarded{is_onboarded}
 {
     m_dbcache_size_mib = SettingToInt(m_node.getPersistentSetting("dbcache"), DEFAULT_DB_CACHE >> 20);
@@ -107,7 +128,10 @@ OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, bool is_onboarded)
 
     m_server = SettingToBool(m_node.getPersistentSetting("server"), false);
 
-    m_dataDir = getDefaultDataDirString();
+    m_dataDir = CurrentDataDirString(m_args);
+    if (m_dataDir != getDefaultDataDirString()) {
+        m_custom_datadir_string = m_dataDir;
+    }
 
     QString proxy_setting = QString::fromStdString(SettingToString(m_node.getPersistentSetting("proxy"), ""));
     if (proxy_setting == "0") proxy_setting.clear();
@@ -335,11 +359,6 @@ common::SettingsValue OptionsQmlModel::pruneSetting() const
     return m_prune ? PruneGBtoMiB(m_prune_size_gb) : 0;
 }
 
-QString PathToQString(const fs::path &path)
-{
-    return QString::fromStdString(path.utf8string());
-}
-
 QString OptionsQmlModel::getDefaultDataDirString()
 {
     return PathToQString(GetDefaultDataDir());
@@ -354,45 +373,149 @@ QUrl OptionsQmlModel::getDefaultDataDirectory()
 
 bool OptionsQmlModel::setCustomDataDirArgs(QString path)
 {
-    if (!path.isEmpty()) {
-    // TODO: add actual custom data wiring
-#ifdef __ANDROID__
-    QString uri = path;
-    QString originalPrefix = "content://com.android.externalstorage.documents/tree/primary%3A";
-    QString newPrefix = "/storage/self/primary/";
-    QString path = uri.replace(originalPrefix, newPrefix);
-#else
-    path = QUrl(path).toLocalFile();
-#endif // __ANDROID__
-        qDebug() << "PlaceHolder: Created data directory: " << path;
-
-        m_custom_datadir_string = path;
-        Q_EMIT customDataDirStringChanged(path);
-        setDataDir(path);
-        return true;
+    const QString normalized_path = normalizeDataDirPath(path);
+    if (normalized_path.isEmpty()) {
+        setDataDirError(tr("Select a data directory."));
+        return false;
     }
-    return false;
+    if (!validateDataDirPath(normalized_path)) return false;
+
+    if (m_custom_datadir_string != normalized_path) {
+        m_custom_datadir_string = normalized_path;
+        Q_EMIT customDataDirStringChanged(m_custom_datadir_string);
+    }
+    if (m_dataDir != normalized_path) {
+        m_dataDir = normalized_path;
+        Q_EMIT dataDirChanged(m_dataDir);
+    }
+    setDataDirError({});
+    return true;
 }
 
 QString OptionsQmlModel::getCustomDataDirString()
 {
-#ifdef __ANDROID__
-    m_custom_datadir_string = m_custom_datadir_string.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/self/primary/");
-#endif // __ANDROID__
     return m_custom_datadir_string;
 }
 
 void OptionsQmlModel::setDataDir(QString new_data_dir)
 {
-    if (new_data_dir != m_dataDir) {
-        m_dataDir = new_data_dir;
-        if (!getCustomDataDirString().isEmpty() && (new_data_dir != getDefaultDataDirString())) {
-            m_dataDir = getCustomDataDirString();
-        } else {
-            m_dataDir = getDefaultDataDirString();
-        }
-        Q_EMIT dataDirChanged(new_data_dir);
+    const QString normalized_path = normalizeDataDirPath(new_data_dir);
+    const QString default_data_dir = getDefaultDataDirString();
+    const bool use_default = normalized_path.isEmpty() || normalized_path == default_data_dir;
+    const QString selected_data_dir = use_default ? default_data_dir : normalized_path;
+
+    if (selected_data_dir == m_dataDir && (use_default ? m_custom_datadir_string.isEmpty() : m_custom_datadir_string == selected_data_dir)) {
+        setDataDirError({});
+        return;
     }
+
+    if (use_default) {
+        m_custom_datadir_string.clear();
+        Q_EMIT customDataDirStringChanged(m_custom_datadir_string);
+    } else if (!validateDataDirPath(selected_data_dir)) {
+        return;
+    } else if (m_custom_datadir_string != selected_data_dir) {
+        m_custom_datadir_string = selected_data_dir;
+        Q_EMIT customDataDirStringChanged(m_custom_datadir_string);
+    }
+
+    if (m_dataDir != selected_data_dir) {
+        m_dataDir = selected_data_dir;
+        Q_EMIT dataDirChanged(m_dataDir);
+    }
+    setDataDirError({});
+}
+
+void OptionsQmlModel::setDataDirError(const QString& error)
+{
+    if (error == m_data_dir_error) return;
+    m_data_dir_error = error;
+    Q_EMIT dataDirErrorChanged(m_data_dir_error);
+}
+
+QString OptionsQmlModel::normalizeDataDirPath(const QString& path) const
+{
+    QString normalized_path = path.trimmed();
+    if (normalized_path.isEmpty()) return {};
+
+#ifdef __ANDROID__
+    normalized_path.replace(
+        QStringLiteral("content://com.android.externalstorage.documents/tree/primary%3A"),
+        QStringLiteral("/storage/self/primary/"));
+#else
+    const QUrl url(normalized_path);
+    if (url.isLocalFile()) {
+        normalized_path = url.toLocalFile();
+    }
+#endif // __ANDROID__
+
+    return QDir::cleanPath(normalized_path);
+}
+
+bool OptionsQmlModel::validateDataDirPath(const QString& path)
+{
+    QFileInfo info(path);
+    if (info.exists() && !info.isDir()) {
+        setDataDirError(tr("The selected data directory path is not a directory."));
+        return false;
+    }
+
+    try {
+        fs::path parent_dir = fs::PathFromString(path.toStdString());
+        fs::path previous_parent_dir;
+        while (parent_dir.has_parent_path() && !fs::exists(parent_dir)) {
+            parent_dir = parent_dir.parent_path();
+            if (parent_dir == previous_parent_dir) break;
+            previous_parent_dir = parent_dir;
+        }
+        (void)fs::space(parent_dir);
+    } catch (const fs::filesystem_error&) {
+        setDataDirError(tr("The selected data directory could not be created."));
+        return false;
+    }
+
+    setDataDirError({});
+    return true;
+}
+
+bool OptionsQmlModel::commitDataDir()
+{
+    const QString default_data_dir = getDefaultDataDirString();
+    if (m_dataDir == default_data_dir) {
+        m_args.LockSettings([](common::Settings& settings) {
+            settings.forced_settings.erase("datadir");
+        });
+    } else {
+        if (!validateDataDirPath(m_dataDir)) return false;
+        const fs::path data_dir = fs::PathFromString(m_dataDir.toStdString());
+        try {
+            if (TryCreateDirectories(data_dir)) {
+                TryCreateDirectories(data_dir / "wallets");
+            }
+        } catch (const fs::filesystem_error&) {
+            setDataDirError(tr("The selected data directory could not be created."));
+            return false;
+        }
+        m_args.LockSettings([](common::Settings& settings) {
+            settings.forced_settings.erase("datadir");
+        });
+        m_args.SoftSetArg("-datadir", fs::PathToString(data_dir));
+    }
+    m_args.ClearPathCache();
+
+    if (m_initialize_config_on_onboard) {
+        if (auto error = common::InitConfig(m_args)) {
+            setDataDirError(QString::fromStdString(error->message.translated));
+            return false;
+        }
+
+        InitLogging(m_args);
+        InitParameterInteraction(m_args);
+    }
+    setDataDirError({});
+    Q_EMIT dataDirCommitted(m_dataDir);
+    qDebug() << "Configured data directory:" << m_dataDir;
+    return true;
 }
 
 void OptionsQmlModel::buildAvailableLanguages()
@@ -477,9 +600,17 @@ QString OptionsQmlModel::displayUnitLabelForAmount(qint64 satoshi) const
 }
 
 
-void OptionsQmlModel::onboard()
+bool OptionsQmlModel::onboard()
 {
+    if (!commitDataDir()) return false;
+
     m_node.resetSettings();
+    QSettings settings(QSettings::UserScope, QAPP_ORG_NAME, QAPP_APP_NAME_DEFAULT);
+    if (m_dataDir == getDefaultDataDirString()) {
+        settings.remove(SettingsKeys::DATA_DIR);
+    } else {
+        settings.setValue(SettingsKeys::DATA_DIR, m_dataDir);
+    }
     if (m_external_signer_path.isEmpty()) {
         m_node.forceSetting("signer", common::SettingsValue{});
     } else {
@@ -518,4 +649,5 @@ void OptionsQmlModel::onboard()
     m_initial_tor_enabled   = m_tor_enabled;
     m_initial_tor_address   = m_tor_address;
     m_initial_external_signer_path = m_external_signer_path;
+    return true;
 }

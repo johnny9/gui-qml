@@ -68,7 +68,7 @@ ApplicationWindow {
         id: onboardingWizard
         OnboardingWizard {
             onFinished: {
-                optionsModel.onboard()
+                if (!optionsModel.onboard()) return
                 nodeModel.startNodeInitializionThread()
                 if (AppMode.walletEnabled && AppMode.isDesktop) {
                     main.push([

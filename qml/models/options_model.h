@@ -19,6 +19,8 @@
 #include <QStringList>
 #include <QUrl>
 
+class ArgsManager;
+
 namespace interfaces {
 class Node;
 }
@@ -39,6 +41,7 @@ class OptionsQmlModel : public QObject
     Q_PROPERTY(int scriptThreads READ scriptThreads WRITE setScriptThreads NOTIFY scriptThreadsChanged)
     Q_PROPERTY(bool server READ server WRITE setServer NOTIFY serverChanged)
     Q_PROPERTY(QString dataDir READ dataDir WRITE setDataDir NOTIFY dataDirChanged)
+    Q_PROPERTY(QString dataDirError READ dataDirError NOTIFY dataDirErrorChanged)
     Q_PROPERTY(QString getDefaultDataDirString READ getDefaultDataDirString CONSTANT)
     Q_PROPERTY(QUrl getDefaultDataDirectory READ getDefaultDataDirectory CONSTANT)
     Q_PROPERTY(bool proxyEnabled READ proxyEnabled WRITE setProxyEnabled NOTIFY proxyEnabledChanged)
@@ -56,6 +59,7 @@ class OptionsQmlModel : public QObject
 
 public:
     explicit OptionsQmlModel(interfaces::Node& node, bool is_onboarded);
+    OptionsQmlModel(interfaces::Node& node, bool is_onboarded, ArgsManager& args, bool initialize_config_on_onboard = false);
 
     int dbcacheSizeMiB() const { return m_dbcache_size_mib; }
     void setDbcacheSizeMiB(int new_dbcache_size_mib);
@@ -76,6 +80,7 @@ public:
     bool server() const { return m_server; }
     void setServer(bool new_server);
     QString dataDir() const { return m_dataDir; }
+    QString dataDirError() const { return m_data_dir_error; }
     void setDataDir(QString new_data_dir);
     QString getDefaultDataDirString();
     QUrl getDefaultDataDirectory();
@@ -118,7 +123,7 @@ public Q_SLOTS:
     void setCustomDataDirString(const QString &new_custom_datadir_string) {
         m_custom_datadir_string = new_custom_datadir_string;
     }
-    Q_INVOKABLE void onboard();
+    Q_INVOKABLE bool onboard();
 
 Q_SIGNALS:
     void dbcacheSizeMiBChanged(int new_dbcache_size_mib);
@@ -130,6 +135,8 @@ Q_SIGNALS:
     void serverChanged(bool new_server);
     void customDataDirStringChanged(QString new_custom_datadir_string);
     void dataDirChanged(QString new_data_dir);
+    void dataDirErrorChanged(QString error);
+    void dataDirCommitted(QString new_data_dir);
     void proxyEnabledChanged(bool enabled);
     void proxyAddressChanged(QString address);
     void torEnabledChanged(bool enabled);
@@ -142,6 +149,8 @@ Q_SIGNALS:
 
 private:
     interfaces::Node& m_node;
+    ArgsManager& m_args;
+    bool m_initialize_config_on_onboard;
     bool m_onboarded;
 
     // Properties that are exposed to QML.
@@ -158,6 +167,7 @@ private:
     bool m_server;
     QString m_custom_datadir_string;
     QString m_dataDir;
+    QString m_data_dir_error;
     bool m_proxy_enabled;
     QString m_proxy_address;
     bool m_tor_enabled;
@@ -174,6 +184,10 @@ private:
 
     common::SettingsValue pruneSetting() const;
     void buildAvailableLanguages();
+    void setDataDirError(const QString& error);
+    QString normalizeDataDirPath(const QString& path) const;
+    bool validateDataDirPath(const QString& path);
+    bool commitDataDir();
 };
 
 #endif // BITCOIN_QML_MODELS_OPTIONS_MODEL_H
