@@ -529,9 +529,14 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool feeEstimatePending MEMBER m_fee_estimate_pending NOTIFY feeEstimatePendingChanged)
     Q_PROPERTY(int feeEstimateRevision MEMBER m_fee_estimate_revision NOTIFY feeEstimateRevisionChanged)
     Q_PROPERTY(bool prepareTransactionResult MEMBER m_prepare_transaction_result NOTIFY prepareTransactionResultChanged)
+    Q_PROPERTY(bool sendTransactionResult MEMBER m_send_transaction_result NOTIFY sendTransactionResultChanged)
     Q_PROPERTY(int prepareTransactionCalls READ prepareTransactionCalls NOTIFY prepareTransactionCallsChanged)
     Q_PROPERTY(int scheduleFeeEstimatesCalls READ scheduleFeeEstimatesCalls NOTIFY scheduleFeeEstimatesCallsChanged)
     Q_PROPERTY(int sendTransactionCalls READ sendTransactionCalls NOTIFY sendTransactionCallsChanged)
+    Q_PROPERTY(bool isEncrypted MEMBER m_is_encrypted NOTIFY securityStateChanged)
+    Q_PROPERTY(bool isLocked MEMBER m_is_locked NOTIFY securityStateChanged)
+    Q_PROPERTY(QString transactionError MEMBER m_transaction_error NOTIFY transactionErrorChanged)
+    Q_PROPERTY(bool transactionNeedsUnlock MEMBER m_transaction_needs_unlock NOTIFY transactionNeedsUnlockChanged)
 
 public:
     QString m_name{QStringLiteral("testwallet")};
@@ -629,7 +634,16 @@ public:
     {
         ++m_prepare_transaction_calls;
         Q_EMIT prepareTransactionCallsChanged();
+        if (m_prepare_transaction_result) {
+            setTransactionStatus({}, false);
+        } else {
+            setTransactionStatus(QStringLiteral("Amount plus fee exceeds available balance"), false);
+        }
         return m_prepare_transaction_result;
+    }
+    Q_INVOKABLE bool prepareTransactionWithPassphrase(const QString&)
+    {
+        return prepareTransaction();
     }
     Q_INVOKABLE void scheduleFeeEstimates()
     {
@@ -652,10 +666,14 @@ public:
         ++m_fee_estimate_revision;
         Q_EMIT feeEstimateRevisionChanged();
     }
-    Q_INVOKABLE void sendTransaction()
+    Q_INVOKABLE bool sendTransaction()
     {
         ++m_send_transaction_calls;
         Q_EMIT sendTransactionCallsChanged();
+        if (m_send_transaction_result) {
+            setTransactionStatus({}, false);
+        }
+        return m_send_transaction_result;
     }
     Q_INVOKABLE void commitPaymentRequest()
     {
@@ -677,16 +695,37 @@ Q_SIGNALS:
     void feeEstimatePendingChanged();
     void feeEstimateRevisionChanged();
     void prepareTransactionResultChanged();
+    void sendTransactionResultChanged();
     void prepareTransactionCallsChanged();
     void scheduleFeeEstimatesCallsChanged();
     void sendTransactionCallsChanged();
+    void securityStateChanged();
+    void transactionErrorChanged();
+    void transactionNeedsUnlockChanged();
 
 private:
+    void setTransactionStatus(const QString& error, bool needs_unlock)
+    {
+        if (m_transaction_error != error) {
+            m_transaction_error = error;
+            Q_EMIT transactionErrorChanged();
+        }
+        if (m_transaction_needs_unlock != needs_unlock) {
+            m_transaction_needs_unlock = needs_unlock;
+            Q_EMIT transactionNeedsUnlockChanged();
+        }
+    }
+
     QHash<int, QString> m_fee_estimates{{1, QStringLiteral("0.00000750 ₿")}, {2, QStringLiteral("0.00000500 ₿")}, {6, QStringLiteral("0.00000250 ₿")}};
     bool m_custom_fee_enabled{false};
     QString m_custom_fee_rate;
     QString m_custom_fee_estimate;
     bool m_fee_estimate_pending{false};
+    bool m_send_transaction_result{true};
+    bool m_is_encrypted{false};
+    bool m_is_locked{false};
+    QString m_transaction_error;
+    bool m_transaction_needs_unlock{false};
     int m_fee_estimate_revision{1};
     int m_prepare_transaction_calls{0};
     int m_schedule_fee_estimates_calls{0};

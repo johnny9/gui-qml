@@ -17,20 +17,12 @@ Page {
     id: root
     background: null
 
+    property string pendingMigrationPath: ""
+
     ButtonGroup { id: navigationTabs }
 
     signal addWallet()
     signal sendTransaction(bool multipleRecipientsEnabled)
-
-    function handleWalletMigrationRequired(walletPath) {
-        const stackView = root.StackView.view
-        if (!stackView || stackView.currentItem !== root) {
-            return
-        }
-
-        walletSelect.close()
-        stackView.push(walletMigrationPage, { "walletPath": walletPath })
-    }
 
     function handleWalletBadgeClicked() {
         if (!walletController.initialized) {
@@ -45,22 +37,46 @@ Page {
         }
     }
 
-    Component {
-        id: walletMigrationPage
-        ImportWalletMigration {
-            onBack: root.StackView.view.pop()
-            onNext: root.StackView.view.pop()
-        }
-    }
-
     Connections {
         target: walletController
         function onOpenWalletSettingsRequested() {
             settingsTabButton.checked = true
             nodeSettings.openWalletSettings()
         }
-        function onWalletMigrationRequired(walletPath) {
-            root.handleWalletMigrationRequired(walletPath)
+        function onWalletMigrationRequired(path) {
+            root.pendingMigrationPath = path
+            migrationRequiredPopup.errorText = ""
+            migrationRequiredPopup.open()
+        }
+        function onWalletMigrationPassphraseRequired(path) {
+            root.pendingMigrationPath = path
+            migrationRequiredPopup.close()
+            migrationPassphrasePopup.busy = false
+            migrationPassphrasePopup.errorText = ""
+            migrationPassphrasePopup.open()
+        }
+        function onWalletMigrationSucceeded() {
+            root.pendingMigrationPath = ""
+            migrationRequiredPopup.close()
+            migrationPassphrasePopup.close()
+        }
+        function onWalletMigrationFailed() {
+            if (root.pendingMigrationPath.length === 0) {
+                return
+            }
+            if (walletController.walletMigrationError.toLowerCase().indexOf("passphrase") !== -1) {
+                const showPassphraseError = migrationPassphrasePopup.opened
+                migrationRequiredPopup.close()
+                migrationPassphrasePopup.busy = false
+                migrationPassphrasePopup.errorText = showPassphraseError ? walletController.walletMigrationError : ""
+                migrationPassphrasePopup.open()
+            } else {
+                migrationPassphrasePopup.busy = false
+                migrationPassphrasePopup.close()
+                migrationRequiredPopup.busy = false
+                migrationRequiredPopup.errorText = walletController.walletMigrationError
+                migrationRequiredPopup.open()
+            }
         }
     }
 
@@ -198,5 +214,39 @@ Page {
         }
     }
 
-    Component.onCompleted: nodeModel.startNodeInitializionThread();
+    WalletMigrationPopup {
+        id: migrationRequiredPopup
+        parent: Overlay.overlay
+        width: Math.min(420, root.width - 40)
+        popupObjectName: "walletMigrationPopup"
+        errorTextObjectName: "walletMigrationErrorText"
+        cancelButtonObjectName: "walletMigrationCancelButton"
+        confirmButtonObjectName: "walletMigrationConfirmButton"
+        descriptionText: qsTr("This wallet uses a legacy format and needs to be updated before it can be opened.")
+        busy: walletController.walletMigrationInProgress
+        onConfirmed: {
+            migrationRequiredPopup.errorText = ""
+            migrationRequiredPopup.close()
+            walletController.migrateWallet(root.pendingMigrationPath, "")
+        }
+    }
+
+    WalletPassphrasePopup {
+        id: migrationPassphrasePopup
+        parent: Overlay.overlay
+        width: Math.min(420, root.width - 40)
+        popupObjectName: "walletMigrationPassphrasePopup"
+        passphraseFieldObjectName: "walletMigrationPassphraseField"
+        errorTextObjectName: "walletMigrationPassphraseErrorText"
+        cancelButtonObjectName: "walletMigrationPassphraseCancelButton"
+        confirmButtonObjectName: "walletMigrationPassphraseConfirmButton"
+        titleText: qsTr("Enter wallet password")
+        descriptionText: qsTr("Enter the wallet password to complete the legacy wallet update.")
+        confirmText: qsTr("Unlock and update")
+        busyConfirmText: qsTr("Updating...")
+        onSubmitted: (passphrase) => {
+            migrationPassphrasePopup.busy = true
+            walletController.migrateWallet(root.pendingMigrationPath, passphrase)
+        }
+    }
 }

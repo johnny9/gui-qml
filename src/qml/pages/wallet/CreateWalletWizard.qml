@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -88,6 +88,7 @@ PageStack {
                 Layout.rightMargin: Layout.leftMargin
                 Layout.bottomMargin: 20
                 Layout.alignment: Qt.AlignCenter
+                enabled: walletController.initialized
                 text: qsTr("Create wallet")
                 onClicked: {
                     root.push(intro)
@@ -100,6 +101,7 @@ PageStack {
                 Layout.leftMargin: 20
                 Layout.rightMargin: Layout.leftMargin
                 Layout.alignment: Qt.AlignCenter
+                enabled: walletController.initialized
                 text: qsTr("Import wallet")
                 borderColor: Theme.color.neutral6
                 borderHoverColor: Theme.color.orangeLight1

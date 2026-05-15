@@ -18,6 +18,7 @@ Page {
     property WalletQmlModel wallet: walletController.selectedWallet
     property SendRecipient recipient: wallet.recipients.current
     property WalletQmlModelTransaction transaction: walletController.selectedWallet.currentTransaction
+    property bool sending: false
 
     signal finished()
     signal back()
@@ -123,8 +124,13 @@ Page {
                 Layout.fillWidth: true
                 Layout.topMargin: 30
                 onSendRequested: {
-                    root.wallet.sendTransaction()
-                    root.transactionSent()
+                    if (root.sending) {
+                        return
+                    }
+                    if (root.wallet.sendTransaction()) {
+                        root.sending = true
+                        root.transactionSent()
+                    }
                 }
             }
 
@@ -132,13 +138,29 @@ Page {
                 id: confirmationButton
                 objectName: "sendReviewSendButton"
                 visible: !root.wallet || !root.wallet.hasExternalSigner
+                enabled: !root.sending
                 Layout.fillWidth: true
                 Layout.topMargin: 30
                 text: qsTr("Send")
                 onClicked: {
-                    root.wallet.sendTransaction()
-                    root.transactionSent()
+                    if (root.sending) {
+                        return
+                    }
+                    if (root.wallet.sendTransaction()) {
+                        root.sending = true
+                        root.transactionSent()
+                    }
                 }
+            }
+
+            CoreText {
+                objectName: "sendReviewErrorText"
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: root.wallet.transactionError
+                color: Theme.color.red
+                font.pixelSize: 15
+                wrapMode: Text.WordWrap
             }
         }
     }

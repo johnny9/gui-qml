@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -19,7 +19,7 @@ Page {
 
     required property string walletName;
 
-    Component.onCompleted: walletController.clearWalletLoadStatus()
+    Component.onCompleted: walletController.clearWalletCreateStatus()
 
     header: NavigationBar2 {
         navigationStack: root.StackView.view
@@ -28,7 +28,6 @@ Page {
             text: qsTr("Skip")
             enabled: walletController.initialized
             onClicked: {
-                walletController.clearWalletLoadStatus()
                 if (walletController.createSingleSigWallet(walletName, "")) {
                     root.next()
                 }
@@ -69,7 +68,7 @@ Page {
             focus: true
             hideText: true
             placeholderText: qsTr("Enter password...")
-            onTextChanged: walletController.clearWalletLoadStatus()
+            onTextChanged: walletController.clearWalletCreateStatus()
         }
         CoreText {
             Layout.topMargin: 20
@@ -87,11 +86,12 @@ Page {
             Layout.rightMargin: 20
             hideText: true
             placeholderText: qsTr("Enter password again...")
-            onTextChanged: walletController.clearWalletLoadStatus()
+            onTextChanged: walletController.clearWalletCreateStatus()
         }
 
         Setting {
             id: confirmToggle
+            objectName: "createWalletPasswordConfirmToggle"
             Layout.fillWidth: true
             Layout.leftMargin: 20
             Layout.rightMargin: 20
@@ -102,15 +102,6 @@ Page {
                 loadedItem.toggle()
                 loadedItem.toggled()
             }
-        }
-
-        CoreText {
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-            visible: walletController.walletLoadError.length > 0
-            color: Theme.color.red
-            wrapMode: Text.WordWrap
-            text: walletController.walletLoadError
         }
 
         ContinueButton {
@@ -127,11 +118,22 @@ Page {
                 password.text == passwordRepeat.text &&
                 confirmToggle.loadedItem.checked
             onClicked: {
-                walletController.clearWalletLoadStatus()
                 if (walletController.createSingleSigWallet(walletName, password.text)) {
                     root.next()
                 }
             }
+        }
+
+        CoreText {
+            objectName: "createWalletPasswordErrorText"
+            Layout.fillWidth: true
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            visible: text.length > 0
+            text: walletController.walletCreateError
+            color: Theme.color.red
+            font.pixelSize: 15
+            wrapMode: Text.WordWrap
         }
     }
 }

@@ -17,6 +17,7 @@ Page {
 
     property WalletQmlModel wallet: walletController.selectedWallet
     property WalletQmlModelTransaction transaction: walletController.selectedWallet.currentTransaction
+    property bool sending: false
     readonly property int recipientCount: root.wallet ? root.wallet.recipients.count : 0
     readonly property string recipientCountText: recipientCount === 1
         ? qsTr("There is 1 recipient.")
@@ -264,22 +265,43 @@ Page {
                 Layout.fillWidth: true
                 Layout.topMargin: 30
                 onSendRequested: {
-                    root.wallet.sendTransaction()
-                    root.transactionSent()
+                    if (root.sending) {
+                        return
+                    }
+                    if (root.wallet.sendTransaction()) {
+                        root.sending = true
+                        root.transactionSent()
+                    }
                 }
             }
 
             ContinueButton {
                 id: confirmationButton
-                objectName: "multipleSendReviewSendButton"
+                objectName: "sendReviewSendButton"
                 visible: !root.wallet || !root.wallet.hasExternalSigner
+                enabled: !root.sending
                 Layout.fillWidth: true
                 Layout.topMargin: 30
                 text: qsTr("Send")
                 onClicked: {
-                    root.wallet.sendTransaction()
-                    root.transactionSent()
+                    if (root.sending) {
+                        return
+                    }
+                    if (root.wallet.sendTransaction()) {
+                        root.sending = true
+                        root.transactionSent()
+                    }
                 }
+            }
+
+            CoreText {
+                objectName: "sendReviewErrorText"
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: root.wallet.transactionError
+                color: Theme.color.red
+                font.pixelSize: 15
+                wrapMode: Text.WordWrap
             }
         }
     }
