@@ -4,13 +4,21 @@
 
 #include <QtTest/QtTest>
 
+#include <common/args.h>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QSettings>
 #include <QTemporaryDir>
+#include <QUrl>
 #include <test/gmocktestfixture.h>
 #include <test/mocks/mocknode.h>
 #include <qml/models/options_model.h>
+#include <qml/guiconstants.h>
 #include <net_processing.h>
 #include <common/settings.h>
+#include <qml/models/settings_keys.h>
+#include <util/fs.h>
 #include <util/translation.h>
 
 #ifndef BITCOINQML_NO_TEST_MAIN
@@ -43,6 +51,12 @@ private Q_SLOTS:
     void signerDirtyNotSetAfterOnboard();
     void externalSignerPathValidationRejectsMissingPath();
     void externalSignerPathValidationAcceptsExecutablePath();
+    void existingCoreDataDirRejectsOnboard();
+    void customDataDirArgsCreatesDirectoryAndSetsArg();
+    void customDataDirArgsRejectsFilePath();
+    void setDataDirDefaultClearsCustomDataDir();
+    void onboardPersistsCustomDataDir();
+    void onboardClearsPersistedDataDirForDefault();
 };
 
 // Convenience: set up a NiceMock whose getPersistentSetting returns null for
@@ -51,6 +65,47 @@ static common::SettingsValue MakeAddress(const std::string& addr)
 {
     return common::SettingsValue{addr};
 }
+
+static QSettings DataDirSettings()
+{
+    return QSettings(QSettings::UserScope, QAPP_ORG_NAME, QAPP_APP_NAME_DEFAULT);
+}
+
+static void SetupDataDirTestArgs(ArgsManager& args)
+{
+    args.ForceSetArg("-noconf", "1");
+    args.ForceSetArg("-settings", "");
+    args.ForceSetArg("-regtest", "1");
+}
+
+static void SetDataDirArg(ArgsManager& args, const QString& data_dir)
+{
+    args.ForceSetArg("-datadir", fs::PathToString(fs::PathFromString(data_dir.toStdString())));
+}
+
+class ScopedHomeDir
+{
+public:
+    explicit ScopedHomeDir(const QString& path)
+        : m_had_home{qEnvironmentVariableIsSet("HOME")}
+        , m_old_home{qgetenv("HOME")}
+    {
+        qputenv("HOME", QFile::encodeName(path));
+    }
+
+    ~ScopedHomeDir()
+    {
+        if (m_had_home) {
+            qputenv("HOME", m_old_home);
+        } else {
+            qunsetenv("HOME");
+        }
+    }
+
+private:
+    const bool m_had_home;
+    const QByteArray m_old_home;
+};
 
 void OptionsModelTests::proxyDisabledRemovesKey()
 {
@@ -139,7 +194,12 @@ void OptionsModelTests::onboardWritesProxy()
     ON_CALL(node, resetSettings()).WillByDefault(Return());
 
     // Construct as not-yet-onboarded.
-    OptionsQmlModel model(node, /*is_onboarded=*/false);
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args);
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    QVERIFY(model.setCustomDataDirArgs(QUrl::fromLocalFile(temp_dir.filePath("fresh-data")).toString()));
     model.setProxyEnabled(true);
     model.setProxyAddress("10.0.0.1:9050");
 
@@ -150,7 +210,7 @@ void OptionsModelTests::onboardWritesProxy()
             return v.isStr() && v.get_str() == "10.0.0.1:9050";
         })));
 
-    model.onboard();
+    QVERIFY2(model.onboard(), qPrintable(model.dataDirError()));
 }
 
 void OptionsModelTests::proxyDirtySetWhenOnboarded()
@@ -225,14 +285,19 @@ void OptionsModelTests::proxyDirtyNotSetAfterOnboard()
     ON_CALL(node, resetSettings()).WillByDefault(Return());
 
     // Configure proxy during onboarding.
-    OptionsQmlModel model(node, /*is_onboarded=*/false);
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args);
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    QVERIFY(model.setCustomDataDirArgs(QUrl::fromLocalFile(temp_dir.filePath("fresh-data")).toString()));
     model.setProxyEnabled(true);
     model.setProxyAddress("127.0.0.1:9050");
     QVERIFY(!model.proxySettingsDirty());
 
     // After onboard() the node starts with those settings applied —
     // no restart is needed, so dirty must be false.
-    model.onboard();
+    QVERIFY2(model.onboard(), qPrintable(model.dataDirError()));
     QVERIFY(!model.proxySettingsDirty());
 }
 
@@ -290,7 +355,12 @@ void OptionsModelTests::onboardWritesExternalSignerPath()
     ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
     ON_CALL(node, resetSettings()).WillByDefault(Return());
 
-    OptionsQmlModel model(node, /*is_onboarded=*/false);
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args);
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    QVERIFY(model.setCustomDataDirArgs(QUrl::fromLocalFile(temp_dir.filePath("fresh-data")).toString()));
     model.setExternalSignerPath("/usr/local/bin/hwi");
 
     EXPECT_CALL(node, updateRwSetting(::testing::_, ::testing::_)).Times(::testing::AnyNumber());
@@ -299,7 +369,7 @@ void OptionsModelTests::onboardWritesExternalSignerPath()
             return v.isStr() && v.get_str() == "/usr/local/bin/hwi";
         })));
 
-    model.onboard();
+    QVERIFY2(model.onboard(), qPrintable(model.dataDirError()));
 }
 
 void OptionsModelTests::walletSettingsDirtyTracksExternalSignerPath()
@@ -432,7 +502,12 @@ void OptionsModelTests::signerDirtyNotSetAfterOnboard()
     ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
     ON_CALL(node, resetSettings()).WillByDefault(Return());
 
-    OptionsQmlModel model(node, /*is_onboarded=*/false);
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args);
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    QVERIFY(model.setCustomDataDirArgs(QUrl::fromLocalFile(temp_dir.filePath("fresh-data")).toString()));
     model.setExternalSignerPath("/opt/hwi/ledger.py");
     QVERIFY(!model.walletSettingsDirty());
 
@@ -442,7 +517,7 @@ void OptionsModelTests::signerDirtyNotSetAfterOnboard()
             return v.isStr() && v.get_str() == "/opt/hwi/ledger.py";
         })));
 
-    model.onboard();
+    QVERIFY2(model.onboard(), qPrintable(model.dataDirError()));
     QVERIFY(!model.walletSettingsDirty());
 }
 
@@ -481,6 +556,175 @@ void OptionsModelTests::externalSignerPathValidationAcceptsExecutablePath()
 
     OptionsQmlModel model(node, /*is_onboarded=*/true);
     QVERIFY(model.externalSignerPathValidationError(script_path).isEmpty());
+}
+
+void OptionsModelTests::existingCoreDataDirRejectsOnboard()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+    EXPECT_CALL(node, resetSettings()).Times(0);
+
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    const QString existing_dir = temp_dir.filePath("existing-core");
+    QVERIFY(QDir().mkpath(existing_dir));
+
+    QFile conf(existing_dir + "/bitcoin.conf");
+    QVERIFY(conf.open(QIODevice::WriteOnly | QIODevice::Text));
+    conf.write("regtest=1\n");
+    conf.close();
+
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    SetDataDirArg(args, existing_dir);
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args);
+
+    QVERIFY(!model.validateDataDirSelection());
+    QVERIFY(model.dataDirError().contains("already contains Bitcoin Core data"));
+    QVERIFY(!model.onboard());
+}
+
+void OptionsModelTests::customDataDirArgsCreatesDirectoryAndSetsArg()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args, /*initialize_config_on_onboard=*/true);
+
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    const QString custom_dir = temp_dir.filePath("custom-data");
+
+    QVERIFY(model.setCustomDataDirArgs(QUrl::fromLocalFile(custom_dir).toString()));
+    QCOMPARE(model.dataDir(), custom_dir);
+    QCOMPARE(model.getCustomDataDirString(), custom_dir);
+    QVERIFY(model.dataDirError().isEmpty());
+    QVERIFY(!QFileInfo::exists(custom_dir));
+
+    QVERIFY2(model.onboard(), qPrintable(model.dataDirError()));
+    QVERIFY(QFileInfo::exists(custom_dir));
+    QVERIFY(QFileInfo::exists(custom_dir + "/regtest/wallets"));
+    QCOMPARE(QString::fromStdString(args.GetDataDirBase().utf8string()), custom_dir);
+}
+
+void OptionsModelTests::customDataDirArgsRejectsFilePath()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+
+    QTemporaryDir home_dir;
+    QVERIFY(home_dir.isValid());
+    ScopedHomeDir scoped_home{home_dir.path()};
+
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args);
+
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    const QString file_path = temp_dir.filePath("not-a-directory");
+    QFile file(file_path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("not a directory\n");
+    file.close();
+
+    QVERIFY(!model.setCustomDataDirArgs(QUrl::fromLocalFile(file_path).toString()));
+    QCOMPARE(model.dataDir(), model.getDefaultDataDirString());
+    QCOMPARE(model.dataDirError(), QString("The selected data directory path is not a directory."));
+}
+
+void OptionsModelTests::setDataDirDefaultClearsCustomDataDir()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+
+    QTemporaryDir home_dir;
+    QVERIFY(home_dir.isValid());
+    ScopedHomeDir scoped_home{home_dir.path()};
+
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args);
+
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    const QString custom_dir = temp_dir.filePath("custom-data");
+
+    QVERIFY(model.setCustomDataDirArgs(QUrl::fromLocalFile(custom_dir).toString()));
+    model.setDataDir(model.getDefaultDataDirString());
+    QCOMPARE(model.dataDir(), model.getDefaultDataDirString());
+    QVERIFY(model.getCustomDataDirString().isEmpty());
+    QVERIFY(model.dataDirError().isEmpty());
+}
+
+void OptionsModelTests::onboardPersistsCustomDataDir()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    QSettings settings = DataDirSettings();
+    settings.remove(SettingsKeys::DATA_DIR);
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+    ON_CALL(node, resetSettings()).WillByDefault(Return());
+
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args);
+
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    const QString custom_dir = temp_dir.filePath("custom-data");
+    QVERIFY(model.setCustomDataDirArgs(QUrl::fromLocalFile(custom_dir).toString()));
+
+    QVERIFY(model.onboard());
+    QCOMPARE(settings.value(SettingsKeys::DATA_DIR).toString(), custom_dir);
+
+    settings.remove(SettingsKeys::DATA_DIR);
+}
+
+void OptionsModelTests::onboardClearsPersistedDataDirForDefault()
+{
+    using ::testing::_;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    QSettings settings = DataDirSettings();
+    settings.setValue(SettingsKeys::DATA_DIR, QStringLiteral("/tmp/old-custom-data"));
+
+    NiceMock<MockNode> node;
+    ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
+    ON_CALL(node, resetSettings()).WillByDefault(Return());
+
+    ArgsManager args;
+    SetupDataDirTestArgs(args);
+    QTemporaryDir home_dir;
+    QVERIFY(home_dir.isValid());
+    ScopedHomeDir scoped_home{home_dir.path()};
+    OptionsQmlModel model(node, /*is_onboarded=*/false, args);
+
+    QVERIFY(model.onboard());
+    QVERIFY(!settings.contains(SettingsKeys::DATA_DIR));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

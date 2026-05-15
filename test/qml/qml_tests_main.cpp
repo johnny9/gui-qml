@@ -9,6 +9,7 @@
 #include <QQmlContext>
 #include <QRegularExpression>
 #include <QStringList>
+#include <QUrl>
 #include <qqml.h>
 
 #include <algorithm>
@@ -760,7 +761,9 @@ class MockOptionsModel : public QObject
     Q_PROPERTY(bool prune MEMBER m_prune NOTIFY pruneChanged)
     Q_PROPERTY(int pruneSizeGB MEMBER m_prune_size_gb NOTIFY pruneSizeGBChanged)
     Q_PROPERTY(QString dataDir MEMBER m_data_dir NOTIFY dataDirChanged)
+    Q_PROPERTY(QString dataDirError MEMBER m_data_dir_error NOTIFY dataDirErrorChanged)
     Q_PROPERTY(QString getDefaultDataDirString READ getDefaultDataDirString CONSTANT)
+    Q_PROPERTY(QUrl getDefaultDataDirectory READ getDefaultDataDirectory CONSTANT)
     Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
     Q_PROPERTY(QString displayUnitLabel READ displayUnitLabel NOTIFY displayUnitChanged)
     Q_PROPERTY(QString languageSummary READ languageSummary NOTIFY languageChanged)
@@ -775,12 +778,35 @@ public:
     int m_prune_size_gb{2};
     QString m_data_dir{QStringLiteral("/tmp/bitcoin-default")};
     QString m_custom_data_dir{QStringLiteral("/tmp/bitcoin-custom")};
+    QString m_data_dir_error;
 
     QString getDefaultDataDirString() const { return QStringLiteral("/tmp/bitcoin-default"); }
+    QUrl getDefaultDataDirectory() const { return QUrl::fromLocalFile(getDefaultDataDirString()); }
     Q_INVOKABLE QString getCustomDataDirString() const { return m_custom_data_dir; }
     Q_INVOKABLE void setCustomDataDirString(const QString& dir) { m_custom_data_dir = dir; }
-    Q_INVOKABLE void setCustomDataDirArgs(const QString& dir) { m_data_dir = dir; }
-    Q_INVOKABLE void onboard() {}
+    Q_INVOKABLE bool setCustomDataDirArgs(const QString& dir)
+    {
+        if (dir.isEmpty()) {
+            m_data_dir_error = QStringLiteral("Select a data directory.");
+            Q_EMIT dataDirErrorChanged();
+            return false;
+        }
+        QUrl url(dir);
+        m_custom_data_dir = url.isLocalFile() ? url.toLocalFile() : dir;
+        m_data_dir = m_custom_data_dir;
+        m_data_dir_error.clear();
+        Q_EMIT customDataDirStringChanged(m_custom_data_dir);
+        Q_EMIT dataDirChanged();
+        Q_EMIT dataDirErrorChanged();
+        return true;
+    }
+    Q_INVOKABLE bool validateDataDirSelection()
+    {
+        m_data_dir_error.clear();
+        Q_EMIT dataDirErrorChanged();
+        return true;
+    }
+    Q_INVOKABLE bool onboard() { return true; }
 
     int displayUnit() const { return m_displayUnit; }
     void setDisplayUnit(int u) {
@@ -811,7 +837,9 @@ Q_SIGNALS:
     void serverChanged();
     void pruneChanged();
     void pruneSizeGBChanged();
+    void customDataDirStringChanged(QString dir);
     void dataDirChanged();
+    void dataDirErrorChanged();
     void displayUnitChanged(int unit);
     void languageChanged();
 
