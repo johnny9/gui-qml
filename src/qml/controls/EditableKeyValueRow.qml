@@ -33,39 +33,41 @@ Item {
     implicitHeight: 36
 
     RowLayout {
+        id: row
         anchors.fill: parent
         spacing: 10
 
         CoreText {
             objectName: root.keyObjectName
             Layout.preferredWidth: root.keyWidth
+            Layout.alignment: Qt.AlignVCenter
             text: root.label
             color: Theme.color.neutral7
             font.pixelSize: 18
-            font.styleName: "Regular"
+            fontStyleName: "Regular"
             horizontalAlignment: Text.AlignLeft
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.NoWrap
         }
 
-        Item {
-            Layout.fillWidth: true
-        }
-
         Loader {
+            id: editLoader
+            Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
             active: root.editing
             visible: active
             sourceComponent: RowLayout {
+                width: editLoader.width
                 spacing: 8
 
                 TextField {
                     objectName: root.editFieldObjectName
+                    Layout.fillWidth: true
                     Layout.preferredWidth: root.fieldWidth
                     implicitHeight: 36
                     text: root.editValue
                     color: Theme.color.neutral9
-                    font.family: "Inter"
+                    font.family: Theme.text.family
                     font.styleName: "Regular"
                     font.pixelSize: 18
                     leftPadding: 12
@@ -104,21 +106,26 @@ Item {
         }
 
         Loader {
+            id: displayLoader
+            Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
             active: !root.editing
             visible: active
             sourceComponent: RowLayout {
+                width: displayLoader.width
                 spacing: 6
 
                 CoreText {
                     objectName: root.valueObjectName
+                    Layout.fillWidth: true
                     text: root.displayValue
                     color: Theme.color.neutral9
                     font.pixelSize: 18
-                    font.styleName: "Regular"
+                    fontStyleName: "Regular"
                     horizontalAlignment: Text.AlignRight
                     verticalAlignment: Text.AlignVCenter
-                    wrapMode: Text.WordWrap
+                    elide: Text.ElideRight
+                    wrapMode: Text.NoWrap
                 }
 
                 ActionButton {
