@@ -23,7 +23,7 @@ InformationPage {
         objectName: "mempoolInformationHeader"
         headerBold: true
         headerSize: 18
-        header: qsTr("Mempool information")
+        header: qsTr("Mempool Information")
     }
 
     bannerActive: false

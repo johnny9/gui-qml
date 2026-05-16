@@ -181,7 +181,7 @@ PageStack {
                     id: gotoMempoolInformation
                     objectName: "settingsMempoolInformation"
                     Layout.fillWidth: true
-                    header: qsTr("Mempool information")
+                    header: qsTr("Mempool Information")
                     actionItem: CaretRightIcon {
                         color: gotoMempoolInformation.stateColor
                     }
