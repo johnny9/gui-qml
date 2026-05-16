@@ -600,6 +600,9 @@ PageStack {
                                     status: delegate.status
                                     address: delegate.address
                                     label: delegate.label
+                                    paymentRequests: walletController.selectedWallet
+                                        ? walletController.selectedWallet.receiveRequests.matchingEntriesForAddress(delegate.address)
+                                        : []
                                 }
                             }
 

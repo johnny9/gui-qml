@@ -8,6 +8,7 @@
 #include <qml/models/walletqmlmodel.h>
 
 #include <QDateTime>
+#include <QVariantList>
 
 ActivityListModel::ActivityListModel(WalletQmlModel *parent)
     : QAbstractListModel(parent)
@@ -134,6 +135,9 @@ QVariantMap ActivityListModel::transactionDetails(const QString& txid) const
         if (tx->txid == txid) {
             updateTransactionStatus(tx);
             updateTransactionLabel(tx);
+            const QVariantList payment_requests = m_wallet_model && m_wallet_model->receiveRequests()
+                ? m_wallet_model->receiveRequests()->matchingEntriesForAddress(tx->address)
+                : QVariantList{};
             return {
                 {"txid", tx->txid},
                 {"canBump", m_wallet_model ? m_wallet_model->canBumpTransaction(tx->hash) : false},
@@ -144,7 +148,8 @@ QVariantMap ActivityListModel::transactionDetails(const QString& txid) const
                 {"type", tx->type},
                 {"status", tx->status},
                 {"address", tx->address},
-                {"label", tx->label}
+                {"label", tx->label},
+                {"paymentRequests", payment_requests}
             };
         }
     }

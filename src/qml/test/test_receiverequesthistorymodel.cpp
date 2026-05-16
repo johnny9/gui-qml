@@ -17,6 +17,8 @@
 #include <vector>
 
 #include <QDateTime>
+#include <QVariantList>
+#include <QVariantMap>
 
 namespace {
 QmlRecentRequestEntry MakeEntry(int64_t id, const std::string& address, CAmount amount,
@@ -52,6 +54,7 @@ private Q_SLOTS:
     void prependInsertsNewRow();
     void removeByRequestIdRemovesRow();
     void entryByIdLookup();
+    void matchingEntriesForAddressReturnsAllMatches();
     void maxIdReturnsHighest();
     void deserializeTruncatedBlob();
     void formatAmountBtcEdgeCases();
@@ -174,6 +177,34 @@ void ReceiveRequestHistoryModelTests::entryByIdLookup()
     QVERIFY(hit.has_value());
     QCOMPARE(hit->recipient.label, std::string{"lbl"});
     QVERIFY(!model.entryById("nope").has_value());
+}
+
+void ReceiveRequestHistoryModelTests::matchingEntriesForAddressReturnsAllMatches()
+{
+    const std::string target{"1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"};
+    ReceiveRequestHistoryModel model;
+    model.setEntries({
+        MakeEntry(1, target, 1000, "older"),
+        MakeEntry(2, "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", 2000, "other"),
+        MakeEntry(3, target, 3000, "newer", "memo", "self"),
+    });
+
+    const QVariantList matches = model.matchingEntriesForAddress(QString::fromStdString(target));
+    QCOMPARE(matches.size(), 2);
+
+    const QVariantMap first{matches.at(0).toMap()};
+    QCOMPARE(first.value(QStringLiteral("requestId")).toString(), QStringLiteral("3"));
+    QCOMPARE(first.value(QStringLiteral("label")).toString(), QStringLiteral("newer"));
+    QCOMPARE(first.value(QStringLiteral("message")).toString(), QStringLiteral("memo"));
+    QCOMPARE(first.value(QStringLiteral("noteSelf")).toString(), QStringLiteral("self"));
+    QCOMPARE(first.value(QStringLiteral("amountSat")).toLongLong(), qlonglong{3000});
+    QCOMPARE(first.value(QStringLiteral("amountDisplay")).toString(), QStringLiteral("0.00003000"));
+    QCOMPARE(first.value(QStringLiteral("address")).toString(), QString::fromStdString(target));
+
+    const QVariantMap second{matches.at(1).toMap()};
+    QCOMPARE(second.value(QStringLiteral("requestId")).toString(), QStringLiteral("1"));
+    QCOMPARE(second.value(QStringLiteral("label")).toString(), QStringLiteral("older"));
+    QVERIFY(model.matchingEntriesForAddress(QStringLiteral("not-this-address")).isEmpty());
 }
 
 void ReceiveRequestHistoryModelTests::maxIdReturnsHighest()

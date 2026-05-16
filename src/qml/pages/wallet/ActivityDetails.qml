@@ -28,12 +28,14 @@ Page {
     property int depth: 0
     property int type: 0
     property int status: 0
+    property var paymentRequests: []
+    readonly property int paymentRequestCount: root.paymentRequests ? root.paymentRequests.length : 0
 
     property color iconColor: {
-        if (delegate.status == Transaction.Confirmed) {
-            if (delegate.type == Transaction.RecvWithAddress ||
-                delegate.type == Transaction.RecvFromOther ||
-                delegate.type == Transaction.Generated) {
+        if (root.status == Transaction.Confirmed) {
+            if (root.type == Transaction.RecvWithAddress ||
+                root.type == Transaction.RecvFromOther ||
+                root.type == Transaction.Generated) {
                 Theme.color.green
             } else {
                 Theme.color.orange
@@ -43,9 +45,9 @@ Page {
         }
     }
     property color amountColor: {
-        if (delegate.type == Transaction.RecvWithAddress
-            || delegate.type == Transaction.RecvFromOther
-            || delegate.type == Transaction.Generated) {
+        if (root.type == Transaction.RecvWithAddress
+            || root.type == Transaction.RecvFromOther
+            || root.type == Transaction.Generated) {
             Theme.color.green
         } else {
             Theme.color.neutral9
@@ -53,6 +55,32 @@ Page {
     }
 
     background: null
+
+    function paymentRequestTitle(request) {
+        if (request && request.label && request.label.length > 0) {
+            return request.label
+        }
+        return qsTr("Payment request")
+    }
+
+    function paymentRequestSubtitle(request) {
+        var amount = request && request.amountDisplay && request.amountDisplay.length > 0
+            ? request.amountDisplay
+            : qsTr("No amount")
+        if (request && request.date && request.date.length > 0) {
+            return amount + " - " + request.date
+        }
+        return amount
+    }
+
+    function openPaymentRequestDetail(requestId) {
+        if (!walletController.selectedWallet || !root.StackView.view || requestId.length === 0) {
+            return
+        }
+        if (walletController.selectedWallet.loadPaymentRequestDetail(requestId)) {
+            root.StackView.view.push(paymentRequestDetailPage)
+        }
+    }
 
     header: NavigationBar2 {
         id: navbar
@@ -200,6 +228,89 @@ Page {
                 }
             }
 
+            ColumnLayout {
+                id: paymentRequestsSection
+                objectName: "activityDetailsPaymentRequestsSection"
+                visible: root.paymentRequestCount > 0
+                Layout.fillWidth: true
+                Layout.bottomMargin: 20
+                spacing: 0
+
+                CoreText {
+                    objectName: "activityDetailsPaymentRequestsTitle"
+                    Layout.fillWidth: true
+                    Layout.bottomMargin: 8
+                    color: Theme.color.neutral7
+                    text: root.paymentRequestCount === 1 ? qsTr("Payment request") : qsTr("Payment requests")
+                    font.pixelSize: 15
+                }
+
+                Repeater {
+                    model: root.paymentRequests
+
+                    delegate: ItemDelegate {
+                        id: paymentRequestDelegate
+                        required property int index
+                        required property var modelData
+
+                        objectName: "activityDetailsPaymentRequest_" + paymentRequestDelegate.index
+                        Layout.fillWidth: true
+                        leftPadding: 0
+                        rightPadding: 0
+                        hoverEnabled: AppMode.isDesktop
+                        background: Item {
+                            Rectangle {
+                                anchors.fill: parent
+                                color: paymentRequestDelegate.hovered ? Theme.color.neutral1 : "transparent"
+                                radius: 4
+                            }
+                        }
+                        onClicked: root.openPaymentRequestDetail(paymentRequestDelegate.modelData.requestId
+                            ? String(paymentRequestDelegate.modelData.requestId)
+                            : "")
+
+                        contentItem: RowLayout {
+                            spacing: 10
+
+                            Icon {
+                                Layout.alignment: Qt.AlignVCenter
+                                source: "qrc:/icons/triangle-down"
+                                color: Theme.color.purple
+                                size: 14
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                CoreText {
+                                    objectName: "activityDetailsPaymentRequestTitle_" + paymentRequestDelegate.index
+                                    Layout.fillWidth: true
+                                    text: root.paymentRequestTitle(paymentRequestDelegate.modelData)
+                                    color: paymentRequestDelegate.hovered ? Theme.color.orange : Theme.color.neutral9
+                                    font.pixelSize: 16
+                                    elide: Text.ElideRight
+                                }
+
+                                CoreText {
+                                    objectName: "activityDetailsPaymentRequestSubtitle_" + paymentRequestDelegate.index
+                                    Layout.fillWidth: true
+                                    text: root.paymentRequestSubtitle(paymentRequestDelegate.modelData)
+                                    color: Theme.color.neutral7
+                                    font.pixelSize: 14
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            CaretRightIcon {
+                                Layout.alignment: Qt.AlignVCenter
+                                color: paymentRequestDelegate.hovered ? Theme.color.orange : Theme.color.neutral7
+                            }
+                        }
+                    }
+                }
+            }
+
             InfoBanner {
                 objectName: "speedUpBanner"
                 visible: root.canBump
@@ -214,6 +325,11 @@ Page {
             }
 
         }
+    }
+
+    Component {
+        id: paymentRequestDetailPage
+        PaymentRequestDetail {}
     }
 
     InfoBanner {

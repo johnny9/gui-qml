@@ -67,6 +67,23 @@ QVariant ReceiveRequestHistoryModel::dataForEntry(const QmlRecentRequestEntry& e
     return {};
 }
 
+QVariantMap ReceiveRequestHistoryModel::entryMap(const QmlRecentRequestEntry& entry) const
+{
+    return {
+        {QStringLiteral("requestId"), dataForEntry(entry, IdRole)},
+        {QStringLiteral("date"), dataForEntry(entry, DateRole)},
+        {QStringLiteral("dateIso"), dataForEntry(entry, DateIsoRole)},
+        {QStringLiteral("address"), dataForEntry(entry, AddressRole)},
+        {QStringLiteral("addressShort"), dataForEntry(entry, AddressShortRole)},
+        {QStringLiteral("label"), dataForEntry(entry, LabelRole)},
+        {QStringLiteral("message"), dataForEntry(entry, MessageRole)},
+        {QStringLiteral("noteSelf"), dataForEntry(entry, NoteSelfRole)},
+        {QStringLiteral("amountSat"), dataForEntry(entry, AmountSatRole)},
+        {QStringLiteral("amountDisplay"), dataForEntry(entry, AmountDisplayRole)},
+        {QStringLiteral("uri"), dataForEntry(entry, UriRole)},
+    };
+}
+
 QHash<int, QByteArray> ReceiveRequestHistoryModel::roleNames() const
 {
     return {
@@ -131,6 +148,18 @@ bool ReceiveRequestHistoryModel::removeByRequestId(const QString& request_id)
     endRemoveRows();
     Q_EMIT countChanged();
     return true;
+}
+
+QVariantList ReceiveRequestHistoryModel::matchingEntriesForAddress(const QString& address) const
+{
+    QVariantList matches;
+    if (address.isEmpty()) return matches;
+    for (const auto& entry : m_entries) {
+        if (QString::fromStdString(entry.recipient.address) == address) {
+            matches.append(entryMap(entry));
+        }
+    }
+    return matches;
 }
 
 std::optional<QmlRecentRequestEntry> ReceiveRequestHistoryModel::entryById(const QString& request_id) const

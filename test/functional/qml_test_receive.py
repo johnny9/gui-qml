@@ -6,8 +6,8 @@
 
 Covers issue #518 acceptance criteria: creating a receive request stores
 a real address + metadata, shows the QR inline (lock-on-generate), the
-request appears as a pending entry in the Activity list, clicking it
-opens the PaymentRequestDetail page, and history survives a GUI restart.
+matching request metadata remains reachable from fulfilled Activity
+transactions, and history survives a GUI restart.
 
 This test requires:
   - bitcoin-core-app built with -DENABLE_TEST_AUTOMATION=ON
@@ -20,10 +20,11 @@ import signal
 import subprocess
 import sys
 import time
+from urllib.parse import urlparse
 
 from qml_driver import QmlDriver, QmlDriverError
 from qml_test_harness import GUI_STARTUP_TIMEOUT, dump_qml_tree
-from qml_wallet_test_lib import WalletFlowHarness, rpc_call
+from qml_wallet_test_lib import WalletFlowHarness, rpc_call, wait_for_rpc
 
 
 WALLET_NAME = "receive_requests"
@@ -46,6 +47,8 @@ def _stop_gui(harness):
 def _relaunch_gui(harness):
     env = dict(os.environ)
     env["QT_QPA_PLATFORM"] = "offscreen"
+    os.makedirs(harness.config_home, exist_ok=True)
+    env["XDG_CONFIG_HOME"] = harness.config_home
     args = [
         harness.gui_binary,
         f"-datadir={harness.gui_datadir}",
@@ -103,6 +106,21 @@ def _open_activity(gui):
     time.sleep(0.5)
 
 
+def _address_from_bip21(uri):
+    parsed = urlparse(uri)
+    assert parsed.scheme == "bitcoin", f"Unexpected BIP21 scheme: {uri!r}"
+    assert parsed.path, f"BIP21 URI missing address: {uri!r}"
+    return parsed.path
+
+
+def _mine_to_address(harness, address):
+    wait_for_rpc(harness.gui_rpc_port)
+    blocks = rpc_call(harness.gui_rpc_port, "generatetoaddress", [1, address])
+    assert len(blocks) == 1, f"Expected one generated block, got {blocks!r}"
+    block = rpc_call(harness.gui_rpc_port, "getblock", [blocks[0]])
+    return block["tx"][0]
+
+
 def _create_request(gui, amount, label, message):
     """Fill the form and click Generate QR. Stays on the same page (lock-on-generate)."""
     gui.set_text("requestPaymentAmountInput", amount)
@@ -141,10 +159,20 @@ def run_test():
         assert "Generate payment request" in button_text, f"Expected 'Generate payment request' after clear, got: {button_text!r}"
         print("[qml_receive_requests] form reset to editing state")
 
-        # Switch to Activity and verify pending request appears
+        # Fulfill the request and verify the transaction links back to request metadata.
+        request_address = _address_from_bip21(qr_code)
+        txid = _mine_to_address(harness, request_address)
+        print(f"[qml_receive_requests] mined block to request address; txid: {txid}")
+
         _open_activity(gui)
-        time.sleep(1)
-        print("[qml_receive_requests] switched to Activity tab")
+        activity_item_name = f"activityItem_{txid}"
+        gui.wait_for_property(activity_item_name, "visible", True, timeout_ms=30000)
+        gui.click(activity_item_name)
+        gui.wait_for_property("activityDetailsPaymentRequestsSection", "visible", True, timeout_ms=10000)
+        gui.wait_for_property("activityDetailsPaymentRequest_0", "visible", True, timeout_ms=10000)
+        gui.click("activityDetailsPaymentRequest_0")
+        gui.wait_for_page("paymentRequestDetailPage", timeout_ms=10000)
+        print("[qml_receive_requests] fulfilled transaction links to payment request detail")
 
         # Restart and verify persistence
         _stop_gui(harness)

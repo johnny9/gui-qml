@@ -15,6 +15,8 @@
 
 #include <QAbstractListModel>
 #include <QString>
+#include <QVariantList>
+#include <QVariantMap>
 
 class ReceiveRequestHistoryModel : public QAbstractListModel
 {
@@ -47,6 +49,7 @@ public:
     void setEntries(std::vector<QmlRecentRequestEntry>&& entries);
     void prependOrReplace(const QmlRecentRequestEntry& entry);
     bool removeByRequestId(const QString& request_id);
+    Q_INVOKABLE QVariantList matchingEntriesForAddress(const QString& address) const;
 
     std::optional<QmlRecentRequestEntry> entryById(const QString& request_id) const;
     int64_t maxId() const;
@@ -62,6 +65,7 @@ Q_SIGNALS:
 private:
     int indexOfId(int64_t id) const;
     QVariant dataForEntry(const QmlRecentRequestEntry& entry, int role) const;
+    QVariantMap entryMap(const QmlRecentRequestEntry& entry) const;
 
     std::vector<QmlRecentRequestEntry> m_entries;
 };
