@@ -11,8 +11,9 @@ Button {
     hoverEnabled: AppMode.isDesktop
 
     property bool bold: false
-    property int textFontPixelSize: 18
-    property string textFontStyleName: bold ? "Semi Bold" : "Medium"
+    property var textStyle: bold ? Theme.text.buttonStrong : Theme.text.button
+    property int textFontPixelSize: textStyle.pixelSize
+    property string textFontStyleName: textStyle.styleName
 
     contentItem: CoreText {
         text: parent.text

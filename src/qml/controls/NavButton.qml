@@ -12,9 +12,10 @@ AbstractButton {
     id: root
     property int iconHeight: 30
     property int iconWidth: 30
-    property int textSize: 18
+    property var textStyle: Theme.text.button
+    property int textSize: textStyle.pixelSize
     property int textFontPixelSize: textSize
-    property string textFontStyleName: "Medium"
+    property string textFontStyleName: textStyle.styleName
     property url iconSource: ""
     property Rectangle iconBackground: null
     property color iconColor: enabled ? Theme.color.neutral9 : Theme.color.neutral2

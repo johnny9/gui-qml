@@ -219,6 +219,20 @@ Control {
             lineHeight: 19
         }
 
+        // Controls
+        readonly property TextStyle button: TextStyle {
+            family: textSetRoot.family
+            styleName: "Regular"
+            pixelSize: 18
+            lineHeight: 22
+        }
+        readonly property TextStyle buttonStrong: TextStyle {
+            family: textSetRoot.family
+            styleName: "Semi Bold"
+            pixelSize: 18
+            lineHeight: 22
+        }
+
         // Mono — Roboto Mono Regular
         readonly property TextStyle monoLead: TextStyle {
             family: textSetRoot.monoFamily
