@@ -28,7 +28,7 @@ ColumnLayout {
         actionItem: CoreText {
             text: Number(nodeModel.mempoolTransactionCount).toLocaleString(Qt.locale(), 'f', 0)
             color: Theme.color.neutral7
-            font.pixelSize: 15
+            font.pixelSize: 18
             fontStyleName: "Regular"
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
@@ -49,7 +49,7 @@ ColumnLayout {
                 .arg(root.formatMegabytes(nodeModel.mempoolUsageMB))
                 .arg(root.formatMegabytes(nodeModel.mempoolMaxUsageMB))
             color: Theme.color.neutral7
-            font.pixelSize: 15
+            font.pixelSize: 18
             fontStyleName: "Regular"
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
@@ -73,7 +73,6 @@ ColumnLayout {
         actionItem: ValueInput {
             parentState: mempoolLimitSetting.state
             description: optionsModel.maxMempoolSizeMB
-            descriptionSize: 15
             validator: QtQuickBase.IntValidator {
                 bottom: optionsModel.minMaxMempoolSizeMB
                 top: optionsModel.maxMaxMempoolSizeMB
