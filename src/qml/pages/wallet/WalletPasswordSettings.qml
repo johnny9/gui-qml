@@ -24,6 +24,20 @@ Page {
 
     background: null
 
+    function clearField(field) {
+        if (!field || field.text.length === 0) {
+            return
+        }
+        field.text = Array(field.text.length + 1).join(" ")
+        field.text = ""
+    }
+
+    function clearPasswordFields() {
+        clearField(currentPassword)
+        clearField(newPassword)
+        clearField(confirmPassword)
+    }
+
     header: NavigationBar2 {
         leftItem: NavButton {
             objectName: "walletPasswordBackButton"
@@ -42,6 +56,12 @@ Page {
     Component.onCompleted: {
         if (root.wallet) root.wallet.clearSettingsError()
         root.errorText = ""
+    }
+    Component.onDestruction: root.clearPasswordFields()
+    onVisibleChanged: {
+        if (!visible) {
+            root.clearPasswordFields()
+        }
     }
 
     Connections {
@@ -176,15 +196,18 @@ Page {
                     ? root.wallet.changeWalletPassphrase(currentPassword.text, newPassword.text)
                     : root.wallet.encryptWallet(newPassword.text)
                 if (ok) {
-                    currentPassword.text = ""
-                    newPassword.text = ""
-                    confirmPassword.text = ""
+                    root.clearPasswordFields()
                     if (!root.updating && acknowledgement.loadedItem) {
                         acknowledgement.loadedItem.checked = false
                     }
                     root.saved()
                 } else {
                     root.errorText = root.wallet ? root.wallet.settingsError : ""
+                    if (root.updating) {
+                        root.clearField(currentPassword)
+                    } else {
+                        root.clearPasswordFields()
+                    }
                 }
             }
         }

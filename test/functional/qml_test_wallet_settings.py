@@ -311,6 +311,72 @@ def case_subpages_close_when_wallet_becomes_unselected(harness, checkpoints):
     checkpoints.checkpoint("wallet reselected from settings page", gui)
 
 
+def case_password_page_closes_when_selected_wallet_changes(harness, checkpoints):
+    wallet_names = ["settings_password_alpha_wallet", "settings_password_beta_wallet"]
+
+    for wallet_name in wallet_names:
+        prepare_managed_wallet(harness, wallet_name, WALLET_PASSWORD)
+    checkpoints.checkpoint("two managed wallets prepared")
+
+    harness.start_gui(reset_gui_settings=True)
+    gui = harness.driver
+    checkpoints.checkpoint("GUI launched", gui)
+    harness.finish_onboarding()
+    checkpoints.checkpoint("onboarding completed", gui)
+    dismiss_create_wallet_wizard(gui)
+
+    for wallet_name in wallet_names:
+        load_wallet(gui, harness, wallet_name)
+    select_wallet(gui, wallet_names[0])
+    gui.wait_for_property("walletBadge", "text", wallet_names[0], timeout_ms=20000)
+    checkpoints.checkpoint("first wallet selected", gui)
+
+    open_wallet_settings(gui)
+    gui.click("walletSettingsPasswordRow")
+    gui.wait_for_page("walletPasswordSettingsPage", timeout_ms=10000)
+    checkpoints.checkpoint("password subpage opened for first wallet", gui)
+
+    select_wallet(gui, wallet_names[1])
+    gui.wait_for_page("walletSettingsPage", timeout_ms=10000)
+    gui.wait_for_property("walletBadge", "text", wallet_names[1], timeout_ms=20000)
+    checkpoints.checkpoint("password subpage unwound after selecting second wallet", gui)
+
+
+def case_wrong_current_password_clears_current_field(harness, checkpoints):
+    wallet_name = "settings_password_clear_wallet"
+    new_password = "another correct horse battery staple"
+
+    prepare_managed_wallet(harness, wallet_name, WALLET_PASSWORD)
+    checkpoints.checkpoint("managed wallet fixture prepared")
+
+    harness.start_gui(reset_gui_settings=True)
+    gui = harness.driver
+    checkpoints.checkpoint("GUI launched", gui)
+    harness.finish_onboarding()
+    checkpoints.checkpoint("onboarding completed", gui)
+    dismiss_create_wallet_wizard(gui)
+    load_wallet(gui, harness, wallet_name)
+    checkpoints.checkpoint("managed wallet loaded", gui)
+
+    open_wallet_settings(gui)
+    gui.click("walletSettingsPasswordRow")
+    gui.wait_for_page("walletPasswordSettingsPage", timeout_ms=10000)
+
+    gui.set_text("walletPasswordCurrentField", "wrong password")
+    gui.set_text("walletPasswordNewField", new_password)
+    gui.set_text("walletPasswordConfirmField", new_password)
+    gui.wait_for_property("walletPasswordSaveButton", "enabled", True, timeout_ms=5000)
+    gui.click("walletPasswordSaveButton")
+    gui.wait_for_property(
+        "walletPasswordErrorText",
+        "text",
+        lambda text: "incorrect" in text.lower(),
+        timeout_ms=10000,
+    )
+    assert gui.get_text("walletPasswordCurrentField") == "", "Current password field should be cleared after failure"
+    checkpoints.checkpoint("wrong current password rejected and cleared", gui)
+
+
 def run_test(args):
     screenshot_root = None
     if args.save_screenshots:
@@ -321,6 +387,8 @@ def run_test(args):
         ("qml_wallet_settings_rename", 400, case_rename_persists_across_restart),
         ("qml_wallet_settings_backup", 410, case_backup_uses_automation_path),
         ("qml_wallet_settings_subpage_close", 420, case_subpages_close_when_wallet_becomes_unselected),
+        ("qml_wallet_settings_password_context_change", 430, case_password_page_closes_when_selected_wallet_changes),
+        ("qml_wallet_settings_password_failure_clears_current", 440, case_wrong_current_password_clears_current_field),
     ]
 
     exit_code = 0

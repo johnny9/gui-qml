@@ -53,9 +53,7 @@ PageStack {
             root.openWalletSettings()
         }
         function onSelectedWalletChanged() {
-            if (!walletController.selectedWallet || walletController.selectedWallet.name.length === 0) {
-                root.closeWalletSettingsSubpage()
-            }
+            root.closeWalletSettingsSubpage()
         }
         function onIsWalletLoadedChanged() {
             if (!walletController.isWalletLoaded) {
