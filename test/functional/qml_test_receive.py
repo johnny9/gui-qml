@@ -5,9 +5,9 @@
 """End-to-end GUI test for the Receive Requests flow.
 
 Covers issue #518 acceptance criteria: creating a receive request stores
-a real address + metadata, shows the QR inline (lock-on-generate), the
-matching request metadata remains reachable from fulfilled Activity
-transactions, and history survives a GUI restart.
+a real address + metadata, exposes the QR through an explicit button, matching
+request metadata remains reachable from fulfilled Activity transactions, and
+history survives a GUI restart.
 
 This test requires:
   - bitcoin-core-app built with -DENABLE_TEST_AUTOMATION=ON
@@ -131,6 +131,16 @@ def _create_request(gui, amount, label, message):
     gui.wait_for_property("requestHistoryCount", "count", before + 1, timeout_ms=20000)
 
 
+def _request_qr_payload(gui):
+    gui.wait_for_property("requestPaymentQRButton", "visible", True, timeout_ms=10000)
+    gui.click("requestPaymentQRButton")
+    gui.wait_for_property("requestPaymentQRPopup", "opened", True, timeout_ms=10000)
+    payload = gui.get_property("requestPaymentQRPopup", "code")
+    gui.click("requestPaymentQRPopupCloseButton")
+    gui.wait_for_property("requestPaymentQRPopup", "opened", False, timeout_ms=10000)
+    return payload
+
+
 def run_test():
     harness = WalletFlowHarness("qml_receive_requests", port_offset=70)
     try:
@@ -138,14 +148,14 @@ def run_test():
         gui = _import_wallet(harness)
         _open_receive(gui)
 
-        # Create first request — verify QR appears inline (lock-on-generate)
+        # Create first request — verify QR is available from the generated-state button.
         _create_request(gui, "0.0001", "Alice", "pizza")
-        qr_code = gui.get_property("requestPaymentQRCode", "code")
+        qr_code = _request_qr_payload(gui)
         assert qr_code.startswith("bitcoin:"), f"QR payload missing BIP21 prefix: {qr_code!r}"
         assert "amount=0.00010000" in qr_code, f"QR payload missing amount: {qr_code!r}"
         assert "label=Alice" in qr_code, f"QR payload missing label: {qr_code!r}"
         assert "message=pizza" in qr_code, f"QR payload missing message: {qr_code!r}"
-        print(f"[qml_receive_requests] created request with inline QR: {qr_code}")
+        print(f"[qml_receive_requests] created request with QR popup payload: {qr_code}")
 
         # Verify the "Generate QR" button now says "New request"
         button_text = gui.get_text("requestPaymentGenerateButton")
@@ -186,7 +196,7 @@ def run_test():
 
         # Create a second request
         _create_request(gui, "0.005", "Bob", "coffee")
-        qr_code2 = gui.get_property("requestPaymentQRCode", "code")
+        qr_code2 = _request_qr_payload(gui)
         assert "amount=0.00500000" in qr_code2, f"Second QR missing amount: {qr_code2!r}"
         assert "label=Bob" in qr_code2, f"Second QR missing label: {qr_code2!r}"
         gui.wait_for_property("requestHistoryCount", "count", 2, timeout_ms=20000)

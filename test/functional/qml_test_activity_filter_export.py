@@ -13,7 +13,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 from qml_test_harness import dump_qml_tree
-from qml_test_receive import WALLET_NAME, _create_request, _import_wallet, _open_receive
+from qml_test_receive import WALLET_NAME, _create_request, _import_wallet, _open_receive, _request_qr_payload
 from qml_wallet_test_lib import WalletFlowHarness, rpc_call, wait_for_rpc
 
 
@@ -154,7 +154,7 @@ def run_test(save_screenshots=False, screenshot_root=None):
         checkpoints.checkpoint("receive page opened", gui)
 
         _create_request(gui, "0.0001", "Alice", "pizza")
-        payment_request_uri = gui.get_property("requestPaymentQRCode", "code")
+        payment_request_uri = _request_qr_payload(gui)
         payment_request_address = _address_from_bip21(payment_request_uri)
         checkpoints.checkpoint("payment request created", gui)
 

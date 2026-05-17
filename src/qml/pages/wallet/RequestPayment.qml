@@ -841,6 +841,7 @@ Page {
 
                     onClicked: qrPopup.open()
                 }
+
             }
 
             Item {

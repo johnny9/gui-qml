@@ -15,6 +15,7 @@ Popup {
 
     property string code: ""
     property string label: ""
+    readonly property string objectNamePrefix: root.objectName.length > 0 ? root.objectName : "qrCodePopup"
     signal copyRequested()
 
     anchors.centerIn: Overlay.overlay
@@ -67,6 +68,7 @@ Popup {
 
             IconButton {
                 id: closeButton
+                objectName: root.objectNamePrefix + "CloseButton"
                 anchors.right: parent.right
                 iconSource: "image://images/cross"
                 Accessible.name: qsTr("Close")
@@ -77,6 +79,7 @@ Popup {
 
         QRImage {
             id: qrImage
+            objectName: root.objectNamePrefix + "Image"
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: 280
             Layout.preferredHeight: 280
@@ -90,6 +93,7 @@ Popup {
             spacing: 10
 
             OutlineButton {
+                objectName: root.objectNamePrefix + "DownloadButton"
                 Layout.fillWidth: true
                 Layout.preferredWidth: 0
                 text: qsTr("Download")
@@ -97,6 +101,7 @@ Popup {
             }
 
             OutlineButton {
+                objectName: root.objectNamePrefix + "CopyButton"
                 Layout.fillWidth: true
                 Layout.preferredWidth: 0
                 text: qsTr("Copy")
