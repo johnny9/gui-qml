@@ -236,15 +236,6 @@ Page {
                 Layout.bottomMargin: 20
                 spacing: 0
 
-                CoreText {
-                    objectName: "activityDetailsPaymentRequestsTitle"
-                    Layout.fillWidth: true
-                    Layout.bottomMargin: 8
-                    color: Theme.color.neutral7
-                    text: root.paymentRequestCount === 1 ? qsTr("Payment request") : qsTr("Payment requests")
-                    font.pixelSize: 15
-                }
-
                 Repeater {
                     model: root.paymentRequests
 
