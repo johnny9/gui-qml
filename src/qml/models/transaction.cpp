@@ -48,10 +48,15 @@ Transaction::Transaction(uint256 hash, qint64 time)
 {
 }
 
+CAmount Transaction::netAmount() const
+{
+    return credit + debit;
+}
+
 QString Transaction::prettyAmount(int display_unit) const
 {
-    CAmount net = credit - debit;
-    bool plus_sign = (net > 0);
+    const CAmount net = netAmount();
+    const bool plus_sign = (net > 0);
     QmlBitcoinUnits::Unit unit = (display_unit == 1)
         ? QmlBitcoinUnits::Unit::SAT
         : QmlBitcoinUnits::Unit::BTC;

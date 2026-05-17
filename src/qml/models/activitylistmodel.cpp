@@ -96,7 +96,7 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
     case RequestIdRole:
         return tx->requestId;
     case NetAmountSatRole:
-        return QVariant::fromValue<qlonglong>(tx->credit + tx->debit);
+        return QVariant::fromValue<qlonglong>(tx->netAmount());
     default:
         return QVariant();
     }

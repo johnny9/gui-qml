@@ -68,6 +68,7 @@ class TransactionTests : public QObject
 private Q_SLOTS:
     void initTestCase();
     void fromWalletTx_hidesSenderChangeOutput();
+    void fromWalletTx_mixedDebitKeepsNegativeNetAmount();
     void fromWalletTx_showsIncomingPaymentToChangeAddress();
 };
 
@@ -92,6 +93,28 @@ void TransactionTests::fromWalletTx_hidesSenderChangeOutput()
     QCOMPARE(parts.at(0)->idx, 0);
     QCOMPARE(parts.at(0)->debit, -71 * COIN_VALUE);
     QCOMPARE(parts.at(0)->credit, 0);
+    QCOMPARE(parts.at(0)->netAmount(), -71 * COIN_VALUE);
+    QCOMPARE(parts.at(0)->prettyAmount(), QStringLiteral("-71.00000000"));
+}
+
+void TransactionTests::fromWalletTx_mixedDebitKeepsNegativeNetAmount()
+{
+    const interfaces::WalletTx wtx = MakeWalletTx(
+        /*txin_is_mine=*/{ISMINE_SPENDABLE, ISMINE_NO},
+        /*output_values=*/{80 * COIN_VALUE},
+        /*txout_is_mine=*/{ISMINE_NO},
+        /*txout_is_change=*/{false},
+        /*debit=*/100 * COIN_VALUE);
+
+    const auto parts = Transaction::fromWalletTx(wtx);
+
+    QCOMPARE(parts.size(), 1);
+    QCOMPARE(parts.at(0)->type, Transaction::Other);
+    QCOMPARE(parts.at(0)->idx, 0);
+    QCOMPARE(parts.at(0)->debit, -100 * COIN_VALUE);
+    QCOMPARE(parts.at(0)->credit, 0);
+    QCOMPARE(parts.at(0)->netAmount(), -100 * COIN_VALUE);
+    QCOMPARE(parts.at(0)->prettyAmount(), QStringLiteral("-100.00000000"));
 }
 
 void TransactionTests::fromWalletTx_showsIncomingPaymentToChangeAddress()
@@ -111,6 +134,8 @@ void TransactionTests::fromWalletTx_showsIncomingPaymentToChangeAddress()
     QCOMPARE(parts.at(0)->idx, 0);
     QCOMPARE(parts.at(0)->debit, 0);
     QCOMPARE(parts.at(0)->credit, 5 * COIN_VALUE);
+    QCOMPARE(parts.at(0)->netAmount(), 5 * COIN_VALUE);
+    QCOMPARE(parts.at(0)->prettyAmount(), QStringLiteral("+5.00000000"));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN
