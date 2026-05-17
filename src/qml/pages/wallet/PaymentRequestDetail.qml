@@ -263,27 +263,26 @@ Page {
                 spacing: 10
 
                 Button {
-                    id: shareButton
-                    objectName: "paymentRequestDetailShare"
+                    id: editButton
+                    objectName: "paymentRequestDetailEdit"
                     Layout.fillWidth: true
-                    enabled: false
                     hoverEnabled: AppMode.isDesktop
                     implicitHeight: 46
-                    Accessible.name: qsTr("Share payment request")
+                    Accessible.name: qsTr("Edit payment request")
 
                     contentItem: RowLayout {
                         spacing: 6
                         Item { Layout.fillWidth: true }
                         Icon {
-                            source: "qrc:/icons/share"
-                            color: shareButton.enabled ? Theme.color.neutral9 : Theme.color.neutral5
+                            source: "qrc:/icons/edit"
+                            color: Theme.color.neutral9
                             size: 24
                         }
                         CoreText {
-                            text: qsTr("Share")
+                            text: qsTr("Edit")
                             bold: true
                             font.pixelSize: 18
-                            color: shareButton.enabled ? Theme.color.neutral9 : Theme.color.neutral5
+                            color: Theme.color.neutral9
                         }
                         Item { Layout.fillWidth: true }
                     }
@@ -293,9 +292,11 @@ Page {
                         color: Theme.color.background
                         radius: 5
                         border.width: 1
-                        border.color: shareButton.hovered && shareButton.enabled ? Theme.color.neutral9 : Theme.color.neutral6
+                        border.color: editButton.pressed ? Theme.color.orangeLight2 : editButton.hovered ? Theme.color.neutral9 : Theme.color.neutral6
                         Behavior on border.color { ColorAnimation { duration: 150 } }
                     }
+
+                    onClicked: root.editRequest()
                 }
 
                 Button {

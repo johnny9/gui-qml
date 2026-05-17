@@ -184,6 +184,10 @@ def run_test():
         gui.wait_for_property("activityDetailsPaymentRequest_0", "visible", True, timeout_ms=10000)
         gui.click("activityDetailsPaymentRequest_0")
         gui.wait_for_page("paymentRequestDetailPage", timeout_ms=10000)
+        gui.wait_for_property("paymentRequestDetailEdit", "visible", True, timeout_ms=10000)
+        gui.click("paymentRequestDetailEdit")
+        gui.wait_for_page("requestPaymentPage", timeout_ms=10000)
+        gui.wait_for_property("requestPaymentTitle", "text", "Payment request #1", timeout_ms=10000)
         print("[qml_receive_requests] fulfilled transaction links to payment request detail")
 
         # Restart and verify persistence
