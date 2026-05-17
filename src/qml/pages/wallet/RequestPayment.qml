@@ -136,7 +136,6 @@ Page {
                 Layout.fillWidth: true
                 Layout.topMargin: 30
                 Layout.bottomMargin: 20
-                implicitHeight: Math.max(titleText.implicitHeight, receiveOptionsButton.implicitHeight)
 
                 CoreText {
                     id: titleText
