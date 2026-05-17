@@ -276,7 +276,9 @@ Page {
                 Layout.fillWidth: true
                 Layout.maximumWidth: 600
                 Layout.topMargin: 20
-                bannerLayout: InfoBanner.Layout.Vertical
+                bannerLayout: root.paymentRequestCount > 0 ? InfoBanner.Layout.Horizontal : InfoBanner.Layout.Vertical
+                contentMargin: 18
+                contentSpacing: 10
                 message: qsTr("This transaction is still unconfirmed. You can speed it up by increasing the fee.")
                 primaryButtonText: qsTr("Speed up")
                 onPrimaryClicked: speedUpOverlay.open()
