@@ -6,12 +6,24 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtTest 1.2
 import "../../qml/controls/utils.js" as Utils
+import "../../qml/pages/wallet"
 
 TestCase {
     name: "RequestPayment"
     when: windowShown
-    width: 400
-    height: 200
+    width: 900
+    height: 700
+
+    Component {
+        id: requestPaymentComponent
+
+        RequestPayment {}
+    }
+
+    function init() {
+        testPaymentRequest.clear()
+        testWalletModel.lastCommitAddressType = ""
+    }
 
     function test_formatRelativeTime_empty() {
         compare(Utils.formatRelativeTime(""), "")
@@ -134,5 +146,29 @@ TestCase {
 
         field.text = "-100"
         compare(field.acceptableInput, false)
+    }
+
+    function test_addressTypeSelection_passes_selected_type_to_generation() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        const addressTypeToggle = findChild(page, "receiveOptionsAddressTypeToggle")
+        verify(addressTypeToggle !== null)
+        addressTypeToggle.checked = true
+
+        const picker = findChild(page, "receiveAddressTypePicker")
+        verify(picker !== null)
+        compare(page.showAddressTypeSelector, true)
+        page.selectedReceiveAddressType = "p2sh-segwit"
+        compare(picker.selectedLabel, "Base58 (P2SH-SegWit)")
+
+        const generateButton = findChild(page, "requestPaymentGenerateButton")
+        verify(generateButton !== null)
+        generateButton.clicked()
+
+        compare(testPaymentRequest.addressType, "p2sh-segwit")
+        compare(testWalletModel.lastCommitAddressType, "p2sh-segwit")
     }
 }

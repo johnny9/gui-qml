@@ -52,6 +52,7 @@ OptionPopup {
 
         EllipsisMenuToggleItem {
             id: addressTypeToggle
+            objectName: "receiveOptionsAddressTypeToggle"
             Layout.fillWidth: true
             text: qsTr("Address type")
         }
