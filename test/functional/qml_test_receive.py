@@ -101,6 +101,53 @@ def _open_receive(gui):
     gui.wait_for_page("requestPaymentPage", timeout_ms=10000)
 
 
+def _open_receive_options(gui):
+    if not bool(gui.get_property("receiveOptionsPopup", "opened")):
+        gui.click("receiveOptionsButton")
+        gui.wait_for_property("receiveOptionsPopup", "opened", True, timeout_ms=5000)
+
+
+def _close_receive_options(gui):
+    if bool(gui.get_property("receiveOptionsPopup", "opened")):
+        gui.click("receiveOptionsButton")
+        gui.wait_for_property("receiveOptionsPopup", "opened", False, timeout_ms=5000)
+
+
+def _set_receive_options(gui, *, show_name, show_message, show_note_self, show_address_type):
+    _open_receive_options(gui)
+    for toggle_name, enabled in (
+        ("receiveOptionsNameToggle", show_name),
+        ("receiveOptionsMessageToggle", show_message),
+        ("receiveOptionsNoteSelfToggle", show_note_self),
+        ("receiveOptionsAddressTypeToggle", show_address_type),
+    ):
+        if bool(gui.get_property(toggle_name, "checked")) != enabled:
+            gui.click(toggle_name)
+            gui.wait_for_property(toggle_name, "checked", enabled, timeout_ms=5000)
+    _close_receive_options(gui)
+
+
+def _assert_receive_options(gui, *, show_name, show_message, show_note_self, show_address_type):
+    _open_receive_options(gui)
+    expected = {
+        "receiveOptionsNameToggle": show_name,
+        "receiveOptionsMessageToggle": show_message,
+        "receiveOptionsNoteSelfToggle": show_note_self,
+        "receiveOptionsAddressTypeToggle": show_address_type,
+    }
+    for toggle_name, enabled in expected.items():
+        actual = bool(gui.get_property(toggle_name, "checked"))
+        assert actual == enabled, f"Expected {toggle_name}.checked={enabled}, got {actual}"
+    _close_receive_options(gui)
+
+
+def _assert_receive_option_rows(gui, *, show_name, show_message, show_note_self, show_address_type):
+    gui.wait_for_property("requestPaymentYourNameInput", "visible", show_name, timeout_ms=5000)
+    gui.wait_for_property("requestPaymentMessageInput", "visible", show_message, timeout_ms=5000)
+    gui.wait_for_property("requestPaymentNoteSelfInput", "visible", show_note_self, timeout_ms=5000)
+    gui.wait_for_property("receiveAddressTypePicker", "visible", show_address_type, timeout_ms=5000)
+
+
 def _open_activity(gui):
     gui.click("activityTabButton")
     time.sleep(0.5)
@@ -174,6 +221,30 @@ def run_test():
         assert "Generate payment request" in button_text, f"Expected 'Generate payment request' after clear, got: {button_text!r}"
         print("[qml_receive_requests] form reset to editing state")
 
+        # Toggle receive form options away from their defaults so restart persistence can be verified.
+        _set_receive_options(
+            gui,
+            show_name=False,
+            show_message=False,
+            show_note_self=False,
+            show_address_type=True,
+        )
+        _assert_receive_options(
+            gui,
+            show_name=False,
+            show_message=False,
+            show_note_self=False,
+            show_address_type=True,
+        )
+        _assert_receive_option_rows(
+            gui,
+            show_name=False,
+            show_message=False,
+            show_note_self=False,
+            show_address_type=True,
+        )
+        print("[qml_receive_requests] receive option preferences updated")
+
         # Fulfill the request and verify the transaction links back to request metadata.
         request_address = _address_from_bip21(qr_code)
         txid = _mine_to_address(harness, request_address)
@@ -202,6 +273,36 @@ def run_test():
         _open_receive(gui)
         gui.wait_for_property("requestHistoryCount", "count", 1, timeout_ms=20000)
         print("[qml_receive_requests] history persisted across restart")
+        _assert_receive_options(
+            gui,
+            show_name=False,
+            show_message=False,
+            show_note_self=False,
+            show_address_type=True,
+        )
+        _assert_receive_option_rows(
+            gui,
+            show_name=False,
+            show_message=False,
+            show_note_self=False,
+            show_address_type=True,
+        )
+        print("[qml_receive_requests] receive option preferences persisted across restart")
+
+        _set_receive_options(
+            gui,
+            show_name=True,
+            show_message=True,
+            show_note_self=True,
+            show_address_type=False,
+        )
+        _assert_receive_option_rows(
+            gui,
+            show_name=True,
+            show_message=True,
+            show_note_self=True,
+            show_address_type=False,
+        )
 
         # Create a second request
         _create_request(gui, "0.005", "Bob", "coffee")

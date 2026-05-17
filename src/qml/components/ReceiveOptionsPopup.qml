@@ -10,6 +10,7 @@ import "../controls"
 
 OptionPopup {
     id: root
+    objectName: "receiveOptionsPopup"
 
     property alias showName: nameToggle.checked
     property alias showMessage: messageToggle.checked
@@ -31,6 +32,7 @@ OptionPopup {
 
         EllipsisMenuToggleItem {
             id: nameToggle
+            objectName: "receiveOptionsNameToggle"
             Layout.fillWidth: true
             text: qsTr("Name")
             checked: true
@@ -38,6 +40,7 @@ OptionPopup {
 
         EllipsisMenuToggleItem {
             id: messageToggle
+            objectName: "receiveOptionsMessageToggle"
             Layout.fillWidth: true
             text: qsTr("Message")
             checked: true
@@ -45,6 +48,7 @@ OptionPopup {
 
         EllipsisMenuToggleItem {
             id: noteSelfToggle
+            objectName: "receiveOptionsNoteSelfToggle"
             Layout.fillWidth: true
             text: qsTr("Note to self")
             checked: true
