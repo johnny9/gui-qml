@@ -233,6 +233,7 @@ Page {
                 objectName: "activityDetailsPaymentRequestsSection"
                 visible: root.paymentRequestCount > 0
                 Layout.fillWidth: true
+                Layout.topMargin: 10
                 Layout.bottomMargin: 20
                 spacing: 0
 

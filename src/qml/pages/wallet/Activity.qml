@@ -48,12 +48,12 @@ PageStack {
             Layout.alignment: Qt.AlignCenter
             Layout.fillHeight: true
             Layout.fillWidth: true
-            Layout.maximumWidth: 600
-            Layout.margins: 20
+            Layout.maximumWidth: 520
 
             property bool filtersVisible: false
             property bool exportSucceeded: true
             readonly property int activityListTopMargin: 10
+            readonly property int activityListBottomMargin: 10
             readonly property bool activitySourceEmpty: walletController.selectedWallet.activityListModel.count === 0
             readonly property bool activityFiltersActive: activityFilterProxy.searchText.trim().length > 0
                 || activityFilterProxy.dateFilter !== ActivityFilterProxyModel.DateAll
@@ -202,13 +202,17 @@ PageStack {
                 visible: false
             }
 
-            header: ColumnLayout {
+            header: Item {
                 id: pageHeader
-                spacing: 10
+                implicitHeight: 50 + (root.filtersVisible ? filterRow.implicitHeight + 10 : 0)
 
                 RowLayout {
                     id: activityHeader
-                    Layout.fillWidth: true
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.topMargin: 15
+                    height: 30
                     spacing: 10
 
                     CoreText {
@@ -275,7 +279,10 @@ PageStack {
 
                 RowLayout {
                     id: filterRow
-                    Layout.fillWidth: true
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: activityHeader.bottom
+                    anchors.topMargin: 10
                     spacing: 15
                     visible: root.filtersVisible
                     height: visible ? implicitHeight : 0
@@ -442,6 +449,7 @@ PageStack {
                     objectName: "activityListView"
                     anchors.fill: parent
                     anchors.topMargin: root.activityListTopMargin
+                    anchors.bottomMargin: root.activityListBottomMargin
                     clip: true
                     model: activityFilterProxy
 
