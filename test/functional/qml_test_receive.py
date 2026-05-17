@@ -151,6 +151,9 @@ def run_test():
         # Create first request — verify QR is available from the generated-state button.
         _create_request(gui, "0.0001", "Alice", "pizza")
         gui.wait_for_property("requestPaymentTitle", "text", "Payment request #1", timeout_ms=10000)
+        gui.wait_for_property("requestPaymentCopyButton", "visible", True, timeout_ms=10000)
+        gui.click("requestPaymentCopyButton")
+        gui.wait_for_property("requestPaymentCopiedToast", "visible", True, timeout_ms=10000)
         qr_code = _request_qr_payload(gui)
         assert qr_code.startswith("bitcoin:"), f"QR payload missing BIP21 prefix: {qr_code!r}"
         assert "amount=0.00010000" in qr_code, f"QR payload missing amount: {qr_code!r}"
