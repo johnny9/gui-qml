@@ -30,7 +30,7 @@ PageStack {
     Connections {
         target: walletController
         function onSelectedWalletChanged() {
-            stackView.pop()
+            stackView.pop(null)
         }
         function onClosePaymentRequestDetailRequested() {
             stackView.pop(null)

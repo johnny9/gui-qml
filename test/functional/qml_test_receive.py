@@ -16,6 +16,7 @@ This test requires:
 """
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -28,6 +29,22 @@ from qml_wallet_test_lib import WalletFlowHarness, rpc_call, wait_for_rpc
 
 
 WALLET_NAME = "receive_requests"
+SECOND_WALLET_NAME = "receive_requests_alt"
+
+
+def wait_until(predicate, timeout=20, interval=0.1, description="condition"):
+    deadline = time.time() + timeout
+    last_error = None
+    while time.time() < deadline:
+        try:
+            if predicate():
+                return
+        except Exception as err:  # noqa: BLE001 - test polling should tolerate transient state
+            last_error = err
+        time.sleep(interval)
+    if last_error:
+        raise AssertionError(f"Timed out waiting for {description}: {last_error}")
+    raise AssertionError(f"Timed out waiting for {description}")
 
 
 def _stop_gui(harness):
@@ -69,15 +86,14 @@ def _relaunch_gui(harness):
     harness.driver = QmlDriver(harness.socket_path, timeout=GUI_STARTUP_TIMEOUT)
 
 
-def _import_wallet(harness):
-    harness.start_source_node()
-    backup_path = os.path.join(harness.tmpdir, f"{WALLET_NAME}.bak")
-    rpc_call(harness.source_rpc_port, "createwallet", {"wallet_name": WALLET_NAME})
-    rpc_call(harness.source_rpc_port, "backupwallet", [backup_path], wallet=WALLET_NAME)
-    harness.stop_source_node()
+def _create_wallet_backup(harness, wallet_name):
+    backup_path = os.path.join(harness.tmpdir, f"{wallet_name}.bak")
+    rpc_call(harness.source_rpc_port, "createwallet", {"wallet_name": wallet_name})
+    rpc_call(harness.source_rpc_port, "backupwallet", [backup_path], wallet=wallet_name)
+    return backup_path
 
-    harness.start_gui()
-    gui = harness.driver
+
+def _import_wallet_backup(gui, backup_path, wallet_name):
     gui.wait_for_property("walletBadge", "loading", False, timeout_ms=20000)
     gui.click("walletBadge")
     try:
@@ -92,8 +108,48 @@ def _import_wallet(harness):
     gui.click("importWalletChooseFileButton")
     gui.wait_for_page("importWalletSuccessPage", timeout_ms=30000)
     gui.click("importWalletSuccessOverviewButton")
-    gui.wait_for_property("walletBadge", "text", WALLET_NAME, timeout_ms=20000)
+    gui.wait_for_property("walletBadge", "text", wallet_name, timeout_ms=20000)
+
+
+def _import_wallet(harness):
+    harness.start_source_node()
+    backup_path = _create_wallet_backup(harness, WALLET_NAME)
+    harness.stop_source_node()
+
+    harness.start_gui()
+    gui = harness.driver
+    _import_wallet_backup(gui, backup_path, WALLET_NAME)
     return gui
+
+
+def _import_wallets(harness):
+    harness.start_source_node()
+    primary_backup_path = _create_wallet_backup(harness, WALLET_NAME)
+    secondary_backup_path = _create_wallet_backup(harness, SECOND_WALLET_NAME)
+    harness.stop_source_node()
+
+    harness.start_gui()
+    gui = harness.driver
+    _import_wallet_backup(gui, primary_backup_path, WALLET_NAME)
+    _import_wallet_backup(gui, secondary_backup_path, SECOND_WALLET_NAME)
+    _select_wallet(gui, WALLET_NAME)
+    return gui
+
+
+def _select_wallet(gui, wallet_name):
+    gui.wait_for_property("walletBadge", "loading", False, timeout_ms=20000)
+    if gui.get_property("walletBadge", "text") == wallet_name:
+        return
+
+    gui.click("walletBadge")
+    gui.wait_for_property("walletSelectPopup", "opened", True, timeout_ms=5000)
+
+    wallet_object_name = "walletSelectItem_" + re.sub(r"[^A-Za-z0-9_]", "_", wallet_name)
+    gui.wait_for_property(wallet_object_name, "visible", True, timeout_ms=10000)
+    gui.click(wallet_object_name)
+    gui.wait_for_property("walletBadge", "text", wallet_name, timeout_ms=10000)
+    gui.wait_for_property("walletSelectPopup", "opened", False, timeout_ms=5000)
+    gui.settle(timeout_ms=5000)
 
 
 def _open_receive(gui):
@@ -192,7 +248,7 @@ def run_test():
     harness = WalletFlowHarness("qml_receive_requests", port_offset=70)
     try:
         print("[qml_receive_requests] starting")
-        gui = _import_wallet(harness)
+        gui = _import_wallets(harness)
         _open_receive(gui)
 
         # Create first request — verify QR is available from the generated-state button.
@@ -262,6 +318,17 @@ def run_test():
         gui.click("paymentRequestDetailEdit")
         gui.wait_for_page("requestPaymentPage", timeout_ms=10000)
         gui.wait_for_property("requestPaymentTitle", "text", "Payment request #1", timeout_ms=10000)
+        gui.click("activityTabButton")
+        gui.wait_for_page("paymentRequestDetailPage", timeout_ms=10000)
+        gui.wait_for_property("paymentRequestDetailBack", "visible", True, timeout_ms=10000)
+        gui.click("paymentRequestDetailBack")
+        gui.wait_for_property("activityDetailsPaymentRequestsSection", "visible", True, timeout_ms=10000)
+        gui.wait_for_property("activityDetailsPaymentRequest_0", "visible", True, timeout_ms=10000)
+        gui.click("activityDetailsPaymentRequest_0")
+        gui.wait_for_page("paymentRequestDetailPage", timeout_ms=10000)
+        _select_wallet(gui, SECOND_WALLET_NAME)
+        gui.click("activityTabButton")
+        gui.wait_for_property("activitySearchToggle", "visible", True, timeout_ms=10000)
         print("[qml_receive_requests] fulfilled transaction links to payment request detail")
 
         # Restart and verify persistence
