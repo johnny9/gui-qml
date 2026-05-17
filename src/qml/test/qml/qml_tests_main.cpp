@@ -649,6 +649,8 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString transactionError MEMBER m_transaction_error NOTIFY transactionErrorChanged)
     Q_PROPERTY(bool transactionNeedsUnlock MEMBER m_transaction_needs_unlock NOTIFY transactionNeedsUnlockChanged)
     Q_PROPERTY(QString lastCommitAddressType MEMBER m_last_commit_address_type NOTIFY lastCommitAddressTypeChanged)
+    Q_PROPERTY(QString lastTemplateRequestId MEMBER m_last_template_request_id NOTIFY lastTemplateRequestIdChanged)
+    Q_PROPERTY(QString lastRemovedRequestId MEMBER m_last_removed_request_id NOTIFY lastRemovedRequestIdChanged)
 
 public:
     QString m_name{QStringLiteral("testwallet")};
@@ -662,6 +664,13 @@ public:
     MockReceiveRequests m_receive_requests{};
     QString m_default_receive_address_type{QStringLiteral("bech32")};
     QString m_last_commit_address_type;
+    QString m_last_template_request_id;
+    QString m_last_removed_request_id;
+    QString m_saved_payment_request_label;
+    QString m_saved_payment_request_message;
+    QString m_saved_payment_request_note_self;
+    QString m_saved_payment_request_amount_display;
+    QString m_saved_payment_request_address_type;
     int m_target_blocks{2};
     bool m_prepare_transaction_result{true};
 
@@ -821,6 +830,11 @@ public:
         if (!request) return false;
         m_last_commit_address_type = request->m_address_type;
         Q_EMIT lastCommitAddressTypeChanged();
+        m_saved_payment_request_label = request->m_label;
+        m_saved_payment_request_message = request->m_message;
+        m_saved_payment_request_note_self = request->m_note_self;
+        m_saved_payment_request_amount_display = request->m_amount.m_display;
+        m_saved_payment_request_address_type = request->m_address_type;
         request->m_id = QStringLiteral("1");
         request->m_address = QStringLiteral("bcrt1qrequestaddress0000000000000000000000");
         request->m_is_editing = false;
@@ -867,6 +881,35 @@ public:
         m_can_manage_passphrase = false;
         Q_EMIT walletInfoChanged();
     }
+    Q_INVOKABLE void usePaymentRequestAsTemplate(const QString& request_id)
+    {
+        m_last_template_request_id = request_id;
+        Q_EMIT lastTemplateRequestIdChanged();
+        auto* request = qobject_cast<MockPaymentRequest*>(m_current_payment_request);
+        if (!request) return;
+        request->m_id.clear();
+        request->m_label = m_saved_payment_request_label;
+        request->m_message = m_saved_payment_request_message;
+        request->m_note_self = m_saved_payment_request_note_self;
+        request->m_address.clear();
+        request->m_address_type = m_saved_payment_request_address_type;
+        request->m_is_editing = true;
+        request->m_amount.m_display = m_saved_payment_request_amount_display;
+        Q_EMIT request->idChanged();
+        Q_EMIT request->labelChanged();
+        Q_EMIT request->messageChanged();
+        Q_EMIT request->noteSelfChanged();
+        Q_EMIT request->addressChanged();
+        Q_EMIT request->addressTypeChanged();
+        Q_EMIT request->isEditingChanged();
+        Q_EMIT request->m_amount.displayChanged();
+    }
+    Q_INVOKABLE bool removeReceiveRequest(const QString& request_id)
+    {
+        m_last_removed_request_id = request_id;
+        Q_EMIT lastRemovedRequestIdChanged();
+        return true;
+    }
 
 Q_SIGNALS:
     void nameChanged();
@@ -889,6 +932,8 @@ Q_SIGNALS:
     void transactionErrorChanged();
     void transactionNeedsUnlockChanged();
     void lastCommitAddressTypeChanged();
+    void lastTemplateRequestIdChanged();
+    void lastRemovedRequestIdChanged();
 
 private:
     void setTransactionStatus(const QString& error, bool needs_unlock)
@@ -954,6 +999,7 @@ class MockWalletController : public QObject
     Q_PROPERTY(QString lastClosedWalletName READ lastClosedWalletName NOTIFY lastClosedWalletNameChanged)
     Q_PROPERTY(int closeWalletCalls READ closeWalletCalls NOTIFY closeWalletCallsChanged)
     Q_PROPERTY(QObject* selectedWallet READ selectedWallet NOTIFY selectedWalletChanged)
+    Q_PROPERTY(int closePaymentRequestDetailRequests MEMBER m_close_payment_request_detail_requests NOTIFY closePaymentRequestDetailRequestsChanged)
 
 public:
     bool m_initialized{true};
@@ -963,6 +1009,7 @@ public:
     QString m_last_selected_wallet_name;
     QString m_last_closed_wallet_name;
     int m_close_wallet_calls{0};
+    int m_close_payment_request_detail_requests{0};
 
     QObject* selectedWallet() const { return m_selected_wallet; }
     QString lastSelectedWalletName() const { return m_last_selected_wallet_name; }
@@ -997,9 +1044,17 @@ public:
         m_last_selected_wallet_name.clear();
         m_last_closed_wallet_name.clear();
         m_close_wallet_calls = 0;
+        m_close_payment_request_detail_requests = 0;
         Q_EMIT lastSelectedWalletNameChanged();
         Q_EMIT lastClosedWalletNameChanged();
         Q_EMIT closeWalletCallsChanged();
+        Q_EMIT closePaymentRequestDetailRequestsChanged();
+    }
+    Q_INVOKABLE void requestClosePaymentRequestDetail()
+    {
+        ++m_close_payment_request_detail_requests;
+        Q_EMIT closePaymentRequestDetailRequestsChanged();
+        Q_EMIT closePaymentRequestDetailRequested();
     }
 
 Q_SIGNALS:
@@ -1010,6 +1065,8 @@ Q_SIGNALS:
     void lastClosedWalletNameChanged();
     void closeWalletCallsChanged();
     void selectedWalletChanged();
+    void closePaymentRequestDetailRequestsChanged();
+    void closePaymentRequestDetailRequested();
 };
 
 class MockOptionsModel : public QObject

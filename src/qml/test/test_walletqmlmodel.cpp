@@ -5,6 +5,7 @@
 #include <QtTest/QtTest>
 
 #include <test/mocks/mockwallet.h>
+#include <qml/models/activitylistmodel.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/walletqmlmodel.h>
@@ -127,10 +128,12 @@ public:
     int lock_calls{0};
     int commit_calls{0};
     int get_new_destination_calls{0};
+    int set_address_receive_request_calls{0};
     std::vector<std::string> unlock_passphrases;
     std::vector<OutputType> new_destination_types;
     std::vector<std::string> new_destination_labels;
     std::vector<interfaces::WalletAddress> wallet_addresses;
+    std::vector<std::string> receive_request_ids;
     std::vector<bool> create_transaction_sign_args;
     std::vector<bool> fill_psbt_sign_args;
     bool get_address_result{false};
@@ -242,7 +245,12 @@ public:
     }
     std::vector<interfaces::WalletAddress> getAddresses() override { return wallet_addresses; }
     std::vector<std::string> getAddressReceiveRequests() override { return {}; }
-    bool setAddressReceiveRequest(const CTxDestination&, const std::string&, const std::string&) override { return true; }
+    bool setAddressReceiveRequest(const CTxDestination&, const std::string& id, const std::string&) override
+    {
+        ++set_address_receive_request_calls;
+        receive_request_ids.push_back(id);
+        return true;
+    }
     util::Result<void> displayAddress(const CTxDestination&) override { return {}; }
     bool lockCoin(const COutPoint&, const bool) override { return true; }
     bool unlockCoin(const COutPoint&) override { return true; }
@@ -347,6 +355,7 @@ private Q_SLOTS:
     void commitPaymentRequestWithPassphraseWrongPasswordSurfacesError();
     void availableReceiveAddressTypesHideUnavailableTaproot();
     void receiveAddressTypeDefaultPersistsPerWallet();
+    void removeReceiveRequestRemovesPendingActivityRow();
     void prepareTransactionOnLockedWalletRequiresPassword();
     void prepareTransactionWithPrivateKeysDisabledDoesNotRequirePassword();
     void prepareTransactionWithPassphraseForwardsUtf8Bytes();
@@ -1090,6 +1099,24 @@ void WalletQmlModelTests::commitPaymentRequestWithPassphraseWrongPasswordSurface
     QCOMPARE(model->currentPaymentRequest()->unlockError(),
              QStringLiteral("The wallet password you entered was incorrect."));
     QVERIFY(model->currentPaymentRequest()->address().isEmpty());
+}
+
+void WalletQmlModelTests::removeReceiveRequestRemovesPendingActivityRow()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    model->currentPaymentRequest()->setLabel(QStringLiteral("request label"));
+
+    QCOMPARE(model->activityListModel()->rowCount(), 0);
+    QVERIFY(model->commitPaymentRequest());
+    QCOMPARE(wallet->set_address_receive_request_calls, 1);
+    QCOMPARE(wallet->receive_request_ids.back(), std::string{"1"});
+    QCOMPARE(model->activityListModel()->rowCount(), 1);
+
+    QVERIFY(model->removeReceiveRequest(QStringLiteral("1")));
+    QCOMPARE(wallet->set_address_receive_request_calls, 2);
+    QCOMPARE(wallet->receive_request_ids.back(), std::string{"1"});
+    QCOMPARE(model->activityListModel()->rowCount(), 0);
 }
 
 void WalletQmlModelTests::prepareTransactionOnLockedWalletRequiresPassword()

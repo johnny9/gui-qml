@@ -23,6 +23,9 @@ TestCase {
     function init() {
         testPaymentRequest.clear()
         testWalletModel.lastCommitAddressType = ""
+        testWalletModel.lastTemplateRequestId = ""
+        testWalletModel.lastRemovedRequestId = ""
+        walletController.closePaymentRequestDetailRequests = 0
     }
 
     function test_formatRelativeTime_empty() {
@@ -170,5 +173,123 @@ TestCase {
 
         compare(testPaymentRequest.addressType, "p2sh-segwit")
         compare(testWalletModel.lastCommitAddressType, "p2sh-segwit")
+    }
+
+    function test_createdRequestOptions_include_template_and_delete_actions() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        testWalletModel.commitPaymentRequest()
+
+        const popup = findChild(page, "receiveOptionsPopup")
+        verify(popup !== null)
+        compare(popup.showRequestActions, true)
+        popup.open()
+        tryCompare(popup, "opened", true)
+
+        const templateButton = findChild(page, "receiveOptionsUseAsTemplateButton")
+        verify(templateButton !== null)
+        verify(templateButton.visible)
+
+        templateButton.clicked()
+        compare(testWalletModel.lastTemplateRequestId, "1")
+        compare(testPaymentRequest.id, "")
+        compare(testPaymentRequest.address, "")
+        compare(testPaymentRequest.isEditing, true)
+    }
+
+    function test_createdRequestDeleteAction_removes_and_clears_request() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        testWalletModel.commitPaymentRequest()
+
+        const popup = findChild(page, "receiveOptionsPopup")
+        verify(popup !== null)
+        popup.open()
+        tryCompare(popup, "opened", true)
+
+        const deleteButton = findChild(page, "receiveOptionsDeleteFromHistoryButton")
+        verify(deleteButton !== null)
+        verify(deleteButton.visible)
+
+        deleteButton.clicked()
+        compare(testWalletModel.lastRemovedRequestId, "1")
+        compare(walletController.closePaymentRequestDetailRequests, 1)
+        compare(testPaymentRequest.id, "")
+        compare(testPaymentRequest.address, "")
+        compare(testPaymentRequest.isEditing, true)
+    }
+
+    function test_editingRequestTemplateAction_cancels_edit_and_fills_template() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        testPaymentRequest.label = "Alice"
+        testPaymentRequest.message = "Coffee"
+        testPaymentRequest.noteSelf = "Counter"
+        testPaymentRequest.addressType = "p2sh-segwit"
+        testPaymentRequest.amount.display = "0.00200000"
+        testWalletModel.commitPaymentRequest()
+        testPaymentRequest.edit()
+        testPaymentRequest.label = "Unsaved name"
+        testPaymentRequest.message = "Unsaved message"
+        testPaymentRequest.noteSelf = "Unsaved note"
+        testPaymentRequest.amount.display = "0.00300000"
+
+        const popup = findChild(page, "receiveOptionsPopup")
+        verify(popup !== null)
+        compare(popup.showRequestActions, true)
+        popup.open()
+        tryCompare(popup, "opened", true)
+
+        const templateButton = findChild(page, "receiveOptionsUseAsTemplateButton")
+        verify(templateButton !== null)
+        verify(templateButton.visible)
+
+        templateButton.clicked()
+        compare(testWalletModel.lastTemplateRequestId, "1")
+        compare(testPaymentRequest.id, "")
+        compare(testPaymentRequest.address, "")
+        compare(testPaymentRequest.isEditing, true)
+        compare(testPaymentRequest.label, "Alice")
+        compare(testPaymentRequest.message, "Coffee")
+        compare(testPaymentRequest.noteSelf, "Counter")
+        compare(testPaymentRequest.addressType, "p2sh-segwit")
+        compare(page.selectedReceiveAddressType, "p2sh-segwit")
+        compare(testPaymentRequest.amount.display, "0.00200000")
+    }
+
+    function test_editingRequestDeleteAction_removes_and_clears_request() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        testWalletModel.commitPaymentRequest()
+        testPaymentRequest.edit()
+
+        const popup = findChild(page, "receiveOptionsPopup")
+        verify(popup !== null)
+        compare(popup.showRequestActions, true)
+        popup.open()
+        tryCompare(popup, "opened", true)
+
+        const deleteButton = findChild(page, "receiveOptionsDeleteFromHistoryButton")
+        verify(deleteButton !== null)
+        verify(deleteButton.visible)
+
+        deleteButton.clicked()
+        compare(testWalletModel.lastRemovedRequestId, "1")
+        compare(walletController.closePaymentRequestDetailRequests, 1)
+        compare(testPaymentRequest.id, "")
+        compare(testPaymentRequest.address, "")
+        compare(testPaymentRequest.isEditing, true)
     }
 }
