@@ -32,6 +32,9 @@ PageStack {
         function onSelectedWalletChanged() {
             stackView.pop()
         }
+        function onClosePaymentRequestDetailRequested() {
+            stackView.pop(null)
+        }
     }
 
     Binding {

@@ -10,6 +10,8 @@
 #include <QDateTime>
 #include <QVariantList>
 
+#include <algorithm>
+
 ActivityListModel::ActivityListModel(WalletQmlModel *parent)
     : QAbstractListModel(parent)
     , m_wallet_model(parent)
@@ -242,6 +244,31 @@ void ActivityListModel::updateReceiveRequest(const QString& requestId, const QSt
             Q_EMIT dataChanged(index(i), index(i));
             return;
         }
+    }
+}
+
+void ActivityListModel::removePendingReceiveRequest(const QString& requestId)
+{
+    for (int i = 0; i < m_transactions.size(); ++i) {
+        if (!m_transactions[i]->isPendingRequest || m_transactions[i]->requestId != requestId) {
+            continue;
+        }
+
+        const QString address = m_transactions[i]->address;
+        beginRemoveRows(QModelIndex(), i, i);
+        m_transactions.removeAt(i);
+        endRemoveRows();
+
+        const bool address_still_pending = std::any_of(m_transactions.cbegin(), m_transactions.cend(),
+            [&address](const QSharedPointer<Transaction>& tx) {
+                return tx->isPendingRequest && tx->address == address;
+            });
+        if (!address_still_pending) {
+            m_pending_request_addresses.remove(address);
+        }
+
+        Q_EMIT countChanged();
+        return;
     }
 }
 

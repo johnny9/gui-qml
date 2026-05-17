@@ -57,6 +57,7 @@ public:
     void addReceiveRequest(const QString& address, const QString& label,
                            CAmount amount, qint64 timestamp, const QString& requestId);
     void updateReceiveRequest(const QString& requestId, const QString& label, CAmount amount);
+    void removePendingReceiveRequest(const QString& requestId);
 
 Q_SIGNALS:
     void countChanged();

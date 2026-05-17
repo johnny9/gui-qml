@@ -45,6 +45,10 @@ Page {
     }
 
     function resetSelectedReceiveAddressType() {
+        if (root.request && !root.hasAddress && root.request.addressType !== undefined && root.request.addressType !== "") {
+            root.selectedReceiveAddressType = root.request.addressType
+            return
+        }
         if (!root.wallet) {
             root.selectedReceiveAddressType = "bech32"
             return
@@ -112,6 +116,23 @@ Page {
         property alias receiveShowAddressType: receiveOptionsPopup.showAddressType
     }
 
+    function useCurrentRequestAsTemplate() {
+        if (!root.wallet || !root.hasSavedRequest) return
+        root.wallet.usePaymentRequestAsTemplate(root.requestValue("id"))
+        root.requestError = ""
+        root.resetSelectedReceiveAddressType()
+    }
+
+    function deleteCurrentRequest() {
+        if (!root.wallet || !root.hasSavedRequest) return
+        if (root.wallet.removeReceiveRequest(root.requestValue("id"))) {
+            root.request.clear()
+            root.requestError = ""
+            root.resetSelectedReceiveAddressType()
+            walletController.requestClosePaymentRequestDetail()
+        }
+    }
+
     Item {
         id: requestHistoryCount
         objectName: "requestHistoryCount"
@@ -171,6 +192,9 @@ Page {
                     id: receiveOptionsPopup
                     x: receiveOptionsButton.x - width + receiveOptionsButton.width
                     y: receiveOptionsButton.y + receiveOptionsButton.height
+                    showRequestActions: root.hasSavedRequest
+                    onUseAsTemplate: root.useCurrentRequestAsTemplate()
+                    onDeleteFromHistory: root.deleteCurrentRequest()
                 }
             }
 

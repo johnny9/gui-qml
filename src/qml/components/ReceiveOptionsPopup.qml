@@ -16,6 +16,10 @@ OptionPopup {
     property alias showMessage: messageToggle.checked
     property alias showNoteSelf: noteSelfToggle.checked
     property alias showAddressType: addressTypeToggle.checked
+    property bool showRequestActions: false
+
+    signal useAsTemplate()
+    signal deleteFromHistory()
 
     implicitWidth: 300
     implicitHeight: columnLayout.implicitHeight + 20
@@ -65,6 +69,28 @@ OptionPopup {
             Layout.fillWidth: true
             text: qsTr("View address history")
             enabled: false
+        }
+
+        EllipsisMenuButtonItem {
+            objectName: "receiveOptionsUseAsTemplateButton"
+            Layout.fillWidth: true
+            visible: root.showRequestActions
+            text: qsTr("Use as template")
+            onClicked: {
+                root.close()
+                root.useAsTemplate()
+            }
+        }
+
+        EllipsisMenuButtonItem {
+            objectName: "receiveOptionsDeleteFromHistoryButton"
+            Layout.fillWidth: true
+            visible: root.showRequestActions
+            text: qsTr("Delete from history")
+            onClicked: {
+                root.close()
+                root.deleteFromHistory()
+            }
         }
     }
 }

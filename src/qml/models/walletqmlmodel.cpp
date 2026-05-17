@@ -47,6 +47,7 @@
 #include <limits>
 #include <optional>
 #include <utility>
+#include <variant>
 
 namespace {
 constexpr unsigned int DEFAULT_STANDARD_FEE_TARGET{2};
@@ -233,6 +234,15 @@ QString LocalizedString(const bilingual_str& value)
 QString OutputTypeId(OutputType type)
 {
     return QString::fromStdString(FormatOutputType(type));
+}
+
+QString OutputTypeIdFromDestination(const CTxDestination& destination)
+{
+    if (std::get_if<PKHash>(&destination)) return OutputTypeId(OutputType::LEGACY);
+    if (std::get_if<ScriptHash>(&destination)) return OutputTypeId(OutputType::P2SH_SEGWIT);
+    if (std::get_if<WitnessV0KeyHash>(&destination) || std::get_if<WitnessV0ScriptHash>(&destination)) return OutputTypeId(OutputType::BECH32);
+    if (std::get_if<WitnessV1Taproot>(&destination)) return OutputTypeId(OutputType::BECH32M);
+    return {};
 }
 
 QString OutputTypeLabel(OutputType type)
@@ -806,6 +816,9 @@ bool WalletQmlModel::removeReceiveRequest(const QString& request_id)
         return false;
     }
     m_receive_requests->removeByRequestId(request_id);
+    if (m_activity_list_model) {
+        m_activity_list_model->removePendingReceiveRequest(request_id);
+    }
     return true;
 }
 
@@ -858,12 +871,14 @@ void WalletQmlModel::usePaymentRequestAsTemplate(const QString& request_id)
     if (!m_current_payment_request || !m_receive_requests) return;
     const auto entry = m_receive_requests->entryById(request_id);
     if (!entry) return;
+    const CTxDestination destination = DecodeDestination(entry->recipient.address);
 
     m_current_payment_request->clear();
     m_current_payment_request->setLabel(QString::fromStdString(entry->recipient.label));
     m_current_payment_request->setMessage(QString::fromStdString(entry->recipient.message));
     m_current_payment_request->setNoteSelf(QString::fromStdString(entry->recipient.noteSelf));
     m_current_payment_request->amount()->setSatoshi(entry->recipient.amount);
+    m_current_payment_request->setAddressType(OutputTypeIdFromDestination(destination));
 
     // Toggle isEditing to re-trigger QML input sync with populated values
     m_current_payment_request->setIsEditing(false);

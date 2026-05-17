@@ -53,6 +53,7 @@ using ::testing::Return;
 
 constexpr auto FEE_ESTIMATE_TIMEOUT_MS{3'000};
 const auto VALID_MAINNET_ADDRESS = QStringLiteral("1BoatSLRHtKNngkdXEeobR76b53LETtpyT");
+const auto VALID_MAINNET_P2SH_ADDRESS = QStringLiteral("3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy");
 const auto VALID_REGTEST_ADDRESS = QStringLiteral("bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9");
 
 class ChainSelectionGuard
@@ -340,6 +341,7 @@ private Q_SLOTS:
     void transactionChangedEmitsBalanceChanged();
     void setCurrentPaymentRequestAddressUsesAddressListLabel();
     void commitPaymentRequestUsesSelectedAddressType();
+    void usePaymentRequestAsTemplatePreservesAddressType();
     void commitPaymentRequestOnLockedWalletSignalsNeedsUnlock();
     void commitPaymentRequestWithPassphraseUnlocksRetriesAndRelocks();
     void commitPaymentRequestWithPassphraseWrongPasswordSurfacesError();
@@ -988,6 +990,28 @@ void WalletQmlModelTests::setCurrentPaymentRequestAddressUsesAddressListLabel()
     QVERIFY(model->setCurrentPaymentRequestAddress(VALID_MAINNET_ADDRESS));
     QCOMPARE(model->currentPaymentRequest()->address(), VALID_MAINNET_ADDRESS);
     QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("invoice 1024"));
+}
+
+void WalletQmlModelTests::usePaymentRequestAsTemplatePreservesAddressType()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    wallet->get_new_destination_fn = [wallet](OutputType type, const std::string& label) -> util::Result<CTxDestination> {
+        ++wallet->get_new_destination_calls;
+        wallet->new_destination_types.push_back(type);
+        wallet->new_destination_labels.push_back(label);
+        return DecodeDestination(VALID_MAINNET_P2SH_ADDRESS.toStdString());
+    };
+
+    model->currentPaymentRequest()->setLabel(QStringLiteral("typed template"));
+    model->currentPaymentRequest()->setAddressType(QStringLiteral("p2sh-segwit"));
+    QVERIFY(model->commitPaymentRequest());
+
+    model->usePaymentRequestAsTemplate(QStringLiteral("1"));
+
+    QVERIFY(model->currentPaymentRequest()->address().isEmpty());
+    QCOMPARE(model->currentPaymentRequest()->addressType(), QStringLiteral("p2sh-segwit"));
+    QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("typed template"));
 }
 
 void WalletQmlModelTests::commitPaymentRequestOnLockedWalletSignalsNeedsUnlock()

@@ -63,6 +63,7 @@ public:
     Q_INVOKABLE void requestOpenWalletSettings();
     Q_INVOKABLE void refreshExternalSignerStatus();
     Q_INVOKABLE void requestOpenReceive();
+    Q_INVOKABLE void requestClosePaymentRequestDetail();
 
     WalletQmlModel* selectedWallet() const;
     void unloadWallets();
@@ -110,6 +111,7 @@ Q_SIGNALS:
     void externalSignerStatusChanged();
     void walletDisplayNamesChanged();
     void openReceiveRequested();
+    void closePaymentRequestDetailRequested();
 
 public Q_SLOTS:
     void initialize();

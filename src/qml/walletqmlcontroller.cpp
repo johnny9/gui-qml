@@ -464,6 +464,11 @@ void WalletQmlController::requestOpenReceive()
     Q_EMIT openReceiveRequested();
 }
 
+void WalletQmlController::requestClosePaymentRequestDetail()
+{
+    Q_EMIT closePaymentRequestDetailRequested();
+}
+
 QString WalletQmlController::normalizeWalletPath(const QString& path) const
 {
     if (path.isEmpty()) {

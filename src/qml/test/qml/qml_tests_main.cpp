@@ -1497,6 +1497,7 @@ class MockActivityFilterProxyModel : public QSortFilterProxyModel
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
     Q_PROPERTY(DateFilter dateFilter READ dateFilter WRITE setDateFilter NOTIFY dateFilterChanged)
     Q_PROPERTY(TypeFilter typeFilter READ typeFilter WRITE setTypeFilter NOTIFY typeFilterChanged)
+    Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
@@ -1558,6 +1559,14 @@ public:
         Q_EMIT countChanged();
     }
 
+    int displayUnit() const { return m_display_unit; }
+    void setDisplayUnit(int display_unit)
+    {
+        if (m_display_unit == display_unit) return;
+        m_display_unit = display_unit;
+        Q_EMIT displayUnitChanged();
+    }
+
     int count() const { return rowCount(); }
 
     Q_INVOKABLE bool exportCsv(const QString& path) const
@@ -1570,12 +1579,14 @@ Q_SIGNALS:
     void searchTextChanged();
     void dateFilterChanged();
     void typeFilterChanged();
+    void displayUnitChanged();
     void countChanged();
 
 private:
     QString m_search_text;
     DateFilter m_date_filter{DateAll};
     TypeFilter m_type_filter{TypeAll};
+    int m_display_unit{0};
 };
 
 class QmlTestsSetup : public QObject

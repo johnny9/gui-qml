@@ -23,7 +23,6 @@ Page {
         if (!root.wallet || !root.request) return
         root.wallet.loadPaymentRequest(root.request.id)
         root.wallet.currentPaymentRequest.edit()
-        root.StackView.view.pop()
         walletController.requestOpenReceive()
     }
 
