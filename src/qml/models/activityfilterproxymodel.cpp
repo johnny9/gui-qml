@@ -31,6 +31,16 @@ void WriteCsvRow(QTextStream& stream, const QStringList& values)
     }
     stream << '\n';
 }
+
+QmlBitcoinUnits::Unit ExportDisplayUnit(int display_unit)
+{
+    return display_unit == 1 ? QmlBitcoinUnits::Unit::SAT : QmlBitcoinUnits::Unit::BTC;
+}
+
+QString ExportDisplayUnitLabel(int display_unit)
+{
+    return display_unit == 1 ? QStringLiteral("sat") : QStringLiteral("BTC");
+}
 } // namespace
 
 ActivityFilterProxyModel::ActivityFilterProxyModel(QObject* parent)
@@ -103,6 +113,19 @@ void ActivityFilterProxyModel::setTypeFilter(TypeFilter type_filter)
     invalidateFilter();
     Q_EMIT typeFilterChanged();
     Q_EMIT countChanged();
+}
+
+int ActivityFilterProxyModel::displayUnit() const
+{
+    return m_display_unit;
+}
+
+void ActivityFilterProxyModel::setDisplayUnit(int display_unit)
+{
+    if (m_display_unit == display_unit) return;
+
+    m_display_unit = display_unit;
+    Q_EMIT displayUnitChanged();
 }
 
 int ActivityFilterProxyModel::count() const
@@ -254,7 +277,7 @@ bool ActivityFilterProxyModel::exportCsv(const QString& path) const
         tr("Type"),
         tr("Label"),
         tr("Address"),
-        tr("Amount (BTC)"),
+        tr("Amount") + QStringLiteral(" (%1)").arg(ExportDisplayUnitLabel(m_display_unit)),
         tr("ID"),
     });
 
@@ -272,7 +295,7 @@ bool ActivityFilterProxyModel::exportCsv(const QString& path) const
             exportTypeLabelForIndex(proxy_index),
             proxy_index.data(ActivityListModel::LabelRole).toString(),
             proxy_index.data(ActivityListModel::AddressRole).toString(),
-            QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::BTC, amount, false, QmlBitcoinUnits::SeparatorStyle::NEVER),
+            QmlBitcoinUnits::format(ExportDisplayUnit(m_display_unit), amount, false, QmlBitcoinUnits::SeparatorStyle::NEVER),
             pending_request ? QString{} : proxy_index.data(ActivityListModel::TxIdRole).toString(),
         });
     }

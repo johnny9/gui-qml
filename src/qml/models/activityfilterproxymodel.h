@@ -17,6 +17,7 @@ class ActivityFilterProxyModel : public QSortFilterProxyModel
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
     Q_PROPERTY(DateFilter dateFilter READ dateFilter WRITE setDateFilter NOTIFY dateFilterChanged)
     Q_PROPERTY(TypeFilter typeFilter READ typeFilter WRITE setTypeFilter NOTIFY typeFilterChanged)
+    Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
@@ -53,6 +54,9 @@ public:
     TypeFilter typeFilter() const;
     void setTypeFilter(TypeFilter type_filter);
 
+    int displayUnit() const;
+    void setDisplayUnit(int display_unit);
+
     int count() const;
 
     Q_INVOKABLE bool exportCsv(const QString& path) const;
@@ -61,6 +65,7 @@ Q_SIGNALS:
     void searchTextChanged();
     void dateFilterChanged();
     void typeFilterChanged();
+    void displayUnitChanged();
     void countChanged();
 
 protected:
@@ -76,6 +81,7 @@ private:
     QString m_search_text;
     DateFilter m_date_filter{DateAll};
     TypeFilter m_type_filter{TypeAll};
+    int m_display_unit{0};
 };
 
 #endif // BITCOIN_QML_MODELS_ACTIVITYFILTERPROXYMODEL_H

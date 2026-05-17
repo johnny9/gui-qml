@@ -181,6 +181,7 @@ PageStack {
                 id: activityFilterProxy
                 objectName: "activityFilterProxyModel"
                 sourceModel: walletController.selectedWallet.activityListModel
+                displayUnit: optionsModel.displayUnit
             }
 
             Settings {
