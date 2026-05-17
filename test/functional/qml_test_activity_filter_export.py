@@ -190,8 +190,9 @@ def run_test(save_screenshots=False, screenshot_root=None):
         mined_csv = _export_activity_csv(gui, mined_export_path)
         checkpoints.checkpoint("mined Activity row exported to CSV", gui)
 
-        expected_header = '"Confirmed","Date","Type","Label","Address","Amount (BTC)","ID"\n'
-        assert mined_csv.startswith(expected_header), f"Unexpected mined CSV header: {mined_csv!r}"
+        expected_btc_header = '"Confirmed","Date","Type","Label","Address","Amount (BTC)","ID"\n'
+        expected_sat_header = '"Confirmed","Date","Type","Label","Address","Amount (sat)","ID"\n'
+        assert mined_csv.startswith(expected_btc_header), f"Unexpected mined CSV header: {mined_csv!r}"
         assert '"Mined"' in mined_csv, f"Missing mined type: {mined_csv!r}"
         assert '"Mining reward"' in mined_csv, f"Missing mined label: {mined_csv!r}"
         assert '"50.00000000"' in mined_csv, f"Missing mined amount: {mined_csv!r}"
@@ -207,15 +208,29 @@ def run_test(save_screenshots=False, screenshot_root=None):
         gui.wait_for_property("activityFilterProxyModel", "count", 1, timeout_ms=10000)
         checkpoints.checkpoint("search by request label applied", gui)
 
+        gui.click("desktopWalletSettingsTabButton")
+        gui.wait_for_page("gotoDisplay", timeout_ms=5000)
+        gui.click("gotoDisplay")
+        gui.wait_for_page("gotoDisplayUnit", timeout_ms=5000)
+        gui.click("gotoDisplayUnit")
+        gui.wait_for_page("settingsDisplayUnitPage", timeout_ms=5000)
+        gui.click("displayUnitSAT")
+        checkpoints.checkpoint("display unit switched to sats", gui)
+
+        gui.click("activityTabButton")
+        gui.wait_for_property("activityFilterProxyModel", "displayUnit", 1, timeout_ms=5000)
+        gui.wait_for_property("activityFilterProxyModel", "count", 1, timeout_ms=10000)
+        checkpoints.checkpoint("returned to filtered Activity in sats", gui)
+
         request_export_path = os.path.join(harness.tmpdir, "activity-request.csv")
         csv = _export_activity_csv(gui, request_export_path)
         checkpoints.checkpoint("filtered Activity exported to CSV", gui)
 
-        assert csv.startswith(expected_header), f"Unexpected CSV header: {csv!r}"
+        assert csv.startswith(expected_sat_header), f"Unexpected CSV header: {csv!r}"
         assert '"Payment request"' in csv, f"Missing payment request type: {csv!r}"
         assert '"Alice"' in csv, f"Missing request label: {csv!r}"
         assert f'"{payment_request_address}"' in csv, f"Missing request address: {csv!r}"
-        assert '"0.00010000"' in csv, f"Missing amount: {csv!r}"
+        assert '"10000"' in csv, f"Missing amount: {csv!r}"
         assert '"Mined"' not in csv, f"Payment request export included mined row: {csv!r}"
         gui.click("activityExportResultCloseButton")
 

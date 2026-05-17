@@ -139,6 +139,7 @@ private Q_SLOTS:
     void filtersByTypeBucketsAndKeepsPendingRequestsExclusive();
     void sortsByTimestampDescending();
     void exportsCurrentFilteredRowsToCsv();
+    void exportsCsvUsingDisplayUnit();
     void exportsCsvEscapesSignedRowsAndHandlesFailures();
 };
 
@@ -309,6 +310,32 @@ void ActivityFilterProxyModelTests::exportsCurrentFilteredRowsToCsv()
     QVERIFY(csv.contains("\"bc1qalice\""));
     QVERIFY(csv.contains("\"0.00010000\""));
     QVERIFY(!csv.contains("txid-bob"));
+}
+
+void ActivityFilterProxyModelTests::exportsCsvUsingDisplayUnit()
+{
+    const qint64 timestamp = TimestampForLocalDate(QDate::currentDate());
+    ActivityRow row = MakeRow("Alice", Transaction::RecvWithAddress, timestamp, "txid-alice", "bc1qalice");
+    row.net_amount_sat = 123'456'789;
+
+    TestActivityListModel source;
+    source.setRows({row});
+
+    ActivityFilterProxyModel proxy;
+    proxy.setSourceModel(&source);
+    proxy.setDisplayUnit(1);
+
+    QTemporaryDir temp_dir;
+    QVERIFY(temp_dir.isValid());
+    const QString path = temp_dir.filePath("activity.csv");
+    QVERIFY(proxy.exportCsv(path));
+
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString csv = QString::fromUtf8(file.readAll());
+    QVERIFY(csv.startsWith("\"Confirmed\",\"Date\",\"Type\",\"Label\",\"Address\",\"Amount (sat)\",\"ID\"\n"));
+    QVERIFY(csv.contains("\"123456789\""));
+    QVERIFY(!csv.contains("\"1.23456789\""));
 }
 
 void ActivityFilterProxyModelTests::exportsCsvEscapesSignedRowsAndHandlesFailures()
