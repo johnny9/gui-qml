@@ -186,46 +186,10 @@ Page {
                 text: root.message
             }
 
-            Item {
-                height: addressLabel.height + addressText.height
+            AddressDetailRow {
                 Layout.fillWidth: true
                 Layout.bottomMargin: 20
-                CoreText {
-                    id: addressLabel
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    color: Theme.color.neutral7
-                    text: qsTr("Address")
-                    font.pixelSize: 15
-                }
-
-                CoreText {
-                    id: addressText
-                    anchors.left: parent.left
-                    anchors.right: copyIcon.left
-                    anchors.top: addressLabel.bottom
-                    leftPadding: 0
-                    font.family: "Roboto Mono"
-                    font.styleName: "Regular"
-                    font.pixelSize: 18
-                    horizontalAlignment: Text.AlignLeft
-                    color: Theme.color.neutral9
-                    text: root.address
-                    wrapMode: Text.WrapAnywhere
-                }
-
-                Icon {
-                    id: copyIcon
-                    anchors.right: parent.right
-                    anchors.verticalCenter: addressText.verticalCenter
-                    source: "image://images/copy"
-                    color: Theme.color.neutral8
-                    size: 30
-                    enabled: true
-                    onClicked: {
-                        Clipboard.setText(addressText.text.replace(/\s+/g, ""))
-                    }
-                }
+                address: root.address
             }
 
             ColumnLayout {

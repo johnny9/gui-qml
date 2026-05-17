@@ -46,20 +46,6 @@ Page {
         return "₿ " + intPart + "." + spaced
     }
 
-    function formatAddressRichText(addr) {
-        if (!addr) return ""
-        var c1 = Theme.color.neutral9
-        var c2 = Theme.color.neutral7
-        var html = ""
-        for (var i = 0; i < addr.length; i += 4) {
-            var chunk = addr.substring(i, Math.min(i + 4, addr.length))
-            var color = (Math.floor(i / 4) % 2 === 0) ? c1 : c2
-            if (i > 0) html += ' '
-            html += '<nobr><font color="' + color + '">' + chunk + '</font></nobr>'
-        }
-        return html
-    }
-
     header: NavigationBar2 {
         leftItem: NavButton {
             objectName: "paymentRequestDetailBack"
@@ -196,60 +182,11 @@ Page {
                     onEditClicked: root.editRequest()
                 }
 
-                Item {
+                AddressDetailRow {
                     Layout.fillWidth: true
                     visible: root.request !== null && root.request.address !== ""
-                    implicitHeight: addressCol.implicitHeight + 20
-
-                    ColumnLayout {
-                        id: addressCol
-                        anchors.left: parent.left
-                        anchors.right: copyAddressIcon.left
-                        anchors.rightMargin: 10
-                        anchors.top: parent.top
-                        anchors.topMargin: 10
-                        spacing: 4
-
-                        CoreText {
-                            Layout.fillWidth: true
-                            horizontalAlignment: Text.AlignLeft
-                            text: qsTr("Address")
-                            font.pixelSize: 13
-                            color: Theme.color.neutral7
-                        }
-                        CoreText {
-                            id: addressValue
-                            Layout.fillWidth: true
-                            horizontalAlignment: Text.AlignLeft
-                            font.pixelSize: 18
-                            textFormat: Text.RichText
-                            wrapMode: Text.WordWrap
-                            text: root.request ? formatAddressRichText(root.request.address) : ""
-                        }
-                    }
-
-                    Icon {
-                        id: copyAddressIcon
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        source: "qrc:/icons/copy"
-                        color: Theme.color.neutral9
-                        size: 24
-                    }
-
-                    MouseArea {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 44
-                        height: 44
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (root.request) {
-                                Clipboard.setText(root.request.address)
-                                copiedToast.show()
-                            }
-                        }
-                    }
+                    address: root.request ? root.request.address : ""
+                    onCopied: copiedToast.show()
                 }
             }
 
