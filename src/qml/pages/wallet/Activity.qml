@@ -129,6 +129,16 @@ PageStack {
                 }
             }
 
+            function shortenedAddress(address) {
+                var value = String(address)
+                if (value.length <= 12) {
+                    return value
+                }
+                return value.substring(0, 6)
+                    + " ... "
+                    + value.substring(value.length - 6)
+            }
+
             function emptyActivityTitle() {
                 if (activitySourceEmpty) {
                     if (nodeModel.verificationProgress < 0.9999) {
@@ -552,7 +562,7 @@ PageStack {
                                 wrap: false
                                 color: delegate.hovered ? Theme.color.orange : Theme.color.neutral9
                                 elide: Text.ElideMiddle
-                                text: delegate.label !== "" ? delegate.label : delegate.address
+                                text: delegate.label !== "" ? delegate.label : root.shortenedAddress(delegate.address)
                                 font.pixelSize: 15
                                 horizontalAlignment: Text.AlignLeft
                                 clip: true
