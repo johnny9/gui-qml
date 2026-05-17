@@ -213,6 +213,8 @@ Page {
                         Layout.fillWidth: true
                         leftPadding: 0
                         rightPadding: 0
+                        topPadding: 4
+                        bottomPadding: 4
                         hoverEnabled: AppMode.isDesktop
                         background: Item {
                             Rectangle {
