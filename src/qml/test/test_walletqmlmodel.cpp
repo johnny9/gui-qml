@@ -318,11 +318,13 @@ void WalletQmlModelTests::detailPropertiesReflectWalletCapabilities()
     QCOMPARE(model->keyScheme(), QString("Watch-only"));
     QCOMPARE(model->privateKeysStatus(), QString("Disabled"));
     QCOMPARE(model->externalSignerStatus(), QString("Enabled"));
+    QVERIFY(!model->canManagePassphrase());
 
     wallet->private_keys_disabled = false;
 
     QCOMPARE(model->keyScheme(), QString("Single-key"));
     QCOMPARE(model->privateKeysStatus(), QString("Enabled"));
+    QVERIFY(model->canManagePassphrase());
 }
 
 void WalletQmlModelTests::encryptWalletUpdatesSecurityState()

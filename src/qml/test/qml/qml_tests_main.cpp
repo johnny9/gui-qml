@@ -538,6 +538,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString keyScheme MEMBER m_key_scheme NOTIFY walletInfoChanged)
     Q_PROPERTY(QString privateKeysStatus MEMBER m_private_keys_status NOTIFY walletInfoChanged)
     Q_PROPERTY(QString externalSignerStatus MEMBER m_external_signer_status NOTIFY walletInfoChanged)
+    Q_PROPERTY(bool canManagePassphrase MEMBER m_can_manage_passphrase NOTIFY walletInfoChanged)
     Q_PROPERTY(QString settingsError MEMBER m_settings_error NOTIFY settingsErrorChanged)
     Q_PROPERTY(QString lastBackupPath READ lastBackupPath NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(int backupWalletCalls READ backupWalletCalls NOTIFY backupWalletCallsChanged)
@@ -710,8 +711,21 @@ public:
     {
         m_last_backup_path.clear();
         m_backup_wallet_calls = 0;
+        m_key_scheme = QStringLiteral("Descriptor");
+        m_private_keys_status = QStringLiteral("Enabled");
+        m_external_signer_status = QStringLiteral("Not used");
+        m_can_manage_passphrase = true;
         clearSettingsError();
         Q_EMIT backupWalletCallsChanged();
+        Q_EMIT walletInfoChanged();
+    }
+    Q_INVOKABLE void setExternalSignerWalletSettingsTestState()
+    {
+        m_key_scheme = QStringLiteral("Watch-only");
+        m_private_keys_status = QStringLiteral("Disabled");
+        m_external_signer_status = QStringLiteral("Enabled");
+        m_can_manage_passphrase = false;
+        Q_EMIT walletInfoChanged();
     }
 
 Q_SIGNALS:
@@ -759,6 +773,7 @@ private:
     QString m_key_scheme{QStringLiteral("Descriptor")};
     QString m_private_keys_status{QStringLiteral("Enabled")};
     QString m_external_signer_status{QStringLiteral("Not used")};
+    bool m_can_manage_passphrase{true};
     QString m_settings_error;
     QString m_last_backup_path;
     int m_backup_wallet_calls{0};

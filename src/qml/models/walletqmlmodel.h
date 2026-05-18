@@ -55,6 +55,7 @@ class WalletQmlModel : public QObject
     Q_PROPERTY(QString keyScheme READ keyScheme CONSTANT)
     Q_PROPERTY(QString privateKeysStatus READ privateKeysStatus CONSTANT)
     Q_PROPERTY(QString externalSignerStatus READ externalSignerStatus CONSTANT)
+    Q_PROPERTY(bool canManagePassphrase READ canManagePassphrase CONSTANT)
     Q_PROPERTY(QString transactionError READ transactionError NOTIFY transactionErrorChanged)
     Q_PROPERTY(bool transactionNeedsUnlock READ transactionNeedsUnlock NOTIFY transactionNeedsUnlockChanged)
     Q_PROPERTY(QString settingsError READ settingsError NOTIFY settingsErrorChanged)
@@ -138,6 +139,7 @@ public:
     QString keyScheme() const;
     QString privateKeysStatus() const;
     QString externalSignerStatus() const;
+    bool canManagePassphrase() const;
     QString transactionError() const { return m_transaction_error; }
     bool transactionNeedsUnlock() const { return m_transaction_needs_unlock; }
     QString settingsError() const { return m_settings_error; }

@@ -53,4 +53,16 @@ TestCase {
         compare(testWalletModel.backupWalletCalls, 1)
         compare(testWalletModel.lastBackupPath, "/tmp/qml-wallet-settings-test.bak")
     }
+
+    function test_wallet_settings_hides_password_action_for_external_signer_wallet() {
+        testWalletModel.setExternalSignerWalletSettingsTestState()
+        const page = createWalletSettingsPage()
+
+        const passwordRow = findChild(page, "walletSettingsPasswordRow")
+        verify(passwordRow !== null)
+        compare(passwordRow.visible, false)
+
+        const backupRow = findChild(page, "walletSettingsBackupRow")
+        verify(backupRow !== null)
+    }
 }

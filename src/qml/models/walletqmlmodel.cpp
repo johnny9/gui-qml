@@ -476,6 +476,11 @@ QString WalletQmlModel::externalSignerStatus() const
     return m_wallet->hasExternalSigner() ? tr("Enabled") : tr("None");
 }
 
+bool WalletQmlModel::canManagePassphrase() const
+{
+    return m_wallet && !m_wallet->privateKeysDisabled();
+}
+
 QString WalletQmlModel::newAddress(QString label)
 {
     if (!m_wallet) {

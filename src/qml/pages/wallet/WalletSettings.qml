@@ -25,6 +25,7 @@ Page {
     signal passwordRequested()
 
     readonly property bool walletLoaded: walletController.isWalletLoaded
+    readonly property bool canManagePassphrase: root.wallet !== null && root.wallet.canManagePassphrase
 
     background: null
 
@@ -263,11 +264,17 @@ Page {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.color.neutral4 }
+        Rectangle {
+            visible: root.canManagePassphrase
+            Layout.fillWidth: true
+            height: visible ? 1 : 0
+            color: Theme.color.neutral4
+        }
 
         Setting {
             id: passwordSetting
             objectName: "walletSettingsPasswordRow"
+            visible: root.canManagePassphrase
             Layout.fillWidth: true
             header: root.wallet && root.wallet.isEncrypted ? qsTr("Update password") : qsTr("Set password")
             filledStateColor: Theme.color.neutral7
