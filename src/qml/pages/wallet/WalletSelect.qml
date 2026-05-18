@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2026 The Bitcoin Core developers
+// Copyright (c) 2024 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -18,6 +18,10 @@ Popup {
     clip: true
 
     signal addWallet()
+
+    function closeLoadedWallet(name) {
+        walletController.closeWallet(name)
+    }
 
     background: Item {
         anchors.fill: parent
@@ -76,17 +80,67 @@ Popup {
             ScrollBar.vertical: ScrollBar { }
             model: walletListModel
 
-            delegate: WalletBadge {
-                required property string name
-                required property string format
+            delegate: ItemDelegate {
+                id: delegate
+                required property string name;
+                required property string displayName;
+                required property string format;
+                required property int loadState;
+
                 objectName: "walletSelectItem_" + name.replace(/[^A-Za-z0-9_]/g, "_")
                 width: 220
                 height: 32
-                text: name
                 checked: walletController.selectedWallet.name == name
                 ButtonGroup.group: buttonGroup
-                showBalance: false
-                showIcon: false
+                leftPadding: 10
+                rightPadding: 6
+                topPadding: 0
+                bottomPadding: 0
+
+                background: Rectangle {
+                    radius: 5
+                    color: delegate.hovered ? Theme.color.neutral2 : "transparent"
+                }
+
+                HoverHandler {
+                    cursorShape: Qt.PointingHandCursor
+                }
+
+                contentItem: RowLayout {
+                    spacing: 6
+
+                    CoreText {
+                        objectName: "walletSelectName_" + delegate.name.replace(/[^A-Za-z0-9_]/g, "_")
+                        Layout.fillWidth: true
+                        text: delegate.displayName
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        font.pixelSize: 14
+                        bold: delegate.loadState === 1
+                        color: delegate.checked || delegate.hovered
+                            ? Theme.color.orange
+                            : delegate.loadState === 1 ? Theme.color.neutral9 : Theme.color.neutral7
+                        elide: Text.ElideRight
+                    }
+
+                    IconButton {
+                        id: closeButton
+                        objectName: "walletSelectClose_" + delegate.name.replace(/[^A-Za-z0-9_]/g, "_")
+                        visible: delegate.loadState === 1
+                        enabled: visible
+                        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                        Layout.preferredWidth: 20
+                        Layout.preferredHeight: 20
+                        size: 20
+                        iconSource: "image://images/cross"
+                        iconColor: delegate.hovered ? Theme.color.orange : Theme.color.neutral7
+                        hoverColor: Theme.color.orange
+                        activeColor: iconColor
+
+                        onClicked: root.closeLoadedWallet(delegate.name)
+                    }
+                }
+
                 onClicked: {
                     walletController.setSelectedWallet(name, format)
                     root.close()

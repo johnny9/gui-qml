@@ -187,7 +187,7 @@ def select_wallet(gui, wallet_name):
                     gui.get_list_item_property(
                         view_object_name="walletSelectList",
                         row_index=row_index,
-                        prop="text",
+                        prop="name",
                     )
                 )
             except QmlDriverError:
@@ -234,9 +234,27 @@ def ensure_desktop_wallets_visible(gui):
 def open_wallet_settings(gui):
     ensure_desktop_wallets_visible(gui)
     gui.click("desktopWalletSettingsTabButton")
-    gui.wait_for_property("settingsWallet", "visible", True, timeout_ms=10000)
-    gui.click("settingsWallet")
+    gui.wait_for_property("settingsExternalSigner", "visible", True, timeout_ms=10000)
+    gui.click("settingsExternalSigner")
     gui.wait_for_property("externalSignerPathInput", "visible", True, timeout_ms=10000)
+
+
+def open_selected_wallet_settings(gui):
+    ensure_desktop_wallets_visible(gui)
+    gui.click("desktopWalletSettingsTabButton")
+    try:
+        gui.wait_for_property("settingsExternalSigner", "visible", True, timeout_ms=1000)
+    except QmlDriverError:
+        for back_button in ("walletSettingsBackButton", "settingsWalletBack"):
+            try:
+                if gui.get_property(back_button, "visible") is True:
+                    gui.click(back_button)
+                    break
+            except QmlDriverError:
+                pass
+        gui.wait_for_property("settingsExternalSigner", "visible", True, timeout_ms=10000)
+    gui.click("settingsWallet")
+    gui.wait_for_page("walletSettingsPage", timeout_ms=10000)
 
 
 def configure_external_signer_via_gui(harness, checkpoints, signer_path):
@@ -475,6 +493,10 @@ def run_test(args):
 
         configure_external_signer_via_gui(harness, checkpoints, signer_path)
         wallet_name = create_and_verify_external_wallet(harness, checkpoints)
+        open_selected_wallet_settings(harness.driver)
+        harness.driver.wait_for_property("walletSettingsPasswordRow", "visible", False, timeout_ms=10000)
+        harness.driver.wait_for_property("walletSettingsBackupRow", "visible", True, timeout_ms=10000)
+        checkpoints.checkpoint("external signer wallet hides password settings", harness.driver)
 
         create_wallet(harness.gui_rpc_port, "miner", load_on_startup=False)
         setup_mock_wallet(harness.gui_rpc_port)

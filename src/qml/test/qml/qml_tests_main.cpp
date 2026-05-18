@@ -535,6 +535,13 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(int sendTransactionCalls READ sendTransactionCalls NOTIFY sendTransactionCallsChanged)
     Q_PROPERTY(bool isEncrypted MEMBER m_is_encrypted NOTIFY securityStateChanged)
     Q_PROPERTY(bool isLocked MEMBER m_is_locked NOTIFY securityStateChanged)
+    Q_PROPERTY(QString keyScheme MEMBER m_key_scheme NOTIFY walletInfoChanged)
+    Q_PROPERTY(QString privateKeysStatus MEMBER m_private_keys_status NOTIFY walletInfoChanged)
+    Q_PROPERTY(QString externalSignerStatus MEMBER m_external_signer_status NOTIFY walletInfoChanged)
+    Q_PROPERTY(bool canManagePassphrase MEMBER m_can_manage_passphrase NOTIFY walletInfoChanged)
+    Q_PROPERTY(QString settingsError MEMBER m_settings_error NOTIFY settingsErrorChanged)
+    Q_PROPERTY(QString lastBackupPath READ lastBackupPath NOTIFY backupWalletCallsChanged)
+    Q_PROPERTY(int backupWalletCalls READ backupWalletCalls NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(QString transactionError MEMBER m_transaction_error NOTIFY transactionErrorChanged)
     Q_PROPERTY(bool transactionNeedsUnlock MEMBER m_transaction_needs_unlock NOTIFY transactionNeedsUnlockChanged)
 
@@ -573,6 +580,8 @@ public:
     int prepareTransactionCalls() const { return m_prepare_transaction_calls; }
     int scheduleFeeEstimatesCalls() const { return m_schedule_fee_estimates_calls; }
     int sendTransactionCalls() const { return m_send_transaction_calls; }
+    QString lastBackupPath() const { return m_last_backup_path; }
+    int backupWalletCalls() const { return m_backup_wallet_calls; }
     Q_INVOKABLE QString estimatedFeeForTarget(const int target) const
     {
         const QString estimate = m_fee_estimates.value(target);
@@ -684,6 +693,40 @@ public:
         Q_EMIT request->idChanged();
         Q_EMIT request->addressChanged();
     }
+    Q_INVOKABLE void clearSettingsError()
+    {
+        if (m_settings_error.isEmpty()) return;
+        m_settings_error.clear();
+        Q_EMIT settingsErrorChanged();
+    }
+    Q_INVOKABLE bool backupWallet(const QString& path)
+    {
+        m_last_backup_path = path;
+        ++m_backup_wallet_calls;
+        clearSettingsError();
+        Q_EMIT backupWalletCallsChanged();
+        return true;
+    }
+    Q_INVOKABLE void resetWalletSettingsTestState()
+    {
+        m_last_backup_path.clear();
+        m_backup_wallet_calls = 0;
+        m_key_scheme = QStringLiteral("Descriptor");
+        m_private_keys_status = QStringLiteral("Enabled");
+        m_external_signer_status = QStringLiteral("Not used");
+        m_can_manage_passphrase = true;
+        clearSettingsError();
+        Q_EMIT backupWalletCallsChanged();
+        Q_EMIT walletInfoChanged();
+    }
+    Q_INVOKABLE void setExternalSignerWalletSettingsTestState()
+    {
+        m_key_scheme = QStringLiteral("Watch-only");
+        m_private_keys_status = QStringLiteral("Disabled");
+        m_external_signer_status = QStringLiteral("Enabled");
+        m_can_manage_passphrase = false;
+        Q_EMIT walletInfoChanged();
+    }
 
 Q_SIGNALS:
     void nameChanged();
@@ -700,6 +743,9 @@ Q_SIGNALS:
     void scheduleFeeEstimatesCallsChanged();
     void sendTransactionCallsChanged();
     void securityStateChanged();
+    void walletInfoChanged();
+    void settingsErrorChanged();
+    void backupWalletCallsChanged();
     void transactionErrorChanged();
     void transactionNeedsUnlockChanged();
 
@@ -724,6 +770,13 @@ private:
     bool m_send_transaction_result{true};
     bool m_is_encrypted{false};
     bool m_is_locked{false};
+    QString m_key_scheme{QStringLiteral("Descriptor")};
+    QString m_private_keys_status{QStringLiteral("Enabled")};
+    QString m_external_signer_status{QStringLiteral("Not used")};
+    bool m_can_manage_passphrase{true};
+    QString m_settings_error;
+    QString m_last_backup_path;
+    int m_backup_wallet_calls{0};
     QString m_transaction_error;
     bool m_transaction_needs_unlock{false};
     int m_fee_estimate_revision{1};
@@ -756,6 +809,8 @@ class MockWalletController : public QObject
     Q_PROPERTY(bool isWalletLoaded MEMBER m_is_wallet_loaded NOTIFY isWalletLoadedChanged)
     Q_PROPERTY(bool noWalletsFound MEMBER m_no_wallets_found NOTIFY noWalletsFoundChanged)
     Q_PROPERTY(QString lastSelectedWalletName READ lastSelectedWalletName NOTIFY lastSelectedWalletNameChanged)
+    Q_PROPERTY(QString lastClosedWalletName READ lastClosedWalletName NOTIFY lastClosedWalletNameChanged)
+    Q_PROPERTY(int closeWalletCalls READ closeWalletCalls NOTIFY closeWalletCallsChanged)
     Q_PROPERTY(QObject* selectedWallet READ selectedWallet NOTIFY selectedWalletChanged)
 
 public:
@@ -764,9 +819,16 @@ public:
     bool m_no_wallets_found{false};
     QObject* m_selected_wallet{nullptr};
     QString m_last_selected_wallet_name;
+    QString m_last_closed_wallet_name;
+    int m_close_wallet_calls{0};
 
     QObject* selectedWallet() const { return m_selected_wallet; }
     QString lastSelectedWalletName() const { return m_last_selected_wallet_name; }
+    QString lastClosedWalletName() const { return m_last_closed_wallet_name; }
+    int closeWalletCalls() const { return m_close_wallet_calls; }
+    Q_INVOKABLE QString homePath() const { return QStringLiteral("/tmp"); }
+    Q_INVOKABLE QString normalizeWalletPath(const QString& path) const { return path; }
+    Q_INVOKABLE bool walletPathExists(const QString&) const { return false; }
     void setSelectedWalletObject(QObject* wallet)
     {
         if (m_selected_wallet == wallet) return;
@@ -781,12 +843,30 @@ public:
         Q_EMIT lastSelectedWalletNameChanged();
         Q_EMIT selectedWalletChanged();
     }
+    Q_INVOKABLE void closeWallet(const QString& name)
+    {
+        m_last_closed_wallet_name = name;
+        ++m_close_wallet_calls;
+        Q_EMIT lastClosedWalletNameChanged();
+        Q_EMIT closeWalletCallsChanged();
+    }
+    Q_INVOKABLE void reset()
+    {
+        m_last_selected_wallet_name.clear();
+        m_last_closed_wallet_name.clear();
+        m_close_wallet_calls = 0;
+        Q_EMIT lastSelectedWalletNameChanged();
+        Q_EMIT lastClosedWalletNameChanged();
+        Q_EMIT closeWalletCallsChanged();
+    }
 
 Q_SIGNALS:
     void initializedChanged();
     void isWalletLoadedChanged();
     void noWalletsFoundChanged();
     void lastSelectedWalletNameChanged();
+    void lastClosedWalletNameChanged();
+    void closeWalletCallsChanged();
     void selectedWalletChanged();
 };
 
@@ -796,6 +876,9 @@ class MockOptionsModel : public QObject
     Q_PROPERTY(bool listen MEMBER m_listen NOTIFY listenChanged)
     Q_PROPERTY(bool natpmp MEMBER m_natpmp NOTIFY natpmpChanged)
     Q_PROPERTY(bool server MEMBER m_server NOTIFY serverChanged)
+    Q_PROPERTY(int maxMempoolSizeMB READ maxMempoolSizeMB WRITE setMaxMempoolSizeMB NOTIFY maxMempoolSizeMBChanged)
+    Q_PROPERTY(int maxMaxMempoolSizeMB MEMBER m_max_max_mempool_size_mb CONSTANT)
+    Q_PROPERTY(int minMaxMempoolSizeMB MEMBER m_min_max_mempool_size_mb CONSTANT)
     Q_PROPERTY(bool prune MEMBER m_prune NOTIFY pruneChanged)
     Q_PROPERTY(int pruneSizeGB MEMBER m_prune_size_gb NOTIFY pruneSizeGBChanged)
     Q_PROPERTY(QString dataDir MEMBER m_data_dir NOTIFY dataDirChanged)
@@ -810,11 +893,21 @@ public:
     bool m_listen{true};
     bool m_natpmp{false};
     bool m_server{false};
+    int m_max_mempool_size_mb{300};
+    int m_max_max_mempool_size_mb{99999};
+    int m_min_max_mempool_size_mb{1};
     bool m_prune{true};
     int m_prune_size_gb{2};
     QString m_data_dir{QStringLiteral("/tmp/bitcoin-default")};
     QString m_custom_data_dir{QStringLiteral("/tmp/bitcoin-custom")};
 
+    int maxMempoolSizeMB() const { return m_max_mempool_size_mb; }
+    void setMaxMempoolSizeMB(int value)
+    {
+        if (value == m_max_mempool_size_mb) return;
+        m_max_mempool_size_mb = value;
+        Q_EMIT maxMempoolSizeMBChanged(value);
+    }
     QString getDefaultDataDirString() const { return QStringLiteral("/tmp/bitcoin-default"); }
     Q_INVOKABLE QString getCustomDataDirString() const { return m_custom_data_dir; }
     Q_INVOKABLE void setCustomDataDirString(const QString& dir) { m_custom_data_dir = dir; }
@@ -848,6 +941,7 @@ Q_SIGNALS:
     void listenChanged();
     void natpmpChanged();
     void serverChanged();
+    void maxMempoolSizeMBChanged(int value);
     void pruneChanged();
     void pruneSizeGBChanged();
     void dataDirChanged();
@@ -882,6 +976,10 @@ class MockNodeModel : public QObject
     Q_PROPERTY(int remainingSyncTime MEMBER m_remaining_sync_time NOTIFY remainingSyncTimeChanged)
     Q_PROPERTY(bool faulted MEMBER m_faulted NOTIFY faultedChanged)
     Q_PROPERTY(int blockTipHeight MEMBER m_block_tip_height NOTIFY blockTipHeightChanged)
+    Q_PROPERTY(int mempoolTransactionCount MEMBER m_mempool_transaction_count NOTIFY mempoolInfoChanged)
+    Q_PROPERTY(double mempoolUsageMB MEMBER m_mempool_usage_mb NOTIFY mempoolInfoChanged)
+    Q_PROPERTY(double mempoolMaxUsageMB MEMBER m_mempool_max_usage_mb NOTIFY mempoolInfoChanged)
+    Q_PROPERTY(bool mempoolInfoPollingActive READ mempoolInfoPollingActive WRITE setMempoolInfoPollingActive NOTIFY mempoolInfoPollingActiveChanged)
 
 public:
     bool m_pause{false};
@@ -891,9 +989,24 @@ public:
     int m_remaining_sync_time{0};
     bool m_faulted{false};
     int m_block_tip_height{0};
+    int m_mempool_transaction_count{0};
+    double m_mempool_usage_mb{0.0};
+    double m_mempool_max_usage_mb{300.0};
+    bool m_mempool_info_polling_active{false};
+    bool mempoolInfoPollingActive() const { return m_mempool_info_polling_active; }
+    void setMempoolInfoPollingActive(bool active)
+    {
+        if (m_mempool_info_polling_active == active) return;
+        m_mempool_info_polling_active = active;
+        Q_EMIT mempoolInfoPollingActiveChanged(active);
+    }
 
     Q_INVOKABLE void startNodeInitializionThread() {}
     Q_INVOKABLE void requestShutdown() { Q_EMIT requestedShutdown(); }
+    Q_INVOKABLE void resetMempoolInfoPollingTestState()
+    {
+        setMempoolInfoPollingActive(false);
+    }
     Q_INVOKABLE QString defaultProxyAddress() const { return QStringLiteral("127.0.0.1:9050"); }
     Q_INVOKABLE bool validateProxyAddress(const QString& value) const
     {
@@ -913,6 +1026,8 @@ Q_SIGNALS:
     void remainingSyncTimeChanged();
     void faultedChanged();
     void blockTipHeightChanged();
+    void mempoolInfoChanged();
+    void mempoolInfoPollingActiveChanged(bool active);
 };
 
 class MockPeerTableModel : public QObject
@@ -998,11 +1113,14 @@ private:
 class MockWalletListModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(int listWalletDirCalls READ listWalletDirCalls NOTIFY listWalletDirCallsChanged)
 
 public:
     enum Roles {
         NameRole = Qt::UserRole + 1,
-        FormatRole
+        FormatRole,
+        DisplayNameRole,
+        LoadStateRole
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex{}) const override
@@ -1014,8 +1132,10 @@ public:
     QVariant data(const QModelIndex& index, int role) const override
     {
         if (!index.isValid() || index.row() < 0 || index.row() >= m_wallet_names.size()) return {};
+        if (role == Qt::DisplayRole || role == DisplayNameRole) return m_wallet_names.at(index.row());
         if (role == NameRole) return m_wallet_names.at(index.row());
         if (role == FormatRole) return QStringLiteral("sqlite");
+        if (role == LoadStateRole) return m_wallet_load_states.at(index.row());
         return {};
     }
 
@@ -1024,13 +1144,41 @@ public:
         return {
             {NameRole, "name"},
             {FormatRole, "format"},
+            {DisplayNameRole, "displayName"},
+            {LoadStateRole, "loadState"},
         };
     }
 
-    Q_INVOKABLE void listWalletDir() {}
+    int listWalletDirCalls() const { return m_list_wallet_dir_calls; }
+
+    Q_INVOKABLE void listWalletDir()
+    {
+        ++m_list_wallet_dir_calls;
+        Q_EMIT listWalletDirCallsChanged();
+    }
+    Q_INVOKABLE void reset()
+    {
+        m_list_wallet_dir_calls = 0;
+        Q_EMIT listWalletDirCallsChanged();
+        setWalletLoadState(QStringLiteral("testwallet"), 1);
+        setWalletLoadState(QStringLiteral("secondarywallet"), 0);
+    }
+    Q_INVOKABLE void setWalletLoadState(const QString& name, int state)
+    {
+        const int row = m_wallet_names.indexOf(name);
+        if (row < 0 || m_wallet_load_states.at(row) == state) return;
+        m_wallet_load_states[row] = state;
+        const QModelIndex changed_index = index(row, 0);
+        Q_EMIT dataChanged(changed_index, changed_index, {LoadStateRole});
+    }
+
+Q_SIGNALS:
+    void listWalletDirCallsChanged();
 
 private:
+    int m_list_wallet_dir_calls{0};
     QStringList m_wallet_names{QStringLiteral("testwallet"), QStringLiteral("secondarywallet")};
+    QVector<int> m_wallet_load_states{1, 0};
 };
 
 class MockBumpTransactionModel : public QObject

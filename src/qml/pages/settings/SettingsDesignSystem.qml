@@ -30,6 +30,8 @@ Page {
         { name: "body", group: "Body" },
         { name: "description", group: "Body" },
         { name: "caption", group: "Body" },
+        { name: "button", group: "Controls" },
+        { name: "buttonStrong", group: "Controls" },
         { name: "monoLead", group: "Mono" },
         { name: "monoBody", group: "Mono" },
         { name: "monoDescription", group: "Mono" },

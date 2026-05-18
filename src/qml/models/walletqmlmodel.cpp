@@ -433,6 +433,54 @@ QString WalletQmlModel::name() const
     return QString::fromStdString(m_wallet->getWalletName());
 }
 
+QString WalletQmlModel::displayName() const
+{
+    if (!m_display_name.isEmpty()) {
+        return m_display_name;
+    }
+    return name();
+}
+
+void WalletQmlModel::setDisplayName(const QString& display_name)
+{
+    if (m_display_name != display_name) {
+        m_display_name = display_name;
+        Q_EMIT displayNameChanged();
+    }
+}
+
+QString WalletQmlModel::keyScheme() const
+{
+    if (!m_wallet) {
+        return {};
+    }
+    if (m_wallet->privateKeysDisabled()) {
+        return tr("Watch-only");
+    }
+    return tr("Single-key");
+}
+
+QString WalletQmlModel::privateKeysStatus() const
+{
+    if (!m_wallet) {
+        return {};
+    }
+    return m_wallet->privateKeysDisabled() ? tr("Disabled") : tr("Enabled");
+}
+
+QString WalletQmlModel::externalSignerStatus() const
+{
+    if (!m_wallet) {
+        return {};
+    }
+    return m_wallet->hasExternalSigner() ? tr("Enabled") : tr("None");
+}
+
+bool WalletQmlModel::canManagePassphrase() const
+{
+    return m_wallet && !m_wallet->privateKeysDisabled();
+}
+
 QString WalletQmlModel::newAddress(QString label)
 {
     if (!m_wallet) {
@@ -441,6 +489,93 @@ QString WalletQmlModel::newAddress(QString label)
     OutputType output_type = m_wallet->getDefaultAddressType();
     util::Result<CTxDestination> dest{m_wallet->getNewDestination(output_type, label.toStdString())};
     return QString::fromStdString(EncodeDestination(dest.value()));
+}
+
+bool WalletQmlModel::encryptWallet(const QString& passphrase)
+{
+    clearSettingsError();
+    if (!m_wallet) {
+        setSettingsError(tr("No wallet is selected."));
+        return false;
+    }
+    if (passphrase.isEmpty()) {
+        setSettingsError(tr("Enter a new wallet password."));
+        return false;
+    }
+
+    SecureString secure_passphrase{SecureStringFromQString(passphrase)};
+    const bool encrypted{m_wallet->encryptWallet(secure_passphrase)};
+    ClearSecureString(secure_passphrase);
+    if (!encrypted) {
+        setSettingsError(tr("The wallet password could not be set."));
+        return false;
+    }
+
+    refreshSecurityState();
+    return true;
+}
+
+bool WalletQmlModel::changeWalletPassphrase(const QString& old_passphrase, const QString& new_passphrase)
+{
+    clearSettingsError();
+    if (!m_wallet) {
+        setSettingsError(tr("No wallet is selected."));
+        return false;
+    }
+    if (old_passphrase.isEmpty()) {
+        setSettingsError(tr("Enter the current wallet password."));
+        return false;
+    }
+    if (new_passphrase.isEmpty()) {
+        setSettingsError(tr("Enter a new wallet password."));
+        return false;
+    }
+
+    SecureString secure_old_passphrase{SecureStringFromQString(old_passphrase)};
+    SecureString secure_new_passphrase{SecureStringFromQString(new_passphrase)};
+    const bool changed{m_wallet->changeWalletPassphrase(secure_old_passphrase, secure_new_passphrase)};
+    ClearSecureString(secure_old_passphrase);
+    ClearSecureString(secure_new_passphrase);
+    if (!changed) {
+        setSettingsError(tr("The current wallet password was incorrect."));
+        return false;
+    }
+
+    refreshSecurityState();
+    return true;
+}
+
+bool WalletQmlModel::backupWallet(const QString& path)
+{
+    clearSettingsError();
+    if (!m_wallet) {
+        setSettingsError(tr("No wallet is selected."));
+        return false;
+    }
+    if (path.trimmed().isEmpty()) {
+        setSettingsError(tr("Choose a location for the wallet backup."));
+        return false;
+    }
+
+    if (!m_wallet->backupWallet(path.toStdString())) {
+        setSettingsError(tr("The wallet could not be backed up."));
+        return false;
+    }
+
+    return true;
+}
+
+void WalletQmlModel::clearSettingsError()
+{
+    setSettingsError(QString());
+}
+
+void WalletQmlModel::removeWallet()
+{
+    if (!m_wallet) {
+        return;
+    }
+    m_wallet->remove();
 }
 
 void WalletQmlModel::commitPaymentRequest()
@@ -720,6 +855,14 @@ std::unique_ptr<interfaces::Handler> WalletQmlModel::handleStatusChanged(StatusC
         return nullptr;
     }
     return m_wallet->handleStatusChanged(fn);
+}
+
+std::unique_ptr<interfaces::Handler> WalletQmlModel::handleUnload(UnloadFn fn)
+{
+    if (!m_wallet) {
+        return nullptr;
+    }
+    return m_wallet->handleUnload(fn);
 }
 
 bool WalletQmlModel::prepareTransaction()
@@ -1059,6 +1202,11 @@ void WalletQmlModel::subscribeToWalletSignals()
             Q_EMIT balanceChanged();
         }, Qt::QueuedConnection);
     });
+    m_handler_unload = handleUnload([this]() {
+        QMetaObject::invokeMethod(this, [this] {
+            Q_EMIT walletUnloaded();
+        }, Qt::QueuedConnection);
+    });
 }
 
 void WalletQmlModel::unsubscribeFromWalletSignals()
@@ -1068,6 +1216,9 @@ void WalletQmlModel::unsubscribeFromWalletSignals()
     }
     if (m_handler_transaction_changed) {
         m_handler_transaction_changed->disconnect();
+    }
+    if (m_handler_unload) {
+        m_handler_unload->disconnect();
     }
 }
 
@@ -1123,5 +1274,13 @@ void WalletQmlModel::setTransactionStatus(const QString& error, bool needs_unloc
     if (m_transaction_needs_unlock != needs_unlock) {
         m_transaction_needs_unlock = needs_unlock;
         Q_EMIT transactionNeedsUnlockChanged();
+    }
+}
+
+void WalletQmlModel::setSettingsError(const QString& error)
+{
+    if (m_settings_error != error) {
+        m_settings_error = error;
+        Q_EMIT settingsErrorChanged();
     }
 }
