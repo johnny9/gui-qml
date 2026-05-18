@@ -979,6 +979,7 @@ class MockNodeModel : public QObject
     Q_PROPERTY(int mempoolTransactionCount MEMBER m_mempool_transaction_count NOTIFY mempoolInfoChanged)
     Q_PROPERTY(double mempoolUsageMB MEMBER m_mempool_usage_mb NOTIFY mempoolInfoChanged)
     Q_PROPERTY(double mempoolMaxUsageMB MEMBER m_mempool_max_usage_mb NOTIFY mempoolInfoChanged)
+    Q_PROPERTY(bool mempoolInfoPollingActive READ mempoolInfoPollingActive WRITE setMempoolInfoPollingActive NOTIFY mempoolInfoPollingActiveChanged)
 
 public:
     bool m_pause{false};
@@ -991,9 +992,21 @@ public:
     int m_mempool_transaction_count{0};
     double m_mempool_usage_mb{0.0};
     double m_mempool_max_usage_mb{300.0};
+    bool m_mempool_info_polling_active{false};
+    bool mempoolInfoPollingActive() const { return m_mempool_info_polling_active; }
+    void setMempoolInfoPollingActive(bool active)
+    {
+        if (m_mempool_info_polling_active == active) return;
+        m_mempool_info_polling_active = active;
+        Q_EMIT mempoolInfoPollingActiveChanged(active);
+    }
 
     Q_INVOKABLE void startNodeInitializionThread() {}
     Q_INVOKABLE void requestShutdown() { Q_EMIT requestedShutdown(); }
+    Q_INVOKABLE void resetMempoolInfoPollingTestState()
+    {
+        setMempoolInfoPollingActive(false);
+    }
     Q_INVOKABLE QString defaultProxyAddress() const { return QStringLiteral("127.0.0.1:9050"); }
     Q_INVOKABLE bool validateProxyAddress(const QString& value) const
     {
@@ -1014,6 +1027,7 @@ Q_SIGNALS:
     void faultedChanged();
     void blockTipHeightChanged();
     void mempoolInfoChanged();
+    void mempoolInfoPollingActiveChanged(bool active);
 };
 
 class MockPeerTableModel : public QObject

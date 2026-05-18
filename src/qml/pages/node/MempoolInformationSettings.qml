@@ -40,17 +40,9 @@ InformationPage {
         id: mempoolInformationRows
     }
 
-    Component.onCompleted: nodeModel.refreshMempoolInfo()
+    Component.onCompleted: nodeModel.mempoolInfoPollingActive = visible
+    Component.onDestruction: nodeModel.mempoolInfoPollingActive = false
     onVisibleChanged: {
-        if (visible) {
-            nodeModel.refreshMempoolInfo()
-        }
-    }
-
-    Timer {
-        interval: 3000
-        repeat: true
-        running: root.visible
-        onTriggered: nodeModel.refreshMempoolInfo()
+        nodeModel.mempoolInfoPollingActive = visible
     }
 }

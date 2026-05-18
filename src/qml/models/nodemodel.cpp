@@ -9,6 +9,7 @@
 #include <net_processing.h>
 #include <netbase.h>
 #include <node/interface_ui.h>
+#include <util/threadnames.h>
 #include <validation.h>
 
 #include <cassert>
@@ -16,15 +17,31 @@
 
 #include <QDateTime>
 #include <QMetaObject>
+#include <QThread>
+#include <QTimer>
 #include <QTimerEvent>
+
+using namespace std::chrono_literals;
+
+static constexpr int MEMPOOL_INFO_POLLING_INTERVAL_MS{3000};
 
 NodeModel::NodeModel(interfaces::Node& node)
     : m_node{node}
 {
+    initializeMempoolInfoPolling();
     ConnectToBlockTipSignal();
     ConnectToNumConnectionsChangedSignal();
     ConnectToBannedListChangedSignal();
     refreshMempoolInfo();
+}
+
+NodeModel::~NodeModel()
+{
+    setMempoolInfoPollingActive(false);
+    if (m_mempool_info_thread) {
+        m_mempool_info_thread->quit();
+        m_mempool_info_thread->wait();
+    }
 }
 
 void NodeModel::setBlockTipHeight(int new_height)
@@ -45,16 +62,89 @@ void NodeModel::setNumOutboundPeers(int new_num)
 
 void NodeModel::refreshMempoolInfo()
 {
-    const int mempool_transaction_count = static_cast<int>(m_node.getMempoolSize());
-    const double mempool_usage_mb = m_node.getMempoolDynamicUsage() / 1'000'000.0;
-    const double mempool_max_usage_mb = m_node.getMempoolMaxUsage() / 1'000'000.0;
+    requestMempoolInfoRefresh();
+}
 
-    if (mempool_transaction_count != m_mempool_transaction_count ||
-        mempool_usage_mb != m_mempool_usage_mb ||
-        mempool_max_usage_mb != m_mempool_max_usage_mb) {
-        m_mempool_transaction_count = mempool_transaction_count;
-        m_mempool_usage_mb = mempool_usage_mb;
-        m_mempool_max_usage_mb = mempool_max_usage_mb;
+void NodeModel::setMempoolInfoPollingActive(bool active)
+{
+    if (m_mempool_info_polling_active == active) {
+        return;
+    }
+    m_mempool_info_polling_active = active;
+    Q_EMIT mempoolInfoPollingActiveChanged(active);
+
+    QTimer* timer = m_mempool_info_timer;
+    if (!timer) {
+        return;
+    }
+
+    QMetaObject::invokeMethod(timer, [timer, active] {
+        if (active) {
+            timer->start();
+        } else {
+            timer->stop();
+        }
+    }, Qt::QueuedConnection);
+
+    if (active) {
+        refreshMempoolInfo();
+    }
+}
+
+void NodeModel::initializeMempoolInfoPolling()
+{
+    m_mempool_info_worker = new QObject;
+    m_mempool_info_thread = new QThread(this);
+    m_mempool_info_timer = new QTimer;
+    m_mempool_info_timer->setInterval(MEMPOOL_INFO_POLLING_INTERVAL_MS);
+
+    m_mempool_info_worker->moveToThread(m_mempool_info_thread);
+    m_mempool_info_timer->moveToThread(m_mempool_info_thread);
+
+    connect(m_mempool_info_timer, &QTimer::timeout, m_mempool_info_worker, [this] {
+        fetchMempoolInfo();
+    });
+    connect(m_mempool_info_thread, &QThread::finished, m_mempool_info_timer, &QObject::deleteLater);
+    connect(m_mempool_info_thread, &QThread::finished, m_mempool_info_worker, &QObject::deleteLater);
+
+    m_mempool_info_thread->start();
+    QTimer::singleShot(0, m_mempool_info_worker, [] {
+        util::ThreadRename("qml-mempool");
+    });
+}
+
+void NodeModel::requestMempoolInfoRefresh()
+{
+    if (!m_mempool_info_worker) {
+        return;
+    }
+
+    QTimer::singleShot(0, m_mempool_info_worker, [this] {
+        fetchMempoolInfo();
+    });
+}
+
+void NodeModel::fetchMempoolInfo()
+{
+    const MempoolInfo info{
+        static_cast<int>(m_node.getMempoolSize()),
+        m_node.getMempoolDynamicUsage() / 1'000'000.0,
+        m_node.getMempoolMaxUsage() / 1'000'000.0,
+    };
+
+    QMetaObject::invokeMethod(this, [this, info] {
+        applyMempoolInfo(info);
+    }, Qt::QueuedConnection);
+}
+
+void NodeModel::applyMempoolInfo(const MempoolInfo& info)
+{
+    if (info.transaction_count != m_mempool_transaction_count ||
+        info.usage_mb != m_mempool_usage_mb ||
+        info.max_usage_mb != m_mempool_max_usage_mb) {
+        m_mempool_transaction_count = info.transaction_count;
+        m_mempool_usage_mb = info.usage_mb;
+        m_mempool_max_usage_mb = info.max_usage_mb;
         Q_EMIT mempoolInfoChanged();
     }
 }
