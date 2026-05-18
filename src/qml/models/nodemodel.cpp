@@ -263,12 +263,12 @@ void NodeModel::ConnectToBlockTipSignal()
 
     m_handler_notify_block_tip = m_node.handleNotifyBlockTip(
         [this](SynchronizationState state, interfaces::BlockTip tip, double verification_progress) {
-            QMetaObject::invokeMethod(this, [&, this] {
+            QMetaObject::invokeMethod(this, [this, tip, verification_progress] {
                 setBlockTipHeight(tip.block_height);
                 setVerificationProgress(verification_progress);
 
                 Q_EMIT setTimeRatioList(tip.block_time);
-            });
+            }, Qt::QueuedConnection);
         });
 }
 
@@ -278,7 +278,9 @@ void NodeModel::ConnectToNumConnectionsChangedSignal()
 
     m_handler_notify_num_peers_changed = m_node.handleNotifyNumConnectionsChanged(
         [this](int new_num_connections) {
-            setNumOutboundPeers(new_num_connections);
+            QMetaObject::invokeMethod(this, [this, new_num_connections] {
+                setNumOutboundPeers(new_num_connections);
+            }, Qt::QueuedConnection);
         });
 }
 
