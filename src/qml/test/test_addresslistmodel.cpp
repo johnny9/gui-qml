@@ -178,6 +178,7 @@ void AddressListModelTests::changeAddressesComeFromUnspentChangeOutputs()
     };
     interfaces::WalletTxOut change_out;
     change_out.txout = CTxOut{2 * COIN, GetScriptForDestination(change)};
+    change_out.time = 0;
 
     TestAddressWallet* wallet_ptr{wallet.get()};
     WalletQmlModel wallet_model{std::move(wallet)};
