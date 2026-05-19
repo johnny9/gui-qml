@@ -8,19 +8,21 @@ import QtQuick.Layouts 1.15
 import org.bitcoincore.qt 1.0
 
 Button {
+    id: root
     property int bgRadius: 5
     property color bgDefaultColor: "transparent"
     property color bgHoverColor: Theme.color.neutral2
     property color textColor: Theme.color.neutral7
     property color textHoverColor: Theme.color.neutral9
     property color textActiveColor: Theme.color.neutral7
-
-    id: root
+    property int contentHorizontalPadding: 10
+    property int contentTopPadding: 10
+    property int contentBottomPadding: 10
     checkable: true
-    checked: optionSwitch.checked
     hoverEnabled: AppMode.isDesktop
 
     implicitWidth: 280
+    implicitHeight: optionSwitch.implicitHeight + root.contentTopPadding + root.contentBottomPadding
 
     MouseArea {
         anchors.fill: parent
@@ -29,15 +31,14 @@ Button {
         cursorShape: Qt.PointingHandCursor
     }
 
-    onClicked: {
-        optionSwitch.checked = !optionSwitch.checked
-    }
-
     contentItem: RowLayout {
         spacing: 7
         anchors.fill: parent
         anchors.centerIn: parent
-        anchors.margins: 10
+        anchors.leftMargin: root.contentHorizontalPadding
+        anchors.rightMargin: root.contentHorizontalPadding
+        anchors.topMargin: root.contentTopPadding
+        anchors.bottomMargin: root.contentBottomPadding
         CoreText {
             id: buttonText
             Layout.fillWidth: true
@@ -52,6 +53,7 @@ Button {
             Layout.preferredWidth: 40
             Layout.preferredHeight: 24
             checked: root.checked
+            onToggled: root.checked = checked
         }
     }
 
@@ -61,15 +63,24 @@ Button {
         radius: root.bgRadius
 
         Behavior on color {
-            ColorAnimation { duration: 150 }
+            ColorAnimation {
+                duration: 150
+            }
         }
     }
 
     states: [
         State {
-            name: "HOVER"; when: root.hovered
-            PropertyChanges { target: bg; color: root.bgHoverColor }
-            PropertyChanges { target: buttonText; color: root.textHoverColor }
+            name: "HOVER"
+            when: root.hovered
+            PropertyChanges {
+                target: bg
+                color: root.bgHoverColor
+            }
+            PropertyChanges {
+                target: buttonText
+                color: root.textHoverColor
+            }
         }
     ]
 }
