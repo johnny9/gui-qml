@@ -63,6 +63,7 @@
         <file>controls/ProgressIndicator.qml</file>
         <file>controls/QRImage.qml</file>
         <file>controls/qmldir</file>
+        <file>controls/ReceiveOptionsPopup.qml</file>
         <file>controls/SendOptionsPopup.qml</file>
         <file>controls/SegmentedPicker.qml</file>
         <file>controls/Setting.qml</file>
@@ -104,6 +105,9 @@
         <file>pages/settings/SettingsTheme.qml</file>
         <file>pages/wallet/Activity.qml</file>
         <file>pages/wallet/ActivityDetails.qml</file>
+        <file>pages/wallet/AddressList.qml</file>
+        <file>pages/wallet/AddressDetails.qml</file>
+        <file>pages/wallet/AddressRow.qml</file>
         <file>pages/wallet/CoinSelection.qml</file>
         <file>pages/wallet/CreateBackup.qml</file>
         <file>pages/wallet/CreateConfirm.qml</file>

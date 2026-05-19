@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QML_UTIL_H
 #define BITCOIN_QML_UTIL_H
 
+#include <support/allocators/secure.h>
+
 #include <QString>
 #include <QtGlobal>
 
@@ -21,6 +23,9 @@ namespace QmlUtil {
 * that is in use by the Qt Quick scene graph renderer.
 */
 QString GraphicsApi(QQuickWindow* window);
+
+SecureString SecureStringFromQString(const QString& value);
+void ClearSecureString(SecureString& value);
 
 } // namespace QmlUtil
 

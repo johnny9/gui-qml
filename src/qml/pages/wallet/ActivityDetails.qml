@@ -12,6 +12,8 @@ import "../../components"
 import "../settings"
 
 Page {
+    id: root
+
     signal showTransaction(string txid)
 
     property string txid: ""
@@ -50,7 +52,6 @@ Page {
         }
     }
 
-    id: root
     background: null
 
     header: NavigationBar2 {
@@ -141,7 +142,7 @@ Page {
                 id: labelTextInput
                 Layout.fillWidth: true
                 Layout.bottomMargin: 20
-                labelText: qsTr("Label")
+                labelText: qsTr("Note to self")
                 visible: root.label != ""
                 enabled: false
                 text: root.label

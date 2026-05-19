@@ -17,7 +17,7 @@ OptionPopup {
     property alias multipleRecipientsEnabled: multipleRecipientsToggle.checked
 
     implicitWidth: 300
-    implicitHeight: 100
+    implicitHeight: columnLayout.implicitHeight + 20
 
     clip: true
     modal: true

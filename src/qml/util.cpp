@@ -4,9 +4,13 @@
 
 #include <qml/util.h>
 
+#include <support/cleanse.h>
+
 #include <cassert>
+#include <cstddef>
 #include <string>
 
+#include <QByteArray>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QString>
@@ -31,6 +35,26 @@ QString GraphicsApi(QQuickWindow* window)
 #endif
     } // no default case, so the compiler can warn about missing cases
     assert(false);
+}
+
+SecureString SecureStringFromQString(const QString& value)
+{
+    QByteArray bytes{value.toUtf8()};
+    SecureString secure;
+    secure.assign(bytes.constData(), bytes.constData() + bytes.size());
+    if (!bytes.isEmpty()) {
+        memory_cleanse(bytes.data(), static_cast<std::size_t>(bytes.size()));
+    }
+    return secure;
+}
+
+void ClearSecureString(SecureString& value)
+{
+    if (value.empty()) {
+        return;
+    }
+    memory_cleanse(value.data(), value.size());
+    value.clear();
 }
 
 } // namespace QmlUtil

@@ -214,10 +214,10 @@ private Q_SLOTS:
     }
 };
 
-int RunBumpTransactionModelTests(int argc, char* argv[])
-{
-    BumpTransactionModelTests test;
-    return QTest::qExec(&test, argc, argv);
-}
-
+#ifdef BITCOINQML_NO_TEST_MAIN
+#include <test/qt_test_registry.h>
+BITCOINQML_REGISTER_QT_TEST(BumpTransactionModelTests)
+#else
+QTEST_MAIN(BumpTransactionModelTests)
+#endif
 #include "test_bumptransactionmodel.moc"

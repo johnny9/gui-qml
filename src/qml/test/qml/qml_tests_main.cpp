@@ -9,6 +9,7 @@
 #include <QQmlContext>
 #include <QRegularExpression>
 #include <QStringList>
+#include <QVariantList>
 #include <qqml.h>
 
 #include <algorithm>
@@ -155,6 +156,60 @@ class MockBitcoinAddress : public QObject
     Q_OBJECT
 };
 
+class MockAddressListModel : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(Category category READ category WRITE setCategory NOTIFY categoryChanged)
+    Q_PROPERTY(QVariantList categoryOptions READ categoryOptions CONSTANT)
+    Q_PROPERTY(bool showUsed READ showUsed WRITE setShowUsed NOTIFY showUsedChanged)
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
+
+public:
+    enum Category {
+        SingleUse,
+        Change
+    };
+    Q_ENUM(Category)
+
+    Category category() const { return m_category; }
+    QVariantList categoryOptions() const
+    {
+        return {
+            QVariantMap{{QStringLiteral("value"), static_cast<int>(SingleUse)}, {QStringLiteral("text"), QStringLiteral("Single-use")}},
+            QVariantMap{{QStringLiteral("value"), static_cast<int>(Change)}, {QStringLiteral("text"), QStringLiteral("Change")}},
+        };
+    }
+    bool showUsed() const { return m_show_used; }
+    int count() const { return 0; }
+
+    void setCategory(const Category category)
+    {
+        if (m_category == category) return;
+        m_category = category;
+        Q_EMIT categoryChanged();
+    }
+
+    void setShowUsed(const bool show_used)
+    {
+        if (m_show_used == show_used) return;
+        m_show_used = show_used;
+        Q_EMIT showUsedChanged();
+    }
+
+    Q_INVOKABLE void refresh() {}
+    Q_INVOKABLE bool setAddressLabel(const QString&, const QString&) { return false; }
+    Q_INVOKABLE QString addressAt(int) const { return {}; }
+
+Q_SIGNALS:
+    void categoryChanged();
+    void showUsedChanged();
+    void countChanged();
+
+private:
+    Category m_category{SingleUse};
+    bool m_show_used{false};
+};
+
 class MockPaymentRequest : public QObject
 {
     Q_OBJECT
@@ -165,6 +220,8 @@ class MockPaymentRequest : public QObject
     Q_PROPERTY(QString message MEMBER m_message NOTIFY messageChanged)
     Q_PROPERTY(QString address MEMBER m_address NOTIFY addressChanged)
     Q_PROPERTY(QString addressFormatted READ addressFormatted NOTIFY addressChanged)
+    Q_PROPERTY(bool needsUnlock MEMBER m_needs_unlock NOTIFY needsUnlockChanged)
+    Q_PROPERTY(QString unlockError MEMBER m_unlock_error NOTIFY unlockErrorChanged)
 
 public:
     QString m_id;
@@ -172,6 +229,8 @@ public:
     QString m_label;
     QString m_message;
     QString m_address;
+    bool m_needs_unlock{false};
+    QString m_unlock_error;
     MockBitcoinAmount m_amount{};
 
     QObject* amount() { return &m_amount; }
@@ -183,6 +242,8 @@ public:
         m_label.clear();
         m_message.clear();
         m_address.clear();
+        m_needs_unlock = false;
+        m_unlock_error.clear();
         m_amount.m_display = QStringLiteral("0.00000000");
         m_amount.m_unit = MockBitcoinAmount::BTC;
         Q_EMIT idChanged();
@@ -190,6 +251,8 @@ public:
         Q_EMIT labelChanged();
         Q_EMIT messageChanged();
         Q_EMIT addressChanged();
+        Q_EMIT needsUnlockChanged();
+        Q_EMIT unlockErrorChanged();
     }
 
 Q_SIGNALS:
@@ -198,6 +261,8 @@ Q_SIGNALS:
     void labelChanged();
     void messageChanged();
     void addressChanged();
+    void needsUnlockChanged();
+    void unlockErrorChanged();
 };
 
 class MockTransaction : public QObject
@@ -521,6 +586,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QObject* coinsListModel READ coinsListModel CONSTANT)
     Q_PROPERTY(QObject* currentTransaction READ currentTransaction CONSTANT)
     Q_PROPERTY(QObject* currentPaymentRequest READ currentPaymentRequest CONSTANT)
+    Q_PROPERTY(MockAddressListModel* addressListModel READ addressListModel CONSTANT)
     Q_PROPERTY(int targetBlocks READ targetBlocks WRITE setTargetBlocks NOTIFY targetBlocksChanged)
     Q_PROPERTY(QString estimatedFee READ estimatedFee NOTIFY feeEstimateRevisionChanged)
     Q_PROPERTY(bool customFeeEnabled READ customFeeEnabled WRITE setCustomFeeEnabled NOTIFY customFeeEnabledChanged)
@@ -563,6 +629,7 @@ public:
     QObject* coinsListModel() const { return m_coins_list_model; }
     QObject* currentTransaction() const { return m_current_transaction; }
     QObject* currentPaymentRequest() const { return m_current_payment_request; }
+    MockAddressListModel* addressListModel() { return &m_address_list_model; }
     int targetBlocks() const { return m_target_blocks; }
     QString estimatedFee() const
     {
@@ -684,14 +751,19 @@ public:
         }
         return m_send_transaction_result;
     }
-    Q_INVOKABLE void commitPaymentRequest()
+    Q_INVOKABLE bool commitPaymentRequest()
     {
         auto* request = qobject_cast<MockPaymentRequest*>(m_current_payment_request);
-        if (!request) return;
+        if (!request) return false;
         request->m_id = QStringLiteral("1");
         request->m_address = QStringLiteral("bcrt1qrequestaddress0000000000000000000000");
         Q_EMIT request->idChanged();
         Q_EMIT request->addressChanged();
+        return true;
+    }
+    Q_INVOKABLE bool commitPaymentRequestWithPassphrase(const QString&)
+    {
+        return commitPaymentRequest();
     }
     Q_INVOKABLE void clearSettingsError()
     {
@@ -783,6 +855,7 @@ private:
     int m_prepare_transaction_calls{0};
     int m_schedule_fee_estimates_calls{0};
     int m_send_transaction_calls{0};
+    MockAddressListModel m_address_list_model;
 };
 
 class MockWalletQmlModelTransaction : public QObject
@@ -1377,6 +1450,7 @@ public Q_SLOTS:
         );
         qmlRegisterType<MockBitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
         qmlRegisterType<MockBitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
+        qmlRegisterUncreatableType<MockAddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "Test stub type");
         qmlRegisterType<MockPaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
         qmlRegisterUncreatableType<MockTransaction>("org.bitcoincore.qt", 1, 0, "Transaction", "Test stub type");
         qmlRegisterUncreatableType<MockSendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "Test stub type");

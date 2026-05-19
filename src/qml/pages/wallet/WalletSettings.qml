@@ -23,6 +23,7 @@ Page {
     signal back()
     signal selectWalletRequested()
     signal passwordRequested()
+    signal addressesRequested()
 
     readonly property bool walletLoaded: walletController.isWalletLoaded
     readonly property bool canManagePassphrase: root.wallet !== null && root.wallet.canManagePassphrase
@@ -262,6 +263,22 @@ Page {
                 objectName: "walletSettingsExternalSignerValue"
                 text: root.wallet ? root.wallet.externalSignerStatus : ""
             }
+        }
+
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.color.neutral4 }
+
+        Setting {
+            id: addressesSetting
+            objectName: "settingsAddresses"
+            Layout.fillWidth: true
+            header: qsTr("Addresses")
+            filledStateColor: Theme.color.neutral7
+            hoverStateColor: Theme.color.orange
+            activeStateColor: Theme.color.orange
+            actionItem: CaretRightIcon {
+                color: addressesSetting.stateColor
+            }
+            onClicked: root.addressesRequested()
         }
 
         Rectangle {

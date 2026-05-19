@@ -14,6 +14,7 @@ import "../settings"
 PageStack {
     signal doneClicked
     signal selectWalletRequested
+    signal receiveRequested
 
     property alias showDoneButton: doneButton.visible
     property bool closingWalletSettingsSubpage: false
@@ -23,6 +24,7 @@ PageStack {
 
     function isWalletSettingsSubpage(page_name) {
         return page_name === "walletPasswordSettingsPage"
+            || page_name === "addressListPage"
     }
 
     function closeWalletSettingsSubpage() {
@@ -255,6 +257,16 @@ PageStack {
         }
     }
     Component {
+        id: addresses_page
+        AddressList {
+            onBack: root.pop()
+            onReceiveRequested: {
+                root.pop()
+                root.receiveRequested()
+            }
+        }
+    }
+    Component {
         id: peers_page
         Peers {
             onBack: {
@@ -308,6 +320,10 @@ PageStack {
             onBack: root.pop()
             onSelectWalletRequested: root.selectWalletRequested()
             onPasswordRequested: root.push(wallet_password_page, { "updating": walletController.selectedWallet.isEncrypted })
+            onAddressesRequested: {
+                walletController.selectedWallet.addressListModel.refresh()
+                root.push(addresses_page)
+            }
         }
     }
     Component {

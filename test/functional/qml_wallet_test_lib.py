@@ -152,7 +152,7 @@ def update_settings_json(datadir, updates):
 
 
 class WalletFlowHarness:
-    """Launches a source bitcoind and the QML GUI with isolated datadirs."""
+    """Launches the QML GUI and optional source bitcoind with isolated datadirs."""
 
     def __init__(self, name, port_offset):
         self.name = name
@@ -188,8 +188,11 @@ class WalletFlowHarness:
         return os.path.join(self.source_datadir, "regtest", "wallets")
 
     def start_source_node(self, extra_args=None, binary=None):
-        bitcoind_binary = binary or self.bitcoind_binary or find_bitcoind()
-        self.bitcoind_binary = bitcoind_binary
+        bitcoind_binary = binary
+        if bitcoind_binary is None:
+            if self.bitcoind_binary is None:
+                self.bitcoind_binary = find_bitcoind()
+            bitcoind_binary = self.bitcoind_binary
         args = [bitcoind_binary, f"-datadir={self.source_datadir}"]
         if extra_args:
             args.extend(extra_args)
@@ -267,6 +270,8 @@ class WalletFlowHarness:
 
     def process_output(self, process):
         if not process:
+            return ""
+        if process.poll() is None:
             return ""
         stdout = process.stdout.read().decode("utf-8", errors="replace") if process.stdout else ""
         stderr = process.stderr.read().decode("utf-8", errors="replace") if process.stderr else ""
