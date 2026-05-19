@@ -348,6 +348,16 @@ private Q_SLOTS:
     void encryptWalletUpdatesSecurityState();
     void changeWalletPassphraseForwardsPasswords();
     void backupWalletForwardsPath();
+    void signVerifyMessageRejectsNonP2PKHAddress();
+    void signVerifyMessageSignsWithLegacyP2PKHAddress();
+    void signVerifyMessageSignsEmptyMessage();
+    void signVerifyMessageWithPassphraseUnlocksSignsAndRelocks();
+    void signVerifyMessageWrongPassphraseSurfacesErrorAndDoesNotRelock();
+    void signVerifyMessageSurfacesSigningFailure();
+    void signVerifyMessageWithoutWalletSurfacesError();
+    void signVerifyMessageClearResetsState();
+    void signVerifyMessageVerifiesValidSignature();
+    void signVerifyMessageVerifyRejectsEmptySignature();
 };
 
 void WalletQmlModelTests::initTestCase()
@@ -1154,6 +1164,161 @@ void WalletQmlModelTests::sendTransactionCommitsPreparedTransactionWithoutUnlock
     QVERIFY(wallet->fill_psbt_sign_args.empty());
     QVERIFY(model->transactionError().isEmpty());
     QVERIFY(!model->transactionNeedsUnlock());
+}
+
+void WalletQmlModelTests::signVerifyMessageRejectsNonP2PKHAddress()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    auto* sign_verify = model->signVerifyMessageModel();
+
+    QVERIFY(!sign_verify->isLegacyP2PKHAddress(QString::fromLatin1(NON_P2PKH_ADDRESS)));
+    QVERIFY(!sign_verify->signMessage(QString::fromLatin1(NON_P2PKH_ADDRESS), "message"));
+    QCOMPARE(sign_verify->signingError(), QString("Enter a legacy P2PKH bitcoin address."));
+    QCOMPARE(wallet->sign_message_calls, 0);
+}
+
+void WalletQmlModelTests::signVerifyMessageSignsWithLegacyP2PKHAddress()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    wallet->encrypted = false;
+    wallet->locked = false;
+    auto* sign_verify = model->signVerifyMessageModel();
+
+    QVERIFY(sign_verify->isLegacyP2PKHAddress(VALID_MAINNET_ADDRESS));
+    QVERIFY(sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello"));
+    QCOMPARE(wallet->sign_message_calls, 1);
+    QCOMPARE(wallet->last_signed_message, std::string("hello"));
+    QCOMPARE(sign_verify->signature(), QString("fake-signature"));
+    QVERIFY(sign_verify->signingError().isEmpty());
+    QVERIFY(!sign_verify->signingNeedsUnlock());
+}
+
+void WalletQmlModelTests::signVerifyMessageWithPassphraseUnlocksSignsAndRelocks()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    auto* sign_verify = model->signVerifyMessageModel();
+
+    QVERIFY(!sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello"));
+    QVERIFY(sign_verify->signingNeedsUnlock());
+    QCOMPARE(wallet->unlock_calls, 0);
+
+    QVERIFY(sign_verify->signMessageWithPassphrase(VALID_MAINNET_ADDRESS, "hello", "secret"));
+    QCOMPARE(wallet->unlock_calls, 1);
+    QCOMPARE(wallet->lock_calls, 1);
+    QVERIFY(wallet->locked);
+    QCOMPARE(sign_verify->signature(), QString("fake-signature"));
+}
+
+void WalletQmlModelTests::signVerifyMessageSurfacesSigningFailure()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    wallet->encrypted = false;
+    wallet->locked = false;
+    wallet->sign_message_fn = [](const std::string&, const PKHash&, std::string&) {
+        return SigningResult::PRIVATE_KEY_NOT_AVAILABLE;
+    };
+    auto* sign_verify = model->signVerifyMessageModel();
+
+    QVERIFY(!sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello"));
+    QVERIFY(sign_verify->signature().isEmpty());
+    QCOMPARE(sign_verify->signingError(), QString("Private key not available"));
+}
+
+void WalletQmlModelTests::signVerifyMessageVerifiesValidSignature()
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const QString address{QString::fromStdString(EncodeDestination(PKHash(key.GetPubKey())))};
+    const QString message{"hello"};
+    std::string signature;
+    QVERIFY(MessageSign(key, message.toStdString(), signature));
+
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    auto* sign_verify = model->signVerifyMessageModel();
+
+    QVERIFY(sign_verify->isLegacyP2PKHAddress(address));
+    QVERIFY(sign_verify->verifyMessage(address, message, QString::fromStdString(signature)));
+    QVERIFY(!sign_verify->verifyMessage(address, message + "!", QString::fromStdString(signature)));
+    QVERIFY(!sign_verify->verifyMessage(QString::fromLatin1(NON_P2PKH_ADDRESS), message, QString::fromStdString(signature)));
+}
+
+void WalletQmlModelTests::signVerifyMessageSignsEmptyMessage()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    wallet->encrypted = false;
+    wallet->locked = false;
+    auto* sign_verify = model->signVerifyMessageModel();
+
+    QVERIFY(sign_verify->signMessage(VALID_MAINNET_ADDRESS, QString()));
+    QCOMPARE(wallet->sign_message_calls, 1);
+    QCOMPARE(wallet->last_signed_message, std::string{});
+    QCOMPARE(sign_verify->signature(), QString("fake-signature"));
+    QVERIFY(sign_verify->signingError().isEmpty());
+}
+
+void WalletQmlModelTests::signVerifyMessageWrongPassphraseSurfacesErrorAndDoesNotRelock()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    wallet->unlock_fn = [wallet](const SecureString& passphrase) {
+        ++wallet->unlock_calls;
+        wallet->unlock_passphrases.emplace_back(passphrase.begin(), passphrase.end());
+        return false;
+    };
+    auto* sign_verify = model->signVerifyMessageModel();
+
+    QVERIFY(!sign_verify->signMessageWithPassphrase(VALID_MAINNET_ADDRESS, "hello", "wrong"));
+    QCOMPARE(wallet->unlock_calls, 1);
+    QCOMPARE(wallet->lock_calls, 0);
+    QCOMPARE(wallet->sign_message_calls, 0);
+    QCOMPARE(sign_verify->signingError(), QString("The wallet password you entered was incorrect."));
+    QVERIFY(sign_verify->signature().isEmpty());
+}
+
+void WalletQmlModelTests::signVerifyMessageWithoutWalletSurfacesError()
+{
+    SignVerifyMessageModel sign_verify{nullptr};
+
+    QVERIFY(!sign_verify.signMessage(VALID_MAINNET_ADDRESS, "hello"));
+    QCOMPARE(sign_verify.signingError(), QString("No wallet is selected."));
+    QVERIFY(sign_verify.signature().isEmpty());
+}
+
+void WalletQmlModelTests::signVerifyMessageClearResetsState()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    wallet->encrypted = false;
+    wallet->locked = false;
+    auto* sign_verify = model->signVerifyMessageModel();
+
+    QVERIFY(sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello"));
+    QVERIFY(!sign_verify->signature().isEmpty());
+
+    QVERIFY(!sign_verify->signMessage(QString::fromLatin1(NON_P2PKH_ADDRESS), "hello"));
+    QVERIFY(!sign_verify->signingError().isEmpty());
+    QVERIFY(sign_verify->signature().isEmpty());
+
+    sign_verify->clear();
+    QVERIFY(sign_verify->signature().isEmpty());
+    QVERIFY(sign_verify->signingError().isEmpty());
+    QVERIFY(!sign_verify->signingNeedsUnlock());
+}
+
+void WalletQmlModelTests::signVerifyMessageVerifyRejectsEmptySignature()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    auto* sign_verify = model->signVerifyMessageModel();
+
+    QVERIFY(!sign_verify->verifyMessage(VALID_MAINNET_ADDRESS, "hello", QString()));
+    QVERIFY(!sign_verify->verifyMessage(VALID_MAINNET_ADDRESS, "hello", QStringLiteral("   ")));
 }
 
 void WalletQmlModelTests::sendTransactionWithPrivateKeysDisabledDoesNotCommit()

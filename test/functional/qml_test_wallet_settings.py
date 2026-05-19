@@ -279,6 +279,58 @@ def case_backup_uses_automation_path(harness, checkpoints):
     checkpoints.checkpoint("wallet backup created", gui)
 
 
+def case_sign_verify_message(harness, checkpoints):
+    wallet_name = "settings_sign_verify_wallet"
+    message = "I control this address."
+
+    prepare_managed_wallet(harness, wallet_name, WALLET_PASSWORD)
+    checkpoints.checkpoint("managed wallet fixture prepared")
+
+    harness.start_gui(reset_gui_settings=True)
+    gui = harness.driver
+    checkpoints.checkpoint("GUI launched", gui)
+    harness.finish_onboarding()
+    checkpoints.checkpoint("onboarding completed", gui)
+    dismiss_create_wallet_wizard(gui)
+    load_wallet(gui, harness, wallet_name)
+    checkpoints.checkpoint("managed wallet loaded", gui)
+
+    address = rpc_call(harness.gui_rpc_port, "getnewaddress", ["", "legacy"], wallet=wallet_name)
+
+    open_wallet_settings(gui)
+    gui.click("walletSettingsSignVerifyMessageRow")
+    gui.wait_for_page("signVerifyMessagePage", timeout_ms=10000)
+    checkpoints.checkpoint("sign verify message page opened", gui)
+
+    gui.set_text("signMessageAddressField", address)
+    gui.set_text("signMessageMessageField", message)
+    gui.wait_for_property("signMessageButton", "enabled", True, timeout_ms=5000)
+    gui.click("signMessageButton")
+    gui.wait_for_property("signMessagePassphrasePopup", "opened", True, timeout_ms=5000)
+    gui.set_text("signMessagePassphraseField", WALLET_PASSWORD)
+    gui.click("signMessagePassphraseConfirmButton")
+    gui.wait_for_property("signMessageSignatureOutput", "visible", True, timeout_ms=10000)
+    signature = gui.get_text("signMessageSignatureText")
+    assert signature, "Signing should reveal a signature"
+    checkpoints.checkpoint("message signed", gui)
+
+    gui.click("verifyMessageTab")
+    gui.set_text("verifyMessageAddressField", address)
+    gui.set_text("verifyMessageMessageField", message)
+    gui.set_text("verifyMessageSignatureField", signature)
+    gui.wait_for_property("verifyMessageButton", "enabled", True, timeout_ms=5000)
+    gui.click("verifyMessageButton")
+    gui.wait_for_property("verifyMessageResultBanner", "visible", True, timeout_ms=5000)
+    assert gui.get_text("verifyMessageResultText") == "Message verified successfully."
+    checkpoints.checkpoint("message verified", gui)
+
+    gui.set_text("verifyMessageMessageField", message + " changed")
+    gui.click("verifyMessageButton")
+    gui.wait_for_property("verifyMessageResultBanner", "visible", True, timeout_ms=5000)
+    assert gui.get_text("verifyMessageResultText") == "Message verification failed."
+    checkpoints.checkpoint("message verification failure displayed", gui)
+
+
 def case_subpages_close_when_wallet_becomes_unselected(harness, checkpoints):
     wallet_name = "settings_subpage_wallet"
 
@@ -386,9 +438,10 @@ def run_test(args):
     cases = [
         ("qml_wallet_settings_rename", 400, case_rename_persists_across_restart),
         ("qml_wallet_settings_backup", 410, case_backup_uses_automation_path),
-        ("qml_wallet_settings_subpage_close", 420, case_subpages_close_when_wallet_becomes_unselected),
-        ("qml_wallet_settings_password_context_change", 430, case_password_page_closes_when_selected_wallet_changes),
-        ("qml_wallet_settings_password_failure_clears_current", 440, case_wrong_current_password_clears_current_field),
+        ("qml_wallet_settings_sign_verify_message", 420, case_sign_verify_message),
+        ("qml_wallet_settings_subpage_close", 430, case_subpages_close_when_wallet_becomes_unselected),
+        ("qml_wallet_settings_password_context_change", 440, case_password_page_closes_when_selected_wallet_changes),
+        ("qml_wallet_settings_password_failure_clears_current", 450, case_wrong_current_password_clears_current_field),
     ]
 
     exit_code = 0

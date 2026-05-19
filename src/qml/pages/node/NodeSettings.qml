@@ -25,6 +25,7 @@ PageStack {
     function isWalletSettingsSubpage(page_name) {
         return page_name === "walletPasswordSettingsPage"
             || page_name === "addressListPage"
+            || page_name === "signVerifyMessagePage"
     }
 
     function closeWalletSettingsSubpage() {
@@ -320,10 +321,17 @@ PageStack {
             onBack: root.pop()
             onSelectWalletRequested: root.selectWalletRequested()
             onPasswordRequested: root.push(wallet_password_page, { "updating": walletController.selectedWallet.isEncrypted })
+            onSignVerifyMessageRequested: root.push(sign_verify_message_page)
             onAddressesRequested: {
                 walletController.selectedWallet.addressListModel.refresh()
                 root.push(addresses_page)
             }
+        }
+    }
+    Component {
+        id: sign_verify_message_page
+        SignVerifyMessage {
+            onBack: root.pop()
         }
     }
     Component {

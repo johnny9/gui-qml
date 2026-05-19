@@ -12,6 +12,7 @@
 #include <qml/models/paymentrequest.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
+#include <qml/models/signverifymessagemodel.h>
 #include <qml/models/walletunlock.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/util.h>
@@ -312,6 +313,8 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObje
     m_bump_transaction_model = new BumpTransactionModel(m_wallet.get(), this);
     m_coins_list_model = new CoinsListModel(this);
     m_send_recipients = new SendRecipientsListModel(this);
+    m_sign_verify_message_model = new SignVerifyMessageModel(m_wallet.get(), this);
+    m_sign_verify_message_model->setSecurityStateChangedFn([this]() { refreshSecurityState(); });
     m_current_payment_request = new PaymentRequest(this);
     initializeFeeEstimator();
     refreshSecurityState();
@@ -326,6 +329,8 @@ WalletQmlModel::WalletQmlModel(QObject* parent)
     m_bump_transaction_model = new BumpTransactionModel(nullptr, this);
     m_coins_list_model = new CoinsListModel(this);
     m_send_recipients = new SendRecipientsListModel(this);
+    m_sign_verify_message_model = new SignVerifyMessageModel(nullptr, this);
+    m_sign_verify_message_model->setSecurityStateChangedFn([this]() { refreshSecurityState(); });
     m_current_payment_request = new PaymentRequest(this);
     initializeFeeEstimator();
 }
@@ -345,6 +350,7 @@ WalletQmlModel::~WalletQmlModel()
     delete m_address_list_model;
     delete m_coins_list_model;
     delete m_send_recipients;
+    delete m_sign_verify_message_model;
     delete m_current_payment_request;
     if (m_current_transaction) {
         delete m_current_transaction;

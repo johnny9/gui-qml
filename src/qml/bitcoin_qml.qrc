@@ -27,6 +27,7 @@
         <file>components/StorageOptions.qml</file>
         <file>components/StorageSettings.qml</file>
         <file>components/ThemeSettings.qml</file>
+        <file>components/Toast.qml</file>
         <file>components/TotalBytesIndicator.qml</file>
         <file>components/Tooltip.qml</file>
         <file>components/LabeledValueField.qml</file>
@@ -125,6 +126,7 @@
         <file>pages/wallet/SendResult.qml</file>
         <file>pages/wallet/SendReview.qml</file>
         <file>pages/wallet/SpeedUpOverlay.qml</file>
+        <file>pages/wallet/SignVerifyMessage.qml</file>
         <file>pages/wallet/WalletBadge.qml</file>
         <file>pages/wallet/WalletPasswordSettings.qml</file>
         <file>pages/wallet/WalletSettings.qml</file>
