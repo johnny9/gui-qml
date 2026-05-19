@@ -38,56 +38,29 @@ QByteArray clickObject(QObject* obj)
         return QJsonDocument(resp).toJson(QJsonDocument::Compact);
     }
 
-    auto* item = qobject_cast<QQuickItem*>(obj);
+    // Preferred path: AbstractButton::click() runs the full press/release/
+    // clicked pipeline synchronously and toggles `checked` when checkable.
+    // This is the canonical Qt API for "click this button" and works
+    // regardless of where the button is in screen space (e.g., mid-animation
+    // during a StackView page transition).
     const QMetaObject* meta = obj->metaObject();
-
-    const QString class_name = QString::fromLatin1(meta->className());
-    if (class_name.startsWith(QStringLiteral("EllipsisMenuToggleItem"))) {
-        int clicked_index = meta->indexOfSignal("clicked()");
-        if (clicked_index >= 0 && meta->method(clicked_index).invoke(obj, Qt::DirectConnection)) {
-            return okResponse();
-        }
+    if (int idx = meta->indexOfMethod("click()"); idx >= 0) {
+        if (meta->method(idx).invoke(obj, Qt::DirectConnection)) return okResponse();
+    }
+    if (int idx = meta->indexOfMethod("trigger()"); idx >= 0) {
+        if (meta->method(idx).invoke(obj, Qt::DirectConnection)) return okResponse();
     }
 
-    bool invoked = false;
-    int click_method_index = meta->indexOfMethod("click()");
-    if (click_method_index >= 0) {
-        invoked = meta->method(click_method_index).invoke(obj, Qt::DirectConnection);
-        if (invoked) {
-            return okResponse();
-        }
-    }
-
-    const bool checkable = obj->property("checkable").toBool();
-    int toggle_index = meta->indexOfMethod("toggle()");
-    if (checkable && toggle_index >= 0) {
-        invoked = meta->method(toggle_index).invoke(obj, Qt::DirectConnection);
-    }
-
-    int clicked_index = meta->indexOfSignal("clicked()");
-    if (clicked_index >= 0) {
-        if (meta->method(clicked_index).invoke(obj, Qt::DirectConnection)) {
-            return okResponse();
-        }
-    }
-
-    int trigger_index = meta->indexOfMethod("trigger()");
-    if (trigger_index >= 0) {
-        if (meta->method(trigger_index).invoke(obj, Qt::DirectConnection)) {
-            return okResponse();
-        }
-    }
-
-    if (invoked) {
-        return okResponse();
-    }
-
-    if (item) {
+    // Fallback for non-Button items (bare Item + MouseArea, IconButton, etc.):
+    // synthesize a real mouse press + release at the item's center and
+    // dispatch it through the window so MouseArea / HoverHandler wiring
+    // fires the same way it would for a user click.
+    if (auto* item = qobject_cast<QQuickItem*>(obj)) {
         QQuickWindow* window = item->window();
-        if (window && item->width() > 0 && item->height() > 0) {
-            QPointF center = item->mapToScene(
+        if (window && item->isVisible() && item->width() > 0 && item->height() > 0) {
+            const QPointF center = item->mapToScene(
                 QPointF(item->width() / 2.0, item->height() / 2.0));
-            QPoint pos = center.toPoint();
+            const QPoint pos = center.toPoint();
 
             QMouseEvent press(QEvent::MouseButtonPress, pos, window->mapToGlobal(pos),
                               Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
@@ -96,7 +69,6 @@ QByteArray clickObject(QObject* obj)
 
             QCoreApplication::sendEvent(window, &press);
             QCoreApplication::sendEvent(window, &release);
-
             return okResponse();
         }
     }
