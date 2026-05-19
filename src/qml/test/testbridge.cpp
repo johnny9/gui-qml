@@ -40,9 +40,7 @@ QByteArray clickObject(QObject* obj)
 
     // Preferred path: AbstractButton::click() runs the full press/release/
     // clicked pipeline synchronously and toggles `checked` when checkable.
-    // This is the canonical Qt API for "click this button" and works
-    // regardless of where the button is in screen space (e.g., mid-animation
-    // during a StackView page transition).
+    // Available on QQuickAbstractButton from Qt 6.8+ (Q_REVISION(6, 8)).
     const QMetaObject* meta = obj->metaObject();
     if (int idx = meta->indexOfMethod("click()"); idx >= 0) {
         if (meta->method(idx).invoke(obj, Qt::DirectConnection)) return okResponse();
@@ -51,10 +49,26 @@ QByteArray clickObject(QObject* obj)
         if (meta->method(idx).invoke(obj, Qt::DirectConnection)) return okResponse();
     }
 
-    // Fallback for non-Button items (bare Item + MouseArea, IconButton, etc.):
-    // synthesize a real mouse press + release at the item's center and
-    // dispatch it through the window so MouseArea / HoverHandler wiring
-    // fires the same way it would for a user click.
+    // Fallback for Qt < 6.8 (no QQuickAbstractButton::click()): invoke both
+    // toggle() (if checkable) and the clicked() signal. We can't tell which
+    // one a given control needs - NavigationTab + ButtonGroup react to
+    // `checked` changes via toggle(), while NavButton / ContinueButton react
+    // to QML-defined onClicked handlers via the clicked() signal. Firing
+    // both covers both shapes without per-component special cases.
+    bool invoked_any{false};
+    if (obj->property("checkable").toBool()) {
+        if (int idx = meta->indexOfMethod("toggle()"); idx >= 0) {
+            invoked_any |= meta->method(idx).invoke(obj, Qt::DirectConnection);
+        }
+    }
+    if (int idx = meta->indexOfSignal("clicked()"); idx >= 0) {
+        invoked_any |= meta->method(idx).invoke(obj, Qt::DirectConnection);
+    }
+    if (invoked_any) return okResponse();
+
+    // Last resort for items without click()/trigger()/toggle()/clicked()
+    // (bare Item + MouseArea, etc.): synthesize a real mouse press + release
+    // at the item's center.
     if (auto* item = qobject_cast<QQuickItem*>(obj)) {
         QQuickWindow* window = item->window();
         if (window && item->isVisible() && item->width() > 0 && item->height() > 0) {
