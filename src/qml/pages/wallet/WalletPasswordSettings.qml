@@ -112,6 +112,7 @@ Page {
             Layout.topMargin: root.updating ? 5 : 0
             Layout.leftMargin: 20
             Layout.rightMargin: 20
+            focus: root.updating
             hideText: true
             placeholderText: qsTr("Enter current password...")
             onTextEdited: root.errorText = ""
@@ -135,7 +136,7 @@ Page {
             Layout.topMargin: 5
             Layout.leftMargin: 20
             Layout.rightMargin: 20
-            focus: true
+            focus: !root.updating
             hideText: true
             placeholderText: root.updating ? qsTr("Enter new password...") : qsTr("Enter password...")
             onTextEdited: root.errorText = ""
