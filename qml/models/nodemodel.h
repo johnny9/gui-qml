@@ -41,6 +41,7 @@ class NodeModel : public QObject
     Q_PROPERTY(double mempoolUsageMB READ mempoolUsageMB NOTIFY mempoolInfoChanged)
     Q_PROPERTY(double mempoolMaxUsageMB READ mempoolMaxUsageMB NOTIFY mempoolInfoChanged)
     Q_PROPERTY(bool mempoolInfoPollingActive READ mempoolInfoPollingActive WRITE setMempoolInfoPollingActive NOTIFY mempoolInfoPollingActiveChanged)
+    Q_PROPERTY(bool mempoolInformationAvailable READ mempoolInformationAvailable CONSTANT)
     Q_PROPERTY(int remainingSyncTime READ remainingSyncTime NOTIFY remainingSyncTimeChanged)
     Q_PROPERTY(double verificationProgress READ verificationProgress NOTIFY verificationProgressChanged)
     Q_PROPERTY(bool pause READ pause WRITE setPause NOTIFY pauseChanged)
@@ -65,6 +66,7 @@ public:
     double mempoolMaxUsageMB() const { return m_mempool_max_usage_mb; }
     bool mempoolInfoPollingActive() const { return m_mempool_info_polling_active; }
     void setMempoolInfoPollingActive(bool active);
+    bool mempoolInformationAvailable() const { return m_mempool_information_available; }
     int remainingSyncTime() const { return m_remaining_sync_time; }
     void setRemainingSyncTime(double new_progress);
     double verificationProgress() const { return m_verification_progress; }
@@ -131,6 +133,7 @@ private:
     double m_mempool_usage_mb{0.0};
     double m_mempool_max_usage_mb{0.0};
     bool m_mempool_info_polling_active{false};
+    bool m_mempool_information_available{true};
     int m_remaining_sync_time{0};
     double m_verification_progress{0.0};
     bool m_pause{false};

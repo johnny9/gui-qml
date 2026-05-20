@@ -1277,6 +1277,7 @@ class MockNodeModel : public QObject
     Q_PROPERTY(double mempoolUsageMB MEMBER m_mempool_usage_mb NOTIFY mempoolInfoChanged)
     Q_PROPERTY(double mempoolMaxUsageMB MEMBER m_mempool_max_usage_mb NOTIFY mempoolInfoChanged)
     Q_PROPERTY(bool mempoolInfoPollingActive READ mempoolInfoPollingActive WRITE setMempoolInfoPollingActive NOTIFY mempoolInfoPollingActiveChanged)
+    Q_PROPERTY(bool mempoolInformationAvailable MEMBER m_mempool_information_available NOTIFY mempoolInformationAvailableChanged)
 
 public:
     bool m_pause{false};
@@ -1292,6 +1293,7 @@ public:
     double m_mempool_usage_mb{0.0};
     double m_mempool_max_usage_mb{300.0};
     bool m_mempool_info_polling_active{false};
+    bool m_mempool_information_available{true};
     bool mempoolInfoPollingActive() const { return m_mempool_info_polling_active; }
     void setMempoolInfoPollingActive(bool active)
     {
@@ -1329,6 +1331,7 @@ Q_SIGNALS:
     void blockTipHeightChanged();
     void mempoolInfoChanged();
     void mempoolInfoPollingActiveChanged(bool active);
+    void mempoolInformationAvailableChanged();
 };
 
 class MockPeerTableModel : public QObject
