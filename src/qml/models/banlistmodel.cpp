@@ -44,10 +44,10 @@ QHash<int, QByteArray> BanListModel::roleNames() const
     };
 }
 
-void BanListModel::unbanAt(int row)
+bool BanListModel::unbanAt(int row)
 {
-    if (row < 0 || row >= m_ban_list.size()) return;
-    m_node.unban(m_ban_list.at(row).subnet);
+    if (row < 0 || row >= m_ban_list.size()) return false;
+    return m_node.unban(m_ban_list.at(row).subnet);
 }
 
 void BanListModel::refresh()

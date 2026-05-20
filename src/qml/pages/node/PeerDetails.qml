@@ -16,6 +16,11 @@ Page {
 
     property PeerDetailsModel details
 
+    function showActionError(message) {
+        peerActionError.message = message
+        peerActionError.open()
+    }
+
     Connections {
         target: details
         function onDisconnected() {
@@ -242,7 +247,13 @@ Page {
                     Layout.preferredWidth: 0
                     text: qsTr("Disconnect")
                     bold: false
-                    onClicked: nodeModel.disconnectPeer(details.nodeId)
+                    onClicked: {
+                        if (nodeModel.disconnectPeer(details.nodeId)) {
+                            peerTableModel.refresh()
+                        } else {
+                            root.showActionError(qsTr("Could not disconnect peer. The peer may already be disconnected or the node state may have changed."))
+                        }
+                    }
                 }
 
                 OutlineButton {
@@ -259,6 +270,7 @@ Page {
 
     Popup {
         id: banPopup
+        objectName: "banPopup"
         anchors.centerIn: parent
         modal: true
         padding: 20
@@ -347,12 +359,23 @@ Page {
                     Layout.preferredWidth: 0
                     text: qsTr("Ban")
                     onClicked: {
-                        nodeModel.banPeer(details.rawAddress, banPopup.selectedDuration)
                         banPopup.close()
+                        if (nodeModel.banPeer(details.rawAddress, banPopup.selectedDuration)) {
+                            peerTableModel.refresh()
+                            banListModel.refresh()
+                        } else {
+                            root.showActionError(qsTr("Could not ban peer. The peer may already be disconnected or the node state may have changed."))
+                        }
                     }
                 }
             }
         }
+    }
+
+    ActionErrorPopup {
+        id: peerActionError
+        objectName: "peerActionErrorPopup"
+        title: qsTr("Peer action failed")
     }
 
     component KeyText: CoreText {

@@ -38,7 +38,7 @@ public:
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     int count() const { return m_ban_list.size(); }
 
-    Q_INVOKABLE void unbanAt(int row);
+    Q_INVOKABLE bool unbanAt(int row);
 
 public Q_SLOTS:
     void refresh();

@@ -31,6 +31,7 @@ Page {
 
     ListView {
         id: listView
+        objectName: "bannedPeersList"
         clip: true
         width: Math.min(parent.width - 40, 450)
         height: parent.height
@@ -95,7 +96,15 @@ Page {
                     bold: false
                     horizontalPadding: 24
                     text: qsTr("Unban")
-                    onClicked: banListModel.unbanAt(index)
+                    onClicked: {
+                        if (banListModel.unbanAt(index)) {
+                            banListModel.refresh()
+                        } else {
+                            unbanActionError.message = qsTr("Could not unban peer. The ban list may have changed.")
+                            unbanActionError.open()
+                            banListModel.refresh()
+                        }
+                    }
                 }
             }
         }
@@ -112,5 +121,11 @@ Page {
                 font.pixelSize: 15
             }
         }
+    }
+
+    ActionErrorPopup {
+        id: unbanActionError
+        objectName: "unbanActionErrorPopup"
+        title: qsTr("Peer action failed")
     }
 }
