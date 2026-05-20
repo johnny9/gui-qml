@@ -4,6 +4,7 @@
 
 #include <qml/models/nodemodel.h>
 
+#include <common/args.h>
 #include <interfaces/node.h>
 #include <net.h>
 #include <net_processing.h>
@@ -28,6 +29,7 @@ static constexpr int MEMPOOL_INFO_POLLING_INTERVAL_MS{3000};
 NodeModel::NodeModel(interfaces::Node& node)
     : m_node{node}
 {
+    m_mempool_information_available = !gArgs.GetBoolArg("-blocksonly", DEFAULT_BLOCKSONLY);
     initializeMempoolInfoPolling();
     refreshPeerCounts();
     ConnectToBlockTipSignal();

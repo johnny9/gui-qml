@@ -203,6 +203,7 @@ PageStack {
                 Setting {
                     id: gotoMempoolInformation
                     objectName: "settingsMempoolInformation"
+                    visible: nodeModel.mempoolInformationAvailable
                     Layout.fillWidth: true
                     header: qsTr("Mempool Information")
                     actionItem: CaretRightIcon {
@@ -212,7 +213,10 @@ PageStack {
                         root.push(mempool_information_page)
                     }
                 }
-                Separator { Layout.fillWidth: true }
+                Separator {
+                    visible: gotoMempoolInformation.visible
+                    Layout.fillWidth: true
+                }
                 Setting {
                     id: gotoDebugLog
                     objectName: "settingsDebugLog"
