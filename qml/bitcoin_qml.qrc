@@ -1,6 +1,7 @@
 <!DOCTYPE RCC><RCC version="1.0">
     <qresource prefix="/qml">
         <file>components/AboutOptions.qml</file>
+        <file>components/ActionErrorPopup.qml</file>
         <file>components/AddressDetailRow.qml</file>
         <file>components/BitcoinAddressDisplayField.qml</file>
         <file>components/BitcoinAddressInputField.qml</file>

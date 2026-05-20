@@ -341,6 +341,7 @@ bool NodeModel::disconnectPeer(int nodeId)
 
 bool NodeModel::banPeer(const QString& rawAddress, int64_t banDuration)
 {
+    if (banDuration <= 0) return false;
     auto addr = LookupHost(rawAddress.toStdString(), /*fAllowLookup=*/false);
     if (!addr) return false;
     bool result = m_node.ban(*addr, banDuration);

@@ -22,6 +22,8 @@
 namespace {
 using ::testing::Invoke;
 using ::testing::NiceMock;
+using ::testing::Return;
+using ::testing::Truly;
 
 constexpr int ASYNC_TIMEOUT_MS{1'000};
 
@@ -105,6 +107,10 @@ private Q_SLOTS:
     void refreshMempoolInfoUpdatesProperties();
     void activatingMempoolPollingEmitsSignalsAndRefreshesImmediately();
     void peerCountsInitializeAndRefreshFromDirectionalNodeCounts();
+    void disconnectPeerReturnsNodeResult();
+    void banPeerRejectsInvalidInputs();
+    void banPeerReturnsFalseWithoutDisconnectWhenBackendFails();
+    void banPeerDisconnectsAddressAfterSuccessfulBan();
     void nodeNotificationHandlersUpdateModelThroughQueuedSignals();
     void blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues();
 };
@@ -218,6 +224,78 @@ void NodeModelTests::peerCountsInitializeAndRefreshFromDirectionalNodeCounts()
     QCOMPARE(model.numPeers(), 8);
     QCOMPARE(model.numInboundPeers(), 5);
     QCOMPARE(model.numOutboundPeers(), 3);
+}
+
+void NodeModelTests::disconnectPeerReturnsNodeResult()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    EXPECT_CALL(node, disconnectById(7)).Times(1).WillOnce(Return(true));
+    QVERIFY(model.disconnectPeer(7));
+
+    EXPECT_CALL(node, disconnectById(8)).Times(1).WillOnce(Return(false));
+    QVERIFY(!model.disconnectPeer(8));
+}
+
+void NodeModelTests::banPeerRejectsInvalidInputs()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    EXPECT_CALL(node, ban(testing::_, testing::_)).Times(0);
+    EXPECT_CALL(node, disconnectByAddress(testing::_)).Times(0);
+
+    QVERIFY(!model.banPeer(QStringLiteral("not an address"), 3600));
+    QVERIFY(!model.banPeer(QStringLiteral("127.0.0.1"), 0));
+    QVERIFY(!model.banPeer(QStringLiteral("127.0.0.1"), -1));
+}
+
+void NodeModelTests::banPeerReturnsFalseWithoutDisconnectWhenBackendFails()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    EXPECT_CALL(node, ban(Truly([](const CNetAddr& value) {
+        return value.ToStringAddr() == "127.0.0.1";
+    }), 3600)).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(node, disconnectByAddress(testing::_)).Times(0);
+
+    QVERIFY(!model.banPeer(QStringLiteral("127.0.0.1"), 3600));
+}
+
+void NodeModelTests::banPeerDisconnectsAddressAfterSuccessfulBan()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    auto is_loopback = [](const CNetAddr& value) {
+        return value.ToStringAddr() == "127.0.0.1";
+    };
+    EXPECT_CALL(node, ban(Truly(is_loopback), 3600)).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(node, disconnectByAddress(Truly(is_loopback))).Times(1).WillOnce(Return(true));
+
+    QVERIFY(model.banPeer(QStringLiteral("127.0.0.1"), 3600));
 }
 
 void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()
