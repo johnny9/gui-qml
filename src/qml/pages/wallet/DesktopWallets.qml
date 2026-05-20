@@ -173,7 +173,7 @@ Page {
                     property var syncState: Utils.formatRemainingSyncTime(nodeModel.remainingSyncTime)
                     property bool synced: nodeModel.verificationProgress > 0.999
                     property bool paused: nodeModel.pause
-                    property bool connected: nodeModel.numOutboundPeers > 0
+                    property bool connected: nodeModel.numPeers > 0
                     property bool faulted: nodeModel.faulted
 
                     anchors.top: blockClockTabButton.bottom

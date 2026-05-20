@@ -37,6 +37,12 @@ struct MempoolState {
     std::atomic<int> max_usage_calls{0};
 };
 
+struct PeerCountState {
+    std::atomic<size_t> total{0};
+    std::atomic<size_t> inbound{0};
+    std::atomic<size_t> outbound{0};
+};
+
 void InstallDefaultHandlers(NiceMock<MockNode>& node)
 {
     ON_CALL(node, handleNotifyBlockTip(testing::_))
@@ -51,6 +57,23 @@ void InstallDefaultHandlers(NiceMock<MockNode>& node)
         .WillByDefault(Invoke([](interfaces::Node::BannedListChangedFn) {
             return MakeNoopHandler();
         }));
+}
+
+void InstallPeerCountGetters(NiceMock<MockNode>& node, PeerCountState& peers)
+{
+    ON_CALL(node, getNodeCount(testing::_)).WillByDefault(Invoke([&peers](ConnectionDirection direction) {
+        switch (direction) {
+        case ConnectionDirection::Both:
+            return peers.total.load();
+        case ConnectionDirection::In:
+            return peers.inbound.load();
+        case ConnectionDirection::Out:
+            return peers.outbound.load();
+        case ConnectionDirection::None:
+            return size_t{0};
+        }
+        return size_t{0};
+    }));
 }
 
 void InstallMempoolGetters(NiceMock<MockNode>& node, MempoolState& mempool)
@@ -81,6 +104,7 @@ class NodeModelTests : public GmockTestFixture
 private Q_SLOTS:
     void refreshMempoolInfoUpdatesProperties();
     void activatingMempoolPollingEmitsSignalsAndRefreshesImmediately();
+    void peerCountsInitializeAndRefreshFromDirectionalNodeCounts();
     void nodeNotificationHandlersUpdateModelThroughQueuedSignals();
     void blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues();
 };
@@ -140,15 +164,73 @@ void NodeModelTests::activatingMempoolPollingEmitsSignalsAndRefreshesImmediately
     QCOMPARE(polling_active_spy.takeFirst().at(0).toBool(), false);
 }
 
+void NodeModelTests::peerCountsInitializeAndRefreshFromDirectionalNodeCounts()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    PeerCountState peers;
+    interfaces::Node::NotifyNumConnectionsChangedFn connections_changed_fn;
+
+    peers.total = 3;
+    peers.inbound = 1;
+    peers.outbound = 2;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    InstallPeerCountGetters(node, peers);
+    ON_CALL(node, handleNotifyNumConnectionsChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyNumConnectionsChangedFn fn) {
+            connections_changed_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(connections_changed_fn);
+    QCOMPARE(model.numPeers(), 3);
+    QCOMPARE(model.numInboundPeers(), 1);
+    QCOMPARE(model.numOutboundPeers(), 2);
+
+    QSignalSpy peers_spy{&model, &NodeModel::numPeersChanged};
+    QSignalSpy inbound_spy{&model, &NodeModel::numInboundPeersChanged};
+    QSignalSpy outbound_spy{&model, &NodeModel::numOutboundPeersChanged};
+
+    peers.total = 7;
+    peers.inbound = 5;
+    peers.outbound = 2;
+    connections_changed_fn(99);
+
+    QTRY_COMPARE_WITH_TIMEOUT(peers_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QTRY_COMPARE_WITH_TIMEOUT(inbound_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(outbound_spy.count(), 0);
+    QCOMPARE(model.numPeers(), 7);
+    QCOMPARE(model.numInboundPeers(), 5);
+    QCOMPARE(model.numOutboundPeers(), 2);
+
+    peers.total = 8;
+    peers.inbound = 5;
+    peers.outbound = 3;
+    connections_changed_fn(1);
+
+    QTRY_COMPARE_WITH_TIMEOUT(peers_spy.count(), 2, ASYNC_TIMEOUT_MS);
+    QCOMPARE(inbound_spy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(outbound_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(model.numPeers(), 8);
+    QCOMPARE(model.numInboundPeers(), 5);
+    QCOMPARE(model.numOutboundPeers(), 3);
+}
+
 void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()
 {
     NiceMock<MockNode> node;
     MempoolState mempool;
+    PeerCountState peers;
     interfaces::Node::NotifyBlockTipFn block_tip_fn;
     interfaces::Node::NotifyNumConnectionsChangedFn connections_changed_fn;
     interfaces::Node::BannedListChangedFn banned_list_changed_fn;
 
     InstallMempoolGetters(node, mempool);
+    InstallPeerCountGetters(node, peers);
     ON_CALL(node, handleNotifyBlockTip(testing::_))
         .WillByDefault(Invoke([&](interfaces::Node::NotifyBlockTipFn fn) {
             block_tip_fn = std::move(fn);
@@ -174,22 +256,31 @@ void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()
     QSignalSpy block_tip_height_spy{&model, &NodeModel::blockTipHeightChanged};
     QSignalSpy verification_progress_spy{&model, &NodeModel::verificationProgressChanged};
     QSignalSpy time_ratio_spy{&model, &NodeModel::setTimeRatioList};
+    QSignalSpy peers_spy{&model, &NodeModel::numPeersChanged};
+    QSignalSpy inbound_peers_spy{&model, &NodeModel::numInboundPeersChanged};
     QSignalSpy outbound_peers_spy{&model, &NodeModel::numOutboundPeersChanged};
     QSignalSpy banned_list_spy{&model, &NodeModel::bannedListChanged};
 
     block_tip_fn(SynchronizationState::POST_INIT, interfaces::BlockTip{144, 1'700'000'000, uint256{}}, 0.42);
+    peers.total = 9;
+    peers.inbound = 2;
+    peers.outbound = 7;
     connections_changed_fn(7);
     banned_list_changed_fn();
 
     QTRY_COMPARE_WITH_TIMEOUT(block_tip_height_spy.count(), 1, ASYNC_TIMEOUT_MS);
     QTRY_COMPARE_WITH_TIMEOUT(verification_progress_spy.count(), 1, ASYNC_TIMEOUT_MS);
     QTRY_COMPARE_WITH_TIMEOUT(time_ratio_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QTRY_COMPARE_WITH_TIMEOUT(peers_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QTRY_COMPARE_WITH_TIMEOUT(inbound_peers_spy.count(), 1, ASYNC_TIMEOUT_MS);
     QTRY_COMPARE_WITH_TIMEOUT(outbound_peers_spy.count(), 1, ASYNC_TIMEOUT_MS);
     QTRY_COMPARE_WITH_TIMEOUT(banned_list_spy.count(), 1, ASYNC_TIMEOUT_MS);
 
     QCOMPARE(model.blockTipHeight(), 144);
     QCOMPARE(model.verificationProgress(), 0.42);
     QCOMPARE(time_ratio_spy.takeFirst().at(0).toInt(), 1'700'000'000);
+    QCOMPARE(model.numPeers(), 9);
+    QCOMPARE(model.numInboundPeers(), 2);
     QCOMPARE(model.numOutboundPeers(), 7);
 }
 

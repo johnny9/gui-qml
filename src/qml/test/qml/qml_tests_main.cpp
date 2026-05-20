@@ -1265,6 +1265,8 @@ class MockNodeModel : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(bool pause MEMBER m_pause NOTIFY pauseChanged)
+    Q_PROPERTY(int numPeers MEMBER m_num_peers NOTIFY numPeersChanged)
+    Q_PROPERTY(int numInboundPeers MEMBER m_num_inbound_peers NOTIFY numInboundPeersChanged)
     Q_PROPERTY(int numOutboundPeers MEMBER m_num_outbound_peers NOTIFY numOutboundPeersChanged)
     Q_PROPERTY(int maxNumOutboundPeers MEMBER m_max_num_outbound_peers NOTIFY maxNumOutboundPeersChanged)
     Q_PROPERTY(double verificationProgress MEMBER m_verification_progress NOTIFY verificationProgressChanged)
@@ -1278,6 +1280,8 @@ class MockNodeModel : public QObject
 
 public:
     bool m_pause{false};
+    int m_num_peers{0};
+    int m_num_inbound_peers{0};
     int m_num_outbound_peers{0};
     int m_max_num_outbound_peers{8};
     double m_verification_progress{0.0};
@@ -1315,6 +1319,8 @@ public:
 Q_SIGNALS:
     void requestedShutdown();
     void pauseChanged();
+    void numPeersChanged();
+    void numInboundPeersChanged();
     void numOutboundPeersChanged();
     void maxNumOutboundPeersChanged();
     void verificationProgressChanged();
