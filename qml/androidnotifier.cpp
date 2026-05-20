@@ -46,7 +46,7 @@ AndroidNotifier::AndroidNotifier(const NodeModel & node_model,
 {
     QObject::connect(&node_model, &NodeModel::blockTipHeightChanged,
                      this, &AndroidNotifier::onBlockTipHeightChanged);
-    QObject::connect(&node_model, &NodeModel::numOutboundPeersChanged,
+    QObject::connect(&node_model, &NodeModel::numPeersChanged,
                      this, &AndroidNotifier::onNumOutboundPeersChanged);
     QObject::connect(&node_model, &NodeModel::pauseChanged,
                      this, &AndroidNotifier::onPausedChanged);
@@ -76,7 +76,7 @@ void AndroidNotifier::onNumOutboundPeersChanged()
         }
         jclass clazz = env->GetObjectClass(g_obj);
         jmethodID mid = env->GetMethodID(clazz, "updateNumberOfPeers", "(I)V");
-        env->CallVoidMethod(g_obj, mid, m_node_model.numOutboundPeers());
+        env->CallVoidMethod(g_obj, mid, m_node_model.numPeers());
     }
 }
 
@@ -105,4 +105,3 @@ void AndroidNotifier::onPausedChanged()
         env->CallVoidMethod(g_obj, mid, static_cast<jboolean>(m_node_model.pause()));
     }
 }
-

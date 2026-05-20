@@ -15,6 +15,8 @@ TestCase {
     QtObject {
         id: nodeModelMock
         property int blockTipHeight: 0
+        property int numPeers: 0
+        property int numInboundPeers: 0
         property int numOutboundPeers: 0
         property int maxNumOutboundPeers: 10
         property int remainingSyncTime: 0
@@ -51,6 +53,8 @@ TestCase {
 
     function resetMocks() {
         nodeModelMock.blockTipHeight = 0
+        nodeModelMock.numPeers = 0
+        nodeModelMock.numInboundPeers = 0
         nodeModelMock.numOutboundPeers = 0
         nodeModelMock.maxNumOutboundPeers = 10
         nodeModelMock.remainingSyncTime = 0
@@ -116,6 +120,7 @@ TestCase {
 
     function test_ibd_state() {
         resetMocks()
+        nodeModelMock.numPeers = 1
         nodeModelMock.numOutboundPeers = 1
         nodeModelMock.verificationProgress = 0.51
         nodeModelMock.remainingSyncTime = 360000
@@ -129,6 +134,7 @@ TestCase {
 
     function test_blockclock_state() {
         resetMocks()
+        nodeModelMock.numPeers = 1
         nodeModelMock.numOutboundPeers = 1
         nodeModelMock.verificationProgress = 1.0
         nodeModelMock.blockTipHeight = 123456
@@ -168,6 +174,7 @@ TestCase {
 
     function test_error_state_overrides_and_disables_toggle() {
         resetMocks()
+        nodeModelMock.numPeers = 1
         nodeModelMock.numOutboundPeers = 1
         nodeModelMock.verificationProgress = 1.0
         nodeModelMock.faulted = true
@@ -194,6 +201,21 @@ TestCase {
         clickToggle(clock)
         compare(nodeModelMock.pause, false)
         compare(clock.state, "CONNECTING")
+    }
+
+    function test_inbound_only_peer_counts_as_connected_without_outbound_peer_fill() {
+        resetMocks()
+        nodeModelMock.numPeers = 1
+        nodeModelMock.numInboundPeers = 1
+        nodeModelMock.numOutboundPeers = 0
+        nodeModelMock.verificationProgress = 0.51
+        nodeModelMock.remainingSyncTime = 360000
+
+        const clock = createClock()
+
+        compare(clock.connected, true)
+        compare(clock.state, "IBD")
+        compare(clock.header, "51%")
     }
 
     function test_formatProgressPercentage_thresholds() {

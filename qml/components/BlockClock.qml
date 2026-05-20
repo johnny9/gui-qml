@@ -27,7 +27,7 @@ Item {
     property alias header: mainText.text
     property alias headerSize: mainText.font.pixelSize
     property alias subText: subText.text
-    property bool connected: root.nodeModelRef !== null && root.nodeModelRef.numOutboundPeers > 0
+    property bool connected: root.nodeModelRef !== null && root.nodeModelRef.numPeers > 0
     property bool synced: root.nodeModelRef !== null && root.nodeModelRef.verificationProgress > 0.999
     property string syncProgress: formatProgressPercentage((root.nodeModelRef !== null ? root.nodeModelRef.verificationProgress : 0) * 100)
     property bool paused: root.nodeModelRef !== null && root.nodeModelRef.pause

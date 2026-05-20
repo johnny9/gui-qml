@@ -29,6 +29,7 @@ NodeModel::NodeModel(interfaces::Node& node)
     : m_node{node}
 {
     initializeMempoolInfoPolling();
+    refreshPeerCounts();
     ConnectToBlockTipSignal();
     ConnectToNumConnectionsChangedSignal();
     ConnectToBannedListChangedSignal();
@@ -58,6 +59,29 @@ void NodeModel::setNumOutboundPeers(int new_num)
         m_num_outbound_peers = new_num;
         Q_EMIT numOutboundPeersChanged();
     }
+}
+
+void NodeModel::setNumPeers(int new_num)
+{
+    if (new_num != m_num_peers) {
+        m_num_peers = new_num;
+        Q_EMIT numPeersChanged();
+    }
+}
+
+void NodeModel::setNumInboundPeers(int new_num)
+{
+    if (new_num != m_num_inbound_peers) {
+        m_num_inbound_peers = new_num;
+        Q_EMIT numInboundPeersChanged();
+    }
+}
+
+void NodeModel::refreshPeerCounts()
+{
+    setNumPeers(static_cast<int>(m_node.getNodeCount(ConnectionDirection::Both)));
+    setNumInboundPeers(static_cast<int>(m_node.getNodeCount(ConnectionDirection::In)));
+    setNumOutboundPeers(static_cast<int>(m_node.getNodeCount(ConnectionDirection::Out)));
 }
 
 void NodeModel::refreshMempoolInfo()
@@ -277,9 +301,9 @@ void NodeModel::ConnectToNumConnectionsChangedSignal()
     assert(!m_handler_notify_num_peers_changed);
 
     m_handler_notify_num_peers_changed = m_node.handleNotifyNumConnectionsChanged(
-        [this](int new_num_connections) {
-            QMetaObject::invokeMethod(this, [this, new_num_connections] {
-                setNumOutboundPeers(new_num_connections);
+        [this]([[maybe_unused]] int new_num_connections) {
+            QMetaObject::invokeMethod(this, [this] {
+                refreshPeerCounts();
             }, Qt::QueuedConnection);
         });
 }

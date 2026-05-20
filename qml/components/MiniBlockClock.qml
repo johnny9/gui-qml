@@ -14,7 +14,7 @@ Item {
 
     property real iconSize: 18
     property bool pageSelected: false
-    property bool connected: nodeModel.numOutboundPeers > 0
+    property bool connected: nodeModel.numPeers > 0
     property bool synced: nodeModel.verificationProgress > 0.999
     property bool paused: nodeModel.pause
     property bool faulted: nodeModel.faulted
