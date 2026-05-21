@@ -39,8 +39,18 @@ TestCase {
         }
     }
 
+    Component {
+        id: peersComponent
+
+        Peers {
+            width: 460
+            height: 680
+        }
+    }
+
     function init() {
         nodeModel.resetPeerActionTestState()
+        networkStatusModel.setNetworkOfflineForTest(false)
         peerTableModel.resetTestState()
         banListModel.resetTestState()
     }
@@ -54,6 +64,13 @@ TestCase {
 
     function createBannedPeersPage() {
         const page = createTemporaryObject(bannedPeersComponent, testWindow.contentItem)
+        verify(page !== null)
+        wait(0)
+        return page
+    }
+
+    function createPeersPage() {
+        const page = createTemporaryObject(peersComponent, testWindow.contentItem)
         verify(page !== null)
         wait(0)
         return page
@@ -80,6 +97,16 @@ TestCase {
         compare(nodeModel.disconnectPeerCalls, 1)
         compare(peerTableModel.refreshCalls, 1)
         compare(popup.opened, false)
+    }
+
+    function test_peers_offline_banner_follows_network_status() {
+        const page = createPeersPage()
+        const banner = findChild(page, "peersOfflineBanner")
+        verify(banner !== null)
+        compare(banner.visible, false)
+
+        networkStatusModel.setNetworkOfflineForTest(true)
+        tryCompare(banner, "visible", true)
     }
 
     function test_disconnect_failure_opens_error_popup() {

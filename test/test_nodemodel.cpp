@@ -12,12 +12,20 @@
 
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
+#include <chainparams.h>
+#include <node/interface_ui.h>
+#include <util/translation.h>
+#include <util/time.h>
 #include <validation.h>
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <thread>
 #include <vector>
+
+#include <QVariantMap>
+#include <QTimer>
 
 namespace {
 using ::testing::Invoke;
@@ -51,14 +59,35 @@ void InstallDefaultHandlers(NiceMock<MockNode>& node)
         .WillByDefault(Invoke([](interfaces::Node::NotifyBlockTipFn) {
             return MakeNoopHandler();
         }));
+    ON_CALL(node, handleNotifyHeaderTip(testing::_))
+        .WillByDefault(Invoke([](interfaces::Node::NotifyHeaderTipFn) {
+            return MakeNoopHandler();
+        }));
     ON_CALL(node, handleNotifyNumConnectionsChanged(testing::_))
         .WillByDefault(Invoke([](interfaces::Node::NotifyNumConnectionsChangedFn) {
+            return MakeNoopHandler();
+        }));
+    ON_CALL(node, handleNotifyNetworkActiveChanged(testing::_))
+        .WillByDefault(Invoke([](interfaces::Node::NotifyNetworkActiveChangedFn) {
+            return MakeNoopHandler();
+        }));
+    ON_CALL(node, handleNotifyAlertChanged(testing::_))
+        .WillByDefault(Invoke([](interfaces::Node::NotifyAlertChangedFn) {
+            return MakeNoopHandler();
+        }));
+    ON_CALL(node, handleMessageBox(testing::_))
+        .WillByDefault(Invoke([](interfaces::Node::MessageBoxFn) {
+            return MakeNoopHandler();
+        }));
+    ON_CALL(node, handleQuestion(testing::_))
+        .WillByDefault(Invoke([](interfaces::Node::QuestionFn) {
             return MakeNoopHandler();
         }));
     ON_CALL(node, handleBannedListChanged(testing::_))
         .WillByDefault(Invoke([](interfaces::Node::BannedListChangedFn) {
             return MakeNoopHandler();
         }));
+    ON_CALL(node, getWarnings()).WillByDefault(Return(Untranslated("")));
 }
 
 void InstallPeerCountGetters(NiceMock<MockNode>& node, PeerCountState& peers)
@@ -113,6 +142,12 @@ private Q_SLOTS:
     void banPeerDisconnectsAddressAfterSuccessfulBan();
     void nodeNotificationHandlersUpdateModelThroughQueuedSignals();
     void blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues();
+    void alertNotificationsRefreshWarningList();
+    void headerTipNotificationsExposeHeaderSyncProgress();
+    void runtimeQuestionHandlerBlocksForAnswerAndReturnsResult();
+    void initializeFailureSetsFaultedStartupErrorFromWarnings();
+    void runawayExceptionSetsFatalStartupError();
+    void nodeInformationRowsExposeDiagnostics();
 };
 
 void NodeModelTests::refreshMempoolInfoUpdatesProperties()
@@ -307,6 +342,7 @@ void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()
     interfaces::Node::NotifyNumConnectionsChangedFn connections_changed_fn;
     interfaces::Node::BannedListChangedFn banned_list_changed_fn;
 
+    InstallDefaultHandlers(node);
     InstallMempoolGetters(node, mempool);
     InstallPeerCountGetters(node, peers);
     ON_CALL(node, handleNotifyBlockTip(testing::_))
@@ -368,6 +404,7 @@ void NodeModelTests::blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues()
     MempoolState mempool;
     interfaces::Node::NotifyBlockTipFn block_tip_fn;
 
+    InstallDefaultHandlers(node);
     InstallMempoolGetters(node, mempool);
     ON_CALL(node, handleNotifyBlockTip(testing::_))
         .WillByDefault(Invoke([&](interfaces::Node::NotifyBlockTipFn fn) {
@@ -419,6 +456,198 @@ void NodeModelTests::blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues()
     QCOMPARE(seen_times.at(1), 1'700'000'099);
     QCOMPARE(model.blockTipHeight(), 456);
     QVERIFY(qFuzzyCompare(model.verificationProgress(), 0.75));
+}
+
+void NodeModelTests::alertNotificationsRefreshWarningList()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::NotifyAlertChangedFn alert_changed_fn;
+    bilingual_str warnings{Untranslated("")};
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, getWarnings()).WillByDefault(Invoke([&] { return warnings; }));
+    ON_CALL(node, handleNotifyAlertChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyAlertChangedFn fn) {
+            alert_changed_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(alert_changed_fn);
+    QVERIFY(!model.hasWarnings());
+
+    QSignalSpy warnings_spy{&model, &NodeModel::warningsChanged};
+    warnings = bilingual_str{"first<hr />second", "translated first<hr />translated second"};
+    alert_changed_fn();
+
+    QTRY_COMPARE_WITH_TIMEOUT(warnings_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(model.warningList(), QStringList({QStringLiteral("translated first"), QStringLiteral("translated second")}));
+    QCOMPARE(model.warnings(), QStringLiteral("translated first<hr />translated second"));
+    QVERIFY(model.hasWarnings());
+}
+
+void NodeModelTests::headerTipNotificationsExposeHeaderSyncProgress()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::NotifyHeaderTipFn header_tip_fn;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, handleNotifyHeaderTip(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyHeaderTipFn fn) {
+            header_tip_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(header_tip_fn);
+
+    QSignalSpy header_spy{&model, &NodeModel::headerSyncChanged};
+    const int height{100};
+    const int64_t block_time{GetTime() - 100 * Params().GetConsensus().nPowTargetSpacing};
+    header_tip_fn(SynchronizationState::INIT_DOWNLOAD, interfaces::BlockTip{height, block_time, uint256{}}, /*presync=*/true);
+
+    QTRY_COMPARE_WITH_TIMEOUT(header_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QVERIFY(model.headerSyncActive());
+    QVERIFY(model.headerPresync());
+    QVERIFY(model.headerSyncProgress() > 0.45);
+    QVERIFY(model.headerSyncProgress() < 0.55);
+}
+
+void NodeModelTests::runtimeQuestionHandlerBlocksForAnswerAndReturnsResult()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::QuestionFn question_fn;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, handleQuestion(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::QuestionFn fn) {
+            question_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(question_fn);
+
+    std::atomic<bool> result{false};
+    std::atomic<bool> finished{false};
+    int prompt_count{0};
+    QObject::connect(&model, &NodeModel::runtimeDialogChanged, &model, [&] {
+        if (!model.runtimeDialogVisible()) return;
+        ++prompt_count;
+        QCOMPARE(model.runtimeDialogTitle(), QStringLiteral("Question caption"));
+        QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated continue?"));
+        QCOMPARE(model.runtimeDialogPrimaryText(), QStringLiteral("Yes"));
+        QCOMPARE(model.runtimeDialogSecondaryText(), QStringLiteral("No"));
+        QVERIFY(model.runtimeDialogQuestion());
+        QTimer::singleShot(0, &model, [&model] {
+            model.answerRuntimeDialog(true);
+        });
+    });
+
+    std::thread worker([&] {
+        result = question_fn(
+            bilingual_str{"Continue?", "Translated continue?"},
+            "Non interactive",
+            "Question caption",
+            CClientUIInterface::ICON_WARNING | CClientUIInterface::BTN_YES | CClientUIInterface::BTN_NO | CClientUIInterface::MODAL);
+        finished = true;
+    });
+
+    QTRY_VERIFY_WITH_TIMEOUT(finished.load(), ASYNC_TIMEOUT_MS);
+    worker.join();
+
+    QCOMPARE(prompt_count, 1);
+    QVERIFY(result.load());
+    QVERIFY(!model.runtimeDialogVisible());
+}
+
+void NodeModelTests::initializeFailureSetsFaultedStartupErrorFromWarnings()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, getWarnings()).WillByDefault(Return(bilingual_str{"init failed", "Translated init failed"}));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    QSignalSpy faulted_spy{&model, &NodeModel::errorStateChanged};
+    QSignalSpy startup_error_spy{&model, &NodeModel::startupErrorChanged};
+    model.initializeResult(false, {});
+
+    QCOMPARE(faulted_spy.count(), 1);
+    QCOMPARE(startup_error_spy.count(), 1);
+    QVERIFY(model.errorState());
+    QCOMPARE(model.startupError(), QStringLiteral("Translated init failed"));
+}
+
+void NodeModelTests::runawayExceptionSetsFatalStartupError()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    model.handleRunawayException(QStringLiteral("std::runtime_error: boom"));
+    QVERIFY(model.errorState());
+    QCOMPARE(model.startupError(), QStringLiteral("std::runtime_error: boom"));
+}
+
+void NodeModelTests::nodeInformationRowsExposeDiagnostics()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    PeerCountState peers;
+
+    peers.total = 3;
+    peers.inbound = 1;
+    peers.outbound = 2;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    InstallPeerCountGetters(node, peers);
+    ON_CALL(node, getNumBlocks()).WillByDefault(Return(321));
+    ON_CALL(node, getHeaderTip(testing::_, testing::_))
+        .WillByDefault(Invoke([](int& height, int64_t& block_time) {
+            height = 333;
+            block_time = 1'700'000'333;
+            return true;
+        }));
+    ON_CALL(node, getLastBlockTime()).WillByDefault(Return(1'700'000'321));
+    ON_CALL(node, getNetworkActive()).WillByDefault(Return(true));
+    ON_CALL(node, getNetLocalAddresses()).WillByDefault(Return(std::map<CNetAddr, LocalServiceInfo>{}));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    const QVariantList rows = model.nodeInformationRows();
+    QVERIFY(!rows.empty());
+
+    bool saw_network_active{false};
+    bool saw_peer_counts{false};
+    for (const QVariant& row : rows) {
+        const QVariantMap map{row.toMap()};
+        const QString value{map.value(QStringLiteral("value")).toString()};
+        saw_network_active |= value == QStringLiteral("Yes");
+        saw_peer_counts |= value == QStringLiteral("3 total (1 inbound, 2 outbound)");
+    }
+    QVERIFY(saw_network_active);
+    QVERIFY(saw_peer_counts);
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN
