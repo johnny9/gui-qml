@@ -77,6 +77,12 @@ class QmlDriver:
         if "error" in resp:
             raise QmlDriverError(f"click({object_name!r}) failed: {resp['error']}")
 
+    def close_window(self):
+        """Send a close event to the root QML window."""
+        resp = self._send({"cmd": "close_window"})
+        if "error" in resp:
+            raise QmlDriverError(f"close_window() failed: {resp['error']}")
+
     def set_text(self, object_name, text):
         """Set the text property of the named QML object."""
         resp = self._send({"cmd": "set_text", "objectName": object_name, "text": text})
