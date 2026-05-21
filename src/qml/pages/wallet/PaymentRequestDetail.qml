@@ -185,7 +185,7 @@ Page {
                     Layout.fillWidth: true
                     visible: root.request !== null && root.request.address !== ""
                     address: root.request ? root.request.address : ""
-                    onCopied: copiedToast.show()
+                    onCopied: copiedToast.show(copyButton)
                 }
             }
 
@@ -272,7 +272,7 @@ Page {
                     onClicked: {
                         if (root.request) {
                             Clipboard.setText(root.request.qrPayload)
-                            copiedToast.show()
+                            copiedToast.show(copyButton)
                         }
                     }
                 }
@@ -315,17 +315,23 @@ Page {
                 }
             }
 
-            CopiedToast {
-                id: copiedToast
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: 8
-            }
-
             Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 20
             }
         }
+    }
+
+    ToastPopup {
+        id: copiedToast
+        popupAnchor: copyButton
+        popupOffset: 4
+        text: qsTr("Copied")
+        backgroundColor: Theme.color.green
+        borderColor: Theme.color.green
+        textColor: Theme.color.neutral0
+        iconSource: "image://images/check"
+        iconColor: Theme.color.neutral0
     }
 
     QRCodePopup {
@@ -335,7 +341,7 @@ Page {
         onCopyRequested: {
             if (root.request) {
                 Clipboard.setText(root.request.qrPayload)
-                copiedToast.show()
+                copiedToast.show(copyButton)
             }
             qrPopup.close()
         }

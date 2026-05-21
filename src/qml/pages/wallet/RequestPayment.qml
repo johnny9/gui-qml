@@ -679,17 +679,10 @@ Page {
                     onClicked: {
                         if (root.request) {
                             Clipboard.setText(root.request.address)
-                            copiedToast.show()
+                            copiedToast.show(copyLabel, (copyLabel.paintedWidth - copyLabel.width) / 2)
                         }
                     }
                 }
-            }
-
-            CopiedToast {
-                id: copiedToast
-                objectName: "requestPaymentCopiedToast"
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: 4
             }
 
             ContinueButton {
@@ -822,7 +815,7 @@ Page {
                     onClicked: {
                         if (root.request) {
                             Clipboard.setText(root.request.qrPayload)
-                            copiedToast.show()
+                            copiedToast.show(copyButton)
                         }
                     }
                 }
@@ -897,6 +890,19 @@ Page {
         }
     }
 
+    ToastPopup {
+        id: copiedToast
+        objectName: "requestPaymentCopiedToast"
+        popupAnchor: copyButton
+        popupOffset: 4
+        text: qsTr("Copied")
+        backgroundColor: Theme.color.green
+        borderColor: Theme.color.green
+        textColor: Theme.color.neutral0
+        iconSource: "image://images/check"
+        iconColor: Theme.color.neutral0
+    }
+
     WalletPassphrasePopup {
         id: commitPassphrasePopup
         parent: Overlay.overlay
@@ -933,7 +939,7 @@ Page {
         onCopyRequested: {
             if (root.request) {
                 Clipboard.setText(root.request.qrPayload)
-                copiedToast.show()
+                copiedToast.show(copyButton)
             }
             qrPopup.close()
         }
