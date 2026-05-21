@@ -22,6 +22,11 @@
         <file>components/InfoBanner.qml</file>
         <file>components/NetworkTrafficGraph.qml</file>
         <file>components/NetworkIndicator.qml</file>
+        <file>components/NodeFatalErrorPopup.qml</file>
+        <file>components/NodeInformationPopup.qml</file>
+        <file>components/NodeRuntimeDialog.qml</file>
+        <file>components/NodeStatusActions.qml</file>
+        <file>components/NodeWarningsPopup.qml</file>
         <file>components/OptionPopup.qml</file>
         <file>components/PeersIndicator.qml</file>
         <file>components/ProxySettings.qml</file>

@@ -37,6 +37,7 @@
 #include <qml/models/chainmodel.h>
 #include <qml/models/debuglogmodel.h>
 #include <qml/models/networktraffictower.h>
+#include <qml/models/networkstatusmodel.h>
 #include <qml/models/nodemodel.h>
 #include <qml/models/options_model.h>
 #include <qml/models/paymentrequest.h>
@@ -321,9 +322,10 @@ int QmlGuiMain(int argc, char* argv[])
     });
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
     QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, &QGuiApplication::quit, Qt::QueuedConnection);
-    // QObject::connect(&init_executor, &InitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
+    QObject::connect(&init_executor, &QmlInitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     NetworkTrafficTower network_traffic_tower{node_model};
+    NetworkStatusModel network_status_model;
 #ifdef __ANDROID__
     AndroidNotifier android_notifier{node_model};
 #endif
@@ -368,6 +370,7 @@ int QmlGuiMain(int argc, char* argv[])
     engine.addImageProvider(QStringLiteral("qr"), new QRImageProvider);
 
     engine.rootContext()->setContextProperty("networkTrafficTower", &network_traffic_tower);
+    engine.rootContext()->setContextProperty("networkStatusModel", &network_status_model);
     engine.rootContext()->setContextProperty("nodeModel", &node_model);
     engine.rootContext()->setContextProperty("chainModel", &chain_model);
     engine.rootContext()->setContextProperty("peerTableModel", &peer_model);

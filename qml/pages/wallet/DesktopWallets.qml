@@ -175,6 +175,8 @@ Page {
                     property bool paused: nodeModel.pause
                     property bool connected: nodeModel.numPeers > 0
                     property bool faulted: nodeModel.faulted
+                    property bool offline: typeof networkStatusModel !== "undefined" && networkStatusModel.networkOffline
+                    property bool headerSyncActive: nodeModel.headerSyncActive
 
                     anchors.top: blockClockTabButton.bottom
                     anchors.topMargin: -5
@@ -184,10 +186,14 @@ Page {
                     text: {
                         if (faulted) {
                             qsTr("Error")
+                        } else if (offline) {
+                            qsTr("Offline")
                         } else if (paused) {
                             qsTr("Paused")
                         } else if (connected && synced) {
                             qsTr("Blocktime\n" +  Number(nodeModel.blockTipHeight).toLocaleString(Qt.locale(), 'f', 0))
+                        } else if (connected && headerSyncActive) {
+                            nodeModel.headerPresync ? qsTr("Pre-syncing headers") : qsTr("Syncing headers")
                         } else if (connected) {
                             qsTr("Downloading blocks\n" +  syncState.text)
                         } else {
@@ -233,6 +239,13 @@ Page {
         }
         Item {
             id: blockClockTab
+            NodeStatusActions {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.topMargin: 16
+                anchors.rightMargin: 16
+                z: 2
+            }
             BlockClock {
                 parentWidth: blockClockTab.width - 40
                 parentHeight: blockClockTab.height

@@ -15,12 +15,16 @@ Page {
     background: null
     clip: true
     header: NavigationBar2 {
-        rightItem: NavButton {
-            objectName: "nodeSettingsButton"
-            iconSource: "image://images/gear"
-            iconHeight: 24
-            iconWidth: 24
-            onClicked: root.settingsClicked()
+        rightItem: RowLayout {
+            spacing: 4
+            NodeStatusActions {}
+            NavButton {
+                objectName: "nodeSettingsButton"
+                iconSource: "image://images/gear"
+                iconHeight: 24
+                iconWidth: 24
+                onClicked: root.settingsClicked()
+            }
         }
     }
 

@@ -26,7 +26,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/module)
 
 # Qt dependencies QML
-set(qt_components Core Gui LinguistTools Widgets Qml Quick QuickControls2)
+set(qt_components Core Gui LinguistTools Widgets Network Qml Quick QuickControls2)
 find_package(Qt 6.2 MODULE REQUIRED
     COMPONENTS ${qt_components}
 )
@@ -89,9 +89,7 @@ target_compile_definitions(bitcoinqml
     QT_USE_QSTRINGBUILDER
 )
 if(ENABLE_TEST_AUTOMATION)
-  find_package(Qt6 REQUIRED COMPONENTS Network)
   target_compile_definitions(bitcoinqml PUBLIC ENABLE_TEST_AUTOMATION)
-  target_link_libraries(bitcoinqml PUBLIC Qt6::Network)
 endif()
 target_include_directories(bitcoinqml
   PRIVATE
@@ -114,6 +112,7 @@ target_link_libraries(bitcoinqml
     Qt6::Qml
     Qt6::Quick
     Qt6::QuickControls2
+    Qt6::Network
     Qt6::Widgets
 )
 

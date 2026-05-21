@@ -18,10 +18,13 @@ Item {
     property bool synced: nodeModel.verificationProgress > 0.999
     property bool paused: nodeModel.pause
     property bool faulted: nodeModel.faulted
+    property var networkStatusModelRef: typeof networkStatusModel !== "undefined" ? networkStatusModel : null
+    property bool offline: networkStatusModelRef !== null && networkStatusModelRef.networkOffline
 
-    readonly property bool showConnectingState: !root.paused && !root.faulted && !root.connected
-    readonly property bool showIbdState: !root.paused && !root.faulted && root.connected && !root.synced
-    readonly property bool showClockState: !root.paused && !root.faulted && root.connected && root.synced
+    readonly property bool showOfflineState: !root.paused && !root.faulted && root.offline
+    readonly property bool showConnectingState: !root.paused && !root.faulted && !root.offline && !root.connected
+    readonly property bool showIbdState: !root.paused && !root.faulted && !root.offline && root.connected && !root.synced
+    readonly property bool showClockState: !root.paused && !root.faulted && !root.offline && root.connected && root.synced
     readonly property bool showDialState: dial.visible
     readonly property real strokeWidth: Math.max(1, root.width / 12)
     readonly property real pausedStrokeWidth: Math.max(1, Math.round(root.strokeWidth))
@@ -92,6 +95,16 @@ Item {
             radius: height / 2
             color: root.dialGlyphColor
         }
+    }
+
+    Icon {
+        id: offlineIcon
+        objectName: "miniBlockClockOfflineIcon"
+        visible: root.showOfflineState
+        anchors.centerIn: parent
+        source: "image://images/network-light"
+        color: root.pageSelected ? Theme.color.confirmationColors[5] : Theme.color.red
+        size: root.width
     }
 
     Item {
