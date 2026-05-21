@@ -19,9 +19,12 @@ class PaymentRequest : public QObject
     Q_PROPERTY(QString addressFormatted READ addressFormatted NOTIFY addressChanged)
     Q_PROPERTY(QString label READ label WRITE setLabel NOTIFY labelChanged)
     Q_PROPERTY(QString message READ message WRITE setMessage NOTIFY messageChanged)
+    Q_PROPERTY(QString addressType READ addressType WRITE setAddressType NOTIFY addressTypeChanged)
     Q_PROPERTY(BitcoinAmount* amount READ amount CONSTANT)
     Q_PROPERTY(QString amountError READ amountError NOTIFY amountErrorChanged)
     Q_PROPERTY(QString id READ id NOTIFY idChanged)
+    Q_PROPERTY(bool needsUnlock READ needsUnlock NOTIFY needsUnlockChanged)
+    Q_PROPERTY(QString unlockError READ unlockError NOTIFY unlockErrorChanged)
 
 public:
     explicit PaymentRequest(QObject* parent = nullptr);
@@ -35,12 +38,21 @@ public:
     QString message() const;
     void setMessage(const QString& message);
 
+    QString addressType() const;
+    void setAddressType(const QString& address_type);
+
     BitcoinAmount* amount() const;
     QString amountError() const;
     void setAmountError(const QString& error);
 
     QString id() const;
     void setId(unsigned int id);
+
+    bool needsUnlock() const;
+    void setNeedsUnlock(bool needs_unlock);
+
+    QString unlockError() const;
+    void setUnlockError(const QString& error);
 
     void setDestination(const CTxDestination& destination);
     CTxDestination destination() const;
@@ -51,8 +63,11 @@ Q_SIGNALS:
     void addressChanged();
     void labelChanged();
     void messageChanged();
+    void addressTypeChanged();
     void amountErrorChanged();
     void idChanged();
+    void needsUnlockChanged();
+    void unlockErrorChanged();
 
 private:
     static QString FormatAddress(const QString& address);
@@ -60,9 +75,12 @@ private:
     CTxDestination m_destination;
     QString m_label;
     QString m_message;
+    QString m_address_type;
     QString m_amountError;
     BitcoinAmount* m_amount;
     QString m_id;
+    bool m_needs_unlock{false};
+    QString m_unlock_error;
 };
 
 #endif // BITCOIN_QML_MODELS_PAYMENTREQUEST_H

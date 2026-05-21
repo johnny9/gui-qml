@@ -38,56 +38,43 @@ QByteArray clickObject(QObject* obj)
         return QJsonDocument(resp).toJson(QJsonDocument::Compact);
     }
 
-    auto* item = qobject_cast<QQuickItem*>(obj);
+    // Preferred path: AbstractButton::click() runs the full press/release/
+    // clicked pipeline synchronously and toggles `checked` when checkable.
+    // Available on QQuickAbstractButton from Qt 6.8+ (Q_REVISION(6, 8)).
     const QMetaObject* meta = obj->metaObject();
+    if (int idx = meta->indexOfMethod("click()"); idx >= 0) {
+        if (meta->method(idx).invoke(obj, Qt::DirectConnection)) return okResponse();
+    }
+    if (int idx = meta->indexOfMethod("trigger()"); idx >= 0) {
+        if (meta->method(idx).invoke(obj, Qt::DirectConnection)) return okResponse();
+    }
 
-    const QString class_name = QString::fromLatin1(meta->className());
-    if (class_name.startsWith(QStringLiteral("EllipsisMenuToggleItem"))) {
-        int clicked_index = meta->indexOfSignal("clicked()");
-        if (clicked_index >= 0 && meta->method(clicked_index).invoke(obj, Qt::DirectConnection)) {
-            return okResponse();
+    // Fallback for Qt < 6.8 (no QQuickAbstractButton::click()): invoke both
+    // toggle() (if checkable) and the clicked() signal. We can't tell which
+    // one a given control needs - NavigationTab + ButtonGroup react to
+    // `checked` changes via toggle(), while NavButton / ContinueButton react
+    // to QML-defined onClicked handlers via the clicked() signal. Firing
+    // both covers both shapes without per-component special cases.
+    bool invoked_any{false};
+    if (obj->property("checkable").toBool()) {
+        if (int idx = meta->indexOfMethod("toggle()"); idx >= 0) {
+            invoked_any |= meta->method(idx).invoke(obj, Qt::DirectConnection);
         }
     }
-
-    bool invoked = false;
-    int click_method_index = meta->indexOfMethod("click()");
-    if (click_method_index >= 0) {
-        invoked = meta->method(click_method_index).invoke(obj, Qt::DirectConnection);
-        if (invoked) {
-            return okResponse();
-        }
+    if (int idx = meta->indexOfSignal("clicked()"); idx >= 0) {
+        invoked_any |= meta->method(idx).invoke(obj, Qt::DirectConnection);
     }
+    if (invoked_any) return okResponse();
 
-    const bool checkable = obj->property("checkable").toBool();
-    int toggle_index = meta->indexOfMethod("toggle()");
-    if (checkable && toggle_index >= 0) {
-        invoked = meta->method(toggle_index).invoke(obj, Qt::DirectConnection);
-    }
-
-    int clicked_index = meta->indexOfSignal("clicked()");
-    if (clicked_index >= 0) {
-        if (meta->method(clicked_index).invoke(obj, Qt::DirectConnection)) {
-            return okResponse();
-        }
-    }
-
-    int trigger_index = meta->indexOfMethod("trigger()");
-    if (trigger_index >= 0) {
-        if (meta->method(trigger_index).invoke(obj, Qt::DirectConnection)) {
-            return okResponse();
-        }
-    }
-
-    if (invoked) {
-        return okResponse();
-    }
-
-    if (item) {
+    // Last resort for items without click()/trigger()/toggle()/clicked()
+    // (bare Item + MouseArea, etc.): synthesize a real mouse press + release
+    // at the item's center.
+    if (auto* item = qobject_cast<QQuickItem*>(obj)) {
         QQuickWindow* window = item->window();
-        if (window && item->width() > 0 && item->height() > 0) {
-            QPointF center = item->mapToScene(
+        if (window && item->isVisible() && item->width() > 0 && item->height() > 0) {
+            const QPointF center = item->mapToScene(
                 QPointF(item->width() / 2.0, item->height() / 2.0));
-            QPoint pos = center.toPoint();
+            const QPoint pos = center.toPoint();
 
             QMouseEvent press(QEvent::MouseButtonPress, pos, window->mapToGlobal(pos),
                               Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
@@ -96,7 +83,6 @@ QByteArray clickObject(QObject* obj)
 
             QCoreApplication::sendEvent(window, &press);
             QCoreApplication::sendEvent(window, &release);
-
             return okResponse();
         }
     }

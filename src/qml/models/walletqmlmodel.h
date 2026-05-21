@@ -6,10 +6,12 @@
 #define BITCOIN_QML_MODELS_WALLETQMLMODEL_H
 
 #include <qml/models/activitylistmodel.h>
+#include <qml/models/addresslistmodel.h>
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/paymentrequest.h>
 #include <qml/models/sendrecipientslistmodel.h>
+#include <qml/models/signverifymessagemodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 
 #include <consensus/amount.h>
@@ -18,14 +20,18 @@
 #include <support/allocators/secure.h>
 #include <wallet/coincontrol.h>
 
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <vector>
 
 #include <QHash>
 #include <QObject>
 #include <QThread>
 #include <QTimer>
+#include <QVariantList>
+#include <QVariantMap>
 
 class WalletQmlModel : public QObject
 {
@@ -36,8 +42,10 @@ class WalletQmlModel : public QObject
     Q_PROPERTY(qint64 balanceSatoshi READ balanceSatoshi NOTIFY balanceChanged)
     Q_PROPERTY(bool hasExternalSigner READ hasExternalSigner CONSTANT)
     Q_PROPERTY(ActivityListModel* activityListModel READ activityListModel CONSTANT)
+    Q_PROPERTY(AddressListModel* addressListModel READ addressListModel CONSTANT)
     Q_PROPERTY(CoinsListModel* coinsListModel READ coinsListModel CONSTANT)
     Q_PROPERTY(SendRecipientsListModel* recipients READ sendRecipientList CONSTANT)
+    Q_PROPERTY(SignVerifyMessageModel* signVerifyMessageModel READ signVerifyMessageModel CONSTANT)
     Q_PROPERTY(PaymentRequest* currentPaymentRequest READ currentPaymentRequest CONSTANT)
     Q_PROPERTY(WalletQmlModelTransaction* currentTransaction READ currentTransaction NOTIFY currentTransactionChanged)
     Q_PROPERTY(unsigned int targetBlocks READ feeTargetBlocks WRITE setFeeTargetBlocks NOTIFY feeTargetBlocksChanged)
@@ -71,12 +79,15 @@ public:
     QString balance() const;
     qint64 balanceSatoshi() const;
     bool hasExternalSigner() const { return m_wallet && m_wallet->hasExternalSigner(); }
-    Q_INVOKABLE void commitPaymentRequest();
+    Q_INVOKABLE bool commitPaymentRequest();
+    Q_INVOKABLE bool commitPaymentRequestWithPassphrase(const QString& passphrase);
 
     ActivityListModel* activityListModel() const { return m_activity_list_model; }
+    AddressListModel* addressListModel() const { return m_address_list_model; }
     BumpTransactionModel* bumpModel() const { return m_bump_transaction_model; }
     CoinsListModel* coinsListModel() const { return m_coins_list_model; }
     SendRecipientsListModel* sendRecipientList() const { return m_send_recipients; }
+    SignVerifyMessageModel* signVerifyMessageModel() const { return m_sign_verify_message_model; }
     PaymentRequest* currentPaymentRequest() const { return m_current_payment_request; }
     WalletQmlModelTransaction* currentTransaction() const { return m_current_transaction; }
     QString estimatedFee() const;
@@ -89,14 +100,18 @@ public:
     Q_INVOKABLE void approveExternalSignerTransaction();
     Q_INVOKABLE bool prepareTransactionWithPassphrase(const QString& passphrase);
     Q_INVOKABLE bool sendTransaction();
-    Q_INVOKABLE QString newAddress(QString label);
+    Q_INVOKABLE QVariantList availableReceiveAddressTypes() const;
+    Q_INVOKABLE QString defaultReceiveAddressType() const;
     Q_INVOKABLE QString estimatedFeeForTarget(unsigned int target_blocks) const;
     Q_INVOKABLE int feeTargetIndex(unsigned int target_blocks) const;
     Q_INVOKABLE void scheduleFeeEstimates();
+    Q_INVOKABLE bool setCurrentPaymentRequestAddress(QString address);
     Q_INVOKABLE bool encryptWallet(const QString& passphrase);
     Q_INVOKABLE bool changeWalletPassphrase(const QString& old_passphrase, const QString& new_passphrase);
     Q_INVOKABLE bool backupWallet(const QString& path);
     Q_INVOKABLE void clearSettingsError();
+    Q_INVOKABLE void setDefaultReceiveAddressType(const QString& address_type);
+    Q_INVOKABLE QString receiveAddressTypeLabel(const QString& address_type) const;
     void removeWallet();
 
     std::set<interfaces::WalletTx> getWalletTxs() const;
@@ -106,6 +121,11 @@ public:
                         int& num_blocks,
                         int64_t& block_time) const;
     QString getAddressLabel(const QString& address) const;
+    bool setAddressLabel(const QString& address, const QString& label);
+    std::vector<interfaces::WalletAddress> getAddresses() const;
+    std::map<QString, CAmount> addressBalances() const;
+    std::set<QString> usedAddresses() const;
+    std::set<QString> changeAddresses() const;
 
     using TransactionChangedFn = std::function<void(const uint256& txid, ChangeType status)>;
     virtual std::unique_ptr<interfaces::Handler> handleTransactionChanged(TransactionChangedFn fn);
@@ -165,6 +185,7 @@ Q_SIGNALS:
     void transactionNeedsUnlockChanged();
     void walletUnloaded();
     void settingsErrorChanged();
+    void addressListChanged();
 
 private:
     void initializeFeeEstimator();
@@ -179,17 +200,22 @@ private:
     void unsubscribeFromWalletSignals();
     void refreshSecurityState();
     bool prepareTransactionInternal(std::optional<SecureString> passphrase);
+    bool ensurePaymentRequestDestination();
+    bool saveCurrentPaymentRequest();
     bool sendTransactionInternal();
     bool unlockForAction(std::optional<SecureString>& passphrase, bool& relock);
     void clearTransactionStatus();
     void setTransactionStatus(const QString& error, bool needs_unlock = false);
     void setSettingsError(const QString& error);
+    QString persistedReceiveAddressTypeKey() const;
 
     std::unique_ptr<interfaces::Wallet> m_wallet;
     ActivityListModel* m_activity_list_model{nullptr};
+    AddressListModel* m_address_list_model{nullptr};
     BumpTransactionModel* m_bump_transaction_model{nullptr};
     CoinsListModel* m_coins_list_model{nullptr};
     SendRecipientsListModel* m_send_recipients{nullptr};
+    SignVerifyMessageModel* m_sign_verify_message_model{nullptr};
     PaymentRequest* m_current_payment_request{nullptr};
     WalletQmlModelTransaction* m_current_transaction{nullptr};
     wallet::CCoinControl m_coin_control;
@@ -212,6 +238,7 @@ private:
     QString m_settings_error;
     QString m_display_name;
     std::unique_ptr<interfaces::Handler> m_handler_status_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_address_list_changed;
     std::unique_ptr<interfaces::Handler> m_handler_transaction_changed;
     std::unique_ptr<interfaces::Handler> m_handler_unload;
     int m_display_unit{0};

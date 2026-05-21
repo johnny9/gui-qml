@@ -34,9 +34,18 @@ TestCase {
     function test_wallet_settings_password_and_backup_actions_remain_available() {
         const page = createWalletSettingsPage()
         let passwordRequests = 0
+        let addressRequests = 0
         page.passwordRequested.connect(function() {
             ++passwordRequests
         })
+        page.addressesRequested.connect(function() {
+            ++addressRequests
+        })
+
+        const addressesRow = findChild(page, "settingsAddresses")
+        verify(addressesRow !== null)
+        addressesRow.clicked()
+        compare(addressRequests, 1)
 
         const passwordRow = findChild(page, "walletSettingsPasswordRow")
         verify(passwordRow !== null)

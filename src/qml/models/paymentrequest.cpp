@@ -52,6 +52,20 @@ void PaymentRequest::setMessage(const QString& message)
     Q_EMIT messageChanged();
 }
 
+QString PaymentRequest::addressType() const
+{
+    return m_address_type;
+}
+
+void PaymentRequest::setAddressType(const QString& address_type)
+{
+    if (m_address_type == address_type) {
+        return;
+    }
+    m_address_type = address_type;
+    Q_EMIT addressTypeChanged();
+}
+
 BitcoinAmount* PaymentRequest::amount() const
 {
     return m_amount;
@@ -86,6 +100,34 @@ void PaymentRequest::setId(unsigned int id)
     Q_EMIT idChanged();
 }
 
+bool PaymentRequest::needsUnlock() const
+{
+    return m_needs_unlock;
+}
+
+void PaymentRequest::setNeedsUnlock(bool needs_unlock)
+{
+    if (m_needs_unlock == needs_unlock) {
+        return;
+    }
+    m_needs_unlock = needs_unlock;
+    Q_EMIT needsUnlockChanged();
+}
+
+QString PaymentRequest::unlockError() const
+{
+    return m_unlock_error;
+}
+
+void PaymentRequest::setUnlockError(const QString& error)
+{
+    if (m_unlock_error == error) {
+        return;
+    }
+    m_unlock_error = error;
+    Q_EMIT unlockErrorChanged();
+}
+
 void PaymentRequest::setDestination(const CTxDestination& destination)
 {
     m_destination = destination;
@@ -102,14 +144,20 @@ void PaymentRequest::clear()
     m_destination = CNoDestination();
     m_label.clear();
     m_message.clear();
+    m_address_type.clear();
     m_amount->clear();
     m_amountError.clear();
     m_id.clear();
+    m_needs_unlock = false;
+    m_unlock_error.clear();
     Q_EMIT addressChanged();
     Q_EMIT labelChanged();
     Q_EMIT messageChanged();
+    Q_EMIT addressTypeChanged();
     Q_EMIT amountErrorChanged();
     Q_EMIT idChanged();
+    Q_EMIT needsUnlockChanged();
+    Q_EMIT unlockErrorChanged();
 }
 
 QString PaymentRequest::FormatAddress(const QString& address)

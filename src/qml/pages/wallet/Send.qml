@@ -178,9 +178,9 @@ PageStack {
                     visible: settings.multipleRecipientsEnabled
 
                     CoreText {
+                        id: selectAndAddRecipientsLabel
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignLeft
-                        id: selectAndAddRecipientsLabel
                         text: qsTr("Recipient %1 of %2").arg(wallet.recipients.currentIndex).arg(wallet.recipients.count)
                         horizontalAlignment: Text.AlignLeft
                         font.pixelSize: 18
@@ -378,7 +378,7 @@ PageStack {
                     inputObjectName: "sendNoteInput"
                     Layout.fillWidth: true
                     labelText: qsTr("Note to self")
-                    placeholderText: qsTr("Enter ...")
+                    placeholderText: qsTr("Enter note…")
                     text: root.recipient.label
                     onTextEdited: root.recipient.label = label.text
                 }

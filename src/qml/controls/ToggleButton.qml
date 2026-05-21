@@ -14,6 +14,8 @@ Button {
     property color textColor: Theme.color.neutral7
     property color textHoverColor: Theme.color.orangeLight1
     property color textActiveColor: Theme.color.neutral9
+    property bool textBold: false
+    property bool textActiveBold: textBold
 
     id: root
     checkable: true
@@ -26,7 +28,8 @@ Button {
     contentItem: CoreText {
         id: buttonText
         text: parent.text
-        font.pixelSize: 13
+        font.pixelSize: Theme.text.caption.pixelSize
+        bold: root.textBold
         color: root.textColor
 
         Behavior on color {
@@ -49,6 +52,7 @@ Button {
             name: "CHECKED"; when: root.checked
             PropertyChanges { target: bg; color: root.bgActiveColor }
             PropertyChanges { target: buttonText; color: root.textActiveColor }
+            PropertyChanges { target: buttonText; bold: root.textActiveBold }
         },
         State {
             name: "HOVER"; when: root.hovered

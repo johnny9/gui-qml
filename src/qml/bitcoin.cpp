@@ -29,6 +29,7 @@
 #include <qml/imageprovider.h>
 #include <qml/initexecutor.h>
 #include <qml/models/activitylistmodel.h>
+#include <qml/models/addresslistmodel.h>
 #include <qml/models/banlistmodel.h>
 #include <qml/models/bitcoinaddress.h>
 #include <qml/models/bumptransactionmodel.h>
@@ -425,6 +426,7 @@ int QmlGuiMain(int argc, char* argv[])
     qmlRegisterUncreatableType<DebugLogModel>("org.bitcoincore.qt", 1, 0, "DebugLogModel", "");
     qmlRegisterType<BitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
     qmlRegisterType<BitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
+    qmlRegisterUncreatableType<AddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "");
     qmlRegisterType<PaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
     qmlRegisterUncreatableType<Transaction>("org.bitcoincore.qt", 1, 0, "Transaction", "");
     qmlRegisterUncreatableType<SendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "");

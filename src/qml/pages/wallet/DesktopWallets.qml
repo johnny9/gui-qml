@@ -140,6 +140,7 @@ Page {
                 ButtonGroup.group: navigationTabs
             }
             NavigationTab {
+                id: receiveTabButton
                 objectName: "desktopWalletsReceiveTab"
                 text: qsTr("Receive")
                 property int index: 2
@@ -230,6 +231,9 @@ Page {
             id: nodeSettings
             showDoneButton: false
             onSelectWalletRequested: root.openWalletSelection()
+            onReceiveRequested: {
+                receiveTabButton.checked = true
+            }
         }
     }
 
