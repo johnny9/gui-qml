@@ -21,6 +21,13 @@ ApplicationWindow {
     color: Theme.color.background
     visible: true
 
+    onClosing: (close) => {
+        if (!nodeModel.shutdownRequested) {
+            close.accepted = false
+            nodeModel.requestShutdown()
+        }
+    }
+
     Settings {
         property alias x: appWindow.x
         property alias y: appWindow.y

@@ -301,13 +301,18 @@ int QmlGuiMain(int argc, char* argv[])
 #ifdef ENABLE_WALLET
     WalletQmlController wallet_controller(*node);
     if (!gArgs.GetBoolArg("-disablewallet", false)) {
-        QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
+        QObject::connect(&init_executor, &QmlInitExecutor::initializeResult,
+                         &wallet_controller, [&wallet_controller, &node_model](bool success, interfaces::BlockAndHeaderTipInfo) {
+                             if (success && !node_model.shutdownRequested()) {
+                                 wallet_controller.initialize();
+                             }
+                         });
     }
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
     QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
 #ifdef ENABLE_WALLET
-        wallet_controller.unloadWallets();
+        wallet_controller.prepareShutdown();
 #endif
         init_executor.shutdown();
     });
@@ -330,10 +335,7 @@ int QmlGuiMain(int argc, char* argv[])
 
     qGuiApp->setQuitOnLastWindowClosed(false);
     QObject::connect(qGuiApp, &QGuiApplication::lastWindowClosed, [&] {
-#ifdef ENABLE_WALLET
-        wallet_controller.unloadWallets();
-#endif
-        node->startShutdown();
+        node_model.requestShutdown();
     });
 
     PeerListModel peer_model{*node, nullptr};

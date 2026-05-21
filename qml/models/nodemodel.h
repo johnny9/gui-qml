@@ -43,6 +43,7 @@ class NodeModel : public QObject
     Q_PROPERTY(double verificationProgress READ verificationProgress NOTIFY verificationProgressChanged)
     Q_PROPERTY(bool pause READ pause WRITE setPause NOTIFY pauseChanged)
     Q_PROPERTY(bool faulted READ errorState WRITE setErrorState NOTIFY errorStateChanged)
+    Q_PROPERTY(bool shutdownRequested READ shutdownRequested NOTIFY shutdownRequestedChanged)
 
 public:
     explicit NodeModel(interfaces::Node& node);
@@ -67,6 +68,7 @@ public:
     void setPause(bool new_pause);
     bool errorState() const { return m_faulted; }
     void setErrorState(bool new_error);
+    bool shutdownRequested() const { return m_shutdown_requested; }
 
     Q_INVOKABLE float getTotalBytesReceived() const { return (float)m_node.getTotalBytesRecv(); }
     Q_INVOKABLE float getTotalBytesSent() const { return (float)m_node.getTotalBytesSent(); }
@@ -97,6 +99,7 @@ Q_SIGNALS:
     void verificationProgressChanged();
     void pauseChanged(bool new_pause);
     void errorStateChanged(bool new_error_state);
+    void shutdownRequestedChanged();
 
     void setTimeRatioList(int new_time);
     void setTimeRatioListInitial();
@@ -126,6 +129,7 @@ private:
     bool m_pause{false};
     bool m_faulted{false};
     bool m_initialization_requested{false};
+    bool m_shutdown_requested{false};
 
     int m_shutdown_polling_timer_id{0};
 

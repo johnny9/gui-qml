@@ -66,6 +66,7 @@ public:
     Q_INVOKABLE void requestClosePaymentRequestDetail();
 
     WalletQmlModel* selectedWallet() const;
+    void prepareShutdown();
     void unloadWallets();
     bool initialized() const { return m_initialized; }
     bool isWalletLoaded() const { return m_is_wallet_loaded; }
@@ -147,6 +148,7 @@ private:
     void setExternalSignerStatus(bool path_configured, int signer_count, const QString& signer_name, const QString& error);
 
     bool m_initialized{false};
+    bool m_shutdown_requested{false};
     interfaces::Node& m_node;
     WalletQmlModel* m_empty_wallet;
     WalletQmlModel* m_selected_wallet;

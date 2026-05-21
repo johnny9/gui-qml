@@ -221,7 +221,7 @@ WalletQmlModel* WalletQmlController::selectedWallet() const
 void WalletQmlController::unloadWallets()
 {
     if (m_handler_load_wallet) {
-        m_handler_load_wallet->disconnect();
+        m_handler_load_wallet.reset();
     }
     m_selected_wallet = m_empty_wallet;
     Q_EMIT selectedWalletChanged();
@@ -238,6 +238,12 @@ void WalletQmlController::unloadWallets()
     for (const QString& wallet_name : unloaded_wallet_names) {
         Q_EMIT walletLoadStateChanged(wallet_name, false);
     }
+}
+
+void WalletQmlController::prepareShutdown()
+{
+    m_shutdown_requested = true;
+    unloadWallets();
 }
 
 void WalletQmlController::registerWalletModel(WalletQmlModel* wallet_model)
@@ -744,6 +750,10 @@ void WalletQmlController::startWalletImport(const QString& path)
 
 void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet)
 {
+    if (m_shutdown_requested || m_node.shutdownRequested()) {
+        return;
+    }
+
     const WalletLoadAction load_action = m_pending_wallet_load_action;
     if (load_action == WalletLoadAction::Import && wallet) {
         setLastImportedWalletInfo(
@@ -815,7 +825,7 @@ void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> w
 void WalletQmlController::initialize()
 {
     // wallet_loader is not set when -disablewallet is passed; bail out.
-    if (gArgs.GetBoolArg("-disablewallet", false)) {
+    if (gArgs.GetBoolArg("-disablewallet", false) || m_shutdown_requested || m_node.shutdownRequested()) {
         return;
     }
     m_handler_load_wallet = m_node.walletLoader().handleLoadWallet([this](std::unique_ptr<interfaces::Wallet> wallet) {
