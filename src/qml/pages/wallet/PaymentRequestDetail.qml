@@ -317,9 +317,9 @@ Page {
         text: qsTr("Copied")
         backgroundColor: Theme.color.green
         borderColor: Theme.color.green
-        textColor: Theme.color.neutral0
+        textColor: Theme.color.white
         iconSource: "image://images/check"
-        iconColor: Theme.color.neutral0
+        iconColor: Theme.color.white
     }
 
     QRCodePopup {

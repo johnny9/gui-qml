@@ -74,7 +74,6 @@ private:
     int findTransactionIndex(const uint256& hash) const;
     int findPendingRequestIndex(const QString& address) const;
     void fulfillPendingRequest(int index, const QSharedPointer<Transaction>& real_tx);
-    void removePendingRequestForAddress(const QString& address);
 
     int m_display_unit{0};
     QList<QSharedPointer<Transaction>> m_transactions;

@@ -272,22 +272,6 @@ void ActivityListModel::removePendingReceiveRequest(const QString& requestId)
     }
 }
 
-void ActivityListModel::removePendingRequestForAddress(const QString& address)
-{
-    if (!m_pending_request_addresses.contains(address)) return;
-
-    for (int i = 0; i < m_transactions.size(); ++i) {
-        if (m_transactions[i]->isPendingRequest && m_transactions[i]->address == address) {
-            beginRemoveRows(QModelIndex(), i, i);
-            m_transactions.removeAt(i);
-            endRemoveRows();
-            Q_EMIT countChanged();
-            break;
-        }
-    }
-    m_pending_request_addresses.remove(address);
-}
-
 void ActivityListModel::updateTransaction(const uint256& hash, const interfaces::WalletTxStatus& tx_status, int num_blocks, int64_t block_time)
 {
     int index = findTransactionIndex(hash);

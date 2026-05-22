@@ -68,7 +68,7 @@ Page {
             ? request.amountDisplay
             : qsTr("No amount")
         if (request && request.date && request.date.length > 0) {
-            return amount + " - " + request.date
+            return qsTr("%1 - %2").arg(amount).arg(request.date)
         }
         return amount
     }

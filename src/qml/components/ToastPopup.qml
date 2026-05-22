@@ -23,7 +23,7 @@ Item {
     property color textColor: Theme.color.neutral9
     property color backgroundColor: Theme.color.neutral0
     property color borderColor: Theme.color.neutral4
-    property int horizontalPadding: 8
+    property int horizontalPadding: 10
     property int verticalPadding: 4
     property int spacing: 4
     property var textStyle: Theme.text.caption
