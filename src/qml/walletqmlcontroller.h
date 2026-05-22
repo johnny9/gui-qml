@@ -5,6 +5,7 @@
 #ifndef BITCOIN_QML_WALLETQMLCONTROLLER_H
 #define BITCOIN_QML_WALLETQMLCONTROLLER_H
 
+#include <qml/models/walletlistmodel.h>
 #include <qml/models/walletqmlmodel.h>
 
 #include <interfaces/handler.h>
@@ -95,11 +96,16 @@ Q_SIGNALS:
     void initializedChanged();
     void isWalletLoadedChanged();
     void noWalletsFoundChanged();
-    void walletLoadStateChanged(const QString& wallet_name, bool loaded);
+    void walletLoadStateChanged(const QString& name,
+                                WalletListModel::LoadState state,
+                                const QString& error);
     void walletLoadInProgressChanged();
     void walletLoadErrorChanged();
     void walletLoadWarningsChanged();
     void walletCreateErrorChanged();
+    void walletInfoChanged(const QString& name,
+                           const QString& balance,
+                           int keySchemeKind);
     void walletLoadSucceeded();
     void walletImportSucceeded();
     void walletMigrationInProgressChanged();
@@ -117,6 +123,7 @@ Q_SIGNALS:
 
 public Q_SLOTS:
     void initialize();
+    void publishOpenWalletsInfo();
 
 private:
     enum class WalletLoadAction {
@@ -147,6 +154,8 @@ private:
     void clearLastImportedWalletInfo();
     QString makeSuggestedExternalSignerWalletName(const QString& signer_name) const;
     void setExternalSignerStatus(bool path_configured, int signer_count, const QString& signer_name, const QString& error);
+    void publishWalletInfo(WalletQmlModel* wallet_model);
+    void subscribeWalletInfo(WalletQmlModel* wallet_model);
 
     bool m_initialized{false};
     interfaces::Node& m_node;

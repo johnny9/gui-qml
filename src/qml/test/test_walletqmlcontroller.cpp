@@ -297,6 +297,8 @@ private Q_SLOTS:
     void initializedControllerEmitsWalletLoadStateChanged();
     void initializedControllerHandlesExternalWalletUnload();
     void initializedControllerUnloadWalletsClearsSelectionAndOpenWallets();
+    void initializedControllerEmitsLoadingThenLoadErrorOnFailedLoad();
+    void publishOpenWalletsInfoEmitsWalletInfoChangedForEachOpenWallet();
 };
 
 void WalletQmlControllerTests::initTestCase()
@@ -825,6 +827,69 @@ void WalletQmlControllerTests::initializedControllerUnloadWalletsClearsSelection
     QVERIFY(!controller.isWalletOpen("beta_wallet"));
     QCOMPARE(alpha_state.remove_calls, 0);
     QCOMPARE(beta_state.remove_calls, 0);
+}
+
+void WalletQmlControllerTests::initializedControllerEmitsLoadingThenLoadErrorOnFailedLoad()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    loader.wallet_dir_entries = {{"alpha_wallet", "sqlite"}};
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QSignalSpy load_state_spy(&controller, &WalletQmlController::walletLoadStateChanged);
+    QSignalSpy load_error_spy(&controller, &WalletQmlController::walletLoadErrorChanged);
+    controller.setSelectedWallet("alpha_wallet", "sqlite");
+
+    // FakeWalletLoader::loadWallet() defaults to returning an error, so
+    // startWalletLoad must emit Loading synchronously and LoadError once the
+    // worker completes.
+    QTRY_COMPARE_WITH_TIMEOUT(load_state_spy.count(), 2, 5000);
+    QCOMPARE(load_state_spy.at(0).at(0).toString(), QString{"alpha_wallet"});
+    QCOMPARE(load_state_spy.at(0).at(1).toInt(),
+             static_cast<int>(WalletListModel::LoadState::Loading));
+    QCOMPARE(load_state_spy.at(0).at(2).toString(), QString{});
+
+    QCOMPARE(load_state_spy.at(1).at(0).toString(), QString{"alpha_wallet"});
+    QCOMPARE(load_state_spy.at(1).at(1).toInt(),
+             static_cast<int>(WalletListModel::LoadState::LoadError));
+    QVERIFY(!load_state_spy.at(1).at(2).toString().isEmpty());
+
+    QVERIFY(load_error_spy.count() >= 1);
+    QVERIFY(!controller.walletLoadInProgress());
+}
+
+void WalletQmlControllerTests::publishOpenWalletsInfoEmitsWalletInfoChangedForEachOpenWallet()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    FakeWallet::State alpha_state;
+    FakeWallet::State beta_state;
+    loader.get_wallets_fn = [&]() {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.emplace_back(std::make_unique<FakeWallet>("alpha_wallet", &alpha_state));
+        wallets.emplace_back(std::make_unique<FakeWallet>("beta_wallet", &beta_state));
+        return wallets;
+    };
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QSignalSpy info_spy(&controller, &WalletQmlController::walletInfoChanged);
+    controller.publishOpenWalletsInfo();
+
+    QCOMPARE(info_spy.count(), 2);
+    QStringList names;
+    names << info_spy.at(0).at(0).toString() << info_spy.at(1).at(0).toString();
+    names.sort();
+    QCOMPARE(names, QStringList({"alpha_wallet", "beta_wallet"}));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

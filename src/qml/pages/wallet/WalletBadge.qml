@@ -27,6 +27,13 @@ Button {
     property bool loading: false
     property bool noWalletLoaded: false
     property bool noWalletsFound: false
+    property int keySchemeKind: WalletQmlModel.SingleKey
+
+    readonly property string walletTypeIcon: {
+        if (keySchemeKind === WalletQmlModel.WatchOnly) return "image://images/visible-filled"
+        if (keySchemeKind === WalletQmlModel.MultiKey)  return "image://images/two-keys-filled"
+        return "image://images/key-filled"
+    }
 
     checkable: true
     hoverEnabled: AppMode.isDesktop
@@ -91,7 +98,7 @@ Button {
             spacing: 5
             Icon {
                 visible: root.showIcon
-                source: root.noWalletsFound ? "image://images/plus" : "image://images/caret-down-medium-filled"
+                source: root.noWalletsFound ? "image://images/plus-filled" : "image://images/caret-down-medium-filled"
                 color: Theme.color.neutral8
                 size: 30
                 Layout.minimumWidth: 25
@@ -127,14 +134,17 @@ Button {
             Icon {
                 id: icon
                 visible: root.showIcon
-                source: "image://images/singlesig-wallet"
+                source: root.walletTypeIcon
                 color: Theme.color.neutral8
                 size: 30
+                Layout.alignment: Qt.AlignVCenter
                 Layout.minimumWidth: 30
                 Layout.preferredWidth: 30
                 Layout.maximumWidth: 30
+                Layout.preferredHeight: 30
             }
             ColumnLayout {
+                Layout.alignment: Qt.AlignVCenter
                 spacing: 2
                 CoreText {
                     horizontalAlignment: Text.AlignLeft

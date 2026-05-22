@@ -110,6 +110,7 @@ Page {
             loading: !walletController.initialized
             noWalletLoaded: !walletController.isWalletLoaded
             noWalletsFound: walletController.noWalletsFound
+            keySchemeKind: walletController.selectedWallet.keySchemeKind
 
             onClicked: {
                 root.toggleWalletSelection()
