@@ -248,36 +248,18 @@ PageStack {
                         }
                     }
 
-                    Button {
+                    IconButton {
                         id: searchToggle
                         objectName: "activitySearchToggle"
                         Layout.preferredWidth: 30
                         Layout.preferredHeight: 30
-                        padding: 0
                         checkable: true
                         checked: root.filtersVisible
-                        hoverEnabled: AppMode.isDesktop
+                        iconSource: "qrc:/icons/search"
+                        iconColor: Theme.color.neutral7
+                        activeColor: Theme.color.orange
+                        size: 30
                         onClicked: root.toggleFilters()
-
-                        HoverHandler {
-                            cursorShape: Qt.PointingHandCursor
-                        }
-
-                        background: Rectangle {
-                            radius: 5
-                            color: searchToggle.hovered || searchToggle.pressed ? Theme.color.neutral2 : Theme.color.background
-                        }
-
-                        contentItem: Item {
-                            anchors.fill: parent
-
-                            Icon {
-                                anchors.centerIn: parent
-                                source: "qrc:/icons/search"
-                                color: searchToggle.checked || searchToggle.pressed ? Theme.color.orange : Theme.color.neutral7
-                                size: 22
-                            }
-                        }
                     }
                 }
 
