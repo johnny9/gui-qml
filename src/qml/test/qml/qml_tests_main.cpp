@@ -1162,7 +1162,7 @@ public:
         return t.length() >= 100 && (t.startsWith("xpub") || t.startsWith("tpub"));
     }
     Q_INVOKABLE void createWatchOnlyWallet(const QString& /*name*/, const QString& /*xpub*/) {}
-    Q_INVOKABLE bool createSingleSigWallet(const QString& /*name*/, const QString& /*passphrase*/) { return true; }
+    Q_INVOKABLE void createSingleSigWallet(const QString& /*name*/, const QString& /*passphrase*/) { Q_EMIT walletCreateSucceeded(); }
     Q_INVOKABLE void clearWalletLoadStatus() { m_wallet_load_error.clear(); Q_EMIT walletLoadErrorChanged(); }
 
 Q_SIGNALS:
@@ -1178,6 +1178,7 @@ Q_SIGNALS:
     void closePaymentRequestDetailRequested();
     void openReceiveRequestsChanged();
     void openReceiveRequested();
+    void walletCreateSucceeded();
 };
 
 class MockOptionsModel : public QObject

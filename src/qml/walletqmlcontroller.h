@@ -51,7 +51,7 @@ public:
     Q_INVOKABLE void closeWallet(const QString& path);
     Q_INVOKABLE QString walletDisplayName(const QString& path) const;
     Q_INVOKABLE bool setWalletDisplayName(const QString& path, const QString& display_name);
-    Q_INVOKABLE bool createSingleSigWallet(const QString &name, const QString &passphrase);
+    Q_INVOKABLE void createSingleSigWallet(const QString &name, const QString &passphrase);
     Q_INVOKABLE bool createExternalSignerWallet(const QString& name);
     Q_INVOKABLE void createWatchOnlyWallet(const QString &name, const QString &xpub);
     Q_INVOKABLE void importWallet(const QString& path);
@@ -108,6 +108,7 @@ Q_SIGNALS:
                            int keySchemeKind);
     void walletLoadSucceeded();
     void walletImportSucceeded();
+    void walletCreateSucceeded();
     void walletMigrationInProgressChanged();
     void walletMigrationErrorChanged();
     void walletMigrationRequired(const QString& path);
@@ -130,6 +131,7 @@ private:
         None,
         Load,
         Import,
+        Create,
     };
 
     void handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet);

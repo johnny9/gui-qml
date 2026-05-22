@@ -75,6 +75,7 @@ public:
         return std::vector<std::unique_ptr<interfaces::Wallet>>{};
     };
     std::vector<std::pair<std::string, std::string>> wallet_dir_entries;
+    LoadWalletFn captured_load_wallet_fn;
 
     void registerRpcs() override {}
     bool verify() override { return true; }
@@ -122,9 +123,10 @@ public:
         ++get_wallets_calls;
         return get_wallets_fn();
     }
-    std::unique_ptr<interfaces::Handler> handleLoadWallet(LoadWalletFn) override
+    std::unique_ptr<interfaces::Handler> handleLoadWallet(LoadWalletFn fn) override
     {
         ++handle_load_wallet_calls;
+        captured_load_wallet_fn = std::move(fn);
         return MakeNoopHandler();
     }
 };
@@ -290,6 +292,9 @@ private Q_SLOTS:
     void initializedControllerPropagatesCreateErrors();
     void initializedControllerForwardsMigrationPassphrase();
     void initializedControllerForwardsUtf8CreatePassphrase();
+    void initializedControllerEmitsWalletCreateSucceeded();
+    void initializedControllerReportsCreateWarnings();
+    void initializedControllerIgnoresDuplicateCreateWhileInProgress();
     void initializedControllerRequestsPassphraseBeforeEncryptedMigration();
     void initializedControllerMigratesUnencryptedWalletWithoutPassphrase();
     void initializedControllerClosesSelectedWalletAndSelectsRemainingLoadedWallet();
@@ -449,9 +454,10 @@ void WalletQmlControllerTests::createWalletBeforeInitializationReturnsFalseAndSe
     StrictMock<MockNode> node;
     WalletQmlController controller(node);
 
-    QVERIFY(!controller.createSingleSigWallet("test_wallet", "secret"));
+    controller.createSingleSigWallet("test_wallet", "secret");
     QCOMPARE(controller.walletCreateError(), QString{NOT_INITIALIZED_ERROR});
     QVERIFY(!controller.isWalletLoaded());
+    QVERIFY(!controller.walletLoadInProgress());
 }
 
 void WalletQmlControllerTests::importWalletBeforeInitializationSetsLoadError()
@@ -512,12 +518,15 @@ void WalletQmlControllerTests::initializedControllerPropagatesCreateErrors()
             util::Error{Untranslated("Wallet creation failed.")}};
     };
 
-    QVERIFY(!controller.createSingleSigWallet("test_wallet", "secret"));
+    QSignalSpy error_spy(&controller, &WalletQmlController::walletCreateErrorChanged);
+    controller.createSingleSigWallet("test_wallet", "secret");
+    QVERIFY(error_spy.wait(5000));
     QVERIFY(saw_expected_passphrase);
     QVERIFY(saw_expected_flags);
     QCOMPARE(loader.create_wallet_calls, 1);
     QCOMPARE(controller.walletCreateError(), QString{"Wallet creation failed."});
     QVERIFY(!controller.isWalletLoaded());
+    QVERIFY(!controller.walletLoadInProgress());
 }
 
 void WalletQmlControllerTests::initializedControllerForwardsMigrationPassphrase()
@@ -576,10 +585,104 @@ void WalletQmlControllerTests::initializedControllerForwardsUtf8CreatePassphrase
             util::Error{Untranslated("Wallet creation failed.")}};
     };
 
-    QVERIFY(!controller.createSingleSigWallet("test_wallet", passphrase));
+    QSignalSpy error_spy(&controller, &WalletQmlController::walletCreateErrorChanged);
+    controller.createSingleSigWallet("test_wallet", passphrase);
+    QVERIFY(error_spy.wait(5000));
     QVERIFY(saw_expected_passphrase);
     QCOMPARE(loader.create_wallet_calls, 1);
     QCOMPARE(controller.walletCreateError(), QString{"Wallet creation failed."});
+}
+
+void WalletQmlControllerTests::initializedControllerEmitsWalletCreateSucceeded()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+    QVERIFY(loader.captured_load_wallet_fn);
+
+    FakeWallet::State wallet_state;
+    loader.create_wallet_fn = [&](const std::string& name,
+                                  const SecureString&,
+                                  uint64_t,
+                                  std::vector<bilingual_str>&) {
+        return util::Result<std::unique_ptr<interfaces::Wallet>>{
+            std::make_unique<FakeWallet>(name, &wallet_state)};
+    };
+
+    QSignalSpy create_spy(&controller, &WalletQmlController::walletCreateSucceeded);
+    QSignalSpy create_calls_spy(&controller, &WalletQmlController::walletLoadInProgressChanged);
+    controller.createSingleSigWallet("created_wallet", "");
+
+    // Simulate the wallet loader firing the load-wallet handler once createWallet
+    // has produced a wallet on the worker thread.
+    QTRY_COMPARE_WITH_TIMEOUT(loader.create_wallet_calls, 1, 5000);
+    loader.captured_load_wallet_fn(std::make_unique<FakeWallet>("created_wallet", &wallet_state));
+
+    QTRY_COMPARE_WITH_TIMEOUT(create_spy.count(), 1, 5000);
+    QVERIFY(controller.isWalletLoaded());
+    QVERIFY(!controller.walletLoadInProgress());
+    QCOMPARE(controller.walletCreateError(), QString{});
+}
+
+void WalletQmlControllerTests::initializedControllerReportsCreateWarnings()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    loader.create_wallet_fn = [](const std::string&,
+                                 const SecureString&,
+                                 uint64_t,
+                                 std::vector<bilingual_str>& warnings) {
+        warnings.push_back(Untranslated("Disk space is low."));
+        return util::Result<std::unique_ptr<interfaces::Wallet>>{
+            util::Error{Untranslated("Wallet creation failed.")}};
+    };
+
+    QSignalSpy warnings_spy(&controller, &WalletQmlController::walletLoadWarningsChanged);
+    controller.createSingleSigWallet("test_wallet", "secret");
+    QVERIFY(warnings_spy.wait(5000));
+    QCOMPARE(controller.walletLoadWarnings(), QString{"Disk space is low."});
+    QCOMPARE(controller.walletCreateError(), QString{"Wallet creation failed."});
+}
+
+void WalletQmlControllerTests::initializedControllerIgnoresDuplicateCreateWhileInProgress()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    loader.create_wallet_fn = [](const std::string&,
+                                 const SecureString&,
+                                 uint64_t,
+                                 std::vector<bilingual_str>&) {
+        return util::Result<std::unique_ptr<interfaces::Wallet>>{
+            util::Error{Untranslated("Wallet creation failed.")}};
+    };
+
+    QSignalSpy error_spy(&controller, &WalletQmlController::walletCreateErrorChanged);
+    controller.createSingleSigWallet("test_wallet", "secret");
+    // Second call while the first is in flight must be dropped without
+    // touching the loader. The flag is set synchronously before the worker
+    // posts, so this check happens before the first call completes.
+    controller.createSingleSigWallet("test_wallet", "secret");
+    QVERIFY(error_spy.wait(5000));
+    QCOMPARE(loader.create_wallet_calls, 1);
 }
 
 void WalletQmlControllerTests::initializedControllerRequestsPassphraseBeforeEncryptedMigration()

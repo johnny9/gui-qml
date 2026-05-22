@@ -85,6 +85,7 @@
         <file>controls/SegmentedPicker.qml</file>
         <file>controls/Setting.qml</file>
         <file>controls/Skeleton.qml</file>
+        <file>controls/SpinningIndicator.qml</file>
         <file>controls/TextButton.qml</file>
         <file>controls/Theme.qml</file>
         <file>controls/ToggleButton.qml</file>

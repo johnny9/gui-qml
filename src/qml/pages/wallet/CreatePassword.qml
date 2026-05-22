@@ -18,19 +18,32 @@ Page {
     background: null
 
     required property string walletName
+    // Which button triggered the in-flight wallet creation, so only that
+    // button shows the spinner. Cleared when the load completes.
+    property string activeAction: ""
 
     Component.onCompleted: walletController.clearWalletCreateStatus()
+
+    Connections {
+        target: walletController
+        function onWalletCreateSucceeded() { root.next() }
+        function onWalletLoadInProgressChanged() {
+            if (!walletController.walletLoadInProgress) {
+                root.activeAction = ""
+            }
+        }
+    }
 
     header: NavigationBar2 {
         navigationStack: root.StackView.view
         rightItem: NavButton {
             objectName: "createWalletPasswordSkipButton"
             text: qsTr("Skip")
-            enabled: walletController.initialized
+            enabled: walletController.initialized && !walletController.walletLoadInProgress
+            busy: root.activeAction === "skip"
             onClicked: {
-                if (walletController.createSingleSigWallet(walletName, "")) {
-                    root.next()
-                }
+                root.activeAction = "skip"
+                walletController.createSingleSigWallet(walletName, "")
             }
         }
     }
@@ -111,16 +124,17 @@ Page {
             Layout.leftMargin: 20
             Layout.rightMargin: Layout.leftMargin
             Layout.alignment: Qt.AlignCenter
-            text: qsTr("Continue")
+            text: root.activeAction === "continue" ? qsTr("Creating…") : qsTr("Continue")
+            busy: root.activeAction === "continue"
             enabled: walletController.initialized &&
+                !walletController.walletLoadInProgress &&
                 password.text != "" &&
                 passwordRepeat.text != "" &&
                 password.text == passwordRepeat.text &&
                 confirmToggle.loadedItem.checked
             onClicked: {
-                if (walletController.createSingleSigWallet(walletName, password.text)) {
-                    root.next()
-                }
+                root.activeAction = "continue"
+                walletController.createSingleSigWallet(walletName, password.text)
             }
         }
 

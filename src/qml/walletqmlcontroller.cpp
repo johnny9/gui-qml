@@ -303,44 +303,57 @@ void WalletQmlController::removeWalletModel(WalletQmlModel* wallet_model)
     delete wallet_model;
 }
 
-bool WalletQmlController::createSingleSigWallet(const QString &name, const QString &passphrase)
+void WalletQmlController::createSingleSigWallet(const QString &name, const QString &passphrase)
 {
+    if (m_wallet_load_in_progress) {
+        return;
+    }
     clearWalletCreateStatus();
     clearWalletLoadStatus();
     clearWalletMigrationStatus();
-    m_warning_messages.clear();
     if (!m_initialized) {
         setWalletCreateError(tr("Wallets are still loading. Try again in a moment."));
-        return false;
+        return;
     }
+
     SecureString secure_passphrase{QmlUtil::SecureStringFromQString(passphrase)};
     const std::string wallet_name{name.toStdString()};
-    auto wallet{m_node.walletLoader().createWallet(wallet_name, secure_passphrase, wallet::WALLET_FLAG_DESCRIPTORS, m_warning_messages)};
-    QmlUtil::ClearSecureString(secure_passphrase);
-    setWalletLoadWarnings(JoinWarnings(m_warning_messages));
-    if (wallet) {
-        const QString loaded_wallet_name = QString::fromStdString((*wallet)->getWalletName());
-        {
-            QMutexLocker locker(&m_wallets_mutex);
-            m_selected_wallet = new WalletQmlModel(std::move(*wallet));
-            registerWalletModel(m_selected_wallet);
-            applyWalletDisplayName(m_selected_wallet);
-            m_wallets.push_back(m_selected_wallet);
-        }
-        subscribeWalletInfo(m_selected_wallet);
-        Q_EMIT walletLoadStateChanged(loaded_wallet_name,
-                                      WalletListModel::LoadState::Open,
-                                      QString{});
-        publishWalletInfo(m_selected_wallet);
-        setWalletLoaded(true);
-        setNoWalletsFound(false);
-        Q_EMIT selectedWalletChanged();
-        return true;
-    } else {
-        const bilingual_str error = util::ErrorString(wallet);
-        setWalletCreateError(QString::fromStdString(error.translated.empty() ? error.original : error.translated));
-        return false;
-    }
+
+    m_wallet_load_requested = true;
+    m_pending_wallet_load_action = WalletLoadAction::Create;
+    setWalletLoadInProgress(true);
+
+    QTimer::singleShot(0, m_worker,
+        [this, wallet_name, secure_passphrase = std::move(secure_passphrase)]() mutable {
+            std::vector<bilingual_str> warning_messages;
+            auto wallet = m_node.walletLoader().createWallet(
+                wallet_name,
+                secure_passphrase,
+                wallet::WALLET_FLAG_DESCRIPTORS,
+                warning_messages);
+            QmlUtil::ClearSecureString(secure_passphrase);
+            const QString warnings = JoinWarnings(warning_messages);
+
+            if (!wallet) {
+                const bilingual_str result_error = util::ErrorString(wallet);
+                const QString error = QString::fromStdString(
+                    result_error.translated.empty() ? result_error.original : result_error.translated);
+                QMetaObject::invokeMethod(this, [this, error, warnings]() {
+                    m_wallet_load_requested = false;
+                    m_pending_wallet_load_action = WalletLoadAction::None;
+                    setWalletLoadInProgress(false);
+                    setWalletLoadWarnings(warnings);
+                    setWalletCreateError(error.isEmpty() ? tr("Wallet creation failed.") : error);
+                });
+                return;
+            }
+
+            // Success: handleLoadWallet() will adopt the wallet, clear the
+            // in-progress flag, and emit walletCreateSucceeded.
+            QMetaObject::invokeMethod(this, [this, warnings]() {
+                setWalletLoadWarnings(warnings);
+            });
+        });
 }
 
 bool WalletQmlController::createExternalSignerWallet(const QString& name)
@@ -865,6 +878,8 @@ void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> w
             Q_EMIT walletImportSucceeded();
         } else if (load_action == WalletLoadAction::Load) {
             Q_EMIT walletLoadSucceeded();
+        } else if (load_action == WalletLoadAction::Create) {
+            Q_EMIT walletCreateSucceeded();
         }
     };
 

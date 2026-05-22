@@ -4,6 +4,7 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Layouts 1.15
 import org.bitcoincore.qt 1.0
 
 Button {
@@ -19,17 +20,36 @@ Button {
     property color borderColor: "transparent"
     property color borderHoverColor: "transparent"
     property color borderPressedColor: "transparent"
-    property bool bold: false
+    property bool bold: true
+    property bool busy: false
     property var textStyle: bold ? Theme.text.buttonStrong : Theme.text.button
     property int textFontPixelSize: textStyle.pixelSize
     property string textFontStyleName: textStyle.styleName
 
-    contentItem: CoreText {
-        text: parent.text
-        color: root.textColor
-        bold: root.bold
-        fontStyleName: root.textFontStyleName
-        font.pixelSize: root.textFontPixelSize
+    contentItem: Item {
+        implicitHeight: contentRow.implicitHeight
+
+        RowLayout {
+            id: contentRow
+            anchors.centerIn: parent
+            spacing: 8
+
+            SpinningIndicator {
+                Layout.alignment: Qt.AlignVCenter
+                visible: root.busy
+                running: root.busy
+                color: root.textColor
+            }
+
+            CoreText {
+                Layout.alignment: Qt.AlignVCenter
+                text: root.text
+                color: root.textColor
+                bold: root.bold
+                fontStyleName: root.textFontStyleName
+                font.pixelSize: root.textFontPixelSize
+            }
+        }
     }
     background: Rectangle {
         id: bg
