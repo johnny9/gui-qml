@@ -113,6 +113,7 @@
         <file>pages/settings/SettingsTheme.qml</file>
         <file>pages/wallet/Activity.qml</file>
         <file>pages/wallet/ActivityDetails.qml</file>
+        <file>pages/wallet/ActivityTransactionVisuals.qml</file>
         <file>pages/wallet/AddressList.qml</file>
         <file>pages/wallet/AddressDetails.qml</file>
         <file>pages/wallet/AddressRow.qml</file>

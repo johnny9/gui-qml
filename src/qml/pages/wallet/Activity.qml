@@ -516,36 +516,19 @@ PageStack {
                             }
                         }
 
+                        ActivityTransactionVisuals {
+                            id: transactionVisuals
+                            transactionType: delegate.type
+                            transactionStatus: delegate.status
+                            isPendingRequest: delegate.isPendingRequest
+                        }
+
                         contentItem: RowLayout {
                             Icon {
                                 Layout.alignment: Qt.AlignCenter
                                 Layout.margins: 6
-                                source: {
-                                    if (delegate.type == Transaction.RecvWithAddress
-                                        || delegate.type == Transaction.RecvFromOther) {
-                                        "qrc:/icons/triangle-down"
-                                    } else if (delegate.type == Transaction.Generated) {
-                                        "qrc:/icons/coinbase"
-                                    } else {
-                                        "qrc:/icons/triangle-up"
-                                    }
-                                }
-                                color: {
-                                    if (delegate.isPendingRequest) {
-                                        Theme.color.purple
-                                    } else if (delegate.status == Transaction.Confirmed
-                                               || delegate.status == Transaction.Immature) {
-                                        if (delegate.type == Transaction.RecvWithAddress ||
-                                            delegate.type == Transaction.RecvFromOther ||
-                                            delegate.type == Transaction.Generated) {
-                                            Theme.color.green
-                                        } else {
-                                            Theme.color.orange
-                                        }
-                                    } else {
-                                        Theme.color.blue
-                                    }
-                                }
+                                source: transactionVisuals.iconSource
+                                color: transactionVisuals.iconColor
                                 size: 14
                             }
                             CoreText {
@@ -580,15 +563,7 @@ PageStack {
                                 text: delegate.amount
                                 font.pixelSize: 15
                                 horizontalAlignment: Text.AlignRight
-                                color: {
-                                    if (delegate.type == Transaction.RecvWithAddress
-                                        || delegate.type == Transaction.RecvFromOther
-                                        || delegate.type == Transaction.Generated) {
-                                        Theme.color.green
-                                    } else {
-                                        Theme.color.neutral9
-                                    }
-                                }
+                                color: transactionVisuals.amountColor
                             }
 
                             Component {
