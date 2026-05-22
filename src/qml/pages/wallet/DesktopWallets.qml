@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -220,6 +220,10 @@ Page {
             }
         }
         RequestPayment {
+            onAddressHistoryRequested: {
+                settingsTabButton.checked = true
+                nodeSettings.openWalletAddressHistory()
+            }
         }
         Item {
             id: blockClockTab

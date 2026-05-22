@@ -27,6 +27,8 @@ Page {
     readonly property bool showAddressTypeSelector: receiveOptionsPopup.showAddressType && root.request !== null && root.requestIsEditing() && !root.hasAddress
     readonly property bool hasSavedRequest: root.requestValue("id") !== ""
 
+    signal addressHistoryRequested()
+
     function requestValue(name) {
         if (!root.request || root.request[name] === undefined || root.request[name] === null) {
             return ""
@@ -182,6 +184,7 @@ Page {
                     x: receiveOptionsButton.x - width + receiveOptionsButton.width
                     y: receiveOptionsButton.y + receiveOptionsButton.height
                     showRequestActions: root.hasSavedRequest
+                    onViewAddressHistory: root.addressHistoryRequested()
                     onUseAsTemplate: root.useCurrentRequestAsTemplate()
                     onDeleteFromHistory: root.deleteCurrentRequest()
                 }

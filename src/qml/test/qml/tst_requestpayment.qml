@@ -220,6 +220,31 @@ TestCase {
         compare(testPaymentRequest.isEditing, true)
     }
 
+    function test_viewAddressHistoryOption_emits_navigation_request() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        let addressHistoryRequests = 0
+        page.addressHistoryRequested.connect(function() {
+            ++addressHistoryRequests
+        })
+
+        const popup = findChild(page, "receiveOptionsPopup")
+        verify(popup !== null)
+        popup.open()
+        tryCompare(popup, "opened", true)
+
+        const viewHistoryButton = findChild(page, "receiveOptionsViewAddressHistoryButton")
+        verify(viewHistoryButton !== null)
+        verify(viewHistoryButton.enabled)
+
+        viewHistoryButton.clicked()
+        compare(addressHistoryRequests, 1)
+        tryCompare(popup, "opened", false)
+    }
+
     function test_createdRequestDeleteAction_removes_and_clears_request() {
         const page = createTemporaryObject(requestPaymentComponent, this)
         verify(page !== null)

@@ -20,6 +20,7 @@ OptionPopup {
 
     signal useAsTemplate()
     signal deleteFromHistory()
+    signal viewAddressHistory()
 
     implicitWidth: 300
     implicitHeight: columnLayout.implicitHeight + 20
@@ -66,9 +67,13 @@ OptionPopup {
         }
 
         EllipsisMenuButtonItem {
+            objectName: "receiveOptionsViewAddressHistoryButton"
             Layout.fillWidth: true
             text: qsTr("View address history")
-            enabled: false
+            onClicked: {
+                root.close()
+                root.viewAddressHistory()
+            }
         }
 
         EllipsisMenuButtonItem {
