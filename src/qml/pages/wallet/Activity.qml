@@ -287,6 +287,9 @@ PageStack {
                         color: Theme.color.neutral9
                         font.family: "Inter"
                         font.pixelSize: 15
+                        verticalAlignment: TextInput.AlignVCenter
+                        topPadding: 0
+                        bottomPadding: 0
                         selectByMouse: true
                         onTextChanged: activityFilterProxy.searchText = text
 
