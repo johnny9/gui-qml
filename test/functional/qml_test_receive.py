@@ -206,7 +206,7 @@ def _assert_receive_option_rows(gui, *, show_name, show_message, show_note_self,
 
 def _open_activity(gui):
     gui.click("activityTabButton")
-    time.sleep(0.5)
+    gui.wait_for_property("activitySearchToggle", "visible", True, timeout_ms=10000)
 
 
 def _address_from_bip21(uri):
@@ -271,7 +271,6 @@ def run_test():
 
         # Click "New request" to reset to editing state
         gui.click("requestPaymentGenerateButton")
-        time.sleep(0.5)
         gui.wait_for_property("requestPaymentTitle", "text", "Request a payment", timeout_ms=10000)
         button_text = gui.get_text("requestPaymentGenerateButton")
         assert "Generate payment request" in button_text, f"Expected 'Generate payment request' after clear, got: {button_text!r}"
@@ -333,7 +332,6 @@ def run_test():
 
         # Restart and verify persistence
         _stop_gui(harness)
-        time.sleep(0.5)
         _relaunch_gui(harness)
         gui = harness.driver
         gui.wait_for_property("walletBadge", "text", WALLET_NAME, timeout_ms=30000)

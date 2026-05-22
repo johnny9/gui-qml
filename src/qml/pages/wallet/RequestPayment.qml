@@ -21,13 +21,7 @@ Page {
     property PaymentRequest request: wallet ? wallet.currentPaymentRequest : null
     property string requestError: ""
     property string selectedReceiveAddressType: ""
-    property var availableAddressTypes: {
-        if (!root.wallet) return []
-        if (typeof root.wallet.availableReceiveAddressTypes === "function") {
-            return root.wallet.availableReceiveAddressTypes()
-        }
-        return root.wallet.receiveAddressTypes !== undefined ? root.wallet.receiveAddressTypes : []
-    }
+    property var availableAddressTypes: root.wallet ? root.wallet.availableReceiveAddressTypes() : []
     readonly property bool hasAddress: root.requestValue("address") !== ""
     readonly property bool hasAddressType: receiveOptionsPopup.showAddressType && root.hasAddress && root.requestValue("addressType") !== ""
     readonly property bool showAddressTypeSelector: receiveOptionsPopup.showAddressType && root.request !== null && root.requestIsEditing() && !root.hasAddress
@@ -53,13 +47,8 @@ Page {
             root.selectedReceiveAddressType = "bech32"
             return
         }
-        if (typeof root.wallet.defaultReceiveAddressType === "function") {
-            root.selectedReceiveAddressType = root.wallet.defaultReceiveAddressType()
-        } else if (root.wallet.defaultReceiveAddressType !== undefined && root.wallet.defaultReceiveAddressType !== "") {
-            root.selectedReceiveAddressType = root.wallet.defaultReceiveAddressType
-        } else {
-            root.selectedReceiveAddressType = "bech32"
-        }
+        root.selectedReceiveAddressType = root.wallet.defaultReceiveAddressType()
+            || "bech32"
     }
 
     function addressTypeIndex(addressType) {
@@ -435,6 +424,10 @@ Page {
                         wrapMode: Text.NoWrap
                     }
 
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
                     Button {
                         id: addressTypePicker
                         objectName: "receiveAddressTypePicker"
@@ -444,33 +437,45 @@ Page {
 
                         enabled: root.request !== null && root.requestIsEditing() && root.availableAddressTypes.length > 0
                         hoverEnabled: AppMode.isDesktop
-                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                        Layout.preferredWidth: Math.min(addressTypePicker.implicitWidth, 280)
+                        Layout.maximumWidth: 280
+                        Layout.preferredHeight: 30
                         leftPadding: 10
                         rightPadding: 4
                         topPadding: 2
                         bottomPadding: 2
-                        height: 28
+                        implicitHeight: 30
                         onPressed: addressTypePopup.open()
 
                         HoverHandler {
                             cursorShape: Qt.PointingHandCursor
                         }
 
-                        contentItem: RowLayout {
-                            spacing: 0
+                        contentItem: Item {
+                            id: addressTypePickerContent
+                            implicitWidth: selectedAddressTypeLabel.implicitWidth + addressTypeCaret.width
+                            implicitHeight: Math.max(selectedAddressTypeLabel.implicitHeight, addressTypeCaret.height)
 
                             CoreText {
+                                id: selectedAddressTypeLabel
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.min(implicitWidth, Math.max(0, parent.width - addressTypeCaret.width))
                                 text: addressTypePicker.selectedLabel
                                 font.pixelSize: 18
-                                Layout.fillWidth: true
                                 horizontalAlignment: Text.AlignRight
                                 elide: Text.ElideRight
                             }
 
                             Icon {
+                                id: addressTypeCaret
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
                                 source: "image://images/caret-down-medium-filled"
-                                Layout.preferredWidth: 30
-                                size: 30
+                                width: 24
+                                height: 24
+                                size: 24
                                 color: addressTypePicker.enabled ? Theme.color.orange : Theme.color.neutral4
                             }
                         }
@@ -898,9 +903,9 @@ Page {
         text: qsTr("Copied")
         backgroundColor: Theme.color.green
         borderColor: Theme.color.green
-        textColor: Theme.color.neutral0
+        textColor: Theme.color.white
         iconSource: "image://images/check"
-        iconColor: Theme.color.neutral0
+        iconColor: Theme.color.white
     }
 
     WalletPassphrasePopup {

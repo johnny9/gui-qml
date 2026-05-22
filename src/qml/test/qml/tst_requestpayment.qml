@@ -175,6 +175,26 @@ TestCase {
         compare(testWalletModel.lastCommitAddressType, "p2sh-segwit")
     }
 
+    function test_addressTypePicker_highlight_is_tight_to_label() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        const addressTypeToggle = findChild(page, "receiveOptionsAddressTypeToggle")
+        verify(addressTypeToggle !== null)
+        addressTypeToggle.checked = true
+
+        const picker = findChild(page, "receiveAddressTypePicker")
+        verify(picker !== null)
+        page.selectedReceiveAddressType = "p2sh-segwit"
+
+        tryVerify(function() { return picker.width > 0 })
+        verify(picker.width < 300)
+        compare(picker.height, 30)
+        compare(picker.selectedLabel, "Base58 (P2SH-SegWit)")
+    }
+
     function test_createdRequestOptions_include_template_and_delete_actions() {
         const page = createTemporaryObject(requestPaymentComponent, this)
         verify(page !== null)
