@@ -131,6 +131,7 @@ class MockBitcoinAmount : public QObject
     Q_PROPERTY(Unit unit MEMBER m_unit NOTIFY unitChanged)
     Q_PROPERTY(qint64 satoshi READ satoshi NOTIFY displayChanged)
     Q_PROPERTY(QString unitLabel READ unitLabel NOTIFY unitChanged)
+    Q_PROPERTY(QString displayWithUnit READ displayWithUnit NOTIFY displayChanged)
 
 public:
     enum Unit {
@@ -155,6 +156,7 @@ public:
         return ok ? static_cast<qint64>(value * 100000000.0 + 0.5) : 0;
     }
     QString unitLabel() const { return m_unit == BTC ? QStringLiteral("BTC") : QStringLiteral("sat"); }
+    QString displayWithUnit() const { return m_display.isEmpty() ? QString{} : m_display + QStringLiteral(" ") + unitLabel(); }
     Q_INVOKABLE void format() {}
     Q_INVOKABLE void flipUnit()
     {

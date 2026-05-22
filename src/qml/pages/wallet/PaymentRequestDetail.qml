@@ -33,18 +33,6 @@ Page {
         walletController.requestOpenReceive()
     }
 
-    function formatAmount(satoshi) {
-        if (satoshi <= 0) return ""
-        var btc = (satoshi / 100000000).toFixed(8)
-        var parts = btc.split(".")
-        var intPart = parts[0]
-        var decPart = parts[1]
-        var spaced = decPart.substring(0, 2)
-        if (decPart.length > 2) spaced += " " + decPart.substring(2, 5)
-        if (decPart.length > 5) spaced += " " + decPart.substring(5, 8)
-        return "₿ " + intPart + "." + spaced
-    }
-
     header: NavigationBar2 {
         leftItem: NavButton {
             objectName: "paymentRequestDetailBack"
@@ -111,7 +99,7 @@ Page {
                 Layout.fillWidth: true
                 Layout.topMargin: 15
                 visible: root.request !== null && root.request.amount.satoshi > 0
-                text: root.request ? formatAmount(root.request.amount.satoshi) : ""
+                text: root.request ? root.request.amount.displayWithUnit : ""
                 font.pixelSize: 24
                 bold: true
                 color: Theme.color.neutral9

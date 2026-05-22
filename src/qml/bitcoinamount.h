@@ -16,6 +16,7 @@ class BitcoinAmount : public QObject
     Q_PROPERTY(Unit unit READ unit WRITE setUnit NOTIFY unitChanged)
     Q_PROPERTY(QString unitLabel READ unitLabel NOTIFY unitChanged)
     Q_PROPERTY(QString display READ toDisplay WRITE fromDisplay NOTIFY displayChanged)
+    Q_PROPERTY(QString displayWithUnit READ displayWithUnit NOTIFY displayWithUnitChanged)
     Q_PROPERTY(qint64 satoshi READ satoshi WRITE setSatoshi NOTIFY amountChanged)
 
 public:
@@ -32,6 +33,7 @@ public:
     QString unitLabel() const;
 
     QString toDisplay() const;
+    QString displayWithUnit() const;
     void fromDisplay(const QString& new_amount);
     qint64 satoshi() const;
     void setSatoshi(qint64 new_amount);
@@ -50,6 +52,7 @@ Q_SIGNALS:
     void unitChanged();
     void amountChanged();
     void displayChanged();
+    void displayWithUnitChanged();
 
 private:
     QString sanitize(const QString& text);

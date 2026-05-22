@@ -71,7 +71,7 @@ QString FormatFeeEstimate(CAmount amount)
 {
     BitcoinAmount bitcoin_amount;
     bitcoin_amount.setSatoshi(amount);
-    return bitcoin_amount.toDisplay() + QStringLiteral(" ") + bitcoin_amount.unitLabel();
+    return bitcoin_amount.displayWithUnit();
 }
 
 std::optional<CAmount> ParseCustomFeeRatePerKvB(const QString& custom_fee_rate)
