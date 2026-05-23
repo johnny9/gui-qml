@@ -9,6 +9,7 @@ TextField {
     id: root
 
     property bool hideText: false
+    property bool showText: false
 
     implicitHeight: 56
     implicitWidth: 450
@@ -17,7 +18,8 @@ TextField {
     font.pixelSize: 18
     color: Theme.color.neutral9
     placeholderTextColor: Theme.color.neutral5
-    echoMode: hideText ? TextInput.Password : TextInput.Normal
+    echoMode: hideText && !showText ? TextInput.Password : TextInput.Normal
+    verticalAlignment: TextInput.AlignVCenter
     rightPadding: hideText ? 46 : 20
     leftPadding: 20
     background: Rectangle {
@@ -25,26 +27,26 @@ TextField {
         border.width: 1
         color: "transparent"
         radius: 5
+    }
 
-        Icon {
-            id: visibleIcon
-            enabled: hideText
-            visible: hideText
-            anchors.right: parent.right
-            anchors.rightMargin: 12
-            size: 24
-            anchors.verticalCenter: parent.verticalCenter
-            source: "qrc:/icons/visible"
-            color: Theme.color.neutral5
-            onClicked: {
-                if (root.echoMode == TextInput.Password) {
-                    root.echoMode = TextInput.Normal
-                    visibleIcon.source = "qrc:/icons/hidden"
-                } else {
-                    root.echoMode = TextInput.Password
-                    visibleIcon.source = "qrc:/icons/visible"
-                }
-            }
+    Icon {
+        id: visibleIcon
+        visible: root.hideText
+        enabled: root.hideText
+        z: 1
+        size: 24
+        anchors.right: root.right
+        anchors.rightMargin: 12
+        anchors.verticalCenter: root.verticalCenter
+        source: root.showText ? "qrc:/icons/hidden" : "qrc:/icons/visible"
+        color: Theme.color.neutral5
+
+        TapHandler {
+            onTapped: root.showText = !root.showText
+        }
+
+        HoverHandler {
+            cursorShape: Qt.PointingHandCursor
         }
     }
 }
