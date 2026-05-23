@@ -296,6 +296,16 @@ void NodeModel::setVerificationProgress(double new_progress)
     }
 }
 
+void NodeModel::setBlockSyncActive(bool active)
+{
+    if (m_block_sync_active == active) {
+        return;
+    }
+
+    m_block_sync_active = active;
+    Q_EMIT blockSyncActiveChanged();
+}
+
 void NodeModel::setHeaderSyncState(int height, int64_t block_time, bool presync)
 {
     m_header_tip_height = height;
@@ -434,8 +444,8 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
         showStartupWarnings();
         setBlockTipHeight(tip_info.block_height);
         setVerificationProgress(tip_info.verification_progress);
-        m_header_tip_height = tip_info.header_height;
-        m_header_tip_time = tip_info.header_time;
+        setBlockSyncActive(tip_info.block_height > 0 && m_node.isInitialBlockDownload());
+        setHeaderSyncState(tip_info.header_height, tip_info.header_time, /*presync=*/false);
         refreshMempoolInfo();
         Q_EMIT setTimeRatioListInitial();
     }
@@ -473,9 +483,10 @@ void NodeModel::ConnectToBlockTipSignal()
 
     m_handler_notify_block_tip = m_node.handleNotifyBlockTip(
         [this]([[maybe_unused]] SynchronizationState state, interfaces::BlockTip tip, double verification_progress) {
-            QMetaObject::invokeMethod(this, [this, block_height = tip.block_height, block_time = tip.block_time, verification_progress] {
+            QMetaObject::invokeMethod(this, [this, state, block_height = tip.block_height, block_time = tip.block_time, verification_progress] {
                 setBlockTipHeight(block_height);
                 setVerificationProgress(verification_progress);
+                setBlockSyncActive(block_height > 0 && state != SynchronizationState::POST_INIT);
 
                 Q_EMIT setTimeRatioList(block_time);
             }, Qt::QueuedConnection);

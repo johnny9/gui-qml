@@ -1274,6 +1274,7 @@ class MockNodeModel : public QObject
     Q_PROPERTY(double verificationProgress MEMBER m_verification_progress NOTIFY verificationProgressChanged)
     Q_PROPERTY(int remainingSyncTime MEMBER m_remaining_sync_time NOTIFY remainingSyncTimeChanged)
     Q_PROPERTY(bool headerSyncActive MEMBER m_header_sync_active NOTIFY headerSyncChanged)
+    Q_PROPERTY(bool blockSyncActive MEMBER m_block_sync_active NOTIFY blockSyncActiveChanged)
     Q_PROPERTY(bool headerPresync MEMBER m_header_presync NOTIFY headerSyncChanged)
     Q_PROPERTY(double headerSyncProgress MEMBER m_header_sync_progress NOTIFY headerSyncChanged)
     Q_PROPERTY(bool faulted MEMBER m_faulted NOTIFY faultedChanged)
@@ -1307,6 +1308,7 @@ public:
     double m_verification_progress{0.0};
     int m_remaining_sync_time{0};
     bool m_header_sync_active{false};
+    bool m_block_sync_active{false};
     bool m_header_presync{false};
     double m_header_sync_progress{0.0};
     bool m_faulted{false};
@@ -1380,6 +1382,12 @@ public:
         m_warnings = warnings.join(QStringLiteral("<hr />"));
         Q_EMIT warningsChanged();
     }
+    Q_INVOKABLE void setBlockSyncActiveForTest(bool active)
+    {
+        if (m_block_sync_active == active) return;
+        m_block_sync_active = active;
+        Q_EMIT blockSyncActiveChanged();
+    }
     Q_INVOKABLE void setRuntimeDialogForTest(const QString& title, const QString& message, unsigned int buttons, bool question)
     {
         m_runtime_dialog_title = title;
@@ -1445,6 +1453,7 @@ Q_SIGNALS:
     void verificationProgressChanged();
     void remainingSyncTimeChanged();
     void headerSyncChanged();
+    void blockSyncActiveChanged();
     void faultedChanged();
     void startupErrorChanged();
     void warningsChanged();
@@ -1805,6 +1814,7 @@ private:
 class MockActivityListModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
     enum Roles {
@@ -1828,8 +1838,10 @@ public:
     int rowCount(const QModelIndex& parent = QModelIndex{}) const override
     {
         Q_UNUSED(parent);
-        return 2;
+        return m_count;
     }
+
+    int count() const { return m_count; }
 
     QVariant data(const QModelIndex& index, int role) const override
     {
@@ -1896,6 +1908,20 @@ public:
     }
 
     Q_INVOKABLE void reload() {}
+    Q_INVOKABLE void setCountForTest(int count)
+    {
+        if (m_count == count) return;
+        beginResetModel();
+        m_count = count;
+        endResetModel();
+        Q_EMIT countChanged();
+    }
+
+Q_SIGNALS:
+    void countChanged();
+
+private:
+    int m_count{2};
 };
 
 class MockActivityFilterProxyModel : public QSortFilterProxyModel
@@ -1953,6 +1979,7 @@ public:
     {
         if (m_search_text == search_text) return;
         m_search_text = search_text;
+        invalidateFilter();
         Q_EMIT searchTextChanged();
         Q_EMIT countChanged();
     }
@@ -1962,6 +1989,7 @@ public:
     {
         if (m_date_filter == date_filter) return;
         m_date_filter = date_filter;
+        invalidateFilter();
         Q_EMIT dateFilterChanged();
         Q_EMIT countChanged();
     }
@@ -1971,6 +1999,7 @@ public:
     {
         if (m_type_filter == type_filter) return;
         m_type_filter = type_filter;
+        invalidateFilter();
         Q_EMIT typeFilterChanged();
         Q_EMIT countChanged();
     }
@@ -1989,6 +2018,16 @@ public:
     {
         Q_UNUSED(path);
         return true;
+    }
+
+protected:
+    bool filterAcceptsRow(int source_row, const QModelIndex& source_parent) const override
+    {
+        Q_UNUSED(source_row);
+        Q_UNUSED(source_parent);
+        return m_search_text.trimmed().isEmpty() &&
+            m_date_filter == DateAll &&
+            m_type_filter == TypeAll;
     }
 
 Q_SIGNALS:
@@ -2082,6 +2121,7 @@ public Q_SLOTS:
         engine->rootContext()->setContextProperty(QStringLiteral("testWalletModel"), &wallet_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testWalletTransaction"), &wallet_transaction);
         engine->rootContext()->setContextProperty(QStringLiteral("testPaymentRequest"), &payment_request);
+        engine->rootContext()->setContextProperty(QStringLiteral("testActivityListModel"), &activity_list_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testSendRecipient"), &send_recipient);
         engine->rootContext()->setContextProperty(QStringLiteral("testRecipientsModel"), &recipients_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testCoinsListModel"), &coins_list_model);

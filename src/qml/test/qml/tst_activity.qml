@@ -16,6 +16,9 @@ TestCase {
         testPaymentRequest.clear()
         testWalletModel.lastLoadedPaymentRequestId = ""
         testWalletModel.lastLoadedPaymentRequestDetailId = ""
+        testActivityListModel.setCountForTest(2)
+        nodeModel.setBlockSyncActiveForTest(false)
+        nodeModel.verificationProgress = 1.0
         walletController.openReceiveRequests = 0
     }
 
@@ -48,6 +51,75 @@ TestCase {
             type: 1,
             address: "bcrt1qreceiveaddress",
             paymentRequests: paymentRequests || []
+        }
+    }
+
+    function findActivityEmptyStateText(page, objectName) {
+        let text = null
+        tryVerify(function() {
+            text = findChild(page, objectName)
+            return text !== null
+        })
+        return text
+    }
+
+    function test_empty_wallet_while_node_syncing_shows_syncing_copy() {
+        testActivityListModel.setCountForTest(0)
+        nodeModel.verificationProgress = 0.25
+        nodeModel.setBlockSyncActiveForTest(true)
+
+        const page = createTemporaryObject(activityComponent, this)
+        verify(page !== null)
+
+        const title = findActivityEmptyStateText(page, "activityEmptyStateTitle")
+        const description = findActivityEmptyStateText(page, "activityEmptyStateDescription")
+        tryCompare(title, "text", "Syncing wallet activity...")
+        compare(description.text, "Transactions may appear as your wallet catches up.")
+    }
+
+    function test_empty_wallet_not_syncing_ignores_low_verification_progress() {
+        testActivityListModel.setCountForTest(0)
+        nodeModel.verificationProgress = 0.25
+        nodeModel.setBlockSyncActiveForTest(false)
+
+        const page = createTemporaryObject(activityComponent, this)
+        verify(page !== null)
+
+        const title = findActivityEmptyStateText(page, "activityEmptyStateTitle")
+        const description = findActivityEmptyStateText(page, "activityEmptyStateDescription")
+        tryCompare(title, "text", "No activity yet")
+        compare(description.text, "Once you send or receive bitcoin, your transactions will appear here.")
+    }
+
+    function test_filtered_empty_copy_stays_separate_from_source_empty_syncing_copy() {
+        nodeModel.setBlockSyncActiveForTest(true)
+
+        const page = createTemporaryObject(activityComponent, this)
+        verify(page !== null)
+
+        const activityFilterProxy = findChild(page, "activityFilterProxyModel")
+        verify(activityFilterProxy !== null)
+        activityFilterProxy.searchText = "no matching transaction"
+
+        const title = findActivityEmptyStateText(page, "activityEmptyStateTitle")
+        const description = findActivityEmptyStateText(page, "activityEmptyStateDescription")
+        tryCompare(title, "text", "No activity matches your filters.")
+        compare(description.text, "Try changing your search, date, or type filters.")
+    }
+
+    function test_non_empty_activity_still_shows_transaction_rows() {
+        nodeModel.verificationProgress = 0.25
+        nodeModel.setBlockSyncActiveForTest(true)
+
+        const page = createTemporaryObject(activityComponent, this)
+        verify(page !== null)
+
+        tryVerify(function() {
+            return findChild(page, "activityItem_aaaa") !== null
+        })
+        const emptyState = findChild(page, "activityEmptyState")
+        if (emptyState !== null) {
+            compare(emptyState.visible, false)
         }
     }
 

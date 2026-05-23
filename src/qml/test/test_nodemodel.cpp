@@ -142,6 +142,7 @@ private Q_SLOTS:
     void banPeerDisconnectsAddressAfterSuccessfulBan();
     void nodeNotificationHandlersUpdateModelThroughQueuedSignals();
     void blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues();
+    void blockSyncActiveFollowsInitializationAndBlockTipState();
     void alertNotificationsRefreshWarningList();
     void headerTipNotificationsExposeHeaderSyncProgress();
     void startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings();
@@ -468,6 +469,59 @@ void NodeModelTests::blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues()
     QVERIFY(qFuzzyCompare(model.verificationProgress(), 0.75));
 }
 
+void NodeModelTests::blockSyncActiveFollowsInitializationAndBlockTipState()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::NotifyBlockTipFn block_tip_fn;
+    bool initial_block_download{true};
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, isInitialBlockDownload()).WillByDefault(Invoke([&] { return initial_block_download; }));
+    ON_CALL(node, handleNotifyBlockTip(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyBlockTipFn fn) {
+            block_tip_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(block_tip_fn);
+    QVERIFY(!model.blockSyncActive());
+
+    QSignalSpy block_sync_spy{&model, &NodeModel::blockSyncActiveChanged};
+    model.initializeResult(true, interfaces::BlockAndHeaderTipInfo{
+        .block_height = 0,
+        .block_time = 1'700'000'000,
+        .header_height = 100,
+        .header_time = GetTime(),
+        .verification_progress = 0.25,
+    });
+
+    QCOMPARE(block_sync_spy.count(), 0);
+    QVERIFY(!model.blockSyncActive());
+
+    model.initializeResult(true, interfaces::BlockAndHeaderTipInfo{
+        .block_height = 100,
+        .block_time = 1'700'000'000,
+        .header_height = 100,
+        .header_time = GetTime(),
+        .verification_progress = 0.25,
+    });
+
+    QCOMPARE(block_sync_spy.count(), 1);
+    QVERIFY(model.blockSyncActive());
+
+    block_tip_fn(SynchronizationState::POST_INIT, interfaces::BlockTip{101, 1'700'000'001, uint256{}}, 0.25);
+    QTRY_COMPARE_WITH_TIMEOUT(block_sync_spy.count(), 2, ASYNC_TIMEOUT_MS);
+    QVERIFY(!model.blockSyncActive());
+
+    block_tip_fn(SynchronizationState::INIT_DOWNLOAD, interfaces::BlockTip{102, 1'700'000'002, uint256{}}, 0.26);
+    QTRY_COMPARE_WITH_TIMEOUT(block_sync_spy.count(), 3, ASYNC_TIMEOUT_MS);
+    QVERIFY(model.blockSyncActive());
+}
+
 void NodeModelTests::alertNotificationsRefreshWarningList()
 {
     NiceMock<MockNode> node;
@@ -518,15 +572,18 @@ void NodeModelTests::headerTipNotificationsExposeHeaderSyncProgress()
     QVERIFY(header_tip_fn);
 
     QSignalSpy header_spy{&model, &NodeModel::headerSyncChanged};
+    QSignalSpy block_sync_spy{&model, &NodeModel::blockSyncActiveChanged};
     const int height{100};
     const int64_t block_time{GetTime() - 100 * Params().GetConsensus().nPowTargetSpacing};
     header_tip_fn(SynchronizationState::INIT_DOWNLOAD, interfaces::BlockTip{height, block_time, uint256{}}, /*presync=*/true);
 
     QTRY_COMPARE_WITH_TIMEOUT(header_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(block_sync_spy.count(), 0);
     QVERIFY(model.headerSyncActive());
     QVERIFY(model.headerPresync());
     QVERIFY(model.headerSyncProgress() > 0.45);
     QVERIFY(model.headerSyncProgress() < 0.55);
+    QVERIFY(!model.blockSyncActive());
 }
 
 void NodeModelTests::startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings()

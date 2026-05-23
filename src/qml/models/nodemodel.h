@@ -48,6 +48,7 @@ class NodeModel : public QObject
     Q_PROPERTY(bool mempoolInformationAvailable READ mempoolInformationAvailable CONSTANT)
     Q_PROPERTY(int remainingSyncTime READ remainingSyncTime NOTIFY remainingSyncTimeChanged)
     Q_PROPERTY(double verificationProgress READ verificationProgress NOTIFY verificationProgressChanged)
+    Q_PROPERTY(bool blockSyncActive READ blockSyncActive NOTIFY blockSyncActiveChanged)
     Q_PROPERTY(bool headerSyncActive READ headerSyncActive NOTIFY headerSyncChanged)
     Q_PROPERTY(bool headerPresync READ headerPresync NOTIFY headerSyncChanged)
     Q_PROPERTY(double headerSyncProgress READ headerSyncProgress NOTIFY headerSyncChanged)
@@ -88,6 +89,7 @@ public:
     void setRemainingSyncTime(double new_progress);
     double verificationProgress() const { return m_verification_progress; }
     void setVerificationProgress(double new_progress);
+    bool blockSyncActive() const { return m_block_sync_active; }
     bool headerSyncActive() const { return m_header_sync_active; }
     bool headerPresync() const { return m_header_presync; }
     double headerSyncProgress() const { return m_header_sync_progress; }
@@ -143,6 +145,7 @@ Q_SIGNALS:
     void requestedInitialize();
     void requestedShutdown();
     void verificationProgressChanged();
+    void blockSyncActiveChanged();
     void headerSyncChanged();
     void pauseChanged(bool new_pause);
     void errorStateChanged(bool new_error_state);
@@ -189,6 +192,7 @@ private:
     bool m_mempool_information_available{true};
     int m_remaining_sync_time{0};
     double m_verification_progress{0.0};
+    bool m_block_sync_active{false};
     bool m_pause{false};
     bool m_faulted{false};
     QString m_startup_error;
@@ -245,6 +249,7 @@ private:
     void recordStartupWarningMessage(const QString& message);
     void showStartupWarnings();
     void setWarnings(const QString& warnings);
+    void setBlockSyncActive(bool active);
     void setHeaderSyncState(int height, int64_t block_time, bool presync);
     bool showRuntimeDialog(const QString& message, const QString& caption, unsigned int style, bool question);
     bool showRuntimeDialogOnGuiThread(const QString& message, const QString& caption, unsigned int style, bool question);

@@ -144,7 +144,7 @@ PageStack {
 
             function emptyActivityTitle() {
                 if (activitySourceEmpty) {
-                    if (nodeModel.verificationProgress < 0.9999) {
+                    if (nodeModel.blockSyncActive) {
                         return qsTr("Syncing wallet activity...")
                     }
                     return qsTr("No activity yet")
@@ -157,7 +157,7 @@ PageStack {
 
             function emptyActivityDescription() {
                 if (activitySourceEmpty) {
-                    if (nodeModel.verificationProgress < 0.9999) {
+                    if (nodeModel.blockSyncActive) {
                         return qsTr("Transactions may appear as your wallet catches up.")
                     }
                     return qsTr("Once you send or receive bitcoin, your transactions will appear here.")
