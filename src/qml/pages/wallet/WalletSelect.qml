@@ -180,6 +180,7 @@ Popup {
                         opacity: delegate.dimmedOpacity
 
                         CoreText {
+                            id: nameText
                             objectName: "walletSelectName_" + delegate.name.replace(/[^A-Za-z0-9_]/g, "_")
                             Layout.fillWidth: true
                             text: delegate.displayName
@@ -189,7 +190,30 @@ Popup {
                             color: delegate.checked || delegate.hovered
                                 ? Theme.color.orange
                                 : Theme.color.neutral9
+                            wrap: false
                             elide: Text.ElideRight
+
+                            ToolTip {
+                                id: nameTooltip
+                                text: delegate.displayName
+                                visible: delegate.hovered && nameText.truncated
+                                delay: 500
+                                padding: 8
+                                background: Rectangle {
+                                    color: Theme.color.neutral0
+                                    border.color: Theme.color.neutral4
+                                    border.width: 1
+                                    radius: 5
+                                }
+                                contentItem: CoreText {
+                                    text: nameTooltip.text
+                                    color: Theme.color.neutral9
+                                    font.pixelSize: 13
+                                    horizontalAlignment: Text.AlignLeft
+                                    wrapMode: Text.WordWrap
+                                    width: Math.min(implicitWidth, 220)
+                                }
+                            }
                         }
 
                         CoreText {
@@ -199,6 +223,7 @@ Popup {
                             horizontalAlignment: Text.AlignLeft
                             font.pixelSize: 12
                             color: delegate.statusColor
+                            wrap: false
                             elide: Text.ElideRight
                             visible: text.length > 0
                         }
