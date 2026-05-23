@@ -145,8 +145,11 @@ private Q_SLOTS:
     void blockSyncActiveFollowsInitializationAndBlockTipState();
     void alertNotificationsRefreshWarningList();
     void headerTipNotificationsExposeHeaderSyncProgress();
+    void startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings();
+    void runtimeMessageHandlerOpensAfterInitialization();
     void runtimeQuestionHandlerBlocksForAnswerAndReturnsResult();
-    void initializeFailureSetsFaultedStartupErrorFromWarnings();
+    void initializeFailureShowsStartupWarningsWithoutMakingThemCurrentWarnings();
+    void initializeFailureUsesNodeErrorMessages();
     void runawayExceptionSetsFatalStartupError();
     void nodeInformationRowsExposeDiagnostics();
 };
@@ -576,6 +579,115 @@ void NodeModelTests::headerTipNotificationsExposeHeaderSyncProgress()
     QVERIFY(!model.blockSyncActive());
 }
 
+void NodeModelTests::startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::MessageBoxFn message_box_fn;
+    interfaces::Node::NotifyAlertChangedFn alert_changed_fn;
+    bilingual_str warnings{"network warning", "Translated network warning"};
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, getWarnings()).WillByDefault(Invoke([&] { return warnings; }));
+    ON_CALL(node, handleNotifyAlertChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyAlertChangedFn fn) {
+            alert_changed_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+    ON_CALL(node, handleMessageBox(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::MessageBoxFn fn) {
+            message_box_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    model.addStartupWarnings({QStringLiteral("Translated early startup warning")});
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(alert_changed_fn);
+    QVERIFY(message_box_fn);
+
+    QSignalSpy runtime_dialog_spy{&model, &NodeModel::runtimeDialogChanged};
+    QVERIFY(!message_box_fn(
+        bilingual_str{"Startup warning", "Translated startup warning"},
+        "",
+        CClientUIInterface::MSG_WARNING));
+    QCOMPARE(runtime_dialog_spy.count(), 0);
+
+    model.initializeResult(true, {});
+
+    QCOMPARE(runtime_dialog_spy.count(), 1);
+    QVERIFY(model.runtimeDialogVisible());
+    QCOMPARE(model.runtimeDialogTitle(), QStringLiteral("Warning"));
+    QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated early startup warning\n\nTranslated startup warning"));
+    QCOMPARE(model.runtimeDialogPrimaryText(), QStringLiteral("OK"));
+    QVERIFY(model.runtimeDialogSecondaryText().isEmpty());
+
+    QCOMPARE(model.warningList(), QStringList({QStringLiteral("Translated network warning")}));
+    QVERIFY(model.hasWarnings());
+    QVERIFY(model.startupError().isEmpty());
+
+    model.answerRuntimeDialog(true);
+    QCOMPARE(runtime_dialog_spy.count(), 2);
+    QVERIFY(!model.runtimeDialogVisible());
+
+    QSignalSpy warnings_spy{&model, &NodeModel::warningsChanged};
+    warnings = Untranslated("");
+    alert_changed_fn();
+
+    QTRY_COMPARE_WITH_TIMEOUT(warnings_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(model.warningList(), QStringList());
+    QVERIFY(!model.hasWarnings());
+}
+
+void NodeModelTests::runtimeMessageHandlerOpensAfterInitialization()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::MessageBoxFn message_box_fn;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, handleMessageBox(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::MessageBoxFn fn) {
+            message_box_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(message_box_fn);
+    model.initializeResult(true, {});
+
+    std::atomic<bool> result{false};
+    std::atomic<bool> finished{false};
+    int prompt_count{0};
+    QObject::connect(&model, &NodeModel::runtimeDialogChanged, &model, [&] {
+        if (!model.runtimeDialogVisible()) return;
+        ++prompt_count;
+        QCOMPARE(model.runtimeDialogTitle(), QStringLiteral("Error"));
+        QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated runtime error"));
+        QTimer::singleShot(0, &model, [&model] {
+            model.answerRuntimeDialog(true);
+        });
+    });
+
+    std::thread worker([&] {
+        result = message_box_fn(
+            bilingual_str{"Runtime error", "Translated runtime error"},
+            "",
+            CClientUIInterface::MSG_ERROR);
+        finished = true;
+    });
+
+    QTRY_VERIFY_WITH_TIMEOUT(finished.load(), ASYNC_TIMEOUT_MS);
+    worker.join();
+
+    QCOMPARE(prompt_count, 1);
+    QVERIFY(result.load());
+    QVERIFY(!model.runtimeDialogVisible());
+}
+
 void NodeModelTests::runtimeQuestionHandlerBlocksForAnswerAndReturnsResult()
 {
     NiceMock<MockNode> node;
@@ -627,16 +739,17 @@ void NodeModelTests::runtimeQuestionHandlerBlocksForAnswerAndReturnsResult()
     QVERIFY(!model.runtimeDialogVisible());
 }
 
-void NodeModelTests::initializeFailureSetsFaultedStartupErrorFromWarnings()
+void NodeModelTests::initializeFailureShowsStartupWarningsWithoutMakingThemCurrentWarnings()
 {
     NiceMock<MockNode> node;
     MempoolState mempool;
 
     InstallDefaultHandlers(node);
     InstallMempoolGetters(node, mempool);
-    ON_CALL(node, getWarnings()).WillByDefault(Return(bilingual_str{"init failed", "Translated init failed"}));
+    ON_CALL(node, getWarnings()).WillByDefault(Return(bilingual_str{"pre-release warning", "Translated pre-release warning"}));
 
     NodeModel model{node};
+    model.addStartupWarnings({QStringLiteral("Translated startup warning")});
     WaitForInitialMempoolRefresh(mempool);
 
     QSignalSpy faulted_spy{&model, &NodeModel::errorStateChanged};
@@ -646,7 +759,57 @@ void NodeModelTests::initializeFailureSetsFaultedStartupErrorFromWarnings()
     QCOMPARE(faulted_spy.count(), 1);
     QCOMPARE(startup_error_spy.count(), 1);
     QVERIFY(model.errorState());
-    QCOMPARE(model.startupError(), QStringLiteral("Translated init failed"));
+    QCOMPARE(model.warningList(), QStringList({QStringLiteral("Translated pre-release warning")}));
+    QCOMPARE(model.startupError(), QStringLiteral("Startup warnings:\nTranslated startup warning\n\nNode initialization failed."));
+}
+
+void NodeModelTests::initializeFailureUsesNodeErrorMessages()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::MessageBoxFn message_box_fn;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, getWarnings()).WillByDefault(Return(bilingual_str{"pre-release warning", "Translated pre-release warning"}));
+    ON_CALL(node, handleMessageBox(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::MessageBoxFn fn) {
+            message_box_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(message_box_fn);
+
+    QSignalSpy runtime_dialog_spy{&model, &NodeModel::runtimeDialogChanged};
+
+    std::atomic<bool> finished{false};
+    std::thread worker([&] {
+        message_box_fn(
+            bilingual_str{"Unable to bind original", "Translated unable to bind"},
+            "",
+            CClientUIInterface::MSG_ERROR);
+        message_box_fn(
+            bilingual_str{"Failed to listen original", "Translated failed to listen"},
+            "",
+            CClientUIInterface::MSG_ERROR);
+        finished = true;
+    });
+
+    QTRY_VERIFY_WITH_TIMEOUT(finished.load(), ASYNC_TIMEOUT_MS);
+    worker.join();
+    QCOMPARE(runtime_dialog_spy.count(), 0);
+
+    QSignalSpy faulted_spy{&model, &NodeModel::errorStateChanged};
+    QSignalSpy startup_error_spy{&model, &NodeModel::startupErrorChanged};
+    model.initializeResult(false, {});
+
+    QCOMPARE(faulted_spy.count(), 1);
+    QCOMPARE(startup_error_spy.count(), 1);
+    QVERIFY(model.errorState());
+    QCOMPARE(model.warningList(), QStringList({QStringLiteral("Translated pre-release warning")}));
+    QCOMPARE(model.startupError(), QStringLiteral("Translated unable to bind\n\nTranslated failed to listen"));
 }
 
 void NodeModelTests::runawayExceptionSetsFatalStartupError()

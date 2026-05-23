@@ -99,6 +99,7 @@ public:
     void setErrorState(bool new_error);
     QString startupError() const { return m_startup_error; }
     void setStartupError(const QString& error);
+    void addStartupWarnings(const QStringList& warnings);
     QString warnings() const { return m_warnings; }
     QStringList warningList() const { return m_warning_list; }
     bool hasWarnings() const { return !m_warning_list.empty(); }
@@ -182,6 +183,8 @@ private:
     bool m_pause{false};
     bool m_faulted{false};
     QString m_startup_error;
+    QStringList m_startup_error_messages;
+    QStringList m_startup_warning_messages;
     QString m_warnings;
     QStringList m_warning_list;
     bool m_header_sync_active{false};
@@ -190,6 +193,7 @@ private:
     int m_header_tip_height{0};
     int64_t m_header_tip_time{0};
     bool m_initialization_requested{false};
+    bool m_runtime_dialogs_enabled{false};
     bool m_runtime_dialog_visible{false};
     bool m_runtime_dialog_question{false};
     bool m_runtime_dialog_answer{false};
@@ -228,6 +232,9 @@ private:
     void initializeMempoolInfoPolling();
     void refreshPeerCounts();
     void refreshWarnings();
+    void recordStartupErrorMessage(const QString& message);
+    void recordStartupWarningMessage(const QString& message);
+    void showStartupWarnings();
     void setWarnings(const QString& warnings);
     void setBlockSyncActive(bool active);
     void setHeaderSyncState(int height, int64_t block_time, bool presync);

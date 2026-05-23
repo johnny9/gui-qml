@@ -146,6 +146,14 @@ bool InitErrorMessageBox(
     return false;
 }
 
+void RecordStartupWarning(QStringList& startup_warnings, const bilingual_str& message)
+{
+    const QString warning{QString::fromStdString(message.translated).trimmed()};
+    if (!warning.isEmpty() && !startup_warnings.contains(warning)) {
+        startup_warnings.push_back(warning);
+    }
+}
+
 /* qDebug() message handler --> debug.log */
 void DebugMessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& msg)
 {
@@ -213,7 +221,15 @@ int QmlGuiMain(int argc, char* argv[])
     QGuiApplication app(argc, argv);
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);
-    auto handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(InitErrorMessageBox);
+    QStringList startup_warnings;
+    auto handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(
+        [&startup_warnings](const bilingual_str& message, const std::string& caption, unsigned int style) {
+            if (style & CClientUIInterface::ICON_WARNING) {
+                RecordStartupWarning(startup_warnings, message);
+                return false;
+            }
+            return InitErrorMessageBox(message, caption, style);
+        });
 
     SetupEnvironment();
     util::ThreadSetInternalName("main");
@@ -303,6 +319,7 @@ int QmlGuiMain(int argc, char* argv[])
 #endif
 
     NodeModel node_model{*node};
+    node_model.addStartupWarnings(startup_warnings);
     QmlInitExecutor init_executor{*node};
 #ifdef ENABLE_WALLET
     std::unique_ptr<WalletQmlController> wallet_controller;

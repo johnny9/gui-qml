@@ -360,6 +360,13 @@ void NodeModel::setStartupError(const QString& error)
     }
 }
 
+void NodeModel::addStartupWarnings(const QStringList& warnings)
+{
+    for (const QString& warning : warnings) {
+        recordStartupWarningMessage(warning);
+    }
+}
+
 void NodeModel::setWarnings(const QString& warnings)
 {
     const QStringList warning_list{SplitWarnings(warnings)};
@@ -373,7 +380,38 @@ void NodeModel::setWarnings(const QString& warnings)
 
 void NodeModel::refreshWarnings()
 {
+    // Keep "current warnings" tied to Core's active warning set.
     setWarnings(QString::fromStdString(m_node.getWarnings().translated));
+}
+
+void NodeModel::showStartupWarnings()
+{
+    if (m_startup_warning_messages.isEmpty()) {
+        return;
+    }
+
+    const QString warnings{m_startup_warning_messages.join(QStringLiteral("\n\n"))};
+    m_startup_warning_messages.clear();
+    // MSG_WARNING is modal; startup notices should be shown once without blocking initialization.
+    showRuntimeDialogOnGuiThread(warnings, QString{}, CClientUIInterface::ICON_WARNING, /*question=*/false);
+}
+
+void NodeModel::recordStartupErrorMessage(const QString& message)
+{
+    const QString error{message.trimmed()};
+    if (error.isEmpty() || m_startup_error_messages.contains(error)) {
+        return;
+    }
+    m_startup_error_messages.push_back(error);
+}
+
+void NodeModel::recordStartupWarningMessage(const QString& message)
+{
+    const QString warning{message.trimmed()};
+    if (warning.isEmpty() || m_startup_warning_messages.contains(warning)) {
+        return;
+    }
+    m_startup_warning_messages.push_back(warning);
 }
 
 void NodeModel::startNodeInitializionThread()
@@ -395,8 +433,17 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
     if (!success) {
         setErrorState(true);
         refreshWarnings();
-        setStartupError(m_warnings.isEmpty() ? tr("Node initialization failed.") : m_warning_list.join(QStringLiteral("\n\n")));
+        QString startup_error{m_startup_error_messages.isEmpty() ? tr("Node initialization failed.") : m_startup_error_messages.join(QStringLiteral("\n\n"))};
+        if (!m_startup_warning_messages.isEmpty()) {
+            startup_error = tr("Startup warnings:") + QStringLiteral("\n") + m_startup_warning_messages.join(QStringLiteral("\n\n")) + QStringLiteral("\n\n") + startup_error;
+        }
+        m_startup_warning_messages.clear();
+        setStartupError(startup_error);
     } else {
+        m_startup_error_messages.clear();
+        m_runtime_dialogs_enabled = true;
+        refreshWarnings();
+        showStartupWarnings();
         setBlockTipHeight(tip_info.block_height);
         setVerificationProgress(tip_info.verification_progress);
         setBlockSyncActive(tip_info.block_height > 0 && m_node.isInitialBlockDownload());
@@ -630,6 +677,15 @@ bool NodeModel::showRuntimeDialog(const QString& message, const QString& caption
 bool NodeModel::showRuntimeDialogOnGuiThread(const QString& message, const QString& caption, unsigned int style, bool question)
 {
     if (m_runtime_dialog_loop) {
+        return false;
+    }
+
+    if (!m_runtime_dialogs_enabled && !question) {
+        if (style & CClientUIInterface::ICON_ERROR) {
+            recordStartupErrorMessage(message);
+        } else if (style & CClientUIInterface::ICON_WARNING) {
+            recordStartupWarningMessage(message);
+        }
         return false;
     }
 
