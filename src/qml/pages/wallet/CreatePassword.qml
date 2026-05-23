@@ -21,6 +21,13 @@ Page {
     // Which button triggered the in-flight wallet creation, so only that
     // button shows the spinner. Cleared when the load completes.
     property string activeAction: ""
+    readonly property bool passwordsMismatch:
+        password && passwordRepeat &&
+        password.text.length > 0 &&
+        passwordRepeat.text.length > 0 &&
+        password.text !== passwordRepeat.text &&
+        !password.activeFocus &&
+        !passwordRepeat.activeFocus
 
     Component.onCompleted: walletController.clearWalletCreateStatus()
 
@@ -32,6 +39,12 @@ Page {
                 root.activeAction = ""
             }
         }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        z: -1
+        onClicked: root.forceActiveFocus()
     }
 
     header: NavigationBar2 {
@@ -95,11 +108,27 @@ Page {
             id: passwordRepeat
             objectName: "createWalletPasswordRepeatInput"
             Layout.fillWidth: true
+            Layout.topMargin: 5
             Layout.leftMargin: 20
             Layout.rightMargin: 20
             hideText: true
             placeholderText: qsTr("Enter password again...")
             onTextChanged: walletController.clearWalletCreateStatus()
+        }
+
+        CoreText {
+            objectName: "createWalletPasswordMismatchText"
+            Layout.fillWidth: true
+            Layout.topMargin: 5
+            Layout.bottomMargin: 15
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            text: qsTr("Passwords don't match")
+            color: Theme.color.red
+            font.pixelSize: 14
+            horizontalAlignment: Text.AlignLeft
+            wrapMode: Text.WordWrap
+            opacity: root.passwordsMismatch ? 1 : 0
         }
 
         Setting {
@@ -112,6 +141,7 @@ Page {
             actionItem: OptionSwitch {
             }
             onClicked: {
+                forceActiveFocus()
                 loadedItem.toggle()
                 loadedItem.toggled()
             }

@@ -22,9 +22,11 @@ TestCase {
     function findChild(parent, objectName) {
         if (!parent) return null
         if (parent.objectName === objectName) return parent
-        for (var i = 0; i < parent.children.length; i++) {
-            var result = findChild(parent.children[i], objectName)
-            if (result) return result
+        if (parent.children) {
+            for (var i = 0; i < parent.children.length; i++) {
+                var result = findChild(parent.children[i], objectName)
+                if (result) return result
+            }
         }
         if (parent.contentItem) {
             var result = findChild(parent.contentItem, objectName)
@@ -69,5 +71,102 @@ TestCase {
         verify(page !== null)
 
         walletController.initialized = true
+    }
+
+    function test_mismatch_text_visible_when_passwords_differ() {
+        const page = createTemporaryObject(passwordPageComponent, this)
+        verify(page !== null)
+
+        const passwordInput = findChild(page, "createWalletPasswordInput")
+        const repeatInput = findChild(page, "createWalletPasswordRepeatInput")
+        const mismatchText = findChild(page, "createWalletPasswordMismatchText")
+        verify(passwordInput !== null)
+        verify(repeatInput !== null)
+        verify(mismatchText !== null)
+
+        passwordInput.text = "hunter2"
+        repeatInput.text = "hunter3"
+        passwordInput.focus = false
+        repeatInput.focus = false
+        verify(mismatchText.opacity > 0)
+    }
+
+    function test_mismatch_text_hidden_when_passwords_match() {
+        const page = createTemporaryObject(passwordPageComponent, this)
+        verify(page !== null)
+
+        const passwordInput = findChild(page, "createWalletPasswordInput")
+        const repeatInput = findChild(page, "createWalletPasswordRepeatInput")
+        const mismatchText = findChild(page, "createWalletPasswordMismatchText")
+
+        passwordInput.text = "hunter2"
+        repeatInput.text = "hunter3"
+        passwordInput.focus = false
+        repeatInput.focus = false
+        verify(mismatchText.opacity > 0)
+
+        repeatInput.text = "hunter2"
+        verify(mismatchText.opacity === 0)
+    }
+
+    function test_mismatch_text_hidden_when_either_field_empty() {
+        const page = createTemporaryObject(passwordPageComponent, this)
+        verify(page !== null)
+
+        const passwordInput = findChild(page, "createWalletPasswordInput")
+        const repeatInput = findChild(page, "createWalletPasswordRepeatInput")
+        const mismatchText = findChild(page, "createWalletPasswordMismatchText")
+
+        passwordInput.focus = false
+        repeatInput.focus = false
+        verify(mismatchText.opacity === 0)
+
+        passwordInput.text = "hunter2"
+        verify(mismatchText.opacity === 0)
+
+        repeatInput.text = "hunter2"
+        passwordInput.text = ""
+        verify(mismatchText.opacity === 0)
+    }
+
+    function test_mismatch_text_hidden_while_field_has_focus() {
+        const page = createTemporaryObject(passwordPageComponent, this)
+        verify(page !== null)
+
+        const passwordInput = findChild(page, "createWalletPasswordInput")
+        const repeatInput = findChild(page, "createWalletPasswordRepeatInput")
+        const mismatchText = findChild(page, "createWalletPasswordMismatchText")
+
+        passwordInput.text = "hunter2"
+        repeatInput.text = "hunter3"
+        repeatInput.forceActiveFocus()
+        verify(mismatchText.opacity === 0)
+
+        passwordInput.focus = false
+        repeatInput.focus = false
+        verify(mismatchText.opacity > 0)
+    }
+
+    function test_acknowledgement_toggle_does_not_affect_mismatch_text() {
+        const page = createTemporaryObject(passwordPageComponent, this)
+        verify(page !== null)
+
+        const passwordInput = findChild(page, "createWalletPasswordInput")
+        const repeatInput = findChild(page, "createWalletPasswordRepeatInput")
+        const mismatchText = findChild(page, "createWalletPasswordMismatchText")
+        const toggle = findChild(page, "createWalletPasswordConfirmToggle")
+        verify(toggle !== null)
+
+        passwordInput.text = "hunter2"
+        repeatInput.text = "hunter3"
+        passwordInput.focus = false
+        repeatInput.focus = false
+        verify(mismatchText.opacity > 0)
+
+        toggle.clicked()
+        verify(mismatchText.opacity > 0)
+
+        toggle.clicked()
+        verify(mismatchText.opacity > 0)
     }
 }
