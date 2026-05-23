@@ -24,7 +24,7 @@ import time
 from urllib.parse import urlparse
 
 from qml_driver import QmlDriver, QmlDriverError
-from qml_test_harness import GUI_STARTUP_TIMEOUT, dump_qml_tree
+from qml_test_harness import GUI_STARTUP_TIMEOUT, dump_qml_tree, qsettings_sandbox_args
 from qml_wallet_test_lib import WalletFlowHarness, rpc_call, wait_for_rpc
 
 
@@ -64,12 +64,12 @@ def _stop_gui(harness):
 def _relaunch_gui(harness):
     env = dict(os.environ)
     env["QT_QPA_PLATFORM"] = "offscreen"
-    os.makedirs(harness.config_home, exist_ok=True)
-    env["XDG_CONFIG_HOME"] = harness.config_home
+    settings_args = qsettings_sandbox_args(env, harness.config_home)
     args = [
         harness.gui_binary,
         f"-datadir={harness.gui_datadir}",
         f"-test-automation={harness.socket_path}",
+    ] + settings_args + [
         "-logtimemicros",
         "-debug",
         "-debugexclude=libevent",

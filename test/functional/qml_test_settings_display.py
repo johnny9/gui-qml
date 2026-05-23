@@ -200,9 +200,8 @@ def test_language_selection(gui):
         print(f"  Headers restored to English  PASSED")
     finally:
         # Best-effort: if the test failed mid-flow the persisted language may
-        # still be Spanish. Reset to System default so QSettings does not leak
-        # a non-default language on platforms where the harness tmpdir does
-        # not sandbox QSettings storage (macOS/Windows).
+        # still be Spanish. Reset to System default so the restart phase starts
+        # from a known state within this test's temporary QSettings sandbox.
         try:
             reset_language_to_system_default(gui)
         except QmlDriverError:

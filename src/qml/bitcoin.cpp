@@ -103,6 +103,7 @@ void SetupUIArgs(ArgsManager& argsman)
     argsman.AddArg("-resetguisettings", "Reset all settings changed in the GUI", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
 #ifdef ENABLE_TEST_AUTOMATION
     argsman.AddArg("-test-automation=<path>", "Enable test automation bridge on the given Unix socket path", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
+    argsman.AddArg("-test-settings-dir=<dir>", "Store QSettings in this directory while test automation is enabled", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
 #endif
 }
 
@@ -204,6 +205,19 @@ void LoadFontResource(const QString& path)
         qWarning() << "Failed to load font resource:" << path;
     }
 }
+
+#ifdef ENABLE_TEST_AUTOMATION
+void ApplyTestSettingsDir()
+{
+    const std::string settings_dir{gArgs.GetArg("-test-settings-dir", "")};
+    if (settings_dir.empty()) {
+        return;
+    }
+
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QString::fromStdString(settings_dir));
+}
+#endif
 } // namespace
 
 
@@ -274,6 +288,9 @@ int QmlGuiMain(int argc, char* argv[])
         InitError(Untranslated(strprintf("Cannot parse command line arguments: %s\n", error)));
         return EXIT_FAILURE;
     }
+#ifdef ENABLE_TEST_AUTOMATION
+    ApplyTestSettingsDir();
+#endif
 
     if (auto error = common::InitConfig(
             gArgs,
