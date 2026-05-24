@@ -9,6 +9,7 @@ import org.bitcoincore.qt 1.0
 
 Button {
     id: root
+
     property int bgRadius: 5
     property color bgDefaultColor: "transparent"
     property color bgHoverColor: Theme.color.neutral2
@@ -18,18 +19,16 @@ Button {
     property int contentHorizontalPadding: 10
     property int contentTopPadding: 10
     property int contentBottomPadding: 10
+
     checkable: true
+    Accessible.role: Accessible.MenuItem
     hoverEnabled: AppMode.isDesktop
+    padding: 10
 
     implicitWidth: 280
     implicitHeight: optionSwitch.implicitHeight + root.contentTopPadding + root.contentBottomPadding
 
-    MouseArea {
-        anchors.fill: parent
-        enabled: false
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-    }
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
 
     contentItem: RowLayout {
         spacing: 7
@@ -39,6 +38,7 @@ Button {
         anchors.rightMargin: root.contentHorizontalPadding
         anchors.topMargin: root.contentTopPadding
         anchors.bottomMargin: root.contentBottomPadding
+
         CoreText {
             id: buttonText
             Layout.fillWidth: true
@@ -46,14 +46,20 @@ Button {
             horizontalAlignment: Text.AlignLeft
             font.pixelSize: 15
             text: root.text
+            color: root.checked ? root.textActiveColor : root.textColor
         }
+
         OptionSwitch {
             id: optionSwitch
             Layout.alignment: Qt.AlignVCenter
             Layout.preferredWidth: 40
             Layout.preferredHeight: 24
             checked: root.checked
-            onToggled: root.checked = checked
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.toggle()
+            }
         }
     }
 

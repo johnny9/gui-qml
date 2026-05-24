@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -57,6 +57,9 @@ Page {
         function onOpenWalletSettingsRequested() {
             settingsTabButton.checked = true
             nodeSettings.openWalletSettings()
+        }
+        function onOpenReceiveRequested() {
+            receiveTabButton.checked = true
         }
         function onWalletMigrationRequired(path) {
             root.pendingMigrationPath = path
@@ -128,20 +131,20 @@ Page {
             visible: walletController.isWalletLoaded
             NavigationTab {
                 id: activityTabButton
-                objectName: "desktopWalletsActivityTab"
+                objectName: "activityTabButton"
                 text: qsTr("Activity")
                 property int index: 0
                 ButtonGroup.group: navigationTabs
             }
             NavigationTab {
-                objectName: "desktopWalletsSendTab"
+                objectName: "sendTabButton"
                 text: qsTr("Send")
                 property int index: 1
                 ButtonGroup.group: navigationTabs
             }
             NavigationTab {
                 id: receiveTabButton
-                objectName: "desktopWalletsReceiveTab"
+                objectName: "receiveTabButton"
                 text: qsTr("Receive")
                 property int index: 2
                 ButtonGroup.group: navigationTabs
@@ -217,6 +220,10 @@ Page {
             }
         }
         RequestPayment {
+            onAddressHistoryRequested: {
+                settingsTabButton.checked = true
+                nodeSettings.openWalletAddressHistory()
+            }
         }
         Item {
             id: blockClockTab

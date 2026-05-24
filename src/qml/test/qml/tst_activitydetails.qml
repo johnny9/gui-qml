@@ -113,6 +113,65 @@ TestCase {
         compare(banner.visible, false)
     }
 
+    function test_paymentRequests_show_matching_list() {
+        const page = createTemporaryObject(detailsComponent, this, {
+            txid: "dddd",
+            canBump: false,
+            amount: "+0.01000000 BTC",
+            date: "2026-01-04",
+            depth: 1,
+            status: 2,
+            type: 1,
+            address: "bcrt1qrequestaddress",
+            paymentRequests: [
+                {
+                    requestId: "7",
+                    label: "Alice",
+                    amountDisplay: "0.00010000",
+                    date: "Fri Jan 2 2026"
+                },
+                {
+                    requestId: "8",
+                    label: "Alice duplicate",
+                    amountDisplay: "",
+                    date: "Sat Jan 3 2026"
+                }
+            ]
+        })
+        verify(page !== null)
+        compare(page.paymentRequestCount, 2)
+
+        const section = findChild(page, "activityDetailsPaymentRequestsSection")
+        verify(section !== null)
+
+        tryVerify(function() {
+            return findChild(page, "activityDetailsPaymentRequest_0") !== null
+        })
+        verify(findChild(page, "activityDetailsPaymentRequest_1") !== null)
+        compare(findChild(page, "activityDetailsPaymentRequestTitle_0").text, "Alice")
+        compare(findChild(page, "activityDetailsPaymentRequestTitle_1").text, "Alice duplicate")
+        compare(findChild(page, "activityDetailsPaymentRequestSubtitle_1").text, "No amount - Sat Jan 3 2026")
+    }
+
+    function test_no_paymentRequests_hides_section() {
+        const page = createTemporaryObject(detailsComponent, this, {
+            txid: "eeee",
+            canBump: false,
+            amount: "+0.01000000 BTC",
+            date: "2026-01-05",
+            depth: 1,
+            status: 2,
+            type: 1,
+            address: "bcrt1qrequestaddress",
+            paymentRequests: []
+        })
+        verify(page !== null)
+
+        const section = findChild(page, "activityDetailsPaymentRequestsSection")
+        verify(section !== null)
+        compare(section.visible, false)
+    }
+
     function test_dimmed_when_replaced() {
         const page = createTemporaryObject(detailsComponent, this, {
             txid: "aaaa",

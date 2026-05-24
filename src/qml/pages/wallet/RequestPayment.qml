@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,7 +10,7 @@ import org.bitcoincore.qt 1.0
 
 import "../../controls"
 import "../../components"
-import "../settings"
+import "../../components" as Components
 
 Page {
     id: root
@@ -20,74 +20,77 @@ Page {
     property WalletQmlModel wallet: walletController.selectedWallet
     property PaymentRequest request: wallet ? wallet.currentPaymentRequest : null
     property string requestError: ""
-    property var availableAddressTypes: wallet ? wallet.availableReceiveAddressTypes() : []
-    readonly property bool requestReady: root.request !== null
-    readonly property bool requestPersisted: root.requestReady && root.request.id !== ""
-    readonly property bool requestHasAddress: root.requestReady && root.request.address !== ""
+    property string selectedReceiveAddressType: ""
+    property var availableAddressTypes: root.wallet ? root.wallet.availableReceiveAddressTypes() : []
+    readonly property bool hasAddress: root.requestValue("address") !== ""
+    readonly property bool hasAddressType: receiveOptionsPopup.showAddressType && root.hasAddress && root.requestValue("addressType") !== ""
+    readonly property bool showAddressTypeSelector: receiveOptionsPopup.showAddressType && root.request !== null && root.requestIsEditing() && !root.hasAddress
+    readonly property bool hasSavedRequest: root.requestValue("id") !== ""
 
-    function selectedReceiveAddressType() {
-        if (root.request && root.request.addressType.length > 0) {
-            return root.request.addressType;
+    signal addressHistoryRequested()
+
+    function requestValue(name) {
+        if (!root.request || root.request[name] === undefined || root.request[name] === null) {
+            return ""
         }
-        return root.wallet ? root.wallet.defaultReceiveAddressType() : "";
+        return root.request[name]
+    }
+
+    function requestIsEditing() {
+        return !root.request || root.request.isEditing === undefined ? true : root.request.isEditing
+    }
+
+    function resetSelectedReceiveAddressType() {
+        if (root.request && !root.hasAddress && root.request.addressType !== undefined && root.request.addressType !== "") {
+            root.selectedReceiveAddressType = root.request.addressType
+            return
+        }
+        if (!root.wallet) {
+            root.selectedReceiveAddressType = "bech32"
+            return
+        }
+        root.selectedReceiveAddressType = root.wallet.defaultReceiveAddressType()
+            || "bech32"
     }
 
     function addressTypeIndex(addressType) {
         for (let i = 0; i < root.availableAddressTypes.length; ++i) {
             if (root.availableAddressTypes[i].id === addressType) {
-                return i;
+                return i
             }
         }
-        return root.availableAddressTypes.length > 0 ? 0 : -1;
+        return root.availableAddressTypes.length > 0 ? 0 : -1
     }
 
-    function ensureAddressTypeSelected() {
-        if (!root.request || root.request.address !== "" || root.request.addressType.length > 0) {
-            return;
-        }
-        root.request.addressType = root.selectedReceiveAddressType();
-    }
-
-    function primaryActionText() {
-        if (root.requestPersisted) {
-            return qsTr("Copy payment request")
-        }
-        if (root.requestHasAddress) {
-            return qsTr("Create payment request")
-        }
-        return qsTr("Create bitcoin address")
-    }
-
-    function runPrimaryAction() {
-        if (!root.requestReady) {
-            return
-        }
+    function commitCurrentRequest() {
+        if (!root.request || !root.wallet) return false
         root.requestError = ""
-        if (!root.requestPersisted) {
-            root.ensureAddressTypeSelected()
-            if (!root.wallet.commitPaymentRequest()) {
-                if (root.request && root.request.needsUnlock) {
-                    commitPassphrasePopup.errorText = ""
-                    commitPassphrasePopup.open()
-                    return
-                }
-                root.requestError = root.requestHasAddress
-                    ? qsTr("The payment request could not be created.")
-                    : qsTr("The new payment address could not be created.")
-            }
-            return
+
+        if (!root.hasAddress && root.request.addressType !== undefined && root.selectedReceiveAddressType !== "") {
+            root.request.addressType = root.selectedReceiveAddressType
         }
-        Clipboard.setText(root.request.address)
+
+        if (root.wallet.commitPaymentRequest()) {
+            root.request.isEditing = false
+            return true
+        }
+
+        if (root.request.needsUnlock) {
+            commitPassphrasePopup.errorText = ""
+            commitPassphrasePopup.open()
+            return false
+        }
+
+        root.requestError = root.hasAddress
+            ? qsTr("The payment request could not be created.")
+            : qsTr("The new payment address could not be created.")
+        return false
     }
 
-    Component.onCompleted: root.ensureAddressTypeSelected()
-
-    onWalletChanged: root.ensureAddressTypeSelected()
-    onRequestChanged: root.ensureAddressTypeSelected()
-
-    Settings {
-        id: settings
-        property alias addressFormatEnabled: receiveOptionsPopup.addressFormatEnabled
+    Component.onCompleted: resetSelectedReceiveAddressType()
+    onWalletChanged: {
+        root.requestError = ""
+        resetSelectedReceiveAddressType()
     }
 
     Binding {
@@ -96,66 +99,104 @@ Page {
         value: optionsModel.displayUnit
     }
 
+    Settings {
+        id: receiveSettings
+        property alias receiveShowName: receiveOptionsPopup.showName
+        property alias receiveShowMessage: receiveOptionsPopup.showMessage
+        property alias receiveShowNoteSelf: receiveOptionsPopup.showNoteSelf
+        property alias receiveShowAddressType: receiveOptionsPopup.showAddressType
+    }
+
+    function useCurrentRequestAsTemplate() {
+        if (!root.wallet || !root.hasSavedRequest) return
+        root.wallet.usePaymentRequestAsTemplate(root.requestValue("id"))
+        root.requestError = ""
+        root.resetSelectedReceiveAddressType()
+    }
+
+    function deleteCurrentRequest() {
+        if (!root.wallet || !root.hasSavedRequest) return
+        if (root.wallet.removeReceiveRequest(root.requestValue("id"))) {
+            root.request.clear()
+            root.requestError = ""
+            root.resetSelectedReceiveAddressType()
+            walletController.requestClosePaymentRequestDetail()
+        }
+    }
+
+    Item {
+        id: requestHistoryCount
+        objectName: "requestHistoryCount"
+        visible: false
+        property int count: root.wallet && root.wallet.receiveRequests !== undefined ? root.wallet.receiveRequests.count : 0
+    }
+
     ScrollView {
         clip: true
         width: parent.width
         height: parent.height
         contentWidth: width
 
-        Item {
-            id: titleRow
-            anchors.left: contentRow.left
-            anchors.right: contentRow.right
-            anchors.top: parent.top
-            anchors.topMargin: 20
-            height: Math.max(title.height, menuButton.height)
-
-            CoreText {
-                id: title
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.requestPersisted
-                    ? qsTr("Payment request #") + root.request.id
-                    : qsTr("Request a payment")
-                font.pixelSize: 21
-                bold: true
-            }
-
-            IconButton {
-                id: menuButton
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                checked: receiveOptionsPopup.opened
-                iconSource: "image://images/ellipsis"
-                onClicked: receiveOptionsPopup.open()
-            }
-
-            ReceiveOptionsPopup {
-                id: receiveOptionsPopup
-                x: menuButton.x - width + menuButton.width
-                y: menuButton.y + menuButton.height
-            }
-        }
-
-        RowLayout {
-            id: contentRow
-
-            enabled: walletController.initialized && root.request !== null
-
-            anchors.top: titleRow.bottom
-            anchors.topMargin: 40
+        ColumnLayout {
+            width: 520
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 30
-            ColumnLayout {
-                id: columnLayout
-                Layout.minimumWidth: 450
-                Layout.maximumWidth: AppMode.isDesktop ? 650 : 470
+            spacing: 10
+            enabled: walletController.initialized
 
-                spacing: 5
+            Item {
+                id: titleRow
+                Layout.fillWidth: true
+                Layout.topMargin: 30
+                Layout.bottomMargin: 20
+
+                CoreText {
+                    id: titleText
+                    objectName: "requestPaymentTitle"
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.hasSavedRequest
+                        ? qsTr("Payment request #%1").arg(root.requestValue("id"))
+                        : qsTr("Request a payment")
+                    font.pixelSize: 21
+                    color: Theme.color.neutral9
+                    bold: true
+                }
+
+                IconButton {
+                    id: receiveOptionsButton
+                    objectName: "receiveOptionsButton"
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    checked: receiveOptionsPopup.opened
+                    iconSource: "image://images/ellipsis"
+                    Accessible.name: qsTr("Receive options")
+                    onClicked: {
+                        if (receiveOptionsPopup.opened) {
+                            receiveOptionsPopup.close()
+                        } else {
+                            receiveOptionsPopup.open()
+                        }
+                    }
+                }
+
+                Components.ReceiveOptionsPopup {
+                    id: receiveOptionsPopup
+                    x: receiveOptionsButton.x - width + receiveOptionsButton.width
+                    y: receiveOptionsButton.y + receiveOptionsButton.height
+                    showRequestActions: root.hasSavedRequest
+                    onViewAddressHistory: root.addressHistoryRequested()
+                    onUseAsTemplate: root.useCurrentRequestAsTemplate()
+                    onDeleteFromHistory: root.deleteCurrentRequest()
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
 
                 Item {
-                    Layout.preferredHeight: 50
                     Layout.fillWidth: true
+                    height: amountInput.height
+
                     CoreText {
                         id: amountLabel
                         width: 110
@@ -169,7 +210,9 @@ Page {
                     TextField {
                         id: amountInput
                         objectName: "requestPaymentAmountInput"
+                        Accessible.name: qsTr("Payment amount")
                         anchors.left: amountLabel.right
+                        anchors.right: unitFlipItem.left
                         anchors.verticalCenter: parent.verticalCenter
                         leftPadding: 0
                         font.family: "BitcoinCoreSans"
@@ -178,43 +221,53 @@ Page {
                         color: Theme.color.neutral9
                         placeholderTextColor: enabled ? Theme.color.neutral7 : Theme.color.neutral4
                         background: Item {}
-                        placeholderText: root.request && root.request.amount.unit === BitcoinAmount.SAT ? "0" : "0.00000000"
+                        placeholderText: !root.request || root.request.amount.unit === BitcoinAmount.BTC
+                            ? "0.00000000" : "0"
                         selectByMouse: true
+                        enabled: root.requestIsEditing()
                         text: root.request ? root.request.amount.display : ""
                         onTextEdited: {
                             root.requestError = ""
                             if (root.request) {
-                                root.request.amount.display = text;
+                                root.request.amount.display = text
                             }
                         }
                         onEditingFinished: {
                             if (root.request) {
-                                root.request.amount.format();
+                                root.request.amount.format()
                             }
                         }
                         onActiveFocusChanged: {
                             if (!activeFocus && root.request) {
-                                root.request.amount.format();
+                                root.request.amount.format()
                             }
                         }
                         validator: RegularExpressionValidator {
-                            regularExpression: !root.request || root.request.amount.unit === BitcoinAmount.BTC ? /^(0|[1-9]\d{0,7})(\.\d{0,8})?$/ : /^(0|[1-9]\d{0,15})$/
+                            regularExpression: !root.request || root.request.amount.unit === BitcoinAmount.BTC
+                                ? /^(0|[1-9]\d{0,7})(\.\d{0,8})?$/
+                                : /^(0|[1-9]\d{0,15})$/
                         }
                         maximumLength: !root.request || root.request.amount.unit === BitcoinAmount.BTC ? 17 : 16
                     }
+
                     Item {
+                        id: unitFlipItem
                         width: unitLabel.width + flipIcon.width
                         height: Math.max(unitLabel.height, flipIcon.height)
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
+
                         MouseArea {
                             anchors.fill: parent
+                            enabled: root.requestIsEditing()
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
                                 if (root.request) {
-                                    root.request.amount.flipUnit();
+                                    root.request.amount.flipUnit()
                                 }
                             }
                         }
+
                         CoreText {
                             id: unitLabel
                             anchors.right: flipIcon.left
@@ -223,6 +276,7 @@ Page {
                             font.pixelSize: 18
                             color: enabled ? Theme.color.neutral7 : Theme.color.neutral4
                         }
+
                         Icon {
                             id: flipIcon
                             anchors.right: parent.right
@@ -231,6 +285,13 @@ Page {
                             color: unitLabel.enabled ? Theme.color.neutral8 : Theme.color.neutral4
                             size: 30
                         }
+                    }
+                }
+
+                Connections {
+                    target: root.request ? root.request.amount : null
+                    function onDisplayChanged() {
+                        amountInput.text = root.request ? root.request.amount.display : ""
                     }
                 }
 
@@ -252,403 +313,602 @@ Page {
                         Layout.fillWidth: true
                     }
                 }
+            }
 
-                Separator {
-                    Layout.fillWidth: true
+            RowLayout {
+                Layout.fillWidth: true
+                visible: root.requestError.length > 0
+
+                Icon {
+                    source: "image://images/alert-filled"
+                    size: 22
+                    color: Theme.color.red
                 }
 
-                LabeledTextInput {
-                    id: label
-                    objectName: "requestPaymentLabelInput"
+                CoreText {
+                    text: root.requestError
+                    font.pixelSize: 15
+                    color: Theme.color.red
+                    horizontalAlignment: Text.AlignLeft
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 50
-                    labelText: qsTr("Note to self")
-                    placeholderText: qsTr("Enter note…")
-                    text: root.request ? root.request.label : ""
-                    onTextEdited: {
-                        root.requestError = ""
-                        if (root.request) {
-                            root.request.label = label.text;
-                        }
+                }
+            }
+
+            Separator {
+                Layout.fillWidth: true
+            }
+
+            LabeledTextInput {
+                id: nameInput
+                objectName: "requestPaymentLabelInput"
+                inputObjectName: "requestPaymentYourNameInput"
+                Layout.fillWidth: true
+                visible: receiveOptionsPopup.showName
+                labelText: qsTr("Name")
+                placeholderText: qsTr("Enter name...")
+                enabled: root.requestIsEditing()
+                text: root.requestValue("label")
+                onTextEdited: {
+                    root.requestError = ""
+                    if (root.request) {
+                        root.request.label = nameInput.text
                     }
                 }
+            }
 
-                Separator {
-                    Layout.fillWidth: true
-                }
+            Separator {
+                Layout.fillWidth: true
+                visible: receiveOptionsPopup.showName && (receiveOptionsPopup.showMessage || receiveOptionsPopup.showNoteSelf || root.showAddressTypeSelector || root.hasAddressType || root.hasAddress)
+            }
 
-                LabeledTextInput {
-                    id: message
-                    objectName: "requestPaymentMessageInput"
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 50
-                    labelText: qsTr("Message")
-                    placeholderText: qsTr("Enter message...")
-                    text: root.request ? root.request.message : ""
-                    onTextEdited: {
-                        root.requestError = ""
-                        if (root.request) {
-                            root.request.message = message.text;
-                        }
+            LabeledTextInput {
+                id: messageInput
+                objectName: "requestPaymentMessageInput"
+                Layout.fillWidth: true
+                visible: receiveOptionsPopup.showMessage
+                labelText: qsTr("Message")
+                placeholderText: qsTr("Enter message...")
+                enabled: root.requestIsEditing()
+                text: root.requestValue("message")
+                onTextEdited: {
+                    root.requestError = ""
+                    if (root.request) {
+                        root.request.message = messageInput.text
                     }
                 }
+            }
 
-                Separator {
-                    Layout.fillWidth: true
+            Separator {
+                Layout.fillWidth: true
+                visible: receiveOptionsPopup.showMessage && (receiveOptionsPopup.showNoteSelf || root.showAddressTypeSelector || root.hasAddressType || root.hasAddress)
+            }
+
+            LabeledTextInput {
+                id: noteSelfInput
+                objectName: "requestPaymentNoteSelfInput"
+                Layout.fillWidth: true
+                visible: receiveOptionsPopup.showNoteSelf
+                labelText: qsTr("Note to self")
+                placeholderText: qsTr("Enter private note...")
+                enabled: root.requestIsEditing()
+                text: root.requestValue("noteSelf")
+                onTextEdited: {
+                    root.requestError = ""
+                    if (root.request && root.request.noteSelf !== undefined) {
+                        root.request.noteSelf = noteSelfInput.text
+                    }
                 }
+            }
 
-                ColumnLayout {
-                    id: addressFormatRow
+            Separator {
+                Layout.fillWidth: true
+                visible: receiveOptionsPopup.showNoteSelf && (root.showAddressTypeSelector || root.hasAddressType || root.hasAddress)
+            }
+
+            ColumnLayout {
+                id: addressFormatRow
+                Layout.fillWidth: true
+                visible: root.showAddressTypeSelector
+                spacing: 0
+
+                RowLayout {
                     Layout.fillWidth: true
-                    visible: settings.addressFormatEnabled
-                    spacing: 0
+                    height: 40
 
-                    RowLayout {
+                    CoreText {
+                        id: addressTypePickerLabel
+                        Layout.preferredWidth: 150
+                        Layout.minimumWidth: 150
+                        Layout.maximumWidth: 150
+                        Layout.rightMargin: 10
+                        horizontalAlignment: Text.AlignLeft
+                        text: qsTr("Address type")
+                        font.pixelSize: 18
+                        wrapMode: Text.NoWrap
+                    }
+
+                    Item {
                         Layout.fillWidth: true
-                        height: 40
+                    }
 
-                        CoreText {
-                            id: addressTypeLabel
-                            Layout.preferredWidth: 150
-                            Layout.minimumWidth: 150
-                            Layout.maximumWidth: 150
-                            Layout.rightMargin: 10
-                            horizontalAlignment: Text.AlignLeft
-                            text: qsTr("Address type")
-                            font.pixelSize: 18
-                            wrapMode: Text.NoWrap
+                    Button {
+                        id: addressTypePicker
+                        objectName: "receiveAddressTypePicker"
+                        property int selectedIndex: root.addressTypeIndex(root.selectedReceiveAddressType)
+                        property string selectedLabel: selectedIndex >= 0 && root.availableAddressTypes.length > 0
+                            ? root.availableAddressTypes[selectedIndex].label : ""
+
+                        enabled: root.request !== null && root.requestIsEditing() && root.availableAddressTypes.length > 0
+                        hoverEnabled: AppMode.isDesktop
+                        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                        Layout.preferredWidth: Math.min(addressTypePicker.implicitWidth, 280)
+                        Layout.maximumWidth: 280
+                        Layout.preferredHeight: 30
+                        leftPadding: 10
+                        rightPadding: 4
+                        topPadding: 2
+                        bottomPadding: 2
+                        implicitHeight: 30
+                        onPressed: addressTypePopup.open()
+
+                        HoverHandler {
+                            cursorShape: Qt.PointingHandCursor
                         }
 
-                        Button {
-                            id: addressTypePicker
-                            objectName: "receiveAddressTypePicker"
-                            property int selectedIndex: root.addressTypeIndex(root.selectedReceiveAddressType())
-                            property string selectedLabel: selectedIndex >= 0 && root.availableAddressTypes.length > 0 ? root.availableAddressTypes[selectedIndex].label : ""
+                        contentItem: Item {
+                            id: addressTypePickerContent
+                            implicitWidth: selectedAddressTypeLabel.implicitWidth + addressTypeCaret.width
+                            implicitHeight: Math.max(selectedAddressTypeLabel.implicitHeight, addressTypeCaret.height)
 
-                            enabled: root.request !== null && root.request.address === "" && count > 0
-                            hoverEnabled: AppMode.isDesktop
-                            Layout.fillWidth: true
+                            CoreText {
+                                id: selectedAddressTypeLabel
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.min(implicitWidth, Math.max(0, parent.width - addressTypeCaret.width))
+                                text: addressTypePicker.selectedLabel
+                                font.pixelSize: 18
+                                horizontalAlignment: Text.AlignRight
+                                elide: Text.ElideRight
+                            }
+
+                            Icon {
+                                id: addressTypeCaret
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                source: "image://images/caret-down-medium-filled"
+                                width: 24
+                                height: 24
+                                size: 24
+                                color: addressTypePicker.enabled ? Theme.color.orange : Theme.color.neutral4
+                            }
+                        }
+
+                        background: Rectangle {
+                            id: addressTypePickerBg
+                            color: Theme.color.background
+                            radius: 6
+                            Behavior on color {
+                                ColorAnimation {
+                                    duration: 150
+                                }
+                            }
+                        }
+
+                        states: [
+                            State {
+                                name: "HOVER"
+                                when: addressTypePicker.hovered
+                                PropertyChanges {
+                                    target: addressTypePickerBg
+                                    color: Theme.color.neutral2
+                                }
+                            }
+                        ]
+                    }
+                }
+
+                Popup {
+                    id: addressTypePopup
+                    modal: true
+                    dim: false
+
+                    background: Rectangle {
+                        color: Theme.color.background
+                        radius: 6
+                        border.color: Theme.color.neutral4
+                    }
+
+                    width: 300
+                    height: Math.min(addressTypeList.contentHeight + 10, 400)
+                    x: Math.max(0, addressTypePicker.x + addressTypePicker.width - width)
+                    y: addressTypePicker.y + addressTypePicker.height + 2
+                    padding: 5
+
+                    contentItem: ListView {
+                        id: addressTypeList
+                        model: root.availableAddressTypes
+                        interactive: false
+                        width: 300
+                        height: contentHeight
+                        spacing: 2
+                        delegate: ItemDelegate {
+                            id: delegate
+                            required property var modelData
+                            required property int index
+
+                            width: ListView.view.width
                             leftPadding: 10
                             rightPadding: 4
-                            topPadding: 2
-                            bottomPadding: 2
-                            height: 28
-                            onPressed: addressTypePopup.open()
+                            topPadding: 6
+                            bottomPadding: 6
 
-                            readonly property int count: root.availableAddressTypes.length
+                            background: Item {
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 6
+                                    color: Theme.color.neutral2
+                                    visible: delegate.hovered
+                                }
+                            }
+
+                            contentItem: RowLayout {
+                                spacing: 5
+
+                                Item {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    Layout.preferredWidth: 24
+                                    Layout.preferredHeight: 24
+
+                                    Icon {
+                                        anchors.fill: parent
+                                        visible: delegate.index === addressTypePicker.selectedIndex
+                                        source: "image://images/check"
+                                        color: Theme.color.orange
+                                        size: 24
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    CoreText {
+                                        text: delegate.modelData.label
+                                        horizontalAlignment: Text.AlignLeft
+                                        Layout.fillWidth: true
+                                        font.pixelSize: 15
+                                        elide: Text.ElideRight
+                                    }
+
+                                    CoreText {
+                                        text: delegate.modelData.description
+                                        horizontalAlignment: Text.AlignLeft
+                                        Layout.fillWidth: true
+                                        font.pixelSize: 13
+                                        color: Theme.color.neutral7
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+                            }
 
                             HoverHandler {
                                 cursorShape: Qt.PointingHandCursor
                             }
 
-                            contentItem: RowLayout {
-                                spacing: 0
-
-                                CoreText {
-                                    text: addressTypePicker.selectedLabel
-                                    font.pixelSize: 18
-                                    Layout.fillWidth: true
-                                    horizontalAlignment: Text.AlignRight
-                                    elide: Text.ElideRight
-                                }
-
-                                Icon {
-                                    source: "image://images/caret-down-medium-filled"
-                                    Layout.preferredWidth: 30
-                                    size: 30
-                                    color: addressTypePicker.enabled ? Theme.color.orange : Theme.color.neutral4
-                                }
-                            }
-
-                            background: Rectangle {
-                                id: addressTypePickerBg
-                                color: Theme.color.background
-                                radius: 6
-                                Behavior on color {
-                                    ColorAnimation {
-                                        duration: 150
-                                    }
-                                }
-                            }
-
-                            states: [
-                                State {
-                                    name: "HOVER"
-                                    when: addressTypePicker.hovered
-                                    PropertyChanges {
-                                        target: addressTypePickerBg
-                                        color: Theme.color.neutral2
-                                    }
-                                },
-                                State {
-                                    name: "DISABLED"
-                                    when: !addressTypePicker.enabled
-                                    PropertyChanges {
-                                        target: addressTypePickerBg
-                                        color: Theme.color.background
-                                    }
-                                }
-                            ]
-                        }
-                    }
-
-                    Popup {
-                        id: addressTypePopup
-                        modal: true
-                        dim: false
-
-                        background: Rectangle {
-                            color: Theme.color.background
-                            radius: 6
-                            border.color: Theme.color.neutral4
-                        }
-
-                        width: 300
-                        height: Math.min(addressTypeList.contentHeight + 10, 400)
-                        x: Math.max(0, addressTypePicker.x + addressTypePicker.width - width)
-                        y: addressTypePicker.y + addressTypePicker.height + 2
-                        padding: 5
-
-                        contentItem: ListView {
-                            id: addressTypeList
-                            model: root.availableAddressTypes
-                            interactive: false
-                            width: 300
-                            height: contentHeight
-                            spacing: 2
-                            delegate: ItemDelegate {
-                                id: delegate
-                                required property var modelData
-                                required property int index
-
-                                width: ListView.view.width
-                                leftPadding: 10
-                                rightPadding: 4
-                                topPadding: 6
-                                bottomPadding: 6
-
-                                background: Item {
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: 6
-                                        color: Theme.color.neutral2
-                                        visible: delegate.hovered
-                                    }
-                                }
-
-                                contentItem: RowLayout {
-                                    spacing: 5
-
-                                    Item {
-                                        Layout.alignment: Qt.AlignVCenter
-                                        Layout.preferredWidth: 24
-                                        Layout.preferredHeight: 24
-
-                                        Icon {
-                                            anchors.fill: parent
-                                            visible: delegate.index === addressTypePicker.selectedIndex
-                                            source: "image://images/check"
-                                            color: Theme.color.orange
-                                            size: 24
-                                        }
-                                    }
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 2
-
-                                        CoreText {
-                                            text: delegate.modelData.label
-                                            horizontalAlignment: Text.AlignLeft
-                                            Layout.fillWidth: true
-                                            font.pixelSize: 15
-                                            elide: Text.ElideRight
-                                        }
-
-                                        CoreText {
-                                            text: delegate.modelData.description
-                                            horizontalAlignment: Text.AlignLeft
-                                            Layout.fillWidth: true
-                                            font.pixelSize: 13
-                                            color: Theme.color.neutral7
-                                            wrapMode: Text.WordWrap
-                                        }
-                                    }
-                                }
-
-                                HoverHandler {
-                                    cursorShape: Qt.PointingHandCursor
-                                }
-
-                                onClicked: {
-                                    if (!root.request) {
-                                        return;
-                                    }
-                                    root.request.addressType = delegate.modelData.id;
-                                    if (root.wallet) {
-                                        root.wallet.setDefaultReceiveAddressType(delegate.modelData.id);
-                                    }
-                                    addressTypePopup.close();
-                                }
+                            onClicked: {
+                                root.selectedReceiveAddressType = delegate.modelData.id
+                                addressTypePopup.close()
                             }
                         }
                     }
                 }
+            }
 
-                Separator {
-                    Layout.fillWidth: true
-                    visible: settings.addressFormatEnabled
+            Item {
+                Layout.fillWidth: true
+                visible: root.hasAddressType
+                implicitHeight: addressTypeLabel.implicitHeight + 16
+                height: implicitHeight
+
+                CoreText {
+                    id: addressTypeLabel
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 110
+                    horizontalAlignment: Text.AlignLeft
+                    text: qsTr("Type")
+                    font.pixelSize: 18
+                }
+
+                CoreText {
+                    anchors.left: addressTypeLabel.right
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    horizontalAlignment: Text.AlignLeft
+                    text: root.requestValue("addressType")
+                    font.pixelSize: 18
+                    color: Theme.color.neutral9
+                }
+            }
+
+            Separator {
+                Layout.fillWidth: true
+                visible: root.hasAddressType && root.hasAddress
+            }
+
+            Item {
+                Layout.fillWidth: true
+                visible: root.hasAddress
+                Layout.topMargin: root.hasAddressType ? 0 : 10
+                implicitHeight: addressLabel.height + copyLabel.height
+                height: addressLabel.height + copyLabel.height
+
+                CoreText {
+                    id: addressLabel
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    horizontalAlignment: Text.AlignLeft
+                    width: 110
+                    text: qsTr("Address")
+                    font.pixelSize: 18
+                }
+
+                CoreText {
+                    id: copyLabel
+                    anchors.left: parent.left
+                    anchors.top: addressLabel.bottom
+                    horizontalAlignment: Text.AlignLeft
+                    width: 110
+                    text: qsTr("Copy")
+                    font.pixelSize: 18
+                    color: Theme.color.orange
+                }
+
+                CoreText {
+                    id: addressValue
+                    objectName: "requestPaymentAddressText"
+                    anchors.left: addressLabel.right
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    horizontalAlignment: Text.AlignLeft
+                    font.pixelSize: 18
+                    wrapMode: Text.WordWrap
+                    text: root.request ? root.request.addressFormatted : ""
+                }
+
+                MouseArea {
+                    anchors.left: parent.left
+                    anchors.top: addressLabel.bottom
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (root.request) {
+                            Clipboard.setText(root.request.address)
+                            copiedToast.show(copyLabel, (copyLabel.paintedWidth - copyLabel.width) / 2)
+                        }
+                    }
+                }
+            }
+
+            ContinueButton {
+                id: generateButton
+                objectName: "requestPaymentGenerateButton"
+                Layout.fillWidth: true
+                Layout.topMargin: 30
+                text: {
+                    if (!root.request || root.requestIsEditing()) {
+                        return root.hasSavedRequest
+                            ? qsTr("Update payment request")
+                            : qsTr("Generate payment request")
+                    }
+                    return qsTr("New request")
+                }
+                onClicked: {
+                    if (!root.request) return
+                    if (root.requestIsEditing()) {
+                        root.commitCurrentRequest()
+                    } else {
+                        root.request.clear()
+                        root.requestError = ""
+                        root.resetSelectedReceiveAddressType()
+                    }
                 }
 
                 Item {
-                    Layout.fillWidth: true
-                    Layout.minimumHeight: addressLabel.height + copyLabel.height
-                    Layout.topMargin: 10
-                    height: addressLabel.height + copyLabel.height
-                    CoreText {
-                        id: addressLabel
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        horizontalAlignment: Text.AlignLeft
-                        width: 110
-                        text: qsTr("Address")
-                        font.pixelSize: 18
-                    }
-                    CoreText {
-                        id: copyLabel
-                        anchors.left: parent.left
-                        anchors.top: addressLabel.bottom
-                        horizontalAlignment: Text.AlignLeft
-                        width: 110
-                        text: qsTr("copy")
-                        font.pixelSize: 18
-                        color: copyArea.enabled ? Theme.color.orange : Theme.color.neutral4
-                    }
-
-                    Rectangle {
-                        anchors.left: addressLabel.right
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        color: Theme.color.neutral2
-                        radius: 5
-                        CoreText {
-                            id: address
-                            objectName: "requestPaymentAddressText"
-                            anchors.fill: parent
-                            anchors.leftMargin: 5
-                            horizontalAlignment: Text.AlignLeft
-                            font.family: "Roboto Mono"
-                            font.styleName: "Regular"
-                            font.pixelSize: 18
-                            wrapMode: Text.WordWrap
-                            text: root.request ? root.request.addressFormatted : ""
-                        }
-                    }
-
-                    MouseArea {
-                        id: copyArea
-                        anchors.left: parent.left
-                        anchors.top: addressLabel.bottom
-                        anchors.right: addressLabel.right
-                        anchors.bottom: parent.bottom
-                        hoverEnabled: true
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        enabled: root.requestHasAddress
-                        onClicked: Clipboard.setText(root.request.address)
-                    }
-
-                    MouseArea {
-                        id: addressArea
-                        anchors.left: addressLabel.right
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        hoverEnabled: true
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        enabled: root.requestHasAddress
-                        onClicked: Clipboard.setText(root.request.address)
-                    }
-                }
-
-                ContinueButton {
-                    id: continueButton
                     objectName: "requestPaymentCreateButton"
-                    Layout.fillWidth: true
-                    Layout.topMargin: 30
-                    text: root.primaryActionText()
-                    onClicked: root.runPrimaryAction()
+                    anchors.fill: parent
+                    enabled: false
                 }
+            }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: root.requestError.length > 0
-
-                    Icon {
-                        source: "image://images/alert-filled"
-                        size: 22
-                        color: Theme.color.red
-                    }
-
-                    CoreText {
-                        text: root.requestError
-                        font.pixelSize: 15
-                        color: Theme.color.red
-                        horizontalAlignment: Text.AlignLeft
-                        Layout.fillWidth: true
-                    }
-                }
-
-                ContinueButton {
-                    id: clearRequest
-                    Layout.fillWidth: true
-                    Layout.topMargin: 10
-                    visible: root.request !== null && root.request.id !== ""
-                    borderColor: Theme.color.neutral6
-                    borderHoverColor: Theme.color.orangeLight1
-                    borderPressedColor: Theme.color.orangeLight2
-                    backgroundColor: "transparent"
-                    backgroundHoverColor: "transparent"
-                    backgroundPressedColor: "transparent"
-                    text: qsTr("Clear")
-                    onClicked: {
-                        if (root.request) {
-                            root.requestError = ""
-                            root.request.clear()
-                            root.ensureAddressTypeSelected()
-                        }
-                    }
-                }
-
-                Connections {
-                    target: walletController
-                    function onSelectedWalletChanged() {
-                        root.requestError = ""
-                        if (root.request) {
-                            root.request.clear();
-                            root.ensureAddressTypeSelected();
-                        }
+            OutlineButton {
+                objectName: "requestPaymentCancelButton"
+                Layout.fillWidth: true
+                Layout.topMargin: 10
+                visible: root.request ? root.requestIsEditing() && root.hasSavedRequest : false
+                text: qsTr("Cancel")
+                onClicked: {
+                    if (root.request && root.wallet && root.wallet.loadPaymentRequest(root.request.id)) {
+                        root.request.isEditing = false
                     }
                 }
             }
 
-            Pane {
-                Layout.alignment: Qt.AlignTop
-                Layout.minimumWidth: 150
-                Layout.minimumHeight: 150
-                padding: 0
-                background: Rectangle {
-                    color: Theme.color.neutral2
-                    visible: qrImage.code === ""
+            RowLayout {
+                id: generatedActions
+                objectName: "requestPaymentGeneratedActions"
+                Layout.fillWidth: true
+                Layout.topMargin: 10
+                visible: root.request ? !root.requestIsEditing() : false
+                spacing: 10
+
+                Button {
+                    id: editButton
+                    objectName: "requestPaymentEditButton"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    hoverEnabled: AppMode.isDesktop
+                    implicitHeight: 46
+                    Accessible.name: qsTr("Edit payment request")
+
+                    contentItem: RowLayout {
+                        spacing: 6
+                        Item { Layout.fillWidth: true }
+                        Icon {
+                            source: "qrc:/icons/edit"
+                            color: Theme.color.neutral9
+                            size: 24
+                        }
+                        CoreText {
+                            text: qsTr("Edit")
+                            bold: true
+                            font.pixelSize: 18
+                            color: Theme.color.neutral9
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    background: Rectangle {
+                        implicitHeight: 46
+                        color: Theme.color.background
+                        radius: 5
+                        border.width: 1
+                        border.color: editButton.pressed ? Theme.color.orangeLight2 : editButton.hovered ? Theme.color.neutral9 : Theme.color.neutral6
+                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                    }
+
+                    onClicked: {
+                        if (root.request) root.request.edit()
+                    }
                 }
-                contentItem: QRImage {
-                    id: qrImage
-                    backgroundColor: "transparent"
-                    foregroundColor: Theme.color.neutral9
-                    code: root.request ? root.request.address : ""
+
+                Button {
+                    id: copyButton
+                    objectName: "requestPaymentCopyButton"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    hoverEnabled: AppMode.isDesktop
+                    implicitHeight: 46
+                    Accessible.name: qsTr("Copy payment request")
+
+                    contentItem: RowLayout {
+                        spacing: 6
+                        Item { Layout.fillWidth: true }
+                        Icon {
+                            source: "qrc:/icons/copy"
+                            color: Theme.color.neutral9
+                            size: 24
+                        }
+                        CoreText {
+                            text: qsTr("Copy")
+                            bold: true
+                            font.pixelSize: 18
+                            color: Theme.color.neutral9
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    background: Rectangle {
+                        implicitHeight: 46
+                        color: Theme.color.background
+                        radius: 5
+                        border.width: 1
+                        border.color: copyButton.pressed ? Theme.color.orangeLight2 : copyButton.hovered ? Theme.color.neutral9 : Theme.color.neutral6
+                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                    }
+
+                    onClicked: {
+                        if (root.request) {
+                            Clipboard.setText(root.request.qrPayload)
+                            copiedToast.show(copyButton)
+                        }
+                    }
+                }
+
+                Button {
+                    id: qrButton
+                    objectName: "requestPaymentQRButton"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    hoverEnabled: AppMode.isDesktop
+                    implicitHeight: 46
+                    Accessible.name: qsTr("Show QR code")
+
+                    contentItem: RowLayout {
+                        spacing: 6
+                        Item { Layout.fillWidth: true }
+                        Icon {
+                            source: "qrc:/icons/qr-code"
+                            color: Theme.color.neutral9
+                            size: 24
+                        }
+                        CoreText {
+                            text: qsTr("QR Code")
+                            bold: true
+                            font.pixelSize: 18
+                            color: Theme.color.neutral9
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    background: Rectangle {
+                        implicitHeight: 46
+                        color: Theme.color.background
+                        radius: 5
+                        border.width: 1
+                        border.color: qrButton.pressed ? Theme.color.orangeLight2 : qrButton.hovered ? Theme.color.neutral9 : Theme.color.neutral6
+                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                    }
+
+                    onClicked: qrPopup.open()
+                }
+
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+            }
+
+            Connections {
+                target: root.request && root.request.isEditing !== undefined ? root.request : null
+                function onIsEditingChanged() {
+                    if (root.request) {
+                        amountInput.text = root.request.amount.display
+                        nameInput.text = root.requestValue("label")
+                        messageInput.text = root.requestValue("message")
+                        noteSelfInput.text = root.requestValue("noteSelf")
+                    }
+                }
+            }
+
+            Connections {
+                target: walletController
+                function onSelectedWalletChanged() {
+                    if (root.request) {
+                        root.request.clear()
+                    }
+                    root.requestError = ""
+                    root.resetSelectedReceiveAddressType()
                 }
             }
         }
+    }
+
+    ToastPopup {
+        id: copiedToast
+        objectName: "requestPaymentCopiedToast"
+        popupAnchor: copyButton
+        popupOffset: 4
+        text: qsTr("Copied")
+        backgroundColor: Theme.color.green
+        borderColor: Theme.color.green
+        textColor: Theme.color.white
+        iconSource: "image://images/check"
+        iconColor: Theme.color.white
     }
 
     WalletPassphrasePopup {
@@ -667,12 +927,29 @@ Page {
         onSubmitted: passphrase => {
             commitPassphrasePopup.busy = true
             if (root.wallet && root.wallet.commitPaymentRequestWithPassphrase(passphrase)) {
+                root.request.isEditing = false
                 commitPassphrasePopup.busy = false
                 commitPassphrasePopup.close()
                 return
             }
             commitPassphrasePopup.busy = false
-            commitPassphrasePopup.errorText = root.request ? root.request.unlockError : ""
+            commitPassphrasePopup.errorText = root.requestValue("unlockError") !== ""
+                ? root.requestValue("unlockError")
+                : qsTr("The payment request could not be created.")
+        }
+    }
+
+    QRCodePopup {
+        id: qrPopup
+        objectName: "requestPaymentQRPopup"
+        code: root.request ? root.request.qrPayload : ""
+        label: root.requestValue("label")
+        onCopyRequested: {
+            if (root.request) {
+                Clipboard.setText(root.request.qrPayload)
+                copiedToast.show(copyButton)
+            }
+            qrPopup.close()
         }
     }
 }

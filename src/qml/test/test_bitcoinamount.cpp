@@ -16,6 +16,7 @@ private Q_SLOTS:
     void sanitize_clampsAndFilters();
     void display_flow_btc();
     void display_flow_sat();
+    void displayWithUnit_formatsAmountAndUnit();
     void flipUnit_changesLabelAndDisplaySignal();
 };
 
@@ -63,6 +64,21 @@ void BitcoinAmountTests::display_flow_sat()
     amt.setUnit(BitcoinAmount::Unit::SAT);
     amt.setSatoshi(123);
     QCOMPARE(amt.toDisplay(), QString("123"));
+}
+
+void BitcoinAmountTests::displayWithUnit_formatsAmountAndUnit()
+{
+    BitcoinAmount amt;
+    QVERIFY(amt.displayWithUnit().isEmpty());
+
+    amt.setSatoshi(COIN);
+    QCOMPARE(amt.displayWithUnit(), QStringLiteral("1.00000000 ₿"));
+
+    amt.setUnit(BitcoinAmount::Unit::SAT);
+    QCOMPARE(amt.displayWithUnit(), QStringLiteral("100000000 sats"));
+
+    amt.setSatoshi(1);
+    QCOMPARE(amt.displayWithUnit(), QStringLiteral("1 sat"));
 }
 
 void BitcoinAmountTests::flipUnit_changesLabelAndDisplaySignal()

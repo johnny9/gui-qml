@@ -9,6 +9,7 @@
 
 #include <addresstype.h>
 
+#include <QDateTime>
 #include <QObject>
 #include <QString>
 
@@ -20,11 +21,16 @@ class PaymentRequest : public QObject
     Q_PROPERTY(QString label READ label WRITE setLabel NOTIFY labelChanged)
     Q_PROPERTY(QString message READ message WRITE setMessage NOTIFY messageChanged)
     Q_PROPERTY(QString addressType READ addressType WRITE setAddressType NOTIFY addressTypeChanged)
+    Q_PROPERTY(QString noteSelf READ noteSelf WRITE setNoteSelf NOTIFY noteSelfChanged)
     Q_PROPERTY(BitcoinAmount* amount READ amount CONSTANT)
     Q_PROPERTY(QString amountError READ amountError NOTIFY amountErrorChanged)
     Q_PROPERTY(QString id READ id NOTIFY idChanged)
     Q_PROPERTY(bool needsUnlock READ needsUnlock NOTIFY needsUnlockChanged)
     Q_PROPERTY(QString unlockError READ unlockError NOTIFY unlockErrorChanged)
+    Q_PROPERTY(QString qrPayload READ qrPayload NOTIFY qrPayloadChanged)
+    Q_PROPERTY(QString createdIso READ createdIso NOTIFY createdIsoChanged)
+    Q_PROPERTY(bool hasPaymentInfo READ hasPaymentInfo NOTIFY qrPayloadChanged)
+    Q_PROPERTY(bool isEditing READ isEditing WRITE setIsEditing NOTIFY isEditingChanged)
 
 public:
     explicit PaymentRequest(QObject* parent = nullptr);
@@ -40,6 +46,9 @@ public:
 
     QString addressType() const;
     void setAddressType(const QString& address_type);
+
+    QString noteSelf() const;
+    void setNoteSelf(const QString& note);
 
     BitcoinAmount* amount() const;
     QString amountError() const;
@@ -57,17 +66,32 @@ public:
     void setDestination(const CTxDestination& destination);
     CTxDestination destination() const;
 
+    QString qrPayload() const;
+
+    QString createdIso() const;
+    QDateTime created() const;
+    void setCreated(const QDateTime& dt);
+    bool hasPaymentInfo() const;
+
+    bool isEditing() const;
+    void setIsEditing(bool editing);
+
     Q_INVOKABLE void clear();
+    Q_INVOKABLE void edit();
 
 Q_SIGNALS:
     void addressChanged();
     void labelChanged();
     void messageChanged();
     void addressTypeChanged();
+    void noteSelfChanged();
     void amountErrorChanged();
     void idChanged();
     void needsUnlockChanged();
     void unlockErrorChanged();
+    void qrPayloadChanged();
+    void createdIsoChanged();
+    void isEditingChanged();
 
 private:
     static QString FormatAddress(const QString& address);
@@ -76,11 +100,14 @@ private:
     QString m_label;
     QString m_message;
     QString m_address_type;
+    QString m_noteSelf;
     QString m_amountError;
     BitcoinAmount* m_amount;
     QString m_id;
     bool m_needs_unlock{false};
     QString m_unlock_error;
+    QDateTime m_created;
+    bool m_is_editing{true};
 };
 
 #endif // BITCOIN_QML_MODELS_PAYMENTREQUEST_H

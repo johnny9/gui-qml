@@ -426,7 +426,7 @@ def set_amount_unit(gui, unit_label):
 
 
 def open_external_signer_review(gui, destination_address, amount_text):
-    gui.click("desktopWalletsSendTab")
+    gui.click("sendTabButton")
     gui.wait_for_page("sendPage", timeout_ms=10000)
     set_multiple_recipients(gui, False)
     set_amount_unit(gui, "₿")

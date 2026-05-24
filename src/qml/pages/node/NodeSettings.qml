@@ -1,4 +1,4 @@
-// Copyright (c) 2022 The Bitcoin Core developers
+// Copyright (c) 2022-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -48,6 +48,19 @@ PageStack {
         if (current_name !== "walletSettingsPage") {
             root.push(wallet_settings_page)
         }
+    }
+
+    function openAddressHistory() {
+        if (!walletController.isWalletLoaded || !walletController.selectedWallet) {
+            return
+        }
+        walletController.selectedWallet.addressListModel.refresh()
+        root.push(addresses_page)
+    }
+
+    function openWalletAddressHistory() {
+        root.openWalletSettings()
+        root.openAddressHistory()
     }
 
     Connections {
@@ -322,10 +335,7 @@ PageStack {
             onSelectWalletRequested: root.selectWalletRequested()
             onPasswordRequested: root.push(wallet_password_page, { "updating": walletController.selectedWallet.isEncrypted })
             onSignVerifyMessageRequested: root.push(sign_verify_message_page)
-            onAddressesRequested: {
-                walletController.selectedWallet.addressListModel.refresh()
-                root.push(addresses_page)
-            }
+            onAddressesRequested: root.openAddressHistory()
         }
     }
     Component {

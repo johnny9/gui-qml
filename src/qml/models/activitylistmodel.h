@@ -12,6 +12,7 @@
 #include <memory>
 #include <QAbstractListModel>
 #include <QList>
+#include <QSet>
 #include <QSharedPointer>
 #include <QString>
 
@@ -20,6 +21,7 @@ class WalletQmlModel;
 class ActivityListModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
     explicit ActivityListModel(WalletQmlModel * parent = nullptr);
@@ -34,21 +36,35 @@ public:
         StatusRole,
         TypeRole,
         TxidRole,
+        TxIdRole = TxidRole,
         CanBumpRole,
         ReplacesTxidRole,
-        ReplacedByTxidRole
+        ReplacedByTxidRole,
+        TimestampRole,
+        IsPendingRequestRole,
+        RequestIdRole,
+        NetAmountSatRole
     };
 
     Q_INVOKABLE void reload();
     Q_INVOKABLE QVariantMap transactionDetails(const QString& txid) const;
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
+    int count() const { return rowCount(); }
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
 
     void setDisplayUnit(int unit);
+    void addReceiveRequest(const QString& address, const QString& label,
+                           CAmount amount, qint64 timestamp, const QString& requestId);
+    void updateReceiveRequest(const QString& requestId, const QString& label, CAmount amount);
+    void removePendingReceiveRequest(const QString& requestId);
+
+Q_SIGNALS:
+    void countChanged();
 
 private:
     void refreshWallet();
+    void addPendingReceiveRequests();
     void updateTransactionStatus(QSharedPointer<Transaction> tx) const;
     void updateTransactionLabel(QSharedPointer<Transaction> tx) const;
     void subscribeToCoreSignals();
@@ -56,9 +72,12 @@ private:
     void updateTransaction(const uint256& hash, const interfaces::WalletTxStatus& wtx,
                            int num_blocks, int64_t block_time);
     int findTransactionIndex(const uint256& hash) const;
+    int findPendingRequestIndex(const QString& address) const;
+    void fulfillPendingRequest(int index, const QSharedPointer<Transaction>& real_tx);
 
     int m_display_unit{0};
     QList<QSharedPointer<Transaction>> m_transactions;
+    QSet<QString> m_pending_request_addresses;
     WalletQmlModel* m_wallet_model;
     std::unique_ptr<interfaces::Handler> m_handler_transaction_changed;
     std::unique_ptr<interfaces::Handler> m_handler_show_progress;

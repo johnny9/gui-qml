@@ -33,6 +33,7 @@ Transaction::Transaction(
     , status(Unconfirmed)
     , time(time)
     , type(type)
+    , txid(QString::fromStdString(hash.GetHex()))
     , involvesWatchAddress(false)
 {
 }
@@ -42,14 +43,20 @@ Transaction::Transaction(uint256 hash, qint64 time)
     , hash(hash)
     , time(time)
     , type(Type::Other)
+    , txid(QString::fromStdString(hash.GetHex()))
     , involvesWatchAddress(false)
 {
 }
 
+CAmount Transaction::netAmount() const
+{
+    return credit + debit;
+}
+
 QString Transaction::prettyAmount(int display_unit) const
 {
-    CAmount net = credit - debit;
-    bool plus_sign = (net > 0);
+    const CAmount net = netAmount();
+    const bool plus_sign = (net > 0);
     QmlBitcoinUnits::Unit unit = (display_unit == 1)
         ? QmlBitcoinUnits::Unit::SAT
         : QmlBitcoinUnits::Unit::BTC;
@@ -58,22 +65,20 @@ QString Transaction::prettyAmount(int display_unit) const
 
 QString Transaction::dateTimeString() const
 {
+    if (isPendingRequest) return tr("Pending receive");
+
     QDateTime dateTime = QDateTime::fromSecsSinceEpoch(time);
     QDateTime now = QDateTime::currentDateTimeUtc();
 
     qint64 elapsedSeconds = dateTime.secsTo(now);
     const qint64 minutes = elapsedSeconds / 60;
     if (minutes < 60) {
-        return QString("%1 minute%2 ago")
-            .arg(minutes)
-            .arg(minutes == 1 ? "" : "s");
+        return minutes == 1 ? tr("1 minute ago") : tr("%1 minutes ago").arg(minutes);
     }
 
     const qint64 hours = minutes / 60;
     if (hours < 24) {
-        return QString("%1 hour%2 ago")
-            .arg(hours)
-            .arg(hours == 1 ? "" : "s");
+        return hours == 1 ? tr("1 hour ago") : tr("%1 hours ago").arg(hours);
     }
 
     int currentYear = QDate::currentDate().year();
@@ -167,11 +172,11 @@ QList<QSharedPointer<Transaction>> Transaction::fromWalletTx(const interfaces::W
             const CTxOut& txout = wtx.tx->vout[i];
 
             if (fAllFromMe) {
-                // Change is only really possible if we're the sender
-                // Otherwise, someone just sent bitcoins to a change address, which should be shown
-                //if (wtx.txout_is_change[i]) {
-                //   continue;
-                //}
+                // Only hide change when this wallet is the sender. If someone sends to
+                // one of our change addresses, it is still an incoming payment.
+                if (wtx.txout_is_change[i]) {
+                    continue;
+                }
 
                 //
                 // Debit

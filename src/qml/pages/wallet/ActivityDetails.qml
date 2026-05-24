@@ -28,31 +28,42 @@ Page {
     property int depth: 0
     property int type: 0
     property int status: 0
+    property var paymentRequests: []
+    readonly property int paymentRequestCount: root.paymentRequests ? root.paymentRequests.length : 0
 
-    property color iconColor: {
-        if (root.status == Transaction.Confirmed) {
-            if (root.type == Transaction.RecvWithAddress ||
-                root.type == Transaction.RecvFromOther ||
-                root.type == Transaction.Generated) {
-                Theme.color.green
-            } else {
-                Theme.color.orange
-            }
-        } else {
-            Theme.color.blue
-        }
-    }
-    property color amountColor: {
-        if (root.type == Transaction.RecvWithAddress
-            || root.type == Transaction.RecvFromOther
-            || root.type == Transaction.Generated) {
-            Theme.color.green
-        } else {
-            Theme.color.neutral9
-        }
+    ActivityTransactionVisuals {
+        id: transactionVisuals
+        transactionType: root.type
+        transactionStatus: root.status
     }
 
     background: null
+
+    function paymentRequestTitle(request) {
+        if (request && request.label && request.label.length > 0) {
+            return request.label
+        }
+        return qsTr("Payment request")
+    }
+
+    function paymentRequestSubtitle(request) {
+        var amount = request && request.amountDisplay && request.amountDisplay.length > 0
+            ? request.amountDisplay
+            : qsTr("No amount")
+        if (request && request.date && request.date.length > 0) {
+            return qsTr("%1 - %2").arg(amount).arg(request.date)
+        }
+        return amount
+    }
+
+    function openPaymentRequestDetail(requestId) {
+        if (!walletController.selectedWallet || !root.StackView.view || requestId.length === 0) {
+            return
+        }
+        if (walletController.selectedWallet.loadPaymentRequestDetail(requestId)) {
+            root.StackView.view.push(paymentRequestDetailPage)
+        }
+    }
 
     header: NavigationBar2 {
         id: navbar
@@ -96,20 +107,11 @@ Page {
                 height: 60
                 Layout.alignment: Qt.AlignHCenter
                 radius: 30
-                color: root.iconColor
+                color: transactionVisuals.iconColor
 
                 Icon {
                     anchors.centerIn: parent
-                    source: {
-                        if (root.type == Transaction.RecvWithAddress
-                            || root.type == Transaction.RecvFromOther) {
-                            "qrc:/icons/triangle-down"
-                        } else if (root.type == Transaction.Generated) {
-                            "qrc:/icons/coinbase"
-                        } else {
-                            "qrc:/icons/triangle-up"
-                        }
-                    }
+                    source: transactionVisuals.iconSource
                     color: Theme.color.white
                     size: 30
                 }
@@ -119,7 +121,7 @@ Page {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.bottomMargin: 5
                 text: root.amount
-                color: amountColor
+                color: transactionVisuals.amountColor
                 font.pixelSize: 28
             }
 
@@ -158,44 +160,85 @@ Page {
                 text: root.message
             }
 
-            Item {
-                height: addressLabel.height + addressText.height
+            AddressDetailRow {
                 Layout.fillWidth: true
                 Layout.bottomMargin: 20
-                CoreText {
-                    id: addressLabel
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    color: Theme.color.neutral7
-                    text: qsTr("Address")
-                    font.pixelSize: 15
-                }
+                address: root.address
+            }
 
-                CoreText {
-                    id: addressText
-                    anchors.left: parent.left
-                    anchors.right: copyIcon.left
-                    anchors.top: addressLabel.bottom
-                    leftPadding: 0
-                    font.family: "Roboto Mono"
-                    font.styleName: "Regular"
-                    font.pixelSize: 18
-                    horizontalAlignment: Text.AlignLeft
-                    color: Theme.color.neutral9
-                    text: root.address
-                    wrapMode: Text.WrapAnywhere
-                }
+            ColumnLayout {
+                id: paymentRequestsSection
+                objectName: "activityDetailsPaymentRequestsSection"
+                visible: root.paymentRequestCount > 0
+                Layout.fillWidth: true
+                Layout.topMargin: 10
+                Layout.bottomMargin: 20
+                spacing: 0
 
-                Icon {
-                    id: copyIcon
-                    anchors.right: parent.right
-                    anchors.verticalCenter: addressText.verticalCenter
-                    source: "image://images/copy"
-                    color: Theme.color.neutral8
-                    size: 30
-                    enabled: true
-                    onClicked: {
-                        Clipboard.setText(addressText.text.replace(/\s+/g, ""))
+                Repeater {
+                    model: root.paymentRequests
+
+                    delegate: ItemDelegate {
+                        id: paymentRequestDelegate
+                        required property int index
+                        required property var modelData
+
+                        objectName: "activityDetailsPaymentRequest_" + paymentRequestDelegate.index
+                        Layout.fillWidth: true
+                        leftPadding: 0
+                        rightPadding: 0
+                        topPadding: 4
+                        bottomPadding: 4
+                        hoverEnabled: AppMode.isDesktop
+                        background: Item {
+                            Rectangle {
+                                anchors.fill: parent
+                                color: paymentRequestDelegate.hovered ? Theme.color.neutral1 : "transparent"
+                                radius: 4
+                            }
+                        }
+                        onClicked: root.openPaymentRequestDetail(paymentRequestDelegate.modelData.requestId
+                            ? String(paymentRequestDelegate.modelData.requestId)
+                            : "")
+
+                        contentItem: RowLayout {
+                            spacing: 10
+
+                            Icon {
+                                Layout.alignment: Qt.AlignVCenter
+                                source: "qrc:/icons/triangle-down"
+                                color: Theme.color.purple
+                                size: 14
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                CoreText {
+                                    objectName: "activityDetailsPaymentRequestTitle_" + paymentRequestDelegate.index
+                                    Layout.fillWidth: true
+                                    text: root.paymentRequestTitle(paymentRequestDelegate.modelData)
+                                    color: paymentRequestDelegate.hovered ? Theme.color.orange : Theme.color.neutral9
+                                    font.pixelSize: 16
+                                    elide: Text.ElideRight
+                                }
+
+                                CoreText {
+                                    objectName: "activityDetailsPaymentRequestSubtitle_" + paymentRequestDelegate.index
+                                    Layout.fillWidth: true
+                                    text: root.paymentRequestSubtitle(paymentRequestDelegate.modelData)
+                                    color: Theme.color.neutral7
+                                    font.pixelSize: 14
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            CaretRightIcon {
+                                Layout.alignment: Qt.AlignVCenter
+                                color: paymentRequestDelegate.hovered ? Theme.color.orange : Theme.color.neutral7
+                            }
+                        }
                     }
                 }
             }
@@ -207,13 +250,20 @@ Page {
                 Layout.fillWidth: true
                 Layout.maximumWidth: 600
                 Layout.topMargin: 20
-                bannerLayout: InfoBanner.Layout.Vertical
+                bannerLayout: root.paymentRequestCount > 0 ? InfoBanner.Layout.Horizontal : InfoBanner.Layout.Vertical
+                contentMargin: 18
+                contentSpacing: 10
                 message: qsTr("This transaction is still unconfirmed. You can speed it up by increasing the fee.")
                 primaryButtonText: qsTr("Speed up")
                 onPrimaryClicked: speedUpOverlay.open()
             }
 
         }
+    }
+
+    Component {
+        id: paymentRequestDetailPage
+        PaymentRequestDetail {}
     }
 
     InfoBanner {

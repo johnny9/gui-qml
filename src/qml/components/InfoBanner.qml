@@ -23,20 +23,22 @@ Rectangle {
     property string primaryButtonText: ""
     property string dismissButtonText: ""
     property int bannerLayout: InfoBanner.Layout.Horizontal
+    property int contentMargin: 30
+    property int contentSpacing: 15
 
     signal primaryClicked()
     signal dismissClicked()
 
     radius: 10
     color: Qt.rgba(Theme.color.blue.r, Theme.color.blue.g, Theme.color.blue.b, 0.2)
-    implicitHeight: contentLoader.item ? contentLoader.item.height + 60 : 60
+    implicitHeight: contentLoader.item ? contentLoader.item.height + 2 * contentMargin : 2 * contentMargin
 
     Loader {
         id: contentLoader
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        anchors.margins: 30
+        anchors.margins: root.contentMargin
         sourceComponent: root.bannerLayout === InfoBanner.Layout.Vertical
             ? verticalContent : horizontalContent
     }
@@ -44,7 +46,7 @@ Rectangle {
     Component {
         id: horizontalContent
         RowLayout {
-            spacing: 15
+            spacing: root.contentSpacing
 
             Icon {
                 visible: root.iconSource != ""
@@ -82,6 +84,8 @@ Rectangle {
                 objectName: root.objectName !== "" ? root.objectName + "DismissButton" : ""
                 visible: root.dismissButtonText !== ""
                 text: root.dismissButtonText
+                leftPadding: 20
+                rightPadding: 20
                 onClicked: root.dismissClicked()
             }
 
@@ -89,6 +93,8 @@ Rectangle {
                 objectName: root.objectName !== "" ? root.objectName + "PrimaryButton" : ""
                 visible: root.primaryButtonText !== ""
                 text: root.primaryButtonText
+                leftPadding: 20
+                rightPadding: 20
                 onClicked: root.primaryClicked()
             }
         }
@@ -97,7 +103,7 @@ Rectangle {
     Component {
         id: verticalContent
         ColumnLayout {
-            spacing: 15
+            spacing: root.contentSpacing
 
             Icon {
                 visible: root.iconSource != ""

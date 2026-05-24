@@ -156,7 +156,9 @@ def open_wallet_selector(gui):
 
 def select_wallet(gui, wallet_name):
     open_wallet_selector(gui)
-    gui.click(f"walletSelectItem_{sanitize_object_suffix(wallet_name)}")
+    item_name = f"walletSelectItem_{sanitize_object_suffix(wallet_name)}"
+    gui.wait_for_object(item_name, timeout_ms=5000)
+    gui.click(item_name)
 
 
 def close_wallet_from_selector(gui, wallet_name):

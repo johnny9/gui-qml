@@ -92,6 +92,7 @@ Page {
             }
 
             ContinueButton {
+                objectName: "sendResultDoneButton"
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 Layout.minimumWidth: 150

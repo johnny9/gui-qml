@@ -316,7 +316,7 @@ Page {
                         }
                     }
 
-                    Toast {
+                    ToastBanner {
                         objectName: "verifyMessageResultBanner"
                         Layout.fillWidth: true
                         Layout.topMargin: 28

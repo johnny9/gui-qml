@@ -11,16 +11,41 @@ Button {
     hoverEnabled: AppMode.isDesktop
 
     property bool bold: false
+    property url iconSource: ""
     property var textStyle: bold ? Theme.text.buttonStrong : Theme.text.button
     property int textFontPixelSize: textStyle.pixelSize
     property string textFontStyleName: textStyle.styleName
 
-    contentItem: CoreText {
-        text: parent.text
-        bold: root.bold
-        fontStyleName: root.textFontStyleName
-        font.pixelSize: root.textFontPixelSize
-        color: Theme.color.neutral9
+    leftPadding: 20
+    rightPadding: 20
+
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
+
+    contentItem: Item {
+        implicitWidth: row.implicitWidth
+        implicitHeight: row.implicitHeight
+        Row {
+            id: row
+            anchors.centerIn: parent
+            spacing: 4
+            Icon {
+                id: icon
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.iconSource.toString().length > 0
+                source: root.iconSource
+                color: Theme.color.neutral9
+                size: 20
+            }
+            CoreText {
+                id: label
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.text
+                bold: root.bold
+                fontStyleName: root.textFontStyleName
+                font.pixelSize: root.textFontPixelSize
+                color: Theme.color.neutral9
+            }
+        }
     }
     background: Rectangle {
         id: bg

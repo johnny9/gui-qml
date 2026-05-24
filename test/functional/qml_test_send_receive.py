@@ -131,7 +131,7 @@ def wait_for_non_empty_text(gui, object_name, *, timeout=20):
 
 
 def btc_text_to_sats(text):
-    match = re.search(r"([0-9]+(?:\.[0-9]+)?)", text.replace(",", ""))
+    match = re.search(r"(-?[0-9]+(?:\.[0-9]+)?)", text.replace(",", ""))
     if match is None:
         raise AssertionError(f"Could not parse BTC amount from {text!r}")
     try:
@@ -220,7 +220,7 @@ def run_test(*, save_screenshots=False, screenshot_root=None):
         )
         checkpoints.checkpoint("gui wallet funded", gui)
 
-        gui.click("desktopWalletsSendTab")
+        gui.click("sendTabButton")
         gui.wait_for_page("sendPage", timeout_ms=10000)
         checkpoints.checkpoint("send page opened", gui)
 
@@ -318,9 +318,31 @@ def run_test(*, save_screenshots=False, screenshot_root=None):
         )
         checkpoints.checkpoint("broadcast fee verified", gui)
 
+        gui.wait_for_page("sendResultPopup", timeout_ms=10000)
+        gui.click("sendResultDoneButton")
+        gui.wait_for_property("activityTabButton", "visible", True, timeout_ms=10000)
+        gui.click("activityTabButton")
+        gui.wait_for_property("activitySearchToggle", "visible", True, timeout_ms=10000)
+        gui.click("activitySearchToggle")
+        gui.wait_for_property("activitySearchToggle", "checked", True, timeout_ms=5000)
+        gui.click("activityTypeFilterButton")
+        gui.click("activityTypeSent")
+        gui.wait_for_property("activityFilterProxyModel", "count", 1, timeout_ms=20000)
+        activity_amount_text = gui.get_list_item_property("activityListView", 0, "amount")
+        activity_amount_sats = amount_text_to_sats(activity_amount_text)
+        assert activity_amount_text.startswith("-"), (
+            f"Expected sent Activity amount to display with a minus sign, got {activity_amount_text!r}"
+        )
+        assert activity_amount_sats < 0, (
+            f"Expected sent Activity amount to parse as negative sats, got "
+            f"{activity_amount_text!r} ({activity_amount_sats} sats)"
+        )
+        checkpoints.checkpoint("sent Activity amount sign verified", gui)
+
         print(
             "Send flow passed: preview totals were correct with include-fee off and on, "
-            "and the broadcast fee matched the subtract-fee preview."
+            "the broadcast fee matched the subtract-fee preview, and Activity showed the "
+            "sent amount as negative."
         )
         return 0
     except Exception as err:  # noqa: BLE001 - preserve failure context for functional test output

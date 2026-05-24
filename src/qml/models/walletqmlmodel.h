@@ -10,6 +10,8 @@
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/paymentrequest.h>
+#include <qml/models/receiverequesthistorymodel.h>
+#include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signverifymessagemodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
@@ -47,6 +49,8 @@ class WalletQmlModel : public QObject
     Q_PROPERTY(SendRecipientsListModel* recipients READ sendRecipientList CONSTANT)
     Q_PROPERTY(SignVerifyMessageModel* signVerifyMessageModel READ signVerifyMessageModel CONSTANT)
     Q_PROPERTY(PaymentRequest* currentPaymentRequest READ currentPaymentRequest CONSTANT)
+    Q_PROPERTY(PaymentRequest* detailPaymentRequest READ detailPaymentRequest CONSTANT)
+    Q_PROPERTY(ReceiveRequestHistoryModel* receiveRequests READ receiveRequests CONSTANT)
     Q_PROPERTY(WalletQmlModelTransaction* currentTransaction READ currentTransaction NOTIFY currentTransactionChanged)
     Q_PROPERTY(unsigned int targetBlocks READ feeTargetBlocks WRITE setFeeTargetBlocks NOTIFY feeTargetBlocksChanged)
     Q_PROPERTY(QString estimatedFee READ estimatedFee NOTIFY estimatedFeeChanged)
@@ -81,6 +85,11 @@ public:
     bool hasExternalSigner() const { return m_wallet && m_wallet->hasExternalSigner(); }
     Q_INVOKABLE bool commitPaymentRequest();
     Q_INVOKABLE bool commitPaymentRequestWithPassphrase(const QString& passphrase);
+    Q_INVOKABLE void reloadReceiveRequests();
+    Q_INVOKABLE bool removeReceiveRequest(const QString& request_id);
+    Q_INVOKABLE bool loadPaymentRequest(const QString& request_id);
+    Q_INVOKABLE bool loadPaymentRequestDetail(const QString& request_id);
+    Q_INVOKABLE void usePaymentRequestAsTemplate(const QString& request_id);
 
     ActivityListModel* activityListModel() const { return m_activity_list_model; }
     AddressListModel* addressListModel() const { return m_address_list_model; }
@@ -89,6 +98,8 @@ public:
     SendRecipientsListModel* sendRecipientList() const { return m_send_recipients; }
     SignVerifyMessageModel* signVerifyMessageModel() const { return m_sign_verify_message_model; }
     PaymentRequest* currentPaymentRequest() const { return m_current_payment_request; }
+    PaymentRequest* detailPaymentRequest() const { return m_detail_payment_request; }
+    ReceiveRequestHistoryModel* receiveRequests() const { return m_receive_requests; }
     WalletQmlModelTransaction* currentTransaction() const { return m_current_transaction; }
     QString estimatedFee() const;
     bool customFeeEnabled() const { return m_custom_fee_enabled; }
@@ -217,6 +228,8 @@ private:
     SendRecipientsListModel* m_send_recipients{nullptr};
     SignVerifyMessageModel* m_sign_verify_message_model{nullptr};
     PaymentRequest* m_current_payment_request{nullptr};
+    PaymentRequest* m_detail_payment_request{nullptr};
+    ReceiveRequestHistoryModel* m_receive_requests{nullptr};
     WalletQmlModelTransaction* m_current_transaction{nullptr};
     wallet::CCoinControl m_coin_control;
     QObject* m_fee_estimation_worker{nullptr};

@@ -14,11 +14,18 @@ class ImageProviderTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void initTestCase();
     void requestPixmap_requiresSizePointer();
     void requestPixmap_requiresValidRequestedSize();
     void requestPixmap_appId_setsRequestedOutputSize();
+    void requestPixmap_iconResource_setsRequestedOutputSize();
     void requestPixmap_unknownId_returnsNullPixmap();
 };
+
+void ImageProviderTests::initTestCase()
+{
+    Q_INIT_RESOURCE(bitcoin_qml);
+}
 
 void ImageProviderTests::requestPixmap_requiresSizePointer()
 {
@@ -51,6 +58,19 @@ void ImageProviderTests::requestPixmap_appId_setsRequestedOutputSize()
     QSize size;
     const QSize requested_size{40, 24};
     const QPixmap pixmap = provider.requestPixmap(QStringLiteral("app"), &size, requested_size);
+    Q_UNUSED(pixmap);
+    QCOMPARE(size, requested_size);
+}
+
+void ImageProviderTests::requestPixmap_iconResource_setsRequestedOutputSize()
+{
+    const std::unique_ptr<const NetworkStyle> style{NetworkStyle::instantiate(ChainType::MAIN)};
+    QVERIFY(style != nullptr);
+    ImageProvider provider(style.get());
+
+    QSize size;
+    const QSize requested_size{24, 24};
+    const QPixmap pixmap = provider.requestPixmap(QStringLiteral("search"), &size, requested_size);
     Q_UNUSED(pixmap);
     QCOMPARE(size, requested_size);
 }

@@ -4,7 +4,13 @@
 
 #include <qml/models/activitylistmodel.h>
 
+#include <qml/models/receiverequesthistorymodel.h>
 #include <qml/models/walletqmlmodel.h>
+
+#include <QDateTime>
+#include <QVariantList>
+
+#include <algorithm>
 
 ActivityListModel::ActivityListModel(WalletQmlModel *parent)
     : QAbstractListModel(parent)
@@ -29,7 +35,7 @@ int ActivityListModel::rowCount(const QModelIndex &parent) const
 
 void ActivityListModel::updateTransactionStatus(QSharedPointer<Transaction> tx) const
 {
-    if (m_wallet_model == nullptr) {
+    if (m_wallet_model == nullptr || tx->isPendingRequest) {
         return;
     }
     interfaces::WalletTxStatus wtx;
@@ -76,13 +82,21 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
     case TypeRole:
         return tx->type;
     case TxidRole:
-        return tx->txid;
+        return tx->isPendingRequest ? QString{} : tx->txid;
     case CanBumpRole:
         return m_wallet_model ? m_wallet_model->canBumpTransaction(tx->hash) : false;
     case ReplacesTxidRole:
         return tx->replacesTxid;
     case ReplacedByTxidRole:
         return tx->replacedByTxid;
+    case TimestampRole:
+        return tx->time;
+    case IsPendingRequestRole:
+        return tx->isPendingRequest;
+    case RequestIdRole:
+        return tx->requestId;
+    case NetAmountSatRole:
+        return QVariant::fromValue<qlonglong>(tx->netAmount());
     default:
         return QVariant();
     }
@@ -102,6 +116,10 @@ QHash<int, QByteArray> ActivityListModel::roleNames() const
     roles[CanBumpRole] = "canBump";
     roles[ReplacesTxidRole] = "replacesTxid";
     roles[ReplacedByTxidRole] = "replacedByTxid";
+    roles[TimestampRole] = "timestamp";
+    roles[IsPendingRequestRole] = "isPendingRequest";
+    roles[RequestIdRole] = "requestId";
+    roles[NetAmountSatRole] = "netAmountSat";
     return roles;
 }
 
@@ -119,6 +137,9 @@ QVariantMap ActivityListModel::transactionDetails(const QString& txid) const
         if (tx->txid == txid) {
             updateTransactionStatus(tx);
             updateTransactionLabel(tx);
+            const QVariantList payment_requests = m_wallet_model && m_wallet_model->receiveRequests()
+                ? m_wallet_model->receiveRequests()->matchingEntriesForAddress(tx->address)
+                : QVariantList{};
             return {
                 {"txid", tx->txid},
                 {"canBump", m_wallet_model ? m_wallet_model->canBumpTransaction(tx->hash) : false},
@@ -129,7 +150,8 @@ QVariantMap ActivityListModel::transactionDetails(const QString& txid) const
                 {"type", tx->type},
                 {"status", tx->status},
                 {"address", tx->address},
-                {"label", tx->label}
+                {"label", tx->label},
+                {"paymentRequests", payment_requests}
             };
         }
     }
@@ -162,6 +184,92 @@ void ActivityListModel::refreshWallet()
               [](const QSharedPointer<Transaction> &a, const QSharedPointer<Transaction> &b) {
                   return a->depth < b->depth;
               });
+
+    addPendingReceiveRequests();
+}
+
+void ActivityListModel::addPendingReceiveRequests()
+{
+    if (m_wallet_model == nullptr) return;
+
+    ReceiveRequestHistoryModel* history = m_wallet_model->receiveRequests();
+    if (!history) return;
+
+    QSet<QString> existing_addresses;
+    for (const auto& tx : m_transactions) {
+        if (!tx->address.isEmpty()) {
+            existing_addresses.insert(tx->address);
+        }
+    }
+
+    for (int i = 0; i < history->rowCount(); ++i) {
+        QModelIndex idx = history->index(i);
+        QString address = history->data(idx, ReceiveRequestHistoryModel::AddressRole).toString();
+        if (address.isEmpty() || existing_addresses.contains(address)) continue;
+
+        QString label = history->data(idx, ReceiveRequestHistoryModel::LabelRole).toString();
+        CAmount amount = history->data(idx, ReceiveRequestHistoryModel::AmountSatRole).toLongLong();
+        QString dateIso = history->data(idx, ReceiveRequestHistoryModel::DateIsoRole).toString();
+        qint64 timestamp = QDateTime::fromString(dateIso, Qt::ISODate).toSecsSinceEpoch();
+        QString reqId = history->data(idx, ReceiveRequestHistoryModel::IdRole).toString();
+
+        addReceiveRequest(address, label, amount, timestamp, reqId);
+    }
+}
+
+void ActivityListModel::addReceiveRequest(const QString& address, const QString& label,
+                                          CAmount amount, qint64 timestamp, const QString& requestId)
+{
+    uint256 zero_hash;
+    auto tx = QSharedPointer<Transaction>::create(zero_hash, timestamp,
+        Transaction::RecvWithAddress, address, CAmount{0}, amount);
+    tx->label = label.isEmpty() ? tr("Payment request") : label;
+    tx->status = Transaction::Unconfirmed;
+    tx->isPendingRequest = true;
+    tx->requestId = requestId;
+
+    beginInsertRows(QModelIndex(), 0, 0);
+    m_transactions.push_front(tx);
+    m_pending_request_addresses.insert(address);
+    endInsertRows();
+    Q_EMIT countChanged();
+}
+
+void ActivityListModel::updateReceiveRequest(const QString& requestId, const QString& label, CAmount amount)
+{
+    for (int i = 0; i < m_transactions.size(); ++i) {
+        if (m_transactions[i]->isPendingRequest && m_transactions[i]->requestId == requestId) {
+            m_transactions[i]->label = label.isEmpty() ? tr("Payment request") : label;
+            m_transactions[i]->credit = amount;
+            Q_EMIT dataChanged(index(i), index(i));
+            return;
+        }
+    }
+}
+
+void ActivityListModel::removePendingReceiveRequest(const QString& requestId)
+{
+    for (int i = 0; i < m_transactions.size(); ++i) {
+        if (!m_transactions[i]->isPendingRequest || m_transactions[i]->requestId != requestId) {
+            continue;
+        }
+
+        const QString address = m_transactions[i]->address;
+        beginRemoveRows(QModelIndex(), i, i);
+        m_transactions.removeAt(i);
+        endRemoveRows();
+
+        const bool address_still_pending = std::any_of(m_transactions.cbegin(), m_transactions.cend(),
+            [&address](const QSharedPointer<Transaction>& tx) {
+                return tx->isPendingRequest && tx->address == address;
+            });
+        if (!address_still_pending) {
+            m_pending_request_addresses.remove(address);
+        }
+
+        Q_EMIT countChanged();
+        return;
+    }
 }
 
 void ActivityListModel::updateTransaction(const uint256& hash, const interfaces::WalletTxStatus& tx_status, int num_blocks, int64_t block_time)
@@ -181,15 +289,17 @@ void ActivityListModel::updateTransaction(const uint256& hash, const interfaces:
         }
         for (const auto& tx : transactions) {
             tx->updateStatus(tx_status, num_blocks, block_time);
+            int pendingIdx = findPendingRequestIndex(tx->address);
+            if (pendingIdx != -1) {
+                fulfillPendingRequest(pendingIdx, tx);
+            } else {
+                beginInsertRows(QModelIndex(), 0, 0);
+                m_transactions.push_front(tx);
+                endInsertRows();
+            }
         }
-        beginInsertRows(QModelIndex(), 0, transactions.size() - 1);
-        for (auto it = transactions.crbegin(); it != transactions.crend(); ++it) {
-            m_transactions.push_front(*it);
-        }
-        endInsertRows();
     }
 }
-
 
 int ActivityListModel::findTransactionIndex(const uint256& hash) const
 {
@@ -201,6 +311,43 @@ int ActivityListModel::findTransactionIndex(const uint256& hash) const
         return std::distance(m_transactions.begin(), it);
     }
     return -1;
+}
+
+int ActivityListModel::findPendingRequestIndex(const QString& address) const
+{
+    if (!m_pending_request_addresses.contains(address)) return -1;
+
+    for (int i = 0; i < m_transactions.size(); ++i) {
+        if (m_transactions[i]->isPendingRequest && m_transactions[i]->address == address) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void ActivityListModel::fulfillPendingRequest(int index, const QSharedPointer<Transaction>& real_tx)
+{
+    QSharedPointer<Transaction> pending = m_transactions.at(index);
+
+    pending->hash = real_tx->hash;
+    pending->status = real_tx->status;
+    pending->depth = real_tx->depth;
+    pending->time = real_tx->time;
+    pending->credit = real_tx->credit;
+    pending->debit = real_tx->debit;
+    pending->type = real_tx->type;
+    pending->idx = real_tx->idx;
+    pending->txid = real_tx->txid;
+    pending->countsForBalance = real_tx->countsForBalance;
+    pending->involvesWatchAddress = real_tx->involvesWatchAddress;
+    pending->isPendingRequest = false;
+    if (!real_tx->label.isEmpty()) {
+        pending->label = real_tx->label;
+    }
+
+    m_pending_request_addresses.remove(pending->address);
+
+    Q_EMIT dataChanged(this->index(index), this->index(index));
 }
 
 void ActivityListModel::subscribeToCoreSignals()

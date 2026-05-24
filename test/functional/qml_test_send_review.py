@@ -123,7 +123,7 @@ def fund_wallet(harness, wallet_name):
 
 
 def open_send_page(gui):
-    gui.click("desktopWalletsSendTab")
+    gui.click("sendTabButton")
     gui.wait_for_page("sendPage", timeout_ms=10000)
     gui.settle(timeout_ms=10000)
 
