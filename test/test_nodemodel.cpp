@@ -148,6 +148,8 @@ private Q_SLOTS:
     void startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings();
     void runtimeMessageHandlerOpensAfterInitialization();
     void runtimeQuestionHandlerBlocksForAnswerAndReturnsResult();
+    void runtimeBlockingDialogsAreQueued();
+    void runtimeNonBlockingDialogsAreQueued();
     void initializeFailureShowsStartupWarningsWithoutMakingThemCurrentWarnings();
     void initializeFailureUsesNodeErrorMessages();
     void runawayExceptionSetsFatalStartupError();
@@ -736,6 +738,107 @@ void NodeModelTests::runtimeQuestionHandlerBlocksForAnswerAndReturnsResult()
 
     QCOMPARE(prompt_count, 1);
     QVERIFY(result.load());
+    QVERIFY(!model.runtimeDialogVisible());
+}
+
+void NodeModelTests::runtimeBlockingDialogsAreQueued()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::QuestionFn question_fn;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, handleQuestion(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::QuestionFn fn) {
+            question_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(question_fn);
+    model.initializeResult(true, {});
+
+    QStringList prompts;
+    bool first_result{false};
+    bool second_result{true};
+
+    QObject::connect(&model, &NodeModel::runtimeDialogChanged, &model, [&] {
+        if (!model.runtimeDialogVisible()) return;
+
+        prompts.push_back(model.runtimeDialogMessage());
+        if (model.runtimeDialogMessage() == QStringLiteral("Translated first?")) {
+            QTimer::singleShot(0, &model, [&model] {
+                model.answerRuntimeDialog(true);
+            });
+            second_result = question_fn(
+                bilingual_str{"Second?", "Translated second?"},
+                "Non interactive",
+                "Second caption",
+                CClientUIInterface::ICON_WARNING | CClientUIInterface::BTN_YES | CClientUIInterface::BTN_NO | CClientUIInterface::MODAL);
+        } else if (model.runtimeDialogMessage() == QStringLiteral("Translated second?")) {
+            QTimer::singleShot(0, &model, [&model] {
+                model.answerRuntimeDialog(false);
+            });
+        }
+    });
+
+    first_result = question_fn(
+        bilingual_str{"First?", "Translated first?"},
+        "Non interactive",
+        "First caption",
+        CClientUIInterface::ICON_WARNING | CClientUIInterface::BTN_YES | CClientUIInterface::BTN_NO | CClientUIInterface::MODAL);
+
+    QCOMPARE(prompts, QStringList({QStringLiteral("Translated first?"), QStringLiteral("Translated second?")}));
+    QVERIFY(first_result);
+    QVERIFY(!second_result);
+    QVERIFY(!model.runtimeDialogVisible());
+}
+
+void NodeModelTests::runtimeNonBlockingDialogsAreQueued()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    interfaces::Node::MessageBoxFn message_box_fn;
+
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, handleMessageBox(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::MessageBoxFn fn) {
+            message_box_fn = std::move(fn);
+            return MakeNoopHandler();
+        }));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+    QVERIFY(message_box_fn);
+    model.initializeResult(true, {});
+
+    QSignalSpy runtime_dialog_spy{&model, &NodeModel::runtimeDialogChanged};
+    QVERIFY(!message_box_fn(
+        bilingual_str{"First", "Translated first"},
+        "",
+        CClientUIInterface::ICON_INFORMATION));
+    QCOMPARE(runtime_dialog_spy.count(), 1);
+    QVERIFY(model.runtimeDialogVisible());
+    QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated first"));
+
+    QVERIFY(!message_box_fn(
+        bilingual_str{"Second", "Translated second"},
+        "",
+        CClientUIInterface::ICON_WARNING));
+    QCOMPARE(runtime_dialog_spy.count(), 1);
+    QVERIFY(model.runtimeDialogVisible());
+    QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated first"));
+
+    model.answerRuntimeDialog(true);
+    QCOMPARE(runtime_dialog_spy.count(), 2);
+    QVERIFY(model.runtimeDialogVisible());
+    QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated second"));
+
+    model.answerRuntimeDialog(true);
+    QCOMPARE(runtime_dialog_spy.count(), 3);
     QVERIFY(!model.runtimeDialogVisible());
 }
 

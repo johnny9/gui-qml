@@ -9,6 +9,7 @@
 #include <interfaces/node.h>
 #include <clientversion.h>
 
+#include <deque>
 #include <memory>
 
 #include <QObject>
@@ -166,6 +167,16 @@ private:
         double max_usage_mb{0.0};
     };
 
+    struct RuntimeDialogRequest {
+        QString message;
+        QString caption;
+        unsigned int style{0};
+        bool question{false};
+        bool answer{false};
+        bool answered{false};
+        QEventLoop* loop{nullptr};
+    };
+
     // Properties that are exposed to QML.
     int m_block_tip_height{0};
     int m_num_peers{0};
@@ -196,14 +207,13 @@ private:
     bool m_runtime_dialogs_enabled{false};
     bool m_runtime_dialog_visible{false};
     bool m_runtime_dialog_question{false};
-    bool m_runtime_dialog_answer{false};
-    bool m_runtime_dialog_answered{false};
     QString m_runtime_dialog_title;
     QString m_runtime_dialog_message;
     QString m_runtime_dialog_icon;
     QString m_runtime_dialog_primary_text;
     QString m_runtime_dialog_secondary_text;
-    QEventLoop* m_runtime_dialog_loop{nullptr};
+    std::shared_ptr<RuntimeDialogRequest> m_runtime_dialog_active;
+    std::deque<std::shared_ptr<RuntimeDialogRequest>> m_runtime_dialog_queue;
 
     int m_shutdown_polling_timer_id{0};
 
@@ -240,6 +250,7 @@ private:
     void setHeaderSyncState(int height, int64_t block_time, bool presync);
     bool showRuntimeDialog(const QString& message, const QString& caption, unsigned int style, bool question);
     bool showRuntimeDialogOnGuiThread(const QString& message, const QString& caption, unsigned int style, bool question);
+    void showRuntimeDialogRequest(const std::shared_ptr<RuntimeDialogRequest>& request);
     void requestMempoolInfoRefresh();
     void fetchMempoolInfo();
     void applyMempoolInfo(const MempoolInfo& info);

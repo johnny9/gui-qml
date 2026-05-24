@@ -676,10 +676,6 @@ bool NodeModel::showRuntimeDialog(const QString& message, const QString& caption
 
 bool NodeModel::showRuntimeDialogOnGuiThread(const QString& message, const QString& caption, unsigned int style, bool question)
 {
-    if (m_runtime_dialog_loop) {
-        return false;
-    }
-
     if (!m_runtime_dialogs_enabled && !question) {
         if (style & CClientUIInterface::ICON_ERROR) {
             recordStartupErrorMessage(message);
@@ -690,49 +686,70 @@ bool NodeModel::showRuntimeDialogOnGuiThread(const QString& message, const QStri
     }
 
     const bool blocking{(style & CClientUIInterface::MODAL) || question};
+    auto request{std::make_shared<RuntimeDialogRequest>()};
+    request->message = message;
+    request->caption = caption;
+    request->style = style;
+    request->question = question;
+
     QEventLoop loop;
     if (blocking) {
-        m_runtime_dialog_loop = &loop;
+        request->loop = &loop;
     }
 
-    m_runtime_dialog_title = RuntimeDialogTitle(caption, style);
-    m_runtime_dialog_message = message;
-    m_runtime_dialog_icon = RuntimeDialogIcon(style);
-    m_runtime_dialog_primary_text = RuntimeDialogPrimaryText(style, question);
-    m_runtime_dialog_secondary_text = RuntimeDialogSecondaryText(style, question);
-    m_runtime_dialog_question = question || !m_runtime_dialog_secondary_text.isEmpty();
-    m_runtime_dialog_answer = false;
-    m_runtime_dialog_answered = false;
-    m_runtime_dialog_visible = true;
-    Q_EMIT runtimeDialogChanged();
+    if (m_runtime_dialog_active) {
+        m_runtime_dialog_queue.push_back(request);
+    } else {
+        showRuntimeDialogRequest(request);
+    }
 
     if (!blocking) {
         return false;
     }
 
-    if (!m_runtime_dialog_answered) {
+    if (!request->answered) {
         loop.exec();
     }
-    m_runtime_dialog_loop = nullptr;
+    request->loop = nullptr;
 
-    const bool result{m_runtime_dialog_answer};
-    m_runtime_dialog_visible = false;
+    return request->answer;
+}
+
+void NodeModel::showRuntimeDialogRequest(const std::shared_ptr<RuntimeDialogRequest>& request)
+{
+    m_runtime_dialog_active = request;
+    m_runtime_dialog_title = RuntimeDialogTitle(request->caption, request->style);
+    m_runtime_dialog_message = request->message;
+    m_runtime_dialog_icon = RuntimeDialogIcon(request->style);
+    m_runtime_dialog_primary_text = RuntimeDialogPrimaryText(request->style, request->question);
+    m_runtime_dialog_secondary_text = RuntimeDialogSecondaryText(request->style, request->question);
+    m_runtime_dialog_question = request->question || !m_runtime_dialog_secondary_text.isEmpty();
+    m_runtime_dialog_visible = true;
     Q_EMIT runtimeDialogChanged();
-    return result;
 }
 
 void NodeModel::answerRuntimeDialog(bool accepted)
 {
-    m_runtime_dialog_answer = accepted;
-    m_runtime_dialog_answered = true;
-    if (m_runtime_dialog_loop) {
-        m_runtime_dialog_loop->quit();
+    if (!m_runtime_dialog_active) {
         return;
     }
-    if (m_runtime_dialog_visible) {
-        m_runtime_dialog_visible = false;
-        Q_EMIT runtimeDialogChanged();
+
+    auto answered_dialog{std::move(m_runtime_dialog_active)};
+    answered_dialog->answer = accepted;
+    answered_dialog->answered = true;
+    if (answered_dialog->loop) {
+        answered_dialog->loop->quit();
     }
+
+    if (!m_runtime_dialog_queue.empty()) {
+        auto next_dialog{m_runtime_dialog_queue.front()};
+        m_runtime_dialog_queue.pop_front();
+        showRuntimeDialogRequest(next_dialog);
+        return;
+    }
+
+    m_runtime_dialog_visible = false;
+    Q_EMIT runtimeDialogChanged();
 }
 
 void NodeModel::ConnectToBannedListChangedSignal()
