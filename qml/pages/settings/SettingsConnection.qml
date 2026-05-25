@@ -29,8 +29,21 @@ Page {
                 headerText: qsTr("Connection settings")
                 headerMargin: 0
                 detailActive: true
-                detailItem: ConnectionSettings {
-                    onNext: stack.push(proxySettings)
+                detailItem: ColumnLayout {
+                    spacing: 12
+                    InfoBanner {
+                        objectName: "connectionRestartRequiredBanner"
+                        visible: !root.onboarding && optionsModel.connectionSettingsDirty
+                        Layout.fillWidth: true
+                        iconSource: "image://images/info-filled"
+                        title: qsTr("Restart required")
+                        message: qsTr("Restart the application for these changes to take effect.")
+                        contentMargin: 14
+                    }
+                    ConnectionSettings {
+                        Layout.fillWidth: true
+                        onNext: stack.push(proxySettings)
+                    }
                 }
 
                 states: [

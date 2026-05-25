@@ -19,13 +19,26 @@ InformationPage {
     headerText: qsTr("Storage settings")
     headerMargin: 0
     detailActive: true
-    detailItem: StorageSettings {
-        id: storageSettings
-        onCustomStorageChanged: {
-            root.customStorage = storageSettings.customStorage
+    detailItem: ColumnLayout {
+        spacing: 12
+        InfoBanner {
+            objectName: "storageRestartRequiredBanner"
+            visible: !root.onboarding && optionsModel.storageSettingsDirty
+            Layout.fillWidth: true
+            iconSource: "image://images/info-filled"
+            title: qsTr("Restart required")
+            message: qsTr("Restart the application for these changes to take effect.")
+            contentMargin: 14
         }
-        onCustomStorageAmountChanged: {
-            root.customStorageAmount = storageSettings.customStorageAmount
+        StorageSettings {
+            id: storageSettings
+            Layout.fillWidth: true
+            onCustomStorageChanged: {
+                root.customStorage = storageSettings.customStorage
+            }
+            onCustomStorageAmountChanged: {
+                root.customStorageAmount = storageSettings.customStorageAmount
+            }
         }
     }
     states: [

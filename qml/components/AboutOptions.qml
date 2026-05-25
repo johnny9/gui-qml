@@ -63,6 +63,40 @@ ColumnLayout {
     }
     Separator { Layout.fillWidth: true }
     Setting {
+        id: openBitcoinConf
+        objectName: "openBitcoinConfSetting"
+        Layout.fillWidth: true
+        header: qsTr("Open bitcoin.conf")
+        description: qsTr("Edit the active Bitcoin Core configuration file")
+        actionItem: CaretRightIcon {
+            color: openBitcoinConf.stateColor
+        }
+        onClicked: optionsModel.openBitcoinConf()
+    }
+    Separator { Layout.fillWidth: true }
+    Setting {
+        id: resetGuiSettings
+        objectName: "resetGuiSettingsSetting"
+        Layout.fillWidth: true
+        header: qsTr("Reset GUI settings")
+        description: qsTr("Clear saved interface settings on the next start")
+        actionItem: CaretRightIcon {
+            color: resetGuiSettings.stateColor
+        }
+        onClicked: optionsModel.resetGuiSettings()
+    }
+    CoreText {
+        objectName: "settingsActionErrorText"
+        visible: optionsModel.settingsActionError.length > 0
+        Layout.fillWidth: true
+        text: optionsModel.settingsActionError
+        font.pixelSize: 15
+        color: Theme.color.red
+        horizontalAlignment: Text.AlignLeft
+        wrap: true
+    }
+    Separator { Layout.fillWidth: true }
+    Setting {
         id: gotoDeveloper
         objectName: "gotoDeveloperSetting"
         Layout.fillWidth: true

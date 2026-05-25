@@ -26,7 +26,21 @@ InformationPage {
     headerText: qsTr("Developer options")
     headerMargin: 0
     detailActive: true
-    detailItem: DeveloperOptions {}
+    detailItem: ColumnLayout {
+        spacing: 12
+        InfoBanner {
+            objectName: "developerRestartRequiredBanner"
+            visible: !root.onboarding && optionsModel.developerSettingsDirty
+            Layout.fillWidth: true
+            iconSource: "image://images/info-filled"
+            title: qsTr("Restart required")
+            message: qsTr("Restart the application for these changes to take effect.")
+            contentMargin: 14
+        }
+        DeveloperOptions {
+            Layout.fillWidth: true
+        }
+    }
 
     states: [
         State {
