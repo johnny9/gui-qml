@@ -74,6 +74,17 @@ QString FormatFeeEstimate(CAmount amount)
     return bitcoin_amount.displayWithUnit();
 }
 
+QmlBitcoinUnits::Unit DisplayUnit(int display_unit)
+{
+    switch (display_unit) {
+    case static_cast<int>(QmlBitcoinUnits::Unit::BTC): return QmlBitcoinUnits::Unit::BTC;
+    case static_cast<int>(QmlBitcoinUnits::Unit::mBTC): return QmlBitcoinUnits::Unit::mBTC;
+    case static_cast<int>(QmlBitcoinUnits::Unit::uBTC): return QmlBitcoinUnits::Unit::uBTC;
+    case static_cast<int>(QmlBitcoinUnits::Unit::SAT): return QmlBitcoinUnits::Unit::SAT;
+    }
+    return QmlBitcoinUnits::Unit::BTC;
+}
+
 std::optional<CAmount> ParseCustomFeeRatePerKvB(const QString& custom_fee_rate)
 {
     const QString trimmed = custom_fee_rate.trimmed();
@@ -360,10 +371,7 @@ QString WalletQmlModel::balance() const
     if (!m_wallet) {
         return "0";
     }
-    QmlBitcoinUnits::Unit unit = (m_display_unit == 1)
-        ? QmlBitcoinUnits::Unit::SAT
-        : QmlBitcoinUnits::Unit::BTC;
-    return QmlBitcoinUnits::format(unit, m_wallet->getBalance());
+    return QmlBitcoinUnits::format(DisplayUnit(m_display_unit), m_wallet->getBalance());
 }
 
 qint64 WalletQmlModel::balanceSatoshi() const

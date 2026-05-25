@@ -69,7 +69,9 @@ ColumnLayout {
             }
 
             validator: RegExpValidator {
-                regExp: /^(0|[1-9]\d*)(\.\d{0,8})?$/
+                regExp: root.amount && root.amount.unit === BitcoinAmount.SAT
+                    ? /^(0|[1-9]\d*)?$/
+                    : /^(0|[1-9]\d*)(\.\d{0,8})?$/
             }
             maximumLength: 17
         }

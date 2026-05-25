@@ -323,7 +323,7 @@ void ActivityFilterProxyModelTests::exportsCsvUsingDisplayUnit()
 
     ActivityFilterProxyModel proxy;
     proxy.setSourceModel(&source);
-    proxy.setDisplayUnit(1);
+    proxy.setDisplayUnit(3);
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());

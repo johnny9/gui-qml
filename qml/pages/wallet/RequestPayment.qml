@@ -221,7 +221,7 @@ Page {
                         color: Theme.color.neutral9
                         placeholderTextColor: enabled ? Theme.color.neutral7 : Theme.color.neutral4
                         background: Item {}
-                        placeholderText: !root.request || root.request.amount.unit === BitcoinAmount.BTC
+                        placeholderText: !root.request || root.request.amount.unit !== BitcoinAmount.SAT
                             ? "0.00000000" : "0"
                         selectByMouse: true
                         enabled: root.requestIsEditing()
@@ -243,11 +243,11 @@ Page {
                             }
                         }
                         validator: RegularExpressionValidator {
-                            regularExpression: !root.request || root.request.amount.unit === BitcoinAmount.BTC
+                            regularExpression: !root.request || root.request.amount.unit !== BitcoinAmount.SAT
                                 ? /^(0|[1-9]\d{0,7})(\.\d{0,8})?$/
                                 : /^(0|[1-9]\d{0,15})$/
                         }
-                        maximumLength: !root.request || root.request.amount.unit === BitcoinAmount.BTC ? 17 : 16
+                        maximumLength: !root.request || root.request.amount.unit !== BitcoinAmount.SAT ? 17 : 16
                     }
 
                     Item {

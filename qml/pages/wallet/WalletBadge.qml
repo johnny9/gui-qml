@@ -145,7 +145,7 @@ Button {
                 CoreText {
                     id: balanceText
                     visible: root.showBalance
-                    text: root.balance + " " + (optionsModel.displayUnit === 1 ? (root.balanceSatoshi === 1 ? qsTr("sat") : qsTr("sats")) : "₿")
+                    text: root.balance + " " + optionsModel.displayUnitLabelForAmount(root.balanceSatoshi)
                     color: Theme.color.neutral7
                 }
             }

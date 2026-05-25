@@ -13,7 +13,7 @@ TestCase {
     width: 600
     height: 800
 
-    // Minimal component exercising the BTC/SAT OptionButton binding logic.
+    // Minimal component exercising the display-unit OptionButton binding logic.
     // Uses OptionButton directly (no NavButton / org.bitcoincore.qt dependency)
     // to test the optionsModel.displayUnit binding in isolation.
     // ButtonGroup is intentionally omitted: the declarative 'checked:' bindings
@@ -29,10 +29,22 @@ TestCase {
                 onClicked: optionsModel.displayUnit = 0
             }
             OptionButton {
-                objectName: "displayUnitSAT"
-                text: "sat"
+                objectName: "displayUnitMBTC"
+                text: "mBTC"
                 checked: optionsModel.displayUnit === 1
                 onClicked: optionsModel.displayUnit = 1
+            }
+            OptionButton {
+                objectName: "displayUnitUBTC"
+                text: "bits"
+                checked: optionsModel.displayUnit === 2
+                onClicked: optionsModel.displayUnit = 2
+            }
+            OptionButton {
+                objectName: "displayUnitSAT"
+                text: "sat"
+                checked: optionsModel.displayUnit === 3
+                onClicked: optionsModel.displayUnit = 3
             }
         }
     }
@@ -52,7 +64,7 @@ TestCase {
     }
 
     function test_displayUnit_SAT_button_updates_on_model_change() {
-        optionsModel.displayUnit = 1
+        optionsModel.displayUnit = 3
         const obj = createTemporaryObject(displayUnitButtons, this)
         verify(obj !== null)
 
@@ -78,14 +90,14 @@ TestCase {
 
         // Invoke the onClicked handler directly to simulate a user press.
         satBtn.clicked()
-        compare(optionsModel.displayUnit, 1)
+        compare(optionsModel.displayUnit, 3)
 
         // Reset
         optionsModel.displayUnit = 0
     }
 
     function test_displayUnit_clicking_BTC_after_SAT_resets_model() {
-        optionsModel.displayUnit = 1
+        optionsModel.displayUnit = 3
         const obj = createTemporaryObject(displayUnitButtons, this)
         verify(obj !== null)
 
@@ -104,12 +116,12 @@ TestCase {
         Text {
             property string balance: "1 000"
             property var balanceSatoshi: 1000
-            text: balance + " " + (optionsModel.displayUnit === 1 ? (balanceSatoshi === 1 ? "sat" : "sats") : "₿")
+            text: balance + " " + optionsModel.displayUnitLabelForAmount(balanceSatoshi)
         }
     }
 
     function test_walletBadge_suffix_is_sats_in_sat_mode() {
-        optionsModel.displayUnit = 1
+        optionsModel.displayUnit = 3
         const obj = createTemporaryObject(balanceSuffixComponent, this)
         verify(obj !== null)
         compare(obj.text, "1 000 sats")
@@ -117,7 +129,7 @@ TestCase {
     }
 
     function test_walletBadge_suffix_is_sat_singular_in_sat_mode() {
-        optionsModel.displayUnit = 1
+        optionsModel.displayUnit = 3
         const obj = createTemporaryObject(balanceSuffixComponent, this)
         verify(obj !== null)
         obj.balanceSatoshi = 1
@@ -134,14 +146,14 @@ TestCase {
 
     // Tests displayUnitLabelForAmount pluralization logic.
     function test_displayUnitLabelForAmount_singular_in_sat_mode() {
-        optionsModel.displayUnit = 1
+        optionsModel.displayUnit = 3
         compare(optionsModel.displayUnitLabelForAmount(1), "sat")
         compare(optionsModel.displayUnitLabelForAmount(-1), "sat")
         optionsModel.displayUnit = 0
     }
 
     function test_displayUnitLabelForAmount_plural_in_sat_mode() {
-        optionsModel.displayUnit = 1
+        optionsModel.displayUnit = 3
         compare(optionsModel.displayUnitLabelForAmount(0), "sats")
         compare(optionsModel.displayUnitLabelForAmount(2), "sats")
         compare(optionsModel.displayUnitLabelForAmount(1000), "sats")

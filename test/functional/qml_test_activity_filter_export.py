@@ -218,7 +218,7 @@ def run_test(save_screenshots=False, screenshot_root=None):
         checkpoints.checkpoint("display unit switched to sats", gui)
 
         gui.click("activityTabButton")
-        gui.wait_for_property("activityFilterProxyModel", "displayUnit", 1, timeout_ms=5000)
+        gui.wait_for_property("activityFilterProxyModel", "displayUnit", 3, timeout_ms=5000)
         gui.wait_for_property("activityFilterProxyModel", "count", 1, timeout_ms=10000)
         checkpoints.checkpoint("returned to filtered Activity in sats", gui)
 

@@ -4,6 +4,7 @@
 
 #include <qml/bitcoinamount.h>
 
+#include <cassert>
 #include <limits>
 
 #include <QRegularExpression>
@@ -27,9 +28,10 @@ QString BitcoinAmount::sanitize(const QString &text)
         result = parts[0] + "." + parts[1];
     }
 
-    // Limit decimal places to 8
-    if (parts.size() == 2 && parts[1].length() > 8) {
-        result = parts[0] + "." + parts[1].left(8);
+    // Limit decimal places to the selected unit precision.
+    const int decimals = unitDecimals();
+    if (parts.size() == 2 && parts[1].length() > decimals) {
+        result = parts[0] + "." + parts[1].left(decimals);
     }
 
     return result;
@@ -85,6 +87,8 @@ QString BitcoinAmount::unitLabel() const
 {
     switch (m_unit) {
     case Unit::BTC: return QStringLiteral("₿");
+    case Unit::mBTC: return QStringLiteral("mBTC");
+    case Unit::uBTC: return QStringLiteral("bits");
     case Unit::SAT:
         return (qAbs(m_satoshi) == 1)
             ? tr("sat", "unit label, singular")
@@ -95,10 +99,10 @@ QString BitcoinAmount::unitLabel() const
 
 void BitcoinAmount::flipUnit()
 {
-    if (m_unit == Unit::BTC) {
-        m_unit = Unit::SAT;
-    } else {
+    if (m_unit == Unit::SAT) {
         m_unit = Unit::BTC;
+    } else {
+        m_unit = Unit::SAT;
     }
     Q_EMIT unitChanged();
     Q_EMIT displayChanged();
@@ -126,11 +130,17 @@ QString BitcoinAmount::toDisplay() const
     if (!m_isSet) {
         return "";
     }
-    if (m_unit == Unit::SAT) {
-        return QString::number(m_satoshi);
-    } else {
-        return satsToBtcString(m_satoshi);
+    const qint64 factor = unitFactor();
+    const int decimals = unitDecimals();
+    const bool negative = m_satoshi < 0;
+    const qint64 abs_sat = negative ? -m_satoshi : m_satoshi;
+    const qint64 whole = abs_sat / factor;
+    QString result = QString::number(whole);
+    if (decimals > 0) {
+        result += "." + QString::number(abs_sat % factor).rightJustified(decimals, '0');
     }
+    if (negative) result.prepend('-');
+    return result;
 }
 
 QString BitcoinAmount::displayWithUnit() const
@@ -139,25 +149,48 @@ QString BitcoinAmount::displayWithUnit() const
     return display.isEmpty() ? QString{} : display + QStringLiteral(" ") + unitLabel();
 }
 
-qint64 BitcoinAmount::btcToSats(const QString& btcSanitized)
+qint64 BitcoinAmount::unitFactor() const
 {
-    if (btcSanitized.isEmpty() || btcSanitized == ".") return 0;
+    switch (m_unit) {
+    case Unit::BTC: return COIN;
+    case Unit::mBTC: return 100000;
+    case Unit::uBTC: return 100;
+    case Unit::SAT: return 1;
+    }
+    assert(false);
+}
 
-    QString cleaned = btcSanitized;
+int BitcoinAmount::unitDecimals() const
+{
+    switch (m_unit) {
+    case Unit::BTC: return 8;
+    case Unit::mBTC: return 5;
+    case Unit::uBTC: return 2;
+    case Unit::SAT: return 0;
+    }
+    assert(false);
+}
+
+qint64 BitcoinAmount::displayToSats(const QString& sanitized) const
+{
+    if (sanitized.isEmpty() || sanitized == ".") return 0;
+
+    QString cleaned = sanitized;
     if (cleaned.startsWith('.')) cleaned.prepend('0');
 
     QStringList parts = cleaned.split('.');
     const qint64 whole = parts[0].isEmpty() ? 0 : parts[0].toLongLong();
     qint64 frac = 0;
     if (parts.size() == 2) {
-        frac = parts[1].leftJustified(8, '0').toLongLong();
+        frac = parts[1].leftJustified(unitDecimals(), '0').toLongLong();
     }
 
-    if (whole > std::numeric_limits<qint64>::max() / COIN) {
+    const qint64 factor = unitFactor();
+    if (whole > std::numeric_limits<qint64>::max() / factor) {
         return std::numeric_limits<qint64>::max();
     }
 
-    return whole * COIN + frac;
+    return whole * factor + frac;
 }
 
 void BitcoinAmount::fromDisplay(const QString& text)
@@ -168,13 +201,13 @@ void BitcoinAmount::fromDisplay(const QString& text)
     }
 
     qint64 newSat = 0;
-    if (m_unit == Unit::BTC) {
-        QString sanitized = sanitize(text);
-        newSat = btcToSats(sanitized);
-    } else {
+    if (m_unit == Unit::SAT) {
         QString digitsOnly = text;
         digitsOnly.remove(QRegularExpression("[^0-9]"));
         newSat = digitsOnly.trimmed().isEmpty() ? 0 : digitsOnly.toLongLong();
+    } else {
+        QString sanitized = sanitize(text);
+        newSat = displayToSats(sanitized);
     }
     setSatoshi(newSat);
 }

@@ -11,6 +11,7 @@
 #include <QRegularExpression>
 #include <QSortFilterProxyModel>
 #include <QStringList>
+#include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
 #include <qqml.h>
@@ -138,6 +139,8 @@ class MockBitcoinAmount : public QObject
 public:
     enum Unit {
         BTC,
+        mBTC,
+        uBTC,
         SAT
     };
     Q_ENUM(Unit)
@@ -155,14 +158,22 @@ public:
         }
 
         const double value = amount_text.toDouble(&ok);
-        return ok ? static_cast<qint64>(value * 100000000.0 + 0.5) : 0;
+        if (!ok) return 0;
+        if (m_unit == mBTC) return static_cast<qint64>(value * 100000.0 + 0.5);
+        if (m_unit == uBTC) return static_cast<qint64>(value * 100.0 + 0.5);
+        return static_cast<qint64>(value * 100000000.0 + 0.5);
     }
-    QString unitLabel() const { return m_unit == BTC ? QStringLiteral("BTC") : QStringLiteral("sat"); }
+    QString unitLabel() const
+    {
+        if (m_unit == mBTC) return QStringLiteral("mBTC");
+        if (m_unit == uBTC) return QStringLiteral("bits");
+        return m_unit == BTC ? QStringLiteral("₿") : QStringLiteral("sat");
+    }
     QString displayWithUnit() const { return m_display.isEmpty() ? QString{} : m_display + QStringLiteral(" ") + unitLabel(); }
     Q_INVOKABLE void format() {}
     Q_INVOKABLE void flipUnit()
     {
-        m_unit = (m_unit == BTC) ? SAT : BTC;
+        m_unit = (m_unit == SAT) ? BTC : SAT;
         Q_EMIT unitChanged();
     }
 
@@ -1180,6 +1191,11 @@ class MockOptionsModel : public QObject
     Q_PROPERTY(int pruneSizeGB MEMBER m_prune_size_gb NOTIFY pruneSizeGBChanged)
     Q_PROPERTY(QString dataDir MEMBER m_data_dir NOTIFY dataDirChanged)
     Q_PROPERTY(QString getDefaultDataDirString READ getDefaultDataDirString CONSTANT)
+    Q_PROPERTY(QUrl getDefaultDataDirectory READ getDefaultDataDirectory CONSTANT)
+    Q_PROPERTY(QString dataDirError MEMBER m_data_dir_error NOTIFY dataDirErrorChanged)
+    Q_PROPERTY(QString dataDirAvailable MEMBER m_data_dir_available NOTIFY dataDirAvailableChanged)
+    Q_PROPERTY(QString settingsActionError MEMBER m_settings_action_error NOTIFY settingsActionErrorChanged)
+    Q_PROPERTY(bool existingCoreProfile MEMBER m_existing_core_profile NOTIFY existingCoreProfileChanged)
     Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
     Q_PROPERTY(QString displayUnitLabel READ displayUnitLabel NOTIFY displayUnitChanged)
     Q_PROPERTY(QString languageSummary READ languageSummary NOTIFY languageChanged)
@@ -1197,6 +1213,10 @@ public:
     int m_prune_size_gb{2};
     QString m_data_dir{QStringLiteral("/tmp/bitcoin-default")};
     QString m_custom_data_dir{QStringLiteral("/tmp/bitcoin-custom")};
+    QString m_data_dir_error;
+    QString m_data_dir_available{QStringLiteral("100.0 GB available")};
+    QString m_settings_action_error;
+    bool m_existing_core_profile{false};
 
     int maxMempoolSizeMB() const { return m_max_mempool_size_mb; }
     void setMaxMempoolSizeMB(int value)
@@ -1206,18 +1226,26 @@ public:
         Q_EMIT maxMempoolSizeMBChanged(value);
     }
     QString getDefaultDataDirString() const { return QStringLiteral("/tmp/bitcoin-default"); }
+    QUrl getDefaultDataDirectory() const { return QUrl::fromLocalFile(getDefaultDataDirString()); }
     Q_INVOKABLE QString getCustomDataDirString() const { return m_custom_data_dir; }
     Q_INVOKABLE void setCustomDataDirString(const QString& dir) { m_custom_data_dir = dir; }
-    Q_INVOKABLE void setCustomDataDirArgs(const QString& dir) { m_data_dir = dir; }
-    Q_INVOKABLE void onboard() {}
+    Q_INVOKABLE bool setCustomDataDirArgs(const QString& dir) { m_data_dir = dir; Q_EMIT dataDirChanged(); return true; }
+    Q_INVOKABLE bool validateDataDirSelection() { return true; }
+    Q_INVOKABLE bool onboard() { return true; }
 
     int displayUnit() const { return m_displayUnit; }
     void setDisplayUnit(int u) {
         if (u != m_displayUnit) { m_displayUnit = u; Q_EMIT displayUnitChanged(u); }
     }
-    QString displayUnitLabel() const { return m_displayUnit == 1 ? "sat" : "BTC"; }
+    QString displayUnitLabel() const {
+        if (m_displayUnit == 1) return "mBTC";
+        if (m_displayUnit == 2) return "bits";
+        if (m_displayUnit == 3) return "sat";
+        return "BTC";
+    }
     Q_INVOKABLE QString displayUnitLabelForAmount(qint64 satoshi) const {
-        if (m_displayUnit != 1) return QString("₿");
+        if (m_displayUnit == 0) return QString("₿");
+        if (m_displayUnit != 3) return displayUnitLabel();
         return (qAbs(satoshi) == 1) ? QString("sat") : QString("sats");
     }
     QString language() const { return m_language; }
@@ -1233,6 +1261,8 @@ public:
         if (tag == "fr") return "Français — French";
         return tag;
     }
+    Q_INVOKABLE bool resetGuiSettings() { return true; }
+    Q_INVOKABLE bool openBitcoinConf() { return true; }
 
 Q_SIGNALS:
     void listenChanged();
@@ -1242,6 +1272,10 @@ Q_SIGNALS:
     void pruneChanged();
     void pruneSizeGBChanged();
     void dataDirChanged();
+    void dataDirErrorChanged();
+    void dataDirAvailableChanged();
+    void settingsActionErrorChanged();
+    void existingCoreProfileChanged();
     void displayUnitChanged(int unit);
     void languageChanged();
 

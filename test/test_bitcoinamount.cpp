@@ -15,6 +15,8 @@ private Q_SLOTS:
     void btcToSats_roundtrip();
     void sanitize_clampsAndFilters();
     void display_flow_btc();
+    void display_flow_mbtc();
+    void display_flow_ubtc();
     void display_flow_sat();
     void displayWithUnit_formatsAmountAndUnit();
     void flipUnit_changesLabelAndDisplaySignal();
@@ -56,6 +58,26 @@ void BitcoinAmountTests::display_flow_btc()
     amt.setUnit(BitcoinAmount::Unit::BTC);
     amt.setSatoshi(2 * COIN);
     QCOMPARE(amt.toDisplay(), QString("2.00000000"));
+}
+
+void BitcoinAmountTests::display_flow_mbtc()
+{
+    BitcoinAmount amt;
+    amt.setUnit(BitcoinAmount::Unit::mBTC);
+    amt.setSatoshi(COIN);
+    QCOMPARE(amt.toDisplay(), QString("1000.00000"));
+    amt.fromDisplay("1.23456");
+    QCOMPARE(amt.satoshi(), 123456);
+}
+
+void BitcoinAmountTests::display_flow_ubtc()
+{
+    BitcoinAmount amt;
+    amt.setUnit(BitcoinAmount::Unit::uBTC);
+    amt.setSatoshi(123456);
+    QCOMPARE(amt.toDisplay(), QString("1234.56"));
+    amt.fromDisplay("1.23");
+    QCOMPARE(amt.satoshi(), 123);
 }
 
 void BitcoinAmountTests::display_flow_sat()

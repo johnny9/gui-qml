@@ -22,6 +22,8 @@ class BitcoinAmount : public QObject
 public:
     enum class Unit {
         BTC,
+        mBTC,
+        uBTC,
         SAT
     };
     Q_ENUM(Unit)
@@ -56,7 +58,9 @@ Q_SIGNALS:
 
 private:
     QString sanitize(const QString& text);
-    static qint64 btcToSats(const QString& btc);
+    qint64 displayToSats(const QString& sanitized) const;
+    qint64 unitFactor() const;
+    int unitDecimals() const;
 
     qint64 m_satoshi{0};
     bool m_isSet{false};

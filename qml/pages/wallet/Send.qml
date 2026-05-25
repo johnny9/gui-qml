@@ -309,11 +309,11 @@ PageStack {
                                 }
                             }
                             validator: RegularExpressionValidator {
-                                regularExpression: root.recipient.amount.unit === BitcoinAmount.BTC
+                                regularExpression: root.recipient.amount.unit !== BitcoinAmount.SAT
                                     ? /^(0|[1-9]\d{0,7})(\.\d{0,8})?$/
                                     : /^(0|[1-9]\d{0,15})$/
                             }
-                            maximumLength: root.recipient.amount.unit === BitcoinAmount.BTC ? 17 : 16
+                            maximumLength: root.recipient.amount.unit !== BitcoinAmount.SAT ? 17 : 16
                         }
                         Item {
                             objectName: "sendAmountUnitToggle"

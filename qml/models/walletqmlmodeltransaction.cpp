@@ -8,6 +8,31 @@
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 
+namespace {
+QmlBitcoinUnits::Unit DisplayUnit(int display_unit)
+{
+    switch (display_unit) {
+    case static_cast<int>(QmlBitcoinUnits::Unit::BTC): return QmlBitcoinUnits::Unit::BTC;
+    case static_cast<int>(QmlBitcoinUnits::Unit::mBTC): return QmlBitcoinUnits::Unit::mBTC;
+    case static_cast<int>(QmlBitcoinUnits::Unit::uBTC): return QmlBitcoinUnits::Unit::uBTC;
+    case static_cast<int>(QmlBitcoinUnits::Unit::SAT): return QmlBitcoinUnits::Unit::SAT;
+    }
+    return QmlBitcoinUnits::Unit::BTC;
+}
+
+QString DisplayUnitLabel(QmlBitcoinUnits::Unit unit, CAmount value)
+{
+    switch (unit) {
+    case QmlBitcoinUnits::Unit::BTC: return QStringLiteral("₿");
+    case QmlBitcoinUnits::Unit::mBTC: return QStringLiteral("mBTC");
+    case QmlBitcoinUnits::Unit::uBTC: return QStringLiteral("bits");
+    case QmlBitcoinUnits::Unit::SAT:
+        return (qAbs(value) == 1) ? QStringLiteral("sat") : QStringLiteral("sats");
+    }
+    return QStringLiteral("₿");
+}
+} // namespace
+
 WalletQmlModelTransaction::WalletQmlModelTransaction(const SendRecipientsListModel* recipient, QObject* parent)
     : QObject(parent),
       m_amount(recipient->totalAmountSatoshi()),
@@ -35,12 +60,9 @@ BitcoinAmount* WalletQmlModelTransaction::amountAmount() const
 
 QString WalletQmlModelTransaction::formatWithUnit(CAmount value, int display_unit)
 {
-    auto unit = (display_unit == 1) ? QmlBitcoinUnits::Unit::SAT : QmlBitcoinUnits::Unit::BTC;
+    const auto unit = DisplayUnit(display_unit);
     QString num = QmlBitcoinUnits::format(unit, value, false, QmlBitcoinUnits::SeparatorStyle::STANDARD);
-    if (display_unit == 1) {
-        return num + " " + ((qAbs(value) == 1) ? QStringLiteral("sat") : QStringLiteral("sats"));
-    }
-    return num + " ₿";
+    return num + " " + DisplayUnitLabel(unit, value);
 }
 
 QString WalletQmlModelTransaction::amount() const

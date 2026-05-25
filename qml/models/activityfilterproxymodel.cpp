@@ -34,12 +34,24 @@ void WriteCsvRow(QTextStream& stream, const QStringList& values)
 
 QmlBitcoinUnits::Unit ExportDisplayUnit(int display_unit)
 {
-    return display_unit == 1 ? QmlBitcoinUnits::Unit::SAT : QmlBitcoinUnits::Unit::BTC;
+    switch (display_unit) {
+    case static_cast<int>(QmlBitcoinUnits::Unit::BTC): return QmlBitcoinUnits::Unit::BTC;
+    case static_cast<int>(QmlBitcoinUnits::Unit::mBTC): return QmlBitcoinUnits::Unit::mBTC;
+    case static_cast<int>(QmlBitcoinUnits::Unit::uBTC): return QmlBitcoinUnits::Unit::uBTC;
+    case static_cast<int>(QmlBitcoinUnits::Unit::SAT): return QmlBitcoinUnits::Unit::SAT;
+    }
+    return QmlBitcoinUnits::Unit::BTC;
 }
 
 QString ExportDisplayUnitLabel(int display_unit)
 {
-    return display_unit == 1 ? QStringLiteral("sat") : QStringLiteral("BTC");
+    switch (ExportDisplayUnit(display_unit)) {
+    case QmlBitcoinUnits::Unit::BTC: return QStringLiteral("BTC");
+    case QmlBitcoinUnits::Unit::mBTC: return QStringLiteral("mBTC");
+    case QmlBitcoinUnits::Unit::uBTC: return QStringLiteral("bits");
+    case QmlBitcoinUnits::Unit::SAT: return QStringLiteral("sat");
+    }
+    return QStringLiteral("BTC");
 }
 } // namespace
 

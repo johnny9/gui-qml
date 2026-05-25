@@ -9,7 +9,7 @@
 #include <qml/models/settings_keys.h>
 
 // Tests for display-settings persistence (language, display unit)
-// and the QmlBitcoinUnits SAT/BTC formatting used by Transaction::prettyAmount().
+// and the QmlBitcoinUnits formatting used by Transaction::prettyAmount().
 // Persistence tests use SettingsKeys::* constants so that a key-name change in
 // the model will immediately break the corresponding test.
 class DisplaySettingsTests : public QObject {
@@ -26,6 +26,8 @@ private Q_SLOTS:
     void qmlBitcoinUnits_satFormat_positive();
     void qmlBitcoinUnits_satFormat_negative();
     void qmlBitcoinUnits_btcFormat_roundtrip();
+    void qmlBitcoinUnits_mbtcFormat_roundtrip();
+    void qmlBitcoinUnits_ubtcFormat_roundtrip();
 
 private:
     // Use a test-only settings group to avoid polluting real user settings.
@@ -64,7 +66,7 @@ void DisplaySettingsTests::displayUnit_persistsToQSettings()
     {
         QSettings settings;
         settings.beginGroup(TEST_GROUP);
-        settings.setValue(SettingsKeys::DISPLAY_UNIT, 1);
+        settings.setValue(SettingsKeys::DISPLAY_UNIT, 3);
         settings.endGroup();
     }
     {
@@ -72,7 +74,7 @@ void DisplaySettingsTests::displayUnit_persistsToQSettings()
         settings.beginGroup(TEST_GROUP);
         int unit = settings.value(SettingsKeys::DISPLAY_UNIT, 0).toInt();
         settings.endGroup();
-        QCOMPARE(unit, 1);
+        QCOMPARE(unit, 3);
     }
 }
 
@@ -123,6 +125,18 @@ void DisplaySettingsTests::qmlBitcoinUnits_btcFormat_roundtrip()
     // 1 BTC = 100,000,000 sat; format() uses '.' separator (not locale-dependent).
     QString result = QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::BTC, 100000000);
     QCOMPARE(result, QStringLiteral("1.00000000"));
+}
+
+void DisplaySettingsTests::qmlBitcoinUnits_mbtcFormat_roundtrip()
+{
+    QString result = QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::mBTC, 100000000);
+    QCOMPARE(result, QStringLiteral("1000.00000"));
+}
+
+void DisplaySettingsTests::qmlBitcoinUnits_ubtcFormat_roundtrip()
+{
+    QString result = QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::uBTC, 100000000);
+    QCOMPARE(result, QStringLiteral("1\u2009000\u2009000.00"));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN
