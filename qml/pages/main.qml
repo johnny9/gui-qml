@@ -76,13 +76,19 @@ ApplicationWindow {
         id: onboardingWizard
         OnboardingWizard {
             onFinished: {
-                optionsModel.onboard()
+                if (!optionsModel.onboard()) {
+                    return
+                }
                 nodeModel.startNodeInitializionThread()
                 if (AppMode.walletEnabled && AppMode.isDesktop) {
-                    main.push([
-                        desktopWallets, {},
-                        createWalletWizard, { "launchContext": CreateWalletWizard.Context.Onboarding }
-                    ])
+                    if (optionsModel.existingCoreProfile) {
+                        main.push(desktopWallets)
+                    } else {
+                        main.push([
+                            desktopWallets, {},
+                            createWalletWizard, { "launchContext": CreateWalletWizard.Context.Onboarding }
+                        ])
+                    }
                 } else {
                     main.push(node)
                 }

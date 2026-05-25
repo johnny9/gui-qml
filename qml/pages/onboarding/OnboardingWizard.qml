@@ -37,7 +37,13 @@ PageStack {
         id: storageLocation
         OnboardingStorageLocation {
             onBack: root.pop()
-            onNext: root.push(storageAmount)
+            onNext: {
+                if (optionsModel.existingCoreProfile) {
+                    root.finished()
+                } else {
+                    root.push(storageAmount)
+                }
+            }
         }
     }
     Component {

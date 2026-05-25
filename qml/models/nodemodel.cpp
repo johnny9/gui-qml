@@ -111,7 +111,6 @@ NodeModel::NodeModel(interfaces::Node& node)
     m_mempool_information_available = !gArgs.GetBoolArg("-blocksonly", DEFAULT_BLOCKSONLY);
     initializeMempoolInfoPolling();
     refreshPeerCounts();
-    refreshWarnings();
     ConnectToBlockTipSignal();
     ConnectToHeaderTipSignal();
     ConnectToNumConnectionsChangedSignal();

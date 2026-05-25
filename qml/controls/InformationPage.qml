@@ -40,6 +40,7 @@ Page {
     property string buttonObjectName: "continueButton"
     property real maximumWidth: 600
     property real detailMaximumWidth: 450
+    property var nextValidator: function() { return true }
 
     background: null
     clip: true
@@ -110,7 +111,11 @@ Page {
             anchors.rightMargin: 20
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.buttonText
-            onClicked: root.next()
+            onClicked: {
+                if (root.nextValidator()) {
+                    root.next()
+                }
+            }
         }
     }
 

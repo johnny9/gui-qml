@@ -26,5 +26,6 @@ InformationPage {
     descriptionMargin: 20
     detailActive: true
     detailItem: StorageLocations {}
-    buttonText: qsTr("Next")
+    buttonText: optionsModel.existingCoreProfile ? qsTr("Use existing profile") : qsTr("Next")
+    nextValidator: function() { return optionsModel.validateDataDirSelection() }
 }

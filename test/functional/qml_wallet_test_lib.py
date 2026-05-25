@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 import time
 
-from qml_driver import QmlDriver
+from qml_driver import QmlDriver, QmlDriverError
 from qml_test_harness import GUI_STARTUP_TIMEOUT, complete_onboarding, find_gui_binary, qsettings_sandbox_args
 
 
@@ -212,7 +212,7 @@ class WalletFlowHarness:
                 self.source_process.wait()
         self.source_process = None
 
-    def start_gui(self, reset_gui_settings=False, extra_args=None, cwd=None):
+    def start_gui(self, reset_gui_settings=False, extra_args=None, cwd=None, auto_onboard=True):
         env = dict(os.environ)
         env["QT_QPA_PLATFORM"] = "offscreen"
         settings_args = qsettings_sandbox_args(env, self.config_home)
@@ -239,6 +239,17 @@ class WalletFlowHarness:
             stderr=subprocess.PIPE,
         )
         self.driver = QmlDriver(self.socket_path, timeout=GUI_STARTUP_TIMEOUT)
+        if auto_onboard:
+            try:
+                self.driver.wait_for_page("onboardingCover", timeout_ms=1000)
+            except QmlDriverError:
+                return
+            complete_onboarding(self.driver)
+            try:
+                self.driver.wait_for_page("createWalletWizard", timeout_ms=3000)
+                self.driver.click("createWalletWizardExitButton")
+            except QmlDriverError:
+                pass
 
     def stop_gui(self):
         if self.gui_process and self.gui_process.poll() is None:
@@ -253,9 +264,9 @@ class WalletFlowHarness:
             self.driver.close()
             self.driver = None
 
-    def restart_gui(self, reset_gui_settings=False, extra_args=None, cwd=None):
+    def restart_gui(self, reset_gui_settings=False, extra_args=None, cwd=None, auto_onboard=True):
         self.stop_gui()
-        self.start_gui(reset_gui_settings=reset_gui_settings, extra_args=extra_args, cwd=cwd)
+        self.start_gui(reset_gui_settings=reset_gui_settings, extra_args=extra_args, cwd=cwd, auto_onboard=auto_onboard)
 
     def update_gui_settings(self, updates):
         update_settings_json(self.gui_datadir, updates)

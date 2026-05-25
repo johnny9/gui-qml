@@ -15,6 +15,7 @@
 #include <validation.h>
 
 #include <qml/models/settings_keys.h>
+#include <qml/bitcoinunits.h>
 
 #include <QObject>
 #include <QString>
@@ -24,6 +25,7 @@
 namespace interfaces {
 class Node;
 }
+class ArgsManager;
 
 /** Model for Bitcoin client options. */
 class OptionsQmlModel : public QObject
@@ -52,15 +54,23 @@ class OptionsQmlModel : public QObject
     Q_PROPERTY(QString torAddress READ torAddress WRITE setTorAddress NOTIFY torAddressChanged)
     Q_PROPERTY(QString externalSignerPath READ externalSignerPath WRITE setExternalSignerPath NOTIFY externalSignerPathChanged)
     Q_PROPERTY(bool proxySettingsDirty READ proxySettingsDirty NOTIFY proxySettingsDirtyChanged)
+    Q_PROPERTY(bool connectionSettingsDirty READ connectionSettingsDirty NOTIFY connectionSettingsDirtyChanged)
+    Q_PROPERTY(bool storageSettingsDirty READ storageSettingsDirty NOTIFY storageSettingsDirtyChanged)
+    Q_PROPERTY(bool developerSettingsDirty READ developerSettingsDirty NOTIFY developerSettingsDirtyChanged)
     Q_PROPERTY(bool walletSettingsDirty READ walletSettingsDirty NOTIFY walletSettingsDirtyChanged)
     Q_PROPERTY(QString language READ language WRITE setLanguage NOTIFY languageChanged)
     Q_PROPERTY(QString languageSummary READ languageSummary NOTIFY languageChanged)
     Q_PROPERTY(QStringList availableLanguages READ availableLanguages CONSTANT)
     Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
     Q_PROPERTY(QString displayUnitLabel READ displayUnitLabel NOTIFY displayUnitChanged)
+    Q_PROPERTY(QString dataDirError READ dataDirError NOTIFY dataDirErrorChanged)
+    Q_PROPERTY(QString dataDirAvailable READ dataDirAvailable NOTIFY dataDirAvailableChanged)
+    Q_PROPERTY(QString settingsActionError READ settingsActionError NOTIFY settingsActionErrorChanged)
+    Q_PROPERTY(bool existingCoreProfile READ existingCoreProfile NOTIFY existingCoreProfileChanged)
 
 public:
     explicit OptionsQmlModel(interfaces::Node& node, bool is_onboarded);
+    OptionsQmlModel(interfaces::Node& node, bool is_onboarded, ArgsManager& args, bool initialize_config_on_onboard = true);
 
     int dbcacheSizeMiB() const { return m_dbcache_size_mib; }
     void setDbcacheSizeMiB(int new_dbcache_size_mib);
@@ -90,6 +100,7 @@ public:
     QUrl getDefaultDataDirectory();
     Q_INVOKABLE bool setCustomDataDirArgs(QString path);
     Q_INVOKABLE QString getCustomDataDirString();
+    Q_INVOKABLE bool validateDataDirSelection();
     Q_INVOKABLE QString externalSignerPathValidationError(const QString& path) const;
     bool proxyEnabled() const { return m_proxy_enabled; }
     void setProxyEnabled(bool enabled);
@@ -113,6 +124,22 @@ public:
         if (!m_onboarded) return false;
         return m_external_signer_path != m_initial_external_signer_path;
     }
+    bool connectionSettingsDirty() const {
+        if (!m_onboarded) return false;
+        return m_listen != m_initial_listen ||
+               m_natpmp != m_initial_natpmp ||
+               m_server != m_initial_server;
+    }
+    bool storageSettingsDirty() const {
+        if (!m_onboarded) return false;
+        return m_prune != m_initial_prune ||
+               (m_prune && m_prune_size_gb != m_initial_prune_size_gb);
+    }
+    bool developerSettingsDirty() const {
+        if (!m_onboarded) return false;
+        return m_dbcache_size_mib != m_initial_dbcache_size_mib ||
+               m_script_threads != m_initial_script_threads;
+    }
     QString language() const { return m_language; }
     void setLanguage(const QString& new_language);
     QString languageSummary() const;
@@ -122,12 +149,18 @@ public:
     void setDisplayUnit(int new_display_unit);
     QString displayUnitLabel() const;
     Q_INVOKABLE QString displayUnitLabelForAmount(qint64 satoshi) const;
+    QString dataDirError() const { return m_data_dir_error; }
+    QString dataDirAvailable() const { return m_data_dir_available; }
+    QString settingsActionError() const { return m_settings_action_error; }
+    bool existingCoreProfile() const { return m_existing_core_profile; }
+    Q_INVOKABLE bool resetGuiSettings();
+    Q_INVOKABLE bool openBitcoinConf();
 
 public Q_SLOTS:
     void setCustomDataDirString(const QString &new_custom_datadir_string) {
         m_custom_datadir_string = new_custom_datadir_string;
     }
-    Q_INVOKABLE void onboard();
+    Q_INVOKABLE bool onboard();
 
 Q_SIGNALS:
     void dbcacheSizeMiBChanged(int new_dbcache_size_mib);
@@ -146,19 +179,31 @@ Q_SIGNALS:
     void torAddressChanged(QString address);
     void externalSignerPathChanged(QString path);
     void proxySettingsDirtyChanged();
+    void connectionSettingsDirtyChanged();
+    void storageSettingsDirtyChanged();
+    void developerSettingsDirtyChanged();
     void walletSettingsDirtyChanged();
     void languageChanged();
     void displayUnitChanged(int new_display_unit);
+    void dataDirErrorChanged(QString error);
+    void dataDirAvailableChanged(QString available);
+    void dataDirCommitted(QString data_dir);
+    void settingsActionErrorChanged(QString error);
+    void existingCoreProfileChanged();
 
 private:
     interfaces::Node& m_node;
+    ArgsManager& m_args;
+    bool m_initialize_config_on_onboard{true};
     bool m_onboarded;
 
     // Properties that are exposed to QML.
     int m_dbcache_size_mib;
+    int m_initial_dbcache_size_mib{0};
     const int m_min_dbcache_size_mib{MIN_DB_CACHE >> 20};
     const int m_max_dbcache_size_mib{MAX_COINS_DB_CACHE >> 20};
     bool m_listen;
+    bool m_initial_listen{false};
     int m_max_mempool_size_mb;
     const int m_min_max_mempool_size_mb{
         static_cast<int>((DEFAULT_DESCENDANT_SIZE_LIMIT_KVB * 1000 * 40 + 999999) / 1000000)
@@ -169,12 +214,20 @@ private:
     const int m_max_script_threads{MAX_SCRIPTCHECK_THREADS};
     const int m_min_script_threads{-GetNumCores()};
     bool m_natpmp;
+    bool m_initial_natpmp{false};
     bool m_prune;
+    bool m_initial_prune{false};
     int m_prune_size_gb;
+    int m_initial_prune_size_gb{0};
     int m_script_threads;
+    int m_initial_script_threads{0};
     bool m_server;
+    bool m_initial_server{false};
     QString m_custom_datadir_string;
     QString m_dataDir;
+    QString m_data_dir_error;
+    QString m_data_dir_available;
+    QString m_settings_action_error;
     bool m_proxy_enabled;
     QString m_proxy_address;
     bool m_tor_enabled;
@@ -188,9 +241,39 @@ private:
     QString m_language;
     QStringList m_available_languages;
     int m_display_unit{0};
+    bool m_existing_core_profile{false};
+    bool m_dbcache_modified{false};
+    bool m_listen_modified{false};
+    bool m_natpmp_modified{false};
+    bool m_prune_modified{false};
+    bool m_prune_size_modified{false};
+    bool m_script_threads_modified{false};
+    bool m_server_modified{false};
+    bool m_proxy_modified{false};
+    bool m_tor_modified{false};
+    bool m_external_signer_modified{false};
 
     common::SettingsValue pruneSetting() const;
     void buildAvailableLanguages();
+    void loadPersistentSettings();
+    void loadPersistentOptionValues(bool notify = false);
+    QString normalizeDataDirPath(const QString& path) const;
+    bool selectDataDirOptions(const QString& data_dir);
+    void applyDataDirArg(const QString& data_dir);
+    void setDataDirError(const QString& error);
+    void setDataDirAvailable(const QString& available);
+    void setSettingsActionError(const QString& error);
+    void setExistingCoreProfile(bool existing_core_profile);
+    bool validateDataDirPath(const QString& path);
+    bool commitDataDir();
+    bool existingCoreDataDir(const QString& path) const;
+    void refreshDataDirAvailable(const QString& path);
+    void markConnectionDirtyChanged(bool was_dirty);
+    void markStorageDirtyChanged(bool was_dirty);
+    void markDeveloperDirtyChanged(bool was_dirty);
+    void resetModifiedFlags();
+    void resetDirtyBaselines();
+    QmlBitcoinUnits::Unit displayUnitEnum() const;
 };
 
 #endif // BITCOIN_QML_MODELS_OPTIONS_MODEL_H

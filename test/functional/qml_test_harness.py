@@ -234,18 +234,40 @@ def complete_onboarding(gui):
     that onboarding is active.
     """
     gui.wait_for_page("onboardingCover", timeout_ms=10000)
-    steps = [
+    intro_steps = [
         ("onboardingCoverButton",           "onboardingStrengthen"),
         ("onboardingStrengthenButton",      "onboardingBlockclock"),
         ("onboardingBlockclockButton",      "onboardingStorageLocation"),
-        ("onboardingStorageLocationButton", "onboardingStorageAmount"),
-        ("onboardingStorageAmountButton",   "onboardingConnection"),
     ]
-    for button, expected_page in steps:
+    for button, expected_page in intro_steps:
         gui.click(button)
         gui.wait_for_page(expected_page, timeout_ms=5000)
-    gui.click("onboardingConnectionButton")
-    time.sleep(1)  # Allow navigation to the post-onboarding screen to settle.
+
+    gui.click("onboardingStorageLocationButton")
+    deadline = time.monotonic() + 10
+    current_page = gui.get_current_page()
+    while (
+        "onboardingStorageAmount" not in current_page
+        and "onboarding" in current_page.lower()
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.1)
+        current_page = gui.get_current_page()
+
+    if "onboardingStorageAmount" in current_page:
+        gui.click("onboardingStorageAmountButton")
+        gui.wait_for_page("onboardingConnection", timeout_ms=5000)
+        gui.click("onboardingConnectionButton")
+
+    # Existing Core profiles skip the option pages and leave onboarding from
+    # the storage-location page.
+    deadline = time.monotonic() + 10
+    current_page = gui.get_current_page()
+    while "onboarding" in current_page.lower() and time.monotonic() < deadline:
+        time.sleep(0.1)
+        current_page = gui.get_current_page()
+    if "onboarding" in current_page.lower():
+        raise AssertionError(f"Still on an onboarding page after finishing: {current_page}")
 
 
 def dump_qml_tree(driver):

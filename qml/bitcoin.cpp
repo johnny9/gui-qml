@@ -6,6 +6,7 @@
 
 #include <common/args.h>
 #include <common/init.h>
+#include <common/settings.h>
 #include <common/system.h>
 #include <chainparams.h>
 #include <init.h>
@@ -45,6 +46,7 @@
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/peerlistmodel.h>
 #include <qml/models/sendrecipient.h>
+#include <qml/models/settings_keys.h>
 #include <qml/models/walletlistmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
@@ -55,8 +57,11 @@
 #ifdef ENABLE_TEST_AUTOMATION
 #include <qml/test/testbridge.h>
 #endif
+#include <util/fs.h>
+#include <util/fs_helpers.h>
 #include <util/threadnames.h>
 #include <util/translation.h>
+#include <univalue.h>
 
 #include <boost/signals2/connection.hpp>
 #include <cassert>
@@ -166,24 +171,17 @@ void DebugMessageHandler(QtMsgType type, const QMessageLogContext& context, cons
     }
 }
 
-bool ConfigurationFileExists(ArgsManager& argsman)
+void ApplyPersistedDataDir(ArgsManager& argsman)
 {
-    fs::path settings_path;
-    if (!argsman.GetSettingsPath(&settings_path)) {
-        // settings file is disabled
-        return true;
-    }
-    if (fs::exists(settings_path)) {
-        return true;
-    }
+    if (argsman.IsArgSet("-datadir")) return;
 
-    const fs::path rel_config_path = argsman.GetPathArg("-conf", BITCOIN_CONF_FILENAME);
-    const fs::path abs_config_path = AbsPathForConfigVal(argsman, rel_config_path, true);
-    if (fs::exists(abs_config_path)) {
-        return true;
-    }
+    const QString stored_data_dir = QSettings{}.value(SettingsKeys::DATA_DIR).toString();
+    if (stored_data_dir.isEmpty()) return;
 
-    return false;
+    if (stored_data_dir == QString::fromStdString(fs::PathToString(GetDefaultDataDir()))) return;
+
+    argsman.SoftSetArg("-datadir", fs::PathToString(fs::PathFromString(stored_data_dir.toStdString())));
+    argsman.ClearPathCache();
 }
 
 void setupChainQSettings(QGuiApplication* app, QString chain)
@@ -292,6 +290,7 @@ int QmlGuiMain(int argc, char* argv[])
     ApplyTestSettingsDir();
 #endif
 
+    ApplyPersistedDataDir(gArgs);
     if (auto error = common::InitConfig(
             gArgs,
             [](const bilingual_str& msg, const std::vector<std::string>& details) {
@@ -304,16 +303,8 @@ int QmlGuiMain(int argc, char* argv[])
     // Default printtoconsole to false for the GUI. GUI programs should not
     // print to the console unnecessarily.
     gArgs.SoftSetBoolArg("-printtoconsole", false);
-    InitLogging(gArgs);
-    InitParameterInteraction(gArgs);
 
-    QVariant need_onboarding(true);
-    if (gArgs.IsArgSet("-datadir") && !gArgs.GetPathArg("-datadir").empty()) {
-        need_onboarding.setValue(false);
-    } else if (ConfigurationFileExists(gArgs)) {
-        need_onboarding.setValue(false);
-    }
-
+    QVariant need_onboarding(!SettingToBool(gArgs.GetPersistentSetting("qml_onboarded"), false));
     if (gArgs.IsArgSet("-resetguisettings")) {
         need_onboarding.setValue(true);
     }
@@ -322,13 +313,16 @@ int QmlGuiMain(int argc, char* argv[])
     std::unique_ptr<interfaces::Node> node = init->makeNode();
     std::unique_ptr<interfaces::Chain> chain = init->makeChain();
 
-    // legacy GUI: baseInitialize()
-    if (!node->baseInitialize()) {
-        // A dialog with detailed error will have been shown by InitError().
-        return EXIT_FAILURE;
+    if (!need_onboarding.toBool()) {
+        InitLogging(gArgs);
+        InitParameterInteraction(gArgs);
+        // legacy GUI: baseInitialize()
+        if (!node->baseInitialize()) {
+            // A dialog with detailed error will have been shown by InitError().
+            return EXIT_FAILURE;
+        }
+        handler_message_box.disconnect();
     }
-
-    handler_message_box.disconnect();
 
     AppMode app_mode = SetupAppMode();
 #ifdef ENABLE_WALLET

@@ -36,7 +36,7 @@ Page {
                 bold: true
                 headerText: qsTr("Storage")
                 headerMargin: 0
-                description: qsTr("Data retrieved from the Bitcoin network is stored on your device.\nYou have 500GB of storage available.")
+                description: qsTr("Data retrieved from the Bitcoin network is stored on your device.\n%1").arg(optionsModel.dataDirAvailable.length > 0 ? optionsModel.dataDirAvailable : qsTr("Storage availability could not be detected."))
                 descriptionMargin: 10
                 detailActive: true
                 detailItem: ColumnLayout {
