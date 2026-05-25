@@ -6,6 +6,7 @@ import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtTest 1.2
 import "../../qml/components"
+import "../../qml/pages/node"
 
 TestCase {
     name: "NodeFeedback"
@@ -23,6 +24,11 @@ TestCase {
     Component {
         id: actionsComponent
         NodeStatusActions {}
+    }
+
+    Component {
+        id: nodeRunnerComponent
+        NodeRunner {}
     }
 
     Component {
@@ -83,6 +89,34 @@ TestCase {
 
         nodeModel.setWarningsForTest(["Clock skew warning"])
         tryCompare(warningButton, "visible", true)
+    }
+
+    function test_node_runner_status_actions_align_with_settings_button() {
+        nodeModel.setWarningsForTest(["Clock skew warning"])
+
+        const runner = createTemporaryObject(nodeRunnerComponent, testWindow.contentItem)
+        verify(runner !== null)
+        runner.width = testWindow.width
+        runner.height = testWindow.height
+        wait(0)
+
+        const warningButton = findChild(runner, "nodeWarningsButton")
+        const infoButton = findChild(runner, "nodeInformationButton")
+        const settingsButton = findChild(runner, "nodeSettingsButton")
+        verify(warningButton !== null)
+        verify(infoButton !== null)
+        verify(settingsButton !== null)
+        tryCompare(warningButton, "visible", true)
+
+        compare(warningButton.height, 34)
+        compare(infoButton.height, 34)
+        compare(settingsButton.height, 34)
+
+        const warningCenterY = warningButton.mapToItem(runner, 0, warningButton.height / 2).y
+        const infoCenterY = infoButton.mapToItem(runner, 0, infoButton.height / 2).y
+        const settingsCenterY = settingsButton.mapToItem(runner, 0, settingsButton.height / 2).y
+        verify(Math.abs(warningCenterY - settingsCenterY) <= 0.5)
+        verify(Math.abs(infoCenterY - settingsCenterY) <= 0.5)
     }
 
     function test_warning_popup_lists_current_warnings() {
