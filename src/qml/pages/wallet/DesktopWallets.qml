@@ -61,6 +61,12 @@ Page {
         function onOpenReceiveRequested() {
             receiveTabButton.checked = true
         }
+        function onWalletLoadStateChanged(name, state, error) {
+            if (state === WalletListModel.LoadError) {
+                loadErrorPopup.errorText = error
+                loadErrorPopup.open()
+            }
+        }
         function onWalletMigrationRequired(path) {
             root.pendingMigrationPath = path
             migrationRequiredPopup.errorText = ""
@@ -298,5 +304,14 @@ Page {
             migrationPassphrasePopup.busy = true
             walletController.migrateWallet(root.pendingMigrationPath, passphrase)
         }
+    }
+
+    WalletLoadErrorPopup {
+        id: loadErrorPopup
+        parent: Overlay.overlay
+        width: Math.min(420, root.width - 40)
+        popupObjectName: "walletLoadErrorPopup"
+        errorTextObjectName: "walletLoadErrorPopupText"
+        dismissButtonObjectName: "walletLoadErrorPopupDismissButton"
     }
 }
