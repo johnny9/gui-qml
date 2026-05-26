@@ -102,7 +102,7 @@ Page {
             Layout.leftMargin: 20
             Layout.rightMargin: 20
             Layout.alignment: Qt.AlignCenter
-            text: qsTr("Start")
+            text: qsTr("Continue")
             onClicked: {
                 root.next()
             }

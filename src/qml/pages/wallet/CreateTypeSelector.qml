@@ -56,7 +56,7 @@ Page {
                 Layout.rightMargin: 20
                 title: qsTr("Regular")
                 description: qsTr("Fully managed in this application.")
-                iconSource: "image://images/singlesig-wallet"
+                iconSource: "image://images/key-filled"
                 onClicked: root.regularSelected()
             }
 
@@ -67,7 +67,7 @@ Page {
                 Layout.rightMargin: 20
                 title: qsTr("Multi-key")
                 description: qsTr("Requires 2 or more wallets or hardware devices to coordinate.")
-                iconSource: "image://images/singlesig-wallet"
+                iconSource: "image://images/two-keys-filled"
                 enabled: false
             }
 
