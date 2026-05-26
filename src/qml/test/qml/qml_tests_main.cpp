@@ -1273,7 +1273,20 @@ class MockNodeModel : public QObject
     Q_PROPERTY(int maxNumOutboundPeers MEMBER m_max_num_outbound_peers NOTIFY maxNumOutboundPeersChanged)
     Q_PROPERTY(double verificationProgress MEMBER m_verification_progress NOTIFY verificationProgressChanged)
     Q_PROPERTY(int remainingSyncTime MEMBER m_remaining_sync_time NOTIFY remainingSyncTimeChanged)
+    Q_PROPERTY(bool headerSyncActive MEMBER m_header_sync_active NOTIFY headerSyncChanged)
+    Q_PROPERTY(bool headerPresync MEMBER m_header_presync NOTIFY headerSyncChanged)
+    Q_PROPERTY(double headerSyncProgress MEMBER m_header_sync_progress NOTIFY headerSyncChanged)
     Q_PROPERTY(bool faulted MEMBER m_faulted NOTIFY faultedChanged)
+    Q_PROPERTY(QString startupError MEMBER m_startup_error NOTIFY startupErrorChanged)
+    Q_PROPERTY(QString warnings MEMBER m_warnings NOTIFY warningsChanged)
+    Q_PROPERTY(QStringList warningList MEMBER m_warning_list NOTIFY warningsChanged)
+    Q_PROPERTY(bool hasWarnings READ hasWarnings NOTIFY warningsChanged)
+    Q_PROPERTY(bool runtimeDialogVisible MEMBER m_runtime_dialog_visible NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QString runtimeDialogTitle MEMBER m_runtime_dialog_title NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QString runtimeDialogMessage MEMBER m_runtime_dialog_message NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QString runtimeDialogIcon MEMBER m_runtime_dialog_icon NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(unsigned int runtimeDialogButtons MEMBER m_runtime_dialog_buttons NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(bool runtimeDialogQuestion MEMBER m_runtime_dialog_question NOTIFY runtimeDialogChanged)
     Q_PROPERTY(int blockTipHeight MEMBER m_block_tip_height NOTIFY blockTipHeightChanged)
     Q_PROPERTY(int mempoolTransactionCount MEMBER m_mempool_transaction_count NOTIFY mempoolInfoChanged)
     Q_PROPERTY(double mempoolUsageMB MEMBER m_mempool_usage_mb NOTIFY mempoolInfoChanged)
@@ -1293,7 +1306,19 @@ public:
     int m_max_num_outbound_peers{8};
     double m_verification_progress{0.0};
     int m_remaining_sync_time{0};
+    bool m_header_sync_active{false};
+    bool m_header_presync{false};
+    double m_header_sync_progress{0.0};
     bool m_faulted{false};
+    QString m_startup_error;
+    QString m_warnings;
+    QStringList m_warning_list;
+    bool m_runtime_dialog_visible{false};
+    QString m_runtime_dialog_title;
+    QString m_runtime_dialog_message;
+    QString m_runtime_dialog_icon{QStringLiteral("image://images/info-filled")};
+    unsigned int m_runtime_dialog_buttons{0};
+    bool m_runtime_dialog_question{false};
     int m_block_tip_height{0};
     int m_mempool_transaction_count{0};
     double m_mempool_usage_mb{0.0};
@@ -1304,6 +1329,7 @@ public:
     bool m_ban_peer_result{true};
     int m_disconnect_peer_calls{0};
     int m_ban_peer_calls{0};
+    bool hasWarnings() const { return !m_warning_list.isEmpty(); }
     bool mempoolInfoPollingActive() const { return m_mempool_info_polling_active; }
     int disconnectPeerCalls() const { return m_disconnect_peer_calls; }
     int banPeerCalls() const { return m_ban_peer_calls; }
@@ -1316,6 +1342,61 @@ public:
 
     Q_INVOKABLE void startNodeInitializionThread() {}
     Q_INVOKABLE void requestShutdown() { Q_EMIT requestedShutdown(); }
+    Q_INVOKABLE void answerRuntimeDialog(unsigned int button)
+    {
+        Q_UNUSED(button);
+        m_runtime_dialog_visible = false;
+        Q_EMIT runtimeDialogChanged();
+    }
+    Q_INVOKABLE QVariantList nodeInformationRows() const
+    {
+        QVariantMap version;
+        version.insert(QStringLiteral("label"), QStringLiteral("Client version"));
+        version.insert(QStringLiteral("value"), QStringLiteral("Bitcoin Core test"));
+
+        QVariantMap network;
+        network.insert(QStringLiteral("label"), QStringLiteral("Network"));
+        network.insert(QStringLiteral("value"), QStringLiteral("regtest"));
+
+        QVariantMap peers;
+        peers.insert(QStringLiteral("label"), QStringLiteral("Peers"));
+        peers.insert(QStringLiteral("value"), QStringLiteral("0 total (0 inbound, 0 outbound)"));
+
+        QVariantList rows;
+        rows.push_back(QVariant::fromValue(version));
+        rows.push_back(QVariant::fromValue(network));
+        rows.push_back(QVariant::fromValue(peers));
+        if (!m_warning_list.isEmpty()) {
+            QVariantMap warnings;
+            warnings.insert(QStringLiteral("label"), QStringLiteral("Warnings"));
+            warnings.insert(QStringLiteral("value"), m_warning_list.join(QStringLiteral("\n")));
+            rows.push_back(QVariant::fromValue(warnings));
+        }
+        return rows;
+    }
+    Q_INVOKABLE void setWarningsForTest(const QStringList& warnings)
+    {
+        m_warning_list = warnings;
+        m_warnings = warnings.join(QStringLiteral("<hr />"));
+        Q_EMIT warningsChanged();
+    }
+    Q_INVOKABLE void setRuntimeDialogForTest(const QString& title, const QString& message, unsigned int buttons, bool question)
+    {
+        m_runtime_dialog_title = title;
+        m_runtime_dialog_message = message;
+        m_runtime_dialog_icon = question ? QStringLiteral("image://images/alert-filled") : QStringLiteral("image://images/info-filled");
+        m_runtime_dialog_buttons = buttons;
+        m_runtime_dialog_question = question;
+        m_runtime_dialog_visible = true;
+        Q_EMIT runtimeDialogChanged();
+    }
+    Q_INVOKABLE void setStartupErrorForTest(const QString& error)
+    {
+        m_startup_error = error;
+        m_faulted = !error.isEmpty();
+        Q_EMIT startupErrorChanged();
+        Q_EMIT faultedChanged();
+    }
     Q_INVOKABLE void resetMempoolInfoPollingTestState()
     {
         setMempoolInfoPollingActive(false);
@@ -1363,7 +1444,11 @@ Q_SIGNALS:
     void maxNumOutboundPeersChanged();
     void verificationProgressChanged();
     void remainingSyncTimeChanged();
+    void headerSyncChanged();
     void faultedChanged();
+    void startupErrorChanged();
+    void warningsChanged();
+    void runtimeDialogChanged();
     void blockTipHeightChanged();
     void mempoolInfoChanged();
     void mempoolInfoPollingActiveChanged(bool active);
@@ -1433,6 +1518,30 @@ Q_SIGNALS:
     void receivedRateListChanged();
     void sentRateListChanged();
     void lastFilterWindowSizeChanged();
+};
+
+class MockNetworkStatusModel : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(bool reachabilityAvailable MEMBER m_reachability_available NOTIFY reachabilityChanged)
+    Q_PROPERTY(bool networkOffline MEMBER m_network_offline NOTIFY reachabilityChanged)
+    Q_PROPERTY(QString reachability MEMBER m_reachability NOTIFY reachabilityChanged)
+
+public:
+    bool m_reachability_available{true};
+    bool m_network_offline{false};
+    QString m_reachability{QStringLiteral("Online")};
+
+    Q_INVOKABLE void setNetworkOfflineForTest(bool offline)
+    {
+        if (m_network_offline == offline) return;
+        m_network_offline = offline;
+        m_reachability = offline ? QStringLiteral("Disconnected") : QStringLiteral("Online");
+        Q_EMIT reachabilityChanged();
+    }
+
+Q_SIGNALS:
+    void reachabilityChanged();
 };
 
 class MockPeerListModelProxy : public QAbstractListModel
@@ -1910,6 +2019,7 @@ public Q_SLOTS:
         static MockNodeModel node_model;
         static MockPeerTableModel peer_table_model;
         static MockNetworkTrafficTower network_traffic_tower;
+        static MockNetworkStatusModel network_status_model;
         static MockPeerListModelProxy peer_list_model_proxy;
         static MockBanListModel ban_list_model;
         static MockPeerDetailsModel peer_details_model;
@@ -1963,6 +2073,7 @@ public Q_SLOTS:
         engine->rootContext()->setContextProperty(QStringLiteral("nodeModel"), &node_model);
         engine->rootContext()->setContextProperty(QStringLiteral("peerTableModel"), &peer_table_model);
         engine->rootContext()->setContextProperty(QStringLiteral("networkTrafficTower"), &network_traffic_tower);
+        engine->rootContext()->setContextProperty(QStringLiteral("networkStatusModel"), &network_status_model);
         engine->rootContext()->setContextProperty(QStringLiteral("peerListModelProxy"), &peer_list_model_proxy);
         engine->rootContext()->setContextProperty(QStringLiteral("banListModel"), &ban_list_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testPeerDetailsModel"), &peer_details_model);

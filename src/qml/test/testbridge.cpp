@@ -403,6 +403,14 @@ QByteArray TestBridge::processCommand(const QByteArray& json_cmd)
             obj.value(QStringLiteral("prop")).toString());
     } else if (cmd == QLatin1String("save_screenshot")) {
         return cmdSaveScreenshot(obj.value(QStringLiteral("path")).toString());
+    } else if (cmd == QLatin1String("show_runtime_dialog")) {
+        return cmdShowRuntimeDialog(
+            obj.value(QStringLiteral("message")).toString(),
+            obj.value(QStringLiteral("caption")).toString(),
+            static_cast<unsigned int>(obj.value(QStringLiteral("style")).toDouble()),
+            obj.value(QStringLiteral("question")).toBool(false));
+    } else if (cmd == QLatin1String("answer_runtime_dialog")) {
+        return cmdAnswerRuntimeDialog(static_cast<unsigned int>(obj.value(QStringLiteral("button")).toDouble()));
     } else if (cmd == QLatin1String("list_objects")) {
         return cmdListObjects();
     } else if (cmd == QLatin1String("close_window")) {
@@ -868,6 +876,49 @@ QByteArray TestBridge::cmdSaveScreenshot(const QString& path)
     resp[QStringLiteral("width")] = image.width();
     resp[QStringLiteral("height")] = image.height();
     return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+}
+
+QByteArray TestBridge::cmdShowRuntimeDialog(const QString& message, const QString& caption, unsigned int style, bool question)
+{
+    QVariant node_model_value = m_engine->rootContext()->contextProperty(QStringLiteral("nodeModel"));
+    QObject* node_model = node_model_value.value<QObject*>();
+    if (!node_model) {
+        return errorResponse(QStringLiteral("nodeModel context property is not available"));
+    }
+
+    const bool invoked = QMetaObject::invokeMethod(
+        node_model,
+        "showRuntimeDialogForTest",
+        Qt::DirectConnection,
+        Q_ARG(QString, message),
+        Q_ARG(QString, caption),
+        Q_ARG(unsigned int, style),
+        Q_ARG(bool, question));
+    if (!invoked) {
+        return errorResponse(QStringLiteral("nodeModel.showRuntimeDialogForTest is not available"));
+    }
+
+    return okResponse();
+}
+
+QByteArray TestBridge::cmdAnswerRuntimeDialog(unsigned int button)
+{
+    QVariant node_model_value = m_engine->rootContext()->contextProperty(QStringLiteral("nodeModel"));
+    QObject* node_model = node_model_value.value<QObject*>();
+    if (!node_model) {
+        return errorResponse(QStringLiteral("nodeModel context property is not available"));
+    }
+
+    const bool invoked = QMetaObject::invokeMethod(
+        node_model,
+        "answerRuntimeDialog",
+        Qt::DirectConnection,
+        Q_ARG(unsigned int, button));
+    if (!invoked) {
+        return errorResponse(QStringLiteral("nodeModel.answerRuntimeDialog is not available"));
+    }
+
+    return okResponse();
 }
 
 QByteArray TestBridge::cmdListObjects()

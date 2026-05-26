@@ -21,8 +21,16 @@ TestCase {
         property int maxNumOutboundPeers: 10
         property int remainingSyncTime: 0
         property real verificationProgress: 0
+        property bool headerSyncActive: false
+        property bool headerPresync: false
+        property real headerSyncProgress: 0
         property bool pause: false
         property bool faulted: false
+    }
+
+    QtObject {
+        id: networkStatusModelMock
+        property bool networkOffline: false
     }
 
     QtObject {
@@ -38,6 +46,7 @@ TestCase {
             parentHeight: 600
             nodeModelRef: nodeModelMock
             chainModelRef: chainModelMock
+            networkStatusModelRef: networkStatusModelMock
         }
     }
 
@@ -48,6 +57,7 @@ TestCase {
             pageSelected: true
             paused: true
             faulted: false
+            networkStatusModelRef: networkStatusModelMock
         }
     }
 
@@ -59,8 +69,12 @@ TestCase {
         nodeModelMock.maxNumOutboundPeers = 10
         nodeModelMock.remainingSyncTime = 0
         nodeModelMock.verificationProgress = 0
+        nodeModelMock.headerSyncActive = false
+        nodeModelMock.headerPresync = false
+        nodeModelMock.headerSyncProgress = 0
         nodeModelMock.pause = false
         nodeModelMock.faulted = false
+        networkStatusModelMock.networkOffline = false
         chainModelMock.timeRatioList = [0.25, 0.0]
         chainModelMock.currentNetworkName = "REGTEST"
     }
@@ -132,6 +146,36 @@ TestCase {
         compare(clock.subText, "~6 minutes left")
     }
 
+    function test_header_sync_uses_block_clock_percentage_surface() {
+        resetMocks()
+        nodeModelMock.numPeers = 1
+        nodeModelMock.numOutboundPeers = 1
+        nodeModelMock.verificationProgress = 0.01
+        nodeModelMock.headerSyncActive = true
+        nodeModelMock.headerSyncProgress = 0.375
+
+        const clock = createClock()
+
+        compare(clock.state, "IBD")
+        compare(clock.header, "38%")
+        compare(clock.subText, "Syncing headers")
+    }
+
+    function test_header_presync_subtext() {
+        resetMocks()
+        nodeModelMock.numPeers = 1
+        nodeModelMock.numOutboundPeers = 1
+        nodeModelMock.headerSyncActive = true
+        nodeModelMock.headerPresync = true
+        nodeModelMock.headerSyncProgress = 0.25
+
+        const clock = createClock()
+
+        compare(clock.state, "IBD")
+        compare(clock.header, "25%")
+        compare(clock.subText, "Pre-syncing headers")
+    }
+
     function test_blockclock_state() {
         resetMocks()
         nodeModelMock.numPeers = 1
@@ -157,6 +201,29 @@ TestCase {
         compare(clock.subText, "Tap to resume")
     }
 
+    function test_offline_state_overrides_connecting() {
+        resetMocks()
+        networkStatusModelMock.networkOffline = true
+
+        const clock = createClock()
+
+        compare(clock.state, "OFFLINE")
+        compare(clock.header, "Offline")
+        compare(clock.subText, "Check network")
+    }
+
+    function test_offline_state_overrides_pause() {
+        resetMocks()
+        nodeModelMock.pause = true
+        networkStatusModelMock.networkOffline = true
+
+        const clock = createClock()
+
+        compare(clock.state, "OFFLINE")
+        compare(clock.header, "Offline")
+        compare(clock.subText, "Check network")
+    }
+
     function test_mini_pause_icon_is_centered() {
         const miniClock = createMiniBlockClock()
         const pausedIcon = findChild(miniClock, "miniBlockClockPausedIcon")
@@ -170,6 +237,35 @@ TestCase {
         compare(miniClock.faulted, false)
         verifyCenteredInParent(pausedRing, pausedIcon)
         verifyCenteredOn(pausedBars, pausedRing)
+    }
+
+    function test_mini_offline_icon_is_visible() {
+        resetMocks()
+        networkStatusModelMock.networkOffline = true
+        const miniClock = createMiniBlockClock()
+        miniClock.paused = false
+        wait(0)
+
+        const offlineIcon = findChild(miniClock, "miniBlockClockOfflineIcon")
+        verify(offlineIcon !== null)
+        compare(miniClock.showOfflineState, true)
+        compare(offlineIcon.source.toString(), "image://images/network-light")
+    }
+
+    function test_mini_offline_icon_overrides_pause() {
+        resetMocks()
+        networkStatusModelMock.networkOffline = true
+        const miniClock = createMiniBlockClock()
+        wait(0)
+
+        const offlineIcon = findChild(miniClock, "miniBlockClockOfflineIcon")
+        const pausedIcon = findChild(miniClock, "miniBlockClockPausedIcon")
+        verify(offlineIcon !== null)
+        verify(pausedIcon !== null)
+        compare(miniClock.paused, true)
+        compare(miniClock.offline, true)
+        compare(miniClock.showOfflineState, true)
+        compare(miniClock.showPausedState, false)
     }
 
     function test_error_state_overrides_and_disables_toggle() {

@@ -225,6 +225,26 @@ class QmlDriver:
             )
         return resp
 
+    def show_runtime_dialog(self, message, caption, style, question=False):
+        """Open a NodeRuntimeDialog through the test automation bridge."""
+        resp = self._send(
+            {
+                "cmd": "show_runtime_dialog",
+                "message": message,
+                "caption": caption,
+                "style": style,
+                "question": question,
+            }
+        )
+        if "error" in resp:
+            raise QmlDriverError(f"show_runtime_dialog failed: {resp['error']}")
+
+    def answer_runtime_dialog(self, button):
+        """Answer the active NodeRuntimeDialog with a Core/QMessageBox button id."""
+        resp = self._send({"cmd": "answer_runtime_dialog", "button": button})
+        if "error" in resp:
+            raise QmlDriverError(f"answer_runtime_dialog({button!r}) failed: {resp['error']}")
+
     def settle(
         self,
         timeout_ms=5000,
