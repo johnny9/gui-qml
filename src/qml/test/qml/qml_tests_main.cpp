@@ -1695,11 +1695,22 @@ class MockWalletListModel : public QAbstractListModel
     Q_PROPERTY(int listWalletDirCalls READ listWalletDirCalls NOTIFY listWalletDirCallsChanged)
 
 public:
+    enum class LoadState {
+        Closed = 0,
+        Open = 1,
+        Loading = 2,
+        LoadError = 3,
+    };
+    Q_ENUM(LoadState)
+
     enum Roles {
         NameRole = Qt::UserRole + 1,
         FormatRole,
         DisplayNameRole,
-        LoadStateRole
+        LoadStateRole,
+        ErrorMessageRole,
+        BalanceRole,
+        KeySchemeKindRole,
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex{}) const override
@@ -1715,6 +1726,9 @@ public:
         if (role == NameRole) return m_wallet_names.at(index.row());
         if (role == FormatRole) return QStringLiteral("sqlite");
         if (role == LoadStateRole) return m_wallet_load_states.at(index.row());
+        if (role == ErrorMessageRole) return QString{};
+        if (role == BalanceRole) return QString{};
+        if (role == KeySchemeKindRole) return 0;
         return {};
     }
 
@@ -1725,6 +1739,9 @@ public:
             {FormatRole, "format"},
             {DisplayNameRole, "displayName"},
             {LoadStateRole, "loadState"},
+            {ErrorMessageRole, "errorMessage"},
+            {BalanceRole, "balance"},
+            {KeySchemeKindRole, "keySchemeKind"},
         };
     }
 
@@ -2118,6 +2135,7 @@ public Q_SLOTS:
         qmlRegisterUncreatableType<MockSendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "Test stub type");
         qmlRegisterUncreatableType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Test stub type");
+        qmlRegisterUncreatableType<MockWalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModelTransaction>(
             "org.bitcoincore.qt",
             1,

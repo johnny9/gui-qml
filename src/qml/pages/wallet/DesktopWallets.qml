@@ -132,6 +132,10 @@ Page {
                 onAddWallet: {
                     root.addWallet()
                 }
+                onCloseWalletRequested: (name) => {
+                    closeConfirmationPopup.walletName = name
+                    closeConfirmationPopup.open()
+                }
             }
         }
         centerItem: RowLayout {
@@ -313,5 +317,15 @@ Page {
         popupObjectName: "walletLoadErrorPopup"
         errorTextObjectName: "walletLoadErrorPopupText"
         dismissButtonObjectName: "walletLoadErrorPopupDismissButton"
+    }
+
+    WalletCloseConfirmationPopup {
+        id: closeConfirmationPopup
+        parent: Overlay.overlay
+        width: Math.min(420, root.width - 40)
+        popupObjectName: "walletCloseConfirmationPopup"
+        cancelButtonObjectName: "walletCloseConfirmationCancelButton"
+        confirmButtonObjectName: "walletCloseConfirmationConfirmButton"
+        onConfirmed: walletController.closeWallet(walletName)
     }
 }

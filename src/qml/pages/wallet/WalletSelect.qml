@@ -20,9 +20,11 @@ Popup {
     clip: true
 
     signal addWallet()
+    signal closeWalletRequested(string name)
 
     function closeLoadedWallet(name) {
-        walletController.closeWallet(name)
+        root.close()
+        root.closeWalletRequested(name)
     }
 
     Connections {
