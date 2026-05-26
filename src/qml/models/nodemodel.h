@@ -9,10 +9,13 @@
 #include <interfaces/node.h>
 #include <clientversion.h>
 
+#include <deque>
 #include <memory>
 
 #include <QObject>
+#include <QStringList>
 #include <QString>
+#include <QVariantList>
 
 const char DEFAULT_PROXY_HOST[] = "127.0.0.1";
 constexpr uint16_t DEFAULT_PROXY_PORT = 9050;
@@ -21,6 +24,7 @@ QT_BEGIN_NAMESPACE
 class QThread;
 class QTimer;
 class QTimerEvent;
+class QEventLoop;
 QT_END_NAMESPACE
 
 namespace interfaces {
@@ -44,8 +48,21 @@ class NodeModel : public QObject
     Q_PROPERTY(bool mempoolInformationAvailable READ mempoolInformationAvailable CONSTANT)
     Q_PROPERTY(int remainingSyncTime READ remainingSyncTime NOTIFY remainingSyncTimeChanged)
     Q_PROPERTY(double verificationProgress READ verificationProgress NOTIFY verificationProgressChanged)
+    Q_PROPERTY(bool headerSyncActive READ headerSyncActive NOTIFY headerSyncChanged)
+    Q_PROPERTY(bool headerPresync READ headerPresync NOTIFY headerSyncChanged)
+    Q_PROPERTY(double headerSyncProgress READ headerSyncProgress NOTIFY headerSyncChanged)
     Q_PROPERTY(bool pause READ pause WRITE setPause NOTIFY pauseChanged)
     Q_PROPERTY(bool faulted READ errorState WRITE setErrorState NOTIFY errorStateChanged)
+    Q_PROPERTY(QString startupError READ startupError NOTIFY startupErrorChanged)
+    Q_PROPERTY(QString warnings READ warnings NOTIFY warningsChanged)
+    Q_PROPERTY(QStringList warningList READ warningList NOTIFY warningsChanged)
+    Q_PROPERTY(bool hasWarnings READ hasWarnings NOTIFY warningsChanged)
+    Q_PROPERTY(bool runtimeDialogVisible READ runtimeDialogVisible NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QString runtimeDialogTitle READ runtimeDialogTitle NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QString runtimeDialogMessage READ runtimeDialogMessage NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QString runtimeDialogIcon READ runtimeDialogIcon NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(unsigned int runtimeDialogButtons READ runtimeDialogButtons NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(bool runtimeDialogQuestion READ runtimeDialogQuestion NOTIFY runtimeDialogChanged)
 
 public:
     explicit NodeModel(interfaces::Node& node);
@@ -71,10 +88,25 @@ public:
     void setRemainingSyncTime(double new_progress);
     double verificationProgress() const { return m_verification_progress; }
     void setVerificationProgress(double new_progress);
+    bool headerSyncActive() const { return m_header_sync_active; }
+    bool headerPresync() const { return m_header_presync; }
+    double headerSyncProgress() const { return m_header_sync_progress; }
     bool pause() const { return m_pause; }
     void setPause(bool new_pause);
     bool errorState() const { return m_faulted; }
     void setErrorState(bool new_error);
+    QString startupError() const { return m_startup_error; }
+    void setStartupError(const QString& error);
+    void addStartupWarnings(const QStringList& warnings);
+    QString warnings() const { return m_warnings; }
+    QStringList warningList() const { return m_warning_list; }
+    bool hasWarnings() const { return !m_warning_list.empty(); }
+    bool runtimeDialogVisible() const { return m_runtime_dialog_visible; }
+    QString runtimeDialogTitle() const { return m_runtime_dialog_title; }
+    QString runtimeDialogMessage() const { return m_runtime_dialog_message; }
+    QString runtimeDialogIcon() const { return m_runtime_dialog_icon; }
+    unsigned int runtimeDialogButtons() const { return m_runtime_dialog_buttons; }
+    bool runtimeDialogQuestion() const { return m_runtime_dialog_question; }
 
     Q_INVOKABLE float getTotalBytesReceived() const { return (float)m_node.getTotalBytesRecv(); }
     Q_INVOKABLE float getTotalBytesSent() const { return (float)m_node.getTotalBytesSent(); }
@@ -90,9 +122,15 @@ public:
     Q_INVOKABLE QString defaultProxyAddress();
     Q_INVOKABLE bool disconnectPeer(int nodeId);
     Q_INVOKABLE bool banPeer(const QString& rawAddress, int64_t banDuration);
+    Q_INVOKABLE QVariantList nodeInformationRows();
+    Q_INVOKABLE void answerRuntimeDialog(unsigned int button);
+#ifdef ENABLE_TEST_AUTOMATION
+    Q_INVOKABLE void showRuntimeDialogForTest(const QString& message, const QString& caption, unsigned int style, bool question);
+#endif
 
 public Q_SLOTS:
     void initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info);
+    void handleRunawayException(const QString& message);
 
 Q_SIGNALS:
     void blockTipHeightChanged();
@@ -105,8 +143,12 @@ Q_SIGNALS:
     void requestedInitialize();
     void requestedShutdown();
     void verificationProgressChanged();
+    void headerSyncChanged();
     void pauseChanged(bool new_pause);
     void errorStateChanged(bool new_error_state);
+    void startupErrorChanged();
+    void warningsChanged();
+    void runtimeDialogChanged();
 
     void setTimeRatioList(int new_time);
     void setTimeRatioListInitial();
@@ -121,6 +163,17 @@ private:
         int transaction_count{0};
         double usage_mb{0.0};
         double max_usage_mb{0.0};
+    };
+
+    struct RuntimeDialogRequest {
+        QString message;
+        QString caption;
+        unsigned int style{0};
+        bool question{false};
+        bool answer{false};
+        bool answered{false};
+        unsigned int button{0};
+        QEventLoop* loop{nullptr};
     };
 
     // Properties that are exposed to QML.
@@ -138,7 +191,28 @@ private:
     double m_verification_progress{0.0};
     bool m_pause{false};
     bool m_faulted{false};
+    QString m_startup_error;
+    QStringList m_startup_error_messages;
+    QStringList m_startup_warning_messages;
+    QString m_warnings;
+    QStringList m_warning_list;
+    bool m_header_sync_active{false};
+    bool m_header_presync{false};
+    double m_header_sync_progress{0.0};
+    int m_header_tip_height{0};
+    int64_t m_header_tip_time{0};
+    bool m_node_ready{false};
     bool m_initialization_requested{false};
+    bool m_runtime_dialogs_enabled{false};
+    bool m_startup_failure_dialog_shown{false};
+    bool m_runtime_dialog_visible{false};
+    bool m_runtime_dialog_question{false};
+    QString m_runtime_dialog_title;
+    QString m_runtime_dialog_message;
+    QString m_runtime_dialog_icon;
+    unsigned int m_runtime_dialog_buttons{0};
+    std::shared_ptr<RuntimeDialogRequest> m_runtime_dialog_active;
+    std::deque<std::shared_ptr<RuntimeDialogRequest>> m_runtime_dialog_queue;
 
     int m_shutdown_polling_timer_id{0};
 
@@ -149,14 +223,32 @@ private:
     QThread* m_mempool_info_thread{nullptr};
     QTimer* m_mempool_info_timer{nullptr};
     std::unique_ptr<interfaces::Handler> m_handler_notify_block_tip;
+    std::unique_ptr<interfaces::Handler> m_handler_notify_header_tip;
     std::unique_ptr<interfaces::Handler> m_handler_notify_num_peers_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_notify_network_active_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_notify_alert_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_message_box;
+    std::unique_ptr<interfaces::Handler> m_handler_question;
     std::unique_ptr<interfaces::Handler> m_handler_notify_banned_list_changed;
 
     void ConnectToBlockTipSignal();
+    void ConnectToHeaderTipSignal();
     void ConnectToNumConnectionsChangedSignal();
+    void ConnectToNetworkActiveChangedSignal();
+    void ConnectToAlertChangedSignal();
+    void ConnectToRuntimeDialogSignals();
     void ConnectToBannedListChangedSignal();
     void initializeMempoolInfoPolling();
     void refreshPeerCounts();
+    void refreshWarnings();
+    void recordStartupErrorMessage(const QString& message);
+    void recordStartupWarningMessage(const QString& message);
+    void showStartupWarnings();
+    void setWarnings(const QString& warnings);
+    void setHeaderSyncState(int height, int64_t block_time, bool presync);
+    bool showRuntimeDialog(const QString& message, const QString& caption, unsigned int style, bool question);
+    bool showRuntimeDialogOnGuiThread(const QString& message, const QString& caption, unsigned int style, bool question);
+    void showRuntimeDialogRequest(const std::shared_ptr<RuntimeDialogRequest>& request);
     void requestMempoolInfoRefresh();
     void fetchMempoolInfo();
     void applyMempoolInfo(const MempoolInfo& info);

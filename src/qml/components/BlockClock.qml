@@ -20,6 +20,7 @@ Item {
     property bool showNetworkIndicator: true
     property var nodeModelRef: typeof nodeModel !== "undefined" ? nodeModel : null
     property var chainModelRef: typeof chainModel !== "undefined" ? chainModel : null
+    property var networkStatusModelRef: typeof networkStatusModel !== "undefined" ? networkStatusModel : null
 
     width: dial.width
     height: dial.height + (networkIndicator.visible ? networkIndicator.height + networkIndicator.anchors.topMargin : 0)
@@ -29,12 +30,14 @@ Item {
     property alias subText: subText.text
     property bool connected: root.nodeModelRef !== null && root.nodeModelRef.numPeers > 0
     property bool synced: root.nodeModelRef !== null && root.nodeModelRef.verificationProgress > 0.999
-    property string syncProgress: formatProgressPercentage((root.nodeModelRef !== null ? root.nodeModelRef.verificationProgress : 0) * 100)
+    property bool headerSyncActive: root.nodeModelRef !== null && root.nodeModelRef.headerSyncActive
+    property string syncProgress: formatProgressPercentage((root.headerSyncActive ? root.nodeModelRef.headerSyncProgress : (root.nodeModelRef !== null ? root.nodeModelRef.verificationProgress : 0)) * 100)
     property bool paused: root.nodeModelRef !== null && root.nodeModelRef.pause
     property var syncState: Utils.formatRemainingSyncTime(root.nodeModelRef !== null ? root.nodeModelRef.remainingSyncTime : 0)
     property string syncTime: syncState.text
     property bool estimating: syncState.estimating
     property bool faulted: root.nodeModelRef !== null && root.nodeModelRef.faulted
+    property bool offline: root.networkStatusModelRef !== null && root.networkStatusModelRef.networkOffline
 
     activeFocusOnTab: true
 
@@ -53,8 +56,8 @@ Item {
         penWidth: dial.width / 50
         timeRatioList: root.chainModelRef !== null ? root.chainModelRef.timeRatioList : []
         verificationProgress: root.nodeModelRef !== null ? root.nodeModelRef.verificationProgress : 0
-        paused: root.paused || root.faulted
-        connected: root.connected
+        paused: root.paused || root.faulted || root.offline
+        connected: root.connected && !root.offline
         synced: root.synced
         backgroundColor: Theme.color.neutral2
         timeTickColor: Theme.color.neutral5
@@ -175,16 +178,18 @@ Item {
 
     states: [
         State {
-            name: "IBD"; when: !faulted && !synced && !paused && connected
+            name: "IBD"; when: !faulted && !offline && !synced && !paused && connected
             PropertyChanges {
                 target: root
                 header: root.syncProgress
-                subText: root.syncTime
+                subText: root.headerSyncActive
+                    ? (root.nodeModelRef.headerPresync ? qsTr("Pre-syncing headers") : qsTr("Syncing headers"))
+                    : root.syncTime
             }
         },
 
         State {
-            name: "BLOCKCLOCK"; when: !faulted && synced && !paused && connected
+            name: "BLOCKCLOCK"; when: !faulted && !offline && synced && !paused && connected
             PropertyChanges {
                 target: root
                 header: Number(root.nodeModelRef !== null ? root.nodeModelRef.blockTipHeight : 0).toLocaleString(Qt.locale(), 'f', 0)
@@ -194,7 +199,7 @@ Item {
         },
 
         State {
-            name: "PAUSE"; when: paused && !faulted
+            name: "PAUSE"; when: paused && !faulted && !offline
             PropertyChanges {
                 target: root
                 header: "Paused"
@@ -223,6 +228,26 @@ Item {
                 target: bitcoinIcon
                 anchors.bottomMargin: dial.width / 40
                 icon.source: "image://images/error"
+            }
+        },
+
+        State {
+            name: "OFFLINE"; when: !faulted && offline
+            PropertyChanges {
+                target: root
+                header: qsTr("Offline")
+                headerSize: dial.width * (3/25)
+                subText: qsTr("Check network")
+                estimating: false
+            }
+            PropertyChanges {
+                target: bitcoinIcon
+                anchors.bottomMargin: dial.width / 40
+                icon.source: "image://images/network-light"
+            }
+            PropertyChanges {
+                target: subText
+                anchors.topMargin: dial.width / 50
             }
         },
 

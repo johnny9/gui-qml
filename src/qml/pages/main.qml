@@ -64,6 +64,14 @@ ApplicationWindow {
         }
     }
 
+    NodeRuntimeDialog {
+        parent: Overlay.overlay
+    }
+
+    NodeFatalErrorPopup {
+        parent: Overlay.overlay
+    }
+
     Component {
         id: onboardingWizard
         OnboardingWizard {

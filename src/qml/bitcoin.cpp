@@ -37,6 +37,7 @@
 #include <qml/models/chainmodel.h>
 #include <qml/models/debuglogmodel.h>
 #include <qml/models/networktraffictower.h>
+#include <qml/models/networkstatusmodel.h>
 #include <qml/models/nodemodel.h>
 #include <qml/models/options_model.h>
 #include <qml/models/paymentrequest.h>
@@ -145,6 +146,14 @@ bool InitErrorMessageBox(
     return false;
 }
 
+void RecordStartupWarning(QStringList& startup_warnings, const bilingual_str& message)
+{
+    const QString warning{QString::fromStdString(message.translated).trimmed()};
+    if (!warning.isEmpty() && !startup_warnings.contains(warning)) {
+        startup_warnings.push_back(warning);
+    }
+}
+
 /* qDebug() message handler --> debug.log */
 void DebugMessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& msg)
 {
@@ -212,7 +221,15 @@ int QmlGuiMain(int argc, char* argv[])
     QGuiApplication app(argc, argv);
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);
-    auto handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(InitErrorMessageBox);
+    QStringList startup_warnings;
+    auto handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(
+        [&startup_warnings](const bilingual_str& message, const std::string& caption, unsigned int style) {
+            if (style & CClientUIInterface::ICON_WARNING) {
+                RecordStartupWarning(startup_warnings, message);
+                return false;
+            }
+            return InitErrorMessageBox(message, caption, style);
+        });
 
     SetupEnvironment();
     util::ThreadSetInternalName("main");
@@ -302,6 +319,7 @@ int QmlGuiMain(int argc, char* argv[])
 #endif
 
     NodeModel node_model{*node};
+    node_model.addStartupWarnings(startup_warnings);
     QmlInitExecutor init_executor{*node};
 #ifdef ENABLE_WALLET
     std::unique_ptr<WalletQmlController> wallet_controller;
@@ -321,9 +339,10 @@ int QmlGuiMain(int argc, char* argv[])
     });
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
     QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, &QGuiApplication::quit, Qt::QueuedConnection);
-    // QObject::connect(&init_executor, &InitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
+    QObject::connect(&init_executor, &QmlInitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     NetworkTrafficTower network_traffic_tower{node_model};
+    NetworkStatusModel network_status_model;
 #ifdef __ANDROID__
     AndroidNotifier android_notifier{node_model};
 #endif
@@ -368,6 +387,7 @@ int QmlGuiMain(int argc, char* argv[])
     engine.addImageProvider(QStringLiteral("qr"), new QRImageProvider);
 
     engine.rootContext()->setContextProperty("networkTrafficTower", &network_traffic_tower);
+    engine.rootContext()->setContextProperty("networkStatusModel", &network_status_model);
     engine.rootContext()->setContextProperty("nodeModel", &node_model);
     engine.rootContext()->setContextProperty("chainModel", &chain_model);
     engine.rootContext()->setContextProperty("peerTableModel", &peer_model);
