@@ -160,7 +160,6 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
 
 bool InitErrorMessageBox(
     const bilingual_str& message,
-    [[maybe_unused]] const std::string& caption,
     [[maybe_unused]] unsigned int style)
 {
     static AppMode error_app_mode = SetupAppMode();
@@ -195,7 +194,7 @@ void DebugMessageHandler(QtMsgType type, const QMessageLogContext& context, cons
     if (type == QtDebugMsg || (type == QtWarningMsg && IsBenignQtFontWarning(msg))) {
         LogDebug(BCLog::QT, "GUI: %s\n", msg.toStdString());
     } else {
-        LogPrintf("GUI: %s\n", msg.toStdString());
+        LogInfo("GUI: %s\n", msg.toStdString());
     }
 }
 
