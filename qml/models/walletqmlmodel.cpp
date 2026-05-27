@@ -1174,7 +1174,7 @@ QString WalletQmlModel::getAddressLabel(const QString& address) const
     }
 
     std::string label;
-    if (m_wallet->getAddress(destination, &label, nullptr, nullptr)) {
+    if (m_wallet->getAddress(destination, &label, nullptr)) {
         if (!label.empty()) {
             return QString::fromStdString(label);
         }
@@ -1201,7 +1201,7 @@ bool WalletQmlModel::setAddressLabel(const QString& address, const QString& labe
     }
 
     wallet::AddressPurpose purpose{wallet::AddressPurpose::RECEIVE};
-    if (!m_wallet->getAddress(destination, nullptr, nullptr, &purpose)) {
+    if (!m_wallet->getAddress(destination, nullptr, &purpose)) {
         return false;
     }
 
@@ -1249,7 +1249,7 @@ std::set<QString> WalletQmlModel::usedAddresses() const
 
     std::set<QString> receive_addresses;
     for (const interfaces::WalletAddress& wallet_address : getAddresses()) {
-        if (wallet_address.purpose != wallet::AddressPurpose::RECEIVE || wallet_address.is_mine == wallet::ISMINE_NO) {
+        if (wallet_address.purpose != wallet::AddressPurpose::RECEIVE || !wallet_address.is_mine) {
             continue;
         }
 
@@ -1324,7 +1324,9 @@ std::unique_ptr<interfaces::Handler> WalletQmlModel::handleTransactionChanged(Tr
     if (!m_wallet) {
         return nullptr;
     }
-    return m_wallet->handleTransactionChanged(fn);
+    return m_wallet->handleTransactionChanged([fn = std::move(fn)](const Txid& txid, ChangeType status) {
+        fn(txid.ToUint256(), status);
+    });
 }
 
 void WalletQmlModel::scheduleFeeEstimates()

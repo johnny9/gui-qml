@@ -199,11 +199,11 @@ public:
             return std::nullopt;
         };
     std::set<Txid> known_txids;
-    std::function<wallet::isminetype(const CTxIn&)> txin_is_mine_fn = [](const CTxIn&) {
-        return wallet::ISMINE_NO;
+    std::function<bool(const CTxIn&)> txin_is_mine_fn = [](const CTxIn&) {
+        return false;
     };
-    std::function<wallet::isminetype(const CTxOut&)> txout_is_mine_fn = [](const CTxOut&) {
-        return wallet::ISMINE_NO;
+    std::function<bool(const CTxOut&)> txout_is_mine_fn = [](const CTxOut&) {
+        return false;
     };
     std::function<SigningResult(const std::string&, const PKHash&, std::string&)>
         sign_message_fn = [this](const std::string& message, const PKHash&, std::string& signature) {
@@ -258,7 +258,7 @@ public:
     bool isSpendable(const CTxDestination&) override { return false; }
     bool setAddressBook(const CTxDestination&, const std::string&, const std::optional<wallet::AddressPurpose>&) override { return true; }
     bool delAddressBook(const CTxDestination&) override { return true; }
-    bool getAddress(const CTxDestination&, std::string* name, wallet::isminetype*, wallet::AddressPurpose*) override
+    bool getAddress(const CTxDestination&, std::string* name, wallet::AddressPurpose*) override
     {
         if (name) {
             *name = get_address_label;
@@ -327,14 +327,14 @@ public:
     }
     CAmount getBalance() override { return balance; }
     CAmount getAvailableBalance(const wallet::CCoinControl&) override { return balance; }
-    wallet::isminetype txinIsMine(const CTxIn& txin) override { return txin_is_mine_fn(txin); }
-    wallet::isminetype txoutIsMine(const CTxOut& txout) override { return txout_is_mine_fn(txout); }
+    bool txinIsMine(const CTxIn& txin) override { return txin_is_mine_fn(txin); }
+    bool txoutIsMine(const CTxOut& txout) override { return txout_is_mine_fn(txout); }
     bool tryGetTxStatus(const Txid& txid, interfaces::WalletTxStatus&, int&, int64_t&) override
     {
         return known_txids.contains(txid);
     }
-    CAmount getDebit(const CTxIn&, wallet::isminefilter) override { return 0; }
-    CAmount getCredit(const CTxOut&, wallet::isminefilter) override { return 0; }
+    CAmount getDebit(const CTxIn&) override { return 0; }
+    CAmount getCredit(const CTxOut&) override { return 0; }
     CoinsList listCoins() override { return {}; }
     std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>&) override { return {}; }
     CAmount getRequiredFee(unsigned int) override { return 0; }
@@ -1418,7 +1418,7 @@ void WalletQmlModelTests::setCurrentPaymentRequestAddressUsesAddressListLabel()
     auto model = MakeWalletModel(wallet);
     wallet->wallet_addresses.emplace_back(
         DecodeDestination(VALID_MAINNET_ADDRESS.toStdString()),
-        wallet::ISMINE_SPENDABLE,
+        true,
         wallet::AddressPurpose::RECEIVE,
         "invoice 1024");
     wallet->get_address_result = true;
@@ -1837,7 +1837,7 @@ void WalletQmlModelTests::importPsbtFromFile_opensOwnedUnsignedPsbtWithoutSignin
 
     const COutPoint owned_outpoint{Txid::FromUint256(uint256::ONE), 0};
     wallet->txin_is_mine_fn = [owned_outpoint](const CTxIn& txin) {
-        return txin.prevout == owned_outpoint ? wallet::ISMINE_SPENDABLE : wallet::ISMINE_NO;
+        return txin.prevout == owned_outpoint;
     };
     wallet->fill_psbt_fn = [wallet](std::optional<int>,
                                     bool sign,
@@ -2036,7 +2036,7 @@ void WalletQmlModelTests::importPsbtFromFile_opensWatchOnlyUnsignedPsbtForReview
     const PartiallySignedTransaction psbt{MakeReviewPsbt()};
     const COutPoint owned_outpoint{psbt.tx->vin[0].prevout};
     wallet->txin_is_mine_fn = [owned_outpoint](const CTxIn& txin) {
-        return txin.prevout == owned_outpoint ? wallet::ISMINE_SPENDABLE : wallet::ISMINE_NO;
+        return txin.prevout == owned_outpoint;
     };
     wallet->fill_psbt_fn = [wallet](std::optional<int>,
                                     bool sign,
@@ -2075,7 +2075,7 @@ void WalletQmlModelTests::saveCurrentTransactionAsPsbt_preservesImportedMetadata
     const QByteArray original{PsbtQmlModel::SerializePsbtRaw(psbt)};
     const COutPoint owned_outpoint{psbt.tx->vin[0].prevout};
     wallet->txin_is_mine_fn = [owned_outpoint](const CTxIn& txin) {
-        return txin.prevout == owned_outpoint ? wallet::ISMINE_SPENDABLE : wallet::ISMINE_NO;
+        return txin.prevout == owned_outpoint;
     };
     wallet->fill_psbt_fn = [wallet](std::optional<int>,
                                     bool sign,
@@ -2128,7 +2128,7 @@ void WalletQmlModelTests::sendImportedPsbtWithPassphraseSignsOnceAndRelocks()
     const PartiallySignedTransaction psbt{MakeReviewPsbt()};
     const COutPoint owned_outpoint{psbt.tx->vin[0].prevout};
     wallet->txin_is_mine_fn = [owned_outpoint](const CTxIn& txin) {
-        return txin.prevout == owned_outpoint ? wallet::ISMINE_SPENDABLE : wallet::ISMINE_NO;
+        return txin.prevout == owned_outpoint;
     };
     wallet->fill_psbt_fn = [wallet](std::optional<int>,
                                     bool sign,
@@ -2176,7 +2176,7 @@ void WalletQmlModelTests::externalSignerApprovalSignsImportedPsbtOnlyOnce()
     const PartiallySignedTransaction psbt{MakeReviewPsbt()};
     const COutPoint owned_outpoint{psbt.tx->vin[0].prevout};
     wallet->txin_is_mine_fn = [owned_outpoint](const CTxIn& txin) {
-        return txin.prevout == owned_outpoint ? wallet::ISMINE_SPENDABLE : wallet::ISMINE_NO;
+        return txin.prevout == owned_outpoint;
     };
     wallet->fill_psbt_fn = [wallet](std::optional<int>,
                                     bool sign,
@@ -2221,7 +2221,7 @@ void WalletQmlModelTests::externalSignerApprovalKeepsIncompleteSignedPsbt()
     const PartiallySignedTransaction psbt{MakeReviewPsbt()};
     const COutPoint owned_outpoint{psbt.tx->vin[0].prevout};
     wallet->txin_is_mine_fn = [owned_outpoint](const CTxIn& txin) {
-        return txin.prevout == owned_outpoint ? wallet::ISMINE_SPENDABLE : wallet::ISMINE_NO;
+        return txin.prevout == owned_outpoint;
     };
 
     const std::vector<unsigned char> signer_key{0x53};
