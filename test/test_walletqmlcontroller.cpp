@@ -13,6 +13,7 @@
 #include <scheduler.h>
 #include <test/mocks/mocknode.h>
 #include <util/translation.h>
+#include <wallet/types.h>
 #include <wallet/walletutil.h>
 
 #include <gmock/gmock.h>
@@ -185,11 +186,10 @@ public:
     bool unlockCoin(const COutPoint&) override { return true; }
     bool isLockedCoin(const COutPoint&) override { return false; }
     void listLockedCoins(std::vector<COutPoint>& outputs) override { outputs.clear(); }
-    util::Result<CTransactionRef> createTransaction(const std::vector<wallet::CRecipient>&,
+    util::Result<wallet::CreatedTransactionResult> createTransaction(const std::vector<wallet::CRecipient>&,
                                                     const wallet::CCoinControl&,
                                                     bool,
-                                                    int&,
-                                                    CAmount&) override
+                                                    std::optional<unsigned int>) override
     {
         return util::Error{Untranslated("Unexpected createTransaction call")};
     }
@@ -208,7 +208,7 @@ public:
     std::set<interfaces::WalletTx> getWalletTxs() override { return {}; }
     bool tryGetTxStatus(const Txid&, interfaces::WalletTxStatus&, int&, int64_t&) override { return false; }
     interfaces::WalletTx getWalletTxDetails(const Txid&, interfaces::WalletTxStatus&, interfaces::WalletOrderForm&, bool&, int&) override { return {}; }
-    std::optional<common::PSBTError> fillPSBT(std::optional<int>, bool, bool, size_t*, PartiallySignedTransaction&, bool&) override
+    std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions&, size_t*, PartiallySignedTransaction&, bool&) override
     {
         return std::nullopt;
     }

@@ -18,6 +18,7 @@
 #include <script/script.h>
 #include <script/solver.h>
 #include <streams.h>
+#include <util/result.h>
 #include <util/strencodings.h>
 #include <util/translation.h>
 
@@ -76,19 +77,14 @@ std::optional<std::pair<int, int>> ExtractMultisigSigInfo(const CScript& script)
     return std::nullopt;
 }
 
-bool IsMultisigScript(const CScript& script)
-{
-    return ExtractMultisigSigInfo(script).has_value();
-}
-
-bool DecodePsbtFromBytes(const QByteArray& bytes, PartiallySignedTransaction& psbt, std::string& error)
+util::Result<PartiallySignedTransaction> DecodePsbtFromBytes(const QByteArray& bytes)
 {
     std::vector<std::byte> raw;
     raw.reserve(bytes.size());
     for (const char ch : bytes) {
         raw.push_back(static_cast<std::byte>(static_cast<unsigned char>(ch)));
     }
-    return DecodeRawPSBT(psbt, std::span<const std::byte>{raw.data(), raw.size()}, error);
+    return DecodeRawPSBT(std::span<const std::byte>{raw.data(), raw.size()});
 }
 
 } // namespace
@@ -113,19 +109,22 @@ QString PsbtQmlModel::LoadPsbtFromFile(const QString& path, PartiallySignedTrans
     }
 
     const QByteArray bytes{file.readAll()};
-    std::string error;
-    if (DecodePsbtFromBytes(bytes, psbt, error)) {
+    const auto raw_result{DecodePsbtFromBytes(bytes)};
+    if (raw_result) {
+        psbt = *raw_result;
         return {};
     }
 
-    psbt = PartiallySignedTransaction{};
-    std::string base64_error;
-    if (DecodeBase64PSBT(psbt, QString::fromUtf8(bytes).trimmed().toStdString(), base64_error)) {
+    const auto base64_result{DecodeBase64PSBT(QString::fromUtf8(bytes).trimmed().toStdString())};
+    if (base64_result) {
+        psbt = *base64_result;
         return {};
     }
 
-    const std::string& decode_error{base64_error == "invalid base64" ? error : base64_error};
-    return tr("Could not decode PSBT: %1").arg(QString::fromStdString(decode_error));
+    const bilingual_str raw_error{util::ErrorString(raw_result)};
+    const bilingual_str base64_error{util::ErrorString(base64_result)};
+    const bilingual_str& decode_error{base64_error.original == "invalid base64" ? raw_error : base64_error};
+    return tr("Could not decode PSBT: %1").arg(QString::fromStdString(decode_error.translated));
 }
 
 QByteArray PsbtQmlModel::SerializePsbtRaw(const PartiallySignedTransaction& psbt)
@@ -171,7 +170,7 @@ std::optional<std::pair<int, int>> PsbtQmlModel::MultisigPsbtInputSigInfo(const 
     if (auto info{ExtractMultisigSigInfo(input.witness_script)}) return info;
 
     CTxOut utxo;
-    if (psbt.GetInputUTXO(utxo, index)) {
+    if (input.GetUTXO(utxo)) {
         if (auto info{ExtractMultisigSigInfo(utxo.scriptPubKey)}) return info;
     }
     return std::nullopt;
@@ -222,7 +221,8 @@ void PsbtQmlModel::setMatchedTxid(const QString& txid)
 
 QString PsbtQmlModel::loadFromFile(const QString& path)
 {
-    PartiallySignedTransaction psbt;
+    CMutableTransaction empty_tx;
+    PartiallySignedTransaction psbt{empty_tx};
     const QString error{LoadPsbtFromFile(path, psbt)};
     if (!error.isEmpty()) {
         setError(error);
@@ -248,7 +248,7 @@ void PsbtQmlModel::sign()
     bool complete{false};
     size_t signed_inputs{0};
     const std::optional<common::PSBTError> error{
-        m_wallet->fillPSBT(std::nullopt, /*sign=*/true, /*bip32derivs=*/true, &signed_inputs, *m_psbt, complete)};
+        m_wallet->fillPSBT({.sign = true, .bip32_derivs = true}, &signed_inputs, *m_psbt, complete)};
     if (error) {
         refreshState(tr("Could not sign PSBT: %1").arg(PsbtErrorText(*error)));
         return;
@@ -328,7 +328,7 @@ void PsbtQmlModel::refreshState(const QString& status_override)
     size_t could_sign{0};
     std::optional<common::PSBTError> fill_error;
     if (m_wallet) {
-        fill_error = m_wallet->fillPSBT(std::nullopt, /*sign=*/false, /*bip32derivs=*/true, &could_sign, *m_psbt, complete);
+        fill_error = m_wallet->fillPSBT({.sign = false, .bip32_derivs = true}, &could_sign, *m_psbt, complete);
     }
 
     m_error = fill_error ? PsbtErrorText(*fill_error) : QString();
@@ -361,13 +361,14 @@ void PsbtQmlModel::refreshState(const QString& status_override)
 QStringList PsbtQmlModel::buildSummary(const PartiallySignedTransaction& psbt) const
 {
     QStringList lines;
-    if (!psbt.tx) {
+    const auto unsigned_tx{psbt.GetUnsignedTx()};
+    if (!unsigned_tx) {
         lines << tr("PSBT does not contain an unsigned transaction.");
         return lines;
     }
 
     CAmount total{0};
-    for (const CTxOut& output : psbt.tx->vout) {
+    for (const CTxOut& output : unsigned_tx->vout) {
         total += output.nValue;
         CTxDestination destination;
         const QString address{ExtractDestination(output.scriptPubKey, destination) ? QString::fromStdString(EncodeDestination(destination)) : tr("unknown destination")};

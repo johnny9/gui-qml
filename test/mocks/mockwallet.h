@@ -53,7 +53,7 @@ public:
     bool unlockCoin(const COutPoint&) override { return false; }
     bool isLockedCoin(const COutPoint&) override { return false; }
     void listLockedCoins(std::vector<COutPoint>&) override {}
-    util::Result<CTransactionRef> createTransaction(const std::vector<wallet::CRecipient>&, const wallet::CCoinControl&, bool, int&, CAmount&) override { return util::Error{Untranslated("not implemented")}; }
+    util::Result<wallet::CreatedTransactionResult> createTransaction(const std::vector<wallet::CRecipient>&, const wallet::CCoinControl&, bool, std::optional<unsigned int>) override { return util::Error{Untranslated("not implemented")}; }
     void commitTransaction(CTransactionRef, interfaces::WalletValueMap, interfaces::WalletOrderForm) override {}
     bool transactionCanBeAbandoned(const Txid&) override { return false; }
     bool abandonTransaction(const Txid&) override { return false; }
@@ -66,7 +66,7 @@ public:
     std::set<interfaces::WalletTx> getWalletTxs() override { return {}; }
     bool tryGetTxStatus(const Txid&, interfaces::WalletTxStatus&, int&, int64_t&) override { return false; }
     interfaces::WalletTx getWalletTxDetails(const Txid&, interfaces::WalletTxStatus&, interfaces::WalletOrderForm&, bool&, int&) override { return {}; }
-    std::optional<common::PSBTError> fillPSBT(std::optional<int>, bool, bool, size_t*, PartiallySignedTransaction&, bool&) override { return std::nullopt; }
+    std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions&, size_t*, PartiallySignedTransaction&, bool&) override { return std::nullopt; }
     interfaces::WalletBalances getBalances() override { return {}; }
     bool tryGetBalances(interfaces::WalletBalances&, uint256&) override { return false; }
     CAmount getBalance() override { return 0; }
@@ -106,14 +106,23 @@ public:
         return getNewDestinationValue(type, label);
     }
 
-    util::Result<CTransactionRef> createTransaction(const std::vector<wallet::CRecipient>& recipients,
+    util::Result<wallet::CreatedTransactionResult> createTransaction(const std::vector<wallet::CRecipient>& recipients,
         const wallet::CCoinControl& coin_control,
         bool sign,
-        int& change_pos,
-        CAmount& fee) override
+        std::optional<unsigned int>) override
     {
         if (createTransactionHandler) {
-            return createTransactionHandler(recipients, coin_control, sign, change_pos, fee);
+            int change_pos{-1};
+            CAmount fee{0};
+            auto result = createTransactionHandler(recipients, coin_control, sign, change_pos, fee);
+            if (!result) {
+                return util::Error{util::ErrorString(result)};
+            }
+            return wallet::CreatedTransactionResult{
+                *result,
+                fee,
+                change_pos >= 0 ? std::optional<unsigned int>{static_cast<unsigned int>(change_pos)} : std::nullopt,
+                FeeCalculation{}};
         }
         return util::Error{Untranslated("no createTransactionHandler installed")};
     }

@@ -32,14 +32,12 @@ public:
     bool private_keys_disabled{false};
     std::vector<bool> sign_args;
 
-    std::optional<common::PSBTError> fillPSBT(std::optional<int>,
-                                              bool sign,
-                                              bool,
+    std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options,
                                               size_t* n_signed,
                                               PartiallySignedTransaction&,
                                               bool& complete) override
     {
-        sign_args.push_back(sign);
+        sign_args.push_back(options.sign);
         if (n_signed) {
             *n_signed = 1;
         }
@@ -78,11 +76,11 @@ PartiallySignedTransaction MakeCompletePsbt()
     return psbt;
 }
 
-PartiallySignedTransaction DecodeRawPsbt(const QString& path)
+std::optional<PartiallySignedTransaction> DecodeRawPsbt(const QString& path)
 {
     QFile file{path};
     if (!file.open(QIODevice::ReadOnly)) {
-        return {};
+        return std::nullopt;
     }
     const QByteArray bytes{file.readAll()};
     std::vector<std::byte> raw;
@@ -91,12 +89,11 @@ PartiallySignedTransaction DecodeRawPsbt(const QString& path)
         raw.push_back(static_cast<std::byte>(static_cast<unsigned char>(byte)));
     }
 
-    PartiallySignedTransaction psbt;
-    std::string error;
-    if (!DecodeRawPSBT(psbt, std::span<const std::byte>{raw.data(), raw.size()}, error)) {
-        return {};
+    const auto psbt{DecodeRawPSBT(std::span<const std::byte>{raw.data(), raw.size()})};
+    if (!psbt) {
+        return std::nullopt;
     }
-    return psbt;
+    return *psbt;
 }
 } // namespace
 
@@ -200,10 +197,11 @@ void PsbtQmlModelTests::savePreservesPsbtMetadata()
     QCOMPARE(model.loadFromFile(source_path), QString{});
     QCOMPARE(model.saveToFile(saved_path), QString{});
 
-    const PartiallySignedTransaction saved{DecodeRawPsbt(saved_path)};
-    QCOMPARE(saved.unknown, psbt.unknown);
-    QCOMPARE(saved.inputs[0].unknown, psbt.inputs[0].unknown);
-    QCOMPARE(saved.outputs[0].unknown, psbt.outputs[0].unknown);
+    const auto saved{DecodeRawPsbt(saved_path)};
+    QVERIFY(saved.has_value());
+    QCOMPARE(saved->unknown, psbt.unknown);
+    QCOMPARE(saved->inputs[0].unknown, psbt.inputs[0].unknown);
+    QCOMPARE(saved->outputs[0].unknown, psbt.outputs[0].unknown);
 }
 
 void PsbtQmlModelTests::broadcastsCompletePsbt()
