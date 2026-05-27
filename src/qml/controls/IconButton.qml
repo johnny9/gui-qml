@@ -1,4 +1,4 @@
-// Copyright (c) 2025 The Bitcoin Core developers
+// Copyright (c) 2025-2026 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,6 +11,8 @@ import org.bitcoincore.qt 1.0
 Button {
     id: root
 
+    implicitHeight: root.height
+    implicitWidth: root.width
     property color iconColor: Theme.color.neutral5
     property color hoverColor: activeColor
     property color activeColor: Theme.color.orange
