@@ -133,7 +133,7 @@ def assert_wallet_ui_absent(gui):
 
     wallet_settings_visible = gui.get_property("settingsWallet", "visible")
     assert wallet_settings_visible is False, (
-        "External Signer settings row should be hidden in -disablewallet mode, "
+        "Wallet settings row should be hidden in -disablewallet mode, "
         f"got {wallet_settings_visible!r}"
     )
 
