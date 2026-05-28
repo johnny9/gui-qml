@@ -78,6 +78,7 @@ class BlockClockDialTests : public QObject
 private Q_SLOTS:
     void ibdProgressRendersImmediateHalfArc();
     void syncedGradientToggleChangesRenderedColors();
+    void syncedGradientUpdatesWhenConfirmationColorsChange();
     void connectingDelayControlsInitialAnimation();
 };
 
@@ -126,6 +127,35 @@ void BlockClockDialTests::syncedGradientToggleChangesRenderedColors()
     QVERIFY2(ColorDistance(gradient_right, gradient_bottom) > 25,
              qPrintable(QStringLiteral("expected gradient samples to differ, got %1 and %2")
                             .arg(gradient_right.name(QColor::HexArgb), gradient_bottom.name(QColor::HexArgb))));
+}
+
+void BlockClockDialTests::syncedGradientUpdatesWhenConfirmationColorsChange()
+{
+    BlockClockDial dial;
+    ConfigureDial(dial);
+    dial.setAnimateDial(false);
+    dial.setConnected(true);
+    dial.setSynced(true);
+    dial.setShowBlockSegments(false);
+    dial.setUseGradientArcWhenSynced(true);
+    dial.setTimeRatioList({1.0, 0.0});
+
+    const QColor initial_color{RenderDial(dial).pixelColor(QPoint{DIAL_SIZE - 7, DIAL_SIZE / 2})};
+
+    const QList<QColor> updated_colors{
+        QColor{QStringLiteral("#3399FF")},
+        QColor{QStringLiteral("#33CCFF")},
+        QColor{QStringLiteral("#33FFCC")},
+        QColor{QStringLiteral("#99FF33")},
+        QColor{QStringLiteral("#FFFF33")},
+        QColor{QStringLiteral("#FFFFFF")},
+    };
+    dial.setConfirmationColors(updated_colors);
+
+    const QColor updated_color{RenderDial(dial).pixelColor(QPoint{DIAL_SIZE - 7, DIAL_SIZE / 2})};
+    QVERIFY2(ColorDistance(initial_color, updated_color) > 50,
+             qPrintable(QStringLiteral("expected gradient color to update, got %1 and %2")
+                            .arg(initial_color.name(QColor::HexArgb), updated_color.name(QColor::HexArgb))));
 }
 
 void BlockClockDialTests::connectingDelayControlsInitialAnimation()

@@ -49,6 +49,11 @@ void BlockClockDial::setupConnectingGradient(const QPen & pen)
 
 void BlockClockDial::setupSyncedGradient(const QRectF& bounds)
 {
+    if (!m_synced_gradient_needs_update && m_synced_gradient_bounds == bounds) {
+        return;
+    }
+
+    m_synced_gradient_bounds = bounds;
     m_synced_gradient.setCenter(bounds.center());
     m_synced_gradient.setAngle(90);
     m_synced_gradient.setColorAt(0, m_confirmation_colors[5]);
@@ -58,6 +63,12 @@ void BlockClockDial::setupSyncedGradient(const QRectF& bounds)
     m_synced_gradient.setColorAt(0.64, m_confirmation_colors[2]);
     m_synced_gradient.setColorAt(0.8, m_confirmation_colors[1]);
     m_synced_gradient.setColorAt(1, m_confirmation_colors[0]);
+    m_synced_gradient_needs_update = false;
+}
+
+void BlockClockDial::invalidateSyncedGradient()
+{
+    m_synced_gradient_needs_update = true;
 }
 
 qreal BlockClockDial::decrementGradientAngle(qreal angle)
@@ -233,16 +244,22 @@ void BlockClockDial::setUseGradientArcWhenSynced(bool use_gradient_arc_when_sync
 
 void BlockClockDial::setPenWidth(qreal width)
 {
-    m_pen_width = width;
-    update();
+    if (m_pen_width != width) {
+        m_pen_width = width;
+        invalidateSyncedGradient();
+        update();
+    }
 }
 
 void BlockClockDial::setScale(qreal scale)
 {
-    m_scale = scale;
-    update();
+    if (m_scale != scale) {
+        m_scale = scale;
+        invalidateSyncedGradient();
+        update();
 
-    Q_EMIT scaleChanged();
+        Q_EMIT scaleChanged();
+    }
 }
 
 void BlockClockDial::setBackgroundColor(QColor color)
@@ -253,8 +270,11 @@ void BlockClockDial::setBackgroundColor(QColor color)
 
 void BlockClockDial::setConfirmationColors(QList<QColor> colorList)
 {
-    m_confirmation_colors = colorList;
-    update();
+    if (m_confirmation_colors != colorList) {
+        m_confirmation_colors = colorList;
+        invalidateSyncedGradient();
+        update();
+    }
 }
 
 void BlockClockDial::setTimeTickColor(QColor color)

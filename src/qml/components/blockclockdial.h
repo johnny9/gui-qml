@@ -82,6 +82,7 @@ private:
     double degreesPerPixel();
     void setupConnectingGradient(const QPen & pen);
     void setupSyncedGradient(const QRectF& bounds);
+    void invalidateSyncedGradient();
     qreal decrementGradientAngle(qreal angle);
     qreal incrementAnimatingMaxAngle(qreal angle);
     qreal getTargetAnimationAngle();
@@ -101,6 +102,8 @@ private:
     QColor m_background_color{"#2D2D2D"};
     QConicalGradient m_connecting_gradient;
     QConicalGradient m_synced_gradient;
+    QRectF m_synced_gradient_bounds;
+    bool m_synced_gradient_needs_update{true};
     qreal m_connecting_start_angle = 90;
     const qreal m_connecting_end_angle = -180;
     QList<QColor> m_confirmation_colors{};
