@@ -324,7 +324,7 @@ void WalletQmlController::createSingleSigWallet(const QString &name, const QStri
     }
 
     SecureString secure_passphrase{QmlUtil::SecureStringFromQString(passphrase)};
-    const std::string wallet_name{name.toStdString()};
+    const std::string wallet_name{name.trimmed().toStdString()};
 
     m_wallet_load_requested = true;
     m_pending_wallet_load_action = WalletLoadAction::Create;
@@ -373,7 +373,7 @@ bool WalletQmlController::createExternalSignerWallet(const QString& name)
         return false;
     }
 
-    const QString wallet_name = name;
+    const QString wallet_name = name.trimmed();
     const QString name_error = walletNameAvailabilityError(wallet_name);
     if (!name_error.isEmpty()) {
         setWalletLoadError(name_error);
@@ -447,7 +447,13 @@ void WalletQmlController::createWatchOnlyWallet(const QString &name, const QStri
         return;
     }
 
-    const std::string wallet_name{name.toStdString()};
+    const QString name_error = walletNameAvailabilityError(name);
+    if (!name_error.isEmpty()) {
+        setWalletLoadError(name_error);
+        return;
+    }
+
+    const std::string wallet_name{name.trimmed().toStdString()};
     const uint64_t creation_flags = wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS |
                                     wallet::WALLET_FLAG_DESCRIPTORS |
                                     wallet::WALLET_FLAG_BLANK_WALLET;
@@ -617,14 +623,14 @@ bool WalletQmlController::walletPathExists(const QString& path) const
 
 bool WalletQmlController::walletNameExists(const QString& name) const
 {
-    const QString candidate = QDir::cleanPath(name);
+    const QString candidate = name.trimmed();
     if (candidate.isEmpty()) {
         return false;
     }
 
     for (const auto& [wallet_path, info] : m_node.walletLoader().listWalletDir()) {
         Q_UNUSED(info);
-        const QString real_name = QDir::cleanPath(QString::fromStdString(wallet_path));
+        const QString real_name = QString::fromStdString(wallet_path);
         if (real_name.compare(candidate, Qt::CaseInsensitive) == 0) {
             return true;
         }
@@ -649,11 +655,12 @@ bool WalletQmlController::walletNameExists(const QString& name) const
 
 QString WalletQmlController::walletNameAvailabilityError(const QString& name) const
 {
-    if (name.isEmpty()) {
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty()) {
         return tr("Enter a wallet name.");
     }
 
-    if (walletNameExists(name)) {
+    if (walletNameExists(trimmed)) {
         return tr("A wallet with this name already exists");
     }
 

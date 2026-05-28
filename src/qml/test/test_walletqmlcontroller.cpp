@@ -304,6 +304,9 @@ private Q_SLOTS:
     void initializedControllerUnloadWalletsClearsSelectionAndOpenWallets();
     void initializedControllerEmitsLoadingThenLoadErrorOnFailedLoad();
     void publishOpenWalletsInfoEmitsWalletInfoChangedForEachOpenWallet();
+    void walletNameAvailabilityErrorRejectsEmptyAndWhitespace();
+    void walletNameAvailabilityErrorRejectsExistingNameWithSurroundingWhitespace();
+    void walletNameAvailabilityErrorReturnsEmptyForAvailableName();
 };
 
 void WalletQmlControllerTests::initTestCase()
@@ -993,6 +996,57 @@ void WalletQmlControllerTests::publishOpenWalletsInfoEmitsWalletInfoChangedForEa
     names << info_spy.at(0).at(0).toString() << info_spy.at(1).at(0).toString();
     names.sort();
     QCOMPARE(names, QStringList({"alpha_wallet", "beta_wallet"}));
+}
+
+void WalletQmlControllerTests::walletNameAvailabilityErrorRejectsEmptyAndWhitespace()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QCOMPARE(controller.walletNameAvailabilityError(""), QString{"Enter a wallet name."});
+    QCOMPARE(controller.walletNameAvailabilityError("   "), QString{"Enter a wallet name."});
+    QCOMPARE(controller.walletNameAvailabilityError("\t\n"), QString{"Enter a wallet name."});
+}
+
+void WalletQmlControllerTests::walletNameAvailabilityErrorRejectsExistingNameWithSurroundingWhitespace()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    loader.wallet_dir_entries = {{"alpha_wallet", "sqlite"}};
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QCOMPARE(controller.walletNameAvailabilityError("alpha_wallet"),
+             QString{"A wallet with this name already exists"});
+    QCOMPARE(controller.walletNameAvailabilityError("  alpha_wallet  "),
+             QString{"A wallet with this name already exists"});
+    QCOMPARE(controller.walletNameAvailabilityError("ALPHA_WALLET"),
+             QString{"A wallet with this name already exists"});
+}
+
+void WalletQmlControllerTests::walletNameAvailabilityErrorReturnsEmptyForAvailableName()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    loader.wallet_dir_entries = {{"alpha_wallet", "sqlite"}};
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QCOMPARE(controller.walletNameAvailabilityError("brand_new_wallet"), QString{});
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN
