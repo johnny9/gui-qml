@@ -372,10 +372,16 @@ Page {
         }
     }
 
-    ActionErrorPopup {
+    AlertPopup {
         id: peerActionError
         objectName: "peerActionErrorPopup"
         title: qsTr("Peer action failed")
+        messageObjectName: "actionErrorMessage"
+
+        AlertAction {
+            text: qsTr("OK")
+            buttonObjectName: "actionErrorCloseButton"
+        }
     }
 
     component KeyText: CoreText {

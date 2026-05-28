@@ -123,9 +123,15 @@ Page {
         }
     }
 
-    ActionErrorPopup {
+    AlertPopup {
         id: unbanActionError
         objectName: "unbanActionErrorPopup"
         title: qsTr("Peer action failed")
+        messageObjectName: "actionErrorMessage"
+
+        AlertAction {
+            text: qsTr("OK")
+            buttonObjectName: "actionErrorCloseButton"
+        }
     }
 }

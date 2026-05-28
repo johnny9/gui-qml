@@ -7,6 +7,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Window 2.15
 import QtTest 1.2
 import "../../qml/components"
+import "../../qml/controls"
 import "../../qml/pages/node"
 
 TestCase {
@@ -52,12 +53,37 @@ TestCase {
         NodeFatalErrorPopup {}
     }
 
+    Component {
+        id: alertPopupComponent
+        AlertPopup {
+            title: "Delete wallet?"
+            message: "Are you sure?"
+            messageObjectName: "alertPopupMessageForTest"
+
+            AlertAction {
+                text: "Cancel"
+                role: AlertAction.Cancel
+                buttonObjectName: "alertCancelButton"
+            }
+
+            AlertAction {
+                text: "Delete"
+                role: AlertAction.Destructive
+                buttonObjectName: "alertDeleteButton"
+                onTriggered: destructiveAlertTriggered = true
+            }
+        }
+    }
+
+    property bool destructiveAlertTriggered: false
+
     function init() {
         testWindow.width = 640
         testWindow.height = 520
         nodeModel.setWarningsForTest([])
         nodeModel.setStartupErrorForTest("")
         nodeModel.answerRuntimeDialog(DialogButtonBox.Cancel)
+        destructiveAlertTriggered = false
     }
 
     function longWarningText() {
@@ -74,6 +100,45 @@ TestCase {
         }
         verify(textItem.width > 0)
         verify(textItem.lineCount > 1)
+    }
+
+    function waitForChild(parent, objectName) {
+        for (let i = 0; i < 20; ++i) {
+            const child = findChild(parent, objectName)
+            if (child !== null) {
+                return child
+            }
+            wait(25)
+        }
+        return null
+    }
+
+    function test_alert_popup_actions_and_text_styles() {
+        const popup = createTemporaryObject(alertPopupComponent, testWindow.contentItem)
+        verify(popup !== null)
+
+        popup.open()
+        tryCompare(popup, "opened", true)
+
+        const title = findChild(popup, "alertTitle")
+        verify(title !== null)
+        compare(title.font.pixelSize, Theme.text.subtitle.pixelSize)
+        compare(title.lineHeight, Theme.text.subtitle.lineHeight)
+
+        const message = findChild(popup, "alertPopupMessageForTest")
+        verify(message !== null)
+        compare(message.font.pixelSize, Theme.text.description.pixelSize)
+        compare(message.lineHeight, Theme.text.description.lineHeight)
+
+        compare(popup.visibleActions.length, 2)
+        compare(popup.visibleActions[1].buttonObjectName, "alertDeleteButton")
+        const deleteButton = waitForChild(testWindow.contentItem, "alertDeleteButton")
+        verify(deleteButton !== null)
+        compare(deleteButton.backgroundColor, Theme.color.red)
+
+        deleteButton.clicked()
+        tryCompare(popup, "opened", false)
+        verify(destructiveAlertTriggered)
     }
 
     function test_warning_action_visibility_follows_warning_state() {
