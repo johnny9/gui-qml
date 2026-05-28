@@ -108,7 +108,7 @@ Page {
         id: navBar
         leftItem: WalletBadge {
             objectName: "walletBadge"
-            implicitWidth: 154
+            implicitWidth: 200
             implicitHeight: 46
             text: walletController.selectedWallet.displayName
             balance: walletController.selectedWallet.balance

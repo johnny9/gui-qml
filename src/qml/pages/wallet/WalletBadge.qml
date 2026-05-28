@@ -163,6 +163,8 @@ Button {
                     visible: root.showBalance
                     text: root.balance + " " + (optionsModel.displayUnit === 1 ? (root.balanceSatoshi === 1 ? qsTr("sat") : qsTr("sats")) : "₿")
                     color: Theme.color.neutral7
+                    font.pixelSize: 15
+                    bold: true
                 }
             }
         }

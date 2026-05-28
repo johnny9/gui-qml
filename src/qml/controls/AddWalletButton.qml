@@ -76,6 +76,7 @@ Button {
         },
         State {
             name: "HOVER"; when: root.hovered
+            PropertyChanges { target: bg; color: bgActiveColor }
             PropertyChanges { target: addText; color: textHoverColor }
             PropertyChanges { target: addIcon; color: textHoverColor }
         }

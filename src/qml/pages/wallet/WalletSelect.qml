@@ -135,10 +135,11 @@ Popup {
                         return qsTr("Closed")
                     }
                 }
-                readonly property color statusColor:
-                    loadState === WalletListModel.LoadError
-                        ? Theme.color.red
-                        : Theme.color.neutral7
+                readonly property color statusColor: {
+                    if (loadState === WalletListModel.LoadError) return Theme.color.red
+                    if (loadState === WalletListModel.Open && (delegate.checked || delegate.hovered)) return Theme.color.orange
+                    return Theme.color.neutral7
+                }
 
                 objectName: "walletSelectItem_" + name.replace(/[^A-Za-z0-9_]/g, "_")
                 width: 220
