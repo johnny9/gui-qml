@@ -179,6 +179,7 @@
         <file alias="coinbase">res/icons/coinbase.png</file>
         <file alias="cross">res/icons/cross.png</file>
         <file alias="cross-filled">res/icons/cross-filled.png</file>
+        <file alias="devices-filled">res/icons/devices-filled.png</file>
         <file alias="edit">res/icons/edit.png</file>
         <file alias="ellipsis">res/icons/ellipsis.png</file>
         <file alias="error">res/icons/error.png</file>

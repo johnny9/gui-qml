@@ -138,47 +138,6 @@ PageStack {
                 }
             }
 
-            ContinueButton {
-                objectName: "createExternalWalletEntryButton"
-                visible: walletController.canCreateExternalSignerWallet
-                Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
-                Layout.leftMargin: 20
-                Layout.rightMargin: Layout.leftMargin
-                Layout.alignment: Qt.AlignCenter
-                text: walletController.externalSignerName.length > 0
-                    ? qsTr("Create external wallet")
-                    : qsTr("Create hardware wallet")
-                borderColor: Theme.color.neutral6
-                borderHoverColor: Theme.color.orangeLight1
-                borderPressedColor: Theme.color.orangeLight2
-                textColor: Theme.color.orange
-                backgroundColor: "transparent"
-                backgroundHoverColor: "transparent"
-                backgroundPressedColor: "transparent"
-                onClicked: {
-                    walletController.clearWalletLoadStatus()
-                    walletController.refreshExternalSignerStatus()
-                    root.push(external_wallet, {
-                        "defaultWalletName": walletController.suggestedExternalSignerWalletName
-                    })
-                }
-            }
-
-            CoreText {
-                visible: optionsModel.externalSignerPath.length > 0 && !walletController.canCreateExternalSignerWallet
-                Layout.fillWidth: true
-                Layout.leftMargin: 20
-                Layout.rightMargin: 20
-                Layout.topMargin: 20
-                wrapMode: Text.WordWrap
-                color: Theme.color.neutral8
-                text: {
-                    if (walletController.externalSignerError.length > 0) {
-                        return walletController.externalSignerError
-                    }
-                    return qsTr("No external signer is currently detected. Open Wallet settings to verify the signer path and rescan.")
-                }
-            }
         }
     }
     Component {
@@ -192,6 +151,13 @@ PageStack {
             onWatchOnlySelected: {
                 root.walletType = "watchonly"
                 root.push(watchOnlyIntro)
+            }
+            onExternalSignerSelected: {
+                walletController.clearWalletLoadStatus()
+                walletController.refreshExternalSignerStatus()
+                root.push(external_wallet, {
+                    "defaultWalletName": walletController.suggestedExternalSignerWalletName
+                })
             }
             onImportSelected: {
                 walletController.clearWalletLoadStatus()

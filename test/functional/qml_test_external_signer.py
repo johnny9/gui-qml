@@ -284,10 +284,12 @@ def create_and_verify_external_wallet(harness, checkpoints):
     open_add_wallet_flow(gui)
     checkpoints.checkpoint("add wallet flow opened", gui)
 
-    gui.wait_for_property("createExternalWalletEntryButton", "visible", True, timeout_ms=10000)
+    gui.wait_for_property("createWalletButton", "visible", True, timeout_ms=10000)
+    gui.click("createWalletButton")
+    gui.wait_for_property("walletTypeExternalSigner", "visible", True, timeout_ms=10000)
     checkpoints.checkpoint("external wallet option available", gui)
 
-    gui.click("createExternalWalletEntryButton")
+    gui.click("walletTypeExternalSigner")
     gui.wait_for_property("externalWalletNameInput", "visible", True, timeout_ms=10000)
     gui.wait_for_property("createExternalWalletButton", "enabled", True, timeout_ms=10000)
     checkpoints.checkpoint("external wallet form opened", gui)

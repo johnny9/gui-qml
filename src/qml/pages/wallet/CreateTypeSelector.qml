@@ -15,6 +15,7 @@ Page {
     signal back
     signal regularSelected
     signal watchOnlySelected
+    signal externalSignerSelected
     signal importSelected
     background: null
 
@@ -78,8 +79,22 @@ Page {
                 Layout.rightMargin: 20
                 title: qsTr("Watch-only")
                 description: qsTr("Keep an eye on another wallet you have.")
-                iconSource: "image://images/visible"
+                iconSource: "image://images/visible-filled"
                 onClicked: root.watchOnlySelected()
+            }
+
+            WalletTypeListItem {
+                objectName: "walletTypeExternalSigner"
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                visible: walletController.canCreateExternalSignerWallet
+                title: walletController.externalSignerName.length > 0
+                    ? qsTr("External signer")
+                    : qsTr("Hardware wallet")
+                description: qsTr("Sign with a connected device.")
+                iconSource: "image://images/devices-filled"
+                onClicked: root.externalSignerSelected()
             }
 
             WalletTypeListItem {

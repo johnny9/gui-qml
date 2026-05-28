@@ -9,7 +9,6 @@ TextField {
     id: root
 
     property bool hideText: false
-    property bool showText: false
 
     implicitHeight: 56
     implicitWidth: 450
@@ -18,7 +17,7 @@ TextField {
     font.pixelSize: 18
     color: Theme.color.neutral9
     placeholderTextColor: Theme.color.neutral5
-    echoMode: hideText && !showText ? TextInput.Password : TextInput.Normal
+    echoMode: hideText ? TextInput.Password : TextInput.Normal
     verticalAlignment: TextInput.AlignVCenter
     rightPadding: hideText ? 46 : 20
     leftPadding: 20
@@ -38,11 +37,13 @@ TextField {
         anchors.right: root.right
         anchors.rightMargin: 12
         anchors.verticalCenter: root.verticalCenter
-        source: root.showText ? "qrc:/icons/hidden" : "qrc:/icons/visible"
+        source: root.echoMode === TextInput.Normal ? "qrc:/icons/hidden" : "qrc:/icons/visible"
         color: Theme.color.neutral5
 
         TapHandler {
-            onTapped: root.showText = !root.showText
+            onTapped: root.echoMode = (root.echoMode === TextInput.Password)
+                ? TextInput.Normal
+                : TextInput.Password
         }
 
         HoverHandler {
