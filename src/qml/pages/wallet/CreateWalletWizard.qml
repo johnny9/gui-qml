@@ -22,6 +22,12 @@ PageStack {
     property string xpub: ""
     property int launchContext: CreateWalletWizard.Context.Onboarding
     property bool waitingForInit: false
+    property bool creatingWatchOnly: false
+
+    function createWatchOnly() {
+        root.creatingWatchOnly = true
+        walletController.createWatchOnlyWallet(root.walletName, root.xpub)
+    }
 
     Component.onCompleted: {
         if (!walletController.initialized) {
@@ -36,13 +42,30 @@ PageStack {
         function onInitializedChanged() {
             if (walletController.initialized) {
                 root.waitingForInit = false
-                walletController.createWatchOnlyWallet(root.walletName, root.xpub)
-                if (walletController.isWalletLoaded) {
-                    root.push(watchOnlyConfirm)
-                }
+                root.createWatchOnly()
             }
         }
     }
+
+    Connections {
+        target: walletController
+        function onWalletCreateSucceeded() {
+            if (!root.creatingWatchOnly || !root.visible) return
+            root.creatingWatchOnly = false
+            root.push(watchOnlyConfirm)
+        }
+        function onWalletCreateErrorChanged() {
+            if (root.creatingWatchOnly && walletController.walletCreateError.length > 0) {
+                root.creatingWatchOnly = false
+            }
+        }
+        function onWalletLoadErrorChanged() {
+            if (root.creatingWatchOnly && walletController.walletLoadError.length > 0) {
+                root.creatingWatchOnly = false
+            }
+        }
+    }
+
     onVisibleChanged: {
         if (visible) {
             walletController.refreshExternalSignerStatus()
@@ -226,10 +249,7 @@ PageStack {
                 root.walletName = createName.walletName
                 if (root.walletType === "watchonly") {
                     if (walletController.initialized) {
-                        walletController.createWatchOnlyWallet(root.walletName, root.xpub)
-                        if (walletController.isWalletLoaded) {
-                            root.push(watchOnlyConfirm)
-                        }
+                        root.createWatchOnly()
                     } else {
                         root.waitingForInit = true
                     }

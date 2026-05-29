@@ -30,6 +30,7 @@
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QSettings>
 #include <QStringList>
 #include <QTimer>
@@ -453,69 +454,83 @@ void WalletQmlController::createWatchOnlyWallet(const QString &name, const QStri
         return;
     }
 
-    const std::string wallet_name{name.trimmed().toStdString()};
+    const QString trimmed_name = name.trimmed();
+    m_deferred_wallet_name = trimmed_name;
+    // Clears the defer state on any early-return path. The success path moves
+    // m_deferred_wallet and clears m_deferred_wallet_name explicitly before
+    // re-entering handleLoadWallet, so the guard is a no-op there.
+    const auto reset_deferred = qScopeGuard([this] {
+        m_deferred_wallet_name.clear();
+        m_deferred_wallet.reset();
+    });
+
     const uint64_t creation_flags = wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS |
                                     wallet::WALLET_FLAG_DESCRIPTORS |
                                     wallet::WALLET_FLAG_BLANK_WALLET;
 
-    auto wallet_result = m_node.walletLoader().createWallet(wallet_name, SecureString{}, creation_flags, m_warning_messages);
+    auto wallet_result = m_node.walletLoader().createWallet(
+        trimmed_name.toStdString(), SecureString{}, creation_flags, m_warning_messages);
     if (!wallet_result) {
         setWalletLoadError(QString::fromStdString(util::ErrorString(wallet_result).translated));
         return;
     }
+    // createWallet() fires NotifyWalletLoaded synchronously, so the intercept
+    // above has already moved the wallet into m_deferred_wallet. If the
+    // notification did not fire for any reason, fall back to the returned
+    // wallet so descriptor import still has something to operate on.
+    if (!m_deferred_wallet) {
+        m_deferred_wallet = std::move(*wallet_result);
+    }
 
+    const std::vector<std::pair<std::string, bool>> descriptors = {
+        {"wpkh(" + xpub_str + "/0/*)", /*internal=*/false},
+        {"wpkh(" + xpub_str + "/1/*)", /*internal=*/true},
+    };
     int descriptors_added = 0;
-    wallet::CWallet* raw_wallet = (*wallet_result)->wallet();
-    if (raw_wallet) {
+    if (wallet::CWallet* raw_wallet = m_deferred_wallet->wallet()) {
         LOCK(raw_wallet->cs_wallet);
-
-        struct DescriptorInfo {
-            std::string desc_str;
-            bool internal;
-        };
-        std::vector<DescriptorInfo> descriptors = {
-            {"wpkh(" + xpub_str + "/0/*)", false},
-            {"wpkh(" + xpub_str + "/1/*)", true},
-        };
-
-        for (const auto& info : descriptors) {
+        for (const auto& [desc_str, internal] : descriptors) {
             FlatSigningProvider keys;
             std::string error;
-            auto parsed = Parse(info.desc_str, keys, error, /*require_checksum=*/false);
+            auto parsed = Parse(desc_str, keys, error, /*require_checksum=*/false);
             if (parsed.empty()) {
                 continue;
             }
-
             wallet::WalletDescriptor w_desc(
                 std::move(parsed.at(0)),
                 TicksSinceEpoch<std::chrono::seconds>(Now<NodeSeconds>()),
                 /*range_start=*/0,
                 /*range_end=*/0,
                 /*next_index=*/0);
-
-            auto spk_manager_res = raw_wallet->AddWalletDescriptor(w_desc, keys, /*label=*/"", info.internal);
+            auto spk_manager_res = raw_wallet->AddWalletDescriptor(w_desc, keys, /*label=*/"", internal);
             if (spk_manager_res) {
                 raw_wallet->AddActiveScriptPubKeyMan(
                     spk_manager_res.value().get().GetID(),
                     OutputType::BECH32,
-                    info.internal);
+                    internal);
                 ++descriptors_added;
             }
         }
         raw_wallet->ConnectScriptPubKeyManNotifiers();
     }
 
-    if (descriptors_added == 0) {
+    // A watch-only wallet needs both external and internal descriptors;
+    // succeeding with only one would leave a half-created wallet.
+    if (descriptors_added != static_cast<int>(descriptors.size())) {
+        if (m_deferred_wallet) m_deferred_wallet->remove();
         setWalletLoadError(tr("Failed to import descriptors into watch-only wallet."));
         return;
     }
 
-    QMutexLocker locker(&m_wallets_mutex);
-    m_selected_wallet = new WalletQmlModel(std::move(*wallet_result));
-    m_wallets.push_back(m_selected_wallet);
-    setWalletLoaded(true);
-    setNoWalletsFound(false);
-    Q_EMIT selectedWalletChanged();
+    // Clear the defer-name before re-entering handleLoadWallet — otherwise the
+    // intercept branch would just re-stash the wallet instead of registering
+    // it. Also flag the load as requested so handleLoadWallet emits
+    // walletCreateSucceeded.
+    auto wallet = std::move(m_deferred_wallet);
+    m_deferred_wallet_name.clear();
+    m_wallet_load_requested = true;
+    m_pending_wallet_load_action = WalletLoadAction::Create;
+    handleLoadWallet(std::move(wallet));
 }
 
 void WalletQmlController::importWallet(const QString& path)
@@ -925,6 +940,14 @@ void WalletQmlController::startWalletImport(const QString& path)
 
 void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet)
 {
+    // Multi-step create flows (currently watch-only) stash the wallet here
+    // and finish setup before re-invoking with the defer-name cleared.
+    if (wallet && !m_deferred_wallet_name.isEmpty() &&
+        QString::fromStdString(wallet->getWalletName()) == m_deferred_wallet_name) {
+        m_deferred_wallet = std::move(wallet);
+        return;
+    }
+
     const WalletLoadAction load_action = m_pending_wallet_load_action;
     if (load_action == WalletLoadAction::Import && wallet) {
         setLastImportedWalletInfo(

@@ -188,6 +188,13 @@ private:
     QString m_external_signer_error;
     QString m_suggested_external_signer_wallet_name;
 
+    // Hold the wallet between createWallet() and publication so a multi-step
+    // create flow (watch-only) can finish setup before the model is published.
+    // handleLoadWallet() stashes the wallet here instead of registering a model,
+    // and the create flow re-invokes handleLoadWallet() after setup completes.
+    QString m_deferred_wallet_name;
+    std::unique_ptr<interfaces::Wallet> m_deferred_wallet;
+
     std::vector<bilingual_str> m_warning_messages;
 };
 

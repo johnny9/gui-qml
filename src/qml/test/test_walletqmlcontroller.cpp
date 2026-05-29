@@ -281,6 +281,7 @@ private Q_SLOTS:
     void validateXpubRejectsEmpty();
     void validateXpubTrimsWhitespace();
     void createWatchOnlyInvalidXpubSetsError();
+    void createWatchOnlyCleansUpWhenDescriptorImportFails();
     void externalSignerCreationRequiresConfiguredPath();
     void externalSignerCreationRequiresExactlyOneSigner();
     void externalSignerSuggestionUsesSignerName();
@@ -362,6 +363,45 @@ void WalletQmlControllerTests::createWatchOnlyInvalidXpubSetsError()
     QVERIFY(!controller.walletLoadError().isEmpty());
     QVERIFY(!controller.isWalletLoaded());
     QCOMPARE(error_spy.count(), 1);
+}
+
+void WalletQmlControllerTests::createWatchOnlyCleansUpWhenDescriptorImportFails()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+    QVERIFY(loader.captured_load_wallet_fn);
+
+    FakeWallet::State wallet_state;
+    loader.create_wallet_fn = [&](const std::string& name,
+                                  const SecureString&,
+                                  uint64_t,
+                                  std::vector<bilingual_str>&) {
+        // Mimic the real WalletLoader: NotifyWalletLoaded fires synchronously
+        // with the new wallet before createWallet returns. The controller's
+        // defer-adoption intercept should stash this wallet instead of
+        // publishing a model for it.
+        loader.captured_load_wallet_fn(std::make_unique<FakeWallet>(name, &wallet_state));
+        return util::Result<std::unique_ptr<interfaces::Wallet>>{
+            std::make_unique<FakeWallet>(name, &wallet_state)};
+    };
+
+    QSignalSpy create_spy(&controller, &WalletQmlController::walletCreateSucceeded);
+
+    // FakeWallet::wallet() returns nullptr, so descriptor import adds zero
+    // ScriptPubKeyMans and the controller must reject the half-created wallet,
+    // call remove() on it, and surface a load error without registering a model.
+    controller.createWatchOnlyWallet("watch_wallet", VALID_XPUB);
+
+    QVERIFY(!controller.walletLoadError().isEmpty());
+    QCOMPARE(wallet_state.remove_calls, 1);
+    QCOMPARE(create_spy.count(), 0);
+    QVERIFY(!controller.isWalletLoaded());
 }
 
 void WalletQmlControllerTests::externalSignerCreationRequiresConfiguredPath()
