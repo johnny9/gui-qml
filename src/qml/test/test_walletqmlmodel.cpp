@@ -358,8 +358,11 @@ private Q_SLOTS:
     void removeReceiveRequestRemovesPendingActivityRow();
     void prepareTransactionOnLockedWalletRequiresPassword();
     void prepareTransactionWithPrivateKeysDisabledDoesNotRequirePassword();
+    void sendRecipientRejectsDustAmount();
+    void prepareTransactionRejectsDuplicateRecipientsBeforeUnlock();
     void prepareTransactionWithPassphraseForwardsUtf8Bytes();
     void prepareTransactionWithPassphraseRelocksWhenRecipientsInvalid();
+    void prepareTransactionWithPassphraseRequiresCompleteMultiRecipient();
     void prepareTransactionWithPassphraseRelocksWhenCustomFeeInvalid();
     void prepareTransactionWithPassphraseReportsCreateErrorAndRelocks();
     void sendTransactionCommitsPreparedTransactionWithoutUnlockingAgain();
@@ -1151,6 +1154,44 @@ void WalletQmlModelTests::prepareTransactionWithPrivateKeysDisabledDoesNotRequir
     QCOMPARE(wallet->lock_calls, 0);
 }
 
+void WalletQmlModelTests::sendRecipientRejectsDustAmount()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    auto* recipient = model->sendRecipientList()->currentRecipient();
+    QVERIFY(recipient != nullptr);
+
+    recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
+    recipient->amount()->setSatoshi(1);
+
+    QVERIFY(!recipient->isValid());
+    QCOMPARE(recipient->amountError(), QStringLiteral("Amount is too small to send."));
+    QVERIFY(!model->sendRecipientList()->allValid());
+}
+
+void WalletQmlModelTests::prepareTransactionRejectsDuplicateRecipientsBeforeUnlock()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetPasswordRecipient(*model, 1'000);
+
+    model->sendRecipientList()->add();
+    auto* second = model->sendRecipientList()->currentRecipient();
+    QVERIFY(second != nullptr);
+    second->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
+    second->amount()->setSatoshi(2'000);
+    QVERIFY(second->isValid());
+
+    QVERIFY(!model->sendRecipientList()->allValid());
+    QCOMPARE(model->sendRecipientList()->validationError(), QString("Recipient addresses must be unique."));
+
+    QVERIFY(!model->prepareTransactionWithPassphrase("secret"));
+    QCOMPARE(model->transactionError(), QString("Recipient addresses must be unique."));
+    QCOMPARE(wallet->unlock_calls, 0);
+    QCOMPARE(wallet->lock_calls, 0);
+    QVERIFY(wallet->create_transaction_sign_args.empty());
+}
+
 void WalletQmlModelTests::prepareTransactionWithPassphraseForwardsUtf8Bytes()
 {
     FakePasswordWallet* wallet{nullptr};
@@ -1176,10 +1217,36 @@ void WalletQmlModelTests::prepareTransactionWithPassphraseRelocksWhenRecipientsI
     recipient->amount()->setSatoshi(1'000);
     QVERIFY(!recipient->isValid());
 
+    QVERIFY(!model->sendRecipientList()->allValid());
+    QVERIFY(model->sendRecipientList()->validationError().isEmpty());
+
     QVERIFY(!model->prepareTransactionWithPassphrase("secret"));
     QVERIFY(wallet->locked);
-    QCOMPARE(wallet->unlock_calls, 1);
-    QCOMPARE(wallet->lock_calls, 1);
+    QVERIFY(model->transactionError().isEmpty());
+    QCOMPARE(wallet->unlock_calls, 0);
+    QCOMPARE(wallet->lock_calls, 0);
+    QVERIFY(wallet->create_transaction_sign_args.empty());
+}
+
+void WalletQmlModelTests::prepareTransactionWithPassphraseRequiresCompleteMultiRecipient()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetPasswordRecipient(*model, 1'000);
+
+    model->sendRecipientList()->add();
+    auto* second = model->sendRecipientList()->currentRecipient();
+    QVERIFY(second != nullptr);
+    QVERIFY(!second->isValid());
+
+    QVERIFY(!model->sendRecipientList()->allValid());
+    QCOMPARE(model->sendRecipientList()->validationError(), QString("Complete every recipient before continuing."));
+
+    QVERIFY(!model->prepareTransactionWithPassphrase("secret"));
+    QVERIFY(wallet->locked);
+    QCOMPARE(model->transactionError(), QString("Complete every recipient before continuing."));
+    QCOMPARE(wallet->unlock_calls, 0);
+    QCOMPARE(wallet->lock_calls, 0);
     QVERIFY(wallet->create_transaction_sign_args.empty());
 }
 

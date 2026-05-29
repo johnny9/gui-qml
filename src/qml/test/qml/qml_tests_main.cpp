@@ -411,6 +411,8 @@ class MockRecipientsModel : public QAbstractListModel
     Q_PROPERTY(QObject* current READ current NOTIFY currentChanged)
     Q_PROPERTY(int currentIndex READ currentIndex WRITE setCurrentIndex NOTIFY currentIndexChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
+    Q_PROPERTY(bool allValid READ allValid WRITE setAllValid NOTIFY validationChanged)
+    Q_PROPERTY(QString validationError READ validationError WRITE setValidationError NOTIFY validationChanged)
 
 public:
     enum Roles {
@@ -437,6 +439,22 @@ public:
     QObject* current() const { return m_current; }
     int currentIndex() const { return m_current_index; } // 1-based, matches QML expectations.
     int count() const { return static_cast<int>(m_rows.size()); }
+    bool allValid() const { return m_all_valid; }
+    QString validationError() const { return m_validation_error; }
+
+    void setAllValid(bool all_valid)
+    {
+        if (m_all_valid == all_valid) return;
+        m_all_valid = all_valid;
+        Q_EMIT validationChanged();
+    }
+
+    void setValidationError(const QString& validation_error)
+    {
+        if (m_validation_error == validation_error) return;
+        m_validation_error = validation_error;
+        Q_EMIT validationChanged();
+    }
 
     void setCurrent(QObject* recipient)
     {
@@ -530,11 +548,14 @@ Q_SIGNALS:
     void currentIndexChanged();
     void countChanged();
     void listCleared();
+    void validationChanged();
 
 private:
     QObject* m_current{nullptr};
     int m_current_index{1};
     std::vector<RecipientRow> m_rows{};
+    bool m_all_valid{true};
+    QString m_validation_error;
 };
 
 class MockCoinsListModel : public QAbstractListModel

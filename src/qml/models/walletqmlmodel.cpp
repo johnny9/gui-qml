@@ -1331,6 +1331,26 @@ bool WalletQmlModel::prepareTransactionInternal(std::optional<SecureString> pass
         setTransactionStatus(tr("Enter at least one valid recipient to continue."));
         return false;
     }
+
+    if (!m_send_recipients->allValid()) {
+        if (passphrase.has_value()) {
+            QmlUtil::ClearSecureString(*passphrase);
+            passphrase.reset();
+        }
+        setTransactionStatus(m_send_recipients->validationError());
+        return false;
+    }
+
+    const auto vec_send = BuildRecipients(*m_send_recipients);
+    if (!vec_send.has_value()) {
+        if (passphrase.has_value()) {
+            QmlUtil::ClearSecureString(*passphrase);
+            passphrase.reset();
+        }
+        setTransactionStatus(tr("Enter at least one valid recipient to continue."));
+        return false;
+    }
+
     if (!m_wallet->privateKeysDisabled() && m_wallet->isCrypted() && m_wallet->isLocked() && !passphrase.has_value()) {
         refreshSecurityState();
         setTransactionStatus(tr("Enter your wallet password to prepare this transaction."), true);
@@ -1342,11 +1362,6 @@ bool WalletQmlModel::prepareTransactionInternal(std::optional<SecureString> pass
         return false;
     }
     WalletRelockGuard relock_guard{*m_wallet, [this] { refreshSecurityState(); }, relock};
-
-    const auto vec_send = BuildRecipients(*m_send_recipients);
-    if (!vec_send.has_value()) {
-        return false;
-    }
 
     CAmount total = 0;
     bool subtract_fee_from_amount = false;

@@ -9,6 +9,9 @@
 #include <qml/models/walletqmlmodel.h>
 
 #include <key_io.h>
+#include <policy/feerate.h>
+#include <policy/policy.h>
+#include <script/script.h>
 
 SendRecipient::SendRecipient(WalletQmlModel* wallet, QObject* parent)
     : QObject(parent), m_wallet(wallet), m_address(new BitcoinAddress(this)), m_amount(new BitcoinAmount(this))
@@ -132,7 +135,7 @@ void SendRecipient::validateAddress()
         setAddressError("");
     }
 
-    Q_EMIT isValidChanged();
+    validateAmount();
 }
 
 void SendRecipient::validateAmount()
@@ -142,6 +145,10 @@ void SendRecipient::validateAmount()
             setAmountError(tr("Amount must be greater than zero"));
         } else if (m_amount->satoshi() > MAX_MONEY) {
             setAmountError(tr("Amount exceeds maximum limit of 21,000,000 BTC"));
+        } else if (!m_address->isEmpty() && m_addressError.isEmpty() &&
+                   IsDust(CTxOut{m_amount->satoshi(), GetScriptForDestination(DecodeDestination(m_address->address().toStdString()))},
+                          CFeeRate{DUST_RELAY_TX_FEE})) {
+            setAmountError(tr("Amount is too small to send."));
         } else if (m_wallet && m_amount->satoshi() > m_wallet->balanceSatoshi()) {
             setAmountError(tr("Amount exceeds available balance"));
         } else {

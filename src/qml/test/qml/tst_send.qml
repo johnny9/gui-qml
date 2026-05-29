@@ -29,6 +29,8 @@ TestCase {
         testWalletModel.prepareTransactionResult = true
         testSendRecipient.subtractFeeFromAmount = false
         testSendRecipient.isValid = true
+        testRecipientsModel.allValid = true
+        testRecipientsModel.validationError = ""
     }
 
     function test_send_has_stable_selectors() {
@@ -57,11 +59,30 @@ TestCase {
         const continueButton = findChild(page, "sendReviewButton")
         verify(continueButton !== null)
 
-        testSendRecipient.isValid = false
+        testRecipientsModel.allValid = false
         tryCompare(continueButton, "enabled", false)
 
-        testSendRecipient.isValid = true
+        testRecipientsModel.allValid = true
         tryCompare(continueButton, "enabled", true)
+    }
+
+    function test_send_shows_recipient_validation_error() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const continueButton = findChild(page, "sendReviewButton")
+        const prepareError = findChild(page, "sendPrepareTransactionError")
+        const prepareErrorText = findChild(page, "sendPrepareTransactionErrorText")
+        verify(continueButton !== null)
+        verify(prepareError !== null)
+        verify(prepareErrorText !== null)
+
+        testRecipientsModel.allValid = false
+        testRecipientsModel.validationError = "Complete every recipient before continuing."
+
+        tryCompare(continueButton, "enabled", false)
+        tryCompare(page, "recipientValidationError", "Complete every recipient before continuing.")
+        tryCompare(prepareErrorText, "text", "Complete every recipient before continuing.")
     }
 
     function test_send_prepare_transaction_success_and_failure_paths() {

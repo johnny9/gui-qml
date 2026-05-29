@@ -20,6 +20,8 @@ PageStack {
     property SendRecipient recipient: wallet.recipients.current
     property string prepareTransactionErrorText: ""
     readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
+    readonly property string recipientValidationError: wallet ? wallet.recipients.validationError : ""
+    readonly property string formErrorText: recipientValidationError.length > 0 ? recipientValidationError : prepareTransactionErrorText
 
     signal transactionPrepared(bool multipleRecipientsEnabled)
 
@@ -359,6 +361,7 @@ PageStack {
                         }
 
                         CoreText {
+                            objectName: "sendAmountErrorText"
                             text: root.recipient.amountError
                             font.pixelSize: 15
                             color: Theme.color.red
@@ -455,6 +458,7 @@ PageStack {
                     objectName: "sendPrepareTransactionError"
                     Layout.fillWidth: true
                     visible: root.prepareTransactionErrorText.length > 0
+                        || root.recipientValidationError.length > 0
 
                     Icon {
                         source: "image://images/alert-filled"
@@ -464,7 +468,7 @@ PageStack {
 
                     CoreText {
                         objectName: "sendPrepareTransactionErrorText"
-                        text: root.prepareTransactionErrorText
+                        text: root.formErrorText
                         font.pixelSize: 15
                         color: Theme.color.red
                         horizontalAlignment: Text.AlignLeft
@@ -478,8 +482,9 @@ PageStack {
                     Layout.fillWidth: true
                     Layout.topMargin: 30
                     text: root.externalSignerWallet ? qsTr("Review transaction") : qsTr("Review")
-                    enabled: root.recipient.isValid
-                        && (!root.wallet || !root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
+                    enabled: root.wallet
+                        && root.wallet.recipients.allValid
+                        && (!root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                     onClicked: {
                         root.clearPrepareTransactionError()
                         if (root.wallet.prepareTransaction()) {
