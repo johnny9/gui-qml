@@ -42,9 +42,7 @@ def open_create_wallet_name_page(gui):
         gui.click("walletSelectAddWalletButton")
     except QmlDriverError:
         pass
-    gui.wait_for_property("createWalletButton", "visible", True, timeout_ms=10000)
-    gui.click("createWalletButton")
-    gui.wait_for_property("walletTypeRegular", "visible", True, timeout_ms=5000)
+    gui.wait_for_property("walletTypeRegular", "visible", True, timeout_ms=10000)
     gui.click("walletTypeRegular")
     gui.wait_for_property("createWalletIntroStartButton", "visible", True, timeout_ms=10000)
     gui.click("createWalletIntroStartButton")

@@ -22,14 +22,12 @@ def open_create_wallet_page(gui):
         gui.click("walletSelectAddWalletButton")
     except QmlDriverError:
         pass
-    gui.wait_for_property("createWalletButton", "visible", True, timeout_ms=10000)
+    gui.wait_for_page("createTypeSelector", timeout_ms=10000)
 
 
 def open_type_selector(gui):
     """Navigate to the wallet type selector page."""
     open_create_wallet_page(gui)
-    gui.click("createWalletButton")
-    gui.wait_for_page("createTypeSelector", timeout_ms=5000)
 
 
 def get_test_xpub(harness):

@@ -13,15 +13,19 @@ Page {
     id: root
     objectName: "createTypeSelector"
     signal back
+    signal cancel
     signal regularSelected
     signal watchOnlySelected
     signal externalSignerSelected
     signal importSelected
+    property bool showBackButton: true
+    property bool showCancelButton: false
     background: null
 
     header: NavigationBar2 {
         leftItem: NavButton {
             objectName: "typeSelectorBackButton"
+            visible: root.showBackButton
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
             onClicked: root.back()
@@ -34,6 +38,12 @@ Page {
                 bold: true
                 color: Theme.color.neutral9
             }
+        }
+        rightItem: NavButton {
+            objectName: "typeSelectorCancelButton"
+            visible: root.showCancelButton
+            text: qsTr("Cancel")
+            onClicked: root.cancel()
         }
     }
 

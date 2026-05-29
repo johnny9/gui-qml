@@ -34,14 +34,12 @@ def create_wallet_through_gui(harness, gui):
     wait_for_rpc(harness.gui_rpc_port, timeout=30)
     gui.click("walletBadge")
     try:
-        gui.wait_for_property("createWalletButton", "visible", True, timeout_ms=3000)
+        gui.wait_for_property("walletTypeRegular", "visible", True, timeout_ms=3000)
     except QmlDriverError:
         gui.wait_for_property("walletSelectPopup", "opened", True, timeout_ms=5000)
         gui.click("walletSelectAddWalletButton")
-        gui.wait_for_property("createWalletButton", "visible", True, timeout_ms=5000)
+        gui.wait_for_property("walletTypeRegular", "visible", True, timeout_ms=5000)
     gui.settle()
-    gui.click("createWalletButton")
-    gui.wait_for_property("walletTypeRegular", "visible", True, timeout_ms=5000)
     gui.click("walletTypeRegular")
     gui.wait_for_property("createWalletIntroStartButton", "visible", True, timeout_ms=5000)
     gui.click("createWalletIntroStartButton")
@@ -62,7 +60,7 @@ def create_wallet_through_gui(harness, gui):
             raise
         wizard_visible = False
     if wizard_visible:
-        gui.click("createWalletWizardExitButton")
+        gui.click("typeSelectorCancelButton")
         gui.settle()
     gui.wait_for_property("walletBadge", "text", WALLET_NAME, timeout_ms=20000)
 
