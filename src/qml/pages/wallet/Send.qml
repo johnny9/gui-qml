@@ -103,6 +103,12 @@ PageStack {
                     root.wallet.recipients.add()
                 }
             }
+
+            onCoinControlEnabledChanged: {
+                if (coinControlEnabled && root.wallet) {
+                    root.wallet.coinsListModel.update()
+                }
+            }
         }
 
         ScrollView {
@@ -391,6 +397,8 @@ PageStack {
                 }
 
                 LabeledCoinControlButton {
+                    objectName: "sendCoinControlButton"
+                    valueObjectName: "sendCoinControlButtonText"
                     visible: settings.coinControlEnabled
                     Layout.fillWidth: true
                     coinsSelected: wallet.coinsListModel.selectedCoinsCount

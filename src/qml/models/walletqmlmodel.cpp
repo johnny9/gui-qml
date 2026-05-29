@@ -1511,6 +1511,7 @@ bool WalletQmlModel::sendTransactionInternal()
     m_wallet->commitTransaction(signed_tx, value_map, order_form);
 
     clearTransactionStatus();
+    clearSelectedCoins();
     return true;
 }
 
@@ -1582,6 +1583,18 @@ bool WalletQmlModel::isSelectedCoin(const COutPoint& output)
 std::vector<COutPoint> WalletQmlModel::listSelectedCoins() const
 {
     return m_coin_control.ListSelected();
+}
+
+void WalletQmlModel::clearSelectedCoins()
+{
+    if (!m_coin_control.HasSelected()) {
+        return;
+    }
+    m_coin_control.UnSelectAll();
+    if (m_coins_list_model) {
+        m_coins_list_model->refreshSelection();
+    }
+    scheduleFeeEstimates();
 }
 
 unsigned int WalletQmlModel::feeTargetBlocks() const

@@ -44,6 +44,7 @@ public:
 
 public Q_SLOTS:
     void update();
+    void refreshSelection();
     void setSortBy(const QString& roleName);
     void toggleCoinSelection(const int index);
     unsigned int lockedCoinsCount() const;

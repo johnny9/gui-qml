@@ -168,6 +168,7 @@ public:
     void unselectCoin(const COutPoint& output);
     bool isSelectedCoin(const COutPoint& output);
     std::vector<COutPoint> listSelectedCoins() const;
+    void clearSelectedCoins();
     unsigned int feeTargetBlocks() const;
     void setFeeTargetBlocks(unsigned int target_blocks);
     void setCustomFeeEnabled(bool enabled);

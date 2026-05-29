@@ -367,6 +367,8 @@ private Q_SLOTS:
     void prepareTransactionWithPassphraseRelocksWhenCustomFeeInvalid();
     void prepareTransactionWithPassphraseReportsCreateErrorAndRelocks();
     void sendTransactionCommitsPreparedTransactionWithoutUnlockingAgain();
+    void sendTransactionClearsSelectedCoins();
+    void clearingRecipientsClearsSelectedCoins();
     void sendTransactionWithPrivateKeysDisabledDoesNotCommit();
     void displayNameDefaultsToWalletName();
     void detailPropertiesReflectWalletCapabilities();
@@ -1344,6 +1346,34 @@ void WalletQmlModelTests::sendTransactionCommitsPreparedTransactionWithoutUnlock
     QVERIFY(wallet->fill_psbt_sign_args.empty());
     QVERIFY(model->transactionError().isEmpty());
     QVERIFY(!model->transactionNeedsUnlock());
+}
+
+void WalletQmlModelTests::sendTransactionClearsSelectedCoins()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetPasswordRecipient(*model, 1'000);
+    const COutPoint selected_outpoint{Txid::FromUint256(uint256::ONE), 1};
+
+    model->selectCoin(selected_outpoint);
+    QCOMPARE(model->listSelectedCoins().size(), size_t{1});
+
+    QVERIFY(model->prepareTransactionWithPassphrase("secret"));
+    QVERIFY(model->sendTransaction());
+    QVERIFY(model->listSelectedCoins().empty());
+}
+
+void WalletQmlModelTests::clearingRecipientsClearsSelectedCoins()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    const COutPoint selected_outpoint{Txid::FromUint256(uint256::ONE), 1};
+
+    model->selectCoin(selected_outpoint);
+    QCOMPARE(model->listSelectedCoins().size(), size_t{1});
+
+    model->sendRecipientList()->clear();
+    QVERIFY(model->listSelectedCoins().empty());
 }
 
 void WalletQmlModelTests::signVerifyMessageRejectsNonP2PKHAddress()

@@ -202,6 +202,9 @@ void SendRecipientsListModel::clear()
     Q_EMIT currentRecipientChanged();
     Q_EMIT currentIndexChanged();
     Q_EMIT validationChanged();
+    if (m_wallet) {
+        m_wallet->clearSelectedCoins();
+    }
     Q_EMIT listCleared();
 }
 
