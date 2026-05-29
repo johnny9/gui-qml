@@ -6,6 +6,8 @@
 
 #include <interfaces/wallet.h>
 #include <qml/bitcoinamount.h>
+#include <qml/models/walletunlock.h>
+#include <qml/util.h>
 #include <wallet/coincontrol.h>
 
 namespace {
@@ -59,11 +61,32 @@ void BumpTransactionModel::setActionType(ActionType type)
     }
 }
 
+void BumpTransactionModel::setNeedsUnlock(bool needs_unlock)
+{
+    if (m_needs_unlock != needs_unlock) {
+        m_needs_unlock = needs_unlock;
+        Q_EMIT needsUnlockChanged();
+    }
+}
+
 void BumpTransactionModel::setError(const QString& error)
 {
     m_error = error;
+    setNeedsUnlock(false);
     setState(Failed);
     Q_EMIT resultChanged();
+}
+
+void BumpTransactionModel::setUnlockRequired(const QString& error)
+{
+    m_error = error;
+    setNeedsUnlock(true);
+    Q_EMIT resultChanged();
+}
+
+void BumpTransactionModel::setSecurityStateChangedFn(std::function<void()> fn)
+{
+    m_security_state_changed_fn = std::move(fn);
 }
 
 void BumpTransactionModel::prepareFeeBump(const QString& txid, unsigned int targetBlocks)
@@ -80,6 +103,7 @@ void BumpTransactionModel::prepareFeeBump(const QString& txid, unsigned int targ
     }
 
     setActionType(SpeedUp);
+    setNeedsUnlock(false);
     setState(Preparing);
 
     wallet::CCoinControl coin_control;
@@ -105,34 +129,101 @@ void BumpTransactionModel::prepareFeeBump(const QString& txid, unsigned int targ
     Q_EMIT resultChanged();
 }
 
-void BumpTransactionModel::confirmFeeBump()
+bool BumpTransactionModel::confirmFeeBump()
+{
+    return confirmFeeBumpInternal(std::nullopt);
+}
+
+bool BumpTransactionModel::confirmFeeBumpWithPassphrase(const QString& passphrase)
+{
+    return confirmFeeBumpInternal(std::optional<SecureString>{QmlUtil::SecureStringFromQString(passphrase)});
+}
+
+bool BumpTransactionModel::confirmFeeBumpInternal(std::optional<SecureString> passphrase)
 {
     if (!m_wallet || m_state != NeedsConfirmation) {
-        return;
+        if (passphrase.has_value()) {
+            QmlUtil::ClearSecureString(*passphrase);
+            passphrase.reset();
+        }
+        return false;
     }
 
+    if (!m_wallet->privateKeysDisabled() && m_wallet->isCrypted() && m_wallet->isLocked() && !passphrase.has_value()) {
+        setUnlockRequired(tr("Enter your wallet password to update this transaction."));
+        return false;
+    }
+
+    bool relock{false};
+    if (!unlockForCommit(passphrase, relock)) {
+        return false;
+    }
+    WalletRelockGuard relock_guard{*m_wallet, [this] {
+        if (m_security_state_changed_fn) {
+            m_security_state_changed_fn();
+        }
+    }, relock};
+
+    setNeedsUnlock(false);
     setState(Committing);
 
     if (!m_wallet->transactionCanBeBumped(m_original_txid)) {
+        relock_guard.relock();
         setError(tr("Transaction can no longer be bumped."));
-        return;
+        return false;
     }
 
     if (!m_wallet->signBumpTransaction(m_bump_mtx)) {
+        relock_guard.relock();
         setError(tr("Failed to sign transaction."));
-        return;
+        return false;
     }
 
     std::vector<bilingual_str> errors;
     Txid bumped_txid;
     if (!m_wallet->commitBumpTransaction(m_original_txid, std::move(m_bump_mtx), errors, bumped_txid)) {
+        relock_guard.relock();
         setError(errors.empty() ? tr("Failed to commit transaction.") : QString::fromStdString(errors[0].translated));
-        return;
+        return false;
     }
 
     m_new_txid = QString::fromStdString(bumped_txid.GetHex());
+    relock_guard.relock();
     setState(Succeeded);
     Q_EMIT resultChanged();
+    return true;
+}
+
+bool BumpTransactionModel::unlockForCommit(std::optional<SecureString>& passphrase, bool& relock)
+{
+    relock = false;
+    if (!m_wallet) {
+        if (passphrase.has_value()) {
+            QmlUtil::ClearSecureString(*passphrase);
+            passphrase.reset();
+        }
+        return false;
+    }
+    if (!passphrase.has_value()) {
+        return true;
+    }
+
+    const auto result{TryUnlockWithPassphrase(*m_wallet, *passphrase)};
+    passphrase.reset();
+    switch (result) {
+    case WalletUnlockResult::IncorrectPassphrase:
+        setUnlockRequired(tr("The wallet password you entered was incorrect."));
+        return false;
+    case WalletUnlockResult::AlreadyUnlocked:
+        return true;
+    case WalletUnlockResult::UnlockedNowRelockRequired:
+        relock = true;
+        if (m_security_state_changed_fn) {
+            m_security_state_changed_fn();
+        }
+        return true;
+    }
+    return false;
 }
 
 void BumpTransactionModel::reset()
@@ -145,8 +236,10 @@ void BumpTransactionModel::reset()
     m_original_txid = Txid{};
     m_new_txid.clear();
     m_error.clear();
+    m_needs_unlock = false;
 
     Q_EMIT stateChanged();
     Q_EMIT actionTypeChanged();
     Q_EMIT resultChanged();
+    Q_EMIT needsUnlockChanged();
 }

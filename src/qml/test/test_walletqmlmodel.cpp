@@ -127,6 +127,9 @@ public:
     int unlock_calls{0};
     int lock_calls{0};
     int commit_calls{0};
+    int create_bump_calls{0};
+    int sign_bump_calls{0};
+    int commit_bump_calls{0};
     int get_new_destination_calls{0};
     int set_address_receive_request_calls{0};
     std::vector<std::string> unlock_passphrases;
@@ -140,6 +143,9 @@ public:
     std::string get_address_label;
     int sign_message_calls{0};
     std::string last_signed_message;
+    bool can_bump_transaction{true};
+    bool sign_bump_result{true};
+    bool commit_bump_result{true};
 
     std::function<util::Result<CTransactionRef>(const std::vector<wallet::CRecipient>&,
                                                 const wallet::CCoinControl&,
@@ -269,6 +275,31 @@ public:
     {
         ++commit_calls;
     }
+    bool transactionCanBeBumped(const Txid&) override { return can_bump_transaction; }
+    bool createBumpTransaction(const Txid& txid,
+                               const wallet::CCoinControl&,
+                               std::vector<bilingual_str>&,
+                               CAmount& old_fee,
+                               CAmount& new_fee,
+                               CMutableTransaction& mtx) override
+    {
+        ++create_bump_calls;
+        old_fee = 100;
+        new_fee = 200;
+        mtx.vin.emplace_back(COutPoint{txid, 0});
+        return true;
+    }
+    bool signBumpTransaction(CMutableTransaction&) override
+    {
+        ++sign_bump_calls;
+        return sign_bump_result;
+    }
+    bool commitBumpTransaction(const Txid&, CMutableTransaction&&, std::vector<bilingual_str>&, Txid& bumped_txid) override
+    {
+        ++commit_bump_calls;
+        bumped_txid = Txid::FromUint256(uint256::ONE);
+        return commit_bump_result;
+    }
     std::optional<common::PSBTError> fillPSBT(std::optional<int> sighash_type,
                                               bool sign,
                                               bool bip32derivs,
@@ -370,6 +401,9 @@ private Q_SLOTS:
     void sendTransactionClearsSelectedCoins();
     void clearingRecipientsClearsSelectedCoins();
     void sendTransactionWithPrivateKeysDisabledDoesNotCommit();
+    void bumpTransactionOnLockedWalletRequiresPassword();
+    void bumpTransactionWithPassphraseUnlocksCommitsAndRelocks();
+    void bumpTransactionWithWrongPassphraseDoesNotSign();
     void displayNameDefaultsToWalletName();
     void detailPropertiesReflectWalletCapabilities();
     void encryptWalletUpdatesSecurityState();
@@ -1374,6 +1408,71 @@ void WalletQmlModelTests::clearingRecipientsClearsSelectedCoins()
 
     model->sendRecipientList()->clear();
     QVERIFY(model->listSelectedCoins().empty());
+}
+
+void WalletQmlModelTests::bumpTransactionOnLockedWalletRequiresPassword()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    auto* bump_model = model->bumpModel();
+
+    bump_model->prepareFeeBump(QString::fromStdString(Txid::FromUint256(uint256::ONE).GetHex()), 1);
+    QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
+
+    QVERIFY(!bump_model->confirmFeeBump());
+    QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
+    QVERIFY(bump_model->needsUnlock());
+    QCOMPARE(bump_model->errorText(), QString("Enter your wallet password to update this transaction."));
+    QCOMPARE(wallet->unlock_calls, 0);
+    QCOMPARE(wallet->sign_bump_calls, 0);
+    QCOMPARE(wallet->commit_bump_calls, 0);
+}
+
+void WalletQmlModelTests::bumpTransactionWithPassphraseUnlocksCommitsAndRelocks()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    auto* bump_model = model->bumpModel();
+
+    bump_model->prepareFeeBump(QString::fromStdString(Txid::FromUint256(uint256::ONE).GetHex()), 1);
+    QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
+
+    QVERIFY(bump_model->confirmFeeBumpWithPassphrase(QStringLiteral("secret")));
+    QCOMPARE(bump_model->state(), BumpTransactionModel::Succeeded);
+    QVERIFY(!bump_model->newTxid().isEmpty());
+    QVERIFY(!bump_model->needsUnlock());
+    QCOMPARE(wallet->unlock_calls, 1);
+    QCOMPARE(wallet->unlock_passphrases.size(), size_t{1});
+    QCOMPARE(wallet->unlock_passphrases.front(), std::string{"secret"});
+    QCOMPARE(wallet->lock_calls, 1);
+    QCOMPARE(wallet->sign_bump_calls, 1);
+    QCOMPARE(wallet->commit_bump_calls, 1);
+    QVERIFY(wallet->locked);
+}
+
+void WalletQmlModelTests::bumpTransactionWithWrongPassphraseDoesNotSign()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    wallet->unlock_fn = [wallet](const SecureString& passphrase) {
+        ++wallet->unlock_calls;
+        wallet->unlock_passphrases.emplace_back(passphrase.begin(), passphrase.end());
+        return false;
+    };
+    auto* bump_model = model->bumpModel();
+
+    bump_model->prepareFeeBump(QString::fromStdString(Txid::FromUint256(uint256::ONE).GetHex()), 1);
+    QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
+
+    QVERIFY(!bump_model->confirmFeeBumpWithPassphrase(QStringLiteral("wrong")));
+    QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
+    QVERIFY(bump_model->needsUnlock());
+    QCOMPARE(bump_model->errorText(), QString("The wallet password you entered was incorrect."));
+    QCOMPARE(wallet->unlock_calls, 1);
+    QCOMPARE(wallet->lock_calls, 0);
+    QCOMPARE(wallet->sign_bump_calls, 0);
+    QCOMPARE(wallet->commit_bump_calls, 0);
+    QVERIFY(wallet->locked);
 }
 
 void WalletQmlModelTests::signVerifyMessageRejectsNonP2PKHAddress()

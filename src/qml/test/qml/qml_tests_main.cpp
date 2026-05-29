@@ -1802,12 +1802,14 @@ class MockBumpTransactionModel : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(int state READ state WRITE setState NOTIFY stateChanged)
+    Q_PROPERTY(bool requireUnlock READ requireUnlock WRITE setRequireUnlock NOTIFY resultChanged)
     Q_PROPERTY(QString oldFee MEMBER m_old_fee NOTIFY resultChanged)
     Q_PROPERTY(QString newFee MEMBER m_new_fee NOTIFY resultChanged)
     Q_PROPERTY(QString feeIncrease MEMBER m_fee_increase NOTIFY resultChanged)
     Q_PROPERTY(QString oldTxid MEMBER m_old_txid NOTIFY resultChanged)
     Q_PROPERTY(QString newTxid MEMBER m_new_txid NOTIFY resultChanged)
     Q_PROPERTY(QString errorText MEMBER m_error_text NOTIFY resultChanged)
+    Q_PROPERTY(bool needsUnlock MEMBER m_needs_unlock NOTIFY needsUnlockChanged)
 
 public:
     enum State { Idle, Preparing, NeedsConfirmation, Committing, Succeeded, Failed };
@@ -1817,11 +1819,20 @@ public:
     Q_ENUM(ActionType)
 
     int state() const { return m_state; }
+    bool requireUnlock() const { return m_require_unlock; }
+
     void setState(int state)
     {
         if (m_state == state) return;
         m_state = state;
         Q_EMIT stateChanged();
+    }
+
+    void setRequireUnlock(bool require_unlock)
+    {
+        if (m_require_unlock == require_unlock) return;
+        m_require_unlock = require_unlock;
+        Q_EMIT resultChanged();
     }
 
     Q_INVOKABLE void prepareFeeBump(const QString& txid, unsigned int targetBlocks)
@@ -1835,11 +1846,29 @@ public:
         Q_EMIT resultChanged();
     }
 
-    Q_INVOKABLE void confirmFeeBump()
+    Q_INVOKABLE bool confirmFeeBump()
     {
+        if (m_require_unlock) {
+            m_error_text = QStringLiteral("Enter your wallet password to update this transaction.");
+            m_needs_unlock = true;
+            Q_EMIT resultChanged();
+            Q_EMIT needsUnlockChanged();
+            return false;
+        }
+
         m_new_txid = QStringLiteral("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        m_needs_unlock = false;
         setState(Succeeded);
         Q_EMIT resultChanged();
+        Q_EMIT needsUnlockChanged();
+        return true;
+    }
+
+    Q_INVOKABLE bool confirmFeeBumpWithPassphrase(const QString& passphrase)
+    {
+        Q_UNUSED(passphrase);
+        m_require_unlock = false;
+        return confirmFeeBump();
     }
 
     Q_INVOKABLE void reset()
@@ -1851,14 +1880,18 @@ public:
         m_old_txid.clear();
         m_new_txid.clear();
         m_error_text.clear();
+        m_needs_unlock = false;
+        m_require_unlock = false;
         Q_EMIT stateChanged();
         Q_EMIT resultChanged();
+        Q_EMIT needsUnlockChanged();
     }
 
 Q_SIGNALS:
     void stateChanged();
     void actionTypeChanged();
     void resultChanged();
+    void needsUnlockChanged();
 
 private:
     int m_state{Idle};
@@ -1868,6 +1901,8 @@ private:
     QString m_old_txid;
     QString m_new_txid;
     QString m_error_text;
+    bool m_needs_unlock{false};
+    bool m_require_unlock{false};
 };
 
 class MockActivityListModel : public QAbstractListModel
@@ -2185,6 +2220,7 @@ public Q_SLOTS:
         engine->rootContext()->setContextProperty(QStringLiteral("testSendRecipient"), &send_recipient);
         engine->rootContext()->setContextProperty(QStringLiteral("testRecipientsModel"), &recipients_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testCoinsListModel"), &coins_list_model);
+        engine->rootContext()->setContextProperty(QStringLiteral("testBumpModel"), &bump_model);
         engine->addImportPath(QStringLiteral(BITCOINQML_QML_SOURCE_DIR));
     }
 };

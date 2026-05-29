@@ -321,6 +321,7 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObje
     m_activity_list_model = new ActivityListModel(this);
     m_address_list_model = new AddressListModel(this);
     m_bump_transaction_model = new BumpTransactionModel(m_wallet.get(), this);
+    m_bump_transaction_model->setSecurityStateChangedFn([this]() { refreshSecurityState(); });
     m_coins_list_model = new CoinsListModel(this);
     m_send_recipients = new SendRecipientsListModel(this);
     m_sign_verify_message_model = new SignVerifyMessageModel(m_wallet.get(), this);
@@ -338,6 +339,7 @@ WalletQmlModel::WalletQmlModel(QObject* parent)
     m_activity_list_model = new ActivityListModel(this);
     m_address_list_model = new AddressListModel(this);
     m_bump_transaction_model = new BumpTransactionModel(nullptr, this);
+    m_bump_transaction_model->setSecurityStateChangedFn([this]() { refreshSecurityState(); });
     m_coins_list_model = new CoinsListModel(this);
     m_send_recipients = new SendRecipientsListModel(this);
     m_sign_verify_message_model = new SignVerifyMessageModel(nullptr, this);
