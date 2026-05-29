@@ -21,7 +21,12 @@ PageStack {
     property string prepareTransactionErrorText: ""
     readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
     readonly property string recipientValidationError: wallet ? wallet.recipients.validationError : ""
-    readonly property string formErrorText: recipientValidationError.length > 0 ? recipientValidationError : prepareTransactionErrorText
+    readonly property string feeBalanceErrorText: wallet && wallet.sendAmountExhaustsBalance
+        ? qsTr("Amount plus fee exceeds available balance")
+        : ""
+    readonly property string formErrorText: recipientValidationError.length > 0
+        ? recipientValidationError
+        : (feeBalanceErrorText.length > 0 ? feeBalanceErrorText : prepareTransactionErrorText)
 
     signal transactionPrepared(bool multipleRecipientsEnabled)
 
@@ -374,8 +379,7 @@ PageStack {
                 RowLayout {
                     objectName: "sendPrepareTransactionError"
                     Layout.fillWidth: true
-                    visible: root.prepareTransactionErrorText.length > 0
-                        || root.recipientValidationError.length > 0
+                    visible: root.formErrorText.length > 0
 
                     Icon {
                         source: "image://images/alert-filled"
@@ -401,6 +405,7 @@ PageStack {
                     text: root.externalSignerWallet ? qsTr("Review transaction") : qsTr("Review")
                     enabled: root.wallet
                         && root.wallet.recipients.allValid
+                        && !root.wallet.sendAmountExhaustsBalance
                         && (!root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                     onClicked: {
                         root.clearPrepareTransactionError()

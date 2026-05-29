@@ -115,6 +115,7 @@ void SendRecipientsListModel::remove()
         delete removed_recipient;
     }
     endRemoveRows();
+    updateTotalAmount();
     Q_EMIT countChanged();
     Q_EMIT validationChanged();
 }
@@ -157,6 +158,8 @@ void SendRecipientsListModel::connectRecipientSignals(SendRecipient* recipient)
     connect(recipient->amount(), &BitcoinAmount::unitChanged, this, [emit_roles_changed] {
         emit_roles_changed({AmountRole, AmountUnitLabelRole});
     });
+    connect(recipient, &SendRecipient::subtractFeeFromAmountChanged,
+            this, &SendRecipientsListModel::subtractFeeFromAmountChanged);
     connect(recipient, &SendRecipient::isValidChanged, this, &SendRecipientsListModel::validationChanged);
 }
 

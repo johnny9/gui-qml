@@ -27,6 +27,7 @@ TestCase {
         testWalletModel.customFeeRate = ""
         testWalletModel.targetBlocks = 2
         testWalletModel.prepareTransactionResult = true
+        testWalletModel.sendAmountExhaustsBalance = false
         testSendRecipient.subtractFeeFromAmount = false
         testSendRecipient.isValid = true
         testRecipientsModel.allValid = true
@@ -64,6 +65,30 @@ TestCase {
 
         testRecipientsModel.allValid = true
         tryCompare(continueButton, "enabled", true)
+    }
+
+    function test_send_continue_button_requires_fee_buffer() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const continueButton = findChild(page, "sendReviewButton")
+        const prepareError = findChild(page, "sendPrepareTransactionError")
+        const prepareErrorText = findChild(page, "sendPrepareTransactionErrorText")
+        verify(continueButton !== null)
+        verify(prepareError !== null)
+        verify(prepareErrorText !== null)
+
+        testWalletModel.sendAmountExhaustsBalance = true
+
+        tryCompare(continueButton, "enabled", false)
+        tryCompare(page, "formErrorText", "Amount plus fee exceeds available balance")
+        compare(prepareErrorText.text, "Amount plus fee exceeds available balance")
+
+        testWalletModel.sendAmountExhaustsBalance = false
+
+        tryCompare(continueButton, "enabled", true)
+        tryCompare(page, "formErrorText", "")
+        compare(prepareErrorText.text, "")
     }
 
     function test_send_shows_recipient_validation_error() {

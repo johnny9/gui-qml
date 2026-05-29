@@ -749,6 +749,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool customFeeRateValid READ customFeeRateValid NOTIFY customFeeRateValidChanged)
     Q_PROPERTY(bool feeEstimatePending MEMBER m_fee_estimate_pending NOTIFY feeEstimatePendingChanged)
     Q_PROPERTY(int feeEstimateRevision MEMBER m_fee_estimate_revision NOTIFY feeEstimateRevisionChanged)
+    Q_PROPERTY(bool sendAmountExhaustsBalance READ sendAmountExhaustsBalance WRITE setSendAmountExhaustsBalance NOTIFY sendAmountExhaustsBalanceChanged)
     Q_PROPERTY(bool prepareTransactionResult MEMBER m_prepare_transaction_result NOTIFY prepareTransactionResultChanged)
     Q_PROPERTY(bool sendTransactionResult MEMBER m_send_transaction_result NOTIFY sendTransactionResultChanged)
     Q_PROPERTY(int prepareTransactionCalls READ prepareTransactionCalls NOTIFY prepareTransactionCallsChanged)
@@ -843,6 +844,7 @@ public:
     int prepareTransactionCalls() const { return m_prepare_transaction_calls; }
     int scheduleFeeEstimatesCalls() const { return m_schedule_fee_estimates_calls; }
     int sendTransactionCalls() const { return m_send_transaction_calls; }
+    bool sendAmountExhaustsBalance() const { return m_send_amount_exhausts_balance; }
     QString lastBackupPath() const { return m_last_backup_path; }
     int backupWalletCalls() const { return m_backup_wallet_calls; }
     Q_INVOKABLE QString estimatedFeeForTarget(const int target) const
@@ -936,6 +938,12 @@ public:
         }
         Q_EMIT feeEstimateRevisionChanged();
         scheduleFeeEstimates();
+    }
+    void setSendAmountExhaustsBalance(const bool value)
+    {
+        if (m_send_amount_exhausts_balance == value) return;
+        m_send_amount_exhausts_balance = value;
+        Q_EMIT sendAmountExhaustsBalanceChanged();
     }
     Q_INVOKABLE bool prepareTransaction()
     {
@@ -1078,6 +1086,7 @@ Q_SIGNALS:
     void customFeeRateValidChanged();
     void feeEstimatePendingChanged();
     void feeEstimateRevisionChanged();
+    void sendAmountExhaustsBalanceChanged();
     void prepareTransactionResultChanged();
     void sendTransactionResultChanged();
     void prepareTransactionCallsChanged();
@@ -1114,6 +1123,7 @@ private:
     QString m_custom_fee_rate;
     QString m_custom_fee_estimate;
     bool m_fee_estimate_pending{false};
+    bool m_send_amount_exhausts_balance{false};
     bool m_send_transaction_result{true};
     bool m_is_encrypted{false};
     bool m_is_locked{false};

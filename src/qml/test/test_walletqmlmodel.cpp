@@ -35,6 +35,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <vector>
@@ -371,6 +372,8 @@ private Q_SLOTS:
     void scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesUnavailable();
     void scheduleFeeEstimates_usesStaticRegtestFeeOverride();
     void scheduleFeeEstimates_usesCustomFeeRateWhenEnabled();
+    void scheduleFeeEstimates_estimatesWhenAmountWouldExceedBalanceWithFee();
+    void sendAmountExhaustsBalance_requiresFeeBuffer();
     void scheduleFeeEstimates_usesDummyPreviewChangeDestination();
     void prepareTransaction_usesStaticRegtestFeeOverride();
     void prepareTransaction_usesCustomFeeRateWithoutRegtestOverride();
@@ -748,6 +751,115 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesCustomFeeRateWhenEnabled()
     QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 2U) != requested_targets.end());
     QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 6U) != requested_targets.end());
     QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 0U) != requested_targets.end());
+}
+
+void WalletQmlModelTests::scheduleFeeEstimates_estimatesWhenAmountWouldExceedBalanceWithFee()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    ON_CALL(*wallet, getBalance()).WillByDefault(Return(50'000));
+    SetValidRecipient(*model);
+    auto* recipient = model->sendRecipientList()->currentRecipient();
+    QVERIFY(recipient != nullptr);
+    recipient->amount()->setSatoshi(49'850);
+    QVERIFY(!model->sendAmountExhaustsBalance());
+    QSignalSpy balance_exhausted_spy{model.get(), &WalletQmlModel::sendAmountExhaustsBalanceChanged};
+
+    bool saw_regular_recipient{false};
+    bool saw_fee_subtracted_recipient{false};
+    std::vector<unsigned int> requested_targets;
+
+    EXPECT_CALL(*wallet, getRequiredFee(testing::_)).Times(0);
+    wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>& recipients,
+                                           const wallet::CCoinControl& coin_control,
+                                           bool,
+                                           int& change_pos,
+                                           CAmount& fee) -> util::Result<CTransactionRef> {
+        requested_targets.push_back(coin_control.m_confirm_target.value_or(0));
+        change_pos = -1;
+        fee = coin_control.m_feerate.has_value()
+            ? 50
+            : coin_control.m_confirm_target.value_or(0) * 100;
+
+        const CAmount total_amount = std::accumulate(recipients.begin(), recipients.end(), CAmount{0}, [](const CAmount total, const wallet::CRecipient& recipient) {
+            return total + recipient.nAmount;
+        });
+        const bool subtracts_fee = std::any_of(recipients.begin(), recipients.end(), [](const wallet::CRecipient& recipient) {
+            return recipient.fSubtractFeeFromAmount;
+        });
+
+        if (subtracts_fee) {
+            saw_fee_subtracted_recipient = true;
+            return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+        }
+
+        saw_regular_recipient = true;
+        if (total_amount + fee <= 50'000) {
+            return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+        }
+        return util::Error{Untranslated("amount plus fee exceeds balance")};
+    };
+
+    model->scheduleFeeEstimates();
+
+    QTRY_COMPARE_WITH_TIMEOUT(model->estimatedFeeForTarget(2), QStringLiteral("0.00000200 ₿"), FEE_ESTIMATE_TIMEOUT_MS);
+    QTRY_VERIFY_WITH_TIMEOUT(model->sendAmountExhaustsBalance(), FEE_ESTIMATE_TIMEOUT_MS);
+    QVERIFY(model->sendAmountExhaustsBalance());
+    QVERIFY(balance_exhausted_spy.count() > 0);
+    QVERIFY(saw_regular_recipient);
+    QVERIFY(saw_fee_subtracted_recipient);
+    QVERIFY(requested_targets.size() >= 5);
+    QCOMPARE(model->sendRecipientList()->currentRecipient()->subtractFeeFromAmount(), false);
+    QCOMPARE(model->estimatedFeeForTarget(1), QStringLiteral("0.00000100 ₿"));
+    QCOMPARE(model->estimatedFeeForTarget(2), QStringLiteral("0.00000200 ₿"));
+    QCOMPARE(model->estimatedFeeForTarget(6), QStringLiteral("0.00000600 ₿"));
+
+    model->setFeeTargetBlocks(1);
+    QCOMPARE(model->estimatedFee(), QStringLiteral("0.00000100 ₿"));
+    QVERIFY(!model->sendAmountExhaustsBalance());
+
+    model->setFeeTargetBlocks(6);
+    QCOMPARE(model->estimatedFee(), QStringLiteral("0.00000600 ₿"));
+    QVERIFY(model->sendAmountExhaustsBalance());
+
+    model->setCustomFeeEnabled(true);
+    model->setCustomFeeRate(QStringLiteral("1"));
+    QTRY_COMPARE_WITH_TIMEOUT(model->estimatedFee(), QStringLiteral("0.00000050 ₿"), FEE_ESTIMATE_TIMEOUT_MS);
+    QVERIFY(!model->sendAmountExhaustsBalance());
+}
+
+void WalletQmlModelTests::sendAmountExhaustsBalance_requiresFeeBuffer()
+{
+    FakePasswordWallet* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    wallet->balance = 50'000;
+    SetPasswordRecipient(*model, 50'000);
+
+    QVERIFY(model->sendAmountExhaustsBalance());
+
+    auto* recipient = model->sendRecipientList()->currentRecipient();
+    QVERIFY(recipient != nullptr);
+    QSignalSpy spy{model.get(), &WalletQmlModel::sendAmountExhaustsBalanceChanged};
+    recipient->amount()->setSatoshi(49'999);
+    QVERIFY(!model->sendAmountExhaustsBalance());
+    QVERIFY(spy.count() > 0);
+
+    recipient->amount()->setSatoshi(50'000);
+    QVERIFY(model->sendAmountExhaustsBalance());
+    recipient->setSubtractFeeFromAmount(true);
+    QVERIFY(!model->sendAmountExhaustsBalance());
+
+    recipient->setSubtractFeeFromAmount(false);
+    recipient->amount()->setSatoshi(49'000);
+    QVERIFY(!model->sendAmountExhaustsBalance());
+    model->sendRecipientList()->add();
+    auto* second_recipient = model->sendRecipientList()->currentRecipient();
+    QVERIFY(second_recipient != nullptr);
+    second_recipient->address()->setAddress(VALID_MAINNET_P2SH_ADDRESS, 0);
+    second_recipient->amount()->setSatoshi(1'000);
+    QVERIFY(model->sendAmountExhaustsBalance());
+    model->sendRecipientList()->remove();
+    QVERIFY(!model->sendAmountExhaustsBalance());
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_usesDummyPreviewChangeDestination()

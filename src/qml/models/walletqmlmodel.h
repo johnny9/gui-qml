@@ -65,6 +65,7 @@ private:
     Q_PROPERTY(WalletQmlModelTransaction* currentTransaction READ currentTransaction NOTIFY currentTransactionChanged)
     Q_PROPERTY(unsigned int targetBlocks READ feeTargetBlocks WRITE setFeeTargetBlocks NOTIFY feeTargetBlocksChanged)
     Q_PROPERTY(QString estimatedFee READ estimatedFee NOTIFY estimatedFeeChanged)
+    Q_PROPERTY(bool sendAmountExhaustsBalance READ sendAmountExhaustsBalance NOTIFY sendAmountExhaustsBalanceChanged)
     Q_PROPERTY(bool customFeeEnabled READ customFeeEnabled WRITE setCustomFeeEnabled NOTIFY customFeeEnabledChanged)
     Q_PROPERTY(QString customFeeRate READ customFeeRate WRITE setCustomFeeRate NOTIFY customFeeRateChanged)
     Q_PROPERTY(bool customFeeRateValid READ customFeeRateValid NOTIFY customFeeRateValidChanged)
@@ -114,6 +115,7 @@ public:
     ReceiveRequestHistoryModel* receiveRequests() const { return m_receive_requests; }
     WalletQmlModelTransaction* currentTransaction() const { return m_current_transaction; }
     QString estimatedFee() const;
+    bool sendAmountExhaustsBalance() const;
     bool customFeeEnabled() const { return m_custom_fee_enabled; }
     QString customFeeRate() const { return m_custom_fee_rate; }
     bool customFeeRateValid() const;
@@ -198,6 +200,7 @@ Q_SIGNALS:
     void currentTransactionChanged();
     void feeTargetBlocksChanged();
     void estimatedFeeChanged();
+    void sendAmountExhaustsBalanceChanged();
     void customFeeEnabledChanged();
     void customFeeRateChanged();
     void customFeeRateValidChanged();
@@ -217,9 +220,10 @@ Q_SIGNALS:
 private:
     void initializeFeeEstimator();
     void requestFeeEstimatesNow();
-    void applyFeeEstimates(const QHash<unsigned int, QString>& estimates,
-                           const QString& custom_estimate,
+    void applyFeeEstimates(const QHash<unsigned int, CAmount>& estimates,
+                           const std::optional<CAmount>& custom_estimate,
                            quint64 request_id);
+    std::optional<CAmount> selectedFeeEstimate() const;
     void clearFeeEstimates();
     unsigned int nextPaymentRequestId() const;
     void subscribeToWalletSignals();
@@ -250,8 +254,8 @@ private:
     QObject* m_fee_estimation_worker{nullptr};
     QThread* m_fee_estimation_thread{nullptr};
     QTimer* m_fee_estimation_timer{nullptr};
-    QHash<unsigned int, QString> m_fee_estimates;
-    QString m_custom_fee_estimate;
+    QHash<unsigned int, CAmount> m_fee_estimates;
+    std::optional<CAmount> m_custom_fee_estimate;
     QString m_custom_fee_rate;
     quint64 m_fee_estimate_request_id{0};
     int m_fee_estimate_revision{0};
