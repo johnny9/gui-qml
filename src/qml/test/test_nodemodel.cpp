@@ -140,6 +140,9 @@ private Q_SLOTS:
     void banPeerRejectsInvalidInputs();
     void banPeerReturnsFalseWithoutDisconnectWhenBackendFails();
     void banPeerDisconnectsAddressAfterSuccessfulBan();
+    void requestShutdownEmitsOnlyOnce();
+    void initializationFailureRequestsShutdownWhenCoreWasInterrupted();
+    void initializationFailureWithoutCoreInterruptOnlySetsErrorState();
     void nodeNotificationHandlersUpdateModelThroughQueuedSignals();
     void blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues();
     void blockSyncActiveFollowsInitializationAndBlockTipState();
@@ -344,6 +347,67 @@ void NodeModelTests::banPeerDisconnectsAddressAfterSuccessfulBan()
     EXPECT_CALL(node, disconnectByAddress(Truly(is_loopback))).Times(1).WillOnce(Return(true));
 
     QVERIFY(model.banPeer(QStringLiteral("127.0.0.1"), 3600));
+}
+
+void NodeModelTests::requestShutdownEmitsOnlyOnce()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
+    model.requestShutdown();
+    model.requestShutdown();
+
+    QCOMPARE(shutdown_spy.count(), 1);
+}
+
+void NodeModelTests::initializationFailureRequestsShutdownWhenCoreWasInterrupted()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, shutdownRequested()).WillByDefault(Return(true));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    QSignalSpy error_state_spy{&model, &NodeModel::errorStateChanged};
+    QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
+    QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
+    model.initializeResult(false, {});
+
+    QCOMPARE(error_state_spy.count(), 1);
+    QVERIFY(model.errorState());
+    QCOMPARE(shutdown_spy.count(), 1);
+    QCOMPARE(initialized_spy.count(), 1);
+}
+
+void NodeModelTests::initializationFailureWithoutCoreInterruptOnlySetsErrorState()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, shutdownRequested()).WillByDefault(Return(false));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    QSignalSpy error_state_spy{&model, &NodeModel::errorStateChanged};
+    QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
+    QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
+    model.initializeResult(false, {});
+
+    QCOMPARE(error_state_spy.count(), 1);
+    QVERIFY(model.errorState());
+    QCOMPARE(shutdown_spy.count(), 0);
+    QCOMPARE(initialized_spy.count(), 1);
 }
 
 void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()

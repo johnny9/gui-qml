@@ -207,6 +207,7 @@ private:
     int64_t m_header_tip_time{0};
     bool m_node_ready{false};
     bool m_initialization_requested{false};
+    bool m_shutdown_requested{false};
     bool m_runtime_dialogs_enabled{false};
     bool m_startup_failure_dialog_shown{false};
     bool m_runtime_dialog_visible{false};

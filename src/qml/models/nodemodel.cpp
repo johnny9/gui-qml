@@ -417,6 +417,11 @@ void NodeModel::startNodeInitializionThread()
 
 void NodeModel::requestShutdown()
 {
+    if (m_shutdown_requested) {
+        return;
+    }
+    m_shutdown_requested = true;
+    stopShutdownPolling();
     Q_EMIT requestedShutdown();
 }
 
@@ -424,7 +429,7 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
 {
     if (!success) {
         if (m_startup_failure_dialog_shown) {
-            Q_EMIT requestedShutdown();
+            requestShutdown();
             Q_EMIT nodeInitialized();
             return;
         }
@@ -436,6 +441,9 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
         }
         m_startup_warning_messages.clear();
         setStartupError(startup_error);
+        if (m_node.shutdownRequested()) {
+            requestShutdown();
+        }
     } else {
         m_startup_error_messages.clear();
         m_node_ready = true;
@@ -460,20 +468,28 @@ void NodeModel::handleRunawayException(const QString& message)
 
 void NodeModel::startShutdownPolling()
 {
+    if (m_shutdown_polling_timer_id != 0) {
+        return;
+    }
     m_shutdown_polling_timer_id = startTimer(200ms);
 }
 
 void NodeModel::stopShutdownPolling()
 {
+    if (m_shutdown_polling_timer_id == 0) {
+        return;
+    }
     killTimer(m_shutdown_polling_timer_id);
+    m_shutdown_polling_timer_id = 0;
 }
 
 void NodeModel::timerEvent(QTimerEvent* event)
 {
-    Q_UNUSED(event)
+    if (event->timerId() != m_shutdown_polling_timer_id) {
+        return;
+    }
     if (m_node.shutdownRequested()) {
-        stopShutdownPolling();
-        Q_EMIT requestedShutdown();
+        requestShutdown();
     }
 }
 
