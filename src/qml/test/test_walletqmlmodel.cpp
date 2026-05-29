@@ -340,6 +340,7 @@ private Q_SLOTS:
     void scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesUnavailable();
     void scheduleFeeEstimates_usesStaticRegtestFeeOverride();
     void scheduleFeeEstimates_usesCustomFeeRateWhenEnabled();
+    void scheduleFeeEstimates_usesDummyPreviewChangeDestination();
     void prepareTransaction_usesStaticRegtestFeeOverride();
     void prepareTransaction_usesCustomFeeRateWithoutRegtestOverride();
     void prepareTransaction_reassignsAmountWhenFeeIncluded();
@@ -541,7 +542,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_populatesFormattedEstimates()
     std::atomic<bool> saw_nonempty_feerate{false};
     std::vector<unsigned int> requested_targets;
 
-    EXPECT_CALL(*wallet, getNewDestinationValue(OutputType::BECH32, "qml-fee-preview")).Times(1);
+    EXPECT_CALL(*wallet, getNewDestinationValue(testing::_, testing::_)).Times(0);
     wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>& recipients,
                                            const wallet::CCoinControl& coin_control,
                                            bool sign,
@@ -594,7 +595,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesU
     std::atomic<bool> saw_fallback_feerate{false};
     std::vector<CAmount> fallback_fee_rates;
 
-    EXPECT_CALL(*wallet, getNewDestinationValue(OutputType::BECH32, "qml-fee-preview")).Times(1);
+    EXPECT_CALL(*wallet, getNewDestinationValue(testing::_, testing::_)).Times(0);
     EXPECT_CALL(*wallet, getRequiredFee(1000)).Times(AtLeast(3)).WillRepeatedly(Return(1000));
     wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
                                            const wallet::CCoinControl& coin_control,
@@ -640,7 +641,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesStaticRegtestFeeOverride()
     std::vector<unsigned int> requested_targets;
     std::vector<CAmount> requested_fee_rates;
 
-    EXPECT_CALL(*wallet, getNewDestinationValue(OutputType::BECH32, "qml-fee-preview")).Times(1);
+    EXPECT_CALL(*wallet, getNewDestinationValue(testing::_, testing::_)).Times(0);
     EXPECT_CALL(*wallet, getRequiredFee(1000)).Times(0);
     wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
                                            const wallet::CCoinControl& coin_control,
@@ -684,7 +685,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesCustomFeeRateWhenEnabled()
     std::vector<unsigned int> requested_targets;
     std::vector<CAmount> requested_fee_rates;
 
-    EXPECT_CALL(*wallet, getNewDestinationValue(OutputType::BECH32, "qml-fee-preview")).Times(1);
+    EXPECT_CALL(*wallet, getNewDestinationValue(testing::_, testing::_)).Times(0);
     wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
                                            const wallet::CCoinControl& coin_control,
                                            bool,
@@ -711,6 +712,41 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesCustomFeeRateWhenEnabled()
     QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 2U) != requested_targets.end());
     QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 6U) != requested_targets.end());
     QVERIFY(std::find(requested_targets.begin(), requested_targets.end(), 0U) != requested_targets.end());
+}
+
+void WalletQmlModelTests::scheduleFeeEstimates_usesDummyPreviewChangeDestination()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetValidRecipient(*model);
+
+    std::atomic<int> create_transaction_calls{0};
+    std::atomic<bool> saw_missing_change{false};
+    std::atomic<bool> saw_wrong_change_type{false};
+
+    EXPECT_CALL(*wallet, getNewDestinationValue(testing::_, testing::_)).Times(0);
+    wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
+                                           const wallet::CCoinControl& coin_control,
+                                           bool,
+                                           int& change_pos,
+                                           CAmount& fee) -> util::Result<CTransactionRef> {
+        ++create_transaction_calls;
+        if (std::get_if<CNoDestination>(&coin_control.destChange)) {
+            saw_missing_change = true;
+        }
+        if (!std::get_if<WitnessV0KeyHash>(&coin_control.destChange)) {
+            saw_wrong_change_type = true;
+        }
+        change_pos = -1;
+        fee = coin_control.m_confirm_target.value_or(0) * 100;
+        return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+    };
+
+    model->scheduleFeeEstimates();
+
+    QTRY_COMPARE_WITH_TIMEOUT(create_transaction_calls.load(), 3, FEE_ESTIMATE_TIMEOUT_MS);
+    QVERIFY(!saw_missing_change.load());
+    QVERIFY(!saw_wrong_change_type.load());
 }
 
 void WalletQmlModelTests::prepareTransaction_usesStaticRegtestFeeOverride()
@@ -881,7 +917,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()
     std::atomic<int> selected_count{-1};
     std::vector<unsigned int> selected_targets;
 
-    EXPECT_CALL(*wallet, getNewDestinationValue(OutputType::BECH32, "qml-fee-preview")).Times(1);
+    EXPECT_CALL(*wallet, getNewDestinationValue(testing::_, testing::_)).Times(0);
     wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
                                            const wallet::CCoinControl& coin_control,
                                            bool sign,
@@ -920,7 +956,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_debouncesRapidRestarts()
 
     std::atomic<int> create_transaction_calls{0};
 
-    EXPECT_CALL(*wallet, getNewDestinationValue(OutputType::BECH32, "qml-fee-preview")).Times(1);
+    EXPECT_CALL(*wallet, getNewDestinationValue(testing::_, testing::_)).Times(0);
     std::atomic<bool> saw_sign_true{false};
     wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
                                            const wallet::CCoinControl& coin_control,

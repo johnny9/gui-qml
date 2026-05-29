@@ -109,15 +109,28 @@ std::optional<CAmount> ParseCustomFeeRatePerKvB(const QString& custom_fee_rate)
     return fee_rate_per_kvb;
 }
 
-void ApplyPreviewChangeDestination(wallet::CCoinControl& coin_control, const QString& preview_change_address)
+std::optional<CTxDestination> PreviewChangeDestination(const OutputType change_type)
 {
-    if (preview_change_address.isEmpty()) {
-        return;
+    const uint160 dummy_key_hash{};
+    switch (change_type) {
+    case OutputType::BECH32M:
+        return WitnessV1Taproot{XOnlyPubKey::NUMS_H};
+    case OutputType::BECH32:
+        return WitnessV0KeyHash{dummy_key_hash};
+    case OutputType::P2SH_SEGWIT:
+        return ScriptHash{GetScriptForDestination(WitnessV0KeyHash{dummy_key_hash})};
+    case OutputType::LEGACY:
+        return PKHash{dummy_key_hash};
+    case OutputType::UNKNOWN:
+        return std::nullopt;
     }
+    return std::nullopt;
+}
 
-    const CTxDestination change_destination = DecodeDestination(preview_change_address.toStdString());
-    if (IsValidDestination(change_destination)) {
-        coin_control.destChange = change_destination;
+void ApplyPreviewChangeDestination(wallet::CCoinControl& coin_control, const OutputType change_type)
+{
+    if (const auto destination = PreviewChangeDestination(change_type)) {
+        coin_control.destChange = *destination;
     }
 }
 
@@ -150,13 +163,13 @@ std::optional<CAmount> TryPreviewFee(interfaces::Wallet& wallet,
 std::optional<QString> EstimatePreviewFee(interfaces::Wallet& wallet,
                                           const std::vector<wallet::CRecipient>& recipients,
                                           const wallet::CCoinControl& base_coin_control,
-                                          const QString& preview_change_address,
+                                          const OutputType preview_change_type,
                                           const unsigned int target)
 {
     wallet::CCoinControl coin_control{base_coin_control};
     coin_control.m_feerate.reset();
     coin_control.m_confirm_target = target;
-    ApplyPreviewChangeDestination(coin_control, preview_change_address);
+    ApplyPreviewChangeDestination(coin_control, preview_change_type);
     ApplyRegtestStaticFeeOverride(coin_control);
 
     if (const auto fee = TryPreviewFee(wallet, recipients, coin_control)) {
@@ -188,13 +201,13 @@ std::optional<QString> EstimatePreviewFee(interfaces::Wallet& wallet,
 std::optional<QString> EstimateCustomPreviewFee(interfaces::Wallet& wallet,
                                                 const std::vector<wallet::CRecipient>& recipients,
                                                 const wallet::CCoinControl& base_coin_control,
-                                                const QString& preview_change_address,
+                                                const OutputType preview_change_type,
                                                 const CAmount fee_rate_per_kvb)
 {
     wallet::CCoinControl coin_control{base_coin_control};
     coin_control.m_confirm_target.reset();
     coin_control.m_feerate = CFeeRate{fee_rate_per_kvb};
-    ApplyPreviewChangeDestination(coin_control, preview_change_address);
+    ApplyPreviewChangeDestination(coin_control, preview_change_type);
 
     if (const auto fee = TryPreviewFee(wallet, recipients, coin_control)) {
         return FormatFeeEstimate(*fee);
@@ -1161,21 +1174,6 @@ void WalletQmlModel::scheduleFeeEstimates()
     m_fee_estimation_timer->start();
 }
 
-QString WalletQmlModel::ensurePreviewChangeAddress()
-{
-    if (!m_wallet || !m_preview_change_address.isEmpty()) {
-        return m_preview_change_address;
-    }
-
-    const auto destination = m_wallet->getNewDestination(m_wallet->getDefaultAddressType(), "qml-fee-preview");
-    if (!destination) {
-        return {};
-    }
-
-    m_preview_change_address = QString::fromStdString(EncodeDestination(destination.value()));
-    return m_preview_change_address;
-}
-
 void WalletQmlModel::requestFeeEstimatesNow()
 {
     if (!m_wallet || !m_send_recipients) {
@@ -1190,8 +1188,8 @@ void WalletQmlModel::requestFeeEstimatesNow()
     }
 
     const quint64 request_id = ++m_fee_estimate_request_id;
-    const QString preview_change_address = ensurePreviewChangeAddress();
     const wallet::CCoinControl base_coin_control{m_coin_control};
+    const OutputType preview_change_type{base_coin_control.m_change_type.value_or(m_wallet->getDefaultAddressType())};
     const bool custom_fee_enabled{m_custom_fee_enabled};
     const std::optional<CAmount> custom_fee_rate_per_kvb{
         ParseCustomFeeRatePerKvB(m_custom_fee_rate)};
@@ -1204,7 +1202,7 @@ void WalletQmlModel::requestFeeEstimatesNow()
         Q_EMIT feeEstimateRevisionChanged();
     }
 
-    QTimer::singleShot(0, m_fee_estimation_worker, [this, request_id, recipients = *recipients, base_coin_control, preview_change_address, custom_fee_enabled, custom_fee_rate_per_kvb, wallet]() {
+    QTimer::singleShot(0, m_fee_estimation_worker, [this, request_id, recipients = *recipients, base_coin_control, preview_change_type, custom_fee_enabled, custom_fee_rate_per_kvb, wallet]() {
         QHash<unsigned int, QString> estimates;
         QString custom_estimate;
 
@@ -1212,7 +1210,7 @@ void WalletQmlModel::requestFeeEstimatesNow()
             if (const auto estimate = EstimatePreviewFee(*wallet,
                                                          recipients,
                                                          base_coin_control,
-                                                         preview_change_address,
+                                                         preview_change_type,
                                                          target)) {
                 estimates.insert(target, *estimate);
             }
@@ -1222,7 +1220,7 @@ void WalletQmlModel::requestFeeEstimatesNow()
             if (const auto estimate = EstimateCustomPreviewFee(*wallet,
                                                                recipients,
                                                                base_coin_control,
-                                                               preview_change_address,
+                                                               preview_change_type,
                                                                *custom_fee_rate_per_kvb)) {
                 custom_estimate = *estimate;
             }

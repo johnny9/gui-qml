@@ -180,6 +180,11 @@ def wait_for_single_mempool_tx(port):
     return txids[0]
 
 
+def assert_no_fee_preview_label(port, wallet_name):
+    labels = rpc_call(port, "listlabels", wallet=wallet_name)
+    assert "qml-fee-preview" not in labels, f"Fee preview created address book label: {labels!r}"
+
+
 def run_test(*, save_screenshots=False, screenshot_root=None):
     harness = WalletFlowHarness("qml_test_send_receive", port_offset=60)
     checkpoints = CheckpointRecorder(save_screenshots, screenshot_root)
@@ -228,6 +233,7 @@ def run_test(*, save_screenshots=False, screenshot_root=None):
         gui.set_text("sendAmountInput", SEND_AMOUNT)
         gui.wait_for_property("sendReviewButton", "enabled", True, timeout_ms=20000)
         checkpoints.checkpoint("send form populated", gui)
+        assert_no_fee_preview_label(harness.gui_rpc_port, GUI_WALLET_NAME)
 
         gui.wait_for_property("feeSelectionControl", "selectedLabel", DEFAULT_FEE_LABEL, timeout_ms=5000)
         gui.wait_for_property("feeSelectionControl", "selectedDuration", DEFAULT_FEE_DURATION, timeout_ms=5000)

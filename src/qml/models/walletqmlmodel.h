@@ -220,7 +220,6 @@ private:
                            const QString& custom_estimate,
                            quint64 request_id);
     void clearFeeEstimates();
-    QString ensurePreviewChangeAddress();
     unsigned int nextPaymentRequestId() const;
     void subscribeToWalletSignals();
     void unsubscribeFromWalletSignals();
@@ -253,7 +252,6 @@ private:
     QHash<unsigned int, QString> m_fee_estimates;
     QString m_custom_fee_estimate;
     QString m_custom_fee_rate;
-    QString m_preview_change_address;
     quint64 m_fee_estimate_request_id{0};
     int m_fee_estimate_revision{0};
     bool m_custom_fee_enabled{false};
