@@ -243,6 +243,7 @@ private:
     void ConnectToAlertChangedSignal();
     void ConnectToRuntimeDialogSignals();
     void ConnectToBannedListChangedSignal();
+    void unsubscribeFromCoreSignals();
     void initializeMempoolInfoPolling();
     void refreshPeerCounts();
     void refreshWarnings();

@@ -116,6 +116,7 @@ NodeModel::NodeModel(interfaces::Node& node)
 
 NodeModel::~NodeModel()
 {
+    unsubscribeFromCoreSignals();
     setMempoolInfoPollingActive(false);
     if (m_mempool_info_thread) {
         m_mempool_info_thread->quit();
@@ -800,4 +801,17 @@ void NodeModel::ConnectToBannedListChangedSignal()
             Q_EMIT bannedListChanged();
         });
     });
+}
+
+void NodeModel::unsubscribeFromCoreSignals()
+{
+    if (m_handler_notify_block_tip) {
+        m_handler_notify_block_tip->disconnect();
+    }
+    if (m_handler_notify_num_peers_changed) {
+        m_handler_notify_num_peers_changed->disconnect();
+    }
+    if (m_handler_notify_banned_list_changed) {
+        m_handler_notify_banned_list_changed->disconnect();
+    }
 }

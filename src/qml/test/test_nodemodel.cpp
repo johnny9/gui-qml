@@ -21,6 +21,7 @@
 #include <atomic>
 #include <functional>
 #include <map>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -143,6 +144,7 @@ private Q_SLOTS:
     void requestShutdownEmitsOnlyOnce();
     void initializationFailureRequestsShutdownWhenCoreWasInterrupted();
     void initializationFailureWithoutCoreInterruptOnlySetsErrorState();
+    void destructorUnsubscribesCoreSignalsBeforeStoppingPolling();
     void nodeNotificationHandlersUpdateModelThroughQueuedSignals();
     void blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues();
     void blockSyncActiveFollowsInitializationAndBlockTipState();
@@ -408,6 +410,47 @@ void NodeModelTests::initializationFailureWithoutCoreInterruptOnlySetsErrorState
     QVERIFY(model.errorState());
     QCOMPARE(shutdown_spy.count(), 0);
     QCOMPARE(initialized_spy.count(), 1);
+}
+
+void NodeModelTests::destructorUnsubscribesCoreSignalsBeforeStoppingPolling()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    std::atomic<int> disconnected_handlers{0};
+
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, handleNotifyBlockTip(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyBlockTipFn) {
+            return interfaces::MakeCleanupHandler([&] { ++disconnected_handlers; });
+        }));
+    ON_CALL(node, handleNotifyNumConnectionsChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyNumConnectionsChangedFn) {
+            return interfaces::MakeCleanupHandler([&] { ++disconnected_handlers; });
+        }));
+    ON_CALL(node, handleBannedListChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::BannedListChangedFn) {
+            return interfaces::MakeCleanupHandler([&] { ++disconnected_handlers; });
+        }));
+
+    auto model{std::make_unique<NodeModel>(node)};
+    WaitForInitialMempoolRefresh(mempool);
+
+    const int refresh_calls = mempool.max_usage_calls.load();
+    model->setMempoolInfoPollingActive(true);
+    QTRY_VERIFY_WITH_TIMEOUT(mempool.max_usage_calls.load() > refresh_calls, ASYNC_TIMEOUT_MS);
+
+    bool checked_shutdown_order{false};
+    QObject::connect(model.get(), &NodeModel::mempoolInfoPollingActiveChanged, [&](bool active) {
+        if (!active) {
+            checked_shutdown_order = true;
+            QCOMPARE(disconnected_handlers.load(), 3);
+        }
+    });
+
+    model.reset();
+
+    QVERIFY(checked_shutdown_order);
+    QCOMPARE(disconnected_handlers.load(), 3);
 }
 
 void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()
