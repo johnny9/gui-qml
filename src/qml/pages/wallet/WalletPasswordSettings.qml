@@ -38,6 +38,13 @@ Page {
         clearField(confirmPassword)
     }
 
+    function focusInitialPasswordField() {
+        const field = root.updating ? currentPassword : newPassword
+        if (root.visible && field) {
+            field.forceActiveFocus()
+        }
+    }
+
     header: NavigationBar2 {
         leftItem: NavButton {
             objectName: "walletPasswordBackButton"
@@ -56,11 +63,15 @@ Page {
     Component.onCompleted: {
         if (root.wallet) root.wallet.clearSettingsError()
         root.errorText = ""
+        Qt.callLater(root.focusInitialPasswordField)
     }
+    StackView.onActivated: Qt.callLater(root.focusInitialPasswordField)
     Component.onDestruction: root.clearPasswordFields()
     onVisibleChanged: {
         if (!visible) {
             root.clearPasswordFields()
+        } else {
+            Qt.callLater(root.focusInitialPasswordField)
         }
     }
 
