@@ -42,8 +42,11 @@ class WalletQmlController : public QObject
     Q_PROPERTY(QString externalSignerName READ externalSignerName NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString externalSignerError READ externalSignerError NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString suggestedExternalSignerWalletName READ suggestedExternalSignerWalletName NOTIFY externalSignerStatusChanged)
+    Q_PROPERTY(QString walletLocationOpenError READ walletLocationOpenError NOTIFY walletLocationOpenErrorChanged)
 
 public:
+    using OpenLocalPathFn = std::function<bool(const QString&)>;
+
     explicit WalletQmlController(interfaces::Node& node, QObject *parent = nullptr);
     ~WalletQmlController();
 
@@ -65,6 +68,8 @@ public:
     Q_INVOKABLE bool walletPathExists(const QString& path) const;
     Q_INVOKABLE QString homePath() const;
     Q_INVOKABLE QString walletNameAvailabilityError(const QString& name) const;
+    Q_INVOKABLE bool openSelectedWalletLocation();
+    Q_INVOKABLE void clearWalletLocationOpenError();
     Q_INVOKABLE void requestOpenWalletSettings();
     Q_INVOKABLE void refreshExternalSignerStatus();
     Q_INVOKABLE void requestOpenReceive();
@@ -92,6 +97,8 @@ public:
     QString externalSignerName() const { return m_external_signer_name; }
     QString externalSignerError() const { return m_external_signer_error; }
     QString suggestedExternalSignerWalletName() const { return m_suggested_external_signer_wallet_name; }
+    QString walletLocationOpenError() const { return m_wallet_location_open_error; }
+    void setOpenLocalPathFnForTesting(OpenLocalPathFn fn);
 
 Q_SIGNALS:
     void selectedWalletChanged();
@@ -123,6 +130,7 @@ Q_SIGNALS:
     void walletDisplayNamesChanged();
     void openReceiveRequested();
     void closePaymentRequestDetailRequested();
+    void walletLocationOpenErrorChanged();
 
 public Q_SLOTS:
     void initialize();
@@ -155,6 +163,7 @@ private:
     void applyWalletDisplayName(WalletQmlModel* wallet_model) const;
     bool walletNameExists(const QString& name) const;
     QString describeImportedWalletKeyScheme(interfaces::Wallet& wallet) const;
+    QString selectedWalletLocationPath() const;
     void setWalletCreateError(const QString& error);
     void setWalletLoadInProgress(bool in_progress);
     void setWalletLoadError(const QString& error);
@@ -167,6 +176,7 @@ private:
     void setExternalSignerStatus(bool path_configured, int signer_count, const QString& signer_name, const QString& error);
     void publishWalletInfo(WalletQmlModel* wallet_model);
     void subscribeWalletInfo(WalletQmlModel* wallet_model);
+    void setWalletLocationOpenError(const QString& error);
 
     bool m_initialized{false};
     interfaces::Node& m_node;
@@ -192,6 +202,8 @@ private:
     QString m_external_signer_name;
     QString m_external_signer_error;
     QString m_suggested_external_signer_wallet_name;
+    QString m_wallet_location_open_error;
+    OpenLocalPathFn m_open_local_path_fn;
 
     // Suppress the global wallet-loaded notification while a multi-step create
     // flow (watch-only) finishes setup. The worker result publishes the wallet

@@ -18,6 +18,8 @@ Page {
     signal next
     background: null
 
+    Component.onCompleted: walletController.clearWalletLocationOpenError()
+
     header: NavigationBar2 {}
 
     ColumnLayout {
@@ -69,6 +71,19 @@ Page {
             backgroundColor: "transparent"
             backgroundHoverColor: "transparent"
             backgroundPressedColor: "transparent"
+            onClicked: walletController.openSelectedWalletLocation()
+        }
+
+        CoreText {
+            objectName: "createWalletBackupErrorText"
+            Layout.fillWidth: true
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            visible: text.length > 0
+            text: walletController.walletLocationOpenError
+            color: Theme.color.red
+            font.pixelSize: 15
+            wrapMode: Text.WordWrap
         }
 
         ContinueButton {

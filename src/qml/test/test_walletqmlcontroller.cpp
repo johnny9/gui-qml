@@ -17,7 +17,10 @@
 
 #include <gmock/gmock.h>
 
+#include <QDir>
+#include <QFileInfo>
 #include <QSemaphore>
+#include <QTemporaryDir>
 
 #ifndef BITCOINQML_NO_TEST_MAIN
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -61,6 +64,7 @@ public:
     int get_wallets_calls{0};
     int list_wallet_dir_calls{0};
     int load_wallet_calls{0};
+    std::string wallet_dir;
 
     std::function<util::Result<std::unique_ptr<interfaces::Wallet>>(const std::string&, const SecureString&, uint64_t, std::vector<bilingual_str>&)>
         create_wallet_fn = [](const std::string&, const SecureString&, uint64_t, std::vector<bilingual_str>&) {
@@ -104,7 +108,7 @@ public:
         ++load_wallet_calls;
         return load_wallet_fn(name, warnings);
     }
-    std::string getWalletDir() override { return {}; }
+    std::string getWalletDir() override { return wallet_dir; }
     util::Result<std::unique_ptr<interfaces::Wallet>> restoreWallet(const fs::path&, const std::string&, std::vector<bilingual_str>&) override
     {
         return util::Error{Untranslated("Unexpected restoreWallet call")};
@@ -319,6 +323,10 @@ private Q_SLOTS:
     void walletNameAvailabilityErrorRejectsEmptyAndWhitespace();
     void walletNameAvailabilityErrorRejectsExistingNameWithSurroundingWhitespace();
     void walletNameAvailabilityErrorReturnsEmptyForAvailableName();
+    void openSelectedWalletLocationOpensWalletDirectory();
+    void openSelectedWalletLocationReportsOpenFailure();
+    void openSelectedWalletLocationReportsMissingWalletPath();
+    void openSelectedWalletLocationReportsMissingSelectedWallet();
 };
 
 void WalletQmlControllerTests::initTestCase()
@@ -1275,6 +1283,112 @@ void WalletQmlControllerTests::walletNameAvailabilityErrorReturnsEmptyForAvailab
     controller.initialize();
 
     QCOMPARE(controller.walletNameAvailabilityError("brand_new_wallet"), QString{});
+}
+
+void WalletQmlControllerTests::openSelectedWalletLocationOpensWalletDirectory()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    QTemporaryDir wallet_dir;
+    QVERIFY(wallet_dir.isValid());
+    QVERIFY(QDir{wallet_dir.path()}.mkpath("created_wallet"));
+    loader.wallet_dir = wallet_dir.path().toStdString();
+    FakeWallet::State wallet_state;
+    loader.get_wallets_fn = [&]() {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.emplace_back(std::make_unique<FakeWallet>("created_wallet", &wallet_state));
+        return wallets;
+    };
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QString opened_path;
+    controller.setOpenLocalPathFnForTesting([&](const QString& path) {
+        opened_path = path;
+        return true;
+    });
+
+    QVERIFY(controller.openSelectedWalletLocation());
+    QCOMPARE(opened_path, QFileInfo{wallet_dir.filePath("created_wallet")}.absoluteFilePath());
+    QVERIFY(controller.walletLocationOpenError().isEmpty());
+}
+
+void WalletQmlControllerTests::openSelectedWalletLocationReportsOpenFailure()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    QTemporaryDir wallet_dir;
+    QVERIFY(wallet_dir.isValid());
+    QVERIFY(QDir{wallet_dir.path()}.mkpath("created_wallet"));
+    loader.wallet_dir = wallet_dir.path().toStdString();
+    FakeWallet::State wallet_state;
+    loader.get_wallets_fn = [&]() {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.emplace_back(std::make_unique<FakeWallet>("created_wallet", &wallet_state));
+        return wallets;
+    };
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    QString opened_path;
+    controller.setOpenLocalPathFnForTesting([&](const QString& path) {
+        opened_path = path;
+        return false;
+    });
+
+    QVERIFY(!controller.openSelectedWalletLocation());
+    QCOMPARE(opened_path, QFileInfo{wallet_dir.filePath("created_wallet")}.absoluteFilePath());
+    QCOMPARE(controller.walletLocationOpenError(), QString{"Could not open wallet file location."});
+}
+
+void WalletQmlControllerTests::openSelectedWalletLocationReportsMissingWalletPath()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    FakeWalletLoader loader;
+    QTemporaryDir wallet_dir;
+    QVERIFY(wallet_dir.isValid());
+    loader.wallet_dir = wallet_dir.path().toStdString();
+    FakeWallet::State wallet_state;
+    loader.get_wallets_fn = [&]() {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.emplace_back(std::make_unique<FakeWallet>("missing_wallet", &wallet_state));
+        return wallets;
+    };
+    ExpectControllerInitialization(node, loader);
+
+    WalletQmlController controller(node);
+    controller.initialize();
+
+    bool opened{false};
+    controller.setOpenLocalPathFnForTesting([&](const QString&) {
+        opened = true;
+        return true;
+    });
+
+    QVERIFY(!controller.openSelectedWalletLocation());
+    QVERIFY(!opened);
+    QCOMPARE(controller.walletLocationOpenError(), QString{"Wallet file not found: %1"}.arg(QFileInfo{wallet_dir.filePath("missing_wallet")}.absoluteFilePath()));
+}
+
+void WalletQmlControllerTests::openSelectedWalletLocationReportsMissingSelectedWallet()
+{
+    using ::testing::StrictMock;
+
+    StrictMock<MockNode> node;
+    WalletQmlController controller(node);
+
+    QVERIFY(!controller.openSelectedWalletLocation());
+    QCOMPARE(controller.walletLocationOpenError(), QString{"No wallet file is available to view."});
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN
