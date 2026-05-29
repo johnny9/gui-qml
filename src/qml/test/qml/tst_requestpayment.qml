@@ -73,9 +73,9 @@ TestCase {
         id: btcValidatorComponent
         TextField {
             validator: RegularExpressionValidator {
-                regularExpression: /^(0|[1-9]\d{0,7})(\.\d{0,8})?$/
+                regularExpression: /^0*\d{0,8}(\.\d{0,8})?$/
             }
-            maximumLength: 17
+            maximumLength: 32
         }
     }
 
@@ -83,9 +83,9 @@ TestCase {
         id: satValidatorComponent
         TextField {
             validator: RegularExpressionValidator {
-                regularExpression: /^(0|[1-9]\d{0,15})$/
+                regularExpression: /^0*\d{0,16}$/
             }
-            maximumLength: 16
+            maximumLength: 32
         }
     }
 
@@ -104,19 +104,28 @@ TestCase {
 
         field.text = "0.00000001"
         compare(field.acceptableInput, true)
+
+        field.text = "01.00000000"
+        compare(field.acceptableInput, true)
+
+        field.text = "00000001.00000000"
+        compare(field.acceptableInput, true)
     }
 
     function test_btcValidator_rejects_invalid_amounts() {
         var field = createTemporaryObject(btcValidatorComponent, this)
         verify(field !== null)
 
-        field.text = "00"
-        compare(field.acceptableInput, false)
-
-        field.text = "1.000000001"
-        compare(field.acceptableInput, false)
-
         field.text = "-1"
+        compare(field.acceptableInput, false)
+
+        field.text = "1.2.3"
+        compare(field.acceptableInput, false)
+
+        field.text = "0.000000001"
+        compare(field.acceptableInput, false)
+
+        field.text = "100000000.00000000"
         compare(field.acceptableInput, false)
 
         field.text = "abc"
@@ -135,20 +144,113 @@ TestCase {
 
         field.text = "2100000000000000"
         compare(field.acceptableInput, true)
+
+        field.text = "00"
+        compare(field.acceptableInput, true)
+
+        field.text = "0002100000000000000"
+        compare(field.acceptableInput, true)
     }
 
     function test_satValidator_rejects_invalid_amounts() {
         var field = createTemporaryObject(satValidatorComponent, this)
         verify(field !== null)
 
-        field.text = "00"
-        compare(field.acceptableInput, false)
-
         field.text = "1.5"
         compare(field.acceptableInput, false)
 
         field.text = "-100"
         compare(field.acceptableInput, false)
+
+        field.text = "10000000000000000"
+        compare(field.acceptableInput, false)
+    }
+
+    function test_amountInput_keeps_user_draft_while_model_display_updates() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        const amountInput = findChild(page, "requestPaymentAmountInput")
+        verify(amountInput !== null)
+
+        amountInput.text = ""
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick("1")
+
+        compare(amountInput.text, "1")
+        compare(testPaymentRequest.amount.display, "1.00000000")
+    }
+
+    function test_amountInput_allows_editing_whole_part_before_decimal() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        const amountInput = findChild(page, "requestPaymentAmountInput")
+        verify(amountInput !== null)
+
+        amountInput.text = "0.00000000"
+        amountInput.cursorPosition = 1
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick("1")
+
+        compare(amountInput.text, "01.00000000")
+        compare(testPaymentRequest.amount.display, "1.00000000")
+
+        amountInput.focus = false
+        wait(0)
+        compare(amountInput.activeFocus, false)
+        compare(amountInput.text, "1.00000000")
+    }
+
+    function test_amountInput_rejects_extra_decimal_digits_while_editing() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        const amountInput = findChild(page, "requestPaymentAmountInput")
+        verify(amountInput !== null)
+
+        testPaymentRequest.amount.display = "0.12345678"
+        tryCompare(amountInput, "text", "0.12345678")
+        amountInput.cursorPosition = amountInput.text.length
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick("9")
+
+        compare(amountInput.text, "0.12345678")
+        compare(testPaymentRequest.amount.display, "0.12345678")
+
+        amountInput.focus = false
+        wait(0)
+        compare(amountInput.activeFocus, false)
+        compare(amountInput.text, "0.12345678")
+    }
+
+    function test_amountInput_rejects_extra_decimal_points_while_editing() {
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        page.wallet = testWalletModel
+        page.request = testPaymentRequest
+
+        const amountInput = findChild(page, "requestPaymentAmountInput")
+        verify(amountInput !== null)
+
+        testPaymentRequest.amount.display = "1.20000000"
+        amountInput.text = "1.2"
+        amountInput.cursorPosition = amountInput.text.length
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick(".")
+
+        compare(amountInput.text, "1.2")
+        compare(testPaymentRequest.amount.display, "1.20000000")
     }
 
     function test_addressTypeSelection_passes_selected_type_to_generation() {

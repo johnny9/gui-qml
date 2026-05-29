@@ -267,114 +267,23 @@ PageStack {
                     Layout.fillWidth: true
                 }
 
-                ColumnLayout {
+                BitcoinAmountInputField {
+                    id: amountInput
                     Layout.fillWidth: true
-
-                    Item {
-                        height: amountInput.height
-                        Layout.fillWidth: true
-                        CoreText {
-                            id: amountLabel
-                            width: 110
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            horizontalAlignment: Text.AlignLeft
-                            text: qsTr("Amount")
-                            font.pixelSize: 18
-                        }
-
-                        TextField {
-                            id: amountInput
-                            objectName: "sendAmountInput"
-                            anchors.left: amountLabel.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            leftPadding: 0
-                            font.family: "BitcoinCoreSans"
-                            font.styleName: "Regular"
-                            font.pixelSize: 18
-                            color: Theme.color.neutral9
-                            placeholderTextColor: enabled ? Theme.color.neutral7 : Theme.color.neutral4
-                            background: Item {}
-                            placeholderText: root.recipient.amount.unit === BitcoinAmount.SAT ? "0" : "0.00000000"
-                            selectByMouse: true
-                            text: root.recipient.amount.display
-                            onTextChanged: {
-                                root.clearPrepareTransactionError()
-                                if (text !== root.recipient.amount.display) {
-                                    root.recipient.amount.display = text
-                                }
-                                root.scheduleFeeEstimates()
-                            }
-                            onTextEdited: root.recipient.amount.display = text
-                            onEditingFinished: {
-                                root.recipient.amount.format()
-                                root.scheduleFeeEstimates()
-                            }
-                            onActiveFocusChanged: {
-                                if (!activeFocus) {
-                                    root.recipient.amount.format()
-                                    root.scheduleFeeEstimates()
-                                }
-                            }
-                            validator: RegularExpressionValidator {
-                                regularExpression: root.recipient.amount.unit === BitcoinAmount.BTC
-                                    ? /^(0|[1-9]\d{0,7})(\.\d{0,8})?$/
-                                    : /^(0|[1-9]\d{0,15})$/
-                            }
-                            maximumLength: root.recipient.amount.unit === BitcoinAmount.BTC ? 17 : 16
-                        }
-                        Item {
-                            objectName: "sendAmountUnitToggle"
-                            width: unitLabel.width + flipIcon.width
-                            height: Math.max(unitLabel.height, flipIcon.height)
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            function click() {
-                                root.recipient.amount.flipUnit()
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: root.recipient.amount.flipUnit()
-                            }
-                            CoreText {
-                                id: unitLabel
-                                objectName: "sendAmountUnitLabel"
-                                anchors.right: flipIcon.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: root.recipient.amount.unitLabel
-                                font.pixelSize: 18
-                                color: enabled ? Theme.color.neutral7 : Theme.color.neutral4
-                            }
-                            Icon {
-                                id: flipIcon
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                source: "image://images/flip-vertical"
-                                color: unitLabel.enabled ? Theme.color.neutral8 : Theme.color.neutral4
-                                size: 30
-                            }
-                        }
+                    inputObjectName: "sendAmountInput"
+                    unitToggleObjectName: "sendAmountUnitToggle"
+                    unitLabelObjectName: "sendAmountUnitLabel"
+                    errorTextObjectName: "sendAmountErrorText"
+                    amount: root.recipient ? root.recipient.amount : null
+                    errorText: root.recipient ? root.recipient.amountError : ""
+                    onInputTextChanged: {
+                        root.clearPrepareTransactionError()
+                        root.scheduleFeeEstimates()
                     }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: root.recipient.amountError.length > 0
-
-                        Icon {
-                            source: "image://images/alert-filled"
-                            size: 22
-                            color: Theme.color.red
-                        }
-
-                        CoreText {
-                            objectName: "sendAmountErrorText"
-                            text: root.recipient.amountError
-                            font.pixelSize: 15
-                            color: Theme.color.red
-                            horizontalAlignment: Text.AlignLeft
-                            Layout.fillWidth: true
-                        }
+                    onTextEdited: {
+                        root.clearPrepareTransactionError()
                     }
+                    onEditingFinished: root.scheduleFeeEstimates()
                 }
 
                 Separator {

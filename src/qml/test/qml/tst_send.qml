@@ -150,10 +150,78 @@ TestCase {
         const amountInput = findChild(page, "sendAmountInput")
         verify(amountInput !== null)
 
+        amountInput.text = ""
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
         const callsBefore = testWalletModel.scheduleFeeEstimatesCalls
-        amountInput.text = "0.01000000"
+        keyClick("1")
 
         tryCompare(testWalletModel, "scheduleFeeEstimatesCalls", callsBefore + 1)
+        compare(amountInput.text, "1")
+        compare(testSendRecipient.amount.display, "1.00000000")
+    }
+
+    function test_send_amount_allows_editing_whole_part_before_decimal() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const amountInput = findChild(page, "sendAmountInput")
+        verify(amountInput !== null)
+
+        amountInput.text = "0.00000000"
+        amountInput.cursorPosition = 1
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick("1")
+
+        compare(amountInput.text, "01.00000000")
+        compare(testSendRecipient.amount.display, "1.00000000")
+
+        amountInput.focus = false
+        wait(0)
+        compare(amountInput.activeFocus, false)
+        compare(amountInput.text, "1.00000000")
+    }
+
+    function test_send_amount_rejects_extra_decimal_digits_while_editing() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const amountInput = findChild(page, "sendAmountInput")
+        verify(amountInput !== null)
+
+        testSendRecipient.amount.display = "0.12345678"
+        tryCompare(amountInput, "text", "0.12345678")
+        amountInput.cursorPosition = amountInput.text.length
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick("9")
+
+        compare(amountInput.text, "0.12345678")
+        compare(testSendRecipient.amount.display, "0.12345678")
+
+        amountInput.focus = false
+        wait(0)
+        compare(amountInput.activeFocus, false)
+        compare(amountInput.text, "0.12345678")
+    }
+
+    function test_send_amount_rejects_extra_decimal_points_while_editing() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const amountInput = findChild(page, "sendAmountInput")
+        verify(amountInput !== null)
+
+        testSendRecipient.amount.display = "1.20000000"
+        amountInput.text = "1.2"
+        amountInput.cursorPosition = amountInput.text.length
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick(".")
+
+        compare(amountInput.text, "1.2")
+        compare(testSendRecipient.amount.display, "1.20000000")
     }
 
     function test_send_shows_selected_estimated_fee() {

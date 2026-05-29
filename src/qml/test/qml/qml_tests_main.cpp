@@ -131,8 +131,8 @@ Q_SIGNALS:
 class MockBitcoinAmount : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(QString display MEMBER m_display NOTIFY displayChanged)
-    Q_PROPERTY(Unit unit MEMBER m_unit NOTIFY unitChanged)
+    Q_PROPERTY(QString display READ display WRITE setDisplay NOTIFY displayChanged)
+    Q_PROPERTY(Unit unit READ unit WRITE setUnit NOTIFY unitChanged)
     Q_PROPERTY(qint64 satoshi READ satoshi NOTIFY displayChanged)
     Q_PROPERTY(QString unitLabel READ unitLabel NOTIFY unitChanged)
     Q_PROPERTY(QString displayWithUnit READ displayWithUnit NOTIFY displayChanged)
@@ -147,6 +147,17 @@ public:
     QString m_display{QStringLiteral("0.00000000")};
     Unit m_unit{BTC};
 
+    QString display() const { return m_display; }
+    Unit unit() const { return m_unit; }
+    void setUnit(Unit unit)
+    {
+        if (m_unit == unit) return;
+        const qint64 sats = satoshi();
+        m_unit = unit;
+        m_display = displayForSatoshi(sats);
+        Q_EMIT unitChanged();
+        Q_EMIT displayChanged();
+    }
     qint64 satoshi() const
     {
         const QString amount_text = m_display.split(u' ').constFirst();
@@ -159,18 +170,59 @@ public:
         const double value = amount_text.toDouble(&ok);
         return ok ? static_cast<qint64>(value * 100000000.0 + 0.5) : 0;
     }
+    void setDisplay(const QString& display)
+    {
+        const QString normalized = normalizedDisplay(display);
+        if (m_display == normalized) return;
+        m_display = normalized;
+        Q_EMIT displayChanged();
+    }
     QString unitLabel() const { return m_unit == BTC ? QStringLiteral("BTC") : QStringLiteral("sat"); }
     QString displayWithUnit() const { return m_display.isEmpty() ? QString{} : m_display + QStringLiteral(" ") + unitLabel(); }
-    Q_INVOKABLE void format() {}
+    Q_INVOKABLE void format()
+    {
+        const QString normalized = normalizedDisplay(m_display);
+        if (m_display != normalized) {
+            m_display = normalized;
+        }
+        Q_EMIT displayChanged();
+    }
     Q_INVOKABLE void flipUnit()
     {
-        m_unit = (m_unit == BTC) ? SAT : BTC;
-        Q_EMIT unitChanged();
+        setUnit(m_unit == BTC ? SAT : BTC);
     }
 
 Q_SIGNALS:
     void displayChanged();
     void unitChanged();
+
+private:
+    QString displayForSatoshi(qint64 sats) const
+    {
+        if (m_unit == SAT) return QString::number(sats);
+        const qint64 whole = sats / 100000000;
+        const qint64 fraction = qAbs(sats % 100000000);
+        return QStringLiteral("%1.%2").arg(whole).arg(fraction, 8, 10, QLatin1Char('0'));
+    }
+
+    QString normalizedDisplay(const QString& display) const
+    {
+        const QString trimmed = display.trimmed();
+        if (trimmed.isEmpty()) return QString{};
+        if (m_unit == SAT) {
+            QString digits_only = trimmed;
+            digits_only.remove(QRegularExpression(QStringLiteral("[^0-9]")));
+            return digits_only.isEmpty() ? QString{} : QString::number(digits_only.toLongLong());
+        }
+
+        QString sanitized = trimmed;
+        sanitized.remove(QRegularExpression(QStringLiteral("[^0-9.]")));
+        const QStringList parts = sanitized.split(u'.');
+        const qint64 whole = parts.value(0).isEmpty() ? 0 : parts.value(0).toLongLong();
+        const QString fraction_text = parts.size() > 1 ? parts.value(1).left(8).leftJustified(8, u'0') : QStringLiteral("00000000");
+        const qint64 fraction = fraction_text.toLongLong();
+        return QStringLiteral("%1.%2").arg(whole).arg(fraction, 8, 10, QLatin1Char('0'));
+    }
 };
 
 class MockBitcoinAddress : public QObject
