@@ -13,6 +13,7 @@
 #include <interfaces/wallet.h>
 #include <support/allocators/secure.h>
 
+#include <functional>
 #include <memory>
 
 #include <QMutex>
@@ -129,15 +130,21 @@ public Q_SLOTS:
 
 private:
     enum class WalletLoadAction {
-        None,
         Load,
-        Import,
         Create,
     };
 
     void handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet);
+    WalletQmlModel* addOrSelectWalletModel(std::unique_ptr<interfaces::Wallet> wallet);
     void registerWalletModel(WalletQmlModel* wallet_model);
     void removeWalletModel(WalletQmlModel* wallet_model);
+    using WalletSetupFn = std::function<QString(interfaces::Wallet& wallet)>;
+    void createWalletAsync(const QString& name,
+                           SecureString passphrase,
+                           uint64_t wallet_creation_flags,
+                           WalletLoadAction load_action,
+                           bool report_create_error,
+                           WalletSetupFn setup_wallet = {});
     void startWalletImport(const QString& path);
     void startWalletLoad(const QString& path, const QString& wallet_format = QString());
     void startWalletMigration(const QString& path, SecureString passphrase);
@@ -173,11 +180,9 @@ private:
     bool m_is_wallet_loaded{false};
     bool m_no_wallets_found{false};
     bool m_wallet_load_in_progress{false};
-    bool m_wallet_load_requested{false};
     QString m_wallet_load_error;
     QString m_wallet_load_warnings;
     QString m_wallet_create_error;
-    WalletLoadAction m_pending_wallet_load_action{WalletLoadAction::None};
     bool m_wallet_migration_in_progress{false};
     QString m_wallet_migration_error;
     QString m_last_imported_wallet_name;
@@ -188,14 +193,11 @@ private:
     QString m_external_signer_error;
     QString m_suggested_external_signer_wallet_name;
 
-    // Hold the wallet between createWallet() and publication so a multi-step
-    // create flow (watch-only) can finish setup before the model is published.
-    // handleLoadWallet() stashes the wallet here instead of registering a model,
-    // and the create flow re-invokes handleLoadWallet() after setup completes.
+    // Suppress the global wallet-loaded notification while a multi-step create
+    // flow (watch-only) finishes setup. The worker result publishes the wallet
+    // through addOrSelectWalletModel() after setup completes.
     QString m_deferred_wallet_name;
-    std::unique_ptr<interfaces::Wallet> m_deferred_wallet;
 
-    std::vector<bilingual_str> m_warning_messages;
 };
 
 #endif // BITCOIN_QML_WALLETQMLCONTROLLER_H

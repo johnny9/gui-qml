@@ -50,9 +50,11 @@ PageStack {
     Connections {
         target: walletController
         function onWalletCreateSucceeded() {
-            if (!root.creatingWatchOnly || !root.visible) return
+            if (!root.creatingWatchOnly) return
             root.creatingWatchOnly = false
-            root.push(watchOnlyConfirm)
+            if (root.visible) {
+                root.push(watchOnlyConfirm)
+            }
         }
         function onWalletCreateErrorChanged() {
             if (root.creatingWatchOnly && walletController.walletCreateError.length > 0) {

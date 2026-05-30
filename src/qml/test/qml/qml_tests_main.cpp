@@ -1165,7 +1165,7 @@ public:
         QString t = xpub.trimmed();
         return t.length() >= 100 && (t.startsWith("xpub") || t.startsWith("tpub"));
     }
-    Q_INVOKABLE void createWatchOnlyWallet(const QString& /*name*/, const QString& /*xpub*/) {}
+    Q_INVOKABLE void createWatchOnlyWallet(const QString& /*name*/, const QString& /*xpub*/) { Q_EMIT walletCreateSucceeded(); }
     Q_INVOKABLE void createSingleSigWallet(const QString& /*name*/, const QString& /*passphrase*/) { Q_EMIT walletCreateSucceeded(); }
     Q_INVOKABLE void clearWalletLoadStatus() { m_wallet_load_error.clear(); Q_EMIT walletLoadErrorChanged(); }
     Q_INVOKABLE void clearWalletCreateStatus() { m_wallet_create_error.clear(); Q_EMIT walletCreateErrorChanged(); }
