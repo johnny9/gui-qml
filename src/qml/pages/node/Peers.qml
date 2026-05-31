@@ -21,6 +21,7 @@ Page {
 
     header: NavigationBar2 {
         leftItem: NavButton {
+            objectName: "peersBackButton"
             iconSource: "image://images/caret-left"
             text: qsTr("Back")
             onClicked: root.back()
@@ -60,6 +61,16 @@ Page {
                 text: qsTr("Peers are nodes you exchange data with.")
                 font.pixelSize: 13
                 color: Theme.color.neutral7
+            }
+
+            InfoBanner {
+                objectName: "peersOfflineBanner"
+                Layout.fillWidth: true
+                visible: typeof networkStatusModel !== "undefined" && networkStatusModel.networkOffline
+                iconSource: "image://images/network-light"
+                title: qsTr("No network connection")
+                message: qsTr("Peer connections will resume when your device is back online.")
+                bannerLayout: InfoBanner.Layout.Horizontal
             }
 
             Flickable {

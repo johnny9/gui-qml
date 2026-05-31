@@ -2,6 +2,8 @@
     <qresource prefix="/qml">
         <file>components/AboutOptions.qml</file>
         <file>components/AddressDetailRow.qml</file>
+        <file>components/AlertAction.qml</file>
+        <file>components/AlertPopup.qml</file>
         <file>components/BitcoinAddressDisplayField.qml</file>
         <file>components/BitcoinAddressInputField.qml</file>
         <file>components/BitcoinAmountDisplayField.qml</file>
@@ -16,10 +18,16 @@
         <file>components/ExternalSignerReviewActions.qml</file>
         <file>components/ExternalPopup.qml</file>
         <file>components/FeeSelection.qml</file>
+        <file>components/MiniBlockClock.qml</file>
         <file>components/MonospaceOutputView.qml</file>
         <file>components/InfoBanner.qml</file>
         <file>components/NetworkTrafficGraph.qml</file>
         <file>components/NetworkIndicator.qml</file>
+        <file>components/NodeFatalErrorPopup.qml</file>
+        <file>components/NodeInformationPopup.qml</file>
+        <file>components/NodeRuntimeDialog.qml</file>
+        <file>components/NodeStatusActions.qml</file>
+        <file>components/NodeWarningsPopup.qml</file>
         <file>components/OptionPopup.qml</file>
         <file>components/PeersIndicator.qml</file>
         <file>components/ProxySettings.qml</file>

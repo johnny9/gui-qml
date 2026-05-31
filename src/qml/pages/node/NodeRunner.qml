@@ -15,12 +15,32 @@ Page {
     background: null
     clip: true
     header: NavigationBar2 {
-        rightItem: NavButton {
-            objectName: "nodeSettingsButton"
-            iconSource: "image://images/gear"
-            iconHeight: 24
-            iconWidth: 24
-            onClicked: root.settingsClicked()
+        rightItem: Item {
+            implicitWidth: actionsRow.implicitWidth + 12
+            implicitHeight: actionsRow.implicitHeight + 10
+
+            RowLayout {
+                id: actionsRow
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.topMargin: 8
+                anchors.rightMargin: 12
+                spacing: 4
+
+                NodeStatusActions {
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                IconButton {
+                    objectName: "nodeSettingsButton"
+                    iconSource: "image://images/gear"
+                    iconColor: Theme.color.neutral9
+                    hoverColor: Theme.color.neutral9
+                    size: 34
+                    iconSize: 34
+                    Layout.alignment: Qt.AlignVCenter
+                    onClicked: root.settingsClicked()
+                }
+            }
         }
     }
 

@@ -133,6 +133,7 @@ def wait_for_wallet_ready(harness, gui):
 
 
 def load_wallet(gui, harness, wallet_name):
+    wait_for_rpc(harness.gui_rpc_port, timeout=60)
     rpc_call(harness.gui_rpc_port, "loadwallet", [wallet_name])
     wait_for_wallet_ready(harness, gui)
     gui.wait_for_property("walletBadge", "noWalletLoaded", False, timeout_ms=5000)

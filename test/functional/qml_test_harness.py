@@ -65,6 +65,13 @@ def setup_datadir(tmpdir):
     return datadir
 
 
+def qsettings_sandbox_args(env, config_home):
+    """Configure a process environment and CLI args for isolated QSettings."""
+    os.makedirs(config_home, exist_ok=True)
+    env["XDG_CONFIG_HOME"] = config_home
+    return [f"-test-settings-dir={config_home}"]
+
+
 def parse_args():
     """Parse common CLI arguments for QML test scripts."""
     parser = argparse.ArgumentParser(
@@ -123,21 +130,22 @@ class QmlTestHarness:
 
         env = dict(os.environ)
         env["QT_QPA_PLATFORM"] = "offscreen"
+        settings_args = []
         if self.config_home:
-            os.makedirs(self.config_home, exist_ok=True)
-            env["XDG_CONFIG_HOME"] = self.config_home
+            settings_args = qsettings_sandbox_args(env, self.config_home)
 
         args = [
             self.gui_binary,
             f"-datadir={self.datadir}",
             f"-test-automation={self.socket_path}",
-        ] + (["-resetguisettings"] if self.reset_settings else []) + [
+        ] + settings_args + (["-resetguisettings"] if self.reset_settings else []) + [
             "-logtimemicros",
             "-debug",
             "-debugexclude=libevent",
             "-debugexclude=leveldb",
             "-nolisten",
-        ] + self.extra_args
+        ]
+        args.extend(self.extra_args)
 
         print(f"Starting GUI: {' '.join(args)}")
         self.process = subprocess.Popen(

@@ -23,6 +23,7 @@
 ///
 /// Supported commands (JSON over newline-delimited stream):
 ///   {"cmd": "get_current_page"}
+///   {"cmd": "get_context_property", "name": "<contextPropertyName>"}
 ///   {"cmd": "get_property", "objectName": "<name>", "prop": "<property>"}
 ///   {"cmd": "click", "objectName": "<name>"}
 ///   {"cmd": "set_text", "objectName": "<name>", "text": "<value>"}
@@ -32,6 +33,8 @@
 ///   {"cmd": "click_list_item", "objectName": "<view>", "index": <zero-based-row>, "childObjectName": "<optional-delegate-child>"}
 ///   {"cmd": "get_list_item_property", "objectName": "<view>", "index": <zero-based-row>, "prop": "<delegate-root-property>"}
 ///   {"cmd": "save_screenshot", "path": "<png_path>"}
+///   {"cmd": "show_runtime_dialog", "message": "<text>", "caption": "<title>", "style": <uint>, "question": <bool>}
+///   {"cmd": "answer_runtime_dialog", "button": <uint>}
 ///   {"cmd": "list_objects"}
 ///   {"cmd": "close_window"}
 class TestBridge : public QObject
@@ -71,6 +74,7 @@ private:
 
     /// Dispatch individual command handlers.
     QByteArray cmdGetCurrentPage();
+    QByteArray cmdGetContextProperty(const QString& name);
     QByteArray cmdGetProperty(const QString& object_name, const QString& prop);
     QByteArray cmdClick(const QString& object_name);
     QByteArray cmdSetText(const QString& object_name, const QString& text);
@@ -80,6 +84,8 @@ private:
     QByteArray cmdClickListItem(const QString& view_object_name, int row_index, const QString& delegate_child_object_name);
     QByteArray cmdGetListItemProperty(const QString& view_object_name, int row_index, const QString& prop);
     QByteArray cmdSaveScreenshot(const QString& path);
+    QByteArray cmdShowRuntimeDialog(const QString& message, const QString& caption, unsigned int style, bool question);
+    QByteArray cmdAnswerRuntimeDialog(unsigned int button);
     QByteArray cmdListObjects();
     QByteArray cmdCloseWindow();
 

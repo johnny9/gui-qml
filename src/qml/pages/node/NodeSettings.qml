@@ -87,6 +87,7 @@ PageStack {
             }
             rightItem: NavButton {
                 id: doneButton
+                objectName: "nodeSettingsDoneButton"
                 text: qsTr("Done")
                 onClicked: root.doneClicked()
             }
@@ -115,6 +116,7 @@ PageStack {
                 Setting {
                     id: gotoWallet
                     objectName: "settingsWallet"
+                    visible: AppMode.walletEnabled
                     Layout.fillWidth: true
                     header: qsTr("Wallet")
                     actionItem: CaretRightIcon {
@@ -124,9 +126,13 @@ PageStack {
                         root.openWalletSettings()
                     }
                 }
-                Separator { Layout.fillWidth: true }
+                Separator {
+                    visible: gotoWallet.visible
+                    Layout.fillWidth: true
+                }
                 Setting {
                     id: gotoStorage
+                    objectName: "gotoStorage"
                     Layout.fillWidth: true
                     header: qsTr("Storage")
                     actionItem: CaretRightIcon {
@@ -183,6 +189,7 @@ PageStack {
                 Separator { Layout.fillWidth: true }
                 Setting {
                     id: gotoNetworkTraffic
+                    objectName: "settingsNetworkTraffic"
                     Layout.fillWidth: true
                     header: qsTr("Network Traffic")
                     actionItem: CaretRightIcon {
@@ -196,6 +203,7 @@ PageStack {
                 Setting {
                     id: gotoMempoolInformation
                     objectName: "settingsMempoolInformation"
+                    visible: nodeModel.mempoolInformationAvailable
                     Layout.fillWidth: true
                     header: qsTr("Mempool Information")
                     actionItem: CaretRightIcon {
@@ -205,7 +213,10 @@ PageStack {
                         root.push(mempool_information_page)
                     }
                 }
-                Separator { Layout.fillWidth: true }
+                Separator {
+                    visible: gotoMempoolInformation.visible
+                    Layout.fillWidth: true
+                }
                 Setting {
                     id: gotoDebugLog
                     objectName: "settingsDebugLog"

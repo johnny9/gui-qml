@@ -68,6 +68,7 @@ class MockPeerDetailsModel : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(int nodeId MEMBER m_node_id CONSTANT)
+    Q_PROPERTY(QString rawAddress MEMBER m_raw_address CONSTANT)
     Q_PROPERTY(QString address MEMBER m_address CONSTANT)
     Q_PROPERTY(QString addressLocal MEMBER m_address_local CONSTANT)
     Q_PROPERTY(QString type MEMBER m_type CONSTANT)
@@ -94,6 +95,7 @@ class MockPeerDetailsModel : public QObject
 
 public:
     int m_node_id{7};
+    QString m_raw_address{QStringLiteral("127.0.0.1")};
     QString m_address{QStringLiteral("127.0.0.1:8333")};
     QString m_address_local{QStringLiteral("127.0.0.1:18444")};
     QString m_type{QStringLiteral("Outbound Full Relay")};
@@ -1265,30 +1267,74 @@ class MockNodeModel : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(bool pause MEMBER m_pause NOTIFY pauseChanged)
+    Q_PROPERTY(int numPeers MEMBER m_num_peers NOTIFY numPeersChanged)
+    Q_PROPERTY(int numInboundPeers MEMBER m_num_inbound_peers NOTIFY numInboundPeersChanged)
     Q_PROPERTY(int numOutboundPeers MEMBER m_num_outbound_peers NOTIFY numOutboundPeersChanged)
     Q_PROPERTY(int maxNumOutboundPeers MEMBER m_max_num_outbound_peers NOTIFY maxNumOutboundPeersChanged)
     Q_PROPERTY(double verificationProgress MEMBER m_verification_progress NOTIFY verificationProgressChanged)
     Q_PROPERTY(int remainingSyncTime MEMBER m_remaining_sync_time NOTIFY remainingSyncTimeChanged)
+    Q_PROPERTY(bool headerSyncActive MEMBER m_header_sync_active NOTIFY headerSyncChanged)
+    Q_PROPERTY(bool blockSyncActive MEMBER m_block_sync_active NOTIFY blockSyncActiveChanged)
+    Q_PROPERTY(bool headerPresync MEMBER m_header_presync NOTIFY headerSyncChanged)
+    Q_PROPERTY(double headerSyncProgress MEMBER m_header_sync_progress NOTIFY headerSyncChanged)
     Q_PROPERTY(bool faulted MEMBER m_faulted NOTIFY faultedChanged)
+    Q_PROPERTY(QString startupError MEMBER m_startup_error NOTIFY startupErrorChanged)
+    Q_PROPERTY(QString warnings MEMBER m_warnings NOTIFY warningsChanged)
+    Q_PROPERTY(QStringList warningList MEMBER m_warning_list NOTIFY warningsChanged)
+    Q_PROPERTY(bool hasWarnings READ hasWarnings NOTIFY warningsChanged)
+    Q_PROPERTY(bool runtimeDialogVisible MEMBER m_runtime_dialog_visible NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QString runtimeDialogTitle MEMBER m_runtime_dialog_title NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QString runtimeDialogMessage MEMBER m_runtime_dialog_message NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QString runtimeDialogIcon MEMBER m_runtime_dialog_icon NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(unsigned int runtimeDialogButtons MEMBER m_runtime_dialog_buttons NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(bool runtimeDialogQuestion MEMBER m_runtime_dialog_question NOTIFY runtimeDialogChanged)
     Q_PROPERTY(int blockTipHeight MEMBER m_block_tip_height NOTIFY blockTipHeightChanged)
     Q_PROPERTY(int mempoolTransactionCount MEMBER m_mempool_transaction_count NOTIFY mempoolInfoChanged)
     Q_PROPERTY(double mempoolUsageMB MEMBER m_mempool_usage_mb NOTIFY mempoolInfoChanged)
     Q_PROPERTY(double mempoolMaxUsageMB MEMBER m_mempool_max_usage_mb NOTIFY mempoolInfoChanged)
     Q_PROPERTY(bool mempoolInfoPollingActive READ mempoolInfoPollingActive WRITE setMempoolInfoPollingActive NOTIFY mempoolInfoPollingActiveChanged)
+    Q_PROPERTY(bool mempoolInformationAvailable MEMBER m_mempool_information_available NOTIFY mempoolInformationAvailableChanged)
+    Q_PROPERTY(bool disconnectPeerResult MEMBER m_disconnect_peer_result NOTIFY peerActionStateChanged)
+    Q_PROPERTY(bool banPeerResult MEMBER m_ban_peer_result NOTIFY peerActionStateChanged)
+    Q_PROPERTY(int disconnectPeerCalls READ disconnectPeerCalls NOTIFY peerActionCallsChanged)
+    Q_PROPERTY(int banPeerCalls READ banPeerCalls NOTIFY peerActionCallsChanged)
 
 public:
     bool m_pause{false};
+    int m_num_peers{0};
+    int m_num_inbound_peers{0};
     int m_num_outbound_peers{0};
     int m_max_num_outbound_peers{8};
     double m_verification_progress{0.0};
     int m_remaining_sync_time{0};
+    bool m_header_sync_active{false};
+    bool m_block_sync_active{false};
+    bool m_header_presync{false};
+    double m_header_sync_progress{0.0};
     bool m_faulted{false};
+    QString m_startup_error;
+    QString m_warnings;
+    QStringList m_warning_list;
+    bool m_runtime_dialog_visible{false};
+    QString m_runtime_dialog_title;
+    QString m_runtime_dialog_message;
+    QString m_runtime_dialog_icon{QStringLiteral("image://images/info-filled")};
+    unsigned int m_runtime_dialog_buttons{0};
+    bool m_runtime_dialog_question{false};
     int m_block_tip_height{0};
     int m_mempool_transaction_count{0};
     double m_mempool_usage_mb{0.0};
     double m_mempool_max_usage_mb{300.0};
     bool m_mempool_info_polling_active{false};
+    bool m_mempool_information_available{true};
+    bool m_disconnect_peer_result{true};
+    bool m_ban_peer_result{true};
+    int m_disconnect_peer_calls{0};
+    int m_ban_peer_calls{0};
+    bool hasWarnings() const { return !m_warning_list.isEmpty(); }
     bool mempoolInfoPollingActive() const { return m_mempool_info_polling_active; }
+    int disconnectPeerCalls() const { return m_disconnect_peer_calls; }
+    int banPeerCalls() const { return m_ban_peer_calls; }
     void setMempoolInfoPollingActive(bool active)
     {
         if (m_mempool_info_polling_active == active) return;
@@ -1298,9 +1344,79 @@ public:
 
     Q_INVOKABLE void startNodeInitializionThread() {}
     Q_INVOKABLE void requestShutdown() { Q_EMIT requestedShutdown(); }
+    Q_INVOKABLE void answerRuntimeDialog(unsigned int button)
+    {
+        Q_UNUSED(button);
+        m_runtime_dialog_visible = false;
+        Q_EMIT runtimeDialogChanged();
+    }
+    Q_INVOKABLE QVariantList nodeInformationRows() const
+    {
+        QVariantMap version;
+        version.insert(QStringLiteral("label"), QStringLiteral("Client version"));
+        version.insert(QStringLiteral("value"), QStringLiteral("Bitcoin Core test"));
+
+        QVariantMap network;
+        network.insert(QStringLiteral("label"), QStringLiteral("Network"));
+        network.insert(QStringLiteral("value"), QStringLiteral("regtest"));
+
+        QVariantMap peers;
+        peers.insert(QStringLiteral("label"), QStringLiteral("Peers"));
+        peers.insert(QStringLiteral("value"), QStringLiteral("0 total (0 inbound, 0 outbound)"));
+
+        QVariantList rows;
+        rows.push_back(QVariant::fromValue(version));
+        rows.push_back(QVariant::fromValue(network));
+        rows.push_back(QVariant::fromValue(peers));
+        if (!m_warning_list.isEmpty()) {
+            QVariantMap warnings;
+            warnings.insert(QStringLiteral("label"), QStringLiteral("Warnings"));
+            warnings.insert(QStringLiteral("value"), m_warning_list.join(QStringLiteral("\n")));
+            rows.push_back(QVariant::fromValue(warnings));
+        }
+        return rows;
+    }
+    Q_INVOKABLE void setWarningsForTest(const QStringList& warnings)
+    {
+        m_warning_list = warnings;
+        m_warnings = warnings.join(QStringLiteral("<hr />"));
+        Q_EMIT warningsChanged();
+    }
+    Q_INVOKABLE void setBlockSyncActiveForTest(bool active)
+    {
+        if (m_block_sync_active == active) return;
+        m_block_sync_active = active;
+        Q_EMIT blockSyncActiveChanged();
+    }
+    Q_INVOKABLE void setRuntimeDialogForTest(const QString& title, const QString& message, unsigned int buttons, bool question)
+    {
+        m_runtime_dialog_title = title;
+        m_runtime_dialog_message = message;
+        m_runtime_dialog_icon = question ? QStringLiteral("image://images/alert-filled") : QStringLiteral("image://images/info-filled");
+        m_runtime_dialog_buttons = buttons;
+        m_runtime_dialog_question = question;
+        m_runtime_dialog_visible = true;
+        Q_EMIT runtimeDialogChanged();
+    }
+    Q_INVOKABLE void setStartupErrorForTest(const QString& error)
+    {
+        m_startup_error = error;
+        m_faulted = !error.isEmpty();
+        Q_EMIT startupErrorChanged();
+        Q_EMIT faultedChanged();
+    }
     Q_INVOKABLE void resetMempoolInfoPollingTestState()
     {
         setMempoolInfoPollingActive(false);
+    }
+    Q_INVOKABLE void resetPeerActionTestState()
+    {
+        m_disconnect_peer_result = true;
+        m_ban_peer_result = true;
+        m_disconnect_peer_calls = 0;
+        m_ban_peer_calls = 0;
+        Q_EMIT peerActionStateChanged();
+        Q_EMIT peerActionCallsChanged();
     }
     Q_INVOKABLE QString defaultProxyAddress() const { return QStringLiteral("127.0.0.1:9050"); }
     Q_INVOKABLE bool validateProxyAddress(const QString& value) const
@@ -1311,27 +1427,70 @@ public:
         };
         return pattern.match(value).hasMatch();
     }
+    Q_INVOKABLE bool disconnectPeer(int node_id)
+    {
+        Q_UNUSED(node_id);
+        ++m_disconnect_peer_calls;
+        Q_EMIT peerActionCallsChanged();
+        return m_disconnect_peer_result;
+    }
+    Q_INVOKABLE bool banPeer(const QString& raw_address, qint64 ban_duration)
+    {
+        Q_UNUSED(raw_address);
+        Q_UNUSED(ban_duration);
+        ++m_ban_peer_calls;
+        Q_EMIT peerActionCallsChanged();
+        return m_ban_peer_result;
+    }
 
 Q_SIGNALS:
     void requestedShutdown();
     void pauseChanged();
+    void numPeersChanged();
+    void numInboundPeersChanged();
     void numOutboundPeersChanged();
     void maxNumOutboundPeersChanged();
     void verificationProgressChanged();
     void remainingSyncTimeChanged();
+    void headerSyncChanged();
+    void blockSyncActiveChanged();
     void faultedChanged();
+    void startupErrorChanged();
+    void warningsChanged();
+    void runtimeDialogChanged();
     void blockTipHeightChanged();
     void mempoolInfoChanged();
     void mempoolInfoPollingActiveChanged(bool active);
+    void mempoolInformationAvailableChanged();
+    void peerActionStateChanged();
+    void peerActionCallsChanged();
 };
 
 class MockPeerTableModel : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(int refreshCalls READ refreshCalls NOTIFY refreshCallsChanged)
 
 public:
     Q_INVOKABLE void startAutoRefresh() {}
     Q_INVOKABLE void stopAutoRefresh() {}
+    Q_INVOKABLE void refresh()
+    {
+        ++m_refresh_calls;
+        Q_EMIT refreshCallsChanged();
+    }
+    Q_INVOKABLE void resetTestState()
+    {
+        m_refresh_calls = 0;
+        Q_EMIT refreshCallsChanged();
+    }
+    int refreshCalls() const { return m_refresh_calls; }
+
+Q_SIGNALS:
+    void refreshCallsChanged();
+
+private:
+    int m_refresh_calls{0};
 };
 
 class MockNetworkTrafficTower : public QObject
@@ -1370,6 +1529,30 @@ Q_SIGNALS:
     void lastFilterWindowSizeChanged();
 };
 
+class MockNetworkStatusModel : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(bool reachabilityAvailable MEMBER m_reachability_available NOTIFY reachabilityChanged)
+    Q_PROPERTY(bool networkOffline MEMBER m_network_offline NOTIFY reachabilityChanged)
+    Q_PROPERTY(QString reachability MEMBER m_reachability NOTIFY reachabilityChanged)
+
+public:
+    bool m_reachability_available{true};
+    bool m_network_offline{false};
+    QString m_reachability{QStringLiteral("Online")};
+
+    Q_INVOKABLE void setNetworkOfflineForTest(bool offline)
+    {
+        if (m_network_offline == offline) return;
+        m_network_offline = offline;
+        m_reachability = offline ? QStringLiteral("Disconnected") : QStringLiteral("Online");
+        Q_EMIT reachabilityChanged();
+    }
+
+Q_SIGNALS:
+    void reachabilityChanged();
+};
+
 class MockPeerListModelProxy : public QAbstractListModel
 {
     Q_OBJECT
@@ -1403,6 +1586,86 @@ Q_SIGNALS:
 
 private:
     QString m_sort_by{QStringLiteral("nodeId")};
+};
+
+class MockBanListModel : public QAbstractListModel
+{
+    Q_OBJECT
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
+    Q_PROPERTY(bool unbanResult MEMBER m_unban_result NOTIFY actionStateChanged)
+    Q_PROPERTY(int unbanCalls READ unbanCalls NOTIFY actionCallsChanged)
+    Q_PROPERTY(int refreshCalls READ refreshCalls NOTIFY refreshCallsChanged)
+
+public:
+    enum Roles {
+        AddressRole = Qt::UserRole,
+        BanUntilRole
+    };
+
+    int count() const { return 1; }
+    int unbanCalls() const { return m_unban_calls; }
+    int refreshCalls() const { return m_refresh_calls; }
+
+    int rowCount(const QModelIndex& parent = QModelIndex{}) const override
+    {
+        Q_UNUSED(parent);
+        return count();
+    }
+
+    QVariant data(const QModelIndex& index, int role) const override
+    {
+        if (!index.isValid() || index.row() < 0 || index.row() >= count()) return {};
+        switch (role) {
+        case AddressRole:
+            return QStringLiteral("127.0.0.1/32");
+        case BanUntilRole:
+            return QStringLiteral("January 1, 2030 12:00 AM");
+        default:
+            return {};
+        }
+    }
+
+    QHash<int, QByteArray> roleNames() const override
+    {
+        return {
+            {AddressRole, "address"},
+            {BanUntilRole, "banUntil"},
+        };
+    }
+
+    Q_INVOKABLE bool unbanAt(int row)
+    {
+        ++m_unban_calls;
+        Q_EMIT actionCallsChanged();
+        return row >= 0 && row < count() && m_unban_result;
+    }
+
+    Q_INVOKABLE void refresh()
+    {
+        ++m_refresh_calls;
+        Q_EMIT refreshCallsChanged();
+    }
+
+    Q_INVOKABLE void resetTestState()
+    {
+        m_unban_result = true;
+        m_unban_calls = 0;
+        m_refresh_calls = 0;
+        Q_EMIT actionStateChanged();
+        Q_EMIT actionCallsChanged();
+        Q_EMIT refreshCallsChanged();
+    }
+
+Q_SIGNALS:
+    void countChanged();
+    void actionStateChanged();
+    void actionCallsChanged();
+    void refreshCallsChanged();
+
+private:
+    bool m_unban_result{true};
+    int m_unban_calls{0};
+    int m_refresh_calls{0};
 };
 
 class MockWalletListModel : public QAbstractListModel
@@ -1551,6 +1814,7 @@ private:
 class MockActivityListModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
     enum Roles {
@@ -1574,8 +1838,10 @@ public:
     int rowCount(const QModelIndex& parent = QModelIndex{}) const override
     {
         Q_UNUSED(parent);
-        return 2;
+        return m_count;
     }
+
+    int count() const { return m_count; }
 
     QVariant data(const QModelIndex& index, int role) const override
     {
@@ -1642,6 +1908,20 @@ public:
     }
 
     Q_INVOKABLE void reload() {}
+    Q_INVOKABLE void setCountForTest(int count)
+    {
+        if (m_count == count) return;
+        beginResetModel();
+        m_count = count;
+        endResetModel();
+        Q_EMIT countChanged();
+    }
+
+Q_SIGNALS:
+    void countChanged();
+
+private:
+    int m_count{2};
 };
 
 class MockActivityFilterProxyModel : public QSortFilterProxyModel
@@ -1699,6 +1979,7 @@ public:
     {
         if (m_search_text == search_text) return;
         m_search_text = search_text;
+        invalidateFilter();
         Q_EMIT searchTextChanged();
         Q_EMIT countChanged();
     }
@@ -1708,6 +1989,7 @@ public:
     {
         if (m_date_filter == date_filter) return;
         m_date_filter = date_filter;
+        invalidateFilter();
         Q_EMIT dateFilterChanged();
         Q_EMIT countChanged();
     }
@@ -1717,6 +1999,7 @@ public:
     {
         if (m_type_filter == type_filter) return;
         m_type_filter = type_filter;
+        invalidateFilter();
         Q_EMIT typeFilterChanged();
         Q_EMIT countChanged();
     }
@@ -1735,6 +2018,16 @@ public:
     {
         Q_UNUSED(path);
         return true;
+    }
+
+protected:
+    bool filterAcceptsRow(int source_row, const QModelIndex& source_parent) const override
+    {
+        Q_UNUSED(source_row);
+        Q_UNUSED(source_parent);
+        return m_search_text.trimmed().isEmpty() &&
+            m_date_filter == DateAll &&
+            m_type_filter == TypeAll;
     }
 
 Q_SIGNALS:
@@ -1765,7 +2058,9 @@ public Q_SLOTS:
         static MockNodeModel node_model;
         static MockPeerTableModel peer_table_model;
         static MockNetworkTrafficTower network_traffic_tower;
+        static MockNetworkStatusModel network_status_model;
         static MockPeerListModelProxy peer_list_model_proxy;
+        static MockBanListModel ban_list_model;
         static MockPeerDetailsModel peer_details_model;
         static MockWalletQmlModelTransaction wallet_transaction;
         static MockPaymentRequest payment_request;
@@ -1817,13 +2112,16 @@ public Q_SLOTS:
         engine->rootContext()->setContextProperty(QStringLiteral("nodeModel"), &node_model);
         engine->rootContext()->setContextProperty(QStringLiteral("peerTableModel"), &peer_table_model);
         engine->rootContext()->setContextProperty(QStringLiteral("networkTrafficTower"), &network_traffic_tower);
+        engine->rootContext()->setContextProperty(QStringLiteral("networkStatusModel"), &network_status_model);
         engine->rootContext()->setContextProperty(QStringLiteral("peerListModelProxy"), &peer_list_model_proxy);
+        engine->rootContext()->setContextProperty(QStringLiteral("banListModel"), &ban_list_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testPeerDetailsModel"), &peer_details_model);
         engine->rootContext()->setContextProperty(QStringLiteral("walletController"), &wallet_controller);
         engine->rootContext()->setContextProperty(QStringLiteral("walletListModel"), &wallet_list_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testWalletModel"), &wallet_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testWalletTransaction"), &wallet_transaction);
         engine->rootContext()->setContextProperty(QStringLiteral("testPaymentRequest"), &payment_request);
+        engine->rootContext()->setContextProperty(QStringLiteral("testActivityListModel"), &activity_list_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testSendRecipient"), &send_recipient);
         engine->rootContext()->setContextProperty(QStringLiteral("testRecipientsModel"), &recipients_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testCoinsListModel"), &coins_list_model);

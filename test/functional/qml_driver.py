@@ -198,6 +198,15 @@ class QmlDriver:
             raise QmlDriverError(f"list_objects failed: {resp['error']}")
         return resp["objects"]
 
+    def get_context_property(self, name):
+        """Return metadata for a QQmlEngine root context property."""
+        resp = self._send({"cmd": "get_context_property", "name": name})
+        if "error" in resp:
+            raise QmlDriverError(
+                f"get_context_property({name!r}) failed: {resp['error']}"
+            )
+        return resp
+
     def save_screenshot(self, path):
         """Save a screenshot of the current QML window to a PNG file.
 
@@ -215,6 +224,26 @@ class QmlDriver:
                 f"save_screenshot({path!r}) failed: {resp['error']}"
             )
         return resp
+
+    def show_runtime_dialog(self, message, caption, style, question=False):
+        """Open a NodeRuntimeDialog through the test automation bridge."""
+        resp = self._send(
+            {
+                "cmd": "show_runtime_dialog",
+                "message": message,
+                "caption": caption,
+                "style": style,
+                "question": question,
+            }
+        )
+        if "error" in resp:
+            raise QmlDriverError(f"show_runtime_dialog failed: {resp['error']}")
+
+    def answer_runtime_dialog(self, button):
+        """Answer the active NodeRuntimeDialog with a Core/QMessageBox button id."""
+        resp = self._send({"cmd": "answer_runtime_dialog", "button": button})
+        if "error" in resp:
+            raise QmlDriverError(f"answer_runtime_dialog({button!r}) failed: {resp['error']}")
 
     def settle(
         self,

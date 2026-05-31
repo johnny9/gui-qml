@@ -41,6 +41,7 @@ class BanListModelTests : public QObject
 private Q_SLOTS:
     void refreshPopulatesRolesAndRows();
     void unbanAtTargetsSelectedSubnet();
+    void unbanAtReturnsFalseWhenNodeRejectsSubnet();
     void unbanAtIgnoresInvalidRows();
 };
 
@@ -118,7 +119,30 @@ void BanListModelTests::unbanAtTargetsSelectedSubnet()
     EXPECT_CALL(node, unban(Truly([&](const CSubNet& value) {
         return value.ToString() == subnet.ToString();
     }))).Times(1).WillOnce(Return(true));
-    model.unbanAt(0);
+    QVERIFY(model.unbanAt(0));
+}
+
+void BanListModelTests::unbanAtReturnsFalseWhenNodeRejectsSubnet()
+{
+    using ::testing::_;
+    using ::testing::DoAll;
+    using ::testing::NiceMock;
+    using ::testing::Return;
+    using ::testing::SetArgReferee;
+
+    banmap_t banned;
+    banned.emplace(ParseSubnet("10.0.0.0/8"), MakeBanEntry(1'900'000'000));
+
+    NiceMock<MockNode> node;
+    EXPECT_CALL(node, getBanned(_))
+        .Times(1)
+        .WillOnce(DoAll(SetArgReferee<0>(banned), Return(true)));
+
+    BanListModel model{node, nullptr};
+    model.refresh();
+
+    EXPECT_CALL(node, unban(_)).Times(1).WillOnce(Return(false));
+    QVERIFY(!model.unbanAt(0));
 }
 
 void BanListModelTests::unbanAtIgnoresInvalidRows()
@@ -141,8 +165,8 @@ void BanListModelTests::unbanAtIgnoresInvalidRows()
     model.refresh();
 
     EXPECT_CALL(node, unban(_)).Times(0);
-    model.unbanAt(-1);
-    model.unbanAt(42);
+    QVERIFY(!model.unbanAt(-1));
+    QVERIFY(!model.unbanAt(42));
 }
 
 int RunBanListModelTests(int argc, char* argv[])

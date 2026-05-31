@@ -81,7 +81,6 @@ void QmlInitExecutorApiTests::initializeEmitsRunawayExceptionOnFailure()
 {
     using ::testing::_;
     using ::testing::Invoke;
-    using ::testing::Return;
     using ::testing::StrictMock;
 
     StrictMock<MockNode> node;
@@ -89,7 +88,6 @@ void QmlInitExecutorApiTests::initializeEmitsRunawayExceptionOnFailure()
     EXPECT_CALL(node, appInitMain(_)).WillOnce(Invoke([](interfaces::BlockAndHeaderTipInfo*) -> bool {
         throw std::runtime_error{"init failed"};
     }));
-    EXPECT_CALL(node, getWarnings()).WillOnce(Return(bilingual_str{"Initialization failed", "Translated init failure"}));
 
     QmlInitExecutor executor{node};
     QSignalSpy initialize_spy(&executor, &QmlInitExecutor::initializeResult);
@@ -100,7 +98,7 @@ void QmlInitExecutorApiTests::initializeEmitsRunawayExceptionOnFailure()
     QVERIFY(runaway_spy.wait(SIGNAL_TIMEOUT));
     QCOMPARE(runaway_spy.count(), 1);
     QCOMPARE(initialize_spy.count(), 0);
-    QCOMPARE(runaway_spy.takeFirst().at(0).toString(), QString{"Translated init failure"});
+    QCOMPARE(runaway_spy.takeFirst().at(0).toString(), QString{"init failed"});
 }
 
 void QmlInitExecutorApiTests::shutdownEmitsResultAndRunsOffMainThread()
@@ -130,7 +128,6 @@ void QmlInitExecutorApiTests::shutdownEmitsResultAndRunsOffMainThread()
 void QmlInitExecutorApiTests::shutdownEmitsRunawayExceptionOnFailure()
 {
     using ::testing::Invoke;
-    using ::testing::Return;
     using ::testing::StrictMock;
 
     StrictMock<MockNode> node;
@@ -138,7 +135,6 @@ void QmlInitExecutorApiTests::shutdownEmitsRunawayExceptionOnFailure()
     EXPECT_CALL(node, appShutdown()).WillOnce(Invoke([] {
         throw std::runtime_error{"shutdown failed"};
     }));
-    EXPECT_CALL(node, getWarnings()).WillOnce(Return(bilingual_str{"Shutdown failed", "Translated shutdown failure"}));
 
     QmlInitExecutor executor{node};
     QSignalSpy shutdown_spy(&executor, &QmlInitExecutor::shutdownResult);
@@ -149,7 +145,7 @@ void QmlInitExecutorApiTests::shutdownEmitsRunawayExceptionOnFailure()
     QVERIFY(runaway_spy.wait(SIGNAL_TIMEOUT));
     QCOMPARE(runaway_spy.count(), 1);
     QCOMPARE(shutdown_spy.count(), 0);
-    QCOMPARE(runaway_spy.takeFirst().at(0).toString(), QString{"Translated shutdown failure"});
+    QCOMPARE(runaway_spy.takeFirst().at(0).toString(), QString{"shutdown failed"});
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

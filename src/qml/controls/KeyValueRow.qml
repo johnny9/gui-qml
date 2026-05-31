@@ -25,6 +25,7 @@ RowLayout {
     Pane {
         id: valueField
         Layout.fillWidth: true
+        Layout.minimumWidth: 0
         Layout.alignment: Qt.AlignLeft
         implicitHeight: Math.max(valueField.contentHeight, 21)
         padding: 0

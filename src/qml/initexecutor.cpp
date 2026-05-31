@@ -32,7 +32,7 @@ QmlInitExecutor::~QmlInitExecutor()
 void QmlInitExecutor::handleRunawayException(const std::exception* e)
 {
     PrintExceptionContinue(e, "Runaway exception");
-    Q_EMIT runawayException(QString::fromStdString(m_node.getWarnings().translated));
+    Q_EMIT runawayException(e ? QString::fromUtf8(e->what()) : tr("Unknown exception"));
 }
 
 void QmlInitExecutor::initialize()

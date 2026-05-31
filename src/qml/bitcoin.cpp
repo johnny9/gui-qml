@@ -37,6 +37,7 @@
 #include <qml/models/chainmodel.h>
 #include <qml/models/debuglogmodel.h>
 #include <qml/models/networktraffictower.h>
+#include <qml/models/networkstatusmodel.h>
 #include <qml/models/nodemodel.h>
 #include <qml/models/options_model.h>
 #include <qml/models/paymentrequest.h>
@@ -67,6 +68,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickStyle>
 #include <QQuickWindow>
 #include <QSettings>
 #include <QString>
@@ -102,6 +104,7 @@ void SetupUIArgs(ArgsManager& argsman)
     argsman.AddArg("-resetguisettings", "Reset all settings changed in the GUI", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
 #ifdef ENABLE_TEST_AUTOMATION
     argsman.AddArg("-test-automation=<path>", "Enable test automation bridge on the given Unix socket path", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
+    argsman.AddArg("-test-settings-dir=<dir>", "Store QSettings in this directory while test automation is enabled", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
 #endif
 }
 
@@ -143,6 +146,14 @@ bool InitErrorMessageBox(
     }
     qGuiApp->exec();
     return false;
+}
+
+void RecordStartupWarning(QStringList& startup_warnings, const bilingual_str& message)
+{
+    const QString warning{QString::fromStdString(message.translated).trimmed()};
+    if (!warning.isEmpty() && !startup_warnings.contains(warning)) {
+        startup_warnings.push_back(warning);
+    }
 }
 
 /* qDebug() message handler --> debug.log */
@@ -195,6 +206,19 @@ void LoadFontResource(const QString& path)
         qWarning() << "Failed to load font resource:" << path;
     }
 }
+
+#ifdef ENABLE_TEST_AUTOMATION
+void ApplyTestSettingsDir()
+{
+    const std::string settings_dir{gArgs.GetArg("-test-settings-dir", "")};
+    if (settings_dir.empty()) {
+        return;
+    }
+
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QString::fromStdString(settings_dir));
+}
+#endif
 } // namespace
 
 
@@ -210,9 +234,18 @@ int QmlGuiMain(int argc, char* argv[])
 
     QGuiApplication::styleHints()->setTabFocusBehavior(Qt::TabFocusAllControls);
     QGuiApplication app(argc, argv);
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);
-    auto handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(InitErrorMessageBox);
+    QStringList startup_warnings;
+    auto handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(
+        [&startup_warnings](const bilingual_str& message, const std::string& caption, unsigned int style) {
+            if (style & CClientUIInterface::ICON_WARNING) {
+                RecordStartupWarning(startup_warnings, message);
+                return false;
+            }
+            return InitErrorMessageBox(message, caption, style);
+        });
 
     SetupEnvironment();
     util::ThreadSetInternalName("main");
@@ -257,6 +290,9 @@ int QmlGuiMain(int argc, char* argv[])
         InitError(Untranslated(strprintf("Cannot parse command line arguments: %s\n", error)));
         return EXIT_FAILURE;
     }
+#ifdef ENABLE_TEST_AUTOMATION
+    ApplyTestSettingsDir();
+#endif
 
     if (auto error = common::InitConfig(
             gArgs,
@@ -296,26 +332,36 @@ int QmlGuiMain(int argc, char* argv[])
 
     handler_message_box.disconnect();
 
+    AppMode app_mode = SetupAppMode();
+#ifdef ENABLE_WALLET
+    const bool wallet_enabled = app_mode.walletEnabled();
+#endif
+
     NodeModel node_model{*node};
+    node_model.addStartupWarnings(startup_warnings);
     QmlInitExecutor init_executor{*node};
 #ifdef ENABLE_WALLET
-    WalletQmlController wallet_controller(*node);
-    if (!gArgs.GetBoolArg("-disablewallet", false)) {
-        QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &wallet_controller, &WalletQmlController::initialize);
+    std::unique_ptr<WalletQmlController> wallet_controller;
+    if (wallet_enabled) {
+        wallet_controller = std::make_unique<WalletQmlController>(*node);
+        QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, wallet_controller.get(), &WalletQmlController::initialize);
     }
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
     QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
 #ifdef ENABLE_WALLET
-        wallet_controller.unloadWallets();
+        if (wallet_controller) {
+            wallet_controller->unloadWallets();
+        }
 #endif
         init_executor.shutdown();
     });
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
     QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, &QGuiApplication::quit, Qt::QueuedConnection);
-    // QObject::connect(&init_executor, &InitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
+    QObject::connect(&init_executor, &QmlInitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     NetworkTrafficTower network_traffic_tower{node_model};
+    NetworkStatusModel network_status_model;
 #ifdef __ANDROID__
     AndroidNotifier android_notifier{node_model};
 #endif
@@ -331,7 +377,9 @@ int QmlGuiMain(int argc, char* argv[])
     qGuiApp->setQuitOnLastWindowClosed(false);
     QObject::connect(qGuiApp, &QGuiApplication::lastWindowClosed, [&] {
 #ifdef ENABLE_WALLET
-        wallet_controller.unloadWallets();
+        if (wallet_controller) {
+            wallet_controller->unloadWallets();
+        }
 #endif
         node->startShutdown();
     });
@@ -358,6 +406,7 @@ int QmlGuiMain(int argc, char* argv[])
     engine.addImageProvider(QStringLiteral("qr"), new QRImageProvider);
 
     engine.rootContext()->setContextProperty("networkTrafficTower", &network_traffic_tower);
+    engine.rootContext()->setContextProperty("networkStatusModel", &network_status_model);
     engine.rootContext()->setContextProperty("nodeModel", &node_model);
     engine.rootContext()->setContextProperty("chainModel", &chain_model);
     engine.rootContext()->setContextProperty("peerTableModel", &peer_model);
@@ -368,25 +417,26 @@ int QmlGuiMain(int argc, char* argv[])
     engine.rootContext()->setContextProperty("debugLogModel", &debug_log_model);
 
 #ifdef ENABLE_WALLET
-    WalletListModel wallet_list_model{*node, nullptr};
-    QObject::connect(&wallet_controller, &WalletQmlController::walletLoadStateChanged,
-                     &wallet_list_model, &WalletListModel::setWalletLoadState);
-    QObject::connect(&wallet_controller, &WalletQmlController::walletDisplayNamesChanged,
-                     &wallet_list_model, &WalletListModel::refreshDisplayNames);
-    QObject::connect(&wallet_list_model, &WalletListModel::walletListChanged,
-                     &wallet_controller, [&wallet_controller](bool has_wallets) {
-                         wallet_controller.setNoWalletsFound(!has_wallets);
-                     });
-    if (!gArgs.GetBoolArg("-disablewallet", false)) {
-        QObject::connect(&wallet_controller, &WalletQmlController::initializedChanged,
-                         &wallet_list_model, [&wallet_controller, &wallet_list_model]() {
-                             if (wallet_controller.initialized()) {
-                                 wallet_list_model.listWalletDir();
+    std::unique_ptr<WalletListModel> wallet_list_model;
+    if (wallet_enabled) {
+        wallet_list_model = std::make_unique<WalletListModel>(*node, nullptr);
+        QObject::connect(wallet_controller.get(), &WalletQmlController::walletLoadStateChanged,
+                         wallet_list_model.get(), &WalletListModel::setWalletLoadState);
+        QObject::connect(wallet_controller.get(), &WalletQmlController::walletDisplayNamesChanged,
+                         wallet_list_model.get(), &WalletListModel::refreshDisplayNames);
+        QObject::connect(wallet_list_model.get(), &WalletListModel::walletListChanged,
+                         wallet_controller.get(), [controller = wallet_controller.get()](bool has_wallets) {
+                             controller->setNoWalletsFound(!has_wallets);
+                         });
+        QObject::connect(wallet_controller.get(), &WalletQmlController::initializedChanged,
+                         wallet_list_model.get(), [controller = wallet_controller.get(), list_model = wallet_list_model.get()]() {
+                             if (controller->initialized()) {
+                                 list_model->listWalletDir();
                              }
                          });
+        engine.rootContext()->setContextProperty("walletController", wallet_controller.get());
+        engine.rootContext()->setContextProperty("walletListModel", wallet_list_model.get());
     }
-    engine.rootContext()->setContextProperty("walletController", &wallet_controller);
-    engine.rootContext()->setContextProperty("walletListModel", &wallet_list_model);
 #endif
 
     OptionsQmlModel options_model(*node, !need_onboarding.toBool());
@@ -414,7 +464,6 @@ int QmlGuiMain(int argc, char* argv[])
         engine.retranslate();
     });
 
-    AppMode app_mode = SetupAppMode();
     BuildInfo build_info;
     Clipboard clipboard;
 
