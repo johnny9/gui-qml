@@ -105,14 +105,19 @@ def run_case(case_name, case_body):
 def seed_wallet_display_alias(harness, wallet_path, alias):
     """Write a wallet display alias into the GUI's QSettings file before launch.
 
-    QSettings honors XDG_CONFIG_HOME on Linux; on macOS it uses NSUserDefaults
-    and this seeded file is ignored. Linux-targeted assertions only.
+    With setDefaultFormat(IniFormat) + setPath(IniFormat, UserScope, ...)
+    applied by -test-settings-dir, Qt resolves the user-scope ini file as
+    "<settings-dir>/<org>/<app>.ini" where <org> comes from
+    OrganizationDomain on macOS and OrganizationName on Linux. Seed both
+    candidate paths so the assertion runs identically on either platform.
     """
-    settings_dir = os.path.join(harness.config_home, "BitcoinCore")
-    os.makedirs(settings_dir, exist_ok=True)
-    settings_path = os.path.join(settings_dir, "BitcoinCore-App-regtest.conf")
-    with open(settings_path, "a", encoding="utf-8") as fh:
-        fh.write(f"[walletDisplayNames]\n{wallet_path}={alias}\n")
+    payload = f"[walletDisplayNames]\n{wallet_path}={alias}\n"
+    for org_dir in ("BitcoinCore", "bitcoincore.org"):
+        settings_dir = os.path.join(harness.config_home, org_dir)
+        os.makedirs(settings_dir, exist_ok=True)
+        settings_path = os.path.join(settings_dir, "BitcoinCore-App-regtest.ini")
+        with open(settings_path, "a", encoding="utf-8") as fh:
+            fh.write(payload)
 
 
 def case_name_availability(harness):
@@ -144,17 +149,14 @@ def case_name_availability(harness):
     wait_for_text_contains(gui, "walletNameError", "already exists")
 
     # Reject names that collide with another wallet's stored display alias.
-    # Linux only — QSettings on macOS uses NSUserDefaults and ignores the
-    # seeded INI file.
-    if sys.platform.startswith("linux"):
-        submit_name(gui, custom_alias)
-        gui.wait_for_page("createWalletNamePage", timeout_ms=10000)
-        wait_for_text_contains(gui, "walletNameError", "already exists")
+    submit_name(gui, custom_alias)
+    gui.wait_for_page("createWalletNamePage", timeout_ms=10000)
+    wait_for_text_contains(gui, "walletNameError", "already exists")
 
-        # Case-insensitive collision.
-        submit_name(gui, custom_alias.lower())
-        gui.wait_for_page("createWalletNamePage", timeout_ms=10000)
-        wait_for_text_contains(gui, "walletNameError", "already exists")
+    # Case-insensitive collision.
+    submit_name(gui, custom_alias.lower())
+    gui.wait_for_page("createWalletNamePage", timeout_ms=10000)
+    wait_for_text_contains(gui, "walletNameError", "already exists")
 
     submit_name(gui, available_wallet)
     gui.wait_for_page("createWalletPasswordPage", timeout_ms=10000)
