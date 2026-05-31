@@ -355,6 +355,9 @@ def case_subpages_close_when_wallet_becomes_unselected(harness, checkpoints):
     checkpoints.checkpoint("password subpage opened", gui)
 
     close_wallet_from_selector(gui, wallet_name)
+    gui.wait_for_property("walletCloseConfirmationPopup", "opened", True, timeout_ms=5000)
+    gui.click("walletCloseConfirmationConfirmButton")
+    gui.wait_for_property("walletCloseConfirmationPopup", "opened", False, timeout_ms=5000)
     gui.wait_for_page("walletSettingsPage", timeout_ms=10000)
     gui.wait_for_property("walletBadge", "noWalletLoaded", True, timeout_ms=5000)
     checkpoints.checkpoint("password subpage unwound after wallet close", gui)

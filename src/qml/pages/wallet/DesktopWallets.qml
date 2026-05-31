@@ -63,7 +63,7 @@ Page {
         }
         function onWalletLoadStateChanged(name, state, error) {
             if (state === WalletListModel.LoadError) {
-                loadErrorPopup.errorText = error
+                loadErrorPopup.message = error
                 loadErrorPopup.open()
             }
         }
@@ -310,22 +310,39 @@ Page {
         }
     }
 
-    WalletLoadErrorPopup {
+    AlertPopup {
         id: loadErrorPopup
+        objectName: "walletLoadErrorPopup"
         parent: Overlay.overlay
         width: Math.min(420, root.width - 40)
-        popupObjectName: "walletLoadErrorPopup"
-        errorTextObjectName: "walletLoadErrorPopupText"
-        dismissButtonObjectName: "walletLoadErrorPopupDismissButton"
+        title: qsTr("Failed to open wallet")
+        messageObjectName: "walletLoadErrorPopupText"
+
+        AlertAction {
+            text: qsTr("OK")
+            buttonObjectName: "walletLoadErrorPopupDismissButton"
+        }
     }
 
-    WalletCloseConfirmationPopup {
+    AlertPopup {
         id: closeConfirmationPopup
+        objectName: "walletCloseConfirmationPopup"
         parent: Overlay.overlay
         width: Math.min(420, root.width - 40)
-        popupObjectName: "walletCloseConfirmationPopup"
-        cancelButtonObjectName: "walletCloseConfirmationCancelButton"
-        confirmButtonObjectName: "walletCloseConfirmationConfirmButton"
-        onConfirmed: walletController.closeWallet(walletName)
+        title: qsTr("Close wallet")
+
+        property string walletName: ""
+        message: qsTr("Do you want to close the wallet \"%1\"?").arg(walletName)
+
+        AlertAction {
+            text: qsTr("Cancel")
+            role: AlertAction.Cancel
+            buttonObjectName: "walletCloseConfirmationCancelButton"
+        }
+        AlertAction {
+            text: qsTr("Close wallet")
+            buttonObjectName: "walletCloseConfirmationConfirmButton"
+            onTriggered: walletController.closeWallet(closeConfirmationPopup.walletName)
+        }
     }
 }
