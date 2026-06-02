@@ -245,6 +245,12 @@ class QmlDriver:
         if "error" in resp:
             raise QmlDriverError(f"answer_runtime_dialog({button!r}) failed: {resp['error']}")
 
+    def close_window(self):
+        """Send a close event to the QML application window."""
+        resp = self._send({"cmd": "close_window"})
+        if "error" in resp:
+            raise QmlDriverError(f"close_window failed: {resp['error']}")
+
     def settle(
         self,
         timeout_ms=5000,
