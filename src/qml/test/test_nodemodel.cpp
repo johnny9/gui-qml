@@ -417,19 +417,42 @@ void NodeModelTests::destructorUnsubscribesCoreSignalsBeforeStoppingPolling()
     NiceMock<MockNode> node;
     MempoolState mempool;
     std::atomic<int> disconnected_handlers{0};
+    auto counted_handler = [&] {
+        return interfaces::MakeCleanupHandler([&] { ++disconnected_handlers; });
+    };
 
     InstallMempoolGetters(node, mempool);
     ON_CALL(node, handleNotifyBlockTip(testing::_))
         .WillByDefault(Invoke([&](interfaces::Node::NotifyBlockTipFn) {
-            return interfaces::MakeCleanupHandler([&] { ++disconnected_handlers; });
+            return counted_handler();
+        }));
+    ON_CALL(node, handleNotifyHeaderTip(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyHeaderTipFn) {
+            return counted_handler();
         }));
     ON_CALL(node, handleNotifyNumConnectionsChanged(testing::_))
         .WillByDefault(Invoke([&](interfaces::Node::NotifyNumConnectionsChangedFn) {
-            return interfaces::MakeCleanupHandler([&] { ++disconnected_handlers; });
+            return counted_handler();
+        }));
+    ON_CALL(node, handleNotifyNetworkActiveChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyNetworkActiveChangedFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleNotifyAlertChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyAlertChangedFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleMessageBox(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::MessageBoxFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleQuestion(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::QuestionFn) {
+            return counted_handler();
         }));
     ON_CALL(node, handleBannedListChanged(testing::_))
         .WillByDefault(Invoke([&](interfaces::Node::BannedListChangedFn) {
-            return interfaces::MakeCleanupHandler([&] { ++disconnected_handlers; });
+            return counted_handler();
         }));
 
     auto model{std::make_unique<NodeModel>(node)};
@@ -443,14 +466,14 @@ void NodeModelTests::destructorUnsubscribesCoreSignalsBeforeStoppingPolling()
     QObject::connect(model.get(), &NodeModel::mempoolInfoPollingActiveChanged, [&](bool active) {
         if (!active) {
             checked_shutdown_order = true;
-            QCOMPARE(disconnected_handlers.load(), 3);
+            QCOMPARE(disconnected_handlers.load(), 8);
         }
     });
 
     model.reset();
 
     QVERIFY(checked_shutdown_order);
-    QCOMPARE(disconnected_handlers.load(), 3);
+    QCOMPARE(disconnected_handlers.load(), 8);
 }
 
 void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()

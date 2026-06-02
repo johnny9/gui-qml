@@ -808,8 +808,23 @@ void NodeModel::unsubscribeFromCoreSignals()
     if (m_handler_notify_block_tip) {
         m_handler_notify_block_tip->disconnect();
     }
+    if (m_handler_notify_header_tip) {
+        m_handler_notify_header_tip->disconnect();
+    }
     if (m_handler_notify_num_peers_changed) {
         m_handler_notify_num_peers_changed->disconnect();
+    }
+    if (m_handler_notify_network_active_changed) {
+        m_handler_notify_network_active_changed->disconnect();
+    }
+    if (m_handler_notify_alert_changed) {
+        m_handler_notify_alert_changed->disconnect();
+    }
+    if (m_handler_message_box) {
+        m_handler_message_box->disconnect();
+    }
+    if (m_handler_question) {
+        m_handler_question->disconnect();
     }
     if (m_handler_notify_banned_list_changed) {
         m_handler_notify_banned_list_changed->disconnect();
