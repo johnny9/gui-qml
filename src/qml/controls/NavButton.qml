@@ -12,7 +12,9 @@ AbstractButton {
     id: root
     property int iconHeight: 30
     property int iconWidth: 30
-    property var textStyle: Theme.text.button
+    property bool bold: true
+    property bool busy: false
+    property var textStyle: bold ? Theme.text.buttonStrong : Theme.text.button
     property int textSize: textStyle.pixelSize
     property int textFontPixelSize: textSize
     property string textFontStyleName: textStyle.styleName
@@ -84,9 +86,15 @@ AbstractButton {
         Item {
             Layout.fillWidth: !text_background.active
         }
+        SpinningIndicator {
+            Layout.alignment: Qt.AlignVCenter
+            visible: root.busy
+            running: root.busy
+            color: root.iconColor
+        }
         Loader {
             id: text_background
-            active: root.text.length > 0
+            active: root.text.length > 0 && !root.busy
             visible: active
             sourceComponent: AbstractButton {
                 id: container
@@ -105,7 +113,8 @@ AbstractButton {
     }
     MouseArea {
         anchors.fill: parent
-        hoverEnabled: AppMode.isDesktop
+        hoverEnabled: AppMode.isDesktop && !root.busy
+        enabled: !root.busy
         cursorShape: root.enabled && root.hoverEnabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onEntered: {
             root.background.state = "HOVER"

@@ -38,6 +38,17 @@
 class WalletQmlModel : public QObject
 {
     Q_OBJECT
+
+public:
+    enum class KeyScheme {
+        SingleKey = 0,
+        WatchOnly,
+        MultiKey,
+        ExternalSigner,
+    };
+    Q_ENUM(KeyScheme)
+
+private:
     Q_PROPERTY(QString name READ name NOTIFY nameChanged)
     Q_PROPERTY(QString displayName READ displayName NOTIFY displayNameChanged)
     Q_PROPERTY(QString balance READ balance NOTIFY balanceChanged)
@@ -65,6 +76,7 @@ class WalletQmlModel : public QObject
     Q_PROPERTY(bool isEncrypted READ isEncrypted NOTIFY securityStateChanged)
     Q_PROPERTY(bool isLocked READ isLocked NOTIFY securityStateChanged)
     Q_PROPERTY(QString keyScheme READ keyScheme CONSTANT)
+    Q_PROPERTY(WalletQmlModel::KeyScheme keySchemeKind READ keySchemeKind CONSTANT)
     Q_PROPERTY(QString privateKeysStatus READ privateKeysStatus CONSTANT)
     Q_PROPERTY(QString externalSignerStatus READ externalSignerStatus CONSTANT)
     Q_PROPERTY(bool canManagePassphrase READ canManagePassphrase CONSTANT)
@@ -168,6 +180,9 @@ public:
     bool isEncrypted() const { return m_is_encrypted; }
     bool isLocked() const { return m_is_locked; }
     QString keyScheme() const;
+    KeyScheme keySchemeKind() const;
+    static KeyScheme keySchemeForWallet(interfaces::Wallet& wallet);
+    static QString keySchemeDisplayText(KeyScheme scheme);
     QString privateKeysStatus() const;
     QString externalSignerStatus() const;
     bool canManagePassphrase() const;

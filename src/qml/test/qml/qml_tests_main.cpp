@@ -7,7 +7,9 @@
 #include <QAbstractListModel>
 #include <QDateTime>
 #include <QQmlEngine>
+#include <QQmlComponent>
 #include <QQmlContext>
+#include <QQmlEngine>
 #include <QRegularExpression>
 #include <QSortFilterProxyModel>
 #include <QStringList>
@@ -1081,6 +1083,9 @@ class MockWalletController : public QObject
     Q_PROPERTY(bool initialized MEMBER m_initialized NOTIFY initializedChanged)
     Q_PROPERTY(bool isWalletLoaded MEMBER m_is_wallet_loaded NOTIFY isWalletLoadedChanged)
     Q_PROPERTY(bool noWalletsFound MEMBER m_no_wallets_found NOTIFY noWalletsFoundChanged)
+    Q_PROPERTY(QString walletLoadError MEMBER m_wallet_load_error NOTIFY walletLoadErrorChanged)
+    Q_PROPERTY(QString walletCreateError MEMBER m_wallet_create_error NOTIFY walletCreateErrorChanged)
+    Q_PROPERTY(bool walletLoadInProgress MEMBER m_wallet_load_in_progress NOTIFY walletLoadInProgressChanged)
     Q_PROPERTY(QString lastSelectedWalletName READ lastSelectedWalletName NOTIFY lastSelectedWalletNameChanged)
     Q_PROPERTY(QString lastClosedWalletName READ lastClosedWalletName NOTIFY lastClosedWalletNameChanged)
     Q_PROPERTY(int closeWalletCalls READ closeWalletCalls NOTIFY closeWalletCallsChanged)
@@ -1092,6 +1097,9 @@ public:
     bool m_initialized{true};
     bool m_is_wallet_loaded{true};
     bool m_no_wallets_found{false};
+    QString m_wallet_load_error;
+    QString m_wallet_create_error;
+    bool m_wallet_load_in_progress{false};
     QObject* m_selected_wallet{nullptr};
     QString m_last_selected_wallet_name;
     QString m_last_closed_wallet_name;
@@ -1152,11 +1160,23 @@ public:
         Q_EMIT openReceiveRequestsChanged();
         Q_EMIT openReceiveRequested();
     }
+    Q_INVOKABLE bool validateXpub(const QString& xpub)
+    {
+        QString t = xpub.trimmed();
+        return t.length() >= 100 && (t.startsWith("xpub") || t.startsWith("tpub"));
+    }
+    Q_INVOKABLE void createWatchOnlyWallet(const QString& /*name*/, const QString& /*xpub*/) { Q_EMIT walletCreateSucceeded(); }
+    Q_INVOKABLE void createSingleSigWallet(const QString& /*name*/, const QString& /*passphrase*/) { Q_EMIT walletCreateSucceeded(); }
+    Q_INVOKABLE void clearWalletLoadStatus() { m_wallet_load_error.clear(); Q_EMIT walletLoadErrorChanged(); }
+    Q_INVOKABLE void clearWalletCreateStatus() { m_wallet_create_error.clear(); Q_EMIT walletCreateErrorChanged(); }
 
 Q_SIGNALS:
     void initializedChanged();
     void isWalletLoadedChanged();
     void noWalletsFoundChanged();
+    void walletLoadErrorChanged();
+    void walletCreateErrorChanged();
+    void walletLoadInProgressChanged();
     void lastSelectedWalletNameChanged();
     void lastClosedWalletNameChanged();
     void closeWalletCallsChanged();
@@ -1165,6 +1185,7 @@ Q_SIGNALS:
     void closePaymentRequestDetailRequested();
     void openReceiveRequestsChanged();
     void openReceiveRequested();
+    void walletCreateSucceeded();
 };
 
 class MockOptionsModel : public QObject
@@ -1674,11 +1695,22 @@ class MockWalletListModel : public QAbstractListModel
     Q_PROPERTY(int listWalletDirCalls READ listWalletDirCalls NOTIFY listWalletDirCallsChanged)
 
 public:
+    enum class LoadState {
+        Closed = 0,
+        Open = 1,
+        Loading = 2,
+        LoadError = 3,
+    };
+    Q_ENUM(LoadState)
+
     enum Roles {
         NameRole = Qt::UserRole + 1,
         FormatRole,
         DisplayNameRole,
-        LoadStateRole
+        LoadStateRole,
+        ErrorMessageRole,
+        BalanceRole,
+        KeySchemeKindRole,
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex{}) const override
@@ -1694,6 +1726,9 @@ public:
         if (role == NameRole) return m_wallet_names.at(index.row());
         if (role == FormatRole) return QStringLiteral("sqlite");
         if (role == LoadStateRole) return m_wallet_load_states.at(index.row());
+        if (role == ErrorMessageRole) return QString{};
+        if (role == BalanceRole) return QString{};
+        if (role == KeySchemeKindRole) return 0;
         return {};
     }
 
@@ -1704,6 +1739,9 @@ public:
             {FormatRole, "format"},
             {DisplayNameRole, "displayName"},
             {LoadStateRole, "loadState"},
+            {ErrorMessageRole, "errorMessage"},
+            {BalanceRole, "balance"},
+            {KeySchemeKindRole, "keySchemeKind"},
         };
     }
 
@@ -2097,6 +2135,7 @@ public Q_SLOTS:
         qmlRegisterUncreatableType<MockSendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "Test stub type");
         qmlRegisterUncreatableType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Test stub type");
+        qmlRegisterUncreatableType<MockWalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModelTransaction>(
             "org.bitcoincore.qt",
             1,

@@ -126,6 +126,8 @@ def create_password_wallet(gui, wallet_name, password):
     gui.wait_for_property("createWalletButton", "visible", True, timeout_ms=10000)
     gui.wait_for_property("createWalletButton", "enabled", True, timeout_ms=25000)
     gui.click("createWalletButton")
+    gui.wait_for_property("walletTypeRegular", "visible", True, timeout_ms=5000)
+    gui.click("walletTypeRegular")
     gui.click("createWalletIntroStartButton")
     gui.set_text("createWalletNameInput", wallet_name)
     gui.click("createWalletNameContinueButton")
@@ -217,6 +219,9 @@ def close_wallet_from_selector(gui, wallet_name):
             raise AssertionError(f"Close button did not appear for wallet {wallet_name!r}")
         time.sleep(0.05)
     gui.click(object_name)
+    gui.wait_for_property("walletCloseConfirmationPopup", "opened", True, timeout_ms=5000)
+    gui.click("walletCloseConfirmationConfirmButton")
+    gui.wait_for_property("walletCloseConfirmationPopup", "opened", False, timeout_ms=5000)
 
 
 def open_wallet_settings_page(gui):

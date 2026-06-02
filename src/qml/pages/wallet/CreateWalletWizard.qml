@@ -18,145 +18,203 @@ PageStack {
 
     signal finished()
     property string walletName: ""
+    property string walletType: ""
+    property string xpub: ""
     property int launchContext: CreateWalletWizard.Context.Onboarding
+    property bool waitingForInit: false
+    property bool creatingWatchOnly: false
 
-    Component.onCompleted: walletController.refreshExternalSignerStatus()
+    function createWatchOnly() {
+        root.creatingWatchOnly = true
+        walletController.createWatchOnlyWallet(root.walletName, root.xpub)
+    }
+
+    Component.onCompleted: {
+        if (!walletController.initialized) {
+            nodeModel.startNodeInitializionThread()
+        }
+        walletController.refreshExternalSignerStatus()
+    }
+
+    Connections {
+        target: walletController
+        enabled: root.waitingForInit
+        function onInitializedChanged() {
+            if (walletController.initialized) {
+                root.waitingForInit = false
+                root.createWatchOnly()
+            }
+        }
+    }
+
+    Connections {
+        target: walletController
+        function onWalletCreateSucceeded() {
+            if (!root.creatingWatchOnly) return
+            root.creatingWatchOnly = false
+            if (root.visible) {
+                root.push(watchOnlyConfirm)
+            }
+        }
+        function onWalletCreateErrorChanged() {
+            if (root.creatingWatchOnly && walletController.walletCreateError.length > 0) {
+                root.creatingWatchOnly = false
+            }
+        }
+        function onWalletLoadErrorChanged() {
+            if (root.creatingWatchOnly && walletController.walletLoadError.length > 0) {
+                root.creatingWatchOnly = false
+            }
+        }
+    }
+
     onVisibleChanged: {
         if (visible) {
             walletController.refreshExternalSignerStatus()
         }
     }
 
-    initialItem: Page {
-        background: null
-        property bool navigationBackEnabled: false
+    initialItem: launchContext === CreateWalletWizard.Context.Main ? typeSelector : addWalletIntro
 
-        header: NavigationBar2 {
-            id: navbar
-            leftItem: NavButton {
-                objectName: "createWalletWizardBackButton"
-                iconSource: "image://images/caret-left"
-                text: qsTr("Back")
-                onClicked: root.finished()
-            }
-            rightItem: NavButton {
-                objectName: "createWalletWizardExitButton"
-                text: {
-                    switch (root.launchContext) {
-                        case CreateWalletWizard.Context.Main:
-                            return qsTr("Cancel");
-                        case CreateWalletWizard.Context.Onboarding:
-                        default:
-                            return qsTr("Skip");
+    Component {
+        id: addWalletIntro
+        Page {
+            background: null
+            property bool navigationBackEnabled: false
+
+            header: NavigationBar2 {
+                id: navbar
+                leftItem: NavButton {
+                    objectName: "createWalletWizardBackButton"
+                    iconSource: "image://images/caret-left"
+                    text: qsTr("Back")
+                    onClicked: root.finished()
+                }
+                rightItem: NavButton {
+                    objectName: "createWalletWizardExitButton"
+                    text: qsTr("Skip")
+                    onClicked: {
+                        root.finished()
                     }
                 }
-                onClicked: {
-                    root.finished()
+            }
+
+            ColumnLayout {
+                id: columnLayout
+                width: Math.min(parent.width, 450)
+                anchors.horizontalCenter: parent.horizontalCenter
+
+                Image {
+                    Layout.alignment: Qt.AlignCenter
+                    source: "image://images/add-wallet-dark"
+
+                    sourceSize.width: 200
+                    sourceSize.height: 200
                 }
+
+                Header {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 20
+                    Layout.rightMargin: 20
+                    header: qsTr("Add a wallet")
+                    headerBold: true
+                    description: walletController.canCreateExternalSignerWallet
+                        ? qsTr("Supported wallet types are external signer, watch-only, single-key,\nand multi-key.")
+                        : qsTr("Supported wallet types are watch-only, single-key,\nand multi-key.")
+                }
+
+                ContinueButton {
+                    objectName: "createWalletButton"
+                    Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
+                    Layout.topMargin: 40
+                    Layout.leftMargin: 20
+                    Layout.rightMargin: Layout.leftMargin
+                    Layout.bottomMargin: 20
+                    Layout.alignment: Qt.AlignCenter
+                    enabled: walletController.initialized
+                    text: qsTr("Create wallet")
+                    onClicked: {
+                        root.push(typeSelector)
+                    }
+                }
+
+                ContinueButton {
+                    objectName: "importWalletButton"
+                    Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
+                    Layout.leftMargin: 20
+                    Layout.rightMargin: Layout.leftMargin
+                    Layout.alignment: Qt.AlignCenter
+                    enabled: walletController.initialized
+                    text: qsTr("Import wallet")
+                    borderColor: Theme.color.neutral6
+                    borderHoverColor: Theme.color.orangeLight1
+                    borderPressedColor: Theme.color.orangeLight2
+                    textColor: Theme.color.orange
+                    backgroundColor: "transparent"
+                    backgroundHoverColor: "transparent"
+                    backgroundPressedColor: "transparent"
+                    onClicked: {
+                        walletController.clearWalletLoadStatus()
+                        root.push(import_options)
+                    }
+                }
+
             }
         }
-
-        ColumnLayout {
-            id: columnLayout
-            width: Math.min(parent.width, 450)
-            anchors.horizontalCenter: parent.horizontalCenter
-
-            Image {
-                Layout.alignment: Qt.AlignCenter
-                source: "image://images/add-wallet-dark"
-
-                sourceSize.width: 200
-                sourceSize.height: 200
+    }
+    Component {
+        id: typeSelector
+        CreateTypeSelector {
+            showBackButton: root.launchContext !== CreateWalletWizard.Context.Main
+            showCancelButton: root.launchContext === CreateWalletWizard.Context.Main
+            onBack: root.pop()
+            onCancel: root.finished()
+            onRegularSelected: {
+                root.walletType = "singlesig"
+                root.push(intro)
             }
-
-            Header {
-                Layout.fillWidth: true
-                Layout.leftMargin: 20
-                Layout.rightMargin: 20
-                header: qsTr("Add a wallet")
-                headerBold: true
-                description: walletController.canCreateExternalSignerWallet
-                    ? qsTr("Supported wallet types are external signer, view-only, single-key,\nand multi-key.")
-                    : qsTr("Supported wallet types are view-only, single-key,\nand multi-key.")
+            onWatchOnlySelected: {
+                root.walletType = "watchonly"
+                root.push(watchOnlyIntro)
             }
-
-            ContinueButton {
-                objectName: "createWalletButton"
-                Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
-                Layout.topMargin: 40
-                Layout.leftMargin: 20
-                Layout.rightMargin: Layout.leftMargin
-                Layout.bottomMargin: 20
-                Layout.alignment: Qt.AlignCenter
-                enabled: walletController.initialized
-                text: qsTr("Create wallet")
-                onClicked: {
-                    root.push(intro)
-                }
+            onExternalSignerSelected: {
+                walletController.clearWalletLoadStatus()
+                walletController.refreshExternalSignerStatus()
+                root.push(external_wallet, {
+                    "defaultWalletName": walletController.suggestedExternalSignerWalletName
+                })
             }
-
-            ContinueButton {
-                objectName: "importWalletButton"
-                Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
-                Layout.leftMargin: 20
-                Layout.rightMargin: Layout.leftMargin
-                Layout.alignment: Qt.AlignCenter
-                enabled: walletController.initialized
-                text: qsTr("Import wallet")
-                borderColor: Theme.color.neutral6
-                borderHoverColor: Theme.color.orangeLight1
-                borderPressedColor: Theme.color.orangeLight2
-                textColor: Theme.color.orange
-                backgroundColor: "transparent"
-                backgroundHoverColor: "transparent"
-                backgroundPressedColor: "transparent"
-                onClicked: {
-                    walletController.clearWalletLoadStatus()
-                    root.push(import_options)
-                }
+            onImportSelected: {
+                walletController.clearWalletLoadStatus()
+                root.push(import_options)
             }
-
-            ContinueButton {
-                objectName: "createExternalWalletEntryButton"
-                visible: walletController.canCreateExternalSignerWallet
-                Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
-                Layout.leftMargin: 20
-                Layout.rightMargin: Layout.leftMargin
-                Layout.alignment: Qt.AlignCenter
-                text: walletController.externalSignerName.length > 0
-                    ? qsTr("Create external wallet")
-                    : qsTr("Create hardware wallet")
-                borderColor: Theme.color.neutral6
-                borderHoverColor: Theme.color.orangeLight1
-                borderPressedColor: Theme.color.orangeLight2
-                textColor: Theme.color.orange
-                backgroundColor: "transparent"
-                backgroundHoverColor: "transparent"
-                backgroundPressedColor: "transparent"
-                onClicked: {
-                    walletController.clearWalletLoadStatus()
-                    walletController.refreshExternalSignerStatus()
-                    root.push(external_wallet, {
-                        "defaultWalletName": walletController.suggestedExternalSignerWalletName
-                    })
-                }
+        }
+    }
+    Component {
+        id: watchOnlyIntro
+        WatchOnlyIntro {
+            onBack: root.pop()
+            onNext: root.push(watchOnlyXpub)
+        }
+    }
+    Component {
+        id: watchOnlyXpub
+        WatchOnlyXpub {
+            id: xpubPage
+            onBack: root.pop()
+            onNext: {
+                root.xpub = xpubPage.xpub
+                root.push(name)
             }
-
-            CoreText {
-                visible: optionsModel.externalSignerPath.length > 0 && !walletController.canCreateExternalSignerWallet
-                Layout.fillWidth: true
-                Layout.leftMargin: 20
-                Layout.rightMargin: 20
-                Layout.topMargin: 20
-                wrapMode: Text.WordWrap
-                color: Theme.color.neutral8
-                text: {
-                    if (walletController.externalSignerError.length > 0) {
-                        return walletController.externalSignerError
-                    }
-                    return qsTr("No external signer is currently detected. Open Wallet settings to verify the signer path and rescan.")
-                }
-            }
+        }
+    }
+    Component {
+        id: watchOnlyConfirm
+        CreateConfirm {
+            headerText: qsTr("Your watch-only wallet has been created")
+            descriptionText: qsTr("You can view transactions and balances. Spending requires an external signer. No backup is needed — your wallet can be recreated from the same extended public key.")
+            onBack: root.pop()
+            onNext: root.finished()
         }
     }
     Component {
@@ -187,9 +245,19 @@ PageStack {
         id: name
         CreateName {
             id: createName
+            loading: root.waitingForInit
+            onBack: root.pop()
             onNext: {
                 root.walletName = createName.walletName
-                root.push(password)
+                if (root.walletType === "watchonly") {
+                    if (walletController.initialized) {
+                        root.createWatchOnly()
+                    } else {
+                        root.waitingForInit = true
+                    }
+                } else {
+                    root.push(password)
+                }
             }
         }
     }

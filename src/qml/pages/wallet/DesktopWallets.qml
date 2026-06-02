@@ -61,6 +61,12 @@ Page {
         function onOpenReceiveRequested() {
             receiveTabButton.checked = true
         }
+        function onWalletLoadStateChanged(name, state, error) {
+            if (state === WalletListModel.LoadError) {
+                loadErrorPopup.message = error
+                loadErrorPopup.open()
+            }
+        }
         function onWalletMigrationRequired(path) {
             root.pendingMigrationPath = path
             migrationRequiredPopup.errorText = ""
@@ -102,7 +108,7 @@ Page {
         id: navBar
         leftItem: WalletBadge {
             objectName: "walletBadge"
-            implicitWidth: 154
+            implicitWidth: 200
             implicitHeight: 46
             text: walletController.selectedWallet.displayName
             balance: walletController.selectedWallet.balance
@@ -110,6 +116,7 @@ Page {
             loading: !walletController.initialized
             noWalletLoaded: !walletController.isWalletLoaded
             noWalletsFound: walletController.noWalletsFound
+            keySchemeKind: walletController.selectedWallet.keySchemeKind
 
             onClicked: {
                 root.toggleWalletSelection()
@@ -124,6 +131,10 @@ Page {
 
                 onAddWallet: {
                     root.addWallet()
+                }
+                onCloseWalletRequested: (name) => {
+                    closeConfirmationPopup.walletName = name
+                    closeConfirmationPopup.open()
                 }
             }
         }
@@ -296,6 +307,42 @@ Page {
         onSubmitted: (passphrase) => {
             migrationPassphrasePopup.busy = true
             walletController.migrateWallet(root.pendingMigrationPath, passphrase)
+        }
+    }
+
+    AlertPopup {
+        id: loadErrorPopup
+        objectName: "walletLoadErrorPopup"
+        parent: Overlay.overlay
+        width: Math.min(420, root.width - 40)
+        title: qsTr("Failed to open wallet")
+        messageObjectName: "walletLoadErrorPopupText"
+
+        AlertAction {
+            text: qsTr("OK")
+            buttonObjectName: "walletLoadErrorPopupDismissButton"
+        }
+    }
+
+    AlertPopup {
+        id: closeConfirmationPopup
+        objectName: "walletCloseConfirmationPopup"
+        parent: Overlay.overlay
+        width: Math.min(420, root.width - 40)
+        title: qsTr("Close wallet")
+
+        property string walletName: ""
+        message: qsTr("Do you want to close the wallet \"%1\"?").arg(walletName)
+
+        AlertAction {
+            text: qsTr("Cancel")
+            role: AlertAction.Cancel
+            buttonObjectName: "walletCloseConfirmationCancelButton"
+        }
+        AlertAction {
+            text: qsTr("Close wallet")
+            buttonObjectName: "walletCloseConfirmationConfirmButton"
+            onTriggered: walletController.closeWallet(closeConfirmationPopup.walletName)
         }
     }
 }

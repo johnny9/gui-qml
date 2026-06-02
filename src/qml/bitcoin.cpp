@@ -422,12 +422,20 @@ int QmlGuiMain(int argc, char* argv[])
         wallet_list_model = std::make_unique<WalletListModel>(*node, nullptr);
         QObject::connect(wallet_controller.get(), &WalletQmlController::walletLoadStateChanged,
                          wallet_list_model.get(), &WalletListModel::setWalletLoadState);
+        QObject::connect(wallet_controller.get(), &WalletQmlController::walletInfoChanged,
+                         wallet_list_model.get(), &WalletListModel::setWalletInfo);
         QObject::connect(wallet_controller.get(), &WalletQmlController::walletDisplayNamesChanged,
                          wallet_list_model.get(), &WalletListModel::refreshDisplayNames);
         QObject::connect(wallet_list_model.get(), &WalletListModel::walletListChanged,
                          wallet_controller.get(), [controller = wallet_controller.get()](bool has_wallets) {
                              controller->setNoWalletsFound(!has_wallets);
                          });
+        // listWalletDir() rebuilds m_items from scratch — any per-row info
+        // pushed earlier (e.g. at controller initialize() time, before the
+        // picker was ever opened) has nowhere to land. Re-publish open wallets'
+        // info every time the model resets so newly created rows pick it up.
+        QObject::connect(wallet_list_model.get(), &QAbstractItemModel::modelReset,
+                         wallet_controller.get(), &WalletQmlController::publishOpenWalletsInfo);
         QObject::connect(wallet_controller.get(), &WalletQmlController::initializedChanged,
                          wallet_list_model.get(), [controller = wallet_controller.get(), list_model = wallet_list_model.get()]() {
                              if (controller->initialized()) {
@@ -489,6 +497,8 @@ int QmlGuiMain(int argc, char* argv[])
                                                "WalletQmlModel cannot be instantiated from QML");
     qmlRegisterUncreatableType<WalletQmlModelTransaction>("org.bitcoincore.qt", 1, 0, "WalletQmlModelTransaction",
                                                           "WalletQmlModelTransaction cannot be instantiated from QML");
+    qmlRegisterUncreatableType<WalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel",
+                                                "WalletListModel cannot be instantiated from QML");
 #endif
 
     engine.load(QUrl(QStringLiteral("qrc:///qml/pages/main.qml")));

@@ -17,7 +17,7 @@ Button {
     property color textActiveColor: Theme.color.orange
 
     hoverEnabled: AppMode.isDesktop
-    implicitHeight: 30
+    implicitHeight: 40
     implicitWidth: 220
 
     MouseArea {
@@ -34,21 +34,22 @@ Button {
             spacing: 3
             Icon {
                 id: addIcon
-                Layout.alignment: Qt.AlignRight
-                source: "image://images/plus"
+                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                source: "image://images/plus-filled"
                 color: Theme.color.neutral7
-                size: 16
-                Layout.minimumWidth: 16
-                Layout.preferredWidth: 16
-                Layout.maximumWidth: 16
+                size: 24
+                Layout.minimumWidth: 24
+                Layout.preferredWidth: 24
+                Layout.maximumWidth: 24
+                Layout.preferredHeight: 24
             }
             CoreText {
                 id: addText
-                Layout.fillHeight: true
-                Layout.alignment: Qt.AlignLeft
+                Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
                 text: qsTr("Add Wallet")
                 color: Theme.color.neutral7
                 font.pixelSize: 15
+                bold: true
             }
         }
     }
@@ -58,8 +59,7 @@ Button {
         height: 30
         width: 220
         radius: 5
-        color: Theme.color.neutral3
-        visible: root.hovered || root.checked
+        color: Theme.color.background
 
         FocusBorder {
             visible: root.visualFocus
@@ -76,6 +76,7 @@ Button {
         },
         State {
             name: "HOVER"; when: root.hovered
+            PropertyChanges { target: bg; color: bgActiveColor }
             PropertyChanges { target: addText; color: textHoverColor }
             PropertyChanges { target: addIcon; color: textHoverColor }
         }

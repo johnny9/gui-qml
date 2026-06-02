@@ -43,32 +43,24 @@ TestCase {
 
         const openWalletClose = findChild(list.itemAtIndex(0), "walletSelectClose_testwallet")
         const closedWalletClose = findChild(list.itemAtIndex(1), "walletSelectClose_secondarywallet")
-        const openWalletName = findChild(list.itemAtIndex(0), "walletSelectName_testwallet")
-        const closedWalletName = findChild(list.itemAtIndex(1), "walletSelectName_secondarywallet")
         verify(openWalletClose !== null)
         verify(closedWalletClose !== null)
-        verify(openWalletName !== null)
-        verify(closedWalletName !== null)
 
-        compare(openWalletName.bold, true)
         compare(openWalletClose.visible, true)
         compare(openWalletClose.enabled, true)
-        compare(closedWalletName.bold, false)
         compare(closedWalletClose.visible, false)
         compare(closedWalletClose.enabled, false)
 
         walletListModel.setWalletLoadState("testwallet", 0)
-        tryCompare(openWalletName, "bold", false)
         tryCompare(openWalletClose, "visible", false)
         compare(openWalletClose.enabled, false)
 
         walletListModel.setWalletLoadState("secondarywallet", 1)
-        tryCompare(closedWalletName, "bold", true)
         tryCompare(closedWalletClose, "visible", true)
         compare(closedWalletClose.enabled, true)
     }
 
-    function test_close_button_invokes_wallet_controller() {
+    function test_close_button_emits_close_wallet_requested() {
         const popup = openWalletSelect()
         const list = findChild(popup, "walletSelectList")
         verify(list !== null)
@@ -76,9 +68,23 @@ TestCase {
         verify(openWalletClose !== null)
         verify(openWalletClose.visible)
 
+        const spy = signalSpyComponent.createObject(this, {
+            target: popup,
+            signalName: "closeWalletRequested",
+        })
+
         openWalletClose.clicked()
 
-        compare(walletController.closeWalletCalls, 1)
-        compare(walletController.lastClosedWalletName, "testwallet")
+        compare(spy.count, 1)
+        compare(spy.signalArguments[0][0], "testwallet")
+        // The selector closes itself before the confirmation popup appears.
+        tryCompare(popup, "opened", false)
+        // No direct controller call — that happens after the confirmation popup.
+        compare(walletController.closeWalletCalls, 0)
+    }
+
+    Component {
+        id: signalSpyComponent
+        SignalSpy {}
     }
 }

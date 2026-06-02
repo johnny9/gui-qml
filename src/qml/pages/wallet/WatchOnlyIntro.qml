@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2025 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,17 +8,29 @@ import QtQuick.Layouts 1.15
 
 import "../../controls"
 import "../../components"
-import "../settings"
 
 Page {
     id: root
-    objectName: "createWalletIntroPage"
+    objectName: "watchOnlyIntro"
     signal back
     signal next
     background: null
 
     header: NavigationBar2 {
-        navigationStack: root.StackView.view
+        leftItem: NavButton {
+            iconSource: "image://images/caret-left"
+            text: qsTr("Back")
+            onClicked: root.back()
+        }
+        centerItem: Item {
+            CoreText {
+                anchors.centerIn: parent
+                text: qsTr("Create wallet")
+                font.pixelSize: 18
+                bold: true
+                color: Theme.color.neutral9
+            }
+        }
     }
 
     ColumnLayout {
@@ -38,7 +50,7 @@ Page {
                 color: Theme.color.blue
             }
             Icon {
-                source: "image://images/wallet"
+                source: "image://images/info"
                 color: Theme.color.white
                 width: 30
                 height: width
@@ -48,8 +60,8 @@ Page {
 
         CoreText {
             Layout.topMargin: 25
-            Layout.alignment: Qt.AlignCenter
-            text: qsTr("You are about to create \na single-key bitcoin wallet")
+            Layout.fillWidth: true
+            text: qsTr("You are about to add a watch-only bitcoin wallet")
             font.pixelSize: 21
             bold: true
             color: Theme.color.neutral9
@@ -57,8 +69,8 @@ Page {
 
         CoreText {
             Layout.topMargin: 20
-            Layout.alignment: Qt.AlignCenter
-            text: qsTr("You can fully control it in this application.")
+            Layout.fillWidth: true
+            text: qsTr("You can view transactions and the balance.")
             font.pixelSize: 18
             color: Theme.color.neutral7
         }
@@ -73,8 +85,8 @@ Page {
 
         CoreText {
             Layout.topMargin: 10
-            Layout.alignment: Qt.AlignCenter
-            text: qsTr("Wallet data will be stored locally on your hard drive.")
+            Layout.fillWidth: true
+            text: qsTr("Transactions can be initiated, but require an external signer to complete.")
             font.pixelSize: 18
             color: Theme.color.neutral7
         }
@@ -89,23 +101,21 @@ Page {
 
         CoreText {
             Layout.topMargin: 10
-            Layout.alignment: Qt.AlignCenter
-            text: qsTr("You can optionally protect it with a password.")
+            Layout.fillWidth: true
+            text: qsTr("Setup requires an extended public key (xpub).")
             font.pixelSize: 18
             color: Theme.color.neutral7
         }
 
         ContinueButton {
-            objectName: "createWalletIntroStartButton"
+            objectName: "watchOnlyIntroNextButton"
             Layout.preferredWidth: Math.min(300, parent.width - 2 * Layout.leftMargin)
             Layout.topMargin: 30
             Layout.leftMargin: 20
             Layout.rightMargin: 20
             Layout.alignment: Qt.AlignCenter
-            text: qsTr("Continue")
-            onClicked: {
-                root.next()
-            }
+            text: qsTr("Next")
+            onClicked: root.next()
         }
     }
 }

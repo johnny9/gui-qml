@@ -27,11 +27,17 @@ Button {
     property bool loading: false
     property bool noWalletLoaded: false
     property bool noWalletsFound: false
+    property int keySchemeKind: WalletQmlModel.SingleKey
+
+    readonly property string walletTypeIcon: {
+        if (keySchemeKind === WalletQmlModel.WatchOnly) return "image://images/visible-filled"
+        if (keySchemeKind === WalletQmlModel.MultiKey)  return "image://images/two-keys-filled"
+        return "image://images/key-filled"
+    }
 
     checkable: true
     hoverEnabled: AppMode.isDesktop
     implicitHeight: 60
-    implicitWidth: contentItem.width
     bottomPadding: 0
     topPadding: 0
     clip: true
@@ -43,9 +49,11 @@ Button {
     contentItem: Item {
         RowLayout {
             visible: root.loading
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
             anchors.leftMargin: 5
             anchors.rightMargin: 5
-            anchors.centerIn: parent
             spacing: 5
 
             Skeleton {
@@ -81,14 +89,16 @@ Button {
                 NumberAnimation { duration: 400 }
             }
 
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
             anchors.leftMargin: 5
             anchors.rightMargin: 5
-            anchors.centerIn: parent
             clip: true
             spacing: 5
             Icon {
                 visible: root.showIcon
-                source: root.noWalletsFound ? "image://images/plus" : "image://images/caret-down-medium-filled"
+                source: root.noWalletsFound ? "image://images/plus-filled" : "image://images/caret-down-medium-filled"
                 color: Theme.color.neutral8
                 size: 30
                 Layout.minimumWidth: 25
@@ -114,27 +124,33 @@ Button {
                 NumberAnimation { duration: 400 }
             }
 
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
             anchors.leftMargin: 5
             anchors.rightMargin: 5
-            anchors.centerIn: parent
             clip: true
             spacing: 5
             Icon {
                 id: icon
                 visible: root.showIcon
-                source: "image://images/singlesig-wallet"
+                source: root.walletTypeIcon
                 color: Theme.color.neutral8
                 size: 30
+                Layout.alignment: Qt.AlignVCenter
                 Layout.minimumWidth: 30
                 Layout.preferredWidth: 30
                 Layout.maximumWidth: 30
+                Layout.preferredHeight: 30
             }
             ColumnLayout {
+                Layout.alignment: Qt.AlignVCenter
                 spacing: 2
                 CoreText {
                     horizontalAlignment: Text.AlignLeft
                     Layout.fillWidth: true
                     wrap: false
+                    elide: Text.ElideRight
                     id: buttonText
                     font.pixelSize: 13
                     text: root.text
@@ -147,6 +163,8 @@ Button {
                     visible: root.showBalance
                     text: root.balance + " " + (optionsModel.displayUnit === 1 ? (root.balanceSatoshi === 1 ? qsTr("sat") : qsTr("sats")) : "₿")
                     color: Theme.color.neutral7
+                    font.pixelSize: 15
+                    bold: true
                 }
             }
         }

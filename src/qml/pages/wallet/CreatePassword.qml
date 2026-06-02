@@ -17,20 +17,46 @@ Page {
     signal next
     background: null
 
-    required property string walletName;
+    required property string walletName
+    // Which button triggered the in-flight wallet creation, so only that
+    // button shows the spinner. Cleared when the load completes.
+    property string activeAction: ""
+    readonly property bool passwordsMismatch:
+        password && passwordRepeat &&
+        password.text.length > 0 &&
+        passwordRepeat.text.length > 0 &&
+        password.text !== passwordRepeat.text &&
+        !password.activeFocus &&
+        !passwordRepeat.activeFocus
 
     Component.onCompleted: walletController.clearWalletCreateStatus()
+
+    Connections {
+        target: walletController
+        function onWalletCreateSucceeded() { root.next() }
+        function onWalletLoadInProgressChanged() {
+            if (!walletController.walletLoadInProgress) {
+                root.activeAction = ""
+            }
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        z: -1
+        onClicked: root.forceActiveFocus()
+    }
 
     header: NavigationBar2 {
         navigationStack: root.StackView.view
         rightItem: NavButton {
             objectName: "createWalletPasswordSkipButton"
             text: qsTr("Skip")
-            enabled: walletController.initialized
+            enabled: walletController.initialized && !walletController.walletLoadInProgress
+            busy: root.activeAction === "skip"
             onClicked: {
-                if (walletController.createSingleSigWallet(walletName, "")) {
-                    root.next()
-                }
+                root.activeAction = "skip"
+                walletController.createSingleSigWallet(walletName, "")
             }
         }
     }
@@ -82,11 +108,27 @@ Page {
             id: passwordRepeat
             objectName: "createWalletPasswordRepeatInput"
             Layout.fillWidth: true
+            Layout.topMargin: 5
             Layout.leftMargin: 20
             Layout.rightMargin: 20
             hideText: true
             placeholderText: qsTr("Enter password again...")
             onTextChanged: walletController.clearWalletCreateStatus()
+        }
+
+        CoreText {
+            objectName: "createWalletPasswordMismatchText"
+            Layout.fillWidth: true
+            Layout.topMargin: 5
+            Layout.bottomMargin: 15
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            text: qsTr("Passwords don't match")
+            color: Theme.color.red
+            font.pixelSize: 14
+            horizontalAlignment: Text.AlignLeft
+            wrapMode: Text.WordWrap
+            opacity: root.passwordsMismatch ? 1 : 0
         }
 
         Setting {
@@ -99,6 +141,7 @@ Page {
             actionItem: OptionSwitch {
             }
             onClicked: {
+                forceActiveFocus()
                 loadedItem.toggle()
                 loadedItem.toggled()
             }
@@ -111,16 +154,17 @@ Page {
             Layout.leftMargin: 20
             Layout.rightMargin: Layout.leftMargin
             Layout.alignment: Qt.AlignCenter
-            text: qsTr("Continue")
+            text: root.activeAction === "continue" ? qsTr("Creating…") : qsTr("Continue")
+            busy: root.activeAction === "continue"
             enabled: walletController.initialized &&
+                !walletController.walletLoadInProgress &&
                 password.text != "" &&
                 passwordRepeat.text != "" &&
                 password.text == passwordRepeat.text &&
                 confirmToggle.loadedItem.checked
             onClicked: {
-                if (walletController.createSingleSigWallet(walletName, password.text)) {
-                    root.next()
-                }
+                root.activeAction = "continue"
+                walletController.createSingleSigWallet(walletName, password.text)
             }
         }
 

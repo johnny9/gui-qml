@@ -33,6 +33,7 @@
 #include <util/result.h>
 #include <util/threadnames.h>
 #include <wallet/coincontrol.h>
+#include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
 
 #include <QDateTime>
@@ -226,6 +227,25 @@ std::optional<std::vector<wallet::CRecipient>> BuildRecipients(const SendRecipie
 
     return vec_send;
 }
+
+bool WalletUsesMultiKeyDescriptor(const wallet::CWallet& wallet)
+{
+    for (const auto* spk_man : wallet.GetActiveScriptPubKeyMans()) {
+        const auto* descriptor_spk_man = dynamic_cast<const wallet::DescriptorScriptPubKeyMan*>(spk_man);
+        if (!descriptor_spk_man) {
+            continue;
+        }
+
+        std::string descriptor;
+        if (descriptor_spk_man->GetDescriptorString(descriptor, /*priv=*/false) &&
+            descriptor.find("multi(") != std::string::npos) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 QString LocalizedString(const bilingual_str& value)
 {
     return QString::fromStdString(value.translated.empty() ? value.original : value.translated);
@@ -437,10 +457,52 @@ QString WalletQmlModel::keyScheme() const
     if (!m_wallet) {
         return {};
     }
-    if (m_wallet->privateKeysDisabled()) {
-        return tr("Watch-only");
+    return keySchemeDisplayText(keySchemeForWallet(*m_wallet));
+}
+
+WalletQmlModel::KeyScheme WalletQmlModel::keySchemeKind() const
+{
+    if (!m_wallet) {
+        return KeyScheme::SingleKey;
     }
-    return tr("Single-key");
+    return keySchemeForWallet(*m_wallet);
+}
+
+WalletQmlModel::KeyScheme WalletQmlModel::keySchemeForWallet(interfaces::Wallet& wallet)
+{
+    const wallet::CWallet* raw_wallet = wallet.wallet();
+    if (raw_wallet) {
+        LOCK(raw_wallet->cs_wallet);
+        if (raw_wallet->IsWalletFlagSet(wallet::WALLET_FLAG_EXTERNAL_SIGNER)) {
+            return KeyScheme::ExternalSigner;
+        }
+        if (raw_wallet->IsWalletFlagSet(wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+            return KeyScheme::WatchOnly;
+        }
+        if (WalletUsesMultiKeyDescriptor(*raw_wallet)) {
+            return KeyScheme::MultiKey;
+        }
+        return KeyScheme::SingleKey;
+    }
+    if (wallet.privateKeysDisabled()) {
+        return KeyScheme::WatchOnly;
+    }
+    return KeyScheme::SingleKey;
+}
+
+QString WalletQmlModel::keySchemeDisplayText(KeyScheme scheme)
+{
+    switch (scheme) {
+    case KeyScheme::WatchOnly:
+        return tr("Watch-only");
+    case KeyScheme::MultiKey:
+        return tr("Multi-key");
+    case KeyScheme::ExternalSigner:
+        return tr("External signer");
+    case KeyScheme::SingleKey:
+    default:
+        return tr("Single-key");
+    }
 }
 
 QString WalletQmlModel::privateKeysStatus() const
