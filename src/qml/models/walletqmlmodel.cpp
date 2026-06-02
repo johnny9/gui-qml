@@ -94,6 +94,12 @@ bool AmountPlusFeeExceedsBalance(const CAmount amount, const CAmount fee, const 
     return fee > balance - amount;
 }
 
+void ApplySelectedInputsPolicy(wallet::CCoinControl& coin_control)
+{
+    // Manually selected coins should be the only wallet inputs used.
+    coin_control.m_allow_other_inputs = !coin_control.HasSelected();
+}
+
 std::optional<CAmount> ParseCustomFeeRatePerKvB(const QString& custom_fee_rate)
 {
     const QString trimmed = custom_fee_rate.trimmed();
@@ -228,6 +234,7 @@ std::optional<CAmount> EstimatePreviewFee(interfaces::Wallet& wallet,
                                           const unsigned int target)
 {
     wallet::CCoinControl coin_control{base_coin_control};
+    ApplySelectedInputsPolicy(coin_control);
     coin_control.m_feerate.reset();
     coin_control.m_confirm_target = target;
     ApplyPreviewChangeDestination(coin_control, preview_change_type);
@@ -266,6 +273,7 @@ std::optional<CAmount> EstimateCustomPreviewFee(interfaces::Wallet& wallet,
                                                 const CAmount fee_rate_per_kvb)
 {
     wallet::CCoinControl coin_control{base_coin_control};
+    ApplySelectedInputsPolicy(coin_control);
     coin_control.m_confirm_target.reset();
     coin_control.m_feerate = CFeeRate{fee_rate_per_kvb};
     ApplyPreviewChangeDestination(coin_control, preview_change_type);
@@ -1502,6 +1510,7 @@ bool WalletQmlModel::prepareTransactionInternal(std::optional<SecureString> pass
     }
 
     wallet::CCoinControl coin_control{m_coin_control};
+    ApplySelectedInputsPolicy(coin_control);
     if (m_custom_fee_enabled) {
         const auto custom_fee_rate_per_kvb = ParseCustomFeeRatePerKvB(m_custom_fee_rate);
         if (!custom_fee_rate_per_kvb.has_value()) {
@@ -1517,7 +1526,7 @@ bool WalletQmlModel::prepareTransactionInternal(std::optional<SecureString> pass
         ApplyRegtestStaticFeeOverride(coin_control);
     }
 
-    CAmount balance = m_wallet->getBalance();
+    CAmount balance = m_wallet->getAvailableBalance(coin_control);
     if (balance < total) {
         relock_guard.relock();
         setTransactionStatus(tr("The wallet does not have enough balance for this transaction."));

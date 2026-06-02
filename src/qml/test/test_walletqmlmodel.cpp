@@ -85,6 +85,7 @@ std::unique_ptr<WalletQmlModel> MakeWalletModel(NiceMock<MockWallet>*& wallet_ou
     ON_CALL(*wallet_out, getWalletTxs()).WillByDefault(Return(std::set<interfaces::WalletTx>{}));
     ON_CALL(*wallet_out, listCoins()).WillByDefault(Return(interfaces::Wallet::CoinsList{}));
     ON_CALL(*wallet_out, getBalance()).WillByDefault(Return(10 * COIN));
+    ON_CALL(*wallet_out, getAvailableBalance(testing::_)).WillByDefault(Return(10 * COIN));
     ON_CALL(*wallet_out, getRequiredFee(testing::_)).WillByDefault(Return(1000));
     ON_CALL(*wallet_out, getDefaultAddressType()).WillByDefault(Return(OutputType::BECH32));
     ON_CALL(*wallet_out, handleTransactionChanged(testing::_)).WillByDefault(Invoke([](interfaces::Wallet::TransactionChangedFn) {
@@ -381,6 +382,7 @@ private Q_SLOTS:
     void prepareTransaction_reassignsAmountWhenFeeIncluded();
     void walletQmlModelTransaction_reassignAmounts_excludesChangeOutput();
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
+    void prepareTransaction_disallowsOtherInputsWhenCoinsSelected();
     void scheduleFeeEstimates_debouncesRapidRestarts();
     void transactionChangedEmitsBalanceChanged();
     void setCurrentPaymentRequestAddressUsesAddressListLabel();
@@ -1064,6 +1066,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()
     std::atomic<int> create_transaction_calls{0};
     std::atomic<bool> saw_sign_true{false};
     std::atomic<bool> saw_missing_selection{false};
+    std::atomic<bool> saw_other_inputs_allowed{false};
     std::atomic<int> selected_count{-1};
     std::vector<unsigned int> selected_targets;
 
@@ -1075,6 +1078,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()
                                            CAmount& fee) -> util::Result<CTransactionRef> {
         if (sign) saw_sign_true = true;
         if (!coin_control.HasSelected() || !coin_control.IsSelected(selected_outpoint)) saw_missing_selection = true;
+        if (coin_control.m_allow_other_inputs) saw_other_inputs_allowed = true;
         const auto selected = coin_control.ListSelected();
         selected_count = static_cast<int>(selected.size());
         if (selected.size() != 1U || selected.front() != selected_outpoint) saw_missing_selection = true;
@@ -1091,11 +1095,53 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()
     QTRY_COMPARE_WITH_TIMEOUT(create_transaction_calls.load(), 3, FEE_ESTIMATE_TIMEOUT_MS);
     QVERIFY(!saw_sign_true.load());
     QVERIFY(!saw_missing_selection.load());
+    QVERIFY(!saw_other_inputs_allowed.load());
     QCOMPARE(selected_count.load(), 1);
     QCOMPARE(selected_targets.size(), 3U);
     QCOMPARE(selected_targets.at(0), 1U);
     QCOMPARE(selected_targets.at(1), 2U);
     QCOMPARE(selected_targets.at(2), 6U);
+}
+
+void WalletQmlModelTests::prepareTransaction_disallowsOtherInputsWhenCoinsSelected()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetValidRecipient(*model);
+
+    const COutPoint selected_outpoint{Txid::FromUint256(uint256::ONE), 1};
+    std::optional<bool> available_balance_allow_other_inputs;
+    bool saw_selected_coin{false};
+    bool saw_other_inputs_allowed{true};
+    int create_transaction_calls{0};
+
+    EXPECT_CALL(*wallet, getAvailableBalance(testing::_))
+        .WillOnce(Invoke([&](const wallet::CCoinControl& coin_control) {
+            available_balance_allow_other_inputs = coin_control.m_allow_other_inputs;
+            return 10 * COIN;
+        }));
+
+    wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
+                                           const wallet::CCoinControl& coin_control,
+                                           bool,
+                                           int& change_pos,
+                                           CAmount& fee) -> util::Result<CTransactionRef> {
+        ++create_transaction_calls;
+        saw_selected_coin = coin_control.HasSelected() && coin_control.IsSelected(selected_outpoint);
+        saw_other_inputs_allowed = coin_control.m_allow_other_inputs;
+        change_pos = -1;
+        fee = 200;
+        return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+    };
+
+    model->selectCoin(selected_outpoint);
+
+    QVERIFY(model->prepareTransaction());
+    QCOMPARE(create_transaction_calls, 1);
+    QVERIFY(saw_selected_coin);
+    QVERIFY(available_balance_allow_other_inputs.has_value());
+    QVERIFY(!*available_balance_allow_other_inputs);
+    QVERIFY(!saw_other_inputs_allowed);
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_debouncesRapidRestarts()
