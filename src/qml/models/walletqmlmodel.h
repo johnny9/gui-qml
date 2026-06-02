@@ -19,6 +19,7 @@
 #include <consensus/amount.h>
 #include <interfaces/handler.h>
 #include <interfaces/wallet.h>
+#include <policy/feerate.h>
 #include <support/allocators/secure.h>
 #include <wallet/coincontrol.h>
 
@@ -34,6 +35,10 @@
 #include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
+
+namespace interfaces {
+class Node;
+}
 
 class WalletQmlModel : public QObject
 {
@@ -86,7 +91,8 @@ private:
     Q_PROPERTY(QString settingsError READ settingsError NOTIFY settingsErrorChanged)
 
 public:
-    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObject* parent = nullptr);
+    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node = nullptr, QObject* parent = nullptr);
+    WalletQmlModel(interfaces::Node* node, QObject* parent = nullptr);
     WalletQmlModel(QObject *parent = nullptr);
     ~WalletQmlModel();
 
@@ -115,6 +121,7 @@ public:
     ReceiveRequestHistoryModel* receiveRequests() const { return m_receive_requests; }
     WalletQmlModelTransaction* currentTransaction() const { return m_current_transaction; }
     QString estimatedFee() const;
+    CFeeRate dustRelayFee() const;
     bool sendAmountExhaustsBalance() const;
     bool customFeeEnabled() const { return m_custom_fee_enabled; }
     QString customFeeRate() const { return m_custom_fee_rate; }
@@ -240,6 +247,7 @@ private:
     QString persistedReceiveAddressTypeKey() const;
 
     std::unique_ptr<interfaces::Wallet> m_wallet;
+    interfaces::Node* m_node{nullptr};
     ActivityListModel* m_activity_list_model{nullptr};
     AddressListModel* m_address_list_model{nullptr};
     BumpTransactionModel* m_bump_transaction_model{nullptr};

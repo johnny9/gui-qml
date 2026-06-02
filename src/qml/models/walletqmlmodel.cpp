@@ -21,11 +21,13 @@
 
 #include <chainparams.h>
 #include <consensus/amount.h>
+#include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <key_io.h>
 #include <addresstype.h>
 #include <outputtype.h>
 #include <policy/feerate.h>
+#include <policy/policy.h>
 #include <psbt.h>
 #include <qml/bitcoinunits.h>
 #include <streams.h>
@@ -371,10 +373,11 @@ QString OutputTypeDescription(OutputType type)
     return {};
 }
 } // namespace
-WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObject *parent)
+WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node, QObject *parent)
     : QObject(parent)
+    , m_wallet(std::move(wallet))
+    , m_node(node)
 {
-    m_wallet = std::move(wallet);
     m_receive_requests = new ReceiveRequestHistoryModel(this);
     reloadReceiveRequests();
     m_activity_list_model = new ActivityListModel(this);
@@ -398,8 +401,9 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, QObje
     subscribeToWalletSignals();
 }
 
-WalletQmlModel::WalletQmlModel(QObject* parent)
+WalletQmlModel::WalletQmlModel(interfaces::Node* node, QObject* parent)
     : QObject(parent)
+    , m_node(node)
 {
     m_activity_list_model = new ActivityListModel(this);
     m_address_list_model = new AddressListModel(this);
@@ -419,6 +423,11 @@ WalletQmlModel::WalletQmlModel(QObject* parent)
     m_detail_payment_request = new PaymentRequest(this);
     m_receive_requests = new ReceiveRequestHistoryModel(this);
     initializeFeeEstimator();
+}
+
+WalletQmlModel::WalletQmlModel(QObject* parent)
+    : WalletQmlModel(nullptr, parent)
+{
 }
 
 WalletQmlModel::~WalletQmlModel()
@@ -505,6 +514,11 @@ std::optional<CAmount> WalletQmlModel::selectedFeeEstimate() const
     }
 
     return estimate.value();
+}
+
+CFeeRate WalletQmlModel::dustRelayFee() const
+{
+    return m_node ? m_node->getDustRelayFee() : CFeeRate{DUST_RELAY_TX_FEE};
 }
 
 bool WalletQmlModel::sendAmountExhaustsBalance() const

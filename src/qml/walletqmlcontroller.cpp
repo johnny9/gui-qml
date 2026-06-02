@@ -63,7 +63,7 @@ bool ErrorContains(const QString& error, const QString& needle)
 WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent)
     : QObject(parent)
     , m_node(node)
-    , m_empty_wallet(new WalletQmlModel(this))
+    , m_empty_wallet(new WalletQmlModel(&node, this))
     , m_selected_wallet(m_empty_wallet)
     , m_worker(new QObject)
     , m_worker_thread(new QThread(this))
@@ -393,7 +393,7 @@ WalletQmlModel* WalletQmlController::addOrSelectWalletModel(std::unique_ptr<inte
     }
 
     const QString loaded_wallet_name = QString::fromStdString(wallet->getWalletName());
-    auto wallet_model = new WalletQmlModel(std::move(wallet));
+    auto wallet_model = new WalletQmlModel(std::move(wallet), &m_node);
     wallet_model->moveToThread(this->thread());
     registerWalletModel(wallet_model);
     {
@@ -1088,7 +1088,7 @@ void WalletQmlController::initialize()
     loaded_wallet_names.reserve(static_cast<qsizetype>(wallets.size()));
     for (auto& wallet : wallets) {
         loaded_wallet_names.append(QString::fromStdString(wallet->getWalletName()));
-        auto* wallet_model = new WalletQmlModel(std::move(wallet));
+        auto* wallet_model = new WalletQmlModel(std::move(wallet), &m_node);
         registerWalletModel(wallet_model);
         applyWalletDisplayName(wallet_model);
         m_wallets.push_back(wallet_model);

@@ -147,7 +147,7 @@ void SendRecipient::validateAmount()
             setAmountError(tr("Amount exceeds maximum limit of 21,000,000 BTC"));
         } else if (!m_address->isEmpty() && m_addressError.isEmpty() &&
                    IsDust(CTxOut{m_amount->satoshi(), GetScriptForDestination(DecodeDestination(m_address->address().toStdString()))},
-                          CFeeRate{DUST_RELAY_TX_FEE})) {
+                          m_wallet ? m_wallet->dustRelayFee() : CFeeRate{DUST_RELAY_TX_FEE})) {
             setAmountError(tr("Amount is too small to send."));
         } else if (m_wallet && m_amount->satoshi() > m_wallet->balanceSatoshi()) {
             setAmountError(tr("Amount exceeds available balance"));

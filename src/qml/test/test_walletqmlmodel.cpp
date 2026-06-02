@@ -4,6 +4,7 @@
 
 #include <QtTest/QtTest>
 
+#include <test/mocks/mocknode.h>
 #include <test/mocks/mockwallet.h>
 #include <qml/models/activitylistmodel.h>
 #include <qml/models/sendrecipient.h>
@@ -76,7 +77,7 @@ private:
     ChainType m_previous_chain_type;
 };
 
-std::unique_ptr<WalletQmlModel> MakeWalletModel(NiceMock<MockWallet>*& wallet_out)
+std::unique_ptr<WalletQmlModel> MakeWalletModel(NiceMock<MockWallet>*& wallet_out, interfaces::Node* node = nullptr)
 {
     auto wallet = std::make_unique<NiceMock<MockWallet>>();
     wallet_out = wallet.get();
@@ -93,7 +94,7 @@ std::unique_ptr<WalletQmlModel> MakeWalletModel(NiceMock<MockWallet>*& wallet_ou
         return DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
     }));
 
-    return std::make_unique<WalletQmlModel>(std::move(wallet));
+    return std::make_unique<WalletQmlModel>(std::move(wallet), node);
 }
 
 void SetValidRecipient(WalletQmlModel& model,
@@ -337,11 +338,11 @@ public:
     std::unique_ptr<interfaces::Handler> handleCanGetAddressesChanged(CanGetAddressesChangedFn) override { return MakeNoopHandler(); }
 };
 
-std::unique_ptr<WalletQmlModel> MakeWalletModel(FakePasswordWallet*& wallet_out)
+std::unique_ptr<WalletQmlModel> MakeWalletModel(FakePasswordWallet*& wallet_out, interfaces::Node* node = nullptr)
 {
     auto wallet = std::make_unique<FakePasswordWallet>();
     wallet_out = wallet.get();
-    return std::make_unique<WalletQmlModel>(std::move(wallet));
+    return std::make_unique<WalletQmlModel>(std::move(wallet), node);
 }
 
 void SetPasswordRecipient(WalletQmlModel& model, qint64 satoshis)
@@ -394,6 +395,7 @@ private Q_SLOTS:
     void prepareTransactionOnLockedWalletRequiresPassword();
     void prepareTransactionWithPrivateKeysDisabledDoesNotRequirePassword();
     void sendRecipientRejectsDustAmount();
+    void sendRecipientUsesNodeDustRelayFee();
     void prepareTransactionRejectsDuplicateRecipientsBeforeUnlock();
     void prepareTransactionWithPassphraseForwardsUtf8Bytes();
     void prepareTransactionWithPassphraseRelocksWhenRecipientsInvalid();
@@ -1347,6 +1349,23 @@ void WalletQmlModelTests::sendRecipientRejectsDustAmount()
 
     recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
     recipient->amount()->setSatoshi(1);
+
+    QVERIFY(!recipient->isValid());
+    QCOMPARE(recipient->amountError(), QStringLiteral("Amount is too small to send."));
+    QVERIFY(!model->sendRecipientList()->allValid());
+}
+
+void WalletQmlModelTests::sendRecipientUsesNodeDustRelayFee()
+{
+    FakePasswordWallet* wallet{nullptr};
+    NiceMock<MockNode> node;
+    EXPECT_CALL(node, getDustRelayFee()).Times(AtLeast(1)).WillRepeatedly(Return(CFeeRate{10'000}));
+    auto model = MakeWalletModel(wallet, &node);
+    auto* recipient = model->sendRecipientList()->currentRecipient();
+    QVERIFY(recipient != nullptr);
+
+    recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
+    recipient->amount()->setSatoshi(600);
 
     QVERIFY(!recipient->isValid());
     QCOMPARE(recipient->amountError(), QStringLiteral("Amount is too small to send."));
