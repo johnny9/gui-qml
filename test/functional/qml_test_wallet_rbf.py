@@ -41,6 +41,11 @@ def wait_for_wallet_balance(port, wallet_name, *, minimum_balance):
     wait_until(has_balance, timeout=30, description=f"{wallet_name} balance >= {minimum_balance}")
 
 
+def assert_wallet_locked(port, wallet_name):
+    info = rpc_call(port, "getwalletinfo", wallet=wallet_name)
+    assert info["unlocked_until"] == 0, f"Expected locked wallet, got getwalletinfo={info}"
+
+
 def wait_for_mempool_change(port, *, exclude_txid, timeout=20):
     result = [None]
 
@@ -210,6 +215,7 @@ def run_test():
             "The wallet password you entered was incorrect.",
             timeout_ms=10000,
         )
+        assert_wallet_locked(harness.gui_rpc_port, GUI_WALLET_NAME)
         gui.set_text("speedUpPassphraseField", WALLET_PASSWORD)
         gui.click("speedUpPassphraseConfirmButton")
         gui.wait_for_property("speedUpPassphrasePopup", "opened", False, timeout_ms=10000)
@@ -218,6 +224,7 @@ def run_test():
         print("[rbf] waiting for replacement tx")
         new_txid = wait_for_mempool_change(harness.gui_rpc_port, exclude_txid=txid)
         assert new_txid != txid, f"Expected different txid, got same: {txid}"
+        assert_wallet_locked(harness.gui_rpc_port, GUI_WALLET_NAME)
         print(f"[rbf] replacement txid: {new_txid}")
 
         print("[rbf] verifying original tx conflict state")

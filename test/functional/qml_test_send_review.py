@@ -124,6 +124,20 @@ def fund_wallet(harness, wallet_name):
     )
 
 
+def wallet_txcount(harness, wallet_name):
+    return rpc_call(harness.gui_rpc_port, "getwalletinfo", wallet=wallet_name)["txcount"]
+
+
+def assert_review_has_no_transaction_side_effects(harness, wallet_name, expected_txcount):
+    mempool_txids = rpc_call(harness.gui_rpc_port, "getrawmempool")
+    assert mempool_txids == [], f"Review-only flows should not broadcast transactions, got {mempool_txids}"
+    actual_txcount = wallet_txcount(harness, wallet_name)
+    assert actual_txcount == expected_txcount, (
+        f"Review-only flows should not add wallet transactions, "
+        f"expected txcount {expected_txcount}, got {actual_txcount}"
+    )
+
+
 def open_send_page(gui):
     gui.click("sendTabButton")
     gui.wait_for_page("sendPage", timeout_ms=10000)
@@ -398,12 +412,14 @@ def run_tests(args):
         create_wallet(gui, wallet_name)
         checkpoints.checkpoint("wallet created", gui)
         fund_wallet(harness, wallet_name)
+        funded_txcount = wallet_txcount(harness, wallet_name)
         checkpoints.checkpoint("wallet funded", gui)
 
         case_invalid_recipients(harness, gui, wallet_name, checkpoints)
         case_single_btc(harness, gui, wallet_name, checkpoints)
         case_single_sat(harness, gui, wallet_name, checkpoints)
         case_multi_review(harness, gui, wallet_name, checkpoints)
+        assert_review_has_no_transaction_side_effects(harness, wallet_name, funded_txcount)
 
         print(f"[{case_name}] completed")
         print("Send review flows passed.")

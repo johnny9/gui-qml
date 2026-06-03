@@ -185,6 +185,25 @@ def assert_no_fee_preview_label(port, wallet_name):
     assert "qml-fee-preview" not in labels, f"Fee preview created address book label: {labels!r}"
 
 
+def assert_receiver_output(port, txid, receiver_address, expected_sats):
+    raw_tx = rpc_call(port, "getrawtransaction", [txid, True])
+    matched_outputs = [
+        vout for vout in raw_tx["vout"]
+        if vout.get("scriptPubKey", {}).get("address") == receiver_address
+    ]
+    assert len(matched_outputs) == 1, (
+        f"Expected one output to {receiver_address}, got {matched_outputs!r} "
+        f"in decoded transaction {raw_tx!r}"
+    )
+    output_sats = int(
+        (Decimal(str(matched_outputs[0]["value"])) * Decimal("100000000")).to_integral_value()
+    )
+    assert output_sats == expected_sats, (
+        f"Expected receiver output {expected_sats} sats, got {output_sats} sats "
+        f"in transaction {txid}"
+    )
+
+
 def enable_coin_control_and_select_first_coin(gui, checkpoints):
     gui.click("sendOptionsButton")
     gui.wait_for_property("sendOptionsPopup", "opened", True, timeout_ms=5000)
@@ -347,6 +366,12 @@ def run_test(*, save_screenshots=False, screenshot_root=None):
         assert rpc_fee_sats == estimated_fee_with_subtract_sats, (
             f"Broadcast fee {rpc_fee_sats} sats did not match preview estimate "
             f"{estimated_fee_with_subtract_sats} sats"
+        )
+        assert_receiver_output(
+            harness.gui_rpc_port,
+            txid,
+            receiver_address,
+            SEND_AMOUNT_SATS - estimated_fee_with_subtract_sats,
         )
         checkpoints.checkpoint("broadcast fee verified", gui)
 
