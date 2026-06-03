@@ -84,8 +84,6 @@ PageStack {
         function onCurrentRecipientChanged() {
             root.clearPrepareTransactionError()
             root.scheduleFeeEstimates()
-        }
-        function onCurrentRecipientChanged() {
             sendPage.paymentRequestStatus = ""
             sendPage.paymentRequestIsError = false
             sendPage.paymentRequestMessage = ""
@@ -503,7 +501,7 @@ PageStack {
                                 objectName: "clipboardUriDismissButton"
                                 text: qsTr("Dismiss")
                                 bold: false
-                                fontSize: 14
+                                textFontPixelSize: 14
                                 implicitHeight: 38
                                 Layout.preferredWidth: 90
                                 onClicked: {
