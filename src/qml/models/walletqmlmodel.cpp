@@ -1305,10 +1305,37 @@ void WalletQmlModel::scheduleFeeEstimates()
     if (m_fee_estimation_timer == nullptr) {
         return;
     }
+    m_fee_estimation_timer->stop();
 
-    if (!m_wallet || !m_send_recipients) {
+    if (!m_wallet || !m_send_recipients || !BuildRecipients(*m_send_recipients).has_value()) {
         clearFeeEstimates();
         return;
+    }
+
+    ++m_fee_estimate_request_id;
+
+    bool estimates_changed{!m_fee_estimates.isEmpty()};
+    bool custom_estimate_changed{m_custom_fee_estimate.has_value()};
+    if (estimates_changed) {
+        m_fee_estimates.clear();
+    }
+    if (custom_estimate_changed) {
+        m_custom_fee_estimate.reset();
+    }
+    if (estimates_changed || custom_estimate_changed) {
+        Q_EMIT estimatedFeeChanged();
+        Q_EMIT sendAmountExhaustsBalanceChanged();
+    }
+
+    bool pending_changed{!m_fee_estimate_pending};
+    if (pending_changed) {
+        m_fee_estimate_pending = true;
+        Q_EMIT feeEstimatePendingChanged();
+    }
+
+    if (estimates_changed || custom_estimate_changed || pending_changed) {
+        ++m_fee_estimate_revision;
+        Q_EMIT feeEstimateRevisionChanged();
     }
 
     m_fee_estimation_timer->start();
@@ -1763,7 +1790,6 @@ void WalletQmlModel::setFeeTargetBlocks(unsigned int target_blocks)
         Q_EMIT feeTargetBlocksChanged();
         Q_EMIT estimatedFeeChanged();
         Q_EMIT sendAmountExhaustsBalanceChanged();
-        scheduleFeeEstimates();
     }
 }
 

@@ -385,6 +385,7 @@ private Q_SLOTS:
     void scheduleFeeEstimates_usesSelectedCoinsInCoinControl();
     void prepareTransaction_disallowsOtherInputsWhenCoinsSelected();
     void scheduleFeeEstimates_debouncesRapidRestarts();
+    void scheduleFeeEstimates_invalidatesStalePreviewState();
     void transactionChangedEmitsBalanceChanged();
     void setCurrentPaymentRequestAddressUsesAddressListLabel();
     void commitPaymentRequestUsesSelectedAddressType();
@@ -1238,6 +1239,72 @@ void WalletQmlModelTests::scheduleFeeEstimates_debouncesRapidRestarts()
     QCOMPARE(model->estimatedFeeForTarget(1), QStringLiteral("0.00000250 ₿"));
     QCOMPARE(model->estimatedFeeForTarget(2), QStringLiteral("0.00000500 ₿"));
     QCOMPARE(model->estimatedFeeForTarget(6), QStringLiteral("0.00001500 ₿"));
+}
+
+void WalletQmlModelTests::scheduleFeeEstimates_invalidatesStalePreviewState()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    ON_CALL(*wallet, getAvailableBalance(testing::_)).WillByDefault(Return(50'000));
+    SetValidRecipient(*model);
+
+    auto* recipient = model->sendRecipientList()->currentRecipient();
+    QVERIFY(recipient != nullptr);
+    recipient->amount()->setSatoshi(49'000);
+
+    std::atomic<int> create_transaction_calls{0};
+    std::atomic<bool> stale_request_started{false};
+    std::atomic<bool> fresh_request_started{false};
+    QSemaphore release_stale_request;
+    QSemaphore release_fresh_request;
+
+    wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>& recipients,
+                                           const wallet::CCoinControl& coin_control,
+                                           bool,
+                                           int& change_pos,
+                                           CAmount& fee) -> util::Result<CTransactionRef> {
+        ++create_transaction_calls;
+        const CAmount total_amount = std::accumulate(recipients.begin(), recipients.end(), CAmount{0}, [](const CAmount total, const wallet::CRecipient& recipient) {
+            return total + recipient.nAmount;
+        });
+
+        if (total_amount == 49'000 && !stale_request_started.exchange(true)) {
+            release_stale_request.acquire();
+        }
+        if (total_amount == 49'900 && !fresh_request_started.exchange(true)) {
+            release_fresh_request.acquire();
+        }
+
+        change_pos = -1;
+        fee = total_amount == 49'900
+            ? coin_control.m_confirm_target.value_or(0) * 100
+            : 50;
+        return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+    };
+
+    model->scheduleFeeEstimates();
+    QTRY_VERIFY_WITH_TIMEOUT(stale_request_started.load(), FEE_ESTIMATE_TIMEOUT_MS);
+    const auto release_stale_on_exit{interfaces::MakeCleanupHandler([&] { release_stale_request.release(); })};
+    QVERIFY(model->feeEstimatePending());
+    QCOMPARE(model->estimatedFeeForTarget(2), QString());
+
+    recipient->amount()->setSatoshi(49'900);
+    model->scheduleFeeEstimates();
+    QCOMPARE(model->estimatedFeeForTarget(2), QString());
+    QVERIFY(model->feeEstimatePending());
+
+    release_stale_request.release();
+    QTRY_VERIFY_WITH_TIMEOUT(fresh_request_started.load(), FEE_ESTIMATE_TIMEOUT_MS);
+    const auto release_fresh_on_exit{interfaces::MakeCleanupHandler([&] { release_fresh_request.release(); })};
+    QCOMPARE(model->estimatedFeeForTarget(2), QString());
+    QVERIFY(model->feeEstimatePending());
+    QVERIFY(!model->sendAmountExhaustsBalance());
+
+    release_fresh_request.release();
+    QTRY_COMPARE_WITH_TIMEOUT(model->estimatedFeeForTarget(2), QStringLiteral("0.00000200 ₿"), FEE_ESTIMATE_TIMEOUT_MS);
+    QTRY_VERIFY_WITH_TIMEOUT(!model->feeEstimatePending(), FEE_ESTIMATE_TIMEOUT_MS);
+    QVERIFY(model->sendAmountExhaustsBalance());
+    QVERIFY(create_transaction_calls.load() >= 6);
 }
 
 void WalletQmlModelTests::transactionChangedEmitsBalanceChanged()

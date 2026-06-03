@@ -336,7 +336,7 @@ def run_test(*, save_screenshots=False, screenshot_root=None):
         gui.wait_for_property("feeSelectionPopup", "opened", False, timeout_ms=5000)
         gui.wait_for_property("feeSelectionControl", "selectedIndex", LOW_FEE_OPTION_INDEX, timeout_ms=5000)
 
-        estimated_fee_with_subtract_text = gui.get_text("feeSelectionEstimateLabel")
+        estimated_fee_with_subtract_text = wait_for_non_empty_text(gui, "feeSelectionEstimateLabel")
         estimated_fee_with_subtract_sats = btc_text_to_sats(estimated_fee_with_subtract_text)
         assert estimated_fee_with_subtract_sats > 0, (
             f"Expected a positive estimated fee with subtract-fee enabled, got "
