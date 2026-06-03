@@ -207,6 +207,7 @@ def run_test():
         print("[rbf] confirming bump")
         gui.click("updateTransactionButton")
         gui.wait_for_property("speedUpPassphrasePopup", "opened", True, timeout_ms=10000)
+        gui.wait_for_property("speedUpPassphraseErrorText", "text", "", timeout_ms=10000)
         gui.set_text("speedUpPassphraseField", "wrong password")
         gui.click("speedUpPassphraseConfirmButton")
         gui.wait_for_property(

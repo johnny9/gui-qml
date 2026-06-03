@@ -164,7 +164,7 @@ Popup {
                     }
                     if (!root.bumpModel.confirmFeeBump() && root.bumpModel.needsUnlock) {
                         speedUpPassphrasePopup.busy = false
-                        speedUpPassphrasePopup.errorText = root.bumpModel.errorText
+                        speedUpPassphrasePopup.errorText = ""
                         speedUpPassphrasePopup.open()
                     }
                 }

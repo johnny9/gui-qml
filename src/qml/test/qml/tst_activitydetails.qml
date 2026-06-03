@@ -72,8 +72,7 @@ TestCase {
         const popup = findChild(overlay, "speedUpPassphrasePopup")
         verify(popup !== null)
         tryCompare(popup, "opened", true)
-        compare(findChild(overlay, "speedUpPassphraseErrorText").text,
-                "Enter your wallet password to update this transaction.")
+        compare(findChild(overlay, "speedUpPassphraseErrorText").text, "")
     }
 
     function test_canBump_false_hides_speedUpBanner() {
