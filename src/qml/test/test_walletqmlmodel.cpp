@@ -376,6 +376,7 @@ private Q_SLOTS:
     void scheduleFeeEstimates_usesCustomFeeRateWhenEnabled();
     void scheduleFeeEstimates_estimatesWhenAmountWouldExceedBalanceWithFee();
     void sendAmountExhaustsBalance_requiresFeeBuffer();
+    void sendAmountExhaustsBalance_usesCoinControlAvailableBalance();
     void scheduleFeeEstimates_usesDummyPreviewChangeDestination();
     void prepareTransaction_usesStaticRegtestFeeOverride();
     void prepareTransaction_usesCustomFeeRateWithoutRegtestOverride();
@@ -762,6 +763,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_estimatesWhenAmountWouldExceedBal
     NiceMock<MockWallet>* wallet{nullptr};
     auto model = MakeWalletModel(wallet);
     ON_CALL(*wallet, getBalance()).WillByDefault(Return(50'000));
+    ON_CALL(*wallet, getAvailableBalance(testing::_)).WillByDefault(Return(50'000));
     SetValidRecipient(*model);
     auto* recipient = model->sendRecipientList()->currentRecipient();
     QVERIFY(recipient != nullptr);
@@ -864,6 +866,66 @@ void WalletQmlModelTests::sendAmountExhaustsBalance_requiresFeeBuffer()
     QVERIFY(model->sendAmountExhaustsBalance());
     model->sendRecipientList()->remove();
     QVERIFY(!model->sendAmountExhaustsBalance());
+}
+
+void WalletQmlModelTests::sendAmountExhaustsBalance_usesCoinControlAvailableBalance()
+{
+    NiceMock<MockWallet>* wallet{nullptr};
+    auto model = MakeWalletModel(wallet);
+    SetValidRecipient(*model);
+
+    const COutPoint selected_outpoint{Txid::FromUint256(uint256::ONE), 1};
+    bool create_transaction_called{false};
+
+    EXPECT_CALL(*wallet, getBalance()).Times(0);
+    EXPECT_CALL(*wallet, getAvailableBalance(testing::_))
+        .WillRepeatedly(Invoke([&](const wallet::CCoinControl& coin_control) {
+            if (coin_control.HasSelected()) {
+                EXPECT_TRUE(coin_control.IsSelected(selected_outpoint));
+                EXPECT_FALSE(coin_control.m_allow_other_inputs);
+                return CAmount{20'000};
+            }
+
+            EXPECT_TRUE(coin_control.m_allow_other_inputs);
+            return CAmount{100'000};
+        }));
+
+    wallet->createTransactionHandler = [&](const std::vector<wallet::CRecipient>&,
+                                           const wallet::CCoinControl&,
+                                           bool,
+                                           int& change_pos,
+                                           CAmount& fee) -> util::Result<CTransactionRef> {
+        create_transaction_called = true;
+        change_pos = -1;
+        fee = 200;
+        return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+    };
+
+    QVERIFY(!model->sendAmountExhaustsBalance());
+
+    QSignalSpy spy{model.get(), &WalletQmlModel::sendAmountExhaustsBalanceChanged};
+    model->selectCoin(selected_outpoint);
+    QCOMPARE(spy.count(), 1);
+    QVERIFY(model->sendAmountExhaustsBalance());
+    QVERIFY(!model->prepareTransaction());
+    QVERIFY(!create_transaction_called);
+    QCOMPARE(model->transactionError(), QStringLiteral("Selected inputs do not cover the amount plus fee"));
+
+    model->unselectCoin(selected_outpoint);
+    QCOMPARE(spy.count(), 2);
+    QVERIFY(!model->sendAmountExhaustsBalance());
+    QVERIFY(model->prepareTransaction());
+    QVERIFY(create_transaction_called);
+
+    model->selectCoin(selected_outpoint);
+    QCOMPARE(spy.count(), 3);
+    QVERIFY(model->sendAmountExhaustsBalance());
+    model->clearSelectedCoins();
+    QCOMPARE(spy.count(), 4);
+    QVERIFY(!model->sendAmountExhaustsBalance());
+
+    model->clearSelectedCoins();
+    QCOMPARE(spy.count(), 4);
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_usesDummyPreviewChangeDestination()

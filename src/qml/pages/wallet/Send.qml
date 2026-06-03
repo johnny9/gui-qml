@@ -21,8 +21,13 @@ PageStack {
     property string prepareTransactionErrorText: ""
     readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
     readonly property string recipientValidationError: wallet ? wallet.recipients.validationError : ""
+    readonly property bool selectedInputsActive: wallet !== null
+        && wallet.coinsListModel !== null
+        && wallet.coinsListModel.selectedCoinsCount > 0
+    readonly property string availableBalanceErrorText: qsTr("Amount plus fee exceeds available balance")
+    readonly property string selectedInputsBalanceErrorText: qsTr("Selected inputs do not cover the amount plus fee")
     readonly property string feeBalanceErrorText: wallet && wallet.sendAmountExhaustsBalance
-        ? qsTr("Amount plus fee exceeds available balance")
+        ? (selectedInputsActive ? selectedInputsBalanceErrorText : availableBalanceErrorText)
         : ""
     readonly property string formErrorText: recipientValidationError.length > 0
         ? recipientValidationError
@@ -417,7 +422,7 @@ PageStack {
                         } else {
                             root.prepareTransactionErrorText = root.wallet.transactionError.length > 0
                                 ? root.wallet.transactionError
-                                : qsTr("Amount plus fee exceeds available balance")
+                                : (root.selectedInputsActive ? root.selectedInputsBalanceErrorText : root.availableBalanceErrorText)
                         }
                     }
                 }

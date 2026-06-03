@@ -535,7 +535,10 @@ bool WalletQmlModel::sendAmountExhaustsBalance() const
         return false;
     }
 
-    const CAmount balance{balanceSatoshi()};
+    wallet::CCoinControl coin_control{m_coin_control};
+    ApplySelectedInputsPolicy(coin_control);
+
+    const CAmount balance{m_wallet->getAvailableBalance(coin_control)};
     const CAmount total_amount{m_send_recipients->totalAmountSatoshi()};
     if (total_amount > balance) {
         return true;
@@ -1529,7 +1532,9 @@ bool WalletQmlModel::prepareTransactionInternal(std::optional<SecureString> pass
     CAmount balance = m_wallet->getAvailableBalance(coin_control);
     if (balance < total) {
         relock_guard.relock();
-        setTransactionStatus(tr("The wallet does not have enough balance for this transaction."));
+        setTransactionStatus(coin_control.HasSelected()
+            ? tr("Selected inputs do not cover the amount plus fee")
+            : tr("The wallet does not have enough balance for this transaction."));
         return false;
     }
 
@@ -1705,13 +1710,21 @@ void WalletQmlModel::listLockedCoins(std::vector<COutPoint>& outputs)
 
 void WalletQmlModel::selectCoin(const COutPoint& output)
 {
+    const bool was_selected{m_coin_control.IsSelected(output)};
     m_coin_control.Select(output);
+    if (!was_selected) {
+        Q_EMIT sendAmountExhaustsBalanceChanged();
+    }
     scheduleFeeEstimates();
 }
 
 void WalletQmlModel::unselectCoin(const COutPoint& output)
 {
+    const bool was_selected{m_coin_control.IsSelected(output)};
     m_coin_control.UnSelect(output);
+    if (was_selected) {
+        Q_EMIT sendAmountExhaustsBalanceChanged();
+    }
     scheduleFeeEstimates();
 }
 
@@ -1734,6 +1747,7 @@ void WalletQmlModel::clearSelectedCoins()
     if (m_coins_list_model) {
         m_coins_list_model->refreshSelection();
     }
+    Q_EMIT sendAmountExhaustsBalanceChanged();
     scheduleFeeEstimates();
 }
 

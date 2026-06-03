@@ -32,6 +32,7 @@ TestCase {
         testSendRecipient.isValid = true
         testRecipientsModel.allValid = true
         testRecipientsModel.validationError = ""
+        testCoinsListModel.reset()
     }
 
     function test_send_has_stable_selectors() {
@@ -89,6 +90,13 @@ TestCase {
         tryCompare(continueButton, "enabled", true)
         tryCompare(page, "formErrorText", "")
         compare(prepareErrorText.text, "")
+
+        testCoinsListModel.toggleCoinSelection(0)
+        testWalletModel.sendAmountExhaustsBalance = true
+
+        tryCompare(continueButton, "enabled", false)
+        tryCompare(page, "formErrorText", "Selected inputs do not cover the amount plus fee")
+        compare(prepareErrorText.text, "Selected inputs do not cover the amount plus fee")
     }
 
     function test_send_shows_recipient_validation_error() {
@@ -137,9 +145,17 @@ TestCase {
         compare(page.prepareTransactionErrorText, "Amount plus fee exceeds available balance")
         compare(prepareErrorText.text, "Amount plus fee exceeds available balance")
 
-        testWalletModel.prepareTransactionResult = true
+        page.prepareTransactionErrorText = ""
+        testCoinsListModel.toggleCoinSelection(0)
         continueButton.clicked()
         compare(testWalletModel.prepareTransactionCalls, callsBefore + 2)
+        compare(transactionPreparedSpy.count, 0)
+        compare(page.prepareTransactionErrorText, "Selected inputs do not cover the amount plus fee")
+        compare(prepareErrorText.text, "Selected inputs do not cover the amount plus fee")
+
+        testWalletModel.prepareTransactionResult = true
+        continueButton.clicked()
+        compare(testWalletModel.prepareTransactionCalls, callsBefore + 3)
         compare(transactionPreparedSpy.count, 1)
         compare(transactionPreparedSpy.signalArguments[0][0], false)
         compare(page.prepareTransactionErrorText, "")

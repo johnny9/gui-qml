@@ -706,6 +706,19 @@ public:
         emitAggregateSignals();
     }
 
+    Q_INVOKABLE void reset()
+    {
+        bool changed{false};
+        for (CoinRow& row : m_rows) {
+            if (!row.selected) continue;
+            row.selected = false;
+            changed = true;
+        }
+        if (!changed) return;
+        Q_EMIT dataChanged(index(0, 0), index(rowCount() - 1, 0), {SelectedRole});
+        emitAggregateSignals();
+    }
+
     Q_INVOKABLE void update() {}
 
 Q_SIGNALS:
@@ -952,7 +965,11 @@ public:
         if (m_prepare_transaction_result) {
             setTransactionStatus({}, false);
         } else {
-            setTransactionStatus(QStringLiteral("Amount plus fee exceeds available balance"), false);
+            const bool selected_inputs_active{
+                m_coins_list_model && m_coins_list_model->property("selectedCoinsCount").toInt() > 0};
+            setTransactionStatus(selected_inputs_active
+                ? QStringLiteral("Selected inputs do not cover the amount plus fee")
+                : QStringLiteral("Amount plus fee exceeds available balance"), false);
         }
         return m_prepare_transaction_result;
     }
