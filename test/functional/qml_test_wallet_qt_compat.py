@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 
+from qml_driver import QmlDriverError
 from qml_test_harness import dump_qml_tree
 from qml_wallet_test_lib import WalletFlowHarness, rpc_call
 
@@ -154,9 +155,27 @@ def set_receive_options(gui):
     gui.wait_for_property("receiveOptionsPopup", "opened", False, timeout_ms=5000)
 
 
+def wait_for_visible_object(gui, object_names, timeout_ms=5000):
+    deadline = time.time() + timeout_ms / 1000
+    last_error = None
+    while time.time() < deadline:
+        for object_name in object_names:
+            try:
+                if gui.get_property(object_name, "visible"):
+                    return object_name
+            except QmlDriverError as err:
+                last_error = err
+        time.sleep(0.05)
+    raise AssertionError(f"Expected one of {object_names} to be visible: {last_error}")
+
+
 def create_unencrypted_wallet(gui, wallet_name):
     gui.wait_for_property("createWalletButton", "enabled", True, timeout_ms=25000)
     gui.click("createWalletButton")
+    next_step = wait_for_visible_object(gui, ("walletTypeRegular", "createWalletIntroStartButton"))
+    if next_step == "walletTypeRegular":
+        gui.click("walletTypeRegular")
+        gui.wait_for_property("createWalletIntroStartButton", "visible", True, timeout_ms=5000)
     gui.click("createWalletIntroStartButton")
     gui.set_text("createWalletNameInput", wallet_name)
     gui.click("createWalletNameContinueButton")
