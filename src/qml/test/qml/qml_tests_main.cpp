@@ -133,7 +133,7 @@ class MockBitcoinAmount : public QObject
     Q_OBJECT
     Q_PROPERTY(QString display READ display WRITE setDisplay NOTIFY displayChanged)
     Q_PROPERTY(Unit unit READ unit WRITE setUnit NOTIFY unitChanged)
-    Q_PROPERTY(qint64 satoshi READ satoshi NOTIFY displayChanged)
+    Q_PROPERTY(qint64 satoshi READ satoshi WRITE setSatoshi NOTIFY amountChanged)
     Q_PROPERTY(QString unitLabel READ unitLabel NOTIFY unitChanged)
     Q_PROPERTY(QString displayWithUnit READ displayWithUnit NOTIFY displayChanged)
 
@@ -170,12 +170,21 @@ public:
         const double value = amount_text.toDouble(&ok);
         return ok ? static_cast<qint64>(value * 100000000.0 + 0.5) : 0;
     }
+    void setSatoshi(qint64 sats)
+    {
+        const QString updated = displayForSatoshi(sats);
+        if (m_display == updated) return;
+        m_display = updated;
+        Q_EMIT displayChanged();
+        Q_EMIT amountChanged();
+    }
     void setDisplay(const QString& display)
     {
         const QString normalized = normalizedDisplay(display);
         if (m_display == normalized) return;
         m_display = normalized;
         Q_EMIT displayChanged();
+        Q_EMIT amountChanged();
     }
     QString unitLabel() const { return m_unit == BTC ? QStringLiteral("BTC") : QStringLiteral("sat"); }
     QString displayWithUnit() const { return m_display.isEmpty() ? QString{} : m_display + QStringLiteral(" ") + unitLabel(); }
@@ -186,6 +195,7 @@ public:
             m_display = normalized;
         }
         Q_EMIT displayChanged();
+        Q_EMIT amountChanged();
     }
     Q_INVOKABLE void flipUnit()
     {
@@ -193,6 +203,7 @@ public:
     }
 
 Q_SIGNALS:
+    void amountChanged();
     void displayChanged();
     void unitChanged();
 
@@ -228,6 +239,32 @@ private:
 class MockBitcoinAddress : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(QString address READ address NOTIFY addressChanged)
+    Q_PROPERTY(QString formattedAddress READ formattedAddress NOTIFY formattedAddressChanged)
+    Q_PROPERTY(QString ellipsesAddress READ ellipsesAddress NOTIFY ellipsesAddressChanged)
+
+public:
+    QString address() const { return m_address; }
+    QString formattedAddress() const { return m_address; }
+    QString ellipsesAddress() const { return m_address; }
+    Q_INVOKABLE int setAddress(const QString& address, int cursorPosition = 0)
+    {
+        if (m_address != address) {
+            m_address = address;
+            Q_EMIT addressChanged();
+            Q_EMIT formattedAddressChanged();
+            Q_EMIT ellipsesAddressChanged();
+        }
+        return cursorPosition;
+    }
+
+Q_SIGNALS:
+    void addressChanged();
+    void formattedAddressChanged();
+    void ellipsesAddressChanged();
+
+private:
+    QString m_address{QStringLiteral("bcrt1qsendtoaddress")};
 };
 
 class MockAddressListModel : public QObject
@@ -422,7 +459,7 @@ public:
 class MockSendRecipient : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(QString address MEMBER m_address NOTIFY addressChanged)
+    Q_PROPERTY(QObject* address READ address CONSTANT)
     Q_PROPERTY(QString addressError MEMBER m_address_error NOTIFY addressErrorChanged)
     Q_PROPERTY(QObject* amount READ amount CONSTANT)
     Q_PROPERTY(QString amountError MEMBER m_amount_error NOTIFY amountErrorChanged)
@@ -431,7 +468,7 @@ class MockSendRecipient : public QObject
     Q_PROPERTY(bool isValid MEMBER m_is_valid NOTIFY isValidChanged)
 
 public:
-    QString m_address{QStringLiteral("bcrt1qsendtoaddress")};
+    MockBitcoinAddress m_address{};
     QString m_address_error;
     MockBitcoinAmount m_amount{};
     QString m_amount_error;
@@ -439,6 +476,7 @@ public:
     bool m_subtract_fee_from_amount{false};
     bool m_is_valid{true};
 
+    QObject* address() { return &m_address; }
     QObject* amount() { return &m_amount; }
     bool subtractFeeFromAmount() const { return m_subtract_fee_from_amount; }
     void setSubtractFeeFromAmount(bool value)
@@ -449,7 +487,6 @@ public:
     }
 
 Q_SIGNALS:
-    void addressChanged();
     void addressErrorChanged();
     void amountErrorChanged();
     void labelChanged();
@@ -754,6 +791,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QObject* detailPaymentRequest READ detailPaymentRequest CONSTANT)
     Q_PROPERTY(QObject* receiveRequests READ receiveRequests CONSTANT)
     Q_PROPERTY(MockAddressListModel* addressListModel READ addressListModel CONSTANT)
+    Q_PROPERTY(bool hasExternalSigner MEMBER m_has_external_signer NOTIFY walletInfoChanged)
     Q_PROPERTY(int displayUnit MEMBER m_display_unit NOTIFY displayUnitChanged)
     Q_PROPERTY(int targetBlocks READ targetBlocks WRITE setTargetBlocks NOTIFY targetBlocksChanged)
     Q_PROPERTY(QString estimatedFee READ estimatedFee NOTIFY feeEstimateRevisionChanged)
@@ -795,6 +833,7 @@ public:
     QObject* m_current_transaction{nullptr};
     QObject* m_current_payment_request{nullptr};
     MockReceiveRequests m_receive_requests{};
+    bool m_has_external_signer{false};
     int m_display_unit{0};
     QString m_default_receive_address_type{QStringLiteral("bech32")};
     QString m_last_commit_address_type;
@@ -2337,6 +2376,7 @@ public Q_SLOTS:
         engine->rootContext()->setContextProperty(QStringLiteral("testPaymentRequest"), &payment_request);
         engine->rootContext()->setContextProperty(QStringLiteral("testActivityListModel"), &activity_list_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testSendRecipient"), &send_recipient);
+        engine->rootContext()->setContextProperty(QStringLiteral("testAutomationEnabled"), false);
         engine->rootContext()->setContextProperty(QStringLiteral("testRecipientsModel"), &recipients_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testCoinsListModel"), &coins_list_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testBumpModel"), &bump_model);

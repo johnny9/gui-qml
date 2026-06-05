@@ -208,6 +208,7 @@ PageStack {
             // Connections must not fire checkClipboard() before the Fill
             // handler has had a chance to set m_filledUri.
             m_applyingUri = false
+            root.scheduleFeeEstimates()
             paymentRequestMessage = result.hasMessage ? result.uriMessage : ""
             paymentRequestStatus = qsTr("Payment request imported from %1.").arg(source)
             paymentRequestIsError = false

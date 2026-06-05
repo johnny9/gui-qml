@@ -28,6 +28,9 @@ TestCase {
         testWalletModel.targetBlocks = 2
         testWalletModel.prepareTransactionResult = true
         testWalletModel.sendAmountExhaustsBalance = false
+        testSendRecipient.address.setAddress("bcrt1qsendtoaddress")
+        testSendRecipient.amount.display = "0.00000000"
+        testSendRecipient.label = ""
         testSendRecipient.subtractFeeFromAmount = false
         testSendRecipient.isValid = true
         testRecipientsModel.allValid = true
@@ -366,5 +369,29 @@ TestCase {
         compare(testSendRecipient.subtractFeeFromAmount, true)
         tryCompare(testWalletModel, "scheduleFeeEstimatesCalls", callsBefore + 1)
         compare(popup.visible, false)
+    }
+
+    function test_send_uri_import_schedules_fee_estimate() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const sendPage = findChild(page, "walletSendPage")
+        verify(sendPage !== null)
+
+        const callsBefore = testWalletModel.scheduleFeeEstimatesCalls
+        sendPage.applyPaymentRequestFromText(
+            "bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.02000000&label=uri-label",
+            "clipboard"
+        )
+
+        // The mocked amount input still emits one schedule request when the
+        // imported amount updates the bound field. The explicit URI-import
+        // refresh added in Send.qml should contribute one more call.
+        tryCompare(testWalletModel, "scheduleFeeEstimatesCalls", callsBefore + 2)
+        compare(testSendRecipient.address.address, "bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9")
+        compare(testSendRecipient.amount.display, "0.02000000")
+        compare(testSendRecipient.label, "uri-label")
+        compare(sendPage.paymentRequestStatus, "Payment request imported from clipboard.")
+        compare(sendPage.paymentRequestIsError, false)
     }
 }

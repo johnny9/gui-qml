@@ -6,5 +6,9 @@ pragma Singleton
 import QtQuick 2.15
 
 QtObject {
-    function text() { return "" }
+    property string currentText: ""
+
+    signal dataChanged()
+
+    function text() { return currentText }
 }
