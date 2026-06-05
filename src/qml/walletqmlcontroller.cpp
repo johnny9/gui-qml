@@ -27,6 +27,7 @@
 #include <utility>
 
 #include <QDir>
+#include <QDesktopServices>
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QRegularExpression>
@@ -62,10 +63,13 @@ bool ErrorContains(const QString& error, const QString& needle)
 WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent)
     : QObject(parent)
     , m_node(node)
-    , m_empty_wallet(new WalletQmlModel(this))
+    , m_empty_wallet(new WalletQmlModel(&node, this))
     , m_selected_wallet(m_empty_wallet)
     , m_worker(new QObject)
     , m_worker_thread(new QThread(this))
+    , m_open_local_path_fn([](const QString& path) {
+        return QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    })
 {
     m_worker->moveToThread(m_worker_thread);
     m_worker_thread->start();
@@ -156,6 +160,58 @@ void WalletQmlController::subscribeWalletInfo(WalletQmlModel* wallet_model)
 QString WalletQmlController::homePath() const
 {
     return QDir::homePath();
+}
+
+QString WalletQmlController::selectedWalletLocationPath() const
+{
+    if (!m_selected_wallet || m_selected_wallet == m_empty_wallet) {
+        return {};
+    }
+
+    const QString wallet_name{m_selected_wallet->name().trimmed()};
+    if (wallet_name.isEmpty()) {
+        return {};
+    }
+
+    QFileInfo wallet_path{wallet_name};
+    if (!wallet_path.isAbsolute()) {
+        const QDir wallet_dir{QString::fromStdString(m_node.walletLoader().getWalletDir())};
+        wallet_path = QFileInfo{wallet_dir.filePath(wallet_name)};
+    }
+
+    return wallet_path.absoluteFilePath();
+}
+
+bool WalletQmlController::openSelectedWalletLocation()
+{
+    clearWalletLocationOpenError();
+
+    const QString wallet_path{selectedWalletLocationPath()};
+    if (wallet_path.isEmpty()) {
+        setWalletLocationOpenError(tr("No wallet file is available to view."));
+        return false;
+    }
+
+    const QFileInfo wallet_location{wallet_path};
+    if (!wallet_location.exists()) {
+        setWalletLocationOpenError(tr("Wallet file not found: %1").arg(wallet_path));
+        return false;
+    }
+
+    const QString open_path = wallet_location.isDir()
+        ? wallet_location.absoluteFilePath()
+        : wallet_location.absolutePath();
+    if (!m_open_local_path_fn(open_path)) {
+        setWalletLocationOpenError(tr("Could not open wallet file location."));
+        return false;
+    }
+
+    return true;
+}
+
+void WalletQmlController::clearWalletLocationOpenError()
+{
+    setWalletLocationOpenError({});
 }
 
 void WalletQmlController::closeWallet(const QString& path)
@@ -337,7 +393,7 @@ WalletQmlModel* WalletQmlController::addOrSelectWalletModel(std::unique_ptr<inte
     }
 
     const QString loaded_wallet_name = QString::fromStdString(wallet->getWalletName());
-    auto wallet_model = new WalletQmlModel(std::move(wallet));
+    auto wallet_model = new WalletQmlModel(std::move(wallet), &m_node);
     wallet_model->moveToThread(this->thread());
     registerWalletModel(wallet_model);
     {
@@ -1032,7 +1088,7 @@ void WalletQmlController::initialize()
     loaded_wallet_names.reserve(static_cast<qsizetype>(wallets.size()));
     for (auto& wallet : wallets) {
         loaded_wallet_names.append(QString::fromStdString(wallet->getWalletName()));
-        auto* wallet_model = new WalletQmlModel(std::move(wallet));
+        auto* wallet_model = new WalletQmlModel(std::move(wallet), &m_node);
         registerWalletModel(wallet_model);
         applyWalletDisplayName(wallet_model);
         m_wallets.push_back(wallet_model);
@@ -1283,4 +1339,19 @@ void WalletQmlController::setExternalSignerStatus(bool path_configured, int sign
     m_external_signer_error = error;
     m_suggested_external_signer_wallet_name = suggested_name;
     Q_EMIT externalSignerStatusChanged();
+}
+
+void WalletQmlController::setWalletLocationOpenError(const QString& error)
+{
+    if (m_wallet_location_open_error == error) {
+        return;
+    }
+
+    m_wallet_location_open_error = error;
+    Q_EMIT walletLocationOpenErrorChanged();
+}
+
+void WalletQmlController::setOpenLocalPathFnForTesting(OpenLocalPathFn fn)
+{
+    m_open_local_path_fn = std::move(fn);
 }

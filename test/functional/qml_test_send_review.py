@@ -124,6 +124,20 @@ def fund_wallet(harness, wallet_name):
     )
 
 
+def wallet_txcount(harness, wallet_name):
+    return rpc_call(harness.gui_rpc_port, "getwalletinfo", wallet=wallet_name)["txcount"]
+
+
+def assert_review_has_no_transaction_side_effects(harness, wallet_name, expected_txcount):
+    mempool_txids = rpc_call(harness.gui_rpc_port, "getrawmempool")
+    assert mempool_txids == [], f"Review-only flows should not broadcast transactions, got {mempool_txids}"
+    actual_txcount = wallet_txcount(harness, wallet_name)
+    assert actual_txcount == expected_txcount, (
+        f"Review-only flows should not add wallet transactions, "
+        f"expected txcount {expected_txcount}, got {actual_txcount}"
+    )
+
+
 def open_send_page(gui):
     gui.click("sendTabButton")
     gui.wait_for_page("sendPage", timeout_ms=10000)
@@ -180,6 +194,11 @@ def prepare_multi_send(gui, first_address, first_amount_btc, second_address, sec
     gui.wait_for_property("sendReviewButton", "enabled", True, timeout_ms=10000)
     gui.click("sendReviewButton")
     gui.wait_for_page("multipleSendReviewPage", timeout_ms=10000)
+
+
+def wait_for_send_error(gui, expected_text):
+    gui.wait_for_property("sendPrepareTransactionErrorText", "text", expected_text, timeout_ms=10000)
+    assert gui.get_property("sendReviewButton", "enabled") is False
 
 
 def assert_unit_suffix(gui, object_name, unit_suffix):
@@ -264,6 +283,39 @@ def case_single_sat(harness, gui, wallet_name, checkpoints):
     assert_unit_suffix(gui, "sendReviewFeeField", "sat")
     assert_unit_suffix(gui, "sendReviewTotalField", "sat")
     return_to_send_page(gui, "sendReviewBackButton")
+
+
+def case_invalid_recipients(harness, gui, wallet_name, checkpoints):
+    first_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet=wallet_name)
+    second_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet=wallet_name)
+
+    open_send_page(gui)
+    set_multiple_recipients(gui, False)
+    set_amount_unit(gui, "sat")
+    gui.set_text("sendAddressInput", first_address)
+    gui.set_text("sendAmountInput", "1")
+    gui.wait_for_property("sendAmountErrorText", "text", "Amount is too small to send.", timeout_ms=10000)
+    assert gui.get_property("sendReviewButton", "enabled") is False
+    checkpoints.checkpoint("dust amount rejected", gui)
+
+    set_multiple_recipients(gui, True)
+    gui.click("sendRecipientPrevButton")
+    set_amount_unit(gui, "₿")
+    gui.set_text("sendAddressInput", first_address)
+    gui.set_text("sendAmountInput", "0.50000000")
+    wait_for_send_error(gui, "Complete every recipient before continuing.")
+    checkpoints.checkpoint("empty second recipient rejected", gui)
+
+    gui.click("sendRecipientNextButton")
+    set_amount_unit(gui, "₿")
+    gui.set_text("sendAddressInput", first_address)
+    gui.set_text("sendAmountInput", "0.25000000")
+    wait_for_send_error(gui, "Recipient addresses must be unique.")
+    checkpoints.checkpoint("duplicate recipient rejected", gui)
+
+    gui.set_text("sendAddressInput", second_address)
+    gui.wait_for_property("sendReviewButton", "enabled", True, timeout_ms=10000)
+    set_multiple_recipients(gui, False)
 
 
 def case_multi_review(harness, gui, wallet_name, checkpoints):
@@ -360,11 +412,14 @@ def run_tests(args):
         create_wallet(gui, wallet_name)
         checkpoints.checkpoint("wallet created", gui)
         fund_wallet(harness, wallet_name)
+        funded_txcount = wallet_txcount(harness, wallet_name)
         checkpoints.checkpoint("wallet funded", gui)
 
+        case_invalid_recipients(harness, gui, wallet_name, checkpoints)
         case_single_btc(harness, gui, wallet_name, checkpoints)
         case_single_sat(harness, gui, wallet_name, checkpoints)
         case_multi_review(harness, gui, wallet_name, checkpoints)
+        assert_review_has_no_transaction_side_effects(harness, wallet_name, funded_txcount)
 
         print(f"[{case_name}] completed")
         print("Send review flows passed.")

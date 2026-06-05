@@ -20,6 +20,18 @@ PageStack {
     property SendRecipient recipient: wallet.recipients.current
     property string prepareTransactionErrorText: ""
     readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
+    readonly property string recipientValidationError: wallet ? wallet.recipients.validationError : ""
+    readonly property bool selectedInputsActive: wallet !== null
+        && wallet.coinsListModel !== null
+        && wallet.coinsListModel.selectedCoinsCount > 0
+    readonly property string availableBalanceErrorText: qsTr("Amount plus fee exceeds available balance")
+    readonly property string selectedInputsBalanceErrorText: qsTr("Selected inputs do not cover the amount plus fee")
+    readonly property string feeBalanceErrorText: wallet && wallet.sendAmountExhaustsBalance
+        ? (selectedInputsActive ? selectedInputsBalanceErrorText : availableBalanceErrorText)
+        : ""
+    readonly property string formErrorText: recipientValidationError.length > 0
+        ? recipientValidationError
+        : (feeBalanceErrorText.length > 0 ? feeBalanceErrorText : prepareTransactionErrorText)
 
     signal transactionPrepared(bool multipleRecipientsEnabled)
 
@@ -35,10 +47,24 @@ PageStack {
         }
     }
 
+    // Re-check the clipboard whenever the Send tab becomes visible so the
+    // banner appears even if the URI was copied before navigating here.
+    onVisibleChanged: if (visible) sendPage.checkClipboard()
+
     Connections {
         target: walletController
         function onSelectedWalletChanged() {
             root.pop()
+            // Clear URI import state so stale results from the previous wallet
+            // are not shown when the user switches wallets and returns to Send.
+            sendPage.paymentRequestStatus = ""
+            sendPage.paymentRequestIsError = false
+            sendPage.paymentRequestMessage = ""
+            sendPage.showClipboardUriBanner = false
+            sendPage.m_pendingClipboardUri = ""
+            sendPage.m_filledUri = ""
+            sendPage.m_dismissedUri = ""
+            sendPage.m_applyingUri = false
         }
     }
 
@@ -58,6 +84,9 @@ PageStack {
         function onCurrentRecipientChanged() {
             root.clearPrepareTransactionError()
             root.scheduleFeeEstimates()
+            sendPage.paymentRequestStatus = ""
+            sendPage.paymentRequestIsError = false
+            sendPage.paymentRequestMessage = ""
         }
     }
 
@@ -87,7 +116,251 @@ PageStack {
     }
 
     initialItem: Page {
+        id: sendPage
+        objectName: "walletSendPage"
         background: null
+
+        // URI import state
+        property string paymentRequestStatus: ""
+        property bool paymentRequestIsError: false
+        property string paymentRequestMessage: ""
+
+        // Clipboard URI detection
+        property bool showClipboardUriBanner: false
+        // Cache the clipboard text at detection time to avoid a TOCTOU race:
+        // the "Fill" button applies this value rather than re-reading the
+        // clipboard, which may have changed since the banner appeared.
+        property string m_pendingClipboardUri: ""
+        // Soft suppress (Fill): URI that was most recently applied to the form.
+        // The banner stays hidden while all URI-specified fields still match the
+        // form; as soon as any field diverges the banner re-appears.
+        property string m_filledUri: ""
+        // Hard suppress (Dismiss): URI the user explicitly dismissed.
+        // The banner only re-appears when the clipboard contains a different URI.
+        property string m_dismissedUri: ""
+        // Guard that prevents field-change Connections from triggering a
+        // re-check while a programmatic URI fill is writing to the form.
+        property bool m_applyingUri: false
+
+        function checkClipboard() {
+            // Skip parsing when the Send tab is not visible or no wallet is
+            // loaded (recipient fields depend on the wallet being present).
+            if (!root.visible || root.wallet === null) {
+                showClipboardUriBanner = false
+                return
+            }
+
+            const text = Clipboard.text()
+            const parsed = BitcoinUri.parseBitcoinUri(text)
+            if (!parsed.success) {
+                showClipboardUriBanner = false
+                m_pendingClipboardUri = ""
+                return
+            }
+
+            // Hard suppress: user dismissed this exact URI.
+            // Only lifts when the clipboard changes to a different URI.
+            if (text === m_dismissedUri) {
+                showClipboardUriBanner = false
+                return
+            }
+
+            // Soft suppress: user filled this URI. Hide the banner while every
+            // field the URI specified still matches its current form value.
+            // As soon as any field diverges the banner re-appears automatically.
+            if (text === m_filledUri) {
+                const filled = BitcoinUri.parseBitcoinUri(m_filledUri)
+                const formMatches =
+                    root.recipient.address.address === filled.address
+                    && (!filled.hasAmount || root.recipient.amount.satoshi === filled.amountSats)
+                    && (!filled.hasLabel  || root.recipient.label === filled.label)
+                if (formMatches) {
+                    showClipboardUriBanner = false
+                    return
+                }
+                // Form diverged — lift fill suppression.
+                m_filledUri = ""
+            }
+
+            m_pendingClipboardUri = text
+            showClipboardUriBanner = true
+        }
+
+        // Apply a pre-parsed URI result to the current recipient form fields.
+        function applyParsedPaymentRequest(result, source) {
+            if (!result.success) {
+                paymentRequestStatus = result.error
+                paymentRequestIsError = true
+                return
+            }
+            m_applyingUri = true
+            root.recipient.address.setAddress(result.address, 0)
+            // Only fields present in the URI are applied. Amount is intentionally
+            // not cleared when the URI omits 'amount='. This matches Bitcoin Core
+            // Qt's URI import behaviour: only populate what the URI specifies.
+            if (result.hasAmount) {
+                root.recipient.amount.satoshi = result.amountSats
+            }
+            if (result.hasLabel) {
+                root.recipient.label = result.label
+            }
+            // Lower the guard only after all writes are done. Field-change
+            // Connections must not fire checkClipboard() before the Fill
+            // handler has had a chance to set m_filledUri.
+            m_applyingUri = false
+            root.scheduleFeeEstimates()
+            paymentRequestMessage = result.hasMessage ? result.uriMessage : ""
+            paymentRequestStatus = qsTr("Payment request imported from %1.").arg(source)
+            paymentRequestIsError = false
+        }
+
+        // Parse a URI from text and apply to form.
+        function applyPaymentRequestFromText(text, source) {
+            const result = BitcoinUri.parseBitcoinUri(text)
+            applyParsedPaymentRequest(result, source)
+            // If the applied URI matches what's on the clipboard, treat it like
+            // the Fill button: soft-suppress the banner so it stays hidden while
+            // the form still reflects what the URI specified.
+            if (result.success && Clipboard.text() === text) {
+                m_filledUri = text
+                showClipboardUriBanner = false
+            }
+        }
+
+        // Parse a URI from a file path and apply to form.
+        function applyPaymentRequestFromFile(path) {
+            const result = BitcoinUri.parseBitcoinUriFromFile(path)
+            applyParsedPaymentRequest(result, qsTr("file"))
+        }
+
+        Connections {
+            target: Clipboard
+            function onDataChanged() { sendPage.checkClipboard() }
+        }
+
+        // Re-check the clipboard whenever any form field changes due to user
+        // input. checkClipboard() compares current values against the filled URI
+        // and re-shows the banner if any specified field has diverged.
+        // The m_applyingUri guard prevents these from firing during a programmatic
+        // fill, which would trigger a re-check before m_filledUri is set.
+        Connections {
+            target: root.recipient.address
+            function onAddressChanged() {
+                if (!sendPage.m_applyingUri) {
+                    if (root.recipient.address.address === "") {
+                        sendPage.paymentRequestStatus = ""
+                        sendPage.paymentRequestIsError = false
+                        sendPage.paymentRequestMessage = ""
+                    }
+                    sendPage.checkClipboard()
+                }
+            }
+        }
+        Connections {
+            target: root.recipient.amount
+            function onAmountChanged() {
+                if (!sendPage.m_applyingUri) sendPage.checkClipboard()
+            }
+        }
+        Connections {
+            target: root.recipient
+            function onLabelChanged() {
+                if (!sendPage.m_applyingUri) sendPage.checkClipboard()
+            }
+        }
+
+        Component.onCompleted: sendPage.checkClipboard()
+
+        Connections {
+            target: sendOptionsPopup
+            function onOpenPaymentRequest() {
+                uriImportInput.text = ""
+                sendUriImportPopup.open()
+            }
+        }
+
+        // Manual URI entry popup
+        Popup {
+            id: sendUriImportPopup
+            objectName: "sendUriImportPopup"
+            anchors.centerIn: Overlay.overlay
+            width: Math.min(sendPage.width - 40, 420)
+            modal: true
+            padding: 20
+
+            background: Item {
+                anchors.fill: parent
+                Rectangle {
+                    color: Theme.color.neutral0
+                    border.color: Theme.color.neutral4
+                    radius: 5
+                    border.width: 1
+                    anchors.fill: parent
+                }
+            }
+
+            contentItem: ColumnLayout {
+                spacing: 12
+
+                CoreText {
+                    text: qsTr("Open payment request")
+                    font.pixelSize: 16
+                    bold: true
+                    color: Theme.color.neutral9
+                    Layout.fillWidth: true
+                }
+
+                CoreTextField {
+                    id: uriImportInput
+                    objectName: "sendUriImportInput"
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("bitcoin:address?amount=…")
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    OutlineButton {
+                        Layout.fillWidth: true
+                        text: qsTr("Cancel")
+                        onClicked: sendUriImportPopup.close()
+                    }
+
+                    ContinueButton {
+                        objectName: "sendUriImportApplyButton"
+                        Layout.fillWidth: true
+                        text: qsTr("Apply")
+                        enabled: uriImportInput.text.trim().length > 0
+                        onClicked: {
+                            sendUriImportPopup.close()
+                            sendPage.applyPaymentRequestFromText(uriImportInput.text, qsTr("manual entry"))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Drag-and-drop support
+        DropArea {
+            objectName: "sendDropArea"
+            anchors.fill: parent
+            keys: ["text/uri-list", "text/plain"]
+            onDropped: (drop) => {
+                if (drop.hasUrls && drop.urls.length > 0) {
+                    const url = drop.urls[0].toString()
+                    if (url.startsWith("file://")) {
+                        // Pass the raw file:// URL; C++ uses QUrl::toLocalFile()
+                        // to derive the correct local path on all platforms.
+                        sendPage.applyPaymentRequestFromFile(url)
+                    } else {
+                        sendPage.applyPaymentRequestFromText(url, qsTr("drag and drop"))
+                    }
+                } else if (drop.hasText) {
+                    sendPage.applyPaymentRequestFromText(drop.text, qsTr("drag and drop"))
+                }
+            }
+        }
 
         Settings {
             id: settings
@@ -99,6 +372,12 @@ PageStack {
                     root.wallet.recipients.clearToFront()
                 } else {
                     root.wallet.recipients.add()
+                }
+            }
+
+            onCoinControlEnabledChanged: {
+                if (coinControlEnabled && root.wallet) {
+                    root.wallet.coinsListModel.update()
                 }
             }
         }
@@ -168,6 +447,135 @@ PageStack {
                     text: qsTr("Make sure you have your external signer at hand to approve this transaction.")
                     font.pixelSize: 18
                     color: Theme.color.neutral7
+                }
+
+                // Clipboard URI detection card
+                Rectangle {
+                    objectName: "clipboardUriBanner"
+                    Layout.fillWidth: true
+                    visible: sendPage.showClipboardUriBanner
+                    color: Theme.color.neutral1
+                    radius: 5
+                    implicitHeight: clipboardBannerContent.implicitHeight + 20
+
+                    ColumnLayout {
+                        id: clipboardBannerContent
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.margins: 10
+                        spacing: 10
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            CoreText {
+                                text: qsTr("You have a Bitcoin invoice in your clipboard.")
+                                font.pixelSize: 14
+                                color: Theme.color.neutral9
+                                horizontalAlignment: Text.AlignLeft
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                            }
+
+                            ContinueButton {
+                                objectName: "clipboardUriPasteButton"
+                                text: qsTr("Fill")
+                                bold: false
+                                textFontPixelSize: 14
+                                implicitHeight: 38
+                                Layout.preferredWidth: 90
+                                onClicked: {
+                                    sendPage.showClipboardUriBanner = false
+                                    // Use the cached URI captured when the banner appeared,
+                                    // not Clipboard.text(), to avoid applying a different URI
+                                    // if the clipboard changed before the user clicked Fill.
+                                    sendPage.applyPaymentRequestFromText(sendPage.m_pendingClipboardUri, qsTr("clipboard"))
+                                    // Soft-suppress: banner stays hidden while the form
+                                    // still reflects what the URI specified.
+                                    sendPage.m_filledUri = sendPage.m_pendingClipboardUri
+                                }
+                            }
+
+                            OutlineButton {
+                                objectName: "clipboardUriDismissButton"
+                                text: qsTr("Dismiss")
+                                bold: false
+                                textFontPixelSize: 14
+                                implicitHeight: 38
+                                Layout.preferredWidth: 90
+                                onClicked: {
+                                    // Hard-suppress: banner only reappears if the
+                                    // clipboard changes to a different URI.
+                                    sendPage.m_dismissedUri = sendPage.m_pendingClipboardUri
+                                    sendPage.showClipboardUriBanner = false
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Payment request message (from URI "message=" field)
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: sendPage.paymentRequestMessage.length > 0
+                    spacing: 8
+
+                    Icon {
+                        source: "image://images/check"
+                        size: 18
+                        color: Theme.color.neutral7
+                    }
+
+                    CoreText {
+                        objectName: "sendPaymentRequestMessageText"
+                        text: sendPage.paymentRequestMessage
+                        font.pixelSize: 14
+                        color: Theme.color.neutral7
+                        horizontalAlignment: Text.AlignLeft
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 3
+                        elide: Text.ElideRight
+                    }
+                }
+
+                // Payment request import status (success or error)
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: sendPage.paymentRequestStatus.length > 0
+                    spacing: 8
+
+                    Icon {
+                        source: sendPage.paymentRequestIsError
+                            ? "image://images/alert-filled"
+                            : "image://images/circle-green-check"
+                        size: 18
+                        color: sendPage.paymentRequestIsError ? Theme.color.red : Theme.color.green
+                    }
+
+                    CoreText {
+                        objectName: "sendPaymentRequestStatusText"
+                        text: sendPage.paymentRequestStatus
+                        font.pixelSize: 14
+                        color: sendPage.paymentRequestIsError ? Theme.color.red : Theme.color.neutral7
+                        horizontalAlignment: Text.AlignLeft
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                    }
+
+                    IconButton {
+                        objectName: "clearPaymentRequestStatusButton"
+                        size: 22
+                        iconSource: "image://images/cross"
+                        Accessible.name: qsTr("Clear status")
+                        Accessible.role: Accessible.Button
+                        onClicked: {
+                            sendPage.paymentRequestStatus = ""
+                            sendPage.paymentRequestIsError = false
+                        }
+                    }
                 }
 
                 RowLayout {
@@ -259,113 +667,23 @@ PageStack {
                     Layout.fillWidth: true
                 }
 
-                ColumnLayout {
+                BitcoinAmountInputField {
+                    id: amountInput
                     Layout.fillWidth: true
-
-                    Item {
-                        height: amountInput.height
-                        Layout.fillWidth: true
-                        CoreText {
-                            id: amountLabel
-                            width: 110
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            horizontalAlignment: Text.AlignLeft
-                            text: qsTr("Amount")
-                            font.pixelSize: 18
-                        }
-
-                        TextField {
-                            id: amountInput
-                            objectName: "sendAmountInput"
-                            anchors.left: amountLabel.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            leftPadding: 0
-                            font.family: "BitcoinCoreSans"
-                            font.styleName: "Regular"
-                            font.pixelSize: 18
-                            color: Theme.color.neutral9
-                            placeholderTextColor: enabled ? Theme.color.neutral7 : Theme.color.neutral4
-                            background: Item {}
-                            placeholderText: root.recipient.amount.unit === BitcoinAmount.SAT ? "0" : "0.00000000"
-                            selectByMouse: true
-                            text: root.recipient.amount.display
-                            onTextChanged: {
-                                root.clearPrepareTransactionError()
-                                if (text !== root.recipient.amount.display) {
-                                    root.recipient.amount.display = text
-                                }
-                                root.scheduleFeeEstimates()
-                            }
-                            onTextEdited: root.recipient.amount.display = text
-                            onEditingFinished: {
-                                root.recipient.amount.format()
-                                root.scheduleFeeEstimates()
-                            }
-                            onActiveFocusChanged: {
-                                if (!activeFocus) {
-                                    root.recipient.amount.format()
-                                    root.scheduleFeeEstimates()
-                                }
-                            }
-                            validator: RegularExpressionValidator {
-                                regularExpression: root.recipient.amount.unit === BitcoinAmount.BTC
-                                    ? /^(0|[1-9]\d{0,7})(\.\d{0,8})?$/
-                                    : /^(0|[1-9]\d{0,15})$/
-                            }
-                            maximumLength: root.recipient.amount.unit === BitcoinAmount.BTC ? 17 : 16
-                        }
-                        Item {
-                            objectName: "sendAmountUnitToggle"
-                            width: unitLabel.width + flipIcon.width
-                            height: Math.max(unitLabel.height, flipIcon.height)
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            function click() {
-                                root.recipient.amount.flipUnit()
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: root.recipient.amount.flipUnit()
-                            }
-                            CoreText {
-                                id: unitLabel
-                                objectName: "sendAmountUnitLabel"
-                                anchors.right: flipIcon.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: root.recipient.amount.unitLabel
-                                font.pixelSize: 18
-                                color: enabled ? Theme.color.neutral7 : Theme.color.neutral4
-                            }
-                            Icon {
-                                id: flipIcon
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                source: "image://images/flip-vertical"
-                                color: unitLabel.enabled ? Theme.color.neutral8 : Theme.color.neutral4
-                                size: 30
-                            }
-                        }
+                    inputObjectName: "sendAmountInput"
+                    unitToggleObjectName: "sendAmountUnitToggle"
+                    unitLabelObjectName: "sendAmountUnitLabel"
+                    errorTextObjectName: "sendAmountErrorText"
+                    amount: root.recipient ? root.recipient.amount : null
+                    errorText: root.recipient ? root.recipient.amountError : ""
+                    onInputTextChanged: {
+                        root.clearPrepareTransactionError()
+                        root.scheduleFeeEstimates()
                     }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: root.recipient.amountError.length > 0
-
-                        Icon {
-                            source: "image://images/alert-filled"
-                            size: 22
-                            color: Theme.color.red
-                        }
-
-                        CoreText {
-                            text: root.recipient.amountError
-                            font.pixelSize: 15
-                            color: Theme.color.red
-                            horizontalAlignment: Text.AlignLeft
-                            Layout.fillWidth: true
-                        }
+                    onTextEdited: {
+                        root.clearPrepareTransactionError()
                     }
+                    onEditingFinished: root.scheduleFeeEstimates()
                 }
 
                 Separator {
@@ -388,6 +706,8 @@ PageStack {
                 }
 
                 LabeledCoinControlButton {
+                    objectName: "sendCoinControlButton"
+                    valueObjectName: "sendCoinControlButtonText"
                     visible: settings.coinControlEnabled
                     Layout.fillWidth: true
                     coinsSelected: wallet.coinsListModel.selectedCoinsCount
@@ -454,7 +774,7 @@ PageStack {
                 RowLayout {
                     objectName: "sendPrepareTransactionError"
                     Layout.fillWidth: true
-                    visible: root.prepareTransactionErrorText.length > 0
+                    visible: root.formErrorText.length > 0
 
                     Icon {
                         source: "image://images/alert-filled"
@@ -464,7 +784,7 @@ PageStack {
 
                     CoreText {
                         objectName: "sendPrepareTransactionErrorText"
-                        text: root.prepareTransactionErrorText
+                        text: root.formErrorText
                         font.pixelSize: 15
                         color: Theme.color.red
                         horizontalAlignment: Text.AlignLeft
@@ -478,8 +798,10 @@ PageStack {
                     Layout.fillWidth: true
                     Layout.topMargin: 30
                     text: root.externalSignerWallet ? qsTr("Review transaction") : qsTr("Review")
-                    enabled: root.recipient.isValid
-                        && (!root.wallet || !root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
+                    enabled: root.wallet
+                        && root.wallet.recipients.allValid
+                        && !root.wallet.sendAmountExhaustsBalance
+                        && (!root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                     onClicked: {
                         root.clearPrepareTransactionError()
                         if (root.wallet.prepareTransaction()) {
@@ -490,7 +812,67 @@ PageStack {
                         } else {
                             root.prepareTransactionErrorText = root.wallet.transactionError.length > 0
                                 ? root.wallet.transactionError
-                                : qsTr("Amount plus fee exceeds available balance")
+                                : (root.selectedInputsActive ? root.selectedInputsBalanceErrorText : root.availableBalanceErrorText)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Automation-only hooks for functional tests. Only loaded when the app
+        // is built with -DENABLE_TEST_AUTOMATION=ON (testAutomationEnabled is a
+        // C++ context property set at startup). In production builds the Loader
+        // is inactive and no hook items exist in the QML object tree.
+        Loader {
+            active: testAutomationEnabled
+            anchors.fill: parent
+            sourceComponent: Component {
+                Item {
+                    anchors.fill: parent
+
+                    CoreTextField {
+                        id: fileImportPathInput
+                        objectName: "sendImportPaymentRequestFilePathInput"
+                        visible: false
+                    }
+
+                    Button {
+                        objectName: "sendApplyPaymentRequestFilePathButton"
+                        visible: false
+                        onClicked: sendPage.applyPaymentRequestFromFile(fileImportPathInput.text)
+                    }
+
+                    CoreTextField {
+                        id: dropUriInput
+                        objectName: "sendDropUriInput"
+                        visible: false
+                    }
+
+                    Button {
+                        objectName: "sendApplyDropUriButton"
+                        visible: false
+                        onClicked: sendPage.applyPaymentRequestFromText(dropUriInput.text, qsTr("drag and drop"))
+                    }
+
+                    // Exercises the DropArea hasUrls + file:// branch.
+                    // Passes the raw URL to applyPaymentRequestFromFile so C++
+                    // handles the platform-correct toLocalFile() conversion.
+                    CoreTextField {
+                        id: dropFileUrlInput
+                        objectName: "sendDropFileUrlInput"
+                        visible: false
+                    }
+
+                    Button {
+                        objectName: "sendApplyDropFileUrlButton"
+                        visible: false
+                        onClicked: {
+                            const url = dropFileUrlInput.text
+                            if (url.startsWith("file://")) {
+                                sendPage.applyPaymentRequestFromFile(url)
+                            } else {
+                                sendPage.applyPaymentRequestFromText(url, qsTr("drag and drop"))
+                            }
                         }
                     }
                 }

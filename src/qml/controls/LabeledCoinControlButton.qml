@@ -9,11 +9,18 @@ import QtQuick.Layouts 1.15
 Item {
     property int coinsSelected: 0
     property int coinCount: 0
+    property string valueObjectName: ""
 
     signal openCoinControl
 
     id: root
     implicitHeight: label.height
+
+    function click() {
+        if (coinCount > 0) {
+            root.openCoinControl()
+        }
+    }
 
     CoreText {
         id: label
@@ -26,6 +33,7 @@ Item {
     }
 
     CoreText {
+        objectName: root.valueObjectName
         anchors.left: label.right
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignLeft
@@ -45,11 +53,7 @@ Item {
 
         MouseArea {
             anchors.fill: parent
-            onClicked: {
-                if (coinCount > 0) {
-                    root.openCoinControl()
-                }
-            }
+            onClicked: root.click()
             cursorShape: Qt.PointingHandCursor
         }
     }

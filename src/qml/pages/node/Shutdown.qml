@@ -8,6 +8,7 @@ import QtQuick.Layouts 1.15
 import "../../controls"
 
 Page {
+    objectName: "shutdownPage"
     background: null
 
     ColumnLayout {

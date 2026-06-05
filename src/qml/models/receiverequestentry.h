@@ -15,7 +15,7 @@
 
 struct QmlReceiveRequestRecipient
 {
-    static constexpr int CURRENT_VERSION{2};
+    static constexpr int CURRENT_VERSION{1};
     int nVersion{CURRENT_VERSION};
     std::string address;
     std::string label;
@@ -28,15 +28,12 @@ struct QmlReceiveRequestRecipient
     SERIALIZE_METHODS(QmlReceiveRequestRecipient, obj)
     {
         READWRITE(obj.nVersion, obj.address, obj.label, obj.amount, obj.message, obj.sPaymentRequest, obj.authenticatedMerchant);
-        if (obj.nVersion >= 2) {
-            READWRITE(obj.noteSelf);
-        }
     }
 };
 
 struct QmlRecentRequestEntry
 {
-    static constexpr int CURRENT_VERSION{2};
+    static constexpr int CURRENT_VERSION{1};
     int nVersion{CURRENT_VERSION};
     int64_t id{0};
     QDateTime date;
@@ -44,8 +41,8 @@ struct QmlRecentRequestEntry
 
     SERIALIZE_METHODS(QmlRecentRequestEntry, obj)
     {
-        int64_t date_timet;
-        SER_WRITE(obj, date_timet = obj.date.toSecsSinceEpoch());
+        unsigned int date_timet;
+        SER_WRITE(obj, date_timet = static_cast<unsigned int>(obj.date.toSecsSinceEpoch()));
         READWRITE(obj.nVersion, obj.id, date_timet, obj.recipient);
         SER_READ(obj, obj.date = QDateTime::fromSecsSinceEpoch(date_timet));
     }

@@ -27,8 +27,15 @@ TestCase {
         testWalletModel.customFeeRate = ""
         testWalletModel.targetBlocks = 2
         testWalletModel.prepareTransactionResult = true
+        testWalletModel.sendAmountExhaustsBalance = false
+        testSendRecipient.address.setAddress("bcrt1qsendtoaddress")
+        testSendRecipient.amount.display = "0.00000000"
+        testSendRecipient.label = ""
         testSendRecipient.subtractFeeFromAmount = false
         testSendRecipient.isValid = true
+        testRecipientsModel.allValid = true
+        testRecipientsModel.validationError = ""
+        testCoinsListModel.reset()
     }
 
     function test_send_has_stable_selectors() {
@@ -57,11 +64,61 @@ TestCase {
         const continueButton = findChild(page, "sendReviewButton")
         verify(continueButton !== null)
 
-        testSendRecipient.isValid = false
+        testRecipientsModel.allValid = false
         tryCompare(continueButton, "enabled", false)
 
-        testSendRecipient.isValid = true
+        testRecipientsModel.allValid = true
         tryCompare(continueButton, "enabled", true)
+    }
+
+    function test_send_continue_button_requires_fee_buffer() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const continueButton = findChild(page, "sendReviewButton")
+        const prepareError = findChild(page, "sendPrepareTransactionError")
+        const prepareErrorText = findChild(page, "sendPrepareTransactionErrorText")
+        verify(continueButton !== null)
+        verify(prepareError !== null)
+        verify(prepareErrorText !== null)
+
+        testWalletModel.sendAmountExhaustsBalance = true
+
+        tryCompare(continueButton, "enabled", false)
+        tryCompare(page, "formErrorText", "Amount plus fee exceeds available balance")
+        compare(prepareErrorText.text, "Amount plus fee exceeds available balance")
+
+        testWalletModel.sendAmountExhaustsBalance = false
+
+        tryCompare(continueButton, "enabled", true)
+        tryCompare(page, "formErrorText", "")
+        compare(prepareErrorText.text, "")
+
+        testCoinsListModel.toggleCoinSelection(0)
+        testWalletModel.sendAmountExhaustsBalance = true
+
+        tryCompare(continueButton, "enabled", false)
+        tryCompare(page, "formErrorText", "Selected inputs do not cover the amount plus fee")
+        compare(prepareErrorText.text, "Selected inputs do not cover the amount plus fee")
+    }
+
+    function test_send_shows_recipient_validation_error() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const continueButton = findChild(page, "sendReviewButton")
+        const prepareError = findChild(page, "sendPrepareTransactionError")
+        const prepareErrorText = findChild(page, "sendPrepareTransactionErrorText")
+        verify(continueButton !== null)
+        verify(prepareError !== null)
+        verify(prepareErrorText !== null)
+
+        testRecipientsModel.allValid = false
+        testRecipientsModel.validationError = "Complete every recipient before continuing."
+
+        tryCompare(continueButton, "enabled", false)
+        tryCompare(page, "recipientValidationError", "Complete every recipient before continuing.")
+        tryCompare(prepareErrorText, "text", "Complete every recipient before continuing.")
     }
 
     function test_send_prepare_transaction_success_and_failure_paths() {
@@ -91,9 +148,17 @@ TestCase {
         compare(page.prepareTransactionErrorText, "Amount plus fee exceeds available balance")
         compare(prepareErrorText.text, "Amount plus fee exceeds available balance")
 
-        testWalletModel.prepareTransactionResult = true
+        page.prepareTransactionErrorText = ""
+        testCoinsListModel.toggleCoinSelection(0)
         continueButton.clicked()
         compare(testWalletModel.prepareTransactionCalls, callsBefore + 2)
+        compare(transactionPreparedSpy.count, 0)
+        compare(page.prepareTransactionErrorText, "Selected inputs do not cover the amount plus fee")
+        compare(prepareErrorText.text, "Selected inputs do not cover the amount plus fee")
+
+        testWalletModel.prepareTransactionResult = true
+        continueButton.clicked()
+        compare(testWalletModel.prepareTransactionCalls, callsBefore + 3)
         compare(transactionPreparedSpy.count, 1)
         compare(transactionPreparedSpy.signalArguments[0][0], false)
         compare(page.prepareTransactionErrorText, "")
@@ -129,10 +194,78 @@ TestCase {
         const amountInput = findChild(page, "sendAmountInput")
         verify(amountInput !== null)
 
+        amountInput.text = ""
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
         const callsBefore = testWalletModel.scheduleFeeEstimatesCalls
-        amountInput.text = "0.01000000"
+        keyClick("1")
 
         tryCompare(testWalletModel, "scheduleFeeEstimatesCalls", callsBefore + 1)
+        compare(amountInput.text, "1")
+        compare(testSendRecipient.amount.display, "1.00000000")
+    }
+
+    function test_send_amount_allows_editing_whole_part_before_decimal() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const amountInput = findChild(page, "sendAmountInput")
+        verify(amountInput !== null)
+
+        amountInput.text = "0.00000000"
+        amountInput.cursorPosition = 1
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick("1")
+
+        compare(amountInput.text, "01.00000000")
+        compare(testSendRecipient.amount.display, "1.00000000")
+
+        amountInput.focus = false
+        wait(0)
+        compare(amountInput.activeFocus, false)
+        compare(amountInput.text, "1.00000000")
+    }
+
+    function test_send_amount_rejects_extra_decimal_digits_while_editing() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const amountInput = findChild(page, "sendAmountInput")
+        verify(amountInput !== null)
+
+        testSendRecipient.amount.display = "0.12345678"
+        tryCompare(amountInput, "text", "0.12345678")
+        amountInput.cursorPosition = amountInput.text.length
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick("9")
+
+        compare(amountInput.text, "0.12345678")
+        compare(testSendRecipient.amount.display, "0.12345678")
+
+        amountInput.focus = false
+        wait(0)
+        compare(amountInput.activeFocus, false)
+        compare(amountInput.text, "0.12345678")
+    }
+
+    function test_send_amount_rejects_extra_decimal_points_while_editing() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const amountInput = findChild(page, "sendAmountInput")
+        verify(amountInput !== null)
+
+        testSendRecipient.amount.display = "1.20000000"
+        amountInput.text = "1.2"
+        amountInput.cursorPosition = amountInput.text.length
+        amountInput.forceActiveFocus()
+        verify(amountInput.activeFocus)
+        keyClick(".")
+
+        compare(amountInput.text, "1.2")
+        compare(testSendRecipient.amount.display, "1.20000000")
     }
 
     function test_send_shows_selected_estimated_fee() {
@@ -236,5 +369,29 @@ TestCase {
         compare(testSendRecipient.subtractFeeFromAmount, true)
         tryCompare(testWalletModel, "scheduleFeeEstimatesCalls", callsBefore + 1)
         compare(popup.visible, false)
+    }
+
+    function test_send_uri_import_schedules_fee_estimate() {
+        const page = createTemporaryObject(sendComponent, this)
+        verify(page !== null)
+
+        const sendPage = findChild(page, "walletSendPage")
+        verify(sendPage !== null)
+
+        const callsBefore = testWalletModel.scheduleFeeEstimatesCalls
+        sendPage.applyPaymentRequestFromText(
+            "bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.02000000&label=uri-label",
+            "clipboard"
+        )
+
+        // The mocked amount input still emits one schedule request when the
+        // imported amount updates the bound field. The explicit URI-import
+        // refresh added in Send.qml should contribute one more call.
+        tryCompare(testWalletModel, "scheduleFeeEstimatesCalls", callsBefore + 2)
+        compare(testSendRecipient.address.address, "bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9")
+        compare(testSendRecipient.amount.display, "0.02000000")
+        compare(testSendRecipient.label, "uri-label")
+        compare(sendPage.paymentRequestStatus, "Payment request imported from clipboard.")
+        compare(sendPage.paymentRequestIsError, false)
     }
 }

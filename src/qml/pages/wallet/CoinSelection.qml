@@ -13,6 +13,7 @@ import "../../components"
 
 Page {
     id: root
+    objectName: "coinSelectionPage"
 
     property WalletQmlModel wallet: walletController.selectedWallet
 
@@ -25,6 +26,7 @@ Page {
             header: qsTr("Coin Selection")
         }
         rightItem: NavButton {
+            objectName: "coinSelectionDoneButton"
             text: qsTr("Done")
             onClicked: root.done()
         }
@@ -55,6 +57,7 @@ Page {
                 text: qsTr("Total selected")
             }
             CoreText {
+                objectName: "coinSelectionTotalSelectedText"
                 Layout.alignment: Qt.AlignRight
                 color: Theme.color.neutral9
                 font.pixelSize: 18
@@ -99,12 +102,14 @@ Page {
 
         ListView {
             id: listView
+            objectName: "coinSelectionListView"
             width: parent.width
             model: root.wallet.coinsListModel
             spacing: 15
 
             delegate: ItemDelegate {
                 id: delegate
+                objectName: "coinSelectionItem_" + index
                 required property string address;
                 required property string amount;
                 required property string label;
@@ -139,10 +144,16 @@ Page {
                     width: parent.width
                     CoreCheckBox {
                         id: checkBox
+                        objectName: "coinSelectionCheckbox"
                         Layout.minimumWidth: 20
                         enabled: !locked
                         checked: selected
                         visible: !locked
+                        function click() {
+                            if (!locked) {
+                                listView.model.toggleCoinSelection(index)
+                            }
+                        }
                         MouseArea {
                             anchors.fill: parent
                             enabled: false

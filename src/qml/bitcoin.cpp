@@ -33,6 +33,7 @@
 #include <qml/models/addresslistmodel.h>
 #include <qml/models/banlistmodel.h>
 #include <qml/models/bitcoinaddress.h>
+#include <qml/models/bitcoinurimodel.h>
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/debuglogmodel.h>
@@ -344,16 +345,26 @@ int QmlGuiMain(int argc, char* argv[])
     std::unique_ptr<WalletQmlController> wallet_controller;
     if (wallet_enabled) {
         wallet_controller = std::make_unique<WalletQmlController>(*node);
-        QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, wallet_controller.get(), &WalletQmlController::initialize);
+        QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, wallet_controller.get(), [wallet_controller = wallet_controller.get()](bool success) {
+            if (success) {
+                wallet_controller->initialize();
+            }
+        });
     }
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
+    bool shutdown_requested{false};
     QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
+        if (shutdown_requested) {
+            return;
+        }
+        shutdown_requested = true;
 #ifdef ENABLE_WALLET
         if (wallet_controller) {
             wallet_controller->unloadWallets();
         }
 #endif
+        node->startShutdown();
         init_executor.shutdown();
     });
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
@@ -376,12 +387,7 @@ int QmlGuiMain(int argc, char* argv[])
 
     qGuiApp->setQuitOnLastWindowClosed(false);
     QObject::connect(qGuiApp, &QGuiApplication::lastWindowClosed, [&] {
-#ifdef ENABLE_WALLET
-        if (wallet_controller) {
-            wallet_controller->unloadWallets();
-        }
-#endif
-        node->startShutdown();
+        node_model.requestShutdown();
     });
 
     PeerListModel peer_model{*node, nullptr};
@@ -450,6 +456,11 @@ int QmlGuiMain(int argc, char* argv[])
     OptionsQmlModel options_model(*node, !need_onboarding.toBool());
     engine.rootContext()->setContextProperty("optionsModel", &options_model);
     engine.rootContext()->setContextProperty("needOnboarding", need_onboarding);
+#ifdef ENABLE_TEST_AUTOMATION
+    engine.rootContext()->setContextProperty("testAutomationEnabled", true);
+#else
+    engine.rootContext()->setContextProperty("testAutomationEnabled", false);
+#endif
 
     // -lang CLI flag overrides the persisted setting (bitcoin-qt compatibility).
     // Must be after gArgs.ParseParameters() and after setupChainQSettings() so
@@ -474,10 +485,12 @@ int QmlGuiMain(int argc, char* argv[])
 
     BuildInfo build_info;
     Clipboard clipboard;
+    BitcoinUriModel bitcoin_uri_model;
 
     qmlRegisterSingletonInstance<AppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
     qmlRegisterSingletonInstance<BuildInfo>("org.bitcoincore.qt", 1, 0, "BuildInfo", &build_info);
     qmlRegisterSingletonInstance<Clipboard>("org.bitcoincore.qt", 1, 0, "Clipboard", &clipboard);
+    qmlRegisterSingletonInstance<BitcoinUriModel>("org.bitcoincore.qt", 1, 0, "BitcoinUri", &bitcoin_uri_model);
     qmlRegisterType<BlockClockDial>("org.bitcoincore.qt", 1, 0, "BlockClockDial");
     qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
     qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");

@@ -100,6 +100,23 @@ void CoinsListModel::toggleCoinSelection(const int index)
         m_wallet_model->selectCoin(outpoint);
         m_total_amount += coin.txout.nValue;
     }
+    const QModelIndex model_index = this->index(index, 0);
+    Q_EMIT dataChanged(model_index, model_index, {SelectedRole});
+    Q_EMIT selectedCoinsCountChanged();
+}
+
+void CoinsListModel::refreshSelection()
+{
+    CAmount total_amount{0};
+    for (const auto& [destination, outpoint, coin] : m_coins) {
+        if (m_wallet_model->isSelectedCoin(outpoint)) {
+            total_amount += coin.txout.nValue;
+        }
+    }
+    m_total_amount = total_amount;
+    if (!m_coins.empty()) {
+        Q_EMIT dataChanged(index(0, 0), index(static_cast<int>(m_coins.size()) - 1, 0), {SelectedRole});
+    }
     Q_EMIT selectedCoinsCountChanged();
 }
 

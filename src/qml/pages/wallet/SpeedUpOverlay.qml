@@ -158,13 +158,45 @@ Popup {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 enabled: root.readyToConfirm
-                //FIXME: Unlock wallet before confirming (PR #548)
                 onClicked: {
-                    if (root.bumpModel) {
-                        root.bumpModel.confirmFeeBump()
+                    if (!root.bumpModel) {
+                        return
+                    }
+                    if (!root.bumpModel.confirmFeeBump() && root.bumpModel.needsUnlock) {
+                        speedUpPassphrasePopup.busy = false
+                        speedUpPassphrasePopup.errorText = ""
+                        speedUpPassphrasePopup.open()
                     }
                 }
             }
+        }
+    }
+
+    WalletPassphrasePopup {
+        id: speedUpPassphrasePopup
+        parent: Overlay.overlay
+        width: Math.min(420, root.width - 40)
+        popupObjectName: "speedUpPassphrasePopup"
+        passphraseFieldObjectName: "speedUpPassphraseField"
+        errorTextObjectName: "speedUpPassphraseErrorText"
+        cancelButtonObjectName: "speedUpPassphraseCancelButton"
+        confirmButtonObjectName: "speedUpPassphraseConfirmButton"
+        titleText: qsTr("Enter wallet password")
+        descriptionText: qsTr("Enter your wallet password to update this transaction.")
+        confirmText: qsTr("Unlock and update")
+        busyConfirmText: qsTr("Unlocking...")
+        onSubmitted: (passphrase) => {
+            if (!root.bumpModel) {
+                return
+            }
+            speedUpPassphrasePopup.busy = true
+            if (root.bumpModel.confirmFeeBumpWithPassphrase(passphrase)) {
+                speedUpPassphrasePopup.busy = false
+                speedUpPassphrasePopup.close()
+                return
+            }
+            speedUpPassphrasePopup.busy = false
+            speedUpPassphrasePopup.errorText = root.bumpModel.errorText
         }
     }
 

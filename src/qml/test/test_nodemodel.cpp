@@ -21,6 +21,7 @@
 #include <atomic>
 #include <functional>
 #include <map>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -140,6 +141,10 @@ private Q_SLOTS:
     void banPeerRejectsInvalidInputs();
     void banPeerReturnsFalseWithoutDisconnectWhenBackendFails();
     void banPeerDisconnectsAddressAfterSuccessfulBan();
+    void requestShutdownEmitsOnlyOnce();
+    void initializationFailureRequestsShutdownWhenCoreWasInterrupted();
+    void initializationFailureWithoutCoreInterruptOnlySetsErrorState();
+    void destructorUnsubscribesCoreSignalsBeforeStoppingPolling();
     void nodeNotificationHandlersUpdateModelThroughQueuedSignals();
     void blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues();
     void blockSyncActiveFollowsInitializationAndBlockTipState();
@@ -344,6 +349,131 @@ void NodeModelTests::banPeerDisconnectsAddressAfterSuccessfulBan()
     EXPECT_CALL(node, disconnectByAddress(Truly(is_loopback))).Times(1).WillOnce(Return(true));
 
     QVERIFY(model.banPeer(QStringLiteral("127.0.0.1"), 3600));
+}
+
+void NodeModelTests::requestShutdownEmitsOnlyOnce()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
+    model.requestShutdown();
+    model.requestShutdown();
+
+    QCOMPARE(shutdown_spy.count(), 1);
+}
+
+void NodeModelTests::initializationFailureRequestsShutdownWhenCoreWasInterrupted()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, shutdownRequested()).WillByDefault(Return(true));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    QSignalSpy error_state_spy{&model, &NodeModel::errorStateChanged};
+    QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
+    QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
+    model.initializeResult(false, {});
+
+    QCOMPARE(error_state_spy.count(), 1);
+    QVERIFY(model.errorState());
+    QCOMPARE(shutdown_spy.count(), 1);
+    QCOMPARE(initialized_spy.count(), 1);
+}
+
+void NodeModelTests::initializationFailureWithoutCoreInterruptOnlySetsErrorState()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, shutdownRequested()).WillByDefault(Return(false));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    QSignalSpy error_state_spy{&model, &NodeModel::errorStateChanged};
+    QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
+    QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
+    model.initializeResult(false, {});
+
+    QCOMPARE(error_state_spy.count(), 1);
+    QVERIFY(model.errorState());
+    QCOMPARE(shutdown_spy.count(), 0);
+    QCOMPARE(initialized_spy.count(), 1);
+}
+
+void NodeModelTests::destructorUnsubscribesCoreSignalsBeforeStoppingPolling()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    std::atomic<int> disconnected_handlers{0};
+    auto counted_handler = [&] {
+        return interfaces::MakeCleanupHandler([&] { ++disconnected_handlers; });
+    };
+
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, handleNotifyBlockTip(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyBlockTipFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleNotifyHeaderTip(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyHeaderTipFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleNotifyNumConnectionsChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyNumConnectionsChangedFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleNotifyNetworkActiveChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyNetworkActiveChangedFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleNotifyAlertChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::NotifyAlertChangedFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleMessageBox(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::MessageBoxFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleQuestion(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::QuestionFn) {
+            return counted_handler();
+        }));
+    ON_CALL(node, handleBannedListChanged(testing::_))
+        .WillByDefault(Invoke([&](interfaces::Node::BannedListChangedFn) {
+            return counted_handler();
+        }));
+
+    auto model{std::make_unique<NodeModel>(node)};
+    WaitForInitialMempoolRefresh(mempool);
+
+    const int refresh_calls = mempool.max_usage_calls.load();
+    model->setMempoolInfoPollingActive(true);
+    QTRY_VERIFY_WITH_TIMEOUT(mempool.max_usage_calls.load() > refresh_calls, ASYNC_TIMEOUT_MS);
+
+    bool checked_shutdown_order{false};
+    QObject::connect(model.get(), &NodeModel::mempoolInfoPollingActiveChanged, [&](bool active) {
+        if (!active) {
+            checked_shutdown_order = true;
+            QCOMPARE(disconnected_handlers.load(), 8);
+        }
+    });
+
+    model.reset();
+
+    QVERIFY(checked_shutdown_order);
+    QCOMPARE(disconnected_handlers.load(), 8);
 }
 
 void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()

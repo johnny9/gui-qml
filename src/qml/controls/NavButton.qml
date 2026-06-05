@@ -58,7 +58,6 @@ AbstractButton {
     }
     contentItem: RowLayout {
         spacing: 0
-        anchors.fill: parent
         Item {
             Layout.fillWidth: !text_background.active
         }

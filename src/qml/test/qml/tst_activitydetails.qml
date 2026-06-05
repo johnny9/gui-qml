@@ -38,6 +38,43 @@ TestCase {
         verify(banner !== null)
     }
 
+    function test_speedUpOverlay_prompts_for_password_when_bump_requires_unlock() {
+        testBumpModel.reset()
+        testBumpModel.requireUnlock = true
+
+        const page = createTemporaryObject(detailsComponent, this, {
+            txid: "bbbb",
+            canBump: true,
+            amount: "-0.00100000 BTC",
+            date: "2026-01-02",
+            depth: 0,
+            status: 0,
+            type: 3,
+            address: "bcrt1qsendaddress"
+        })
+        verify(page !== null)
+
+        const banner = findChild(page, "speedUpBanner")
+        verify(banner !== null)
+        const button = findChild(banner, "speedUpBannerPrimaryButton")
+        verify(button !== null)
+        banner.primaryClicked()
+
+        const overlay = findChild(page, "speedUpOverlay")
+        verify(overlay !== null)
+        tryCompare(overlay, "opened", true)
+
+        const updateButton = findChild(overlay, "updateTransactionButton")
+        verify(updateButton !== null)
+        tryCompare(updateButton, "enabled", true)
+        mouseClick(updateButton)
+
+        const popup = findChild(overlay, "speedUpPassphrasePopup")
+        verify(popup !== null)
+        tryCompare(popup, "opened", true)
+        compare(findChild(overlay, "speedUpPassphraseErrorText").text, "")
+    }
+
     function test_canBump_false_hides_speedUpBanner() {
         const page = createTemporaryObject(detailsComponent, this, {
             txid: "aaaa",

@@ -35,6 +35,40 @@ QmlRecentRequestEntry MakeEntry(int64_t id, const std::string& address, CAmount 
     entry.recipient.noteSelf = note_self;
     return entry;
 }
+
+struct QtWidgetsSendCoinsRecipient
+{
+    static constexpr int CURRENT_VERSION{1};
+    int nVersion{CURRENT_VERSION};
+    std::string address;
+    std::string label;
+    CAmount amount{0};
+    std::string message;
+    std::string sPaymentRequest;
+    std::string authenticatedMerchant;
+
+    SERIALIZE_METHODS(QtWidgetsSendCoinsRecipient, obj)
+    {
+        READWRITE(obj.nVersion, obj.address, obj.label, obj.amount, obj.message, obj.sPaymentRequest, obj.authenticatedMerchant);
+    }
+};
+
+struct QtWidgetsRecentRequestEntry
+{
+    static constexpr int CURRENT_VERSION{1};
+    int nVersion{CURRENT_VERSION};
+    int64_t id{0};
+    QDateTime date;
+    QtWidgetsSendCoinsRecipient recipient;
+
+    SERIALIZE_METHODS(QtWidgetsRecentRequestEntry, obj)
+    {
+        unsigned int date_timet;
+        SER_WRITE(obj, date_timet = static_cast<unsigned int>(obj.date.toSecsSinceEpoch()));
+        READWRITE(obj.nVersion, obj.id, date_timet, obj.recipient);
+        SER_READ(obj, obj.date = QDateTime::fromSecsSinceEpoch(date_timet));
+    }
+};
 } // namespace
 
 class ReceiveRequestHistoryModelTests : public QObject
@@ -48,7 +82,9 @@ private Q_SLOTS:
     void buildUriWithAmountLabelMessage();
     void buildUriPreservesBech32Case();
     void buildUriUrlEncodesParams();
-    void serializeRoundTripV2();
+    void serializeRoundTripWithQmlExtension();
+    void serializeBaseEntryMatchesQtWidgetsFormat();
+    void serializeQmlExtensionDoesNotBreakQtWidgetsFormat();
     void deserializeSkipsMalformed();
     void modelRolesMatchEntry();
     void prependInsertsNewRow();
@@ -58,7 +94,7 @@ private Q_SLOTS:
     void maxIdReturnsHighest();
     void deserializeTruncatedBlob();
     void formatAmountBtcEdgeCases();
-    void deserializeV1RecipientBlob();
+    void deserializeQtWidgetsRecipientBlob();
 };
 
 void ReceiveRequestHistoryModelTests::initTestCase()
@@ -101,7 +137,7 @@ void ReceiveRequestHistoryModelTests::buildUriUrlEncodesParams()
     QVERIFY(uri.contains("message=hi%3Dhello%3Fx"));
 }
 
-void ReceiveRequestHistoryModelTests::serializeRoundTripV2()
+void ReceiveRequestHistoryModelTests::serializeRoundTripWithQmlExtension()
 {
     const auto entry_in = MakeEntry(7, "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", 50000, "Alice", "lunch", "personal note");
     const std::string blob = ReceiveRequestHistoryModel::SerializeEntry(entry_in);
@@ -115,6 +151,55 @@ void ReceiveRequestHistoryModelTests::serializeRoundTripV2()
     QCOMPARE(out.recipient.message, std::string{"lunch"});
     QCOMPARE(out.recipient.noteSelf, std::string{"personal note"});
     QCOMPARE(out.date.toSecsSinceEpoch(), entry_in.date.toSecsSinceEpoch());
+}
+
+void ReceiveRequestHistoryModelTests::serializeBaseEntryMatchesQtWidgetsFormat()
+{
+    const auto entry_in = MakeEntry(8, "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", 75000, "Alice", "lunch");
+    const std::string blob = ReceiveRequestHistoryModel::SerializeEntry(entry_in);
+
+    // The base record is the shared Qt Widgets contract and must not contain
+    // QML-only fields.
+    std::vector<uint8_t> data(blob.begin(), blob.end());
+    DataStream ss{data};
+    QtWidgetsRecentRequestEntry out;
+    ss >> out;
+
+    QVERIFY(ss.empty());
+    QCOMPARE(out.nVersion, QtWidgetsRecentRequestEntry::CURRENT_VERSION);
+    QCOMPARE(out.id, int64_t{8});
+    QCOMPARE(out.date.toSecsSinceEpoch(), entry_in.date.toSecsSinceEpoch());
+    QCOMPARE(out.recipient.nVersion, QtWidgetsSendCoinsRecipient::CURRENT_VERSION);
+    QCOMPARE(out.recipient.address, std::string{"1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"});
+    QCOMPARE(out.recipient.amount, CAmount{75000});
+    QCOMPARE(out.recipient.label, std::string{"Alice"});
+    QCOMPARE(out.recipient.message, std::string{"lunch"});
+}
+
+void ReceiveRequestHistoryModelTests::serializeQmlExtensionDoesNotBreakQtWidgetsFormat()
+{
+    const auto entry_in = MakeEntry(9, "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", 80000, "Alice", "lunch", "personal note");
+    const std::string blob = ReceiveRequestHistoryModel::SerializeEntry(entry_in);
+
+    // noteSelf is a QML-owned extension after the Qt Widgets prefix. Qt Widgets
+    // readers should be able to deserialize the prefix without consuming it.
+    std::vector<uint8_t> data(blob.begin(), blob.end());
+    DataStream ss{data};
+    QtWidgetsRecentRequestEntry out;
+    ss >> out;
+
+    QCOMPARE(out.id, int64_t{9});
+    QCOMPARE(out.date.toSecsSinceEpoch(), entry_in.date.toSecsSinceEpoch());
+    QCOMPARE(out.recipient.address, std::string{"1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"});
+    QCOMPARE(out.recipient.amount, CAmount{80000});
+    QCOMPARE(out.recipient.label, std::string{"Alice"});
+    QCOMPARE(out.recipient.message, std::string{"lunch"});
+    QVERIFY(!ss.empty());
+
+    std::string note_self;
+    ss >> note_self;
+    QCOMPARE(note_self, std::string{"personal note"});
+    QVERIFY(ss.empty());
 }
 
 void ReceiveRequestHistoryModelTests::deserializeSkipsMalformed()
@@ -240,12 +325,11 @@ void ReceiveRequestHistoryModelTests::formatAmountBtcEdgeCases()
     QCOMPARE(ReceiveRequestHistoryModel::FormatAmountBtc(100000000), QStringLiteral("1.00000000"));
 }
 
-void ReceiveRequestHistoryModelTests::deserializeV1RecipientBlob()
+void ReceiveRequestHistoryModelTests::deserializeQtWidgetsRecipientBlob()
 {
-    QmlRecentRequestEntry entry;
+    QtWidgetsRecentRequestEntry entry;
     entry.id = 5;
     entry.date = QDateTime::fromSecsSinceEpoch(1'700'000'005);
-    entry.recipient.nVersion = 1;
     entry.recipient.address = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2";
     entry.recipient.amount = 25000;
     entry.recipient.label = "v1label";

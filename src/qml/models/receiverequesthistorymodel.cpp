@@ -181,6 +181,16 @@ int64_t ReceiveRequestHistoryModel::maxId() const
     return max_id;
 }
 
+// Wallet receive requests are stored in address destdata "rr##" values that
+// bitcoin-qt reads as Qt Widgets RecentRequestEntry records. Keep the serialized
+// prefix byte-compatible with bitcoin/src/qt/recentrequeststablemodel.h and
+// bitcoin/src/qt/sendcoinsrecipient.h: version 1, Qt's unsigned timestamp, and
+// no QML-only fields inside the prefix.
+//
+// QML currently persists noteSelf as an optional trailing string. Released
+// bitcoin-qt builds ignore trailing bytes after RecentRequestEntry, while QML
+// reads the extension when present. If Qt Widgets gains noteSelf support, move
+// this to an explicit shared contract instead of changing the prefix ad hoc.
 std::vector<QmlRecentRequestEntry> ReceiveRequestHistoryModel::DeserializeEntries(const std::vector<std::string>& blobs)
 {
     std::vector<QmlRecentRequestEntry> out;
@@ -191,6 +201,9 @@ std::vector<QmlRecentRequestEntry> ReceiveRequestHistoryModel::DeserializeEntrie
         QmlRecentRequestEntry entry;
         try {
             ss >> entry;
+            if (!ss.empty()) {
+                ss >> entry.recipient.noteSelf;
+            }
         } catch (const std::ios_base::failure& e) {
             qWarning() << "ReceiveRequestHistoryModel: skipping malformed receive request entry:" << e.what();
             continue;
@@ -207,6 +220,9 @@ std::string ReceiveRequestHistoryModel::SerializeEntry(const QmlRecentRequestEnt
 {
     DataStream ss{};
     ss << entry;
+    if (!entry.recipient.noteSelf.empty()) {
+        ss << entry.recipient.noteSelf;
+    }
     return ss.str();
 }
 

@@ -116,6 +116,7 @@ NodeModel::NodeModel(interfaces::Node& node)
 
 NodeModel::~NodeModel()
 {
+    unsubscribeFromCoreSignals();
     setMempoolInfoPollingActive(false);
     if (m_mempool_info_thread) {
         m_mempool_info_thread->quit();
@@ -417,6 +418,11 @@ void NodeModel::startNodeInitializionThread()
 
 void NodeModel::requestShutdown()
 {
+    if (m_shutdown_requested) {
+        return;
+    }
+    m_shutdown_requested = true;
+    stopShutdownPolling();
     Q_EMIT requestedShutdown();
 }
 
@@ -424,7 +430,7 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
 {
     if (!success) {
         if (m_startup_failure_dialog_shown) {
-            Q_EMIT requestedShutdown();
+            requestShutdown();
             Q_EMIT nodeInitialized();
             return;
         }
@@ -436,6 +442,9 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
         }
         m_startup_warning_messages.clear();
         setStartupError(startup_error);
+        if (m_node.shutdownRequested()) {
+            requestShutdown();
+        }
     } else {
         m_startup_error_messages.clear();
         m_node_ready = true;
@@ -460,20 +469,28 @@ void NodeModel::handleRunawayException(const QString& message)
 
 void NodeModel::startShutdownPolling()
 {
+    if (m_shutdown_polling_timer_id != 0) {
+        return;
+    }
     m_shutdown_polling_timer_id = startTimer(200ms);
 }
 
 void NodeModel::stopShutdownPolling()
 {
+    if (m_shutdown_polling_timer_id == 0) {
+        return;
+    }
     killTimer(m_shutdown_polling_timer_id);
+    m_shutdown_polling_timer_id = 0;
 }
 
 void NodeModel::timerEvent(QTimerEvent* event)
 {
-    Q_UNUSED(event)
+    if (event->timerId() != m_shutdown_polling_timer_id) {
+        return;
+    }
     if (m_node.shutdownRequested()) {
-        stopShutdownPolling();
-        Q_EMIT requestedShutdown();
+        requestShutdown();
     }
 }
 
@@ -784,4 +801,32 @@ void NodeModel::ConnectToBannedListChangedSignal()
             Q_EMIT bannedListChanged();
         });
     });
+}
+
+void NodeModel::unsubscribeFromCoreSignals()
+{
+    if (m_handler_notify_block_tip) {
+        m_handler_notify_block_tip->disconnect();
+    }
+    if (m_handler_notify_header_tip) {
+        m_handler_notify_header_tip->disconnect();
+    }
+    if (m_handler_notify_num_peers_changed) {
+        m_handler_notify_num_peers_changed->disconnect();
+    }
+    if (m_handler_notify_network_active_changed) {
+        m_handler_notify_network_active_changed->disconnect();
+    }
+    if (m_handler_notify_alert_changed) {
+        m_handler_notify_alert_changed->disconnect();
+    }
+    if (m_handler_message_box) {
+        m_handler_message_box->disconnect();
+    }
+    if (m_handler_question) {
+        m_handler_question->disconnect();
+    }
+    if (m_handler_notify_banned_list_changed) {
+        m_handler_notify_banned_list_changed->disconnect();
+    }
 }

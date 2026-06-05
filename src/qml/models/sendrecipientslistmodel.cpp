@@ -5,7 +5,10 @@
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/walletqmlmodel.h>
 
+#include <key_io.h>
 #include <qml/models/sendrecipient.h>
+
+#include <set>
 
 SendRecipientsListModel::SendRecipientsListModel(QObject* parent)
     : QAbstractListModel(parent)
@@ -68,6 +71,7 @@ void SendRecipientsListModel::add()
 
     endInsertRows();
     Q_EMIT countChanged();
+    Q_EMIT validationChanged();
     setCurrentIndex(row);
 }
 
@@ -111,7 +115,9 @@ void SendRecipientsListModel::remove()
         delete removed_recipient;
     }
     endRemoveRows();
+    updateTotalAmount();
     Q_EMIT countChanged();
+    Q_EMIT validationChanged();
 }
 
 SendRecipient* SendRecipientsListModel::currentRecipient() const
@@ -152,6 +158,9 @@ void SendRecipientsListModel::connectRecipientSignals(SendRecipient* recipient)
     connect(recipient->amount(), &BitcoinAmount::unitChanged, this, [emit_roles_changed] {
         emit_roles_changed({AmountRole, AmountUnitLabelRole});
     });
+    connect(recipient, &SendRecipient::subtractFeeFromAmountChanged,
+            this, &SendRecipientsListModel::subtractFeeFromAmountChanged);
+    connect(recipient, &SendRecipient::isValidChanged, this, &SendRecipientsListModel::validationChanged);
 }
 
 int SendRecipientsListModel::recipientRow(const SendRecipient* recipient) const
@@ -195,6 +204,10 @@ void SendRecipientsListModel::clear()
     Q_EMIT totalAmountChanged();
     Q_EMIT currentRecipientChanged();
     Q_EMIT currentIndexChanged();
+    Q_EMIT validationChanged();
+    if (m_wallet) {
+        m_wallet->clearSelectedCoins();
+    }
     Q_EMIT listCleared();
 }
 
@@ -215,10 +228,53 @@ void SendRecipientsListModel::clearToFront()
 
     if (count_changed) {
         Q_EMIT countChanged();
+        Q_EMIT validationChanged();
     }
 
     if (m_totalAmount != m_recipients[0]->amount()->satoshi()) {
         m_totalAmount = m_recipients[0]->amount()->satoshi();
         Q_EMIT totalAmountChanged();
     }
+}
+
+bool SendRecipientsListModel::allValid() const
+{
+    if (m_recipients.empty()) {
+        return false;
+    }
+
+    std::set<CTxDestination> destinations;
+    for (const auto* recipient : m_recipients) {
+        if (recipient == nullptr || !recipient->isValid()) {
+            return false;
+        }
+
+        const CTxDestination destination{DecodeDestination(recipient->address()->address().toStdString())};
+        if (!destinations.insert(destination).second) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+QString SendRecipientsListModel::validationError() const
+{
+    if (m_recipients.empty()) {
+        return tr("Enter at least one valid recipient to continue.");
+    }
+
+    std::set<CTxDestination> destinations;
+    for (const auto* recipient : m_recipients) {
+        if (recipient == nullptr || !recipient->isValid()) {
+            return m_recipients.size() > 1 ? tr("Complete every recipient before continuing.") : QString{};
+        }
+
+        const CTxDestination destination{DecodeDestination(recipient->address()->address().toStdString())};
+        if (!destinations.insert(destination).second) {
+            return tr("Recipient addresses must be unique.");
+        }
+    }
+
+    return {};
 }

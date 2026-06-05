@@ -180,6 +180,55 @@ def wait_for_single_mempool_tx(port):
     return txids[0]
 
 
+def assert_no_fee_preview_label(port, wallet_name):
+    labels = rpc_call(port, "listlabels", wallet=wallet_name)
+    assert "qml-fee-preview" not in labels, f"Fee preview created address book label: {labels!r}"
+
+
+def assert_receiver_output(port, txid, receiver_address, expected_sats):
+    raw_tx = rpc_call(port, "getrawtransaction", [txid, True])
+    matched_outputs = [
+        vout for vout in raw_tx["vout"]
+        if vout.get("scriptPubKey", {}).get("address") == receiver_address
+    ]
+    assert len(matched_outputs) == 1, (
+        f"Expected one output to {receiver_address}, got {matched_outputs!r} "
+        f"in decoded transaction {raw_tx!r}"
+    )
+    output_sats = int(
+        (Decimal(str(matched_outputs[0]["value"])) * Decimal("100000000")).to_integral_value()
+    )
+    assert output_sats == expected_sats, (
+        f"Expected receiver output {expected_sats} sats, got {output_sats} sats "
+        f"in transaction {txid}"
+    )
+
+
+def enable_coin_control_and_select_first_coin(gui, checkpoints):
+    gui.click("sendOptionsButton")
+    gui.wait_for_property("sendOptionsPopup", "opened", True, timeout_ms=5000)
+    if not gui.get_property("sendOptionsCoinControlToggle", "checked"):
+        gui.click("sendOptionsCoinControlToggle")
+        gui.wait_for_property("sendOptionsCoinControlToggle", "checked", True, timeout_ms=5000)
+    gui.click("sendOptionsButton")
+    gui.wait_for_property("sendOptionsPopup", "opened", False, timeout_ms=5000)
+    gui.wait_for_property("sendCoinControlButtonText", "text", "Select", timeout_ms=10000)
+
+    gui.click("sendCoinControlButton")
+    gui.wait_for_page("coinSelectionPage", timeout_ms=10000)
+    gui.click_list_item("coinSelectionListView", 0, "coinSelectionCheckbox")
+    gui.wait_for_property(
+        "coinSelectionTotalSelectedText",
+        "text",
+        lambda text: text != "0.00000000",
+        timeout_ms=10000,
+    )
+    checkpoints.checkpoint("one input selected", gui)
+    gui.click("coinSelectionDoneButton")
+    gui.wait_for_page("sendPage", timeout_ms=10000)
+    gui.wait_for_property("sendCoinControlButtonText", "text", "1 input selected", timeout_ms=10000)
+
+
 def run_test(*, save_screenshots=False, screenshot_root=None):
     harness = WalletFlowHarness("qml_test_send_receive", port_offset=60)
     checkpoints = CheckpointRecorder(save_screenshots, screenshot_root)
@@ -223,11 +272,13 @@ def run_test(*, save_screenshots=False, screenshot_root=None):
         gui.click("sendTabButton")
         gui.wait_for_page("sendPage", timeout_ms=10000)
         checkpoints.checkpoint("send page opened", gui)
+        enable_coin_control_and_select_first_coin(gui, checkpoints)
 
         gui.set_text("sendAddressInput", receiver_address)
         gui.set_text("sendAmountInput", SEND_AMOUNT)
         gui.wait_for_property("sendReviewButton", "enabled", True, timeout_ms=20000)
         checkpoints.checkpoint("send form populated", gui)
+        assert_no_fee_preview_label(harness.gui_rpc_port, GUI_WALLET_NAME)
 
         gui.wait_for_property("feeSelectionControl", "selectedLabel", DEFAULT_FEE_LABEL, timeout_ms=5000)
         gui.wait_for_property("feeSelectionControl", "selectedDuration", DEFAULT_FEE_DURATION, timeout_ms=5000)
@@ -285,7 +336,7 @@ def run_test(*, save_screenshots=False, screenshot_root=None):
         gui.wait_for_property("feeSelectionPopup", "opened", False, timeout_ms=5000)
         gui.wait_for_property("feeSelectionControl", "selectedIndex", LOW_FEE_OPTION_INDEX, timeout_ms=5000)
 
-        estimated_fee_with_subtract_text = gui.get_text("feeSelectionEstimateLabel")
+        estimated_fee_with_subtract_text = wait_for_non_empty_text(gui, "feeSelectionEstimateLabel")
         estimated_fee_with_subtract_sats = btc_text_to_sats(estimated_fee_with_subtract_text)
         assert estimated_fee_with_subtract_sats > 0, (
             f"Expected a positive estimated fee with subtract-fee enabled, got "
@@ -316,11 +367,21 @@ def run_test(*, save_screenshots=False, screenshot_root=None):
             f"Broadcast fee {rpc_fee_sats} sats did not match preview estimate "
             f"{estimated_fee_with_subtract_sats} sats"
         )
+        assert_receiver_output(
+            harness.gui_rpc_port,
+            txid,
+            receiver_address,
+            SEND_AMOUNT_SATS - estimated_fee_with_subtract_sats,
+        )
         checkpoints.checkpoint("broadcast fee verified", gui)
 
         gui.wait_for_page("sendResultPopup", timeout_ms=10000)
         gui.click("sendResultDoneButton")
         gui.wait_for_property("activityTabButton", "visible", True, timeout_ms=10000)
+        gui.click("sendTabButton")
+        gui.wait_for_page("sendPage", timeout_ms=10000)
+        gui.wait_for_property("sendCoinControlButtonText", "text", "Select", timeout_ms=10000)
+        checkpoints.checkpoint("coin control selection cleared after send", gui)
         gui.click("activityTabButton")
         gui.wait_for_property("activitySearchToggle", "visible", True, timeout_ms=10000)
         gui.click("activitySearchToggle")

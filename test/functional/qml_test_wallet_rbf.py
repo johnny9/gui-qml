@@ -15,6 +15,7 @@ from qml_wallet_test_lib import WalletFlowHarness, rpc_call
 GUI_WALLET_NAME = "rbf_wallet"
 RECEIVER_WALLET_NAME = "rbf_receiver"
 SEND_AMOUNT = "1.00000000"
+WALLET_PASSWORD = "correct horse battery staple"
 
 
 def wait_until(predicate, *, timeout=20, interval=0.25, description="condition"):
@@ -38,6 +39,11 @@ def wait_for_wallet_balance(port, wallet_name, *, minimum_balance):
         return balance >= minimum_balance
 
     wait_until(has_balance, timeout=30, description=f"{wallet_name} balance >= {minimum_balance}")
+
+
+def assert_wallet_locked(port, wallet_name):
+    info = rpc_call(port, "getwalletinfo", wallet=wallet_name)
+    assert info["unlocked_until"] == 0, f"Expected locked wallet, got getwalletinfo={info}"
 
 
 def wait_for_mempool_change(port, *, exclude_txid, timeout=20):
@@ -148,7 +154,7 @@ def run_test():
         gui.wait_for_property("walletBadge", "loading", False, timeout_ms=30000)
         gui.wait_for_property("walletBadge", "visible", True, timeout_ms=10000)
 
-        rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": GUI_WALLET_NAME})
+        rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": GUI_WALLET_NAME, "passphrase": WALLET_PASSWORD})
         gui.wait_for_property("walletBadge", "text", GUI_WALLET_NAME, timeout_ms=20000)
         gui.wait_for_property("walletBadge", "noWalletLoaded", False, timeout_ms=10000)
 
@@ -158,12 +164,14 @@ def run_test():
         wait_for_wallet_balance(harness.gui_rpc_port, GUI_WALLET_NAME, minimum_balance=Decimal("50"))
 
         print("[rbf] sending initial transaction")
+        rpc_call(harness.gui_rpc_port, "walletpassphrase", [WALLET_PASSWORD, 60], wallet=GUI_WALLET_NAME)
         txid = rpc_call(
             harness.gui_rpc_port,
             "sendtoaddress",
             [receiver_address, SEND_AMOUNT],
             wallet=GUI_WALLET_NAME,
         )
+        rpc_call(harness.gui_rpc_port, "walletlock", wallet=GUI_WALLET_NAME)
         print(f"[rbf] sent txid: {txid}")
         wait_for_wallet_tx(harness.gui_rpc_port, GUI_WALLET_NAME, txid)
 
@@ -198,11 +206,26 @@ def run_test():
 
         print("[rbf] confirming bump")
         gui.click("updateTransactionButton")
+        gui.wait_for_property("speedUpPassphrasePopup", "opened", True, timeout_ms=10000)
+        gui.wait_for_property("speedUpPassphraseErrorText", "text", "", timeout_ms=10000)
+        gui.set_text("speedUpPassphraseField", "wrong password")
+        gui.click("speedUpPassphraseConfirmButton")
+        gui.wait_for_property(
+            "speedUpPassphraseErrorText",
+            "text",
+            "The wallet password you entered was incorrect.",
+            timeout_ms=10000,
+        )
+        assert_wallet_locked(harness.gui_rpc_port, GUI_WALLET_NAME)
+        gui.set_text("speedUpPassphraseField", WALLET_PASSWORD)
+        gui.click("speedUpPassphraseConfirmButton")
+        gui.wait_for_property("speedUpPassphrasePopup", "opened", False, timeout_ms=10000)
         gui.settle()
 
         print("[rbf] waiting for replacement tx")
         new_txid = wait_for_mempool_change(harness.gui_rpc_port, exclude_txid=txid)
         assert new_txid != txid, f"Expected different txid, got same: {txid}"
+        assert_wallet_locked(harness.gui_rpc_port, GUI_WALLET_NAME)
         print(f"[rbf] replacement txid: {new_txid}")
 
         print("[rbf] verifying original tx conflict state")
@@ -223,6 +246,7 @@ def run_test():
         )
 
         print("[rbf] verifying confirmed tx is not bumpable")
+        rpc_call(harness.gui_rpc_port, "walletpassphrase", [WALLET_PASSWORD, 60], wallet=GUI_WALLET_NAME)
         try:
             rpc_call(harness.gui_rpc_port, "bumpfee", [new_txid], wallet=GUI_WALLET_NAME)
             assert False, "bumpfee on confirmed tx should have raised an error"
@@ -231,6 +255,8 @@ def run_test():
             accepted_reasons = ("confirmed", "cannot bump", "already spent")
             assert any(reason in message for reason in accepted_reasons), f"Unexpected error: {rpc_err}"
             print(f"[rbf] confirmed tx correctly rejected: {rpc_err}")
+        finally:
+            rpc_call(harness.gui_rpc_port, "walletlock", wallet=GUI_WALLET_NAME)
 
         print("[rbf] ALL TESTS PASSED")
         return 0
