@@ -81,6 +81,7 @@
 #include <vector>
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDebug>
 #include <QEventLoop>
 #include <QFontDatabase>
@@ -557,6 +558,7 @@ int QmlGuiMain(int argc, char* argv[])
     node_model.addStartupWarnings(startup_warnings);
     QmlInitExecutor init_executor{*node};
     bool shutdown_requested{false};
+    DebugLogModel debug_log_model{gArgs.GetDataDirNet() / "debug.log"};
 #ifdef ENABLE_WALLET
     std::unique_ptr<WalletQmlController> wallet_controller;
     if (wallet_enabled) {
@@ -581,11 +583,12 @@ int QmlGuiMain(int argc, char* argv[])
             wallet_controller->unloadWallets();
         }
 #endif
-        node->startShutdown();
         init_executor.shutdown();
     });
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
-    QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, &QGuiApplication::quit, Qt::QueuedConnection);
+    QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, [] {
+        QCoreApplication::exit(0);
+    }, Qt::QueuedConnection);
     QObject::connect(&init_executor, &QmlInitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     NetworkTrafficTower network_traffic_tower{node_model};
@@ -630,28 +633,26 @@ int QmlGuiMain(int argc, char* argv[])
     QObject::connect(&node_model, &NodeModel::nodeInitialized,
                      &ban_list_model, &BanListModel::refresh);
 
-    QQmlApplicationEngine engine;
+    auto engine = std::make_unique<QQmlApplicationEngine>();
 
     QScopedPointer<const NetworkStyle> network_style{NetworkStyle::instantiate(Params().GetChainType())};
     assert(!network_style.isNull());
-    engine.addImageProvider(QStringLiteral("images"), new ImageProvider{network_style.data()});
-    engine.addImageProvider(QStringLiteral("qr"), new QRImageProvider);
+    engine->addImageProvider(QStringLiteral("images"), new ImageProvider{network_style.data()});
+    engine->addImageProvider(QStringLiteral("qr"), new QRImageProvider);
 
-    engine.rootContext()->setContextProperty("networkTrafficTower", &network_traffic_tower);
-    engine.rootContext()->setContextProperty("networkStatusModel", &network_status_model);
-    engine.rootContext()->setContextProperty("nodeModel", &node_model);
-    engine.rootContext()->setContextProperty("chainModel", &chain_model);
-    engine.rootContext()->setContextProperty("peerTableModel", &peer_model);
-    engine.rootContext()->setContextProperty("peerListModelProxy", &peer_model_sort_proxy);
-    engine.rootContext()->setContextProperty("banListModel", &ban_list_model);
-
-    DebugLogModel debug_log_model{gArgs.GetDataDirNet() / "debug.log"};
-    engine.rootContext()->setContextProperty("debugLogModel", &debug_log_model);
+    engine->rootContext()->setContextProperty("networkTrafficTower", &network_traffic_tower);
+    engine->rootContext()->setContextProperty("networkStatusModel", &network_status_model);
+    engine->rootContext()->setContextProperty("nodeModel", &node_model);
+    engine->rootContext()->setContextProperty("chainModel", &chain_model);
+    engine->rootContext()->setContextProperty("peerTableModel", &peer_model);
+    engine->rootContext()->setContextProperty("peerListModelProxy", &peer_model_sort_proxy);
+    engine->rootContext()->setContextProperty("banListModel", &ban_list_model);
+    engine->rootContext()->setContextProperty("debugLogModel", &debug_log_model);
 
     RpcConsoleModel rpc_console_model{*node};
     QObject::connect(&node_model, &NodeModel::nodeInitialized,
                      &rpc_console_model, &RpcConsoleModel::onNodeInitialized);
-    engine.rootContext()->setContextProperty("rpcConsoleModel", &rpc_console_model);
+    engine->rootContext()->setContextProperty("rpcConsoleModel", &rpc_console_model);
 
 #ifdef ENABLE_WALLET
     std::unique_ptr<WalletListModel> wallet_list_model;
@@ -679,17 +680,17 @@ int QmlGuiMain(int argc, char* argv[])
                                  list_model->listWalletDir();
                              }
                          });
-        engine.rootContext()->setContextProperty("walletController", wallet_controller.get());
-        engine.rootContext()->setContextProperty("walletListModel", wallet_list_model.get());
+        engine->rootContext()->setContextProperty("walletController", wallet_controller.get());
+        engine->rootContext()->setContextProperty("walletListModel", wallet_list_model.get());
     }
 #endif
 
     OptionsQmlModel options_model(*node);
-    engine.rootContext()->setContextProperty("optionsModel", &options_model);
+    engine->rootContext()->setContextProperty("optionsModel", &options_model);
 #ifdef ENABLE_TEST_AUTOMATION
-    engine.rootContext()->setContextProperty("testAutomationEnabled", true);
+    engine->rootContext()->setContextProperty("testAutomationEnabled", true);
 #else
-    engine.rootContext()->setContextProperty("testAutomationEnabled", false);
+    engine->rootContext()->setContextProperty("testAutomationEnabled", false);
 #endif
     // Install language before QML engine loads so that all qsTr() calls in QML
     // pick up the correct locale from the start.
@@ -698,7 +699,7 @@ int QmlGuiMain(int argc, char* argv[])
     // Retranslate the QML UI immediately when the user picks a new language.
     QObject::connect(&options_model, &OptionsQmlModel::languageChanged, [&]() {
         install_language(options_model.language());
-        engine.retranslate();
+        engine->retranslate();
     });
 
     desktop_tray_icon_controller.setBasePixmap(
@@ -711,20 +712,20 @@ int QmlGuiMain(int argc, char* argv[])
         [&desktop_window_behavior_model](bool supported) {
             if (!supported) desktop_window_behavior_model.setShowTrayIcon(false);
     });
-    engine.rootContext()->setContextProperty("desktopWindowBehaviorModel", &desktop_window_behavior_model);
-    engine.rootContext()->setContextProperty("desktopTrayIconController", &desktop_tray_icon_controller);
+    engine->rootContext()->setContextProperty("desktopWindowBehaviorModel", &desktop_window_behavior_model);
+    engine->rootContext()->setContextProperty("desktopTrayIconController", &desktop_tray_icon_controller);
 
-    engine.setInitialProperties({
+    engine->setInitialProperties({
         {QStringLiteral("walletAvailableForUi"), wallet_enabled},
         {QStringLiteral("appModeDesktopForUi"), app_mode.mode() == AppMode::DESKTOP},
         {QStringLiteral("preInitOnboardingRanForUi"), pre_init_onboarding_status == PreInitOnboardingStatus::COMPLETED},
     });
-    engine.load(QUrl(QStringLiteral("qrc:///qml/pages/MainWindow.qml")));
-    if (engine.rootObjects().isEmpty()) {
+    engine->load(QUrl(QStringLiteral("qrc:///qml/pages/MainWindow.qml")));
+    if (engine->rootObjects().isEmpty()) {
         return EXIT_FAILURE;
     }
 
-    auto window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    auto window = qobject_cast<QQuickWindow*>(engine->rootObjects().first());
     if (!window) {
         return EXIT_FAILURE;
     }
@@ -743,7 +744,7 @@ int QmlGuiMain(int argc, char* argv[])
             socket_path = QString::fromStdString(
                 (gArgs.GetDataDirNet() / "test_bridge.sock").utf8string());
         }
-        test_bridge = std::make_unique<TestBridge>(&engine, socket_path);
+        test_bridge = std::make_unique<TestBridge>(engine.get(), socket_path);
     }
 #endif
 
@@ -753,5 +754,10 @@ int QmlGuiMain(int argc, char* argv[])
     qInfo() << "Graphics API in use:" << QmlUtil::GraphicsApi(window);
 
     node_model.startShutdownPolling();
-    return qGuiApp->exec();
+    const int exit_code{qGuiApp->exec()};
+#ifdef ENABLE_TEST_AUTOMATION
+    test_bridge.reset();
+#endif
+    engine.reset();
+    return exit_code;
 }
