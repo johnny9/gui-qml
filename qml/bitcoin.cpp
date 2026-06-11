@@ -75,7 +75,6 @@
 #include <wallet/wallet.h>
 #endif
 
-#include <boost/signals2/connection.hpp>
 #include <cassert>
 #include <memory>
 #include <tuple>
@@ -406,13 +405,13 @@ int QmlGuiMain(int argc, char* argv[])
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);
     QStringList startup_warnings;
-    auto handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(
-        [&startup_warnings](const bilingual_str& message, const std::string& caption, unsigned int style) {
+    auto handler_message_box = ::uiInterface.ThreadSafeMessageBox.connect(
+        [&startup_warnings](const bilingual_str& message, unsigned int style) {
             if (style & CClientUIInterface::ICON_WARNING) {
                 RecordStartupWarning(startup_warnings, message);
                 return false;
             }
-            return InitErrorMessageBox(message, caption, style);
+            return InitErrorMessageBox(message, style);
         });
 
     SetupEnvironment();

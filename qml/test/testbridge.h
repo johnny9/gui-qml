@@ -38,7 +38,7 @@
 ///   {"cmd": "click_list_item", "objectName": "<view>", "index": <zero-based-row>, "childObjectName": "<optional-delegate-child>"}
 ///   {"cmd": "get_list_item_property", "objectName": "<view>", "index": <zero-based-row>, "prop": "<delegate-root-property>"}
 ///   {"cmd": "save_screenshot", "path": "<png_path>"}
-///   {"cmd": "show_runtime_dialog", "message": "<text>", "caption": "<title>", "style": <uint>, "question": <bool>}
+///   {"cmd": "show_runtime_dialog", "message": "<text>", "style": <uint>, "question": <bool>}
 ///   {"cmd": "answer_runtime_dialog", "button": <uint>}
 ///   {"cmd": "list_objects"}
 ///   {"cmd": "close_window"}
@@ -94,7 +94,7 @@ private:
     QByteArray cmdClickListItem(const QString& view_object_name, int row_index, const QString& delegate_child_object_name);
     QByteArray cmdGetListItemProperty(const QString& view_object_name, int row_index, const QString& prop);
     QByteArray cmdSaveScreenshot(const QString& path);
-    QByteArray cmdShowRuntimeDialog(const QString& message, const QString& caption, unsigned int style, bool question);
+    QByteArray cmdShowRuntimeDialog(const QString& message, unsigned int style, bool question);
     QByteArray cmdAnswerRuntimeDialog(unsigned int button);
     QByteArray cmdListObjects();
     QByteArray cmdCloseWindow();
