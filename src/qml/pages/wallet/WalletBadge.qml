@@ -1,0 +1,204 @@
+// Copyright (c) 2024 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Layouts 1.15
+
+import org.bitcoincore.qt 1.0
+
+import "../../controls"
+
+Button {
+    id: root
+    objectName: "walletBadge"
+
+    property color bgActiveColor: Theme.color.neutral2
+    property color textColor: Theme.color.neutral7
+    property color textHoverColor: Theme.color.orange
+    property color textActiveColor: Theme.color.orange
+    property color iconColor: "transparent"
+    property string iconSource: ""
+    property bool showBalance: true
+    property bool showIcon: true
+    property string balance: "0.0 000 000"
+    property var balanceSatoshi: 0
+    property bool loading: false
+    property bool noWalletLoaded: false
+    property bool noWalletsFound: false
+    property int keySchemeKind: WalletQmlModel.SingleKey
+
+    readonly property string walletTypeIcon: {
+        if (keySchemeKind === WalletQmlModel.WatchOnly) return "image://images/visible-filled"
+        if (keySchemeKind === WalletQmlModel.MultiKey)  return "image://images/two-keys-filled"
+        return "image://images/key-filled"
+    }
+
+    checkable: true
+    hoverEnabled: AppMode.isDesktop
+    implicitHeight: 60
+    bottomPadding: 0
+    topPadding: 0
+    clip: true
+
+    HoverHandler{
+        cursorShape: Qt.PointingHandCursor
+    }
+
+    contentItem: Item {
+        RowLayout {
+            visible: root.loading
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 5
+            anchors.rightMargin: 5
+            spacing: 5
+
+            Skeleton {
+                Layout.preferredHeight: 30
+                Layout.preferredWidth: 30
+                loading: root.loading
+            }
+            ColumnLayout {
+                spacing: 2
+                Layout.preferredHeight: 30
+                Layout.fillWidth: true
+
+                Skeleton {
+                    Layout.preferredHeight: 15
+                    Layout.preferredWidth: 50
+                    loading: root.loading
+                }
+
+                Skeleton {
+                    Layout.preferredHeight: 15
+                    Layout.preferredWidth: 114
+                    loading: root.loading
+                }
+            }
+        }
+
+        RowLayout {
+            visible: !root.loading && root.noWalletLoaded
+
+            opacity: visible ? 1 : 0
+
+            Behavior on opacity {
+                NumberAnimation { duration: 400 }
+            }
+
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 5
+            anchors.rightMargin: 5
+            clip: true
+            spacing: 5
+            Icon {
+                visible: root.showIcon
+                source: root.noWalletsFound ? "image://images/plus-filled" : "image://images/caret-down-medium-filled"
+                color: Theme.color.neutral8
+                size: 30
+                Layout.minimumWidth: 25
+                Layout.preferredWidth: 25
+                Layout.maximumWidth: 25
+            }
+            CoreText {
+                horizontalAlignment: Text.AlignLeft
+                Layout.fillWidth: true
+                wrap: false
+                font.pixelSize: 15
+                text: root.noWalletsFound ? qsTr("Add Wallet") : qsTr("Select Wallet")
+                color: root.textColor
+            }
+        }
+
+        RowLayout {
+            visible: !root.loading && !root.noWalletLoaded
+
+            opacity: visible ? 1 : 0
+
+            Behavior on opacity {
+                NumberAnimation { duration: 400 }
+            }
+
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 5
+            anchors.rightMargin: 5
+            clip: true
+            spacing: 5
+            Icon {
+                id: icon
+                visible: root.showIcon
+                source: root.walletTypeIcon
+                color: Theme.color.neutral8
+                size: 30
+                Layout.alignment: Qt.AlignVCenter
+                Layout.minimumWidth: 30
+                Layout.preferredWidth: 30
+                Layout.maximumWidth: 30
+                Layout.preferredHeight: 30
+            }
+            ColumnLayout {
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 2
+                CoreText {
+                    horizontalAlignment: Text.AlignLeft
+                    Layout.fillWidth: true
+                    wrap: false
+                    elide: Text.ElideRight
+                    id: buttonText
+                    font.pixelSize: 13
+                    text: root.text
+                    color: root.textColor
+                    bold: true
+                    visible: root.text !== ""
+                }
+                CoreText {
+                    id: balanceText
+                    visible: root.showBalance
+                    text: root.balance + " " + (optionsModel.displayUnit === 1 ? (root.balanceSatoshi === 1 ? qsTr("sat") : qsTr("sats")) : "₿")
+                    color: Theme.color.neutral7
+                    font.pixelSize: 15
+                    bold: true
+                }
+            }
+        }
+    }
+
+    background: Rectangle {
+        id: bg
+        height: root.height
+        width: root.width
+        radius: 5
+        color: Theme.color.neutral3
+        visible: root.hovered || root.checked
+
+        FocusBorder {
+            visible: root.visualFocus
+        }
+
+        Behavior on color {
+            ColorAnimation { duration: 150 }
+        }
+    }
+
+    states: [
+        State {
+            name: "CHECKED"; when: root.checked
+            PropertyChanges { target: buttonText; color: root.textActiveColor }
+            PropertyChanges { target: icon; color: root.textActiveColor }
+            PropertyChanges { target: balanceText; color: root.textActiveColor }
+        },
+        State {
+            name: "HOVER"; when: root.hovered
+            PropertyChanges { target: buttonText; color: root.textHoverColor }
+            PropertyChanges { target: icon; color: root.textHoverColor }
+            PropertyChanges { target: balanceText; color: root.textHoverColor }
+        }
+    ]
+}

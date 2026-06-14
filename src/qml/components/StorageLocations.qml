@@ -1,0 +1,66 @@
+// Copyright (c) 2022 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Layouts 1.15
+import QtQuick.Dialogs
+
+import org.bitcoincore.qt 1.0
+
+import "../controls"
+
+ColumnLayout {
+    ButtonGroup {
+        id: group
+    }
+    spacing: 15
+    OptionButton {
+        id: defaultDirOption
+        Layout.fillWidth: true
+        ButtonGroup.group: group
+        text: qsTr("Default")
+        description: qsTr("Your application directory.")
+        customDir: optionsModel.getDefaultDataDirString
+        checked: optionsModel.dataDir === optionsModel.getDefaultDataDirString
+        onClicked: {
+            defaultDirOption.checked = true
+            optionsModel.dataDir = optionsModel.getDefaultDataDirString
+        }
+    }
+    OptionButton {
+        id: customDirOption
+        Layout.fillWidth: true
+        ButtonGroup.group: group
+        text: qsTr("Custom")
+        description: qsTr("Choose the directory and storage device.")
+        customDir: customDirOption.checked ? fileDialog.currentFolder.toString() : ""
+        checked: optionsModel.dataDir !== optionsModel.getDefaultDataDirString
+        onClicked: fileDialog.open()
+    }
+    FileDialog {
+        id: fileDialog
+        onAccepted: {
+            optionsModel.setCustomDataDirString(fileDialog.selectedFile.toString())
+            var customDataDir = fileDialog.selectedFile.toString();
+            if (customDataDir !== "") {
+                optionsModel.setCustomDataDirArgs(customDataDir)
+                customDirOption.customDir = optionsModel.getCustomDataDirString()
+                if (optionsModel.dataDir !== optionsModel.getDefaultDataDirString) {
+                    customDirOption.checked = true
+                    defaultDirOption.checked = false
+                }
+            }
+        }
+        onRejected: {
+            console.log("Custom datadir selection canceled")
+            if (optionsModel.dataDir !== optionsModel.getDefaultDataDirString) {
+                customDirOption.checked = true
+                defaultDirOption.checked = false
+            } else {
+                defaultDirOption.checked = true
+            }
+        }
+    }
+}
