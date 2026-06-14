@@ -51,6 +51,38 @@ target_link_libraries(bitcoinqml
     Qt6::Widgets
 )
 
+# Compile QML-app-specific translations and embed them as resources.
+qt6_add_translation(QML_GUI_QM_FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/locale/bitcoin_qml_es.ts
+)
+set_source_files_properties(${QML_GUI_QM_FILES} PROPERTIES
+  QT_RESOURCE_ALIAS "bitcoin_qml_es.qm"
+)
+qt6_add_resources(bitcoinqml "qml_gui_translations"
+  PREFIX "/translations"
+  FILES ${QML_GUI_QM_FILES}
+)
+
+# Embed bitcoin-qt translations built by the Qt subdirectory.
+file(GLOB BITCOIN_QT_TS_FILES CONFIGURE_DEPENDS
+  "${PROJECT_SOURCE_DIR}/src/qt/locale/bitcoin_*.ts"
+)
+set(BITCOIN_QT_QM_FILES)
+foreach(ts_file IN LISTS BITCOIN_QT_TS_FILES)
+  get_filename_component(locale_name "${ts_file}" NAME_WE)
+  set(qm_file "${PROJECT_BINARY_DIR}/src/qt/locale/${locale_name}.qm")
+  set_source_files_properties(${qm_file} PROPERTIES
+    GENERATED TRUE
+    QT_RESOURCE_ALIAS "${locale_name}.qm"
+  )
+  list(APPEND BITCOIN_QT_QM_FILES ${qm_file})
+endforeach()
+qt6_add_resources(bitcoinqml "bitcoin_qt_translations"
+  PREFIX "/translations"
+  FILES ${BITCOIN_QT_QM_FILES}
+)
+add_dependencies(bitcoinqml bitcoin-qt)
+
 add_executable(bitcoin-qml WIN32
   main.cpp
   ${PROJECT_SOURCE_DIR}/src/init/bitcoin-qt.cpp
