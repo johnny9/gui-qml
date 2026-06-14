@@ -36,8 +36,8 @@ add_executable(bitcoinqml_unit_tests
   test_receiverequesthistorymodel.cpp
   test_transaction.cpp
   test_activityfilterproxymodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/bitcoinuri.cpp
+  ${PROJECT_SOURCE_DIR}/src/util/chaintype.cpp
+  ${PROJECT_SOURCE_DIR}/src/qml/models/bitcoinuri.cpp
 )
 
 target_compile_definitions(bitcoinqml_unit_tests
@@ -47,10 +47,10 @@ target_compile_definitions(bitcoinqml_unit_tests
 
 target_include_directories(bitcoinqml_unit_tests
   PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/univalue/include
-    ${CMAKE_CURRENT_BINARY_DIR}/../bitcoin/src
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/qml
+    ${PROJECT_SOURCE_DIR}/src/univalue/include
+    ${PROJECT_BINARY_DIR}/src
 )
 
 target_link_libraries(bitcoinqml_unit_tests
@@ -72,13 +72,13 @@ add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests -platform offs
 
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/components/blockclockdial.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/controls/linegraph.cpp
+  ${PROJECT_SOURCE_DIR}/src/qml/components/blockclockdial.cpp
+  ${PROJECT_SOURCE_DIR}/src/qml/controls/linegraph.cpp
 )
 
 target_compile_definitions(bitcoinqml_qmltests
   PRIVATE
-    BITCOINQML_QML_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../qml"
+    BITCOINQML_QML_SOURCE_DIR="${PROJECT_SOURCE_DIR}/src/qml"
     QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
     BITCOINQML_QML_TEST_MOCKS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/mocks/qml"
 )
@@ -93,7 +93,7 @@ target_link_libraries(bitcoinqml_qmltests
 
 target_include_directories(bitcoinqml_qmltests
   PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${PROJECT_SOURCE_DIR}/src/qml
 )
 
 add_test(NAME bitcoinqml_qmltests COMMAND bitcoinqml_qmltests -platform offscreen)

@@ -68,6 +68,10 @@ target_link_libraries(bitcoin-qml
 
 install_binary_component(bitcoin-qml)
 
+if(BUILD_GUI_TESTS)
+  add_subdirectory(test)
+endif()
+
 # Use the `bitcoin-qml` target as a drop-in replacement
 # for the legacy QtWidgets-based `bitcoin-qt`.
 set_target_properties(bitcoin-qt PROPERTIES
