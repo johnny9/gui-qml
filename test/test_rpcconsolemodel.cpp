@@ -30,6 +30,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -100,7 +101,7 @@ public:
     void forceSetting(const std::string&, const common::SettingsValue&) override {}
     void resetSettings() override {}
     void mapPort(bool) override {}
-    bool getProxy(Network, Proxy&) override { return false; }
+    std::optional<Proxy> getProxy(Network) override { return std::nullopt; }
     size_t getNodeCount(ConnectionDirection) override { return 0; }
     bool getNodesStats(NodesStats&) override { return false; }
     bool getBanned(banmap_t&) override { return false; }

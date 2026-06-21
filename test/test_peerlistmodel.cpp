@@ -28,7 +28,7 @@ CNodeStats MakeNodeStats(NodeId node_id, std::string address, bool inbound, Conn
 {
     CNodeStats stats;
     stats.nodeid = node_id;
-    stats.m_connected = std::chrono::seconds{1'000};
+    stats.m_connected = NodeClock::time_point{std::chrono::seconds{1'000}};
     stats.m_addr_name = std::move(address);
     stats.fInbound = inbound;
     stats.m_conn_type = connection_type;
@@ -211,21 +211,21 @@ void PeerListModelTests::sortProxySortsByRoles()
     using ::testing::SetArgReferee;
 
     auto stats_a = MakeNodeStats(10, "10.0.0.20:8333", false, ConnectionType::MANUAL, NET_IPV6);
-    stats_a.m_connected = std::chrono::seconds{200};
+    stats_a.m_connected = NodeClock::time_point{std::chrono::seconds{200}};
     stats_a.m_min_ping_time = std::chrono::microseconds{5'000};
     stats_a.nSendBytes = 400;
     stats_a.nRecvBytes = 300;
     stats_a.cleanSubVer = "/Satoshi:27.0.0/";
 
     auto stats_b = MakeNodeStats(20, "10.0.0.10:8333", true, ConnectionType::OUTBOUND_FULL_RELAY, NET_IPV4);
-    stats_b.m_connected = std::chrono::seconds{400};
+    stats_b.m_connected = NodeClock::time_point{std::chrono::seconds{400}};
     stats_b.m_min_ping_time = std::chrono::microseconds{2'000};
     stats_b.nSendBytes = 100;
     stats_b.nRecvBytes = 500;
     stats_b.cleanSubVer = "/Satoshi:26.0.0/";
 
     auto stats_c = MakeNodeStats(30, "10.0.0.30:8333", false, ConnectionType::BLOCK_RELAY, NET_ONION);
-    stats_c.m_connected = std::chrono::seconds{100};
+    stats_c.m_connected = NodeClock::time_point{std::chrono::seconds{100}};
     stats_c.m_min_ping_time = std::chrono::microseconds{8'000};
     stats_c.nSendBytes = 700;
     stats_c.nRecvBytes = 200;

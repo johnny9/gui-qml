@@ -54,13 +54,13 @@ public:
     QString services() const { return PeerStatsUtil::FormatServicesStr(m_combinedStats->nodeStateStats.their_services); }
     bool transactionRelay() const { return m_combinedStats->nodeStateStats.m_relay_txs; }
     bool addressRelay() const { return m_combinedStats->nodeStateStats.m_addr_relay_enabled; }
-    QString startingHeight() const { return QString::number(m_combinedStats->nodeStateStats.m_starting_height); }
+    QString startingHeight() const { return tr("N/A"); }
     QString syncedHeaders() const { return QString::number(m_combinedStats->nodeStateStats.nSyncHeight); }
     QString syncedBlocks() const { return QString::number(m_combinedStats->nodeStateStats.nCommonHeight); }
     QString direction() const { return QString::fromStdString(m_combinedStats->nodeStats.fInbound ? "Inbound" : "Outbound"); }
-    QString connectionDuration() const { return PeerStatsUtil::FormatDurationStr(GetTime<std::chrono::seconds>() - m_combinedStats->nodeStats.m_connected); }
-    QString lastSend() const { return PeerStatsUtil::FormatDurationStr(GetTime<std::chrono::seconds>() - m_combinedStats->nodeStats.m_last_send); }
-    QString lastReceived() const { return PeerStatsUtil::FormatDurationStr(GetTime<std::chrono::seconds>() - m_combinedStats->nodeStats.m_last_recv); }
+    QString connectionDuration() const { return PeerStatsUtil::FormatDurationStr(NodeClock::now() - m_combinedStats->nodeStats.m_connected); }
+    QString lastSend() const { return PeerStatsUtil::FormatDurationStr(NodeClock::now() - m_combinedStats->nodeStats.m_last_send); }
+    QString lastReceived() const { return PeerStatsUtil::FormatDurationStr(NodeClock::now() - m_combinedStats->nodeStats.m_last_recv); }
     QString bytesSent() const { return PeerStatsUtil::FormatBytes(m_combinedStats->nodeStats.nSendBytes); }
     QString bytesReceived() const { return PeerStatsUtil::FormatBytes(m_combinedStats->nodeStats.nRecvBytes); }
     QString pingTime() const { return PeerStatsUtil::FormatPingTime(m_combinedStats->nodeStats.m_last_ping_time); }

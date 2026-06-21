@@ -52,7 +52,7 @@ QString NetworkToQString(Network net)
     assert(false);
 }
 
-QString FormatDurationStr(std::chrono::seconds dur)
+QString FormatDurationStr(std::chrono::nanoseconds dur)
 {
     const auto d{std::chrono::duration_cast<std::chrono::days>(dur)};
     const auto h{std::chrono::duration_cast<std::chrono::hours>(dur - d)};
@@ -68,10 +68,9 @@ QString FormatDurationStr(std::chrono::seconds dur)
     return str_list.join(" ");
 }
 
-QString FormatPeerAge(std::chrono::seconds time_connected)
+QString FormatPeerAge(NodeClock::time_point time_connected)
 {
-    const auto time_now{GetTime<std::chrono::seconds>()};
-    const auto age{time_now - time_connected};
+    const auto age{NodeClock::now() - time_connected};
     if (age >= 24h) return QObject::tr("%1 d").arg(age / 24h);
     if (age >= 1h) return QObject::tr("%1 h").arg(age / 1h);
     if (age >= 1min) return QObject::tr("%1 m").arg(age / 1min);
@@ -90,12 +89,12 @@ QString FormatServicesStr(quint64 mask)
     return QObject::tr("None");
 }
 
-QString FormatPingTime(std::chrono::microseconds ping_time)
+QString FormatPingTime(NodeClock::duration ping_time)
 {
-    if (ping_time == std::chrono::microseconds::max() || ping_time == 0us) {
+    if (ping_time == NodeClock::duration::max() || ping_time == 0us) {
         return QObject::tr("N/A");
     }
-    return QObject::tr("%1 ms").arg(QString::number(static_cast<int>(count_microseconds(ping_time) / 1000), 10));
+    return QObject::tr("%1 ms").arg(QString::number(Ticks<std::chrono::milliseconds>(ping_time), 10));
 }
 
 QString FormatTimeOffset(int64_t time_offset)

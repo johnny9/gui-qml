@@ -6,6 +6,7 @@
 #define BITCOIN_QML_PEERSTATSUTIL_H
 
 #include <net.h>
+#include <node/timeoffsets.h>
 
 #include <QString>
 
@@ -15,10 +16,10 @@ namespace PeerStatsUtil {
 
 QString ConnectionTypeToQString(ConnectionType conn_type, bool prepend_direction);
 QString NetworkToQString(Network net);
-QString FormatDurationStr(std::chrono::seconds dur);
-QString FormatPeerAge(std::chrono::seconds time_connected);
+QString FormatDurationStr(std::chrono::nanoseconds dur);
+QString FormatPeerAge(NodeClock::time_point time_connected);
 QString FormatServicesStr(quint64 mask);
-QString FormatPingTime(std::chrono::microseconds ping_time);
+QString FormatPingTime(NodeClock::duration ping_time);
 QString FormatTimeOffset(int64_t time_offset);
 QString FormatBytes(uint64_t bytes);
 

@@ -55,7 +55,7 @@ void PeerStatsUtilTests::formatDuration()
 
 void PeerStatsUtilTests::formatPeerAge()
 {
-    const auto now{GetTime<std::chrono::seconds>()};
+    const auto now{NodeClock::now()};
     QCOMPARE(PeerStatsUtil::FormatPeerAge(now - 90s), QString("1 m"));
     QCOMPARE(PeerStatsUtil::FormatPeerAge(now - 3700s), QString("1 h"));
     QCOMPARE(PeerStatsUtil::FormatPeerAge(now - 90000s), QString("1 d"));
@@ -72,7 +72,7 @@ void PeerStatsUtilTests::formatServices()
 void PeerStatsUtilTests::formatPingTime()
 {
     QCOMPARE(PeerStatsUtil::FormatPingTime(0us), QString("N/A"));
-    QCOMPARE(PeerStatsUtil::FormatPingTime(std::chrono::microseconds::max()), QString("N/A"));
+    QCOMPARE(PeerStatsUtil::FormatPingTime(NodeClock::duration::max()), QString("N/A"));
     QCOMPARE(PeerStatsUtil::FormatPingTime(1500us), QString("1 ms"));
     QCOMPARE(PeerStatsUtil::FormatPingTime(2500us), QString("2 ms"));
 }
