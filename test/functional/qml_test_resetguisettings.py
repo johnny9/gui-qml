@@ -126,7 +126,7 @@ def run_first_reset_onboarding(tmpdir, custom_datadir):
 
         settings = load_settings(custom_datadir)
         assert settings.get("listen") is False, settings
-        assert settings.get("natpmp") is True, settings
+        assert "natpmp" not in settings, settings
         assert settings.get("server") is True, settings
         assert settings.get("proxy") == "10.0.0.1:9050", settings
         assert settings.get("onion") == "127.0.0.1:9150", settings
@@ -156,7 +156,7 @@ def run_second_reset_onboarding(tmpdir, custom_datadir):
         open_connection_settings(gui)
 
         assert gui.get_property("listenSwitch", "checked") is True
-        assert gui.get_property("natpmpSwitch", "checked") is False
+        assert gui.get_property("natpmpSwitch", "checked") is True
         assert gui.get_property("serverSwitch", "checked") is False
         open_proxy_settings(gui)
         assert gui.get_property("proxyEnableSwitch", "checked") is False

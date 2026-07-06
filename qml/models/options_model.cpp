@@ -118,11 +118,11 @@ OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, ArgsManager& args)
     m_core_setting_statuses = QmlCoreSettings::BuildCoreSettingStatuses(m_args, QmlCoreSettings::CoreSettingNames());
     m_core_settings.setStatuses(CoreSettingStatusesForNames(m_core_setting_statuses, QmlCoreSettings::OnboardingCoreSettingNames()));
 
-    m_dbcache_size_mib = SettingToInt(QmlCoreSettings::DisplaySettingValue(m_node, m_args, QStringLiteral("dbcache")), DEFAULT_DB_CACHE >> 20);
+    m_dbcache_size_mib = SettingTo<int64_t>(QmlCoreSettings::DisplaySettingValue(m_node, m_args, QStringLiteral("dbcache")), DEFAULT_DB_CACHE >> 20);
 
-    m_max_mempool_size_mb = SettingToInt(QmlCoreSettings::DisplaySettingValue(m_node, m_args, QStringLiteral("maxmempool")), DEFAULT_MAX_MEMPOOL_SIZE_MB);
+    m_max_mempool_size_mb = SettingTo<int64_t>(QmlCoreSettings::DisplaySettingValue(m_node, m_args, QStringLiteral("maxmempool")), DEFAULT_MAX_MEMPOOL_SIZE_MB);
 
-    m_script_threads = SettingToInt(QmlCoreSettings::DisplaySettingValue(m_node, m_args, QStringLiteral("par")), DEFAULT_SCRIPTCHECK_THREADS);
+    m_script_threads = SettingTo<int64_t>(QmlCoreSettings::DisplaySettingValue(m_node, m_args, QStringLiteral("par")), DEFAULT_SCRIPTCHECK_THREADS);
 
     m_external_signer_path = QString::fromStdString(SettingToString(QmlCoreSettings::DisplaySettingValue(m_node, m_args, QStringLiteral("signer")), ""));
 

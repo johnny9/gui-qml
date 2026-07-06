@@ -776,28 +776,29 @@ void OptionsModelTests::natpmpAppliesLiveWithoutRestartDirty()
     ON_CALL(node, getPersistentSetting(_)).WillByDefault(Return(common::SettingsValue{}));
 
     OptionsQmlModel model(node);
+    QVERIFY(model.natpmp());
     InSequence sequence;
     EXPECT_CALL(node, updateRwSetting(std::string{"natpmp"},
         Truly([](const common::SettingsValue& value) {
             const std::optional<bool> parsed = SettingToBool(value);
-            return parsed.has_value() && *parsed;
+            return parsed.has_value() && !*parsed;
         })));
-    EXPECT_CALL(node, mapPort(true));
+    EXPECT_CALL(node, mapPort(false));
     EXPECT_CALL(node, updateRwSetting(std::string{"natpmp"},
         Truly([](const common::SettingsValue& value) {
             const std::optional<bool> parsed = SettingToBool(value);
-            return value.isNull() || (parsed.has_value() && !*parsed);
+            return value.isNull() || (parsed.has_value() && *parsed);
         })));
-    EXPECT_CALL(node, mapPort(false));
+    EXPECT_CALL(node, mapPort(true));
 
-    model.setNatpmp(true);
-    QVERIFY(model.natpmp());
+    model.setNatpmp(false);
+    QVERIFY(!model.natpmp());
     QVERIFY(!model.connectionSettingsDirty());
     QVERIFY(!model.restartRequired());
     QTest::qWait(300);
 
-    model.setNatpmp(false);
-    QVERIFY(!model.natpmp());
+    model.setNatpmp(true);
+    QVERIFY(model.natpmp());
     QVERIFY(!model.connectionSettingsDirty());
     QVERIFY(!model.restartRequired());
     QTest::qWait(300);
@@ -1385,7 +1386,7 @@ void OptionsModelTests::resetGuiSettingsPreviewIgnoresSelectedCustomDataDirSetti
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.values.listen);
-    QVERIFY(!preview.values.natpmp);
+    QVERIFY(preview.values.natpmp);
     QVERIFY(!preview.values.server);
     QVERIFY(!preview.values.proxy_enabled);
     QVERIFY(!preview.values.tor_enabled);
@@ -1425,7 +1426,7 @@ void OptionsModelTests::resetGuiSettingsApplyClearsSelectedCustomDataDirSettings
     QVERIFY(model.selectCustomDataDir(data_dir.path()));
     QCOMPARE(model.previewError(), QString{});
     QVERIFY(model.listen());
-    QVERIFY(!model.natpmp());
+    QVERIFY(model.natpmp());
     QVERIFY(!model.server());
     QVERIFY(!model.proxyEnabled());
 
@@ -3026,11 +3027,11 @@ void OptionsModelTests::commandLineOverriddenSettingsPreservePersistentValues()
     model.setExternalSignerPath(QStringLiteral("changed-signer"));
 
     QCOMPARE(SettingToBool(args.GetPersistentSetting("server")), false);
-    QCOMPARE(SettingToInt(args.GetPersistentSetting("prune"), -1), 0);
+    QCOMPARE(SettingTo<int64_t>(args.GetPersistentSetting("prune"), -1), 0);
     QCOMPARE(QString::fromStdString(SettingToString(args.GetPersistentSetting("proxy"), "")), QString("127.0.0.1:9050"));
-    QCOMPARE(SettingToInt(args.GetPersistentSetting("dbcache"), -1), 300);
-    QCOMPARE(SettingToInt(args.GetPersistentSetting("par"), -1), 1);
-    QCOMPARE(SettingToInt(args.GetPersistentSetting("maxmempool"), -1), 300);
+    QCOMPARE(SettingTo<int64_t>(args.GetPersistentSetting("dbcache"), -1), 300);
+    QCOMPARE(SettingTo<int64_t>(args.GetPersistentSetting("par"), -1), 1);
+    QCOMPARE(SettingTo<int64_t>(args.GetPersistentSetting("maxmempool"), -1), 300);
     QCOMPARE(QString::fromStdString(SettingToString(args.GetPersistentSetting("signer"), "")), QString("saved-signer"));
 }
 
@@ -3153,24 +3154,24 @@ void OptionsModelTests::legacyQtSettingsMigrateToCoreSettings()
     common::SettingsValue dbcache;
     common::SettingsValue script_threads;
     common::SettingsValue listen;
-    common::SettingsValue natpmp;
     common::SettingsValue server;
     common::SettingsValue prune;
     common::SettingsValue proxy;
     common::SettingsValue onion_prev;
     common::SettingsValue language;
+    bool has_natpmp{true};
     bool has_onion{true};
     bool has_prune_prev{true};
     args.LockSettings([&](common::Settings& core_settings) {
         dbcache = core_settings.rw_settings.at("dbcache");
         script_threads = core_settings.rw_settings.at("par");
         listen = core_settings.rw_settings.at("listen");
-        natpmp = core_settings.rw_settings.at("natpmp");
         server = core_settings.rw_settings.at("server");
         prune = core_settings.rw_settings.at("prune");
         proxy = core_settings.rw_settings.at("proxy");
         onion_prev = core_settings.rw_settings.at("onion-prev");
         language = core_settings.rw_settings.at("lang");
+        has_natpmp = core_settings.rw_settings.count("natpmp") > 0;
         has_onion = core_settings.rw_settings.count("onion") > 0;
         has_prune_prev = core_settings.rw_settings.count("prune-prev") > 0;
     });
@@ -3180,7 +3181,7 @@ void OptionsModelTests::legacyQtSettingsMigrateToCoreSettings()
     QVERIFY(script_threads.isStr());
     QCOMPARE(QString::fromStdString(script_threads.get_str()), QStringLiteral("12"));
     QCOMPARE(SettingToBool(listen), false);
-    QCOMPARE(SettingToBool(natpmp), true);
+    QVERIFY(!has_natpmp);
     QCOMPARE(SettingToBool(server), true);
     QVERIFY(prune.isStr());
     QCOMPARE(QString::fromStdString(prune.get_str()), QString::number(QmlCoreSettings::PruneGBToMiB(10)));

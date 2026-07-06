@@ -206,12 +206,12 @@ int64_t PruneGBToMiB(int gb)
 
 bool PruneEnabled(const common::SettingsValue& setting)
 {
-    return SettingToInt(setting, 0) > 1;
+    return SettingTo<int64_t>(setting, 0) > 1;
 }
 
 int PruneSizeGBFromSetting(const common::SettingsValue& setting)
 {
-    const int64_t value = SettingToInt(setting, 0);
+    const int64_t value = SettingTo<int64_t>(setting, 0);
     return value > 1 ? PruneMiBToGB(value) : DEFAULT_PRUNE_TARGET_GB;
 }
 
@@ -480,8 +480,8 @@ bool CoreSettingValuesEqual(const QString& name, const common::SettingsValue& le
         return left_bool && right_bool && *left_bool == *right_bool;
     }
     if (IsIntCoreSetting(name)) {
-        const std::optional<int64_t> left_int = SettingToInt(left);
-        const std::optional<int64_t> right_int = SettingToInt(right);
+        const std::optional<int64_t> left_int = SettingTo<int64_t>(left);
+        const std::optional<int64_t> right_int = SettingTo<int64_t>(right);
         return left_int && right_int && *left_int == *right_int;
     }
     if (IsOptionalStringCoreSetting(name)) {
