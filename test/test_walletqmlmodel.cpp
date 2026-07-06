@@ -245,7 +245,7 @@ public:
     bool isSpendable(const CTxDestination&) override { return false; }
     bool setAddressBook(const CTxDestination&, const std::string&, const std::optional<wallet::AddressPurpose>&) override { return true; }
     bool delAddressBook(const CTxDestination&) override { return true; }
-    bool getAddress(const CTxDestination&, std::string* name, wallet::isminetype*, wallet::AddressPurpose*) override
+    bool getAddress(const CTxDestination&, std::string* name, wallet::AddressPurpose*) override
     {
         if (name) {
             *name = get_address_label;
@@ -265,14 +265,23 @@ public:
     bool unlockCoin(const COutPoint&) override { return true; }
     bool isLockedCoin(const COutPoint&) override { return false; }
     void listLockedCoins(std::vector<COutPoint>& outputs) override { outputs.clear(); }
-    util::Result<CTransactionRef> createTransaction(const std::vector<wallet::CRecipient>& recipients,
+    util::Result<wallet::CreatedTransactionResult> createTransaction(const std::vector<wallet::CRecipient>& recipients,
                                                     const wallet::CCoinControl& coin_control,
                                                     bool sign,
-                                                    int& change_pos,
-                                                    CAmount& fee) override
+                                                    std::optional<unsigned int>) override
     {
         create_transaction_sign_args.push_back(sign);
-        return create_transaction_fn(recipients, coin_control, sign, change_pos, fee);
+        int change_pos{-1};
+        CAmount fee{0};
+        auto result = create_transaction_fn(recipients, coin_control, sign, change_pos, fee);
+        if (!result) {
+            return util::Error{util::ErrorString(result)};
+        }
+        return wallet::CreatedTransactionResult{
+            *result,
+            fee,
+            change_pos >= 0 ? std::optional<unsigned int>{static_cast<unsigned int>(change_pos)} : std::nullopt,
+            FeeCalculation{}};
     }
     void commitTransaction(CTransactionRef, interfaces::WalletValueMap, interfaces::WalletOrderForm) override
     {
@@ -314,10 +323,10 @@ public:
     }
     CAmount getBalance() override { return balance; }
     CAmount getAvailableBalance(const wallet::CCoinControl&) override { return balance; }
-    wallet::isminetype txinIsMine(const CTxIn&) override { return wallet::ISMINE_NO; }
-    wallet::isminetype txoutIsMine(const CTxOut&) override { return wallet::ISMINE_NO; }
-    CAmount getDebit(const CTxIn&, wallet::isminefilter) override { return 0; }
-    CAmount getCredit(const CTxOut&, wallet::isminefilter) override { return 0; }
+    bool txinIsMine(const CTxIn&) override { return false; }
+    bool txoutIsMine(const CTxOut&) override { return false; }
+    CAmount getDebit(const CTxIn&) override { return 0; }
+    CAmount getCredit(const CTxOut&) override { return 0; }
     CoinsList listCoins() override { return {}; }
     std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>&) override { return {}; }
     CAmount getRequiredFee(unsigned int) override { return 0; }
@@ -1355,7 +1364,7 @@ void WalletQmlModelTests::setCurrentPaymentRequestAddressUsesAddressListLabel()
     auto model = MakeWalletModel(wallet);
     wallet->wallet_addresses.emplace_back(
         DecodeDestination(VALID_MAINNET_ADDRESS.toStdString()),
-        wallet::ISMINE_SPENDABLE,
+        true,
         wallet::AddressPurpose::RECEIVE,
         "invoice 1024");
     wallet->get_address_result = true;

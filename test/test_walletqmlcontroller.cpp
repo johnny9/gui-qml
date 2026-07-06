@@ -13,6 +13,7 @@
 #include <scheduler.h>
 #include <test/mocks/mocknode.h>
 #include <util/translation.h>
+#include <wallet/types.h>
 #include <wallet/walletutil.h>
 
 #include <gmock/gmock.h>
@@ -109,7 +110,7 @@ public:
         return load_wallet_fn(name, warnings);
     }
     std::string getWalletDir() override { return wallet_dir; }
-    util::Result<std::unique_ptr<interfaces::Wallet>> restoreWallet(const fs::path&, const std::string&, std::vector<bilingual_str>&) override
+    util::Result<std::unique_ptr<interfaces::Wallet>> restoreWallet(const fs::path&, const std::string&, std::vector<bilingual_str>&, bool) override
     {
         return util::Error{Untranslated("Unexpected restoreWallet call")};
     }
@@ -176,7 +177,7 @@ public:
     bool isSpendable(const CTxDestination&) override { return false; }
     bool setAddressBook(const CTxDestination&, const std::string&, const std::optional<wallet::AddressPurpose>&) override { return true; }
     bool delAddressBook(const CTxDestination&) override { return true; }
-    bool getAddress(const CTxDestination&, std::string*, wallet::isminetype*, wallet::AddressPurpose*) override { return false; }
+    bool getAddress(const CTxDestination&, std::string*, wallet::AddressPurpose*) override { return false; }
     std::vector<interfaces::WalletAddress> getAddresses() override { return {}; }
     std::vector<std::string> getAddressReceiveRequests() override { return {}; }
     bool setAddressReceiveRequest(const CTxDestination&, const std::string&, const std::string&) override { return true; }
@@ -185,11 +186,10 @@ public:
     bool unlockCoin(const COutPoint&) override { return true; }
     bool isLockedCoin(const COutPoint&) override { return false; }
     void listLockedCoins(std::vector<COutPoint>& outputs) override { outputs.clear(); }
-    util::Result<CTransactionRef> createTransaction(const std::vector<wallet::CRecipient>&,
+    util::Result<wallet::CreatedTransactionResult> createTransaction(const std::vector<wallet::CRecipient>&,
                                                     const wallet::CCoinControl&,
                                                     bool,
-                                                    int&,
-                                                    CAmount&) override
+                                                    std::optional<unsigned int>) override
     {
         return util::Error{Untranslated("Unexpected createTransaction call")};
     }
@@ -216,10 +216,10 @@ public:
     bool tryGetBalances(interfaces::WalletBalances&, uint256&) override { return false; }
     CAmount getBalance() override { return 0; }
     CAmount getAvailableBalance(const wallet::CCoinControl&) override { return 0; }
-    wallet::isminetype txinIsMine(const CTxIn&) override { return {}; }
-    wallet::isminetype txoutIsMine(const CTxOut&) override { return {}; }
-    CAmount getDebit(const CTxIn&, wallet::isminefilter) override { return 0; }
-    CAmount getCredit(const CTxOut&, wallet::isminefilter) override { return 0; }
+    bool txinIsMine(const CTxIn&) override { return false; }
+    bool txoutIsMine(const CTxOut&) override { return false; }
+    CAmount getDebit(const CTxIn&) override { return 0; }
+    CAmount getCredit(const CTxOut&) override { return 0; }
     CoinsList listCoins() override { return {}; }
     std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>&) override { return {}; }
     CAmount getRequiredFee(unsigned int) override { return 0; }

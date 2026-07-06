@@ -144,6 +144,7 @@ private Q_SLOTS:
     void requestShutdownEmitsOnlyOnce();
     void initializationFailureRequestsShutdownWhenCoreWasInterrupted();
     void initializationFailureWithoutCoreInterruptOnlySetsErrorState();
+    void initializationSuccessDuringCoreShutdownSkipsReadyState();
     void destructorUnsubscribesCoreSignalsBeforeStoppingPolling();
     void nodeNotificationHandlersUpdateModelThroughQueuedSignals();
     void blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues();
@@ -166,6 +167,7 @@ private Q_SLOTS:
     void nodeInformationRowsExposeDiagnostics();
     void initEmitsRequestedInitialize();
     void initGuardBlocksSecondEmission();
+    void shutdownPollingStartsShutdownBeforeEmittingSignal();
 };
 
 void NodeModelTests::refreshMempoolInfoUpdatesProperties()
@@ -410,6 +412,27 @@ void NodeModelTests::initializationFailureWithoutCoreInterruptOnlySetsErrorState
     QVERIFY(model.errorState());
     QCOMPARE(shutdown_spy.count(), 0);
     QCOMPARE(initialized_spy.count(), 1);
+}
+
+void NodeModelTests::initializationSuccessDuringCoreShutdownSkipsReadyState()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, shutdownRequested()).WillByDefault(Return(true));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
+    QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
+    QSignalSpy ready_state_spy{&model, &NodeModel::setTimeRatioListInitial};
+    model.initializeResult(true, {});
+
+    QCOMPARE(shutdown_spy.count(), 1);
+    QCOMPARE(initialized_spy.count(), 0);
+    QCOMPARE(ready_state_spy.count(), 0);
 }
 
 void NodeModelTests::destructorUnsubscribesCoreSignalsBeforeStoppingPolling()
@@ -749,7 +772,6 @@ void NodeModelTests::startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings()
     QSignalSpy runtime_dialog_spy{&model, &NodeModel::runtimeDialogChanged};
     QVERIFY(!message_box_fn(
         bilingual_str{"Startup warning", "Translated startup warning"},
-        "",
         CClientUIInterface::MSG_WARNING));
     QCOMPARE(runtime_dialog_spy.count(), 0);
 
@@ -814,7 +836,6 @@ void NodeModelTests::runtimeMessageHandlerOpensAfterInitialization()
     std::thread worker([&] {
         result = message_box_fn(
             bilingual_str{"Runtime error", "Translated runtime error"},
-            "",
             CClientUIInterface::MSG_ERROR);
         finished = true;
     });
@@ -851,7 +872,7 @@ void NodeModelTests::runtimeQuestionHandlerBlocksForAnswerAndReturnsResult()
     QObject::connect(&model, &NodeModel::runtimeDialogChanged, &model, [&] {
         if (!model.runtimeDialogVisible()) return;
         ++prompt_count;
-        QCOMPARE(model.runtimeDialogTitle(), QStringLiteral("Question caption"));
+        QCOMPARE(model.runtimeDialogTitle(), QStringLiteral("Error"));
         QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated rebuild?"));
         QCOMPARE(model.runtimeDialogButtons(), static_cast<unsigned int>(CClientUIInterface::BTN_OK | CClientUIInterface::BTN_ABORT));
         QVERIFY(model.runtimeDialogQuestion());
@@ -864,7 +885,6 @@ void NodeModelTests::runtimeQuestionHandlerBlocksForAnswerAndReturnsResult()
         result = question_fn(
             bilingual_str{"Rebuild?", "Translated rebuild?"},
             "Non interactive",
-            "Question caption",
             CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
         finished = true;
     });
@@ -917,7 +937,6 @@ void NodeModelTests::runtimeStartupQuestionFailureLetsInitializeResultRequestShu
         result = question_fn(
             bilingual_str{"Rebuild?", "Translated rebuild?"},
             "Non interactive",
-            "",
             CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
         finished = true;
     });
@@ -979,7 +998,6 @@ void NodeModelTests::runtimeStartupErrorDialogLetsInitializeResultRequestShutdow
     std::thread worker([&] {
         result = message_box_fn(
             bilingual_str{"Failed to initialize", "Translated failed to initialize"},
-            "",
             CClientUIInterface::MSG_ERROR);
         finished = true;
     });
@@ -1033,7 +1051,6 @@ void NodeModelTests::runtimeDialogDefaultsToOkWhenNoButtonsAreSpecified()
     std::thread worker([&] {
         result = message_box_fn(
             bilingual_str{"Information", "Translated information"},
-            "",
             CClientUIInterface::ICON_INFORMATION | CClientUIInterface::MODAL);
         finished = true;
     });
@@ -1081,7 +1098,6 @@ void NodeModelTests::runtimeDialogExposesFullCoreButtonMask()
     std::thread worker([&] {
         result = message_box_fn(
             bilingual_str{"Full button mask", "Translated full button mask"},
-            "",
             CClientUIInterface::ICON_WARNING | CClientUIInterface::MODAL | full_button_mask);
         finished = true;
     });
@@ -1127,7 +1143,6 @@ void NodeModelTests::runtimeBlockingDialogsAreQueued()
             second_result = question_fn(
                 bilingual_str{"Second?", "Translated second?"},
                 "Non interactive",
-                "Second caption",
                 CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
         } else if (model.runtimeDialogMessage() == QStringLiteral("Translated second?")) {
             QTimer::singleShot(0, &model, [&model] {
@@ -1139,7 +1154,6 @@ void NodeModelTests::runtimeBlockingDialogsAreQueued()
     first_result = question_fn(
         bilingual_str{"First?", "Translated first?"},
         "Non interactive",
-        "First caption",
         CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
 
     QCOMPARE(prompts, QStringList({QStringLiteral("Translated first?"), QStringLiteral("Translated second?")}));
@@ -1170,7 +1184,6 @@ void NodeModelTests::runtimeNonBlockingDialogsAreQueued()
     QSignalSpy runtime_dialog_spy{&model, &NodeModel::runtimeDialogChanged};
     QVERIFY(!message_box_fn(
         bilingual_str{"First", "Translated first"},
-        "",
         CClientUIInterface::ICON_INFORMATION));
     QCOMPARE(runtime_dialog_spy.count(), 1);
     QVERIFY(model.runtimeDialogVisible());
@@ -1178,7 +1191,6 @@ void NodeModelTests::runtimeNonBlockingDialogsAreQueued()
 
     QVERIFY(!message_box_fn(
         bilingual_str{"Second", "Translated second"},
-        "",
         CClientUIInterface::ICON_WARNING));
     QCOMPARE(runtime_dialog_spy.count(), 1);
     QVERIFY(model.runtimeDialogVisible());
@@ -1243,11 +1255,9 @@ void NodeModelTests::initializeFailureUsesNodeErrorMessages()
     std::thread worker([&] {
         message_box_fn(
             bilingual_str{"Unable to bind original", "Translated unable to bind"},
-            "",
             CClientUIInterface::ICON_ERROR);
         message_box_fn(
             bilingual_str{"Failed to listen original", "Translated failed to listen"},
-            "",
             CClientUIInterface::ICON_ERROR);
         finished = true;
     });
@@ -1382,6 +1392,32 @@ void NodeModelTests::initGuardBlocksSecondEmission()
     model.startNodeInitializionThread();
     model.startNodeInitializionThread();
     QCOMPARE(spy.count(), 1);
+}
+
+void NodeModelTests::shutdownPollingStartsShutdownBeforeEmittingSignal()
+{
+    NiceMock<MockNode> node;
+    MempoolState mempool;
+    InstallDefaultHandlers(node);
+    InstallMempoolGetters(node, mempool);
+    ON_CALL(node, shutdownRequested()).WillByDefault(Return(true));
+
+    NodeModel model{node};
+    WaitForInitialMempoolRefresh(mempool);
+
+    QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
+    bool started_before_signal{false};
+    EXPECT_CALL(node, startShutdown()).WillOnce(Invoke([&] {
+        started_before_signal = shutdown_spy.count() == 0;
+    }));
+
+    model.startShutdownPolling();
+
+    QTRY_COMPARE_WITH_TIMEOUT(shutdown_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QVERIFY(started_before_signal);
+
+    model.requestShutdown();
+    QCOMPARE(shutdown_spy.count(), 1);
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN
