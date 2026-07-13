@@ -29,6 +29,20 @@ Page {
     property bool searchMode: false
     property string commandDraft: ""
     property string searchDraft: ""
+    // DesktopWallets supplies its navigation bar so this persistent
+    // StackLayout child can dismiss overlay-based transient UI on tab changes.
+    property var navigationBar: null
+    property var navigationTab: null
+
+    Connections {
+        target: root.navigationBar
+
+        function onTabChanged(previousTab, currentTab) {
+            if (previousTab === root.navigationTab) {
+                autocompletePopup.close()
+            }
+        }
+    }
 
     function _pushPalette() {
         rpcConsoleModel.requestColor = consoleRequestColor

@@ -106,6 +106,7 @@ Page {
 
     header: NavigationBar2 {
         id: navBar
+        tabGroup: navigationTabs
         leftItem: WalletBadge {
             objectName: "walletBadge"
             implicitWidth: 175
@@ -346,6 +347,8 @@ Page {
         }
         CommandConsole {
             showHeader: false
+            navigationBar: navBar
+            navigationTab: consoleTabButton
             walletName: walletController.isWalletLoaded && walletController.selectedWallet
                 ? walletController.selectedWallet.name
                 : ""

@@ -7,15 +7,40 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
 Pane {
+    id: root
+
     property alias leftItem: left_section.contentItem
     property alias centerItem: center_section.contentItem
     property alias rightItem: right_section.contentItem
     property var navigationStack: null
+    // Optional tab group supplied by a containing view. This lets content
+    // pages close transient UI when the user leaves their tab.
+    property var tabGroup: null
+    property var currentTab: null
     property bool showBackButton: navigationStack ? navigationStack.canGoBack : false
     property string backButtonObjectName: ""
     property string backButtonText: qsTr("Back")
 
     signal backClicked
+    signal tabChanged(var previousTab, var currentTab)
+
+    onTabGroupChanged: {
+        currentTab = tabGroup ? tabGroup.checkedButton : null
+    }
+
+    Connections {
+        target: root.tabGroup
+
+        function onCheckedButtonChanged() {
+            const nextTab = root.tabGroup.checkedButton
+            if (!nextTab || nextTab === root.currentTab) {
+                return
+            }
+            const previousTab = root.currentTab
+            root.currentTab = nextTab
+            root.tabChanged(previousTab, nextTab)
+        }
+    }
 
     background: null
     padding: 4

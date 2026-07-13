@@ -97,6 +97,26 @@ TestCase {
         compare(tabs[3].iconSize, 30)
     }
 
+    function test_console_autocomplete_closes_when_switching_tabs() {
+        const page = createDesktopWallets()
+        const consoleTab = findChild(page, "consoleTabButton")
+        const activityTab = findChild(page, "activityTabButton")
+        const popup = findChild(page, "consoleAutocompletePopup")
+
+        verify(consoleTab !== null)
+        verify(activityTab !== null)
+        verify(popup !== null)
+
+        consoleTab.checked = true
+        tryCompare(consoleTab, "checked", true)
+        popup.open()
+        tryCompare(popup, "visible", true)
+
+        activityTab.checked = true
+        tryCompare(activityTab, "checked", true)
+        tryCompare(popup, "visible", false)
+    }
+
     function test_receive_options_view_address_history_opens_settings_address_stack() {
         const page = createDesktopWallets()
         const receiveTab = findChild(page, "receiveTabButton")
