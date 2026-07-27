@@ -59,6 +59,8 @@ jobs:
             build-essential \
             cmake \
             curl \
+            libgl-dev \
+            libx11-xcb-dev \
             make \
             ninja-build \
             patch \
