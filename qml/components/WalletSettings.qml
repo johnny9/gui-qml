@@ -12,8 +12,11 @@ ColumnLayout {
     id: root
 
     spacing: 0
+    readonly property bool bundledHwi: walletController.bundledHwiEnabled === true
     readonly property var signerStatus: (optionsModel.coreSettingStatuses || ({})).signer || ({})
-    readonly property string signerPathError: optionsModel.externalSignerPathValidationError(signerPathInput.text)
+    readonly property string signerPathError: root.bundledHwi
+        ? ""
+        : optionsModel.externalSignerPathValidationError(signerPathInput.text)
 
     Component.onCompleted: walletController.refreshExternalSignerStatus()
 
@@ -34,6 +37,7 @@ ColumnLayout {
         text: qsTr("Signer path")
         font.pixelSize: 15
         color: Theme.color.neutral9
+        visible: !root.bundledHwi
     }
 
     CoreTextField {
@@ -44,6 +48,7 @@ ColumnLayout {
         placeholderText: qsTr("Enter external signer path")
         text: optionsModel.externalSignerPath
         enabled: root.signerStatus.canEdit !== false
+        visible: !root.bundledHwi
         onEditingFinished: {
             if (root.commitSignerPath()) {
                 walletController.refreshExternalSignerStatus()
@@ -52,7 +57,8 @@ ColumnLayout {
     }
 
     CoreText {
-        visible: root.signerPathError.length > 0 || (root.signerStatus.infoText || "").length > 0
+        visible: !root.bundledHwi
+            && (root.signerPathError.length > 0 || (root.signerStatus.infoText || "").length > 0)
         Layout.topMargin: 10
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
@@ -84,11 +90,13 @@ ColumnLayout {
 
             Icon {
                 source: root.signerPathError.length > 0
+                    || walletController.externalSignerError.length > 0
                     ? "image://images/error"
                     : walletController.canCreateExternalSignerWallet
                     ? "image://images/green-check"
                     : "image://images/info-filled"
                 color: root.signerPathError.length > 0
+                    || walletController.externalSignerError.length > 0
                     ? Theme.color.red
                     : walletController.canCreateExternalSignerWallet
                     ? Theme.color.green
@@ -105,6 +113,23 @@ ColumnLayout {
                 text: {
                     if (root.signerPathError.length > 0) {
                         return root.signerPathError
+                    }
+                    if (root.bundledHwi) {
+                        if (walletController.externalSignerError.length > 0) {
+                            return walletController.externalSignerError
+                        }
+                        if (walletController.bundledHwiVerified && walletController.canCreateExternalSignerWallet) {
+                            return qsTr("Bundled HWI — signature verified. Detected external signer: %1")
+                                .arg(walletController.externalSignerName)
+                        }
+                        if (walletController.bundledHwiVerified) {
+                            return qsTr("Bundled HWI — signature verified. Connect a supported hardware wallet to continue.")
+                        }
+                        if (walletController.canCreateExternalSignerWallet) {
+                            return qsTr("Developer signer override: %1. Bundled signature checks are bypassed.")
+                                .arg(walletController.externalSignerName)
+                        }
+                        return qsTr("Developer signer override active. No external signer is currently detected.")
                     }
                     if (walletController.canCreateExternalSignerWallet) {
                         return qsTr("Detected external signer: %1").arg(walletController.externalSignerName)
@@ -130,9 +155,10 @@ ColumnLayout {
         Layout.preferredWidth: Math.min(300, parent.width)
         Layout.alignment: Qt.AlignHCenter
         text: qsTr("Check device")
-        enabled: root.signerPathError.length === 0 && root.signerStatus.canEdit !== false
+        enabled: root.bundledHwi
+            || (root.signerPathError.length === 0 && root.signerStatus.canEdit !== false)
         onClicked: {
-            if (root.commitSignerPath()) {
+            if (root.bundledHwi || root.commitSignerPath()) {
                 walletController.refreshExternalSignerStatus()
             }
         }

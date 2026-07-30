@@ -9,6 +9,7 @@
 
 #include <common/args.h>
 #include <common/settings.h>
+#include <external_signer.h>
 #include <interfaces/node.h>
 #include <key_io.h>
 #include <script/descriptor.h>
@@ -67,6 +68,7 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent
     , m_selected_wallet(m_empty_wallet)
     , m_worker(new QObject)
     , m_worker_thread(new QThread(this))
+    , m_bundled_hwi_enabled(IsBundledHwiEnabled())
     , m_open_local_path_fn([](const QString& path) {
         return QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     })
@@ -706,15 +708,32 @@ void WalletQmlController::refreshExternalSignerStatus()
 {
     const QString signer_path = QString::fromStdString(
         SettingToString(m_node.getPersistentSetting("signer"), "")).trimmed();
-    const bool path_configured = !signer_path.isEmpty();
-    if (path_configured) {
-        m_node.forceSetting("signer", signer_path.toStdString());
-    } else {
-        m_node.forceSetting("signer", common::SettingsValue{});
+    if (!m_bundled_hwi_enabled) {
+        if (!signer_path.isEmpty()) {
+            m_node.forceSetting("signer", signer_path.toStdString());
+        } else {
+            m_node.forceSetting("signer", common::SettingsValue{});
+        }
     }
+    const bool using_bundled_hwi = IsUsingBundledHwi();
+    const bool path_configured = using_bundled_hwi
+        ? !GetExternalSignerCommand().empty()
+        : !signer_path.isEmpty();
     int signer_count = 0;
     QString signer_name;
     QString error;
+
+    m_bundled_hwi_verified = false;
+    if (using_bundled_hwi) {
+        const auto verified = VerifyBundledHwi();
+        if (!verified) {
+            error = tr("Bundled HWI verification failed: %1").arg(
+                QString::fromStdString(util::ErrorString(verified).original));
+            setExternalSignerStatus(path_configured, signer_count, signer_name, error);
+            return;
+        }
+        m_bundled_hwi_verified = true;
+    }
 
     try {
         auto signers = m_node.listExternalSigners();
@@ -724,8 +743,10 @@ void WalletQmlController::refreshExternalSignerStatus()
         } else if (signer_count > 1) {
             error = tr("More than one external signer was found. Connect only one device.");
         }
-    } catch (const std::runtime_error&) {
-        error = tr("The signer command did not return valid output. Check that the path is correct.");
+    } catch (const std::runtime_error& exception) {
+        error = using_bundled_hwi
+            ? tr("Bundled HWI failed: %1").arg(QString::fromUtf8(exception.what()))
+            : tr("The signer command did not return valid output. Check that the path is correct.");
     }
 
     setExternalSignerStatus(path_configured, signer_count, signer_name, error);

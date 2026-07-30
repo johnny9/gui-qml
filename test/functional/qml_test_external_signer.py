@@ -23,6 +23,7 @@ EXPECTED_FIRST_BECH32_ADDRESS = "bcrt1qm90ugl4d48jv8n6e5t9ln6t9zlpm5th68x4f8g"
 EXPECTED_FIRST_BECH32M_ADDRESS = "bcrt1phw4cgpt6cd30kz9k4wkpwm872cdvhss29jga2xpmftelhqll62ms4e9sqj"
 EXPECTED_FIRST_HD_KEYPATH = "m/84h/1h/0h/0/0"
 EXPECTED_FIRST_TAPROOT_HD_KEYPATH = "m/86h/1h/0h/0/0"
+SIGNER_TEST_ARGS = ["-signerpolicy=any"]
 
 
 def parse_args():
@@ -486,7 +487,7 @@ def run_test(args):
         no_signer_path = find_mock_signer_path("no_signer")
 
         print(f"[{case_name}] starting")
-        harness.start_gui(cwd=harness.tmpdir)
+        harness.start_gui(extra_args=SIGNER_TEST_ARGS, cwd=harness.tmpdir)
         checkpoints.checkpoint("GUI launched", harness.driver)
         harness.finish_onboarding()
         wait_for_rpc(harness.gui_rpc_port)
@@ -520,7 +521,7 @@ def run_test(args):
         wait_for_wallet_badge_balance(harness.driver, "50.00000000")
         checkpoints.checkpoint("wallet badge balance updated", harness.driver)
 
-        harness.restart_gui(cwd=harness.tmpdir)
+        harness.restart_gui(extra_args=SIGNER_TEST_ARGS, cwd=harness.tmpdir)
         wait_for_rpc(harness.gui_rpc_port)
         signers = rpc_call(harness.gui_rpc_port, "enumeratesigners")["signers"]
         assert {"fingerprint": "00000001", "name": "trezor_t"} in signers
@@ -530,7 +531,7 @@ def run_test(args):
         checkpoints.checkpoint("wallet badge balance restored after restart", harness.driver)
 
         harness.update_gui_settings({"signer": no_signer_path})
-        harness.restart_gui(cwd=harness.tmpdir)
+        harness.restart_gui(extra_args=SIGNER_TEST_ARGS, cwd=harness.tmpdir)
         wait_for_rpc(harness.gui_rpc_port)
         assert rpc_call(harness.gui_rpc_port, "enumeratesigners")["signers"] == []
         wait_for_wallet(harness.driver, wallet_name)
@@ -554,7 +555,7 @@ def run_test(args):
         checkpoints.checkpoint("no-signer review error surfaced", harness.driver)
 
         harness.update_gui_settings({"signer": signer_path})
-        harness.restart_gui(cwd=harness.tmpdir)
+        harness.restart_gui(extra_args=SIGNER_TEST_ARGS, cwd=harness.tmpdir)
         wait_for_rpc(harness.gui_rpc_port)
         signers = rpc_call(harness.gui_rpc_port, "enumeratesigners")["signers"]
         assert {"fingerprint": "00000001", "name": "trezor_t"} in signers

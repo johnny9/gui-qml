@@ -1325,6 +1325,8 @@ class MockWalletController : public QObject
     Q_PROPERTY(QString externalSignerName MEMBER m_external_signer_name NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString externalSignerError MEMBER m_external_signer_error NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString suggestedExternalSignerWalletName MEMBER m_suggested_external_signer_wallet_name NOTIFY externalSignerStatusChanged)
+    Q_PROPERTY(bool bundledHwiEnabled MEMBER m_bundled_hwi_enabled NOTIFY externalSignerStatusChanged)
+    Q_PROPERTY(bool bundledHwiVerified MEMBER m_bundled_hwi_verified NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString lastSelectedWalletName READ lastSelectedWalletName NOTIFY lastSelectedWalletNameChanged)
     Q_PROPERTY(QString lastClosedWalletName READ lastClosedWalletName NOTIFY lastClosedWalletNameChanged)
     Q_PROPERTY(int closeWalletCalls READ closeWalletCalls NOTIFY closeWalletCallsChanged)
@@ -1350,6 +1352,8 @@ public:
     QString m_external_signer_name;
     QString m_external_signer_error;
     QString m_suggested_external_signer_wallet_name{QStringLiteral("external_signer")};
+    bool m_bundled_hwi_enabled{false};
+    bool m_bundled_hwi_verified{false};
     QObject* m_selected_wallet{nullptr};
     QString m_last_selected_wallet_name;
     QString m_last_closed_wallet_name;
@@ -1488,6 +1492,8 @@ public:
         m_external_signer_name.clear();
         m_external_signer_error.clear();
         m_suggested_external_signer_wallet_name = QStringLiteral("external_signer");
+        m_bundled_hwi_enabled = false;
+        m_bundled_hwi_verified = false;
         Q_EMIT lastSelectedWalletNameChanged();
         Q_EMIT lastClosedWalletNameChanged();
         Q_EMIT closeWalletCallsChanged();

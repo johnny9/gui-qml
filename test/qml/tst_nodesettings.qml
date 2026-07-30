@@ -39,6 +39,8 @@ TestCase {
         nodeModel.mempoolInformationAvailable = true
         AppMode.walletEnabled = true
         AppMode.isDesktop = true
+        walletController.bundledHwiEnabled = false
+        walletController.bundledHwiVerified = false
         testNetworkTrafficTower.active = false
     }
 
@@ -127,6 +129,26 @@ TestCase {
         const signerItem = findChild(page, "settings_externalsigner")
         verify(signerItem !== null)
         compare(signerItem.visible, false)
+    }
+
+    function test_bundled_hwi_status_locks_signer_path() {
+        walletController.bundledHwiEnabled = true
+        walletController.bundledHwiVerified = true
+
+        const page = createNodeSettingsPage()
+        const signerItem = findChild(page, "settings_externalsigner")
+        verify(signerItem !== null)
+        mouseClick(signerItem, signerItem.width / 2, signerItem.height / 2)
+
+        const pathInput = findChild(page, "externalSignerPathInput")
+        const statusText = findChild(page, "externalSignerStatusText")
+        const checkButton = findChild(page, "externalSignerCheckDeviceButton")
+        verify(pathInput !== null)
+        verify(statusText !== null)
+        verify(checkButton !== null)
+        compare(pathInput.visible, false)
+        compare(statusText.text, "Bundled HWI — signature verified. Connect a supported hardware wallet to continue.")
+        compare(checkButton.enabled, true)
     }
 
     function test_window_behavior_hidden_on_non_desktop() {

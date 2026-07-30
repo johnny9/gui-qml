@@ -1,5 +1,10 @@
 # Bitcoin Core App
 
+The `poc/bundled-hwi-linux-macos` branch can produce signed-integrity,
+explicitly untrusted HWI test bundles for Linux x86_64 and macOS arm64. See
+[the bundled HWI test guide](doc/hwi-sidecar.md) for its security model,
+artifact layouts, build order, and Coldcard MK4 acceptance checklist.
+
 *(The QML GUI)*
 
 **WARNING: THIS IS EXPERIMENTAL, DO NOT USE BUILDS FROM THIS REPO FOR REAL TRANSACTIONS!**

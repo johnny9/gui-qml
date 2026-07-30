@@ -7,6 +7,7 @@
 #include <common/args.h>
 #include <common/settings.h>
 #include <common/system.h>
+#include <external_signer.h>
 #include <interfaces/node.h>
 #include <mapport.h>
 #include <qml/bitcoinunits.h>
@@ -401,6 +402,7 @@ QString OptionsQmlModel::defaultProxyAddress() const
 
 void OptionsQmlModel::setExternalSignerPath(const QString& path)
 {
+    if (IsBundledHwiEnabled()) return;
     if (!canEditCoreSetting(QStringLiteral("signer"))) return;
     const QString normalized_path = NormalizeCommandPath(path);
     if (normalized_path != m_external_signer_path) {

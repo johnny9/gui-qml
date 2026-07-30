@@ -42,6 +42,8 @@ class WalletQmlController : public QObject
     Q_PROPERTY(QString externalSignerName READ externalSignerName NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString externalSignerError READ externalSignerError NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString suggestedExternalSignerWalletName READ suggestedExternalSignerWalletName NOTIFY externalSignerStatusChanged)
+    Q_PROPERTY(bool bundledHwiEnabled READ bundledHwiEnabled CONSTANT)
+    Q_PROPERTY(bool bundledHwiVerified READ bundledHwiVerified NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString walletLocationOpenError READ walletLocationOpenError NOTIFY walletLocationOpenErrorChanged)
 
 public:
@@ -97,6 +99,8 @@ public:
     QString externalSignerName() const { return m_external_signer_name; }
     QString externalSignerError() const { return m_external_signer_error; }
     QString suggestedExternalSignerWalletName() const { return m_suggested_external_signer_wallet_name; }
+    bool bundledHwiEnabled() const { return m_bundled_hwi_enabled; }
+    bool bundledHwiVerified() const { return m_bundled_hwi_verified; }
     QString walletLocationOpenError() const { return m_wallet_location_open_error; }
     void setOpenLocalPathFnForTesting(OpenLocalPathFn fn);
 
@@ -202,6 +206,8 @@ private:
     QString m_external_signer_name;
     QString m_external_signer_error;
     QString m_suggested_external_signer_wallet_name;
+    const bool m_bundled_hwi_enabled;
+    bool m_bundled_hwi_verified{false};
     QString m_wallet_location_open_error;
     OpenLocalPathFn m_open_local_path_fn;
 
