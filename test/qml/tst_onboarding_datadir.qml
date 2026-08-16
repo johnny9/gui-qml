@@ -88,6 +88,16 @@ TestCase {
         }
     }
 
+    Component {
+        id: appFolderDialog
+        AppFolderDialog { }
+    }
+
+    Component {
+        id: signalSpy
+        SignalSpy { }
+    }
+
     function init() {
         optionsModel.clearCoreSettingStatusesForTest()
         optionsModel.existingProfile = false
@@ -355,6 +365,22 @@ TestCase {
         const dialog = findChild(page, "customDataDirFolderDialog")
         verify(dialog !== null)
         verify(dialog.selectedFolder !== undefined)
+    }
+
+    function test_app_folder_dialog_compatibility_contract() {
+        const dialog = createTemporaryObject(appFolderDialog, this)
+        verify(dialog !== null)
+        verify(dialog.selectedFolder !== undefined)
+        compare(typeof dialog.open, "function")
+        compare(typeof dialog.close, "function")
+
+        const acceptedSpy = createTemporaryObject(signalSpy, this, {
+            target: dialog,
+            signalName: "accepted"
+        })
+        verify(acceptedSpy.valid)
+        dialog.accepted()
+        compare(acceptedSpy.count, 1)
     }
 
     function test_storage_location_option_bindings_survive_selection_clicks() {
