@@ -32,6 +32,14 @@ find_package(Qt 6.2 MODULE REQUIRED
 )
 find_package(QRencode MODULE REQUIRED)
 
+# Qt Creator's QML code model does not execute the qmlRegisterType calls in
+# qml/bitcoin.cpp. Give Qt Quick Designer a QML-only description of those
+# backend types instead. This path is used by tooling only; the files are not
+# embedded in or loaded by bitcoin-core-app.
+list(APPEND QML_IMPORT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/qml/designer/mockImports")
+list(REMOVE_DUPLICATES QML_IMPORT_PATH)
+set(QML_IMPORT_PATH "${QML_IMPORT_PATH}" CACHE STRING "Additional QML import paths used by Qt tooling" FORCE)
+
 option(ENABLE_TEST_AUTOMATION "Enable test automation bridge for QML UI testing" OFF)
 
 # Do not build any executable targets from bitcoin submodule

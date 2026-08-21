@@ -128,6 +128,13 @@ Binaries are exported to the `build/` directory:
 build/bin/bitcoin-core-app
 ```
 
+### Edit the QML interface visually
+
+Developers and designers can edit the controls, components, and pages with Qt
+Quick Designer in Qt Creator or Qt Design Studio without starting a Bitcoin
+node. See [Editing QML in Qt Quick Designer](doc/qt-designer.md) for setup and
+design-time mock details.
+
 ### Run Tests
 
 - Enable tests at configure time and run them via CTest.

@@ -1,0 +1,39 @@
+// Copyright (c) 2026 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+import QmlProject 1.1
+
+Project {
+    mainFile: "qml/designer/DesignerPreview.qml"
+    mainUiFile: "qml/pages/settings/SettingsDesignSystem.qml"
+    qt6Project: true
+
+    // The production backend is registered from C++. Qt Design Studio does
+    // not execute that code, so use the API-compatible QML mocks instead.
+    importPaths: [ "qml" ]
+    mockImports: [ "qml/designer/mockImports" ]
+
+    QmlFiles {
+        directory: "qml"
+    }
+    JavaScriptFiles {
+        directory: "qml"
+    }
+    ImageFiles {
+        directory: "qml/res"
+    }
+    Files {
+        directory: "qml/res/fonts"
+        filter: "*.otf;*.ttf"
+    }
+    Files {
+        directory: "qml"
+        filter: "qmldir"
+    }
+
+    Environment {
+        QT_AUTO_SCREEN_SCALE_FACTOR: "1"
+        QT_QUICK_CONTROLS_STYLE: "Basic"
+    }
+}

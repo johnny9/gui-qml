@@ -1,0 +1,24 @@
+module org.bitcoincore.qt
+designersupported
+
+singleton AppMode 1.0 AppMode.qml
+singleton BuildInfo 1.0 BuildInfo.qml
+singleton Clipboard 1.0 Clipboard.qml
+singleton BitcoinUri 1.0 BitcoinUri.qml
+
+BlockClockDial 1.0 BlockClockDial.qml
+LineGraph 1.0 LineGraph.qml
+PeerDetailsModel 1.0 PeerDetailsModel.qml
+DebugLogModel 1.0 DebugLogModel.qml
+RpcConsoleModel 1.0 GenericObject.qml
+BitcoinAmount 1.0 BitcoinAmount.qml
+BitcoinAddress 1.0 BitcoinAddress.qml
+ActivityFilterProxyModel 1.0 ActivityFilterProxyModel.qml
+AddressListModel 1.0 AddressListModel.qml
+PaymentRequest 1.0 PaymentRequest.qml
+Transaction 1.0 Transaction.qml
+SendRecipient 1.0 SendRecipient.qml
+BumpTransactionModel 1.0 BumpTransactionModel.qml
+WalletQmlModel 1.0 WalletQmlModel.qml
+WalletQmlModelTransaction 1.0 WalletQmlModelTransaction.qml
+WalletListModel 1.0 WalletListModel.qml
