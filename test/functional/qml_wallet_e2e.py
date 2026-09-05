@@ -88,6 +88,32 @@ class QmlWalletE2ETest(BitcoinTestFramework):
             self.wait_until(lambda: gui.get_property("walletOverviewPage", "visible"))
             self.wait_until(lambda: Decimal(gui.get_property("selectedWalletBalance", "text").split()[0]) == Decimal("50"))
 
+            self.log.info("Prepare and submit one ordinary payment through the UI")
+            gui.click("walletSendButton")
+            self.wait_until(lambda: gui.get_property("walletSendPage", "visible"))
+            gui.type_text("sendAddress-0", ADDRESS_BCRT1_UNSPENDABLE)
+            gui.type_text("sendAmount-0", "0.001")
+            gui.click("sendCustomFee")
+            gui.type_text("sendCustomFeeRate", "2")
+            self.wait_until(lambda: gui.get_property("sendPrepareButton", "enabled"))
+            gui.click("sendPrepareButton")
+            self.wait_until(lambda: gui.get_property("sendTransactionReview", "visible"), timeout=30)
+            self.wait_until(lambda: gui.get_property("sendSubmitButton", "enabled"))
+            gui.click("sendSubmitButton")
+            self.wait_until(lambda: gui.get_property("sendSubmittedTransactionId", "text") != "", timeout=30)
+            txid = gui.get_property("sendSubmittedTransactionId", "text")
+            self.wait_until(lambda: txid in rpc.getrawmempool())
+            transaction = rpc.gettransaction(txid, verbose=True)
+            outputs = [output for output in transaction["decoded"]["vout"]
+                       if output["scriptPubKey"].get("address") == ADDRESS_BCRT1_UNSPENDABLE]
+            assert_equal(len(outputs), 1)
+            assert_equal(outputs[0]["value"], Decimal("0.001"))
+            assert_equal(-transaction["fee"], rpc.getmempoolentry(txid)["fees"]["base"])
+            self.wait_until(lambda: gui.get_property("sendViewTransactionButton", "enabled"))
+            gui.click("sendViewTransactionButton")
+            self.wait_until(lambda: gui.get_property("walletTransactionDetailsPage", "visible"))
+            self.wait_until(lambda: gui.get_property("transactionId", "text") == txid)
+
             gui.close_window()
             assert_equal(harness.wait_for_exit(), 0)
         except Exception:
@@ -95,7 +121,9 @@ class QmlWalletE2ETest(BitcoinTestFramework):
                 try:
                     focused_names = {"mainWindow", "walletOverviewPage", "selectedWalletName", "selectedWalletBalance",
                                      "createWalletDialog", "createWalletError", "walletReceivePage", "receiveError",
-                                     "receiveRequestId", "walletActivityPage", "walletActivityList"}
+                                     "receiveRequestId", "walletActivityPage", "walletActivityList", "walletSendPage",
+                                     "sendError", "sendPrepareButton", "sendTransactionReview", "sendSubmitButton",
+                                     "sendSubmissionStatus", "sendSubmittedTransactionId", "sendViewTransactionButton"}
                     snapshot = [entry for entry in harness.driver.list_objects()
                                 if entry["objectName"] in focused_names or entry["objectName"].startswith("activityRow-")]
                     for entry in snapshot:
