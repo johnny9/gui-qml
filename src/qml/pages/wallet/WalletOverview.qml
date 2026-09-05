@@ -15,6 +15,7 @@ Page {
     CreateWallet { id: createWallet; parent: Overlay.overlay }
     RestoreWallet { id: restoreWallet; parent: Overlay.overlay }
     MigrateWallet { id: migrateWallet; parent: Overlay.overlay }
+    WalletSettings { id: walletSettings; parent: Overlay.overlay }
     Connections { target: walletManager; function onMigrationRequired(name) { migrateWallet.open() } }
     background: Rectangle { color: Theme.color.background }
     header: ToolBar {
@@ -38,6 +39,12 @@ Page {
         Label {
             text: root.selected ? (root.selected.overview.encrypted ?
                 (root.selected.overview.locked ? qsTr("Encrypted and locked") : qsTr("Encrypted and unlocked")) : qsTr("Not encrypted")) : ""
+        }
+        Button {
+            objectName: "walletSettingsButton"
+            text: qsTr("Wallet settings")
+            visible: !!root.selected
+            onClicked: { walletSettings.wallet = root.selected; walletSettings.open() }
         }
         Button {
             objectName: "closeWalletButton"

@@ -9,6 +9,7 @@
 #include <qml/wallet/walletsession.h>
 
 #include <QSignalSpy>
+#include <QQmlApplicationEngine>
 #include <QTest>
 
 class WalletCatalogTests : public QObject
@@ -17,6 +18,21 @@ class WalletCatalogTests : public QObject
 public:
     explicit WalletCatalogTests(BitcoinQmlApplication& app) : m_app(app) {}
 private Q_SLOTS:
+    void overviewPageLoads()
+    {
+        auto* root = m_app.engine().rootObjects().constFirst();
+        auto* runner = root->findChild<QObject*>(QStringLiteral("nodeRunner"));
+        QVERIFY(runner);
+        QVERIFY(QMetaObject::invokeMethod(runner, "walletsClicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(root->findChild<QObject*>(QStringLiteral("walletOverviewPage")), 2'000);
+        auto* create = root->findChild<QObject*>(QStringLiteral("createWalletButton"));
+        QVERIFY(create);
+        QVERIFY(QMetaObject::invokeMethod(create, "clicked"));
+        auto* dialog = root->findChild<QObject*>(QStringLiteral("createWalletDialog"));
+        QVERIFY(dialog);
+        QTRY_VERIFY_WITH_TIMEOUT(dialog->property("opened").toBool(), 2'000);
+        QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+    }
     void externalLoadSelectionAndClose()
     {
         WalletTestFixture fixture(m_app.node());

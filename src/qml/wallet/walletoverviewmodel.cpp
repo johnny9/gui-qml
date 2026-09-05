@@ -21,11 +21,13 @@ QString WalletOverviewModel::name() const { return m_session.name(); }
 QString WalletOverviewModel::aliasKey() const
 {
     return QStringLiteral("walletAliases/%1/%2").arg(m_network,
-        QString::fromLatin1(QCryptographicHash::hash(name().toUtf8(), QCryptographicHash::Sha256).toHex()));
+        QString::fromLatin1(QCryptographicHash::hash(m_session.identity().toUtf8(), QCryptographicHash::Sha256).toHex()));
 }
 QString WalletOverviewModel::displayName() const
 {
-    const QString alias = QSettings{}.value(aliasKey()).toString();
+    QSettings settings;
+    const QString legacy_key = QStringLiteral("walletDisplayNames/%1").arg(name());
+    const QString alias = settings.value(aliasKey(), settings.value(legacy_key)).toString();
     return alias.isEmpty() ? (name().isEmpty() ? tr("Default wallet") : name()) : alias;
 }
 QString WalletOverviewModel::balance() const

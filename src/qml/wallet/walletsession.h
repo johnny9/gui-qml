@@ -26,6 +26,7 @@ public:
     bool available() const { return m_available; }
     bool actionBusy() const { return m_action_busy; }
     QString name() const { return m_name; }
+    QString identity() const { return m_identity.isEmpty() ? m_name : m_identity; }
     void invalidate();
     bool runAction(std::function<WalletOperationResult(interfaces::Wallet&)> work, WalletOperationExecutor::Completion completion);
 Q_SIGNALS:
@@ -40,6 +41,7 @@ private:
     const quint64 m_id;
     quint64 m_generation{1};
     const QString m_name;
+    QString m_identity;
     WalletOperationExecutor& m_executor;
     bool m_available{true};
     bool m_action_busy{false};

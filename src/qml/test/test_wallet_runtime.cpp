@@ -9,7 +9,9 @@
 #include <qml/wallet/walletsession.h>
 
 #include <QSignalSpy>
+#include <QSemaphore>
 #include <QTest>
+#include <atomic>
 
 class WalletRuntimeTests : public QObject
 {
@@ -88,6 +90,32 @@ private Q_SLOTS:
         QVERIFY(wallet->isLocked());
         QVERIFY(wallet->unlock(password));
         QVERIFY(wallet->lock());
+    }
+    void invalidationDiscardsPendingCompletion()
+    {
+        WalletTestFixture fixture(m_node);
+        WalletOperationExecutor executor;
+        WalletSession session(fixture.create(), 23, executor);
+        QSemaphore release;
+        std::atomic<bool> entered{false};
+        bool completed{false};
+        QVERIFY(session.runAction([&](interfaces::Wallet& wallet) {
+            entered = true;
+            release.acquire();
+            wallet.getWalletName();
+            return WalletOperationResult{};
+        }, [&completed](WalletOperationResult) { completed = true; }));
+        // No blocking wait on the GUI thread; the worker is released before any
+        // assertion can exit this case and strand its executor.
+        const bool started = QTest::qWaitFor([&entered] { return entered.load(); }, 5'000);
+        session.invalidate();
+        release.release();
+        QVERIFY(started);
+        QTRY_VERIFY_WITH_TIMEOUT(!session.actionBusy(), 5'000);
+        QVERIFY(!completed);
+        QSignalSpy drained(&executor, &WalletOperationExecutor::drained);
+        executor.drain();
+        QTRY_COMPARE_WITH_TIMEOUT(drained.size(), 1, 5'000);
     }
 private:
     interfaces::Node& m_node;

@@ -37,11 +37,11 @@ public:
             if (std::ranges::find(m_names, wallet->getWalletName()) != m_names.end()) wallet->remove();
         }
     }
-    std::shared_ptr<interfaces::Wallet> create(const SecureString& passphrase = {})
+    std::shared_ptr<interfaces::Wallet> create(const SecureString& passphrase = {}, uint64_t flags = wallet::WALLET_FLAG_DESCRIPTORS)
     {
         std::vector<bilingual_str> warnings;
         const std::string name = QString(QStringLiteral("qml-test-") + QUuid::createUuid().toString(QUuid::WithoutBraces)).toStdString();
-        auto result = m_node.walletLoader().createWallet(name, passphrase, wallet::WALLET_FLAG_DESCRIPTORS, warnings);
+        auto result = m_node.walletLoader().createWallet(name, passphrase, flags, warnings);
         if (!result) throw std::runtime_error(util::ErrorString(result).original);
         m_names.push_back(name);
         return std::shared_ptr<interfaces::Wallet>(std::move(*result));

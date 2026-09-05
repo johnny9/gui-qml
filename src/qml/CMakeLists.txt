@@ -138,6 +138,10 @@ if(ENABLE_WALLET)
     wallet/walletlistmodel.h
     wallet/walletoverviewmodel.cpp
     wallet/walletoverviewmodel.h
+    wallet/walletsecuritymodel.cpp
+    wallet/walletsecuritymodel.h
+    wallet/walletstoragemodel.cpp
+    wallet/walletstoragemodel.h
     wallet/walletviewmodel.h
     wallet/walletoperationexecutor.cpp
     wallet/walletoperationexecutor.h

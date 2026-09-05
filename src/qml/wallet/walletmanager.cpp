@@ -44,7 +44,12 @@ QString WalletManager::canonicalIdentity(const QString& name) const
     const QString directory = QString::fromStdString(loader().getWalletDir());
     const QFileInfo file(QDir(directory).absoluteFilePath(name));
     const QString canonical = file.canonicalFilePath();
-    return canonical.isEmpty() ? QDir::cleanPath(file.absoluteFilePath()) : canonical;
+    if (!canonical.isEmpty()) return canonical;
+    // Creation starts before the target exists. Resolve its existing parent so
+    // a symlinked wallet directory has the same identity before and after Core
+    // creates the database and emits its load notification.
+    const QString parent = QFileInfo(file.absolutePath()).canonicalFilePath();
+    return parent.isEmpty() ? QDir::cleanPath(file.absoluteFilePath()) : QDir(parent).filePath(file.fileName());
 }
 
 WalletViewModel* WalletManager::selectedWallet() const
@@ -81,6 +86,7 @@ WalletViewModel* WalletManager::publish(std::shared_ptr<interfaces::Wallet> wall
     if (found != m_instances.end()) return found->second->view.get();
     auto instance = std::make_unique<Instance>();
     instance->session = std::make_unique<WalletSession>(std::move(wallet), m_next_session_id++, m_executor);
+    instance->session->m_identity = identity;
     // A Core load and immediate unload can both precede this queued GUI call.
     // Subscribe first, then reconcile membership, so an unload cannot fall in
     // the gap between taking a snapshot and installing the unload handler.
