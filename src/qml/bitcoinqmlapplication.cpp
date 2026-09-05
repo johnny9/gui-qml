@@ -109,6 +109,7 @@ BitcoinQmlApplication::BitcoinQmlApplication(int& argc, char** argv)
     qmlRegisterUncreatableType<ReceiveRequestHistoryModel>("org.bitcoincore.qt", 1, 0, "ReceiveRequestHistoryModel", "Owned by the receive workflow");
     qmlRegisterUncreatableType<PaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest", "Owned by the receive workflow");
     qmlRegisterUncreatableType<WalletSendModel>("org.bitcoincore.qt", 1, 0, "WalletSendModel", "Owned by the wallet view");
+    qmlRegisterUncreatableType<PsbtModel>("org.bitcoincore.qt", 1, 0, "PsbtModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<FeeSelectionModel>("org.bitcoincore.qt", 1, 0, "FeeSelectionModel", "Owned by the send workflow");
     qmlRegisterUncreatableType<CoinSelectionModel>("org.bitcoincore.qt", 1, 0, "CoinSelectionModel", "Owned by the send workflow");
     qmlRegisterUncreatableType<TransactionReviewModel>("org.bitcoincore.qt", 1, 0, "TransactionReviewModel", "Owned by the transaction workflow");
@@ -260,6 +261,7 @@ bool BitcoinQmlApplication::createWindow()
     if (!gArgs.GetBoolArg("-disablewallet", false)) {
         m_wallet_manager = std::make_unique<WalletManager>(*m_node, QString::fromStdString(gArgs.GetChainTypeString()));
         m_router->registerDestination({QStringLiteral("wallet/send"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/Send.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Send"), false, QStringLiteral("wallets"), false});
+        m_router->registerDestination({QStringLiteral("wallet-psbt"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/Psbt.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "PSBT"), false, QStringLiteral("wallets"), false});
         connect(m_wallet_manager.get(), &WalletManager::selectedWalletChanged, m_router.get(), [this, previous = QPointer<WalletSendModel>{}]() mutable {
             if (previous) previous->invalidateReview();
             // Drop routes borrowing the old wallet before it can be destroyed.
@@ -267,6 +269,7 @@ bool BitcoinQmlApplication::createWindow()
             auto* selected = m_wallet_manager->selectedWallet();
             previous = selected ? selected->send() : nullptr;
             m_router->setDestinationEnabled(QStringLiteral("wallet/send"), selected && selected->send()->available());
+            m_router->setDestinationEnabled(QStringLiteral("wallet-psbt"), selected != nullptr);
         });
         m_router->registerDestination({QStringLiteral("wallets"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletOverview.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Wallets"), true, {}, false});
         m_router->registerDestination({QStringLiteral("wallet-activity"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletActivity.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Activity"), false, QStringLiteral("wallets"), false});

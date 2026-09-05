@@ -55,6 +55,12 @@ Page {
             enabled: !!root.selected && root.selected.overview.available
             onClicked: root.navigateRequested("wallet-addresses", {sessionId: root.selected.sessionId})
         }
+        Button {
+            objectName: "walletPsbtButton"
+            text: qsTr("Inspect PSBT")
+            enabled: !!root.selected
+            onClicked: root.navigateRequested("wallet-psbt", {"sessionId": root.selected.sessionId})
+        }
         Label {
             text: root.selected ? (root.selected.overview.encrypted ?
                 (root.selected.overview.locked ? qsTr("Encrypted and locked") : qsTr("Encrypted and unlocked")) : qsTr("Not encrypted")) : ""

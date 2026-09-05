@@ -182,6 +182,12 @@ if(ENABLE_WALLET)
     wallet/sendrecipientslistmodel.h
     wallet/walletsendmodel.cpp
     wallet/walletsendmodel.h
+    wallet/psbtdocument.cpp
+    wallet/psbtdocument.h
+    wallet/psbtinspection.cpp
+    wallet/psbtinspection.h
+    wallet/psbtmodel.cpp
+    wallet/psbtmodel.h
     wallet/walletoperationexecutor.cpp
     wallet/walletoperationexecutor.h
     wallet/walletsession.cpp

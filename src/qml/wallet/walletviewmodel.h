@@ -16,6 +16,7 @@
 #include <qml/wallet/walletsecuritymodel.h>
 #include <qml/wallet/walletstoragemodel.h>
 #include <qml/wallet/walletsendmodel.h>
+#include <qml/wallet/psbtmodel.h>
 #include <QObject>
 
 class WalletSession;
@@ -33,11 +34,12 @@ class WalletViewModel : public QObject
     Q_PROPERTY(SignVerifyMessageModel* messages READ messages CONSTANT)
     Q_PROPERTY(WalletOverviewModel* overview READ overview CONSTANT)
     Q_PROPERTY(WalletSendModel* send READ send CONSTANT)
+    Q_PROPERTY(PsbtModel* psbt READ psbt CONSTANT)
     Q_PROPERTY(WalletSecurityModel* security READ security CONSTANT)
     Q_PROPERTY(WalletStorageModel* storage READ storage CONSTANT)
 public:
-    WalletViewModel(WalletSession& session, const QString& network, CFeeRate dust_relay_fee, QObject* parent = nullptr)
-        : QObject(parent), m_session(session), m_overview(session, network, this), m_security(session, this), m_storage(session, m_overview, this), m_history(session, this), m_receive(session, network, this), m_activity(session.id(), m_history, *m_receive.history(), this), m_activity_filter(m_activity, this), m_addresses(session, this), m_messages(session, this), m_send(session, dust_relay_fee, this) {}
+    WalletViewModel(WalletSession& session, const QString& network, CFeeRate dust_relay_fee, interfaces::Node& node, QObject* parent = nullptr)
+        : QObject(parent), m_session(session), m_overview(session, network, this), m_security(session, this), m_storage(session, m_overview, this), m_history(session, this), m_receive(session, network, this), m_activity(session.id(), m_history, *m_receive.history(), this), m_activity_filter(m_activity, this), m_addresses(session, this), m_messages(session, this), m_send(session, dust_relay_fee, this), m_psbt(session, node, this) {}
     QString sessionId() const { return QString::number(m_session.id()); }
     WalletReceiveModel* receive() { return &m_receive; }
     TransactionHistoryModel* history() { return &m_history; }
@@ -47,6 +49,7 @@ public:
     SignVerifyMessageModel* messages() { return &m_messages; }
     WalletSession& session() const { return m_session; }
     WalletSendModel* send() { return &m_send; }
+    PsbtModel* psbt() { return &m_psbt; }
     WalletOverviewModel* overview() { return &m_overview; }
     WalletSecurityModel* security() { return &m_security; }
     WalletStorageModel* storage() { return &m_storage; }
@@ -62,6 +65,7 @@ private:
     AddressListModel m_addresses;
     SignVerifyMessageModel m_messages;
     WalletSendModel m_send;
+    PsbtModel m_psbt;
 };
 
 #endif // BITCOIN_QML_WALLET_WALLETVIEWMODEL_H
