@@ -64,6 +64,13 @@ add_library(bitcoinqml STATIC
   models/debuglogmodel.h
   models/debuglogreader.cpp
   models/debuglogreader.h
+  models/desktoptrayiconcontroller.cpp
+  models/desktoptrayiconcontroller.h
+  models/desktopwindowbehaviormodel.cpp
+  models/desktopwindowbehaviormodel.h
+  models/languagesettingsmodel.cpp
+  models/languagesettingsmodel.h
+  models/macdockiconhandler.h
   models/mempoolmodel.cpp
   models/mempoolmodel.h
   models/networkstatusmodel.cpp
@@ -150,6 +157,13 @@ if("-Wtrailing-whitespace=any" IN_LIST warn_flags)
 endif()
 unset(warn_flags)
 unset(ts_files)
+
+if(APPLE)
+  target_sources(bitcoinqml PRIVATE
+    models/macdockiconhandler.h
+    models/macdockiconhandler.mm
+  )
+endif()
 
 target_compile_definitions(bitcoinqml
   PUBLIC

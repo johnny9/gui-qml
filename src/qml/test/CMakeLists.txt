@@ -14,7 +14,9 @@ add_executable(test_bitcoin-qt
   test_node_integration.cpp
   test_banlistmodel.cpp
   test_blockclockdial.cpp
+  test_desktopwindowbehaviormodel.cpp
   test_debuglog.cpp
+  test_display_settings.cpp
   test_guiargs.cpp
   test_networkstatusmodel.cpp
   test_networktraffictower.cpp

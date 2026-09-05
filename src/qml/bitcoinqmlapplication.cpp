@@ -14,6 +14,7 @@
 #include <qml/appmode.h>
 #include <qml/applicationrouter.h>
 #include <qml/translationmanager.h>
+#include <qml/models/languagesettingsmodel.h>
 #include <qml/models/chainsyncmodel.h>
 #include <qml/models/nodenetworkmodel.h>
 #include <qml/models/runtimedialogmodel.h>
@@ -29,6 +30,8 @@
 #include <qml/models/banlistmodel.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/debuglogmodel.h>
+#include <qml/models/desktoptrayiconcontroller.h>
+#include <qml/models/desktopwindowbehaviormodel.h>
 #include <qml/models/networkstatusmodel.h>
 #include <qml/models/networktraffictower.h>
 #include <qml/models/nodemodel.h>
@@ -117,6 +120,7 @@ BitcoinQmlApplication::~BitcoinQmlApplication()
     if (m_node && m_base_initialized && !m_shutdown_complete) m_node->startShutdown();
     m_test_bridge.reset();
     m_engine.reset();
+    m_language_settings_model.reset();
     m_options_model.reset();
     m_node_information_model.reset();
     m_mempool_model.reset();
@@ -129,6 +133,8 @@ BitcoinQmlApplication::~BitcoinQmlApplication()
     m_ban_list_model.reset();
     m_peer_model_sort_proxy.reset();
     m_peer_model.reset();
+    m_desktop_tray_icon_controller.reset();
+    m_desktop_window_behavior_model.reset();
     m_chain_model.reset();
     m_network_status_model.reset();
     m_network_traffic_tower.reset();
@@ -191,8 +197,20 @@ bool BitcoinQmlApplication::createWindow()
     m_router->registerDestination({QStringLiteral("mempool"), QUrl{QStringLiteral("qrc:///qml/pages/node/MempoolInformationSettings.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Mempool"), true, QStringLiteral("")});
     m_router->registerDestination({QStringLiteral("console"), QUrl{QStringLiteral("qrc:///qml/pages/node/CommandConsole.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Console"), true, QStringLiteral("")});
     m_router->registerDestination({QStringLiteral("debug-log"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsDebugLog.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Debug log"), true, QStringLiteral("")});
+    m_router->registerDestination({QStringLiteral("settings"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsDisplay.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Settings"), true, QStringLiteral("")});
     m_router->registerDestination({QStringLiteral("peer-details"), QUrl{QStringLiteral("qrc:///qml/pages/node/PeerDetails.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Peer details"), false, QStringLiteral("peers")});
     m_router->registerDestination({QStringLiteral("shutdown"), QUrl{QStringLiteral("qrc:///qml/pages/node/Shutdown.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Shutting down"), false, QStringLiteral("")});
+    m_router->registerDestination({QStringLiteral("settings/window"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsWindowBehavior.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Window"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/storage"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsStorage.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Storage"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/connection"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsConnection.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Connection"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/about"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsAbout.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "About"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/theme"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsTheme.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Theme"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/block-clock"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsBlockClockDisplayMode.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Block clock"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/unit"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsDisplayUnit.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Display unit"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/language"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsLanguage.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Language"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/design-system"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsDesignSystem.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Design system"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/developer"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsDeveloper.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Developer"), false, QStringLiteral("settings")});
+    m_router->registerDestination({QStringLiteral("settings/proxy"), QUrl{QStringLiteral("qrc:///qml/pages/settings/SettingsProxy.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Proxy"), false, QStringLiteral("settings")});
     m_router->navigate(QStringLiteral("node"));
     m_navigation_model = std::make_unique<NavigationModel>(*m_router);
     connect(m_translations.get(), &TranslationManager::languageChanged, m_router.get(), &ApplicationRouter::retranslate);
@@ -220,8 +238,25 @@ bool BitcoinQmlApplication::createWindow()
     m_chain_model = std::make_unique<ChainModel>(*m_chain);
     m_chain_model->setCurrentNetworkName(QString::fromStdString(gArgs.GetChainTypeString()));
 
+    if (gArgs.IsArgSet("-resetguisettings")) {
+        QSettings settings;
+        settings.remove(QStringLiteral("fHideTrayIcon"));
+        settings.remove(QStringLiteral("fMinimizeToTray"));
+        settings.remove(QStringLiteral("fMinimizeOnClose"));
+    }
+
     connect(m_chain_sync_model.get(), &ChainSyncModel::setTimeRatioList, m_chain_model.get(), &ChainModel::setTimeRatioList);
     connect(m_chain_sync_model.get(), &ChainSyncModel::setTimeRatioListInitial, m_chain_model.get(), &ChainModel::setTimeRatioListInitial);
+
+    m_desktop_window_behavior_model = std::make_unique<DesktopWindowBehaviorModel>();
+    m_desktop_tray_icon_controller = std::make_unique<DesktopTrayIconController>();
+    m_desktop_tray_icon_controller->setRouter(*m_router);
+    connect(m_translations.get(), &TranslationManager::languageChanged,
+        m_desktop_tray_icon_controller.get(), &DesktopTrayIconController::retranslate);
+    connect(this, &QGuiApplication::lastWindowClosed, this, [this] {
+        if (m_desktop_tray_icon_controller && m_desktop_tray_icon_controller->visible()) return;
+        requestShutdown();
+    });
 
     m_peer_model = std::make_unique<PeerListModel>(*m_node, nullptr);
     connect(m_node_model.get(), &NodeLifecycleModel::requestedShutdown, m_peer_model.get(), &PeerListModel::stop);
@@ -252,6 +287,8 @@ bool BitcoinQmlApplication::createWindow()
     assert(m_network_style);
     setApplicationName(m_network_style->getAppName());
     setWindowIcon(m_network_style->getAppIcon());
+
+    m_language_settings_model = std::make_unique<LanguageSettingsModel>(*m_node, gArgs, *m_translations);
     m_engine = std::make_unique<QQmlApplicationEngine>();
     m_translations->attachEngine(*m_engine);
     m_engine->addImageProvider(QStringLiteral("images"), new ImageProvider{m_network_style.get()});
@@ -266,6 +303,7 @@ bool BitcoinQmlApplication::createWindow()
     context->setContextProperty(QStringLiteral("nodeInformationModel"), m_node_information_model.get());
     context->setContextProperty(QStringLiteral("applicationRouter"), m_router.get());
     context->setContextProperty(QStringLiteral("navigationModel"), m_navigation_model.get());
+    context->setContextProperty(QStringLiteral("languageSettingsModel"), m_language_settings_model.get());
     context->setContextProperty(QStringLiteral("chainModel"), m_chain_model.get());
     context->setContextProperty(QStringLiteral("peerTableModel"), m_peer_model.get());
     context->setContextProperty(QStringLiteral("peerListModelProxy"), m_peer_model_sort_proxy.get());
@@ -273,13 +311,26 @@ bool BitcoinQmlApplication::createWindow()
     context->setContextProperty(QStringLiteral("debugLogModel"), m_debug_log_model.get());
     context->setContextProperty(QStringLiteral("rpcConsoleModel"), m_rpc_console_model.get());
     context->setContextProperty(QStringLiteral("optionsModel"), m_options_model.get());
+    context->setContextProperty(QStringLiteral("desktopWindowBehaviorModel"), m_desktop_window_behavior_model.get());
+    context->setContextProperty(QStringLiteral("desktopTrayIconController"), m_desktop_tray_icon_controller.get());
 
-    connect(this, &QGuiApplication::lastWindowClosed, this, &BitcoinQmlApplication::requestShutdown);
+    m_desktop_tray_icon_controller->setBasePixmap(
+        m_network_style->getTrayAndWindowIcon().pixmap(QSize(256, 256)));
+    m_desktop_tray_icon_controller->setToolTip(
+        QString(tr("%1 client").arg(CLIENT_NAME) + " " + m_network_style->getTitleAddText()).trimmed());
+    m_desktop_tray_icon_controller->setVisible(
+        m_desktop_window_behavior_model->desktopPlatform() && m_desktop_window_behavior_model->showTrayIcon());
+    connect(m_desktop_tray_icon_controller.get(), &DesktopTrayIconController::supportedChanged,
+        m_desktop_window_behavior_model.get(), [this](bool supported) {
+            if (!supported) m_desktop_window_behavior_model->setShowTrayIcon(false);
+        });
+
     m_engine->load(QUrl{QStringLiteral("qrc:///qml/pages/MainWindow.qml")});
     if (m_engine->rootObjects().isEmpty()) return false;
 
     auto* const window{qobject_cast<QQuickWindow*>(m_engine->rootObjects().constFirst())};
     if (!window) return false;
+    m_desktop_tray_icon_controller->setMainWindow(window);
     if (m_initial_window_geometry.isValid()) window->setGeometry(m_initial_window_geometry);
     m_node_model->startShutdownPolling();
     // NodeLifecycleModel interrupts Core first. All preceding direct slots drain
