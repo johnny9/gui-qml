@@ -14,11 +14,16 @@ Page {
     property var wallet: null
     property string sessionId
     property string requestId
+    property string address
     function openRequest() {
         if (receive && !receive.busy && requestId.length > 0) {
             const id = requestId
             requestId = ""
             if (!receive.edit(id)) requestId = id
+        } else if (receive && !receive.busy && address.length > 0) {
+            const selectedAddress = address
+            address = ""
+            if (!receive.useAddress(selectedAddress)) address = selectedAddress
         }
     }
     readonly property var receive: wallet ? wallet.receive : null
@@ -34,7 +39,7 @@ Page {
     header: ToolBar {
         RowLayout {
             anchors.fill: parent
-            Button { text: qsTr("Back"); onClicked: root.back() }
+            Button { objectName: "receiveBackButton"; text: qsTr("Back"); onClicked: root.back() }
             Label { text: qsTr("Receive"); Layout.fillWidth: true }
             Button { text: qsTr("New request"); enabled: !!root.receive && !root.receive.busy; onClicked: root.receive.clear() }
         }

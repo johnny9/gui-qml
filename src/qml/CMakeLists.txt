@@ -133,6 +133,10 @@ if(ENABLE_WALLET)
     wallet/activityfilterproxymodel.h
     wallet/activitycsv.cpp
     wallet/activitycsv.h
+    wallet/addresslistmodel.cpp
+    wallet/addresslistmodel.h
+    wallet/signverifymessagemodel.cpp
+    wallet/signverifymessagemodel.h
     wallet/transactionhistorymodel.h
     wallet/paymentrequest.cpp
     wallet/paymentrequest.h

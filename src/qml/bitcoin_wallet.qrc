@@ -4,6 +4,9 @@
         <file>pages/wallet/WalletActivity.qml</file>
         <file>pages/wallet/WalletReceive.qml</file>
         <file>pages/wallet/WalletTransactionDetails.qml</file>
+        <file>pages/wallet/WalletAddresses.qml</file>
+        <file>pages/wallet/WalletAddressDetails.qml</file>
+        <file>pages/wallet/WalletMessage.qml</file>
         <file>pages/wallet/CreateWallet.qml</file>
         <file>pages/wallet/RestoreWallet.qml</file>
         <file>pages/wallet/MigrateWallet.qml</file>

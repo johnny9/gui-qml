@@ -256,11 +256,17 @@ bool BitcoinQmlApplication::createWindow()
         m_router->registerDestination({QStringLiteral("wallets"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletOverview.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Wallets"), true, {}, false});
         m_router->registerDestination({QStringLiteral("wallet-activity"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletActivity.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Activity"), false, QStringLiteral("wallets"), false});
         m_router->registerDestination({QStringLiteral("wallet-receive"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletReceive.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Receive"), false, QStringLiteral("wallets"), false});
+        m_router->registerDestination({QStringLiteral("wallet-addresses"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletAddresses.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Addresses"), false, QStringLiteral("wallets"), false});
+        m_router->registerDestination({QStringLiteral("wallet-address"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletAddressDetails.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Address details"), false, QStringLiteral("wallets"), false});
+        m_router->registerDestination({QStringLiteral("wallet-message"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletMessage.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Sign / verify message"), false, QStringLiteral("wallets"), false});
         m_router->registerDestination({QStringLiteral("wallet-transaction"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletTransactionDetails.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Transaction details"), false, QStringLiteral("wallets"), false});
         connect(m_wallet_manager.get(), &WalletManager::selectedWalletChanged, m_router.get(), [this] {
             const bool selected{m_wallet_manager->selectedWallet() != nullptr};
             m_router->setDestinationEnabled(QStringLiteral("wallet-activity"), selected);
             m_router->setDestinationEnabled(QStringLiteral("wallet-receive"), selected);
+            m_router->setDestinationEnabled(QStringLiteral("wallet-addresses"), selected);
+            m_router->setDestinationEnabled(QStringLiteral("wallet-address"), selected);
+            m_router->setDestinationEnabled(QStringLiteral("wallet-message"), selected);
             m_router->setDestinationEnabled(QStringLiteral("wallet-transaction"), selected);
         });
         connect(m_wallet_manager.get(), &WalletManager::initializedChanged, m_router.get(), [this] {

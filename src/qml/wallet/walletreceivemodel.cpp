@@ -10,6 +10,7 @@
 #include <key_io.h>
 #include <outputtype.h>
 #include <util/translation.h>
+#include <wallet/types.h>
 #include <QCryptographicHash>
 #include <QPointer>
 #include <QSettings>
@@ -43,6 +44,35 @@ void WalletReceiveModel::setDefaultAddressType(const QString& type)
     m_default_type = type;
     QSettings{}.setValue(m_settings_key, type);
     Q_EMIT changed();
+}
+
+bool WalletReceiveModel::useAddress(const QString& address)
+{
+    if (!m_session.available() || busy()) return false;
+    m_loading = true;
+    m_error.clear();
+    Q_EMIT changed();
+    auto entry{std::make_shared<QmlRecentRequestEntry>()};
+    const QPointer<WalletReceiveModel> self{this};
+    if (!m_session.runRead([address, entry](interfaces::Wallet& wallet) {
+        const auto destination{DecodeDestination(address.toStdString())};
+        for (const auto& known : wallet.getAddresses()) {
+            if (known.dest == destination && known.is_mine && known.purpose == wallet::AddressPurpose::RECEIVE) {
+                entry->recipient.address = EncodeDestination(destination);
+                entry->recipient.label = known.name;
+                return WalletOperationResult{};
+            }
+        }
+        return WalletOperationResult::failure(WalletOperationResult::Unavailable, QObject::tr("Choose a receiving address owned by this wallet."));
+    }, [self, entry](WalletOperationResult result) {
+        if (!self) return;
+        self->m_loading = false;
+        self->m_error = result.error;
+        if (result.code == WalletOperationResult::Success) self->m_draft.setEntry(*entry);
+        Q_EMIT self->changed();
+        if (self->m_reload_pending) { self->m_reload_pending = false; self->reload(); }
+    })) { m_loading = false; Q_EMIT changed(); return false; }
+    return true;
 }
 
 void WalletReceiveModel::reload()

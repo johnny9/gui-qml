@@ -36,6 +36,7 @@ public:
     Q_INVOKABLE bool remove(const QString& id);
     Q_INVOKABLE bool edit(const QString& id);
     Q_INVOKABLE bool useAsTemplate(const QString& id, bool reuse_address = false);
+    Q_INVOKABLE bool useAddress(const QString& address);
     Q_INVOKABLE void clear();
 Q_SIGNALS:
     void changed();

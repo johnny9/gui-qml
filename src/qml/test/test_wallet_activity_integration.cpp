@@ -45,12 +45,16 @@ private Q_SLOTS:
         QTRY_VERIFY_WITH_TIMEOUT(!original->receive()->busy() && original->activity()->count() == 1, 10'000);
         const QString row_key{original->activity()->rows().front().value("rowKey").toString()};
         QSignalSpy warnings{&m_app.engine(), &QQmlEngine::warnings};
-        const QVariantMap params{{"sessionId", id}, {"rowKey", row_key}};
-        for (const auto& route : {"wallet-activity", "wallet-transaction", "wallet-receive"}) {
-            QVERIFY(m_app.router().navigate(QString::fromLatin1(route), params));
+        const QVariantMap params{{"sessionId", id}};
+        for (const auto& route : {"wallet-activity", "wallet-transaction", "wallet-receive", "wallet-addresses", "wallet-address", "wallet-message"}) {
+            auto route_params{params};
+            if (QString::fromLatin1(route) == "wallet-transaction") route_params.insert("rowKey", row_key);
+            QVERIFY(m_app.router().navigate(QString::fromLatin1(route), route_params));
             auto* host{m_app.engine().rootObjects().constFirst()->findChild<QObject*>("applicationPageHost")};
             QVERIFY(host);
             QTRY_VERIFY_WITH_TIMEOUT(host->property("item").value<QObject*>(), 5'000);
+            QCOMPARE(host->property("status").toInt(), 1); // Loader.Ready, not a retained failed page.
+            QCoreApplication::processEvents();
             QCOMPARE(host->property("item").value<QObject*>()->property("wallet").value<QObject*>(), original.data());
         }
         QVERIFY(m_app.router().navigate("node"));

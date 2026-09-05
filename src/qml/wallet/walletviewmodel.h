@@ -10,6 +10,8 @@
 #include <qml/wallet/walletreceivemodel.h>
 #include <qml/wallet/activitytimelinemodel.h>
 #include <qml/wallet/activityfilterproxymodel.h>
+#include <qml/wallet/addresslistmodel.h>
+#include <qml/wallet/signverifymessagemodel.h>
 #include <qml/wallet/walletsession.h>
 #include <qml/wallet/walletsecuritymodel.h>
 #include <qml/wallet/walletstoragemodel.h>
@@ -26,17 +28,21 @@ class WalletViewModel : public QObject
     Q_PROPERTY(TransactionHistoryModel* history READ history CONSTANT)
     Q_PROPERTY(ActivityTimelineModel* activity READ activity CONSTANT)
     Q_PROPERTY(ActivityFilterProxyModel* activityFilter READ activityFilter CONSTANT)
+    Q_PROPERTY(AddressListModel* addresses READ addresses CONSTANT)
+    Q_PROPERTY(SignVerifyMessageModel* messages READ messages CONSTANT)
     Q_PROPERTY(WalletOverviewModel* overview READ overview CONSTANT)
     Q_PROPERTY(WalletSecurityModel* security READ security CONSTANT)
     Q_PROPERTY(WalletStorageModel* storage READ storage CONSTANT)
 public:
     WalletViewModel(WalletSession& session, const QString& network, QObject* parent = nullptr)
-        : QObject(parent), m_session(session), m_overview(session, network, this), m_security(session, this), m_storage(session, m_overview, this), m_history(session, this), m_receive(session, network, this), m_activity(session.id(), m_history, *m_receive.history(), this), m_activity_filter(m_activity, this) {}
+        : QObject(parent), m_session(session), m_overview(session, network, this), m_security(session, this), m_storage(session, m_overview, this), m_history(session, this), m_receive(session, network, this), m_activity(session.id(), m_history, *m_receive.history(), this), m_activity_filter(m_activity, this), m_addresses(session, this), m_messages(session, this) {}
     QString sessionId() const { return QString::number(m_session.id()); }
     WalletReceiveModel* receive() { return &m_receive; }
     TransactionHistoryModel* history() { return &m_history; }
     ActivityTimelineModel* activity() { return &m_activity; }
     ActivityFilterProxyModel* activityFilter() { return &m_activity_filter; }
+    AddressListModel* addresses() { return &m_addresses; }
+    SignVerifyMessageModel* messages() { return &m_messages; }
     WalletSession& session() const { return m_session; }
     WalletOverviewModel* overview() { return &m_overview; }
     WalletSecurityModel* security() { return &m_security; }
@@ -50,6 +56,8 @@ private:
     WalletReceiveModel m_receive;
     ActivityTimelineModel m_activity;
     ActivityFilterProxyModel m_activity_filter;
+    AddressListModel m_addresses;
+    SignVerifyMessageModel m_messages;
 };
 
 #endif // BITCOIN_QML_WALLET_WALLETVIEWMODEL_H
