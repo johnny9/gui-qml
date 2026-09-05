@@ -8,6 +8,7 @@
 #include <consensus/amount.h>
 #include <qml/wallet/feepolicy.h>
 #include <outputtype.h>
+#include <primitives/transaction.h>
 #include <QString>
 #include <vector>
 
@@ -27,6 +28,8 @@ struct SendDraftSnapshot {
     std::vector<SendRecipientValue> recipients;
     FeePolicy fees;
     OutputType change_type{OutputType::BECH32};
+    std::vector<COutPoint> selected_inputs;
+    bool selected_only{false};
 };
 
 #endif // BITCOIN_QML_WALLET_SENDDRAFTSNAPSHOT_H

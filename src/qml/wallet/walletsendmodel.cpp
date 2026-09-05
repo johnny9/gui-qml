@@ -8,7 +8,7 @@
 #include <interfaces/wallet.h>
 
 WalletSendModel::WalletSendModel(WalletSession& session, CFeeRate dust_relay_fee, QObject* parent)
-    : QObject(parent), m_session(session), m_recipients(dust_relay_fee, this),
+    : QObject(parent), m_session(session), m_recipients(dust_relay_fee, this), m_coins(session, this),
       m_fees([&session](SendDraftSnapshot draft, quint64 request_id, FeeSelectionModel::Complete complete) {
           auto preview = std::make_shared<FeePreview>(FeePreview{draft.session_id, draft.session_generation, draft.revision, request_id, {}, false, false, {}});
           const bool accepted = session.runRead([preview, draft](interfaces::Wallet& backend) {
@@ -30,6 +30,7 @@ WalletSendModel::WalletSendModel(WalletSession& session, CFeeRate dust_relay_fee
     connect(&session, &WalletSession::activityChanged, this, &WalletSendModel::draftEdited);
     connect(&m_fees, &FeeSelectionModel::policyChanged, this, &WalletSendModel::draftEdited);
     connect(&m_fees, &FeeSelectionModel::previewChanged, this, &WalletSendModel::changed);
+    connect(&m_coins, &CoinSelectionModel::inputChanged, this, &WalletSendModel::draftEdited);
 }
 
 bool WalletSendModel::available() const
@@ -46,7 +47,8 @@ QString WalletSendModel::error() const
 SendDraftSnapshot WalletSendModel::snapshot() const
 {
     return {m_session.id(), m_session.generation(), m_revision, m_recipients.snapshot(), m_fees.policy(),
-            m_session.available() ? m_session.wallet().getDefaultAddressType() : OutputType::UNKNOWN};
+            m_session.available() ? m_session.wallet().getDefaultAddressType() : OutputType::UNKNOWN,
+            m_coins.selected(), m_coins.manual()};
 }
 
 void WalletSendModel::draftEdited()
@@ -57,4 +59,4 @@ void WalletSendModel::draftEdited()
     Q_EMIT changed();
 }
 
-void WalletSendModel::discard() { m_recipients.clear(); }
+void WalletSendModel::discard() { m_coins.clear(); m_recipients.clear(); }

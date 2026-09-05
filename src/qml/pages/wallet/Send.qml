@@ -13,9 +13,14 @@ Page {
     required property string sessionId
     property var wallet: null
     readonly property var send: wallet ? wallet.send : null
-    Component.onCompleted: { wallet = walletManager.walletBySession(sessionId) }
+    Component.onCompleted: {
+        wallet = walletManager.walletBySession(sessionId)
+        if (send) send.coins.active = true
+    }
+    Component.onDestruction: { if (send) send.coins.active = false }
     signal back()
     Binding { target: root.send ? root.send.fees : null; property: "displayUnit"; value: optionsModel.displayUnit }
+    Binding { target: root.send ? root.send.coins : null; property: "displayUnit"; value: optionsModel.displayUnit }
     background: Rectangle { color: Theme.color.background }
     header: ToolBar {
         RowLayout {
@@ -112,6 +117,46 @@ Page {
                     Label {
                         objectName: "sendFeeEstimate"
                         text: root.send.fees.pending ? qsTr("Estimating fee…") : root.send.fees.estimatedFee
+                    }
+                }
+            }
+            GroupBox {
+                title: qsTr("Coin selection")
+                Layout.fillWidth: true
+                ColumnLayout {
+                    anchors.fill: parent
+                    CheckBox {
+                        objectName: "sendManualCoins"
+                        text: qsTr("Spend selected coins only")
+                        checked: root.send.coins.manual
+                        onToggled: root.send.coins.manual = checked
+                    }
+                    Label { text: root.send.coins.error; visible: text.length > 0 }
+                    ListView {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.min(300, contentHeight)
+                        clip: true
+                        model: root.send.coins
+                        delegate: RowLayout {
+                            width: ListView.view.width
+                            required property string coinKey
+                            required property string coinAddress
+                            required property string coinAmount
+                            required property int confirmations
+                            required property bool coinSelected
+                            required property bool coinLocked
+                            CheckBox {
+                                checked: coinSelected
+                                enabled: !coinLocked && !root.send.coins.busy
+                                onToggled: root.send.coins.select(coinKey, checked)
+                            }
+                            Label { text: coinAmount + " · " + coinAddress + " · " + qsTr("%1 confirmations").arg(confirmations); Layout.fillWidth: true; elide: Text.ElideMiddle }
+                            Button {
+                                text: coinLocked ? qsTr("Unlock coin") : qsTr("Lock coin")
+                                enabled: !root.send.coins.busy
+                                onClicked: root.send.coins.setLocked(coinKey, !coinLocked)
+                            }
+                        }
                     }
                 }
             }

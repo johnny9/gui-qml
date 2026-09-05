@@ -7,6 +7,7 @@
 
 #include <qml/wallet/sendrecipientslistmodel.h>
 #include <qml/wallet/feeselectionmodel.h>
+#include <qml/wallet/coinselectionmodel.h>
 #include <QObject>
 
 class WalletSession;
@@ -17,6 +18,7 @@ class WalletSendModel : public QObject
     Q_OBJECT
     Q_PROPERTY(SendRecipientsListModel* recipients READ recipients CONSTANT)
     Q_PROPERTY(FeeSelectionModel* fees READ fees CONSTANT)
+    Q_PROPERTY(CoinSelectionModel* coins READ coins CONSTANT)
     Q_PROPERTY(bool available READ available NOTIFY changed)
     Q_PROPERTY(quint64 revision READ revision NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
@@ -24,6 +26,7 @@ public:
     WalletSendModel(WalletSession& session, CFeeRate dust_relay_fee, QObject* parent = nullptr);
     SendRecipientsListModel* recipients() { return &m_recipients; }
     FeeSelectionModel* fees() { return &m_fees; }
+    CoinSelectionModel* coins() { return &m_coins; }
     bool available() const;
     quint64 revision() const { return m_revision; }
     QString error() const;
@@ -35,6 +38,7 @@ private:
     void draftEdited();
     WalletSession& m_session;
     SendRecipientsListModel m_recipients;
+    CoinSelectionModel m_coins;
     FeeSelectionModel m_fees;
     quint64 m_revision{1};
 };

@@ -13,7 +13,7 @@ class FeeSelectionTests : public QObject
     struct Request { SendDraftSnapshot draft; quint64 id; FeeSelectionModel::Complete complete; };
     static SendDraftSnapshot draft(quint64 revision)
     {
-        return {11, 3, revision, {{"address", {}, COIN, false, false}}, {}, OutputType::BECH32};
+        return {11, 3, revision, {{"address", {}, COIN, false, false}}, {}, OutputType::BECH32, {}, false};
     }
     static FeePreview reply(const Request& request, CAmount fee)
     {

@@ -117,6 +117,7 @@ add_library(bitcoinqml STATIC
 )
 
 if(ENABLE_WALLET)
+  target_sources(bitcoinqml PRIVATE wallet/coinselectionmodel.cpp wallet/coinselectionmodel.h)
   qt6_add_resources(BITCOIN_WALLET_QRC bitcoin_wallet.qrc)
   get_target_property(warn_flags warn_interface INTERFACE_COMPILE_OPTIONS)
   if("-Wtrailing-whitespace=any" IN_LIST warn_flags)

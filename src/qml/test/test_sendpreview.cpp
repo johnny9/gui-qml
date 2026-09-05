@@ -37,7 +37,7 @@ class SendPreviewTests : public QObject
     };
     static SendDraftSnapshot draft()
     {
-        return {11, 3, 17, {{QString::fromStdString(EncodeDestination(WitnessV0KeyHash(uint160{}))), {}, COIN, true, false}}, {}, OutputType::BECH32};
+        return {11, 3, 17, {{QString::fromStdString(EncodeDestination(WitnessV0KeyHash(uint160{}))), {}, COIN, true, false}}, {}, OutputType::BECH32, {}, false};
     }
     static std::vector<wallet::CRecipient> recipients(const SendDraftSnapshot& draft)
     {
@@ -61,6 +61,8 @@ private Q_SLOTS:
         QFETCH(CAmount, multiplier);
         auto input = draft();
         input.fees.target = target;
+        input.selected_only = true;
+        input.selected_inputs = {{Txid::FromUint256(uint256::ONE), 2}};
         Probe probe{{std::nullopt, 250}};
         const auto preview = EstimateSendFee(input, recipients(input), 9, probe.backend());
         QCOMPARE(probe.attempts.size(), size_t{2});
@@ -71,6 +73,8 @@ private Q_SLOTS:
         QCOMPARE(probe.attempts[1].control.m_feerate->GetFeePerK(), probe.required * multiplier);
         for (const auto& attempt : probe.attempts) {
             QVERIFY(IsValidDestination(attempt.control.destChange));
+            QVERIFY(!attempt.control.m_allow_other_inputs);
+            QCOMPARE(attempt.control.ListSelected(), input.selected_inputs);
         }
         QCOMPARE(preview.session_id, input.session_id);
         QCOMPARE(preview.session_generation, input.session_generation);

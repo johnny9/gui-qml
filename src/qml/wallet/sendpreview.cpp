@@ -52,6 +52,10 @@ std::optional<CAmount> TryPreview(const SendPreviewBackend& backend, const std::
 wallet::CCoinControl CoinControlForDraft(const SendDraftSnapshot& draft, bool preview)
 {
     wallet::CCoinControl control;
+    if (draft.selected_only && draft.selected_inputs.empty()) throw std::runtime_error("Select at least one available coin or enable automatic selection.");
+    control.m_allow_other_inputs = !draft.selected_only;
+    for (const auto& outpoint : draft.selected_inputs) control.Select(outpoint);
+    control.m_change_type = draft.change_type;
     control.m_confirm_target = draft.fees.target;
     if (draft.fees.custom_per_kvb) {
         control.m_confirm_target.reset();
@@ -68,6 +72,17 @@ wallet::CCoinControl CoinControlForDraft(const SendDraftSnapshot& draft, bool pr
 
 std::vector<wallet::CRecipient> RecipientsForDraft(const SendDraftSnapshot& draft, interfaces::Wallet& backend)
 {
+    if (!draft.selected_inputs.empty()) {
+        std::set<COutPoint> available;
+        for (const auto& [destination, group] : backend.listCoins()) {
+            for (const auto& [outpoint, output] : group) {
+                if (!backend.isLockedCoin(outpoint)) available.insert(outpoint);
+            }
+        }
+        for (const auto& outpoint : draft.selected_inputs) {
+            if (!available.contains(outpoint)) throw std::runtime_error("A selected coin is no longer available. Review the coin selection.");
+        }
+    }
     CAmount fixed_total{0};
     int maximum_count{0};
     for (const auto& recipient : draft.recipients) {
