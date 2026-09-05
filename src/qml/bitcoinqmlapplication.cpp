@@ -108,6 +108,7 @@ BitcoinQmlApplication::BitcoinQmlApplication(int& argc, char** argv)
     qmlRegisterUncreatableType<ReceiveRequestHistoryModel>("org.bitcoincore.qt", 1, 0, "ReceiveRequestHistoryModel", "Owned by the receive workflow");
     qmlRegisterUncreatableType<PaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest", "Owned by the receive workflow");
     qmlRegisterUncreatableType<WalletSendModel>("org.bitcoincore.qt", 1, 0, "WalletSendModel", "Owned by the wallet view");
+    qmlRegisterUncreatableType<FeeSelectionModel>("org.bitcoincore.qt", 1, 0, "FeeSelectionModel", "Owned by the send workflow");
     qmlRegisterUncreatableType<SendRecipientsListModel>("org.bitcoincore.qt", 1, 0, "SendRecipientsListModel", "Owned by the send workflow");
     qmlRegisterUncreatableType<WalletOverviewModel>("org.bitcoincore.qt", 1, 0, "WalletOverviewModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<WalletSecurityModel>("org.bitcoincore.qt", 1, 0, "WalletSecurityModel", "Owned by the wallet view");

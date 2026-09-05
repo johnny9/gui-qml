@@ -6,6 +6,8 @@
 #define BITCOIN_QML_WALLET_SENDDRAFTSNAPSHOT_H
 
 #include <consensus/amount.h>
+#include <qml/wallet/feepolicy.h>
+#include <outputtype.h>
 #include <QString>
 #include <vector>
 
@@ -23,6 +25,8 @@ struct SendDraftSnapshot {
     quint64 session_generation{0};
     quint64 revision{0};
     std::vector<SendRecipientValue> recipients;
+    FeePolicy fees;
+    OutputType change_type{OutputType::BECH32};
 };
 
 #endif // BITCOIN_QML_WALLET_SENDDRAFTSNAPSHOT_H

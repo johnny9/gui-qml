@@ -15,6 +15,7 @@ Page {
     readonly property var send: wallet ? wallet.send : null
     Component.onCompleted: { wallet = walletManager.walletBySession(sessionId) }
     signal back()
+    Binding { target: root.send ? root.send.fees : null; property: "displayUnit"; value: optionsModel.displayUnit }
     background: Rectangle { color: Theme.color.background }
     header: ToolBar {
         RowLayout {
@@ -83,6 +84,37 @@ Page {
                 }
             }
             Button { text: qsTr("Add recipient"); onClicked: root.send.recipients.add() }
+            GroupBox {
+                title: qsTr("Transaction fee")
+                Layout.fillWidth: true
+                ColumnLayout {
+                    anchors.fill: parent
+                    ComboBox {
+                        objectName: "sendFeeTarget"
+                        model: [qsTr("Fast (1 block)"), qsTr("Standard (2 blocks)"), qsTr("Economical (6 blocks)")]
+                        currentIndex: [1, 2, 6].indexOf(root.send.fees.target)
+                        enabled: !root.send.fees.custom
+                        onActivated: root.send.fees.target = [1, 2, 6][currentIndex]
+                    }
+                    CheckBox {
+                        objectName: "sendCustomFee"
+                        text: qsTr("Custom fee rate")
+                        checked: root.send.fees.custom
+                        onToggled: root.send.fees.custom = checked
+                    }
+                    TextField {
+                        objectName: "sendCustomFeeRate"
+                        visible: root.send.fees.custom
+                        placeholderText: qsTr("sat/vB")
+                        text: root.send.fees.customRate
+                        onTextEdited: root.send.fees.customRate = text
+                    }
+                    Label {
+                        objectName: "sendFeeEstimate"
+                        text: root.send.fees.pending ? qsTr("Estimating fee…") : root.send.fees.estimatedFee
+                    }
+                }
+            }
             Label {
                 objectName: "sendError"
                 text: root.send.error

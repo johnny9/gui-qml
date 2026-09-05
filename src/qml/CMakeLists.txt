@@ -169,6 +169,12 @@ if(ENABLE_WALLET)
     wallet/walletstoragemodel.h
     wallet/walletviewmodel.h
     wallet/senddraftsnapshot.h
+    wallet/feepolicy.cpp
+    wallet/feepolicy.h
+    wallet/feeselectionmodel.cpp
+    wallet/feeselectionmodel.h
+    wallet/sendpreview.cpp
+    wallet/sendpreview.h
     wallet/sendrecipientslistmodel.cpp
     wallet/sendrecipientslistmodel.h
     wallet/walletsendmodel.cpp
