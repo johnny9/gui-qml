@@ -99,6 +99,10 @@ public:
     //! Get public key.
     virtual bool getPubKey(const CScript& script, const CKeyID& address, CPubKey& pub_key) = 0;
 
+    //! Whether an available local private key can sign for this public key.
+    //! Never signs, unlocks, or exposes private key material to the caller.
+    virtual bool hasSigningKey(const CPubKey& pub_key) = 0;
+
     //! Sign message
     virtual SigningResult signMessage(const std::string& message, const PKHash& pkhash, std::string& str_sig) = 0;
 

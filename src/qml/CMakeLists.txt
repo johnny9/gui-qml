@@ -187,6 +187,7 @@ if(ENABLE_WALLET)
     wallet/psbtinspection.cpp
     wallet/psbtinspection.h
     wallet/psbtmodel.cpp
+    wallet/psbtactions.cpp
     wallet/psbtmodel.h
     wallet/walletoperationexecutor.cpp
     wallet/walletoperationexecutor.h

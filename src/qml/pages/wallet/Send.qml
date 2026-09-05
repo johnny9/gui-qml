@@ -235,6 +235,15 @@ Page {
                         }
                     }
                     Label { objectName: "sendPreparedFee"; text: qsTr("Actual fee: %1").arg(root.send.review.feeText) }
+                    Button {
+                        objectName: "sendReviewExportPsbt"
+                        text: qsTr("Export reviewed transaction as PSBT…")
+                        enabled: !!root.wallet && !!root.wallet.psbt && !root.wallet.psbt.busy
+                        onClicked: {
+                            if (root.wallet.psbt.importReview(root.send.review))
+                                root.navigateRequested("wallet-psbt", {"sessionId": root.sessionId})
+                        }
+                    }
                 }
             }
             Label {

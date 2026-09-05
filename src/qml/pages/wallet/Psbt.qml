@@ -14,7 +14,7 @@ Page {
     required property string sessionId
     property var wallet: null
     readonly property var psbt: wallet ? wallet.psbt : null
-    Component.onCompleted: wallet = walletManager.walletBySession(sessionId)
+    Component.onCompleted: if (!wallet) wallet = walletManager.walletBySession(sessionId)
     signal back()
     background: Rectangle { color: Theme.color.background }
     header: ToolBar {
@@ -29,7 +29,15 @@ Page {
         id: openDialog
         title: qsTr("Import PSBT")
         nameFilters: [qsTr("PSBT files (*.psbt)"), qsTr("All files (*)")]
-        onAccepted: root.psbt.importFile(selectedFile.toString())
+        onAccepted: if (root.psbt) root.psbt.importFile(selectedFile.toString())
+    }
+    FileDialog {
+        id: saveDialog
+        title: qsTr("Export PSBT")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "psbt"
+        nameFilters: [qsTr("PSBT files (*.psbt)"), qsTr("All files (*)")]
+        onAccepted: if (root.psbt) root.psbt.exportFile(selectedFile.toString())
     }
     ScrollView {
         anchors.fill: parent
@@ -60,6 +68,30 @@ Page {
                 }
             }
             Label { objectName: "psbtFee"; text: root.psbt && root.psbt.review.hasReview ? qsTr("Fee: %1").arg(root.psbt.review.feeText) : qsTr("Fee unavailable") }
+            Button {
+                objectName: "psbtExport"
+                text: qsTr("Export PSBT…")
+                enabled: !!root.psbt && root.psbt.loaded && !root.psbt.busy
+                onClicked: saveDialog.open()
+            }
+            RowLayout {
+                visible: !!root.psbt && (root.psbt.canSign || root.psbt.canUnlockForSigning)
+                TextField {
+                    id: passphrase
+                    objectName: "psbtPassphrase"
+                    placeholderText: qsTr("Wallet password, if locked")
+                    echoMode: TextInput.Password
+                    inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+                    onVisibleChanged: if (!visible) clear()
+                    Component.onDestruction: clear()
+                }
+                Button {
+                    objectName: "psbtSign"
+                    text: root.psbt && root.psbt.canUnlockForSigning ? qsTr("Unlock and try local signing") : qsTr("Add local signatures")
+                    enabled: !!root.psbt && (root.psbt.canSign || root.psbt.canUnlockForSigning)
+                    onClicked: { const secret = passphrase.text; passphrase.clear(); root.psbt.sign(secret) }
+                }
+            }
         }
     }
 }

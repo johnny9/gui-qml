@@ -18,6 +18,7 @@ PsbtModel::PsbtModel(WalletSession& session, interfaces::Node& node, QObject* pa
 bool PsbtModel::available() const { return m_session.available(); }
 bool PsbtModel::busy() const { return m_pending || m_session.actionBusy(); }
 bool PsbtModel::canSign() const { return available() && !busy() && !known() && m_inspection.can_sign; }
+bool PsbtModel::canUnlockForSigning() const { return available() && !busy() && !known() && m_inspection.needs_unlock; }
 
 QString PsbtModel::status() const
 {
@@ -29,7 +30,8 @@ QString PsbtModel::status() const
         ? tr("Complete transaction. Review all outputs and the fee before submitting.")
         : tr("Complete transaction, but its inputs or fee cannot be verified. Submission is unavailable.");
     if (m_inspection.can_sign) return tr("Incomplete transaction. This wallet has local signing keys.");
-    return tr("Incomplete transaction. This wallet does not have the local keys required to sign.");
+    if (m_inspection.needs_unlock) return tr("Wallet locked. Unlock for this action to check whether local signatures can be added.");
+    return tr("Incomplete transaction. No local signing keys are currently available for the remaining inputs.");
 }
 
 QVariantList PsbtModel::outputs() const

@@ -24,6 +24,7 @@ class PsbtModel : public QObject
     Q_PROPERTY(bool available READ available NOTIFY changed)
     Q_PROPERTY(bool complete READ complete NOTIFY changed)
     Q_PROPERTY(bool canSign READ canSign NOTIFY changed)
+    Q_PROPERTY(bool canUnlockForSigning READ canUnlockForSigning NOTIFY changed)
     Q_PROPERTY(bool known READ known NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
@@ -36,6 +37,7 @@ public:
     bool available() const;
     bool complete() const { return m_inspection.complete; }
     bool canSign() const;
+    bool canUnlockForSigning() const;
     bool known() const { return m_inspection.known; }
     QString status() const;
     QString error() const { return m_error; }
@@ -45,6 +47,9 @@ public:
     const std::optional<PsbtDocument>& document() const { return m_document; }
     Q_INVOKABLE void importFile(const QString& path);
     void importData(const QByteArray& data);
+    Q_INVOKABLE bool importReview(TransactionReviewModel* review);
+    Q_INVOKABLE void exportFile(const QString& path);
+    Q_INVOKABLE void sign(const QString& passphrase = {});
     Q_INVOKABLE void clear();
 Q_SIGNALS:
     void changed();

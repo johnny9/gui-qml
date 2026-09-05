@@ -159,6 +159,20 @@ public:
         LOCK(m_wallet->cs_wallet);
         return m_wallet->GetNewDestination(type, label);
     }
+    bool hasSigningKey(const CPubKey& pub_key) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        if (m_wallet->IsLocked() || m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return false;
+        for (auto* manager : m_wallet->GetAllScriptPubKeyMans()) {
+            const auto* descriptor = dynamic_cast<DescriptorScriptPubKeyMan*>(manager);
+            if (!descriptor) continue;
+            // The same exact provider lookup used by FillPSBT's foreign-input
+            // signing path. Key material stays inside Core and is discarded.
+            const auto provider = descriptor->GetSigningProvider(pub_key);
+            if (provider && provider->HaveKey(pub_key.GetID())) return true;
+        }
+        return false;
+    }
     bool getPubKey(const CScript& script, const CKeyID& address, CPubKey& pub_key) override
     {
         std::unique_ptr<SigningProvider> provider = m_wallet->GetSolvingProvider(script);

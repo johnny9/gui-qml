@@ -23,6 +23,7 @@ struct PsbtInspection {
     std::vector<PsbtOutput> outputs;
     bool complete{false};
     bool can_sign{false};
+    bool needs_unlock{false};
     bool known{false};
     bool inputs_verified{false};
     int unsigned_inputs{0};

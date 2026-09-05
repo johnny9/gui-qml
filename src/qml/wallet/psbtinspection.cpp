@@ -8,9 +8,65 @@
 #include <key_io.h>
 #include <node/psbt.h>
 #include <rpc/util.h>
+#include <script/miniscript.h>
 #include <univalue.h>
 #include <util/strencodings.h>
+#include <algorithm>
 #include <QObject>
+
+namespace {
+// Parse the same Miniscript language Core signs, retaining only keys actually
+// used by the script. Extra derivation records are not signing requirements.
+struct TaprootScriptKeys {
+    using Key = XOnlyPubKey;
+    const PSBTInput& input;
+    mutable std::set<Key> keys;
+    auto MsContext() const { return miniscript::MiniscriptContext::TAPSCRIPT; }
+    static bool KeyCompare(const Key& a, const Key& b) { return a < b; }
+    template<typename I> std::optional<Key> FromPKBytes(I first, I last) const
+    {
+        if (last - first != 32) return {};
+        const Key key(std::vector<unsigned char>(first, last));
+        keys.insert(key);
+        return key;
+    }
+    template<typename I> std::optional<Key> FromPKHBytes(I first, I last) const
+    {
+        const uint160 hash(std::vector<unsigned char>(first, last));
+        for (const auto& [key, path] : input.m_tap_bip32_paths) {
+            if (Hash160(key) == hash) { keys.insert(key); return key; }
+        }
+        return {};
+    }
+};
+
+bool TaprootKeyRequired(const PSBTInput& input, const XOnlyPubKey& key)
+{
+    CTxOut utxo;
+    if (!input.GetUTXO(utxo) || !utxo.scriptPubKey.IsPayToTaproot()) return false;
+    const XOnlyPubKey output(std::span{utxo.scriptPubKey}.subspan(2));
+    if (input.m_tap_key_sig.empty()) {
+        if (key == output) return true;
+        const auto tweaked = key.CreateTapTweak(input.m_tap_merkle_root.IsNull() ? nullptr : &input.m_tap_merkle_root);
+        if (key == input.m_tap_internal_key && tweaked && tweaked->first == output) return true;
+    }
+    for (const auto& [leaf, controls] : input.m_tap_scripts) {
+        const auto& [script, version] = leaf;
+        if (version != TAPROOT_LEAF_TAPSCRIPT) continue;
+        const auto hash = ComputeTapleafHash(version, script);
+        if (input.m_tap_script_sigs.contains({key, hash})) continue;
+        const bool committed = std::ranges::any_of(controls, [&](const auto& control) {
+            if (control.size() < TAPROOT_CONTROL_BASE_SIZE || control.size() > TAPROOT_CONTROL_MAX_SIZE ||
+                (control.size() - TAPROOT_CONTROL_BASE_SIZE) % TAPROOT_CONTROL_NODE_SIZE != 0 || (control[0] & 0xfe) != version) return false;
+            return output.CheckTapTweak(XOnlyPubKey(std::span{control}.subspan(1, 32)), ComputeTaprootMerkleRoot(control, hash), control[0] & 1);
+        });
+        if (!committed) continue;
+        const TaprootScriptKeys parsed{input, {}};
+        if (miniscript::FromScript(CScript(script.begin(), script.end()), parsed) && parsed.keys.contains(key)) return true;
+    }
+    return false;
+}
+}
 
 bool PsbtInputsMatchChain(const PartiallySignedTransaction& psbt, interfaces::Node& node)
 {
@@ -73,9 +129,25 @@ PsbtInspection InspectPsbt(const PartiallySignedTransaction& psbt, interfaces::W
     result.known = PsbtTransactionKnown(result.transaction, wallet, node);
     result.inputs_verified = PsbtInputsMatchChain(analyzed, node);
     if (!result.complete && !wallet.privateKeysDisabled() && !wallet.hasExternalSigner()) {
-        for (const auto& input : analyzed.inputs) {
-            CTxOut utxo;
-            if (!PSBTInputSigned(input) && input.GetUTXO(utxo) && wallet.txoutIsMine(utxo)) result.can_sign = true;
+        result.needs_unlock = wallet.isLocked();
+        for (size_t index = 0; index < analyzed.inputs.size(); ++index) {
+            const auto& input = analyzed.inputs[index];
+            if (PSBTInputSigned(input)) continue;
+            // A multisig output need not belong to this wallet as a whole.
+            // Core can contribute a local key named by its public derivation
+            // data without claiming ownership or signing during import.
+            for (const auto& [pubkey, origin] : input.hd_keypaths) {
+                const auto& required = analysis.inputs[index].missing_sigs;
+                if (std::ranges::find(required, pubkey.GetID()) != required.end() && wallet.hasSigningKey(pubkey)) result.can_sign = true;
+            }
+            for (const auto& [pubkey, paths] : input.m_tap_bip32_paths) {
+                if (!TaprootKeyRequired(input, pubkey)) continue;
+                for (const unsigned char prefix : {0x02, 0x03}) {
+                    std::vector<unsigned char> full{prefix};
+                    full.insert(full.end(), pubkey.begin(), pubkey.end());
+                    if (wallet.hasSigningKey(CPubKey(full))) result.can_sign = true;
+                }
+            }
         }
     }
     for (const auto& output : transaction->vout) {
