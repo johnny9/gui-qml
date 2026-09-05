@@ -121,6 +121,6 @@ private:
     interfaces::Node& m_node;
 };
 
-BITCOINQML_REGISTER_INTEGRATION_TEST(WalletRuntimeTests)
+BITCOINQML_REGISTER_WALLET_INTEGRATION_TEST(WalletRuntimeTests)
 
 #include <test_wallet_runtime.moc>

@@ -372,6 +372,7 @@ BASE_SCRIPTS = [
     'interface_ipc_mining.py',
     'interface_gui.py',
     'interface_qml.py',
+    'qml_wallet_e2e.py',
     'feature_anchors.py',
     'mempool_datacarrier.py',
     'feature_coinstatsindex.py',

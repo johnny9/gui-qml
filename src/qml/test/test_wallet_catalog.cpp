@@ -91,6 +91,6 @@ private:
     BitcoinQmlApplication& m_app;
 };
 
-BITCOINQML_REGISTER_INTEGRATION_TEST(WalletCatalogTests)
+BITCOINQML_REGISTER_WALLET_INTEGRATION_TEST(WalletCatalogTests)
 
 #include <test_wallet_catalog.moc>

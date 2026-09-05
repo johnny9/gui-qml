@@ -78,6 +78,6 @@ private:
     BitcoinQmlApplication& m_app;
     QString m_created;
 };
-BITCOINQML_REGISTER_INTEGRATION_TEST(WalletCreationTests)
+BITCOINQML_REGISTER_WALLET_INTEGRATION_TEST(WalletCreationTests)
 
 #include <test_wallet_creation.moc>

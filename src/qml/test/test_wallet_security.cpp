@@ -134,6 +134,6 @@ private:
     BitcoinQmlApplication& m_app;
     QString m_restored;
 };
-BITCOINQML_REGISTER_INTEGRATION_TEST(WalletSecurityTests)
+BITCOINQML_REGISTER_WALLET_INTEGRATION_TEST(WalletSecurityTests)
 
 #include <test_wallet_security.moc>

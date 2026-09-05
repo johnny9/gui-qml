@@ -108,6 +108,15 @@ add_test(NAME test_bitcoin-qt-integration
   COMMAND test_bitcoin-qt --suite=integration -platform minimal
 )
 
+if(ENABLE_WALLET)
+  add_test(NAME test_bitcoin-qt-wallet-disabled
+    COMMAND test_bitcoin-qt --suite=integration -platform minimal
+  )
+  set_tests_properties(test_bitcoin-qt-wallet-disabled PROPERTIES
+    ENVIRONMENT "QML_TEST_DISABLE_WALLET=1;QML_DISABLE_DISK_CACHE=1"
+  )
+endif()
+
 set_property(
   TEST
     test_bitcoin-qt

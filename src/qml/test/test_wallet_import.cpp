@@ -124,6 +124,6 @@ private:
     QString m_target;
     QStringList m_companions;
 };
-BITCOINQML_REGISTER_INTEGRATION_TEST(WalletImportTests)
+BITCOINQML_REGISTER_WALLET_INTEGRATION_TEST(WalletImportTests)
 
 #include <test_wallet_import.moc>

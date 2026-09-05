@@ -15,6 +15,7 @@ namespace qmlintegration {
 struct Entry {
     const char* name;
     int (*run)(BitcoinQmlApplication&, int, char**);
+    bool requires_wallet;
 };
 
 inline std::vector<Entry>& Registry()
@@ -24,9 +25,9 @@ inline std::vector<Entry>& Registry()
 }
 
 struct Registration {
-    Registration(const char* name, int (*run)(BitcoinQmlApplication&, int, char**))
+    Registration(const char* name, int (*run)(BitcoinQmlApplication&, int, char**), bool requires_wallet = false)
     {
-        Registry().push_back({name, run});
+        Registry().push_back({name, run, requires_wallet});
     }
 };
 
@@ -40,7 +41,7 @@ inline auto SortedEntries()
 }
 } // namespace qmlintegration
 
-#define BITCOINQML_REGISTER_INTEGRATION_TEST(TestClass)                      \
+#define BITCOINQML_REGISTER_INTEGRATION_TEST_IMPL(TestClass, RequiresWallet) \
     namespace {                                                            \
     int RunIntegration_##TestClass(BitcoinQmlApplication& app, int argc, char** argv) \
     {                                                                      \
@@ -48,7 +49,10 @@ inline auto SortedEntries()
         return QTest::qExec(&tests, argc, argv);                             \
     }                                                                      \
     [[maybe_unused]] qmlintegration::Registration g_integration_##TestClass{ \
-        #TestClass, &RunIntegration_##TestClass};                           \
+        #TestClass, &RunIntegration_##TestClass, RequiresWallet};           \
     }
+
+#define BITCOINQML_REGISTER_INTEGRATION_TEST(TestClass) BITCOINQML_REGISTER_INTEGRATION_TEST_IMPL(TestClass, false)
+#define BITCOINQML_REGISTER_WALLET_INTEGRATION_TEST(TestClass) BITCOINQML_REGISTER_INTEGRATION_TEST_IMPL(TestClass, true)
 
 #endif // BITCOIN_QML_TEST_INTEGRATION_TEST_REGISTRY_H

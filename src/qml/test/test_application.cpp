@@ -3,9 +3,11 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <common/args.h>
+#include <bitcoin-build-config.h>
 #include <interfaces/init.h>
 #include <interfaces/node.h>
 #include <qml/bitcoinqmlapplication.h>
+#include <qml/applicationrouter.h>
 #include <qml/models/nodemodel.h>
 #include <qml/models/rpcconsolemodel.h>
 #include <qml/test/integration_test_registry.h>
@@ -43,6 +45,17 @@ public:
     explicit ApplicationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void walletBuildAndRuntimeBoundary()
+    {
+#ifdef ENABLE_WALLET
+        QCOMPARE(m_app.walletManager() != nullptr, !gArgs.GetBoolArg("-disablewallet", false));
+        QVERIFY(QDir{QStringLiteral(":/qml/pages/wallet")}.exists());
+#else
+        QVERIFY(!m_app.walletManager());
+        QVERIFY(!QDir{QStringLiteral(":/qml/pages/wallet")}.exists());
+#endif
+        if (!m_app.walletManager()) QVERIFY(!m_app.router().navigate(QStringLiteral("wallets")));
+    }
     void applicationTests()
     {
         QVERIFY(QDir{QStringLiteral(":/translations")}.exists(QStringLiteral("bitcoin_es.qm")));
@@ -131,6 +144,7 @@ int RunApplicationTests(int argc, char* argv[])
     gArgs.ForceSetArg("-dnsseed", "0");
     gArgs.ForceSetArg("-fixedseeds", "0");
     gArgs.ForceSetArg("-natpmp", "0");
+    if (qEnvironmentVariableIntValue("QML_TEST_DISABLE_WALLET") == 1) gArgs.ForceSetArg("-disablewallet", "1");
 
     std::string error;
     if (!gArgs.ReadConfigFiles(error, true)) {
@@ -149,7 +163,13 @@ int RunApplicationTests(int argc, char* argv[])
 
     ApplicationTests tests{app};
     int status = QTest::qExec(&tests, argc, argv);
-    for (const auto& entry : qmlintegration::SortedEntries()) status |= entry.run(app, argc, argv);
+    for (const auto& entry : qmlintegration::SortedEntries()) {
+        if (entry.requires_wallet && !app.walletManager()) {
+            std::cout << "Skipping " << entry.name << ": wallets explicitly disabled for this configuration\n";
+            continue;
+        }
+        status |= entry.run(app, argc, argv);
+    }
 
     ApplicationShutdownTests shutdown_tests{app};
     status |= QTest::qExec(&shutdown_tests, argc, argv);
