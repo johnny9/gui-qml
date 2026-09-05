@@ -10,13 +10,14 @@
 #include <key_io.h>
 #include <outputtype.h>
 #include <univalue.h>
+#include <util/moneystr.h>
 #include <QByteArray>
 
 /** RPC prepares external data; signing/import/submission under test use models. */
-inline QByteArray FundedPsbt(interfaces::Node& node, interfaces::Wallet& wallet, bool signed_psbt = false, bool multiple_outputs = false)
+inline QByteArray FundedPsbt(interfaces::Node& node, interfaces::Wallet& wallet, bool signed_psbt = false, bool multiple_outputs = false, CAmount amount = COIN)
 {
     UniValue outputs(UniValue::VOBJ);
-    outputs.pushKV(EncodeDestination(WitnessV0KeyHash(uint160{})), 1);
+    outputs.pushKV(EncodeDestination(WitnessV0KeyHash(uint160{})), UniValue(UniValue::VNUM, FormatMoney(amount)));
     if (multiple_outputs) outputs.pushKV(EncodeDestination(PKHash(uint160{})), 2);
     UniValue options(UniValue::VOBJ);
     options.pushKV("fee_rate", 2);

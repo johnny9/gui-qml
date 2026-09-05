@@ -17,6 +17,7 @@ struct TransactionRecord {
     int output_index{-1};
     Kind kind{Other};
     QString address, label, message;
+    QString replaces_txid, replaced_by_txid;
     CAmount credit{0}, debit{0}, fee{0};
     qint64 time{0};
     int confirmations{0}, blocks_to_maturity{0};
@@ -24,7 +25,7 @@ struct TransactionRecord {
     QString key() const;
     QString status() const;
     CAmount netAmount() const { return credit + debit; }
-    bool qualifiesAsReceipt() const { return credit > 0 && !abandoned && confirmations >= 0 && (kind != Generated || in_main_chain); }
+    bool qualifiesAsReceipt() const { return credit > 0 && !abandoned && replaced_by_txid.isEmpty() && confirmations >= 0 && (kind != Generated || in_main_chain); }
 };
 QVector<TransactionRecord> DecomposeWalletTransaction(quint64 session_id, const interfaces::WalletTx& tx,
                                                       const interfaces::WalletTxStatus& status);

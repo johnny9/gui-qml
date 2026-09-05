@@ -83,6 +83,8 @@ WalletTx MakeWalletTx(CWallet& wallet, const CWalletTx& wtx)
     result.comment = wtx.m_comment;
     result.comment_to = wtx.m_comment_to;
     result.is_coinbase = wtx.IsCoinBase();
+    result.replaces_txid = wtx.m_replaces_txid;
+    result.replaced_by_txid = wtx.m_replaced_by_txid;
     return result;
 }
 

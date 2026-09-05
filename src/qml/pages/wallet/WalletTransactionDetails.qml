@@ -17,7 +17,15 @@ Page {
     signal back()
     signal navigateRequested(string route, var parameters)
     function refresh() { details = wallet ? wallet.activity.details(rowKey) : ({}) }
-    Component.onCompleted: { wallet = walletManager.walletBySession(sessionId); refresh() }
+    Component.onCompleted: {
+        wallet = walletManager.walletBySession(sessionId)
+        refresh()
+        if (wallet && wallet.bump && details.txid) wallet.bump.inspect(details.txid)
+    }
+    function openRelated(transactionId) {
+        const key = wallet.history.keyForTransaction(transactionId)
+        if (key) navigateRequested("wallet-transaction", {sessionId: sessionId, rowKey: key})
+    }
     Connections {
         target: root.wallet ? root.wallet.activity : null
         function onRecordsChanged() { root.refresh() }
@@ -55,6 +63,23 @@ Page {
                     text: qsTr("View request %1").arg(modelData)
                     onClicked: root.navigateRequested("wallet-receive", {sessionId: root.sessionId, requestId: modelData})
                 }
+            }
+            Button {
+                visible: !!root.details.replacesTxid
+                text: qsTr("Replaces: %1").arg(root.details.replacesTxid || "")
+                onClicked: root.openRelated(root.details.replacesTxid)
+            }
+            Button {
+                visible: !!root.details.replacedByTxid
+                text: qsTr("Replaced by: %1").arg(root.details.replacedByTxid || "")
+                onClicked: root.openRelated(root.details.replacedByTxid)
+            }
+            Button {
+                objectName: "transactionBumpFeeButton"
+                text: qsTr("Increase fee")
+                visible: !!root.wallet && !!root.wallet.bump && root.wallet.bump.eligible
+                enabled: visible && !root.wallet.bump.busy
+                onClicked: root.navigateRequested("wallet-bump", {sessionId: root.sessionId, transactionId: root.details.txid})
             }
         }
     }

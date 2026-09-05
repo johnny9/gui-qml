@@ -404,6 +404,10 @@ struct WalletTx
     std::optional<std::string> comment_to;
     bool is_coinbase;
 
+    //! Replacement relationships recorded by Core, never inferred by the GUI.
+    std::optional<Txid> replaces_txid;
+    std::optional<Txid> replaced_by_txid;
+
     bool operator<(const WalletTx& a) const { return tx->GetHash() < a.tx->GetHash(); }
 };
 

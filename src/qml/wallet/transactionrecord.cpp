@@ -17,6 +17,7 @@ QString TransactionRecord::status() const
 {
     if (confirmations < 0) return QObject::tr("Conflicted");
     if (abandoned) return QObject::tr("Abandoned");
+    if (!replaced_by_txid.isEmpty() && confirmations == 0) return QObject::tr("Replaced");
     if (kind == Generated && !in_main_chain) return QObject::tr("Not accepted");
     if (blocks_to_maturity > 0) return QObject::tr("Immature");
     if (confirmations == 0) return QObject::tr("Unconfirmed");
@@ -39,6 +40,8 @@ QVector<TransactionRecord> DecomposeWalletTransaction(quint64 session_id, const 
         row.abandoned = status.is_abandoned;
         row.in_main_chain = status.is_in_main_chain;
         if (tx.comment) row.message = QString::fromStdString(*tx.comment);
+        if (tx.replaces_txid) row.replaces_txid = QString::fromStdString(tx.replaces_txid->GetHex());
+        if (tx.replaced_by_txid) row.replaced_by_txid = QString::fromStdString(tx.replaced_by_txid->GetHex());
         return row;
     };
     const bool any_from_me{!tx.is_coinbase && std::ranges::any_of(tx.txin_is_mine, [](bool mine) { return mine; })};

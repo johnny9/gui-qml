@@ -9,6 +9,7 @@
         <file>pages/wallet/WalletMessage.qml</file>
         <file>pages/wallet/Send.qml</file>
         <file>pages/wallet/Psbt.qml</file>
+        <file>pages/wallet/BumpFee.qml</file>
         <file>pages/wallet/CreateWallet.qml</file>
         <file>pages/wallet/RestoreWallet.qml</file>
         <file>pages/wallet/MigrateWallet.qml</file>

@@ -189,6 +189,8 @@ if(ENABLE_WALLET)
     wallet/psbtmodel.cpp
     wallet/psbtactions.cpp
     wallet/psbtsubmit.cpp
+    wallet/bumpfeemodel.cpp
+    wallet/bumpfeemodel.h
     wallet/psbtmodel.h
     wallet/walletoperationexecutor.cpp
     wallet/walletoperationexecutor.h

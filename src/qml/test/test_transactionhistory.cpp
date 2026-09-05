@@ -13,6 +13,28 @@ class TransactionHistoryTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void replacementMetadataComesFromCoreAndDoesNotCountTwice()
+    {
+        CMutableTransaction tx;
+        tx.vin.resize(1);
+        tx.vout.emplace_back(100, CScript{});
+        interfaces::WalletTx wallet_tx{};
+        wallet_tx.tx = MakeTransactionRef(tx);
+        wallet_tx.txin_is_mine = {false};
+        wallet_tx.txout_is_mine = {true};
+        wallet_tx.replaced_by_txid = Txid::FromHex(std::string(64, 'a'));
+        interfaces::WalletTxStatus status{};
+        const auto rows = DecomposeWalletTransaction(17, wallet_tx, status);
+        QCOMPARE(rows.size(), 1);
+        QCOMPARE(rows[0].status(), QStringLiteral("Replaced"));
+        QVERIFY(!rows[0].qualifiesAsReceipt());
+        QCOMPARE(rows[0].replaced_by_txid, QString(64, QLatin1Char('a')));
+        TransactionHistoryModel history;
+        history.setRecords(rows);
+        QCOMPARE(history.keyForTransaction(rows[0].txid), rows[0].key());
+        QCOMPARE(history.details(rows[0].key()).value("replacedByTxid").toString(), rows[0].replaced_by_txid);
+    }
+
     void keepsEveryOwnedOutputAndStableIdentity()
     {
         CMutableTransaction tx;

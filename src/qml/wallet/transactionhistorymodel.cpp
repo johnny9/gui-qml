@@ -82,6 +82,7 @@ QVariantMap TransactionHistoryModel::details(const QString& key) const
         return {{QStringLiteral("rowKey"), row.key()}, {QStringLiteral("txid"), row.txid},
                 {QStringLiteral("address"), row.address}, {QStringLiteral("label"), row.label},
                 {QStringLiteral("message"), row.message}, {QStringLiteral("confirmations"), row.confirmations},
+                {QStringLiteral("replacesTxid"), row.replaces_txid}, {QStringLiteral("replacedByTxid"), row.replaced_by_txid},
                 {QStringLiteral("status"), row.status()}, {QStringLiteral("outputIndex"), row.output_index},
                 {QStringLiteral("creditSat"), QVariant::fromValue<qlonglong>(row.credit)},
                 {QStringLiteral("debitSat"), QVariant::fromValue<qlonglong>(row.debit)},
