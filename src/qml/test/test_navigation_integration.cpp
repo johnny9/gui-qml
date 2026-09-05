@@ -27,6 +27,10 @@ private Q_SLOTS:
         const auto destinations = router.destinations();
         for (const auto& destination : destinations) {
             if (destination.id == "shutdown" || destination.id == "peer-details") continue;
+            if (!destination.enabled) {
+                QVERIFY(!router.navigate(destination.id));
+                continue;
+            }
             QVERIFY2(router.navigate(destination.id), qPrintable(destination.id));
             QObject* host = engine.rootObjects().constFirst()->findChild<QObject*>("applicationPageHost");
             QVERIFY(host);
@@ -36,6 +40,11 @@ private Q_SLOTS:
         }
         QVERIFY(!router.navigate("wallet/send"));
         QVERIFY(router.navigate("node"));
+    }
+
+    void cleanup()
+    {
+        QVERIFY(m_app.router().navigate("node"));
     }
 };
 

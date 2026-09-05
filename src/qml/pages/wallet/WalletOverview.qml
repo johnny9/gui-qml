@@ -11,6 +11,7 @@ Page {
     id: root
     objectName: "walletOverviewPage"
     signal back()
+    signal navigateRequested(string route, var parameters)
     readonly property var selected: walletManager.selectedWallet
     CreateWallet { id: createWallet; parent: Overlay.overlay }
     RestoreWallet { id: restoreWallet; parent: Overlay.overlay }
@@ -36,6 +37,12 @@ Page {
         Label { objectName: "selectedWalletName"; text: root.selected ? root.selected.overview.name : "" }
         Label { text: root.selected ? root.selected.overview.balance + " BTC" : qsTr("Select an existing wallet below.") }
         Label { text: root.selected ? root.selected.overview.keyScheme : "" }
+        Button {
+            objectName: "walletActivityButton"
+            text: qsTr("Activity")
+            enabled: !!root.selected && root.selected.overview.available
+            onClicked: root.navigateRequested("wallet-activity", {"sessionId": root.selected.sessionId})
+        }
         Label {
             text: root.selected ? (root.selected.overview.encrypted ?
                 (root.selected.overview.locked ? qsTr("Encrypted and locked") : qsTr("Encrypted and unlocked")) : qsTr("Not encrypted")) : ""

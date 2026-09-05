@@ -124,6 +124,10 @@ if(ENABLE_WALLET)
   endif()
   unset(warn_flags)
   target_sources(bitcoinqml PRIVATE
+    wallet/transactionrecord.cpp
+    wallet/transactionrecord.h
+    wallet/transactionhistorymodel.cpp
+    wallet/transactionhistorymodel.h
     wallet/walletmanager.cpp
     wallet/walletmanager.h
     wallet/walletworkflowmodel.cpp

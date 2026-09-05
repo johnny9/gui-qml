@@ -34,6 +34,7 @@ add_executable(test_bitcoin-qt
 add_windows_application_manifest(test_bitcoin-qt)
 
 if(ENABLE_WALLET)
+  target_sources(test_bitcoin-qt PRIVATE test_transactionhistory.cpp test_wallet_history_integration.cpp)
   target_sources(test_bitcoin-qt PRIVATE test_wallet_runtime.cpp test_wallet_catalog.cpp test_wallet_creation.cpp test_wallet_import.cpp test_wallet_security.cpp)
   target_compile_definitions(test_bitcoin-qt PRIVATE QML_WALLET_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/wallet")
   set(QML_HISTORICAL_BINARY_DIR "" CACHE PATH "Explicit pinned v28.2 tools for the designated QML wallet compatibility lane")

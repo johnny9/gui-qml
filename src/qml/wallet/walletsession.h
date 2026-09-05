@@ -6,8 +6,10 @@
 #define BITCOIN_QML_WALLET_WALLETSESSION_H
 
 #include <qml/wallet/walletoperationexecutor.h>
+#include <uint256.h>
 
 #include <QObject>
+#include <QTimer>
 #include <memory>
 #include <vector>
 
@@ -29,14 +31,19 @@ public:
     QString identity() const { return m_identity.isEmpty() ? m_name : m_identity; }
     void invalidate();
     bool runAction(std::function<WalletOperationResult(interfaces::Wallet&)> work, WalletOperationExecutor::Completion completion);
+    // Serialized backend reads do not acquire a write action or emit changed().
+    bool runRead(std::function<WalletOperationResult(interfaces::Wallet&)> work, WalletOperationExecutor::Completion completion);
 Q_SIGNALS:
     void changed();
     void activityChanged();
     void addressesChanged();
     void invalidated();
     void actionBusyChanged();
+private Q_SLOTS:
+    void pollProcessedTip(bool initial = false);
 private:
     friend class WalletManager;
+    friend class WalletHistoryIntegrationTests; // Control poll timing without a public testing API.
     std::shared_ptr<interfaces::Wallet> m_wallet;
     const quint64 m_id;
     quint64 m_generation{1};
@@ -45,6 +52,9 @@ private:
     WalletOperationExecutor& m_executor;
     bool m_available{true};
     bool m_action_busy{false};
+    bool m_tip_read_pending{false};
+    uint256 m_processed_tip;
+    QTimer m_tip_timer;
     std::vector<std::unique_ptr<interfaces::Handler>> m_handlers;
 };
 

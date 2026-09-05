@@ -30,6 +30,15 @@ WalletSession::WalletSession(std::shared_ptr<interfaces::Wallet> wallet, quint64
     m_handlers.push_back(m_wallet->handleCanGetAddressesChanged([this] {
         QMetaObject::invokeMethod(this, [this] { if (m_available) Q_EMIT changed(); }, Qt::QueuedConnection);
     }));
+    // A new block can change confirmations/maturity without changing a wallet
+    // transaction. Observe the tip processed by this wallet, not the node tip
+    // which may arrive before the wallet has processed its notification.
+    m_tip_timer.setInterval(1000);
+    connect(&m_tip_timer, &QTimer::timeout, this, [this] { pollProcessedTip(); });
+    // Queue the baseline before any child model's initial read. Discovering the
+    // starting tip is not a change that should invalidate a prepared review.
+    pollProcessedTip(true);
+    m_tip_timer.start();
 }
 
 WalletSession::~WalletSession()
@@ -47,9 +56,34 @@ void WalletSession::invalidate()
 {
     if (!m_available) return;
     m_available = false;
+    m_tip_timer.stop();
     ++m_generation;
     for (auto& handler : m_handlers) handler->disconnect();
     Q_EMIT invalidated();
+}
+
+void WalletSession::pollProcessedTip(bool initial)
+{
+    if (!m_available || m_tip_read_pending) return;
+    struct Snapshot { uint256 tip; bool ready{false}; };
+    auto snapshot{std::make_shared<Snapshot>()};
+    const QPointer<WalletSession> self{this};
+    m_tip_read_pending = true;
+    if (!runRead([snapshot](interfaces::Wallet& wallet) {
+        interfaces::WalletBalances ignored;
+        snapshot->ready = wallet.tryGetBalances(ignored, snapshot->tip);
+        return WalletOperationResult{};
+    }, [self, snapshot, initial](WalletOperationResult result) {
+        if (!self) return;
+        self->m_tip_read_pending = false;
+        if (result.code != WalletOperationResult::Success || !snapshot->ready || snapshot->tip == self->m_processed_tip) return;
+        self->m_processed_tip = snapshot->tip;
+        // Suppress only the constructor's successful baseline, not the first
+        // eventual success: a failed initial read may precede stale child data.
+        if (initial) return;
+        Q_EMIT self->activityChanged();
+        Q_EMIT self->changed();
+    })) m_tip_read_pending = false;
 }
 
 bool WalletSession::runAction(std::function<WalletOperationResult(interfaces::Wallet&)> work, WalletOperationExecutor::Completion completion)
@@ -73,4 +107,15 @@ bool WalletSession::runAction(std::function<WalletOperationResult(interfaces::Wa
         Q_EMIT actionBusyChanged();
     }
     return accepted;
+}
+
+bool WalletSession::runRead(std::function<WalletOperationResult(interfaces::Wallet&)> work, WalletOperationExecutor::Completion completion)
+{
+    if (!m_available) return false;
+    const quint64 generation{m_generation};
+    const QPointer<WalletSession> self{this};
+    return m_executor.submit([backend = m_wallet, work = std::move(work)] { return work(*backend); },
+        [self, generation, completion = std::move(completion)](WalletOperationResult result) mutable {
+            if (self && self->m_available && self->m_generation == generation) completion(std::move(result));
+        });
 }

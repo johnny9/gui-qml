@@ -68,7 +68,7 @@ Item {
     }
     Connections {
         target: settingsSidebar.item
-        function onNavigateRequested(route) { applicationRouter.navigate(route) }
+        function onNavigateRequested(route, parameters) { applicationRouter.navigate(route, parameters || {}) }
         function onDoneClicked() { applicationRouter.navigate("node") }
     }
     // Feature pages report intent. Only the shell converts intent to routes.
@@ -77,11 +77,12 @@ Item {
         ignoreUnknownSignals: true
         function onBack() { applicationRouter.back() }
         function onDoneClicked() { applicationRouter.back() }
-        function onNavigateRequested(route) { applicationRouter.navigate(route) }
+        function onNavigateRequested(route, parameters) { applicationRouter.navigate(route, parameters || {}) }
         function onSettingsClicked() { applicationRouter.navigate("settings") }
         function onPeersClicked() { applicationRouter.navigate("peers") }
         function onConsoleClicked() { applicationRouter.navigate("console") }
         function onWalletsClicked() { applicationRouter.navigate("wallets") }
+        function onTransactionSelected(key) { applicationRouter.navigate("wallet-transaction", {"sessionId": page.item.sessionId, "rowKey": key}) }
         function onPeerSelected(details) { applicationRouter.navigate("peer-details", {"details": details}) }
         function onBannedPeers() { applicationRouter.navigate("banned-peers") }
         function onDesignSystemRequested() { applicationRouter.navigate("settings/design-system") }

@@ -33,6 +33,7 @@ public:
     explicit WalletManager(interfaces::Node& node, const QString& network, QObject* parent = nullptr);
     ~WalletManager() override;
     WalletViewModel* selectedWallet() const;
+    Q_INVOKABLE WalletViewModel* walletBySession(const QString& id) const;
     WalletListModel* catalog() { return &m_catalog; }
     bool initialized() const { return m_initialized; }
     bool busy() const { return m_operation_id != 0; }

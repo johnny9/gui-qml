@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QPointer>
+#include <QQmlEngine>
 #include <QTimer>
 
 struct WalletManager::Instance {
@@ -79,6 +80,17 @@ void WalletManager::initialize()
     Q_EMIT initializedChanged();
 }
 
+WalletViewModel* WalletManager::walletBySession(const QString& id) const
+{
+    bool valid{false};
+    const quint64 session_id{id.toULongLong(&valid)};
+    if (!valid) return nullptr;
+    for (const auto& [identity, instance] : m_instances) {
+        if (instance->session->id() == session_id && instance->session->available()) return instance->view.get();
+    }
+    return nullptr;
+}
+
 WalletViewModel* WalletManager::publish(std::shared_ptr<interfaces::Wallet> wallet)
 {
     const QString identity = canonicalIdentity(QString::fromStdString(wallet->getWalletName()));
@@ -96,6 +108,8 @@ WalletViewModel* WalletManager::publish(std::shared_ptr<interfaces::Wallet> wall
     }
     if (!still_loaded) return nullptr;
     instance->view = std::make_unique<WalletViewModel>(*instance->session, m_network);
+    // Q_INVOKABLE lookup returns a borrowed pointer, never ownership to QML.
+    QQmlEngine::setObjectOwnership(instance->view.get(), QQmlEngine::CppOwnership);
     connect(instance->session.get(), &WalletSession::invalidated, this, [this, identity] { retire(identity); });
     connect(instance->session.get(), &WalletSession::actionBusyChanged, this, [this] {
         QTimer::singleShot(0, this, &WalletManager::collectRetired);

@@ -102,6 +102,7 @@ BitcoinQmlApplication::BitcoinQmlApplication(int& argc, char** argv)
     Q_INIT_RESOURCE(bitcoin_wallet);
     qmlRegisterUncreatableType<WalletManager>("org.bitcoincore.qt", 1, 0, "WalletManager", "Owned by the application");
     qmlRegisterUncreatableType<WalletViewModel>("org.bitcoincore.qt", 1, 0, "WalletViewModel", "Owned by the wallet manager");
+    qmlRegisterUncreatableType<TransactionHistoryModel>("org.bitcoincore.qt", 1, 0, "TransactionHistoryModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<WalletOverviewModel>("org.bitcoincore.qt", 1, 0, "WalletOverviewModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<WalletSecurityModel>("org.bitcoincore.qt", 1, 0, "WalletSecurityModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<WalletStorageModel>("org.bitcoincore.qt", 1, 0, "WalletStorageModel", "Owned by the wallet view");
@@ -249,6 +250,13 @@ bool BitcoinQmlApplication::createWindow()
     if (!gArgs.GetBoolArg("-disablewallet", false)) {
         m_wallet_manager = std::make_unique<WalletManager>(*m_node, QString::fromStdString(gArgs.GetChainTypeString()));
         m_router->registerDestination({QStringLiteral("wallets"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletOverview.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Wallets"), true, {}, false});
+        m_router->registerDestination({QStringLiteral("wallet-activity"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletActivity.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Activity"), false, QStringLiteral("wallets"), false});
+        m_router->registerDestination({QStringLiteral("wallet-transaction"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletTransactionDetails.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Transaction details"), false, QStringLiteral("wallets"), false});
+        connect(m_wallet_manager.get(), &WalletManager::selectedWalletChanged, m_router.get(), [this] {
+            const bool selected{m_wallet_manager->selectedWallet() != nullptr};
+            m_router->setDestinationEnabled(QStringLiteral("wallet-activity"), selected);
+            m_router->setDestinationEnabled(QStringLiteral("wallet-transaction"), selected);
+        });
         connect(m_wallet_manager.get(), &WalletManager::initializedChanged, m_router.get(), [this] {
             m_router->setDestinationEnabled(QStringLiteral("wallets"), m_wallet_manager->initialized());
         });
