@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/bitcoinqmlapplication.h>
+#include <QPointer>
 
 #include <chainparams.h>
 #include <clientversion.h>
@@ -259,10 +260,12 @@ bool BitcoinQmlApplication::createWindow()
     if (!gArgs.GetBoolArg("-disablewallet", false)) {
         m_wallet_manager = std::make_unique<WalletManager>(*m_node, QString::fromStdString(gArgs.GetChainTypeString()));
         m_router->registerDestination({QStringLiteral("wallet/send"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/Send.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Send"), false, QStringLiteral("wallets"), false});
-        connect(m_wallet_manager.get(), &WalletManager::selectedWalletChanged, m_router.get(), [this] {
+        connect(m_wallet_manager.get(), &WalletManager::selectedWalletChanged, m_router.get(), [this, previous = QPointer<WalletSendModel>{}]() mutable {
+            if (previous) previous->invalidateReview();
             // Drop routes borrowing the old wallet before it can be destroyed.
             m_router->setDestinationEnabled(QStringLiteral("wallet/send"), false);
             auto* selected = m_wallet_manager->selectedWallet();
+            previous = selected ? selected->send() : nullptr;
             m_router->setDestinationEnabled(QStringLiteral("wallet/send"), selected && selected->send()->available());
         });
         m_router->registerDestination({QStringLiteral("wallets"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletOverview.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Wallets"), true, {}, false});

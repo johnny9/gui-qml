@@ -146,6 +146,10 @@ int RunApplicationTests(int argc, char* argv[])
     gArgs.ForceSetArg("-fixedseeds", "0");
     gArgs.ForceSetArg("-natpmp", "0");
     if (qEnvironmentVariableIntValue("QML_TEST_DISABLE_WALLET") == 1) gArgs.ForceSetArg("-disablewallet", "1");
+    const bool no_broadcast = qEnvironmentVariableIntValue("QML_TEST_NO_WALLET_BROADCAST") == 1;
+    const bool blocks_only = qEnvironmentVariableIntValue("QML_TEST_BLOCKS_ONLY") == 1;
+    if (no_broadcast) gArgs.ForceSetArg("-walletbroadcast", "0");
+    if (blocks_only) gArgs.ForceSetArg("-blocksonly", "1");
 
     std::string error;
     if (!gArgs.ReadConfigFiles(error, true)) {
@@ -165,6 +169,9 @@ int RunApplicationTests(int argc, char* argv[])
     ApplicationTests tests{app};
     int status = QTest::qExec(&tests, argc, argv);
     for (const auto& entry : qmlintegration::SortedEntries()) {
+        // A separate process is required for startup wallet broadcast policy.
+        const bool broadcast_policy_test = std::string_view(entry.name) == "SendNoBroadcastIntegrationTests";
+        if (broadcast_policy_test != (no_broadcast || blocks_only)) continue;
         if (entry.requires_wallet && !app.walletManager()) {
             std::cout << "Skipping " << entry.name << ": wallets explicitly disabled for this configuration\n";
             continue;

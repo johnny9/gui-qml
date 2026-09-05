@@ -129,3 +129,9 @@ void TransactionHistoryModel::reload()
     })};
     if (!accepted) { m_loading = false; Q_EMIT loadingChanged(); }
 }
+
+QString TransactionHistoryModel::keyForTransaction(const QString& txid) const
+{
+    for (const auto& record : m_records) if (record.txid == txid) return record.key();
+    return {};
+}

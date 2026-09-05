@@ -76,6 +76,8 @@ private Q_SLOTS:
         const auto key{row.key()};
         history.setRecords({row});
         QCOMPARE(history.rowCount(), 1);
+        QCOMPARE(history.keyForTransaction(row.txid), key);
+        QVERIFY(history.keyForTransaction("not-recorded").isEmpty());
         QCOMPARE(history.details(key).value(QStringLiteral("status")).toString(), QStringLiteral("Unconfirmed"));
         row.confirmations = 6;
         row.label = QStringLiteral("Updated label");

@@ -32,6 +32,7 @@ public:
     const QVector<TransactionRecord>& records() const { return m_records; }
     void setRecords(QVector<TransactionRecord> records);
     Q_INVOKABLE QVariantMap details(const QString& key) const;
+    Q_INVOKABLE QString keyForTransaction(const QString& txid) const;
     Q_INVOKABLE void reload();
 Q_SIGNALS:
     void recordsChanged();

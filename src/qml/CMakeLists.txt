@@ -117,6 +117,7 @@ add_library(bitcoinqml STATIC
 )
 
 if(ENABLE_WALLET)
+  target_sources(bitcoinqml PRIVATE wallet/sendsubmit.cpp wallet/sendsubmit.h)
   target_sources(bitcoinqml PRIVATE wallet/sendprepare.cpp wallet/sendprepare.h wallet/transactionreviewmodel.cpp wallet/transactionreviewmodel.h)
   target_sources(bitcoinqml PRIVATE wallet/coinselectionmodel.cpp wallet/coinselectionmodel.h)
   qt6_add_resources(BITCOIN_WALLET_QRC bitcoin_wallet.qrc)

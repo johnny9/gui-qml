@@ -12,7 +12,6 @@
 #include <QObject>
 
 class WalletSession;
-namespace interfaces { class Node; }
 
 /** Per-session send coordinator. Selecting another wallet never retargets a draft. */
 class WalletSendModel : public QObject
@@ -24,6 +23,9 @@ class WalletSendModel : public QObject
     Q_PROPERTY(TransactionReviewModel* review READ review CONSTANT)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool canPrepare READ canPrepare NOTIFY changed)
+    Q_PROPERTY(bool canSubmit READ canSubmit NOTIFY changed)
+    Q_PROPERTY(QString submittedTransactionId READ submittedTransactionId NOTIFY changed)
+    Q_PROPERTY(QString submissionStatus READ submissionStatus NOTIFY changed)
     Q_PROPERTY(bool needsPassphrase READ needsPassphrase NOTIFY changed)
     Q_PROPERTY(bool available READ available NOTIFY changed)
     Q_PROPERTY(quint64 revision READ revision NOTIFY changed)
@@ -36,6 +38,9 @@ public:
     TransactionReviewModel* review() { return &m_review; }
     bool busy() const;
     bool canPrepare() const;
+    bool canSubmit() const;
+    QString submittedTransactionId() const { return m_submitted_id; }
+    QString submissionStatus() const { return m_submission_status; }
     bool needsPassphrase() const;
     bool available() const;
     quint64 revision() const { return m_revision; }
@@ -43,9 +48,12 @@ public:
     SendDraftSnapshot snapshot() const;
     Q_INVOKABLE void discard();
     Q_INVOKABLE bool prepare(const QString& passphrase);
+    Q_INVOKABLE bool submit();
     Q_INVOKABLE void invalidateReview();
+    Q_INVOKABLE void editDraft();
 Q_SIGNALS:
     void changed();
+    void submitted();
 private:
     void draftEdited();
     WalletSession& m_session;
@@ -56,7 +64,10 @@ private:
     quint64 m_revision{1};
     quint64 m_prepare_id{0};
     bool m_preparing{false};
+    bool m_submitting{false};
     QString m_error;
+    QString m_submitted_id;
+    QString m_submission_status;
     struct Prepared { SendDraftSnapshot inputs; ReviewSnapshot review; };
     std::optional<Prepared> m_prepared;
 };

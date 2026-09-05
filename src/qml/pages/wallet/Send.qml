@@ -13,12 +13,15 @@ Page {
     required property string sessionId
     property var wallet: null
     readonly property var send: wallet ? wallet.send : null
+    readonly property bool reviewing: !!send && send.review.hasReview
+    readonly property bool hasResult: !!send && send.submissionStatus.length > 0
     Component.onCompleted: {
         if (!wallet) wallet = walletManager.walletBySession(sessionId)
         if (send) send.coins.active = true
     }
     Component.onDestruction: { if (send) { send.coins.active = false; send.invalidateReview() } }
     signal back()
+    signal navigateRequested(string route, var parameters)
     Binding { target: root.send ? root.send.fees : null; property: "displayUnit"; value: optionsModel.displayUnit }
     Binding { target: root.send ? root.send.coins : null; property: "displayUnit"; value: optionsModel.displayUnit }
     Binding { target: root.send ? root.send.review : null; property: "displayUnit"; value: optionsModel.displayUnit }
@@ -26,8 +29,47 @@ Page {
     header: ToolBar {
         RowLayout {
             anchors.fill: parent
-            Button { text: qsTr("Back"); onClicked: root.back() }
+            Button { text: qsTr("Back"); onClicked: { if (root.reviewing || root.hasResult) root.send.editDraft(); else root.back() } }
             Label { text: root.wallet ? qsTr("Send from %1").arg(root.wallet.overview.displayName) : qsTr("Wallet unavailable"); Layout.fillWidth: true }
+        }
+    }
+    footer: ToolBar {
+        visible: !!root.send
+        contentItem: RowLayout {
+            TextField {
+                id: passphrase
+                objectName: "sendPassphrase"
+                Layout.fillWidth: true
+                visible: !!root.send && root.send.needsPassphrase && !root.reviewing && !root.hasResult
+                enabled: !!root.send && !root.send.busy
+                placeholderText: qsTr("Wallet passphrase")
+                echoMode: TextInput.Password
+                inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+            }
+            Button {
+                objectName: "sendPrepareButton"
+                visible: !root.reviewing && !root.hasResult
+                text: root.send && root.send.busy ? qsTr("Preparing…") : qsTr("Prepare transaction")
+                enabled: !!root.send && root.send.canPrepare
+                onClicked: {
+                    const secret = passphrase.text
+                    passphrase.clear()
+                    root.send.prepare(secret)
+                }
+            }
+            Button {
+                objectName: "sendSubmitButton"
+                visible: root.reviewing
+                text: qsTr("Submit transaction")
+                enabled: !!root.send && root.send.canSubmit
+                onClicked: root.send.submit()
+            }
+            Button {
+                objectName: "sendEditDraftButton"
+                visible: root.hasResult && !!root.send && !root.send.busy
+                text: root.send && root.send.submittedTransactionId.length ? qsTr("New payment") : qsTr("Edit draft")
+                onClicked: root.send.editDraft()
+            }
         }
     }
     Loader {
@@ -40,7 +82,10 @@ Page {
             width: parent.width
             spacing: 12
             enabled: root.send.available
-            Repeater {
+            ColumnLayout {
+              Layout.fillWidth: true
+              visible: !root.reviewing && !root.hasResult
+              Repeater {
                 model: root.send.recipients
                 delegate: GroupBox {
                     required property int index
@@ -51,6 +96,7 @@ Page {
                     required property bool maximum
                     Layout.fillWidth: true
                     title: qsTr("Recipient %1").arg(index + 1)
+                    enabled: !root.send.busy
                     ColumnLayout {
                         anchors.fill: parent
                         TextField {
@@ -89,9 +135,10 @@ Page {
                     }
                 }
             }
-            Button { text: qsTr("Add recipient"); onClicked: root.send.recipients.add() }
+            Button { text: qsTr("Add recipient"); enabled: !root.send.busy && root.send.recipients.canAdd; onClicked: root.send.recipients.add() }
             GroupBox {
                 title: qsTr("Transaction fee")
+                enabled: !root.send.busy
                 Layout.fillWidth: true
                 ColumnLayout {
                     anchors.fill: parent
@@ -123,6 +170,7 @@ Page {
             }
             GroupBox {
                 title: qsTr("Coin selection")
+                enabled: !root.send.busy
                 Layout.fillWidth: true
                 ColumnLayout {
                     anchors.fill: parent
@@ -161,31 +209,13 @@ Page {
                     }
                 }
             }
+            }
             Label {
                 objectName: "sendError"
                 text: root.send.error
                 visible: text.length > 0
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
-            }
-            TextField {
-                id: passphrase
-                objectName: "sendPassphrase"
-                visible: root.send.needsPassphrase
-                enabled: !root.send.busy
-                placeholderText: qsTr("Wallet passphrase")
-                echoMode: TextInput.Password
-                inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
-            }
-            Button {
-                objectName: "sendPrepareButton"
-                text: root.send.busy ? qsTr("Preparing…") : qsTr("Prepare transaction")
-                enabled: root.send.canPrepare
-                onClicked: {
-                    const secret = passphrase.text
-                    passphrase.clear()
-                    root.send.prepare(secret)
-                }
             }
             GroupBox {
                 objectName: "sendTransactionReview"
@@ -206,6 +236,30 @@ Page {
                     }
                     Label { objectName: "sendPreparedFee"; text: qsTr("Actual fee: %1").arg(root.send.review.feeText) }
                 }
+            }
+            Label {
+                objectName: "sendSubmissionStatus"
+                text: root.send.submissionStatus
+                visible: text.length > 0
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
+            Label {
+                objectName: "sendSubmittedTransactionId"
+                text: root.send.submittedTransactionId
+                visible: text.length > 0
+                Layout.fillWidth: true
+                wrapMode: Text.WrapAnywhere
+            }
+            Button {
+                objectName: "sendViewTransactionButton"
+                text: qsTr("View transaction")
+                // count's notification tracks refreshed rows; the lookup itself
+                // never manufactures an optimistic activity entry.
+                readonly property string rowKey: root.wallet.history.count >= 0 ? root.wallet.history.keyForTransaction(root.send.submittedTransactionId) : ""
+                visible: root.send.submittedTransactionId.length > 0
+                enabled: rowKey.length > 0
+                onClicked: root.navigateRequested("wallet-transaction", {"sessionId": root.sessionId, "rowKey": rowKey})
             }
         }
     }

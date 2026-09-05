@@ -34,6 +34,11 @@ add_executable(test_bitcoin-qt
 add_windows_application_manifest(test_bitcoin-qt)
 
 if(ENABLE_WALLET)
+  add_test(NAME test_bitcoin-qt-no-wallet-broadcast COMMAND test_bitcoin-qt --suite=integration -platform minimal)
+  set_tests_properties(test_bitcoin-qt-no-wallet-broadcast PROPERTIES ENVIRONMENT "QML_TEST_NO_WALLET_BROADCAST=1;QML_DISABLE_DISK_CACHE=1")
+  add_test(NAME test_bitcoin-qt-blocks-only COMMAND test_bitcoin-qt --suite=integration -platform minimal)
+  set_tests_properties(test_bitcoin-qt-blocks-only PROPERTIES ENVIRONMENT "QML_TEST_BLOCKS_ONLY=1;QML_DISABLE_DISK_CACHE=1")
+  target_sources(test_bitcoin-qt PRIVATE test_sendsubmit_integration.cpp)
   target_sources(test_bitcoin-qt PRIVATE test_transactionreview.cpp test_sendprepare_integration.cpp)
   qt6_add_resources(test_bitcoin-qt wallet_qml_tests PREFIX /test FILES qml/tst_walletreceive.qml qml/tst_walletsend.qml)
   target_sources(test_bitcoin-qt PRIVATE test_receiverequests.cpp test_wallet_receive_integration.cpp)

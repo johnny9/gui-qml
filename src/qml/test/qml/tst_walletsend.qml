@@ -13,7 +13,7 @@ TestCase {
     width: 900
     height: 1200
     QtObject { id: optionsModel; property int displayUnit: 0 }
-    ListModel { id: recipientsMock }
+    ListModel { id: recipientsMock; property bool canAdd: true }
     ListModel {
         id: coinsMock
         property bool active: false
@@ -48,15 +48,20 @@ TestCase {
         property bool available: true
         property bool busy: false
         readonly property bool canPrepare: available && !busy
+        property bool canSubmit: false
+        property string submittedTransactionId: ""
+        property string submissionStatus: ""
         property bool needsPassphrase: true
         property string error: ""
         property int prepared: 0
         property string passedPassword: ""
         function prepare(password) { prepared++; passedPassword = password; busy = true; return true }
         function invalidateReview() { reviewMock.hasReview = false }
+        function editDraft() { invalidateReview(); submissionStatus = ""; submittedTransactionId = "" }
     }
     QtObject { id: overviewMock; property string displayName: "Test wallet" }
-    QtObject { id: walletMock; property var send: sendMock; property var overview: overviewMock }
+    QtObject { id: historyMock; property int count: 0; function keyForTransaction(txid) { return "" } }
+    QtObject { id: walletMock; property var send: sendMock; property var overview: overviewMock; property var history: historyMock }
     Component { id: pageComponent; Send { wallet: walletMock; sessionId: "1"; width: 900; height: 1200 } }
 
     function init() { sendMock.busy = false; sendMock.prepared = 0; sendMock.passedPassword = ""; reviewMock.hasReview = false }
