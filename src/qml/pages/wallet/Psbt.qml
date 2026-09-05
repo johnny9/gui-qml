@@ -14,6 +14,7 @@ Page {
     required property string sessionId
     property var wallet: null
     readonly property var psbt: wallet ? wallet.psbt : null
+    property string acknowledgedRevision: ""
     Component.onCompleted: if (!wallet) wallet = walletManager.walletBySession(sessionId)
     signal back()
     background: Rectangle { color: Theme.color.background }
@@ -25,6 +26,14 @@ Page {
         }
     }
     Binding { target: root.psbt ? root.psbt.review : null; property: "displayUnit"; value: optionsModel.displayUnit }
+    Connections {
+        target: root.psbt
+        ignoreUnknownSignals: true
+        function onChanged() {
+            if (confirmation.checked && root.acknowledgedRevision !== String(root.psbt.revision))
+                confirmation.checked = false
+        }
+    }
     FileDialog {
         id: openDialog
         title: qsTr("Import PSBT")
@@ -91,6 +100,21 @@ Page {
                     enabled: !!root.psbt && (root.psbt.canSign || root.psbt.canUnlockForSigning)
                     onClicked: { const secret = passphrase.text; passphrase.clear(); root.psbt.sign(secret) }
                 }
+            }
+            CheckBox {
+                id: confirmation
+                objectName: "psbtReviewConfirmation"
+                text: qsTr("I have checked every output and the fee.")
+                visible: !!root.psbt && root.psbt.complete && !root.psbt.known
+                enabled: !!root.psbt && root.psbt.canSubmit
+                onToggled: root.acknowledgedRevision = checked ? String(root.psbt.revision) : ""
+            }
+            Button {
+                objectName: "psbtSubmit"
+                text: qsTr("Submit reviewed transaction")
+                visible: !!root.psbt && root.psbt.complete && !root.psbt.known
+                enabled: !!root.psbt && root.psbt.canSubmit && confirmation.checked && root.acknowledgedRevision === String(root.psbt.revision)
+                onClicked: root.psbt.submit()
             }
         }
     }

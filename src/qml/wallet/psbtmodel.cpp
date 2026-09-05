@@ -24,9 +24,10 @@ QString PsbtModel::status() const
 {
     if (!available()) return tr("Wallet unavailable.");
     if (m_pending) return tr("Processing PSBT…");
+    if (m_submitted) return tr("The transaction was accepted by Core.");
     if (!loaded()) return tr("Import a PSBT to inspect its transaction.");
     if (known()) return tr("This transaction is already known to the wallet or mempool.");
-    if (complete()) return m_inspection.fee && m_inspection.inputs_verified
+    if (complete()) return m_inspection.fee && MoneyRange(*m_inspection.fee) && m_inspection.inputs_verified
         ? tr("Complete transaction. Review all outputs and the fee before submitting.")
         : tr("Complete transaction, but its inputs or fee cannot be verified. Submission is unavailable.");
     if (m_inspection.can_sign) return tr("Incomplete transaction. This wallet has local signing keys.");
@@ -50,6 +51,7 @@ void PsbtModel::clear()
     m_document.reset();
     m_inspection = {};
     m_pending = false;
+    m_submitted = false;
     m_error.clear();
     m_review.clear();
     Q_EMIT changed();

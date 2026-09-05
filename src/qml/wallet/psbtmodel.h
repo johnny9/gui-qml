@@ -26,6 +26,9 @@ class PsbtModel : public QObject
     Q_PROPERTY(bool canSign READ canSign NOTIFY changed)
     Q_PROPERTY(bool canUnlockForSigning READ canUnlockForSigning NOTIFY changed)
     Q_PROPERTY(bool known READ known NOTIFY changed)
+    Q_PROPERTY(bool canSubmit READ canSubmit NOTIFY changed)
+    Q_PROPERTY(bool accepted READ accepted NOTIFY changed)
+    Q_PROPERTY(quint64 revision READ revision NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(QVariantList outputs READ outputs NOTIFY changed)
@@ -39,6 +42,8 @@ public:
     bool canSign() const;
     bool canUnlockForSigning() const;
     bool known() const { return m_inspection.known; }
+    bool canSubmit() const;
+    bool accepted() const { return m_submitted; }
     QString status() const;
     QString error() const { return m_error; }
     QVariantList outputs() const;
@@ -50,6 +55,7 @@ public:
     Q_INVOKABLE bool importReview(TransactionReviewModel* review);
     Q_INVOKABLE void exportFile(const QString& path);
     Q_INVOKABLE void sign(const QString& passphrase = {});
+    Q_INVOKABLE void submit();
     Q_INVOKABLE void clear();
 Q_SIGNALS:
     void changed();
@@ -63,6 +69,7 @@ private:
     PsbtInspection m_inspection;
     quint64 m_revision{1};
     bool m_pending{false};
+    bool m_submitted{false};
     QString m_error;
 };
 
