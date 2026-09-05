@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/qml">
         <file>pages/wallet/WalletOverview.qml</file>
+        <file>pages/wallet/CreateWallet.qml</file>
     </qresource>
 </RCC>

@@ -126,6 +126,11 @@ if(ENABLE_WALLET)
   target_sources(bitcoinqml PRIVATE
     wallet/walletmanager.cpp
     wallet/walletmanager.h
+    wallet/walletworkflowmodel.cpp
+    wallet/walletworkflowmodel.h
+    wallet/walletcreationmodel.cpp
+    wallet/walletcreationmodel.h
+    wallet/walletpassphrase.h
     wallet/walletlistmodel.h
     wallet/walletoverviewmodel.cpp
     wallet/walletoverviewmodel.h

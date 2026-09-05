@@ -34,7 +34,7 @@ add_executable(test_bitcoin-qt
 add_windows_application_manifest(test_bitcoin-qt)
 
 if(ENABLE_WALLET)
-  target_sources(test_bitcoin-qt PRIVATE test_wallet_runtime.cpp test_wallet_catalog.cpp)
+  target_sources(test_bitcoin-qt PRIVATE test_wallet_runtime.cpp test_wallet_catalog.cpp test_wallet_creation.cpp)
 endif()
 
 qt6_add_resources(test_bitcoin-qt qml_tests

@@ -12,12 +12,14 @@ Page {
     objectName: "walletOverviewPage"
     signal back()
     readonly property var selected: walletManager.selectedWallet
+    CreateWallet { id: createWallet; parent: Overlay.overlay }
     background: Rectangle { color: Theme.color.background }
     header: ToolBar {
         RowLayout {
             anchors.fill: parent
             Button { text: qsTr("Back"); onClicked: root.back() }
             Label { text: qsTr("Wallets"); Layout.fillWidth: true }
+            Button { objectName: "createWalletButton"; text: qsTr("Create wallet"); enabled: !walletManager.busy; onClicked: createWallet.open() }
             Button { text: qsTr("Refresh"); enabled: !walletManager.busy; onClicked: walletManager.refresh() }
         }
     }

@@ -6,6 +6,7 @@
 #define BITCOIN_QML_WALLET_WALLETMANAGER_H
 
 #include <qml/wallet/walletlistmodel.h>
+#include <qml/wallet/walletcreationmodel.h>
 #include <qml/wallet/walletoperationexecutor.h>
 #include <qml/wallet/walletviewmodel.h>
 
@@ -23,6 +24,7 @@ class WalletManager : public QObject
     Q_PROPERTY(bool initialized READ initialized NOTIFY initializedChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString loadError READ loadError NOTIFY loadStatusChanged)
+    Q_PROPERTY(WalletCreationModel* creation READ creation CONSTANT)
 public:
     explicit WalletManager(interfaces::Node& node, const QString& network, QObject* parent = nullptr);
     ~WalletManager() override;
@@ -31,6 +33,7 @@ public:
     bool initialized() const { return m_initialized; }
     bool busy() const { return m_operation_id != 0; }
     QString loadError() const { return m_load_error; }
+    WalletCreationModel* creation() { return &m_creation; }
     interfaces::WalletLoader& loader() const;
     QString canonicalIdentity(const QString& name) const;
     quint64 beginOperation(const QString& name, WalletOperationExecutor::Work work, WalletOperationExecutor::Completion completion);
@@ -55,6 +58,7 @@ private:
     QString m_network;
     WalletOperationExecutor m_executor;
     WalletListModel m_catalog;
+    WalletCreationModel m_creation;
     std::map<QString, std::unique_ptr<Instance>> m_instances;
     std::vector<std::unique_ptr<Instance>> m_retired;
     std::unique_ptr<interfaces::Handler> m_load_handler;

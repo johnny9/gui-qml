@@ -21,7 +21,7 @@ struct WalletManager::Instance {
 };
 
 WalletManager::WalletManager(interfaces::Node& node, const QString& network, QObject* parent)
-    : QObject(parent), m_node(node), m_network(network), m_executor(this), m_catalog(this)
+    : QObject(parent), m_node(node), m_network(network), m_executor(this), m_catalog(this), m_creation(*this, this)
 {
     connect(&m_executor, &WalletOperationExecutor::drained, this, [this] {
         m_instances.clear();
