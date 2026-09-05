@@ -23,9 +23,13 @@
 #include <qml/guiconstants.h>
 #include <qml/imageprovider.h>
 #include <qml/initexecutor.h>
+#include <qml/models/banlistmodel.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/networkstatusmodel.h>
 #include <qml/models/nodemodel.h>
+#include <qml/models/peerdetailsmodel.h>
+#include <qml/models/peerlistmodel.h>
+#include <qml/models/peerlistsortproxy.h>
 #include <qml/networkstyle.h>
 #include <qml/test/testbridge.h>
 
@@ -70,6 +74,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
         return clipboard_instance;
     });
     qmlRegisterType<BlockClockDial>("org.bitcoincore.qt", 1, 0, "BlockClockDial");
+    qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");
     registered = true;
 }
 } // namespace
@@ -106,6 +111,9 @@ BitcoinQmlApplication::~BitcoinQmlApplication()
     m_chain_sync_model.reset();
     m_navigation_model.reset();
     m_router.reset();
+    m_ban_list_model.reset();
+    m_peer_model_sort_proxy.reset();
+    m_peer_model.reset();
     m_chain_model.reset();
     m_network_status_model.reset();
     m_network_style.reset();
@@ -159,6 +167,9 @@ bool BitcoinQmlApplication::createWindow()
     m_node_network_model = std::make_unique<NodeNetworkModel>(*m_node);
     m_router = std::make_unique<ApplicationRouter>();
     m_router->registerDestination({QStringLiteral("node"), QUrl{QStringLiteral("qrc:///qml/pages/node/NodeRunner.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Node"), true, QStringLiteral("")});
+    m_router->registerDestination({QStringLiteral("peers"), QUrl{QStringLiteral("qrc:///qml/pages/node/Peers.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Peers"), true, QStringLiteral("")});
+    m_router->registerDestination({QStringLiteral("banned-peers"), QUrl{QStringLiteral("qrc:///qml/pages/node/BannedPeers.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Banned peers"), true, QStringLiteral("")});
+    m_router->registerDestination({QStringLiteral("peer-details"), QUrl{QStringLiteral("qrc:///qml/pages/node/PeerDetails.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Peer details"), false, QStringLiteral("peers")});
     m_router->registerDestination({QStringLiteral("shutdown"), QUrl{QStringLiteral("qrc:///qml/pages/node/Shutdown.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Shutting down"), false, QStringLiteral("")});
     m_router->navigate(QStringLiteral("node"));
     m_navigation_model = std::make_unique<NavigationModel>(*m_router);
@@ -184,6 +195,23 @@ bool BitcoinQmlApplication::createWindow()
     connect(m_chain_sync_model.get(), &ChainSyncModel::setTimeRatioList, m_chain_model.get(), &ChainModel::setTimeRatioList);
     connect(m_chain_sync_model.get(), &ChainSyncModel::setTimeRatioListInitial, m_chain_model.get(), &ChainModel::setTimeRatioListInitial);
 
+    m_peer_model = std::make_unique<PeerListModel>(*m_node, nullptr);
+    connect(m_node_model.get(), &NodeLifecycleModel::requestedShutdown, m_peer_model.get(), &PeerListModel::stop);
+    m_peer_model_sort_proxy = std::make_unique<PeerListSortProxy>(nullptr);
+    m_peer_model_sort_proxy->setSourceModel(m_peer_model.get());
+    connect(m_router.get(), &ApplicationRouter::routeChanged, m_peer_model.get(), [this] {
+        const auto route = m_router->currentRoute();
+        if (!m_router->shuttingDown() && (route == QStringLiteral("peers") || route == QStringLiteral("peer-details"))) {
+            m_peer_model->startAutoRefresh();
+        } else {
+            m_peer_model->stopAutoRefresh();
+        }
+    });
+
+    m_ban_list_model = std::make_unique<BanListModel>(*m_node);
+    connect(m_node_model.get(), &NodeLifecycleModel::requestedShutdown, m_ban_list_model.get(), &BanListModel::stop);
+    connect(m_node_model.get(), &NodeLifecycleModel::nodeInitialized, m_ban_list_model.get(), &BanListModel::refresh);
+
     m_network_style.reset(NetworkStyle::instantiate(Params().GetChainType()));
     assert(m_network_style);
     setApplicationName(m_network_style->getAppName());
@@ -200,6 +228,9 @@ bool BitcoinQmlApplication::createWindow()
     context->setContextProperty(QStringLiteral("applicationRouter"), m_router.get());
     context->setContextProperty(QStringLiteral("navigationModel"), m_navigation_model.get());
     context->setContextProperty(QStringLiteral("chainModel"), m_chain_model.get());
+    context->setContextProperty(QStringLiteral("peerTableModel"), m_peer_model.get());
+    context->setContextProperty(QStringLiteral("peerListModelProxy"), m_peer_model_sort_proxy.get());
+    context->setContextProperty(QStringLiteral("banListModel"), m_ban_list_model.get());
 
     connect(this, &QGuiApplication::lastWindowClosed, this, &BitcoinQmlApplication::requestShutdown);
     m_engine->load(QUrl{QStringLiteral("qrc:///qml/pages/MainWindow.qml")});

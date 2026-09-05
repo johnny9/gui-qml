@@ -33,6 +33,16 @@ Page {
                 NodeStatusActions {
                     Layout.alignment: Qt.AlignVCenter
                 }
+                IconButton {
+                    objectName: "peersTabButton"
+                    iconSource: Utils.nodeConnectionIcon(nodeNetworkModel.numPeers)
+                    iconColor: Theme.color.neutral7
+                    hoverColor: Theme.color.neutral9
+                    size: 34
+                    iconSize: 24
+                    Layout.alignment: Qt.AlignVCenter
+                    onClicked: root.peersClicked()
+                }
 
             }
         }
