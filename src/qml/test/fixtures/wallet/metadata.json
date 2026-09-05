@@ -1,0 +1,22 @@
+{
+  "generator_version": "Bitcoin Core version v28.2.0",
+  "archive_sha256": "98add5f220c01b387343b70edeb6273403fe081e22cd85fda132704cdcaa98aa",
+  "bitcoind_sha256": "79011d54248a80c76bf2865f91f540963c83634e170365139180372a4410f3b1",
+  "network": "regtest",
+  "encrypted_passphrase": "qml-legacy-test-only",
+  "command": "python3 src/qml/test/fixtures/generate_legacy_wallets.py --binary-dir /tmp/qt6-legacy-fixture-tools/v28.2/bin --output src/qml/test/fixtures/wallet",
+  "additional_fixtures_command": "python3 src/qml/test/fixtures/generate_legacy_wallets.py --binary-dir /home/codex/workspaces/bitcoin-core-app/.qt6-legacy-fixture-tools/v28.2/bin --output /home/codex/workspaces/bitcoin-core-app/.qt6-chunk3-extra-fixtures --fixtures legacy-companions external-signer multikey-watchonly",
+  "synthetic_signer_sha256": "b097eda273be21cdc9aaaa202eac9820cd2262eb3d1ef27393b3e408cc7c5567",
+  "capabilities": {
+    "legacy-companions.bak": "Unfunded legacy wallet with watched and unwatched 2-of-3 multisig scripts, each having only one local key; migration creates watch-only and solvables companions.",
+    "external-signer.bak": "Unfunded descriptor wallet created with the existing test/functional/mocks/signer.py; no hardware or signer executable is needed to restore and inspect it.",
+    "multikey-watchonly.bak": "Unfunded, private-keys-disabled descriptor wallet containing one non-ranged wsh(sortedmulti(2,...)) script."
+  },
+  "fixtures": {
+    "legacy-unencrypted.bak": "2f180df7875fc6e14cd1297ddfe46ba9a7b8e58b932de47c3bf6fdbadaf6ae50",
+    "legacy-encrypted.bak": "f0bac6b266b8f02c17868766c099b43972cb51f32d213fbdcc430c450c425608",
+    "legacy-companions.bak": "0e7202f9b0e66afa042a0665828ab513f4e92cbc6ce15ec4c19bf5a19a898edb",
+    "external-signer.bak": "7c7bc42d5e173b4b4c78fa00e9aef0ab1c2ef58badd57d37094ab3e7c7f1335f",
+    "multikey-watchonly.bak": "36a8e4a8e045e75e1bd888de25f0f048cf79ad6c548e5b2a9898f525117cbd0c"
+  }
+}

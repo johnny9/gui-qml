@@ -21,7 +21,7 @@ struct WalletManager::Instance {
 };
 
 WalletManager::WalletManager(interfaces::Node& node, const QString& network, QObject* parent)
-    : QObject(parent), m_node(node), m_network(network), m_executor(this), m_catalog(this), m_creation(*this, this)
+    : QObject(parent), m_node(node), m_network(network), m_executor(this), m_catalog(this), m_creation(*this, this), m_import(*this, this), m_migration(*this, this)
 {
     connect(&m_executor, &WalletOperationExecutor::drained, this, [this] {
         m_instances.clear();
@@ -171,7 +171,7 @@ void WalletManager::selectWallet(const QString& name)
     }
     for (const auto& [entry, format] : loader().listWalletDir()) {
         if (canonicalIdentity(QString::fromStdString(entry)) == identity && format == "bdb") {
-            Q_EMIT migrationRequired(name);
+            if (m_migration.inspect(name)) Q_EMIT migrationRequired(name);
             return;
         }
     }

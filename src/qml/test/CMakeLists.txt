@@ -34,7 +34,18 @@ add_executable(test_bitcoin-qt
 add_windows_application_manifest(test_bitcoin-qt)
 
 if(ENABLE_WALLET)
-  target_sources(test_bitcoin-qt PRIVATE test_wallet_runtime.cpp test_wallet_catalog.cpp test_wallet_creation.cpp)
+  target_sources(test_bitcoin-qt PRIVATE test_wallet_runtime.cpp test_wallet_catalog.cpp test_wallet_creation.cpp test_wallet_import.cpp)
+  target_compile_definitions(test_bitcoin-qt PRIVATE QML_WALLET_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/wallet")
+  set(QML_HISTORICAL_BINARY_DIR "" CACHE PATH "Explicit pinned v28.2 tools for the designated QML wallet compatibility lane")
+  if(QML_HISTORICAL_BINARY_DIR)
+    add_test(NAME test_bitcoin-qt-historical-wallet
+      COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/test/functional/qml_wallet_migration_compat.py
+        --configfile=${PROJECT_BINARY_DIR}/test/config.ini
+        --historical-binary-dir=${QML_HISTORICAL_BINARY_DIR}
+        --require-historical
+    )
+    set_tests_properties(test_bitcoin-qt-historical-wallet PROPERTIES LABELS "compatibility;historical-wallet")
+  endif()
 endif()
 
 qt6_add_resources(test_bitcoin-qt qml_tests

@@ -7,6 +7,8 @@
 
 #include <qml/wallet/walletlistmodel.h>
 #include <qml/wallet/walletcreationmodel.h>
+#include <qml/wallet/walletimportmodel.h>
+#include <qml/wallet/walletmigrationmodel.h>
 #include <qml/wallet/walletoperationexecutor.h>
 #include <qml/wallet/walletviewmodel.h>
 
@@ -25,6 +27,8 @@ class WalletManager : public QObject
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString loadError READ loadError NOTIFY loadStatusChanged)
     Q_PROPERTY(WalletCreationModel* creation READ creation CONSTANT)
+    Q_PROPERTY(WalletImportModel* importModel READ importModel CONSTANT)
+    Q_PROPERTY(WalletMigrationModel* migration READ migration CONSTANT)
 public:
     explicit WalletManager(interfaces::Node& node, const QString& network, QObject* parent = nullptr);
     ~WalletManager() override;
@@ -34,6 +38,8 @@ public:
     bool busy() const { return m_operation_id != 0; }
     QString loadError() const { return m_load_error; }
     WalletCreationModel* creation() { return &m_creation; }
+    WalletImportModel* importModel() { return &m_import; }
+    WalletMigrationModel* migration() { return &m_migration; }
     interfaces::WalletLoader& loader() const;
     QString canonicalIdentity(const QString& name) const;
     quint64 beginOperation(const QString& name, WalletOperationExecutor::Work work, WalletOperationExecutor::Completion completion);
@@ -59,6 +65,8 @@ private:
     WalletOperationExecutor m_executor;
     WalletListModel m_catalog;
     WalletCreationModel m_creation;
+    WalletImportModel m_import;
+    WalletMigrationModel m_migration;
     std::map<QString, std::unique_ptr<Instance>> m_instances;
     std::vector<std::unique_ptr<Instance>> m_retired;
     std::unique_ptr<interfaces::Handler> m_load_handler;

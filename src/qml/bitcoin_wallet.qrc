@@ -2,5 +2,7 @@
     <qresource prefix="/qml">
         <file>pages/wallet/WalletOverview.qml</file>
         <file>pages/wallet/CreateWallet.qml</file>
+        <file>pages/wallet/RestoreWallet.qml</file>
+        <file>pages/wallet/MigrateWallet.qml</file>
     </qresource>
 </RCC>

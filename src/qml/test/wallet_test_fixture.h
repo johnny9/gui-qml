@@ -18,6 +18,11 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QUuid>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <algorithm>
 #include <stdexcept>
 
@@ -89,6 +94,21 @@ public:
         args.pushKV("fee_rate", 2);
         m_node.executeRpc("sendmany", args, "/wallet/" + m_faucet_name);
         mine(1);
+    }
+    QString copyCanonicalBackup(const QString& name) const
+    {
+        const QDir fixtures(QStringLiteral(QML_WALLET_FIXTURE_DIR));
+        QFile metadata(fixtures.filePath(QStringLiteral("metadata.json")));
+        QFile source(fixtures.filePath(name));
+        if (!metadata.open(QIODevice::ReadOnly) || !source.open(QIODevice::ReadOnly))
+            throw std::runtime_error("Missing canonical QML wallet fixture or metadata");
+        const auto expected = QJsonDocument::fromJson(metadata.readAll()).object().value(QStringLiteral("fixtures")).toObject().value(name).toString();
+        const auto actual = QString::fromLatin1(QCryptographicHash::hash(source.readAll(), QCryptographicHash::Sha256).toHex());
+        if (expected.isEmpty() || actual != expected) throw std::runtime_error("Canonical QML wallet fixture checksum mismatch");
+        source.close();
+        const auto target = m_files.filePath(name);
+        if (!QFile::copy(source.fileName(), target)) throw std::runtime_error("Could not copy canonical QML wallet fixture");
+        return target;
     }
 private:
     inline static std::string m_faucet_name;

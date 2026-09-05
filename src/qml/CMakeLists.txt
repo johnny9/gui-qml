@@ -131,6 +131,10 @@ if(ENABLE_WALLET)
     wallet/walletcreationmodel.cpp
     wallet/walletcreationmodel.h
     wallet/walletpassphrase.h
+    wallet/walletimportmodel.cpp
+    wallet/walletimportmodel.h
+    wallet/walletmigrationmodel.cpp
+    wallet/walletmigrationmodel.h
     wallet/walletlistmodel.h
     wallet/walletoverviewmodel.cpp
     wallet/walletoverviewmodel.h

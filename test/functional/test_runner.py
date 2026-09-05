@@ -90,6 +90,8 @@ EXTENDED_SCRIPTS = [
     'feature_pruning.py',
     'feature_dbcrash.py',
     'feature_index_prune.py',
+    # Requires an explicitly supplied pinned binary; normal local runs skip it.
+    'qml_wallet_migration_compat.py',
 ]
 
 # Special script to run each bench sanity check

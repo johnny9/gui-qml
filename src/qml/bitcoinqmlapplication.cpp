@@ -105,6 +105,8 @@ BitcoinQmlApplication::BitcoinQmlApplication(int& argc, char** argv)
     qmlRegisterUncreatableType<WalletOverviewModel>("org.bitcoincore.qt", 1, 0, "WalletOverviewModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<WalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel", "Owned by the wallet manager");
     qmlRegisterUncreatableType<WalletCreationModel>("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Owned by the wallet manager");
+    qmlRegisterUncreatableType<WalletImportModel>("org.bitcoincore.qt", 1, 0, "WalletImportModel", "Owned by the wallet manager");
+    qmlRegisterUncreatableType<WalletMigrationModel>("org.bitcoincore.qt", 1, 0, "WalletMigrationModel", "Owned by the wallet manager");
 #endif
     setOrganizationName(QStringLiteral(QAPP_ORG_NAME));
     setOrganizationDomain(QStringLiteral(QAPP_ORG_DOMAIN));

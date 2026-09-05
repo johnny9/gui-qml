@@ -13,6 +13,9 @@ Page {
     signal back()
     readonly property var selected: walletManager.selectedWallet
     CreateWallet { id: createWallet; parent: Overlay.overlay }
+    RestoreWallet { id: restoreWallet; parent: Overlay.overlay }
+    MigrateWallet { id: migrateWallet; parent: Overlay.overlay }
+    Connections { target: walletManager; function onMigrationRequired(name) { migrateWallet.open() } }
     background: Rectangle { color: Theme.color.background }
     header: ToolBar {
         RowLayout {
@@ -20,7 +23,8 @@ Page {
             Button { text: qsTr("Back"); onClicked: root.back() }
             Label { text: qsTr("Wallets"); Layout.fillWidth: true }
             Button { objectName: "createWalletButton"; text: qsTr("Create wallet"); enabled: !walletManager.busy; onClicked: createWallet.open() }
-            Button { text: qsTr("Refresh"); enabled: !walletManager.busy; onClicked: walletManager.refresh() }
+            Button { objectName: "restoreWalletButton"; text: qsTr("Restore backup"); enabled: !walletManager.busy; onClicked: restoreWallet.open() }
+            Button { objectName: "walletRefreshButton"; text: qsTr("Refresh"); enabled: !walletManager.busy; onClicked: walletManager.refresh() }
         }
     }
     ColumnLayout {
@@ -43,6 +47,7 @@ Page {
             onClicked: walletManager.closeWallet(root.selected.overview.name)
         }
         Label { objectName: "walletLoadError"; text: walletManager.loadError; visible: text.length > 0; wrapMode: Text.Wrap; Layout.fillWidth: true }
+        Label { text: walletManager.creation.warnings.concat(walletManager.importModel.warnings).join("\n"); visible: text.length > 0; wrapMode: Text.Wrap; Layout.fillWidth: true }
         ListView {
             objectName: "walletCatalog"
             Layout.fillWidth: true
