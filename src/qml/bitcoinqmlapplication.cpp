@@ -44,6 +44,7 @@
 #include <qml/test/testbridge.h>
 #ifdef ENABLE_WALLET
 #include <qml/wallet/walletmanager.h>
+#include <qml/wallet/walletqrimageprovider.h>
 #endif
 
 #include <QMetaType>
@@ -103,6 +104,9 @@ BitcoinQmlApplication::BitcoinQmlApplication(int& argc, char** argv)
     qmlRegisterUncreatableType<WalletManager>("org.bitcoincore.qt", 1, 0, "WalletManager", "Owned by the application");
     qmlRegisterUncreatableType<WalletViewModel>("org.bitcoincore.qt", 1, 0, "WalletViewModel", "Owned by the wallet manager");
     qmlRegisterUncreatableType<TransactionHistoryModel>("org.bitcoincore.qt", 1, 0, "TransactionHistoryModel", "Owned by the wallet view");
+    qmlRegisterUncreatableType<WalletReceiveModel>("org.bitcoincore.qt", 1, 0, "WalletReceiveModel", "Owned by the wallet view");
+    qmlRegisterUncreatableType<ReceiveRequestHistoryModel>("org.bitcoincore.qt", 1, 0, "ReceiveRequestHistoryModel", "Owned by the receive workflow");
+    qmlRegisterUncreatableType<PaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest", "Owned by the receive workflow");
     qmlRegisterUncreatableType<WalletOverviewModel>("org.bitcoincore.qt", 1, 0, "WalletOverviewModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<WalletSecurityModel>("org.bitcoincore.qt", 1, 0, "WalletSecurityModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<WalletStorageModel>("org.bitcoincore.qt", 1, 0, "WalletStorageModel", "Owned by the wallet view");
@@ -251,10 +255,12 @@ bool BitcoinQmlApplication::createWindow()
         m_wallet_manager = std::make_unique<WalletManager>(*m_node, QString::fromStdString(gArgs.GetChainTypeString()));
         m_router->registerDestination({QStringLiteral("wallets"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletOverview.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Wallets"), true, {}, false});
         m_router->registerDestination({QStringLiteral("wallet-activity"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletActivity.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Activity"), false, QStringLiteral("wallets"), false});
+        m_router->registerDestination({QStringLiteral("wallet-receive"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletReceive.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Receive"), false, QStringLiteral("wallets"), false});
         m_router->registerDestination({QStringLiteral("wallet-transaction"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletTransactionDetails.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Transaction details"), false, QStringLiteral("wallets"), false});
         connect(m_wallet_manager.get(), &WalletManager::selectedWalletChanged, m_router.get(), [this] {
             const bool selected{m_wallet_manager->selectedWallet() != nullptr};
             m_router->setDestinationEnabled(QStringLiteral("wallet-activity"), selected);
+            m_router->setDestinationEnabled(QStringLiteral("wallet-receive"), selected);
             m_router->setDestinationEnabled(QStringLiteral("wallet-transaction"), selected);
         });
         connect(m_wallet_manager.get(), &WalletManager::initializedChanged, m_router.get(), [this] {
@@ -330,6 +336,12 @@ bool BitcoinQmlApplication::createWindow()
     m_translations->attachEngine(*m_engine);
 #ifdef ENABLE_WALLET
     m_engine->rootContext()->setContextProperty("walletManager", m_wallet_manager.get());
+    if (m_wallet_manager) m_engine->addImageProvider(QStringLiteral("walletqr"), new WalletQRImageProvider);
+#ifdef USE_QRCODE
+    m_engine->rootContext()->setContextProperty("walletQrAvailable", m_wallet_manager != nullptr);
+#else
+    m_engine->rootContext()->setContextProperty("walletQrAvailable", false);
+#endif
 #else
     m_engine->rootContext()->setContextProperty("walletManager", static_cast<QObject*>(nullptr));
 #endif

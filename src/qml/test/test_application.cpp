@@ -55,6 +55,7 @@ private Q_SLOTS:
         QVERIFY(!QDir{QStringLiteral(":/qml/pages/wallet")}.exists());
 #endif
         if (!m_app.walletManager()) QVERIFY(!m_app.router().navigate(QStringLiteral("wallets")));
+        QCOMPARE(m_app.engine().imageProvider(QStringLiteral("walletqr")) != nullptr, m_app.walletManager() != nullptr);
     }
     void applicationTests()
     {

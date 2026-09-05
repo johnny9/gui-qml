@@ -128,6 +128,17 @@ if(ENABLE_WALLET)
     wallet/transactionrecord.h
     wallet/transactionhistorymodel.cpp
     wallet/transactionhistorymodel.h
+    wallet/paymentrequest.cpp
+    wallet/paymentrequest.h
+    wallet/receiverequestentry.h
+    wallet/receiverequesthistorymodel.cpp
+    wallet/receiverequesthistorymodel.h
+    wallet/walletreceivemodel.cpp
+    wallet/walletreceivemodel.h
+    wallet/walletunlockcontext.cpp
+    wallet/walletunlockcontext.h
+    wallet/walletqrimageprovider.cpp
+    wallet/walletqrimageprovider.h
     wallet/walletmanager.cpp
     wallet/walletmanager.h
     wallet/walletworkflowmodel.cpp
@@ -154,6 +165,9 @@ if(ENABLE_WALLET)
     ${BITCOIN_WALLET_QRC}
   )
   target_link_libraries(bitcoinqml PRIVATE bitcoin_wallet)
+  if(WITH_QRENCODE)
+    target_link_libraries(bitcoinqml PRIVATE QRencode::QRencode)
+  endif()
 endif()
 
 # Compile and embed the QML catalog alongside Bitcoin Core's existing Qt

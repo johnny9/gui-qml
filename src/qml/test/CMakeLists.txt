@@ -34,6 +34,8 @@ add_executable(test_bitcoin-qt
 add_windows_application_manifest(test_bitcoin-qt)
 
 if(ENABLE_WALLET)
+  qt6_add_resources(test_bitcoin-qt wallet_qml_tests PREFIX /test FILES qml/tst_walletreceive.qml)
+  target_sources(test_bitcoin-qt PRIVATE test_receiverequests.cpp test_wallet_receive_integration.cpp)
   target_sources(test_bitcoin-qt PRIVATE test_transactionhistory.cpp test_wallet_history_integration.cpp)
   target_sources(test_bitcoin-qt PRIVATE test_wallet_runtime.cpp test_wallet_catalog.cpp test_wallet_creation.cpp test_wallet_import.cpp test_wallet_security.cpp)
   target_compile_definitions(test_bitcoin-qt PRIVATE QML_WALLET_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/wallet")
@@ -61,6 +63,9 @@ qt6_add_resources(test_bitcoin-qt qml_tests
 # See: https://bugreports.qt.io/browse/QTBUG-141858.
 get_target_property(warn_flags warn_interface INTERFACE_COMPILE_OPTIONS)
 if("-Wtrailing-whitespace=any" IN_LIST warn_flags)
+  if(ENABLE_WALLET)
+    set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/.qt/rcc/qrc_wallet_qml_tests.cpp PROPERTIES COMPILE_OPTIONS -Wno-trailing-whitespace)
+  endif()
   set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/.qt/rcc/qrc_qml_tests.cpp PROPERTIES COMPILE_OPTIONS -Wno-trailing-whitespace)
 endif()
 unset(warn_flags)

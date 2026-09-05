@@ -43,6 +43,12 @@ Page {
             enabled: !!root.selected && root.selected.overview.available
             onClicked: root.navigateRequested("wallet-activity", {"sessionId": root.selected.sessionId})
         }
+        Button {
+            objectName: "walletReceiveButton"
+            text: qsTr("Receive")
+            enabled: !!root.selected && root.selected.overview.available
+            onClicked: root.navigateRequested("wallet-receive", {"sessionId": root.selected.sessionId})
+        }
         Label {
             text: root.selected ? (root.selected.overview.encrypted ?
                 (root.selected.overview.locked ? qsTr("Encrypted and locked") : qsTr("Encrypted and unlocked")) : qsTr("Not encrypted")) : ""

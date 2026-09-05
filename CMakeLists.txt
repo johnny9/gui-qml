@@ -126,7 +126,7 @@ cmake_dependent_option(WITH_EXTERNAL_LIBMULTIPROCESS "Build with external libmul
 option(WITH_EMBEDDED_ASMAP "Embed default ASMap data." ON)
 option(WITH_USDT "Enable tracepoints for Userspace, Statically Defined Tracing." OFF)
 
-cmake_dependent_option(WITH_QRENCODE "Enable QR code support." ON "BUILD_GUI_LEGACY" OFF)
+cmake_dependent_option(WITH_QRENCODE "Enable QR code support." ON "BUILD_GUI_LEGACY OR (BUILD_GUI AND ENABLE_WALLET)" OFF)
 cmake_dependent_option(WITH_DBUS "Enable DBus support." ON "NOT CMAKE_SYSTEM_NAME MATCHES \"(Windows|Darwin)\" AND BUILD_GUI_LEGACY" OFF)
 
 option(BUILD_BENCH "Build bench_bitcoin executable." OFF)

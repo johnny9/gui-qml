@@ -266,6 +266,9 @@ public:
     // Get default address type.
     virtual OutputType getDefaultAddressType() = 0;
 
+    //! Active external descriptor types that can derive receiving addresses.
+    virtual std::vector<OutputType> getAvailableAddressTypes() { return {}; }
+
     //! Get max tx fee.
     virtual CAmount getDefaultMaxTxFee() = 0;
 

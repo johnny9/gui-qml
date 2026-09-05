@@ -489,6 +489,16 @@ public:
         return spk_man != nullptr;
     }
     OutputType getDefaultAddressType() override { return m_wallet->m_default_address_type; }
+    std::vector<OutputType> getAvailableAddressTypes() override
+    {
+        LOCK(m_wallet->cs_wallet);
+        std::vector<OutputType> types;
+        for (const auto type : OUTPUT_TYPES) {
+            const auto* manager{m_wallet->GetScriptPubKeyMan(type, /*internal=*/false)};
+            if (manager && manager->CanGetAddresses(/*internal=*/false)) types.push_back(type);
+        }
+        return types;
+    }
     CAmount getDefaultMaxTxFee() override { return m_wallet->m_default_max_tx_fee; }
     void remove() override
     {
