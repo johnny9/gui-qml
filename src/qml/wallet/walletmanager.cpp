@@ -107,7 +107,7 @@ WalletViewModel* WalletManager::publish(std::shared_ptr<interfaces::Wallet> wall
         if (canonicalIdentity(QString::fromStdString(current->getWalletName())) == identity) still_loaded = true;
     }
     if (!still_loaded) return nullptr;
-    instance->view = std::make_unique<WalletViewModel>(*instance->session, m_network);
+    instance->view = std::make_unique<WalletViewModel>(*instance->session, m_network, m_node.getDustRelayFee());
     // Q_INVOKABLE lookup returns a borrowed pointer, never ownership to QML.
     QQmlEngine::setObjectOwnership(instance->view.get(), QQmlEngine::CppOwnership);
     connect(instance->session.get(), &WalletSession::invalidated, this, [this, identity] { retire(identity); });

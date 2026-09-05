@@ -72,6 +72,12 @@ Page {
             enabled: !walletManager.busy
             onClicked: walletManager.closeWallet(root.selected.overview.name)
         }
+        Button {
+            objectName: "walletSendButton"
+            text: qsTr("Send")
+            visible: !!root.selected && root.selected.send.available
+            onClicked: root.navigateRequested("wallet/send", {"sessionId": root.selected.sessionId})
+        }
         Label { objectName: "walletLoadError"; text: walletManager.loadError; visible: text.length > 0; wrapMode: Text.Wrap; Layout.fillWidth: true }
         Label { text: walletManager.creation.warnings.concat(walletManager.importModel.warnings).join("\n"); visible: text.length > 0; wrapMode: Text.Wrap; Layout.fillWidth: true }
         ListView {

@@ -168,6 +168,11 @@ if(ENABLE_WALLET)
     wallet/walletstoragemodel.cpp
     wallet/walletstoragemodel.h
     wallet/walletviewmodel.h
+    wallet/senddraftsnapshot.h
+    wallet/sendrecipientslistmodel.cpp
+    wallet/sendrecipientslistmodel.h
+    wallet/walletsendmodel.cpp
+    wallet/walletsendmodel.h
     wallet/walletoperationexecutor.cpp
     wallet/walletoperationexecutor.h
     wallet/walletsession.cpp

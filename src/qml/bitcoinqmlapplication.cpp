@@ -107,6 +107,8 @@ BitcoinQmlApplication::BitcoinQmlApplication(int& argc, char** argv)
     qmlRegisterUncreatableType<WalletReceiveModel>("org.bitcoincore.qt", 1, 0, "WalletReceiveModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<ReceiveRequestHistoryModel>("org.bitcoincore.qt", 1, 0, "ReceiveRequestHistoryModel", "Owned by the receive workflow");
     qmlRegisterUncreatableType<PaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest", "Owned by the receive workflow");
+    qmlRegisterUncreatableType<WalletSendModel>("org.bitcoincore.qt", 1, 0, "WalletSendModel", "Owned by the wallet view");
+    qmlRegisterUncreatableType<SendRecipientsListModel>("org.bitcoincore.qt", 1, 0, "SendRecipientsListModel", "Owned by the send workflow");
     qmlRegisterUncreatableType<WalletOverviewModel>("org.bitcoincore.qt", 1, 0, "WalletOverviewModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<WalletSecurityModel>("org.bitcoincore.qt", 1, 0, "WalletSecurityModel", "Owned by the wallet view");
     qmlRegisterUncreatableType<WalletStorageModel>("org.bitcoincore.qt", 1, 0, "WalletStorageModel", "Owned by the wallet view");
@@ -253,6 +255,13 @@ bool BitcoinQmlApplication::createWindow()
 #ifdef ENABLE_WALLET
     if (!gArgs.GetBoolArg("-disablewallet", false)) {
         m_wallet_manager = std::make_unique<WalletManager>(*m_node, QString::fromStdString(gArgs.GetChainTypeString()));
+        m_router->registerDestination({QStringLiteral("wallet/send"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/Send.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Send"), false, QStringLiteral("wallets"), false});
+        connect(m_wallet_manager.get(), &WalletManager::selectedWalletChanged, m_router.get(), [this] {
+            // Drop routes borrowing the old wallet before it can be destroyed.
+            m_router->setDestinationEnabled(QStringLiteral("wallet/send"), false);
+            auto* selected = m_wallet_manager->selectedWallet();
+            m_router->setDestinationEnabled(QStringLiteral("wallet/send"), selected && selected->send()->available());
+        });
         m_router->registerDestination({QStringLiteral("wallets"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletOverview.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Wallets"), true, {}, false});
         m_router->registerDestination({QStringLiteral("wallet-activity"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletActivity.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Activity"), false, QStringLiteral("wallets"), false});
         m_router->registerDestination({QStringLiteral("wallet-receive"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletReceive.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Receive"), false, QStringLiteral("wallets"), false});

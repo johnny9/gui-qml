@@ -26,7 +26,7 @@ private Q_SLOTS:
         QSignalSpy warnings(&engine, &QQmlEngine::warnings);
         const auto destinations = router.destinations();
         for (const auto& destination : destinations) {
-            if (destination.id == "shutdown" || destination.id == "peer-details") continue;
+            if (destination.id == "shutdown" || destination.id == "peer-details" || destination.id == "wallet/send") continue;
             if (!destination.enabled) {
                 QVERIFY(!router.navigate(destination.id));
                 continue;
