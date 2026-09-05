@@ -116,6 +116,16 @@ add_library(bitcoinqml STATIC
   ${BITCOIN_COMPAT_QRC}
 )
 
+if(ENABLE_WALLET)
+  target_sources(bitcoinqml PRIVATE
+    wallet/walletoperationexecutor.cpp
+    wallet/walletoperationexecutor.h
+    wallet/walletsession.cpp
+    wallet/walletsession.h
+  )
+  target_link_libraries(bitcoinqml PRIVATE bitcoin_wallet)
+endif()
+
 # Compile and embed the QML catalog alongside Bitcoin Core's existing Qt
 # catalogs. OptionsQmlModel discovers the latter from this resource prefix.
 qt6_add_translation(BITCOIN_QML_QM_FILES
