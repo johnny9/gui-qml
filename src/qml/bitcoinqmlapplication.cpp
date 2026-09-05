@@ -42,6 +42,9 @@
 #include <qml/models/rpcconsolemodel.h>
 #include <qml/networkstyle.h>
 #include <qml/test/testbridge.h>
+#ifdef ENABLE_WALLET
+#include <qml/wallet/walletmanager.h>
+#endif
 
 #include <QMetaType>
 #include <QJSEngine>
@@ -95,6 +98,13 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
 BitcoinQmlApplication::BitcoinQmlApplication(int& argc, char** argv)
     : QApplication{argc, argv}
 {
+#ifdef ENABLE_WALLET
+    Q_INIT_RESOURCE(bitcoin_wallet);
+    qmlRegisterUncreatableType<WalletManager>("org.bitcoincore.qt", 1, 0, "WalletManager", "Owned by the application");
+    qmlRegisterUncreatableType<WalletViewModel>("org.bitcoincore.qt", 1, 0, "WalletViewModel", "Owned by the wallet manager");
+    qmlRegisterUncreatableType<WalletOverviewModel>("org.bitcoincore.qt", 1, 0, "WalletOverviewModel", "Owned by the wallet view");
+    qmlRegisterUncreatableType<WalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel", "Owned by the wallet manager");
+#endif
     setOrganizationName(QStringLiteral(QAPP_ORG_NAME));
     setOrganizationDomain(QStringLiteral(QAPP_ORG_DOMAIN));
     setApplicationName(QStringLiteral(QAPP_APP_NAME_DEFAULT));
@@ -121,6 +131,9 @@ BitcoinQmlApplication::~BitcoinQmlApplication()
     m_test_bridge.reset();
     m_engine.reset();
     m_language_settings_model.reset();
+#ifdef ENABLE_WALLET
+    m_wallet_manager.reset();
+#endif
     m_options_model.reset();
     m_node_information_model.reset();
     m_mempool_model.reset();
@@ -227,6 +240,17 @@ bool BitcoinQmlApplication::createWindow()
     connect(m_node_model.get(), &NodeLifecycleModel::initializationFinished, m_node_information_model.get(), &NodeInformationModel::setReady);
     connect(m_node_model.get(), &NodeLifecycleModel::nodeInitialized, m_node_network_model.get(), &NodeNetworkModel::refreshPeerCounts);
     connect(m_init_executor.get(), &QmlInitExecutor::shutdownResult, m_node_model.get(), &NodeLifecycleModel::shutdownResult);
+#ifdef ENABLE_WALLET
+    if (!gArgs.GetBoolArg("-disablewallet", false)) {
+        m_wallet_manager = std::make_unique<WalletManager>(*m_node, QString::fromStdString(gArgs.GetChainTypeString()));
+        m_router->registerDestination({QStringLiteral("wallets"), QUrl{QStringLiteral("qrc:///qml/pages/wallet/WalletOverview.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Wallets"), true, {}, false});
+        connect(m_wallet_manager.get(), &WalletManager::initializedChanged, m_router.get(), [this] {
+            m_router->setDestinationEnabled(QStringLiteral("wallets"), m_wallet_manager->initialized());
+        });
+        connect(m_node_model.get(), &NodeLifecycleModel::nodeInitialized, m_wallet_manager.get(), &WalletManager::initialize);
+        connect(m_wallet_manager.get(), &WalletManager::drained, m_init_executor.get(), &QmlInitExecutor::shutdown);
+    }
+#endif
     connect(m_init_executor.get(), &QmlInitExecutor::runawayException, this, &BitcoinQmlApplication::handleRunawayException);
     connect(m_node_model.get(), &NodeLifecycleModel::shutdownComplete, this, [this] {
         m_shutdown_complete = true;
@@ -291,6 +315,11 @@ bool BitcoinQmlApplication::createWindow()
     m_language_settings_model = std::make_unique<LanguageSettingsModel>(*m_node, gArgs, *m_translations);
     m_engine = std::make_unique<QQmlApplicationEngine>();
     m_translations->attachEngine(*m_engine);
+#ifdef ENABLE_WALLET
+    m_engine->rootContext()->setContextProperty("walletManager", m_wallet_manager.get());
+#else
+    m_engine->rootContext()->setContextProperty("walletManager", static_cast<QObject*>(nullptr));
+#endif
     m_engine->addImageProvider(QStringLiteral("images"), new ImageProvider{m_network_style.get()});
     QQmlContext* const context{m_engine->rootContext()};
     context->setContextProperty(QStringLiteral("networkTrafficTower"), m_network_traffic_tower.get());
@@ -335,7 +364,12 @@ bool BitcoinQmlApplication::createWindow()
     m_node_model->startShutdownPolling();
     // NodeLifecycleModel interrupts Core first. All preceding direct slots drain
     // feature workers before this last slot queues destruction of Core state.
-    connect(m_node_model.get(), &NodeLifecycleModel::requestedShutdown, m_init_executor.get(), &QmlInitExecutor::shutdown);
+    connect(m_node_model.get(), &NodeLifecycleModel::requestedShutdown, this, [this] {
+#ifdef ENABLE_WALLET
+        if (m_wallet_manager) { m_wallet_manager->shutdown(); return; }
+#endif
+        m_init_executor->shutdown();
+    });
     return true;
 }
 
@@ -407,4 +441,13 @@ QQmlApplicationEngine& BitcoinQmlApplication::engine() const
 {
     assert(m_engine);
     return *m_engine;
+}
+
+WalletManager* BitcoinQmlApplication::walletManager() const
+{
+#ifdef ENABLE_WALLET
+    return m_wallet_manager.get();
+#else
+    return nullptr;
+#endif
 }

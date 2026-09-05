@@ -81,6 +81,7 @@ Item {
         function onSettingsClicked() { applicationRouter.navigate("settings") }
         function onPeersClicked() { applicationRouter.navigate("peers") }
         function onConsoleClicked() { applicationRouter.navigate("console") }
+        function onWalletsClicked() { applicationRouter.navigate("wallets") }
         function onPeerSelected(details) { applicationRouter.navigate("peer-details", {"details": details}) }
         function onBannedPeers() { applicationRouter.navigate("banned-peers") }
         function onDesignSystemRequested() { applicationRouter.navigate("settings/design-system") }

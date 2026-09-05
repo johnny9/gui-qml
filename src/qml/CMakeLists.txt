@@ -117,11 +117,24 @@ add_library(bitcoinqml STATIC
 )
 
 if(ENABLE_WALLET)
+  qt6_add_resources(BITCOIN_WALLET_QRC bitcoin_wallet.qrc)
+  get_target_property(warn_flags warn_interface INTERFACE_COMPILE_OPTIONS)
+  if("-Wtrailing-whitespace=any" IN_LIST warn_flags)
+    set_source_files_properties(${BITCOIN_WALLET_QRC} PROPERTIES COMPILE_OPTIONS -Wno-trailing-whitespace)
+  endif()
+  unset(warn_flags)
   target_sources(bitcoinqml PRIVATE
+    wallet/walletmanager.cpp
+    wallet/walletmanager.h
+    wallet/walletlistmodel.h
+    wallet/walletoverviewmodel.cpp
+    wallet/walletoverviewmodel.h
+    wallet/walletviewmodel.h
     wallet/walletoperationexecutor.cpp
     wallet/walletoperationexecutor.h
     wallet/walletsession.cpp
     wallet/walletsession.h
+    ${BITCOIN_WALLET_QRC}
   )
   target_link_libraries(bitcoinqml PRIVATE bitcoin_wallet)
 endif()

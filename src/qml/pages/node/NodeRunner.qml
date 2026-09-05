@@ -13,6 +13,7 @@ Page {
     signal settingsClicked
     signal peersClicked
     signal consoleClicked
+    signal walletsClicked
     id: root
     objectName: "nodeRunner"
     background: null
@@ -32,6 +33,13 @@ Page {
 
                 NodeStatusActions {
                     Layout.alignment: Qt.AlignVCenter
+                }
+                Button {
+                    objectName: "walletsTabButton"
+                    text: qsTr("Wallets")
+                    visible: walletManager !== null
+                    enabled: walletManager !== null && walletManager.initialized
+                    onClicked: root.walletsClicked()
                 }
                 IconButton {
                     objectName: "peersTabButton"

@@ -6,6 +6,7 @@
 #define BITCOIN_QML_BITCOINQMLAPPLICATION_H
 
 #include <memory>
+#include <bitcoin-build-config.h>
 
 #include <QApplication>
 #include <QRect>
@@ -40,6 +41,7 @@ class NodeNetworkModel;
 class RuntimeDialogModel;
 class MempoolModel;
 class NodeInformationModel;
+class WalletManager;
 namespace interfaces {
 class Chain;
 class Init;
@@ -68,6 +70,7 @@ public:
     QQmlApplicationEngine& engine() const;
     TranslationManager& translations() const;
     ApplicationRouter& router() const;
+    WalletManager* walletManager() const;
 
 private:
     [[noreturn]] void handleRunawayException(const QString& message);
@@ -102,6 +105,9 @@ private:
     std::unique_ptr<RuntimeDialogModel> m_runtime_dialog_model;
     std::unique_ptr<MempoolModel> m_mempool_model;
     std::unique_ptr<NodeInformationModel> m_node_information_model;
+#ifdef ENABLE_WALLET
+    std::unique_ptr<WalletManager> m_wallet_manager;
+#endif
     QStringList m_startup_warnings;
     QRect m_initial_window_geometry;
     bool m_base_initialized{false};
