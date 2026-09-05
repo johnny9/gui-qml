@@ -15,10 +15,11 @@ Page {
     property string rowKey
     property var details: ({})
     signal back()
-    function refresh() { details = wallet ? wallet.history.details(rowKey) : ({}) }
+    signal navigateRequested(string route, var parameters)
+    function refresh() { details = wallet ? wallet.activity.details(rowKey) : ({}) }
     Component.onCompleted: { wallet = walletManager.walletBySession(sessionId); refresh() }
     Connections {
-        target: root.wallet ? root.wallet.history : null
+        target: root.wallet ? root.wallet.activity : null
         function onRecordsChanged() { root.refresh() }
     }
     background: Rectangle { color: Theme.color.background }
@@ -45,6 +46,16 @@ Page {
             Label { text: qsTr("Debit (sat): %1").arg(root.details.debitSat || 0) }
             Label { text: qsTr("Fee (sat): %1").arg(root.details.feeSat || 0) }
             Label { text: root.details.message || ""; wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Label { text: qsTr("Associated requests (address match, not proof of settlement)"); visible: requestLinks.count > 0; wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Repeater {
+                id: requestLinks
+                model: root.details.requestIds || []
+                Button {
+                    required property string modelData
+                    text: qsTr("View request %1").arg(modelData)
+                    onClicked: root.navigateRequested("wallet-receive", {sessionId: root.sessionId, requestId: modelData})
+                }
+            }
         }
     }
 }

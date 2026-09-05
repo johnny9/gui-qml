@@ -6,6 +6,8 @@
 #include <qml/test/integration_test_registry.h>
 #include <qml/test/wallet_test_fixture.h>
 #include <qml/wallet/transactionhistorymodel.h>
+#include <qml/wallet/activitytimelinemodel.h>
+#include <qml/wallet/walletreceivemodel.h>
 #include <qml/wallet/walletsession.h>
 #include <key_io.h>
 #include <univalue.h>
@@ -108,6 +110,48 @@ private Q_SLOTS:
             return drainReads(*session) && !activity->isEmpty();
         }, 5'000));
         QCOMPARE(activity->count(), 1); // Consumers may have read data after the failed baseline.
+    }
+
+    void requestAssociationsFollowRealReorgs()
+    {
+        WalletTestFixture fixture{m_node};
+        WalletOperationExecutor executor;
+        auto backend{fixture.create()};
+        WalletSession session{backend, 4002, executor};
+        TransactionHistoryModel history{session};
+        WalletReceiveModel receive{session, QStringLiteral("regtest")};
+        ActivityTimelineModel activity{session.id(), history, *receive.history()};
+        QTRY_VERIFY_WITH_TIMEOUT(receive.available() && !receive.busy(), 10'000);
+        QVERIFY(receive.save());
+        QTRY_VERIFY_WITH_TIMEOUT(!receive.busy() && receive.history()->count() == 1, 10'000);
+        const QString id{receive.draft()->id()}, address{receive.draft()->address()};
+        QCOMPARE(activity.count(), 1);
+        QVERIFY(activity.rows().front().value("pendingRequest").toBool());
+        UniValue params{UniValue::VARR};
+        params.push_back(1);
+        params.push_back(address.toStdString());
+        const auto blocks{m_node.executeRpc("generatetoaddress", params, "")};
+        QTRY_VERIFY_WITH_TIMEOUT(history.count() == 1 && !activity.rows().front().value("pendingRequest").toBool(), 10'000);
+        const auto before{activity.rows()};
+        UniValue reorg{UniValue::VARR};
+        reorg.push_back(blocks[0].get_str());
+        struct RestoreBlock {
+            interfaces::Node& node;
+            UniValue& params;
+            ~RestoreBlock() { node.executeRpc("reconsiderblock", params, ""); }
+        } restore{m_node, reorg};
+        m_node.executeRpc("invalidateblock", reorg, "");
+        history.reload();
+        QTRY_VERIFY_WITH_TIMEOUT(!activity.details(QStringLiteral("4002:request:") + id).isEmpty(), 10'000);
+        QCOMPARE(receive.history()->count(), 1);
+        m_node.executeRpc("reconsiderblock", reorg, "");
+        history.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(activity.rows(), before, 10'000);
+        QVERIFY(receive.remove(id));
+        QTRY_VERIFY_WITH_TIMEOUT(!receive.busy() && receive.history()->count() == 0, 10'000);
+        QCOMPARE(history.count(), 1);
+        QCOMPARE(activity.count(), 1);
+        QVERIFY(activity.rows().front().value("requestIds").toStringList().isEmpty());
     }
 
     void realWalletNotificationsAndReloadAgree()

@@ -13,11 +13,23 @@ Page {
     objectName: "walletReceivePage"
     property var wallet: null
     property string sessionId
+    property string requestId
+    function openRequest() {
+        if (receive && !receive.busy && requestId.length > 0) {
+            const id = requestId
+            requestId = ""
+            if (!receive.edit(id)) requestId = id
+        }
+    }
     readonly property var receive: wallet ? wallet.receive : null
     readonly property var draft: receive ? receive.draft : null
     readonly property bool qrAvailable: typeof walletQrAvailable !== "undefined" && walletQrAvailable
     signal back()
-    Component.onCompleted: { if (!wallet) wallet = walletManager.walletBySession(sessionId) }
+    Component.onCompleted: { if (!wallet) wallet = walletManager.walletBySession(sessionId); openRequest() }
+    Connections {
+        target: root.receive
+        function onChanged() { root.openRequest() }
+    }
     background: Rectangle { color: Theme.color.background }
     header: ToolBar {
         RowLayout {

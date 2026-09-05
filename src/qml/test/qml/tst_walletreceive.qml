@@ -38,6 +38,7 @@ TestCase {
         property string defaultAddressType: "bech32"
         property int saved: 0
         property string passedPassword: ""
+        signal changed()
         function save(password) { saved++; passedPassword = password; return true }
         function clear() {}
     }

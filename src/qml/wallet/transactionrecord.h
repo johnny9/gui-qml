@@ -24,7 +24,7 @@ struct TransactionRecord {
     QString key() const;
     QString status() const;
     CAmount netAmount() const { return credit + debit; }
-    bool qualifiesAsReceipt() const { return credit > 0 && !abandoned && confirmations >= 0; }
+    bool qualifiesAsReceipt() const { return credit > 0 && !abandoned && confirmations >= 0 && (kind != Generated || in_main_chain); }
 };
 QVector<TransactionRecord> DecomposeWalletTransaction(quint64 session_id, const interfaces::WalletTx& tx,
                                                       const interfaces::WalletTxStatus& status);

@@ -127,6 +127,8 @@ if(ENABLE_WALLET)
     wallet/transactionrecord.cpp
     wallet/transactionrecord.h
     wallet/transactionhistorymodel.cpp
+    wallet/activitytimelinemodel.cpp
+    wallet/activitytimelinemodel.h
     wallet/transactionhistorymodel.h
     wallet/paymentrequest.cpp
     wallet/paymentrequest.h

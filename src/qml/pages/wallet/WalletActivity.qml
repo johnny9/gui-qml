@@ -22,7 +22,7 @@ Page {
             anchors.fill: parent
             Button { text: qsTr("Back"); onClicked: root.back() }
             Label { text: qsTr("Activity"); Layout.fillWidth: true }
-            Button { text: qsTr("Refresh"); enabled: root.available; onClicked: root.wallet.history.reload() }
+            Button { text: qsTr("Refresh"); enabled: root.available; onClicked: { root.wallet.history.reload(); root.wallet.receive.reload() } }
         }
     }
     ColumnLayout {
@@ -31,7 +31,7 @@ Page {
         Label { text: root.wallet ? root.wallet.overview.displayName : qsTr("Wallet unavailable") }
         Label { text: root.wallet ? root.wallet.history.error : ""; visible: text.length > 0 }
         Binding {
-            target: root.wallet ? root.wallet.history : null
+            target: root.wallet ? root.wallet.activity : null
             property: "displayUnit"
             value: optionsModel.displayUnit
         }
@@ -40,7 +40,7 @@ Page {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            model: root.wallet ? root.wallet.history : null
+            model: root.wallet ? root.wallet.activity : null
             delegate: ItemDelegate {
                 required property string rowKey
                 required property string label
@@ -52,7 +52,7 @@ Page {
                 text: (label || address) + "   " + amountDisplay + "   " + status
                 onClicked: root.transactionSelected(rowKey)
             }
-            Label { anchors.centerIn: parent; visible: parent.count === 0; text: qsTr("No transactions yet") }
+            Label { anchors.centerIn: parent; visible: parent.count === 0; text: qsTr("No activity yet") }
         }
     }
 }
