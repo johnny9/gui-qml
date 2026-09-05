@@ -31,6 +31,8 @@ add_library(bitcoinqml STATIC
   bitcoin.h
   bitcoinqmlapplication.cpp
   bitcoinqmlapplication.h
+  bitcoinunits.cpp
+  bitcoinunits.h
   buildinfo.h
   clipboard.h
   components/blockclockdial.cpp
@@ -58,6 +60,8 @@ add_library(bitcoinqml STATIC
   models/chainsyncmodel.h
   models/core_settings_model.cpp
   models/core_settings_model.h
+  models/mempoolmodel.cpp
+  models/mempoolmodel.h
   models/networkstatusmodel.cpp
   models/networkstatusmodel.h
   models/networktraffictower.cpp
@@ -70,6 +74,8 @@ add_library(bitcoinqml STATIC
   models/nodenetworkmodel.h
   models/onboardingoptionsmodel.cpp
   models/onboardingoptionsmodel.h
+  models/options_model.cpp
+  models/options_model.h
   models/peerdetailsmodel.cpp
   models/peerdetailsmodel.h
   models/peerlistmodel.cpp
