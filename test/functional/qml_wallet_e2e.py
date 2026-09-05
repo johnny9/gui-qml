@@ -4,6 +4,9 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """One minimal UI wallet journey; regression permutations belong in integration."""
 
+from decimal import Decimal
+
+from test_framework.address import ADDRESS_BCRT1_UNSPENDABLE
 from test_framework.authproxy import AuthServiceProxy
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, get_auth_cookie, rpc_port
@@ -52,13 +55,52 @@ class QmlWalletE2ETest(BitcoinTestFramework):
             assert_equal(rpc.listwallets(), ["e2e_wallet"])
             assert_equal(rpc.getwalletinfo()["walletname"], "e2e_wallet")
 
+            self.log.info("Create one receive request through the UI")
+            gui.click("walletReceiveButton")
+            self.wait_until(lambda: gui.get_property("walletReceivePage", "visible"))
+            self.wait_until(lambda: gui.get_property("saveReceiveRequestButton", "enabled"))
+            gui.type_text("receiveAmountInput", "0.001")
+            gui.type_text("receiveLabelInput", "E2E receipt")
+            gui.click("saveReceiveRequestButton")
+            self.wait_until(lambda: gui.get_property("receiveRequestId", "text") != "")
+            address = gui.get_property("receiveAddress", "text")
+            assert rpc.validateaddress(address)["isvalid"]
+            assert gui.get_property("receiveUri", "text").startswith(f"bitcoin:{address}?amount=0.001")
+            gui.click("receiveBackButton")
+            self.wait_until(lambda: gui.get_property("walletOverviewPage", "visible"))
+            gui.click("walletActivityButton")
+            self.wait_until(lambda: gui.get_property("walletActivityList", "count") == 1)
+
+            self.log.info("Fund the saved address locally and observe the live receipt")
+            # One coinbase goes to the request. Unrelated blocks only mature it;
+            # this is fixture setup, not an additional GUI workflow.
+            rpc.generatetoaddress(1, address)
+            rpc.generatetoaddress(100, ADDRESS_BCRT1_UNSPENDABLE)
+            self.wait_until(lambda: rpc.getbalance() == Decimal("50"))
+
+            def receipt_visible():
+                rows = [entry["objectName"] for entry in gui.list_objects()
+                        if entry["objectName"].startswith("activityRow-") and ":request:" not in entry["objectName"]]
+                return len(rows) == 1 and "E2E receipt" in gui.get_property(rows[0], "text") and "Confirmed" in gui.get_property(rows[0], "text")
+
+            self.wait_until(receipt_visible, timeout=30)
+            gui.click("activityBackButton")
+            self.wait_until(lambda: gui.get_property("walletOverviewPage", "visible"))
+            self.wait_until(lambda: Decimal(gui.get_property("selectedWalletBalance", "text").split()[0]) == Decimal("50"))
+
             gui.close_window()
             assert_equal(harness.wait_for_exit(), 0)
         except Exception:
             if harness is not None:
                 try:
+                    focused_names = {"mainWindow", "walletOverviewPage", "selectedWalletName", "selectedWalletBalance",
+                                     "createWalletDialog", "createWalletError", "walletReceivePage", "receiveError",
+                                     "receiveRequestId", "walletActivityPage", "walletActivityList"}
                     snapshot = [entry for entry in harness.driver.list_objects()
-                                if entry["objectName"] in {"mainWindow", "walletOverviewPage", "selectedWalletName", "createWalletDialog", "createWalletError"}]
+                                if entry["objectName"] in focused_names or entry["objectName"].startswith("activityRow-")]
+                    for entry in snapshot:
+                        if entry["objectName"].startswith("activityRow-"):
+                            entry["text"] = harness.driver.get_property(entry["objectName"], "text")
                     self.log.error("Focused wallet UI snapshot: %s", snapshot)
                 except Exception:
                     pass

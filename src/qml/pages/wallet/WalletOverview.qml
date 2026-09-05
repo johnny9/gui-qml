@@ -35,7 +35,7 @@ Page {
         spacing: 16
         Label { text: root.selected ? root.selected.overview.displayName : qsTr("No wallet selected"); font.pixelSize: 26 }
         Label { objectName: "selectedWalletName"; text: root.selected ? root.selected.overview.name : "" }
-        Label { text: root.selected ? root.selected.overview.balance + " BTC" : qsTr("Select an existing wallet below.") }
+        Label { objectName: "selectedWalletBalance"; text: root.selected ? root.selected.overview.balance + " BTC" : qsTr("Select an existing wallet below.") }
         Label { text: root.selected ? root.selected.overview.keyScheme : "" }
         Button {
             objectName: "walletActivityButton"

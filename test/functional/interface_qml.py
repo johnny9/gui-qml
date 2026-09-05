@@ -20,6 +20,9 @@ class QmlInterfaceTest(BitcoinTestFramework):
     def setup_network(self):
         pass
 
+    def add_options(self, parser):
+        parser.add_argument("--disablewallet", action="store_true", help="Run the same node journey with runtime wallet support disabled")
+
     def skip_test_if_missing_module(self):
         self.skip_if_no_qml()
 
@@ -77,7 +80,7 @@ class QmlInterfaceTest(BitcoinTestFramework):
             self.log.info("Starting QML %s and connecting the test bridge", name)
             harness = self.start_qml(
                 multiprocess=multiprocess,
-                extra_args=["-qml_onboarded=1"],
+                extra_args=["-qml_onboarded=1"] + (["-disablewallet"] if self.options.disablewallet else []),
             )
             gui = harness.driver
 
@@ -100,6 +103,8 @@ class QmlInterfaceTest(BitcoinTestFramework):
             assert_equal(gui.get_property("mainWindow", "title"), "Bitcoin Core")
             self.log.info("Waiting for the node to finish starting")
             self.wait_until(lambda: gui.get_property("mainWindow", "nodeStatus") == "Node is running", timeout=30)
+            if self.options.disablewallet:
+                assert_equal(gui.get_property("walletsTabButton", "visible"), False)
 
             self.log.info("Opening the console and executing a read-only node command")
             gui.click("consoleTabButton")

@@ -20,7 +20,7 @@ Page {
     header: ToolBar {
         RowLayout {
             anchors.fill: parent
-            Button { text: qsTr("Back"); onClicked: root.back() }
+            Button { objectName: "activityBackButton"; text: qsTr("Back"); onClicked: root.back() }
             Label { text: qsTr("Activity"); Layout.fillWidth: true }
             Button { text: qsTr("Refresh"); enabled: root.available; onClicked: { root.wallet.history.reload(); root.wallet.receive.reload() } }
         }
