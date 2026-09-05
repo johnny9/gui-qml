@@ -34,7 +34,8 @@ add_executable(test_bitcoin-qt
 add_windows_application_manifest(test_bitcoin-qt)
 
 if(ENABLE_WALLET)
-  qt6_add_resources(test_bitcoin-qt wallet_qml_tests PREFIX /test FILES qml/tst_walletreceive.qml)
+  target_sources(test_bitcoin-qt PRIVATE test_transactionreview.cpp test_sendprepare_integration.cpp)
+  qt6_add_resources(test_bitcoin-qt wallet_qml_tests PREFIX /test FILES qml/tst_walletreceive.qml qml/tst_walletsend.qml)
   target_sources(test_bitcoin-qt PRIVATE test_receiverequests.cpp test_wallet_receive_integration.cpp)
   target_sources(test_bitcoin-qt PRIVATE test_activitytimeline.cpp test_wallet_activity_integration.cpp)
   target_sources(test_bitcoin-qt PRIVATE test_activityfilter.cpp)

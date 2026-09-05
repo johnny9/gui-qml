@@ -44,6 +44,7 @@ private Q_SLOTS:
 private:
     friend class WalletManager;
     friend class WalletHistoryIntegrationTests; // Control poll timing without a public testing API.
+    friend class SendPreparationIntegrationTests; // Observe fixture readiness without a public testing API.
     std::shared_ptr<interfaces::Wallet> m_wallet;
     const quint64 m_id;
     quint64 m_generation{1};

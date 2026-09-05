@@ -14,13 +14,14 @@ Page {
     property var wallet: null
     readonly property var send: wallet ? wallet.send : null
     Component.onCompleted: {
-        wallet = walletManager.walletBySession(sessionId)
+        if (!wallet) wallet = walletManager.walletBySession(sessionId)
         if (send) send.coins.active = true
     }
-    Component.onDestruction: { if (send) send.coins.active = false }
+    Component.onDestruction: { if (send) { send.coins.active = false; send.invalidateReview() } }
     signal back()
     Binding { target: root.send ? root.send.fees : null; property: "displayUnit"; value: optionsModel.displayUnit }
     Binding { target: root.send ? root.send.coins : null; property: "displayUnit"; value: optionsModel.displayUnit }
+    Binding { target: root.send ? root.send.review : null; property: "displayUnit"; value: optionsModel.displayUnit }
     background: Rectangle { color: Theme.color.background }
     header: ToolBar {
         RowLayout {
@@ -166,6 +167,45 @@ Page {
                 visible: text.length > 0
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
+            }
+            TextField {
+                id: passphrase
+                objectName: "sendPassphrase"
+                visible: root.send.needsPassphrase
+                enabled: !root.send.busy
+                placeholderText: qsTr("Wallet passphrase")
+                echoMode: TextInput.Password
+                inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+            }
+            Button {
+                objectName: "sendPrepareButton"
+                text: root.send.busy ? qsTr("Preparing…") : qsTr("Prepare transaction")
+                enabled: root.send.canPrepare
+                onClicked: {
+                    const secret = passphrase.text
+                    passphrase.clear()
+                    root.send.prepare(secret)
+                }
+            }
+            GroupBox {
+                objectName: "sendTransactionReview"
+                visible: root.send.review.hasReview
+                title: qsTr("Review prepared transaction")
+                Layout.fillWidth: true
+                ColumnLayout {
+                    anchors.fill: parent
+                    Label { text: qsTr("Transaction: %1").arg(root.send.review.transactionId); Layout.fillWidth: true; wrapMode: Text.WrapAnywhere }
+                    Repeater {
+                        model: root.send.review.outputs
+                        delegate: Label {
+                            required property var modelData
+                            text: modelData.amount + " → " + modelData.address + (modelData.change ? qsTr(" (change)") : "")
+                            Layout.fillWidth: true
+                            wrapMode: Text.WrapAnywhere
+                        }
+                    }
+                    Label { objectName: "sendPreparedFee"; text: qsTr("Actual fee: %1").arg(root.send.review.feeText) }
+                }
             }
         }
     }
