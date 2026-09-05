@@ -20,12 +20,14 @@
 #include <qml/buildinfo.h>
 #include <qml/clipboard.h>
 #include <qml/components/blockclockdial.h>
+#include <qml/controls/linegraph.h>
 #include <qml/guiconstants.h>
 #include <qml/imageprovider.h>
 #include <qml/initexecutor.h>
 #include <qml/models/banlistmodel.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/networkstatusmodel.h>
+#include <qml/models/networktraffictower.h>
 #include <qml/models/nodemodel.h>
 #include <qml/models/peerdetailsmodel.h>
 #include <qml/models/peerlistmodel.h>
@@ -74,6 +76,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
         return clipboard_instance;
     });
     qmlRegisterType<BlockClockDial>("org.bitcoincore.qt", 1, 0, "BlockClockDial");
+    qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
     qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");
     registered = true;
 }
@@ -116,6 +119,7 @@ BitcoinQmlApplication::~BitcoinQmlApplication()
     m_peer_model.reset();
     m_chain_model.reset();
     m_network_status_model.reset();
+    m_network_traffic_tower.reset();
     m_network_style.reset();
     m_clipboard.reset();
     m_build_info.reset();
@@ -169,6 +173,7 @@ bool BitcoinQmlApplication::createWindow()
     m_router->registerDestination({QStringLiteral("node"), QUrl{QStringLiteral("qrc:///qml/pages/node/NodeRunner.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Node"), true, QStringLiteral("")});
     m_router->registerDestination({QStringLiteral("peers"), QUrl{QStringLiteral("qrc:///qml/pages/node/Peers.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Peers"), true, QStringLiteral("")});
     m_router->registerDestination({QStringLiteral("banned-peers"), QUrl{QStringLiteral("qrc:///qml/pages/node/BannedPeers.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Banned peers"), true, QStringLiteral("")});
+    m_router->registerDestination({QStringLiteral("traffic"), QUrl{QStringLiteral("qrc:///qml/pages/node/NetworkTraffic.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Network traffic"), true, QStringLiteral("")});
     m_router->registerDestination({QStringLiteral("peer-details"), QUrl{QStringLiteral("qrc:///qml/pages/node/PeerDetails.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Peer details"), false, QStringLiteral("peers")});
     m_router->registerDestination({QStringLiteral("shutdown"), QUrl{QStringLiteral("qrc:///qml/pages/node/Shutdown.qml")}, QT_TRANSLATE_NOOP("ApplicationRouter", "Shutting down"), false, QStringLiteral("")});
     m_router->navigate(QStringLiteral("node"));
@@ -188,6 +193,8 @@ bool BitcoinQmlApplication::createWindow()
         m_shutdown_complete = true;
         exit(node().getExitStatus());
     });
+
+    m_network_traffic_tower = std::make_unique<NetworkTrafficTower>(*m_node);
     m_network_status_model = std::make_unique<NetworkStatusModel>();
     m_chain_model = std::make_unique<ChainModel>(*m_chain);
     m_chain_model->setCurrentNetworkName(QString::fromStdString(gArgs.GetChainTypeString()));
@@ -211,6 +218,7 @@ bool BitcoinQmlApplication::createWindow()
     m_ban_list_model = std::make_unique<BanListModel>(*m_node);
     connect(m_node_model.get(), &NodeLifecycleModel::requestedShutdown, m_ban_list_model.get(), &BanListModel::stop);
     connect(m_node_model.get(), &NodeLifecycleModel::nodeInitialized, m_ban_list_model.get(), &BanListModel::refresh);
+    connect(m_node_model.get(), &NodeLifecycleModel::requestedShutdown, m_network_traffic_tower.get(), &NetworkTrafficTower::stop);
 
     m_network_style.reset(NetworkStyle::instantiate(Params().GetChainType()));
     assert(m_network_style);
@@ -220,6 +228,7 @@ bool BitcoinQmlApplication::createWindow()
     m_translations->attachEngine(*m_engine);
     m_engine->addImageProvider(QStringLiteral("images"), new ImageProvider{m_network_style.get()});
     QQmlContext* const context{m_engine->rootContext()};
+    context->setContextProperty(QStringLiteral("networkTrafficTower"), m_network_traffic_tower.get());
     context->setContextProperty(QStringLiteral("networkStatusModel"), m_network_status_model.get());
     context->setContextProperty(QStringLiteral("nodeLifecycleModel"), m_node_model.get());
     context->setContextProperty(QStringLiteral("chainSyncModel"), m_chain_sync_model.get());

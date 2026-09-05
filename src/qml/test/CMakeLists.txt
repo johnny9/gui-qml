@@ -15,6 +15,7 @@ add_executable(test_bitcoin-qt
   test_blockclockdial.cpp
   test_guiargs.cpp
   test_networkstatusmodel.cpp
+  test_networktraffictower.cpp
   test_nodemodel.cpp
   test_noderuntimemodels.cpp
   test_runtimedialogmodel.cpp

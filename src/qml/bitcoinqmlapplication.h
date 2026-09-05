@@ -18,6 +18,7 @@ class ChainModel;
 class Clipboard;
 class NetworkStatusModel;
 class NetworkStyle;
+class NetworkTrafficTower;
 class NodeLifecycleModel;
 class PeerListModel;
 class PeerListSortProxy;
@@ -70,6 +71,7 @@ private:
     std::unique_ptr<Clipboard> m_clipboard;
     std::unique_ptr<NodeLifecycleModel> m_node_model;
     std::unique_ptr<QmlInitExecutor> m_init_executor;
+    std::unique_ptr<NetworkTrafficTower> m_network_traffic_tower;
     std::unique_ptr<NetworkStatusModel> m_network_status_model;
     std::unique_ptr<ChainModel> m_chain_model;
     std::unique_ptr<PeerListModel> m_peer_model;
