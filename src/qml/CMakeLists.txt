@@ -129,6 +129,10 @@ if(ENABLE_WALLET)
     wallet/transactionhistorymodel.cpp
     wallet/activitytimelinemodel.cpp
     wallet/activitytimelinemodel.h
+    wallet/activityfilterproxymodel.cpp
+    wallet/activityfilterproxymodel.h
+    wallet/activitycsv.cpp
+    wallet/activitycsv.h
     wallet/transactionhistorymodel.h
     wallet/paymentrequest.cpp
     wallet/paymentrequest.h

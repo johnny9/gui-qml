@@ -30,6 +30,44 @@ Page {
         anchors.margins: 20
         Label { text: root.wallet ? root.wallet.overview.displayName : qsTr("Wallet unavailable") }
         Label { text: root.wallet ? root.wallet.history.error : ""; visible: text.length > 0 }
+        TextField {
+            objectName: "activitySearchInput"
+            Layout.fillWidth: true
+            placeholderText: qsTr("Search address, label, message or transaction ID")
+            text: root.wallet ? root.wallet.activityFilter.searchText : ""
+            enabled: !!root.wallet
+            onTextEdited: root.wallet.activityFilter.searchText = text
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            ComboBox {
+                objectName: "activityTypeFilter"
+                model: [qsTr("All activity"), qsTr("Received"), qsTr("Sent"), qsTr("Self payment"), qsTr("Generated"), qsTr("Pending requests")]
+                currentIndex: root.wallet ? root.wallet.activityFilter.typeFilter : 0
+                enabled: !!root.wallet
+                onActivated: root.wallet.activityFilter.typeFilter = currentIndex
+            }
+            TextField {
+                Layout.fillWidth: true
+                placeholderText: qsTr("From YYYY-MM-DD (UTC)")
+                text: root.wallet ? root.wallet.activityFilter.fromDate : ""
+                enabled: !!root.wallet
+                onTextEdited: root.wallet.activityFilter.fromDate = text
+            }
+            TextField {
+                Layout.fillWidth: true
+                placeholderText: qsTr("Through YYYY-MM-DD (UTC)")
+                text: root.wallet ? root.wallet.activityFilter.throughDate : ""
+                enabled: !!root.wallet
+                onTextEdited: root.wallet.activityFilter.throughDate = text
+            }
+            Button {
+                text: qsTr("Export CSV")
+                enabled: !!root.wallet
+                onClicked: root.wallet.activityFilter.chooseExportFile()
+            }
+        }
+        Label { text: root.wallet ? root.wallet.activityFilter.error : ""; visible: text.length > 0; wrapMode: Text.Wrap; Layout.fillWidth: true }
         Binding {
             target: root.wallet ? root.wallet.activity : null
             property: "displayUnit"
@@ -40,7 +78,7 @@ Page {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            model: root.wallet ? root.wallet.activity : null
+            model: root.wallet ? root.wallet.activityFilter : null
             delegate: ItemDelegate {
                 required property string rowKey
                 required property string label
