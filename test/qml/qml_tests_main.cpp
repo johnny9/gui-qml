@@ -1296,7 +1296,7 @@ public:
     int backupWalletCalls() const { return m_backup_wallet_calls; }
     Q_INVOKABLE QString estimatedFeeForTarget(const int target) const
     {
-        const QString estimate = m_fee_estimates.value(target);
+        QString estimate = m_fee_estimates.value(target);
         if (!estimate.isEmpty()) {
             return estimate;
         }
@@ -2764,6 +2764,7 @@ Q_SIGNALS:
     void mempoolInfoPollingActiveChanged(bool active);
     void mempoolInformationAvailableChanged();
     void peerActionStateChanged();
+    void peerActionFinished(bool success);
     void peerActionCallsChanged();
 };
 
@@ -3059,6 +3060,7 @@ public:
     }
 
 Q_SIGNALS:
+    void unbanFinished(bool success);
     void countChanged();
     void actionStateChanged();
     void actionCallsChanged();

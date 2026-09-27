@@ -19,6 +19,7 @@ BlockClockModel::BlockClockModel(HistoryLoader history_loader, bool start_timer,
       m_current_time_provider{std::move(current_time_provider)},
       m_clock_timer{this}
 {
+    connect(&m_backend, &BackendWorker::drained, this, &BlockClockModel::backendDrained);
     if (!m_current_time_provider) {
         m_current_time_provider = [] { return QDateTime::currentDateTime(); };
     }
@@ -44,9 +45,12 @@ qint64 BlockClockModel::PeriodStartFor(const QDateTime& current_time)
 
 void BlockClockModel::updateCurrentTime(const QDateTime& current_time)
 {
+    RequireModelThread(this);
+    if (m_draining) return;
     const qint64 period_start{PeriodStartFor(current_time)};
     if (m_timeline.period_start != period_start) {
         m_timeline.period_start = period_start;
+        replaceBlockHistory({});
         Q_EMIT periodChanged();
 
         if (m_history_initialized) {
@@ -72,12 +76,16 @@ void BlockClockModel::scheduleNextClockUpdate(const QDateTime& current_time)
 
 void BlockClockModel::initializeHistory()
 {
+    RequireModelThread(this);
+    if (m_draining) return;
     m_history_initialized = true;
     loadHistory();
 }
 
 void BlockClockModel::recordBlockTime(qint64 block_timestamp)
 {
+    RequireModelThread(this);
+    if (m_draining) return;
     updateCurrentTime(m_current_time_provider());
     if (m_history_initialized && m_history_loader) {
         // A queued notification may already be included in loaded history.
@@ -98,12 +106,37 @@ void BlockClockModel::recordBlockTime(qint64 block_timestamp)
 
 void BlockClockModel::loadHistory()
 {
+    if (m_draining) return;
     if (!m_history_loader) {
         replaceBlockHistory({});
         return;
     }
 
-    replaceBlockHistory(m_history_loader(m_timeline.period_start, m_timeline.period_start + PERIOD_SECONDS));
+    if (m_history_pending) {
+        m_history_again = true;
+        return;
+    }
+    m_history_pending = true;
+    const qint64 period_start{m_timeline.period_start};
+    m_backend.submit([loader = m_history_loader, period_start] {
+        return loader(period_start, period_start + PERIOD_SECONDS);
+    }, [this, period_start](QList<qint64> timestamps) {
+        RequireModelThread(this);
+        m_history_pending = false;
+        if (std::exchange(m_history_again, false) || period_start != m_timeline.period_start) {
+            loadHistory();
+            return;
+        }
+        replaceBlockHistory(std::move(timestamps));
+    });
+}
+
+void BlockClockModel::drainBackend()
+{
+    RequireModelThread(this);
+    m_draining = true;
+    m_clock_timer.stop();
+    m_backend.drain();
 }
 
 void BlockClockModel::replaceBlockHistory(QList<qint64> block_timestamps)

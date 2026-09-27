@@ -379,7 +379,8 @@ bool ShouldShowPreInitOnboarding(const std::vector<std::string>& argv, bool can_
     return !status.ok || status.should_show_onboarding;
 }
 
-PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, const std::vector<std::string>& argv, bool can_listen_ipc)
+PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, const std::vector<std::string>& argv, bool can_listen_ipc,
+    const std::function<void(QQmlApplicationEngine&)>& window_created)
 {
     // Let InitConfig report invalid explicit datadirs with Core's standard
     // error instead of entering an onboarding preview that cannot override
@@ -429,6 +430,7 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
     QEventLoop loop;
     QObject::connect(context.engine->rootObjects().first(), SIGNAL(finished()), &loop, SLOT(quit()));
     QObject::connect(context.window, SIGNAL(closing(QQuickCloseEvent*)), &loop, SLOT(quit()));
+    if (window_created) window_created(*context.engine);
     loop.exec();
 
     const bool completed = context.engine->rootObjects().first()->property("completed").toBool();
@@ -447,27 +449,33 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
     context.pending_apply = std::move(pending_apply);
     return PreInitOnboardingStatus::COMPLETED;
 }
-
-// Qt gets a synthetic argument list so it never parses the process command line:
-// a bitcoin: URI from a desktop handler can smuggle options that Qt would consume
-// before Bitcoin Core rejects them. See https://achow101.com/2021/02/0.18-uri-vuln.
-int qt_argc = 1;
-const char* qt_argv = "bitcoin-core-app";
 } // namespace
 
 
-int QmlGuiMain(int argc, char* argv[])
+int QmlGuiMain(int argc, char* argv[], const QmlApplicationHooks& hooks)
 {
 #ifdef WIN32
     common::WinCmdLineArgs winArgs;
     std::tie(argc, argv) = winArgs.get();
 #endif // WIN32
 
+    return RunQmlApplication(argc, argv, hooks);
+}
+
+int RunQmlApplication(int argc, char* argv[], const QmlApplicationHooks& hooks)
+{
+    // Shared by the production executable and every application test runner.
+    noui_connect();
     Q_INIT_RESOURCE(bitcoin_qml);
     Q_INIT_RESOURCE(bitcoin_compat);
     qRegisterMetaType<interfaces::BlockAndHeaderTipInfo>("interfaces::BlockAndHeaderTipInfo");
 
     QGuiApplication::styleHints()->setTabFocusBehavior(Qt::TabFocusAllControls);
+    // Qt gets a synthetic argument list so it never parses the process command line:
+    // a bitcoin: URI from a desktop handler can smuggle options that Qt would consume
+    // before Bitcoin Core rejects them. See https://achow101.com/2021/02/0.18-uri-vuln.
+    int qt_argc = 1;
+    const char* qt_argv = "bitcoin-core-app";
     QApplication app(qt_argc, const_cast<char**>(&qt_argv));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
@@ -559,7 +567,7 @@ int QmlGuiMain(int argc, char* argv[])
 
     PreInitOnboardingContext pre_init_onboarding_context;
     const PreInitOnboardingStatus pre_init_onboarding_status{
-        RunPreInitOnboarding(pre_init_onboarding_context, command_line_args, init->canListenIpc())
+        RunPreInitOnboarding(pre_init_onboarding_context, command_line_args, init->canListenIpc(), hooks.onboarding_created)
     };
     switch (pre_init_onboarding_status) {
     case PreInitOnboardingStatus::COMPLETED:
@@ -616,6 +624,7 @@ int QmlGuiMain(int argc, char* argv[])
     // legacy GUI: createNode()
     std::unique_ptr<interfaces::Node> node = init->makeNode();
     std::unique_ptr<interfaces::Chain> chain = init->makeChain();
+    if (hooks.interfaces_created) hooks.interfaces_created(node, chain);
 
     // legacy GUI: baseInitialize()
     if (!node->baseInitialize()) {
@@ -647,18 +656,6 @@ int QmlGuiMain(int argc, char* argv[])
     }
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
-    QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
-        if (shutdown_requested) {
-            return;
-        }
-        shutdown_requested = true;
-#ifdef ENABLE_WALLET
-        if (wallet_controller) {
-            wallet_controller->unloadWallets();
-        }
-#endif
-        init_executor.shutdown();
-    });
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
     QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, [] {
         QCoreApplication::exit(0);
@@ -666,6 +663,12 @@ int QmlGuiMain(int argc, char* argv[])
     QObject::connect(&init_executor, &QmlInitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     NetworkTrafficTower network_traffic_tower{*node};
+    QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &network_traffic_tower,
+                     [&](bool success) {
+                         if (success && !shutdown_requested && !node->shutdownRequested()) {
+                             network_traffic_tower.startSampling();
+                         }
+                     });
     NetworkStatusModel network_status_model;
 #ifdef __ANDROID__
     AndroidNotifier android_notifier{node_model};
@@ -691,14 +694,15 @@ int QmlGuiMain(int argc, char* argv[])
     });
 
     PeerListModel peer_model{*node, nullptr};
+    QObject::connect(&node_model, &NodeModel::nodeReady, &peer_model, &PeerListModel::onNodeReady);
     PeerListSortProxy peer_model_sort_proxy{nullptr};
     peer_model_sort_proxy.setSourceModel(&peer_model);
 
     BanListModel ban_list_model{*node, nullptr};
     QObject::connect(&node_model, &NodeModel::bannedListChanged,
                      &ban_list_model, &BanListModel::refresh);
-    QObject::connect(&node_model, &NodeModel::nodeInitialized,
-                     &ban_list_model, &BanListModel::refresh);
+    QObject::connect(&node_model, &NodeModel::nodeReady,
+                     &ban_list_model, &BanListModel::onNodeReady);
 
     auto engine = std::make_unique<QQmlApplicationEngine>();
 
@@ -718,7 +722,8 @@ int QmlGuiMain(int argc, char* argv[])
     engine->rootContext()->setContextProperty("debugLogModel", &debug_log_model);
 
     RpcConsoleModel rpc_console_model{*node};
-    QObject::connect(&node_model, &NodeModel::nodeInitialized,
+    QObject::connect(&rpc_console_model, &RpcConsoleModel::shutdownRequested, &node_model, &NodeModel::requestShutdown);
+    QObject::connect(&node_model, &NodeModel::nodeReady,
                      &rpc_console_model, &RpcConsoleModel::onNodeInitialized);
     engine->rootContext()->setContextProperty("rpcConsoleModel", &rpc_console_model);
 
@@ -828,7 +833,34 @@ int QmlGuiMain(int argc, char* argv[])
 
     qInfo() << "Graphics API in use:" << QmlUtil::GraphicsApi(window);
 
+    // Drain feature workers while QML can still render the shutdown page.
+    // Core shutdown must not destroy state that an accepted read still uses.
+    int pending_shutdown_workers{6};
+    const auto worker_drained = [&] {
+        if (--pending_shutdown_workers == 0) init_executor.shutdown();
+    };
+    QObject::connect(&node_model, &NodeModel::backendDrained, &app, worker_drained);
+    QObject::connect(&block_clock_model, &BlockClockModel::backendDrained, &app, worker_drained);
+    QObject::connect(&peer_model, &PeerListModel::backendDrained, &app, worker_drained);
+    QObject::connect(&ban_list_model, &BanListModel::backendDrained, &app, worker_drained);
+    QObject::connect(&network_traffic_tower, &NetworkTrafficTower::backendDrained, &app, worker_drained);
+    QObject::connect(&rpc_console_model, &RpcConsoleModel::backendDrained, &app, worker_drained);
+    QObject::connect(&node_model, &NodeModel::requestedShutdown, &app, [&] {
+        if (shutdown_requested) return;
+        shutdown_requested = true;
+#ifdef ENABLE_WALLET
+        if (wallet_controller) wallet_controller->unloadWallets();
+#endif
+        node_model.drainBackend();
+        block_clock_model.drainBackend();
+        peer_model.drainBackend();
+        ban_list_model.drainBackend();
+        network_traffic_tower.drainBackend();
+        rpc_console_model.drainBackend();
+    });
+
     node_model.startShutdownPolling();
+    if (hooks.window_created) hooks.window_created(*node, *engine);
     const int exit_code{qGuiApp->exec()};
 #ifdef ENABLE_TEST_AUTOMATION
     test_bridge.reset();

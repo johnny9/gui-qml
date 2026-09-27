@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QML_MODELS_BLOCKCLOCKMODEL_H
 #define BITCOIN_QML_MODELS_BLOCKCLOCKMODEL_H
 
+#include <qml/backendworker.h>
+
 #include <functional>
 
 #include <QDateTime>
@@ -42,9 +44,9 @@ struct BlockClockTimeline
  * period, not that synchronization is incomplete. Initial-sync state belongs
  * to NodeModel.
  *
- * All methods and the owned timer run on this object's thread (the GUI thread
- * in production). Active-chain history is refreshed after initialization, on
- * block-tip notifications, and when the local clock crosses midnight or noon.
+ * Presentation and the owned timer run on this object's thread. History loads
+ * run on a serial worker after initialization, on block-tip notifications, and
+ * when the local clock crosses midnight or noon. Concurrent requests coalesce.
  */
 class BlockClockModel : public QObject
 {
@@ -72,6 +74,7 @@ public:
 
     /** Update the scalar clock position. Public to allow deterministic tests. */
     void updateCurrentTime(const QDateTime& current_time);
+    void drainBackend();
 
 public Q_SLOTS:
     /** Load the current period's active-chain block history. */
@@ -81,6 +84,7 @@ public Q_SLOTS:
     void recordBlockTime(qint64 block_timestamp);
 
 Q_SIGNALS:
+    void backendDrained();
     void periodChanged();
     void currentTimeFractionChanged();
     void blockTimeFractionsChanged();
@@ -99,6 +103,10 @@ private:
     qreal m_current_time_fraction{0.0};
     QList<qreal> m_block_time_fractions;
     bool m_history_initialized{false};
+    bool m_history_pending{false};
+    bool m_history_again{false};
+    bool m_draining{false};
+    BackendWorker m_backend;
 };
 
 /** Read active-chain block timestamps belonging to the requested dial period. */
