@@ -39,6 +39,7 @@
 #include <qml/models/banlistmodel.h>
 #include <qml/models/bitcoinaddress.h>
 #include <qml/models/bitcoinurimodel.h>
+#include <qml/models/blockclockhistory.h>
 #include <qml/models/blockclockmodel.h>
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/chainmodel.h>
@@ -568,7 +569,11 @@ int QmlGuiMain(int argc, char* argv[])
 
     NodeModel node_model{*node};
     node_model.addStartupWarnings(startup_warnings);
-    QmlInitExecutor init_executor{*node};
+    auto block_clock_history{std::make_shared<BlockClockHistory>()};
+    BlockClockModel block_clock_model{block_clock_history};
+    QmlInitExecutor init_executor{*node, [block_clock_history, node = node.get(), chain = chain.get()] {
+        return SubscribeBlockClockHistory(*node, *chain, block_clock_history);
+    }};
     bool shutdown_requested{false};
     DebugLogModel debug_log_model{gArgs.GetDataDirNet() / "debug.log"};
 #ifdef ENABLE_WALLET
@@ -610,9 +615,6 @@ int QmlGuiMain(int argc, char* argv[])
 #endif
 
     ChainModel chain_model{QString::fromStdString(gArgs.GetChainTypeString())};
-    BlockClockModel block_clock_model{[chain = chain.get()](qint64 period_start, qint64 period_end) {
-        return LoadBlockClockHistory(*chain, period_start, period_end);
-    }};
     setupChainQSettings(&app, chain_model.networkName());
     // Settings reset must happen before model instantiation so the models
     // read clean defaults from QSettings.
@@ -622,10 +624,6 @@ int QmlGuiMain(int argc, char* argv[])
         settings.remove(QStringLiteral("fMinimizeToTray"));
         settings.remove(QStringLiteral("fMinimizeOnClose"));
     }
-
-    QObject::connect(&node_model, &NodeModel::blockTipTimeChanged, &block_clock_model, &BlockClockModel::recordBlockTime);
-    QObject::connect(&node_model, &NodeModel::chainStateReady, &block_clock_model, &BlockClockModel::initializeHistory);
-
 
     DesktopWindowBehaviorModel desktop_window_behavior_model;
     DesktopTrayIconController desktop_tray_icon_controller;

@@ -4,9 +4,12 @@
 
 #include <qml/initexecutor.h>
 
+#include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <util/exception.h>
 #include <util/threadnames.h>
+
+#include <utility>
 
 #include <QDebug>
 #include <QMetaObject>
@@ -14,8 +17,8 @@
 #include <QString>
 #include <QThread>
 
-QmlInitExecutor::QmlInitExecutor(interfaces::Node& node)
-    : QObject(), m_node(node)
+QmlInitExecutor::QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe)
+    : QObject(), m_node(node), m_subscription_factory{std::move(subscribe)}
 {
     m_context.moveToThread(&m_thread);
     m_thread.start();
@@ -24,9 +27,22 @@ QmlInitExecutor::QmlInitExecutor(interfaces::Node& node)
 QmlInitExecutor::~QmlInitExecutor()
 {
     qDebug() << __func__ << ": Stopping thread";
-    m_thread.quit();
+    // Also disconnect backend subscriptions if the event loop exited without
+    // an explicit shutdown request. Keep cleanup on the worker and finish it
+    // before the caller releases the node/chain interfaces.
+    QMetaObject::invokeMethod(&m_context, [this] {
+        prepareShutdown();
+        m_thread.quit();
+    });
     m_thread.wait();
     qDebug() << __func__ << ": Stopped thread";
+}
+
+void QmlInitExecutor::prepareShutdown()
+{
+    if (m_shutdown_started) return;
+    m_shutdown_started = true;
+    m_subscription.reset();
 }
 
 void QmlInitExecutor::handleRunawayException(const std::exception* e)
@@ -43,6 +59,12 @@ void QmlInitExecutor::initialize()
             qDebug() << "Running initialization in thread";
             interfaces::BlockAndHeaderTipInfo tip_info;
             bool rv = m_node.appInitMain(&tip_info);
+            if (rv && m_subscription_factory && !m_shutdown_started && !m_node.shutdownRequested()) {
+                // Clear the factory before invoking it, even if registration throws.
+                // The local subscription factory must use RAII while loading.
+                auto subscribe{std::exchange(m_subscription_factory, {})};
+                m_subscription = subscribe();
+            }
             Q_EMIT initializeResult(rv, tip_info);
         } catch (const std::exception& e) {
             handleRunawayException(&e);
@@ -57,6 +79,7 @@ void QmlInitExecutor::shutdown()
     QMetaObject::invokeMethod(&m_context, [this] {
         try {
             qDebug() << "Running shutdown in thread";
+            prepareShutdown();
             m_node.appShutdown();
             qDebug() << "Shutdown finished";
             Q_EMIT shutdownResult();
