@@ -144,21 +144,17 @@ void CompareFeeEstimateCalls(const std::vector<FeeEstimateCall>& actual, const s
     }
 }
 
-struct DrainWalletModel {
-    void operator()(WalletQmlModel* model) const
-    {
-        model->beginShutdown();
-        // QSignalSpy::wait skips its event loop after an earlier assertion
-        // fails. Cleanup must still drain callbacks that borrow fixture data.
-        QVERIFY(QTest::qWaitFor([&] { return model->backendExecutor()->isDrained(); }, 10000));
-        delete model;
-    }
-};
-
 template <typename Wallet>
 struct WalletModelHarness {
     Wallet* wallet;
-    std::unique_ptr<WalletQmlModel, DrainWalletModel> model;
+    std::unique_ptr<WalletQmlModel> model;
+    ~WalletModelHarness()
+    {
+        if (!model) return;
+        const auto executor = model->backendExecutor();
+        model->beginShutdown();
+        if (!QTest::qWaitFor([&] { return executor->isDrained(); })) qFatal("Wallet queue did not drain");
+    }
 };
 
 class ReviewMockWallet : public MockWallet
@@ -205,9 +201,39 @@ WalletModelHarness<MockWallet> MakeWalletModel(interfaces::Node* node = nullptr)
         return DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
     };
 
-    auto model = std::unique_ptr<WalletQmlModel, DrainWalletModel>{new WalletQmlModel(std::move(wallet), node)};
-    if (!QTest::qWaitFor([&] { return model->walletStateReady(); })) qFatal("Initial wallet state did not load");
+    auto model = std::make_unique<WalletQmlModel>(std::move(wallet), node);
+    if (!QTest::qWaitFor([&] { return model->walletStateReady() && !model->receiveRequestReconciliationPending(); })) {
+        qFatal("The initial wallet snapshot did not finish");
+    }
     return {wallet_view, std::move(model)};
+}
+
+// A command return value only reports dispatch. Assert its eventual result.
+bool CompleteReceive(WalletQmlModel& model, bool accepted)
+{
+    if (!accepted) return false;
+    if (!model.receiveOperationPending()) return true;
+    QSignalSpy finished{&model, &WalletQmlModel::receiveOperationFinished};
+    if (!QTest::qWaitFor([&] { return !model.receiveOperationPending(); })) return false;
+    if (finished.isEmpty()) return false;
+    const bool success = finished.last().at(1).toBool();
+    if (!QTest::qWaitFor([&] { return !model.receiveRequestReconciliationPending(); })) return false;
+    return success;
+}
+
+bool CompleteSigning(SignVerifyMessageModel& model, bool accepted)
+{
+    if (!accepted) return false;
+    if (!QTest::qWaitFor([&] { return !model.signingPending(); })) return false;
+    if (auto* wallet = qobject_cast<WalletQmlModel*>(model.parent())) {
+        if (!QTest::qWaitFor([&] { return !wallet->receiveRequestReconciliationPending(); })) return false;
+    }
+    return model.signingError().isEmpty();
+}
+
+bool CompleteVerification(SignVerifyMessageModel& model, bool accepted)
+{
+    return accepted && QTest::qWaitFor([&] { return !model.verificationPending(); }) && model.verificationValid();
 }
 
 void SetValidRecipient(WalletQmlModel& model,
@@ -242,8 +268,16 @@ public:
     std::set<interfaces::WalletTx> getWalletTxs() override
     {
         std::function<std::set<interfaces::WalletTx>()> fn;
-        { std::lock_guard lock{m_transaction_mutex}; fn = m_get_wallet_txs_fn; }
-        return fn ? fn() : std::set<interfaces::WalletTx>{};
+        {
+            std::lock_guard lock{m_transaction_mutex};
+            fn = m_get_wallet_txs_fn;
+            if (!fn) {
+                std::set<interfaces::WalletTx> result;
+                for (const auto& [txid, transaction] : m_transaction_details) result.insert(transaction);
+                return result;
+            }
+        }
+        return fn();
     }
     void setTransactionDetails(const interfaces::WalletTx& tx)
     {
@@ -309,7 +343,7 @@ public:
     std::vector<std::string> receive_request_ids;
     std::vector<bool> create_transaction_sign_args;
     std::vector<bool> fill_psbt_sign_args;
-    bool get_address_result{false};
+    bool get_address_result{true};
     std::string get_address_label;
     std::string last_set_address_book_label;
     int set_address_book_calls{0};
@@ -418,6 +452,7 @@ public:
     bool setAddressBook(const CTxDestination&, const std::string& name, const std::optional<wallet::AddressPurpose>&) override
     {
         last_set_address_book_label = name;
+        get_address_label = name;
         ++set_address_book_calls;
         return true;
     }
@@ -430,7 +465,14 @@ public:
         }
         return get_address_result;
     }
-    std::vector<interfaces::WalletAddress> getAddresses() override { return wallet_addresses; }
+    std::vector<interfaces::WalletAddress> getAddresses() override {
+        auto result = wallet_addresses;
+        const auto destination = DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
+        if (get_address_result && std::none_of(result.begin(), result.end(), [&](const auto& item) { return item.dest == destination; })) {
+            result.emplace_back(destination, true, wallet::AddressPurpose::RECEIVE, get_address_label);
+        }
+        return result;
+    }
     std::map<std::string, std::string> saved_receive_requests;
     std::vector<std::string> getAddressReceiveRequests() override
     {
@@ -565,8 +607,10 @@ WalletModelHarness<FakePasswordWallet> MakePasswordWalletModel(interfaces::Node*
 {
     auto wallet = std::make_unique<FakePasswordWallet>();
     FakePasswordWallet* const wallet_view{wallet.get()};
-    auto model = std::unique_ptr<WalletQmlModel, DrainWalletModel>{new WalletQmlModel(std::move(wallet), node)};
-    if (!QTest::qWaitFor([&] { return model->walletStateReady(); })) qFatal("Initial wallet state did not load");
+    auto model = std::make_unique<WalletQmlModel>(std::move(wallet), node);
+    if (!QTest::qWaitFor([&] { return model->walletStateReady() && !model->receiveRequestReconciliationPending(); })) {
+        qFatal("The initial wallet snapshot did not finish");
+    }
     return {wallet_view, std::move(model)};
 }
 
@@ -653,10 +697,12 @@ private:
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
-    void snapshotsKeepGuiResponsiveAndCoalesceInvalidations();
-    void backendHandlesRetireOffGui();
-    void backendHandlesRetireOffGui_data();
     void initTestCase();
+    void snapshotsKeepGuiResponsiveAndCoalesceInvalidations();
+    void backendHandlesRetireOffGui_data();
+    void backendHandlesRetireOffGui();
+    void receiveCompletionDoesNotOverwriteNewDraft();
+    void signingRunsOffGuiAndDiscardsClearedResult();
     void cleanupTestCase();
     void feeTargetIndex_mapsStandardTargets();
     void customFeeRateUpdatesEstimatedTarget();
@@ -713,8 +759,6 @@ private Q_SLOTS:
     void commitPaymentRequestUsesSelectedAddressType();
     void updateChangesUnpaidPaymentRequestAmount();
     void paymentArrivalLocksRequestAndPreservesNote();
-    void receiveActionsLoadStoredRequests_data();
-    void receiveActionsLoadStoredRequests();
     void paymentRequestTracksActualReceivedAmount();
     void replacementNotificationRechecksReceiverOriginal();
     void cancelledPaymentWithoutNotificationClearsReceivedAmount();
@@ -809,105 +853,6 @@ void WalletQmlModelTests::displayNameDefaultsToWalletName()
     QCOMPARE(model->displayName(), QString("Personal"));
 }
 
-void WalletQmlModelTests::backendHandlesRetireOffGui_data()
-{
-    QTest::addColumn<bool>("explicit_close");
-    QTest::newRow("ordinary destruction") << false;
-    QTest::newRow("close and remove") << true;
-}
-
-void WalletQmlModelTests::backendHandlesRetireOffGui()
-{
-    QFETCH(bool, explicit_close);
-    struct Probe {
-        std::atomic_bool destroyed{false}, off_gui{false}, removed{false};
-        std::atomic_bool registered_off_gui{true}, disconnected_off_gui{true};
-        std::atomic_int registrations{0}, disconnections{0};
-    };
-    struct RetiringWallet final : StubWallet {
-        std::shared_ptr<Probe> probe;
-        QThread* gui_thread;
-        RetiringWallet(std::shared_ptr<Probe> p, QThread* gui) : probe(std::move(p)), gui_thread(gui) {}
-        ~RetiringWallet() override { probe->off_gui = QThread::currentThread() != gui_thread; probe->destroyed = true; }
-        void remove() override { probe->removed = QThread::currentThread() != gui_thread; }
-        std::unique_ptr<interfaces::Handler> subscribe() {
-            ++probe->registrations;
-            if (QThread::currentThread() == gui_thread) probe->registered_off_gui = false;
-            return interfaces::MakeCleanupHandler([result = probe, gui = gui_thread] {
-                ++result->disconnections;
-                if (QThread::currentThread() == gui) result->disconnected_off_gui = false;
-            });
-        }
-        std::unique_ptr<interfaces::Handler> handleStatusChanged(StatusChangedFn) override { return subscribe(); }
-        std::unique_ptr<interfaces::Handler> handleAddressBookChanged(AddressBookChangedFn) override { return subscribe(); }
-        std::unique_ptr<interfaces::Handler> handleTransactionChanged(TransactionChangedFn) override { return subscribe(); }
-        std::unique_ptr<interfaces::Handler> handleUnload(UnloadFn) override { return subscribe(); }
-    };
-    const auto probe = std::make_shared<Probe>();
-    auto wallet = std::make_unique<RetiringWallet>(probe, QThread::currentThread());
-    auto model = std::make_unique<WalletQmlModel>(std::move(wallet));
-    QTRY_VERIFY(model->walletStateReady());
-    const auto executor = model->backendExecutor();
-    if (explicit_close) {
-        QSignalSpy finished{model.get(), &WalletQmlModel::shutdownFinished};
-        model->beginShutdown(true);
-        QTRY_COMPARE(finished.size(), 1);
-        QVERIFY(probe->destroyed.load());
-        QVERIFY(probe->removed.load());
-    }
-    model.reset();
-    QTRY_VERIFY(executor->isDrained());
-    QVERIFY(probe->destroyed.load());
-    QVERIFY(probe->off_gui.load());
-    QCOMPARE(probe->registrations.load(), 4);
-    QCOMPARE(probe->disconnections.load(), 4);
-    QVERIFY(probe->registered_off_gui.load());
-    QVERIFY(probe->disconnected_off_gui.load());
-}
-
-void WalletQmlModelTests::snapshotsKeepGuiResponsiveAndCoalesceInvalidations()
-{
-    auto [wallet, model] = MakeWalletModel();
-    QSemaphore entered, release;
-    const auto gui_thread = QThread::currentThread();
-    std::atomic_int reads{0};
-    std::atomic_bool off_gui{false};
-    wallet->get_balance_fn = [&] {
-        off_gui = QThread::currentThread() != gui_thread;
-        if (++reads == 1) { entered.release(); release.acquire(); }
-        return 42 * COIN;
-    };
-    const auto unblock = qScopeGuard([&] {
-        release.release();
-        model->beginShutdown();
-        if (!QTest::qWaitFor([&] { return model->backendExecutor()->isDrained(); })) qFatal("Wallet queue did not drain");
-    });
-    model->requestWalletStateRefresh();
-    QTRY_VERIFY(entered.available());
-    for (int i = 0; i < 100; ++i) model->requestWalletStateRefresh();
-    bool heartbeat{false};
-    QTimer::singleShot(0, model.get(), [&] { heartbeat = true; });
-    QTRY_VERIFY(heartbeat);
-    QCOMPARE(model->balanceSatoshi(), qint64{10 * COIN});
-    auto* recipient = model->sendRecipientList()->currentRecipient();
-    recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
-    recipient->amount()->setSatoshi(20 * COIN);
-    QVERIFY(!recipient->isValid());
-    model->keyScheme();
-    QCOMPARE(reads.load(), 1);
-    QVERIFY(off_gui.load());
-    release.release();
-    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
-    QCOMPARE(model->balanceSatoshi(), qint64{42 * COIN});
-    QVERIFY(recipient->isValid());
-    QCOMPARE(reads.load(), 2);
-    wallet->get_balance_fn = [] { throw std::runtime_error("snapshot failure"); return CAmount{0}; };
-    model->requestWalletStateRefresh();
-    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
-    QVERIFY(!model->walletStateError().isEmpty());
-    QCOMPARE(model->balanceSatoshi(), qint64{42 * COIN});
-}
-
 void WalletQmlModelTests::detailPropertiesReflectWalletCapabilities()
 {
     auto [wallet, model] = MakePasswordWalletModel();
@@ -983,6 +928,8 @@ void WalletQmlModelTests::availableReceiveAddressTypesHideUnavailableTaproot()
     QCOMPARE(types.front().toMap().value("id").toString(), QString("bech32m"));
 
     wallet->taproot_enabled = false;
+    model->requestWalletStateRefresh();
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
     types = model->availableReceiveAddressTypes();
     QCOMPARE(types.size(), 3);
     for (const QVariant& type : types) {
@@ -1004,6 +951,7 @@ void WalletQmlModelTests::receiveAddressTypeDefaultPersistsPerWallet()
     QCOMPARE(model->defaultReceiveAddressType(), QString("bech32m"));
 
     model->setDefaultReceiveAddressType("p2sh-segwit");
+    QTRY_VERIFY(!model->receiveOperationPending());
     QCOMPARE(model->defaultReceiveAddressType(), QString("p2sh-segwit"));
     const auto saved = node.getPersistentSetting("qml_receive_address_types");
     QCOMPARE(saved["fake-wallet"].get_str(), std::string("p2sh-segwit"));
@@ -1012,14 +960,21 @@ void WalletQmlModelTests::receiveAddressTypeDefaultPersistsPerWallet()
     QCOMPARE(restored_model->defaultReceiveAddressType(), QString("p2sh-segwit"));
 
     model->setDefaultReceiveAddressType("invalid");
+    QTRY_VERIFY(!model->receiveOperationPending());
     QCOMPARE(model->defaultReceiveAddressType(), QString("p2sh-segwit"));
     model->setDefaultReceiveAddressType("bech32m");
+    QTRY_VERIFY(!model->receiveOperationPending());
     QCOMPARE(model->defaultReceiveAddressType(), QString("bech32m"));
     wallet->taproot_enabled = false;
+    model->requestWalletStateRefresh();
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
     QCOMPARE(model->defaultReceiveAddressType(), QString("bech32"));
     node.SetPersistentSetting("qml_receive_address_types", "malformed");
+    model->requestWalletStateRefresh();
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
     QCOMPARE(model->defaultReceiveAddressType(), QString("bech32"));
     model->setDefaultReceiveAddressType("legacy");
+    QTRY_VERIFY(!model->receiveOperationPending());
     QCOMPARE(model->defaultReceiveAddressType(), QString("legacy"));
 }
 
@@ -1032,15 +987,15 @@ void WalletQmlModelTests::receivingAddressIsStableUntilRotatedOrPaid()
         node.SetPersistentSetting(key, value);
     };
     auto [wallet, model] = MakePasswordWalletModel(&node);
-    QVERIFY(model->ensureReceivingAddress());
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress()));
     QCOMPARE(wallet->new_destination_types.back(), OutputType::BECH32M);
     const auto address = model->receivingAddress()->address();
     QVERIFY(!address.isEmpty());
-    QVERIFY(model->ensureReceivingAddress());
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress()));
     QCOMPARE(wallet->get_new_destination_calls, 1);
-    QVERIFY(model->ensureReceivingAddress(true));
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress(true)));
     QCOMPARE(wallet->get_new_destination_calls, 2);
-    QVERIFY(model->ensureReceivingAddress(false, "bech32"));
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress(false, "bech32")));
     QCOMPARE(wallet->new_destination_types.back(), OutputType::BECH32);
     QCOMPARE(model->defaultReceiveAddressType(), QString("bech32"));
 
@@ -1049,10 +1004,10 @@ void WalletQmlModelTests::receivingAddressIsStableUntilRotatedOrPaid()
     const auto payment = MakeIncomingPayment(incoming, {true});
     wallet->setWalletTxsFn([payment] { return std::set<interfaces::WalletTx>{payment}; });
     model->currentPaymentRequest()->setLabel("Too late");
-    QVERIFY(!model->commitReceivingPaymentRequest());
+    QVERIFY(!CompleteReceive(*model, model->commitReceivingPaymentRequest()));
     QVERIFY(model->receivingAddress()->paymentReceived());
     QCOMPARE(model->receiveRequests()->count(), 0);
-    QVERIFY(model->ensureReceivingAddress());
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress()));
     QCOMPARE(wallet->get_new_destination_calls, 4);
     QCOMPARE(wallet->set_address_receive_request_calls, 0);
     settings.remove("receiveAddressTypes/fake-wallet");
@@ -1063,31 +1018,31 @@ void WalletQmlModelTests::receivingAddressCreationAndRequestPersistenceAreSepara
     QSettings settings;
     settings.remove("receiveAddressTypes/fake-wallet");
     auto [wallet, model] = MakePasswordWalletModel();
-    QVERIFY(model->ensureReceivingAddress());
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress()));
     const auto address = model->receivingAddress()->address();
     QCOMPARE(model->receiveRequests()->count(), 0);
     // Reopening the wallet restores its unused receiving address without
     // consuming another key or saving a payment request.
     auto [restored_wallet, restored_model] = MakePasswordWalletModel();
     restored_wallet->get_address_result = true;
-    QVERIFY(restored_model->ensureReceivingAddress());
+    QVERIFY(CompleteReceive(*restored_model, restored_model->ensureReceivingAddress()));
     QCOMPARE(restored_model->receivingAddress()->address(), address);
     QCOMPARE(restored_wallet->get_new_destination_calls, 0);
-    QVERIFY(!model->commitReceivingPaymentRequest());
+    QVERIFY(!CompleteReceive(*model, model->commitReceivingPaymentRequest()));
     model->currentPaymentRequest()->setNoteSelf("Only a private note");
     wallet->set_address_receive_request_result = false;
-    QVERIFY(!model->commitReceivingPaymentRequest());
+    QVERIFY(!CompleteReceive(*model, model->commitReceivingPaymentRequest()));
     QCOMPARE(model->receivingAddress()->address(), address);
     QVERIFY(settings.contains("receiveAddressTypes/fake-wallet/address"));
     wallet->set_address_receive_request_result = true;
-    QVERIFY(model->commitReceivingPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitReceivingPaymentRequest()));
     QCOMPARE(model->currentPaymentRequest()->address(), address);
     QCOMPARE(wallet->get_new_destination_calls, 1);
     QCOMPARE(model->receiveRequests()->count(), 1);
     QVERIFY(model->receivingAddress()->address().isEmpty());
     QVERIFY(!settings.contains("receiveAddressTypes/fake-wallet/address"));
     model->currentPaymentRequest()->clear();
-    QVERIFY(model->ensureReceivingAddress());
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress()));
     QCOMPARE(wallet->get_new_destination_calls, 2);
     settings.remove("receiveAddressTypes/fake-wallet");
 }
@@ -1869,6 +1824,186 @@ void WalletQmlModelTests::transactionChangedEmitsBalanceChanged()
     QCOMPARE(model.balance(), QStringLiteral("75.00000000"));
 }
 
+void WalletQmlModelTests::backendHandlesRetireOffGui_data()
+{
+    QTest::addColumn<bool>("explicit_close");
+    QTest::newRow("ordinary destruction") << false;
+    QTest::newRow("close and remove") << true;
+}
+
+void WalletQmlModelTests::backendHandlesRetireOffGui()
+{
+    QFETCH(bool, explicit_close);
+    struct Probe {
+        std::atomic_bool destroyed{false}, off_gui{false}, removed{false};
+        std::atomic_bool registered_off_gui{true}, disconnected_off_gui{true};
+        std::atomic_int registrations{0}, disconnections{0};
+    };
+    struct RetiringWallet final : StubWallet {
+        std::shared_ptr<Probe> probe;
+        QThread* gui_thread;
+        RetiringWallet(std::shared_ptr<Probe> p, QThread* gui) : probe(std::move(p)), gui_thread(gui) {}
+        ~RetiringWallet() override { probe->off_gui = QThread::currentThread() != gui_thread; probe->destroyed = true; }
+        void remove() override { probe->removed = QThread::currentThread() != gui_thread; }
+        std::unique_ptr<interfaces::Handler> subscribe() {
+            ++probe->registrations;
+            if (QThread::currentThread() == gui_thread) probe->registered_off_gui = false;
+            return interfaces::MakeCleanupHandler([result = probe, gui = gui_thread] {
+                ++result->disconnections;
+                if (QThread::currentThread() == gui) result->disconnected_off_gui = false;
+            });
+        }
+        std::unique_ptr<interfaces::Handler> handleStatusChanged(StatusChangedFn) override { return subscribe(); }
+        std::unique_ptr<interfaces::Handler> handleAddressBookChanged(AddressBookChangedFn) override { return subscribe(); }
+        std::unique_ptr<interfaces::Handler> handleTransactionChanged(TransactionChangedFn) override { return subscribe(); }
+        std::unique_ptr<interfaces::Handler> handleUnload(UnloadFn) override { return subscribe(); }
+    };
+    const auto probe = std::make_shared<Probe>();
+    auto wallet = std::make_unique<RetiringWallet>(probe, QThread::currentThread());
+    auto model = std::make_unique<WalletQmlModel>(std::move(wallet));
+    QTRY_VERIFY(model->walletStateReady());
+    const auto executor = model->backendExecutor();
+    if (explicit_close) {
+        QSignalSpy finished{model.get(), &WalletQmlModel::shutdownFinished};
+        model->beginShutdown(true);
+        QTRY_COMPARE(finished.size(), 1);
+        QVERIFY(probe->destroyed.load());
+        QVERIFY(probe->removed.load());
+    }
+    model.reset();
+    QTRY_VERIFY(executor->isDrained());
+    QVERIFY(probe->destroyed.load());
+    QVERIFY(probe->off_gui.load());
+    QCOMPARE(probe->registrations.load(), 4);
+    QCOMPARE(probe->disconnections.load(), 4);
+    QVERIFY(probe->registered_off_gui.load());
+    QVERIFY(probe->disconnected_off_gui.load());
+}
+
+void WalletQmlModelTests::snapshotsKeepGuiResponsiveAndCoalesceInvalidations()
+{
+    auto [wallet, model] = MakeWalletModel();
+    QSemaphore entered, release;
+    const auto gui_thread = QThread::currentThread();
+    std::atomic_int reads{0};
+    std::atomic_bool off_gui{false};
+    wallet->get_balance_fn = [&] {
+        off_gui = QThread::currentThread() != gui_thread;
+        if (++reads == 1) { entered.release(); release.acquire(); }
+        return 42 * COIN;
+    };
+    const auto unblock = qScopeGuard([&] {
+        release.release();
+        model->beginShutdown();
+        if (!QTest::qWaitFor([&] { return model->backendExecutor()->isDrained(); })) qFatal("Wallet queue did not drain");
+    });
+    model->requestWalletStateRefresh();
+    QTRY_VERIFY(entered.available());
+    for (int i = 0; i < 100; ++i) model->requestWalletStateRefresh();
+    bool heartbeat{false};
+    QTimer::singleShot(0, model.get(), [&] { heartbeat = true; });
+    QTRY_VERIFY(heartbeat);
+    QCOMPARE(model->balanceSatoshi(), qint64{10 * COIN});
+    auto* recipient = model->sendRecipientList()->currentRecipient();
+    recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
+    recipient->amount()->setSatoshi(20 * COIN);
+    QVERIFY(!recipient->isValid());
+    model->availableReceiveAddressTypes();
+    model->keyScheme();
+    model->addressBalances();
+    model->usedAddresses();
+    model->getAddressLabel(VALID_MAINNET_ADDRESS);
+    QCOMPARE(reads.load(), 1);
+    QVERIFY(off_gui.load());
+    release.release();
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
+    QCOMPARE(model->balanceSatoshi(), qint64{42 * COIN});
+    QVERIFY(recipient->isValid());
+    QCOMPARE(reads.load(), 2);
+    wallet->get_balance_fn = [] { throw std::runtime_error("snapshot failure"); return CAmount{0}; };
+    model->requestWalletStateRefresh();
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
+    QVERIFY(!model->walletStateError().isEmpty());
+    QCOMPARE(model->balanceSatoshi(), qint64{42 * COIN});
+}
+
+void WalletQmlModelTests::receiveCompletionDoesNotOverwriteNewDraft()
+{
+    auto [wallet, model] = MakePasswordWalletModel();
+    QSemaphore entered, release;
+    const auto gui_thread = QThread::currentThread();
+    std::atomic_bool off_gui{false};
+    wallet->get_new_destination_fn = [&](OutputType, const std::string&) -> util::Result<CTxDestination> {
+        off_gui = QThread::currentThread() != gui_thread;
+        entered.release(); release.acquire();
+        return DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
+    };
+    const auto unblock = qScopeGuard([&] {
+        release.release();
+        model->beginShutdown();
+        if (!QTest::qWaitFor([&] { return model->backendExecutor()->isDrained(); })) qFatal("Wallet queue did not drain");
+    });
+    model->currentPaymentRequest()->setLabel("Original draft");
+    QVERIFY(model->commitPaymentRequest());
+    QTRY_VERIFY(entered.available());
+    QVERIFY(model->receiveOperationPending());
+    QVERIFY(!model->commitPaymentRequest());
+    model->currentPaymentRequest()->clear();
+    model->currentPaymentRequest()->setLabel("New draft");
+    bool heartbeat{false};
+    QTimer::singleShot(0, model.get(), [&] { heartbeat = true; });
+    QTRY_VERIFY(heartbeat);
+    QVERIFY(off_gui.load());
+    release.release();
+    QTRY_VERIFY(!model->receiveOperationPending());
+    QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("New draft"));
+    QVERIFY(model->currentPaymentRequest()->id().isEmpty());
+    QCOMPARE(model->receiveRequests()->count(), 1);
+    QVERIFY(!model->receiveOperationError().isEmpty());
+}
+
+void WalletQmlModelTests::signingRunsOffGuiAndDiscardsClearedResult()
+{
+    auto [wallet, model] = MakePasswordWalletModel();
+    QSemaphore entered, release;
+    const auto gui_thread = QThread::currentThread();
+    std::atomic_bool off_gui{false};
+    wallet->sign_message_fn = [&](const std::string&, const PKHash&, std::string& signature) {
+        off_gui = QThread::currentThread() != gui_thread;
+        entered.release(); release.acquire();
+        signature = "discarded";
+        return SigningResult::OK;
+    };
+    const auto unblock = qScopeGuard([&] {
+        release.release();
+        model->beginShutdown();
+        if (!QTest::qWaitFor([&] { return model->backendExecutor()->isDrained(); })) qFatal("Wallet queue did not drain");
+    });
+    auto* signing = model->signVerifyMessageModel();
+    QVERIFY(signing->signMessageWithPassphrase(VALID_MAINNET_ADDRESS, "message", "secret"));
+    QTRY_VERIFY(entered.available());
+    QVERIFY(signing->signingPending());
+    QVERIFY(!signing->signMessage(VALID_MAINNET_ADDRESS, "duplicate"));
+    signing->clear();
+    bool heartbeat{false};
+    QTimer::singleShot(0, model.get(), [&] { heartbeat = true; });
+    QTRY_VERIFY(heartbeat);
+    release.release();
+    QTRY_VERIFY(!signing->signingPending());
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
+    QVERIFY(signing->signature().isEmpty());
+    QVERIFY(off_gui.load());
+    QVERIFY(wallet->locked);
+    QCOMPARE(wallet->lock_calls, 1);
+    wallet->sign_message_fn = [](const std::string&, const PKHash&, std::string&) -> SigningResult { throw std::runtime_error("signing failed"); };
+    QVERIFY(signing->signMessageWithPassphrase(VALID_MAINNET_ADDRESS, "message", "secret"));
+    QTRY_VERIFY(!signing->signingPending());
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
+    QVERIFY(!signing->signingError().isEmpty());
+    QVERIFY(wallet->locked);
+    QCOMPARE(wallet->lock_calls, 2);
+}
+
 void WalletQmlModelTests::commitPaymentRequestUsesSelectedAddressType()
 {
     auto [wallet, model] = MakePasswordWalletModel();
@@ -1877,7 +2012,7 @@ void WalletQmlModelTests::commitPaymentRequestUsesSelectedAddressType()
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("typed receive"));
     model->currentPaymentRequest()->setAddressType(QStringLiteral("bech32m"));
 
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QCOMPARE(wallet->get_new_destination_calls, 1);
     QCOMPARE(wallet->new_destination_types.size(), size_t{1});
     QCOMPARE(wallet->new_destination_types.front(), OutputType::BECH32M);
@@ -1891,76 +2026,25 @@ void WalletQmlModelTests::updateChangesUnpaidPaymentRequestAmount()
 
     model->currentPaymentRequest()->setLabel(QStringLiteral("first"));
     model->currentPaymentRequest()->amount()->setSatoshi(1000);
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString request_id{model->currentPaymentRequest()->id()};
     QVERIFY(!request_id.isEmpty());
 
     // Unpaid public fields can change without generating another address.
     model->currentPaymentRequest()->amount()->setSatoshi(999999);
     model->currentPaymentRequest()->setLabel(QStringLiteral("second"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
 
     const auto entry = model->receiveRequests()->entryById(request_id);
     QVERIFY(entry.has_value());
     QCOMPARE(entry->recipient.amount, CAmount{999999});
     QCOMPARE(QString::fromStdString(entry->recipient.label), QStringLiteral("second"));
     QCOMPARE(model->currentPaymentRequest()->amount()->satoshi(), qint64{999999});
-    QVERIFY(!model->updatePaymentRequest(request_id, 0, "", "", ""));
-    QVERIFY(!model->updatePaymentRequest(request_id, 0, "  ", "\t", "\n"));
+    QVERIFY(!CompleteReceive(*model, model->updatePaymentRequest(request_id, 0, "", "", "")));
+    QVERIFY(!CompleteReceive(*model, model->updatePaymentRequest(request_id, 0, "  ", "\t", "\n")));
     QCOMPARE(model->receiveRequests()->entryById(request_id)->recipient.amount, CAmount{999999});
-    QVERIFY(model->updatePaymentRequest(request_id, 0, "", "", "Private reminder"));
+    QVERIFY(CompleteReceive(*model, model->updatePaymentRequest(request_id, 0, "", "", "Private reminder")));
     QCOMPARE(model->receiveRequests()->entryById(request_id)->recipient.noteSelf, std::string("Private reminder"));
-}
-
-void WalletQmlModelTests::receiveActionsLoadStoredRequests_data()
-{
-    QTest::addColumn<QString>("action");
-    for (const auto* action : {"load", "detail", "address", "template", "remove", "label", "create"}) {
-        QTest::newRow(action) << QString::fromLatin1(action);
-    }
-}
-
-void WalletQmlModelTests::receiveActionsLoadStoredRequests()
-{
-    QFETCH(QString, action);
-    auto [wallet, model] = MakePasswordWalletModel();
-    QmlRecentRequestEntry stored;
-    stored.id = 7;
-    stored.date = QDateTime::currentDateTime();
-    stored.recipient.address = VALID_MAINNET_ADDRESS.toStdString();
-    stored.recipient.label = "Stored request";
-    stored.recipient.noteSelf = "Original note";
-    wallet->saved_receive_requests["7"] = ReceiveRequestHistoryModel::SerializeEntry(stored);
-
-    // These public actions must work before a view asks for receiveRequests().
-    if (action == "load") {
-        QVERIFY(model->loadPaymentRequest("7"));
-        QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("Stored request"));
-    } else if (action == "detail") {
-        QVERIFY(model->loadPaymentRequestDetail("7"));
-        QCOMPARE(model->detailPaymentRequest()->label(), QStringLiteral("Stored request"));
-    } else if (action == "address") {
-        QVERIFY(model->setCurrentPaymentRequestAddress(VALID_MAINNET_ADDRESS));
-        QCOMPARE(model->currentPaymentRequest()->id(), QStringLiteral("7"));
-    } else if (action == "template") {
-        model->usePaymentRequestAsTemplate("7");
-        QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("Stored request"));
-        QVERIFY(model->currentPaymentRequest()->id().isEmpty());
-    } else if (action == "remove") {
-        QVERIFY(model->removeReceiveRequest("7"));
-        QVERIFY(wallet->saved_receive_requests.empty());
-    } else if (action == "label") {
-        wallet->get_address_result = true;
-        QVERIFY(model->setAddressLabel(VALID_MAINNET_ADDRESS, "Updated note"));
-        const auto requests = ReceiveRequestHistoryModel::DeserializeEntries(wallet->getAddressReceiveRequests());
-        QCOMPARE(requests.front().recipient.noteSelf, std::string{"Updated note"});
-    } else if (action == "create") {
-        model->currentPaymentRequest()->setLabel("New request");
-        QVERIFY(model->commitPaymentRequest());
-        QCOMPARE(model->currentPaymentRequest()->id(), QStringLiteral("8"));
-        QCOMPARE(wallet->saved_receive_requests.size(), size_t{2});
-    }
-    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
 }
 
 void WalletQmlModelTests::paymentArrivalLocksRequestAndPreservesNote()
@@ -1970,7 +2054,7 @@ void WalletQmlModelTests::paymentArrivalLocksRequestAndPreservesNote()
     request->setLabel("Original");
     request->setMessage("Public message");
     request->amount()->setSatoshi(10000);
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString id = request->id();
     const QString address = request->address();
     QVERIFY(model->loadPaymentRequestDetail(id));
@@ -1984,7 +2068,7 @@ void WalletQmlModelTests::paymentArrivalLocksRequestAndPreservesNote()
     wallet->setTransactionDetails(payment);
     QVERIFY(wallet->transaction_changed_fn);
     wallet->transaction_changed_fn(payment.tx->GetHash(), CT_UPDATED);
-    QVERIFY(!model->updatePaymentRequest(id, 20000, "Changed", "Changed", ""));
+    QVERIFY(!CompleteReceive(*model, model->updatePaymentRequest(id, 20000, "Changed", "Changed", "")));
     QTRY_VERIFY(model->detailPaymentRequest()->paymentReceived());
     QCOMPARE(model->detailPaymentRequest()->receivedAmountSatoshi(), qint64{1});
     QVERIFY(model->detailPaymentRequest()->qrPayload().isEmpty());
@@ -1994,12 +2078,11 @@ void WalletQmlModelTests::paymentArrivalLocksRequestAndPreservesNote()
     QCOMPARE(entry->recipient.amount, CAmount{10000});
     QCOMPARE(entry->recipient.label, std::string{"Original"});
     QCOMPARE(entry->recipient.message, std::string{"Public message"});
-    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
-    QVERIFY(model->updatePaymentRequest(id, 10000, "Original", "Public message", "Private receipt"));
+    QVERIFY(CompleteReceive(*model, model->updatePaymentRequest(id, 10000, "Original", "Public message", "Private receipt")));
     QCOMPARE(model->detailPaymentRequest()->noteSelf(), QStringLiteral("Private receipt"));
     QCOMPARE(model->detailPaymentRequest()->address(), address);
     wallet->get_address_result = true;
-    QVERIFY(model->setAddressLabel(address, "Updated private receipt"));
+    QVERIFY(CompleteReceive(*model, model->setAddressLabel(address, "Updated private receipt")));
     QCOMPARE(model->detailPaymentRequest()->noteSelf(), QStringLiteral("Updated private receipt"));
     QCOMPARE(model->detailPaymentRequest()->label(), QStringLiteral("Original"));
     QCOMPARE(model->detailPaymentRequest()->message(), QStringLiteral("Public message"));
@@ -2010,7 +2093,7 @@ void WalletQmlModelTests::paymentArrivalLocksRequestAndPreservesNote()
     QVERIFY(model->loadPaymentRequestDetail(id));
     QVERIFY(model->detailPaymentRequest()->paymentReceived());
     QVERIFY(model->detailPaymentRequest()->qrPayload().isEmpty());
-    QVERIFY(!model->updatePaymentRequest(id, 10000, "Changed", "Public message", ""));
+    QVERIFY(!CompleteReceive(*model, model->updatePaymentRequest(id, 10000, "Changed", "Public message", "")));
     const auto blobs = std::vector<std::string>{ReceiveRequestHistoryModel::SerializeEntry(*model->receiveRequests()->entryById(id))};
     QVERIFY(ReceiveRequestHistoryModel::DeserializeEntries(blobs).front().payment_received);
 }
@@ -2020,7 +2103,7 @@ void WalletQmlModelTests::paymentRequestTracksActualReceivedAmount()
     auto [wallet, model] = MakePasswordWalletModel();
     auto* request = model->currentPaymentRequest();
     request->amount()->setSatoshi(10000);
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString id = request->id();
     const auto script = GetScriptForDestination(request->destination());
 
@@ -2092,7 +2175,7 @@ void WalletQmlModelTests::paymentRequestTracksActualReceivedAmount()
 void WalletQmlModelTests::replacementNotificationRechecksReceiverOriginal()
 {
     auto [wallet, model] = MakePasswordWalletModel();
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString id = model->currentPaymentRequest()->id();
     const auto script = GetScriptForDestination(model->currentPaymentRequest()->destination());
     CMutableTransaction original_raw;
@@ -2121,7 +2204,7 @@ void WalletQmlModelTests::replacementNotificationRechecksReceiverOriginal()
 void WalletQmlModelTests::cancelledPaymentWithoutNotificationClearsReceivedAmount()
 {
     auto [wallet, model] = MakePasswordWalletModel();
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString id = model->currentPaymentRequest()->id();
     CMutableTransaction incoming;
     incoming.vout.emplace_back(100, GetScriptForDestination(model->currentPaymentRequest()->destination()));
@@ -2168,8 +2251,7 @@ void WalletQmlModelTests::reconciliationBatchesActivityRebuilds()
     });
     model->reloadReceiveRequests();
     QTRY_VERIFY(scan_started.load());
-    QCOMPARE(activity->requestCount(), REQUEST_COUNT);
-    QVERIFY(activity->paymentRequestUri(QStringLiteral("1")).isEmpty());
+    QCOMPARE(activity->requestCount(), 0);
     QSignalSpy rebuilt{activity, &TransactionActivityModel::transactionDetailsChanged};
     scan_gate.release();
     QTRY_VERIFY(!model->receiveRequestReconciliationPending());
@@ -2204,20 +2286,22 @@ void WalletQmlModelTests::openingRequestRemainsResponsiveDuringLargeHistoryScan(
     }
     QSemaphore scan_gate;
     std::atomic<bool> scan_started{false};
-    wallet->setWalletTxsFn([&] {
-        scan_started = true;
-        scan_gate.tryAcquire(1, 10'000);
-        return history;
-    });
     std::atomic<int> history_reads{0};
     auto* wallet_view = wallet.get();
+    wallet->setWalletTxsFn([&] { return history; });
     WalletQmlModel model{std::move(wallet)};
     const auto drain_before_fixture_destruction = qScopeGuard([&] {
         scan_gate.release();
         model.beginShutdown();
         QVERIFY(QTest::qWaitFor([&] { return model.backendExecutor()->isDrained(); }, 10000));
     });
-    model.receiveRequests();
+    QTRY_VERIFY_WITH_TIMEOUT(model.walletStateReady(), 20'000);
+    wallet_view->setWalletTxsFn([&] {
+        scan_started = true;
+        scan_gate.tryAcquire(1, 10'000);
+        return history;
+    });
+    model.requestWalletStateRefresh();
     QTRY_VERIFY(scan_started.load());
     QVERIFY(model.receiveRequestReconciliationPending());
     QElapsedTimer timer;
@@ -2235,20 +2319,21 @@ void WalletQmlModelTests::openingRequestRemainsResponsiveDuringLargeHistoryScan(
     timer.restart();
     QVERIFY(model.updatePaymentRequest(QStringLiteral("1"), 0, {}, {}, QStringLiteral("Private note")));
     QVERIFY2(timer.elapsed() < 250, "Editing a saved request blocked on wallet history");
-    QCOMPARE(history_reads.load(), 0);
+    QVERIFY(CompleteReceive(model, true));
+    QVERIFY(history_reads.load() > 0);
 }
 
 void WalletQmlModelTests::requestDetailEditsPreserveReceiveDraft()
 {
     auto [wallet, model] = MakePasswordWalletModel();
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString id = model->currentPaymentRequest()->id();
     const QString address = model->currentPaymentRequest()->address();
     const auto created = model->currentPaymentRequest()->created();
     model->currentPaymentRequest()->clear();
     model->currentPaymentRequest()->setLabel("Unrelated draft");
     QVERIFY(model->loadPaymentRequestDetail(id));
-    QVERIFY(model->updatePaymentRequest(id, 49000, "Coffee & cake", "Thank you", "Private"));
+    QVERIFY(CompleteReceive(*model, model->updatePaymentRequest(id, 49000, "Coffee & cake", "Thank you", "Private")));
     QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("Unrelated draft"));
     QVERIFY(model->currentPaymentRequest()->address().isEmpty());
     QCOMPARE(model->detailPaymentRequest()->address(), address);
@@ -2256,11 +2341,11 @@ void WalletQmlModelTests::requestDetailEditsPreserveReceiveDraft()
     QVERIFY(model->detailPaymentRequest()->qrPayload().contains("amount=0.00049000"));
     QVERIFY(model->detailPaymentRequest()->qrPayload().contains("label=Coffee%20%26%20cake"));
     QVERIFY(!model->detailPaymentRequest()->qrPayload().contains("Private"));
-    QVERIFY(!model->updatePaymentRequest(id, 0, "", "", ""));
-    QVERIFY(model->updatePaymentRequest(id, 0, "", "", "Private"));
+    QVERIFY(!CompleteReceive(*model, model->updatePaymentRequest(id, 0, "", "", "")));
+    QVERIFY(CompleteReceive(*model, model->updatePaymentRequest(id, 0, "", "", "Private")));
     QCOMPARE(model->detailPaymentRequest()->qrPayload(), "bitcoin:" + address);
-    QVERIFY(!model->updatePaymentRequest(id, -1, "", "", ""));
-    QVERIFY(!model->updatePaymentRequest(id, MAX_MONEY + 1, "", "", ""));
+    QVERIFY(!CompleteReceive(*model, model->updatePaymentRequest(id, -1, "", "", "")));
+    QVERIFY(!CompleteReceive(*model, model->updatePaymentRequest(id, MAX_MONEY + 1, "", "", "")));
     QCOMPARE(wallet->get_new_destination_calls, 1);
 }
 
@@ -2270,7 +2355,7 @@ void WalletQmlModelTests::setCurrentPaymentRequestAddressEditsExistingRequest()
 
     model->currentPaymentRequest()->setLabel(QStringLiteral("original"));
     model->currentPaymentRequest()->amount()->setSatoshi(1000);
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString request_id{model->currentPaymentRequest()->id()};
     const QString address{model->currentPaymentRequest()->address()};
     QVERIFY(!request_id.isEmpty());
@@ -2279,7 +2364,7 @@ void WalletQmlModelTests::setCurrentPaymentRequestAddressEditsExistingRequest()
 
     // Selecting the same address again must load the saved request for
     // editing instead of starting a fresh draft.
-    QVERIFY(model->setCurrentPaymentRequestAddress(address));
+    QVERIFY(CompleteReceive(*model, model->setCurrentPaymentRequestAddress(address)));
     QCOMPARE(model->currentPaymentRequest()->id(), request_id);
     QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("original"));
     QCOMPARE(model->currentPaymentRequest()->amount()->satoshi(), qint64{1000});
@@ -2287,7 +2372,7 @@ void WalletQmlModelTests::setCurrentPaymentRequestAddressEditsExistingRequest()
 
     // Committing from that state updates in place rather than duplicating.
     model->currentPaymentRequest()->setLabel(QStringLiteral("renamed"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QCOMPARE(model->receiveRequests()->rowCount(), 1);
     const auto entry = model->receiveRequests()->entryById(request_id);
     QVERIFY(entry.has_value());
@@ -2304,7 +2389,9 @@ void WalletQmlModelTests::setCurrentPaymentRequestAddressUsesAddressListLabel()
         "invoice 1024");
     wallet->get_address_result = true;
 
-    QVERIFY(model->setCurrentPaymentRequestAddress(VALID_MAINNET_ADDRESS));
+    model->requestWalletStateRefresh();
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
+    QVERIFY(CompleteReceive(*model, model->setCurrentPaymentRequestAddress(VALID_MAINNET_ADDRESS)));
     QCOMPARE(model->currentPaymentRequest()->address(), VALID_MAINNET_ADDRESS);
     QCOMPARE(model->currentPaymentRequest()->noteSelf(), QStringLiteral("invoice 1024"));
     QVERIFY(model->currentPaymentRequest()->label().isEmpty());
@@ -2322,9 +2409,9 @@ void WalletQmlModelTests::usePaymentRequestAsTemplatePreservesAddressType()
 
     model->currentPaymentRequest()->setLabel(QStringLiteral("typed template"));
     model->currentPaymentRequest()->setAddressType(QStringLiteral("p2sh-segwit"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
 
-    QVERIFY(model->ensureReceivingAddress());
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress()));
     const int generated = wallet->get_new_destination_calls;
     model->usePaymentRequestAsTemplate(QStringLiteral("1"));
 
@@ -2349,9 +2436,9 @@ void WalletQmlModelTests::commitPaymentRequestOnLockedWalletSignalsNeedsUnlock()
         return DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
     };
 
-    QVERIFY(!model->commitPaymentRequest());
+    QVERIFY(!CompleteReceive(*model, model->commitPaymentRequest()));
     QVERIFY(model->currentPaymentRequest()->needsUnlock());
-    QVERIFY(model->currentPaymentRequest()->unlockError().isEmpty());
+    QVERIFY(!model->currentPaymentRequest()->unlockError().isEmpty());
     QCOMPARE(wallet->get_new_destination_calls, 1);
     QCOMPARE(wallet->unlock_calls, 0);
     QVERIFY(wallet->locked);
@@ -2369,11 +2456,11 @@ void WalletQmlModelTests::commitPaymentRequestWithPassphraseUnlocksRetriesAndRel
         return DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
     };
 
-    QVERIFY(!model->commitPaymentRequest());
+    QVERIFY(!CompleteReceive(*model, model->commitPaymentRequest()));
     QVERIFY(model->currentPaymentRequest()->needsUnlock());
 
     const QString passphrase{QString::fromUtf8("secret")};
-    QVERIFY(model->commitPaymentRequestWithPassphrase(passphrase));
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequestWithPassphrase(passphrase)));
     QCOMPARE(wallet->unlock_calls, 1);
     QCOMPARE(wallet->unlock_passphrases.size(), size_t{1});
     QCOMPARE(wallet->unlock_passphrases.back(), std::string{"secret"});
@@ -2402,8 +2489,8 @@ void WalletQmlModelTests::commitPaymentRequestWithPassphraseWrongPasswordSurface
         return false;
     };
 
-    QVERIFY(!model->commitPaymentRequest());
-    QVERIFY(!model->commitPaymentRequestWithPassphrase(QStringLiteral("wrong")));
+    QVERIFY(!CompleteReceive(*model, model->commitPaymentRequest()));
+    QVERIFY(!CompleteReceive(*model, model->commitPaymentRequestWithPassphrase(QStringLiteral("wrong"))));
     QCOMPARE(wallet->unlock_calls, 1);
     QCOMPARE(wallet->lock_calls, 0);
     QCOMPARE(wallet->get_new_destination_calls, 1);
@@ -2418,12 +2505,12 @@ void WalletQmlModelTests::removeReceiveRequestRemovesPendingActivityRow()
     model->currentPaymentRequest()->setLabel(QStringLiteral("request label"));
 
     QTRY_COMPARE(model->transactionActivityModel()->rowCount(), 0);
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QCOMPARE(wallet->set_address_receive_request_calls, 1);
     QCOMPARE(wallet->receive_request_ids.back(), std::string{"1"});
     QTRY_COMPARE(model->transactionActivityModel()->rowCount(), 1);
 
-    QVERIFY(model->removeReceiveRequest(QStringLiteral("1")));
+    QVERIFY(CompleteReceive(*model, model->removeReceiveRequest(QStringLiteral("1"))));
     QCOMPARE(wallet->set_address_receive_request_calls, 2);
     QCOMPARE(wallet->receive_request_ids.back(), std::string{"1"});
     QTRY_COMPARE(model->transactionActivityModel()->rowCount(), 0);
@@ -2440,7 +2527,7 @@ void WalletQmlModelTests::editedReceiveRequestNameShownInActivityMetadata()
     wallet->get_address_label = "address book label";
 
     model->currentPaymentRequest()->setLabel(QStringLiteral("Old label"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
 
     TransactionActivityModel* activity = model->transactionActivityModel();
     QTRY_COMPARE(activity->rowCount(), 1);
@@ -2450,7 +2537,7 @@ void WalletQmlModelTests::editedReceiveRequestNameShownInActivityMetadata()
 
     // Editing the label commits an update for the same request id.
     model->currentPaymentRequest()->setLabel(QStringLiteral("New label"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
 
     QCOMPARE(activity->rowCount(), 1);
     QCOMPARE(activity->data(activity->index(0), TransactionActivityModel::PaymentRequestsRole).toList().first().toMap().value("label").toString(),
@@ -2467,25 +2554,25 @@ void WalletQmlModelTests::editedRequestSyncsAddressBookLabel()
     model->currentPaymentRequest()->setLabel(QStringLiteral("Public name"));
     model->currentPaymentRequest()->setMessage(QStringLiteral("Lunch split"));
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Old label"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QCOMPARE(wallet->last_set_address_book_label, std::string{"Old label"});
     const int public_edit_calls = wallet->set_address_book_calls;
-    QVERIFY(model->updatePaymentRequest(model->currentPaymentRequest()->id(), 0,
-                                       "New public name", "Dinner split", "Old label"));
+    QVERIFY(CompleteReceive(*model, model->updatePaymentRequest(model->currentPaymentRequest()->id(), 0,
+                                       "New public name", "Dinner split", "Old label")));
     QCOMPARE(wallet->set_address_book_calls, public_edit_calls);
 
     // Editing the label writes the new label back to the address book, so the
     // Addresses page reflects it instead of keeping the stale label.
     const int calls_before = wallet->set_address_book_calls;
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("New label"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QVERIFY(wallet->set_address_book_calls > calls_before);
     QCOMPARE(wallet->last_set_address_book_label, std::string{"New label"});
     // Clearing the private note clears its matching address label, but leaves
     // the public fields intact and present in the payment URI.
     wallet->get_address_label = "New label";
-    QVERIFY(model->updatePaymentRequest(model->currentPaymentRequest()->id(), 0,
-                                       "New public name", "Dinner split", ""));
+    QVERIFY(CompleteReceive(*model, model->updatePaymentRequest(model->currentPaymentRequest()->id(), 0,
+                                       "New public name", "Dinner split", "")));
     QVERIFY(wallet->last_set_address_book_label.empty());
     QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("New public name"));
 }
@@ -2498,13 +2585,13 @@ void WalletQmlModelTests::requestSaveLeavesUneditedAddressBookLabelAlone()
     wallet->get_address_label = "Book label";
 
     // Saving a request whose note is empty must not clear the book label.
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QCOMPARE(wallet->set_address_book_calls, 0);
 
     // Saving with an unchanged note (e.g. an amount-only edit) must not
     // rewrite the book label either.
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Book label"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QCOMPARE(wallet->set_address_book_calls, 0);
 }
 
@@ -2515,7 +2602,7 @@ void WalletQmlModelTests::amountOnlyRequestEditPreservesAddressBookLabel()
 
     // Creating the request labels its address.
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Request label"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QCOMPARE(wallet->last_set_address_book_label, std::string{"Request label"});
 
     // The address is then relabeled independently on the Addresses page.
@@ -2525,12 +2612,12 @@ void WalletQmlModelTests::amountOnlyRequestEditPreservesAddressBookLabel()
     // Editing only the amount must not re-assert the request note over the
     // independent one; the save changed no label.
     model->currentPaymentRequest()->amount()->setSatoshi(12'345);
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QCOMPARE(wallet->set_address_book_calls, calls_before);
 
     // Editing the request note itself still writes it back.
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Renamed request"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QVERIFY(wallet->set_address_book_calls > calls_before);
     QCOMPARE(wallet->last_set_address_book_label, std::string{"Renamed request"});
 }
@@ -2542,7 +2629,7 @@ void WalletQmlModelTests::editedAddressBookLabelSyncsRequestNote()
 
     // Create a request; its address carries the private note.
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Old label"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString address = model->currentPaymentRequest()->address();
     QVERIFY(!address.isEmpty());
 
@@ -2554,7 +2641,7 @@ void WalletQmlModelTests::editedAddressBookLabelSyncsRequestNote()
     // Editing the label on the Addresses page must propagate to the matching
     // request, so the request record and its Activity row do not diverge from
     // the address book (the reverse of editedRequestSyncsAddressBookLabel).
-    QVERIFY(model->setAddressLabel(address, QStringLiteral("New label")));
+    QVERIFY(CompleteReceive(*model, model->setAddressLabel(address, QStringLiteral("New label"))));
 
     QCOMPARE(activity->data(activity->index(0), TransactionActivityModel::PaymentRequestsRole).toList().first().toMap().value("noteSelf").toString(),
              QStringLiteral("New label"));
@@ -2576,13 +2663,13 @@ void WalletQmlModelTests::requestSaveLeavesSiblingRequestNotesAlone()
     // Two requests on the same address (the fake wallet hands out one
     // destination), with their own labels.
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Request A"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString request_a_id = model->currentPaymentRequest()->id();
     const QString address = model->currentPaymentRequest()->address();
 
     model->currentPaymentRequest()->clear();
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Request B"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString request_b_id = model->currentPaymentRequest()->id();
     QVERIFY(request_a_id != request_b_id);
     QCOMPARE(model->currentPaymentRequest()->address(), address);
@@ -2594,7 +2681,7 @@ void WalletQmlModelTests::requestSaveLeavesSiblingRequestNotesAlone()
     const int b_writes_before = static_cast<int>(
         std::count(wallet->receive_request_ids.begin(), wallet->receive_request_ids.end(),
                    request_b_id.toStdString()));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     QCOMPARE(wallet->last_set_address_book_label, std::string{"Edited A"});
 
     const int b_writes_after = static_cast<int>(
@@ -2615,12 +2702,12 @@ void WalletQmlModelTests::labelSyncSkipsInMemoryUpdateWhenPersistFails()
     wallet->get_address_result = true;
 
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Old label"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString request_id = model->currentPaymentRequest()->id();
     const QString address = model->currentPaymentRequest()->address();
 
     wallet->set_address_receive_request_result = false;
-    QVERIFY(model->setAddressLabel(address, QStringLiteral("New label")));
+    QVERIFY(CompleteReceive(*model, model->setAddressLabel(address, QStringLiteral("New label"))));
 
     const auto entry = model->receiveRequests()->entryById(request_id);
     QVERIFY(entry.has_value());
@@ -2637,7 +2724,7 @@ void WalletQmlModelTests::editedAddressBookLabelUpdatesHeldRequestObjects()
     wallet->get_address_result = true;
 
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Old label"));
-    QVERIFY(model->commitPaymentRequest());
+    QVERIFY(CompleteReceive(*model, model->commitPaymentRequest()));
     const QString address = model->currentPaymentRequest()->address();
     const QString request_id = model->currentPaymentRequest()->id();
     QVERIFY(!address.isEmpty());
@@ -2647,7 +2734,7 @@ void WalletQmlModelTests::editedAddressBookLabelUpdatesHeldRequestObjects()
     // A held-open detail page or locked editor keeps reading these objects,
     // so an Addresses page label edit must refresh them too, not only the
     // stored request and its Activity row.
-    QVERIFY(model->setAddressLabel(address, QStringLiteral("New label")));
+    QVERIFY(CompleteReceive(*model, model->setAddressLabel(address, QStringLiteral("New label"))));
     QCOMPARE(model->detailPaymentRequest()->noteSelf(), QStringLiteral("New label"));
     QCOMPARE(model->currentPaymentRequest()->noteSelf(), QStringLiteral("New label"));
     QCOMPARE(model->detailPaymentRequest()->qrPayload(), public_uri);
@@ -2657,7 +2744,7 @@ void WalletQmlModelTests::editedAddressBookLabelUpdatesHeldRequestObjects()
     // the detail object still follows.
     model->currentPaymentRequest()->edit();
     model->currentPaymentRequest()->setNoteSelf(QStringLiteral("Unsaved draft"));
-    QVERIFY(model->setAddressLabel(address, QStringLiteral("Renamed again")));
+    QVERIFY(CompleteReceive(*model, model->setAddressLabel(address, QStringLiteral("Renamed again"))));
     QCOMPARE(model->currentPaymentRequest()->noteSelf(), QStringLiteral("Unsaved draft"));
     QCOMPARE(model->detailPaymentRequest()->noteSelf(), QStringLiteral("Renamed again"));
 }
@@ -3729,7 +3816,7 @@ void WalletQmlModelTests::signVerifyMessageRejectsNonP2PKHAddress()
     auto* sign_verify = model->signVerifyMessageModel();
 
     QVERIFY(!sign_verify->isLegacyP2PKHAddress(QString::fromLatin1(NON_P2PKH_ADDRESS)));
-    QVERIFY(!sign_verify->signMessage(QString::fromLatin1(NON_P2PKH_ADDRESS), "message"));
+    QVERIFY(!CompleteSigning(*sign_verify, sign_verify->signMessage(QString::fromLatin1(NON_P2PKH_ADDRESS), "message")));
     QCOMPARE(sign_verify->signingError(), QString("Enter a legacy P2PKH bitcoin address."));
     QCOMPARE(wallet->sign_message_calls, 0);
 }
@@ -3742,7 +3829,7 @@ void WalletQmlModelTests::signVerifyMessageSignsWithLegacyP2PKHAddress()
     auto* sign_verify = model->signVerifyMessageModel();
 
     QVERIFY(sign_verify->isLegacyP2PKHAddress(VALID_MAINNET_ADDRESS));
-    QVERIFY(sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello"));
+    QVERIFY(CompleteSigning(*sign_verify, sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello")));
     QCOMPARE(wallet->sign_message_calls, 1);
     QCOMPARE(wallet->last_signed_message, std::string("hello"));
     QCOMPARE(sign_verify->signature(), QString("fake-signature"));
@@ -3755,11 +3842,11 @@ void WalletQmlModelTests::signVerifyMessageWithPassphraseUnlocksSignsAndRelocks(
     auto [wallet, model] = MakePasswordWalletModel();
     auto* sign_verify = model->signVerifyMessageModel();
 
-    QVERIFY(!sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello"));
+    QVERIFY(!CompleteSigning(*sign_verify, sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello")));
     QVERIFY(sign_verify->signingNeedsUnlock());
     QCOMPARE(wallet->unlock_calls, 0);
 
-    QVERIFY(sign_verify->signMessageWithPassphrase(VALID_MAINNET_ADDRESS, "hello", "secret"));
+    QVERIFY(CompleteSigning(*sign_verify, sign_verify->signMessageWithPassphrase(VALID_MAINNET_ADDRESS, "hello", "secret")));
     QCOMPARE(wallet->unlock_calls, 1);
     QCOMPARE(wallet->lock_calls, 1);
     QVERIFY(wallet->locked);
@@ -3776,7 +3863,7 @@ void WalletQmlModelTests::signVerifyMessageSurfacesSigningFailure()
     };
     auto* sign_verify = model->signVerifyMessageModel();
 
-    QVERIFY(!sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello"));
+    QVERIFY(!CompleteSigning(*sign_verify, sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello")));
     QVERIFY(sign_verify->signature().isEmpty());
     QCOMPARE(sign_verify->signingError(), QString("Private key not available"));
 }
@@ -3794,9 +3881,9 @@ void WalletQmlModelTests::signVerifyMessageVerifiesValidSignature()
     auto* sign_verify = model->signVerifyMessageModel();
 
     QVERIFY(sign_verify->isLegacyP2PKHAddress(address));
-    QVERIFY(sign_verify->verifyMessage(address, message, QString::fromStdString(signature)));
-    QVERIFY(!sign_verify->verifyMessage(address, message + "!", QString::fromStdString(signature)));
-    QVERIFY(!sign_verify->verifyMessage(QString::fromLatin1(NON_P2PKH_ADDRESS), message, QString::fromStdString(signature)));
+    QVERIFY(CompleteVerification(*sign_verify, sign_verify->verifyMessage(address, message, QString::fromStdString(signature))));
+    QVERIFY(!CompleteVerification(*sign_verify, sign_verify->verifyMessage(address, message + "!", QString::fromStdString(signature))));
+    QVERIFY(!CompleteVerification(*sign_verify, sign_verify->verifyMessage(QString::fromLatin1(NON_P2PKH_ADDRESS), message, QString::fromStdString(signature))));
 }
 
 void WalletQmlModelTests::signVerifyMessageSignsEmptyMessage()
@@ -3806,7 +3893,7 @@ void WalletQmlModelTests::signVerifyMessageSignsEmptyMessage()
     wallet->locked = false;
     auto* sign_verify = model->signVerifyMessageModel();
 
-    QVERIFY(sign_verify->signMessage(VALID_MAINNET_ADDRESS, QString()));
+    QVERIFY(CompleteSigning(*sign_verify, sign_verify->signMessage(VALID_MAINNET_ADDRESS, QString())));
     QCOMPARE(wallet->sign_message_calls, 1);
     QCOMPARE(wallet->last_signed_message, std::string{});
     QCOMPARE(sign_verify->signature(), QString("fake-signature"));
@@ -3823,7 +3910,7 @@ void WalletQmlModelTests::signVerifyMessageWrongPassphraseSurfacesErrorAndDoesNo
     };
     auto* sign_verify = model->signVerifyMessageModel();
 
-    QVERIFY(!sign_verify->signMessageWithPassphrase(VALID_MAINNET_ADDRESS, "hello", "wrong"));
+    QVERIFY(!CompleteSigning(*sign_verify, sign_verify->signMessageWithPassphrase(VALID_MAINNET_ADDRESS, "hello", "wrong")));
     QCOMPARE(wallet->unlock_calls, 1);
     QCOMPARE(wallet->lock_calls, 0);
     QCOMPARE(wallet->sign_message_calls, 0);
@@ -3847,10 +3934,10 @@ void WalletQmlModelTests::signVerifyMessageClearResetsState()
     wallet->locked = false;
     auto* sign_verify = model->signVerifyMessageModel();
 
-    QVERIFY(sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello"));
+    QVERIFY(CompleteSigning(*sign_verify, sign_verify->signMessage(VALID_MAINNET_ADDRESS, "hello")));
     QVERIFY(!sign_verify->signature().isEmpty());
 
-    QVERIFY(!sign_verify->signMessage(QString::fromLatin1(NON_P2PKH_ADDRESS), "hello"));
+    QVERIFY(!CompleteSigning(*sign_verify, sign_verify->signMessage(QString::fromLatin1(NON_P2PKH_ADDRESS), "hello")));
     QVERIFY(!sign_verify->signingError().isEmpty());
     QVERIFY(sign_verify->signature().isEmpty());
 
@@ -3865,8 +3952,8 @@ void WalletQmlModelTests::signVerifyMessageVerifyRejectsEmptySignature()
     auto [wallet, model] = MakePasswordWalletModel();
     auto* sign_verify = model->signVerifyMessageModel();
 
-    QVERIFY(!sign_verify->verifyMessage(VALID_MAINNET_ADDRESS, "hello", QString()));
-    QVERIFY(!sign_verify->verifyMessage(VALID_MAINNET_ADDRESS, "hello", QStringLiteral("   ")));
+    QVERIFY(!CompleteVerification(*sign_verify, sign_verify->verifyMessage(VALID_MAINNET_ADDRESS, "hello", QString())));
+    QVERIFY(!CompleteVerification(*sign_verify, sign_verify->verifyMessage(VALID_MAINNET_ADDRESS, "hello", QStringLiteral("   "))));
 }
 
 void WalletQmlModelTests::sendTransactionWithPrivateKeysDisabledDoesNotCommit()

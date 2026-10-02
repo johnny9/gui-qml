@@ -18,6 +18,13 @@ public:
     std::map<CTxDestination, std::string> labels;
     CoinsList listCoins() override { return coins; }
     bool isLockedCoin(const COutPoint& p) override { return locked.count(p); }
+    void listLockedCoins(std::vector<COutPoint>& outputs) override { outputs.assign(locked.begin(), locked.end()); }
+    std::vector<interfaces::WalletAddress> getAddresses() override {
+        std::vector<interfaces::WalletAddress> result;
+        result.reserve(labels.size());
+        for (const auto& [address, label] : labels) result.emplace_back(address, true, wallet::AddressPurpose::RECEIVE, label);
+        return result;
+    }
     bool lockCoin(const COutPoint& p, bool) override { locked.insert(p); return true; }
     bool unlockCoin(const COutPoint& p) override { locked.erase(p); return true; }
     bool getAddress(const CTxDestination& d, std::string* name, wallet::AddressPurpose*) override {
@@ -42,6 +49,7 @@ private Q_SLOTS:
         wallet->add(0, 1000, 1700000000, 1, "First");
         wallet->add(1, 2000, 1700000010, 2, "Second");
         WalletQmlModel model{std::move(wallet)};
+        QTRY_VERIFY(model.walletStateReady());
         auto* coins = model.coinsListModel();
         coins->setSortBy("amount");
         coins->setSortDescending(false);
@@ -53,7 +61,8 @@ private Q_SLOTS:
         QCOMPARE(coins->totalSelectedSatoshi(), 1000);
 
         source->coins.clear();
-        coins->update();
+        model.requestWalletStateRefresh();
+        QTRY_COMPARE(coins->rowCount(), 0);
         QVERIFY(!coins->toggleCoinSelectionById(coin_id));
         QCOMPARE(coins->selectedCoinsCount(), 0);
     }
@@ -63,6 +72,7 @@ private Q_SLOTS:
         wallet->add(0, 1000, 1700000000, 1, "Rent");
         wallet->add(1, 2000, 1700000010, 2, "Savings");
         WalletQmlModel model{std::move(wallet)};
+        QTRY_VERIFY(model.walletStateReady());
         auto* coins = model.coinsListModel();
         coins->setSortDescending(false);
         QCOMPARE(coins->data(coins->index(0), CoinsListModel::AddressRole).toString(), QString::fromStdString(EncodeDestination(CoinDestination(1))));
@@ -96,6 +106,7 @@ private Q_SLOTS:
         wallet->add(1, 1000, 1700000010, 1, "Zulu");
         wallet->add(2, 2000, 1700000020, 2, "Alpha");
         WalletQmlModel model{std::move(wallet)};
+        QTRY_VERIFY(model.walletStateReady());
         auto* coins = model.coinsListModel();
         coins->setGroupBy("date");
         coins->setSortBy("amount"); coins->setSortDescending(false);
@@ -116,11 +127,11 @@ private Q_SLOTS:
         const auto id = coins->data(coins->index(0), CoinsListModel::CoinIdRole).toString();
         QVERIFY(coins->setCoinsLocked({id}, true));
         QCOMPARE(coins->selectedCoinsCount(), 0);
-        coins->setFilter("locked"); QCOMPARE(coins->rowCount(), 1);
+        coins->setFilter("locked"); QTRY_COMPARE(coins->rowCount(), 1);
         coins->toggleCoinSelection(0); QCOMPARE(coins->selectedCoinsCount(), 1);
         QCOMPARE(coins->data(coins->index(0), CoinsListModel::CoinIdRole).toString(), id);
         QVERIFY(coins->setCoinsLocked({id}, false));
-        QCOMPARE(coins->rowCount(), 0);
+        QTRY_COMPARE(coins->rowCount(), 0);
         coins->setFilter("spendable"); QCOMPARE(coins->rowCount(), 3);
         coins->setMinAmount(1500); QCOMPARE(coins->rowCount(), 2);
         coins->setMaxAmount(2500); QCOMPARE(coins->rowCount(), 1);
@@ -128,7 +139,8 @@ private Q_SLOTS:
         coins->setGroupBy("date");
         QVERIFY(!coins->data(coins->index(0), CoinsListModel::GroupRole).toString().isEmpty());
         coins->toggleCoinSelection(0);
-        source->coins.clear(); coins->update();
+        source->coins.clear(); model.requestWalletStateRefresh();
+        QTRY_COMPARE(coins->rowCount(), 0);
         QCOMPARE(coins->selectedCoinsCount(), 0);
         QCOMPARE(coins->totalSatoshi(), 0);
     }

@@ -26,9 +26,9 @@ Pane {
         if (!wallet) return
         pendingNext = !!next
         pendingType = type || ""
-        if (wallet.ensureReceivingAddress(pendingNext, pendingType)) errorText = ""
-        else if (request.needsUnlock) passphrasePopup.open()
-        else errorText = qsTr("A receiving address could not be generated. Please try again.")
+        if (wallet.receiveOperationPending) return
+        errorText = ""
+        wallet.ensureReceivingAddress(pendingNext, pendingType)
     }
     function captureQR(callback) {
         if (!ready || qrImage.status !== Image.Ready) {
@@ -47,11 +47,18 @@ Pane {
     }
     function saveQRToFile(fileUrl) {
         return captureQR(function(result) {
-            if (!result.saveToFile(decodeURIComponent(fileUrl.toString().replace(/^file:\/\//, ""))))
+            if (!imageSave.save(result.image, fileUrl))
                 root.errorText = qsTr("The QR code could not be saved. Please try again.")
         })
     }
-    Connections {
+    ImageSaveModel {
+        id: imageSave
+        onFinished: function(success) {
+            if (!success) root.errorText = qsTr("The QR code could not be saved. Please try again.")
+        }
+    }
+    // Keep notification handlers owned by the card when their targets change.
+    readonly property Connections requestNotifications: Connections {
         target: root.request
         function onAddressChanged() { qrMenu.close(); saveDialog.close() }
         function onPaymentReceivedChanged() {
@@ -62,7 +69,23 @@ Pane {
             }
         }
     }
+    readonly property Connections walletCompletion: Connections {
+        target: root.wallet
+        function onReceiveOperationFinished(operation, success) {
+            if (operation === "rememberAddress" && root.visible && root.request.address === "") {
+                Qt.callLater(function() { root.ensureAddress(false, "") })
+                return
+            }
+            if (operation !== "address") return
+            passphrasePopup.busy = false
+            root.errorText = root.wallet.receiveOperationError
+            if (success) passphrasePopup.close()
+            else if (root.request.needsUnlock) passphrasePopup.open()
+            else if (passphrasePopup.visible) passphrasePopup.errorText = root.request.unlockError
+        }
+    }
     contentItem: ColumnLayout {
+        enabled: !root.wallet || !root.wallet.receiveOperationPending
         spacing: 24
         CoreText {
             Layout.fillWidth: true
@@ -145,7 +168,7 @@ Pane {
             rightPadding: 0
             trailingItem: PopupPicker {
                 objectName: "requestPaymentAddressTypeDropdown"
-                model: root.wallet ? root.wallet.availableReceiveAddressTypes() : []
+                model: root.wallet ? root.wallet.receiveAddressTypes : []
                 textRole: "label"
                 valueRole: "id"
                 subtitleRole: "description"
@@ -185,10 +208,7 @@ Pane {
         descriptionText: qsTr("Enter your wallet password to create a receiving address.")
         confirmText: qsTr("Unlock and create address")
         onSubmitted: function(passphrase) {
-            if (root.wallet.ensureReceivingAddressWithPassphrase(passphrase, root.pendingNext, root.pendingType)) {
-                root.errorText = ""
-                close()
-            } else errorText = root.request.unlockError || qsTr("The receiving address could not be created.")
+            passphrasePopup.busy = root.wallet.ensureReceivingAddressWithPassphrase(passphrase, root.pendingNext, root.pendingType)
         }
     }
 }

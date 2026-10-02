@@ -19,6 +19,7 @@
 #include <QRegularExpression>
 #include <QSortFilterProxyModel>
 #include <QStringList>
+#include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
 #include <qqml.h>
@@ -31,6 +32,7 @@
 #include <qml/backendexecutor.h>
 #include <qml/components/blockclockdial.h>
 #include <qml/controls/linegraph.h>
+#include <qml/models/imagesavemodel.h>
 
 class MockAppMode : public QObject
 {
@@ -463,7 +465,10 @@ public:
     Q_INVOKABLE void refresh() {}
     Q_INVOKABLE bool setAddressLabel(const QString& address, const QString& label)
     {
-        if (!m_set_address_label_succeeds) return false;
+        if (!m_set_address_label_succeeds) {
+            QTimer::singleShot(0, this, [this, address, label] { Q_EMIT labelChangeFinished(address, label, false, QStringLiteral("This address is no longer available.")); });
+            return true;
+        }
         for (int row = 0; row < rowCount(); ++row) {
             Entry& entry{m_rows.at(row)};
             if (entry.address != address) continue;
@@ -471,6 +476,7 @@ public:
             Q_EMIT dataChanged(index(row), index(row), {LabelRole});
             break;
         }
+        QTimer::singleShot(0, this, [this, address, label] { Q_EMIT labelChangeFinished(address, label, true, {}); });
         return true;
     }
     Q_INVOKABLE QString addressAt(int row) const
@@ -491,6 +497,7 @@ public:
     }
 
 Q_SIGNALS:
+    void labelChangeFinished(const QString& address, const QString& label, bool success, const QString& error);
     void categoryChanged();
     void showUsedChanged();
     void countChanged();
@@ -1130,8 +1137,6 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString settingsError MEMBER m_settings_error NOTIFY settingsErrorChanged)
     Q_PROPERTY(bool settingsBusy MEMBER m_settings_busy NOTIFY settingsBusyChanged)
     Q_PROPERTY(bool settingsAutoComplete MEMBER m_settings_auto_complete)
-    Q_PROPERTY(bool walletStateReady MEMBER m_wallet_state_ready NOTIFY walletStateChanged)
-    Q_PROPERTY(QString walletStateError MEMBER m_wallet_state_error NOTIFY walletStateChanged)
     Q_PROPERTY(QString lastBackupPath READ lastBackupPath NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(int backupWalletCalls READ backupWalletCalls NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(QString transactionError MEMBER m_transaction_error NOTIFY transactionErrorChanged)
@@ -1141,6 +1146,11 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString lastLoadedPaymentRequestDetailId MEMBER m_last_loaded_payment_request_detail_id NOTIFY lastLoadedPaymentRequestDetailIdChanged)
     Q_PROPERTY(QString lastTemplateRequestId MEMBER m_last_template_request_id NOTIFY lastTemplateRequestIdChanged)
     Q_PROPERTY(QString lastRemovedRequestId MEMBER m_last_removed_request_id NOTIFY lastRemovedRequestIdChanged)
+    Q_PROPERTY(bool walletStateReady MEMBER m_wallet_state_ready NOTIFY walletStateChanged)
+    Q_PROPERTY(QString walletStateError MEMBER m_wallet_state_error NOTIFY walletStateChanged)
+    Q_PROPERTY(bool receiveOperationPending MEMBER m_receive_operation_pending NOTIFY receiveOperationPendingChanged)
+    Q_PROPERTY(QString receiveOperationError MEMBER m_receive_operation_error NOTIFY receiveOperationErrorChanged)
+    Q_PROPERTY(QVariantList receiveAddressTypes READ availableReceiveAddressTypes NOTIFY walletInfoChanged)
     Q_PROPERTY(bool removeReceiveRequestResult MEMBER m_remove_receive_request_result NOTIFY removeReceiveRequestResultChanged)
 
 public:
@@ -1171,6 +1181,22 @@ public:
     QString m_last_loaded_payment_request_detail_id;
     QString m_last_template_request_id;
     QString m_last_removed_request_id;
+    bool m_wallet_state_ready{true};
+    QString m_wallet_state_error;
+    bool m_receive_operation_pending{false};
+    QString m_receive_operation_error;
+    void finishReceiveOperation(QString operation, bool success = true)
+    {
+        m_receive_operation_pending = true;
+        Q_EMIT receiveOperationPendingChanged();
+        QTimer::singleShot(0, this, [this, operation, success] {
+            m_receive_operation_pending = false;
+            m_receive_operation_error = success ? QString{} : QStringLiteral("The payment request could not be deleted. Please try again.");
+            Q_EMIT receiveOperationPendingChanged();
+            Q_EMIT receiveOperationErrorChanged();
+            Q_EMIT receiveOperationFinished(operation, success);
+        });
+    }
     bool m_remove_receive_request_result{true};
     bool m_receive_request_reconciliation_pending{false};
     QString m_saved_payment_request_label;
@@ -1208,6 +1234,7 @@ public:
             Q_EMIT m_receiving_address.addressChanged();
             Q_EMIT m_receiving_address.addressTypeChanged();
         }
+        finishReceiveOperation(QStringLiteral("address"));
         return true;
     }
     Q_INVOKABLE bool ensureReceivingAddressWithPassphrase(const QString&, bool next = false, const QString& type = {})
@@ -1492,6 +1519,7 @@ public:
         Q_EMIT request->idChanged();
         Q_EMIT request->addressChanged();
         Q_EMIT request->isEditingChanged();
+        finishReceiveOperation(QStringLiteral("save"));
         return true;
     }
     Q_INVOKABLE bool updatePaymentRequest(const QString& id, qint64 amount, const QString& label, const QString& message, const QString& note)
@@ -1503,6 +1531,7 @@ public:
         request->setProperty("label", label);
         request->setProperty("message", message);
         request->setProperty("noteSelf", note);
+        finishReceiveOperation(QStringLiteral("update"));
         return true;
     }
     Q_INVOKABLE bool commitPaymentRequestWithPassphrase(const QString&)
@@ -1612,9 +1641,11 @@ public:
     }
     Q_INVOKABLE bool removeReceiveRequest(const QString& request_id)
     {
-        if (!m_remove_receive_request_result) return false;
-        m_last_removed_request_id = request_id;
-        Q_EMIT lastRemovedRequestIdChanged();
+        if (m_remove_receive_request_result) {
+            m_last_removed_request_id = request_id;
+            Q_EMIT lastRemovedRequestIdChanged();
+        }
+        finishReceiveOperation(QStringLiteral("remove"), m_remove_receive_request_result);
         return true;
     }
 
@@ -1646,7 +1677,6 @@ Q_SIGNALS:
     void settingsErrorChanged();
     void settingsBusyChanged();
     void settingsOperationFinished(const QString& operation, bool success);
-    void walletStateChanged();
     void backupWalletCallsChanged();
     void transactionErrorChanged();
     void transactionNeedsUnlockChanged();
@@ -1657,6 +1687,10 @@ Q_SIGNALS:
     void lastTemplateRequestIdChanged();
     void lastRemovedRequestIdChanged();
     void removeReceiveRequestResultChanged();
+    void walletStateChanged();
+    void receiveOperationPendingChanged();
+    void receiveOperationErrorChanged();
+    void receiveOperationFinished(const QString& operation, bool success);
     void receiveRequestReconciliationPendingChanged();
 
 private:
@@ -1689,8 +1723,6 @@ private:
     bool m_settings_busy{false};
     bool m_settings_auto_complete{true};
     QString m_pending_settings_operation;
-    bool m_wallet_state_ready{true};
-    QString m_wallet_state_error;
     QString m_last_backup_path;
     int m_backup_wallet_calls{0};
     QString m_transaction_error;
@@ -3545,6 +3577,10 @@ private:
 class MockActivityFilterProxyModel : public QSortFilterProxyModel
 {
     Q_OBJECT
+    Q_PROPERTY(bool exportPending READ exportPending NOTIFY exportPendingChanged)
+    Q_PROPERTY(QString exportError READ exportError NOTIFY exportErrorChanged)
+    Q_PROPERTY(bool exportSucceeds MEMBER m_export_succeeds)
+    Q_PROPERTY(bool autoCompleteExport MEMBER m_auto_complete_export)
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
     Q_PROPERTY(DateFilter dateFilter READ dateFilter WRITE setDateFilter NOTIFY dateFilterChanged)
     Q_PROPERTY(TypeFilter typeFilter READ typeFilter WRITE setTypeFilter NOTIFY typeFilterChanged)
@@ -3801,10 +3837,28 @@ public:
 
     int count() const { return rowCount(); }
 
-    Q_INVOKABLE bool exportCsv(const QString& path) const
+    bool exportPending() const { return m_export_pending; }
+    QString exportError() const { return m_export_error; }
+
+    Q_INVOKABLE bool exportCsv(const QString& path)
     {
-        Q_UNUSED(path);
+        if (m_export_pending || path.isEmpty()) return false;
+        m_export_pending = true;
+        m_export_error.clear();
+        Q_EMIT exportPendingChanged();
+        Q_EMIT exportErrorChanged();
+        if (m_auto_complete_export) QTimer::singleShot(0, this, &MockActivityFilterProxyModel::completeExport);
         return true;
+    }
+
+    Q_INVOKABLE void completeExport()
+    {
+        if (!m_export_pending) return;
+        m_export_pending = false;
+        m_export_error = m_export_succeeds ? QString{} : QStringLiteral("The Activity CSV could not be saved.");
+        Q_EMIT exportPendingChanged();
+        Q_EMIT exportErrorChanged();
+        Q_EMIT exportFinished(m_export_succeeds);
     }
 
     bool matchesTypes(const QModelIndex& row) const
@@ -3870,8 +3924,15 @@ Q_SIGNALS:
 
     void groupByChanged();
     void pendingBalanceChanged();
+    void exportPendingChanged();
+    void exportErrorChanged();
+    void exportFinished(bool success);
 
 private:
+    bool m_export_pending{false};
+    bool m_export_succeeds{true};
+    bool m_auto_complete_export{true};
+    QString m_export_error;
     QString m_search_text;
     GroupBy m_group_by{Month};
     DateFilter m_date_filter{DateAll};
@@ -4321,6 +4382,7 @@ public Q_SLOTS:
             "DebugLogModel",
             "Test stub type"
         );
+        qmlRegisterType<ImageSaveModel>("org.bitcoincore.qt", 1, 0, "ImageSaveModel");
         qmlRegisterType<BlockClockDial>("org.bitcoincore.qt", 1, 0, "BlockClockDial");
         qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
         engine->rootContext()->setContextProperty(QStringLiteral("optionsModel"), &options_model);
