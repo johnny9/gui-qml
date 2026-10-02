@@ -6,6 +6,8 @@
 
 #include <QAbstractListModel>
 #include <QDateTime>
+#include <QEvent>
+#include <QEventLoop>
 #include <QFont>
 #include <QHash>
 #include <QIcon>
@@ -26,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include <qml/backendexecutor.h>
 #include <qml/components/blockclockdial.h>
 #include <qml/controls/linegraph.h>
 
@@ -4033,6 +4036,16 @@ public Q_SLOTS:
     {
         // Exercise the same customizable controls used by the application.
         qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+    }
+
+    void cleanupTestCase()
+    {
+        // Keep Qt alive until retired backend jobs and final thread cleanup finish.
+        QEventLoop loop;
+        bool drained{false};
+        BackendExecutor::shutdownAll(&loop, [&] { drained = true; loop.quit(); });
+        while (!drained) loop.exec();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
 
     void qmlEngineAvailable(QQmlEngine* engine)

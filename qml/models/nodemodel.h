@@ -72,8 +72,10 @@ class NodeModel : public QObject
     Q_PROPERTY(bool runtimeDialogQuestion READ runtimeDialogQuestion NOTIFY runtimeDialogChanged)
 
 public:
-    explicit NodeModel(interfaces::Node& node);
+    // Pass false while appInitMain can still install backend services.
+    explicit NodeModel(interfaces::Node& node, bool backend_ready = true);
     ~NodeModel() override;
+    void beginShutdown();
 
     int blockTipHeight() const { return m_block_tip_height; }
     void setBlockTipHeight(int new_height);
@@ -138,10 +140,12 @@ public:
 #endif
 
 public Q_SLOTS:
-    void initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info);
+    void initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info,
+                          bool initial_block_download = false, bool shutdown_requested = false);
     void handleRunawayException(const QString& message);
 
 Q_SIGNALS:
+    void drained();
     void blockTipHeightChanged();
     void mempoolInfoChanged();
     void mempoolInfoPollingActiveChanged(bool active);
@@ -198,6 +202,7 @@ private:
     double m_mempool_usage_mb{0.0};
     double m_mempool_max_usage_mb{0.0};
     bool m_mempool_info_polling_active{false};
+    bool m_workers_stopping{false};
     bool m_mempool_information_available{true};
     qint64 m_remaining_sync_time{0};
     double m_verification_progress{0.0};
@@ -215,6 +220,7 @@ private:
     int m_header_tip_height{0};
     int64_t m_header_tip_time{0};
     bool m_node_ready{false};
+    bool m_backend_queries_ready;
     bool m_initial_sync_complete{false};
     bool m_initialization_requested{false};
     bool m_shutdown_requested{false};

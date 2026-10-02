@@ -19,6 +19,9 @@
 #include <node/interface_ui.h>
 #include <noui.h>
 #include <qml/appmode.h>
+#include <qml/backendexecutor.h>
+#include <qml/backendstage.h>
+#include <qml/shutdowncoordinator.h>
 #include <qml/bitcoinamount.h>
 #include <qml/buildinfo.h>
 #include <qml/clipboard.h>
@@ -67,6 +70,7 @@
 #ifdef ENABLE_TEST_AUTOMATION
 #include <qml/test/testbridge.h>
 #endif
+#include <util/btcsignals.h>
 #include <util/fs.h>
 #include <util/fs_helpers.h>
 #include <util/threadnames.h>
@@ -77,12 +81,16 @@
 
 #include <cassert>
 #include <memory>
+#include <mutex>
+#include <optional>
+
 #include <tuple>
 #include <vector>
 
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QEvent>
 #include <QEventLoop>
 #include <QFontDatabase>
 #include <QIcon>
@@ -95,7 +103,9 @@
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QQuickItem>
 #include <QSettings>
+#include <QScopeGuard>
 #include <QString>
 #include <QStyleHints>
 #include <QTranslator>
@@ -324,16 +334,16 @@ struct PreInitOnboardingContext {
 
 bool ShouldShowPreInitOnboarding(const std::vector<std::string>& argv, bool can_listen_ipc)
 {
-    const QmlOnboardingSettings::OnboardingStartupStatus status{
-        QmlOnboardingSettings::ResolveOnboardingStartupStatus(argv, can_listen_ipc)
-    };
+    const auto status = RunBackendStage([argv, can_listen_ipc] {
+        return QmlOnboardingSettings::ResolveOnboardingStartupStatus(argv, can_listen_ipc);
+    });
     return !status.ok || status.should_show_onboarding;
 }
 
 PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, const std::vector<std::string>& argv, bool can_listen_ipc)
 {
     if (!ShouldShowPreInitOnboarding(argv, can_listen_ipc)) {
-        QmlDataDir::ApplyGuiDataDirSetting(gArgs);
+        RunBackendStage([] { return QmlDataDir::ApplyGuiDataDirSetting(gArgs); });
         return PreInitOnboardingStatus::NOT_SHOWN;
     }
 
@@ -382,13 +392,95 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
         return PreInitOnboardingStatus::CANCELED;
     }
 
+    // Freeze the completed form before dispatching its owned settings values.
+    if (context.window) context.window->contentItem()->setEnabled(false);
+    const auto request = context.onboarding_options_model->applyRequest();
     QString error;
-    if (!context.onboarding_options_model->applyToArgs(gArgs, &error)) {
+    try {
+        error = RunBackendStage([request] {
+            QString apply_error;
+            if (!QmlOnboardingSettings::ApplyToArgs(gArgs, request.data_dir, request.touched_settings, request.values, &apply_error)
+                && apply_error.isEmpty()) {
+                apply_error = QObject::tr("Onboarding settings could not be applied.");
+            }
+            return apply_error;
+        });
+    } catch (const std::exception& e) {
+        error = QString::fromUtf8(e.what());
+    } catch (...) {
+        error = QObject::tr("Unknown exception applying onboarding settings.");
+    }
+    if (!error.isEmpty()) {
         InitError(Untranslated(error.toStdString()));
         context.close();
         return PreInitOnboardingStatus::FAILED;
     }
     return PreInitOnboardingStatus::COMPLETED;
+}
+
+struct BootstrapResult {
+    std::unique_ptr<interfaces::Node> node;
+    std::unique_ptr<interfaces::Chain> chain;
+    QStringList warnings;
+    QString error;
+};
+
+BootstrapResult PrepareNode(interfaces::Init& init)
+{
+    BootstrapResult result;
+    struct Messages {
+        std::mutex mutex;
+        QStringList warnings;
+        QString error;
+    };
+    auto captured = std::make_shared<Messages>();
+    const auto record_message = [captured](const bilingual_str& message, unsigned int style) {
+        const std::lock_guard lock{captured->mutex};
+        if (style & CClientUIInterface::ICON_WARNING) {
+            RecordStartupWarning(captured->warnings, message);
+        } else {
+            if (!captured->error.isEmpty()) captured->error += QStringLiteral("\n\n");
+            captured->error += QString::fromStdString(message.translated);
+        }
+        return false;
+    };
+    const auto finish = [&] {
+        const std::lock_guard lock{captured->mutex};
+        result.warnings = captured->warnings;
+        if (!captured->error.isEmpty()) result.error = captured->error;
+        return std::move(result);
+    };
+    const btcsignals::scoped_connection messages{uiInterface.ThreadSafeMessageBox.connect(record_message)};
+    if (common::InitConfig(gArgs, [&](const bilingual_str& message, const std::vector<std::string>& details) {
+            record_message(message, CClientUIInterface::MSG_ERROR);
+            for (const auto& detail : details) record_message(Untranslated(detail), CClientUIInterface::MSG_ERROR);
+            return false;
+        })) {
+        if (result.error.isEmpty()) result.error = QObject::tr("Node configuration failed.");
+        return finish();
+    }
+    const auto migration = QmlLegacySettings::MigrateCoreSettings(gArgs, QmlLegacySettings::MigrationMode::Persist);
+    if (!migration.error.isEmpty()) {
+        result.error = migration.error;
+        return finish();
+    }
+    if (migration.settings_changed) {
+        std::vector<std::string> errors;
+        if (!gArgs.WriteSettingsFile(&errors)) {
+            result.error = QObject::tr("Settings file could not be written");
+            for (const auto& error : errors) result.error += QStringLiteral("\n") + QString::fromStdString(error);
+            return finish();
+        }
+    }
+    gArgs.SoftSetBoolArg("-printtoconsole", false);
+    InitLogging(gArgs);
+    InitParameterInteraction(gArgs);
+    result.node = init.makeNode();
+    result.chain = init.makeChain();
+    if (!result.node->baseInitialize() && result.error.isEmpty()) {
+        result.error = QObject::tr("Node initialization failed.");
+    }
+    return finish();
 }
 
 // Qt gets a synthetic argument list so it never parses the process command line:
@@ -412,6 +504,15 @@ int QmlGuiMain(int argc, char* argv[])
 
     QGuiApplication::styleHints()->setTabFocusBehavior(Qt::TabFocusAllControls);
     QApplication app(qt_argc, const_cast<char**>(&qt_argv));
+    // Early onboarding/error returns can leave value-only URI/export workers.
+    // Runtime backend borrowers drain through the coordinator before Node dies.
+    const auto drain_value_workers = qScopeGuard([] {
+        QEventLoop loop;
+        bool drained{false};
+        BackendExecutor::shutdownAll(&loop, [&] { drained = true; loop.quit(); });
+        while (!drained) loop.exec();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    });
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);
@@ -475,8 +576,12 @@ int QmlGuiMain(int argc, char* argv[])
     app.setQuitOnLastWindowClosed(false);
     setupChainQSettings(&app, QString::fromStdString(gArgs.GetChainTypeString()).toUpper());
     if (gArgs.GetBoolArg("-resetguisettings", false)) {
-        QString reset_error;
-        if (!QmlDataDir::ResetGuiSettings(gArgs, &reset_error)) {
+        const QString reset_error = RunBackendStage([] {
+            QString error;
+            if (!QmlDataDir::ResetGuiSettings(gArgs, &error) && error.isEmpty()) error = QObject::tr("Unable to reset settings.");
+            return error;
+        });
+        if (!reset_error.isEmpty()) {
             InitError(Untranslated(reset_error.toStdString()));
             return EXIT_FAILURE;
         }
@@ -492,10 +597,12 @@ int QmlGuiMain(int argc, char* argv[])
     BitcoinUriModel bitcoin_uri_model;
     RegisterQmlTypes(app_mode, build_info, clipboard, bitcoin_uri_model);
 
-    const QString cli_lang = QString::fromStdString(gArgs.GetArg("-lang", ""));
-    const QString startup_language = cli_lang.isEmpty()
-        ? QSettings().value(SettingsKeys::LANGUAGE, QmlLegacySettings::ReadLegacyGuiLanguage(QString::fromStdString(gArgs.GetChainTypeString()))).toString()
-        : cli_lang;
+    const QString startup_language = RunBackendStage([] {
+        const QString cli_lang = QString::fromStdString(gArgs.GetArg("-lang", ""));
+        return cli_lang.isEmpty()
+            ? QSettings().value(SettingsKeys::LANGUAGE, QmlLegacySettings::ReadLegacyGuiLanguage(QString::fromStdString(gArgs.GetChainTypeString()))).toString()
+            : cli_lang;
+    });
     install_language(startup_language);
 
     std::vector<std::string> command_line_args;
@@ -519,56 +626,33 @@ int QmlGuiMain(int argc, char* argv[])
         break;
     }
 
-    if (auto error = common::InitConfig(
-            gArgs,
-            [](const bilingual_str& msg, const std::vector<std::string>& details) {
-                return InitError(msg, details);
-            })) {
-        return EXIT_FAILURE;
-    }
-
-    const QmlLegacySettings::MigrationResult legacy_migration{
-        QmlLegacySettings::MigrateCoreSettings(gArgs, QmlLegacySettings::MigrationMode::Persist)
-    };
-    if (!legacy_migration.error.isEmpty()) {
-        InitError(Untranslated(legacy_migration.error.toStdString()));
-        return EXIT_FAILURE;
-    }
-    if (legacy_migration.settings_changed) {
-        std::vector<std::string> settings_errors;
-        if (!gArgs.WriteSettingsFile(&settings_errors)) {
-            InitError(_("Settings file could not be written"), settings_errors);
-            return EXIT_FAILURE;
-        }
-    }
-
-    // legacy GUI: parameterSetup()
-    // Default printtoconsole to false for the GUI. GUI programs should not
-    // print to the console unnecessarily.
-    gArgs.SoftSetBoolArg("-printtoconsole", false);
-    InitLogging(gArgs);
-    InitParameterInteraction(gArgs);
-
-    QmlUtil::LogQtInfo();
-
-    // legacy GUI: createNode()
-    std::unique_ptr<interfaces::Node> node = init->makeNode();
-    std::unique_ptr<interfaces::Chain> chain = init->makeChain();
-
-    // legacy GUI: baseInitialize()
-    if (!node->baseInitialize()) {
-        // A dialog with detailed error will have been shown by InitError().
-        return EXIT_FAILURE;
-    }
-
+    // Configuration and base initialization can perform storage, lock and
+    // system calls. Collect their messages off-thread, then present values on
+    // the GUI after the stage and its borrowed Init interface have drained.
     handler_message_box.disconnect();
+    std::optional<BootstrapResult> bootstrap;
+    try {
+        bootstrap.emplace(RunBackendStage([init = init.get()] { return PrepareNode(*init); }));
+    } catch (const std::exception& e) {
+        InitErrorMessageBox(Untranslated(e.what()), CClientUIInterface::MSG_ERROR);
+        return EXIT_FAILURE;
+    }
+    startup_warnings.append(bootstrap->warnings);
+    if (!bootstrap->error.isEmpty()) {
+        InitErrorMessageBox(Untranslated(bootstrap->error.toStdString()), CClientUIInterface::MSG_ERROR);
+        return EXIT_FAILURE;
+    }
+    std::unique_ptr<interfaces::Node> node = std::move(bootstrap->node);
+    std::unique_ptr<interfaces::Chain> chain = std::move(bootstrap->chain);
+    QmlUtil::LogQtInfo();
 
     const bool wallet_enabled = WalletEnabledFromArgs();
     app_mode.setWalletEnabled(wallet_enabled);
 
-    NodeModel node_model{*node};
+    NodeModel node_model{*node, /*backend_ready=*/false};
     node_model.addStartupWarnings(startup_warnings);
     QmlInitExecutor init_executor{*node};
+    QmlShutdownCoordinator shutdown_coordinator{init_executor};
     bool shutdown_requested{false};
     DebugLogModel debug_log_model{gArgs.GetDataDirNet() / "debug.log"};
 #ifdef ENABLE_WALLET
@@ -577,33 +661,42 @@ int QmlGuiMain(int argc, char* argv[])
         wallet_controller = std::make_unique<WalletQmlController>(*node);
         QObject::connect(
             &init_executor, &QmlInitExecutor::initializeResult, wallet_controller.get(),
-            [wallet_controller = wallet_controller.get(), node = node.get(), &shutdown_requested](bool success) {
-                if (success && !shutdown_requested && !node->shutdownRequested()) {
+            [wallet_controller = wallet_controller.get(), &shutdown_requested](bool success, interfaces::BlockAndHeaderTipInfo, bool, bool backend_shutdown_requested) {
+                if (success && !shutdown_requested && !backend_shutdown_requested) {
                     wallet_controller->initialize();
                 }
             });
     }
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
-    QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
-        if (shutdown_requested) {
-            return;
-        }
+    QObject::connect(&node_model, &NodeModel::requestedShutdown,
+                     &shutdown_coordinator, &QmlShutdownCoordinator::requestShutdown);
+    QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::shutdownStarted, &node_model, [&] {
         shutdown_requested = true;
-#ifdef ENABLE_WALLET
-        if (wallet_controller) {
-            wallet_controller->unloadWallets();
+        for (auto* window : QGuiApplication::allWindows()) {
+            if (auto* quick_window = qobject_cast<QQuickWindow*>(window)) quick_window->contentItem()->setEnabled(false);
         }
-#endif
-        init_executor.shutdown();
+        node_model.requestShutdown();
     });
+    shutdown_coordinator.addParticipant(&node_model, &NodeModel::drained, [&] { node_model.beginShutdown(); });
+    shutdown_coordinator.addParticipant(&debug_log_model, &DebugLogModel::drained, [&] { debug_log_model.stop(); });
+#ifdef ENABLE_WALLET
+    if (wallet_controller) {
+        shutdown_coordinator.addParticipant(wallet_controller.get(), &WalletQmlController::walletsDrained,
+                                            [&] { wallet_controller->beginShutdown(); });
+    }
+#endif
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
-    QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, [] {
+    QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::finished, qGuiApp, [] {
         QCoreApplication::exit(0);
     }, Qt::QueuedConnection);
     QObject::connect(&init_executor, &QmlInitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 
     NetworkTrafficTower network_traffic_tower{*node};
+    QObject::connect(&node_model, &NodeModel::chainStateReady,
+                     &network_traffic_tower, &NetworkTrafficTower::startSampling);
+    shutdown_coordinator.addParticipant(&network_traffic_tower, &NetworkTrafficTower::drained,
+                                        [&] { network_traffic_tower.beginShutdown(); });
     NetworkStatusModel network_status_model;
 #ifdef __ANDROID__
     AndroidNotifier android_notifier{node_model};
@@ -617,10 +710,15 @@ int QmlGuiMain(int argc, char* argv[])
     // Settings reset must happen before model instantiation so the models
     // read clean defaults from QSettings.
     if (gArgs.IsArgSet("-resetguisettings")) {
-        QSettings settings;
-        settings.remove(QStringLiteral("fHideTrayIcon"));
-        settings.remove(QStringLiteral("fMinimizeToTray"));
-        settings.remove(QStringLiteral("fMinimizeOnClose"));
+        const bool reset_saved = RunBackendStage([] {
+            QSettings settings;
+            settings.remove(QStringLiteral("fHideTrayIcon"));
+            settings.remove(QStringLiteral("fMinimizeToTray"));
+            settings.remove(QStringLiteral("fMinimizeOnClose"));
+            settings.sync();
+            return settings.status() == QSettings::NoError;
+        });
+        if (!reset_saved) node_model.addStartupWarnings({QObject::tr("Unable to save window settings after reset.")});
     }
 
     QObject::connect(&node_model, &NodeModel::blockTipTimeChanged, &block_clock_model, &BlockClockModel::recordBlockTime);
@@ -637,15 +735,25 @@ int QmlGuiMain(int argc, char* argv[])
         node_model.requestShutdown();
     });
 
-    PeerListModel peer_model{*node, nullptr};
+    PeerListModel peer_model{*node, nullptr, /*backend_ready=*/false};
+    QObject::connect(&node_model, &NodeModel::chainStateReady,
+                     &peer_model, &PeerListModel::backendInitialized);
     PeerListSortProxy peer_model_sort_proxy{nullptr};
     peer_model_sort_proxy.setSourceModel(&peer_model);
 
-    BanListModel ban_list_model{*node, nullptr};
+    BanListModel ban_list_model{*node, nullptr, /*backend_ready=*/false};
     QObject::connect(&node_model, &NodeModel::bannedListChanged,
                      &ban_list_model, &BanListModel::refresh);
-    QObject::connect(&node_model, &NodeModel::nodeInitialized,
-                     &ban_list_model, &BanListModel::refresh);
+    QObject::connect(&node_model, &NodeModel::chainStateReady,
+                     &ban_list_model, &BanListModel::backendInitialized);
+
+    QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::shutdownStarted, &peer_model, [&] {
+        peer_model.beginShutdown();
+        ban_list_model.beginShutdown();
+        block_clock_model.stop();
+        QObject::disconnect(&node_model, nullptr, &ban_list_model, nullptr);
+        QObject::disconnect(&node_model, nullptr, &block_clock_model, nullptr);
+    });
 
     auto engine = std::make_unique<QQmlApplicationEngine>();
 
@@ -665,6 +773,8 @@ int QmlGuiMain(int argc, char* argv[])
     engine->rootContext()->setContextProperty("debugLogModel", &debug_log_model);
 
     RpcConsoleModel rpc_console_model{*node};
+    shutdown_coordinator.addParticipant(&rpc_console_model, &RpcConsoleModel::drained,
+                                        [&] { rpc_console_model.beginShutdown(); });
     QObject::connect(&node_model, &NodeModel::nodeInitialized,
                      &rpc_console_model, &RpcConsoleModel::onNodeInitialized);
     engine->rootContext()->setContextProperty("rpcConsoleModel", &rpc_console_model);
@@ -701,6 +811,8 @@ int QmlGuiMain(int argc, char* argv[])
 #endif
 
     OptionsQmlModel options_model(*node);
+    shutdown_coordinator.addBeforeInterruptParticipant(&options_model, &OptionsQmlModel::shutdownFinished,
+                                        [&] { options_model.beginShutdown(); });
 #ifdef ENABLE_WALLET
     if (wallet_list_model) {
         wallet_list_model->setDisplayUnit(options_model.displayUnit());
@@ -714,8 +826,6 @@ int QmlGuiMain(int argc, char* argv[])
 #else
     engine->rootContext()->setContextProperty("testAutomationEnabled", false);
 #endif
-    // Install language before QML engine loads so that all qsTr() calls in QML
-    // pick up the correct locale from the start.
     install_language(options_model.language());
 
     // Retranslate the QML UI immediately when the user picks a new language.
@@ -742,13 +852,25 @@ int QmlGuiMain(int argc, char* argv[])
         {QStringLiteral("appModeDesktopForUi"), app_mode.mode() == AppMode::DESKTOP},
         {QStringLiteral("preInitOnboardingRanForUi"), pre_init_onboarding_status == PreInitOnboardingStatus::COMPLETED},
     });
+    const auto drain_before_return = [&] {
+        QEventLoop loop;
+        bool finished{false};
+        QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::finished, &loop, [&] {
+            finished = true;
+            loop.quit();
+        });
+        node_model.requestShutdown();
+        while (!finished) loop.exec();
+    };
     engine->load(QUrl(QStringLiteral("qrc:///qml/pages/MainWindow.qml")));
     if (engine->rootObjects().isEmpty()) {
+        drain_before_return();
         return EXIT_FAILURE;
     }
 
     auto window = qobject_cast<QQuickWindow*>(engine->rootObjects().first());
     if (!window) {
+        drain_before_return();
         return EXIT_FAILURE;
     }
     desktop_tray_icon_controller.setMainWindow(window);

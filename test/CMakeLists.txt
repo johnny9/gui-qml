@@ -3,9 +3,15 @@ cmake_minimum_required(VERSION 3.22)
 # Tests for the QML/Qt6 app
 
 find_package(Qt 6.2 MODULE REQUIRED COMPONENTS Core Gui Network Test Qml Quick QuickTest Widgets)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+add_test(NAME bitcoinqml_process_checks
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_process_checks.py
+)
 
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
+  test_backendexecutor.cpp
   test_bitcoinaddress.cpp
   test_blockclockdial.cpp
   test_blockclockmodel.cpp
@@ -26,6 +32,7 @@ add_executable(bitcoinqml_unit_tests
   test_networkstatusmodel.cpp
   test_networktraffictower.cpp
   test_qmlinitexecutor_api.cpp
+  test_shutdownproducers.cpp
   test_guiargs.cpp
   test_options_model.cpp
   test_onboarding_storage.cpp
@@ -85,6 +92,7 @@ qt6_add_resources(QMLTESTS_QRC_CPP ${QML_QRC} qml/bitcoin_qmltests.qrc)
 
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/backendexecutor.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/components/blockclockdial.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/controls/linegraph.cpp
   ${QMLTESTS_QRC_CPP}

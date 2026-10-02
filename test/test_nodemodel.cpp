@@ -142,7 +142,7 @@ private Q_SLOTS:
     void nodeInformationRowsExposeDiagnostics();
     void initEmitsRequestedInitialize();
     void initGuardBlocksSecondEmission();
-    void shutdownPollingStartsShutdownBeforeEmittingSignal();
+    void shutdownPollingOnlyRequestsLifecycleControl();
 };
 
 void NodeModelTests::refreshMempoolInfoUpdatesProperties()
@@ -380,7 +380,7 @@ void NodeModelTests::initializationFailureRequestsShutdownWhenCoreWasInterrupted
     QSignalSpy error_state_spy{&model, &NodeModel::errorStateChanged};
     QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
     QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
-    model.initializeResult(false, {});
+    model.initializeResult(false, {}, false, true);
 
     QCOMPARE(error_state_spy.count(), 1);
     QVERIFY(model.errorState());
@@ -424,7 +424,7 @@ void NodeModelTests::initializationSuccessDuringCoreShutdownSkipsReadyState()
     QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
     QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
     QSignalSpy ready_state_spy{&model, &NodeModel::chainStateReady};
-    model.initializeResult(true, {});
+    model.initializeResult(true, {}, false, true);
 
     QCOMPARE(shutdown_spy.count(), 1);
     QCOMPARE(initialized_spy.count(), 0);
@@ -663,7 +663,7 @@ void NodeModelTests::blockSyncActiveFollowsInitializationAndBlockTipState()
         .header_height = 100,
         .header_time = GetTime(),
         .verification_progress = 0.25,
-    });
+    }, initial_block_download, false);
 
     QCOMPARE(block_sync_spy.count(), 1);
     QVERIFY(model.blockSyncActive());
@@ -1549,7 +1549,7 @@ void NodeModelTests::initGuardBlocksSecondEmission()
     QCOMPARE(spy.count(), 1);
 }
 
-void NodeModelTests::shutdownPollingStartsShutdownBeforeEmittingSignal()
+void NodeModelTests::shutdownPollingOnlyRequestsLifecycleControl()
 {
     MockNode node;
     MempoolState mempool;
@@ -1561,17 +1561,13 @@ void NodeModelTests::shutdownPollingStartsShutdownBeforeEmittingSignal()
     WaitForInitialMempoolRefresh(mempool);
 
     QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
-    bool started_before_signal{false};
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
-    node.start_shutdown_fn = [&] {
-        started_before_signal = shutdown_spy.count() == 0;
-    };
-    node.ExpectExactly(node.calls.startShutdown, 1);
+    node.ExpectExactly(node.calls.startShutdown, 0);
 
     model.startShutdownPolling();
 
     QTRY_COMPARE_WITH_TIMEOUT(shutdown_spy.count(), 1, ASYNC_TIMEOUT_MS);
-    QVERIFY(started_before_signal);
+    QCOMPARE(node.calls.startShutdown.load(), 0);
 
     model.requestShutdown();
     QCOMPARE(shutdown_spy.count(), 1);
