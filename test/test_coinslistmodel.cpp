@@ -17,14 +17,14 @@ public:
     std::set<COutPoint> locked;
     std::map<CTxDestination, std::string> labels;
     CoinsList listCoins() override { return coins; }
-    bool isLockedCoin(const COutPoint& p) override { return locked.count(p); }
     void listLockedCoins(std::vector<COutPoint>& outputs) override { outputs.assign(locked.begin(), locked.end()); }
     std::vector<interfaces::WalletAddress> getAddresses() override {
         std::vector<interfaces::WalletAddress> result;
         result.reserve(labels.size());
-        for (const auto& [address, label] : labels) result.emplace_back(address, true, wallet::AddressPurpose::RECEIVE, label);
+        for (const auto& [destination, label] : labels) result.emplace_back(destination, true, wallet::AddressPurpose::RECEIVE, label);
         return result;
     }
+    bool isLockedCoin(const COutPoint& p) override { return locked.contains(p); }
     bool lockCoin(const COutPoint& p, bool) override { locked.insert(p); return true; }
     bool unlockCoin(const COutPoint& p) override { locked.erase(p); return true; }
     bool getAddress(const CTxDestination& d, std::string* name, wallet::AddressPurpose*) override {
@@ -126,11 +126,13 @@ private Q_SLOTS:
         coins->toggleCoinSelection(0);
         const auto id = coins->data(coins->index(0), CoinsListModel::CoinIdRole).toString();
         QVERIFY(coins->setCoinsLocked({id}, true));
-        QCOMPARE(coins->selectedCoinsCount(), 0);
+        QTRY_VERIFY(!coins->lockPending());
+        QTRY_COMPARE(coins->selectedCoinsCount(), 0);
         coins->setFilter("locked"); QTRY_COMPARE(coins->rowCount(), 1);
         coins->toggleCoinSelection(0); QCOMPARE(coins->selectedCoinsCount(), 1);
         QCOMPARE(coins->data(coins->index(0), CoinsListModel::CoinIdRole).toString(), id);
         QVERIFY(coins->setCoinsLocked({id}, false));
+        QTRY_VERIFY(!coins->lockPending());
         QTRY_COMPARE(coins->rowCount(), 0);
         coins->setFilter("spendable"); QCOMPARE(coins->rowCount(), 3);
         coins->setMinAmount(1500); QCOMPARE(coins->rowCount(), 2);

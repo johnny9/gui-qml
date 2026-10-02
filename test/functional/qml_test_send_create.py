@@ -9,7 +9,10 @@ from qml_wallet_test_lib import WalletFlowHarness, rpc_call
 
 def run_test():
     harness = WalletFlowHarness("qml_test_send_create", port_offset=90)
-    artifacts = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "build", "test-artifacts", "send-v3"))
+    artifacts = os.path.abspath(os.environ.get(
+        "QML_TEST_ARTIFACTS_DIR",
+        os.path.join(os.path.dirname(__file__), "..", "..", "build", "test-artifacts", "send-v3"),
+    ))
     os.makedirs(artifacts, exist_ok=True)
     try:
         harness.start_gui()
@@ -32,7 +35,8 @@ def run_test():
         assert gui.get_property("feeSelectionEstimateLabel", "value") == "—"
         gui.set_text("sendAmountInput", "")
         gui.save_screenshot(os.path.join(artifacts, "01-empty.png"))
-        gui.set_text("sendNoteInput", "My private note")
+        # TextArea edits require focus on Qt 6.4, which lacks textEdited.
+        gui.type_text("sendNoteInput", "My private note")
         uri = f"bitcoin:{addresses[1]}?amount=0.018&label=Alice&message=September%20rent"
         gui.set_clipboard_text(uri)
         gui.wait_for_property("clipboardUriPasteButton", "visible", True)
@@ -48,7 +52,7 @@ def run_test():
         gui.wait_for_property("sendRecipientCard_0", "expanded", False)
         gui.set_text("sendAddressInput", addresses[2])
         gui.set_text("sendAmountInput", "0.025")
-        gui.set_text("sendNoteInput", "Donation")
+        gui.type_text("sendNoteInput", "Donation")
         gui.click("feeSelectionPickerButton")
         gui.click("feeSelectionOption3")
         gui.set_text("feeSelectionCustomRateInput", "4.2")
@@ -88,10 +92,12 @@ def run_test():
         gui.click_list_item("coinSelectionListView", 0, "coinSelectionCheckbox")
         gui.wait_for_property("coinsLockButton", "enabled", True)
         gui.click("coinsLockButton")
+        gui.wait_for_property("coinSelectionItem_0", "locked", True)
         assert len(rpc_call(harness.gui_rpc_port, "listlockunspent", wallet="send_create")) == 1
         gui.click_list_item("coinSelectionListView", 0, "coinSelectionCheckbox")
         gui.wait_for_property("coinsUnlockButton", "enabled", True)
         gui.click("coinsUnlockButton")
+        gui.wait_for_property("coinSelectionItem_0", "locked", False)
         assert rpc_call(harness.gui_rpc_port, "listlockunspent", wallet="send_create") == []
         gui.set_property("appWindow", "width", 800)
         gui.set_property("appWindow", "height", 665)

@@ -41,6 +41,7 @@ class WalletQmlController : public QObject
     Q_PROPERTY(QString walletMigrationError READ walletMigrationError NOTIFY walletMigrationErrorChanged)
     Q_PROPERTY(QString lastImportedWalletName READ lastImportedWalletName NOTIFY lastImportedWalletInfoChanged)
     Q_PROPERTY(QString lastImportedWalletKeyScheme READ lastImportedWalletKeyScheme NOTIFY lastImportedWalletInfoChanged)
+    Q_PROPERTY(bool externalSignerPending READ externalSignerPending NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(bool canCreateExternalSignerWallet READ canCreateExternalSignerWallet NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString externalSignerName READ externalSignerName NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString externalSignerError READ externalSignerError NOTIFY externalSignerStatusChanged)
@@ -97,7 +98,8 @@ public:
     QString walletMigrationError() const { return m_wallet_migration_error; }
     QString lastImportedWalletName() const { return m_last_imported_wallet_name; }
     QString lastImportedWalletKeyScheme() const { return m_last_imported_wallet_key_scheme; }
-    bool canCreateExternalSignerWallet() const { return m_external_signer_path_configured && m_external_signer_count == 1; }
+    bool externalSignerPending() const { return m_signer_pending; }
+    bool canCreateExternalSignerWallet() const { return !m_signer_pending && m_external_signer_path_configured && m_external_signer_count == 1; }
     QString externalSignerName() const { return m_external_signer_name; }
     QString externalSignerError() const { return m_external_signer_error; }
     QString suggestedExternalSignerWalletName() const { return m_suggested_external_signer_wallet_name; }
@@ -149,6 +151,7 @@ private:
         Create,
     };
 
+    void finishExternalSignerWalletCreation();
     void consumeWalletNotifications();
     void handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet, const QString& name);
     WalletQmlModel* addOrSelectWalletModel(std::unique_ptr<interfaces::Wallet> wallet, const QString& name);
@@ -187,6 +190,10 @@ private:
 
     bool m_initialized{false};
     bool m_initializing{false};
+    bool m_signer_pending{false};
+    bool m_signer_refresh_requested{false};
+    quint64 m_signer_request_generation{0};
+    QString m_signer_wallet_name;
     interfaces::Node& m_node;
     WalletQmlModel* m_empty_wallet;
     WalletQmlModel* m_selected_wallet;

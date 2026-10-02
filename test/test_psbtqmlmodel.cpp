@@ -117,8 +117,8 @@ void PsbtQmlModelTests::initTestCase()
 
 void PsbtQmlModelTests::loadsRawAndBase64Psbt()
 {
-    PsbtTestWallet wallet;
-    PsbtQmlModel model{&wallet, nullptr};
+    auto wallet_handle = std::make_shared<PsbtTestWallet>();
+    PsbtQmlModel model{wallet_handle, nullptr};
     const PartiallySignedTransaction psbt{MakeUnsignedPsbt()};
 
     QTemporaryDir temp_dir;
@@ -126,6 +126,7 @@ void PsbtQmlModelTests::loadsRawAndBase64Psbt()
     const QString raw_path{temp_dir.filePath(QStringLiteral("raw.psbt"))};
     QCOMPARE(PsbtQmlModel::SavePsbtToFile(psbt, raw_path), QString{});
     QCOMPARE(model.loadFromFile(raw_path), QString{});
+    QTRY_VERIFY(!model.pending());
     QVERIFY(model.loaded());
     QVERIFY(model.canSign());
     QCOMPARE(model.couldSignInputCount(), 1);
@@ -140,6 +141,7 @@ void PsbtQmlModelTests::loadsRawAndBase64Psbt()
 
     model.clear();
     QCOMPARE(model.loadFromFile(base64_path), QString{});
+    QTRY_VERIFY(!model.pending());
     QVERIFY(model.loaded());
     QCOMPARE(model.unsignedInputCount(), 1);
 }
@@ -155,7 +157,8 @@ void PsbtQmlModelTests::invalidFileSetsErrorAndClearResetsState()
     file.close();
 
     PsbtQmlModel model{nullptr, nullptr};
-    QVERIFY(!model.loadFromFile(path).isEmpty());
+    QCOMPARE(model.loadFromFile(path), QString{});
+    QTRY_VERIFY(!model.pending());
     QVERIFY(!model.loaded());
     QVERIFY(!model.error().isEmpty());
 
@@ -166,16 +169,19 @@ void PsbtQmlModelTests::invalidFileSetsErrorAndClearResetsState()
 
 void PsbtQmlModelTests::signUsesInjectedWallet()
 {
-    PsbtTestWallet wallet;
-    PsbtQmlModel model{&wallet, nullptr};
+    auto wallet_handle = std::make_shared<PsbtTestWallet>();
+    auto& wallet = *wallet_handle;
+    PsbtQmlModel model{wallet_handle, nullptr};
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
     const QString path{temp_dir.filePath(QStringLiteral("unsigned.psbt"))};
     QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeUnsignedPsbt(), path), QString{});
     QCOMPARE(model.loadFromFile(path), QString{});
+    QTRY_VERIFY(!model.pending());
 
     model.sign();
+    QTRY_VERIFY(!model.pending());
     QCOMPARE(wallet.sign_args, std::vector<bool>({false, true, false}));
     QVERIFY(model.status().contains(QStringLiteral("Signed 1 input")));
 }
@@ -195,7 +201,9 @@ void PsbtQmlModelTests::savePreservesPsbtMetadata()
 
     PsbtQmlModel model{nullptr, nullptr};
     QCOMPARE(model.loadFromFile(source_path), QString{});
+    QTRY_VERIFY(!model.pending());
     QCOMPARE(model.saveToFile(saved_path), QString{});
+    QTRY_VERIFY(!model.pending());
 
     const auto saved{DecodeRawPsbt(saved_path)};
     QVERIFY(saved.has_value());
@@ -218,10 +226,12 @@ void PsbtQmlModelTests::broadcastsCompletePsbt()
 
     PsbtQmlModel model{nullptr, &node};
     QCOMPARE(model.loadFromFile(path), QString{});
+    QTRY_VERIFY(!model.pending());
     QVERIFY(model.complete());
     QVERIFY(model.canBroadcast());
 
     model.broadcast();
+    QTRY_VERIFY(!model.pending());
     QVERIFY(model.status().startsWith(QStringLiteral("Transaction broadcast successfully.")));
     QCOMPARE(node.calls.broadcastTransaction.load(), 1);
 }

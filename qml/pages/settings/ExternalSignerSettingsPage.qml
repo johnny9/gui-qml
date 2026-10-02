@@ -22,6 +22,7 @@ SettingsPage {
         && walletController.canCreateExternalSignerWallet
     readonly property string signerStatusText: {
         if (root.signerPathError.length > 0) return root.signerPathError
+        if (walletController.externalSignerPending) return qsTr("Checking external signer…")
         if (walletController.canCreateExternalSignerWallet) {
             return qsTr("Detected external signer: %1").arg(walletController.externalSignerName)
         }
@@ -167,9 +168,9 @@ SettingsPage {
                     Layout.preferredWidth: 140
                     Layout.preferredHeight: 40
                     Layout.alignment: Qt.AlignVCenter
-                    text: qsTr("Check device")
+                    text: walletController.externalSignerPending ? qsTr("Checking…") : qsTr("Check device")
                     textStyle: Theme.text.subheading
-                    enabled: root.signerPathError.length === 0 && !optionsModel.settingsPending
+                    enabled: root.signerPathError.length === 0 && !walletController.externalSignerPending && !optionsModel.settingsPending
                         && root.signerStatus.canEdit !== false
                     onClicked: root.checkDevice()
                 }

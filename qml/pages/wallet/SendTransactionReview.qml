@@ -68,22 +68,38 @@ Page {
         else commitSend()
     }
 
-    function commitSend() {
-        if (sending || !wallet) return
-        if (wallet.sendTransaction()) {
-            sending = true
+    function finishSend(success) {
+        sendPassphrasePopup.busy = false
+        if (success) {
+            sendPassphrasePopup.close()
             transactionSent(transaction ? transaction.txid : "")
-        } else if (wallet.transactionNeedsUnlock) {
-            sendPassphrasePopup.errorText = ""
-            sendPassphrasePopup.open()
+        } else {
+            sending = false
+            if (wallet && wallet.transactionNeedsUnlock) {
+                sendPassphrasePopup.errorText = sendPassphrasePopup.opened ? wallet.transactionError : ""
+                if (root.visible) sendPassphrasePopup.open()
+            }
         }
     }
 
+    function commitSend() {
+        if (sending || !wallet || wallet.transactionPending) return
+        sending = true
+        if (!wallet.sendTransaction()) finishSend(false)
+    }
+
     function commitBroadcast() {
-        if (sending || !wallet) return
-        if (wallet.broadcastCurrentTransaction()) {
-            sending = true
-            transactionSent(transaction ? transaction.txid : "")
+        if (sending || !wallet || wallet.transactionPending) return
+        sending = true
+        if (!wallet.broadcastCurrentTransaction()) finishSend(false)
+    }
+
+    Connections {
+        target: root.wallet
+        function onTransactionSent(success) { if (root.sending) root.finishSend(success) }
+        function onPsbtSaved(error) {
+            root.saveStatus = error.length ? error : qsTr("Saved.")
+            root.saveError = error.length > 0
         }
     }
 
@@ -95,7 +111,7 @@ Page {
     function savePsbt(path) {
         if (!wallet || !String(path).length) return
         const result = wallet.saveCurrentTransactionAsPsbt(String(path))
-        saveStatus = result.length ? result : qsTr("Saved.")
+        saveStatus = result.length ? result : qsTr("Saving…")
         saveError = result.length > 0
     }
 
@@ -307,7 +323,7 @@ Page {
                 NeutralButton {
                     objectName: "sendTransactionReviewSaveButton"
                     buttonSize: NeutralButton.Large
-                    enabled: !!root.transaction && !root.sending
+                    enabled: !!root.transaction && !root.sending && !root.wallet.transactionPending
                     width: parent.width < 540 || !root.showSend && !root.showBroadcast || externalSignerActions.visible
                         ? parent.width : (parent.width - 12) / 2
                     height: 46
@@ -317,7 +333,7 @@ Page {
                 ContinueButton {
                     objectName: "sendTransactionReviewSendButton"
                     visible: (root.showSend && !externalSignerActions.visible) || root.showBroadcast
-                    enabled: !root.sending
+                    enabled: !root.sending && root.wallet && !root.wallet.transactionPending
                     width: parent.width < 540 ? parent.width : (parent.width - 12) / 2
                     height: 46
                     text: root.showBroadcast ? qsTr("Broadcast transaction") : qsTr("Send transaction")
@@ -381,15 +397,8 @@ Page {
         busyConfirmText: qsTr("Unlocking...")
         onSubmitted: (passphrase) => {
             busy = true
-            if (root.wallet.sendTransactionWithPassphrase(passphrase)) {
-                busy = false
-                close()
-                root.sending = true
-                root.transactionSent(root.transaction ? root.transaction.txid : "")
-            } else {
-                busy = false
-                errorText = root.wallet.transactionError
-            }
+            root.sending = true
+            if (!root.wallet.sendTransactionWithPassphrase(passphrase)) root.finishSend(false)
         }
     }
 }

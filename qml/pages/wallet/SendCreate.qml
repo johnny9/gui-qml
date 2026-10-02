@@ -20,6 +20,10 @@ PageStack {
     property SendRecipient recipient: wallet.recipients.current
     property string prepareTransactionErrorText: ""
     property bool manualCoinSelection: false
+    property bool preparingTransaction: false
+    property double paymentFileRequest: 0
+    property int paymentInputRevision: 0
+    property int paymentFileRevision: 0
     readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
     readonly property string recipientValidationError: wallet ? wallet.recipients.validationError : ""
     readonly property bool selectedInputsActive: wallet !== null
@@ -50,11 +54,21 @@ PageStack {
     }
 
     function prepareTransactionForReview() {
+        if (!root.wallet || root.wallet.transactionPending) return
         root.clearPrepareTransactionError()
-        if (root.wallet.prepareTransaction()) root.openTransactionReview()
-        else if (root.wallet.transactionNeedsUnlock) {
-            reviewPassphrasePopup.errorText = ""
-            reviewPassphrasePopup.open()
+        root.preparingTransaction = true
+        if (!root.wallet.prepareTransaction()) root.handlePreparationResult(false)
+    }
+
+    function handlePreparationResult(success) {
+        root.preparingTransaction = false
+        reviewPassphrasePopup.busy = false
+        if (success) {
+            reviewPassphrasePopup.close()
+            if (root.visible) root.openTransactionReview()
+        } else if (root.wallet.transactionNeedsUnlock) {
+            reviewPassphrasePopup.errorText = reviewPassphrasePopup.opened ? root.wallet.transactionError : ""
+            if (root.visible) reviewPassphrasePopup.open()
         } else root.prepareTransactionErrorText = root.wallet.transactionError.length > 0
             ? root.displayTransactionError(root.wallet.transactionError)
             : root.selectedInputsActive ? root.selectedInputsBalanceErrorText : root.availableBalanceErrorText
@@ -115,6 +129,7 @@ PageStack {
     }
 
     function scheduleFeeEstimates() {
+        ++root.paymentInputRevision
         if (root.wallet) {
             root.wallet.scheduleFeeEstimates()
         }
@@ -130,7 +145,13 @@ PageStack {
         if (visible) sendPage.checkClipboard()
         else reviewSweepAlert.close()
     }
-    onWalletChanged: reviewSweepAlert.close()
+    onWalletChanged: {
+        reviewSweepAlert.close()
+        preparingTransaction = false
+        paymentFileRequest = 0
+        ++paymentInputRevision
+        reviewPassphrasePopup.close()
+    }
 
     Connections {
         target: walletController
@@ -156,6 +177,7 @@ PageStack {
 
     Connections {
         target: root.wallet ? root.wallet.recipients : null
+        function onDataChanged() { ++root.paymentInputRevision }
         function onListCleared() {
             root.clearPrepareTransactionError()
             sendPage.expandedRecipient = 0
@@ -191,11 +213,31 @@ PageStack {
     Connections {
         target: root.wallet
         function onCurrentTransactionChanged() { reviewSweepAlert.close() }
+        function onTransactionPrepared(success) {
+            if (root.preparingTransaction) root.handlePreparationResult(success)
+        }
+        function onPsbtImported(result) {
+            if (root.visible) sendPage.handlePsbtImportResult(result)
+        }
         function onCustomFeeEnabledChanged() {
             root.clearPrepareTransactionError()
         }
         function onCustomFeeRateChanged() {
             root.clearPrepareTransactionError()
+        }
+    }
+
+    Connections {
+        target: BitcoinUri
+        function onFileParsed(requestId, result) {
+            if (requestId !== root.paymentFileRequest) return
+            root.paymentFileRequest = 0
+            if (root.paymentFileRevision !== root.paymentInputRevision) {
+                sendPage.paymentRequestStatus = qsTr("The payment changed while reading the file. Import it again.")
+                sendPage.paymentRequestIsError = true
+                return
+            }
+            sendPage.applyParsedPaymentRequest(result, qsTr("file"))
         }
     }
 
@@ -576,8 +618,10 @@ PageStack {
 
         // Parse a URI from a file path and apply to form.
         function applyPaymentRequestFromFile(path) {
-            const result = BitcoinUri.parseBitcoinUriFromFile(path)
-            applyParsedPaymentRequest(result, qsTr("file"))
+            root.paymentFileRevision = root.paymentInputRevision
+            root.paymentFileRequest = BitcoinUri.parseBitcoinUriFromFile(path)
+            paymentRequestStatus = root.paymentFileRequest ? qsTr("Reading payment request…") : qsTr("The application is shutting down.")
+            paymentRequestIsError = !root.paymentFileRequest
         }
 
         AlertPopup {
@@ -1047,7 +1091,7 @@ PageStack {
                                 objectName: "sendReviewButton"
                                 Layout.fillWidth: true
                                 text: qsTr("Review Transaction")
-                                enabled: root.wallet && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending
+                                enabled: root.wallet && !root.wallet.transactionPending && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending
                                     && !root.wallet.sendAmountExhaustsBalance && (!root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                                 onClicked: root.confirmTransactionReview()
                             }
@@ -1157,14 +1201,8 @@ PageStack {
         busyConfirmText: qsTr("Unlocking...")
         onSubmitted: (passphrase) => {
             reviewPassphrasePopup.busy = true
-            if (root.wallet.prepareTransactionWithPassphrase(passphrase)) {
-                reviewPassphrasePopup.busy = false
-                reviewPassphrasePopup.close()
-                root.openTransactionReview()
-                return
-            }
-            reviewPassphrasePopup.busy = false
-            reviewPassphrasePopup.errorText = root.wallet.transactionError
+            root.preparingTransaction = true
+            if (!root.wallet.prepareTransactionWithPassphrase(passphrase)) root.handlePreparationResult(false)
         }
     }
 }

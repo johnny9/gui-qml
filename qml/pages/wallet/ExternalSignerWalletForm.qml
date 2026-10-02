@@ -37,7 +37,8 @@ OnboardingView {
 
     title: ""
     heading: qsTr("External signer wallet")
-    subheading: walletController.externalSignerError.length > 0
+    subheading: walletController.externalSignerPending ? qsTr("Checking external signer…")
+        : walletController.externalSignerError.length > 0
         ? walletController.externalSignerError
         : walletController.externalSignerName.length > 0
           ? qsTr("Connected signer: %1").arg(walletController.externalSignerName)

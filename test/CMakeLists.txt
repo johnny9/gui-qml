@@ -28,8 +28,8 @@ add_executable(bitcoinqml_unit_tests
   test_peerlistmodel.cpp
   test_peerstatsutil.cpp
   test_psbtqmlmodel.cpp
-  test_walletsecurityasync.cpp
   test_walletqmlmodel.cpp
+  test_walletsecurityasync.cpp
   test_walletqmlmodeltransaction.cpp
   test_qmlbitcoinunits.cpp
   test_imageprovider.cpp
@@ -105,8 +105,8 @@ qt6_add_resources(QMLTESTS_QRC_CPP ${QML_QRC} qml/bitcoin_qmltests.qrc)
 
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/imagesavemodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/backendexecutor.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/imagesavemodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/components/blockclockdial.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/controls/linegraph.cpp
   ${QMLTESTS_QRC_CPP}

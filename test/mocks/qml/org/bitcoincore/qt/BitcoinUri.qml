@@ -59,7 +59,11 @@ QtObject {
         return result
     }
 
+    property int nextFileRequest: 0
+    signal fileParsed(double requestId, var result)
     function parseBitcoinUriFromFile(_sourcePath) {
-        return { success: false, error: "File parsing is unavailable in QML unit tests." }
+        const request = ++nextFileRequest
+        Qt.callLater(function() { fileParsed(request, { success: false, error: "File parsing is unavailable in QML unit tests." }) })
+        return request
     }
 }

@@ -59,6 +59,7 @@ Popup {
     }
 
     onClosed: {
+        speedUpPassphrasePopup.close()
         if (root.bumpModel) {
             root.bumpModel.reset()
         }
@@ -82,8 +83,16 @@ Popup {
 
     Connections {
         target: root.bumpModel
+        function onOperationFinished(success) {
+            speedUpPassphrasePopup.busy = false
+            if (success) speedUpPassphrasePopup.close()
+            else if (root.bumpModel && root.bumpModel.needsUnlock && root.opened) {
+                speedUpPassphrasePopup.errorText = speedUpPassphrasePopup.opened ? root.bumpModel.errorText : ""
+                speedUpPassphrasePopup.open()
+            }
+        }
         function onStateChanged() {
-            if (root.bumpModel && root.bumpModel.state === BumpTransactionModel.Succeeded) {
+            if (root.opened && root.bumpModel && root.bumpModel.state === BumpTransactionModel.Succeeded) {
                 root.newTxid = root.bumpModel.newTxid
                 root.close()
                 root.bumpSucceeded()
@@ -181,11 +190,7 @@ Popup {
                     if (!root.bumpModel) {
                         return
                     }
-                    if (!root.bumpModel.confirmFeeBump() && root.bumpModel.needsUnlock) {
-                        speedUpPassphrasePopup.busy = false
-                        speedUpPassphrasePopup.errorText = ""
-                        speedUpPassphrasePopup.open()
-                    }
+                    root.bumpModel.confirmFeeBump()
                 }
             }
         }
@@ -209,13 +214,10 @@ Popup {
                 return
             }
             speedUpPassphrasePopup.busy = true
-            if (root.bumpModel.confirmFeeBumpWithPassphrase(passphrase)) {
+            if (!root.bumpModel.confirmFeeBumpWithPassphrase(passphrase)) {
                 speedUpPassphrasePopup.busy = false
-                speedUpPassphrasePopup.close()
-                return
+                speedUpPassphrasePopup.errorText = root.bumpModel.errorText
             }
-            speedUpPassphrasePopup.busy = false
-            speedUpPassphrasePopup.errorText = root.bumpModel.errorText
         }
     }
 

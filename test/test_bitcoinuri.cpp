@@ -6,6 +6,17 @@
 
 #include <chainparams.h>
 #include <qml/models/bitcoinuri.h>
+#include <qml/models/bitcoinurimodel.h>
+
+#include <QSignalSpy>
+#include <QTemporaryFile>
+#include <QTemporaryDir>
+#include <QTimer>
+#ifdef Q_OS_UNIX
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 #include <util/chaintype.h>
 
 // A known valid mainnet P2WPKH bech32 address used across most tests.
@@ -19,6 +30,49 @@ class BitcoinUriTests : public QObject
 
 private Q_SLOTS:
     void initTestCase();
+    void fileImportCompletesWithRequestIdentity()
+    {
+        QTemporaryFile file;
+        QVERIFY(file.open());
+        file.write((QStringLiteral("bitcoin:") + TEST_ADDRESS + QStringLiteral("?amount=0.01")).toUtf8());
+        file.flush();
+        BitcoinUriModel model;
+        QSignalSpy parsed(&model, &BitcoinUriModel::fileParsed);
+        const auto request = model.parseBitcoinUriFromFile(file.fileName());
+        QCOMPARE(parsed.count(), 0);
+        QTRY_COMPARE(parsed.count(), 1);
+        QCOMPARE(parsed.front().at(0).toULongLong(), request);
+        const auto result = parsed.front().at(1).toMap();
+        QVERIFY(result.value("success").toBool());
+        QCOMPARE(result.value("amountSats").toLongLong(), 1'000'000);
+    }
+
+    void blockedFileReadKeepsGuiAndShutdownResponsive()
+    {
+#ifdef Q_OS_UNIX
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = QFile::encodeName(dir.filePath("payment.fifo"));
+        QVERIFY(::mkfifo(path.constData(), 0600) == 0);
+        BitcoinUriModel model;
+        QSignalSpy parsed(&model, &BitcoinUriModel::fileParsed);
+        QSignalSpy drained(&model, &BitcoinUriModel::shutdownFinished);
+        model.parseBitcoinUriFromFile(QString::fromLocal8Bit(path));
+        int writer{-1};
+        QTRY_VERIFY(writer >= 0 || (writer = ::open(path.constData(), O_WRONLY | O_NONBLOCK)) >= 0);
+        bool gui_callback{false};
+        QTimer::singleShot(0, &model, [&] { gui_callback = true; });
+        QTRY_VERIFY(gui_callback);
+        model.beginShutdown();
+        QCOMPARE(drained.count(), 0);
+        ::close(writer);
+        QTRY_COMPARE(drained.count(), 1);
+        QCOMPARE(parsed.count(), 0);
+#else
+        QSKIP("FIFO blocking read fixture requires Unix.");
+#endif
+    }
+
 
     void parse_valid_uri_with_amount_label_and_message();
     void parse_valid_uri_address_only();

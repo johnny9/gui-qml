@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/psbtqmlmodel.h>
+#include <qml/backendexecutor.h>
 
 #include <common/messages.h>
 #include <interfaces/node.h>
@@ -108,7 +109,9 @@ QString PsbtQmlModel::LoadPsbtFromFile(const QString& path, PartiallySignedTrans
         return tr("PSBT file must be smaller than 100 MiB");
     }
 
-    const QByteArray bytes{file.readAll()};
+    const QByteArray bytes{file.read(MAX_FILE_SIZE_PSBT + 1)};
+    if (bytes.size() > MAX_FILE_SIZE_PSBT) return tr("PSBT file must be smaller than 100 MiB");
+    if (file.error() != QFileDevice::NoError) return tr("Could not read PSBT file: %1").arg(file.errorString());
     const auto raw_result{DecodePsbtFromBytes(bytes)};
     if (raw_result) {
         psbt = *raw_result;
@@ -176,15 +179,25 @@ std::optional<std::pair<int, int>> PsbtQmlModel::MultisigPsbtInputSigInfo(const 
     return std::nullopt;
 }
 
-PsbtQmlModel::PsbtQmlModel(interfaces::Wallet* wallet, interfaces::Node* node, QObject* parent)
+PsbtQmlModel::PsbtQmlModel(std::shared_ptr<interfaces::Wallet> wallet, interfaces::Node* node, QObject* parent, std::shared_ptr<BackendExecutor> executor)
     : QObject(parent)
-    , m_wallet(wallet)
+    , m_wallet(std::move(wallet))
+    , m_executor(executor ? std::move(executor) : std::make_shared<BackendExecutor>())
     , m_node(node)
 {
 }
 
+void PsbtQmlModel::detachWallet()
+{
+    ++m_generation;
+    m_wallet.reset();
+    m_node = nullptr;
+}
+
 void PsbtQmlModel::clear()
 {
+    ++m_generation;
+    m_pending = false;
     m_psbt.reset();
     m_status.clear();
     m_error.clear();
@@ -200,6 +213,8 @@ void PsbtQmlModel::clear()
 
 void PsbtQmlModel::setError(const QString& error)
 {
+    ++m_generation;
+    m_pending = false;
     m_psbt.reset();
     m_status.clear();
     m_error = error;
@@ -221,144 +236,123 @@ void PsbtQmlModel::setMatchedTxid(const QString& txid)
 
 QString PsbtQmlModel::loadFromFile(const QString& path)
 {
-    CMutableTransaction empty_tx;
-    PartiallySignedTransaction psbt{empty_tx};
-    const QString error{LoadPsbtFromFile(path, psbt)};
-    if (!error.isEmpty()) {
-        setError(error);
-        return error;
-    }
-
-    m_psbt = std::make_unique<PartiallySignedTransaction>(std::move(psbt));
-    refreshState();
-    return QString{};
+    return startOperation(Operation::Load, path) ? QString{} : tr("A PSBT operation is already in progress.");
 }
 
-void PsbtQmlModel::sign()
-{
-    if (!m_psbt || !m_wallet) {
-        setError(tr("No signable PSBT is loaded."));
-        return;
-    }
-    if (m_wallet->privateKeysDisabled()) {
-        refreshState(tr("This wallet cannot sign transactions because private keys are disabled."));
-        return;
-    }
-
-    bool complete{false};
-    size_t signed_inputs{0};
-    const std::optional<common::PSBTError> error{
-        m_wallet->fillPSBT({.sign = true, .bip32_derivs = true}, &signed_inputs, *m_psbt, complete)};
-    if (error) {
-        refreshState(tr("Could not sign PSBT: %1").arg(PsbtErrorText(*error)));
-        return;
-    }
-
-    if (complete) {
-        refreshState(tr("PSBT signed. Transaction is ready for broadcast."));
-    } else if (signed_inputs > 0) {
-        refreshState(tr("Signed %n input(s). More signatures are still required.", "", static_cast<int>(signed_inputs)));
-    } else {
-        refreshState(tr("This wallet could not add any signatures to the PSBT."));
-    }
-}
-
-void PsbtQmlModel::broadcast()
-{
-    if (!m_psbt) {
-        setError(tr("No PSBT is loaded."));
-        return;
-    }
-    if (!m_node) {
-        refreshState(tr("Cannot broadcast from this context because the node interface is unavailable."));
-        return;
-    }
-
-    CMutableTransaction mutable_tx;
-    if (!FinalizeAndExtractPSBT(*m_psbt, mutable_tx)) {
-        refreshState(tr("PSBT is not complete and cannot be broadcast."));
-        return;
-    }
-
-    const CTransactionRef tx{MakeTransactionRef(std::move(mutable_tx))};
-    std::string error_string;
-    const node::TransactionError error{m_node->broadcastTransaction(tx, node::DEFAULT_MAX_RAW_TX_FEE_RATE.GetFeePerK(), error_string)};
-    if (error == node::TransactionError::OK) {
-        refreshState(tr("Transaction broadcast successfully. Transaction ID: %1").arg(QString::fromStdString(tx->GetHash().ToString())));
-    } else {
-        QString message{TransactionErrorText(error)};
-        if (!error_string.empty()) {
-            message += QStringLiteral(": ") + QString::fromStdString(error_string);
-        }
-        refreshState(tr("Transaction broadcast failed: %1").arg(message));
-    }
-}
-
-void PsbtQmlModel::copyToClipboard()
-{
-    if (!m_psbt) {
-        return;
-    }
-    QGuiApplication::clipboard()->setText(SerializePsbtBase64(*m_psbt));
-    refreshState(tr("PSBT copied to clipboard."));
-}
+void PsbtQmlModel::sign() { startOperation(Operation::Sign); }
+void PsbtQmlModel::broadcast() { startOperation(Operation::Broadcast); }
+void PsbtQmlModel::copyToClipboard() { startOperation(Operation::Copy); }
 
 QString PsbtQmlModel::saveToFile(const QString& path)
 {
-    if (!m_psbt) {
-        const QString err{tr("No PSBT is loaded.")};
-        refreshState(err);
-        return err;
-    }
-    const QString err{SavePsbtToFile(*m_psbt, path)};
-    if (!err.isEmpty()) {
-        refreshState(err);
-        return err;
-    }
-    refreshState(tr("PSBT saved."));
-    return QString{};
+    if (!m_psbt) return tr("No PSBT is loaded.");
+    return startOperation(Operation::Save, path) ? QString{} : tr("A PSBT operation is already in progress.");
 }
 
 void PsbtQmlModel::refreshState(const QString& status_override)
 {
-    if (!m_psbt) {
-        return;
-    }
-    bool complete{FinalizePSBT(*m_psbt)};
-    size_t could_sign{0};
-    std::optional<common::PSBTError> fill_error;
-    if (m_wallet) {
-        fill_error = m_wallet->fillPSBT({.sign = false, .bip32_derivs = true}, &could_sign, *m_psbt, complete);
-    }
-
-    m_error = fill_error ? PsbtErrorText(*fill_error) : QString();
-    m_complete = complete;
-    m_can_broadcast = complete;
-    m_could_sign_inputs = static_cast<int>(could_sign);
-    m_unsigned_inputs = static_cast<int>(CountPSBTUnsignedInputs(*m_psbt));
-    m_can_sign = !complete && m_wallet && !m_wallet->privateKeysDisabled() && could_sign > 0;
-    m_summary = buildSummary(*m_psbt);
-
-    if (!status_override.isEmpty()) {
-        m_status = status_override;
-    } else if (!m_error.isEmpty()) {
-        m_status = m_error;
-    } else if (complete) {
-        m_status = tr("Transaction is fully signed and ready for broadcast.");
-    } else if (!m_wallet) {
-        m_status = tr("No wallet is loaded. You can inspect, copy, or save this PSBT.");
-    } else if (m_wallet->privateKeysDisabled()) {
-        m_status = tr("This wallet cannot sign transactions because private keys are disabled.");
-    } else if (could_sign > 0) {
-        m_status = tr("This wallet can sign %n input(s).", "", static_cast<int>(could_sign));
-    } else {
-        m_status = tr("This wallet does not have the right keys to sign this PSBT.");
-    }
-
-    Q_EMIT changed();
+    startOperation(Operation::Refresh, {}, status_override);
 }
 
-QStringList PsbtQmlModel::buildSummary(const PartiallySignedTransaction& psbt) const
+bool PsbtQmlModel::startOperation(Operation operation, const QString& path, const QString& status)
+{
+    if (m_pending || (operation != Operation::Load && !m_psbt)) return false;
+    const auto generation = ++m_generation;
+    const auto current = m_psbt ? std::optional{*m_psbt} : std::nullopt;
+    m_pending = true;
+    Q_EMIT changed();
+    struct Result {
+        std::optional<PartiallySignedTransaction> psbt;
+        QString status;
+        QString error;
+        QString clipboard;
+        QStringList summary;
+        bool complete{false};
+        bool can_sign{false};
+        int unsigned_inputs{0};
+        int could_sign{0};
+    };
+    const bool accepted = m_executor->submit(this, [wallet = m_wallet, node = m_node, current, operation, path, status] {
+        Result out;
+        out.psbt = current.value_or(PartiallySignedTransaction{CMutableTransaction{}});
+        out.status = status;
+        if (operation == Operation::Load) out.error = LoadPsbtFromFile(path, *out.psbt);
+        if (!out.error.isEmpty()) { out.psbt.reset(); return out; }
+        if (operation == Operation::Sign) {
+            if (!wallet || wallet->privateKeysDisabled()) {
+                out.status = tr("This wallet cannot sign transactions because private keys are disabled.");
+            } else {
+                size_t signed_inputs{0};
+                bool complete{false};
+                const auto error = wallet->fillPSBT({.sign = true, .bip32_derivs = true}, &signed_inputs, *out.psbt, complete);
+                if (error) out.error = tr("Could not sign PSBT: %1").arg(PsbtErrorText(*error));
+                else if (complete) out.status = tr("PSBT signed. Transaction is ready for broadcast.");
+                else if (signed_inputs) out.status = tr("Signed %n input(s). More signatures are still required.", "", static_cast<int>(signed_inputs));
+                else out.status = tr("This wallet could not add any signatures to the PSBT.");
+            }
+        } else if (operation == Operation::Broadcast) {
+            CMutableTransaction tx;
+            if (!node) out.error = tr("Cannot broadcast from this context because the node interface is unavailable.");
+            else if (!FinalizeAndExtractPSBT(*out.psbt, tx)) out.error = tr("PSBT is not complete and cannot be broadcast.");
+            else {
+                const auto transaction = MakeTransactionRef(std::move(tx));
+                std::string detail;
+                const auto error = node->broadcastTransaction(transaction, node::DEFAULT_MAX_RAW_TX_FEE_RATE.GetFeePerK(), detail);
+                if (error == node::TransactionError::OK) out.status = tr("Transaction broadcast successfully. Transaction ID: %1").arg(QString::fromStdString(transaction->GetHash().ToString()));
+                else out.error = tr("Transaction broadcast failed: %1").arg(TransactionErrorText(error) + QString::fromStdString(detail.empty() ? "" : ": " + detail));
+            }
+        } else if (operation == Operation::Save) {
+            out.error = SavePsbtToFile(*out.psbt, path);
+            out.status = tr("PSBT saved.");
+        } else if (operation == Operation::Copy) {
+            out.clipboard = SerializePsbtBase64(*out.psbt);
+            out.status = tr("PSBT copied to clipboard.");
+        }
+        out.complete = FinalizePSBT(*out.psbt);
+        size_t could_sign{0};
+        if (wallet) {
+            if (const auto error = wallet->fillPSBT({.sign = false, .bip32_derivs = true}, &could_sign, *out.psbt, out.complete); error && out.error.isEmpty()) out.error = PsbtErrorText(*error);
+        }
+        out.could_sign = static_cast<int>(could_sign);
+        out.unsigned_inputs = static_cast<int>(CountPSBTUnsignedInputs(*out.psbt));
+        out.can_sign = !out.complete && wallet && !wallet->privateKeysDisabled() && could_sign > 0;
+        out.summary = buildSummary(*out.psbt, wallet.get());
+        if (!out.error.isEmpty()) out.status = out.error;
+        else if (out.status.isEmpty()) {
+            if (out.complete) out.status = tr("Transaction is fully signed and ready for broadcast.");
+            else if (!wallet) out.status = tr("No wallet is loaded. You can inspect, copy, or save this PSBT.");
+            else if (wallet->privateKeysDisabled()) out.status = tr("This wallet cannot sign transactions because private keys are disabled.");
+            else if (could_sign) out.status = tr("This wallet can sign %n input(s).", "", static_cast<int>(could_sign));
+            else out.status = tr("This wallet does not have the right keys to sign this PSBT.");
+        }
+        return out;
+    }, [this, generation](Result out) {
+        if (generation != m_generation) return;
+        m_pending = false;
+        m_psbt = out.psbt ? std::make_unique<PartiallySignedTransaction>(std::move(*out.psbt)) : nullptr;
+        m_status = out.status;
+        m_error = out.error;
+        m_summary = std::move(out.summary);
+        m_complete = out.complete;
+        m_can_broadcast = out.complete;
+        m_can_sign = out.can_sign;
+        m_unsigned_inputs = out.unsigned_inputs;
+        m_could_sign_inputs = out.could_sign;
+        if (!out.clipboard.isEmpty()) QGuiApplication::clipboard()->setText(out.clipboard);
+        Q_EMIT changed();
+        Q_EMIT operationFinished(out.error.isEmpty());
+    }, [this, generation](std::exception_ptr) {
+        if (generation != m_generation) return;
+        m_pending = false;
+        m_error = tr("The PSBT operation failed.");
+        Q_EMIT changed();
+        Q_EMIT operationFinished(false);
+    });
+    if (!accepted) { m_pending = false; Q_EMIT changed(); }
+    return accepted;
+}
+
+QStringList PsbtQmlModel::buildSummary(const PartiallySignedTransaction& psbt, interfaces::Wallet* wallet)
 {
     QStringList lines;
     const auto unsigned_tx{psbt.GetUnsignedTx()};
@@ -372,7 +366,7 @@ QStringList PsbtQmlModel::buildSummary(const PartiallySignedTransaction& psbt) c
         total += output.nValue;
         CTxDestination destination;
         const QString address{ExtractDestination(output.scriptPubKey, destination) ? QString::fromStdString(EncodeDestination(destination)) : tr("unknown destination")};
-        const bool own_address{m_wallet && m_wallet->txoutIsMine(output)};
+        const bool own_address{wallet && wallet->txoutIsMine(output)};
         lines << tr("Sends %1 to %2%3").arg(FormatBtc(output.nValue), address, own_address ? tr(" (own address)") : QString());
     }
 
