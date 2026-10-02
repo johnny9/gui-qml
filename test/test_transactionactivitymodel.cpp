@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <test/asyncwallet.h>
 #include <qml/models/activityfilterproxymodel.h>
 #include <qml/models/transactionactivitymodel.h>
 #include <qml/models/sendrecipient.h>
@@ -736,6 +737,10 @@ void TransactionActivityModelTests::savesBatchRecipientNotesWhenSending()
     auto request = Request(1, Address(batch, 1), "Public request name");
     request.recipient.noteSelf = "Private request note";
     f.request(request);
+    QSignalSpy snapshot(f.wallet.get(), &WalletQmlModel::walletStateChanged);
+    f.wallet->requestWalletStateRefresh();
+    QTRY_VERIFY(!snapshot.isEmpty());
+    QCOMPARE(f.wallet->hasExternalSigner(), externalSigner);
 
     auto* source = f.model();
     auto* recipients = f.wallet->sendRecipientList();
@@ -747,16 +752,16 @@ void TransactionActivityModelTests::savesBatchRecipientNotesWhenSending()
         recipient->setLabel(notes[i]);
         recipient->amount()->setSatoshi(batch.tx->vout[i].nValue);
     }
-    QVERIFY2(f.wallet->prepareTransaction(), qPrintable(f.wallet->transactionError()));
+    QVERIFY2(PrepareTransaction(*f.wallet), qPrintable(f.wallet->transactionError()));
     QCOMPARE(f.state->address_writes, 0); // Reviewing/cancelling must not save notes.
     if (externalSigner) {
         QSignalSpy approved(f.wallet.get(), &WalletQmlModel::externalSignerApprovalSucceeded);
-        f.wallet->approveExternalSignerTransaction();
-        QCOMPARE(approved.count(), 1);
+        ApproveExternalSigner(*f.wallet);
+        QTRY_COMPARE(approved.count(), 1);
     }
     // The committed notes belong to the reviewed transaction, not a new draft.
     recipients->clear();
-    QVERIFY(f.wallet->sendTransaction());
+    QVERIFY(SendTransaction(*f.wallet));
     QCOMPARE(f.state->commits, 1);
     QCOMPARE(f.state->address_writes, 2);
     QCOMPARE(f.state->labels.at(Address(batch).toStdString()), notes[0].toStdString());

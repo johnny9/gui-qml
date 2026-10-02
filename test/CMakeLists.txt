@@ -3,6 +3,11 @@ cmake_minimum_required(VERSION 3.22)
 # Tests for the QML/Qt6 app
 
 find_package(Qt 6.2 MODULE REQUIRED COMPONENTS Core Gui Network Test Qml Quick QuickTest Widgets)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+add_test(NAME bitcoinqml_process_checks
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_process_checks.py
+)
 
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp

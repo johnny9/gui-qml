@@ -85,6 +85,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QEvent>
 #include <QEventLoop>
 #include <QFontDatabase>
 #include <QIcon>
@@ -98,6 +99,7 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QSettings>
+#include <QScopeGuard>
 #include <QString>
 #include <QStyleHints>
 #include <QTranslator>
@@ -415,6 +417,15 @@ int QmlGuiMain(int argc, char* argv[])
 
     QGuiApplication::styleHints()->setTabFocusBehavior(Qt::TabFocusAllControls);
     QApplication app(qt_argc, const_cast<char**>(&qt_argv));
+    // Early onboarding/error returns can leave value-only URI/export workers.
+    // Runtime backend borrowers drain before Node dies.
+    const auto drain_value_workers = qScopeGuard([] {
+        QEventLoop loop;
+        bool drained{false};
+        BackendExecutor::shutdownAll(&loop, [&] { drained = true; loop.quit(); });
+        while (!drained) loop.exec();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    });
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);

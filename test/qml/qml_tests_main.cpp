@@ -886,6 +886,9 @@ private:
 class MockCoinsListModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(bool lockPending READ lockPending CONSTANT)
+public:
+    bool lockPending() const { return false; }
     Q_PROPERTY(qint64 totalSelectedSatoshi READ totalSelectedSatoshi NOTIFY selectedCoinsCountChanged)
     Q_PROPERTY(qint64 totalSatoshi READ totalSatoshi CONSTANT)
     Q_PROPERTY(qint64 lockedSatoshi READ lockedSatoshi CONSTANT)
@@ -978,7 +981,7 @@ public:
     Q_INVOKABLE void beginSelection() { m_snapshot = m_rows; }
     Q_INVOKABLE void applySelection() { m_snapshot.clear(); }
     Q_INVOKABLE void cancelSelection() { if (m_snapshot.empty()) return; beginResetModel(); m_rows=m_snapshot; m_snapshot.clear(); endResetModel(); emitAggregateSignals(); }
-    Q_INVOKABLE bool setCoinsLocked(const QStringList&, bool) { return true; }
+    Q_INVOKABLE bool setCoinsLocked(const QStringList&, bool) { QTimer::singleShot(0, this, [this] { Q_EMIT locksUpdated(true); }); return true; }
     int coinCount() const { return rowCount(); }
 
     QString totalSelected() const
@@ -1059,6 +1062,7 @@ public:
     Q_INVOKABLE void update() {}
 
 Q_SIGNALS:
+    void locksUpdated(bool success);
     void viewChanged();
     void selectedCoinsCountChanged();
     void coinCountChanged();
@@ -1117,6 +1121,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool feeEstimatePending MEMBER m_fee_estimate_pending NOTIFY feeEstimatePendingChanged)
     Q_PROPERTY(int feeEstimateRevision MEMBER m_fee_estimate_revision NOTIFY feeEstimateRevisionChanged)
     Q_PROPERTY(bool sendAmountExhaustsBalance READ sendAmountExhaustsBalance WRITE setSendAmountExhaustsBalance NOTIFY sendAmountExhaustsBalanceChanged)
+    Q_PROPERTY(bool transactionPending MEMBER m_transaction_pending NOTIFY transactionPendingChanged)
     Q_PROPERTY(bool prepareTransactionResult MEMBER m_prepare_transaction_result NOTIFY prepareTransactionResultChanged)
     Q_PROPERTY(bool sendTransactionResult MEMBER m_send_transaction_result NOTIFY sendTransactionResultChanged)
     Q_PROPERTY(int prepareTransactionCalls READ prepareTransactionCalls NOTIFY prepareTransactionCallsChanged)
@@ -1204,6 +1209,7 @@ public:
     QString m_saved_payment_request_address_type;
     QString m_saved_payment_request_address;
     int m_target_blocks{2};
+    bool m_transaction_pending{false};
     bool m_prepare_transaction_result{true};
     bool m_current_transaction_can_send{true};
     QVariantMap m_current_transaction_flow;
@@ -1439,7 +1445,14 @@ public:
                 ? QStringLiteral("Selected inputs do not cover the amount plus fee")
                 : QStringLiteral("Amount plus fee exceeds available balance"), false);
         }
-        return m_prepare_transaction_result;
+        m_transaction_pending = true;
+        Q_EMIT transactionPendingChanged();
+        QTimer::singleShot(0, this, [this, result = m_prepare_transaction_result] {
+            m_transaction_pending = false;
+            Q_EMIT transactionPendingChanged();
+            Q_EMIT transactionPrepared(result);
+        });
+        return true;
     }
     Q_INVOKABLE bool prepareTransactionWithPassphrase(const QString&)
     {
@@ -1473,18 +1486,33 @@ public:
         if (m_send_transaction_result) {
             setTransactionStatus({}, false);
         }
-        return m_send_transaction_result;
+        m_transaction_pending = true;
+        Q_EMIT transactionPendingChanged();
+        QTimer::singleShot(0, this, [this, result = m_send_transaction_result] {
+            m_transaction_pending = false;
+            Q_EMIT transactionPendingChanged();
+            Q_EMIT transactionSent(result);
+        });
+        return true;
     }
     Q_INVOKABLE bool broadcastCurrentTransaction()
     {
         ++m_broadcast_current_transaction_calls;
         Q_EMIT broadcastCurrentTransactionCallsChanged();
-        return m_current_transaction_can_broadcast;
+        m_transaction_pending = true;
+        Q_EMIT transactionPendingChanged();
+        QTimer::singleShot(0, this, [this, result = m_current_transaction_can_broadcast] {
+            m_transaction_pending = false;
+            Q_EMIT transactionPendingChanged();
+            Q_EMIT transactionSent(result);
+        });
+        return true;
     }
     Q_INVOKABLE QString saveCurrentTransactionAsPsbt(const QString& path)
     {
         m_last_saved_psbt_path = path;
         Q_EMIT lastSavedPsbtPathChanged();
+        QTimer::singleShot(0, this, [this] { Q_EMIT psbtSaved({}); });
         return {};
     }
     Q_INVOKABLE void discardCurrentTransaction()
@@ -1615,6 +1643,11 @@ Q_SIGNALS:
     void feeEstimateRevisionChanged();
     void maximumRecipientChanged();
     void sendAmountExhaustsBalanceChanged();
+    void transactionPendingChanged();
+    void transactionPrepared(bool success);
+    void transactionSent(bool success);
+    void psbtImported(int result);
+    void psbtSaved(const QString& error);
     void prepareTransactionResultChanged();
     void sendTransactionResultChanged();
     void prepareTransactionCallsChanged();
@@ -1749,6 +1782,7 @@ class MockWalletController : public QObject
     Q_PROPERTY(QString lastImportedWalletName MEMBER m_last_imported_wallet_name NOTIFY lastImportedWalletInfoChanged)
     Q_PROPERTY(QString lastImportedWalletKeyScheme MEMBER m_last_imported_wallet_key_scheme NOTIFY lastImportedWalletInfoChanged)
     Q_PROPERTY(bool canCreateExternalSignerWallet MEMBER m_can_create_external_signer_wallet NOTIFY externalSignerStatusChanged)
+    Q_PROPERTY(bool externalSignerPending MEMBER m_external_signer_pending NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString externalSignerName MEMBER m_external_signer_name NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString externalSignerError MEMBER m_external_signer_error NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString suggestedExternalSignerWalletName MEMBER m_suggested_external_signer_wallet_name NOTIFY externalSignerStatusChanged)
@@ -1774,6 +1808,7 @@ public:
     QString m_last_imported_wallet_name;
     QString m_last_imported_wallet_key_scheme;
     bool m_can_create_external_signer_wallet{false};
+    bool m_external_signer_pending{false};
     QString m_external_signer_name;
     QString m_external_signer_error;
     QString m_suggested_external_signer_wallet_name{QStringLiteral("external_signer")};
@@ -3273,7 +3308,8 @@ public:
             m_needs_unlock = true;
             Q_EMIT resultChanged();
             Q_EMIT needsUnlockChanged();
-            return false;
+            QTimer::singleShot(0, this, [this] { Q_EMIT operationFinished(false); });
+            return true;
         }
 
         m_new_txid = QStringLiteral("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
@@ -3281,6 +3317,7 @@ public:
         setState(Succeeded);
         Q_EMIT resultChanged();
         Q_EMIT needsUnlockChanged();
+        QTimer::singleShot(0, this, [this] { Q_EMIT operationFinished(true); });
         return true;
     }
 
@@ -3308,6 +3345,7 @@ public:
     }
 
 Q_SIGNALS:
+    void operationFinished(bool success);
     void stateChanged();
     void actionTypeChanged();
     void resultChanged();

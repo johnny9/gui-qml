@@ -49,19 +49,17 @@ Item {
     implicitHeight: actionsColumn.implicitHeight
 
     function reset() {
-        approveTimer.stop()
         reviewState = "initial"
         errorMessage = ""
     }
 
     function beginApproval() {
-        if (reviewState === "waiting") {
+        if (reviewState === "waiting" || (root.wallet && root.wallet.transactionPending)) {
             return
         }
-        approveTimer.stop()
         reviewState = "waiting"
         errorMessage = ""
-        approveTimer.start()
+        if (root.wallet) root.wallet.approveExternalSignerTransaction()
     }
 
     Component.onDestruction: reset()
@@ -71,30 +69,23 @@ Item {
         }
     }
 
-    Timer {
-        id: approveTimer
-        interval: 1
-        onTriggered: {
-            if (root.wallet) {
-                root.wallet.approveExternalSignerTransaction()
-            }
-        }
-    }
-
     Connections {
         target: root.wallet
 
         function onExternalSignerApprovalSucceeded() {
+            if (root.reviewState !== "waiting") return
             root.reviewState = "signed"
             root.errorMessage = ""
         }
 
         function onExternalSignerApprovalPartiallySucceeded() {
+            if (root.reviewState !== "waiting") return
             root.reviewState = "partiallySigned"
             root.errorMessage = ""
         }
 
         function onExternalSignerApprovalFailed(message, signerNotFound) {
+            if (root.reviewState !== "waiting") return
             root.reviewState = "error"
             root.errorMessage = message
         }
@@ -123,7 +114,7 @@ Item {
             objectName: root.buttonObjectName
             Layout.fillWidth: true
             text: root.buttonText
-            enabled: root.canSend && root.reviewState !== "waiting" && root.reviewState !== "partiallySigned"
+            enabled: root.canSend && !(root.wallet && root.wallet.transactionPending) && root.reviewState !== "waiting" && root.reviewState !== "partiallySigned"
             onClicked: {
                 if (root.reviewState === "signed") {
                     root.sendRequested()

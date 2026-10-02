@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/walletqmlcontroller.h>
+#include <qml/backendexecutor.h>
 
 #include <qml/models/walletqmlmodel.h>
 #include <qml/util.h>
@@ -85,6 +86,7 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent
     })
 {
     m_empty_wallet->setNode(&m_node);
+    connect(m_executor.get(), &BackendExecutor::drained, this, &WalletQmlController::checkShutdownFinished);
     m_worker->moveToThread(m_worker_thread);
     connect(m_worker_thread, &QThread::finished, this, [this] {
         m_controller_drained = true;
@@ -323,6 +325,7 @@ void WalletQmlController::beginShutdown()
 {
     if (m_shutting_down) return;
     m_shutting_down = true;
+    m_executor->shutdown();
     m_load_notifications->stopping = true;
     m_initialized = false;
     Q_EMIT initializedChanged();
@@ -360,7 +363,7 @@ void WalletQmlController::retireWallet(WalletQmlModel* model, bool remove)
 
 void WalletQmlController::checkShutdownFinished()
 {
-    if (m_shutting_down && m_controller_drained && m_retiring_wallets.empty() && !m_shutdown_complete) {
+    if (m_shutting_down && m_controller_drained && m_executor->isDrained() && m_retiring_wallets.empty() && !m_shutdown_complete) {
         m_shutdown_complete = true;
         Q_EMIT walletsDrained();
     }
@@ -601,24 +604,23 @@ bool WalletQmlController::createExternalSignerWallet(const QString& name)
         return false;
     }
 
+    if (m_wallet_load_in_progress || !m_signer_wallet_name.isEmpty()) return false;
+    m_signer_wallet_name = wallet_name;
+    setWalletLoadInProgress(true);
     refreshExternalSignerStatus();
-    if (!m_external_signer_path_configured) {
-        setWalletLoadError(tr("Set an external signer path in Wallet settings first."));
-        return false;
-    }
-    if (!m_external_signer_error.isEmpty()) {
-        setWalletLoadError(m_external_signer_error);
-        return false;
-    }
-    if (m_external_signer_count == 0) {
-        setWalletLoadError(tr("Connect an external signer and try again."));
-        return false;
-    }
-    if (m_external_signer_count > 1) {
-        setWalletLoadError(tr("More than one external signer was found. Connect only one device and try again."));
-        return false;
-    }
+    return true;
+}
 
+void WalletQmlController::finishExternalSignerWalletCreation()
+{
+    if (m_signer_wallet_name.isEmpty()) return;
+    const QString wallet_name = std::exchange(m_signer_wallet_name, {});
+    if (!m_external_signer_error.isEmpty() || !m_external_signer_path_configured || m_external_signer_count != 1) {
+        setWalletLoadInProgress(false);
+        setWalletLoadError(!m_external_signer_error.isEmpty() ? m_external_signer_error
+            : tr("Connect one external signer and check its configured path before creating a wallet."));
+        return;
+    }
     constexpr uint64_t flags = wallet::WALLET_FLAG_DESCRIPTORS |
         wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS |
         wallet::WALLET_FLAG_EXTERNAL_SIGNER;
@@ -627,7 +629,6 @@ bool WalletQmlController::createExternalSignerWallet(const QString& name)
                       flags,
                       WalletLoadAction::Load,
                       /*report_create_error=*/false);
-    return true;
 }
 
 void WalletQmlController::createWatchOnlyWallet(const QString &name, const QString &xpub)
@@ -758,31 +759,45 @@ void WalletQmlController::requestOpenWalletSettings()
 
 void WalletQmlController::refreshExternalSignerStatus()
 {
-    const QString signer_path = QString::fromStdString(
-        SettingToString(m_node.getPersistentSetting("signer"), "")).trimmed();
-    const bool path_configured = !signer_path.isEmpty();
-    if (path_configured) {
-        m_node.forceSetting("signer", signer_path.toStdString());
-    } else {
-        m_node.forceSetting("signer", common::SettingsValue{});
-    }
-    int signer_count = 0;
-    QString signer_name;
-    QString error;
-
-    try {
-        auto signers = m_node.listExternalSigners();
-        signer_count = static_cast<int>(signers.size());
-        if (signer_count == 1) {
-            signer_name = QString::fromStdString(signers.front()->getName());
-        } else if (signer_count > 1) {
-            error = tr("More than one external signer was found. Connect only one device.");
+    if (m_shutting_down) return;
+    ++m_signer_request_generation;
+    if (m_signer_pending) { m_signer_refresh_requested = true; return; }
+    m_signer_pending = true;
+    m_signer_refresh_requested = false;
+    const auto generation = m_signer_request_generation;
+    Q_EMIT externalSignerStatusChanged();
+    struct Result { bool configured{false}; int count{0}; QString name; QString error; };
+    if (!m_executor->submit(this, [node = &m_node] {
+        Result out;
+        const QString path = QString::fromStdString(SettingToString(node->getPersistentSetting("signer"), "")).trimmed();
+        out.configured = !path.isEmpty();
+        node->forceSetting("signer", out.configured ? common::SettingsValue{path.toStdString()} : common::SettingsValue{});
+        try {
+            auto signers = node->listExternalSigners();
+            out.count = static_cast<int>(signers.size());
+            if (out.count == 1) out.name = QString::fromStdString(signers.front()->getName());
+            else if (out.count > 1) out.error = tr("More than one external signer was found. Connect only one device.");
+        } catch (const std::runtime_error&) {
+            out.error = tr("The signer command did not return valid output. Check that the path is correct.");
         }
-    } catch (const std::runtime_error&) {
-        error = tr("The signer command did not return valid output. Check that the path is correct.");
+        return out;
+    }, [this, generation](Result out) {
+        m_signer_pending = false;
+        if (m_signer_refresh_requested || generation != m_signer_request_generation) { refreshExternalSignerStatus(); return; }
+        setExternalSignerStatus(out.configured, out.count, out.name, out.error);
+        Q_EMIT externalSignerStatusChanged();
+        finishExternalSignerWalletCreation();
+    }, [this](std::exception_ptr) {
+        m_signer_pending = false;
+        setExternalSignerStatus(false, 0, {}, tr("External signer discovery failed."));
+        Q_EMIT externalSignerStatusChanged();
+        finishExternalSignerWalletCreation();
+    })) {
+        m_signer_pending = false;
+        setExternalSignerStatus(false, 0, {}, tr("The application is shutting down."));
+        Q_EMIT externalSignerStatusChanged();
+        finishExternalSignerWalletCreation();
     }
-
-    setExternalSignerStatus(path_configured, signer_count, signer_name, error);
 }
 
 void WalletQmlController::requestOpenReceive()

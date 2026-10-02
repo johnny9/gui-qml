@@ -76,6 +76,7 @@ public:
         WalletCanSign,
         WalletCannotSign,
         TransactionAlreadyKnown,
+        Pending,
     };
     Q_ENUM(PsbtImportResult)
 
@@ -124,6 +125,7 @@ private:
     Q_PROPERTY(QString privateKeysStatus READ privateKeysStatus NOTIFY walletStateChanged)
     Q_PROPERTY(QString externalSignerStatus READ externalSignerStatus NOTIFY walletStateChanged)
     Q_PROPERTY(bool canManagePassphrase READ canManagePassphrase NOTIFY walletStateChanged)
+    Q_PROPERTY(bool transactionPending READ transactionPending NOTIFY transactionPendingChanged)
     Q_PROPERTY(QString transactionError READ transactionError NOTIFY transactionErrorChanged)
     Q_PROPERTY(bool transactionNeedsUnlock READ transactionNeedsUnlock NOTIFY transactionNeedsUnlockChanged)
     Q_PROPERTY(bool currentTransactionCanSend READ currentTransactionCanSend NOTIFY currentTransactionChanged)
@@ -199,6 +201,7 @@ public:
     bool customFeeRateValid() const;
     bool feeEstimatePending() const { return m_fee_estimate_pending; }
     int feeEstimateRevision() const { return m_fee_estimate_revision; }
+    // Command return values report acceptance. Completion signals report the backend result.
     Q_INVOKABLE bool prepareTransaction();
     Q_INVOKABLE void approveExternalSignerTransaction();
     Q_INVOKABLE bool prepareTransactionWithPassphrase(const QString& passphrase);
@@ -250,7 +253,6 @@ public:
     std::set<QString> usedAddresses() const;
     std::set<QString> changeAddresses() const;
 
-    bool canBumpTransaction(const uint256& txid) const;
 
     interfaces::Wallet::CoinsList listCoins() const;
     bool lockCoin(const COutPoint& output);
@@ -281,6 +283,7 @@ public:
     QString privateKeysStatus() const;
     QString externalSignerStatus() const;
     bool canManagePassphrase() const;
+    bool transactionPending() const { return m_transaction_pending; }
     QString transactionError() const { return m_transaction_error; }
     bool transactionNeedsUnlock() const { return m_transaction_needs_unlock; }
     bool currentTransactionCanSend() const { return m_current_transaction && m_current_transaction_can_send; }
@@ -315,6 +318,11 @@ Q_SIGNALS:
     void externalSignerApprovalFailed(const QString& message, bool signerNotFound);
     void displayUnitChanged(int unit);
     void securityStateChanged();
+    void transactionPendingChanged();
+    void transactionPrepared(bool success);
+    void transactionSent(bool success);
+    void psbtImported(WalletQmlModel::PsbtImportResult result);
+    void psbtSaved(const QString& error);
     void transactionErrorChanged();
     void transactionNeedsUnlockChanged();
     void walletUnloaded();
@@ -340,6 +348,7 @@ private:
     void setMaximumRecipient(SendRecipient* recipient);
     void updateMaximumAmount();
     void requestFeeEstimatesNow();
+    void updateCustomFeeTarget();
     void applyFeeEstimates(const QHash<unsigned int, SendFeePreview>& estimates,
                            const std::optional<SendFeePreview>& custom_estimate,
                            quint64 request_id);
@@ -357,13 +366,14 @@ private:
     CAmount receivedPaymentRequestAmount(const QString& address) const;
     void updateReceivedPaymentRequestAmounts();
     bool sendTransactionInternal(std::optional<SecureString> passphrase = std::nullopt);
-    void saveSentRecipientLabels();
+    void setTransactionPending(bool pending);
+    void transactionFailed(std::exception_ptr error);
     bool unlockForAction(std::optional<SecureString>& passphrase, bool& relock);
     void clearTransactionStatus();
     void setTransactionStatus(const QString& error, bool needs_unlock = false);
     void setSettingsError(const QString& error);
     QString persistedReceiveAddressTypeKey() const;
-    bool tryImportPsbtToReview(const PartiallySignedTransaction& psbt, PsbtImportResult& result, QString& reason);
+
 
     std::shared_ptr<interfaces::Wallet> m_wallet;
     interfaces::Node* m_node{nullptr};
@@ -407,14 +417,24 @@ private:
     QTimer* m_fee_estimation_timer{nullptr};
     QHash<unsigned int, SendFeePreview> m_fee_estimates;
     std::optional<SendFeePreview> m_custom_fee_estimate;
+    QHash<unsigned int, CAmount> m_fee_target_rates;
+    std::optional<unsigned int> m_pending_custom_target;
     QString m_custom_fee_rate;
     quint64 m_fee_estimate_request_id{0};
     int m_fee_estimate_revision{0};
     bool m_custom_fee_enabled{false};
     bool m_fee_estimate_pending{false};
+    bool m_fee_job_running{false};
+    bool m_fee_refresh_requested{false};
     bool m_is_wallet_loaded{false};
     bool m_is_encrypted{false};
     bool m_is_locked{false};
+    bool m_transaction_pending{false};
+    quint64 m_transaction_request_id{0};
+    quint64 m_send_draft_revision{0};
+    QVariantMap m_current_transaction_flow;
+    CAmount m_available_selected_balance{0};
+    std::optional<CAmount> m_available_fee_balance;
     QString m_transaction_error;
     bool m_transaction_needs_unlock{false};
     QString m_settings_error;

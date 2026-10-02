@@ -10,7 +10,8 @@ import subprocess
 import sys
 import time
 
-from qml_test_harness import qsettings_sandbox_args
+from qml_test_harness import QmlTestHarness, qsettings_sandbox_args
+from qml_process_checks import check_gui_exit, report_gui_failure
 from qml_wallet_test_lib import WalletFlowHarness, find_bitcoind, rpc_call, wait_for_rpc
 
 
@@ -58,10 +59,12 @@ def create_load_on_startup_wallets(harness, prefix):
         stop_node(process, harness.gui_rpc_port)
 
 
-def wait_for_process_exit(process, description):
+def wait_for_process_exit(process, description, socket_path):
     deadline = time.time() + SHUTDOWN_TIMEOUT_SECS
     while time.time() < deadline:
         if process.poll() is not None:
+            _, stderr = process.communicate()
+            check_gui_exit(process.returncode, stderr.decode("utf-8", errors="replace"), socket_path=socket_path)
             return process.returncode
         time.sleep(0.25)
     raise TimeoutError(f"GUI did not exit after {description}")
@@ -130,6 +133,25 @@ def start_gui_without_driver(harness):
     )
 
 
+def case_close_preinit_onboarding():
+    harness = QmlTestHarness(
+        use_datadir_arg=False,
+        reset_settings=True,
+        start_onboarded=False,
+        extra_args=["-regtest"],
+    )
+    try:
+        harness.start()
+        harness.driver.wait_for_page("onboardingCover", timeout_ms=5000)
+        harness.driver.close_window()
+        wait_for_process_exit(harness.process, "closing pre-init onboarding", harness.socket_path)
+    except BaseException:
+        report_gui_failure(harness.process, "closing pre-init onboarding")
+        raise
+    finally:
+        harness.stop()
+
+
 def case_close_window_during_load_on_startup():
     harness = WalletFlowHarness("qml_shutdown_close", 970)
     try:
@@ -140,8 +162,11 @@ def case_close_window_during_load_on_startup():
         gui.close_window()
         gui.wait_for_page("shutdownPage", timeout_ms=5000)
 
-        return_code = wait_for_process_exit(harness.gui_process, "closing during load_on_startup")
+        return_code = wait_for_process_exit(harness.gui_process, "closing during load_on_startup", harness.socket_path)
         assert return_code == 0, f"Expected GUI exit code 0, got {return_code}"
+    except BaseException:
+        report_gui_failure(harness.gui_process, "closing during load_on_startup")
+        raise
     finally:
         harness.stop()
 
@@ -156,14 +181,20 @@ def case_sigint_during_load_on_startup():
         wait_for_startup_initialization(harness, harness.gui_process, baseline_wallet_loads_completed)
         harness.gui_process.send_signal(signal.SIGINT)
 
-        return_code = wait_for_process_exit(harness.gui_process, "SIGINT during load_on_startup")
+        return_code = wait_for_process_exit(harness.gui_process, "SIGINT during load_on_startup", harness.socket_path)
         assert return_code == 0, f"Expected GUI exit code 0 after SIGINT, got {return_code}"
+    except BaseException:
+        report_gui_failure(harness.gui_process, "SIGINT during load_on_startup")
+        raise
     finally:
         harness.stop()
 
 
 def run_tests():
     try:
+        case_close_preinit_onboarding()
+        print("Pre-init onboarding shutdown completed successfully.")
+
         case_close_window_during_load_on_startup()
         print("Close during load_on_startup shutdown completed successfully.")
 

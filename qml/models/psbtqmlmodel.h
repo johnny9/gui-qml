@@ -23,9 +23,12 @@ class Node;
 class Wallet;
 } // namespace interfaces
 
+class BackendExecutor;
+
 class PsbtQmlModel : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(bool pending READ pending NOTIFY changed)
     Q_PROPERTY(bool loaded READ loaded NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
@@ -38,8 +41,9 @@ class PsbtQmlModel : public QObject
     Q_PROPERTY(QString matchedTxid READ matchedTxid NOTIFY changed)
 
 public:
-    explicit PsbtQmlModel(interfaces::Wallet* wallet, interfaces::Node* node, QObject* parent = nullptr);
+    explicit PsbtQmlModel(std::shared_ptr<interfaces::Wallet> wallet, interfaces::Node* node, QObject* parent = nullptr, std::shared_ptr<BackendExecutor> executor = {});
 
+    bool pending() const { return m_pending; }
     bool loaded() const { return m_psbt != nullptr; }
     QString status() const { return m_status; }
     QString error() const { return m_error; }
@@ -61,6 +65,7 @@ public:
     const PartiallySignedTransaction* psbt() const { return m_psbt.get(); }
     void setError(const QString& error);
     void setMatchedTxid(const QString& txid);
+    void detachWallet();
     void setNode(interfaces::Node* node) { m_node = node; }
     void refreshState(const QString& status_override = {});
 
@@ -74,12 +79,18 @@ public:
     static std::optional<std::pair<int, int>> MultisigPsbtInputSigInfo(const PartiallySignedTransaction& psbt, std::size_t index);
 
 Q_SIGNALS:
+    void operationFinished(bool success);
     void changed();
 
 private:
-    QStringList buildSummary(const PartiallySignedTransaction& psbt) const;
+    enum class Operation { Load, Refresh, Sign, Broadcast, Copy, Save };
+    bool startOperation(Operation operation, const QString& path = {}, const QString& status = {});
+    static QStringList buildSummary(const PartiallySignedTransaction& psbt, interfaces::Wallet* wallet);
 
-    interfaces::Wallet* m_wallet;
+    std::shared_ptr<interfaces::Wallet> m_wallet;
+    std::shared_ptr<BackendExecutor> m_executor;
+    quint64 m_generation{0};
+    bool m_pending{false};
     interfaces::Node* m_node;
     std::unique_ptr<PartiallySignedTransaction> m_psbt;
     QString m_status;

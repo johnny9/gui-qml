@@ -27,6 +27,11 @@ ColumnLayout {
     readonly property real remainingAmount: Math.max(0, target - selectedAmount)
     readonly property real changeAmount: Math.max(0, selectedAmount - target)
     readonly property int activeFilterCount: !coins ? 0 : (coins.filter !== "all" ? 1 : 0) + (coins.minAmount >= 0 || coins.maxAmount >= 0 ? 1 : 0)
+    enabled: !coins || !coins.lockPending
+    Connections {
+        target: root.coins
+        function onLocksUpdated(success) { root.errorText = success ? "" : qsTr("Some coins could not be updated. Try again.") }
+    }
     spacing: 16
     onWalletChanged: { markedIds = []; walletSelectionActive = false; pendingLockedCoinId = ""; errorText = "" }
 

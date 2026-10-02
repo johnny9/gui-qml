@@ -234,6 +234,24 @@ TestCase {
         mouseClick(findChild(overlay.contentItem, "speedUpCloseButton"))
         tryCompare(overlay, "visible", false)
     }
+    function test_closed_fee_bump_does_not_navigate_on_late_success() {
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "opened", true)
+        testBumpModel.state = BumpTransactionModel.Committing
+        overlay.close()
+        tryCompare(overlay, "visible", false)
+
+        // The accepted backend command may finish after its review is closed.
+        testBumpModel.newTxid = "late-bump-result"
+        testBumpModel.state = BumpTransactionModel.Succeeded
+        testBumpModel.operationFinished(true)
+        const complete = findChild(page, "speedUpCompletePopup")
+        compare(complete.visible, false)
+        compare(overlay.visible, false)
+    }
+
     function test_fee_bump_success_opens_modal_completion() {
         const page = createDetail()
         findChild(page, "speedUpBanner").primaryClicked()

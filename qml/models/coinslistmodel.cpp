@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/models/coinslistmodel.h>
+#include <qml/backendexecutor.h>
 #include <qml/bitcoinamount.h>
 #include <qml/models/walletqmlmodel.h>
 #include <key_io.h>
@@ -171,17 +172,37 @@ void CoinsListModel::cancelSelection()
 }
 bool CoinsListModel::setCoinsLocked(const QStringList& ids, bool locked)
 {
-    if (!m_wallet_model) return false;
-    bool success = true;
+    if (!m_wallet_model || m_lock_pending) return false;
+    std::vector<COutPoint> outputs;
     for (const auto& coin : m_coins) {
-        if (!ids.contains(coin.id()) || coin.locked == locked) continue;
-        const bool changed = locked ? m_wallet_model->lockCoin(coin.outpoint) : m_wallet_model->unlockCoin(coin.outpoint);
-        success = changed && success;
-        if (changed && locked) m_wallet_model->unselectCoin(coin.outpoint);
+        if (ids.contains(coin.id()) && coin.locked != locked) outputs.push_back(coin.outpoint);
     }
-    update();
-    m_wallet_model->scheduleFeeEstimates();
-    return success;
+    m_lock_pending = true;
+    Q_EMIT lockPendingChanged();
+    const bool accepted = m_wallet_model->backendExecutor()->submit(this,
+        [wallet = m_wallet_model->walletHandle(), outputs, locked] {
+            std::pair<bool, std::vector<COutPoint>> result{true, {}};
+            for (const auto& output : outputs) {
+                const bool changed = locked ? wallet->lockCoin(output, true) : wallet->unlockCoin(output);
+                result.first &= changed;
+                if (changed) result.second.push_back(output);
+            }
+            return result;
+        }, [this, locked](const std::pair<bool, std::vector<COutPoint>>& result) {
+            m_lock_pending = false;
+            if (locked) for (const auto& output : result.second) m_wallet_model->unselectCoin(output);
+            m_wallet_model->requestWalletStateRefresh();
+            m_wallet_model->scheduleFeeEstimates();
+            Q_EMIT lockPendingChanged();
+            Q_EMIT locksUpdated(result.first);
+        }, [this](std::exception_ptr) {
+            m_lock_pending = false;
+            m_wallet_model->requestWalletStateRefresh();
+            Q_EMIT lockPendingChanged();
+            Q_EMIT locksUpdated(false);
+        });
+    if (!accepted) { m_lock_pending = false; Q_EMIT lockPendingChanged(); }
+    return accepted;
 }
 int CoinsListModel::lockedCoinsCount() const { return std::count_if(m_coins.begin(), m_coins.end(), [](const auto& c) { return c.locked; }); }
 int CoinsListModel::selectedCoinsCount() const { return m_wallet_model ? static_cast<int>(m_wallet_model->listSelectedCoins().size()) : 0; }

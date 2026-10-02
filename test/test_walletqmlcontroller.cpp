@@ -6,6 +6,8 @@
 
 #include <chainparams.h>
 #include <common/settings.h>
+#include <common/run_command.h>
+#include <univalue.h>
 #include <interfaces/handler.h>
 #include <interfaces/wallet.h>
 #include <outputtype.h>
@@ -22,6 +24,9 @@
 #include <QTemporaryDir>
 #include <atomic>
 #include <mutex>
+#include <QStandardPaths>
+#include <QTimer>
+#include <QScopeGuard>
 
 #ifndef BITCOINQML_NO_TEST_MAIN
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -317,6 +322,60 @@ private Q_SLOTS:
     void validateXpubTrimsWhitespace();
     void createWatchOnlyInvalidXpubSetsError();
     void createWatchOnlyCleansUpWhenDescriptorImportFails();
+    void externalSignerDiscoveryWaitsForSubprocessOffGui()
+    {
+        const auto python = QStandardPaths::findExecutable("python3");
+        if (python.isEmpty()) QSKIP("Python is required for the external signer process fixture.");
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto ready_path = dir.filePath("ready");
+        const auto release_path = dir.filePath("release");
+        QFile script(dir.filePath("signer.py"));
+        QVERIFY(script.open(QIODevice::WriteOnly));
+        script.write("import pathlib, sys, time\npathlib.Path(sys.argv[1]).touch()\nend = time.monotonic() + 10\nwhile not pathlib.Path(sys.argv[2]).exists() and time.monotonic() < end:\n    time.sleep(0.01)\nprint('{\"name\":\"Gated signer\"}')\n");
+        script.close();
+        MockNode node;
+        node.list_external_signers_fn = [python, path = script.fileName(), ready_path, release_path] {
+            const auto result = RunCommandParseJSON({python.toStdString(), path.toStdString(), ready_path.toStdString(), release_path.toStdString()});
+            std::vector<std::unique_ptr<interfaces::ExternalSigner>> signers;
+            signers.emplace_back(std::make_unique<FakeExternalSigner>(result["name"].get_str()));
+            return signers;
+        };
+        TestWalletController controller(node);
+        controller.refreshExternalSignerStatus();
+        QTRY_VERIFY(QFileInfo::exists(ready_path));
+        bool gui_callback{false};
+        QTimer::singleShot(0, &controller, [&] { gui_callback = true; });
+        QTRY_VERIFY(gui_callback);
+        QVERIFY(controller.externalSignerPending());
+        QFile release(release_path);
+        QVERIFY(release.open(QIODevice::WriteOnly));
+        release.close();
+        QTRY_VERIFY(!controller.externalSignerPending());
+        QCOMPARE(controller.externalSignerName(), QString{"Gated signer"});
+    }
+
+    void externalSignerDiscoveryDrainsBeforeShutdown()
+    {
+        QSemaphore entered, release;
+        MockNode node;
+        node.list_external_signers_fn = [&] {
+            entered.release();
+            release.acquire();
+            return MakeSigners({"Gated signer"});
+        };
+        TestWalletController controller(node);
+        const auto unblock = qScopeGuard([&] { release.release(); });
+        QSignalSpy drained{&controller, &WalletQmlController::walletsDrained};
+        controller.refreshExternalSignerStatus();
+        QTRY_VERIFY(entered.available() > 0);
+        controller.beginShutdown();
+        QTest::qWait(25);
+        QVERIFY(drained.empty());
+        release.release();
+        QTRY_COMPARE(drained.count(), 1);
+    }
+
     void externalSignerCreationRequiresConfiguredPath();
     void externalSignerCreationRequiresExactlyOneSigner();
     void externalSignerSuggestionUsesSignerName();
@@ -525,6 +584,7 @@ void WalletQmlControllerTests::externalSignerCreationRequiresConfiguredPath()
 
     TestWalletController controller(node);
     controller.refreshExternalSignerStatus();
+    QTRY_VERIFY(!controller.externalSignerPending());
 
     QVERIFY(!controller.canCreateExternalSignerWallet());
     QCOMPARE(controller.externalSignerName(), QString("Ledger Nano X"));
@@ -543,6 +603,7 @@ void WalletQmlControllerTests::externalSignerCreationRequiresExactlyOneSigner()
 
     TestWalletController controller(node);
     controller.refreshExternalSignerStatus();
+    QTRY_VERIFY(!controller.externalSignerPending());
 
     QVERIFY(!controller.canCreateExternalSignerWallet());
     QVERIFY(controller.externalSignerName().isEmpty());
@@ -561,6 +622,7 @@ void WalletQmlControllerTests::externalSignerSuggestionUsesSignerName()
 
     TestWalletController controller(node);
     controller.refreshExternalSignerStatus();
+    QTRY_VERIFY(!controller.externalSignerPending());
 
     QVERIFY(controller.canCreateExternalSignerWallet());
     QCOMPARE(controller.externalSignerName(), QString("Coldcard Mk4"));

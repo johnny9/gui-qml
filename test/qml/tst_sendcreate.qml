@@ -416,7 +416,7 @@ TestCase {
     }
 
     function test_send_prepare_transaction_success_and_failure_paths() {
-        const page = createTemporaryObject(sendComponent, this)
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
         verify(page !== null)
 
         const continueButton = findChild(page, "sendReviewButton")
@@ -434,14 +434,14 @@ TestCase {
         testWalletModel.prepareTransactionResult = false
         continueButton.clicked()
         compare(testWalletModel.prepareTransactionCalls, callsBefore + 1)
-        compare(page.prepareTransactionErrorText, "Amount plus fee exceeds available balance. Some of your coins are locked.")
+        tryCompare(page, "prepareTransactionErrorText", "Amount plus fee exceeds available balance. Some of your coins are locked.")
         compare(prepareErrorText.text, "Amount plus fee exceeds available balance. Some of your coins are locked.")
 
         page.prepareTransactionErrorText = ""
         testCoinsListModel.toggleCoinSelection(0)
         continueButton.clicked()
         compare(testWalletModel.prepareTransactionCalls, callsBefore + 2)
-        compare(page.prepareTransactionErrorText, "Selected inputs do not cover the amount plus fee")
+        tryCompare(page, "prepareTransactionErrorText", "Selected inputs do not cover the amount plus fee")
         compare(prepareErrorText.text, "Selected inputs do not cover the amount plus fee")
 
         testWalletModel.prepareTransactionResult = true
@@ -531,6 +531,19 @@ TestCase {
 
         compare(amountInput.text, "1.2")
         compare(testSendRecipient.amount.display, "1.20000000")
+    }
+
+    function test_file_import_rejects_result_after_draft_edit() {
+        const page = createTemporaryObject(sendComponent, this)
+        const sendPage = findChild(page, "walletSendPage")
+        const previousAddress = testSendRecipient.address.address
+        sendPage.applyPaymentRequestFromFile("/tmp/payment.txt")
+        verify(page.paymentFileRequest > 0)
+        page.scheduleFeeEstimates()
+        tryCompare(page, "paymentFileRequest", 0)
+        compare(sendPage.paymentRequestStatus, "The payment changed while reading the file. Import it again.")
+        verify(sendPage.paymentRequestIsError)
+        compare(testSendRecipient.address.address, previousAddress)
     }
 
     function test_send_uri_import_schedules_fee_estimate() {

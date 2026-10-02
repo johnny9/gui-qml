@@ -21,8 +21,10 @@ int main(int argc, char* argv[])
 
     const auto classes = qEnvironmentVariable("BITCOIN_QML_TEST_CLASSES").split(',', Qt::SkipEmptyParts);
     int status = 0;
+    bool ran{false};
     for (const auto& test : qttestregistry::SortedEntries()) {
         if (!classes.isEmpty() && !classes.contains(QString::fromUtf8(test.name))) continue;
+        ran = true;
         status |= test.run(argc, argv);
     }
     // The last test may retire an executor or thread owner before its accepted
@@ -32,5 +34,5 @@ int main(int argc, char* argv[])
     BackendExecutor::shutdownAll(&loop, [&] { drained = true; loop.quit(); });
     while (!drained) loop.exec();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    return status;
+    return ran ? status : 1;
 }

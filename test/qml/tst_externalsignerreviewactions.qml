@@ -17,6 +17,7 @@ TestCase {
 
         QtObject {
             property int approveCalls: 0
+            property bool transactionPending: false
             property string currentTransactionReviewMessage: ""
 
             signal externalSignerApprovalSucceeded()
@@ -113,6 +114,7 @@ TestCase {
         const button = findObjectByName(review, "externalSignerApproveButton")
         verify(button !== null)
 
+        review.beginApproval()
         wallet.externalSignerApprovalPartiallySucceeded()
 
         compare(review.reviewState, "partiallySigned")
@@ -149,7 +151,7 @@ TestCase {
         compare(review.statusText, "Signed on external signer. Ready to send.")
     }
 
-    function test_reset_cancels_pending_approval() {
+    function test_reset_ignores_late_approval_result() {
         const wallet = createTemporaryObject(walletComponent, this)
         verify(wallet !== null)
 
@@ -158,15 +160,16 @@ TestCase {
 
         review.beginApproval()
         review.reset()
+        wallet.externalSignerApprovalSucceeded()
         wait(50)
 
-        compare(wallet.approveCalls, 0)
+        compare(wallet.approveCalls, 1)
         compare(review.reviewState, "initial")
         compare(review.errorMessage, "")
         compare(review.statusText, "Approve on external signer to broadcast this transaction.")
     }
 
-    function test_destroy_cancels_pending_approval() {
+    function test_destroy_leaves_owned_approval_request_safe() {
         const wallet = createTemporaryObject(walletComponent, this)
         verify(wallet !== null)
 
@@ -177,7 +180,7 @@ TestCase {
         review.destroy()
         wait(50)
 
-        compare(wallet.approveCalls, 0)
+        compare(wallet.approveCalls, 1)
     }
 
     function test_rapid_clicks_only_start_one_approval() {
