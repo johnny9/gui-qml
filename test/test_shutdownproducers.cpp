@@ -121,7 +121,7 @@ private Q_SLOTS:
         SelectParams(ChainType::REGTEST);
         MockNode node;
         NodeModel model(node, /*backend_ready=*/false);
-        QVERIFY(model.nodeInformationRows().isEmpty());
+        QVERIFY(!model.nodeInformationRows().isEmpty());
         PeerListModel peers(node, nullptr, /*backend_ready=*/false);
         BanListModel bans(node, nullptr, /*backend_ready=*/false);
         connect(&model, &NodeModel::chainStateReady, &peers, &PeerListModel::backendInitialized);
@@ -134,7 +134,7 @@ private Q_SLOTS:
         model.setPause(true);
         QVERIFY(!model.disconnectPeer(1));
         model.initializeResult(false, {});
-        QVERIFY(model.nodeInformationRows().isEmpty());
+        QVERIFY(!model.nodeInformationRows().isEmpty());
         QTest::qWait(30);
         QCOMPARE(node.calls.getMempoolSize.load(), 0);
         QCOMPARE(node.calls.getNodeCount.load(), 0);
@@ -145,14 +145,16 @@ private Q_SLOTS:
         model.initializeResult(true, {});
         QTRY_VERIFY(node.calls.getMempoolSize.load() > 0);
         QTRY_VERIFY(node.calls.getNodeCount.load() > 0);
-        QVERIFY(node.calls.getNodesStats.load() >= 1);
-        QCOMPARE(node.calls.getBanned.load(), 1);
+        QTRY_VERIFY(node.calls.getNodesStats.load() >= 1);
+        QTRY_COMPARE(node.calls.getBanned.load(), 1);
         QVERIFY(peers.findChild<QTimer*>()->isActive());
         QSignalSpy drained(&model, &NodeModel::drained);
         model.beginShutdown();
         peers.beginShutdown();
         bans.beginShutdown();
         QTRY_COMPARE(drained.size(), 1);
+        QTRY_VERIFY(peers.isDrained());
+        QTRY_VERIFY(bans.isDrained());
         const int mempool_queries = node.calls.getMempoolSize.load();
         const int peer_queries = node.calls.getNodesStats.load();
         const int ban_queries = node.calls.getBanned.load();
@@ -178,6 +180,8 @@ private Q_SLOTS:
         peers.beginShutdown();
         bans.beginShutdown();
         clock.stop();
+        QTRY_VERIFY(peers.isDrained());
+        QTRY_VERIFY(bans.isDrained());
         const int peer_queries = node.calls.getNodesStats.load();
         const int ban_queries = node.calls.getBanned.load();
         peers.startAutoRefresh();
@@ -228,12 +232,11 @@ private Q_SLOTS:
         QTRY_VERIFY(heartbeat);
         QCOMPARE(drained.size(), 0);
         QVERIFY(!gui_call.load());
-        QVERIFY(model.nodeInformationRows().isEmpty());
+        QVERIFY(!model.nodeInformationRows().isEmpty());
         QVERIFY(!model.disconnectPeer(1));
         release.release();
         QTRY_COMPARE(drained.size(), 1);
     }
-
 
     void shutdownDismissesBlockingBackendQuestion()
     {
