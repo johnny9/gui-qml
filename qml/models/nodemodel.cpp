@@ -440,7 +440,6 @@ void NodeModel::requestShutdown()
     }
     m_shutdown_requested = true;
     stopShutdownPolling();
-    m_node.startShutdown();
     Q_EMIT requestedShutdown();
 }
 

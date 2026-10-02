@@ -2331,6 +2331,11 @@ QString MockCoreSettingEntryModel::defaultAddress() const
 class MockOptionsModel : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(bool settingsReady MEMBER m_settings_ready NOTIFY settingsReadyChanged)
+    Q_PROPERTY(bool settingsPending MEMBER m_settings_pending NOTIFY settingsPendingChanged)
+    Q_PROPERTY(QString settingsError MEMBER m_settings_error NOTIFY settingsErrorChanged)
+    Q_PROPERTY(bool validationPending MEMBER m_validation_pending NOTIFY validationPendingChanged)
+    Q_PROPERTY(QString signerPathError MEMBER m_signer_path_error NOTIFY signerPathValidationChanged)
     Q_PROPERTY(bool listen READ listen WRITE setListen NOTIFY listenChanged)
     Q_PROPERTY(bool natpmp READ natpmp WRITE setNatpmp NOTIFY natpmpChanged)
     Q_PROPERTY(bool server READ server WRITE setServer NOTIFY serverChanged)
@@ -2385,6 +2390,12 @@ class MockOptionsModel : public QObject
     Q_PROPERTY(QFont moneyFont READ moneyFont NOTIFY moneyFontChanged)
 
 public:
+    bool m_settings_ready{true};
+    bool m_settings_pending{false};
+    bool m_validation_pending{false};
+    QString m_settings_error;
+    QString m_signer_path_error;
+    Q_INVOKABLE void requestExternalSignerPathValidation(const QString&) {}
     bool m_listen{true};
     bool m_natpmp{false};
     bool m_server{false};
@@ -2621,6 +2632,12 @@ public:
     }
 
 Q_SIGNALS:
+    void settingsReadyChanged();
+    void settingsPendingChanged();
+    void settingsErrorChanged();
+    void validationPendingChanged();
+    void signerPathValidationChanged();
+    void dataDirSelectionFinished(bool success, const QString& error);
     void listenChanged();
     void natpmpChanged();
     void serverChanged();

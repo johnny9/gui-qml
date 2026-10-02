@@ -36,7 +36,9 @@ add_executable(bitcoinqml_unit_tests
   test_qmlinitexecutor_api.cpp
   test_guiargs.cpp
   test_options_model.cpp
+  test_async_options.cpp
   test_onboarding_storage.cpp
+  test_onboardingasync.cpp
   test_banlistmodel.cpp
   test_walletlistmodel.cpp
   test_bumptransactionmodel.cpp

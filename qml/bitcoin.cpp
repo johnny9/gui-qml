@@ -600,33 +600,6 @@ int QmlGuiMain(int argc, char* argv[])
     }
 #endif
     QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
-    QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
-        if (shutdown_requested) {
-            return;
-        }
-        shutdown_requested = true;
-        const auto shutdown_node = [&] {
-#ifdef ENABLE_WALLET
-            if (wallet_list_model && !wallet_list_model->isShutdownComplete()) {
-                // Directory discovery borrows the loader until its queue drains.
-                QObject::connect(wallet_list_model.get(), &WalletListModel::shutdownFinished,
-                                 &init_executor, &QmlInitExecutor::shutdown, Qt::SingleShotConnection);
-                wallet_list_model->beginShutdown();
-                return;
-            }
-#endif
-            init_executor.shutdown();
-        };
-#ifdef ENABLE_WALLET
-        if (wallet_controller) {
-            QObject::connect(wallet_controller.get(), &WalletQmlController::walletsDrained,
-                             &init_executor, shutdown_node, Qt::SingleShotConnection);
-            wallet_controller->beginShutdown();
-            return;
-        }
-#endif
-        shutdown_node();
-    });
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
     QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, [] {
         BackendExecutor::shutdownAll(qGuiApp, [] { QCoreApplication::exit(0); });
@@ -730,6 +703,39 @@ int QmlGuiMain(int argc, char* argv[])
 #endif
 
     OptionsQmlModel options_model(*node);
+    QObject::connect(&node_model, &NodeModel::requestedShutdown, [&] {
+        if (shutdown_requested) {
+            return;
+        }
+        shutdown_requested = true;
+        // Accepted settings commands can still enable port mapping. Finish
+        // them before interrupting Core, so mapping cannot restart afterward.
+        QObject::connect(&options_model, &OptionsQmlModel::shutdownFinished, &init_executor, [&] {
+            node->startShutdown();
+            const auto shutdown_node = [&] {
+#ifdef ENABLE_WALLET
+                if (wallet_list_model && !wallet_list_model->isShutdownComplete()) {
+                    // Directory discovery borrows the loader until its queue drains.
+                    QObject::connect(wallet_list_model.get(), &WalletListModel::shutdownFinished,
+                                     &init_executor, &QmlInitExecutor::shutdown, Qt::SingleShotConnection);
+                    wallet_list_model->beginShutdown();
+                    return;
+                }
+#endif
+                init_executor.shutdown();
+            };
+#ifdef ENABLE_WALLET
+            if (wallet_controller) {
+                QObject::connect(wallet_controller.get(), &WalletQmlController::walletsDrained,
+                                 &init_executor, shutdown_node, Qt::SingleShotConnection);
+                wallet_controller->beginShutdown();
+                return;
+            }
+#endif
+            shutdown_node();
+        }, Qt::SingleShotConnection);
+        options_model.beginShutdown();
+    });
 #ifdef ENABLE_WALLET
     if (wallet_list_model) {
         wallet_list_model->setDisplayUnit(options_model.displayUnit());
@@ -743,9 +749,8 @@ int QmlGuiMain(int argc, char* argv[])
 #else
     engine->rootContext()->setContextProperty("testAutomationEnabled", false);
 #endif
-    // Install language before QML engine loads so that all qsTr() calls in QML
-    // pick up the correct locale from the start.
-    install_language(options_model.language());
+    // Keep the startup language until the settings snapshot is ready.
+    if (options_model.settingsReady()) install_language(options_model.language());
 
     // Retranslate the QML UI immediately when the user picks a new language.
     QObject::connect(&options_model, &OptionsQmlModel::languageChanged, [&]() {
