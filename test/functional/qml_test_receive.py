@@ -432,7 +432,9 @@ def run_test():
         gui.wait_for_property("receiveTabButton", "checked", True)
         gui.wait_for_property("requestPaymentNoteSelfInput", "text", "Partial payment received")
         assert gui.get_property("requestHistoryCount", "count") == 1
-        assert gui.get_property("requestPaymentAmountInput", "enabled")
+        # Request Again copies the draft before the wallet finishes rotating
+        # its receiving address. Wait for that command before editing fields.
+        gui.wait_for_property("requestPaymentAmountInput", "enabled", True)
         for field in ("amount", "label", "message", "note"):
             _edit_field(gui, field, "")
 

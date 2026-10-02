@@ -5,6 +5,7 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <qml/bitcoin.h>
+#include <qml/backendexecutor.h>
 
 #include <common/args.h>
 #include <common/init.h>
@@ -22,6 +23,7 @@
 #include <qml/bitcoinamount.h>
 #include <qml/buildinfo.h>
 #include <qml/clipboard.h>
+#include <qml/models/imagesavemodel.h>
 #include <qml/datadir.h>
 #include <qml/guiargs.h>
 #include <qml/legacy_settings_migration.h>
@@ -275,6 +277,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<TransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Owned by WalletQmlModel");
     qmlRegisterUncreatableType<AddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "");
     qmlRegisterType<PaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
+    qmlRegisterType<ImageSaveModel>("org.bitcoincore.qt", 1, 0, "ImageSaveModel");
     qmlRegisterUncreatableType<Transaction>("org.bitcoincore.qt", 1, 0, "Transaction", "");
     qmlRegisterUncreatableType<SendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "");
 
@@ -592,14 +595,17 @@ int QmlGuiMain(int argc, char* argv[])
         shutdown_requested = true;
 #ifdef ENABLE_WALLET
         if (wallet_controller) {
-            wallet_controller->unloadWallets();
+            QObject::connect(wallet_controller.get(), &WalletQmlController::walletsDrained,
+                             &init_executor, &QmlInitExecutor::shutdown, Qt::SingleShotConnection);
+            wallet_controller->beginShutdown();
+            return;
         }
 #endif
         init_executor.shutdown();
     });
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
     QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, [] {
-        QCoreApplication::exit(0);
+        BackendExecutor::shutdownAll(qGuiApp, [] { QCoreApplication::exit(0); });
     }, Qt::QueuedConnection);
     QObject::connect(&init_executor, &QmlInitExecutor::runawayException, &node_model, &NodeModel::handleRunawayException);
 

@@ -6,6 +6,8 @@
 
 #include <QAbstractListModel>
 #include <QDateTime>
+#include <QEvent>
+#include <QEventLoop>
 #include <QFont>
 #include <QHash>
 #include <QIcon>
@@ -19,6 +21,7 @@
 #include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QTimer>
 #include <qqml.h>
 
 #include <algorithm>
@@ -27,7 +30,9 @@
 #include <vector>
 
 #include <qml/components/blockclockdial.h>
+#include <qml/backendexecutor.h>
 #include <qml/controls/linegraph.h>
+#include <qml/models/imagesavemodel.h>
 
 class MockAppMode : public QObject
 {
@@ -460,7 +465,10 @@ public:
     Q_INVOKABLE void refresh() {}
     Q_INVOKABLE bool setAddressLabel(const QString& address, const QString& label)
     {
-        if (!m_set_address_label_succeeds) return false;
+        if (!m_set_address_label_succeeds) {
+            QTimer::singleShot(0, this, [this, address, label] { Q_EMIT labelChangeFinished(address, label, false, QStringLiteral("This address is no longer available.")); });
+            return true;
+        }
         for (int row = 0; row < rowCount(); ++row) {
             Entry& entry{m_rows.at(row)};
             if (entry.address != address) continue;
@@ -468,6 +476,7 @@ public:
             Q_EMIT dataChanged(index(row), index(row), {LabelRole});
             break;
         }
+        QTimer::singleShot(0, this, [this, address, label] { Q_EMIT labelChangeFinished(address, label, true, {}); });
         return true;
     }
     Q_INVOKABLE QString addressAt(int row) const
@@ -488,6 +497,7 @@ public:
     }
 
 Q_SIGNALS:
+    void labelChangeFinished(const QString& address, const QString& label, bool success, const QString& error);
     void categoryChanged();
     void showUsedChanged();
     void countChanged();
@@ -1134,6 +1144,11 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString lastLoadedPaymentRequestDetailId MEMBER m_last_loaded_payment_request_detail_id NOTIFY lastLoadedPaymentRequestDetailIdChanged)
     Q_PROPERTY(QString lastTemplateRequestId MEMBER m_last_template_request_id NOTIFY lastTemplateRequestIdChanged)
     Q_PROPERTY(QString lastRemovedRequestId MEMBER m_last_removed_request_id NOTIFY lastRemovedRequestIdChanged)
+    Q_PROPERTY(bool walletStateReady MEMBER m_wallet_state_ready NOTIFY walletStateChanged)
+    Q_PROPERTY(QString walletStateError MEMBER m_wallet_state_error NOTIFY walletStateChanged)
+    Q_PROPERTY(bool receiveOperationPending MEMBER m_receive_operation_pending NOTIFY receiveOperationPendingChanged)
+    Q_PROPERTY(QString receiveOperationError MEMBER m_receive_operation_error NOTIFY receiveOperationErrorChanged)
+    Q_PROPERTY(QVariantList receiveAddressTypes READ availableReceiveAddressTypes NOTIFY walletInfoChanged)
     Q_PROPERTY(bool removeReceiveRequestResult MEMBER m_remove_receive_request_result NOTIFY removeReceiveRequestResultChanged)
 
 public:
@@ -1164,6 +1179,22 @@ public:
     QString m_last_loaded_payment_request_detail_id;
     QString m_last_template_request_id;
     QString m_last_removed_request_id;
+    bool m_wallet_state_ready{true};
+    QString m_wallet_state_error;
+    bool m_receive_operation_pending{false};
+    QString m_receive_operation_error;
+    void finishReceiveOperation(QString operation, bool success = true)
+    {
+        m_receive_operation_pending = true;
+        Q_EMIT receiveOperationPendingChanged();
+        QTimer::singleShot(0, this, [this, operation, success] {
+            m_receive_operation_pending = false;
+            m_receive_operation_error = success ? QString{} : QStringLiteral("The payment request could not be deleted. Please try again.");
+            Q_EMIT receiveOperationPendingChanged();
+            Q_EMIT receiveOperationErrorChanged();
+            Q_EMIT receiveOperationFinished(operation, success);
+        });
+    }
     bool m_remove_receive_request_result{true};
     bool m_receive_request_reconciliation_pending{false};
     QString m_saved_payment_request_label;
@@ -1201,6 +1232,7 @@ public:
             Q_EMIT m_receiving_address.addressChanged();
             Q_EMIT m_receiving_address.addressTypeChanged();
         }
+        finishReceiveOperation(QStringLiteral("address"));
         return true;
     }
     Q_INVOKABLE bool ensureReceivingAddressWithPassphrase(const QString&, bool next = false, const QString& type = {})
@@ -1485,6 +1517,7 @@ public:
         Q_EMIT request->idChanged();
         Q_EMIT request->addressChanged();
         Q_EMIT request->isEditingChanged();
+        finishReceiveOperation(QStringLiteral("save"));
         return true;
     }
     Q_INVOKABLE bool updatePaymentRequest(const QString& id, qint64 amount, const QString& label, const QString& message, const QString& note)
@@ -1496,6 +1529,7 @@ public:
         request->setProperty("label", label);
         request->setProperty("message", message);
         request->setProperty("noteSelf", note);
+        finishReceiveOperation(QStringLiteral("update"));
         return true;
     }
     Q_INVOKABLE bool commitPaymentRequestWithPassphrase(const QString&)
@@ -1562,9 +1596,11 @@ public:
     }
     Q_INVOKABLE bool removeReceiveRequest(const QString& request_id)
     {
-        if (!m_remove_receive_request_result) return false;
-        m_last_removed_request_id = request_id;
-        Q_EMIT lastRemovedRequestIdChanged();
+        if (m_remove_receive_request_result) {
+            m_last_removed_request_id = request_id;
+            Q_EMIT lastRemovedRequestIdChanged();
+        }
+        finishReceiveOperation(QStringLiteral("remove"), m_remove_receive_request_result);
         return true;
     }
 
@@ -1604,6 +1640,10 @@ Q_SIGNALS:
     void lastTemplateRequestIdChanged();
     void lastRemovedRequestIdChanged();
     void removeReceiveRequestResultChanged();
+    void walletStateChanged();
+    void receiveOperationPendingChanged();
+    void receiveOperationErrorChanged();
+    void receiveOperationFinished(const QString& operation, bool success);
     void receiveRequestReconciliationPendingChanged();
 
 private:
@@ -3352,6 +3392,8 @@ private:
 class MockActivityFilterProxyModel : public QSortFilterProxyModel
 {
     Q_OBJECT
+    Q_PROPERTY(bool exportPending MEMBER m_export_pending NOTIFY exportPendingChanged)
+    Q_PROPERTY(QString exportError MEMBER m_export_error NOTIFY exportErrorChanged)
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
     Q_PROPERTY(DateFilter dateFilter READ dateFilter WRITE setDateFilter NOTIFY dateFilterChanged)
     Q_PROPERTY(TypeFilter typeFilter READ typeFilter WRITE setTypeFilter NOTIFY typeFilterChanged)
@@ -3608,9 +3650,18 @@ public:
 
     int count() const { return rowCount(); }
 
-    Q_INVOKABLE bool exportCsv(const QString& path) const
+    bool m_export_pending{false};
+    QString m_export_error;
+    Q_INVOKABLE bool exportCsv(const QString& path)
     {
         Q_UNUSED(path);
+        m_export_pending = true;
+        Q_EMIT exportPendingChanged();
+        QTimer::singleShot(0, this, [this] {
+            m_export_pending = false;
+            Q_EMIT exportPendingChanged();
+            Q_EMIT exportFinished(true);
+        });
         return true;
     }
 
@@ -3664,6 +3715,9 @@ protected:
     }
 
 Q_SIGNALS:
+    void exportPendingChanged();
+    void exportErrorChanged();
+    void exportFinished(bool success);
     void searchTextChanged();
     void dateFilterChanged();
     void typeFilterChanged();
@@ -4035,6 +4089,17 @@ public Q_SLOTS:
         qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
     }
 
+    void cleanupTestCase()
+    {
+        // Views may have retired real image-save workers. Keep the application
+        // dispatcher alive until their jobs and queued thread exits finish.
+        QEventLoop loop;
+        bool drained{false};
+        BackendExecutor::shutdownAll(&loop, [&] { drained = true; loop.quit(); });
+        while (!drained) loop.exec();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+
     void qmlEngineAvailable(QQmlEngine* engine)
     {
         engine->addImageProvider(QStringLiteral("images"), new TestIconProvider);
@@ -4092,6 +4157,7 @@ public Q_SLOTS:
         qmlRegisterUncreatableType<MockTransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Test fixture");
         qmlRegisterUncreatableType<MockAddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "Test stub type");
         qmlRegisterType<MockPaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
+        qmlRegisterType<ImageSaveModel>("org.bitcoincore.qt", 1, 0, "ImageSaveModel");
         qmlRegisterUncreatableType<MockTransaction>("org.bitcoincore.qt", 1, 0, "Transaction", "Test stub type");
         qmlRegisterUncreatableType<MockSendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "Test stub type");
         qmlRegisterUncreatableType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Test stub type");

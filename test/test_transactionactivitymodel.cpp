@@ -12,6 +12,7 @@
 #include <core_io.h>
 #include <key_io.h>
 #include <script/solver.h>
+#include <util/string.h>
 
 #include <QAbstractItemModelTester>
 #include <QFile>
@@ -23,7 +24,6 @@
 #include <thread>
 #include <atomic>
 #include <QSemaphore>
-#include <QScopeGuard>
 #include <stdexcept>
 
 namespace {
@@ -84,6 +84,18 @@ class ActivityWallet : public StubWallet
 {
 public:
     std::map<Txid, interfaces::WalletTx> transactions;
+    std::map<std::string, std::string> requests;
+    std::vector<std::string> getAddressReceiveRequests() override {
+        std::vector<std::string> result;
+        result.reserve(requests.size());
+        for (const auto& [id, value] : requests) result.push_back(value);
+        return result;
+    }
+    bool setAddressReceiveRequest(const CTxDestination&, const std::string& id, const std::string& value) override {
+        if (value.empty()) requests.erase(id);
+        else requests[id] = value;
+        return true;
+    }
     std::map<Txid, interfaces::WalletTxStatus> statuses;
     std::map<std::string, std::string> labels;
     std::vector<TransactionChangedFn> callbacks;
@@ -230,12 +242,21 @@ struct Fixture {
         auto backend = std::make_unique<ActivityWallet>();
         state = backend.get();
         wallet = std::make_unique<WalletQmlModel>(std::move(backend));
+        if (!QTest::qWaitFor([&] { return wallet->walletStateReady(); })) qFatal("Initial wallet snapshot did not finish");
         // Scope the thread assertion to activity operations, after the existing
         // address-book model has loaded during wallet construction.
         state->blocking_read_on_gui = false;
     }
     Model* model() { auto* result = wallet->transactionActivityModel(); Wait(result); return result; }
-    void request(const QmlRecentRequestEntry& request) { wallet->receiveRequests()->prependOrReplace(request); }
+    void request(const QmlRecentRequestEntry& request) {
+        state->requests[util::ToString(request.id)] = ReceiveRequestHistoryModel::SerializeEntry(request);
+        wallet->receiveRequests()->prependOrReplace(request);
+    }
+    ~Fixture() {
+        if (!wallet) return;
+        wallet->beginShutdown();
+        if (!QTest::qWaitFor([&] { return wallet->backendExecutor()->isDrained(); })) qFatal("Wallet did not drain");
+    }
 };
 
 QModelIndex Find(const QAbstractItemModel& model, const QString& txid)
@@ -333,9 +354,11 @@ void TransactionActivityModelTests::historyReadsLeaveTheEventLoopFreeAndDiscardS
     QTimer::singleShot(0, [&] { heartbeat = true; });
     QTRY_VERIFY(heartbeat);
     QVERIFY(model->loading());
-    // The worker captured old_tx before the gate. Supersede that snapshot.
-    f.state->transactions.clear();
-    f.state->put(new_tx);
+    // Supersede the captured snapshot, ordering the replacement after its read.
+    QVERIFY(f.wallet->backendExecutor()->submit(model, [state = f.state, new_tx] {
+        state->transactions.clear();
+        state->put(new_tx);
+    }, [] {}));
     model->reload();
     bool inserted_stale{false};
     connect(model, &Model::rowsInserted, model, [&] {
@@ -792,6 +815,8 @@ void TransactionActivityModelTests::filtersWholeTransactionsAndExportsParentImpa
     QTemporaryDir dir;
     const auto path = dir.filePath("activity.csv");
     QVERIFY(proxy.exportCsv(path));
+    QTRY_VERIFY(!proxy.exportPending());
+    QVERIFY2(proxy.exportError().isEmpty(), qPrintable(proxy.exportError()));
     QFile file(path);
     QVERIFY(file.open(QIODevice::ReadOnly));
     const auto csv = file.readAll();
@@ -821,6 +846,8 @@ void TransactionActivityModelTests::exportsBatchActionsWithoutDuplicatingFees()
     QTemporaryDir dir;
     const auto path = dir.filePath("batch.csv");
     QVERIFY(proxy.exportCsv(path));
+    QTRY_VERIFY(!proxy.exportPending());
+    QVERIFY2(proxy.exportError().isEmpty(), qPrintable(proxy.exportError()));
     QFile file(path);
     QVERIFY(file.open(QIODevice::ReadOnly));
     const auto csv = file.readAll();
@@ -988,6 +1015,8 @@ void TransactionActivityModelTests::movesReplacedBatchToHistoryAndKeepsReplaceme
     const auto path = dir.filePath("replaced.csv");
     proxy.setDisplayUnit(3);
     QVERIFY(proxy.exportCsv(path));
+    QTRY_VERIFY(!proxy.exportPending());
+    QVERIFY2(proxy.exportError().isEmpty(), qPrintable(proxy.exportError()));
     QFile file(path);
     QVERIFY(file.open(QIODevice::ReadOnly));
     const auto csv = file.readAll();
@@ -1011,6 +1040,8 @@ void TransactionActivityModelTests::movesReplacedBatchToHistoryAndKeepsReplaceme
     source->refreshStatuses();
     Wait(source);
     QVERIFY(proxy.exportCsv(path));
+    QTRY_VERIFY(!proxy.exportPending());
+    QVERIFY2(proxy.exportError().isEmpty(), qPrintable(proxy.exportError()));
     QVERIFY(file.open(QIODevice::ReadOnly));
     const auto confirmed_csv = file.readAll();
     const QByteArray confirmed_parent = "\"-101000\",\"" + Id(original).toUtf8() + "\",\"Transaction\",\"\",\"Confirmed\"";

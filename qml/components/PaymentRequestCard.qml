@@ -19,6 +19,8 @@ Pane {
     property var clipboard: Clipboard
     readonly property int amountUnit: optionsModel.displayUnit
     property string errorText: ""
+    property string pendingOperation: ""
+    property string pendingRequestId: ""
     readonly property bool saved: !!request && request.id !== ""
     readonly property bool paymentReceived: !!request && request.paymentReceived
     readonly property bool sharing: visible && saved && !paymentReceived && !!wallet
@@ -56,7 +58,8 @@ Pane {
         messageInput.reset()
         noteInput.reset()
     }
-    onRequestChanged: resetFields()
+    onRequestChanged: { pendingOperation = ""; pendingRequestId = ""; resetFields() }
+    onWalletChanged: { pendingOperation = ""; pendingRequestId = "" }
     Component.onCompleted: resetFields()
 
     function amountInSatoshis(text) {
@@ -97,7 +100,8 @@ Pane {
                 errorText = qsTr("The changes could not be saved. Please try again.")
                 return false
             }
-            resetFields()
+            pendingOperation = "update"
+            pendingRequestId = request.id
             return true
         }
         return saveField("amount", amountInput) && saveField("label", labelInput)
@@ -114,7 +118,7 @@ Pane {
     function createRequest() {
         if (!wallet || !request || saved || !hasFields || !saveFields()) return
         errorText = ""
-        if (wallet.commitReceivingPaymentRequest()) created(request.id)
+        if (wallet.commitReceivingPaymentRequest()) pendingOperation = "save"
         else errorText = qsTr("The payment request could not be created. Please try again.")
     }
     function copyRequest() {
@@ -142,7 +146,7 @@ Pane {
     }
     function saveQRToFile(fileUrl) {
         return captureQR(function(result) {
-            if (!result.saveToFile(decodeURIComponent(fileUrl.toString().replace(/^file:\/\//, ""))))
+            if (!imageSave.save(result.image, fileUrl))
                 root.errorText = qsTr("The QR code could not be saved. Please try again.")
         })
     }
@@ -153,10 +157,33 @@ Pane {
             errorText = qsTr("The payment request could not be deleted. Please try again.")
             return false
         }
-        // Discard local edits so closing the modal cannot try to save a deleted request.
-        resetFields()
-        deleted(requestId)
+        pendingOperation = "remove"
+        pendingRequestId = requestId
         return true
+    }
+
+    ImageSaveModel {
+        id: imageSave
+        onFinished: function(success) {
+            if (!success) root.errorText = qsTr("The QR code could not be saved. Please try again.")
+        }
+    }
+    Connections {
+        target: root.wallet
+        function onReceiveOperationFinished(operation, success) {
+            if (root.pendingOperation !== operation) return
+            root.pendingOperation = ""
+            const operationError = root.wallet.receiveOperationError
+            root.errorText = operationError
+            if (!success) return
+            if (operation === "save") root.created(root.request.id)
+            else if (operation === "remove") {
+                root.resetFields()
+                root.deleted(root.pendingRequestId)
+            } else if (operation === "update") root.resetFields()
+            root.pendingRequestId = ""
+            root.errorText = operationError
+        }
     }
 
     BitcoinAmount {
@@ -185,6 +212,7 @@ Pane {
     }
 
     contentItem: ColumnLayout {
+        enabled: !root.wallet || !root.wallet.receiveOperationPending
         spacing: 16
         RowLayout {
             visible: root.modalView

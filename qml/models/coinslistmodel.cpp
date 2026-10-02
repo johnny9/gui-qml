@@ -13,9 +13,7 @@ CoinsListModel::CoinsListModel(WalletQmlModel* parent)
     : QAbstractListModel(parent), m_wallet_model(parent)
 {
     if (parent) {
-        connect(parent, &WalletQmlModel::transactionChanged, this, &CoinsListModel::update);
-        connect(parent, &WalletQmlModel::addressListChanged, this, &CoinsListModel::update);
-        connect(parent, &WalletQmlModel::balanceChanged, this, &CoinsListModel::update);
+        connect(parent, &WalletQmlModel::walletStateChanged, this, &CoinsListModel::update);
     }
     update();
 }
