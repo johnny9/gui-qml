@@ -42,17 +42,11 @@ SettingsPage {
         let normalized = walletController.normalizeWalletPath(rawPath)
         if (normalized.length === 0) return ""
 
-        const hasKnownSuffix = /\.(bak|dat)$/i.test(normalized)
-        if (walletController.walletPathExists(normalized) && !hasKnownSuffix) {
-            normalized += "/" + root.backupFileName()
-        } else if (!hasKnownSuffix) {
-            normalized += ".bak"
-        }
         return normalized
     }
 
     function startBackup() {
-        if (!root.wallet) return
+        if (!root.wallet || root.wallet.settingsBusy) return
         root.errorText = ""
         root.wallet.clearSettingsError()
         if (backupAutomationPath.text.length > 0) {

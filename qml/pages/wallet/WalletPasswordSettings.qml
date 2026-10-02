@@ -19,6 +19,8 @@ SettingsPage {
     property WalletQmlModel wallet: walletController.selectedWallet
     property string errorText: ""
     property string successText: ""
+    property var submittedWallet: null
+    property string submittedOperation: ""
     readonly property string resultText: successText.length > 0 ? successText : errorText
     readonly property bool resultSuccess: successText.length > 0
 
@@ -90,6 +92,18 @@ SettingsPage {
     Connections {
         target: root.wallet
 
+        function onSettingsOperationFinished(operation, success) {
+            if (root.submittedWallet !== root.wallet || operation !== root.submittedOperation) return
+            root.submittedWallet = null
+            root.submittedOperation = ""
+            if (!root.visible && success) {
+                root.successText = root.updating ? qsTr("Password updated successfully.") : qsTr("Wallet password set successfully.")
+                root.errorText = ""
+                return
+            }
+            root.handleSaveResult(success)
+        }
+
         function onSettingsErrorChanged() {
             root.successText = ""
             root.errorText = root.wallet ? root.wallet.settingsError : ""
@@ -107,6 +121,7 @@ SettingsPage {
     FormSection {
         objectName: "walletPasswordFormSection"
         Layout.fillWidth: true
+        enabled: root.wallet && !root.wallet.settingsBusy
 
         ColumnLayout {
             Layout.fillWidth: true
@@ -185,7 +200,8 @@ SettingsPage {
                 Layout.preferredWidth: Math.min(320, parent.width)
                 Layout.alignment: Qt.AlignHCenter
                 text: root.updating ? qsTr("Update password") : qsTr("Set password")
-                enabled: walletController.initialized
+                enabled: walletController.initialized && root.wallet && !root.wallet.settingsBusy
+                    && (root.updating || !root.wallet.isEncrypted)
                     && newPassword.text !== ""
                     && confirmPassword.text !== ""
                     && newPassword.text === confirmPassword.text
@@ -197,7 +213,12 @@ SettingsPage {
                     const ok = root.updating
                         ? root.wallet.changeWalletPassphrase(currentPassword.text, newPassword.text)
                         : root.wallet.encryptWallet(newPassword.text)
-                    root.handleSaveResult(ok)
+                    if (!ok) root.handleSaveResult(false)
+                    else {
+                        root.submittedWallet = root.wallet
+                        root.submittedOperation = root.updating ? "passphrase" : "encrypt"
+                        if (!root.updating) root.clearPasswordFields()
+                    }
                 }
             }
         }

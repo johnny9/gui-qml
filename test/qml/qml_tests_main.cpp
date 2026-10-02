@@ -1140,6 +1140,8 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString externalSignerStatus MEMBER m_external_signer_status NOTIFY walletInfoChanged)
     Q_PROPERTY(bool canManagePassphrase MEMBER m_can_manage_passphrase NOTIFY walletInfoChanged)
     Q_PROPERTY(QString settingsError MEMBER m_settings_error NOTIFY settingsErrorChanged)
+    Q_PROPERTY(bool settingsBusy MEMBER m_settings_busy NOTIFY settingsBusyChanged)
+    Q_PROPERTY(bool settingsAutoComplete MEMBER m_settings_auto_complete)
     Q_PROPERTY(QString lastBackupPath READ lastBackupPath NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(int backupWalletCalls READ backupWalletCalls NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(QString transactionError MEMBER m_transaction_error NOTIFY transactionErrorChanged)
@@ -1570,12 +1572,55 @@ public:
         m_settings_error.clear();
         Q_EMIT settingsErrorChanged();
     }
+    Q_INVOKABLE bool encryptWallet(const QString&)
+    {
+        return startSettingsOperation(QStringLiteral("encrypt"));
+    }
+    Q_INVOKABLE bool changeWalletPassphrase(const QString&, const QString&)
+    {
+        return startSettingsOperation(QStringLiteral("passphrase"));
+    }
+    Q_INVOKABLE void completeSettingsOperation(bool success)
+    {
+        if (!m_settings_busy) return;
+        const QString operation = std::exchange(m_pending_settings_operation, QString{});
+        m_settings_busy = false;
+        if (success && operation == QStringLiteral("encrypt")) {
+            m_is_encrypted = true;
+            m_is_locked = true;
+            Q_EMIT securityStateChanged();
+        }
+        if (!success) {
+            m_settings_error = QStringLiteral("The wallet operation failed.");
+            Q_EMIT settingsErrorChanged();
+        }
+        Q_EMIT settingsBusyChanged();
+        Q_EMIT settingsOperationFinished(operation, success);
+    }
+    bool startSettingsOperation(const QString& operation)
+    {
+        if (m_settings_busy) return false;
+        clearSettingsError();
+        m_settings_busy = true;
+        m_pending_settings_operation = operation;
+        Q_EMIT settingsBusyChanged();
+        if (m_settings_auto_complete) QTimer::singleShot(0, this, [this] { completeSettingsOperation(true); });
+        return true;
+    }
     Q_INVOKABLE bool backupWallet(const QString& path)
     {
-        m_last_backup_path = path;
-        ++m_backup_wallet_calls;
-        clearSettingsError();
-        Q_EMIT backupWalletCallsChanged();
+        if (m_settings_busy) return false;
+        m_settings_busy = true;
+        Q_EMIT settingsBusyChanged();
+        QTimer::singleShot(0, this, [this, path] {
+            m_last_backup_path = path;
+            ++m_backup_wallet_calls;
+            clearSettingsError();
+            m_settings_busy = false;
+            Q_EMIT backupWalletCallsChanged();
+            Q_EMIT settingsBusyChanged();
+            Q_EMIT settingsOperationFinished(QStringLiteral("backup"), true);
+        });
         return true;
     }
     Q_INVOKABLE void resetWalletSettingsTestState()
@@ -1663,6 +1708,8 @@ Q_SIGNALS:
     void securityStateChanged();
     void walletInfoChanged();
     void settingsErrorChanged();
+    void settingsBusyChanged();
+    void settingsOperationFinished(const QString& operation, bool success);
     void backupWalletCallsChanged();
     void transactionErrorChanged();
     void transactionNeedsUnlockChanged();
@@ -1706,6 +1753,9 @@ private:
     QString m_external_signer_status{QStringLiteral("Not used")};
     bool m_can_manage_passphrase{true};
     QString m_settings_error;
+    bool m_settings_busy{false};
+    bool m_settings_auto_complete{true};
+    QString m_pending_settings_operation;
     QString m_last_backup_path;
     int m_backup_wallet_calls{0};
     QString m_transaction_error;
@@ -3158,6 +3208,7 @@ public:
         Open = 1,
         Loading = 2,
         LoadError = 3,
+        Closing = 4,
     };
     Q_ENUM(LoadState)
 

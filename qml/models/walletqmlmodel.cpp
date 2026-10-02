@@ -52,6 +52,8 @@
 #include <wallet/wallet.h>
 
 #include <QDateTime>
+#include <QDir>
+#include <QFileInfo>
 #include <QMetaObject>
 #include <QRegularExpression>
 #include <QScopedValueRollback>
@@ -1270,78 +1272,88 @@ bool WalletQmlModel::canManagePassphrase() const
     return m_wallet && m_wallet_state_ready && !m_wallet_state.private_keys_disabled;
 }
 
-bool WalletQmlModel::encryptWallet(const QString& passphrase)
+bool WalletQmlModel::runSettingsOperation(const QString& operation, std::function<QString(interfaces::Wallet&)> work)
 {
+    if (m_settings_busy) return false;
     clearSettingsError();
     if (!m_wallet) {
         setSettingsError(tr("No wallet is selected."));
         return false;
     }
+    m_settings_busy = true;
+    Q_EMIT settingsBusyChanged();
+    const auto complete = [this, operation](const QString& error) {
+        m_settings_busy = false;
+        setSettingsError(error);
+        requestWalletStateRefresh();
+        Q_EMIT settingsBusyChanged();
+        Q_EMIT settingsOperationFinished(operation, error.isEmpty());
+    };
+    if (!backendExecutor()->submit(this,
+            [wallet = walletHandle(), work = std::move(work)] {
+                const QString error = work(*wallet);
+                return std::tuple{error, wallet->isCrypted(), wallet->isLocked()};
+            },
+            [this, complete](const auto& result) {
+                applySecurityState(std::get<1>(result), std::get<2>(result));
+                complete(std::get<0>(result));
+            }, [complete](std::exception_ptr) { complete(tr("The wallet operation failed.")); })) {
+        complete(tr("The wallet is closing."));
+        return false;
+    }
+    return true;
+}
+
+bool WalletQmlModel::encryptWallet(const QString& passphrase)
+{
     if (passphrase.isEmpty()) {
         setSettingsError(tr("Enter a new wallet password."));
         return false;
     }
-
-    SecureString secure_passphrase{QmlUtil::SecureStringFromQString(passphrase)};
-    const bool encrypted{m_wallet->encryptWallet(secure_passphrase)};
-    QmlUtil::ClearSecureString(secure_passphrase);
-    if (!encrypted) {
-        setSettingsError(tr("The wallet password could not be set."));
-        return false;
-    }
-
-    refreshSecurityState();
-    return true;
+    return runSettingsOperation(QStringLiteral("encrypt"),
+        [passphrase = QmlUtil::SecureStringFromQString(passphrase)](interfaces::Wallet& wallet) mutable {
+            const bool encrypted = wallet.encryptWallet(passphrase);
+            QmlUtil::ClearSecureString(passphrase);
+            return encrypted ? QString{} : tr("The wallet password could not be set.");
+        });
 }
 
 bool WalletQmlModel::changeWalletPassphrase(const QString& old_passphrase, const QString& new_passphrase)
 {
-    clearSettingsError();
-    if (!m_wallet) {
-        setSettingsError(tr("No wallet is selected."));
+    if (old_passphrase.isEmpty() || new_passphrase.isEmpty()) {
+        setSettingsError(old_passphrase.isEmpty() ? tr("Enter the current wallet password.") : tr("Enter a new wallet password."));
         return false;
     }
-    if (old_passphrase.isEmpty()) {
-        setSettingsError(tr("Enter the current wallet password."));
-        return false;
-    }
-    if (new_passphrase.isEmpty()) {
-        setSettingsError(tr("Enter a new wallet password."));
-        return false;
-    }
-
-    SecureString secure_old_passphrase{QmlUtil::SecureStringFromQString(old_passphrase)};
-    SecureString secure_new_passphrase{QmlUtil::SecureStringFromQString(new_passphrase)};
-    const bool changed{m_wallet->changeWalletPassphrase(secure_old_passphrase, secure_new_passphrase)};
-    QmlUtil::ClearSecureString(secure_old_passphrase);
-    QmlUtil::ClearSecureString(secure_new_passphrase);
-    if (!changed) {
-        setSettingsError(tr("The current wallet password was incorrect."));
-        return false;
-    }
-
-    refreshSecurityState();
-    return true;
+    return runSettingsOperation(QStringLiteral("passphrase"),
+        [old_passphrase = QmlUtil::SecureStringFromQString(old_passphrase),
+         new_passphrase = QmlUtil::SecureStringFromQString(new_passphrase)](interfaces::Wallet& wallet) mutable {
+            const bool changed = wallet.changeWalletPassphrase(old_passphrase, new_passphrase);
+            QmlUtil::ClearSecureString(old_passphrase);
+            QmlUtil::ClearSecureString(new_passphrase);
+            return changed ? QString{} : tr("The current wallet password was incorrect.");
+        });
 }
 
 bool WalletQmlModel::backupWallet(const QString& path)
 {
-    clearSettingsError();
-    if (!m_wallet) {
-        setSettingsError(tr("No wallet is selected."));
-        return false;
-    }
     if (path.trimmed().isEmpty()) {
         setSettingsError(tr("Choose a location for the wallet backup."));
         return false;
     }
-
-    if (!m_wallet->backupWallet(path.toStdString())) {
-        setSettingsError(tr("The wallet could not be backed up."));
-        return false;
-    }
-
-    return true;
+    return runSettingsOperation(QStringLiteral("backup"), [path](interfaces::Wallet& wallet) {
+        QString wallet_name = QString::fromStdString(wallet.getWalletName());
+        if (wallet_name.isEmpty()) wallet_name = QStringLiteral("wallet");
+        const QString filename = wallet_name.replace(QRegularExpression(QStringLiteral("[/\\\\]")), QStringLiteral("_")) + QStringLiteral(".bak");
+        QString destination = path;
+        const QFileInfo info(destination);
+        if (info.isDir()) {
+            destination = QDir(destination).filePath(filename);
+        } else if (!destination.endsWith(QStringLiteral(".bak"), Qt::CaseInsensitive) &&
+                   !destination.endsWith(QStringLiteral(".dat"), Qt::CaseInsensitive)) {
+            destination += QStringLiteral(".bak");
+        }
+        return wallet.backupWallet(destination.toStdString()) ? QString{} : tr("The wallet could not be backed up.");
+    });
 }
 
 void WalletQmlModel::clearSettingsError()

@@ -587,6 +587,7 @@ int QmlGuiMain(int argc, char* argv[])
     DebugLogModel debug_log_model{gArgs.GetDataDirNet() / "debug.log"};
 #ifdef ENABLE_WALLET
     std::unique_ptr<WalletQmlController> wallet_controller;
+    std::unique_ptr<WalletListModel> wallet_list_model;
     if (wallet_enabled) {
         wallet_controller = std::make_unique<WalletQmlController>(*node);
         QObject::connect(
@@ -604,15 +605,27 @@ int QmlGuiMain(int argc, char* argv[])
             return;
         }
         shutdown_requested = true;
+        const auto shutdown_node = [&] {
+#ifdef ENABLE_WALLET
+            if (wallet_list_model && !wallet_list_model->isShutdownComplete()) {
+                // Directory discovery borrows the loader until its queue drains.
+                QObject::connect(wallet_list_model.get(), &WalletListModel::shutdownFinished,
+                                 &init_executor, &QmlInitExecutor::shutdown, Qt::SingleShotConnection);
+                wallet_list_model->beginShutdown();
+                return;
+            }
+#endif
+            init_executor.shutdown();
+        };
 #ifdef ENABLE_WALLET
         if (wallet_controller) {
             QObject::connect(wallet_controller.get(), &WalletQmlController::walletsDrained,
-                             &init_executor, &QmlInitExecutor::shutdown, Qt::SingleShotConnection);
+                             &init_executor, shutdown_node, Qt::SingleShotConnection);
             wallet_controller->beginShutdown();
             return;
         }
 #endif
-        init_executor.shutdown();
+        shutdown_node();
     });
     QObject::connect(&init_executor, &QmlInitExecutor::initializeResult, &node_model, &NodeModel::initializeResult);
     QObject::connect(&init_executor, &QmlInitExecutor::shutdownResult, qGuiApp, [] {
@@ -687,7 +700,6 @@ int QmlGuiMain(int argc, char* argv[])
     engine->rootContext()->setContextProperty("rpcConsoleModel", &rpc_console_model);
 
 #ifdef ENABLE_WALLET
-    std::unique_ptr<WalletListModel> wallet_list_model;
     if (wallet_enabled) {
         wallet_list_model = std::make_unique<WalletListModel>(*node, nullptr);
         QObject::connect(wallet_controller.get(), &WalletQmlController::walletLoadStateChanged,
