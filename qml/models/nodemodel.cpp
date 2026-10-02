@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/nodemodel.h>
+#include <qml/asyncjoin.h>
 
 #include <common/args.h>
 #include <common/system.h>
@@ -21,6 +22,7 @@
 #include <cassert>
 #include <algorithm>
 #include <chrono>
+#include <vector>
 
 #include <QDateTime>
 #include <QEventLoop>
@@ -94,8 +96,8 @@ QVariant InformationRow(const QString& label, const QString& value)
 }
 } // namespace
 
-NodeModel::NodeModel(interfaces::Node& node)
-    : m_node{node}
+NodeModel::NodeModel(interfaces::Node& node, bool backend_ready)
+    : m_backend_queries_ready{backend_ready}, m_node{node}
 {
     m_sync_progress_clock.start();
     m_mempool_information_available = !gArgs.GetBoolArg("-blocksonly", DEFAULT_BLOCKSONLY);
@@ -120,6 +122,43 @@ NodeModel::~NodeModel()
         m_mempool_info_thread->quit();
         m_mempool_info_thread->wait();
     }
+}
+
+void NodeModel::beginShutdown()
+{
+    if (m_workers_stopping) return;
+    setMempoolInfoPollingActive(false);
+    m_workers_stopping = true;
+    setNodeReady(false);
+    stopShutdownPolling();
+    if (!m_mempool_info_thread) {
+        Q_EMIT drained();
+        return;
+    }
+    auto handlers = std::make_shared<std::vector<std::unique_ptr<interfaces::Handler>>>();
+    handlers->push_back(std::move(m_handler_notify_block_tip));
+    handlers->push_back(std::move(m_handler_notify_header_tip));
+    handlers->push_back(std::move(m_handler_notify_num_peers_changed));
+    handlers->push_back(std::move(m_handler_notify_network_active_changed));
+    handlers->push_back(std::move(m_handler_notify_alert_changed));
+    handlers->push_back(std::move(m_handler_message_box));
+    handlers->push_back(std::move(m_handler_question));
+    handlers->push_back(std::move(m_handler_notify_banned_list_changed));
+    JoinThreadAsync(m_mempool_info_thread, this, [this] {
+        m_mempool_info_thread = nullptr;
+        m_mempool_info_worker = nullptr;
+        m_mempool_info_timer = nullptr;
+        Q_EMIT drained();
+    });
+    QMetaObject::invokeMethod(m_mempool_info_worker,
+        [handlers = std::move(handlers), timer = m_mempool_info_timer, thread = m_mempool_info_thread] {
+            timer->stop();
+            for (const auto& handler : *handlers) {
+                if (handler) handler->disconnect();
+            }
+            handlers->clear();
+            QMetaObject::invokeMethod(thread, &QThread::quit, Qt::QueuedConnection);
+        }, Qt::QueuedConnection);
 }
 
 void NodeModel::setBlockTipHeight(int new_height)
@@ -157,6 +196,7 @@ void NodeModel::setNumInboundPeers(int new_num)
 
 void NodeModel::refreshPeerCounts()
 {
+    if (!m_backend_queries_ready || m_shutdown_requested || m_workers_stopping) return;
     setNumPeers(static_cast<int>(m_node.getNodeCount(ConnectionDirection::Both)));
     setNumInboundPeers(static_cast<int>(m_node.getNodeCount(ConnectionDirection::In)));
     setNumOutboundPeers(static_cast<int>(m_node.getNodeCount(ConnectionDirection::Out)));
@@ -164,11 +204,13 @@ void NodeModel::refreshPeerCounts()
 
 void NodeModel::refreshMempoolInfo()
 {
+    if (!m_backend_queries_ready || m_workers_stopping) return;
     requestMempoolInfoRefresh();
 }
 
 void NodeModel::setMempoolInfoPollingActive(bool active)
 {
+    if (m_workers_stopping) return;
     if (m_mempool_info_polling_active == active) {
         return;
     }
@@ -176,7 +218,7 @@ void NodeModel::setMempoolInfoPollingActive(bool active)
     Q_EMIT mempoolInfoPollingActiveChanged(active);
 
     QTimer* timer = m_mempool_info_timer;
-    if (!timer) {
+    if (!timer || !m_backend_queries_ready) {
         return;
     }
 
@@ -347,6 +389,7 @@ void NodeModel::updateSyncCompletion()
 
 void NodeModel::setPause(bool new_pause)
 {
+    if (!m_backend_queries_ready || m_shutdown_requested || m_workers_stopping) return;
     if(m_pause != new_pause) {
         m_pause = new_pause;
         m_node.setNetworkActive(!new_pause);
@@ -390,6 +433,7 @@ void NodeModel::setWarnings(const QString& warnings)
 
 void NodeModel::refreshWarnings()
 {
+    if (m_shutdown_requested || m_workers_stopping) return;
     // Keep "current warnings" tied to Core's active warning set.
     setWarnings(QString::fromStdString(m_node.getWarnings().translated));
 }
@@ -439,12 +483,14 @@ void NodeModel::requestShutdown()
         return;
     }
     m_shutdown_requested = true;
+    while (m_runtime_dialog_active) answerRuntimeDialog(CClientUIInterface::BTN_CANCEL);
     stopShutdownPolling();
     Q_EMIT requestedShutdown();
 }
 
 void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info)
 {
+    if (m_workers_stopping) return;
     if (success && (m_shutdown_requested || m_node.shutdownRequested())) {
         requestShutdown();
         return;
@@ -468,6 +514,11 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
             requestShutdown();
         }
     } else {
+        m_backend_queries_ready = true;
+        refreshPeerCounts();
+        if (m_mempool_info_polling_active) {
+            QMetaObject::invokeMethod(m_mempool_info_timer, [timer = m_mempool_info_timer] { timer->start(); }, Qt::QueuedConnection);
+        }
         m_startup_error_messages.clear();
         m_runtime_dialogs_enabled = true;
         refreshWarnings();
@@ -629,12 +680,13 @@ QString NodeModel::defaultProxyAddress()
 
 bool NodeModel::disconnectPeer(int nodeId)
 {
+    if (!m_backend_queries_ready || m_shutdown_requested || m_workers_stopping) return false;
     return m_node.disconnectById(nodeId);
 }
 
 bool NodeModel::banPeer(const QString& rawAddress, int64_t banDuration)
 {
-    if (banDuration <= 0) return false;
+    if (!m_backend_queries_ready || m_shutdown_requested || m_workers_stopping || banDuration <= 0) return false;
     auto addr = LookupHost(rawAddress.toStdString(), /*fAllowLookup=*/false);
     if (!addr) return false;
     bool result = m_node.ban(*addr, banDuration);
@@ -646,6 +698,7 @@ bool NodeModel::banPeer(const QString& rawAddress, int64_t banDuration)
 
 QVariantList NodeModel::nodeInformationRows()
 {
+    if (!m_backend_queries_ready || m_shutdown_requested || m_workers_stopping) return {};
     int header_height{m_header_tip_height};
     int64_t header_time{m_header_tip_time};
     if (m_node_ready && header_height == 0) {
@@ -725,6 +778,7 @@ bool NodeModel::showRuntimeQuestion(const QString& message, unsigned int style)
 
 bool NodeModel::showRuntimeDialogOnGuiThread(const QString& message, unsigned int style, bool question)
 {
+    if (m_shutdown_requested || m_workers_stopping) return false;
     if (!m_runtime_dialogs_enabled && !question) {
         if (style & CClientUIInterface::ICON_WARNING) {
             recordStartupWarningMessage(message);

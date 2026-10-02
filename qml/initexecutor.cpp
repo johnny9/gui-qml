@@ -5,65 +5,74 @@
 #include <qml/initexecutor.h>
 
 #include <interfaces/node.h>
-#include <util/exception.h>
 #include <util/threadnames.h>
 
-#include <QDebug>
-#include <QMetaObject>
-#include <QObject>
 #include <QString>
-#include <QThread>
 
 QmlInitExecutor::QmlInitExecutor(interfaces::Node& node)
     : QObject(), m_node(node)
 {
-    m_context.moveToThread(&m_thread);
-    m_thread.start();
+    connect(&m_backend, &BackendExecutor::drained, this, &QmlInitExecutor::finishShutdown);
+    connect(&m_control, &BackendExecutor::drained, this, &QmlInitExecutor::finishShutdown);
 }
 
-QmlInitExecutor::~QmlInitExecutor()
-{
-    qDebug() << __func__ << ": Stopping thread";
-    m_thread.quit();
-    m_thread.wait();
-    qDebug() << __func__ << ": Stopped thread";
-}
+QmlInitExecutor::~QmlInitExecutor() = default;
 
-void QmlInitExecutor::handleRunawayException(const std::exception* e)
+void QmlInitExecutor::handleRunawayException(std::exception_ptr error)
 {
-    PrintExceptionContinue(e, "Runaway exception");
-    Q_EMIT runawayException(e ? QString::fromUtf8(e->what()) : tr("Unknown exception"));
+    QString message{tr("Unknown exception")};
+    try {
+        std::rethrow_exception(error);
+    } catch (const std::exception& e) {
+        message = QString::fromUtf8(e.what());
+    } catch (...) {
+    }
+    Q_EMIT runawayException(message);
 }
 
 void QmlInitExecutor::initialize()
 {
-    QMetaObject::invokeMethod(&m_context, [this] {
-        try {
-            util::ThreadRename("qml-init");
-            qDebug() << "Running initialization in thread";
-            interfaces::BlockAndHeaderTipInfo tip_info;
-            bool rv = m_node.appInitMain(&tip_info);
-            Q_EMIT initializeResult(rv, tip_info);
-        } catch (const std::exception& e) {
-            handleRunawayException(&e);
-        } catch (...) {
-            handleRunawayException(nullptr);
-        }
+    struct Result {
+        bool success;
+        interfaces::BlockAndHeaderTipInfo tip;
+    };
+    m_backend.submit(this, [node = &m_node] {
+        util::ThreadRename("qml-init");
+        Result result{};
+        result.success = node->appInitMain(&result.tip);
+        return result;
+    }, [this](Result result) {
+        Q_EMIT initializeResult(result.success, result.tip);
+    }, [this](std::exception_ptr error) { handleRunawayException(error); });
+}
+
+void QmlInitExecutor::interrupt()
+{
+    if (m_interrupt_requested) return;
+    m_interrupt_requested = true;
+    m_control.submit(this, [node = &m_node] {
+        util::ThreadRename("qml-control");
+        node->startShutdown();
+    }, [this] { Q_EMIT interruptResult(); }, [this](std::exception_ptr error) {
+        handleRunawayException(error);
+        Q_EMIT interruptResult();
     });
 }
 
 void QmlInitExecutor::shutdown()
 {
-    QMetaObject::invokeMethod(&m_context, [this] {
-        try {
-            qDebug() << "Running shutdown in thread";
-            m_node.appShutdown();
-            qDebug() << "Shutdown finished";
-            Q_EMIT shutdownResult();
-        } catch (const std::exception& e) {
-            handleRunawayException(&e);
-        } catch (...) {
-            handleRunawayException(nullptr);
-        }
-    });
+    if (m_shutdown_requested) return;
+    m_shutdown_requested = true;
+    m_backend.submit(this, [node = &m_node] { node->appShutdown(); }, [this] {
+        m_shutdown_complete = true;
+        m_backend.shutdown();
+        m_control.shutdown();
+    }, [this](std::exception_ptr error) { handleRunawayException(error); });
+}
+
+void QmlInitExecutor::finishShutdown()
+{
+    if (!m_shutdown_complete || m_shutdown_emitted || !m_backend.isDrained() || !m_control.isDrained()) return;
+    m_shutdown_emitted = true;
+    Q_EMIT shutdownResult();
 }

@@ -4,10 +4,14 @@
 
 #include <net_processing.h>
 #include <qml/initexecutor.h>
+#include <qml/shutdowncoordinator.h>
 #include <test/mocks/mocknode.h>
 #include <util/translation.h>
 
 #include <QtTest/QtTest>
+#include <QScopeGuard>
+#include <QSemaphore>
+#include <QTimer>
 
 #include <atomic>
 #include <stdexcept>
@@ -17,6 +21,16 @@ Q_DECLARE_METATYPE(interfaces::BlockAndHeaderTipInfo)
 namespace {
 constexpr auto SIGNAL_TIMEOUT{5'000};
 }
+
+class ShutdownParticipant : public QObject
+{
+    Q_OBJECT
+public:
+    bool started{false};
+    void finish() { Q_EMIT drained(); }
+Q_SIGNALS:
+    void drained();
+};
 
 class QmlInitExecutorApiTests : public QObject
 {
@@ -28,6 +42,9 @@ private Q_SLOTS:
     void initializeEmitsRunawayExceptionOnFailure();
     void shutdownEmitsResultAndRunsOffMainThread();
     void shutdownEmitsRunawayExceptionOnFailure();
+    void interruptionBypassesBlockedInitialization();
+    void shutdownWaitsForInterruptionAndEveryParticipant();
+    void portMappingDrainsBeforeInterruption();
 };
 
 void QmlInitExecutorApiTests::initTestCase()
@@ -138,6 +155,100 @@ void QmlInitExecutorApiTests::shutdownEmitsRunawayExceptionOnFailure()
     QCOMPARE(runaway_spy.count(), 1);
     QCOMPARE(shutdown_spy.count(), 0);
     QCOMPARE(runaway_spy.takeFirst().at(0).toString(), QString{"shutdown failed"});
+    QCOMPARE(node.calls.appShutdown.load(), 1);
+}
+
+void QmlInitExecutorApiTests::interruptionBypassesBlockedInitialization()
+{
+    StrictMockNode node;
+    QSemaphore release;
+    const auto unblock = qScopeGuard([&] { release.release(); });
+    std::atomic_bool entered{false};
+    std::atomic_bool off_gui{false};
+    const auto gui_thread = QThread::currentThread();
+    node.app_init_main_fn = [&](interfaces::BlockAndHeaderTipInfo*) {
+        entered = true;
+        release.acquire();
+        return false;
+    };
+    node.start_shutdown_fn = [&] {
+        off_gui = QThread::currentThread() != gui_thread;
+        release.release();
+    };
+    node.app_shutdown_fn = [] {};
+    QmlInitExecutor executor{node};
+    QSignalSpy initialized{&executor, &QmlInitExecutor::initializeResult};
+    QSignalSpy interrupted{&executor, &QmlInitExecutor::interruptResult};
+    QSignalSpy finished{&executor, &QmlInitExecutor::shutdownResult};
+    executor.initialize();
+    QTRY_VERIFY_WITH_TIMEOUT(entered.load(), SIGNAL_TIMEOUT);
+    executor.interrupt();
+    executor.interrupt();
+    QTRY_COMPARE_WITH_TIMEOUT(interrupted.count(), 1, SIGNAL_TIMEOUT);
+    QTRY_COMPARE_WITH_TIMEOUT(initialized.count(), 1, SIGNAL_TIMEOUT);
+    QVERIFY(off_gui.load());
+    QCOMPARE(node.calls.startShutdown.load(), 1);
+    executor.shutdown();
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, SIGNAL_TIMEOUT);
+}
+
+void QmlInitExecutorApiTests::shutdownWaitsForInterruptionAndEveryParticipant()
+{
+    StrictMockNode node;
+    QSemaphore release_hook;
+    const auto unblock = qScopeGuard([&] { release_hook.release(); });
+    std::atomic_bool hook_entered{false};
+    node.start_shutdown_fn = [&] {
+        hook_entered = true;
+        release_hook.acquire();
+    };
+    node.app_shutdown_fn = [] {};
+    QmlInitExecutor executor{node};
+    QmlShutdownCoordinator coordinator{executor};
+    ShutdownParticipant first, second;
+    coordinator.addParticipant(&first, &ShutdownParticipant::drained, [&] { first.started = true; });
+    coordinator.addParticipant(&second, &ShutdownParticipant::drained, [&] { second.started = true; });
+    QSignalSpy finished{&executor, &QmlInitExecutor::shutdownResult};
+    coordinator.requestShutdown();
+    coordinator.requestShutdown();
+    QTRY_VERIFY_WITH_TIMEOUT(hook_entered.load(), SIGNAL_TIMEOUT);
+    bool gui_progress{false};
+    QTimer::singleShot(0, this, [&] { gui_progress = true; });
+    QTRY_VERIFY_WITH_TIMEOUT(gui_progress, SIGNAL_TIMEOUT);
+    QVERIFY(!first.started);
+    QCOMPARE(node.calls.appShutdown.load(), 0);
+    release_hook.release();
+    QTRY_VERIFY_WITH_TIMEOUT(first.started && second.started, SIGNAL_TIMEOUT);
+    first.finish();
+    first.finish();
+    QCOMPARE(node.calls.appShutdown.load(), 0);
+    second.finish();
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, SIGNAL_TIMEOUT);
+    QCOMPARE(node.calls.startShutdown.load(), 1);
+    QCOMPARE(node.calls.appShutdown.load(), 1);
+}
+
+void QmlInitExecutorApiTests::portMappingDrainsBeforeInterruption()
+{
+    StrictMockNode node;
+    node.start_shutdown_fn = [] {};
+    node.app_shutdown_fn = [] {};
+    QmlInitExecutor executor{node};
+    QmlShutdownCoordinator coordinator{executor};
+    ShutdownParticipant settings;
+    coordinator.addBeforeInterruptParticipant(&settings, &ShutdownParticipant::drained, [&] { settings.started = true; });
+    QSignalSpy finished{&executor, &QmlInitExecutor::shutdownResult};
+    coordinator.requestShutdown();
+    QVERIFY(settings.started);
+    // The final queued mapping change must precede InterruptMapPort. No second
+    // startShutdown call may be used to repair that order (it reruns hooks).
+    QCOMPARE(node.calls.startShutdown.load(), 0);
+    bool gui_progress{false};
+    QTimer::singleShot(0, this, [&] { gui_progress = true; });
+    QTRY_VERIFY_WITH_TIMEOUT(gui_progress, SIGNAL_TIMEOUT);
+    settings.finish();
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, SIGNAL_TIMEOUT);
+    QCOMPARE(node.calls.startShutdown.load(), 1);
     QCOMPARE(node.calls.appShutdown.load(), 1);
 }
 

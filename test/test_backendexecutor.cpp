@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/backendexecutor.h>
+#include <qml/backendstage.h>
 #include <qml/asyncjoin.h>
 
 #include <QScopeGuard>
@@ -40,6 +41,7 @@ private Q_SLOTS:
     void destructionReleasesBackendCapturesOnWorker();
     void ownerDestructionAfterCompletion();
     void discardedOwningResultIsDestroyedOnWorker();
+    void bootstrapStageProcessesGuiEventsAndReturnsOwnedResult();
 };
 
 void BackendExecutorTests::finalDrainIncludesDestroyedThreadOwner()
@@ -323,6 +325,32 @@ void BackendExecutorTests::ownerDestructionAfterCompletion()
     bool drained{false};
     BackendExecutor::shutdownAll(this, [&] { drained = true; });
     QTRY_VERIFY_WITH_TIMEOUT(drained, TIMEOUT);
+}
+
+void BackendExecutorTests::bootstrapStageProcessesGuiEventsAndReturnsOwnedResult()
+{
+    auto gate = std::make_shared<Gate>();
+    const auto unblock = qScopeGuard([gate] { gate->release.release(); });
+    bool gui_progress{false};
+    QTimer::singleShot(0, this, [&] {
+        gui_progress = true;
+        gate->release.release();
+    });
+    const auto result = RunBackendStage([gate] {
+        gate->release.acquire();
+        return std::make_unique<int>(42);
+    });
+    QVERIFY(gui_progress);
+    QCOMPARE(*result, 42);
+    bool threw_expected{false};
+    try {
+        RunBackendStage([]() -> int { throw std::runtime_error{"failed stage"}; });
+    } catch (const std::runtime_error&) {
+        threw_expected = true;
+    } catch (...) {
+        QFAIL("Expected std::runtime_error from the failed backend stage");
+    }
+    QVERIFY(threw_expected);
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

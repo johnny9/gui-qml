@@ -446,3 +446,8 @@ bool OnboardingOptionsModel::applyToArgs(ArgsManager& args, QString* error) cons
         coreValues(),
         error);
 }
+
+QmlOnboardingSettings::ApplyRequest OnboardingOptionsModel::applyRequest() const
+{
+    return {{m_data_dir, m_data_dir_source}, m_core_settings.touchedSettings(), coreValues()};
+}

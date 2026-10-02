@@ -6,11 +6,11 @@
 #define BITCOIN_QML_INITEXECUTOR_H
 
 #include <interfaces/node.h>
+#include <qml/backendexecutor.h>
 
 #include <exception>
 
 #include <QObject>
-#include <QThread>
 
 QT_BEGIN_NAMESPACE
 class QString;
@@ -26,19 +26,27 @@ public:
 
 public Q_SLOTS:
     void initialize();
+    /** Runs interruption independently of a potentially blocked initialize job. */
+    void interrupt();
     void shutdown();
 
 Q_SIGNALS:
     void initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info);
+    void interruptResult();
     void shutdownResult();
     void runawayException(const QString& message);
 
 private:
-    void handleRunawayException(const std::exception* e);
+    void handleRunawayException(std::exception_ptr error);
+    void finishShutdown();
 
     interfaces::Node& m_node;
-    QObject m_context;
-    QThread m_thread;
+    BackendExecutor m_backend;
+    BackendExecutor m_control;
+    bool m_interrupt_requested{false};
+    bool m_shutdown_requested{false};
+    bool m_shutdown_complete{false};
+    bool m_shutdown_emitted{false};
 };
 
 #endif // BITCOIN_QML_INITEXECUTOR_H

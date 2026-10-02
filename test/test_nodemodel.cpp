@@ -142,7 +142,7 @@ private Q_SLOTS:
     void nodeInformationRowsExposeDiagnostics();
     void initEmitsRequestedInitialize();
     void initGuardBlocksSecondEmission();
-    void shutdownPollingRequestsShutdownWithoutInterruptingCore();
+    void shutdownPollingOnlyRequestsLifecycleControl();
 };
 
 void NodeModelTests::refreshMempoolInfoUpdatesProperties()
@@ -1549,7 +1549,7 @@ void NodeModelTests::initGuardBlocksSecondEmission()
     QCOMPARE(spy.count(), 1);
 }
 
-void NodeModelTests::shutdownPollingRequestsShutdownWithoutInterruptingCore()
+void NodeModelTests::shutdownPollingOnlyRequestsLifecycleControl()
 {
     MockNode node;
     MempoolState mempool;
@@ -1567,6 +1567,7 @@ void NodeModelTests::shutdownPollingRequestsShutdownWithoutInterruptingCore()
     model.startShutdownPolling();
 
     QTRY_COMPARE_WITH_TIMEOUT(shutdown_spy.count(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(node.calls.startShutdown.load(), 0);
 
     model.requestShutdown();
     QCOMPARE(shutdown_spy.count(), 1);
