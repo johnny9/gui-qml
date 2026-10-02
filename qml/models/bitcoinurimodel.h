@@ -8,6 +8,10 @@
 #include <QObject>
 #include <QVariantMap>
 
+#include <memory>
+
+class BackendExecutor;
+
 /**
  * QML-accessible singleton that wraps the BitcoinUri static parser.
  * Registered as "BitcoinUri" in the org.bitcoincore.qt 1.0 module.
@@ -20,6 +24,7 @@ class BitcoinUriModel : public QObject
     Q_OBJECT
 public:
     explicit BitcoinUriModel(QObject* parent = nullptr);
+    void beginShutdown();
 
     /** Parse a bitcoin: URI string. Returns a QVariantMap with keys:
      *  success, error, address, amountSats, hasAmount,
@@ -28,8 +33,15 @@ public:
 
     /** Read a local file and parse its contents as a bitcoin: URI.
      *  Accepts plain paths and file:// URLs (QUrl::toLocalFile is used
-     *  for platform-correct conversion). Capped at 1 MiB. */
-    Q_INVOKABLE QVariantMap parseBitcoinUriFromFile(const QString& source_path);
+     *  for platform-correct conversion). Capped at 1 MiB. Returns a request
+     *  id for fileParsed(), or zero when shutdown rejects the request. */
+    Q_INVOKABLE quint64 parseBitcoinUriFromFile(const QString& source_path);
+Q_SIGNALS:
+    void shutdownFinished();
+    void fileParsed(quint64 request_id, const QVariantMap& result);
+private:
+    std::shared_ptr<BackendExecutor> m_executor;
+    quint64 m_next_request{0};
 };
 
 #endif // BITCOIN_QML_MODELS_BITCOINURIMODEL_H

@@ -15,6 +15,7 @@ class WalletQmlModel;
 class CoinsListModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(bool lockPending READ lockPending NOTIFY lockPendingChanged)
     Q_PROPERTY(int lockedCoinsCount READ lockedCoinsCount NOTIFY coinCountChanged)
     Q_PROPERTY(int selectedCoinsCount READ selectedCoinsCount NOTIFY selectedCoinsCountChanged)
     Q_PROPERTY(int coinCount READ coinCount NOTIFY coinCountChanged)
@@ -44,6 +45,7 @@ public:
     int rowCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
+    bool lockPending() const { return m_lock_pending; }
     int lockedCoinsCount() const;
     int selectedCoinsCount() const;
     int coinCount() const { return static_cast<int>(m_coins.size()); }
@@ -78,6 +80,8 @@ public:
     Q_INVOKABLE void cancelSelection();
     Q_INVOKABLE bool setCoinsLocked(const QStringList& coin_ids, bool locked);
 Q_SIGNALS:
+    void lockPendingChanged();
+    void locksUpdated(bool success);
     void lockedCoinsCountChanged();
     void selectedCoinsCountChanged();
     void coinCountChanged();
@@ -105,5 +109,6 @@ private:
     qint64 m_min_amount{-1};
     qint64 m_max_amount{-1};
     bool m_descending{true};
+    bool m_lock_pending{false};
 };
 #endif

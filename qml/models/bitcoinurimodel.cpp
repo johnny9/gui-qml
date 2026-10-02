@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/bitcoinurimodel.h>
+#include <qml/backendexecutor.h>
 
 #include <qml/models/bitcoinuri.h>
 
@@ -30,8 +31,15 @@ QVariantMap BuildBitcoinUriResultMap(const BitcoinUriParseResult& r)
 } // namespace
 
 BitcoinUriModel::BitcoinUriModel(QObject* parent)
-    : QObject(parent)
+    : QObject(parent), m_executor(std::make_shared<BackendExecutor>())
 {
+    connect(m_executor.get(), &BackendExecutor::drained, this, &BitcoinUriModel::shutdownFinished);
+}
+
+void BitcoinUriModel::beginShutdown()
+{
+    if (m_executor->isDrained()) Q_EMIT shutdownFinished();
+    else m_executor->shutdown();
 }
 
 QVariantMap BitcoinUriModel::parseBitcoinUri(const QString& uri_text)
@@ -39,34 +47,41 @@ QVariantMap BitcoinUriModel::parseBitcoinUri(const QString& uri_text)
     return BuildBitcoinUriResultMap(BitcoinUri::Parse(uri_text));
 }
 
-QVariantMap BitcoinUriModel::parseBitcoinUriFromFile(const QString& source_path)
+quint64 BitcoinUriModel::parseBitcoinUriFromFile(const QString& source_path)
 {
-    constexpr qint64 MAX_FILE_SIZE = 1024 * 1024; // 1 MiB
+    const auto request = ++m_next_request;
+    const bool accepted = m_executor->submit(this, [source_path] {
+        constexpr qint64 MAX_FILE_SIZE = 1024 * 1024; // 1 MiB
 
-    // Accept either a local file path or a file:// URL (e.g. from a DropArea).
-    // QUrl::toLocalFile() handles the platform-specific conversion correctly,
-    // including the extra leading slash in file:///C:/path on Windows.
-    QString local_path = source_path;
-    const QUrl url(source_path);
-    if (url.isLocalFile()) {
-        local_path = url.toLocalFile();
-    }
+        // Accept either a local file path or a file:// URL (e.g. from a DropArea).
+        // QUrl::toLocalFile() handles the platform-specific conversion correctly,
+        // including the extra leading slash in file:///C:/path on Windows.
+        QString local_path = source_path;
+        const QUrl url(source_path);
+        if (url.isLocalFile()) {
+            local_path = url.toLocalFile();
+        }
 
-    // File is read synchronously on the GUI thread. For local storage the
-    // 1 MiB guard makes this acceptable. For network-mounted paths (NFS, SMB)
-    // this could stall the UI — see issue #541 for the async fix using
-    // QtConcurrent::run.
-    QFile file(local_path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        BitcoinUriParseResult err;
-        err.error = tr("Cannot open file: %1").arg(file.errorString());
-        return BuildBitcoinUriResultMap(err);
-    }
-    if (file.size() > MAX_FILE_SIZE) {
-        BitcoinUriParseResult err;
-        err.error = tr("File is too large to be a payment URI.");
-        return BuildBitcoinUriResultMap(err);
-    }
-    const QString content = QString::fromUtf8(file.readAll()).trimmed();
-    return BuildBitcoinUriResultMap(BitcoinUri::Parse(content));
+        QFile file(local_path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            BitcoinUriParseResult err;
+            err.error = tr("Cannot open file: %1").arg(file.errorString());
+            return BuildBitcoinUriResultMap(err);
+        }
+        if (file.size() > MAX_FILE_SIZE) {
+            BitcoinUriParseResult err;
+            err.error = tr("File is too large to be a payment URI.");
+            return BuildBitcoinUriResultMap(err);
+        }
+        const auto bytes = file.read(MAX_FILE_SIZE + 1);
+        if (bytes.size() > MAX_FILE_SIZE || file.error() != QFileDevice::NoError) {
+            BitcoinUriParseResult err;
+            err.error = tr("Could not read the complete payment URI file.");
+            return BuildBitcoinUriResultMap(err);
+        }
+        const QString content = QString::fromUtf8(bytes).trimmed();
+        return BuildBitcoinUriResultMap(BitcoinUri::Parse(content));
+    }, [this, request](const QVariantMap& result) { Q_EMIT fileParsed(request, result); },
+       [this, request](std::exception_ptr) { Q_EMIT fileParsed(request, {{QStringLiteral("success"), false}, {QStringLiteral("error"), tr("Could not read the payment URI file.")}}); });
+    return accepted ? request : 0;
 }

@@ -11,6 +11,7 @@
 #include <uint256.h>
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -22,13 +23,13 @@ class Wallet;
 } // namespace interfaces
 
 struct bilingual_str;
+class BackendExecutor;
 
 class BumpTransactionModel : public QObject
 {
     Q_OBJECT
 
 public:
-    void detachWallet() { m_wallet = nullptr; }
     enum State { Idle, Preparing, NeedsConfirmation, Committing, Succeeded, Failed };
     Q_ENUM(State)
 
@@ -45,7 +46,7 @@ public:
     Q_PROPERTY(QString errorText READ errorText NOTIFY resultChanged)
     Q_PROPERTY(bool needsUnlock READ needsUnlock NOTIFY needsUnlockChanged)
 
-    explicit BumpTransactionModel(interfaces::Wallet* wallet, QObject* parent = nullptr);
+    explicit BumpTransactionModel(std::shared_ptr<interfaces::Wallet> wallet, std::shared_ptr<BackendExecutor> executor = {}, QObject* parent = nullptr);
 
     State state() const { return m_state; }
     ActionType actionType() const { return m_action_type; }
@@ -62,8 +63,11 @@ public:
     Q_INVOKABLE bool confirmFeeBumpWithPassphrase(const QString& passphrase);
     Q_INVOKABLE void reset();
     void setSecurityStateChangedFn(std::function<void()> fn);
+    // Called while the parent retains the wallet for worker-side retirement.
+    void detachWallet();
 
 Q_SIGNALS:
+    void operationFinished(bool success);
     void stateChanged();
     void actionTypeChanged();
     void resultChanged();
@@ -76,9 +80,10 @@ private:
     void setNeedsUnlock(bool needs_unlock);
     void setUnlockRequired(const QString& error);
     bool confirmFeeBumpInternal(std::optional<SecureString> passphrase);
-    bool unlockForCommit(std::optional<SecureString>& passphrase, bool& relock);
 
-    interfaces::Wallet* m_wallet{nullptr};
+    std::shared_ptr<interfaces::Wallet> m_wallet;
+    std::shared_ptr<BackendExecutor> m_executor;
+    quint64 m_generation{0};
     std::function<void()> m_security_state_changed_fn;
     State m_state{Idle};
     ActionType m_action_type{SpeedUp};

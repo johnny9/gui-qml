@@ -8,15 +8,20 @@
 #include <qml/models/bumptransactionmodel.h>
 
 #include <QSignalSpy>
+#include <QSemaphore>
+#include <QThread>
+#include <QTimer>
+
+#include <atomic>
 
 #include <memory>
 
 namespace {
 const auto TEST_TXID = QStringLiteral("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
-std::unique_ptr<MockWallet> MakeBumpableWallet()
+std::shared_ptr<MockWallet> MakeBumpableWallet()
 {
-    auto wallet = std::make_unique<MockWallet>();
+    auto wallet = std::make_shared<MockWallet>();
     wallet->transaction_can_be_bumped_fn = [](const Txid&) { return true; };
     return wallet;
 }
@@ -27,10 +32,36 @@ class BumpTransactionModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void blockedPreparationKeepsGuiResponsiveAndResetDiscardsResult()
+    {
+        struct Gate { QSemaphore entered; QSemaphore release; std::atomic<bool> off_gui{false}; };
+        auto gate = std::make_shared<Gate>();
+        auto wallet = MakeBumpableWallet();
+        auto* gui_thread = QThread::currentThread();
+        wallet->create_bump_transaction_fn = [gate, gui_thread](const Txid&, const wallet::CCoinControl&,
+                std::vector<bilingual_str>&, CAmount&, CAmount&, CMutableTransaction&) {
+            gate->off_gui = QThread::currentThread() != gui_thread;
+            gate->entered.release();
+            return gate->release.tryAcquire(1, 5000);
+        };
+        BumpTransactionModel model(wallet);
+        model.prepareFeeBump(TEST_TXID, 1);
+        QTRY_VERIFY(gate->entered.available());
+        QVERIFY(gate->off_gui.load());
+        bool gui_callback{false};
+        QTimer::singleShot(0, &model, [&] { gui_callback = true; });
+        QTRY_VERIFY(gui_callback);
+        QCOMPARE(model.state(), BumpTransactionModel::Preparing);
+        model.reset();
+        gate->release.release();
+        QTest::qWait(50);
+        QCOMPARE(model.state(), BumpTransactionModel::Idle);
+    }
+
     void stateIsIdleByDefault()
     {
         auto wallet = MakeBumpableWallet();
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
         QCOMPARE(model.state(), BumpTransactionModel::Idle);
     }
 
@@ -44,10 +75,11 @@ private Q_SLOTS:
             return true;
         };
 
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
         QSignalSpy stateSpy(&model, &BumpTransactionModel::stateChanged);
 
         model.prepareFeeBump(TEST_TXID, 1);
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Preparing);
 
         QCOMPARE(model.state(), BumpTransactionModel::NeedsConfirmation);
         QVERIFY(stateSpy.count() >= 2); // Idle -> Preparing -> NeedsConfirmation
@@ -63,8 +95,9 @@ private Q_SLOTS:
             return true;
         };
 
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
         model.prepareFeeBump(TEST_TXID, 1);
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Preparing);
 
         QVERIFY(!model.oldFee().isEmpty());
         QVERIFY(!model.newFee().isEmpty());
@@ -80,8 +113,9 @@ private Q_SLOTS:
             return false;
         };
 
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
         model.prepareFeeBump(TEST_TXID, 1);
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Preparing);
 
         QCOMPARE(model.state(), BumpTransactionModel::Failed);
         QVERIFY(!model.errorText().isEmpty());
@@ -90,7 +124,7 @@ private Q_SLOTS:
     void prepareFeeBump_invalidTxidFails()
     {
         auto wallet = MakeBumpableWallet();
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
 
         model.prepareFeeBump(QStringLiteral("not-a-txid"), 1);
 
@@ -102,6 +136,7 @@ private Q_SLOTS:
         BumpTransactionModel model(nullptr);
 
         model.prepareFeeBump(TEST_TXID, 1);
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Preparing);
 
         QCOMPARE(model.state(), BumpTransactionModel::Failed);
     }
@@ -121,11 +156,13 @@ private Q_SLOTS:
             return true;
         };
 
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
         model.prepareFeeBump(TEST_TXID, 1);
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Preparing);
         QCOMPARE(model.state(), BumpTransactionModel::NeedsConfirmation);
 
         model.confirmFeeBump();
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Committing);
 
         QCOMPARE(model.state(), BumpTransactionModel::Succeeded);
         QVERIFY(!model.newTxid().isEmpty());
@@ -142,10 +179,12 @@ private Q_SLOTS:
         };
         wallet->sign_bump_transaction_fn = [](CMutableTransaction&) { return false; };
 
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
         model.prepareFeeBump(TEST_TXID, 1);
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Preparing);
 
         model.confirmFeeBump();
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Committing);
 
         QCOMPARE(model.state(), BumpTransactionModel::Failed);
         QCOMPARE(wallet->calls.commitBumpTransaction.load(), 0);
@@ -154,9 +193,10 @@ private Q_SLOTS:
     void confirmFeeBump_rejectsWhenNotReady()
     {
         auto wallet = MakeBumpableWallet();
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
 
         model.confirmFeeBump();
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Committing);
 
         QCOMPARE(model.state(), BumpTransactionModel::Idle);
     }
@@ -171,11 +211,13 @@ private Q_SLOTS:
             return true;
         };
 
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
         model.prepareFeeBump(TEST_TXID, 1);
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Preparing);
 
         wallet->transaction_can_be_bumped_fn = [](const Txid&) { return false; };
         model.confirmFeeBump();
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Committing);
 
         QCOMPARE(model.state(), BumpTransactionModel::Failed);
     }
@@ -190,8 +232,9 @@ private Q_SLOTS:
             return true;
         };
 
-        BumpTransactionModel model(wallet.get());
+        BumpTransactionModel model(wallet);
         model.prepareFeeBump(TEST_TXID, 1);
+        QTRY_VERIFY(model.state() != BumpTransactionModel::Preparing);
         QCOMPARE(model.state(), BumpTransactionModel::NeedsConfirmation);
 
         model.reset();
