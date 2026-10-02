@@ -53,6 +53,8 @@
 #include <wallet/wallet.h>
 
 #include <QDateTime>
+#include <QDir>
+#include <QFileInfo>
 #include <QMetaObject>
 #include <QRegularExpression>
 #include <QScopedValueRollback>
@@ -495,23 +497,6 @@ std::optional<std::vector<wallet::CRecipient>> BuildRecipients(const SendRecipie
     return vec_send;
 }
 
-bool WalletUsesMultiKeyDescriptor(const wallet::CWallet& wallet)
-{
-    for (const auto* spk_man : wallet.GetActiveScriptPubKeyMans()) {
-        const auto* descriptor_spk_man = dynamic_cast<const wallet::DescriptorScriptPubKeyMan*>(spk_man);
-        if (!descriptor_spk_man) {
-            continue;
-        }
-
-        std::string descriptor;
-        if (descriptor_spk_man->GetDescriptorString(descriptor, /*priv=*/false) &&
-            descriptor.find("multi(") != std::string::npos) {
-            return true;
-        }
-    }
-
-    return false;
-}
 
 QString LocalizedString(const bilingual_str& value)
 {
@@ -568,7 +553,10 @@ QString OutputTypeDescription(OutputType type)
 
 } // namespace
 
-WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node, QObject *parent)
+WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node, QObject* parent, QString initial_name)
+    : WalletQmlModel(std::shared_ptr<interfaces::Wallet>{std::move(wallet)}, node, parent, std::move(initial_name)) {}
+
+WalletQmlModel::WalletQmlModel(std::shared_ptr<interfaces::Wallet> wallet, interfaces::Node* node, QObject* parent, QString initial_name)
     : QObject(parent)
     , m_wallet(std::move(wallet))
     , m_node(node)
@@ -576,11 +564,9 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, inter
     m_receive_requests = new ReceiveRequestHistoryModel(this);
     m_receive_payment_poll_timer.setInterval(1000);
     connect(&m_receive_payment_poll_timer, &QTimer::timeout, this, &WalletQmlModel::pollUnconfirmedReceiveRequestPayments);
-    reloadReceiveRequests();
-    m_address_list_model = new AddressListModel(this);
+    m_wallet_state.name = std::move(initial_name);
     m_bump_transaction_model = new BumpTransactionModel(m_wallet.get(), this);
     m_bump_transaction_model->setSecurityStateChangedFn([this]() { refreshSecurityState(); });
-    m_coins_list_model = new CoinsListModel(this);
     m_send_recipients = new SendRecipientsListModel(this);
     connect(m_send_recipients, &SendRecipientsListModel::totalAmountChanged,
             this, &WalletQmlModel::sendAmountExhaustsBalanceChanged);
@@ -592,20 +578,18 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, inter
     m_receiving_address = new PaymentRequest(this);
     m_detail_payment_request = new PaymentRequest(this);
     m_imported_psbt_model = new PsbtQmlModel(m_wallet.get(), m_node, this);
-    initializeBackend();
+    initializeWalletState();
     initializeFeeEstimator();
-    refreshSecurityState();
     subscribeToWalletSignals();
+    requestWalletStateRefresh();
 }
 
 WalletQmlModel::WalletQmlModel(interfaces::Node* node, QObject* parent)
     : QObject(parent)
     , m_node(node)
 {
-    m_address_list_model = new AddressListModel(this);
     m_bump_transaction_model = new BumpTransactionModel(nullptr, this);
     m_bump_transaction_model->setSecurityStateChangedFn([this]() { refreshSecurityState(); });
-    m_coins_list_model = new CoinsListModel(this);
     m_send_recipients = new SendRecipientsListModel(this);
     connect(m_send_recipients, &SendRecipientsListModel::totalAmountChanged,
             this, &WalletQmlModel::sendAmountExhaustsBalanceChanged);
@@ -618,7 +602,7 @@ WalletQmlModel::WalletQmlModel(interfaces::Node* node, QObject* parent)
     m_detail_payment_request = new PaymentRequest(this);
     m_receive_requests = new ReceiveRequestHistoryModel(this);
     m_imported_psbt_model = new PsbtQmlModel(nullptr, m_node, this);
-    initializeBackend();
+    initializeWalletState();
     initializeFeeEstimator();
 }
 
@@ -662,13 +646,95 @@ void WalletQmlModel::setNode(interfaces::Node* node)
     }
 }
 
-void WalletQmlModel::initializeBackend()
+void WalletQmlModel::initializeWalletState()
 {
     m_notification_bridge = std::shared_ptr<QObject>{new QObject, [](QObject* object) {
         if (QThread::currentThread() == object->thread()) delete object;
         else object->deleteLater();
     }};
-    connect(m_backend_executor.get(), &BackendExecutor::drained, this, &WalletQmlModel::shutdownFinished);
+    if (m_wallet) m_wallet_state_backend = std::make_shared<WalletStateBackend>(m_wallet);
+    connect(m_backend_executor.get(), &BackendExecutor::drained, this, [this] {
+        Q_EMIT shutdownFinished();
+    });
+}
+
+void WalletQmlModel::requestWalletStateRefresh()
+{
+    if (m_stopping || !m_wallet_state_backend) return;
+    m_state_refresh_requested = true;
+    if (m_state_refresh_pending || m_state_refresh_scheduled) return;
+    m_state_refresh_scheduled = true;
+    Q_EMIT receiveRequestReconciliationPendingChanged();
+    QTimer::singleShot(0, this, &WalletQmlModel::startWalletStateRefresh);
+}
+
+void WalletQmlModel::startWalletStateRefresh()
+{
+    m_state_refresh_scheduled = false;
+    if (m_stopping || !m_wallet_state_backend) return;
+    m_state_refresh_pending = true;
+    m_state_refresh_requested = false;
+    const auto backend = m_wallet_state_backend;
+    const auto node = m_node;
+    m_backend_executor->submit(this, [backend, node] { return backend->read(node); },
+        [this](WalletStateSnapshot state) {
+            m_state_refresh_pending = false;
+            applyWalletState(std::move(state));
+            if (m_state_refresh_requested) requestWalletStateRefresh();
+            Q_EMIT receiveRequestReconciliationPendingChanged();
+        }, [this](std::exception_ptr) {
+            m_state_refresh_pending = false;
+            m_wallet_state_error = tr("Wallet information could not be loaded. Please try again.");
+            Q_EMIT walletStateChanged();
+            if (m_state_refresh_requested) requestWalletStateRefresh();
+            Q_EMIT receiveRequestReconciliationPendingChanged();
+        });
+}
+
+void WalletQmlModel::applySecurityState(bool encrypted, bool locked)
+{
+    if (m_is_encrypted == encrypted && m_is_locked == locked) return;
+    m_is_encrypted = encrypted;
+    m_is_locked = locked;
+    m_wallet_state.encrypted = encrypted;
+    m_wallet_state.locked = locked;
+    Q_EMIT securityStateChanged();
+}
+
+void WalletQmlModel::applyWalletState(WalletStateSnapshot state)
+{
+    if (m_stopping) return;
+    const bool name_changed = state.name != m_wallet_state.name;
+    const bool balance_changed = !m_wallet_state_ready || state.balance != m_wallet_state.balance || state.available_balance != m_wallet_state.available_balance;
+    const bool security_changed = state.encrypted != m_is_encrypted || state.locked != m_is_locked;
+    m_wallet_state = std::move(state);
+    m_wallet_state_ready = true;
+    m_wallet_state_error = m_wallet_subscription_error;
+    m_is_encrypted = m_wallet_state.encrypted;
+    m_is_locked = m_wallet_state.locked;
+    if (name_changed) { Q_EMIT nameChanged(); Q_EMIT displayNameChanged(); }
+    if (security_changed) Q_EMIT securityStateChanged();
+    Q_EMIT walletStateChanged();
+    if (balance_changed) Q_EMIT balanceChanged();
+    Q_EMIT sendAmountExhaustsBalanceChanged();
+}
+
+AddressListModel* WalletQmlModel::addressListModel()
+{
+    if (!m_address_list_model) m_address_list_model = new AddressListModel(this);
+    return m_address_list_model;
+}
+
+CoinsListModel* WalletQmlModel::coinsListModel()
+{
+    if (!m_coins_list_model) m_coins_list_model = new CoinsListModel(this);
+    return m_coins_list_model;
+}
+
+ReceiveRequestHistoryModel* WalletQmlModel::receiveRequests()
+{
+    if (!m_receive_requests_loaded && !m_stopping) reloadReceiveRequests();
+    return m_receive_requests;
 }
 
 void WalletQmlModel::beginShutdown(bool remove_wallet)
@@ -682,10 +748,11 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
                                    std::move(m_handler_transaction_changed), std::move(m_handler_unload));
     if (m_bump_transaction_model) m_bump_transaction_model->detachWallet();
     if (m_imported_psbt_model) m_imported_psbt_model->detachWallet();
+    auto backend = std::move(m_wallet_state_backend);
     auto wallet = std::move(m_wallet);
     m_sign_verify_message_model->setWallet(nullptr);
     m_sign_verify_message_model->setSecurityStateChangedFn({});
-    m_backend_executor->submit(this, [wallet = std::move(wallet), handlers = std::move(handlers), remove_wallet]() mutable {
+    m_backend_executor->submit(this, [wallet = std::move(wallet), backend = std::move(backend), handlers = std::move(handlers), remove_wallet]() mutable {
         std::apply([](auto&... handler) { ((handler ? handler->disconnect() : void()), ...); }, handlers);
         if (wallet && remove_wallet) wallet->remove();
     }, [] {});
@@ -702,18 +769,12 @@ void WalletQmlModel::initializeFeeEstimator()
 
 QString WalletQmlModel::balance() const
 {
-    if (!m_wallet) {
-        return "0";
-    }
-    return QmlBitcoinUnits::formatForDisplay(QmlBitcoinUnits::fromDisplayUnit(m_display_unit), m_wallet->getBalance());
+    return QmlBitcoinUnits::formatForDisplay(QmlBitcoinUnits::fromDisplayUnit(m_display_unit), m_wallet_state.balance);
 }
 
 qint64 WalletQmlModel::balanceSatoshi() const
 {
-    if (!m_wallet) {
-        return 0;
-    }
-    return m_wallet->getBalance();
+    return m_wallet_state.balance;
 }
 
 QString WalletQmlModel::estimatedFee() const
@@ -884,10 +945,7 @@ int WalletQmlModel::feeTargetIndex(const unsigned int target_blocks) const
 
 QString WalletQmlModel::name() const
 {
-    if (!m_wallet) {
-        return QString();
-    }
-    return QString::fromStdString(m_wallet->getWalletName());
+    return m_wallet_state.name;
 }
 
 QString WalletQmlModel::displayName() const
@@ -908,40 +966,17 @@ void WalletQmlModel::setDisplayName(const QString& display_name)
 
 QString WalletQmlModel::keyScheme() const
 {
-    if (!m_wallet) {
-        return {};
-    }
-    return keySchemeDisplayText(keySchemeForWallet(*m_wallet));
+    return keySchemeDisplayText(keySchemeKind());
 }
 
 WalletQmlModel::KeyScheme WalletQmlModel::keySchemeKind() const
 {
-    if (!m_wallet) {
-        return KeyScheme::SingleKey;
-    }
-    return keySchemeForWallet(*m_wallet);
+    return static_cast<KeyScheme>(m_wallet_state.key_scheme);
 }
 
 WalletQmlModel::KeyScheme WalletQmlModel::keySchemeForWallet(interfaces::Wallet& wallet)
 {
-    const wallet::CWallet* raw_wallet = wallet.wallet();
-    if (raw_wallet) {
-        LOCK(raw_wallet->cs_wallet);
-        if (raw_wallet->IsWalletFlagSet(wallet::WALLET_FLAG_EXTERNAL_SIGNER)) {
-            return KeyScheme::ExternalSigner;
-        }
-        if (raw_wallet->IsWalletFlagSet(wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
-            return KeyScheme::WatchOnly;
-        }
-        if (WalletUsesMultiKeyDescriptor(*raw_wallet)) {
-            return KeyScheme::MultiKey;
-        }
-        return KeyScheme::SingleKey;
-    }
-    if (wallet.privateKeysDisabled()) {
-        return KeyScheme::WatchOnly;
-    }
-    return KeyScheme::SingleKey;
+    return static_cast<KeyScheme>(ReadWalletKeyScheme(wallet));
 }
 
 QString WalletQmlModel::keySchemeDisplayText(KeyScheme scheme)
@@ -961,97 +996,101 @@ QString WalletQmlModel::keySchemeDisplayText(KeyScheme scheme)
 
 QString WalletQmlModel::privateKeysStatus() const
 {
-    if (!m_wallet) {
-        return {};
-    }
-    return m_wallet->privateKeysDisabled() ? tr("Disabled") : tr("Enabled");
+    return m_wallet_state.private_keys_disabled ? tr("Disabled") : tr("Enabled");
 }
 
 QString WalletQmlModel::externalSignerStatus() const
 {
-    if (!m_wallet) {
-        return {};
-    }
-    return m_wallet->hasExternalSigner() ? tr("Enabled") : tr("None");
+    return m_wallet_state.external_signer ? tr("Enabled") : tr("None");
 }
 
 bool WalletQmlModel::canManagePassphrase() const
 {
-    return m_wallet && !m_wallet->privateKeysDisabled();
+    return m_wallet && m_wallet_state_ready && !m_wallet_state.private_keys_disabled;
+}
+
+bool WalletQmlModel::runSettingsOperation(const QString& operation, std::function<QString(interfaces::Wallet&)> work)
+{
+    if (m_settings_busy) return false;
+    clearSettingsError();
+    if (!m_wallet) {
+        setSettingsError(tr("No wallet is selected."));
+        return false;
+    }
+    m_settings_busy = true;
+    Q_EMIT settingsBusyChanged();
+    const auto complete = [this, operation](const QString& error) {
+        m_settings_busy = false;
+        setSettingsError(error);
+        requestWalletStateRefresh();
+        Q_EMIT settingsBusyChanged();
+        Q_EMIT settingsOperationFinished(operation, error.isEmpty());
+    };
+    if (!backendExecutor()->submit(this,
+            [wallet = walletHandle(), work = std::move(work)] {
+                const QString error = work(*wallet);
+                return std::tuple{error, wallet->isCrypted(), wallet->isLocked()};
+            },
+            [this, complete](const auto& result) {
+                applySecurityState(std::get<1>(result), std::get<2>(result));
+                complete(std::get<0>(result));
+            }, [complete](std::exception_ptr) { complete(tr("The wallet operation failed.")); })) {
+        complete(tr("The wallet is closing."));
+        return false;
+    }
+    return true;
 }
 
 bool WalletQmlModel::encryptWallet(const QString& passphrase)
 {
-    clearSettingsError();
-    if (!m_wallet) {
-        setSettingsError(tr("No wallet is selected."));
-        return false;
-    }
     if (passphrase.isEmpty()) {
         setSettingsError(tr("Enter a new wallet password."));
         return false;
     }
-
-    SecureString secure_passphrase{QmlUtil::SecureStringFromQString(passphrase)};
-    const bool encrypted{m_wallet->encryptWallet(secure_passphrase)};
-    QmlUtil::ClearSecureString(secure_passphrase);
-    if (!encrypted) {
-        setSettingsError(tr("The wallet password could not be set."));
-        return false;
-    }
-
-    refreshSecurityState();
-    return true;
+    return runSettingsOperation(QStringLiteral("encrypt"),
+        [passphrase = QmlUtil::SecureStringFromQString(passphrase)](interfaces::Wallet& wallet) mutable {
+            const bool encrypted = wallet.encryptWallet(passphrase);
+            QmlUtil::ClearSecureString(passphrase);
+            return encrypted ? QString{} : tr("The wallet password could not be set.");
+        });
 }
 
 bool WalletQmlModel::changeWalletPassphrase(const QString& old_passphrase, const QString& new_passphrase)
 {
-    clearSettingsError();
-    if (!m_wallet) {
-        setSettingsError(tr("No wallet is selected."));
+    if (old_passphrase.isEmpty() || new_passphrase.isEmpty()) {
+        setSettingsError(old_passphrase.isEmpty() ? tr("Enter the current wallet password.") : tr("Enter a new wallet password."));
         return false;
     }
-    if (old_passphrase.isEmpty()) {
-        setSettingsError(tr("Enter the current wallet password."));
-        return false;
-    }
-    if (new_passphrase.isEmpty()) {
-        setSettingsError(tr("Enter a new wallet password."));
-        return false;
-    }
-
-    SecureString secure_old_passphrase{QmlUtil::SecureStringFromQString(old_passphrase)};
-    SecureString secure_new_passphrase{QmlUtil::SecureStringFromQString(new_passphrase)};
-    const bool changed{m_wallet->changeWalletPassphrase(secure_old_passphrase, secure_new_passphrase)};
-    QmlUtil::ClearSecureString(secure_old_passphrase);
-    QmlUtil::ClearSecureString(secure_new_passphrase);
-    if (!changed) {
-        setSettingsError(tr("The current wallet password was incorrect."));
-        return false;
-    }
-
-    refreshSecurityState();
-    return true;
+    return runSettingsOperation(QStringLiteral("passphrase"),
+        [old_passphrase = QmlUtil::SecureStringFromQString(old_passphrase),
+         new_passphrase = QmlUtil::SecureStringFromQString(new_passphrase)](interfaces::Wallet& wallet) mutable {
+            const bool changed = wallet.changeWalletPassphrase(old_passphrase, new_passphrase);
+            QmlUtil::ClearSecureString(old_passphrase);
+            QmlUtil::ClearSecureString(new_passphrase);
+            return changed ? QString{} : tr("The current wallet password was incorrect.");
+        });
 }
 
 bool WalletQmlModel::backupWallet(const QString& path)
 {
-    clearSettingsError();
-    if (!m_wallet) {
-        setSettingsError(tr("No wallet is selected."));
-        return false;
-    }
     if (path.trimmed().isEmpty()) {
         setSettingsError(tr("Choose a location for the wallet backup."));
         return false;
     }
-
-    if (!m_wallet->backupWallet(path.toStdString())) {
-        setSettingsError(tr("The wallet could not be backed up."));
-        return false;
-    }
-
-    return true;
+    return runSettingsOperation(QStringLiteral("backup"), [path](interfaces::Wallet& wallet) {
+        QString wallet_name = QString::fromStdString(wallet.getWalletName());
+        if (wallet_name.isEmpty()) wallet_name = QStringLiteral("wallet");
+        const QString filename = wallet_name.replace(QRegularExpression(QStringLiteral("[/\\\\]")), QStringLiteral("_")) + QStringLiteral(".bak");
+        QString destination = path;
+        const QFileInfo info(destination);
+        if (info.isDir()) {
+            destination = QDir(destination).filePath(filename);
+        } else if (!destination.endsWith(QStringLiteral(".bak"), Qt::CaseInsensitive) &&
+                   !destination.endsWith(QStringLiteral(".dat"), Qt::CaseInsensitive)) {
+            destination += QStringLiteral(".bak");
+        }
+        return wallet.backupWallet(destination.toStdString()) ? QString{} : tr("The wallet could not be backed up.");
+    });
 }
 
 void WalletQmlModel::clearSettingsError()
@@ -1153,6 +1192,7 @@ bool WalletQmlModel::setCurrentPaymentRequestAddress(QString address)
         return false;
     }
 
+    receiveRequests();
     // A request already saved for this address is loaded for editing, not
     // duplicated: reopening the action on such an address means changing
     // the saved request, and silently minting a second request for the
@@ -1185,6 +1225,7 @@ bool WalletQmlModel::setCurrentPaymentRequestAddress(QString address)
 bool WalletQmlModel::ensureReceivingAddress(bool next, const QString& address_type)
 {
     if (!m_wallet || !m_receiving_address) return false;
+    receiveRequests();
     auto* receiving = m_receiving_address;
     const QString type = address_type.isEmpty() ? defaultReceiveAddressType() : address_type;
     const auto available = availableReceiveAddressTypes();
@@ -1240,6 +1281,7 @@ bool WalletQmlModel::commitReceivingPaymentRequest()
 {
     if (!m_wallet || !m_receiving_address || !m_current_payment_request) return false;
     if (!m_current_payment_request->id().isEmpty()) return false;
+    receiveRequests();
     // Reconcile before committing: never silently attach a draft to a different
     // address if a payment landed while the user was filling out the form.
     for (const auto& tx : m_wallet->getWalletTxs()) recordReceiveRequestPayment(tx);
@@ -1291,6 +1333,9 @@ bool WalletQmlModel::savePaymentRequest(PaymentRequest* request)
         return false;
     }
 
+    // History stays lazy at wallet construction, but must be available before
+    // assigning an ID or applying payment notifications to a saved request.
+    receiveRequests();
     const bool is_update = !request->id().isEmpty();
     // Until the background history scan completes, an old request might have
     // received a payment that is not yet reflected in its persisted lock.
@@ -1439,6 +1484,7 @@ bool WalletQmlModel::commitPaymentRequestWithPassphrase(const QString& passphras
 
 void WalletQmlModel::reloadReceiveRequests()
 {
+    m_receive_requests_loaded = true;
     if (!m_receive_requests) return;
     if (!m_wallet) {
         m_receive_requests->setEntries({});
@@ -1466,6 +1512,7 @@ void WalletQmlModel::reloadReceiveRequests()
 bool WalletQmlModel::removeReceiveRequest(const QString& request_id)
 {
     if (!m_wallet || !m_receive_requests) return false;
+    receiveRequests();
     const auto entry = m_receive_requests->entryById(request_id);
     if (!entry) return false;
     const CTxDestination destination = DecodeDestination(entry->recipient.address);
@@ -1482,6 +1529,7 @@ bool WalletQmlModel::removeReceiveRequest(const QString& request_id)
 bool WalletQmlModel::loadPaymentRequest(const QString& request_id)
 {
     if (!m_current_payment_request || !m_receive_requests) return false;
+    receiveRequests();
     const auto entry = m_receive_requests->entryById(request_id);
     if (!entry) return false;
     if (entry->id < 0 || entry->id > std::numeric_limits<unsigned int>::max()) return false;
@@ -1506,6 +1554,7 @@ bool WalletQmlModel::loadPaymentRequest(const QString& request_id)
 bool WalletQmlModel::loadPaymentRequestDetail(const QString& request_id)
 {
     if (!m_detail_payment_request || !m_receive_requests) return false;
+    receiveRequests();
     const auto entry = m_receive_requests->entryById(request_id);
     if (!entry) return false;
     if (entry->id < 0 || entry->id > std::numeric_limits<unsigned int>::max()) return false;
@@ -1531,6 +1580,7 @@ bool WalletQmlModel::updatePaymentRequest(const QString& request_id, qint64 amou
                                         const QString& label, const QString& message, const QString& note)
 {
     if (!m_wallet || !m_receive_requests || !MoneyRange(amount)) return false;
+    receiveRequests();
     const auto entry = m_receive_requests->entryById(request_id);
     if (!entry || entry->id <= 0 || entry->id > std::numeric_limits<unsigned int>::max()) return false;
     PaymentRequest edited;
@@ -1784,6 +1834,7 @@ void WalletQmlModel::updateReceivedPaymentRequestAmounts()
 void WalletQmlModel::usePaymentRequestAsTemplate(const QString& request_id)
 {
     if (!m_current_payment_request || !m_receive_requests) return;
+    receiveRequests();
     const auto entry = m_receive_requests->entryById(request_id);
     if (!entry) return;
     const CTxDestination destination = DecodeDestination(entry->recipient.address);
@@ -1909,6 +1960,7 @@ void WalletQmlModel::syncPaymentRequestNoteToAddress(const QString& address, con
         return;
     }
 
+    receiveRequests();
     refreshReceiveRequestPayments();
     for (QmlRecentRequestEntry entry : m_receive_requests->entriesForAddress(address)) {
         // Already in step: nothing to re-store.
@@ -3148,42 +3200,52 @@ void WalletQmlModel::subscribeToWalletSignals()
     const QPointer<WalletQmlModel> guard{this};
     const auto bridge = m_notification_bridge;
     const auto pending = m_receive_request_notifications_pending;
-    m_handler_status_changed = handleStatusChanged([guard, bridge] {
-        QMetaObject::invokeMethod(bridge.get(), [guard] {
-            if (!guard || guard->m_stopping) return;
-            guard->refreshSecurityState();
-            Q_EMIT guard->balanceChanged();
-            Q_EMIT guard->sendAmountExhaustsBalanceChanged();
-        }, Qt::QueuedConnection);
-    });
-    m_handler_address_list_changed = m_wallet->handleAddressBookChanged([guard, bridge](const CTxDestination&, const std::string&, bool, wallet::AddressPurpose, ChangeType) {
-        QMetaObject::invokeMethod(bridge.get(), [guard] {
-            if (guard && !guard->m_stopping) Q_EMIT guard->addressListChanged();
-        }, Qt::QueuedConnection);
-    });
-    m_handler_transaction_changed = handleTransactionChanged([guard, bridge, pending](const uint256& txid, ChangeType change) {
-        pending->fetch_add(1);
-        QMetaObject::invokeMethod(bridge.get(), [guard, pending, txid, change] {
-            if (guard && !guard->m_stopping) {
-                const Txid id = Txid::FromUint256(txid);
-                if (guard->m_receive_reconciliation_pending) guard->m_receive_reconciliation_updates[id] = change == CT_DELETED;
-                guard->removeReceiveRequestPayment(id);
-                if (change != CT_DELETED) {
-                    guard->recordReceiveRequestPayment(guard->getWalletTx(txid));
-                    guard->recheckReceiveRequestPayments(id);
-                }
-                guard->updateReceivedPaymentRequestAmounts();
-                Q_EMIT guard->transactionChanged(QString::fromStdString(txid.ToString()), change);
-                Q_EMIT guard->balanceChanged();
+    m_backend_executor->submit(this, [wallet = m_wallet, guard, bridge, pending] {
+        auto status = wallet->handleStatusChanged([guard, bridge] {
+            QMetaObject::invokeMethod(bridge.get(), [guard] {
+                if (!guard || guard->m_stopping) return;
+                guard->refreshSecurityState();
                 Q_EMIT guard->sendAmountExhaustsBalanceChanged();
-            }
-            pending->fetch_sub(1);
-        }, Qt::QueuedConnection);
-    });
-    m_handler_unload = handleUnload([guard, bridge] {
-        QMetaObject::invokeMethod(bridge.get(), [guard] {
-            if (guard && !guard->m_stopping) Q_EMIT guard->walletUnloaded();
-        }, Qt::QueuedConnection);
+            }, Qt::QueuedConnection);
+        });
+        auto address = wallet->handleAddressBookChanged([guard, bridge](const CTxDestination&, const std::string&, bool, wallet::AddressPurpose, ChangeType) {
+            QMetaObject::invokeMethod(bridge.get(), [guard] {
+                if (guard && !guard->m_stopping) Q_EMIT guard->addressListChanged();
+            }, Qt::QueuedConnection);
+        });
+        auto transaction = wallet->handleTransactionChanged([guard, bridge, pending](const Txid& txid, ChangeType change) {
+            pending->fetch_add(1);
+            QMetaObject::invokeMethod(bridge.get(), [guard, pending, txid, change] {
+                if (guard && !guard->m_stopping) {
+                    guard->requestWalletStateRefresh();
+                    if (guard->m_receive_requests_loaded) {
+                        const Txid id = txid;
+                        if (guard->m_receive_reconciliation_pending) guard->m_receive_reconciliation_updates[id] = change == CT_DELETED;
+                        guard->removeReceiveRequestPayment(id);
+                        if (change != CT_DELETED) {
+                            guard->recordReceiveRequestPayment(guard->getWalletTx(txid.ToUint256()));
+                            guard->recheckReceiveRequestPayments(id);
+                        }
+                        guard->updateReceivedPaymentRequestAmounts();
+                    }
+                    Q_EMIT guard->transactionChanged(QString::fromStdString(txid.ToString()), change);
+                    Q_EMIT guard->sendAmountExhaustsBalanceChanged();
+                }
+                pending->fetch_sub(1);
+            }, Qt::QueuedConnection);
+        });
+        auto unload = wallet->handleUnload([guard, bridge] {
+            QMetaObject::invokeMethod(bridge.get(), [guard] {
+                if (guard && !guard->m_stopping) Q_EMIT guard->walletUnloaded();
+            }, Qt::QueuedConnection);
+        });
+        return std::make_tuple(std::move(status), std::move(address), std::move(transaction), std::move(unload));
+    }, [this](auto handlers) {
+        std::tie(m_handler_status_changed, m_handler_address_list_changed, m_handler_transaction_changed, m_handler_unload) = std::move(handlers);
+    }, [this](std::exception_ptr) {
+        m_wallet_subscription_error = tr("Wallet notifications could not be registered. Reopen the wallet to try again.");
+        m_wallet_state_error = m_wallet_subscription_error;
+        Q_EMIT walletStateChanged();
     });
 }
 
@@ -3205,13 +3267,7 @@ void WalletQmlModel::unsubscribeFromWalletSignals()
 
 void WalletQmlModel::refreshSecurityState()
 {
-    const bool encrypted = m_wallet ? m_wallet->isCrypted() : false;
-    const bool locked = m_wallet ? m_wallet->isLocked() : false;
-    if (m_is_encrypted != encrypted || m_is_locked != locked) {
-        m_is_encrypted = encrypted;
-        m_is_locked = locked;
-        Q_EMIT securityStateChanged();
-    }
+    requestWalletStateRefresh();
 }
 
 bool WalletQmlModel::unlockForAction(std::optional<SecureString>& passphrase, bool& relock)

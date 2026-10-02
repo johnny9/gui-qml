@@ -6,8 +6,8 @@
 #define BITCOIN_QML_WALLETQMLCONTROLLER_H
 
 #include <qml/models/walletlistmodel.h>
-#include <qml/models/walletqmlmodel.h>
 #include <qml/backendexecutor.h>
+#include <qml/models/walletqmlmodel.h>
 
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
@@ -20,7 +20,6 @@
 #include <QMutex>
 #include <QObject>
 #include <QThread>
-#include <QSet>
 
 struct WalletLoadNotifications;
 
@@ -69,7 +68,6 @@ public:
     Q_INVOKABLE void clearWalletMigrationStatus();
     Q_INVOKABLE bool validateXpub(const QString& xpub) const;
     Q_INVOKABLE QString normalizeWalletPath(const QString& path) const;
-    Q_INVOKABLE bool walletPathExists(const QString& path) const;
     Q_INVOKABLE QString homePath() const;
     Q_INVOKABLE QString walletNameAvailabilityError(const QString& name) const;
     Q_INVOKABLE bool openSelectedWalletLocation();
@@ -82,6 +80,7 @@ public:
     WalletQmlModel* selectedWallet() const;
     void unloadWallets();
     void beginShutdown();
+    bool isShutdownComplete() const { return m_shutdown_complete; }
     bool initialized() const { return m_initialized; }
     bool isWalletLoaded() const { return m_is_wallet_loaded; }
     void setWalletLoaded(bool loaded);
@@ -106,8 +105,10 @@ public:
     void setOpenLocalPathFnForTesting(OpenLocalPathFn fn);
 
 Q_SIGNALS:
-    void walletsDrained();
     void selectedWalletChanged();
+    void walletsDrained();
+    void walletCatalogChanged();
+    void walletDisplayNameSaved(bool success);
     void initializedChanged();
     void isWalletLoadedChanged();
     void noWalletsFoundChanged();
@@ -148,13 +149,11 @@ private:
         Create,
     };
 
-    void handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet);
     void consumeWalletNotifications();
-    WalletQmlModel* addOrSelectWalletModel(std::unique_ptr<interfaces::Wallet> wallet);
+    void handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet, const QString& name);
+    WalletQmlModel* addOrSelectWalletModel(std::unique_ptr<interfaces::Wallet> wallet, const QString& name);
     void registerWalletModel(WalletQmlModel* wallet_model);
-    void removeWalletModel(WalletQmlModel* wallet_model, bool remove = false);
-    void retireWallet(WalletQmlModel* wallet_model, bool remove);
-    void checkShutdownFinished();
+    void removeWalletModel(WalletQmlModel* wallet_model);
     using WalletSetupFn = std::function<QString(interfaces::Wallet& wallet)>;
     void createWalletAsync(const QString& name,
                            SecureString passphrase,
@@ -165,14 +164,13 @@ private:
     void startWalletImport(const QString& path);
     void startWalletLoad(const QString& path, const QString& wallet_format = QString());
     void startWalletMigration(const QString& path, SecureString passphrase);
-    QString resolveManagedWalletReference(const QString& path, QString* wallet_format = nullptr) const;
-    QString inferWalletLoadTarget(const QString& normalized_path) const;
-    QString inferRestoreWalletName(const QString& normalized_path) const;
+    static QString resolveManagedWalletReference(interfaces::Node& node, const QString& path, QString* wallet_format = nullptr);
+    static QString inferWalletLoadTarget(interfaces::Node& node, const QString& normalized_path);
+    static QString inferRestoreWalletName(const QString& normalized_path);
     QString walletDisplayNameKey(const QString& path) const;
     void applyWalletDisplayName(WalletQmlModel* wallet_model) const;
     bool walletNameExists(const QString& name) const;
-    QString describeImportedWalletKeyScheme(interfaces::Wallet& wallet) const;
-    QString selectedWalletLocationPath() const;
+    static QString describeImportedWalletKeyScheme(interfaces::Wallet& wallet);
     void setWalletCreateError(const QString& error);
     void setWalletLoadInProgress(bool in_progress);
     void setWalletLoadError(const QString& error);
@@ -188,20 +186,27 @@ private:
     void setWalletLocationOpenError(const QString& error);
 
     bool m_initialized{false};
-    bool m_shutting_down{false};
-    bool m_controller_drained{false};
-    bool m_shutdown_complete{false};
-    QSet<WalletQmlModel*> m_retiring_wallets;
-    QSet<QString> m_retiring_wallet_names;
+    bool m_initializing{false};
     interfaces::Node& m_node;
     WalletQmlModel* m_empty_wallet;
     WalletQmlModel* m_selected_wallet;
     std::shared_ptr<BackendExecutor> m_executor;
+    std::shared_ptr<QObject> m_notification_bridge;
+    std::shared_ptr<WalletLoadNotifications> m_load_notifications;
+    QHash<QString, QString> m_display_names;
+    QStringList m_catalog_names;
+    bool m_shutting_down{false};
+    bool m_controller_drained{false};
+    bool m_empty_wallet_drained{false};
+    bool m_shutdown_complete{false};
+    QSet<WalletQmlModel*> m_retiring_wallets;
+    QSet<QString> m_retiring_wallet_names;
+    void retireWallet(WalletQmlModel* model, bool remove);
+    void checkShutdownFinished();
+    void refreshWalletCatalog();
     mutable QMutex m_wallets_mutex;
     std::vector<WalletQmlModel*> m_wallets;
     std::unique_ptr<interfaces::Handler> m_handler_load_wallet;
-    std::shared_ptr<WalletLoadNotifications> m_load_notifications;
-    std::shared_ptr<QObject> m_notification_bridge;
     bool m_is_wallet_loaded{false};
     bool m_no_wallets_found{false};
     bool m_wallet_load_in_progress{false};

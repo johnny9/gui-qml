@@ -28,6 +28,7 @@
 #include <QVariant>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 QByteArray okResponse()
@@ -415,27 +416,38 @@ QObject* TestBridge::resolveCurrentLeafItem(QObject* item) const
     return current;
 }
 
-void TestBridge::collectNamedObjects(QObject* root, std::vector<NamedObjectEntry>& results, QSet<const QObject*>& visited, int depth) const
+void TestBridge::collectNamedObjects(QObject* root, std::vector<NamedObjectEntry>& results, QSet<const QObject*>& visited, int depth, bool include_text) const
 {
-    if (!root) return;
-    if (visited.contains(root)) return;
-    visited.insert(root);
+    std::vector<std::pair<QObject*, int>> pending{{root, depth}};
+    while (!pending.empty()) {
+        const auto [current, current_depth] = pending.back();
+        pending.pop_back();
+        if (!current || visited.contains(current)) continue;
+        visited.insert(current);
 
-    if (!root->objectName().isEmpty()) {
-        NamedObjectEntry named_entry;
-        named_entry.object_name = root->objectName();
-        named_entry.class_name = QString::fromLatin1(root->metaObject()->className());
-        named_entry.depth = depth;
-        results.push_back(named_entry);
-    }
-    for (QObject* child : root->children()) {
-        collectNamedObjects(child, results, visited, depth + 1);
-    }
-    // Also traverse visual children for QQuickItem-based trees.
-    auto* item = qobject_cast<QQuickItem*>(root);
-    if (item) {
-        for (QQuickItem* visual_child : item->childItems()) {
-            collectNamedObjects(visual_child, results, visited, depth + 1);
+        if (!current->objectName().isEmpty()) {
+            NamedObjectEntry named_entry;
+            named_entry.object_name = current->objectName();
+            named_entry.class_name = QString::fromLatin1(current->metaObject()->className());
+            named_entry.depth = current_depth;
+            if (include_text) {
+                const QVariant text = current->property("text");
+                if (text.isValid()) named_entry.text = QJsonValue::fromVariant(text);
+            }
+            results.push_back(named_entry);
+        }
+
+        // Reverse the push order so DFS still visits QObject children first,
+        // followed by visual children, with each list's original order intact.
+        if (const auto* item = qobject_cast<QQuickItem*>(current)) {
+            const auto visual_children = item->childItems();
+            for (auto it = visual_children.crbegin(); it != visual_children.crend(); ++it) {
+                pending.emplace_back(*it, current_depth + 1);
+            }
+        }
+        const auto& children = current->children();
+        for (auto it = children.crbegin(); it != children.crend(); ++it) {
+            pending.emplace_back(*it, current_depth + 1);
         }
     }
 }
@@ -520,7 +532,7 @@ QByteArray TestBridge::processCommand(const QByteArray& json_cmd)
     } else if (cmd == QLatin1String("answer_runtime_dialog")) {
         return cmdAnswerRuntimeDialog(static_cast<unsigned int>(obj.value(QStringLiteral("button")).toDouble()));
     } else if (cmd == QLatin1String("list_objects")) {
-        return cmdListObjects();
+        return cmdListObjects(obj.value(QStringLiteral("includeText")).toBool(false));
     } else if (cmd == QLatin1String("close_window")) {
         return cmdCloseWindow();
     } else if (cmd == QLatin1String("set_clipboard_text")) {
@@ -1200,12 +1212,12 @@ QByteArray TestBridge::cmdAnswerRuntimeDialog(unsigned int button)
     return okResponse();
 }
 
-QByteArray TestBridge::cmdListObjects()
+QByteArray TestBridge::cmdListObjects(bool include_text)
 {
     std::vector<NamedObjectEntry> objects;
     QSet<const QObject*> visited;
     for (QObject* root : m_engine->rootObjects()) {
-        collectNamedObjects(root, objects, visited, 0);
+        collectNamedObjects(root, objects, visited, 0, include_text);
     }
 
     QJsonArray arr;
@@ -1214,6 +1226,7 @@ QByteArray TestBridge::cmdListObjects()
         json_entry[QStringLiteral("objectName")] = obj_entry.object_name;
         json_entry[QStringLiteral("className")] = obj_entry.class_name;
         json_entry[QStringLiteral("depth")] = obj_entry.depth;
+        if (!obj_entry.text.isUndefined()) json_entry[QStringLiteral("text")] = obj_entry.text;
         arr.append(json_entry);
     }
 

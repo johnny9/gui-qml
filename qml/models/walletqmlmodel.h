@@ -7,6 +7,8 @@
 
 #include <qml/models/addresslistmodel.h>
 #include <qml/backendexecutor.h>
+#include <qml/models/walletstatesnapshot.h>
+#include <concepts>
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/paymentrequest.h>
@@ -82,7 +84,7 @@ private:
     Q_PROPERTY(QString displayName READ displayName NOTIFY displayNameChanged)
     Q_PROPERTY(QString balance READ balance NOTIFY balanceChanged)
     Q_PROPERTY(qint64 balanceSatoshi READ balanceSatoshi NOTIFY balanceChanged)
-    Q_PROPERTY(bool hasExternalSigner READ hasExternalSigner CONSTANT)
+    Q_PROPERTY(bool hasExternalSigner READ hasExternalSigner NOTIFY walletStateChanged)
     Q_PROPERTY(TransactionActivityModel* transactionActivityModel READ transactionActivityModel CONSTANT)
     Q_PROPERTY(AddressListModel* addressListModel READ addressListModel CONSTANT)
     Q_PROPERTY(CoinsListModel* coinsListModel READ coinsListModel CONSTANT)
@@ -117,21 +119,28 @@ private:
     Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
     Q_PROPERTY(bool isEncrypted READ isEncrypted NOTIFY securityStateChanged)
     Q_PROPERTY(bool isLocked READ isLocked NOTIFY securityStateChanged)
-    Q_PROPERTY(QString keyScheme READ keyScheme CONSTANT)
-    Q_PROPERTY(WalletQmlModel::KeyScheme keySchemeKind READ keySchemeKind CONSTANT)
-    Q_PROPERTY(QString privateKeysStatus READ privateKeysStatus CONSTANT)
-    Q_PROPERTY(QString externalSignerStatus READ externalSignerStatus CONSTANT)
-    Q_PROPERTY(bool canManagePassphrase READ canManagePassphrase CONSTANT)
+    Q_PROPERTY(QString keyScheme READ keyScheme NOTIFY walletStateChanged)
+    Q_PROPERTY(WalletQmlModel::KeyScheme keySchemeKind READ keySchemeKind NOTIFY walletStateChanged)
+    Q_PROPERTY(QString privateKeysStatus READ privateKeysStatus NOTIFY walletStateChanged)
+    Q_PROPERTY(QString externalSignerStatus READ externalSignerStatus NOTIFY walletStateChanged)
+    Q_PROPERTY(bool canManagePassphrase READ canManagePassphrase NOTIFY walletStateChanged)
     Q_PROPERTY(QString transactionError READ transactionError NOTIFY transactionErrorChanged)
     Q_PROPERTY(bool transactionNeedsUnlock READ transactionNeedsUnlock NOTIFY transactionNeedsUnlockChanged)
     Q_PROPERTY(bool currentTransactionCanSend READ currentTransactionCanSend NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanBroadcast READ currentTransactionCanBroadcast NOTIFY currentTransactionChanged)
     Q_PROPERTY(QString currentTransactionReviewMessage READ currentTransactionReviewMessage NOTIFY currentTransactionChanged)
+    Q_PROPERTY(bool settingsBusy READ settingsBusy NOTIFY settingsBusyChanged)
+    Q_PROPERTY(bool walletStateReady READ walletStateReady NOTIFY walletStateChanged)
+    Q_PROPERTY(QString walletStateError READ walletStateError NOTIFY walletStateChanged)
     Q_PROPERTY(QString settingsError READ settingsError NOTIFY settingsErrorChanged)
     Q_PROPERTY(PsbtQmlModel* importedPsbt READ importedPsbt CONSTANT)
 
 public:
-    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node = nullptr, QObject* parent = nullptr);
+    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node = nullptr, QObject* parent = nullptr, QString initial_name = {});
+    WalletQmlModel(std::shared_ptr<interfaces::Wallet> wallet, interfaces::Node* node = nullptr, QObject* parent = nullptr, QString initial_name = {});
+    template <typename Wallet> requires std::derived_from<Wallet, interfaces::Wallet>
+    explicit WalletQmlModel(std::unique_ptr<Wallet> wallet, interfaces::Node* node = nullptr, QObject* parent = nullptr, QString initial_name = {})
+        : WalletQmlModel(std::unique_ptr<interfaces::Wallet>{std::move(wallet)}, node, parent, std::move(initial_name)) {}
     WalletQmlModel(interfaces::Node* node, QObject* parent = nullptr);
     WalletQmlModel(QObject *parent = nullptr);
     ~WalletQmlModel();
@@ -141,7 +150,7 @@ public:
     void setDisplayName(const QString& display_name);
     QString balance() const;
     qint64 balanceSatoshi() const;
-    bool hasExternalSigner() const { return m_wallet && m_wallet->hasExternalSigner(); }
+    bool hasExternalSigner() const { return m_wallet_state.external_signer; }
     Q_INVOKABLE bool commitPaymentRequest();
     Q_INVOKABLE bool commitPaymentRequestWithPassphrase(const QString& passphrase);
     Q_INVOKABLE void reloadReceiveRequests();
@@ -152,9 +161,9 @@ public:
     Q_INVOKABLE void usePaymentRequestAsTemplate(const QString& request_id);
 
     TransactionActivityModel* transactionActivityModel();
-    AddressListModel* addressListModel() const { return m_address_list_model; }
+    AddressListModel* addressListModel();
     BumpTransactionModel* bumpModel() const { return m_bump_transaction_model; }
-    CoinsListModel* coinsListModel() const { return m_coins_list_model; }
+    CoinsListModel* coinsListModel();
     SendRecipientsListModel* sendRecipientList() const { return m_send_recipients; }
     SignVerifyMessageModel* signVerifyMessageModel() const { return m_sign_verify_message_model; }
     PaymentRequest* currentPaymentRequest() const { return m_current_payment_request; }
@@ -163,8 +172,8 @@ public:
     Q_INVOKABLE bool ensureReceivingAddressWithPassphrase(const QString& passphrase, bool next = false, const QString& address_type = {});
     Q_INVOKABLE bool commitReceivingPaymentRequest();
     PaymentRequest* detailPaymentRequest() const { return m_detail_payment_request; }
-    ReceiveRequestHistoryModel* receiveRequests() const { return m_receive_requests; }
-    bool receiveRequestReconciliationPending() const { return m_receive_reconciliation_pending || m_receive_reconciliation_applying; }
+    ReceiveRequestHistoryModel* receiveRequests();
+    bool receiveRequestReconciliationPending() const { return m_state_refresh_pending || m_state_refresh_scheduled || m_receive_reconciliation_pending || m_receive_reconciliation_applying; }
     bool receiveRequestReconciliationApplying() const { return m_receive_reconciliation_applying; }
     WalletQmlModelTransaction* currentTransaction() const { return m_current_transaction; }
     QVariantMap currentTransactionFlow() const;
@@ -215,6 +224,12 @@ public:
     interfaces::Node* node() const { return m_node; }
     std::shared_ptr<BackendExecutor> backendExecutor() const { return m_backend_executor; }
     void beginShutdown(bool remove_wallet = false);
+    const WalletStateSnapshot& cachedWalletState() const { return m_wallet_state; }
+    bool walletStateReady() const { return m_wallet_state_ready; }
+    QString walletStateError() const { return m_wallet_state_error; }
+    bool settingsBusy() const { return m_settings_busy; }
+    void requestWalletStateRefresh();
+    void applySecurityState(bool encrypted, bool locked);
     void removeWallet();
 
     std::set<interfaces::WalletTx> getWalletTxs() const;
@@ -285,8 +300,11 @@ public:
     void setNode(interfaces::Node* node);
 
 Q_SIGNALS:
-    void shutdownFinished();
     void nameChanged();
+    void walletStateChanged();
+    void settingsBusyChanged();
+    void settingsOperationFinished(const QString& operation, bool success);
+    void shutdownFinished();
     void displayNameChanged();
     void balanceChanged();
     void currentTransactionChanged();
@@ -322,7 +340,10 @@ private:
         ImportedPsbt,
     };
 
-    void initializeBackend();
+    void initializeWalletState();
+    void startWalletStateRefresh();
+    void applyWalletState(WalletStateSnapshot state);
+    bool runSettingsOperation(const QString& operation, std::function<QString(interfaces::Wallet&)> work);
     void initializeFeeEstimator();
     void setMaximumRecipient(SendRecipient* recipient);
     void updateMaximumAmount();
@@ -361,6 +382,16 @@ private:
     std::shared_ptr<BackendExecutor> m_backend_executor{std::make_shared<BackendExecutor>()};
     std::shared_ptr<QObject> m_notification_bridge;
     bool m_stopping{false};
+    std::shared_ptr<WalletStateBackend> m_wallet_state_backend;
+    WalletStateSnapshot m_wallet_state;
+    bool m_wallet_state_ready{false};
+    bool m_state_refresh_pending{false};
+    bool m_state_refresh_requested{false};
+    bool m_state_refresh_scheduled{false};
+    bool m_receive_requests_loaded{false};
+    bool m_settings_busy{false};
+    QString m_wallet_state_error;
+    QString m_wallet_subscription_error;
     std::shared_ptr<interfaces::Wallet> m_wallet;
     interfaces::Node* m_node{nullptr};
     TransactionActivityModel* m_transaction_activity_model{nullptr};

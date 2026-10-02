@@ -40,7 +40,7 @@
 ///   {"cmd": "save_screenshot", "path": "<png_path>"}
 ///   {"cmd": "show_runtime_dialog", "message": "<text>", "style": <uint>, "question": <bool>}
 ///   {"cmd": "answer_runtime_dialog", "button": <uint>}
-///   {"cmd": "list_objects"}
+///   {"cmd": "list_objects", "includeText": <optional-bool>}
 ///   {"cmd": "close_window"}
 ///   {"cmd": "set_clipboard_text", "text": "<value>"}
 class TestBridge : public QObject
@@ -63,6 +63,7 @@ private:
         QString object_name;
         QString class_name;
         int depth;
+        QJsonValue text{QJsonValue::Undefined};
     };
 
     /// Find a QObject by objectName, searching the entire QML tree.
@@ -71,8 +72,8 @@ private:
     QObject* findListItem(QObject* view_obj, int row) const;
     QObject* resolveCurrentLeafItem(QObject* item) const;
 
-    /// Recursively collect all named objects from the QML tree.
-    void collectNamedObjects(QObject* root, std::vector<NamedObjectEntry>& results, QSet<const QObject*>& visited, int depth) const;
+    /// Collect all named objects from the QML tree.
+    void collectNamedObjects(QObject* root, std::vector<NamedObjectEntry>& results, QSet<const QObject*>& visited, int depth, bool include_text) const;
 
     /// Process a single JSON command and return the JSON response.
     QByteArray processCommand(const QByteArray& json_cmd);
@@ -96,7 +97,7 @@ private:
     QByteArray cmdSaveScreenshot(const QString& path);
     QByteArray cmdShowRuntimeDialog(const QString& message, unsigned int style, bool question);
     QByteArray cmdAnswerRuntimeDialog(unsigned int button);
-    QByteArray cmdListObjects();
+    QByteArray cmdListObjects(bool include_text);
     QByteArray cmdCloseWindow();
     QByteArray cmdSetClipboardText(const QString& text);
 

@@ -172,6 +172,8 @@ Popup {
                     switch (loadState) {
                     case WalletListModel.Loading:
                         return qsTr("Loading…")
+                    case WalletListModel.Closing:
+                        return qsTr("Closing…")
                     case WalletListModel.LoadError:
                         return qsTr("Failed to open wallet")
                     case WalletListModel.Open:
@@ -192,7 +194,7 @@ Popup {
                 width: listView.width
                 height: loadState === WalletListModel.Open ? 64 : 48
                 checked: loadState === WalletListModel.Open && walletController.selectedWallet.name === name
-                enabled: !walletController.walletLoadInProgress
+                enabled: !walletController.walletLoadInProgress && loadState !== WalletListModel.Closing
                 ButtonGroup.group: buttonGroup
                 leftPadding: 10
                 rightPadding: 10
@@ -307,7 +309,7 @@ Popup {
                             objectName: "walletSelectActions_" + delegate.name.replace(/[^A-Za-z0-9_]/g, "_")
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: delegate.loadState !== WalletListModel.Loading
+                            visible: delegate.loadState !== WalletListModel.Loading && delegate.loadState !== WalletListModel.Closing
                             enabled: visible && !walletController.walletLoadInProgress
                             size: 24
                             iconSize: 18
@@ -383,7 +385,7 @@ Popup {
                             anchors.verticalCenter: parent.verticalCenter
                             width: 24
                             height: 24
-                            running: delegate.loadState === WalletListModel.Loading
+                            running: delegate.loadState === WalletListModel.Loading || delegate.loadState === WalletListModel.Closing
                             visible: running
                         }
                     }
