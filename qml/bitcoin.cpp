@@ -44,6 +44,7 @@
 #include <qml/models/bitcoinaddress.h>
 #include <qml/models/bitcoinurimodel.h>
 #include <qml/models/blockclockmodel.h>
+#include <qml/models/blockclockhistory.h>
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/debuglogmodel.h>
@@ -659,7 +660,10 @@ int QmlGuiMain(int argc, char* argv[])
 
     NodeModel node_model{*node, /*backend_ready=*/false};
     node_model.addStartupWarnings(startup_warnings);
-    QmlInitExecutor init_executor{*node};
+    auto block_clock_history{std::make_shared<BlockClockHistory>()};
+    QmlInitExecutor init_executor{*node, [history = block_clock_history, node = node.get(), chain = chain.get()] {
+        return SubscribeBlockClockHistory(*node, *chain, history);
+    }};
     QmlShutdownCoordinator shutdown_coordinator{init_executor};
     shutdown_coordinator.addParticipant(&bitcoin_uri_model, &BitcoinUriModel::shutdownFinished,
                                         [&] { bitcoin_uri_model.beginShutdown(); });
@@ -671,8 +675,8 @@ int QmlGuiMain(int argc, char* argv[])
         wallet_controller = std::make_unique<WalletQmlController>(*node);
         QObject::connect(
             &init_executor, &QmlInitExecutor::initializeResult, wallet_controller.get(),
-            [wallet_controller = wallet_controller.get(), node = node.get(), &shutdown_requested](bool success) {
-                if (success && !shutdown_requested && !node->shutdownRequested()) {
+            [wallet_controller = wallet_controller.get(), &shutdown_requested](bool success, interfaces::BlockAndHeaderTipInfo, bool, bool backend_shutdown_requested) {
+                if (success && !shutdown_requested && !backend_shutdown_requested) {
                     wallet_controller->initialize();
                 }
             });
@@ -713,9 +717,7 @@ int QmlGuiMain(int argc, char* argv[])
 #endif
 
     ChainModel chain_model{QString::fromStdString(gArgs.GetChainTypeString())};
-    BlockClockModel block_clock_model{[chain = chain.get()](qint64 period_start, qint64 period_end) {
-        return LoadBlockClockHistory(*chain, period_start, period_end);
-    }};
+    BlockClockModel block_clock_model{block_clock_history};
     setupChainQSettings(&app, chain_model.networkName());
     // Settings reset must happen before model instantiation so the models
     // read clean defaults from QSettings.
@@ -731,8 +733,6 @@ int QmlGuiMain(int argc, char* argv[])
         if (!reset_saved) node_model.addStartupWarnings({QObject::tr("Unable to save window settings after reset.")});
     }
 
-    QObject::connect(&node_model, &NodeModel::blockTipTimeChanged, &block_clock_model, &BlockClockModel::recordBlockTime);
-    QObject::connect(&node_model, &NodeModel::chainStateReady, &block_clock_model, &BlockClockModel::initializeHistory);
 
 
     DesktopWindowBehaviorModel desktop_window_behavior_model;
@@ -751,15 +751,25 @@ int QmlGuiMain(int argc, char* argv[])
     PeerListSortProxy peer_model_sort_proxy{nullptr};
     peer_model_sort_proxy.setSourceModel(&peer_model);
 
-    BanListModel ban_list_model{*node, nullptr, /*backend_ready=*/false};
+    BanListModel ban_list_model{*node, nullptr, /*backend_ready=*/false, node_model.peerCommandExecutor()};
     QObject::connect(&node_model, &NodeModel::bannedListChanged,
                      &ban_list_model, &BanListModel::refresh);
+    QObject::connect(&node_model, &NodeModel::peerActionPendingChanged, &ban_list_model, [&] {
+        if (node_model.peerActionPending()) ban_list_model.setExternalActionPending(true);
+    });
+    QObject::connect(&node_model, &NodeModel::peerActionFinished, &peer_model,
+                     [&](const QString& action, bool success, const QString&) {
+        if (success) peer_model.refresh();
+        ban_list_model.finishExternalAction(action == QStringLiteral("ban"));
+    });
+    QObject::connect(&ban_list_model, &BanListModel::unbanFinished,
+                     &node_model, &NodeModel::acknowledgeBanNotification);
     QObject::connect(&node_model, &NodeModel::chainStateReady,
                      &ban_list_model, &BanListModel::backendInitialized);
 
+    shutdown_coordinator.addParticipant(&peer_model, &PeerListModel::drained, [&] { peer_model.beginShutdown(); });
+    shutdown_coordinator.addParticipant(&ban_list_model, &BanListModel::drained, [&] { ban_list_model.beginShutdown(); });
     QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::shutdownStarted, &peer_model, [&] {
-        peer_model.beginShutdown();
-        ban_list_model.beginShutdown();
         block_clock_model.stop();
         QObject::disconnect(&node_model, nullptr, &ban_list_model, nullptr);
         QObject::disconnect(&node_model, nullptr, &block_clock_model, nullptr);

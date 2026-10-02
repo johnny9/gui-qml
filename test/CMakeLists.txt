@@ -14,6 +14,7 @@ add_executable(bitcoinqml_unit_tests
   test_backendexecutor.cpp
   test_bitcoinaddress.cpp
   test_blockclockdial.cpp
+  test_blockclockhistory.cpp
   test_blockclockmodel.cpp
   test_bitcoinuri.cpp
   test_bitcoinamount.cpp

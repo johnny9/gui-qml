@@ -5,18 +5,41 @@
 #include <qml/initexecutor.h>
 
 #include <interfaces/node.h>
+#include <interfaces/handler.h>
 #include <util/threadnames.h>
 
 #include <QString>
 
-QmlInitExecutor::QmlInitExecutor(interfaces::Node& node)
-    : QObject(), m_node(node)
+#include <atomic>
+#include <utility>
+
+struct QmlInitExecutor::WorkerState {
+    SubscriptionFactory factory;
+    std::unique_ptr<interfaces::Handler> subscription;
+    std::atomic_bool stopping{false};
+
+    explicit WorkerState(SubscriptionFactory subscribe) : factory(std::move(subscribe)) {}
+    void retire()
+    {
+        subscription.reset();
+        factory = {};
+    }
+};
+
+QmlInitExecutor::QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe)
+    : QObject(), m_node(node), m_worker_state(std::make_shared<WorkerState>(std::move(subscribe)))
 {
     connect(&m_backend, &BackendExecutor::drained, this, &QmlInitExecutor::finishShutdown);
     connect(&m_control, &BackendExecutor::drained, this, &QmlInitExecutor::finishShutdown);
 }
 
-QmlInitExecutor::~QmlInitExecutor() = default;
+QmlInitExecutor::~QmlInitExecutor()
+{
+    m_worker_state->stopping = true;
+    // Accepted init work retains the state after this QObject is gone. Retire
+    // its token and factory on that same queue before the executor drains.
+    m_backend.submit(this, [state = std::move(m_worker_state)] { state->retire(); }, [] {});
+}
 
 void QmlInitExecutor::handleRunawayException(std::exception_ptr error)
 {
@@ -32,17 +55,29 @@ void QmlInitExecutor::handleRunawayException(std::exception_ptr error)
 
 void QmlInitExecutor::initialize()
 {
+    if (m_initialize_requested || m_shutdown_requested) return;
+    m_initialize_requested = true;
     struct Result {
         bool success;
         interfaces::BlockAndHeaderTipInfo tip;
+        bool initial_block_download;
+        bool shutdown_requested;
     };
-    m_backend.submit(this, [node = &m_node] {
+    m_backend.submit(this, [node = &m_node, state = m_worker_state] {
         util::ThreadRename("qml-init");
         Result result{};
         result.success = node->appInitMain(&result.tip);
+        if (result.success && state->factory && !state->stopping && !node->shutdownRequested()) {
+            // Consume before invoking: a registration failure cannot be retried
+            // accidentally, and the factory uses local RAII while seeding.
+            auto subscribe{std::exchange(state->factory, {})};
+            state->subscription = subscribe();
+        }
+        result.initial_block_download = result.success && node->isInitialBlockDownload();
+        result.shutdown_requested = node->shutdownRequested();
         return result;
     }, [this](Result result) {
-        Q_EMIT initializeResult(result.success, result.tip);
+        Q_EMIT initializeResult(result.success, result.tip, result.initial_block_download, result.shutdown_requested);
     }, [this](std::exception_ptr error) { handleRunawayException(error); });
 }
 
@@ -50,6 +85,7 @@ void QmlInitExecutor::interrupt()
 {
     if (m_interrupt_requested) return;
     m_interrupt_requested = true;
+    m_worker_state->stopping = true;
     m_control.submit(this, [node = &m_node] {
         util::ThreadRename("qml-control");
         node->startShutdown();
@@ -63,7 +99,11 @@ void QmlInitExecutor::shutdown()
 {
     if (m_shutdown_requested) return;
     m_shutdown_requested = true;
-    m_backend.submit(this, [node = &m_node] { node->appShutdown(); }, [this] {
+    m_worker_state->stopping = true;
+    m_backend.submit(this, [node = &m_node, state = m_worker_state] {
+        state->retire();
+        node->appShutdown();
+    }, [this] {
         m_shutdown_complete = true;
         m_backend.shutdown();
         m_control.shutdown();
