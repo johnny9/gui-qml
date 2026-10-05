@@ -53,9 +53,9 @@ void ThreadAudit::setObserver(std::function<void(const char*)> observer)
 
 namespace {
 // The generated forwarding code has a separate, explicit policy for every
-// method, including inherited default methods. CTest checks it against the
-// pinned interface headers so adding a default method cannot open a bypass.
-#include <test/thread_audit_generated.inc>
+// method, including inherited default methods. Build generation and CTest check
+// the pinned interface headers so adding a default method cannot open a bypass.
+#include <thread_audit_generated.inc>
 } // namespace
 
 std::unique_ptr<interfaces::Node> CheckNode(std::unique_ptr<interfaces::Node> backend, std::shared_ptr<ThreadAudit> audit)

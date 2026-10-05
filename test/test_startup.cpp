@@ -79,7 +79,7 @@ private Q_SLOTS:
         const auto initial_settings = ReadSettings(profile);
         QSignalSpy finished{window, SIGNAL(finished())};
         QSignalSpy warnings{&engine, &QQmlEngine::warnings};
-        for (const auto* name : {"onboardingCover", "onboardingStrengthen", "onboardingBlockclock", "onboardingStorageLocation", "onboardingStorageAmount", "onboardingConnection"}) {
+        for (const auto* name : {"onboardingCover", "onboardingStrengthen", "onboardingBlockchain", "onboardingBlockclock", "onboardingStorageLocation", "onboardingStorageAmount", "onboardingConnection"}) {
             QTRY_VERIFY(ApplicationTestContext::find(window, name));
             auto* page = ApplicationTestContext::find(window, name);
             QTRY_VERIFY(page->property("visible").toBool());

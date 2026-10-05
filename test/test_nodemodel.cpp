@@ -5,6 +5,7 @@
 #include <QtTest/QtTest>
 
 #include <test/mocks/mocknode.h>
+#include <test/backend_barrier.h>
 #include <test/qt_test_registry.h>
 
 #include <qml/models/nodemodel.h>
@@ -129,6 +130,7 @@ private Q_SLOTS:
     void syncCompletionResetsForLargeHeaderGap_data();
     void syncCompletionResetsForLargeHeaderGap();
     void blockSyncActiveFollowsInitializationAndBlockTipState();
+    void initialSyncWaitsForBackendAndKeepsNewerNotification();
     void alertNotificationsRefreshWarningList();
     void headerTipNotificationsExposeHeaderSyncProgress();
     void startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings();
@@ -778,6 +780,34 @@ void NodeModelTests::blockSyncActiveFollowsInitializationAndBlockTipState()
     QCOMPARE(sync_complete_spy.count(), 1);
 }
 
+void NodeModelTests::initialSyncWaitsForBackendAndKeepsNewerNotification()
+{
+    qmlintegration::Barrier barrier;
+    MockNode node;
+    ConfigureNodeModelDefaults(node);
+    interfaces::Node::NotifyBlockTipFn block_tip;
+    node.handle_notify_block_tip_fn = [&](auto fn) {
+        block_tip = std::move(fn);
+        return MakeNoopHandler();
+    };
+    node.is_initial_block_download_fn = [&] {
+        barrier.enter();
+        return true;
+    };
+    NodeModel model{node};
+    model.initializeResult(true, {});
+    QTRY_VERIFY(barrier.entered.load());
+    QVERIFY(!model.initialSyncComplete());
+
+    block_tip(SynchronizationState::POST_INIT, interfaces::BlockTip{1, GetTime(), uint256{}}, 1.0);
+    QTRY_COMPARE(model.blockTipHeight(), 1);
+    QVERIFY(!model.initialSyncComplete());
+    QVERIFY(!barrier.timed_out);
+    barrier.release();
+    QTRY_VERIFY(model.initialSyncComplete());
+    QVERIFY(!model.blockSyncActive());
+}
+
 void NodeModelTests::initialSyncCompletionIgnoresVerificationEstimateForGenesis()
 {
     MockNode node;
@@ -788,7 +818,6 @@ void NodeModelTests::initialSyncCompletionIgnoresVerificationEstimateForGenesis(
     node.is_initial_block_download_fn = [] { return false; };
 
     NodeModel model{node};
-    WaitForInitialMempoolRefresh(mempool);
     QSignalSpy sync_complete_spy{&model, &NodeModel::initialSyncCompleteChanged};
 
     // A valid genesis-only chain can be complete (for example, regtest), and
@@ -802,7 +831,7 @@ void NodeModelTests::initialSyncCompletionIgnoresVerificationEstimateForGenesis(
     });
 
     QVERIFY(!model.blockSyncActive());
-    QVERIFY(model.initialSyncComplete());
+    QTRY_VERIFY(model.initialSyncComplete());
     QCOMPARE(sync_complete_spy.count(), 1);
 }
 
@@ -826,7 +855,6 @@ void NodeModelTests::initialSyncCompletionWaitsForStartupCatchUpAndLatches()
     };
 
     NodeModel model{node};
-    WaitForInitialMempoolRefresh(mempool);
     QVERIFY(block_tip_fn);
     QVERIFY(header_tip_fn);
     QSignalSpy sync_complete_spy{&model, &NodeModel::initialSyncCompleteChanged};
@@ -840,6 +868,8 @@ void NodeModelTests::initialSyncCompletionWaitsForStartupCatchUpAndLatches()
         .header_time = stale_header_time,
         .verification_progress = 0.90,
     });
+
+    WaitForInitialMempoolRefresh(mempool);
 
     // Core can latch out of IBD before connecting to a peer when the saved tip
     // is recent by Core's standard. The stale header still keeps the startup
@@ -877,7 +907,7 @@ void NodeModelTests::initialSyncCompletionWaitsForStartupCatchUpAndLatches()
                  interfaces::BlockTip{313'901, GetTime(), uint256{}},
                  1.0);
     QTRY_COMPARE_WITH_TIMEOUT(model.blockTipHeight(), 313'901, ASYNC_TIMEOUT_MS);
-    QVERIFY(model.initialSyncComplete());
+    QTRY_VERIFY(model.initialSyncComplete());
     QCOMPARE(sync_complete_spy.count(), 1);
 }
 
@@ -908,7 +938,6 @@ void NodeModelTests::syncCompletionResetsForLargeHeaderGap()
     };
 
     NodeModel model{node};
-    WaitForInitialMempoolRefresh(mempool);
     QVERIFY(block_tip_fn);
     QVERIFY(header_tip_fn);
     model.initializeResult(true, interfaces::BlockAndHeaderTipInfo{
@@ -918,7 +947,7 @@ void NodeModelTests::syncCompletionResetsForLargeHeaderGap()
         .header_time = GetTime(),
         .verification_progress = 1.0,
     });
-    QVERIFY(model.initialSyncComplete());
+    QTRY_VERIFY(model.initialSyncComplete());
     QSignalSpy sync_complete_spy{&model, &NodeModel::initialSyncCompleteChanged};
 
     for (const int gap : {1, 24, 25, 200}) {

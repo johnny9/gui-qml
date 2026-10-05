@@ -143,7 +143,23 @@ set_tests_properties(bitcoinqml_startup_tests PROPERTIES
   ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1"
 )
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-add_test(NAME bitcoinqml_thread_policy COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/generate_thread_audit.py)
+set(thread_audit_generated "${CMAKE_CURRENT_BINARY_DIR}/thread_audit_generated.inc")
+add_custom_command(
+  OUTPUT "${thread_audit_generated}"
+  COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/generate_thread_audit.py"
+    --output "${thread_audit_generated}"
+  DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/generate_thread_audit.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/thread_policy.json"
+    "${PROJECT_SOURCE_DIR}/bitcoin/src/interfaces/node.h"
+    "${PROJECT_SOURCE_DIR}/bitcoin/src/interfaces/chain.h"
+    "${PROJECT_SOURCE_DIR}/bitcoin/src/interfaces/wallet.h"
+  COMMENT "Generating checked Core interface wrappers"
+  VERBATIM
+)
+add_custom_target(bitcoinqml_thread_audit_generated DEPENDS "${thread_audit_generated}")
+add_test(NAME bitcoinqml_thread_policy COMMAND ${Python3_EXECUTABLE}
+  "${CMAKE_CURRENT_SOURCE_DIR}/generate_thread_audit.py" --check "${thread_audit_generated}")
 add_executable(bitcoinqml_thread_tests test_thread_audit.cpp thread_audit.cpp)
 target_include_directories(bitcoinqml_thread_tests PRIVATE
   ${PROJECT_SOURCE_DIR}
@@ -161,6 +177,10 @@ target_include_directories(bitcoinqml_audited_app PRIVATE
 )
 target_link_libraries(bitcoinqml_audited_app PRIVATE bitcoinqml bitcoinqt Qt6::Test)
 qt6_import_qml_plugins(bitcoinqml_audited_app)
+foreach(app bitcoinqml_integration_tests bitcoinqml_startup_tests bitcoinqml_thread_tests bitcoinqml_audited_app)
+  add_dependencies(${app} bitcoinqml_thread_audit_generated)
+  target_include_directories(${app} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+endforeach()
 foreach(app bitcoin-core-app bitcoinqml_audited_app)
   add_test(NAME ${app}_lifecycle COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/functional/gui_process_check.py

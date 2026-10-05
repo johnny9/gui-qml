@@ -46,6 +46,7 @@ def run_tests():
         ]
 
         for button, expected_page in onboarding_steps:
+            gui.wait_for_property(button, "enabled", True, timeout_ms=5000)
             print(f"Click {button} ...")
             gui.click(button)
             gui.wait_for_page(expected_page, timeout_ms=5000)

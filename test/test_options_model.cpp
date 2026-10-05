@@ -1335,7 +1335,7 @@ void OptionsModelTests::validRelativeExplicitDataDirResolvesAgainstWorkingDirect
     QVERIFY(QDir::setCurrent(temp_dir.path()));
 
     const QString relative_data_dir{QStringLiteral("relative-data-dir")};
-    const QString absolute_data_dir{QDir(temp_dir.path()).filePath(relative_data_dir)};
+    const QString absolute_data_dir{QDir::current().absoluteFilePath(relative_data_dir)};
     QVERIFY(QDir().mkpath(relative_data_dir));
 
     std::vector<std::string> argv{TestArgv()};

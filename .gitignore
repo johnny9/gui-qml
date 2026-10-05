@@ -6,3 +6,6 @@
 *.pyc
 
 /CMakeUserPresets.json
+
+# Thread-audit wrappers are generated in the build directory.
+/test/thread_audit_generated.inc

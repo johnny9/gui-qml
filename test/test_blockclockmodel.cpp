@@ -5,9 +5,12 @@
 #include <qml/models/blockclockmodel.h>
 
 #include <test/qt_test_registry.h>
+#include <test/backend_barrier.h>
 
 #include <QtTest/QtTest>
 #include <QTimeZone>
+
+#include <mutex>
 
 namespace {
 QDateTime UtcTime(int hour, int minute = 0, int second = 0)
@@ -30,6 +33,8 @@ private Q_SLOTS:
     void blockNotificationsRefreshAuthoritativeHistory();
     void blockArrivalAtRolloverIsNotCountedTwice();
     void emptyHistoryDoesNotEmitRedundantChanges();
+    void pendingHistoryCoalescesAndIgnoresOldPeriod();
+    void shutdownDiscardsPendingHistory();
     void timerHasModelOwnershipAndCanBeDisabledForTests();
     void timerAlignsToNextMinute();
 };
@@ -106,10 +111,12 @@ void BlockClockModelTests::historyLoadsOnInitializationAndPeriodRollover()
 
     model.updateCurrentTime(UtcTime(11, 59, 59));
     model.initializeHistory();
+    QTRY_COMPARE(model.blockTimeFractions().size(), 2);
     QCOMPARE(requested_starts, QList<qint64>{UtcTime(0).toSecsSinceEpoch()});
     QCOMPARE(model.blockTimeFractions().size(), 2);
 
     model.updateCurrentTime(UtcTime(12));
+    QTRY_COMPARE(model.blockTimeFractions().size(), 2);
     QCOMPARE(requested_starts, QList<qint64>({UtcTime(0).toSecsSinceEpoch(), UtcTime(12).toSecsSinceEpoch()}));
     QCOMPARE(model.periodStart(), UtcTime(12).toSecsSinceEpoch());
     QCOMPARE(model.blockTimeFractions().size(), 2);
@@ -125,40 +132,51 @@ void BlockClockModelTests::loadedHistoryPreservesEqualTimestamps()
 
     model.initializeHistory();
     const QList<qreal> expected{1.0 / 12.0, 2.0 / 12.0, 2.0 / 12.0};
-    QCOMPARE(model.blockTimeFractions(), expected);
+    QTRY_COMPARE(model.blockTimeFractions(), expected);
     QCOMPARE(history_spy.count(), 1);
     model.initializeHistory();
+    QTRY_VERIFY(!model.historyPending());
     QCOMPARE(model.blockTimeFractions(), expected);
     QCOMPARE(history_spy.count(), 1);
 }
 
 void BlockClockModelTests::blockNotificationsRefreshAuthoritativeHistory()
 {
+    std::mutex offsets_mutex;
     QList<qint64> offsets{3600};
     BlockClockModel model{[&](qint64 start, qint64) {
+        std::lock_guard lock{offsets_mutex};
         QList<qint64> timestamps;
         for (const qint64 offset : offsets) timestamps.push_back(start + offset);
         return timestamps;
     }, false};
     model.initializeHistory();
+    QTRY_COMPARE(model.blockTimeFractions().size(), 1);
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
 
-    offsets.push_back(3600);
+    {
+        std::lock_guard lock{offsets_mutex};
+        offsets.push_back(3600);
+    }
     model.recordBlockTime(model.periodStart() + 3600);
     const QList<qreal> expected{1.0 / 12.0, 1.0 / 12.0};
-    QCOMPARE(model.blockTimeFractions(), expected);
+    QTRY_COMPARE(model.blockTimeFractions(), expected);
     QCOMPARE(history_spy.count(), 1);
 
     // A repeated or queued notification must not count a loaded block again.
     model.recordBlockTime(model.periodStart() + 3600);
-    QCOMPARE(model.blockTimeFractions(), expected);
+    QTRY_VERIFY(!model.historyPending());
+    QTRY_COMPARE(model.blockTimeFractions(), expected);
     QCOMPARE(history_spy.count(), 1);
 
     // Replacing the active tip must also remove the old block's timestamp.
-    offsets = {3600, 7200};
+    {
+        std::lock_guard lock{offsets_mutex};
+        offsets = {3600, 7200};
+    }
     model.recordBlockTime(model.periodStart() + 7200);
     const QList<qreal> reorganized{1.0 / 12.0, 2.0 / 12.0};
-    QCOMPARE(model.blockTimeFractions(), reorganized);
+    QTRY_COMPARE(model.blockTimeFractions(), reorganized);
     QCOMPARE(history_spy.count(), 2);
 }
 
@@ -175,7 +193,7 @@ void BlockClockModelTests::blockArrivalAtRolloverIsNotCountedTwice()
 
     QCOMPARE(model.periodStart(), UtcTime(12).toSecsSinceEpoch());
     const QList<qreal> expected{1.0 / 720.0, 1.0 / 720.0};
-    QCOMPARE(model.blockTimeFractions(), expected);
+    QTRY_COMPARE(model.blockTimeFractions(), expected);
 }
 
 void BlockClockModelTests::emptyHistoryDoesNotEmitRedundantChanges()
@@ -186,7 +204,58 @@ void BlockClockModelTests::emptyHistoryDoesNotEmitRedundantChanges()
 
     model.initializeHistory();
     model.initializeHistory();
+    QTRY_VERIFY(!model.historyPending());
     QCOMPARE(history_spy.count(), 0);
+}
+
+void BlockClockModelTests::pendingHistoryCoalescesAndIgnoresOldPeriod()
+{
+    qmlintegration::Barrier barrier;
+    std::atomic<int> loads{0};
+    BlockClockModel model{[&](qint64 start, qint64) {
+        ++loads;
+        barrier.enter();
+        return QList<qint64>{start + 600};
+    }, false};
+    model.updateCurrentTime(UtcTime(11));
+    QSignalSpy history{&model, &BlockClockModel::blockTimeFractionsChanged};
+    model.initializeHistory();
+    QTRY_VERIFY(barrier.entered.load());
+    model.updateCurrentTime(UtcTime(12));
+    for (int i = 0; i < 20; ++i) model.initializeHistory();
+    QCOMPARE(loads.load(), 1);
+    QCOMPARE(history.count(), 0);
+    QVERIFY(!barrier.timed_out);
+    barrier.release();
+    QTRY_VERIFY(!model.historyPending());
+    QCOMPARE(loads.load(), 2);
+    QCOMPARE(model.periodStart(), UtcTime(12).toSecsSinceEpoch());
+    QCOMPARE(model.blockTimeFractions(), QList<qreal>{600.0 / BlockClockModel::PERIOD_SECONDS});
+    QCOMPARE(history.count(), 1);
+}
+
+void BlockClockModelTests::shutdownDiscardsPendingHistory()
+{
+    qmlintegration::Barrier barrier;
+    std::atomic<int> loads{0};
+    BlockClockModel model{[&](qint64 start, qint64) {
+        ++loads;
+        barrier.enter();
+        return QList<qint64>{start + 600};
+    }, false};
+    QSignalSpy history{&model, &BlockClockModel::blockTimeFractionsChanged};
+    QSignalSpy drained{&model, &BlockClockModel::backendDrained};
+    model.initializeHistory();
+    QTRY_VERIFY(barrier.entered.load());
+    model.initializeHistory();
+    model.drainBackend();
+    QCOMPARE(drained.count(), 0);
+    QVERIFY(!barrier.timed_out);
+    barrier.release();
+    QTRY_COMPARE(drained.count(), 1);
+    QCOMPARE(loads.load(), 1);
+    QCOMPARE(history.count(), 0);
+    QVERIFY(model.blockTimeFractions().isEmpty());
 }
 
 void BlockClockModelTests::timerHasModelOwnershipAndCanBeDisabledForTests()
