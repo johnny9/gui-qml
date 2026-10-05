@@ -120,19 +120,20 @@ Page {
         onContentHeightChanged: Qt.callLater(root.ensureFocusedItemVisible)
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-        Item {
+        // Let Control track implicit content sizing. A direct binding to the
+        // nested layout's implicit height loops when wrapped text changes on Qt 6.2.
+        Control {
             id: contentFrame
             width: scrollView.availableWidth
-            height: content.implicitHeight + 96
+            implicitHeight: implicitContentHeight + topPadding + bottomPadding
+            topPadding: 8
+            bottomPadding: 88
+            leftPadding: Math.max(root.contentSidePadding,
+                                  (width - root.maximumContentWidth) / 2)
+            rightPadding: leftPadding
 
-            ColumnLayout {
-                id: content
+            contentItem: ColumnLayout {
                 objectName: "onboardingContent"
-                anchors.top: parent.top
-                anchors.topMargin: 8
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: Math.max(0, Math.min(parent.width - root.contentSidePadding * 2,
-                                            root.maximumContentWidth))
                 spacing: 0
 
                 Image {
