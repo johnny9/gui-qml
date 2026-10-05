@@ -13,7 +13,7 @@
 #include <univalue.h>
 #include <wallet/wallet.h>
 
-#include <QDebug>
+#include <QCoreApplication>
 
 #include <cstdio>
 #include <cstdlib>
@@ -21,13 +21,22 @@
 #include <utility>
 
 namespace qmlintegration {
+ThreadAudit::ThreadAudit(bool local)
+    : m_gui_thread{QCoreApplication::instance() ? QCoreApplication::instance()->thread() : nullptr}, m_local{local}
+{
+    if (!m_gui_thread) {
+        std::fprintf(stderr, "Thread audit requires an application instance\n");
+        std::abort();
+    }
+}
+
 void ThreadAudit::check(const char* method, ThreadPolicy policy) const
 {
     const auto phase = m_phase.load();
+    const bool on_gui_thread{QThread::currentThread() == m_gui_thread};
+    const bool startup_allowed{m_local && policy == ThreadPolicy::Bootstrap && phase == TestPhase::Bootstrap};
     if (policy != ThreadPolicy::Forbidden &&
-        (QThread::currentThread() != m_gui_thread ||
-         (m_local && (policy == ThreadPolicy::LocalShutdown || policy == ThreadPolicy::LocalAccessor ||
-                      (policy == ThreadPolicy::Bootstrap && phase == TestPhase::Bootstrap))))) {
+        (!on_gui_thread || startup_allowed || (m_local && policy == ThreadPolicy::LocalShutdown))) {
         std::function<void(const char*)> observer;
         {
             std::lock_guard lock{m_observer_mutex};
@@ -52,9 +61,8 @@ void ThreadAudit::setObserver(std::function<void(const char*)> observer)
 }
 
 namespace {
-// The generated forwarding code has a separate, explicit policy for every
-// method, including inherited default methods. Build generation and CTest check
-// the pinned interface headers so adding a default method cannot open a bypass.
+// Generate every override, including inherited defaults. Core work requires a
+// worker unless a temporary exception in the generator explicitly allows it.
 #include <thread_audit_generated.inc>
 } // namespace
 

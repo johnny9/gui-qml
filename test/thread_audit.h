@@ -18,15 +18,16 @@
 
 namespace qmlintegration {
 
-// These exceptions only describe the in-process implementation. An IPC proxy
-// must use Worker even for operations which are local atomics in that backend.
-enum class ThreadPolicy { Worker, Bootstrap, LocalShutdown, LocalAccessor, Forbidden };
+// Bootstrap temporarily allows local setup until the runtime handoff; onboarding
+// may still be visible. LocalShutdown is temporary until #981 moves shutdown
+// polling to a worker. An IPC proxy never receives GUI-thread exceptions.
+enum class ThreadPolicy { Worker, Bootstrap, LocalShutdown, Forbidden };
 enum class TestPhase { Bootstrap, Running, Shutdown };
 
 class ThreadAudit
 {
 public:
-    explicit ThreadAudit(bool local = true) : m_gui_thread{QThread::currentThread()}, m_local{local} {}
+    explicit ThreadAudit(bool local = true);
     void check(const char* method, ThreadPolicy policy) const;
     void setPhase(TestPhase phase) { m_phase.store(phase); }
     void setObserver(std::function<void(const char*)> observer);

@@ -150,7 +150,6 @@ add_custom_command(
     --output "${thread_audit_generated}"
   DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/generate_thread_audit.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/thread_policy.json"
     "${PROJECT_SOURCE_DIR}/bitcoin/src/interfaces/node.h"
     "${PROJECT_SOURCE_DIR}/bitcoin/src/interfaces/chain.h"
     "${PROJECT_SOURCE_DIR}/bitcoin/src/interfaces/wallet.h"
@@ -160,6 +159,8 @@ add_custom_command(
 add_custom_target(bitcoinqml_thread_audit_generated DEPENDS "${thread_audit_generated}")
 add_test(NAME bitcoinqml_thread_policy COMMAND ${Python3_EXECUTABLE}
   "${CMAKE_CURRENT_SOURCE_DIR}/generate_thread_audit.py" --check "${thread_audit_generated}")
+add_test(NAME bitcoinqml_thread_generator COMMAND ${Python3_EXECUTABLE}
+  "${CMAKE_CURRENT_SOURCE_DIR}/test_generate_thread_audit.py")
 add_executable(bitcoinqml_thread_tests test_thread_audit.cpp thread_audit.cpp)
 target_include_directories(bitcoinqml_thread_tests PRIVATE
   ${PROJECT_SOURCE_DIR}

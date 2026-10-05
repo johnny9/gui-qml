@@ -125,8 +125,13 @@ int Violate(const QString& route)
     // Production redirects Qt messages into debug.log; fatal diagnostics must
     // still be present in the process stderr captured by CTest/Python.
     qInstallMessageHandler([](QtMsgType, const QMessageLogContext&, const QString&) {});
-    auto audit = std::make_shared<ThreadAudit>(route != "ipc-shutdown");
+    auto audit = route == "constructed-on-worker"
+        ? std::async(std::launch::async, [] { return std::make_shared<ThreadAudit>(); }).get()
+        : std::make_shared<ThreadAudit>(route != "ipc-shutdown" && route != "ipc-bootstrap");
     audit->setPhase(TestPhase::Running);
+    if (route == "ipc-bootstrap" || route == "worker-during-bootstrap") {
+        audit->setPhase(TestPhase::Bootstrap);
+    }
     if (route.startsWith("wallet-")) {
         auto backend = std::make_unique<AuditLoader>();
         auto* raw = backend.get();
@@ -140,8 +145,10 @@ int Violate(const QString& route)
     } else {
         auto node = CheckNode(std::make_unique<AuditNode>(), audit);
         if (route == "default") node->context();
-        else if (route == "bootstrap") node->baseInitialize();
+        else if (route == "forbidden-on-worker") std::async(std::launch::async, [&] { node->context(); }).get();
+        else if (route == "bootstrap" || route == "ipc-bootstrap") node->baseInitialize();
         else if (route == "ipc-shutdown") node->shutdownRequested();
+        else if (route == "loader-access") node->walletLoader();
         else node->getNumBlocks();
     }
     return 0;
@@ -161,7 +168,12 @@ private Q_SLOTS:
         QTest::newRow("node") << QString{"node"} << QByteArray{"Node::getNumBlocks"};
         QTest::newRow("inherited-default") << QString{"default"} << QByteArray{"Node::context"};
         QTest::newRow("bootstrap-ended") << QString{"bootstrap"} << QByteArray{"Node::baseInitialize"};
+        QTest::newRow("bootstrap-is-not-a-blanket-exemption") << QString{"worker-during-bootstrap"} << QByteArray{"Node::getNumBlocks"};
+        QTest::newRow("no-startup-exceptions-for-ipc") << QString{"ipc-bootstrap"} << QByteArray{"Node::baseInitialize"};
         QTest::newRow("no-local-exceptions-for-ipc") << QString{"ipc-shutdown"} << QByteArray{"Node::shutdownRequested"};
+        QTest::newRow("audit-constructed-on-worker") << QString{"constructed-on-worker"} << QByteArray{"Node::getNumBlocks"};
+        QTest::newRow("raw-access-on-worker") << QString{"forbidden-on-worker"} << QByteArray{"Node::context"};
+        QTest::newRow("loader-access-needs-worker") << QString{"loader-access"} << QByteArray{"Node::walletLoader"};
         QTest::newRow("model-affinity") << QString{"affinity"} << QByteArray{"GUI model mutated on a foreign thread"};
         for (const auto* route : {"create", "load", "restore", "migrate", "list", "callback"}) {
             QTest::newRow(route) << QString{"wallet-"} + route << QByteArray{"Wallet::getBalance"};
@@ -178,7 +190,10 @@ private Q_SLOTS:
         const auto diagnostics = child.readAllStandardError();
         QVERIFY2(child.exitStatus() == QProcess::CrashExit || child.exitCode() != 0, diagnostics.constData());
         QVERIFY2(diagnostics.contains(method), diagnostics.constData());
-        if (route != "affinity") QVERIFY(diagnostics.contains("phase=running"));
+        if (route != "affinity") {
+            const bool bootstrap{route == "ipc-bootstrap" || route == "worker-during-bootstrap"};
+            QVERIFY(diagnostics.contains(bootstrap ? "phase=bootstrap" : "phase=running"));
+        }
         QVERIFY(!diagnostics.contains("BACKEND_ENTERED"));
     }
 
@@ -189,8 +204,8 @@ private Q_SLOTS:
         auto* raw = &backend->loader;
         auto state = raw->state;
         auto node = CheckNode(std::move(backend), audit);
-        auto& loader = node->walletLoader();
-        QCOMPARE(&loader, &node->walletLoader());
+        auto& loader = *std::async(std::launch::async, [&] { return &node->walletLoader(); }).get();
+        QCOMPARE(&loader, std::async(std::launch::async, [&] { return &node->walletLoader(); }).get());
         QVERIFY(&loader != raw);
         std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
         std::async(std::launch::async, [&] {
