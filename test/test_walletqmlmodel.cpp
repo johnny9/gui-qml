@@ -878,7 +878,9 @@ void WalletQmlModelTests::encryptWalletUpdatesSecurityState()
     FakePasswordWallet* raw_wallet = wallet.get();
     auto model = std::make_unique<WalletQmlModel>(std::move(wallet));
 
+    QSignalSpy completed(model.get(), &WalletQmlModel::settingsOperationFinished);
     QVERIFY(model->encryptWallet("secret"));
+    QTRY_COMPARE(completed.count(), 1);
     QCOMPARE(raw_wallet->encrypt_calls, 1);
     QTRY_VERIFY(model->isEncrypted());
     QTRY_VERIFY(model->isLocked());
@@ -889,13 +891,17 @@ void WalletQmlModelTests::changeWalletPassphraseForwardsPasswords()
 {
     auto [wallet, model] = MakePasswordWalletModel();
 
+    QSignalSpy completed(model.get(), &WalletQmlModel::settingsOperationFinished);
     QVERIFY(model->changeWalletPassphrase("secret", "new-secret"));
+    QTRY_COMPARE(completed.count(), 1);
     QCOMPARE(wallet->change_passphrase_calls, 1);
     QCOMPARE(wallet->changed_passphrases.size(), size_t{1});
     QCOMPARE(wallet->changed_passphrases.front().first, std::string("secret"));
     QCOMPARE(wallet->changed_passphrases.front().second, std::string("new-secret"));
 
-    QVERIFY(!model->changeWalletPassphrase("wrong", "new-secret"));
+    QVERIFY(model->changeWalletPassphrase("wrong", "new-secret"));
+    QTRY_COMPARE(completed.count(), 2);
+    QVERIFY(!completed.at(1).at(1).toBool());
     QCOMPARE(model->settingsError(), QString("The current wallet password was incorrect."));
 }
 
@@ -903,7 +909,9 @@ void WalletQmlModelTests::backupWalletForwardsPath()
 {
     auto [wallet, model] = MakePasswordWalletModel();
 
+    QSignalSpy completed(model.get(), &WalletQmlModel::settingsOperationFinished);
     QVERIFY(model->backupWallet("/tmp/fake-wallet.bak"));
+    QTRY_COMPARE(completed.count(), 1);
     QCOMPARE(wallet->backup_calls, 1);
     QCOMPARE(wallet->last_backup_path, std::string("/tmp/fake-wallet.bak"));
     QVERIFY(model->settingsError().isEmpty());

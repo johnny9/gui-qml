@@ -19,6 +19,10 @@ target_link_libraries(bitcoinqml_bootstrap_tests PRIVATE Qt6::Widgets Qt6::Quick
 add_test(NAME bitcoinqml_bootstrap_tests COMMAND bitcoinqml_bootstrap_tests -platform minimal)
 set_tests_properties(bitcoinqml_bootstrap_tests PROPERTIES TIMEOUT 30)
 
+add_test(NAME bitcoinqml_privacy_checks
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_privacy_checks.py
+)
+
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
   test_backendexecutor.cpp
@@ -34,6 +38,7 @@ add_executable(bitcoinqml_unit_tests
   test_peerlistmodel.cpp
   test_peerstatsutil.cpp
   test_psbtqmlmodel.cpp
+  test_walletsecurityasync.cpp
   test_walletqmlmodel.cpp
   test_walletqmlmodeltransaction.cpp
   test_qmlbitcoinunits.cpp
@@ -71,6 +76,10 @@ add_executable(bitcoinqml_unit_tests
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/bitcoinuri.cpp
 )
+
+if(ENABLE_TEST_AUTOMATION)
+  target_sources(bitcoinqml_unit_tests PRIVATE test_testbridge.cpp)
+endif()
 
 target_compile_definitions(bitcoinqml_unit_tests
   PRIVATE

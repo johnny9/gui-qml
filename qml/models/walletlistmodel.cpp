@@ -12,28 +12,60 @@
 
 #include <algorithm>
 
-namespace {
-QString WalletDisplayName(const QString& path)
-{
-    const QString trimmed_path = path.trimmed();
-    if (trimmed_path.isEmpty()) {
-        return {};
-    }
-
-    QSettings settings;
-    const QString display_name = settings.value(QStringLiteral("walletDisplayNames/%1").arg(trimmed_path)).toString().trimmed();
-    return display_name.isEmpty() ? trimmed_path : display_name;
-}
-} // namespace
-
 WalletListModel::WalletListModel(interfaces::Node& node, QObject *parent)
 : QAbstractListModel(parent)
 , m_node(node)
+, m_executor(std::make_shared<BackendExecutor>())
 {
+}
+
+void WalletListModel::beginShutdown()
+{
+    if (m_shutting_down) return;
+    m_shutting_down = true;
+    connect(m_executor.get(), &BackendExecutor::drained, this, &WalletListModel::shutdownFinished);
+    m_executor->shutdown();
 }
 
 void WalletListModel::listWalletDir()
 {
+    if (m_shutting_down) return;
+    if (m_refreshing) {
+        m_refresh_again = true;
+        return;
+    }
+    m_refreshing = true;
+    m_executor->submit(this, [node = &m_node] {
+        struct Result {
+            QList<QPair<QString, QString>> directory;
+            QHash<QString, QString> aliases;
+        } result;
+        QSettings settings;
+        for (const auto& [path, format] : node->walletLoader().listWalletDir()) {
+            const QString name = QString::fromStdString(path);
+            result.directory.append({name, QString::fromStdString(format)});
+        }
+        settings.beginGroup(QStringLiteral("walletDisplayNames"));
+        for (const QString& name : settings.allKeys()) {
+            const QString alias = settings.value(name).toString().trimmed();
+            if (!alias.isEmpty()) result.aliases.insert(name, alias);
+        }
+        return result;
+    }, [this](const auto& result) {
+        m_refreshing = false;
+        applyDirectory(result.directory, result.aliases);
+        if (std::exchange(m_refresh_again, false)) listWalletDir();
+    }, [this](std::exception_ptr) {
+        m_refreshing = false;
+        m_refresh_again = false;
+        Q_EMIT walletDirectoryError(tr("Wallet discovery failed."));
+    });
+}
+
+void WalletListModel::applyDirectory(const QList<QPair<QString, QString>>& directory, const QHash<QString, QString>& aliases)
+{
+    const bool aliases_changed = m_aliases != aliases;
+    m_aliases = aliases;
     // Preserve per-row info (balance, keyScheme) that was pushed in before the
     // picker was first opened — it's not derivable from listWalletDir().
     QHash<QString, Item> previous_items;
@@ -43,9 +75,8 @@ void WalletListModel::listWalletDir()
     }
 
     QList<Item> updated_items;
-    for (const auto& [path, format] : m_node.walletLoader().listWalletDir()) {
-        const QString name = QString::fromStdString(path);
-        Item item{name, QString::fromStdString(format), true, {}, -1};
+    for (const auto& [name, format] : directory) {
+        Item item{name, format, true, {}, -1};
         const auto previous = previous_items.constFind(name);
         if (previous != previous_items.constEnd()) {
             item.balance = previous->balance;
@@ -71,6 +102,9 @@ void WalletListModel::listWalletDir()
 
     sortItems(updated_items);
     applyUpdatedItems(std::move(updated_items));
+    if (aliases_changed && !m_items.isEmpty()) {
+        Q_EMIT dataChanged(index(0, 0), index(rowCount() - 1, 0), {Qt::DisplayRole, DisplayNameRole});
+    }
     const bool wallet_dir_became_loaded{!m_wallet_dir_loaded};
     if (wallet_dir_became_loaded) {
         m_wallet_dir_loaded = true;
@@ -88,6 +122,10 @@ void WalletListModel::setWalletLoadState(const QString& name, LoadState state, c
     }
 
     switch (state) {
+    case LoadState::Closing:
+        m_closing_wallet_names.insert(name);
+        emitTransientStateChanged();
+        return;
     case LoadState::Loading: {
         bool changed = false;
         if (!m_load_error.first.isEmpty()) {
@@ -124,6 +162,7 @@ void WalletListModel::setWalletLoadState(const QString& name, LoadState state, c
     }
 
     const bool loaded = (state == LoadState::Open);
+    m_closing_wallet_names.remove(name);
     const bool was_loaded = m_open_wallet_names.contains(name);
     if (loaded) {
         m_open_wallet_names.insert(name);
@@ -217,12 +256,15 @@ QVariant WalletListModel::data(const QModelIndex &index, int role) const
     switch (role) {
     case Qt::DisplayRole:
     case DisplayNameRole:
-        return WalletDisplayName(item.name);
+        return m_aliases.value(item.name, item.name);
     case NameRole:
         return item.name;
     case FormatRole:
         return item.format;
     case LoadStateRole:
+        if (m_closing_wallet_names.contains(item.name)) {
+            return static_cast<int>(LoadState::Closing);
+        }
         if (m_load_error.first == item.name) {
             return static_cast<int>(LoadState::LoadError);
         }
@@ -336,11 +378,5 @@ int WalletListModel::rowForName(const QString& name) const
 
 void WalletListModel::refreshDisplayNames()
 {
-    if (m_items.isEmpty()) {
-        return;
-    }
-
-    const QModelIndex first = index(0, 0);
-    const QModelIndex last = index(rowCount() - 1, 0);
-    Q_EMIT dataChanged(first, last, {Qt::DisplayRole, DisplayNameRole});
+    listWalletDir();
 }
