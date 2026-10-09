@@ -13,9 +13,7 @@ CoinsListModel::CoinsListModel(WalletQmlModel* parent)
     : QAbstractListModel(parent), m_wallet_model(parent)
 {
     if (parent) {
-        connect(parent, &WalletQmlModel::transactionChanged, this, &CoinsListModel::update);
-        connect(parent, &WalletQmlModel::addressListChanged, this, &CoinsListModel::update);
-        connect(parent, &WalletQmlModel::balanceChanged, this, &CoinsListModel::update);
+        connect(parent, &WalletQmlModel::walletStateChanged, this, &CoinsListModel::update);
     }
     update();
 }
@@ -155,7 +153,7 @@ void CoinsListModel::refreshSelection()
 void CoinsListModel::beginSelection()
 {
     if (!m_wallet_model || m_previous_selection) return;
-    update();
+    m_wallet_model->requestWalletStateRefresh();
     m_previous_selection = m_wallet_model->listSelectedCoins();
 }
 void CoinsListModel::applySelection() { m_previous_selection.reset(); }
