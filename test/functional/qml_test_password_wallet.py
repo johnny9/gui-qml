@@ -178,14 +178,11 @@ def assert_wallet_locked(gui_rpc_port, wallet_name):
 def assert_passphrase_not_in_ui(gui, passphrase):
     gui.settle()
     leaks = []
-    for obj in gui.list_objects():
+    # Read each object's own text once. Repeated name lookups scan the entire
+    # tree again and can resolve a different object when names are duplicated.
+    for obj in gui.list_objects(include_text=True):
         object_name = obj.get("objectName", "")
-        if not object_name:
-            continue
-        try:
-            text = gui.get_property(object_name, "text")
-        except QmlDriverError:
-            continue
+        text = obj.get("text")
         if isinstance(text, str) and passphrase in text:
             leaks.append(f"{object_name} ({obj.get('className', 'unknown')})")
     assert not leaks, f"Passphrase leaked through QML text properties: {', '.join(leaks)}"

@@ -20,7 +20,6 @@ from qml_wallet_test_lib import (
     WalletFlowHarness,
     open_wallet_selector,
     rpc_call,
-    wait_for_loaded_wallets,
     wait_for_rpc,
 )
 
@@ -361,12 +360,13 @@ def case_selector_skips_load_for_already_open_wallet(harness, checkpoints):
     gui.wait_for_property("walletCloseConfirmationPopup", "opened", True, timeout_ms=5000)
     gui.click("walletCloseConfirmationConfirmButton")
     gui.wait_for_property("walletBadge", "text", wallet_a, timeout_ms=5000)
-    # The selection changes before the wallet's background work has drained.
-    wait_for_loaded_wallets(harness.gui_rpc_port, [wallet_a])
-    checkpoints.checkpoint("selected wallet unloads only after confirmation", gui)
+    # Selection changes while the closing wallet's accepted work drains.
+    # The Closed row state confirms that backend removal has finished.
     open_wallet_selector(gui)
     row_b = f"walletSelectItem_{suffix_b}"
-    assert gui.get_property(row_b, "loadState") == LOAD_STATE_CLOSED
+    gui.wait_for_property(row_b, "loadState", LOAD_STATE_CLOSED, timeout_ms=15000)
+    assert rpc_call(harness.gui_rpc_port, "listwallets") == [wallet_a]
+    checkpoints.checkpoint("selected wallet unloads only after confirmation", gui)
     assert gui.get_property(row_b, "iconSource") == "image://images/wallet"
     gui.wait_for_property(f"walletSelectActionsMenu_{suffix_b}", "visible", False, timeout_ms=5000)
     checkpoints.checkpoint("closed wallet uses generic wallet icon", gui)

@@ -129,6 +129,7 @@ private:
     Q_PROPERTY(bool currentTransactionCanSend READ currentTransactionCanSend NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanBroadcast READ currentTransactionCanBroadcast NOTIFY currentTransactionChanged)
     Q_PROPERTY(QString currentTransactionReviewMessage READ currentTransactionReviewMessage NOTIFY currentTransactionChanged)
+    Q_PROPERTY(bool settingsBusy READ settingsBusy NOTIFY settingsBusyChanged)
     Q_PROPERTY(QString settingsError READ settingsError NOTIFY settingsErrorChanged)
     Q_PROPERTY(bool walletStateReady READ walletStateReady NOTIFY walletStateChanged)
     Q_PROPERTY(QString walletStateError READ walletStateError NOTIFY walletStateChanged)
@@ -286,6 +287,7 @@ public:
     bool currentTransactionCanSend() const { return m_current_transaction && m_current_transaction_can_send; }
     bool currentTransactionCanBroadcast() const { return m_current_transaction && m_current_transaction_can_broadcast; }
     QString currentTransactionReviewMessage() const { return m_current_transaction_review_message; }
+    bool settingsBusy() const { return m_settings_busy; }
     QString settingsError() const { return m_settings_error; }
     void setNode(interfaces::Node* node);
 
@@ -319,6 +321,8 @@ Q_SIGNALS:
     void transactionNeedsUnlockChanged();
     void walletUnloaded();
     void settingsErrorChanged();
+    void settingsBusyChanged();
+    void settingsOperationFinished(const QString& operation, bool success);
     void addressListChanged();
     // Forwarded on the GUI thread; models must not read wallet state from the
     // Core callback while it holds the wallet lock.
@@ -418,6 +422,8 @@ private:
     QString m_transaction_error;
     bool m_transaction_needs_unlock{false};
     QString m_settings_error;
+    bool m_settings_busy{false};
+    bool runSettingsOperation(const QString& operation, std::function<QString(interfaces::Wallet&)> work);
     QString m_display_name;
     std::unique_ptr<interfaces::Handler> m_handler_status_changed;
     std::unique_ptr<interfaces::Handler> m_handler_address_list_changed;

@@ -155,4 +155,61 @@ TestCase {
         compare(banner.iconSource.toString(), "image://images/check")
         compare(banner.textColor, Theme.color.green)
     }
+
+    function test_save_waits_for_backend_completion() {
+        const page = createWalletPasswordSettingsPage(updatePasswordComponent)
+        const save = findChild(page, "walletPasswordSaveButton")
+        const current = findChild(page, "walletPasswordCurrentField")
+        const next = findChild(page, "walletPasswordNewField")
+        const confirm = findChild(page, "walletPasswordConfirmField")
+        page.wallet.settingsAutoComplete = false
+        current.text = "current"
+        next.text = "new-password"
+        confirm.text = "new-password"
+        verify(save.enabled)
+        save.clicked()
+        compare(page.wallet.settingsBusy, true)
+        compare(page.successText, "")
+        compare(save.enabled, false)
+        compare(current.enabled, false)
+        compare(current.text, "current")
+        compare(next.text, "new-password")
+        compare(confirm.text, "new-password")
+        page.wallet.completeSettingsOperation(false)
+        compare(page.successText, "")
+        compare(page.errorText, "The wallet operation failed.")
+        compare(current.enabled, true)
+        compare(current.text, "current")
+        compare(next.text, "new-password")
+        compare(confirm.text, "new-password")
+        current.text = "corrected password"
+        save.clicked()
+        page.wallet.completeSettingsOperation(true)
+        compare(page.successText, "Password updated successfully.")
+        compare(current.text, "")
+        compare(next.text, "")
+        compare(confirm.text, "")
+        page.wallet.settingsAutoComplete = true
+    }
+
+    function test_hidden_password_page_does_not_navigate_on_completion() {
+        const page = createWalletPasswordSettingsPage(setPasswordComponent)
+        page.wallet.isEncrypted = false
+        page.wallet.settingsAutoComplete = false
+        findChild(page, "walletPasswordNewField").text = "new-password"
+        findChild(page, "walletPasswordConfirmField").text = "new-password"
+        findChild(page, "walletPasswordConfirmToggle").loadedTrailingItem.checked = true
+        let savedCount = 0
+        page.saved.connect(function() { savedCount += 1 })
+        const save = findChild(page, "walletPasswordSaveButton")
+        verify(save.enabled)
+        save.clicked()
+        compare(page.wallet.settingsBusy, true)
+        page.visible = false
+        page.wallet.completeSettingsOperation(true)
+        compare(savedCount, 0)
+        compare(page.successText, "Wallet password set successfully.")
+        page.wallet.settingsAutoComplete = true
+        page.wallet.isEncrypted = false
+    }
 }

@@ -248,10 +248,15 @@ class QmlDriver:
 
 
 
-    def list_objects(self):
-        """Return a list of dicts with objectName and className for all
-        named objects in the QML tree.  Useful for debugging."""
-        resp = self._send({"cmd": "list_objects"})
+    def list_objects(self, *, include_text=False):
+        """List named objects, optionally reading their text in the same traversal.
+
+        Text is opt-in so ordinary object-tree diagnostics do not expose inputs.
+        """
+        command = {"cmd": "list_objects"}
+        if include_text:
+            command["includeText"] = True
+        resp = self._send(command)
         if "error" in resp:
             raise QmlDriverError(f"list_objects failed: {resp['error']}")
         return resp["objects"]

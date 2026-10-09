@@ -6,6 +6,7 @@
 #define BITCOIN_QML_MODELS_WALLETLISTMODEL_H
 
 #include <interfaces/wallet.h>
+#include <qml/backendexecutor.h>
 #include <QAbstractListModel>
 #include <QHash>
 #include <QList>
@@ -30,6 +31,7 @@ public:
         Open      = 1,
         Loading   = 2,
         LoadError = 3,
+        Closing   = 4,
     };
     Q_ENUM(LoadState)
 
@@ -51,10 +53,14 @@ public:
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
+    void beginShutdown();
+    bool isShutdownComplete() const { return m_executor->isDrained(); }
     bool walletDirLoaded() const { return m_wallet_dir_loaded; }
 
 Q_SIGNALS:
     void walletListChanged(bool has_wallets);
+    void shutdownFinished();
+    void walletDirectoryError(const QString& error);
     void walletDirLoadedChanged();
 
 public Q_SLOTS:
@@ -73,6 +79,7 @@ private:
         int keySchemeKind{-1}; // Unknown until this wallet has been loaded.
     };
 
+    void applyDirectory(const QList<QPair<QString, QString>>& directory, const QHash<QString, QString>& aliases);
     bool itemLess(const Item& a, const Item& b) const;
     void sortItems(QList<Item>& items) const;
     bool applyUpdatedItems(QList<Item>&& updated_items);
@@ -83,10 +90,16 @@ private:
     int m_display_unit{0};
     QList<Item> m_items;
     QSet<QString> m_open_wallet_names;
+    QSet<QString> m_closing_wallet_names;
     QString m_loading_wallet;
     QPair<QString, QString> m_load_error;
     interfaces::Node& m_node;
     bool m_wallet_dir_loaded{false};
+    std::shared_ptr<BackendExecutor> m_executor;
+    QHash<QString, QString> m_aliases;
+    bool m_refreshing{false};
+    bool m_refresh_again{false};
+    bool m_shutting_down{false};
 };
 
 #endif // BITCOIN_QML_MODELS_WALLETLISTMODEL_H

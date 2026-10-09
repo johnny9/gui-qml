@@ -43,6 +43,22 @@ TestCase {
         return data
     }
 
+    function test_destroy_releases_ribbons_before_shape() {
+        for (let i = 0; i < 3; ++i) {
+            const flow = createTemporaryObject(flowComponent, this, {flow: snapshot()})
+            verify(flow !== null)
+            tryVerify(function() { return flow.ribbonObjects.length === 4 })
+            let released = false
+            flow.ribbonObjectsChanged.connect(function() {
+                if (flow.ribbonObjects.length === 0) released = true
+            })
+            flow.destroy()
+            tryVerify(function() { return released }, 1000,
+                      "The ribbon model must release its delegates before their Shape is destroyed")
+            gc()
+        }
+    }
+
     function test_amount_labels_survive_unit_changes() {
         const flow = createTemporaryObject(flowComponent, this, {flow: snapshot(), displayUnit: BitcoinAmount.SAT})
         verify(waitForRendering(flow))

@@ -7,6 +7,7 @@
 #include <interfaces/handler.h>
 #include <interfaces/wallet.h>
 #include <qml/models/walletlistmodel.h>
+#include <qml/initexecutor.h>
 #include <scheduler.h>
 #include <test/mocks/mocknode.h>
 #include <util/translation.h>
@@ -14,12 +15,31 @@
 
 #include <QSettings>
 #include <QLocale>
+#include <QScopeGuard>
+#include <QSemaphore>
+#include <QTimer>
+
+#include <atomic>
 
 namespace {
+class TestWalletListModel : public WalletListModel
+{
+public:
+    using WalletListModel::WalletListModel;
+    ~TestWalletListModel() override
+    {
+        beginShutdown();
+        if (!QTest::qWaitFor([this] { return isShutdownComplete(); }, 10000)) {
+            qFatal("The wallet fixture did not drain before backend teardown");
+        }
+    }
+};
+
 class FakeWalletLoader : public interfaces::WalletLoader
 {
 public:
     std::vector<std::pair<std::string, std::string>> wallet_dir_entries;
+    std::function<void()> before_list;
 
     void registerRpcs() override {}
     bool verify() override { return true; }
@@ -48,6 +68,7 @@ public:
     bool isEncrypted(const std::string&) override { return false; }
     std::vector<std::pair<std::string, std::string>> listWalletDir() override
     {
+        if (before_list) before_list();
         return wallet_dir_entries;
     }
     std::vector<std::unique_ptr<interfaces::Wallet>> getWallets() override { return {}; }
@@ -90,6 +111,9 @@ private Q_SLOTS:
     void walletDirLoadedFlipsAfterFirstList();
     void balancesFollowDisplayUnitAcrossWalletRefreshes();
     void balancesUseGermanLocale();
+    void blockedDirectoryReadKeepsGuiResponsiveAndCoalescesRefreshes();
+    void shutdownDiscardsPendingDirectoryResult();
+    void directoryDrainPrecedesBackendShutdown();
 };
 
 void WalletListModelTests::init()
@@ -118,8 +142,12 @@ void WalletListModelTests::listWalletDirMapsNameAndLoadStateRoles()
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QCOMPARE(model.rowCount(), 2);
     QCOMPARE(model.roleNames().value(WalletListModel::NameRole), QByteArray{"name"});
@@ -144,14 +172,22 @@ void WalletListModelTests::listWalletDirRemovesMissingEntries()
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
     QCOMPARE(model.rowCount(), 2);
 
     loader.wallet_dir_entries = {
         {"beta_wallet", "sqlite"},
     };
-    model.listWalletDir();
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QCOMPARE(model.rowCount(), 1);
     QCOMPARE(model.data(model.index(0, 0), WalletListModel::NameRole).toString(), QString{"beta_wallet"});
@@ -171,8 +207,12 @@ void WalletListModelTests::listWalletDirSortsCaseInsensitivelyAndPreservesDuplic
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QCOMPARE(model.rowCount(), 5);
     QCOMPARE(model.data(model.index(0, 0), WalletListModel::NameRole).toString(), QString{"Alpha_wallet"});
@@ -199,8 +239,12 @@ void WalletListModelTests::displayNameRoleUsesStoredAlias()
     settings.setValue("walletDisplayNames/alpha_wallet", "Personal");
     settings.sync();
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QCOMPARE(model.data(model.index(0, 0), WalletListModel::DisplayNameRole).toString(), QString{"Personal"});
 }
@@ -216,8 +260,12 @@ void WalletListModelTests::setWalletLoadStateUpdatesLoadStateRole()
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QSignalSpy data_changed_spy(&model, &QAbstractItemModel::dataChanged);
 
@@ -248,8 +296,12 @@ void WalletListModelTests::setWalletLoadStateSortsLoadedRowsFirst()
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QCOMPARE(model.data(model.index(0, 0), WalletListModel::NameRole).toString(), QString{"alpha_wallet"});
     QCOMPARE(model.data(model.index(1, 0), WalletListModel::NameRole).toString(), QString{"bravo_wallet"});
@@ -283,11 +335,15 @@ void WalletListModelTests::setWalletLoadStateBeforeListWalletDirSeedsInitialRows
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
+    TestWalletListModel model{node, nullptr};
     model.setWalletLoadState("beta_wallet", WalletListModel::LoadState::Open);
     QCOMPARE(model.rowCount(), 0);
 
-    model.listWalletDir();
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QCOMPARE(model.rowCount(), 2);
     QCOMPARE(model.data(model.index(0, 0), WalletListModel::NameRole).toString(), QString{"beta_wallet"});
@@ -306,8 +362,12 @@ void WalletListModelTests::setWalletLoadStateAddsNewLoadedWalletAfterInitialList
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QSignalSpy model_reset_spy(&model, &QAbstractItemModel::modelReset);
     model.setWalletLoadState("created_wallet", WalletListModel::LoadState::Open);
@@ -328,8 +388,12 @@ void WalletListModelTests::setWalletLoadStateRemovesOpenOnlyWalletOnUnload()
     FakeWalletLoader loader;
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
     QCOMPARE(model.rowCount(), 0);
 
     QSignalSpy wallet_list_changed_spy(&model, &WalletListModel::walletListChanged);
@@ -362,8 +426,12 @@ void WalletListModelTests::setWalletLoadStateLoadingExposesLoadingRoleAndClearsO
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     model.setWalletLoadState("alpha_wallet", WalletListModel::LoadState::Loading);
 
@@ -389,8 +457,12 @@ void WalletListModelTests::setWalletLoadStateLoadErrorExposesErrorMessageRoleAnd
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     model.setWalletLoadState("alpha_wallet",
                              WalletListModel::LoadState::LoadError,
@@ -419,8 +491,12 @@ void WalletListModelTests::setWalletInfoUpdatesBalanceAndKeySchemeRolesForRowOnl
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QSignalSpy data_changed_spy(&model, &QAbstractItemModel::dataChanged);
     model.setWalletInfo("alpha_wallet", 167930, /*keySchemeKind=*/2);
@@ -455,8 +531,12 @@ void WalletListModelTests::listWalletDirPreservesBalanceAndKeySchemeAcrossRebuil
     };
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
-    model.listWalletDir();
+    TestWalletListModel model{node, nullptr};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
     model.setWalletInfo("alpha_wallet", 123000000, /*keySchemeKind=*/1);
 
     // Rebuild with the same wallet still present plus a new one.
@@ -464,7 +544,11 @@ void WalletListModelTests::listWalletDirPreservesBalanceAndKeySchemeAcrossRebuil
         {"alpha_wallet", "sqlite"},
         {"beta_wallet", "sqlite"},
     };
-    model.listWalletDir();
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     const int alpha_row = model.data(model.index(0, 0), WalletListModel::NameRole).toString() == "alpha_wallet" ? 0 : 1;
     QCOMPARE(model.data(model.index(alpha_row, 0), WalletListModel::BalanceRole).toString(), QString{"1.23000000"});
@@ -482,8 +566,12 @@ void WalletListModelTests::balancesFollowDisplayUnitAcrossWalletRefreshes()
     FakeWalletLoader loader;
     loader.wallet_dir_entries = {{"Charlie", "sqlite"}, {"Other", "sqlite"}};
     ConfigureExpectedWalletLoader(node, loader);
-    WalletListModel model{node};
-    model.listWalletDir();
+    TestWalletListModel model{node};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
     model.setWalletInfo("Charlie", 13900000000LL, 0);
     model.setWalletInfo("Other", 1, 0);
     const auto amount = [&model](int row) {
@@ -498,7 +586,11 @@ void WalletListModelTests::balancesFollowDisplayUnitAcrossWalletRefreshes()
     QCOMPARE(amount(1), QStringLiteral("1"));
     // Switching wallets republishes metadata and reopening the selector rebuilds rows.
     model.setWalletInfo("Charlie", 13900000000LL, 0);
-    model.listWalletDir();
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
     QCOMPARE(amount(0), QStringLiteral("13900000000"));
     model.setDisplayUnit(1);
     QCOMPARE(amount(0), QStringLiteral("139000.00000"));
@@ -517,8 +609,12 @@ void WalletListModelTests::balancesUseGermanLocale()
     FakeWalletLoader loader;
     loader.wallet_dir_entries = {{"alpha_wallet", "sqlite"}};
     ConfigureExpectedWalletLoader(node, loader);
-    WalletListModel model{node};
-    model.listWalletDir();
+    TestWalletListModel model{node};
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
     model.setWalletInfo("alpha_wallet", 123456789, 0);
     const auto amount = [&model] {
         return model.data(model.index(0, 0), WalletListModel::BalanceRole).toString();
@@ -532,7 +628,11 @@ void WalletListModelTests::balancesUseGermanLocale()
     model.setDisplayUnit(3);
     QCOMPARE(amount(), QStringLiteral("123.456.789"));
     model.setDisplayUnit(0);
-    model.listWalletDir();
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
     QCOMPARE(amount(), QStringLiteral("1,23456789"));
 }
 
@@ -543,17 +643,130 @@ void WalletListModelTests::walletDirLoadedFlipsAfterFirstList()
     FakeWalletLoader loader;
     ConfigureExpectedWalletLoader(node, loader);
 
-    WalletListModel model{node, nullptr};
+    TestWalletListModel model{node, nullptr};
     QSignalSpy wallet_dir_loaded_spy(&model, &WalletListModel::walletDirLoadedChanged);
 
     QCOMPARE(model.walletDirLoaded(), false);
-    model.listWalletDir();
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
 
     QCOMPARE(model.walletDirLoaded(), true);
     QCOMPARE(wallet_dir_loaded_spy.count(), 1);
 
-    model.listWalletDir();
+    {
+        QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+        model.listWalletDir();
+        QTRY_COMPARE(refreshed.count(), 1);
+    }
     QCOMPARE(wallet_dir_loaded_spy.count(), 1);
+}
+
+void WalletListModelTests::blockedDirectoryReadKeepsGuiResponsiveAndCoalescesRefreshes()
+{
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedWalletLoader(node, loader);
+    loader.wallet_dir_entries = {{"wallet", "sqlite"}};
+    QSemaphore entered;
+    QSemaphore release;
+    std::atomic<int> calls{0};
+    std::atomic<bool> on_worker{false};
+    loader.before_list = [&] {
+        on_worker = QThread::currentThread() != QCoreApplication::instance()->thread();
+        if (++calls == 1) {
+            entered.release();
+            release.acquire();
+        }
+    };
+    TestWalletListModel model(node);
+    const auto unblock = qScopeGuard([&] { release.release(); });
+    QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+    model.listWalletDir();
+    QTRY_VERIFY(entered.available() > 0);
+    entered.acquire();
+    QVERIFY(on_worker);
+    bool heartbeat{false};
+    QTimer::singleShot(0, &model, [&] { heartbeat = true; });
+    QTRY_VERIFY(heartbeat);
+    for (int i = 0; i < 40; ++i) {
+        QCOMPARE(model.rowCount(), 0);
+        QVERIFY(!model.walletDirLoaded());
+        model.listWalletDir();
+    }
+    QCOMPARE(calls.load(), 1);
+    QCOMPARE(refreshed.count(), 0);
+    release.release();
+    QTRY_COMPARE(refreshed.count(), 2);
+    QCOMPARE(calls.load(), 2);
+    QCOMPARE(model.rowCount(), 1);
+}
+
+void WalletListModelTests::shutdownDiscardsPendingDirectoryResult()
+{
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedWalletLoader(node, loader);
+    loader.wallet_dir_entries = {{"wallet", "sqlite"}};
+    QSemaphore entered;
+    QSemaphore release;
+    loader.before_list = [&] {
+        entered.release();
+        release.acquire();
+    };
+    TestWalletListModel model(node);
+    const auto unblock = qScopeGuard([&] { release.release(); });
+    QSignalSpy refreshed(&model, &WalletListModel::walletListChanged);
+    QSignalSpy drained(&model, &WalletListModel::shutdownFinished);
+    model.listWalletDir();
+    QTRY_VERIFY(entered.available() > 0);
+    entered.acquire();
+    model.beginShutdown();
+    QCOMPARE(drained.count(), 0);
+    release.release();
+    QTRY_COMPARE(drained.count(), 1);
+    QCOMPARE(refreshed.count(), 0);
+    QCOMPARE(model.rowCount(), 0);
+}
+
+void WalletListModelTests::directoryDrainPrecedesBackendShutdown()
+{
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedWalletLoader(node, loader);
+    QSemaphore entered, release;
+    std::atomic_bool directory_returned{false};
+    std::atomic_bool backend_shutdown{false};
+    std::atomic_bool shutdown_too_early{false};
+    loader.before_list = [&] {
+        entered.release();
+        release.acquire();
+        directory_returned = true;
+    };
+    node.app_shutdown_fn = [&] {
+        shutdown_too_early = !directory_returned.load();
+        backend_shutdown = true;
+    };
+    QmlInitExecutor init_executor{node};
+    TestWalletListModel model{node};
+    const auto unblock = qScopeGuard([&] { release.release(); });
+    QSignalSpy finished{&init_executor, &QmlInitExecutor::shutdownResult};
+    connect(&model, &WalletListModel::shutdownFinished, &init_executor,
+            &QmlInitExecutor::shutdown, Qt::SingleShotConnection);
+    model.listWalletDir();
+    QTRY_VERIFY(entered.available() > 0);
+    entered.acquire();
+    model.beginShutdown();
+    bool heartbeat{false};
+    QTimer::singleShot(0, &model, [&] { heartbeat = true; });
+    QTRY_VERIFY(heartbeat);
+    QVERIFY(!backend_shutdown);
+    release.release();
+    QTRY_COMPARE(finished.count(), 1);
+    QVERIFY(backend_shutdown);
+    QVERIFY(!shutdown_too_early);
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

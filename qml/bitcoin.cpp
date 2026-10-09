@@ -791,6 +791,8 @@ int QmlGuiMain(int argc, char* argv[])
     std::unique_ptr<WalletListModel> wallet_list_model;
     if (wallet_enabled) {
         wallet_list_model = std::make_unique<WalletListModel>(*node, nullptr);
+        shutdown_coordinator.addParticipant(wallet_list_model.get(), &WalletListModel::shutdownFinished,
+                                            [&] { wallet_list_model->beginShutdown(); });
         QObject::connect(wallet_controller.get(), &WalletQmlController::walletLoadStateChanged,
                          wallet_list_model.get(), &WalletListModel::setWalletLoadState);
         QObject::connect(wallet_controller.get(), &WalletQmlController::walletInfoChanged,
