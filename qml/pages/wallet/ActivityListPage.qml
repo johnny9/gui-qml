@@ -15,6 +15,7 @@ Page {
     objectName: "activityPage"
     property var wallet: walletController.selectedWallet
     property bool exportSucceeded: true
+    property var exportWallet: null
     property bool ready: false
     readonly property bool activitySourceEmpty: !wallet || wallet.transactionActivityModel.count === 0
     readonly property bool typeFilterActive: activityFilterProxy.typeFilters.length > 0
@@ -32,6 +33,12 @@ Page {
     padding: 0
     Component.onCompleted: ready = true
     onWalletChanged: if (ready) {
+        exportDialog.openedWallet = null
+        exportDialog.close()
+        root.exportWallet = null
+        exportResultPopup.close()
+        moreMenu.close()
+        activityRowMenu.openedWallet = null
         activityRowMenu.close()
         clearFilters()
         activityFilterProxy.searchText = ""
@@ -97,30 +104,46 @@ Page {
     Connections {
         target: activityFilterProxy
         function onExportFinished(success) {
+            const owner = root.exportWallet
+            root.exportWallet = null
+            if (!owner || owner !== root.wallet) return
             root.exportSucceeded = success
             exportResultPopup.open()
         }
     }
 
     Connections {
-        target: root.wallet
+        target: activityRowMenu.pendingDeleteWallet
         function onReceiveOperationFinished(operation, success) {
             if (operation !== "remove" || !activityRowMenu.pendingDeleteId) return
+            const owner = activityRowMenu.pendingDeleteWallet
             const requestId = activityRowMenu.pendingDeleteId
+            const currentMenu = owner === root.wallet && activityRowMenu.visible
+                && activityRowMenu.pendingDeleteOpening === activityRowMenu.opening
+                && activityRowMenu.requestId === requestId
             activityRowMenu.pendingDeleteId = ""
-            if (!success) {
-                activityRowMenu.deleteError = root.wallet.receiveOperationError
-                return
+            activityRowMenu.pendingDeleteWallet = null
+            if (success) {
+                for (const request of [owner.currentPaymentRequest, owner.detailPaymentRequest]) {
+                    if (request && request.id === requestId) request.clear()
+                }
             }
-            for (const request of [root.wallet.currentPaymentRequest, root.wallet.detailPaymentRequest]) {
-                if (request && request.id === requestId) request.clear()
-            }
-            activityRowMenu.close()
+            if (!currentMenu) return
+            if (success) activityRowMenu.close()
+            else activityRowMenu.deleteError = owner.receiveOperationError
         }
     }
 
     function exportActivity(path) {
-        activityFilterProxy.exportCsv(normalizeLocalPath(path))
+        if (!root.wallet || activityFilterProxy.exportPending) return
+        root.exportWallet = root.wallet
+        if (!activityFilterProxy.exportCsv(normalizeLocalPath(path))) root.exportWallet = null
+    }
+
+    function openExportDialog() {
+        if (!root.wallet || activityFilterProxy.exportPending) return
+        exportDialog.openedWallet = root.wallet
+        exportDialog.open()
     }
 
     // A filter popup right-aligns to its button, but a wide popup on a
@@ -189,10 +212,17 @@ Page {
     }
     FileDialog {
         id: exportDialog
+        objectName: "activityExportFileDialog"
+        property var openedWallet: null
         defaultSuffix: "csv"
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("Comma separated file (*.csv)")]
-        onAccepted: root.exportActivity(exportDialog.selectedFile.toString())
+        onAccepted: {
+            const owner = openedWallet
+            openedWallet = null
+            if (owner && owner === root.wallet) root.exportActivity(selectedFile.toString())
+        }
+        onRejected: openedWallet = null
     }
     TextField {
         id: automationExportPathField
@@ -494,6 +524,10 @@ Page {
     ContextMenu {
         id: activityRowMenu
         property string pendingDeleteId: ""
+        property var pendingDeleteWallet: null
+        property var openedWallet: null
+        property int pendingDeleteOpening: 0
+        property int opening: 0
         objectName: "activityRowContextMenu"
         backgroundColor: Theme.color.neutral2
         parent: Overlay.overlay
@@ -502,19 +536,25 @@ Page {
         property string requestId: ""
         property bool isRequest: false
         property string deleteError: ""
-        onAboutToShow: deleteError = ""
+        onAboutToShow: {
+            openedWallet = root.wallet
+            ++opening
+            deleteError = ""
+        }
+        onAboutToHide: ++opening
         ContextMenuButton {
             objectName: "activityCopyTransactionId"
             visible: !activityRowMenu.isRequest
             text: qsTr("Copy transaction ID")
-            onTriggered: Clipboard.setText(activityRowMenu.txid)
+            onTriggered: if (activityRowMenu.openedWallet && activityRowMenu.openedWallet === root.wallet) Clipboard.setText(activityRowMenu.txid)
         }
         ContextMenuButton {
             objectName: "activityCopyRawTransaction"
             visible: !activityRowMenu.isRequest
             text: qsTr("Copy raw transaction hex")
             onTriggered: {
-                const hex = root.wallet ? root.wallet.transactionActivityModel.rawTransaction(activityRowMenu.txid) : ""
+                const owner = activityRowMenu.openedWallet
+                const hex = owner && owner === root.wallet ? owner.transactionActivityModel.rawTransaction(activityRowMenu.txid) : ""
                 if (hex.length > 0) Clipboard.setText(hex)
             }
         }
@@ -524,7 +564,8 @@ Page {
             enabled: !!root.wallet && !root.wallet.receiveRequestReconciliationPending
             text: qsTr("Copy payment request")
             onTriggered: {
-                const uri = root.wallet ? root.wallet.transactionActivityModel.paymentRequestUri(activityRowMenu.requestId) : ""
+                const owner = activityRowMenu.openedWallet
+                const uri = owner && owner === root.wallet ? owner.transactionActivityModel.paymentRequestUri(activityRowMenu.requestId) : ""
                 if (uri.length > 0) Clipboard.setText(uri)
             }
         }
@@ -534,18 +575,23 @@ Page {
         }
         ContextMenuButton {
             objectName: "activityDeletePaymentRequest"
-            enabled: !!root.wallet && !root.wallet.receiveOperationPending
+            enabled: !!root.wallet && activityRowMenu.openedWallet === root.wallet
+                && !root.wallet.receiveOperationPending && !activityRowMenu.pendingDeleteWallet
             visible: activityRowMenu.isRequest
             text: qsTr("Delete payment request")
             role: ContextMenuButton.Destructive
             autoClose: false
             onTriggered: {
                 const requestId = activityRowMenu.requestId
-                if (!root.wallet || !root.wallet.removeReceiveRequest(requestId)) {
-                    activityRowMenu.deleteError = qsTr("The payment request could not be deleted. Please try again.")
-                    return
-                }
+                if (!root.wallet || activityRowMenu.openedWallet !== root.wallet || activityRowMenu.pendingDeleteWallet) return
                 activityRowMenu.pendingDeleteId = requestId
+                activityRowMenu.pendingDeleteWallet = root.wallet
+                activityRowMenu.pendingDeleteOpening = activityRowMenu.opening
+                if (!root.wallet.removeReceiveRequest(requestId)) {
+                    activityRowMenu.pendingDeleteId = ""
+                    activityRowMenu.pendingDeleteWallet = null
+                    activityRowMenu.deleteError = qsTr("The payment request could not be deleted. Please try again.")
+                }
             }
         }
         CoreText {
@@ -610,7 +656,7 @@ Page {
                     const path = automationExportPathField.text
                     automationExportPathField.text = ""
                     root.exportActivity(path)
-                } else exportDialog.open()
+                } else root.openExportDialog()
             }
         }
     }

@@ -17,7 +17,9 @@ PageStack {
     vertical: true
 
     property WalletQmlModel wallet: walletController.selectedWallet
-    property SendRecipient recipient: wallet.recipients.current
+    property SendRecipient recipient: wallet ? wallet.recipients.current : null
+    property int walletRevision: 0
+    property bool contextReady: false
     property string prepareTransactionErrorText: ""
     property bool manualCoinSelection: false
     readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
@@ -43,6 +45,48 @@ PageStack {
 
     signal viewTransactionInActivity(string txid)
 
+    function isCurrentWallet(owner, revision) {
+        return owner && owner === root.wallet && revision === root.walletRevision
+    }
+
+    function resetWalletContext() {
+        ++root.walletRevision
+        if (!root.contextReady) return
+        transactionReviewPopup.close()
+        reviewSweepAlert.close()
+        reviewPassphrasePopup.ownerWallet = null
+        reviewPassphrasePopup.close()
+        reviewPassphrasePopup.clearPassphraseField()
+        reviewPassphrasePopup.busy = false
+        reviewPassphrasePopup.errorText = ""
+        coinSelectionPopup.cancelEditing()
+        coinSelectionPopup.close()
+        sendOptionsPopup.close()
+        sendUriImportPopup.ownerWallet = null
+        sendUriImportPopup.close()
+        uriImportInput.text = ""
+        psbtOpenDialog.ownerWallet = null
+        psbtOpenDialog.close()
+        unsupportedPsbtPopup.close()
+        knownPsbtTxPopup.close()
+        root.returnToSendForm()
+        root.manualCoinSelection = false
+        root.clearPrepareTransactionError()
+        sendPage.expandedRecipient = root.wallet ? root.wallet.recipients.currentIndex - 1 : 0
+        sendPage.paymentRequestStatus = ""
+        sendPage.paymentRequestIsError = false
+        sendPage.paymentRequestMessage = ""
+        sendPage.showClipboardUriBanner = false
+        sendPage.m_pendingClipboardUri = ""
+        sendPage.m_filledUri = ""
+        sendPage.m_dismissedUri = ""
+        sendPage.m_applyingUri = false
+        sendPage.clearPendingPaymentUriPaste()
+        paymentUriOverwritePopup.close()
+    }
+
+    Component.onCompleted: contextReady = true
+
     function confirmTransactionReview() {
         if (!root.wallet) return
         if (root.wallet.sendDraftSweepsWallet) reviewSweepAlert.open()
@@ -50,9 +94,12 @@ PageStack {
     }
 
     function prepareTransactionForReview() {
+        if (!root.wallet) return
         root.clearPrepareTransactionError()
         if (root.wallet.prepareTransaction()) root.openTransactionReview()
         else if (root.wallet.transactionNeedsUnlock) {
+            reviewPassphrasePopup.ownerWallet = root.wallet
+            reviewPassphrasePopup.ownerRevision = root.walletRevision
             reviewPassphrasePopup.errorText = ""
             reviewPassphrasePopup.open()
         } else root.prepareTransactionErrorText = root.wallet.transactionError.length > 0
@@ -61,6 +108,7 @@ PageStack {
     }
 
     function openTransactionReview() {
+        if (!root.wallet) return
         transactionReviewPopup.reviewWallet = root.wallet
         transactionReviewPopup.importedReview = root.wallet.currentTransactionIsImportedPsbt === true
         transactionReviewPopup.open()
@@ -74,12 +122,20 @@ PageStack {
 
     function openPaymentRequestImport() {
         root.returnToSendForm()
-        Qt.callLater(sendPage.openPaymentRequestImport)
+        const owner = root.wallet
+        const revision = root.walletRevision
+        Qt.callLater(function() {
+            if (root.isCurrentWallet(owner, revision)) sendPage.openPaymentRequestImport()
+        })
     }
 
     function openPsbtFileImport() {
         root.returnToSendForm()
-        Qt.callLater(sendPage.openPsbtFileImport)
+        const owner = root.wallet
+        const revision = root.walletRevision
+        Qt.callLater(function() {
+            if (root.isCurrentWallet(owner, revision)) sendPage.openPsbtFileImport()
+        })
     }
 
     function clearPrepareTransactionError() {
@@ -88,11 +144,12 @@ PageStack {
         }
     }
 
-    function resetSendForm() {
-        if (!root.wallet) return
-        root.wallet.recipients.clear()
-        root.wallet.clearSelectedCoins()
-        root.wallet.coinsListModel.update()
+    function resetSendForm(owner) {
+        const wallet = owner || root.wallet
+        if (!wallet || wallet !== root.wallet) return
+        wallet.recipients.clear()
+        wallet.clearSelectedCoins()
+        wallet.coinsListModel.update()
         root.manualCoinSelection = false
         root.clearPrepareTransactionError()
         sendPage.expandedRecipient = 0
@@ -130,28 +187,11 @@ PageStack {
         if (visible) sendPage.checkClipboard()
         else reviewSweepAlert.close()
     }
-    onWalletChanged: reviewSweepAlert.close()
+    onWalletChanged: resetWalletContext()
 
     Connections {
         target: walletController
-        function onSelectedWalletChanged() {
-            if (transactionReviewPopup.opened) {
-                transactionReviewPopup.close()
-            }
-            root.pop()
-            // Clear URI import state so stale results from the previous wallet
-            // are not shown when the user switches wallets and returns to Send.
-            sendPage.paymentRequestStatus = ""
-            sendPage.paymentRequestIsError = false
-            sendPage.paymentRequestMessage = ""
-            sendPage.showClipboardUriBanner = false
-            sendPage.m_pendingClipboardUri = ""
-            sendPage.m_filledUri = ""
-            sendPage.m_dismissedUri = ""
-            sendPage.m_applyingUri = false
-            sendPage.clearPendingPaymentUriPaste()
-            paymentUriOverwritePopup.close()
-        }
+        function onSelectedWalletChanged() { root.resetWalletContext() }
     }
 
     Connections {
@@ -238,12 +278,18 @@ PageStack {
         }
 
         function openPaymentRequestImport() {
+            if (!root.wallet) return
             uriImportInput.text = ""
+            sendUriImportPopup.ownerWallet = root.wallet
+            sendUriImportPopup.ownerRevision = root.walletRevision
             sendUriImportPopup.open()
         }
 
         function openPsbtFileImport() {
+            if (!root.wallet) return
             sendOptionsPopup.close()
+            psbtOpenDialog.ownerWallet = root.wallet
+            psbtOpenDialog.ownerRevision = root.walletRevision
             psbtOpenDialog.open()
         }
 
@@ -284,17 +330,26 @@ PageStack {
 
             property WalletQmlModel reviewWallet: null
             property bool importedReview: false
+            property bool acceptingActions: false
+            property int session: 0
 
-            onClosed: {
+            onAboutToShow: {
+                reviewStack.pop(null, StackView.Immediate)
+                ++session
+                acceptingActions = true
+            }
+            onAboutToHide: {
+                acceptingActions = false
+                ++session
                 const wallet = reviewWallet
                 const wasImported = importedReview
-                reviewStack.pop(null, StackView.Immediate)
                 reviewWallet = null
                 importedReview = false
                 if (wallet && wasImported) {
                     wallet.discardCurrentTransaction()
                 }
             }
+            onClosed: reviewStack.pop(null, StackView.Immediate)
 
             background: null
 
@@ -319,10 +374,14 @@ PageStack {
                     id: reviewPage
                     SendTransactionReview {
                         wallet: transactionReviewPopup.reviewWallet
+                        reviewActive: transactionReviewPopup.acceptingActions
                         onBack: transactionReviewPopup.close()
                         onTransactionSent: (txid) => {
+                            if (!transactionReviewPopup.acceptingActions || wallet !== root.wallet) return
                             reviewStack.push(sendCompletePage, {
                                 "txid": txid,
+                                "completedWallet": wallet,
+                                "reviewSession": transactionReviewPopup.session,
                                 "targetBlocks": !transactionReviewPopup.importedReview && wallet && !wallet.customFeeEnabled
                                     ? wallet.currentTransaction.reviewTargetBlocks : 0
                             })
@@ -333,12 +392,22 @@ PageStack {
                 Component {
                     id: sendCompletePage
                     SendComplete {
+                        property WalletQmlModel completedWallet: null
+                        property int reviewSession: -1
+                        function belongsToCurrentReview() {
+                            return transactionReviewPopup.acceptingActions
+                                && reviewSession === transactionReviewPopup.session
+                                && completedWallet && completedWallet === root.wallet
+                                && completedWallet === transactionReviewPopup.reviewWallet
+                        }
                         onDone: {
-                            root.resetSendForm()
+                            if (!belongsToCurrentReview()) return
+                            root.resetSendForm(completedWallet)
                             transactionReviewPopup.close()
                         }
                         onViewNewTransaction: (txid) => {
-                            root.resetSendForm()
+                            if (!belongsToCurrentReview()) return
+                            root.resetSendForm(completedWallet)
                             transactionReviewPopup.close()
                             root.viewTransactionInActivity(txid)
                         }
@@ -349,10 +418,19 @@ PageStack {
 
         FileDialog {
             id: psbtOpenDialog
+            objectName: "sendPsbtOpenDialog"
+            property WalletQmlModel ownerWallet: null
+            property int ownerRevision: -1
             title: qsTr("Import PSBT")
             fileMode: FileDialog.OpenFile
             nameFilters: [qsTr("Partially Signed Bitcoin Transactions (*.psbt)"), qsTr("All files (*)")]
-            onAccepted: sendPage.handlePsbtImportResult(root.wallet.importPsbtFromFile(selectedFile.toString()))
+            onRejected: ownerWallet = null
+            onAccepted: {
+                const owner = ownerWallet
+                ownerWallet = null
+                if (!root.isCurrentWallet(owner, ownerRevision)) return
+                sendPage.handlePsbtImportResult(owner.importPsbtFromFile(selectedFile.toString()))
+            }
         }
 
         // Kept hidden so functional tests can inject a PSBT path until the
@@ -365,11 +443,17 @@ PageStack {
 
         AlertPopup {
             id: unsupportedPsbtPopup
+            property WalletQmlModel ownerWallet: null
             objectName: "unsupportedPsbtPopup"
             title: qsTr("Not supported")
             messageObjectName: "unsupportedPsbtPopupMessage"
 
-            onClosed: root.wallet.importedPsbt.clear()
+            onAboutToShow: ownerWallet = root.wallet
+            onAboutToHide: {
+                const owner = ownerWallet
+                ownerWallet = null
+                if (owner) owner.importedPsbt.clear()
+            }
 
             AlertAction {
                 text: qsTr("OK")
@@ -379,6 +463,8 @@ PageStack {
 
         AlertPopup {
             id: knownPsbtTxPopup
+            property WalletQmlModel ownerWallet: null
+            property int ownerRevision: -1
             objectName: "knownPsbtTxPopup"
             title: qsTr("Cannot import transaction")
             message: qsTr("This transaction is already in your wallet spent history. View it in Activity")
@@ -386,12 +472,26 @@ PageStack {
 
             property string txid: ""
 
-            onClosed: root.wallet.importedPsbt.clear()
+            onAboutToShow: {
+                ownerWallet = root.wallet
+                ownerRevision = root.walletRevision
+            }
+            onAboutToHide: {
+                const owner = ownerWallet
+                ownerWallet = null
+                if (owner) owner.importedPsbt.clear()
+            }
 
             AlertAction {
                 text: qsTr("View transaction")
                 buttonObjectName: "knownPsbtTxViewButton"
-                onTriggered: root.viewTransactionInActivity(knownPsbtTxPopup.txid)
+                closesPopup: false
+                onTriggered: {
+                    const current = root.isCurrentWallet(knownPsbtTxPopup.ownerWallet, knownPsbtTxPopup.ownerRevision)
+                    const txid = knownPsbtTxPopup.txid
+                    knownPsbtTxPopup.close()
+                    if (current) root.viewTransactionInActivity(txid)
+                }
             }
 
             AlertAction {
@@ -536,6 +636,7 @@ PageStack {
 
         // Apply a pre-parsed URI result to the current recipient form fields.
         function applyParsedPaymentRequest(result, source) {
+            if (!root.wallet || !root.recipient) return
             if (!result.success) {
                 paymentRequestStatus = result.error
                 paymentRequestIsError = true
@@ -624,7 +725,7 @@ PageStack {
         // The m_applyingUri guard prevents these from firing during a programmatic
         // fill, which would trigger a re-check before m_filledUri is set.
         Connections {
-            target: root.recipient.address
+            target: root.recipient ? root.recipient.address : null
             function onAddressChanged() {
                 if (!sendPage.m_applyingUri) {
                     if (root.recipient.address.address === "") {
@@ -637,7 +738,7 @@ PageStack {
             }
         }
         Connections {
-            target: root.recipient.amount
+            target: root.recipient ? root.recipient.amount : null
             function onAmountChanged() {
                 if (!sendPage.m_applyingUri) sendPage.checkClipboard()
             }
@@ -651,17 +752,22 @@ PageStack {
 
         Component.onCompleted: sendPage.checkClipboard()
 
-        Connections {
-            target: sendOptionsPopup
-            function onOpenPaymentRequest() {
-                sendPage.openPaymentRequestImport()
-            }
-        }
-
         // Manual URI entry popup
         Popup {
             id: sendUriImportPopup
             objectName: "sendUriImportPopup"
+            property WalletQmlModel ownerWallet: null
+            property int ownerRevision: -1
+            function applyRequest() {
+                if (!root.isCurrentWallet(ownerWallet, ownerRevision)) return
+                const text = uriImportInput.text
+                close()
+                sendPage.applyPaymentRequestFromText(text, qsTr("manual entry"))
+            }
+            onAboutToHide: {
+                ownerWallet = null
+                uriImportInput.text = ""
+            }
             anchors.centerIn: Overlay.overlay
             width: Math.min(sendPage.width - 40, 420)
             modal: true
@@ -723,10 +829,7 @@ PageStack {
                         Layout.preferredWidth: 0
                         text: qsTr("Apply")
                         enabled: uriImportInput.text.trim().length > 0
-                        onClicked: {
-                            sendUriImportPopup.close()
-                            sendPage.applyPaymentRequestFromText(uriImportInput.text, qsTr("manual entry"))
-                        }
+                        onClicked: sendUriImportPopup.applyRequest()
                     }
                 }
             }
@@ -780,7 +883,7 @@ PageStack {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top; anchors.topMargin: 28
                     spacing: 24
-                    enabled: walletController.initialized
+                    enabled: walletController.initialized && root.wallet !== null
                     RowLayout {
                         Layout.fillWidth: true
                         ColumnLayout {
@@ -821,13 +924,27 @@ PageStack {
                             onClicked: sendOptionsPopup.opened ? sendOptionsPopup.close() : sendOptionsPopup.open()
                             SendCreateOptionsPopup {
                                 id: sendOptionsPopup
+                                property WalletQmlModel ownerWallet: null
+                                property int ownerRevision: -1
                                 x: menuButton.width - width; y: menuButton.height + 6
-                                onClearFormRequested: root.resetSendForm()
+                                onAboutToShow: {
+                                    ownerWallet = root.wallet
+                                    ownerRevision = root.walletRevision
+                                }
+                                onAboutToHide: ownerWallet = null
+                                onOpenPaymentRequest: {
+                                    if (root.isCurrentWallet(ownerWallet, ownerRevision)) sendPage.openPaymentRequestImport()
+                                }
+                                onClearFormRequested: {
+                                    if (root.isCurrentWallet(ownerWallet, ownerRevision)) root.resetSendForm(ownerWallet)
+                                }
                                 onImportPsbtFromFileRequested: {
+                                    const owner = ownerWallet
+                                    if (!root.isCurrentWallet(owner, ownerRevision)) return
                                     if (psbtAutomationPathField.text.length > 0) {
                                         const automatedPath = psbtAutomationPathField.text
                                         psbtAutomationPathField.text = ""
-                                        sendPage.handlePsbtImportResult(root.wallet.importPsbtFromFile(automatedPath))
+                                        sendPage.handlePsbtImportResult(owner.importPsbtFromFile(automatedPath))
                                     } else sendPage.openPsbtFileImport()
                                 }
                             }
@@ -846,7 +963,7 @@ PageStack {
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignTop
                             Layout.preferredWidth: sendSections.columns === 2 ? sendSections.width * 0.6 - 12 : sendSections.width
-                            title: root.wallet.recipients.count > 1 ? qsTr("Recipients") : qsTr("Recipient")
+                            title: root.wallet && root.wallet.recipients.count > 1 ? qsTr("Recipients") : qsTr("Recipient")
                             showBackground: false
                             rowSpacing: 12
 
@@ -859,7 +976,7 @@ PageStack {
 
                                 Repeater {
                                     id: recipientRepeater
-                                    model: root.wallet.recipients
+                                    model: root.wallet ? root.wallet.recipients : null
                                     delegate: Pane {
                                         id: recipientCard
                                         required property int index
@@ -880,7 +997,7 @@ PageStack {
                                         contentItem: ColumnLayout {
                                             spacing: 12
                                             RowLayout {
-                                                visible: root.wallet.recipients.count > 1
+                                                visible: root.wallet !== null && root.wallet.recipients.count > 1
                                                 Layout.fillWidth: true; spacing: 10
                                                 AbstractButton {
                                                     objectName: "sendEditRecipient_" + recipientCard.index
@@ -921,13 +1038,13 @@ PageStack {
                                             }
                                             Loader {
                                                 id: editorLoader
-                                                active: recipientCard.expanded || root.wallet.recipients.count === 1
+                                                active: root.wallet !== null && (recipientCard.expanded || root.wallet.recipients.count === 1)
                                                 visible: active
                                                 Layout.fillWidth: true
                                                 sourceComponent: SendRecipientEditor {
                                                     wallet: root.wallet; recipient: recipientCard.recipientObject
                                                     clipboardRequest: sendPage.showClipboardUriBanner
-                                                    canRemove: root.wallet.recipients.count > 1
+                                                    canRemove: root.wallet !== null && root.wallet.recipients.count > 1
                                                     removeButtonObjectName: "sendRemoveRecipient_" + recipientCard.index
                                                     onPasteRequested: function(field) { sendPage.handleClipboardPaste(field, editorLoader.item) }
                                                     onEdited: { root.clearPrepareTransactionError(); root.scheduleFeeEstimates() }
@@ -954,7 +1071,7 @@ PageStack {
                                 objectName: "sendAddRecipientButton"
                                 Layout.fillWidth: true
                                 text: qsTr("+ Add another")
-                                enabled: root.wallet.recipients.count < 25
+                                enabled: root.wallet !== null && root.wallet.recipients.count < 25
                                 onClicked: { root.wallet.recipients.add(); sendPage.expandedRecipient = root.wallet.recipients.currentIndex - 1 }
                             }
                         }
@@ -1007,7 +1124,7 @@ PageStack {
                                     visible: root.manualCoinSelection || root.selectedInputsActive
                                     Layout.fillWidth: true
                                     title: qsTr("Inputs")
-                                    description: root.wallet.coinsListModel.selectedCoinsCount === 0 ? qsTr("No inputs selected")
+                                    description: !root.wallet || root.wallet.coinsListModel.selectedCoinsCount === 0 ? qsTr("No inputs selected")
                                         : root.wallet.coinsListModel.selectedCoinsCount === 1 ? qsTr("1 input selected") : qsTr("%1 inputs selected").arg(root.wallet.coinsListModel.selectedCoinsCount)
                                     showDivider: false
                                     trailingItem: NeutralButton {
@@ -1023,7 +1140,7 @@ PageStack {
                                     visible: false
                                     //: Status in the Send form showing how many transaction inputs are selected.
                                     text: root.selectedInputsActive ? (root.wallet.coinsListModel.selectedCoinsCount === 1 ? qsTr("1 input selected") : qsTr("%1 inputs selected").arg(root.wallet.coinsListModel.selectedCoinsCount))
-                                        : qsTr("%1 inputs selected automatically").arg(root.wallet.estimatedInputCount)
+                                        : qsTr("%1 inputs selected automatically").arg(root.wallet ? root.wallet.estimatedInputCount : 0)
                                 }
                                 OutlineButton {
                                     objectName: "sendUseAutomaticInputsButton"
@@ -1036,10 +1153,10 @@ PageStack {
                             FormSection {
                                 Layout.fillWidth: true
                                 title: qsTr("Summary")
-                                BitcoinAmount { id: summaryFee; satoshi: Math.max(0, root.wallet.estimatedFeeSatoshi); unit: optionsModel.displayUnit }
-                                BitcoinAmount { id: summaryTotal; satoshi: root.wallet.sendTotalSatoshi; unit: optionsModel.displayUnit }
-                                ValueRow { objectName: "sendTotalFeesValue"; Layout.fillWidth: true; amountValue: true; title: qsTr("Total fees"); value: !root.wallet.feeEstimatePending && root.wallet.estimatedFeeSatoshi >= 0 ? summaryFee.localizedDisplay : "—"; valueUnit: summaryFee.unitLabel; valueTextStyle: Theme.text.monoDescription }
-                                ValueRow { objectName: "sendTotalAmountValue"; Layout.fillWidth: true; amountValue: true; title: qsTr("Total to send"); showDivider: false; value: !root.wallet.feeEstimatePending && root.wallet.estimatedFeeSatoshi >= 0 ? summaryTotal.localizedDisplay : recipientsTotalAmount.localizedDisplay; valueUnit: !root.wallet.feeEstimatePending && root.wallet.estimatedFeeSatoshi >= 0 ? summaryTotal.unitLabel : recipientsTotalAmount.unitLabel; valueTextStyle: Theme.text.monoBody }
+                                BitcoinAmount { id: summaryFee; satoshi: root.wallet ? Math.max(0, root.wallet.estimatedFeeSatoshi) : 0; unit: optionsModel.displayUnit }
+                                BitcoinAmount { id: summaryTotal; satoshi: root.wallet ? root.wallet.sendTotalSatoshi : 0; unit: optionsModel.displayUnit }
+                                ValueRow { objectName: "sendTotalFeesValue"; Layout.fillWidth: true; amountValue: true; title: qsTr("Total fees"); value: root.wallet && !root.wallet.feeEstimatePending && root.wallet.estimatedFeeSatoshi >= 0 ? summaryFee.localizedDisplay : "—"; valueUnit: summaryFee.unitLabel; valueTextStyle: Theme.text.monoDescription }
+                                ValueRow { objectName: "sendTotalAmountValue"; Layout.fillWidth: true; amountValue: true; title: qsTr("Total to send"); showDivider: false; value: root.wallet && !root.wallet.feeEstimatePending && root.wallet.estimatedFeeSatoshi >= 0 ? summaryTotal.localizedDisplay : recipientsTotalAmount.localizedDisplay; valueUnit: root.wallet && !root.wallet.feeEstimatePending && root.wallet.estimatedFeeSatoshi >= 0 ? summaryTotal.unitLabel : recipientsTotalAmount.unitLabel; valueTextStyle: Theme.text.monoBody }
                             }
 
                             CoreText { objectName: "sendPrepareTransactionErrorText"; Layout.fillWidth: true; visible: root.formErrorText.length > 0; text: root.formErrorText; horizontalAlignment: Text.AlignLeft; font: Theme.text.description.font; color: Theme.color.red }
@@ -1047,7 +1164,7 @@ PageStack {
                                 objectName: "sendReviewButton"
                                 Layout.fillWidth: true
                                 text: qsTr("Review Transaction")
-                                enabled: root.wallet && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending
+                                enabled: root.wallet !== null && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending
                                     && !root.wallet.sendAmountExhaustsBalance && (!root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                                 onClicked: root.confirmTransactionReview()
                             }
@@ -1121,6 +1238,13 @@ PageStack {
     AlertPopup {
         id: reviewSweepAlert
         objectName: "sendReviewSweepAlert"
+        property WalletQmlModel ownerWallet: null
+        property int ownerRevision: -1
+        onAboutToShow: {
+            ownerWallet = root.wallet
+            ownerRevision = root.walletRevision
+        }
+        onAboutToHide: ownerWallet = null
         parent: Overlay.overlay
         //: Confirmation before reviewing a transaction that sends the wallet's entire available balance.
         title: qsTr("Use all available funds?")
@@ -1136,7 +1260,12 @@ PageStack {
             //: Confirm using all available funds before unlocking the wallet and reviewing; this does not send it.
             text: qsTr("Use maximum")
             buttonObjectName: "sendReviewSweepConfirmButton"
-            onTriggered: root.prepareTransactionForReview()
+            closesPopup: false
+            onTriggered: {
+                const current = root.isCurrentWallet(reviewSweepAlert.ownerWallet, reviewSweepAlert.ownerRevision)
+                reviewSweepAlert.close()
+                if (current) root.prepareTransactionForReview()
+            }
         }
     }
 
@@ -1144,6 +1273,8 @@ PageStack {
 
     WalletPassphrasePopup {
         id: reviewPassphrasePopup
+        property WalletQmlModel ownerWallet: null
+        property int ownerRevision: -1
         parent: Overlay.overlay
         width: Math.min(480, root.width - 40)
         popupObjectName: "reviewPassphrasePopup"
@@ -1155,16 +1286,24 @@ PageStack {
         descriptionText: qsTr("Enter your wallet password to prepare this transaction for review.")
         confirmText: qsTr("Unlock and continue")
         busyConfirmText: qsTr("Unlocking...")
+        onAboutToHide: {
+            ownerWallet = null
+            clearPassphraseField()
+            busy = false
+            errorText = ""
+        }
         onSubmitted: (passphrase) => {
+            const owner = ownerWallet
+            if (!root.isCurrentWallet(owner, ownerRevision)) return
             reviewPassphrasePopup.busy = true
-            if (root.wallet.prepareTransactionWithPassphrase(passphrase)) {
+            if (owner.prepareTransactionWithPassphrase(passphrase)) {
                 reviewPassphrasePopup.busy = false
                 reviewPassphrasePopup.close()
                 root.openTransactionReview()
                 return
             }
             reviewPassphrasePopup.busy = false
-            reviewPassphrasePopup.errorText = root.wallet.transactionError
+            reviewPassphrasePopup.errorText = owner.transactionError
         }
     }
 }

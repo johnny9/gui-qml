@@ -478,8 +478,10 @@ public:
         for (const auto& [id, blob] : saved_receive_requests) requests.push_back(blob);
         return requests;
     }
+    std::function<void()> before_save_receive_request;
     bool setAddressReceiveRequest(const CTxDestination&, const std::string& id, const std::string& blob) override
     {
+        if (before_save_receive_request) before_save_receive_request();
         ++set_address_receive_request_calls;
         receive_request_ids.push_back(id);
         if (set_address_receive_request_result) {
@@ -700,6 +702,8 @@ private Q_SLOTS:
     void backendHandlesRetireOffGui_data();
     void backendHandlesRetireOffGui();
     void receiveCompletionDoesNotOverwriteNewDraft();
+    void savedReceivingAddressIsRetiredAfterDraftChanges();
+    void fundedSnapshotRestartsFeeEstimates();
     void signingRunsOffGuiAndDiscardsClearedResult();
     void cleanupTestCase();
     void feeTargetIndex_mapsStandardTargets();
@@ -1950,6 +1954,80 @@ void WalletQmlModelTests::receiveCompletionDoesNotOverwriteNewDraft()
     QVERIFY(model->currentPaymentRequest()->id().isEmpty());
     QCOMPARE(model->receiveRequests()->count(), 1);
     QVERIFY(!model->receiveOperationError().isEmpty());
+}
+
+void WalletQmlModelTests::savedReceivingAddressIsRetiredAfterDraftChanges()
+{
+    QSettings settings;
+    settings.remove("receiveAddressTypes/fake-wallet");
+    auto [wallet, model] = MakePasswordWalletModel();
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress()));
+    const auto original_address = model->receivingAddress()->address();
+    QVERIFY(!original_address.isEmpty());
+    QSemaphore entered, release;
+    wallet->before_save_receive_request = [&] { entered.release(); release.acquire(); };
+    const auto unblock = qScopeGuard([&] {
+        release.release();
+        model->beginShutdown();
+        if (!QTest::qWaitFor([&] { return model->backendExecutor()->isDrained(); })) qFatal("Wallet queue did not drain");
+        settings.remove("receiveAddressTypes/fake-wallet");
+    });
+    model->currentPaymentRequest()->setLabel("Original request");
+    QVERIFY(model->commitReceivingPaymentRequest());
+    QTRY_VERIFY(entered.available());
+    model->currentPaymentRequest()->clear();
+    model->currentPaymentRequest()->setLabel("New draft");
+    release.release();
+    QTRY_VERIFY(!model->receiveOperationPending());
+    QCOMPARE(model->receiveRequests()->count(), 1);
+    QCOMPARE(model->currentPaymentRequest()->label(), QStringLiteral("New draft"));
+    QVERIFY(model->receivingAddress()->address().isEmpty());
+    QVERIFY(!settings.contains("receiveAddressTypes/fake-wallet/address"));
+
+    wallet->before_save_receive_request = {};
+    wallet->get_new_destination_fn = [](OutputType, const std::string&) -> util::Result<CTxDestination> {
+        return DecodeDestination(VALID_MAINNET_P2SH_ADDRESS.toStdString());
+    };
+    QVERIFY(CompleteReceive(*model, model->ensureReceivingAddress()));
+    QCOMPARE(model->receivingAddress()->address(), VALID_MAINNET_P2SH_ADDRESS);
+    QVERIFY(CompleteReceive(*model, model->commitReceivingPaymentRequest()));
+    QCOMPARE(model->receiveRequests()->count(), 2);
+    QVERIFY(model->currentPaymentRequest()->address() != original_address);
+    CMutableTransaction incoming;
+    incoming.vout.emplace_back(5'000, GetScriptForDestination(DecodeDestination(original_address.toStdString())));
+    const auto payment = MakeIncomingPayment(incoming, {true});
+    wallet->setWalletTxsFn([payment] { return std::set<interfaces::WalletTx>{payment}; });
+    model->requestWalletStateRefresh();
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
+    QVERIFY(!model->currentPaymentRequest()->paymentReceived());
+    const auto original = model->receiveRequests()->entriesForAddress(original_address);
+    QCOMPARE(original.size(), size_t{1});
+    QVERIFY(model->loadPaymentRequestDetail(QString::number(original.front().id)));
+    QCOMPARE(model->detailPaymentRequest()->receivedAmountSatoshi(), qint64{5'000});
+    QVERIFY(!model->currentPaymentRequest()->paymentReceived());
+}
+
+void WalletQmlModelTests::fundedSnapshotRestartsFeeEstimates()
+{
+    auto [wallet, model] = MakeWalletModel();
+    auto* recipient = model->sendRecipientList()->currentRecipient();
+    recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
+    recipient->amount()->setSatoshi(20 * COIN);
+    QVERIFY(!recipient->isValid());
+    std::atomic_int estimates{0};
+    wallet->create_transaction_fn = [&](const auto&, const auto&, bool, int&, CAmount& fee) {
+        ++estimates;
+        fee = 250;
+        return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
+    };
+    connect(model.get(), &WalletQmlModel::walletStateChanged, model.get(), [&] { model->scheduleFeeEstimates(); });
+    wallet->get_balance_fn = [] { return 42 * COIN; };
+    wallet->get_available_balance_fn = [](const auto&) { return 42 * COIN; };
+    model->requestWalletStateRefresh();
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
+    QVERIFY(recipient->isValid());
+    QTRY_VERIFY_WITH_TIMEOUT(estimates.load() > 0, FEE_ESTIMATE_TIMEOUT_MS);
+    QTRY_VERIFY_WITH_TIMEOUT(!model->feeEstimatePending(), FEE_ESTIMATE_TIMEOUT_MS);
 }
 
 void WalletQmlModelTests::signingRunsOffGuiAndDiscardsClearedResult()

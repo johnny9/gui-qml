@@ -11,6 +11,8 @@ Popup {
     objectName: "paymentRequestModal"
     property var wallet: walletController.selectedWallet
     property var openedWallet: null
+    property var deletedWallet: null
+    property int openingRevision: 0
     property real originY: -1
     property bool reducedMotion: false
     property real verticalOffset: 0
@@ -31,39 +33,55 @@ Popup {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: null
 
+    function clearDeletedRequest() {
+        const owner = deletedWallet
+        const requestId = deletedRequestId
+        deletedWallet = null
+        deletedRequestId = ""
+        if (!owner || !requestId) return
+        for (const request of [owner.currentPaymentRequest, owner.detailPaymentRequest]) {
+            if (request && request.id === requestId) request.clear()
+        }
+    }
     function openRequest(requestId, fromY) {
+        ++openingRevision
+        clearDeletedRequest()
+        repeatRequestId = ""
+        card.invalidateContext()
         if (!wallet || !wallet.loadPaymentRequestDetail(requestId)) return false
         originY = fromY === undefined ? -1 : fromY
-        card.resetFields()
         openedWallet = wallet
+        card.resetFields()
         open()
         return true
     }
     onAboutToShow: if (scroll.contentItem) scroll.contentItem.contentY = 0
+    onAboutToHide: {
+        ++openingRevision
+        card.invalidateContext()
+    }
     onClosed: {
-        if (wallet && deletedRequestId) {
-            for (const request of [wallet.currentPaymentRequest, wallet.detailPaymentRequest]) {
-                if (request && request.id === deletedRequestId) request.clear()
-            }
-        }
-        deletedRequestId = ""
+        clearDeletedRequest()
+        const requestWallet = openedWallet
+        const requestId = repeatRequestId
+        const revision = openingRevision
+        repeatRequestId = ""
         openedWallet = null
         card.resetFields()
-        if (repeatRequestId) {
-            const requestId = repeatRequestId
-            const requestWallet = wallet
-            repeatRequestId = ""
+        if (requestId) {
             // Let the Receive page finish clearing its previous creation draft.
             Qt.callLater(function() {
-                if (!requestWallet || requestWallet !== root.wallet) return
+                if (root.openingRevision !== revision || !requestWallet || requestWallet !== root.wallet) return
                 requestWallet.usePaymentRequestAsTemplate(requestId)
                 walletController.requestOpenReceive()
             })
         }
     }
     onWalletChanged: {
+        ++openingRevision
+        repeatRequestId = ""
         if (openedWallet && wallet !== openedWallet) {
-            repeatRequestId = ""
+            card.invalidateContext()
             close()
         }
     }
@@ -95,8 +113,9 @@ Popup {
             id: card
             visible: root.visible
             width: scroll.availableWidth
-            wallet: root.wallet
-            request: root.wallet ? root.wallet.detailPaymentRequest : null
+            enabled: root.openedWallet === root.wallet
+            wallet: root.openedWallet
+            request: root.openedWallet ? root.openedWallet.detailPaymentRequest : null
             modalView: true
             onCloseRequested: root.close()
             onRequestAgain: function(requestId) {
@@ -104,6 +123,7 @@ Popup {
                 root.close()
             }
             onDeleted: function(requestId) {
+                root.deletedWallet = root.openedWallet
                 root.deletedRequestId = requestId
                 root.close()
             }

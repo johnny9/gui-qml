@@ -17,6 +17,7 @@ SettingsPage {
 
     property var wallet: walletController.selectedWallet
     property string errorText: ""
+    property bool ready: false
     readonly property bool walletLoaded: walletController.isWalletLoaded
     readonly property bool noWalletsAvailable: walletController.noWalletsFound
     readonly property bool canManagePassphrase: root.wallet !== null && root.wallet.canManagePassphrase
@@ -26,6 +27,13 @@ SettingsPage {
     signal signVerifyMessageRequested()
     signal addressesRequested()
     signal coinsRequested()
+
+    Component.onCompleted: ready = true
+    onWalletChanged: if (ready) {
+        backupDialog.openedWallet = null
+        backupDialog.close()
+        root.errorText = ""
+    }
 
     function backupFileName() {
         const walletName = root.wallet && root.wallet.name.length > 0
@@ -61,22 +69,29 @@ SettingsPage {
             if (!root.wallet.backupWallet(automatedPath)) root.errorText = root.wallet.settingsError
             return
         }
+        backupDialog.openedWallet = root.wallet
         backupDialog.open()
     }
 
     FileDialog {
         id: backupDialog
+        objectName: "walletBackupFileDialog"
+        property var openedWallet: null
         fileMode: FileDialog.SaveFile
         currentFolder: "file://" + walletController.homePath()
         currentFile: root.backupDefaultFileUrl()
         defaultSuffix: "bak"
         nameFilters: [qsTr("Wallet backup files (*.bak *.dat)"), qsTr("All files (*)")]
         onAccepted: {
+            const owner = openedWallet
+            openedWallet = null
+            if (!owner || owner !== root.wallet) return
             if (backupDialog.selectedFile.toString().length === 0) return
             const normalized = root.resolvedBackupPath(backupDialog.selectedFile.toString())
-            if (!root.wallet.backupWallet(normalized)) root.errorText = root.wallet.settingsError
+            if (!owner.backupWallet(normalized)) root.errorText = owner.settingsError
             else root.errorText = ""
         }
+        onRejected: openedWallet = null
     }
 
     TextField {
@@ -90,14 +105,6 @@ SettingsPage {
 
         function onSettingsErrorChanged() {
             root.errorText = root.wallet ? root.wallet.settingsError : ""
-        }
-    }
-
-    Connections {
-        target: walletController
-
-        function onSelectedWalletChanged() {
-            root.errorText = ""
         }
     }
 

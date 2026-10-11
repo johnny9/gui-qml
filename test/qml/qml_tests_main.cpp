@@ -1090,6 +1090,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(qint64 availableSendBalanceSatoshi READ availableSendBalanceSatoshi NOTIFY balanceChanged)
     Q_PROPERTY(QObject* maximumRecipient READ maximumRecipient NOTIFY maximumRecipientChanged)
     Q_PROPERTY(QString name MEMBER m_name NOTIFY nameChanged)
+    Q_PROPERTY(QString displayName MEMBER m_name NOTIFY nameChanged)
     Q_PROPERTY(QString balance MEMBER m_balance NOTIFY balanceChanged)
     Q_PROPERTY(QObject* transactionActivityModel READ transactionActivityModel CONSTANT)
     Q_PROPERTY(QObject* bumpModel READ bumpModel CONSTANT)
@@ -4336,6 +4337,14 @@ public Q_SLOTS:
         static MockRecipientsModel recipients_model;
         static MockCoinsListModel coins_list_model;
         static MockWalletQmlModel wallet_model;
+        static MockWalletQmlModelTransaction other_wallet_transaction;
+        static MockPaymentRequest other_payment_request;
+        static MockSendRecipient other_send_recipient;
+        static MockRecipientsModel other_recipients_model;
+        static MockCoinsListModel other_coins_list_model;
+        static MockWalletQmlModel other_wallet_model;
+        static MockTransactionActivityModel other_transaction_activity_model;
+        static MockBumpTransactionModel other_bump_model;
         static MockWalletController wallet_controller;
         static MockWalletListModel wallet_list_model;
         static MockTransactionActivityModel transaction_activity_model;
@@ -4349,6 +4358,13 @@ public Q_SLOTS:
         wallet_model.setCoinsListModel(&coins_list_model);
         wallet_model.setCurrentTransaction(&wallet_transaction);
         wallet_model.setCurrentPaymentRequest(&payment_request);
+        other_recipients_model.setCurrent(&other_send_recipient);
+        other_wallet_model.setTransactionActivityModel(&other_transaction_activity_model);
+        other_wallet_model.setBumpModel(&other_bump_model);
+        other_wallet_model.setRecipients(&other_recipients_model);
+        other_wallet_model.setCoinsListModel(&other_coins_list_model);
+        other_wallet_model.setCurrentTransaction(&other_wallet_transaction);
+        other_wallet_model.setCurrentPaymentRequest(&other_payment_request);
         wallet_controller.setSelectedWalletObject(&wallet_model);
         qmlRegisterSingletonInstance<MockAppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
         qmlRegisterSingletonInstance<MockBuildInfo>("org.bitcoincore.qt", 1, 0, "BuildInfo", &build_info);
@@ -4402,6 +4418,14 @@ public Q_SLOTS:
         engine->rootContext()->setContextProperty(QStringLiteral("walletController"), &wallet_controller);
         engine->rootContext()->setContextProperty(QStringLiteral("walletListModel"), &wallet_list_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testWalletModel"), &wallet_model);
+        engine->rootContext()->setContextProperty(QStringLiteral("otherWalletModel"), &other_wallet_model);
+        engine->rootContext()->setContextProperty(QStringLiteral("otherWalletTransaction"), &other_wallet_transaction);
+        engine->rootContext()->setContextProperty(QStringLiteral("otherPaymentRequest"), &other_payment_request);
+        engine->rootContext()->setContextProperty(QStringLiteral("otherTransactionActivityModel"), &other_transaction_activity_model);
+        engine->rootContext()->setContextProperty(QStringLiteral("otherSendRecipient"), &other_send_recipient);
+        engine->rootContext()->setContextProperty(QStringLiteral("otherRecipientsModel"), &other_recipients_model);
+        engine->rootContext()->setContextProperty(QStringLiteral("otherCoinsListModel"), &other_coins_list_model);
+        engine->rootContext()->setContextProperty(QStringLiteral("otherBumpModel"), &other_bump_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testWalletTransaction"), &wallet_transaction);
         engine->rootContext()->setContextProperty(QStringLiteral("testPaymentRequest"), &payment_request);
         engine->rootContext()->setContextProperty(QStringLiteral("testTransactionActivityModel"), &transaction_activity_model);

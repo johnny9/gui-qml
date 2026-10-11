@@ -82,6 +82,8 @@ private:
         QString script_type;
         bool can_edit_label{false};
         bool can_create_payment_request{false};
+
+        bool operator==(const AddressEntry&) const = default;
     };
 
     void rebuild();

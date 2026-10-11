@@ -11,7 +11,24 @@ Popup {
     readonly property color modalOverlayColor: Qt.rgba(0, 0, 0, 0.4)
     property real verticalOffset: 0
     property var wallet
+    property var editingWallet: null
     property var editingCoins: null
+    property bool acceptingSelection: false
+
+    function cancelEditing() {
+        const coins = editingCoins
+        acceptingSelection = false
+        editingWallet = null
+        editingCoins = null
+        if (coins) coins.cancelSelection()
+    }
+
+    function applySelection() {
+        if (!acceptingSelection || !editingWallet || editingWallet !== wallet || !editingCoins) return
+        acceptingSelection = false
+        editingCoins.applySelection()
+        close()
+    }
     parent: Overlay.overlay
     implicitWidth: 1000
     width: Math.min(1000, parent.width - 40)
@@ -74,9 +91,20 @@ Popup {
             cornerRadius: parent.radius
         }
     }
-    onAboutToShow: { editingCoins = wallet.coinsListModel; browser.fallbackTarget = wallet.sendTotalSatoshi; editingCoins.beginSelection(); wallet.scheduleFeeEstimates() }
-    onClosed: { if (editingCoins) editingCoins.cancelSelection(); editingCoins = null }
-    onWalletChanged: if (opened) close()
+    onAboutToShow: {
+        editingWallet = wallet
+        editingCoins = wallet ? wallet.coinsListModel : null
+        acceptingSelection = !!editingCoins
+        if (!editingCoins) return
+        browser.fallbackTarget = wallet.sendTotalSatoshi
+        editingCoins.beginSelection()
+        wallet.scheduleFeeEstimates()
+    }
+    onAboutToHide: cancelEditing()
+    onWalletChanged: {
+        cancelEditing()
+        close()
+    }
     contentItem: ColumnLayout {
         spacing: 20
         RowLayout {
@@ -90,7 +118,7 @@ Popup {
             }
             CloseButton { objectName: "coinSelectionCloseButton"; onClicked: root.close() }
         }
-        CoinsList { id: browser; objectName: "sendCoinsList"; Layout.fillWidth: true; Layout.fillHeight: true; wallet: root.wallet; coins: root.editingCoins }
+        CoinsList { id: browser; objectName: "sendCoinsList"; Layout.fillWidth: true; Layout.fillHeight: true; wallet: root.editingWallet; coins: root.editingCoins }
         RowLayout {
             Layout.fillWidth: true; spacing: 12
             CoreText {
@@ -105,8 +133,8 @@ Popup {
                 objectName: "coinSelectionDoneButton"
                 //: Apply these selected coins to the transaction.
                 text: qsTr("Use selected inputs")
-                enabled: root.editingCoins && root.editingCoins.selectedCoinsCount > 0
-                onClicked: { root.editingCoins.applySelection(); root.close() }
+                enabled: root.acceptingSelection && root.editingCoins && root.editingCoins.selectedCoinsCount > 0
+                onClicked: root.applySelection()
             }
         }
     }

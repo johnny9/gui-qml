@@ -315,11 +315,16 @@ TestCase {
 
         let activatedValue = ""
         picker.activated.connect(function(value) { activatedValue = value })
+        button.clicked()
+        tryCompare(menu, "opened", true)
         tryVerify(function() { return picker.itemAtIndex(0) !== null })
-        picker.itemAtIndex(0).triggered()
+        picker.itemAtIndex(0).clicked()
 
         compare(activatedValue, "light")
         compare(picker.currentValue, "dark")
+        tryCompare(picker, "opened", false)
+        picker.itemAtIndex(1).clicked()
+        compare(activatedValue, "light")
     }
 
     function test_outlineButtonUsesLargeNeutralAppearance() {

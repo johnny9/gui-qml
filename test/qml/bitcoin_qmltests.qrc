@@ -51,5 +51,8 @@
         <file>tst_walletpassphrasepopup.qml</file>
         <file>tst_walletpasswordsettings.qml</file>
         <file>tst_walletselect.qml</file>
+        <file>tst_receivedialogcontext.qml</file>
+        <file>tst_sendwalletcontext.qml</file>
+        <file>tst_walletactivitycontext.qml</file>
     </qresource>
 </RCC>

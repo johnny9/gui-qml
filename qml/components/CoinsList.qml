@@ -12,6 +12,7 @@ ColumnLayout {
     property var wallet
     property var coins: wallet ? wallet.coinsListModel : null
     property bool selectionMode: true
+    property bool ready: false
     property bool walletSelectionActive: false
     property var markedIds: []
     property string errorText: ""
@@ -19,16 +20,40 @@ ColumnLayout {
     property string contextCoinId: ""
     property bool contextCoinLocked: false
     property real fallbackTarget: 0
-    readonly property real target: feeReady ? wallet.sendTotalSatoshi : fallbackTarget
+    readonly property real target: wallet && feeReady ? wallet.sendTotalSatoshi : fallbackTarget
     onTargetChanged: if (feeReady) fallbackTarget = target
     readonly property real selectedAmount: coins ? coins.totalSelectedSatoshi : 0
     readonly property bool covered: selectedAmount >= target && target > 0
-    readonly property bool feeReady: wallet && !wallet.feeEstimatePending && wallet.estimatedFeeSatoshi >= 0
+    readonly property bool feeReady: !!wallet && !wallet.feeEstimatePending && wallet.estimatedFeeSatoshi >= 0
     readonly property real remainingAmount: Math.max(0, target - selectedAmount)
     readonly property real changeAmount: Math.max(0, selectedAmount - target)
     readonly property int activeFilterCount: !coins ? 0 : (coins.filter !== "all" ? 1 : 0) + (coins.minAmount >= 0 || coins.maxAmount >= 0 ? 1 : 0)
     spacing: 16
-    onWalletChanged: { markedIds = []; walletSelectionActive = false; pendingLockedCoinId = ""; errorText = "" }
+    Component.onCompleted: ready = true
+    onWalletChanged: {
+        markedIds = []
+        walletSelectionActive = false
+        pendingLockedCoinId = ""
+        errorText = ""
+        fallbackTarget = wallet && feeReady ? wallet.sendTotalSatoshi : 0
+        if (ready) closeDialogs()
+    }
+    onVisibleChanged: if (ready && !visible) closeDialogs()
+
+    function closeDialogs() {
+        for (const dialog of [sortMenu, groupMenu, filterMenu, amountPopup,
+                              clearFiltersMenu, coinContextMenu, lockedCoinAlert]) {
+            dialog.openedWallet = null
+            dialog.close()
+        }
+        pendingLockedCoinId = ""
+        contextCoinId = ""
+        contextCoinLocked = false
+    }
+
+    function dialogIsCurrent(dialog) {
+        return !!root.wallet && !!root.coins && dialog.openedWallet === root.wallet
+    }
 
     BitcoinAmount { id: targetAmount; unit: optionsModel.displayUnit; satoshi: root.target }
     BitcoinAmount { id: selectedAmountText; unit: optionsModel.displayUnit; satoshi: root.selectedAmount }
@@ -41,6 +66,7 @@ ColumnLayout {
     BitcoinAmount { id: upperAmountText; unit: optionsModel.displayUnit; satoshi: amountSlider.upperValue }
 
     function toggleRow(row, coinId, locked, marked) {
+        if (!wallet || !coins) return
         if (selectionMode && locked && !marked) {
             pendingLockedCoinId = coinId
             lockedCoinAlert.open()
@@ -53,13 +79,16 @@ ColumnLayout {
         }
     }
     function lockMarked(locked) {
+        if (!coins) return
         errorText = coins.setCoinsLocked(markedIds, locked) ? "" : qsTr("Some coins could not be updated. Try again.")
         markedIds = []
     }
     function setCoinLocked(coinId, locked) {
+        if (!coins || !coinId) return
         errorText = coins.setCoinsLocked([coinId], locked) ? "" : qsTr("This coin could not be updated. Try again.")
     }
     function openMenu(menu, button) {
+        if (!wallet || !coins) return
         const p = button.mapToItem(Overlay.overlay, button.width, button.height + 6)
         menu.x = Math.max(12, Math.min(p.x - menu.width, Overlay.overlay.width - menu.width - 12))
         menu.y = Math.max(12, Math.min(p.y, Overlay.overlay.height - menu.height - 12))
@@ -359,41 +388,53 @@ ColumnLayout {
 
     ContextMenu {
         id: sortMenu; parent: Overlay.overlay; objectName: "coinBrowserSortMenu"
+        property var openedWallet: null
+        onAboutToShow: openedWallet = root.wallet
         ContextMenuPicker {
+            objectName: "coinBrowserSortPicker"
             title: qsTr("Sort by")
             model: [{text: qsTr("Date"), value: "date"}, {text: qsTr("Amount"), value: "amount"}, {text: qsTr("Label / note"), value: "label"}]
             currentValue: root.coins ? root.coins.sortBy : "date"
-            onActivated: function(value) { root.coins.sortBy = value; sortMenu.close() }
+            onActivated: function(value) { if (root.dialogIsCurrent(sortMenu)) root.coins.sortBy = value; sortMenu.close() }
         }
         ContextMenuDivider {}
         ContextMenuPicker {
+            objectName: "coinBrowserSortOrderPicker"
             model: [{text: qsTr("Ascending"), value: false}, {text: qsTr("Descending"), value: true}]
             currentValue: root.coins ? root.coins.sortDescending : true
-            onActivated: function(value) { root.coins.sortDescending = value; sortMenu.close() }
+            onActivated: function(value) { if (root.dialogIsCurrent(sortMenu)) root.coins.sortDescending = value; sortMenu.close() }
         }
     }
     ContextMenu {
         id: groupMenu; parent: Overlay.overlay; objectName: "coinBrowserGroupMenu"
+        property var openedWallet: null
+        onAboutToShow: openedWallet = root.wallet
         ContextMenuPicker {
+            objectName: "coinBrowserGroupPicker"
             title: qsTr("Group by")
             model: [{text: qsTr("Date"), value: "date"}, {text: qsTr("Month"), value: "month"}, {text: qsTr("Address"), value: "address"}]
             currentValue: root.coins ? root.coins.groupBy : "date"
-            onActivated: function(value) { root.coins.groupBy = value; groupMenu.close() }
+            onActivated: function(value) { if (root.dialogIsCurrent(groupMenu)) root.coins.groupBy = value; groupMenu.close() }
         }
     }
     ContextMenu {
         id: filterMenu; parent: Overlay.overlay; objectName: "coinBrowserFilterMenu"
+        property var openedWallet: null
+        onAboutToShow: openedWallet = root.wallet
         ContextMenuPicker {
+            objectName: "coinBrowserFilterPicker"
             title: qsTr("Coin type")
             model: [{text: qsTr("All"), value: "all"}, {text: qsTr("Spendable"), value: "spendable"}, {text: qsTr("Locked"), value: "locked"}]
             currentValue: root.coins ? root.coins.filter : "all"
-            onActivated: function(value) { root.coins.filter = value; filterMenu.close() }
+            onActivated: function(value) { if (root.dialogIsCurrent(filterMenu)) root.coins.filter = value; filterMenu.close() }
         }
     }
     ContextMenu {
         id: amountPopup; parent: Overlay.overlay; objectName: "coinBrowserAmountFilterPopup"
+        property var openedWallet: null
         implicitWidth: Math.min(320, root.width)
         onAboutToShow: {
+            openedWallet = root.wallet
             const low = root.coins && root.coins.availableMinAmount !== undefined ? root.coins.availableMinAmount : 0
             const high = root.coins && root.coins.availableMaxAmount !== undefined ? root.coins.availableMaxAmount : 0
             amountSlider.setValues(root.coins && root.coins.minAmount >= 0 ? root.coins.minAmount : low,
@@ -409,23 +450,27 @@ ColumnLayout {
                 minValue: root.coins && root.coins.availableMinAmount !== undefined ? root.coins.availableMinAmount : 0
                 maxValue: root.coins && root.coins.availableMaxAmount !== undefined ? root.coins.availableMaxAmount : 0
                 Accessible.name: qsTr("Coin amount range")
-                first.onMoved: if (root.coins) root.coins.minAmount = Math.round(lowerValue)
-                second.onMoved: if (root.coins) root.coins.maxAmount = Math.round(upperValue)
+                first.onMoved: if (root.dialogIsCurrent(amountPopup)) root.coins.minAmount = Math.round(lowerValue)
+                second.onMoved: if (root.dialogIsCurrent(amountPopup)) root.coins.maxAmount = Math.round(upperValue)
             }
         }
     }
     ContextMenu {
         id: clearFiltersMenu; parent: Overlay.overlay; objectName: "coinBrowserClearFiltersMenu"
-        ContextMenuButton { text: qsTr("Clear filters"); role: ContextMenuButton.Destructive; onTriggered: { root.clearFilters(); clearFiltersMenu.close() } }
+        property var openedWallet: null
+        onAboutToShow: openedWallet = root.wallet
+        ContextMenuButton { objectName: "coinBrowserClearFiltersAction"; text: qsTr("Clear filters"); role: ContextMenuButton.Destructive; onTriggered: { if (root.dialogIsCurrent(clearFiltersMenu)) root.clearFilters(); clearFiltersMenu.close() } }
     }
     ContextMenu {
         id: coinContextMenu
         parent: Overlay.overlay
         objectName: "walletCoinContextMenu"
+        property var openedWallet: null
+        onAboutToShow: openedWallet = root.wallet
         ContextMenuButton {
             objectName: "walletCoinLockToggle"
             text: root.contextCoinLocked ? qsTr("Unlock coin") : qsTr("Lock coin")
-            onTriggered: root.setCoinLocked(root.contextCoinId, !root.contextCoinLocked)
+            onTriggered: if (root.dialogIsCurrent(coinContextMenu)) root.setCoinLocked(root.contextCoinId, !root.contextCoinLocked)
         }
     }
 
@@ -433,6 +478,8 @@ ColumnLayout {
         id: lockedCoinAlert
         objectName: "lockedCoinSelectionAlert"
         parent: Overlay.overlay
+        property var openedWallet: null
+        onAboutToShow: openedWallet = root.wallet
         title: qsTr("Use locked coin?")
         message: qsTr("This coin is excluded from automatic coin selection. Do you still want to spend it?")
         onClosed: root.pendingLockedCoinId = ""
@@ -446,7 +493,7 @@ ColumnLayout {
             buttonObjectName: "lockedCoinSelectionConfirmButton"
             onTriggered: {
                 const coinId = root.pendingLockedCoinId
-                if (coinId.length && root.coins && !root.coins.toggleCoinSelectionById(coinId)) {
+                if (coinId.length && root.dialogIsCurrent(lockedCoinAlert) && !root.coins.toggleCoinSelectionById(coinId)) {
                     root.errorText = qsTr("This coin is no longer available. Try again.")
                 }
             }

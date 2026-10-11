@@ -28,8 +28,11 @@ Control {
     property bool embedded: false
     readonly property string currentText: displayText.length > 0 ? displayText : _currentText()
     readonly property bool opened: popup.visible
+    property bool acceptingSelection: false
 
     signal activated(var value)
+    signal aboutToShow()
+    signal aboutToHide()
 
     function _count() {
         if (root.model === null || root.model === undefined) return 0
@@ -93,6 +96,14 @@ Control {
         minMenuWidth: Math.max(root.minimumMenuWidth, root.width)
         x: button.width - width
         y: button.height + 2
+        onAboutToShow: {
+            root.acceptingSelection = true
+            root.aboutToShow()
+        }
+        onAboutToHide: {
+            root.acceptingSelection = false
+            root.aboutToHide()
+        }
 
         ContextMenuPicker {
             id: picker
@@ -109,8 +120,9 @@ Control {
             selectionIconSource: root.selectionIconSource
             iconSize: root.iconSize
             onActivated: function(value) {
-                root.close()
+                if (!root.acceptingSelection) return
                 root.activated(value)
+                root.close()
             }
         }
     }

@@ -21,6 +21,15 @@ Pane {
     property string errorText: ""
     property string pendingOperation: ""
     property string pendingRequestId: ""
+    property var pendingDeleteWallet: null
+    property string pendingDeleteId: ""
+    property int pendingDeleteRevision: -1
+    property int contextRevision: 0
+    property int qrRevision: 0
+    property int imageSaveRevision: -1
+    property var draftRequest: null
+    readonly property string requestPayload: request ? request.qrPayload : ""
+    onRequestPayloadChanged: invalidateQR()
     readonly property bool saved: !!request && request.id !== ""
     readonly property bool paymentReceived: !!request && request.paymentReceived
     readonly property bool sharing: visible && saved && !paymentReceived && !!wallet
@@ -58,9 +67,38 @@ Pane {
         messageInput.reset()
         noteInput.reset()
     }
-    onRequestChanged: { pendingOperation = ""; pendingRequestId = ""; resetFields() }
-    onWalletChanged: { pendingOperation = ""; pendingRequestId = "" }
-    Component.onCompleted: resetFields()
+    function invalidateQR() {
+        ++qrRevision
+        saveDialog.close()
+        qrMenu.close()
+    }
+    function invalidateContext() {
+        ++contextRevision
+        pendingOperation = ""
+        pendingRequestId = ""
+        errorText = ""
+        moreMenu.close()
+        invalidateQR()
+    }
+    function keepDraft() {
+        if (!draftRequest || draftRequest.id !== "") return
+        saveField("amount", amountInput, draftRequest)
+        saveField("label", labelInput, draftRequest)
+        saveField("message", messageInput, draftRequest)
+        saveField("noteSelf", noteInput, draftRequest)
+    }
+    onRequestChanged: {
+        keepDraft()
+        invalidateContext()
+        draftRequest = request
+        resetFields()
+    }
+    onWalletChanged: invalidateContext()
+    onVisibleChanged: if (!visible) {
+        keepDraft()
+        invalidateContext()
+    }
+    Component.onCompleted: { draftRequest = request; resetFields() }
 
     function amountInSatoshis(text) {
         if (text === "") return 0
@@ -74,8 +112,9 @@ Pane {
         const sats = Number((parts[0] || "0") + fraction.padEnd(decimals, "0"))
         return Number.isSafeInteger(sats) && sats <= 2100000000000000 ? sats : -1
     }
-    function saveField(name, field) {
-        if (!request || saved || !field.modified) return true
+    function saveField(name, field, targetRequest) {
+        const draft = targetRequest || request
+        if (!draft || draft.id !== "" || !field.modified) return true
         const value = name === "amount" ? amountInSatoshis(field.text) : field.text
         if (name === "amount" && value < 0) {
             errorText = amountUnit === BitcoinAmount.SAT
@@ -83,8 +122,8 @@ Pane {
                 : qsTr("Enter a valid amount, up to 21,000,000 BTC.")
             return false
         }
-        if (name === "amount") request.amount.satoshi = value
-        else request[name] = value
+        if (name === "amount") draft.amount.satoshi = value
+        else draft[name] = value
         field.modified = false
         errorText = ""
         return true
@@ -118,8 +157,10 @@ Pane {
     function createRequest() {
         if (!wallet || !request || saved || !hasFields || !saveFields()) return
         errorText = ""
-        if (wallet.commitReceivingPaymentRequest()) pendingOperation = "save"
-        else errorText = qsTr("The payment request could not be created. Please try again.")
+        if (wallet.commitReceivingPaymentRequest()) {
+            pendingOperation = "save"
+            saveCompletionComponent.createObject(root, { owner: wallet, request: request, revision: contextRevision })
+        } else errorText = qsTr("The payment request could not be created. Please try again.")
     }
     function copyRequest() {
         if (!sharing || !request.qrPayload) return
@@ -132,10 +173,11 @@ Pane {
             errorText = qsTr("The QR code is not ready. Please try again.")
             return false
         }
+        const revision = qrRevision
         const requestId = request.id
         const payload = request.qrPayload
         return qrPanel.grabToImage(function(result) {
-            if (root.sharing && root.request.id === requestId && root.request.qrPayload === payload)
+            if (root.qrRevision === revision && root.sharing && root.request.id === requestId && root.request.qrPayload === payload)
                 callback(result)
         }, Qt.size(736, 736))
     }
@@ -146,44 +188,104 @@ Pane {
     }
     function saveQRToFile(fileUrl) {
         return captureQR(function(result) {
-            if (!imageSave.save(result.image, fileUrl))
-                root.errorText = qsTr("The QR code could not be saved. Please try again.")
+            if (imageSave.save(result.image, fileUrl)) root.imageSaveRevision = root.qrRevision
+            else root.errorText = qsTr("The QR code could not be saved. Please try again.")
         })
     }
     function deleteRequest() {
-        if (!wallet || !saved) return false
+        if (!wallet || !saved || pendingDeleteWallet) return false
         const requestId = request.id
         if (!wallet.removeReceiveRequest(requestId)) {
             errorText = qsTr("The payment request could not be deleted. Please try again.")
             return false
         }
-        pendingOperation = "remove"
-        pendingRequestId = requestId
+        pendingDeleteWallet = wallet
+        pendingDeleteId = requestId
+        pendingDeleteRevision = contextRevision
         return true
     }
 
     ImageSaveModel {
         id: imageSave
+        objectName: "paymentRequestImageSave"
         onFinished: function(success) {
-            if (!success) root.errorText = qsTr("The QR code could not be saved. Please try again.")
+            if (!success && root.visible && root.imageSaveRevision === root.qrRevision)
+                root.errorText = qsTr("The QR code could not be saved. Please try again.")
+            root.imageSaveRevision = -1
         }
     }
     // Keep notification handlers owned by the card when their targets change.
     readonly property Connections walletCompletion: Connections {
         target: root.wallet
         function onReceiveOperationFinished(operation, success) {
-            if (root.pendingOperation !== operation) return
+            if (operation !== "update" || !root.visible || root.pendingOperation !== operation) return
+            const requestId = root.pendingRequestId
+            const revision = root.contextRevision
             root.pendingOperation = ""
+            root.pendingRequestId = ""
+            if (!root.request || root.request.id !== requestId) return
             const operationError = root.wallet.receiveOperationError
             root.errorText = operationError
             if (!success) return
-            if (operation === "save") root.created(root.request.id)
-            else if (operation === "remove") {
-                root.resetFields()
-                root.deleted(root.pendingRequestId)
-            } else if (operation === "update") root.resetFields()
-            root.pendingRequestId = ""
-            root.errorText = operationError
+            root.resetFields()
+            if (root.contextRevision === revision) root.errorText = operationError
+        }
+    }
+
+    // Each save belongs to its wallet, even if another wallet starts a save
+    // before this one finishes. A changed draft is rejected by the backend.
+    Component {
+        id: saveCompletionComponent
+        QtObject {
+            id: completion
+            objectName: "paymentRequestSaveCompletion"
+            property QtObject owner: null
+            property var request: null
+            property int revision: -1
+            onOwnerChanged: if (!owner) destroy()
+            readonly property Connections receiveCompletion: Connections {
+                target: completion.owner
+                function onReceiveOperationFinished(operation, success) {
+                    if (operation !== "save" || !completion.owner) return
+                    const owner = completion.owner
+                    const current = root.visible && root.wallet === owner
+                        && root.request === completion.request && root.contextRevision === completion.revision
+                    completion.owner = null
+                    if (current) {
+                        root.pendingOperation = ""
+                        root.errorText = owner.receiveOperationError
+                        if (success) root.created(completion.request.id)
+                    } else if (success && completion.request && completion.request.id !== "") {
+                        completion.request.clear()
+                    }
+                }
+            }
+        }
+    }
+
+    // Deleting is committed work even after its dialog opening is invalidated.
+    readonly property Connections deleteCompletion: Connections {
+        target: root.pendingDeleteWallet
+        function onReceiveOperationFinished(operation, success) {
+            if (operation !== "remove" || !root.pendingDeleteId) return
+            const owner = root.pendingDeleteWallet
+            const requestId = root.pendingDeleteId
+            const current = root.visible && root.wallet === owner && root.request
+                && root.request.id === requestId && root.pendingDeleteRevision === root.contextRevision
+            root.pendingDeleteWallet = null
+            root.pendingDeleteId = ""
+            root.pendingDeleteRevision = -1
+            if (current) {
+                root.errorText = owner.receiveOperationError
+                if (success) {
+                    root.resetFields()
+                    root.deleted(requestId)
+                }
+            } else if (success) {
+                for (const request of [owner.currentPaymentRequest, owner.detailPaymentRequest]) {
+                    if (request && request.id === requestId) request.clear()
+                }
+            }
         }
     }
 
@@ -205,11 +307,16 @@ Pane {
             labelInput.reset()
             messageInput.reset()
             root.errorText = ""
-            saveDialog.close()
+            root.invalidateQR()
             moreMenu.close()
-            qrMenu.close()
         }
-        function onIdChanged() { if (!root.saved) root.resetFields() }
+        function onIdChanged() {
+            root.invalidateQR()
+            if (!root.saved) {
+                root.invalidateContext()
+                root.resetFields()
+            }
+        }
     }
 
     contentItem: ColumnLayout {
@@ -242,6 +349,16 @@ Pane {
                 ContextMenu {
                     id: moreMenu
                     objectName: "paymentRequestMoreMenu"
+                    property int ownerRevision: -1
+                    property string requestId: ""
+                    onAboutToShow: { ownerRevision = root.contextRevision; requestId = root.request ? root.request.id : "" }
+                    onAboutToHide: ownerRevision = -1
+                    function acceptAction() {
+                        const current = root.visible && ownerRevision === root.contextRevision
+                            && root.request && root.request.id === requestId
+                        close()
+                        return current
+                    }
                     x: moreButton.width - width
                     y: moreButton.height + 8
                     ContextMenuButton {
@@ -249,27 +366,31 @@ Pane {
                         visible: !root.paymentReceived
                         enabled: root.sharing
                         text: qsTr("Copy QR code")
-                        onTriggered: root.copyQR()
+                        autoClose: false
+                        onTriggered: if (moreMenu.acceptAction()) root.copyQR()
                     }
                     ContextMenuButton {
                         objectName: "requestPaymentSaveQRMenuButton"
                         visible: !root.paymentReceived
                         enabled: root.sharing
                         text: qsTr("Save QR code")
-                        onTriggered: if (root.sharing) saveDialog.open()
+                        autoClose: false
+                        onTriggered: if (moreMenu.acceptAction() && root.sharing) saveDialog.open()
                     }
                     ContextMenuDivider { visible: !root.paymentReceived }
                     ContextMenuButton {
                         objectName: "requestPaymentAgainMenuButton"
                         text: qsTr("Request again")
-                        onTriggered: root.requestAgain(root.request.id)
+                        autoClose: false
+                        onTriggered: if (moreMenu.acceptAction()) root.requestAgain(root.request.id)
                     }
                     ContextMenuDivider {}
                     ContextMenuButton {
                         objectName: "requestPaymentDeleteMenuButton"
                         text: qsTr("Delete payment request")
                         role: ContextMenuButton.Destructive
-                        onTriggered: root.deleteRequest()
+                        autoClose: false
+                        onTriggered: if (moreMenu.acceptAction()) root.deleteRequest()
                     }
                 }
             }
@@ -335,17 +456,27 @@ Pane {
                 ContextMenu {
                     id: qrMenu
                     objectName: "requestPaymentQRContextMenu"
+                    property int ownerRevision: -1
+                    onAboutToShow: ownerRevision = root.qrRevision
+                    onAboutToHide: ownerRevision = -1
+                    function acceptAction() {
+                        const current = root.sharing && ownerRevision === root.qrRevision
+                        close()
+                        return current
+                    }
                     ContextMenuButton {
                         objectName: "requestPaymentQRContextCopy"
                         text: qsTr("Copy QR code")
                         enabled: root.sharing
-                        onTriggered: root.copyQR()
+                        autoClose: false
+                        onTriggered: if (qrMenu.acceptAction()) root.copyQR()
                     }
                     ContextMenuButton {
                         objectName: "requestPaymentQRContextSave"
                         text: qsTr("Save QR code")
                         enabled: root.sharing
-                        onTriggered: if (root.sharing) saveDialog.open()
+                        autoClose: false
+                        onTriggered: if (qrMenu.acceptAction()) saveDialog.open()
                     }
                 }
             }
@@ -454,7 +585,7 @@ Pane {
                     titleColor: root.paymentReceived ? Theme.color.neutral4 : Theme.color.neutral7
                     valueColor: root.paymentReceived ? Theme.color.neutral4 : Theme.color.neutral9
                     minimumRowHeight: 56
-                    value: root.request ? root.wallet.receiveAddressTypeLabel(root.request.addressType.toLowerCase()) : ""
+                    value: root.request && root.wallet ? root.wallet.receiveAddressTypeLabel(root.request.addressType.toLowerCase()) : ""
                     showDivider: true
                     dividerColor: root.modalView ? Theme.color.neutral3 : Theme.color.neutral2
                 }
@@ -589,6 +720,12 @@ Pane {
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("PNG files (*.png)")]
         defaultSuffix: "png"
-        onAccepted: root.saveQRToFile(selectedFile)
+        property int ownerRevision: -1
+        onVisibleChanged: if (visible) ownerRevision = root.qrRevision
+        onRejected: ownerRevision = -1
+        onAccepted: {
+            if (ownerRevision === root.qrRevision && root.sharing) root.saveQRToFile(selectedFile)
+            ownerRevision = -1
+        }
     }
 }

@@ -222,7 +222,8 @@ TestCase {
 
     function test_receive_view_addresses_opens_address_settings() {
         const page = createDesktopWallets()
-        findChild(page, "receiveTabButton").clicked()
+        page.openReceive()
+        tryCompare(findChild(page, "requestPaymentPage"), "visible", true)
         findChild(page, "receiveMoreButton").clicked()
         tryCompare(findChild(page, "receiveMoreMenu"), "opened", true)
         const historyButton = findChild(page, "requestPaymentHistoryButton")

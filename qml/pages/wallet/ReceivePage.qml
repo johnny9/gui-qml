@@ -16,6 +16,8 @@ Page {
     property var request: wallet ? wallet.currentPaymentRequest : null
     property var clipboard: Clipboard
     property var presentedRequest: null
+    property string presentedRequestId: ""
+    property int contextRevision: 0
     readonly property real pageSidePadding: width < 640 ? 16 : 40
     readonly property real headerContentWidth: Math.max(0, Math.min(1100, width - pageSidePadding * 2))
     readonly property alias requestModal: requestModal
@@ -33,18 +35,29 @@ Page {
 
     // The Addresses page may bring an existing request into Receive.
     // Saved requests always use the same modal, including this entry point.
-    onVisibleChanged: {
-        if (visible) Qt.callLater(function() {
-            if (root.visible) root.prepareReceivingAddress()
-            if (root.visible && root.request && root.request.id && !requestModal.visible) {
-                root.presentedRequest = root.request
-                requestModal.openRequest(root.request.id)
-            }
-        })
+    function prepareCurrentWallet(revision) {
+        if (!visible || contextRevision !== revision) return
+        prepareReceivingAddress()
+        if (request && request.id && !requestModal.visible) {
+            presentedRequest = request
+            presentedRequestId = request.id
+            requestModal.openRequest(request.id)
+        }
     }
-    Component.onCompleted: Qt.callLater(function() {
-        if (root.visible) root.prepareReceivingAddress()
-    })
+    onWalletChanged: {
+        ++contextRevision
+        presentedRequest = null
+        presentedRequestId = ""
+        requestModal.close()
+        receiveMoreMenu.close()
+        Qt.callLater(root.prepareCurrentWallet, contextRevision)
+    }
+    onVisibleChanged: {
+        ++contextRevision
+        if (visible) Qt.callLater(root.prepareCurrentWallet, contextRevision)
+        else receiveMoreMenu.close()
+    }
+    Component.onCompleted: Qt.callLater(root.prepareCurrentWallet, contextRevision)
 
     Item {
         objectName: "requestHistoryCount"
@@ -86,18 +99,28 @@ Page {
                     ContextMenu {
                         id: receiveMoreMenu
                         objectName: "receiveMoreMenu"
+                        property int ownerRevision: -1
+                        onAboutToShow: ownerRevision = root.contextRevision
+                        onAboutToHide: ownerRevision = -1
+                        function acceptAction() {
+                            const current = root.visible && ownerRevision === root.contextRevision
+                            close()
+                            return current
+                        }
                         x: receiveMoreButton.width - width
                         y: receiveMoreButton.height + 8
                         ContextMenuButton {
                             objectName: "nextReceivingAddressButton"
                             text: qsTr("Generate new address")
-                            onTriggered: receivingCard.ensureAddress(true, "")
+                            autoClose: false
+                            onTriggered: if (receiveMoreMenu.acceptAction()) receivingCard.ensureAddress(true, "")
                         }
                         ContextMenuDivider {}
                         ContextMenuButton {
                             objectName: "requestPaymentHistoryButton"
                             text: qsTr("View addresses")
-                            onTriggered: root.addressHistoryRequested()
+                            autoClose: false
+                            onTriggered: if (receiveMoreMenu.acceptAction()) root.addressHistoryRequested()
                         }
                     }
                 }
@@ -132,8 +155,12 @@ Page {
                     clipboard: root.clipboard
                     enabled: walletController.initialized
                     onCreated: function(requestId) {
-                        root.presentedRequest = root.request
+                        const requestWallet = root.wallet
+                        const createdRequest = root.request
                         root.paymentRequestCreated()
+                        if (root.wallet !== requestWallet || root.request !== createdRequest) return
+                        root.presentedRequest = createdRequest
+                        root.presentedRequestId = requestId
                         requestModal.openRequest(requestId)
                     }
                 }
@@ -144,25 +171,23 @@ Page {
         id: requestModal
         wallet: root.wallet
         onClosed: {
-            if (root.presentedRequest && root.request === root.presentedRequest) root.request.clear()
+            if (root.presentedRequest && root.request === root.presentedRequest
+                    && root.request.id === root.presentedRequestId) root.request.clear()
             root.presentedRequest = null
+            root.presentedRequestId = ""
             card.resetFields()
-            if (root.visible) root.prepareReceivingAddress()
+            if (root.visible) Qt.callLater(root.prepareCurrentWallet, root.contextRevision)
         }
     }
     Connections {
         target: walletController
         function onOpenReceiveRequested() {
+            const revision = root.contextRevision
             Qt.callLater(function() {
+                if (revision !== root.contextRevision) return
                 card.resetFields()
-                if (root.visible) root.prepareReceivingAddress()
+                root.prepareCurrentWallet(revision)
             })
-        }
-        function onSelectedWalletChanged() {
-            requestModal.close()
-            if (root.request) root.request.clear()
-            card.resetFields()
-            Qt.callLater(function() { if (root.visible) receivingCard.ensureAddress(false, "") })
         }
     }
 }

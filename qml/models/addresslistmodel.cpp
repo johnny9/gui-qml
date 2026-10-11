@@ -13,6 +13,8 @@
 #include <wallet/types.h>
 
 #include <QVariantMap>
+#include <algorithm>
+#include <set>
 #include <utility>
 
 using wallet::AddressPurpose;
@@ -205,10 +207,38 @@ QString AddressListModel::addressAt(int row) const
 
 void AddressListModel::rebuild()
 {
-    beginResetModel();
-    m_entries = collectEntries();
-    endResetModel();
-    Q_EMIT countChanged();
+    auto entries = collectEntries();
+    const int old_count = count();
+    std::set<QString> addresses;
+    for (const auto& entry : entries) addresses.insert(entry.address);
+    for (int row = old_count - 1; row >= 0; --row) {
+        if (addresses.contains(m_entries[row].address)) continue;
+        beginRemoveRows({}, row, row);
+        m_entries.erase(m_entries.begin() + row);
+        endRemoveRows();
+    }
+    for (int row = 0; row < static_cast<int>(entries.size()); ++row) {
+        auto existing = std::find_if(m_entries.begin() + row, m_entries.end(), [&](const AddressEntry& entry) {
+            return entry.address == entries[row].address;
+        });
+        if (existing == m_entries.end()) {
+            beginInsertRows({}, row, row);
+            m_entries.insert(m_entries.begin() + row, std::move(entries[row]));
+            endInsertRows();
+            continue;
+        }
+        const int source = existing - m_entries.begin();
+        if (source != row) {
+            beginMoveRows({}, source, source, {}, row);
+            std::rotate(m_entries.begin() + row, existing, existing + 1);
+            endMoveRows();
+        }
+        if (m_entries[row] != entries[row]) {
+            m_entries[row] = std::move(entries[row]);
+            Q_EMIT dataChanged(index(row), index(row));
+        }
+    }
+    if (old_count != count()) Q_EMIT countChanged();
 }
 
 std::vector<AddressListModel::AddressEntry> AddressListModel::collectEntries() const

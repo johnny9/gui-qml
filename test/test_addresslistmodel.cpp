@@ -6,6 +6,9 @@
 
 #include <test/mocks/mockwallet.h>
 
+#include <QAbstractItemModelTester>
+#include <QPersistentModelIndex>
+#include <QSignalSpy>
 #include <QVariantMap>
 
 #include <addresstype.h>
@@ -112,6 +115,7 @@ private Q_SLOTS:
     void initTestCase();
     void receiveAddressesHideUsedUntilEnabled();
     void labelsCanBeEdited();
+    void snapshotsPreserveAddressRows();
     void changeAddressesComeFromUnspentChangeOutputs();
 };
 
@@ -168,6 +172,54 @@ void AddressListModelTests::labelsCanBeEdited()
     QVERIFY(model->setAddressLabel(address, QStringLiteral("updated label")));
     QTRY_VERIFY(!wallet_model.receiveOperationPending());
     QCOMPARE(model->data(model->index(0), AddressListModel::LabelRole).toString(), QStringLiteral("updated label"));
+}
+
+void AddressListModelTests::snapshotsPreserveAddressRows()
+{
+    auto wallet{std::make_unique<TestAddressWallet>()};
+    auto* backend = wallet.get();
+    const auto first = TestDestination(1);
+    const auto second = TestDestination(2);
+    backend->m_addresses = {{first, true, wallet::AddressPurpose::RECEIVE, "first"},
+                            {second, true, wallet::AddressPurpose::RECEIVE, "second"}};
+    WalletQmlModel wallet_model{std::move(wallet)};
+    QTRY_VERIFY(!wallet_model.receiveRequestReconciliationPending());
+    auto* model = wallet_model.addressListModel();
+    QAbstractItemModelTester tester{model, QAbstractItemModelTester::FailureReportingMode::QtTest};
+    QSignalSpy reset{model, &QAbstractItemModel::modelReset};
+    QSignalSpy changed{model, &QAbstractItemModel::dataChanged};
+    QPersistentModelIndex first_index{model->index(0)};
+    QPersistentModelIndex second_index{model->index(1)};
+
+    wallet_model.requestWalletStateRefresh();
+    QTRY_VERIFY(!wallet_model.receiveRequestReconciliationPending());
+    QCOMPARE(reset.count(), 0);
+    QCOMPARE(changed.count(), 0);
+
+    backend->m_addresses[0].name = "updated";
+    wallet_model.requestWalletStateRefresh();
+    QTRY_VERIFY(!wallet_model.receiveRequestReconciliationPending());
+    QCOMPARE(reset.count(), 0);
+    QCOMPARE(changed.count(), 1);
+    QCOMPARE(first_index.data(AddressListModel::LabelRole).toString(), QStringLiteral("updated"));
+    QCOMPARE(second_index.row(), 1);
+
+    std::swap(backend->m_addresses[0], backend->m_addresses[1]);
+    backend->m_addresses.insert(backend->m_addresses.begin(), {TestDestination(3), true, wallet::AddressPurpose::RECEIVE, "third"});
+    wallet_model.requestWalletStateRefresh();
+    QTRY_VERIFY(!wallet_model.receiveRequestReconciliationPending());
+    QCOMPARE(model->count(), 3);
+    QCOMPARE(reset.count(), 0);
+    QCOMPARE(first_index.row(), 2);
+    QCOMPARE(second_index.row(), 1);
+
+    backend->m_addresses.erase(backend->m_addresses.begin() + 1);
+    wallet_model.requestWalletStateRefresh();
+    QTRY_VERIFY(!wallet_model.receiveRequestReconciliationPending());
+    QCOMPARE(reset.count(), 0);
+    QVERIFY(!second_index.isValid());
+    QCOMPARE(first_index.row(), 1);
+    QCOMPARE(first_index.data(AddressListModel::LabelRole).toString(), QStringLiteral("updated"));
 }
 
 void AddressListModelTests::changeAddressesComeFromUnspentChangeOutputs()

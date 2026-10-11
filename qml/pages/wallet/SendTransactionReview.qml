@@ -18,30 +18,44 @@ Page {
     title: qsTr("Review Transaction")
 
     property WalletQmlModel wallet: null
+    property bool reviewActive: true
+    property bool contextReady: false
+    readonly property bool canAct: reviewActive && visible && wallet !== null && transaction !== null
     readonly property WalletQmlModelTransaction transaction: wallet ? wallet.currentTransaction : null
-    readonly property bool importedPsbt: wallet && wallet.currentTransactionIsImportedPsbt === true
-    readonly property bool canSend: wallet && wallet.currentTransactionCanSend
-    readonly property bool canBroadcast: wallet && wallet.currentTransactionCanBroadcast
+    readonly property bool importedPsbt: wallet !== null && wallet.currentTransactionIsImportedPsbt === true
+    readonly property bool canSend: wallet !== null && wallet.currentTransactionCanSend
+    readonly property bool canBroadcast: wallet !== null && wallet.currentTransactionCanBroadcast
     readonly property bool showBroadcast: importedPsbt && canBroadcast
     readonly property bool showSend: !showBroadcast && canSend
     readonly property string reviewMessage: wallet ? wallet.currentTransactionReviewMessage : ""
     readonly property bool showWarning: reviewMessage.length > 0
-        || (wallet && wallet.keySchemeKind === WalletQmlModel.WatchOnly && !canBroadcast)
+        || (wallet !== null && wallet.keySchemeKind === WalletQmlModel.WatchOnly && !canBroadcast)
     readonly property real sidePadding: width < 640 ? 16 : 40
     readonly property real reviewContentWidth: Math.max(0, Math.min(1100, width - sidePadding * 2))
     property bool sending: false
     property string saveStatus: ""
     property bool saveError: false
 
-    onVisibleChanged: {
-        if (!visible) {
-            sweepAlert.close()
-            externalSignerActions.reset()
-            sending = false
-            saveStatus = ""
-            saveError = false
-        }
+    function resetDialogs() {
+        if (!contextReady) return
+        sweepAlert.close()
+        savePsbtDialog.ownerWallet = null
+        savePsbtDialog.ownerTransaction = null
+        savePsbtDialog.close()
+        sendPassphrasePopup.ownerWallet = null
+        sendPassphrasePopup.ownerTransaction = null
+        sendPassphrasePopup.close()
+        sendPassphrasePopup.clearPassphraseField()
+        sendPassphrasePopup.busy = false
+        sendPassphrasePopup.errorText = ""
+        externalSignerActions.reset()
+        sending = false
+        saveStatus = ""
+        saveError = false
     }
+    Component.onCompleted: contextReady = true
+    onVisibleChanged: if (!visible) resetDialogs()
+    onReviewActiveChanged: if (!reviewActive) resetDialogs()
 
     signal back()
     signal transactionSent(string txid)
@@ -59,28 +73,30 @@ Page {
         }
     }
 
-    onWalletChanged: sweepAlert.close()
-    onTransactionChanged: sweepAlert.close()
+    onWalletChanged: resetDialogs()
+    onTransactionChanged: resetDialogs()
 
     function requestSend() {
-        if (sending || !wallet) return
+        if (sending || !canAct) return
         if (wallet.currentTransactionSweepsWallet) sweepAlert.open()
         else commitSend()
     }
 
     function commitSend() {
-        if (sending || !wallet) return
+        if (sending || !canAct) return
         if (wallet.sendTransaction()) {
             sending = true
             transactionSent(transaction ? transaction.txid : "")
         } else if (wallet.transactionNeedsUnlock) {
+            sendPassphrasePopup.ownerWallet = wallet
+            sendPassphrasePopup.ownerTransaction = transaction
             sendPassphrasePopup.errorText = ""
             sendPassphrasePopup.open()
         }
     }
 
     function commitBroadcast() {
-        if (sending || !wallet) return
+        if (sending || !canAct) return
         if (wallet.broadcastCurrentTransaction()) {
             sending = true
             transactionSent(transaction ? transaction.txid : "")
@@ -92,21 +108,24 @@ Page {
             + Qt.formatDateTime(new Date(), "yyyy-MM-dd-HHmm") + ".psbt"
     }
 
-    function savePsbt(path) {
-        if (!wallet || !String(path).length) return
-        const result = wallet.saveCurrentTransactionAsPsbt(String(path))
+    function savePsbt(path, owner, preparedTransaction) {
+        if (!canAct || owner !== wallet || preparedTransaction !== transaction || !String(path).length) return
+        const result = owner.saveCurrentTransactionAsPsbt(String(path))
         saveStatus = result.length ? result : qsTr("Saved.")
         saveError = result.length > 0
     }
 
     function startSavePsbt() {
+        if (!canAct || sending) return
         saveStatus = ""
         saveError = false
         if (savePsbtAutomationPath.text.length) {
             const path = savePsbtAutomationPath.text
             savePsbtAutomationPath.text = ""
-            savePsbt(path)
+            savePsbt(path, wallet, transaction)
         } else {
+            savePsbtDialog.ownerWallet = wallet
+            savePsbtDialog.ownerTransaction = transaction
             savePsbtDialog.currentFile = defaultSavePsbtFileUrl()
             savePsbtDialog.open()
         }
@@ -136,12 +155,24 @@ Page {
     FileDialog {
         id: savePsbtDialog
         objectName: "sendTransactionReviewSaveDialog"
+        property WalletQmlModel ownerWallet: null
+        property WalletQmlModelTransaction ownerTransaction: null
         title: qsTr("Save transaction as PSBT")
         fileMode: FileDialog.SaveFile
         currentFolder: "file://" + walletController.homePath()
         defaultSuffix: "psbt"
         nameFilters: [qsTr("Partially Signed Bitcoin Transactions (*.psbt)"), qsTr("All files (*)")]
-        onAccepted: root.savePsbt(selectedFile.toString())
+        onRejected: {
+            ownerWallet = null
+            ownerTransaction = null
+        }
+        onAccepted: {
+            const owner = ownerWallet
+            const preparedTransaction = ownerTransaction
+            ownerWallet = null
+            ownerTransaction = null
+            root.savePsbt(selectedFile.toString(), owner, preparedTransaction)
+        }
     }
 
     Item {
@@ -297,7 +328,7 @@ Page {
                 visible: root.showSend && root.wallet && root.wallet.hasExternalSigner
                 Layout.fillWidth: true
                 wallet: root.wallet
-                canSend: root.canSend
+                canSend: root.canAct && root.canSend
                 onSendRequested: root.requestSend()
             }
 
@@ -307,7 +338,7 @@ Page {
                 NeutralButton {
                     objectName: "sendTransactionReviewSaveButton"
                     buttonSize: NeutralButton.Large
-                    enabled: !!root.transaction && !root.sending
+                    enabled: root.canAct && !root.sending
                     width: parent.width < 540 || !root.showSend && !root.showBroadcast || externalSignerActions.visible
                         ? parent.width : (parent.width - 12) / 2
                     height: 46
@@ -317,7 +348,7 @@ Page {
                 ContinueButton {
                     objectName: "sendTransactionReviewSendButton"
                     visible: (root.showSend && !externalSignerActions.visible) || root.showBroadcast
-                    enabled: !root.sending
+                    enabled: root.canAct && !root.sending
                     width: parent.width < 540 ? parent.width : (parent.width - 12) / 2
                     height: 46
                     text: root.showBroadcast ? qsTr("Broadcast transaction") : qsTr("Send transaction")
@@ -351,6 +382,16 @@ Page {
     AlertPopup {
         id: sweepAlert
         objectName: "sendSweepAlert"
+        property WalletQmlModel ownerWallet: null
+        property WalletQmlModelTransaction ownerTransaction: null
+        onAboutToShow: {
+            ownerWallet = root.wallet
+            ownerTransaction = root.transaction
+        }
+        onAboutToHide: {
+            ownerWallet = null
+            ownerTransaction = null
+        }
         parent: Overlay.overlay
         //: Final confirmation before sending a transaction that uses all available wallet funds.
         title: qsTr("Send all available funds?")
@@ -367,28 +408,48 @@ Page {
             //: Confirm and send the prepared transaction using all available wallet funds.
             text: qsTr("Send all funds")
             buttonObjectName: "sendSweepConfirmButton"
-            onTriggered: root.commitSend()
+            closesPopup: false
+            onTriggered: {
+                const current = root.canAct && sweepAlert.ownerWallet === root.wallet
+                    && sweepAlert.ownerTransaction === root.transaction
+                sweepAlert.close()
+                if (current) root.commitSend()
+            }
         }
     }
 
     WalletPassphrasePopup {
         id: sendPassphrasePopup
+        property WalletQmlModel ownerWallet: null
+        property WalletQmlModelTransaction ownerTransaction: null
+        popupObjectName: "sendPassphrasePopup"
+        passphraseFieldObjectName: "sendPassphraseField"
+        confirmButtonObjectName: "sendPassphraseConfirmButton"
         parent: Overlay.overlay
         width: Math.min(420, root.width - 40)
         titleText: qsTr("Enter wallet password")
         descriptionText: qsTr("Enter your wallet password to send this transaction.")
         confirmText: qsTr("Unlock and send")
         busyConfirmText: qsTr("Unlocking...")
+        onAboutToHide: {
+            ownerWallet = null
+            ownerTransaction = null
+            clearPassphraseField()
+            busy = false
+            errorText = ""
+        }
         onSubmitted: (passphrase) => {
+            const owner = ownerWallet
+            if (!root.canAct || !owner || owner !== root.wallet || ownerTransaction !== root.transaction) return
             busy = true
-            if (root.wallet.sendTransactionWithPassphrase(passphrase)) {
+            if (owner.sendTransactionWithPassphrase(passphrase)) {
                 busy = false
                 close()
                 root.sending = true
                 root.transactionSent(root.transaction ? root.transaction.txid : "")
             } else {
                 busy = false
-                errorText = root.wallet.transactionError
+                errorText = owner.transactionError
             }
         }
     }

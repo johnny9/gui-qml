@@ -22,8 +22,11 @@ ContextMenu {
     ContextMenuButton {
         objectName: "sendOptionsOpenPaymentRequestButton"
         text: qsTr("Open payment request")
-        autoClose: true
-        onTriggered: root.openPaymentRequest()
+        autoClose: false
+        onTriggered: {
+            root.openPaymentRequest()
+            root.close()
+        }
     }
 
     ContextMenuDivider {}
@@ -31,7 +34,11 @@ ContextMenu {
     ContextMenuButton {
         objectName: "sendImportPsbtFromFileButton"
         text: qsTr("Import PSBT from file…")
-        onTriggered: root.importPsbtFromFileRequested()
+        autoClose: false
+        onTriggered: {
+            root.importPsbtFromFileRequested()
+            root.close()
+        }
     }
 
     ContextMenuDivider {}
@@ -40,6 +47,10 @@ ContextMenu {
         objectName: "sendClearFormButton"
         text: qsTr("Clear form")
         iconSource: "qrc:/icons/cross"
-        onTriggered: root.clearFormRequested()
+        autoClose: false
+        onTriggered: {
+            root.clearFormRequested()
+            root.close()
+        }
     }
 }

@@ -23,6 +23,10 @@ ColumnLayout {
     ]
     signal feeChanged(int target)
     spacing: 0
+    onWalletModelChanged: {
+        speedPicker.selectionWallet = null
+        speedPicker.close()
+    }
 
     function nearestBlockTarget(target) {
         let nearest = blockTargets[0]
@@ -38,20 +42,26 @@ ColumnLayout {
         Layout.fillWidth: true
         title: qsTr("Speed")
         trailingItem: PopupPicker {
+            id: speedPicker
             objectName: "feeSelectionPicker"
+            property var selectionWallet: null
             model: root.speedOptions
             subtitleRole: "subtitle"
             objectNameRole: "objectName"
             currentValue: root.presetIndex
             minimumMenuWidth: 340
             embedded: true
+            onAboutToShow: selectionWallet = root.walletModel
+            onAboutToHide: selectionWallet = null
             onActivated: function(index) {
-                if (!root.walletModel) return
+                const wallet = selectionWallet
+                if (!acceptingSelection || !wallet || wallet !== root.walletModel) return
+                selectionWallet = null
                 const option = root.speedOptions[index]
-                if (option.blocks < 0) root.walletModel.setCustomFeeTarget(root.nearestBlockTarget(root.currentTarget))
+                if (option.blocks < 0) wallet.setCustomFeeTarget(root.nearestBlockTarget(root.currentTarget))
                 else {
-                    root.walletModel.customFeeEnabled = false
-                    root.walletModel.targetBlocks = option.blocks
+                    wallet.customFeeEnabled = false
+                    wallet.targetBlocks = option.blocks
                     root.feeChanged(option.blocks)
                 }
             }

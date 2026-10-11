@@ -233,6 +233,7 @@ TestCase {
         property bool receiveRequestReconciliationPending: false
         property string receiveOperationError: ""
         function receiveAddressTypeLabel(type) { return testWalletModel.receiveAddressTypeLabel(type) }
+        function ensureReceivingAddress(next, type) { return true }
         signal receiveOperationFinished(string operation, bool success)
     }
 
@@ -244,6 +245,7 @@ TestCase {
             card.wallet = otherReceiveWallet
             compare(card.request, otherPaymentRequest)
             gc()
+            verify(card.ensureAddress(false, ""))
             otherReceiveWallet.receiveOperationError = "New wallet " + i
             otherReceiveWallet.receiveOperationFinished("address", false)
             compare(card.errorText, "New wallet " + i)
@@ -251,6 +253,8 @@ TestCase {
             compare(card.errorText, "New wallet " + i)
             card.wallet = testWalletModel
             gc()
+            tryCompare(testWalletModel, "receiveOperationPending", false)
+            verify(card.ensureAddress(false, ""))
             testWalletModel.receiveOperationError = "Original wallet " + i
             testWalletModel.receiveOperationFinished("address", false)
             compare(card.errorText, "Original wallet " + i)
@@ -287,22 +291,42 @@ TestCase {
         receiveMenuClosing.target = null
     }
 
+    Component {
+        id: completionWalletComponent
+        QtObject {
+            readonly property var currentPaymentRequest: PaymentRequest {}
+            readonly property var receivingAddress: currentPaymentRequest
+            property bool receiveOperationPending: false
+            property bool receiveRequestReconciliationPending: false
+            property string receiveOperationError: ""
+            function receiveAddressTypeLabel(type) { return type }
+            function commitReceivingPaymentRequest() { receiveOperationPending = true; return true }
+            signal receiveOperationFinished(string operation, bool success)
+        }
+    }
+
     function test_payment_request_handlers_survive_collection_and_target_changes() {
+        const first = createTemporaryObject(completionWalletComponent, this)
+        const second = createTemporaryObject(completionWalletComponent, this)
         const card = createTemporaryObject(paymentCardComponent, this, {
-            wallet: testWalletModel, request: testPaymentRequest, width: 532
+            wallet: first, request: first.currentPaymentRequest, width: 532
         })
         verify(card !== null)
         for (let i = 0; i < 2; ++i) {
             const previousWallet = card.wallet
             const previousRequest = card.request
             gc()
-            card.wallet = i === 0 ? otherReceiveWallet : testWalletModel
-            card.request = i === 0 ? otherPaymentRequest : testPaymentRequest
+            card.wallet = i === 0 ? second : first
+            card.request = card.wallet.currentPaymentRequest
+            card.request.label = "Request " + i
+            card.resetFields()
+            card.createRequest()
+            compare(card.pendingOperation, "save")
             gc()
-            card.pendingOperation = "save"
             card.wallet.receiveOperationError = "Save failed " + i
             previousWallet.receiveOperationFinished("save", false)
             compare(card.pendingOperation, "save")
+            card.wallet.receiveOperationPending = false
             card.wallet.receiveOperationFinished("save", false)
             compare(card.pendingOperation, "")
             compare(card.errorText, "Save failed " + i)
@@ -333,7 +357,7 @@ TestCase {
         compare(findChild(card, "paymentRequestStatus").text, "Awaiting payment")
         page.requestModal.close()
         tryCompare(page.requestModal, "visible", false)
-        verify(testWalletModel.receivingAddress.address !== "")
+        tryVerify(function() { return testWalletModel.receivingAddress.address !== "" })
         verify(testWalletModel.receivingAddress.address !== address)
         compare(testPaymentRequest.id, "")
     }
@@ -635,7 +659,8 @@ TestCase {
         tryCompare(testWalletModel, "receiveOperationPending", false)
         tryCompare(page.requestModal, "visible", false)
         compare(testWalletModel.lastRemovedRequestId, requestId)
-        compare(card.request.id, "")
+        compare(card.request, null)
+        compare(testWalletModel.detailPaymentRequest.id, "")
         compare(testPaymentRequest.id, "")
         verify(page.draftCard.visible)
     }

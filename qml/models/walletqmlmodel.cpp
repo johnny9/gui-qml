@@ -670,9 +670,9 @@ void WalletQmlModel::applyWalletState(WalletStateSnapshot state)
     m_receive_reconciliation_applying = false;
     if (name_changed) { Q_EMIT nameChanged(); Q_EMIT displayNameChanged(); }
     if (was_encrypted != m_is_encrypted || was_locked != m_is_locked) Q_EMIT securityStateChanged();
+    if (balance_changed) Q_EMIT balanceChanged();
     Q_EMIT walletStateChanged();
     if (labels_changed) Q_EMIT addressListChanged();
-    if (balance_changed) Q_EMIT balanceChanged();
     Q_EMIT sendAmountExhaustsBalanceChanged();
 }
 
@@ -726,7 +726,10 @@ bool WalletQmlModel::submitReceiveCommand(ReceiveCommand command, QString operat
                 if (m_detail_payment_request->id() == QString::number(result.saved_entry->id)) applySavedRequest(m_detail_payment_request, *result.saved_entry);
                 if (!held && m_current_payment_request->id() == QString::number(result.saved_entry->id)) applySavedRequest(m_current_payment_request, *result.saved_entry);
             }
-            if (result.success && reserve && current_request) m_receiving_address->clear();
+            if (result.success && reserve && result.saved_entry &&
+                m_receiving_address->address() == QString::fromStdString(result.saved_entry->recipient.address)) {
+                m_receiving_address->clear();
+            }
             if (held && !current_request) {
                 result.success = false;
                 m_receive_operation_error = tr("The request changed while the operation was running. Check Activity for saved requests.");
