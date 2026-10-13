@@ -3,13 +3,16 @@ From: Hennadii Stepanov <32963518+hebasto@users.noreply.github.com>
 Date: Mon, 8 Jun 2026 16:33:21 +0100
 Subject: [PATCH 2/3] depends: Add Qt Qml and Qt Quick modules
 
+Backport the QtDBus raw metatype leak fix (QTBUG-150776).
+
 ---
  depends/packages/native_qt.mk              |   22 ++++++++++++++---
- depends/packages/qt.mk                     |   40 +++++++++++++++++++++++++++--
+ depends/packages/qt.mk                     |   44 +++++++++++++++++++++++++++---
  depends/packages/qt_details.mk             |    8 ++++++
+ depends/patches/qt/fix-dbus-metatype-leak.patch |  17 +++++++++++++
  depends/patches/qt/qtbase_skip_tools.patch |    8 ++----
  depends/patches/qt/static_fixes.patch      |   10 ++++++++
- 5 files changed, 78 insertions(+), 10 deletions(-)
+ 6 files changed, 98 insertions(+), 11 deletions(-)
 
 diff --git a/depends/packages/native_qt.mk b/depends/packages/native_qt.mk
 index 2bf088c10a..6d2aec3734 100644
@@ -92,13 +95,15 @@ index 2bf088c10a..6d2aec3734 100644
    $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qttranslations_file_name) -C qttranslations && \
    mkdir -p qttools && \
 diff --git a/depends/packages/qt.mk b/depends/packages/qt.mk
-index 9b7cec341d..b0f51fe437 100644
+index 9b7cec341d..d70731f54b 100644
 --- a/depends/packages/qt.mk
 +++ b/depends/packages/qt.mk
-@@ -27,13 +27,24 @@ $(package)_patches += fix-gcc16-sfinae-qanystringview.patch
+@@ -26,14 +26,26 @@ $(package)_patches += fix-gcc16-sfinae-qbitarray.patch
+ $(package)_patches += fix-gcc16-sfinae-qanystringview.patch
  $(package)_patches += fix-macos26-qyield.patch
  $(package)_patches += fix-qbytearray-include.patch
- 
++$(package)_patches += fix-dbus-metatype-leak.patch
++
 +$(package)_qtshadertools_file_name=$(qt_details_qtshadertools_file_name)
 +$(package)_qtshadertools_sha256_hash=$(qt_details_qtshadertools_sha256_hash)
 +
@@ -106,7 +111,7 @@ index 9b7cec341d..b0f51fe437 100644
 +$(package)_qtsvg_file_name=$(qt_details_qtsvg_file_name)
 +$(package)_qtdeclarative_sha256_hash=$(qt_details_qtdeclarative_sha256_hash)
 +$(package)_qtsvg_sha256_hash=$(qt_details_qtsvg_sha256_hash)
-+
+ 
  $(package)_qttranslations_file_name=$(qt_details_qttranslations_file_name)
  $(package)_qttranslations_sha256_hash=$(qt_details_qttranslations_sha256_hash)
  
@@ -121,7 +126,7 @@ index 9b7cec341d..b0f51fe437 100644
  $(package)_extra_sources += $($(package)_qttools_file_name)
  
  $(package)_top_download_path=$(qt_details_top_download_path)
-@@ -127,6 +138,9 @@ $(package)_config_opts += -no-feature-macdeployqt
+@@ -127,6 +139,9 @@ $(package)_config_opts += -no-feature-macdeployqt
  $(package)_config_opts += -no-feature-qmake
  $(package)_config_opts += -no-feature-windeployqt
  
@@ -131,7 +136,7 @@ index 9b7cec341d..b0f51fe437 100644
  ifeq ($(host),$(build))
  # Qt Tools module.
  $(package)_config_opts += -feature-linguist
-@@ -147,7 +161,8 @@ $(package)_config_opts_darwin += -no-feature-freetype
+@@ -147,7 +162,8 @@ $(package)_config_opts_darwin += -no-feature-freetype
  $(package)_config_opts_darwin += -no-pkg-config
  
  $(package)_config_opts_linux := -fontconfig
@@ -141,7 +146,7 @@ index 9b7cec341d..b0f51fe437 100644
  $(package)_config_opts_linux += -no-feature-xlib
  $(package)_config_opts_linux += -no-xcb-xlib
  $(package)_config_opts_linux += -pkg-config
-@@ -224,6 +239,9 @@ endef
+@@ -224,6 +240,9 @@ endef
  
  define $(package)_fetch_cmds
  $(call fetch_file,$(package),$($(package)_download_path),$($(package)_download_file),$($(package)_file_name),$($(package)_sha256_hash)) && \
@@ -151,7 +156,7 @@ index 9b7cec341d..b0f51fe437 100644
  $(call fetch_file,$(package),$($(package)_download_path),$($(package)_qttranslations_file_name),$($(package)_qttranslations_file_name),$($(package)_qttranslations_sha256_hash)) && \
  $(call fetch_file,$(package),$($(package)_download_path),$($(package)_qttools_file_name),$($(package)_qttools_file_name),$($(package)_qttools_sha256_hash)) && \
  $(call fetch_file,$(package),$($(package)_top_download_path),$($(package)_top_cmakelists_download_file),$($(package)_top_cmakelists_file_name)-$($(package)_version),$($(package)_top_cmakelists_sha256_hash)) && \
-@@ -235,6 +253,9 @@ ifeq ($(host),$(build))
+@@ -235,14 +254,23 @@ ifeq ($(host),$(build))
  define $(package)_extract_cmds
    mkdir -p $($(package)_extract_dir) && \
    echo "$($(package)_sha256_hash)  $($(package)_source)" > $($(package)_extract_dir)/.$($(package)_file_name).hash && \
@@ -161,7 +166,8 @@ index 9b7cec341d..b0f51fe437 100644
    echo "$($(package)_qttranslations_sha256_hash)  $($(package)_source_dir)/$($(package)_qttranslations_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
    echo "$($(package)_qttools_sha256_hash)  $($(package)_source_dir)/$($(package)_qttools_file_name)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
    echo "$($(package)_top_cmakelists_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmakelists_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
-@@ -243,6 +264,12 @@ define $(package)_extract_cmds
+   echo "$($(package)_top_cmake_ecmoptionaladdsubdirectory_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
+   echo "$($(package)_top_cmake_qttoplevelhelpers_sha256_hash)  $($(package)_source_dir)/$($(package)_top_cmake_qttoplevelhelpers_file_name)-$($(package)_version)" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
    $(build_SHA256SUM) -c $($(package)_extract_dir)/.$($(package)_file_name).hash && \
    mkdir -p qtbase && \
    $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source) -C qtbase && \
@@ -174,7 +180,7 @@ index 9b7cec341d..b0f51fe437 100644
    mkdir -p qttranslations && \
    $(build_TAR) --no-same-owner --strip-components=1 -xf $($(package)_source_dir)/$($(package)_qttranslations_file_name) -C qttranslations && \
    mkdir -p qttools && \
-@@ -256,12 +283,21 @@ else
+@@ -256,12 +284,21 @@ else
  define $(package)_extract_cmds
    mkdir -p $($(package)_extract_dir) && \
    echo "$($(package)_sha256_hash)  $($(package)_source)" > $($(package)_extract_dir)/.$($(package)_file_name).hash && \
@@ -196,6 +202,16 @@ index 9b7cec341d..b0f51fe437 100644
    cp $($(package)_source_dir)/$($(package)_top_cmakelists_file_name)-$($(package)_version) ./$($(package)_top_cmakelists_file_name) && \
    mkdir -p cmake && \
    cp $($(package)_source_dir)/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name)-$($(package)_version) cmake/$($(package)_top_cmake_ecmoptionaladdsubdirectory_file_name) && \
+@@ -284,7 +321,8 @@ define $(package)_preprocess_cmds
+   patch -p1 -i $($(package)_patch_dir)/fix-gcc16-sfinae-qbitarray.patch && \
+   patch -p1 -i $($(package)_patch_dir)/fix-gcc16-sfinae-qanystringview.patch && \
+   patch -p1 -i $($(package)_patch_dir)/fix-macos26-qyield.patch && \
+-  patch -p1 -i $($(package)_patch_dir)/fix-qbytearray-include.patch
++  patch -p1 -i $($(package)_patch_dir)/fix-qbytearray-include.patch && \
++  patch -p1 -i $($(package)_patch_dir)/fix-dbus-metatype-leak.patch
+ endef
+ ifeq ($(host),$(build))
+   $(package)_preprocess_cmds += && patch -p1 -i $($(package)_patch_dir)/qttools_skip_dependencies.patch
 diff --git a/depends/packages/qt_details.mk b/depends/packages/qt_details.mk
 index e49ac6a287..1e7264ab1a 100644
 --- a/depends/packages/qt_details.mk
@@ -215,6 +231,29 @@ index e49ac6a287..1e7264ab1a 100644
  qt_details_qttranslations_file_name := qttranslations-$(qt_details_suffix)
  qt_details_qttranslations_sha256_hash := c3c61d79c3d8fe316a20b3617c64673ce5b5519b2e45535f49bee313152fa531
  
+diff --git a/depends/patches/qt/fix-dbus-metatype-leak.patch b/depends/patches/qt/fix-dbus-metatype-leak.patch
+new file mode 100644
+index 0000000000..978c9c319d
+--- /dev/null
++++ b/depends/patches/qt/fix-dbus-metatype-leak.patch
+@@ -0,0 +1,17 @@
++Fix the QtDBus raw metatype leak (QTBUG-150776).
++Backport of https://github.com/qt/qtbase/commit/0fcbb6c64db055510f737e79d5b944f7e63a119f
++
++--- a/qtbase/src/dbus/qdbusmetaobject.cpp
+++++ b/qtbase/src/dbus/qdbusmetaobject.cpp
++@@ -118,8 +118,10 @@ static int registerComplexDBusType(const QByteArray &typeName)
++     {
++         ~Hash()
++         {
++-            for (QMetaType entry : std::as_const(*this))
+++            for (QMetaType entry : std::as_const(*this)) {
++                 QMetaType::unregisterMetaType(entry);
+++                delete static_cast<const QDBusRawTypeHandler *>(entry.iface());
+++            }
++         }
++     } hash;
++     QMutexLocker lock(&mutex);
 diff --git a/depends/patches/qt/qtbase_skip_tools.patch b/depends/patches/qt/qtbase_skip_tools.patch
 index eef65425d4..d5377c3f45 100644
 --- a/depends/patches/qt/qtbase_skip_tools.patch
