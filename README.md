@@ -1,7 +1,3 @@
-# Onboarding screenshots
+Screenshots for bitcoin-core/gui-qml#1050.
 
-Source: https://github.com/johnny9/gui-qml/commit/f846af32efd29fe3ccfb9b0cda5635887b0f2e4b
-
-Captured from bitcoin-core-app at 800 x 665 with temporary offline mainnet profiles.
-The profiles use prune=0 or prune=1907. The Custom target is 7 GB.
-These are direct app captures with no image edits.
+Captured from source commit 7eecbb94f24b8d082f2f40dbd46dd3dda23f0e2f at 800 × 665 pixels, using Qt 6.4.2 and the software renderer.
