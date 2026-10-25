@@ -76,6 +76,7 @@
         <file>components/LabeledBitcoinAddressField.qml</file>
         <file>components/WalletMigrationPopup.qml</file>
         <file>components/WalletPassphrasePopup.qml</file>
+        <file>components/WalletHistoryRecovery.qml</file>
         <file>controls/AddWalletButton.qml</file>
         <file>controls/AppFolderDialog.qml</file>
         <file>controls/CaretRightIcon.qml</file>

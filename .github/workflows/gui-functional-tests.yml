@@ -176,6 +176,7 @@ jobs:
           python3 test/functional/qml_test_uri_argument_injection.py
           python3 test/functional/qml_test_wallet_settings.py
           python3 test/functional/qml_test_watchonly_wallet.py
+          python3 test/functional/qml_test_wallet_history_recovery.py
           python3 test/functional/qml_test_create_wallet_name.py
           python3 test/functional/qml_test_wallet_selector_load.py
           python3 test/functional/qml_test_shutdown.py

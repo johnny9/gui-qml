@@ -20,6 +20,8 @@ PageStack {
     property string prepareTransactionErrorText: ""
     property bool manualCoinSelection: false
     readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
+    readonly property bool historyIncomplete: wallet !== null && wallet.historyRecovery
+        ? wallet.historyRecovery.incomplete : false
     readonly property string recipientValidationError: wallet ? wallet.recipients.validationError : ""
     readonly property bool selectedInputsActive: wallet !== null
         && wallet.coinsListModel !== null
@@ -43,7 +45,7 @@ PageStack {
     signal viewTransactionInActivity(string txid)
 
     function confirmTransactionReview() {
-        if (!root.wallet) return
+        if (!root.wallet || root.historyIncomplete) return
         if (root.wallet.sendDraftSweepsWallet) reviewSweepAlert.open()
         else root.prepareTransactionForReview()
     }
@@ -801,6 +803,7 @@ PageStack {
                             CoreText { objectName: "walletSendTitle"; Layout.fillWidth: true; text: qsTr("Send bitcoin"); font: Theme.text.headline.font; horizontalAlignment: Text.AlignLeft }
                             RowLayout {
                                 id: availableBalanceRow
+                                visible: !root.historyIncomplete
                                 Layout.fillWidth: true
                                 spacing: 4
                                 //: Available wallet balance excludes locked coins.
@@ -1059,7 +1062,7 @@ PageStack {
                                 objectName: "sendReviewButton"
                                 Layout.fillWidth: true
                                 text: qsTr("Review Transaction")
-                                enabled: root.wallet && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending
+                                enabled: root.wallet && !root.historyIncomplete && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending
                                     && !root.wallet.sendAmountExhaustsBalance && (!root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                                 onClicked: root.confirmTransactionReview()
                             }

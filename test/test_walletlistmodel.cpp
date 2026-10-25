@@ -90,6 +90,7 @@ private Q_SLOTS:
     void walletDirLoadedFlipsAfterFirstList();
     void balancesFollowDisplayUnitAcrossWalletRefreshes();
     void balancesUseGermanLocale();
+    void incompleteHistoryHidesBalancesAcrossRefresh();
 };
 
 void WalletListModelTests::init()
@@ -534,6 +535,28 @@ void WalletListModelTests::balancesUseGermanLocale()
     model.setDisplayUnit(0);
     model.listWalletDir();
     QCOMPARE(amount(), QStringLiteral("1,23456789"));
+}
+
+void WalletListModelTests::incompleteHistoryHidesBalancesAcrossRefresh()
+{
+    StrictMockNode node;
+    [[maybe_unused]] auto verify_node = node.VerifyOnExit();
+    FakeWalletLoader loader;
+    loader.wallet_dir_entries = {{"recovery_wallet", "sqlite"}};
+    ConfigureExpectedWalletLoader(node, loader);
+    WalletListModel model{node};
+    model.listWalletDir();
+    model.setWalletInfo("recovery_wallet", 5000000000LL, 0);
+    model.setHistoryIncomplete("recovery_wallet", true);
+    QCOMPARE(model.data(model.index(0, 0), WalletListModel::BalanceRole).toString(), QStringLiteral("History incomplete"));
+    QVERIFY(!model.data(model.index(0, 0), WalletListModel::BalanceSatoshiRole).isValid());
+    model.listWalletDir();
+    QVERIFY(model.data(model.index(0, 0), WalletListModel::HistoryIncompleteRole).toBool());
+    model.setWalletInfo("recovery_wallet", 0, 0);
+    QCOMPARE(model.data(model.index(0, 0), WalletListModel::BalanceRole).toString(), QStringLiteral("History incomplete"));
+    model.setHistoryIncomplete("recovery_wallet", false);
+    QCOMPARE(model.data(model.index(0, 0), WalletListModel::BalanceSatoshiRole).toLongLong(), 0LL);
+    QCOMPARE(model.data(model.index(0, 0), WalletListModel::BalanceRole).toString(), QStringLiteral("0.00000000"));
 }
 
 void WalletListModelTests::walletDirLoadedFlipsAfterFirstList()

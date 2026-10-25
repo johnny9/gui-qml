@@ -18,6 +18,8 @@ Page {
     background: null
 
     property string pendingMigrationPath: ""
+    readonly property var historyRecovery: walletController.selectedWallet
+        && walletController.selectedWallet.historyRecovery ? walletController.selectedWallet.historyRecovery : null
 
     ButtonGroup { id: navigationTabs }
 
@@ -83,6 +85,7 @@ Page {
     }
 
     function openSend() {
+        if (root.historyRecovery !== null && root.historyRecovery.incomplete) return
         sendTabButton.checked = true
     }
 
@@ -176,172 +179,185 @@ Page {
         }
     }
 
-    header: NavigationBar2 {
-        id: navBar
-        leftItem: WalletBadge {
-            objectName: "walletBadge"
-            implicitHeight: 48
-            checked: walletSelect.visible
-            walletType: walletController.selectedWallet.keyScheme
-            text: walletController.selectedWallet.displayName
-            balance: walletController.selectedWallet.balance
-            balanceSatoshi: walletController.selectedWallet.balanceSatoshi
-            loading: !walletController.initialized
-            noWalletLoaded: !walletController.isWalletLoaded
-            noWalletsFound: walletController.noWalletsFound
-            keySchemeKind: walletController.selectedWallet.keySchemeKind
+    header: ColumnLayout {
+        spacing: 0
 
-            onClicked: {
-                root.toggleWalletSelection()
-            }
+        NavigationBar2 {
+            id: navBar
+            Layout.fillWidth: true
+            leftItem: WalletBadge {
+                objectName: "walletBadge"
+                implicitHeight: 48
+                checked: walletSelect.visible
+                walletType: walletController.selectedWallet.keyScheme
+                text: walletController.selectedWallet.displayName
+                balance: walletController.selectedWallet.balance
+                balanceSatoshi: walletController.selectedWallet.balanceSatoshi
+                historyIncomplete: root.historyRecovery !== null && root.historyRecovery.incomplete
+                loading: !walletController.initialized
+                noWalletLoaded: !walletController.isWalletLoaded
+                noWalletsFound: walletController.noWalletsFound
+                keySchemeKind: walletController.selectedWallet.keySchemeKind
 
-            WalletSelect {
-                id: walletSelect
-                model: walletListModel
-                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-                width: Math.max(360, parent.width)
-                x: 0
-                y: parent.height + 2 + verticalOffset
-
-                onAddWallet: {
-                    root.addWallet()
-                }
-                onWalletSettingsRequested: (name, format) => {
-                    walletController.setSelectedWallet(name, format)
-                    root.openSettingsRoute("wallet")
-                }
-                onCloseWalletRequested: (name) => {
-                    closeConfirmationPopup.walletName = name
-                    closeConfirmationPopup.open()
-                }
-            }
-        }
-        centerItem: RowLayout {
-            visible: walletController.isWalletLoaded
-            NavigationTab {
-                id: activityTabButton
-                objectName: "activityTabButton"
-                text: qsTr("Activity")
-                property int index: 0
-                ButtonGroup.group: navigationTabs
-            }
-            NavigationTab {
-                id: sendTabButton
-                objectName: "sendTabButton"
-                text: qsTr("Send")
-                property int index: 1
-                ButtonGroup.group: navigationTabs
-            }
-            NavigationTab {
-                id: receiveTabButton
-                objectName: "receiveTabButton"
-                text: qsTr("Receive")
-                property int index: 2
-                ButtonGroup.group: navigationTabs
-            }
-        }
-        rightItem: RowLayout {
-            spacing: 5
-            NetworkIndicator {
-                textSize: 11
-                shorten: true
-            }
-            NavigationTab {
-                id: blockClockTabButton
-                objectName: "blockClockTabButton"
-                checked: true
-                Layout.preferredWidth: 30
-                property int index: 3
-                ButtonGroup.group: navigationTabs
-                customContent: MiniBlockClock {
-                    pageSelected: blockClockTabButton.checked
-                    renderingActive: root.visible
+                onClicked: {
+                    root.toggleWalletSelection()
                 }
 
-                Tooltip {
-                    id: blockClockTooltip
-                    objectName: "blockClockTooltip"
-                    property var syncState: Utils.formatRemainingSyncTime(nodeModel.remainingSyncTime)
-                    property bool synced: nodeModel.initialSyncComplete
-                    property bool paused: nodeModel.pause
-                    property bool connected: nodeModel.numPeers > 0
-                    property bool faulted: nodeModel.faulted
-                    property bool offline: typeof networkStatusModel !== "undefined" && networkStatusModel.networkOffline
-                    property bool headerSyncActive: nodeModel.headerSyncActive
+                WalletSelect {
+                    id: walletSelect
+                    model: walletListModel
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+                    width: Math.max(360, parent.width)
+                    x: 0
+                    y: parent.height + 2 + verticalOffset
 
-                    anchors.top: blockClockTabButton.bottom
-                    anchors.topMargin: 8
-                    anchors.horizontalCenter: blockClockTabButton.horizontalCenter
+                    onAddWallet: {
+                        root.addWallet()
+                    }
+                    onWalletSettingsRequested: (name, format) => {
+                        walletController.setSelectedWallet(name, format)
+                        root.openSettingsRoute("wallet")
+                    }
+                    onCloseWalletRequested: (name) => {
+                        closeConfirmationPopup.walletName = name
+                        closeConfirmationPopup.open()
+                    }
+                }
+            }
+            centerItem: RowLayout {
+                visible: walletController.isWalletLoaded
+                NavigationTab {
+                    id: activityTabButton
+                    objectName: "activityTabButton"
+                    text: qsTr("Activity")
+                    property int index: 0
+                    ButtonGroup.group: navigationTabs
+                }
+                NavigationTab {
+                    id: sendTabButton
+                    objectName: "sendTabButton"
+                    text: qsTr("Send")
+                    enabled: root.historyRecovery === null || !root.historyRecovery.incomplete
+                    property int index: 1
+                    ButtonGroup.group: navigationTabs
+                }
+                NavigationTab {
+                    id: receiveTabButton
+                    objectName: "receiveTabButton"
+                    text: qsTr("Receive")
+                    property int index: 2
+                    ButtonGroup.group: navigationTabs
+                }
+            }
+            rightItem: RowLayout {
+                spacing: 5
+                NetworkIndicator {
+                    textSize: 11
+                    shorten: true
+                }
+                NavigationTab {
+                    id: blockClockTabButton
+                    objectName: "blockClockTabButton"
+                    checked: true
+                    Layout.preferredWidth: 30
+                    property int index: 3
+                    ButtonGroup.group: navigationTabs
+                    customContent: MiniBlockClock {
+                        pageSelected: blockClockTabButton.checked
+                        renderingActive: root.visible
+                    }
 
-                    shown: blockClockTabButton.hovered
-                    text: {
-                        if (faulted) {
-                            qsTr("Error")
-                        } else if (offline) {
-                            qsTr("Offline")
-                        } else if (paused) {
-                            qsTr("Paused")
-                        } else if (connected && synced) {
-                            qsTr("Blocktime\n" +  Number(nodeModel.blockTipHeight).toLocaleString(Qt.locale(), 'f', 0))
-                        } else if (connected && headerSyncActive) {
-                            nodeModel.headerPresync ? qsTr("Pre-syncing headers") : qsTr("Syncing headers")
-                        } else if (connected) {
-                            qsTr("Downloading blocks\n" +  syncState.text)
-                        } else {
-                            qsTr("Connecting")
+                    Tooltip {
+                        id: blockClockTooltip
+                        objectName: "blockClockTooltip"
+                        property var syncState: Utils.formatRemainingSyncTime(nodeModel.remainingSyncTime)
+                        property bool synced: nodeModel.initialSyncComplete
+                        property bool paused: nodeModel.pause
+                        property bool connected: nodeModel.numPeers > 0
+                        property bool faulted: nodeModel.faulted
+                        property bool offline: typeof networkStatusModel !== "undefined" && networkStatusModel.networkOffline
+                        property bool headerSyncActive: nodeModel.headerSyncActive
+
+                        anchors.top: blockClockTabButton.bottom
+                        anchors.topMargin: 8
+                        anchors.horizontalCenter: blockClockTabButton.horizontalCenter
+
+                        shown: blockClockTabButton.hovered
+                        text: {
+                            if (faulted) {
+                                qsTr("Error")
+                            } else if (offline) {
+                                qsTr("Offline")
+                            } else if (paused) {
+                                qsTr("Paused")
+                            } else if (connected && synced) {
+                                qsTr("Blocktime\n" +  Number(nodeModel.blockTipHeight).toLocaleString(Qt.locale(), 'f', 0))
+                            } else if (connected && headerSyncActive) {
+                                nodeModel.headerPresync ? qsTr("Pre-syncing headers") : qsTr("Syncing headers")
+                            } else if (connected) {
+                                qsTr("Downloading blocks\n" +  syncState.text)
+                            } else {
+                                qsTr("Connecting")
+                            }
                         }
                     }
                 }
-            }
-            NavigationTab {
-                id: peersTabButton
-                objectName: "peersTabButton"
-                iconSource: Utils.nodeConnectionIcon(nodeModel.numPeers)
-                iconColor: Theme.color.neutral7
-                iconSize: 24
-                Layout.preferredWidth: 30
-                property int index: 4
-                ButtonGroup.group: navigationTabs
-                onCheckedChanged: {
-                    if (checked) {
-                        peerTableModel.startAutoRefresh()
-                    } else {
-                        peerTableModel.stopAutoRefresh()
+                NavigationTab {
+                    id: peersTabButton
+                    objectName: "peersTabButton"
+                    iconSource: Utils.nodeConnectionIcon(nodeModel.numPeers)
+                    iconColor: Theme.color.neutral7
+                    iconSize: 24
+                    Layout.preferredWidth: 30
+                    property int index: 4
+                    ButtonGroup.group: navigationTabs
+                    onCheckedChanged: {
+                        if (checked) {
+                            peerTableModel.startAutoRefresh()
+                        } else {
+                            peerTableModel.stopAutoRefresh()
+                        }
+                    }
+
+                    Tooltip {
+                        anchors.top: peersTabButton.bottom
+                        anchors.topMargin: 8
+                        anchors.horizontalCenter: peersTabButton.horizontalCenter
+                        shown: peersTabButton.hovered
+                        text: qsTr("Peers")
                     }
                 }
+                NavigationTab {
+                    id: settingsTabButton
+                    objectName: "desktopWalletSettingsTabButton"
+                    iconSource: "image://images/gear-outline"
+                    iconColor: Theme.color.neutral7
+                    Layout.preferredWidth: 30
+                    property int index: 5
+                    ButtonGroup.group: navigationTabs
 
-                Tooltip {
-                    anchors.top: peersTabButton.bottom
-                    anchors.topMargin: 8
-                    anchors.horizontalCenter: peersTabButton.horizontalCenter
-                    shown: peersTabButton.hovered
-                    text: qsTr("Peers")
+                    Tooltip {
+                        anchors.top: settingsTabButton.bottom
+                        anchors.topMargin: 8
+                        anchors.horizontalCenter: settingsTabButton.horizontalCenter
+                        shown: settingsTabButton.hovered
+                        text: qsTr("Settings")
+                    }
                 }
             }
-            NavigationTab {
-                id: settingsTabButton
-                objectName: "desktopWalletSettingsTabButton"
-                iconSource: "image://images/gear-outline"
-                iconColor: Theme.color.neutral7
-                Layout.preferredWidth: 30
-                property int index: 5
-                ButtonGroup.group: navigationTabs
-
-                Tooltip {
-                    anchors.top: settingsTabButton.bottom
-                    anchors.topMargin: 8
-                    anchors.horizontalCenter: settingsTabButton.horizontalCenter
-                    shown: settingsTabButton.hovered
-                    text: qsTr("Settings")
-                }
+            background: Rectangle {
+                color: Theme.color.neutral2
+                anchors.bottom: navBar.bottom
+                anchors.bottomMargin: 4
+                height: 1
+                width: parent.width
             }
         }
-        background: Rectangle {
-            color: Theme.color.neutral2
-            anchors.bottom: navBar.bottom
-            anchors.bottomMargin: 4
-            height: 1
-            width: parent.width
+
+        WalletHistoryRecovery {
+            Layout.fillWidth: true
+            recovery: root.historyRecovery
+            visible: walletController.isWalletLoaded && recovery !== null && recovery.visible
         }
     }
 

@@ -49,6 +49,7 @@
         <file>tst_utils.qml</file>
         <file>tst_valueinput.qml</file>
         <file>tst_walletpassphrasepopup.qml</file>
+        <file>tst_wallethistoryrecovery.qml</file>
         <file>tst_walletpasswordsettings.qml</file>
         <file>tst_walletselect.qml</file>
     </qresource>

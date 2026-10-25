@@ -17,6 +17,7 @@ Button {
     property bool loading: false
     property bool noWalletLoaded: false
     property bool noWalletsFound: false
+    property bool historyIncomplete: false
     property int keySchemeKind: WalletQmlModel.SingleKey
     property string walletType: ""
 
@@ -96,13 +97,24 @@ Button {
             BitcoinAmountDisplayLabel {
                 objectName: "walletBadgeBalanceText"
                 Layout.fillWidth: true
-                visible: !root.loading && !root.noWalletLoaded
+                visible: !root.loading && !root.noWalletLoaded && !root.historyIncomplete
                 amount: root.balance
                 unit: optionsModel.displayUnit === BitcoinAmount.SAT
                     ? (root.balanceSatoshi === 1 ? "sat" : "sats") : optionsModel.displayUnitLabel
                 color: Theme.color.neutral8
                 font.family: optionsModel.moneyFont.family
                 font.weight: optionsModel.moneyFont.weight
+                font.pixelSize: 13
+                horizontalAlignment: Text.AlignLeft
+                wrap: false
+                elide: Text.ElideRight
+            }
+            CoreText {
+                objectName: "walletBadgeRecoveryText"
+                Layout.fillWidth: true
+                visible: !root.loading && !root.noWalletLoaded && root.historyIncomplete
+                text: qsTr("History incomplete")
+                color: Theme.color.neutral7
                 font.pixelSize: 13
                 horizontalAlignment: Text.AlignLeft
                 wrap: false

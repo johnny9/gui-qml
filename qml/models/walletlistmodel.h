@@ -46,6 +46,7 @@ public:
         KeySchemeKindRole,
         WalletSectionRole,
         BalanceSatoshiRole,
+        HistoryIncompleteRole,
     };
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -62,6 +63,7 @@ public Q_SLOTS:
     void setWalletLoadState(const QString& name, LoadState state, const QString& error = {});
     void setDisplayUnit(int unit);
     void setWalletInfo(const QString& name, qint64 balance, int keySchemeKind);
+    void setHistoryIncomplete(const QString& name, bool incomplete);
     void refreshDisplayNames();
 
 private:
@@ -71,6 +73,7 @@ private:
         bool from_wallet_dir{false};
         std::optional<qint64> balance;
         int keySchemeKind{-1}; // Unknown until this wallet has been loaded.
+        bool historyIncomplete{false};
     };
 
     bool itemLess(const Item& a, const Item& b) const;

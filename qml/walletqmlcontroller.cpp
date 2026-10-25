@@ -158,6 +158,7 @@ bool WalletQmlController::isWalletOpen(const QString& path)
 void WalletQmlController::publishWalletInfo(WalletQmlModel* wallet_model)
 {
     if (!wallet_model) return;
+    Q_EMIT walletHistoryRecoveryChanged(wallet_model->name(), wallet_model->historyRecovery()->incomplete());
     Q_EMIT walletInfoChanged(
         wallet_model->name(),
         wallet_model->balanceSatoshi(),
@@ -383,6 +384,16 @@ void WalletQmlController::checkShutdownFinished()
 
 void WalletQmlController::registerWalletModel(WalletQmlModel* wallet_model)
 {
+    auto* recovery = wallet_model->historyRecovery();
+    connect(recovery, &WalletHistoryRecoveryController::changed, this,
+            [this, wallet_model, recovery, previous = recovery->incomplete()]() mutable {
+        const bool incomplete = recovery->incomplete();
+        if (previous == incomplete) return;
+        previous = incomplete;
+        Q_EMIT walletHistoryRecoveryChanged(wallet_model->name(), incomplete);
+        if (!incomplete) publishWalletInfo(wallet_model);
+    });
+    recovery->start();
     connect(wallet_model, &WalletQmlModel::walletUnloaded, this, [this, wallet_model]() {
         removeWalletModel(wallet_model);
     }, Qt::QueuedConnection);

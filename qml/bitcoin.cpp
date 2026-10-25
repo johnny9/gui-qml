@@ -784,6 +784,8 @@ int QmlGuiMain(int argc, char* argv[])
                          wallet_list_model.get(), &WalletListModel::setWalletLoadState);
         QObject::connect(wallet_controller.get(), &WalletQmlController::walletInfoChanged,
                          wallet_list_model.get(), &WalletListModel::setWalletInfo);
+        QObject::connect(wallet_controller.get(), &WalletQmlController::walletHistoryRecoveryChanged,
+                         wallet_list_model.get(), &WalletListModel::setHistoryIncomplete);
         QObject::connect(wallet_controller.get(), &WalletQmlController::walletDisplayNamesChanged,
                          wallet_list_model.get(), &WalletListModel::refreshDisplayNames);
         QObject::connect(wallet_list_model.get(), &WalletListModel::walletListChanged,

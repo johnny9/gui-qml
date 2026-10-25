@@ -236,6 +236,10 @@ QString PsbtQmlModel::loadFromFile(const QString& path)
 
 void PsbtQmlModel::sign()
 {
+    if (m_spending_allowed && !m_spending_allowed()) {
+        setError(tr("Finish wallet history recovery before spending."));
+        return;
+    }
     if (!m_psbt || !m_wallet) {
         setError(tr("No signable PSBT is loaded."));
         return;
@@ -265,6 +269,10 @@ void PsbtQmlModel::sign()
 
 void PsbtQmlModel::broadcast()
 {
+    if (m_spending_allowed && !m_spending_allowed()) {
+        setError(tr("Finish wallet history recovery before spending."));
+        return;
+    }
     if (!m_psbt) {
         setError(tr("No PSBT is loaded."));
         return;

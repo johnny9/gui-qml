@@ -78,6 +78,27 @@ TestCase {
         ]
     }
 
+    function test_incomplete_wallet_history_does_not_show_balance_or_unit() {
+        const model = createTemporaryObject(typedWalletModel, this)
+        model.append({ name: "recovering", displayName: "Recovering wallet",
+            format: "sqlite", loadState: 1, errorMessage: "",
+            balance: "12.34", balanceSatoshi: 1234000000, keySchemeKind: 0,
+            walletSection: "open", historyIncomplete: true })
+        const popup = createTemporaryObject(walletSelectComponent, this, { model: model })
+        popup.open()
+        tryCompare(popup, "opened", true)
+        const list = findChild(popup, "walletSelectList")
+        tryVerify(function() { return list.itemAtIndex(0) !== null })
+        const row = list.itemAtIndex(0)
+        const label = findChild(row, "walletSelectStatus_recovering")
+        verify(label !== null)
+        compare(label.text, "History incomplete")
+        verify(!label.animateUnitChanges)
+        model.setProperty(0, "historyIncomplete", false)
+        compare(label.text, row.balance + " " + (optionsModel.displayUnit === 3 ? "sats" : optionsModel.displayUnitLabel))
+        verify(label.animateUnitChanges)
+    }
+
     function test_closed_wallet_uses_generic_icon(data) {
         const model = createTemporaryObject(typedWalletModel, this)
         model.append({ name: "typedwallet", displayName: "Typed wallet",

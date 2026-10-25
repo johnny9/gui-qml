@@ -50,6 +50,7 @@ void WalletListModel::listWalletDir()
         if (previous != previous_items.constEnd()) {
             item.balance = previous->balance;
             item.keySchemeKind = previous->keySchemeKind;
+            item.historyIncomplete = previous->historyIncomplete;
         }
         updated_items.append(std::move(item));
     }
@@ -64,6 +65,7 @@ void WalletListModel::listWalletDir()
             if (previous != previous_items.constEnd()) {
                 item.balance = previous->balance;
                 item.keySchemeKind = previous->keySchemeKind;
+                item.historyIncomplete = previous->historyIncomplete;
             }
             updated_items.append(std::move(item));
         }
@@ -202,6 +204,14 @@ void WalletListModel::setWalletInfo(const QString& name, qint64 balance, int key
     }
 }
 
+void WalletListModel::setHistoryIncomplete(const QString& name, bool incomplete)
+{
+    const int row = rowForName(name);
+    if (row < 0 || m_items[row].historyIncomplete == incomplete) return;
+    m_items[row].historyIncomplete = incomplete;
+    Q_EMIT dataChanged(index(row, 0), index(row, 0), {BalanceRole, BalanceSatoshiRole, HistoryIncompleteRole});
+}
+
 int WalletListModel::rowCount(const QModelIndex &parent) const
 {
     Q_UNUSED(parent);
@@ -235,9 +245,13 @@ QVariant WalletListModel::data(const QModelIndex &index, int role) const
     case ErrorMessageRole:
         return (m_load_error.first == item.name) ? m_load_error.second : QString();
     case BalanceRole:
+        if (item.historyIncomplete) return tr("History incomplete");
         return item.balance ? QmlBitcoinUnits::formatForDisplay(QmlBitcoinUnits::fromDisplayUnit(m_display_unit), *item.balance) : QString{};
     case BalanceSatoshiRole:
+        if (item.historyIncomplete) return {};
         return item.balance.value_or(0);
+    case HistoryIncompleteRole:
+        return item.historyIncomplete;
     case WalletSectionRole:
         return m_open_wallet_names.contains(item.name) ? QStringLiteral("open") : QStringLiteral("closed");
     case KeySchemeKindRole:
@@ -257,6 +271,7 @@ QHash<int, QByteArray> WalletListModel::roleNames() const
     roles[ErrorMessageRole] = "errorMessage";
     roles[BalanceRole] = "balance";
     roles[BalanceSatoshiRole] = "balanceSatoshi";
+    roles[HistoryIncompleteRole] = "historyIncomplete";
     roles[KeySchemeKindRole] = "keySchemeKind";
     roles[WalletSectionRole] = "walletSection";
     return roles;

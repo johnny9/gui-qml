@@ -51,6 +51,8 @@ add_executable(bitcoinqml_unit_tests
   test_walletlistmodel.cpp
   test_bumptransactionmodel.cpp
   test_walletqmlcontroller.cpp
+  test_wallethistoryrecoverybackend.cpp
+  test_wallethistoryrecoverycontroller.cpp
   test_display_settings.cpp
   test_addresslistmodel.cpp
   test_receiverequesthistorymodel.cpp

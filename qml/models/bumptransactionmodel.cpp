@@ -91,6 +91,10 @@ void BumpTransactionModel::setSecurityStateChangedFn(std::function<void()> fn)
 
 void BumpTransactionModel::prepareFeeBump(const QString& txid, unsigned int targetBlocks)
 {
+    if (m_spending_allowed && !m_spending_allowed()) {
+        setError(tr("Finish wallet history recovery before spending."));
+        return;
+    }
     if (!m_wallet) {
         setError(tr("No wallet available."));
         return;
@@ -141,6 +145,11 @@ bool BumpTransactionModel::confirmFeeBumpWithPassphrase(const QString& passphras
 
 bool BumpTransactionModel::confirmFeeBumpInternal(std::optional<SecureString> passphrase)
 {
+    if (m_spending_allowed && !m_spending_allowed()) {
+        if (passphrase) QmlUtil::ClearSecureString(*passphrase);
+        setError(tr("Finish wallet history recovery before spending."));
+        return false;
+    }
     if (!m_wallet || m_state != NeedsConfirmation) {
         if (passphrase.has_value()) {
             QmlUtil::ClearSecureString(*passphrase);

@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <functional>
 #include <optional>
 #include <utility>
 
@@ -64,6 +65,7 @@ public:
     void setMatchedTxid(const QString& txid);
     void setNode(interfaces::Node* node) { m_node = node; }
     void refreshState(const QString& status_override = {});
+    void setSpendingAllowedFn(std::function<bool()> fn) { m_spending_allowed = std::move(fn); }
 
     static QString LocalFilePath(const QString& path);
     static QString LoadPsbtFromFile(const QString& path, PartiallySignedTransaction& psbt);
@@ -82,6 +84,7 @@ private:
 
     interfaces::Wallet* m_wallet;
     interfaces::Node* m_node;
+    std::function<bool()> m_spending_allowed;
     std::unique_ptr<PartiallySignedTransaction> m_psbt;
     QString m_status;
     QString m_error;

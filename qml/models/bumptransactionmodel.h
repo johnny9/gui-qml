@@ -12,6 +12,7 @@
 
 #include <functional>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <QObject>
@@ -62,6 +63,7 @@ public:
     Q_INVOKABLE bool confirmFeeBumpWithPassphrase(const QString& passphrase);
     Q_INVOKABLE void reset();
     void setSecurityStateChangedFn(std::function<void()> fn);
+    void setSpendingAllowedFn(std::function<bool()> fn) { m_spending_allowed = std::move(fn); }
 
 Q_SIGNALS:
     void stateChanged();
@@ -80,6 +82,7 @@ private:
 
     interfaces::Wallet* m_wallet{nullptr};
     std::function<void()> m_security_state_changed_fn;
+    std::function<bool()> m_spending_allowed;
     State m_state{Idle};
     ActionType m_action_type{SpeedUp};
     CAmount m_old_fee{0};

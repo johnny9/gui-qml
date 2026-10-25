@@ -602,6 +602,7 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, inter
     m_detail_payment_request = new PaymentRequest(this);
     m_imported_psbt_model = new PsbtQmlModel(m_wallet.get(), m_node, this);
     initializeBackend();
+    initializeHistoryRecovery();
     initializeFeeEstimator();
     refreshSecurityState();
     subscribeToWalletSignals();
@@ -628,6 +629,7 @@ WalletQmlModel::WalletQmlModel(interfaces::Node* node, QObject* parent)
     m_receive_requests = new ReceiveRequestHistoryModel(this);
     m_imported_psbt_model = new PsbtQmlModel(nullptr, m_node, this);
     initializeBackend();
+    initializeHistoryRecovery();
     initializeFeeEstimator();
 }
 
@@ -688,6 +690,13 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
     m_receive_payment_poll_timer.stop();
     if (m_transaction_activity_model) m_transaction_activity_model->stop();
     if (m_fee_estimation_timer) m_fee_estimation_timer->stop();
+    const auto recovery_completion = m_history_recovery ? m_history_recovery->completion() : std::shared_future<void>{};
+    if (m_history_recovery) m_history_recovery->shutdown();
+    finishShutdown(remove_wallet, recovery_completion);
+}
+
+void WalletQmlModel::finishShutdown(bool remove_wallet, std::shared_future<void> recovery_completion)
+{
     auto handlers = std::make_tuple(std::move(m_handler_status_changed), std::move(m_handler_address_list_changed),
                                    std::move(m_handler_transaction_changed), std::move(m_handler_unload));
     if (m_bump_transaction_model) m_bump_transaction_model->detachWallet();
@@ -695,11 +704,21 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
     auto wallet = std::move(m_wallet);
     m_sign_verify_message_model->setWallet(nullptr);
     m_sign_verify_message_model->setSecurityStateChangedFn({});
-    m_backend_executor->submit(this, [wallet = std::move(wallet), handlers = std::move(handlers), remove_wallet]() mutable {
+    m_backend_executor->submit(this, [wallet = std::move(wallet), handlers = std::move(handlers), remove_wallet, recovery_completion]() mutable {
+        if (recovery_completion.valid()) recovery_completion.wait();
         std::apply([](auto&... handler) { ((handler ? handler->disconnect() : void()), ...); }, handlers);
         if (wallet && remove_wallet) wallet->remove();
     }, [] {});
     m_backend_executor->shutdown();
+}
+
+void WalletQmlModel::initializeHistoryRecovery()
+{
+    m_history_recovery = new WalletHistoryRecoveryController(m_wallet ? m_node : nullptr, m_wallet, name(), this);
+    connect(m_history_recovery, &WalletHistoryRecoveryController::finished, this, &WalletQmlModel::refreshSecurityState);
+    const auto can_spend = [this] { return !m_history_recovery->incomplete(); };
+    m_bump_transaction_model->setSpendingAllowedFn(can_spend);
+    m_imported_psbt_model->setSpendingAllowedFn(can_spend);
 }
 
 void WalletQmlModel::initializeFeeEstimator()
@@ -2277,6 +2296,11 @@ bool WalletQmlModel::prepareTransactionWithPassphrase(const QString& passphrase)
 bool WalletQmlModel::prepareTransactionInternal(std::optional<SecureString> passphrase)
 {
     clearTransactionStatus();
+    if (m_history_recovery->incomplete()) {
+        if (passphrase) QmlUtil::ClearSecureString(*passphrase);
+        setTransactionStatus(tr("Finish wallet history recovery before spending."));
+        return false;
+    }
     if (!m_wallet || !m_send_recipients || m_send_recipients->recipients().empty()) {
         if (passphrase.has_value()) {
             QmlUtil::ClearSecureString(*passphrase);
@@ -2489,6 +2513,10 @@ bool WalletQmlModel::sendTransactionWithPassphrase(const QString& passphrase)
 bool WalletQmlModel::broadcastCurrentTransaction()
 {
     clearTransactionStatus();
+    if (m_history_recovery->incomplete()) {
+        setTransactionStatus(tr("Finish wallet history recovery before spending."));
+        return false;
+    }
     if (!m_node || !m_current_transaction || !m_current_psbt || !m_current_transaction_can_broadcast) {
         setTransactionStatus(tr("This transaction is not ready to broadcast."));
         return false;
@@ -2535,6 +2563,11 @@ bool WalletQmlModel::broadcastCurrentTransaction()
 bool WalletQmlModel::sendTransactionInternal(std::optional<SecureString> passphrase)
 {
     clearTransactionStatus();
+    if (m_history_recovery->incomplete()) {
+        if (passphrase) QmlUtil::ClearSecureString(*passphrase);
+        setTransactionStatus(tr("Finish wallet history recovery before spending."));
+        return false;
+    }
     if (!m_wallet || !m_current_transaction) {
         if (passphrase.has_value()) {
             QmlUtil::ClearSecureString(*passphrase);

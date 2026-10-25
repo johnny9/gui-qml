@@ -147,6 +147,7 @@ Popup {
 
             delegate: ItemDelegate {
                 id: delegate
+                required property var model
                 required property int index;
                 required property string name;
                 required property string displayName;
@@ -156,6 +157,7 @@ Popup {
                 required property string balance;
                 required property var balanceSatoshi;
                 required property int keySchemeKind;
+                readonly property bool historyIncomplete: model.historyIncomplete === true
 
                 readonly property string iconSource: {
                     if (loadState !== WalletListModel.Open) return "image://images/wallet"
@@ -175,6 +177,7 @@ Popup {
                     case WalletListModel.LoadError:
                         return qsTr("Failed to open wallet")
                     case WalletListModel.Open:
+                        if (historyIncomplete) return qsTr("History incomplete")
                         return balance + " " + (optionsModel.displayUnit === BitcoinAmount.SAT
                             ? (balanceSatoshi === 1 ? "sat" : "sats") : optionsModel.displayUnitLabel)
                     case WalletListModel.Closed:
@@ -272,13 +275,13 @@ Popup {
                             Layout.fillWidth: true
                             text: delegate.statusText
                             horizontalAlignment: Text.AlignLeft
-                            font: delegate.loadState === WalletListModel.Open
+                            font: delegate.loadState === WalletListModel.Open && !delegate.historyIncomplete
                                 ? Theme.text.monoCaption.font : Theme.text.caption.font
                             color: delegate.statusColor
                             wrap: false
                             elide: Text.ElideRight
                             visible: text.length > 0
-                            animateUnitChanges: delegate.loadState === WalletListModel.Open
+                            animateUnitChanges: delegate.loadState === WalletListModel.Open && !delegate.historyIncomplete
                         }
                     }
 

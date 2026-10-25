@@ -7,6 +7,7 @@
 
 #include <qml/models/addresslistmodel.h>
 #include <qml/backendexecutor.h>
+#include <qml/wallethistoryrecoverycontroller.h>
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/paymentrequest.h>
@@ -115,6 +116,7 @@ private:
     Q_PROPERTY(int feeEstimateRevision READ feeEstimateRevision NOTIFY feeEstimateRevisionChanged)
     Q_PROPERTY(BumpTransactionModel* bumpModel READ bumpModel CONSTANT)
     Q_PROPERTY(bool isWalletLoaded READ isWalletLoaded NOTIFY walletIsLoadedChanged)
+    Q_PROPERTY(WalletHistoryRecoveryController* historyRecovery READ historyRecovery CONSTANT)
     Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
     Q_PROPERTY(bool isEncrypted READ isEncrypted NOTIFY securityStateChanged)
     Q_PROPERTY(bool isLocked READ isLocked NOTIFY securityStateChanged)
@@ -216,6 +218,7 @@ public:
     std::shared_ptr<interfaces::Wallet> walletHandle() const { return m_wallet; }
     interfaces::Node* node() const { return m_node; }
     std::shared_ptr<BackendExecutor> backendExecutor() const { return m_backend_executor; }
+    WalletHistoryRecoveryController* historyRecovery() const { return m_history_recovery; }
     void beginShutdown(bool remove_wallet = false);
     void removeWallet();
 
@@ -325,6 +328,8 @@ private:
     };
 
     void initializeBackend();
+    void initializeHistoryRecovery();
+    void finishShutdown(bool remove_wallet, std::shared_future<void> recovery_completion);
     void initializeFeeEstimator();
     void setMaximumRecipient(SendRecipient* recipient);
     void updateMaximumAmount();
@@ -363,6 +368,7 @@ private:
     std::shared_ptr<BackendExecutor> m_backend_executor{std::make_shared<BackendExecutor>()};
     std::shared_ptr<QObject> m_notification_bridge;
     bool m_stopping{false};
+    WalletHistoryRecoveryController* m_history_recovery{nullptr};
     std::shared_ptr<interfaces::Wallet> m_wallet;
     interfaces::Node* m_node{nullptr};
     TransactionActivityModel* m_transaction_activity_model{nullptr};

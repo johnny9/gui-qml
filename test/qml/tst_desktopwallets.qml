@@ -118,6 +118,21 @@ TestCase {
         compare(balanceText.font.weight, optionsModel.moneyFont.weight)
     }
 
+    function test_wallet_badge_hides_balance_while_history_is_incomplete() {
+        const page = createDesktopWallets()
+        const badge = findChild(page, "walletBadge")
+        const balanceText = findChild(page, "walletBadgeBalanceText")
+        const recoveryText = findChild(page, "walletBadgeRecoveryText")
+        verify(balanceText !== null)
+        verify(recoveryText !== null)
+        badge.historyIncomplete = true
+        verify(!balanceText.visible)
+        verify(recoveryText.visible)
+        badge.historyIncomplete = false
+        verify(balanceText.visible)
+        verify(!recoveryText.visible)
+    }
+
     function test_wallet_badge_balance_updates_unit_suffix() {
         const originalUnit = optionsModel.displayUnit
         const page = createDesktopWallets()

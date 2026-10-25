@@ -121,6 +121,7 @@ Q_SIGNALS:
     void walletInfoChanged(const QString& name,
                            qint64 balance,
                            int keySchemeKind);
+    void walletHistoryRecoveryChanged(const QString& name, bool incomplete);
     void walletLoadSucceeded();
     void walletImportSucceeded();
     void walletCreateSucceeded();
