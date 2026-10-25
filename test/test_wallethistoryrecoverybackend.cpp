@@ -5,6 +5,7 @@
 #include <qml/wallethistoryrecoverybackend.h>
 
 #include <blockfilter.h>
+#include <script/script.h>
 #include <test/qt_test_registry.h>
 #include <uint256.h>
 
@@ -34,8 +35,8 @@ struct FakeRecoveryNode {
     bool initial_download{false};
     bool validated{true};
     bool locked{false};
-    bool empty_descriptors{false};
-    bool unspendable_descriptor{false};
+    bool empty_scripts{false};
+    bool unspendable_script{false};
     bool rpc_unlock_required{false};
     bool missing_blocks{false};
     bool archival_peer{false};
@@ -45,7 +46,8 @@ struct FakeRecoveryNode {
     bool null_rescan_stop{false};
     bool null_mempool_rescan_stop{false};
     bool mempool_spend_known{false};
-    bool expand_descriptors_after_scan{false};
+    bool expand_scripts_after_scan{false};
+    bool expand_scripts_after_mempool_rescan{false};
     bool cancel_during_scan{false};
     bool extend_chain_during_rescan{false};
     bool cancel_during_filter_catchup{false};
@@ -99,23 +101,6 @@ struct FakeRecoveryNode {
             result.pushKV("descriptors", true);
             result.pushKV("scanning", false);
             if (locked) result.pushKV("unlocked_until", 0);
-            return result;
-        }
-        if (method == "listdescriptors") {
-            wallet_uris.push_back(uri);
-            UniValue descriptors{UniValue::VARR};
-            if (!empty_descriptors) {
-                UniValue item{UniValue::VOBJ};
-                item.pushKV("desc", unspendable_descriptor ? "raw(6a)" : "raw(51)");
-                descriptors.push_back(std::move(item));
-                if (expand_descriptors_after_scan && filter_reads > 0) {
-                    UniValue added{UniValue::VOBJ};
-                    added.pushKV("desc", "raw(52)");
-                    descriptors.push_back(std::move(added));
-                }
-            }
-            UniValue result{UniValue::VOBJ};
-            result.pushKV("descriptors", std::move(descriptors));
             return result;
         }
         if (method == "getblockhash") {
@@ -206,7 +191,7 @@ struct FakeRecoveryNode {
             GCSFilter::ElementSet elements;
             if (height > 0) {
                 elements.insert(GCSFilter::Element{static_cast<unsigned char>(
-                    expand_descriptors_after_scan && height == 2 ? 0x52 : 0x51)});
+                    (expand_scripts_after_scan || expand_scripts_after_mempool_rescan) && height == 2 ? 0x52 : 0x51)});
             }
             const GCSFilter filter{
                 {hash.GetUint64(0), hash.GetUint64(1), BASIC_FILTER_P, BASIC_FILTER_M}, elements};
@@ -224,6 +209,15 @@ struct FakeRecoveryNode {
             },
             [this](int start, int end, std::vector<BlockFilter>& filters) {
                 return readFilters(start, end, filters);
+            },
+            [this] {
+                if (empty_scripts) return std::vector<CScript>{};
+                std::vector<CScript> scripts{CScript{} << (unspendable_script ? OP_RETURN : OP_TRUE)};
+                if ((expand_scripts_after_scan && filter_reads > 0) ||
+                    (expand_scripts_after_mempool_rescan && !mempool_rescans.empty())) {
+                    scripts.push_back(CScript{} << OP_2);
+                }
+                return scripts;
             },
         };
         return wallet_history::Recover(backend, wallet_name, control);
@@ -246,7 +240,8 @@ private Q_SLOTS:
     void rescansMatchesInOrderAndEscapesWalletName();
     void rejectsChangedChainAnchor();
     void rejectsIncompleteWalletRescan();
-    void repeatsDiscoveryAfterDescriptorExpansion();
+    void repeatsDiscoveryAfterScriptExpansion();
+    void repeatsDiscoveryAfterMempoolScriptExpansion();
     void catchesUpNewSpendsBeforeCompletion();
     void cancelsWhileNewBlockFiltersCatchUp();
     void replaysMempoolAfterFundingRecovery();
@@ -276,7 +271,7 @@ void WalletHistoryRecoveryBackendTests::waitsForRequiredState()
         case 2: node.initial_download = true; break;
         case 3: node.validated = false; break;
         case 4: node.locked = true; break;
-        case 5: node.empty_descriptors = true; break;
+        case 5: node.empty_scripts = true; break;
         }
         const auto result{node.recover()};
         QCOMPARE(result.outcome, Outcome::Retry);
@@ -313,7 +308,7 @@ void WalletHistoryRecoveryBackendTests::honorsWalletUnlockState()
 void WalletHistoryRecoveryBackendTests::rejectsScriptsExcludedFromBasicFilters()
 {
     FakeRecoveryNode node;
-    node.unspendable_descriptor = true;
+    node.unspendable_script = true;
     QCOMPARE(node.recover().outcome, Outcome::Failed);
     QCOMPARE(node.filter_reads, 0);
     QVERIFY(node.rescanned.empty());
@@ -394,14 +389,26 @@ void WalletHistoryRecoveryBackendTests::rejectsIncompleteWalletRescan()
     QCOMPARE(node.control->snapshot().phase, Phase::Failed);
 }
 
-void WalletHistoryRecoveryBackendTests::repeatsDiscoveryAfterDescriptorExpansion()
+void WalletHistoryRecoveryBackendTests::repeatsDiscoveryAfterScriptExpansion()
 {
     FakeRecoveryNode node;
-    node.expand_descriptors_after_scan = true;
+    node.expand_scripts_after_scan = true;
     const auto result{node.recover()};
     QVERIFY2(result.outcome == Outcome::Complete, result.error.c_str());
     QCOMPARE(node.filter_reads, 2);
     QVERIFY(std::find(node.rescanned.begin(), node.rescanned.end(), 2) != node.rescanned.end());
+    QCOMPARE(node.control->snapshot().phase, Phase::Complete);
+}
+
+void WalletHistoryRecoveryBackendTests::repeatsDiscoveryAfterMempoolScriptExpansion()
+{
+    FakeRecoveryNode node;
+    node.expand_scripts_after_mempool_rescan = true;
+    const auto result{node.recover()};
+    QVERIFY2(result.outcome == Outcome::Complete, result.error.c_str());
+    QCOMPARE(node.filter_ranges, (std::vector<std::pair<int, int>>{{0, 2}, {0, 2}}));
+    QCOMPARE(node.rescanned, (std::vector<int>{1, 1, 2}));
+    QCOMPARE(node.mempool_rescans, (std::vector<int>{2, 2}));
     QCOMPARE(node.control->snapshot().phase, Phase::Complete);
 }
 

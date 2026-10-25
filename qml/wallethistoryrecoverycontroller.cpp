@@ -40,7 +40,7 @@ WalletHistoryRecoveryController::WalletHistoryRecoveryController(
           }
           WalletRelockGuard guard{*handle, [] {}, relock};
           control->wallet_unlocked = !handle->isLocked();
-          return wallet_history::Recover(*node, name, control);
+          return wallet_history::Recover(*node, *handle, name, control);
       }} : Work{}, parent)
 {
 }

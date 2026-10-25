@@ -17,8 +17,10 @@ Item {
     property string reviewState: "initial"
     property string errorMessage: ""
     property bool canSend: true
+    readonly property bool recoveryIncomplete: Boolean(wallet && wallet.historyRecovery && wallet.historyRecovery.incomplete)
 
     readonly property string statusText: {
+        if (recoveryIncomplete) return qsTr("Finish wallet history recovery before spending.")
         if (reviewState === "partiallySigned") {
             return root.wallet && root.wallet.currentTransactionReviewMessage.length > 0
                 ? root.wallet.currentTransactionReviewMessage
@@ -55,7 +57,7 @@ Item {
     }
 
     function beginApproval() {
-        if (reviewState === "waiting") {
+        if (recoveryIncomplete || reviewState === "waiting") {
             return
         }
         approveTimer.stop()
@@ -65,6 +67,9 @@ Item {
     }
 
     Component.onDestruction: reset()
+    onRecoveryIncompleteChanged: {
+        if (recoveryIncomplete) reset()
+    }
     onVisibleChanged: {
         if (!visible) {
             reset()
@@ -123,7 +128,7 @@ Item {
             objectName: root.buttonObjectName
             Layout.fillWidth: true
             text: root.buttonText
-            enabled: root.canSend && root.reviewState !== "waiting" && root.reviewState !== "partiallySigned"
+            enabled: !root.recoveryIncomplete && root.canSend && root.reviewState !== "waiting" && root.reviewState !== "partiallySigned"
             onClicked: {
                 if (root.reviewState === "signed") {
                     root.sendRequested()

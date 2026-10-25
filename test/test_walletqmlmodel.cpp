@@ -23,6 +23,7 @@
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/wallethistoryrecoverycontroller.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <test/mocks/mocknode.h>
@@ -54,6 +55,7 @@
 #include <optional>
 #include <set>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -766,6 +768,7 @@ private Q_SLOTS:
     void saveReviewOnlyPsbt_preservesOriginalWithoutDerivationMetadata();
     void discardCurrentTransaction_clearsReviewState();
     void sendImportedPsbtWithPassphraseSignsOnceAndRelocks();
+    void externalSignerApprovalSignsImportedPsbtOnlyOnce_data();
     void externalSignerApprovalSignsImportedPsbtOnlyOnce();
     void externalSignerApprovalKeepsIncompleteSignedPsbt();
     void importPsbtFromFile_opensForeignUnsignedPsbtForReviewOnly();
@@ -3261,9 +3264,46 @@ void WalletQmlModelTests::sendImportedPsbtWithPassphraseSignsOnceAndRelocks()
     QCOMPARE(std::count(wallet->fill_psbt_sign_args.begin(), wallet->fill_psbt_sign_args.end(), true), 1);
 }
 
+void WalletQmlModelTests::externalSignerApprovalSignsImportedPsbtOnlyOnce_data()
+{
+    QTest::addColumn<bool>("recovery_enabled");
+    QTest::addColumn<bool>("cancel_recovery");
+    QTest::newRow("disabled") << false << false;
+    QTest::newRow("waiting") << true << false;
+    QTest::newRow("cancelled") << true << true;
+}
+
 void WalletQmlModelTests::externalSignerApprovalSignsImportedPsbtOnlyOnce()
 {
-    auto [wallet, model] = MakePasswordWalletModel();
+    QFETCH(bool, recovery_enabled);
+    QFETCH(bool, cancel_recovery);
+    class RecoveryNode final : public MockNode {
+    public:
+        bool recovery_enabled{false};
+        node::NodeContext node_context;
+        node::NodeContext* context() override { return &node_context; }
+        UniValue executeRpc(const std::string& method, const UniValue&, const std::string&) override
+        {
+            UniValue result{UniValue::VOBJ};
+            if (method == "getblockchaininfo") {
+                result.pushKV("pruned", recovery_enabled);
+                result.pushKV("initialblockdownload", true);
+            } else if (method == "getindexinfo") {
+                result.pushKV("basic block filter index", UniValue{UniValue::VOBJ});
+            } else if (method == "getwalletinfo") {
+                result.pushKV("descriptors", true);
+            } else {
+                throw std::runtime_error("Unexpected recovery RPC: " + method);
+            }
+            return result;
+        }
+    } node;
+    node.recovery_enabled = recovery_enabled;
+    auto [wallet, model] = MakePasswordWalletModel(&node);
+    model->historyRecovery()->start();
+    QTRY_COMPARE(model->historyRecovery()->state(), recovery_enabled ? QStringLiteral("waiting-node") : QStringLiteral("disabled"));
+    if (cancel_recovery) model->historyRecovery()->cancel();
+    QCOMPARE(model->historyRecovery()->incomplete(), recovery_enabled);
     wallet->private_keys_disabled = true;
     wallet->external_signer = true;
 
@@ -3295,7 +3335,23 @@ void WalletQmlModelTests::externalSignerApprovalSignsImportedPsbtOnlyOnce()
     QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCanSign);
 
     QSignalSpy succeeded_spy{model.get(), &WalletQmlModel::externalSignerApprovalSucceeded};
+    QSignalSpy failed_spy{model.get(), &WalletQmlModel::externalSignerApprovalFailed};
     model->approveExternalSignerTransaction();
+    if (recovery_enabled) {
+        QCOMPARE(succeeded_spy.count(), 0);
+        QCOMPARE(failed_spy.count(), 1);
+        QCOMPARE(failed_spy.at(0).at(0).toString(), QStringLiteral("Finish wallet history recovery before spending."));
+        QCOMPARE(std::count(wallet->fill_psbt_sign_args.begin(), wallet->fill_psbt_sign_args.end(), true), 0);
+        QVERIFY(!model->sendTransaction());
+        QCOMPARE(wallet->commit_calls, 0);
+        const QString saved_path{temp_dir.filePath(QStringLiteral("unsigned.psbt"))};
+        QCOMPARE(model->saveCurrentTransactionAsPsbt(saved_path), QString{});
+        QFile saved{saved_path};
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        QCOMPARE(saved.readAll(), PsbtQmlModel::SerializePsbtRaw(psbt));
+        return;
+    }
+    QCOMPARE(failed_spy.count(), 0);
     QCOMPARE(succeeded_spy.count(), 1);
     QCOMPARE(std::count(wallet->fill_psbt_sign_args.begin(), wallet->fill_psbt_sign_args.end(), true), 1);
 

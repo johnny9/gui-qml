@@ -2423,6 +2423,10 @@ bool WalletQmlModel::prepareTransactionInternal(std::optional<SecureString> pass
 
 void WalletQmlModel::approveExternalSignerTransaction()
 {
+    if (m_history_recovery->incomplete()) {
+        Q_EMIT externalSignerApprovalFailed(tr("Finish wallet history recovery before spending."), false);
+        return;
+    }
     if (!m_wallet || !m_current_transaction || !m_wallet->hasExternalSigner()) {
         Q_EMIT externalSignerApprovalFailed(tr("External signer not available."), true);
         return;

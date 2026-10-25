@@ -17,20 +17,20 @@ A progress banner appears below the wallet navigation tabs. It remains available
 
 ## Recovery path
 
-`WalletHistoryRecoveryController` runs `wallet_history::Recover` through a dedicated `BackendExecutor`. It publishes thread-safe progress snapshots to QML. Node RPCs, descriptor derivation, filter reads, block retrieval, and wallet rescans run off the GUI thread.
+`WalletHistoryRecoveryController` runs `wallet_history::Recover` through a dedicated `BackendExecutor`. It publishes thread-safe progress snapshots to QML. Node RPCs, wallet script snapshots, filter reads, block retrieval, and wallet rescans run off the GUI thread.
 
 The backend:
 
 1. Checks pruning, index availability, descriptor-wallet support, initial sync, background validation, and wallet unlock state.
-2. Reads the wallet's public descriptors and their imported derivation ranges.
-3. Expands scripts in bounded batches and searches basic filters from genesis. It uses `LookupFilterRange` directly and requires every requested filter, so a read failure cannot silently count as a successful scan.
+2. Reads cached scriptPubKeys from every script manager under the wallet lock. This includes hardened derivation paths from imported descriptors and migrated HD wallets, without exporting private keys.
+3. Searches basic filters from genesis using the cached scripts. It uses `LookupFilterRange` directly and requires every requested filter, so a read failure cannot silently count as a successful scan.
 4. Downloads unavailable candidate blocks from connected peers advertising full historical block service. It waits for actual block availability and bounds retries.
 5. Calls the existing `rescanblockchain(height, height)` wallet RPC for candidate blocks in ascending height order. The wallet handles ownership, spending transactions, persistence, and normal transaction notifications. Re-fetched blocks do not need undo data for this path.
-6. Repeats discovery from genesis when recovered activity expands the wallet's descriptor ranges. A bounded expansion limit leaves the job incomplete instead of claiming success prematurely.
+6. Repeats discovery from genesis when rescans expand the wallet's cached script set. A bounded expansion limit leaves the job incomplete instead of claiming success prematurely.
 7. Catches up incrementally when the chain grows during recovery. This covers spends that arrived before the wallet knew their historical funding transactions.
-8. Performs a final open-ended rescan from the current tip to replay current mempool transactions, then checks descriptors and the chain again before completion.
+8. Performs a final open-ended rescan from the current tip to replay current mempool transactions, then checks cached scripts and the chain again before completion.
 
-The controller checks the chain anchor throughout recovery. A reorg stops the job with an explicit incomplete state. Cancellation is checked between derivation/filter batches, block operations, and download polls. On unload or shutdown, wallet retirement waits for the recovery operation on a worker; the GUI thread does not wait for it.
+The controller checks the chain anchor throughout recovery. A reorg stops the job with an explicit incomplete state. Cancellation is checked while collecting scripts and between filter batches, block operations, and download polls. On unload or shutdown, wallet retirement waits for the recovery operation on a worker; the GUI thread does not wait for it.
 
 Core wallet source and the Bitcoin submodule revision are unchanged. There is no dependency on `txoscriptindex`, `txospenderindex`, or a new proof-import path.
 
@@ -46,10 +46,10 @@ The implementation has regtest and GUI coverage. Mainnet recovery duration, down
 
 Build with `-DBUILD_APP_TESTS=ON -DENABLE_TEST_AUTOMATION=ON -DBUILD_DAEMON=ON`.
 
-- `WalletHistoryRecoveryBackendTests`: readiness, checked filter reads, no-change spending order, peer failures, cancellation, descriptor expansion, reorgs, new-block catch-up, and final mempool replay.
+- `WalletHistoryRecoveryBackendTests`: readiness, checked filter reads, no-change spending order, peer failures, cancellation, script expansion after block and mempool rescans, reorgs, new-block catch-up, and final mempool replay.
 - `WalletHistoryRecoveryControllerTests`: progress state, retry, GUI responsiveness, cancellation, unlock handoff, destruction, and shutdown completion.
 - `WalletListModelTests`: incomplete balances remain hidden across model refreshes.
-- QML tests cover the banner, controls, wallet badge, and selector.
-- `test/functional/qml_test_wallet_history_recovery.py` runs real application flows: pruned receive/no-change-spend recovery, Activity rows, fee and balance, retry, restart, disabled configurations, encrypted unlock/relock, unload, and shutdown.
+- `WalletQmlModelTests` and QML tests cover blocked external-signer approval during recovery. QML tests also cover the banner, controls, wallet badge, and selector.
+- `test/functional/qml_test_wallet_history_recovery.py` runs real application flows: pruned receive/no-change-spend recovery (including a hardened-wildcard wallet and keypool expansion), Activity rows, fee and balance, retry, restart, disabled configurations, encrypted unlock/relock, unload, and shutdown.
 
 The functional test is included in the GUI functional-test workflow.

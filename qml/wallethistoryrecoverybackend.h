@@ -15,8 +15,10 @@
 #include <univalue.h>
 
 class BlockFilter;
+class CScript;
 namespace interfaces {
 class Node;
+class Wallet;
 }
 
 namespace wallet_history {
@@ -68,10 +70,11 @@ struct Result {
 struct Backend {
     std::function<UniValue(const std::string&, const UniValue&, const std::string&)> rpc;
     std::function<bool(int, int, std::vector<BlockFilter>&)> read_filters;
+    std::function<std::vector<CScript>()> read_scripts;
 };
 
 Result Recover(const Backend& backend, const std::string& wallet_name, const std::shared_ptr<Control>& control);
-Result Recover(interfaces::Node& node, const std::string& wallet_name, const std::shared_ptr<Control>& control);
+Result Recover(interfaces::Node& node, interfaces::Wallet& wallet, const std::string& wallet_name, const std::shared_ptr<Control>& control);
 } // namespace wallet_history
 
 #endif // BITCOIN_QML_WALLETHISTORYRECOVERYBACKEND_H

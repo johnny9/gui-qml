@@ -15,8 +15,12 @@ import sys
 import time
 import traceback
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "bitcoin", "test", "functional"))
+
 from qml_test_harness import dump_qml_tree
 from qml_wallet_test_lib import WalletFlowHarness, rpc_call, wait_for_rpc
+from test_framework.descriptors import descsum_create
+from test_framework.extendedkey import ExtendedPrivateKey
 
 
 WALLET = "recovery_test"
@@ -71,10 +75,10 @@ def connect_archive(harness):
                "archival peer connection")
 
 
-def create_blank_wallet(harness):
+def create_blank_wallet(harness, private_keys=False):
     rpc_call(harness.gui_rpc_port, "createwallet", {
         "wallet_name": WALLET,
-        "disable_private_keys": True,
+        "disable_private_keys": not private_keys,
         "blank": True,
         "load_on_startup": True,
     })
@@ -100,16 +104,23 @@ def check_recovered(harness, received, spent, expected_fee):
     assert rpc_call(harness.gui_rpc_port, "getwalletinfo", wallet=WALLET)["txcount"] == 2
 
 
-def prepare_history(harness):
-    harness.start_source_node(extra_args=["-listen=1", f"-bind=127.0.0.1:{harness.source_p2p_port}"])
+def prepare_history(harness, hardened=False):
+    harness.start_source_node(extra_args=["-listen=1", f"-bind=127.0.0.1:{harness.source_p2p_port}", "-keypool=2"])
     rpc_call(harness.source_rpc_port, "createwallet", {"wallet_name": MINER})
-    rpc_call(harness.source_rpc_port, "createwallet", {"wallet_name": SOURCE_WALLET})
+    rpc_call(harness.source_rpc_port, "createwallet", {"wallet_name": SOURCE_WALLET, "blank": hardened})
+    if hardened:
+        descriptor = descsum_create(f"pkh({ExtendedPrivateKey.generate().to_string()}/0h/*h)")
+        imported = rpc_call(harness.source_rpc_port, "importdescriptors",
+                            [[{"desc": descriptor, "range": [0, 1], "timestamp": "now", "active": True}]],
+                            wallet=SOURCE_WALLET)
+        assert imported[0]["success"], imported
     mining_address = rpc_call(harness.source_rpc_port, "getnewaddress", wallet=MINER)
-    receiving_address = rpc_call(harness.source_rpc_port, "getnewaddress", wallet=SOURCE_WALLET)
-    descriptor = rpc_call(harness.source_rpc_port, "getdescriptorinfo",
-                          [f"addr({receiving_address})"])["descriptor"]
+    receiving_address = rpc_call(harness.source_rpc_port, "getnewaddress", ["", "legacy"], wallet=SOURCE_WALLET)
+    if not hardened:
+        descriptor = rpc_call(harness.source_rpc_port, "getdescriptorinfo",
+                              [f"addr({receiving_address})"])["descriptor"]
 
-    harness.start_gui(extra_args=RECOVERY_ARGS)
+    harness.start_gui(extra_args=RECOVERY_ARGS + ["-keypool=2"])
     wait_for_rpc(harness.gui_rpc_port)
     connect_archive(harness)
     rpc_call(harness.source_rpc_port, "generatetoaddress", [101, mining_address])
@@ -146,9 +157,9 @@ def prepare_history(harness):
     return descriptor, received, spent, expected_fee, late_time
 
 
-def case_recovery(harness):
-    descriptor, received, spent, expected_fee, late_time = prepare_history(harness)
-    create_blank_wallet(harness)
+def case_recovery(harness, hardened=False):
+    descriptor, received, spent, expected_fee, late_time = prepare_history(harness, hardened=hardened)
+    create_blank_wallet(harness, private_keys=hardened)
     gui = harness.driver
     gui.wait_for_property("walletHistoryRecoveryBanner", "visible", True)
     wait_for_state(gui, "waiting-wallet")
@@ -163,9 +174,14 @@ def case_recovery(harness):
     wait_for_state(gui, "cancelled")
     gui.wait_for_property("walletHistoryRecoveryBanner", "recoveryIncomplete", True)
     assert rpc_call(harness.gui_rpc_port, "listtransactions", wallet=WALLET) == []
-    imported = rpc_call(harness.gui_rpc_port, "importdescriptors",
-                        [[{"desc": descriptor, "timestamp": "now"}]], wallet=WALLET)
+    request = {"desc": descriptor, "timestamp": "now"}
+    if hardened:
+        request.update({"range": [0, 1], "active": True})
+    imported = rpc_call(harness.gui_rpc_port, "importdescriptors", [[request]], wallet=WALLET)
     assert imported[0]["success"], imported
+    if hardened:
+        public = rpc_call(harness.gui_rpc_port, "listdescriptors", [False], wallet=WALLET)["descriptors"]
+        assert len(public) == 1 and "/*h" in public[0]["desc"], public
     gui.click("recoveryRetryButton")
     wait_for_state(gui, "error")
     gui.wait_for_property("recoveryRetryButton", "visible", True)
@@ -179,14 +195,18 @@ def case_recovery(harness):
     wait_for_state(gui, "complete", timeout_ms=60000)
     gui.wait_for_property("walletHistoryRecoveryBanner", "recoveryIncomplete", False)
     gui.wait_for_property("walletBadgeRecoveryText", "visible", False)
+    gui.wait_for_property("sendTabButton", "enabled", True)
     check_recovered(harness, received, spent, expected_fee)
+    if hardened:
+        public = rpc_call(harness.gui_rpc_port, "listdescriptors", [False], wallet=WALLET)["descriptors"]
+        assert public[0]["range"][1] >= 2, public
     gui.click("activityTabButton")
     gui.wait_for_page("activityPage", timeout_ms=15000)
     gui.wait_for_property("activityFilterProxyModel", "transactionCount", 2, timeout_ms=15000)
     gui.save_screenshot(os.path.join(harness.tmpdir, "recovered-activity.png"))
     print("  Recovery restores both Activity transactions, fee, zero balance and no UTXOs")
 
-    harness.restart_gui(extra_args=RECOVERY_ARGS + [f"-mocktime={late_time}"])
+    harness.restart_gui(extra_args=RECOVERY_ARGS + [f"-mocktime={late_time}", "-keypool=2"])
     wait_for_rpc(harness.gui_rpc_port)
     gui = harness.driver
     gui.wait_for_property("walletBadge", "text", WALLET, timeout_ms=20000)
@@ -297,6 +317,7 @@ def run_case(name, body):
 
 def main():
     failures = run_case("wallet_history_recovery", case_recovery)
+    failures += run_case("wallet_history_hardened", lambda harness: case_recovery(harness, hardened=True))
     failures += run_case("wallet_history_without_filter", lambda harness: case_disabled(
         harness, ["-prune=1", "-blockfilterindex=0"]))
     failures += run_case("wallet_history_without_pruning", lambda harness: case_disabled(

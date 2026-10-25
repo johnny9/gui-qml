@@ -8,13 +8,14 @@
 #include <chain.h>
 #include <index/blockfilterindex.h>
 #include <interfaces/node.h>
+#include <interfaces/wallet.h>
 #include <node/context.h>
 #include <rpc/protocol.h>
-#include <rpc/util.h>
 #include <script/script.h>
-#include <script/signingprovider.h>
 #include <sync.h>
 #include <validation.h>
+#include <wallet/scriptpubkeyman.h>
+#include <wallet/wallet.h>
 
 #include <algorithm>
 #include <chrono>
@@ -27,8 +28,7 @@
 namespace wallet_history {
 namespace {
 constexpr int FILTER_BATCH_SIZE{256};
-constexpr int DESCRIPTOR_BATCH_SIZE{64};
-constexpr int MAX_DESCRIPTOR_PASSES{8};
+constexpr int MAX_SCRIPT_PASSES{8};
 constexpr std::size_t MAX_DOWNLOAD_PEERS{4};
 constexpr auto DOWNLOAD_TIMEOUT{std::chrono::seconds{15}};
 constexpr auto DOWNLOAD_POLL_INTERVAL{std::chrono::milliseconds{100}};
@@ -96,57 +96,27 @@ Result Finish(const std::shared_ptr<Control>& control, Outcome outcome, Phase ph
     return {outcome, std::move(error)};
 }
 
-std::vector<UniValue> ReadDescriptors(const Backend& backend, const std::string& uri)
-{
-    const auto wallet_descriptors{Call(backend, "listdescriptors", Params(false), uri)};
-    std::vector<UniValue> descriptors;
-    for (const auto& entry : wallet_descriptors["descriptors"].getValues()) {
-        UniValue descriptor{UniValue::VOBJ};
-        descriptor.pushKV("desc", entry["desc"].get_str());
-        if (entry.exists("range")) descriptor.pushKV("range", entry["range"]);
-        descriptors.push_back(std::move(descriptor));
-    }
-    std::sort(descriptors.begin(), descriptors.end(), [](const auto& first, const auto& second) {
-        return first.write() < second.write();
-    });
-    return descriptors;
-}
-
-bool SameDescriptors(const std::vector<UniValue>& first, const std::vector<UniValue>& second)
-{
-    return first.size() == second.size() && std::equal(first.begin(), first.end(), second.begin(), [](const auto& a, const auto& b) {
-        return a.write() == b.write();
-    });
-}
-
-GCSFilter::ElementSet DescriptorScripts(const std::vector<UniValue>& descriptors, const Control& control)
+GCSFilter::ElementSet ReadScripts(const Backend& backend, const Control& control)
 {
     GCSFilter::ElementSet scripts;
-    for (const auto& descriptor : descriptors) {
+    CheckCancelled(control);
+    for (const auto& script : backend.read_scripts()) {
         CheckCancelled(control);
-        auto add_scripts = [&](const UniValue& scan_object) {
-            FlatSigningProvider provider;
-            for (const auto& script : EvalDescriptorStringOrObject(scan_object, provider)) {
-                if (script.empty() || script.front() == OP_RETURN) {
-                    throw std::runtime_error{"Compact block filters do not cover an unspendable wallet descriptor."};
-                }
-                scripts.emplace(script.begin(), script.end());
-            }
-        };
-        if (!descriptor.exists("range")) {
-            add_scripts(descriptor);
-            continue;
+        if (script.empty() || script.front() == OP_RETURN) {
+            throw std::runtime_error{"Compact block filters do not cover an unspendable wallet descriptor."};
         }
-        const auto [begin, end]{ParseDescriptorRange(descriptor["range"])};
-        for (int64_t offset{begin}; offset <= end; offset += DESCRIPTOR_BATCH_SIZE) {
-            CheckCancelled(control);
-            UniValue scan_object{UniValue::VOBJ};
-            scan_object.pushKV("desc", descriptor["desc"]);
-            scan_object.pushKV("range", Params(offset, std::min(end, offset + DESCRIPTOR_BATCH_SIZE - 1)));
-            add_scripts(scan_object);
-        }
+        scripts.emplace(script.begin(), script.end());
     }
     return scripts;
+}
+
+bool SameScripts(const GCSFilter::ElementSet& first, const GCSFilter::ElementSet& second)
+{
+    // Each set has an independently salted hasher. Compare membership without
+    // relying on unordered_set equality to handle different hash functions.
+    return first.size() == second.size() && std::all_of(first.begin(), first.end(), [&](const auto& script) {
+        return second.contains(script);
+    });
 }
 
 void CheckAnchor(const Backend& backend, int height, const std::string& hash, const Control& control)
@@ -259,15 +229,14 @@ Result Run(const Backend& backend, const std::string& wallet_name, const std::sh
         return Finish(control, Outcome::Retry, Phase::WaitingForWallet, "Waiting for the current wallet scan.");
     }
     std::string anchor{Call(backend, "getblockhash", Params(end_height)).get_str()};
-    auto descriptors{ReadDescriptors(backend, uri)};
-    if (descriptors.empty()) {
+    auto scripts{ReadScripts(backend, *control)};
+    if (scripts.empty()) {
         return Finish(control, Outcome::Retry, Phase::WaitingForWallet, "Waiting for wallet descriptors.");
     }
 
     int start_height{0};
-    int descriptor_passes{1};
+    int script_passes{1};
     while (true) {
-        const auto scripts{DescriptorScripts(descriptors, *control)};
         std::vector<std::pair<int, std::string>> candidates;
         const int blocks_to_scan{end_height - start_height + 1};
         control->update({Phase::Scanning, 0, blocks_to_scan});
@@ -322,10 +291,10 @@ Result Run(const Backend& backend, const std::string& wallet_name, const std::sh
         }
 
         CheckAnchor(backend, end_height, anchor, *control);
-        auto updated_descriptors{ReadDescriptors(backend, uri)};
+        auto updated_scripts{ReadScripts(backend, *control)};
         auto current_chain{Call(backend, "getblockchaininfo")};
         CheckAnchor(backend, end_height, anchor, *control);
-        if (SameDescriptors(descriptors, updated_descriptors) && current_chain["blocks"].getInt<int>() == end_height) {
+        if (SameScripts(scripts, updated_scripts) && current_chain["blocks"].getInt<int>() == end_height) {
             control->update({Phase::Rescanning, 0, 1, "Checking current wallet activity."});
             FetchBlock(backend, anchor, *control);
             CheckAnchor(backend, end_height, anchor, *control);
@@ -334,27 +303,27 @@ Result Run(const Backend& backend, const std::string& wallet_name, const std::sh
                 scanned["start_height"].getInt<int>() != end_height || scanned["stop_height"].getInt<int>() < end_height) {
                 throw std::runtime_error{"The wallet did not finish checking current activity. Retry wallet history recovery."};
             }
-            updated_descriptors = ReadDescriptors(backend, uri);
+            updated_scripts = ReadScripts(backend, *control);
             current_chain = Call(backend, "getblockchaininfo");
             CheckAnchor(backend, end_height, anchor, *control);
         }
-        if (updated_descriptors.empty()) {
+        if (updated_scripts.empty()) {
             throw std::runtime_error{"Wallet descriptors disappeared during recovery. Retry wallet history recovery."};
         }
-        const bool descriptors_changed{!SameDescriptors(descriptors, updated_descriptors)};
+        const bool scripts_changed{!SameScripts(scripts, updated_scripts)};
         const int current_height{current_chain["blocks"].getInt<int>()};
         if (current_height < end_height) {
             throw std::runtime_error{"The blockchain changed during recovery. Retry wallet history recovery."};
         }
-        if (!descriptors_changed && current_height == end_height) {
+        if (!scripts_changed && current_height == end_height) {
             CheckCancelled(*control);
             return Finish(control, Outcome::Complete, Phase::Complete);
         }
-        if (descriptors_changed) {
-            if (++descriptor_passes > MAX_DESCRIPTOR_PASSES) {
+        if (scripts_changed) {
+            if (++script_passes > MAX_SCRIPT_PASSES) {
                 throw std::runtime_error{"The wallet address range kept expanding. Retry recovery to scan the additional addresses."};
             }
-            descriptors = std::move(updated_descriptors);
+            scripts = std::move(updated_scripts);
             start_height = 0;
         } else {
             start_height = end_height + 1;
@@ -399,11 +368,27 @@ Result Recover(const Backend& backend, const std::string& wallet_name, const std
     }
 }
 
-Result Recover(interfaces::Node& node, const std::string& wallet_name, const std::shared_ptr<Control>& control)
+Result Recover(interfaces::Node& node, interfaces::Wallet& wallet, const std::string& wallet_name, const std::shared_ptr<Control>& control)
 {
     Backend backend;
     backend.rpc = [&node](const std::string& command, const UniValue& params, const std::string& uri) {
         return node.executeRpc(command, params, uri);
+    };
+    backend.read_scripts = [&wallet, &control] {
+        auto* loaded_wallet{wallet.wallet()};
+        if (!loaded_wallet) throw std::runtime_error{"The wallet is not available for history recovery."};
+        std::vector<CScript> scripts;
+        LOCK(loaded_wallet->cs_wallet);
+        for (const auto* spkm : loaded_wallet->GetAllScriptPubKeyMans()) {
+            CheckCancelled(*control);
+            // Public descriptors cannot derive hardened children. Use the same
+            // cached scripts as the wallet rescan, including inactive managers.
+            for (const auto& script : spkm->GetScriptPubKeys()) {
+                CheckCancelled(*control);
+                scripts.push_back(script);
+            }
+        }
+        return scripts;
     };
     backend.read_filters = [&node](int start, int end, std::vector<BlockFilter>& filters) {
         auto* context{node.context()};

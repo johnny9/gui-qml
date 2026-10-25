@@ -18,6 +18,9 @@ TestCase {
         QtObject {
             property int approveCalls: 0
             property string currentTransactionReviewMessage: ""
+            property QtObject historyRecovery: QtObject {
+                property bool incomplete: false
+            }
 
             signal externalSignerApprovalSucceeded()
             signal externalSignerApprovalPartiallySucceeded()
@@ -67,6 +70,34 @@ TestCase {
 
     function waitForApproveCalls(wallet, count) {
         tryCompare(wallet, "approveCalls", count, 1000)
+    }
+
+    function test_incomplete_history_blocks_approval_until_recovered() {
+        const wallet = createTemporaryObject(walletComponent, this)
+        wallet.historyRecovery.incomplete = true
+        const review = createTemporaryObject(reviewComponent, this, {wallet: wallet})
+        const button = findObjectByName(review, "externalSignerApproveButton")
+        verify(!button.enabled)
+        compare(review.statusText, "Finish wallet history recovery before spending.")
+
+        review.beginApproval()
+        wait(50)
+        compare(wallet.approveCalls, 0)
+
+        wallet.historyRecovery.incomplete = false
+        verify(button.enabled)
+        review.beginApproval()
+        waitForApproveCalls(wallet, 1)
+    }
+
+    function test_recovery_cancels_pending_approval() {
+        const wallet = createTemporaryObject(walletComponent, this)
+        const review = createTemporaryObject(reviewComponent, this, {wallet: wallet})
+        review.beginApproval()
+        wallet.historyRecovery.incomplete = true
+        wait(50)
+        compare(wallet.approveCalls, 0)
+        compare(review.reviewState, "initial")
     }
 
     function test_waiting_state_persists_until_mock_completes() {
