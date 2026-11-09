@@ -15,6 +15,7 @@ import "../node"
 
 Page {
     id: root
+    objectName: "desktopWalletsPage"
     background: null
 
     property string pendingMigrationPath: ""

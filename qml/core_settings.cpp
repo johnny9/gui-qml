@@ -128,7 +128,7 @@ bool IsDottedNumericHost(const std::string& host)
     for (unsigned char c : host) {
         if (c == '.') {
             has_dot = true;
-        } else if (std::isdigit(c)) {
+        } else if ((c >= '0' && c <= '9')) {
             has_digit = true;
         } else {
             return false;
@@ -153,7 +153,7 @@ bool IsValidHostnameSyntax(const std::string& host)
             previous = c;
             continue;
         }
-        if (!std::isalnum(c) && c != '-') return false;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) && c != '-') return false;
         if (label_len == 0 && c == '-') return false;
         ++label_len;
         if (label_len > 63) return false;

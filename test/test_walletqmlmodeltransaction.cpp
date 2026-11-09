@@ -168,4 +168,4 @@ BITCOINQML_REGISTER_QT_TEST(WalletQmlModelTransactionTests)
 #else
 QTEST_MAIN(WalletQmlModelTransactionTests)
 #endif
-#include "test_walletqmlmodeltransaction.moc"
+#include <test_walletqmlmodeltransaction.moc>

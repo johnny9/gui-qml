@@ -5,6 +5,7 @@
 #ifndef BITCOIN_QML_TEST_INTEGRATION_FIXTURE_TEST_WALLET_H
 #define BITCOIN_QML_TEST_INTEGRATION_FIXTURE_TEST_WALLET_H
 
+#include <util/string.h>
 #include <test/integration/fixture/test_util.h>
 #include <qml/walletqmlcontroller.h>
 #include <script/descriptor.h>
@@ -65,7 +66,7 @@ inline WalletQmlModel* CreateLockedHardenedWallet(BitcoinQmlApplication& app, co
     const std::string key{"tprv8ZgxMBicQKsPdYeeZbPSKd2KYLmeVKtcFA7kqCxDvDR13MQ6us8HopUR2wLcS2ZKPhLyKsqpDL2FtL73LMHcgoCL7DXsciA8eX8nbjCR2eG"};
     UniValue descriptors{UniValue::VARR};
     for (int branch{0}; branch < 2; ++branch) {
-        const auto descriptor = "wpkh(" + key + "/" + std::to_string(branch) + "h/*h)";
+        const auto descriptor = "wpkh(" + key + "/" + util::ToString(branch) + "h/*h)";
         UniValue entry{UniValue::VOBJ};
         entry.pushKV("desc", descriptor + "#" + GetDescriptorChecksum(descriptor));
         entry.pushKV("timestamp", "now");

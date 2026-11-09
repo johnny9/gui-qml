@@ -23,7 +23,6 @@
 #include <thread>
 #include <atomic>
 #include <QSemaphore>
-#include <QScopeGuard>
 #include <stdexcept>
 
 namespace {
@@ -1410,4 +1409,4 @@ BITCOINQML_REGISTER_QT_TEST(TransactionActivityModelTests)
 #else
 QTEST_MAIN(TransactionActivityModelTests)
 #endif
-#include "test_transactionactivitymodel.moc"
+#include <test_transactionactivitymodel.moc>

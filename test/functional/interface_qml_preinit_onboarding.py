@@ -11,7 +11,6 @@ RunPreInitOnboarding() is observable through the pre-init test bridge.
 import json
 import os
 import subprocess
-import tempfile
 import time
 from qml_test_harness import cleanup_test_directory, create_test_directory
 from qml_scenarios import (

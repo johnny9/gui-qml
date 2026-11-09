@@ -82,4 +82,4 @@ BITCOINQML_REGISTER_QT_TEST(QtInfoLogTests)
 #else
 QTEST_MAIN(QtInfoLogTests)
 #endif
-#include "test_qtinfolog.moc"
+#include <test_qtinfolog.moc>

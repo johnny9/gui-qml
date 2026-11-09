@@ -18,7 +18,7 @@ SettingsPage {
     contentSpacing: 16
 
     property WalletQmlModel wallet: null
-    property AddressListModel addressModel: wallet.addressListModel
+    property AddressListModel addressModel: wallet ? wallet.addressListModel : null
     property string selectedAddress: ""
     property string selectedLabel: ""
     property string selectedAmount: ""
@@ -59,7 +59,7 @@ SettingsPage {
         if (closeAction) {
             closeAction();
         }
-        addressModel.refresh();
+        root.addressModel.refresh();
         root.errorText = qsTr("This address is no longer available.");
     }
 
@@ -108,7 +108,7 @@ SettingsPage {
         }
     }
 
-    Component.onCompleted: addressModel.refresh()
+    Component.onCompleted: root.addressModel.refresh()
 
     ContextMenu {
         id: pageMenu
@@ -120,8 +120,9 @@ SettingsPage {
         ContextMenuToggle {
             checkable: false
             text: qsTr("Show used addresses")
-            checked: root.addressModel.showUsed
-            onClicked: root.addressModel.showUsed = !root.addressModel.showUsed
+            checked: root.addressModel ? root.addressModel.showUsed : false
+            enabled: root.addressModel !== null
+            onClicked: if (root.addressModel) root.addressModel.showUsed = !root.addressModel.showUsed
         }
     }
 
@@ -231,11 +232,11 @@ SettingsPage {
         Layout.maximumWidth: 360
         Layout.alignment: Qt.AlignHCenter
         implicitHeight: 36
-        model: root.addressModel.categoryOptions
-        currentIndex: Math.max(0, root.addressModel.categoryOptions.findIndex(option => option.value === root.addressModel.category))
+        model: root.addressModel ? root.addressModel.categoryOptions : []
+        currentIndex: root.addressModel ? Math.max(0, root.addressModel.categoryOptions.findIndex(option => option.value === root.addressModel.category)) : 0
         onSelected: (index, option) => {
             root.errorText = "";
-            root.addressModel.category = option.value;
+            if (root.addressModel) root.addressModel.category = option.value;
         }
     }
 
@@ -250,8 +251,9 @@ SettingsPage {
 
     CoreText {
         Layout.fillWidth: true
-        visible: root.addressModel.count === 0
+        visible: root.addressModel !== null && root.addressModel.count === 0
         text: {
+            if (!root.addressModel) return "";
             if (root.addressModel.category === AddressListModel.Change) {
                 return qsTr("No current change addresses.");
             }
@@ -264,7 +266,7 @@ SettingsPage {
 
     FormSection {
         objectName: "addressListSection"
-        visible: root.addressModel.count > 0
+        visible: root.addressModel !== null && root.addressModel.count > 0
         Layout.fillWidth: true
 
         ListView {
@@ -274,7 +276,7 @@ SettingsPage {
             Layout.preferredHeight: Math.min(contentHeight, Math.max(76, root.height - 230))
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            reuseItems: root.addressModel.category === AddressListModel.Change
+            reuseItems: root.addressModel !== null && root.addressModel.category === AddressListModel.Change
             model: root.addressModel
             spacing: 0
 

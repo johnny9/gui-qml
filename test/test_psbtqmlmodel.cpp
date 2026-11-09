@@ -232,4 +232,4 @@ BITCOINQML_REGISTER_QT_TEST(PsbtQmlModelTests)
 #else
 QTEST_MAIN(PsbtQmlModelTests)
 #endif
-#include "test_psbtqmlmodel.moc"
+#include <test_psbtqmlmodel.moc>

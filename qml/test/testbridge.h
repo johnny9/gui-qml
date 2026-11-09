@@ -71,7 +71,7 @@ private:
     QObject* findListItem(QObject* view_obj, int row) const;
     QObject* resolveCurrentLeafItem(QObject* item) const;
 
-    /// Recursively collect all named objects from the QML tree.
+    /// Collect all named objects from the QML tree.
     void collectNamedObjects(QObject* root, std::vector<NamedObjectEntry>& results, QSet<const QObject*>& visited, int depth) const;
 
     /// Process a single JSON command and return the JSON response.

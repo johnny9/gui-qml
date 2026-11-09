@@ -163,4 +163,4 @@ BITCOINQML_REGISTER_QT_TEST(BanListModelTests)
 #else
 QTEST_MAIN(BanListModelTests)
 #endif
-#include "test_banlistmodel.moc"
+#include <test_banlistmodel.moc>

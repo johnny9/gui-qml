@@ -140,8 +140,9 @@ jobs:
           export XDG_RUNTIME_DIR
           XDG_RUNTIME_DIR=$(mktemp -d /tmp/qml-ci-XXXXXX)
           trap 'rm -rf -- "$XDG_RUNTIME_DIR"' EXIT
-          python3 build-check/bitcoin/test/with_sanitizer_env.py ctest --test-dir build-check --output-on-failure --output-junit "$PWD/build-check/ctest.xml"
-          python3 build-check/bitcoin/test/with_sanitizer_env.py python3 test/functional/qml_test_shutdown.py
+          python3 ci/with_sanitizer_env.py --build-dir build-check ctest --test-dir build-check -V --output-on-failure --output-junit "$PWD/build-check/ctest.xml"
+          python3 ci/with_sanitizer_env.py --build-dir build-check python3 test/functional/interface_qml_startup.py
+          python3 ci/with_sanitizer_env.py --build-dir build-check python3 test/functional/interface_qml_shutdown.py
       - name: Upload diagnostics
         uses: actions/upload-artifact@v7
         if: always()

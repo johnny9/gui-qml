@@ -289,11 +289,17 @@ Page {
                 id: ownWalletSettings
                 anchors.fill: parent
                 active: !root.walletSettingsProvided && root.wallet !== null
-                sourceComponent: WalletPages.WalletSettingsStack {
-                    wallet: root.wallet
-                    // Sub-pages belong to the wallet they were opened for.
-                    onWalletChanged: resetToRoot()
-                    onSelectWalletRequested: root.selectWalletRequested()
+                source: active ? "../pages/wallet/WalletSettingsStack.qml" : ""
+                Binding {
+                    target: ownWalletSettings.item
+                    property: "wallet"
+                    value: root.wallet
+                    when: ownWalletSettings.status === Loader.Ready
+                }
+                Connections {
+                    target: ownWalletSettings.item
+                    function onWalletChanged() { (ownWalletSettings.item as WalletPages.WalletSettingsStack).resetToRoot() }
+                    function onSelectWalletRequested() { root.selectWalletRequested() }
                 }
             }
 

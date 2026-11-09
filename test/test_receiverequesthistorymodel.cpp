@@ -399,4 +399,4 @@ BITCOINQML_REGISTER_QT_TEST(ReceiveRequestHistoryModelTests)
 #else
 QTEST_MAIN(ReceiveRequestHistoryModelTests)
 #endif
-#include "test_receiverequesthistorymodel.moc"
+#include <test_receiverequesthistorymodel.moc>

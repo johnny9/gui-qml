@@ -132,4 +132,4 @@ BITCOINQML_REGISTER_QT_TEST(DisplaySettingsTests)
 #else
 QTEST_MAIN(DisplaySettingsTests)
 #endif
-#include "test_display_settings.moc"
+#include <test_display_settings.moc>

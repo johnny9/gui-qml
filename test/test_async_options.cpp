@@ -378,4 +378,4 @@ BITCOINQML_REGISTER_QT_TEST(AsyncOptionsTests)
 #else
 QTEST_MAIN(AsyncOptionsTests)
 #endif
-#include "test_async_options.moc"
+#include <test_async_options.moc>

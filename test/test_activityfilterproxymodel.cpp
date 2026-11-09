@@ -795,4 +795,4 @@ BITCOINQML_REGISTER_QT_TEST(ActivityFilterProxyModelTests)
 #else
 QTEST_MAIN(ActivityFilterProxyModelTests)
 #endif
-#include "test_activityfilterproxymodel.moc"
+#include <test_activityfilterproxymodel.moc>

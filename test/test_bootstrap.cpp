@@ -94,4 +94,4 @@ void BootstrapBeforeExecTests::repeatedNativeQuitAllowsOnboardingExitAndFinalDra
 }
 
 QTEST_MAIN(BootstrapBeforeExecTests)
-#include "test_bootstrap.moc"
+#include <test_bootstrap.moc>

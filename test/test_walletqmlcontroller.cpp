@@ -1714,4 +1714,4 @@ BITCOINQML_REGISTER_QT_TEST(WalletQmlControllerTests)
 QTEST_MAIN(WalletQmlControllerTests)
 #endif
 
-#include "test_walletqmlcontroller.moc"
+#include <test_walletqmlcontroller.moc>

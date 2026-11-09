@@ -4636,4 +4636,4 @@ int main(int argc, char* argv[])
     return setup.hadWarnings() ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-#include "qml_tests_main.moc"
+#include <qml_tests_main.moc>

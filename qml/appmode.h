@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QML_APPMODE_H
 #define BITCOIN_QML_APPMODE_H
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <QObject>
 
 class AppMode : public QObject
@@ -12,6 +14,7 @@ class AppMode : public QObject
     Q_OBJECT
     Q_PROPERTY(bool isDesktop READ isDesktop NOTIFY modeChanged)
     Q_PROPERTY(bool isMobile READ isMobile NOTIFY modeChanged)
+    Q_PROPERTY(bool walletCompiled READ walletCompiled CONSTANT)
     Q_PROPERTY(bool walletEnabled READ walletEnabled NOTIFY walletEnabledChanged)
     Q_PROPERTY(QString state READ state NOTIFY modeChanged)
 
@@ -23,15 +26,24 @@ public:
 
     explicit AppMode(Mode mode, bool wallet_enabled)
     : m_mode(mode)
-    , m_wallet_enabled(wallet_enabled)
+    , m_wallet_enabled(walletCompiled() && wallet_enabled)
     {
     }
 
     bool isMobile() { return m_mode == MOBILE; }
     bool isDesktop() { return m_mode == DESKTOP; }
+    static constexpr bool walletCompiled()
+    {
+#ifdef ENABLE_WALLET
+        return true;
+#else
+        return false;
+#endif
+    }
     bool walletEnabled() { return m_wallet_enabled; }
     void setWalletEnabled(bool wallet_enabled)
     {
+        wallet_enabled = walletCompiled() && wallet_enabled;
         if (m_wallet_enabled == wallet_enabled) return;
         m_wallet_enabled = wallet_enabled;
         Q_EMIT walletEnabledChanged();

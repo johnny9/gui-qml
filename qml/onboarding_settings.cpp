@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <qml/onboarding_settings.h>
 
 #include <chainparams.h>
@@ -19,7 +21,9 @@
 #include <univalue.h>
 #include <util/fs.h>
 #include <util/fs_helpers.h>
+#ifdef ENABLE_WALLET
 #include <wallet/db.h>
+#endif
 
 #include <QFileInfo>
 
@@ -201,6 +205,7 @@ bool HasExistingChainData(const ArgsManager& args)
     return DirectoryHasNonHiddenEntry(BlocksDirPathNoCreate(args));
 }
 
+#ifdef ENABLE_WALLET
 std::optional<fs::path> EffectiveWalletDirNoCreate(const ArgsManager& args)
 {
     if (args.IsArgSet("-walletdir")) {
@@ -225,6 +230,8 @@ bool HasExistingWalletData(const ArgsManager& args)
     return wallet_dir && !wallet::ListDatabases(*wallet_dir).empty();
 }
 
+#endif // ENABLE_WALLET
+
 QmlOnboardingSettings::ProfileSummary BuildProfileSummary(const ArgsManager& args, bool config_file_path_available)
 {
     QmlOnboardingSettings::ProfileSummary summary;
@@ -232,7 +239,9 @@ QmlOnboardingSettings::ProfileSummary BuildProfileSummary(const ArgsManager& arg
     summary.has_settings_file = settings_path && PathExists(*settings_path);
     summary.has_config_file = config_file_path_available && PathExists(args.GetConfigFilePath());
     summary.has_chain_data = HasExistingChainData(args);
+#ifdef ENABLE_WALLET
     summary.has_wallet_data = HasExistingWalletData(args);
+#endif
     summary.existing_profile = summary.has_settings_file ||
                                summary.has_config_file ||
                                summary.has_chain_data ||

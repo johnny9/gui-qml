@@ -41,14 +41,11 @@
 #include <qml/guiconstants.h>
 #include <qml/imageprovider.h>
 #include <qml/initexecutor.h>
-#include <qml/models/activityfilterproxymodel.h>
-#include <qml/models/addresslistmodel.h>
 #include <qml/models/banlistmodel.h>
 #include <qml/models/bitcoinaddress.h>
 #include <qml/models/bitcoinurimodel.h>
 #include <qml/models/blockclockmodel.h>
 #include <qml/models/blockclockhistory.h>
-#include <qml/models/bumptransactionmodel.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/debuglogmodel.h>
 #include <qml/models/networktraffictower.h>
@@ -58,21 +55,15 @@
 #include <qml/models/desktopwindowbehaviormodel.h>
 #include <qml/models/onboardingoptionsmodel.h>
 #include <qml/models/options_model.h>
-#include <qml/models/paymentrequest.h>
 #include <qml/models/peerdetailsmodel.h>
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/peerlistmodel.h>
 #include <qml/models/rpcconsolemodel.h>
 #include <qml/models/settings_keys.h>
-#include <qml/models/sendrecipient.h>
-#include <qml/models/walletlistmodel.h>
-#include <qml/models/walletqmlmodel.h>
-#include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/qmlfiledialog.h>
 #include <qml/qrimageprovider.h>
 #include <qml/networkstyle.h>
 #include <qml/util.h>
-#include <qml/walletqmlcontroller.h>
 #ifdef ENABLE_TEST_AUTOMATION
 #include <qml/test/testbridge.h>
 #endif
@@ -83,6 +74,15 @@
 #include <util/translation.h>
 #ifdef ENABLE_WALLET
 #include <wallet/wallet.h>
+#include <qml/models/activityfilterproxymodel.h>
+#include <qml/models/addresslistmodel.h>
+#include <qml/models/bumptransactionmodel.h>
+#include <qml/models/paymentrequest.h>
+#include <qml/models/sendrecipient.h>
+#include <qml/models/walletlistmodel.h>
+#include <qml/models/walletqmlmodel.h>
+#include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/walletqmlcontroller.h>
 #endif
 
 #include <cassert>
@@ -321,6 +321,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<RpcConsoleModel>("org.bitcoincore.qt", 1, 0, "RpcConsoleModel", "");
     qmlRegisterType<BitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
     qmlRegisterType<BitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
+#ifdef ENABLE_WALLET
     qmlRegisterType<ActivityFilterProxyModel>("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel");
     qmlRegisterUncreatableType<TransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Owned by WalletQmlModel");
     qmlRegisterUncreatableType<AddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "");
@@ -328,7 +329,6 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<Transaction>("org.bitcoincore.qt", 1, 0, "Transaction", "");
     qmlRegisterUncreatableType<SendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "");
 
-#ifdef ENABLE_WALLET
     qmlRegisterUncreatableType<BumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel",
                                                       "BumpTransactionModel cannot be instantiated from QML");
     qmlRegisterUncreatableType<WalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel",
@@ -337,6 +337,17 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
                                                           "WalletQmlModelTransaction cannot be instantiated from QML");
     qmlRegisterUncreatableType<WalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel",
                                                 "WalletListModel cannot be instantiated from QML");
+#else
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "AddressListModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "PaymentRequest", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "Transaction", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "SendRecipient", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModelTransaction", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletListModel", "Wallet support is not compiled");
 #endif
 
     registered = true;
@@ -405,6 +416,7 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
     engine_created(*context.engine);
     context.engine->addImageProvider(QStringLiteral("images"), new ImageProvider{context.network_style.data()});
     context.engine->rootContext()->setContextProperty("optionsModel", context.onboarding_options_model.get());
+    context.engine->rootContext()->setContextProperty("onboardingOptionsModel", context.onboarding_options_model.get());
     context.engine->load(QUrl(QStringLiteral("qrc:///qml/pages/preinit.qml")));
     if (context.engine->rootObjects().isEmpty()) {
         return PreInitOnboardingStatus::FAILED;

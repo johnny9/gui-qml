@@ -135,9 +135,15 @@ private Q_SLOTS:
     void freshExplicitDatadirPreviewReportsFreshProfile();
     void onboardingPreviewDetectsSettingsJsonProfile();
     void onboardingPreviewDetectsChainDataWithoutCreatingBlocksDir();
+#ifdef ENABLE_WALLET
     void onboardingPreviewDetectsRootWalletProfile();
+#endif
+#ifdef ENABLE_WALLET
     void onboardingPreviewDetectsExplicitWalletDirProfile();
+#endif
+#ifdef ENABLE_WALLET
     void onboardingPreviewIgnoresEmptyExplicitWalletDir();
+#endif
     void onboardingPreviewIgnoresUnrecognizedWalletsEntry();
     void freshExplicitDatadirShowsFullOnboarding();
     void onboardingApplyWithoutTouchedSettingsOnlyAddsQmlOnboardedMarker();
@@ -360,6 +366,7 @@ static std::vector<std::string> TestArgvWithDataDir(const QString& data_dir)
     };
 }
 
+#ifdef ENABLE_WALLET
 static void WriteSqliteWalletMarker(const QString& wallet_dir)
 {
     QVERIFY(QDir().mkpath(wallet_dir));
@@ -376,6 +383,8 @@ static void WriteSqliteWalletMarker(const QString& wallet_dir)
     QCOMPARE(wallet_file.write(wallet_data), wallet_data.size());
     wallet_file.close();
 }
+
+#endif
 
 static void PrepareArgsForDataDir(ArgsManager& args, const QString& data_dir)
 {
@@ -2197,6 +2206,7 @@ void OptionsModelTests::onboardingPreviewDetectsChainDataWithoutCreatingBlocksDi
     QVERIFY(!QFileInfo::exists(blocks_dir));
 }
 
+#ifdef ENABLE_WALLET
 void OptionsModelTests::onboardingPreviewDetectsRootWalletProfile()
 {
     SavedGuiDataDirSettings saved_settings;
@@ -2214,6 +2224,9 @@ void OptionsModelTests::onboardingPreviewDetectsRootWalletProfile()
     QVERIFY(preview.profile.has_wallet_data);
 }
 
+#endif
+
+#ifdef ENABLE_WALLET
 void OptionsModelTests::onboardingPreviewDetectsExplicitWalletDirProfile()
 {
     SavedGuiDataDirSettings saved_settings;
@@ -2234,6 +2247,9 @@ void OptionsModelTests::onboardingPreviewDetectsExplicitWalletDirProfile()
     QVERIFY(preview.profile.has_wallet_data);
 }
 
+#endif
+
+#ifdef ENABLE_WALLET
 void OptionsModelTests::onboardingPreviewIgnoresEmptyExplicitWalletDir()
 {
     SavedGuiDataDirSettings saved_settings;
@@ -2252,6 +2268,8 @@ void OptionsModelTests::onboardingPreviewIgnoresEmptyExplicitWalletDir()
     QVERIFY(!preview.profile.has_chain_data);
     QVERIFY(!preview.profile.has_wallet_data);
 }
+
+#endif
 
 void OptionsModelTests::onboardingPreviewIgnoresUnrecognizedWalletsEntry()
 {
@@ -3791,4 +3809,4 @@ BITCOINQML_REGISTER_QT_TEST(OptionsModelTests)
 #else
 QTEST_MAIN(OptionsModelTests)
 #endif
-#include "test_options_model.moc"
+#include <test_options_model.moc>

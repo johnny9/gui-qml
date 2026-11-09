@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <util/string.h>
 #include <addresstype.h>
 #include <chainparams.h>
 #include <common/messages.h>
@@ -2165,7 +2166,7 @@ void WalletQmlModelTests::reconciliationBatchesActivityRebuilds()
         entry.id = i;
         entry.date = QDateTime::currentDateTime();
         entry.recipient.address = VALID_MAINNET_ADDRESS.toStdString();
-        wallet->saved_receive_requests[std::to_string(i)] = ReceiveRequestHistoryModel::SerializeEntry(entry);
+        wallet->saved_receive_requests[util::ToString(i)] = ReceiveRequestHistoryModel::SerializeEntry(entry);
     }
     CMutableTransaction incoming;
     incoming.vout.emplace_back(100, GetScriptForDestination(DecodeDestination(VALID_MAINNET_ADDRESS.toStdString())));
@@ -2209,7 +2210,7 @@ void WalletQmlModelTests::openingRequestRemainsResponsiveDuringLargeHistoryScan(
         entry.date = QDateTime::currentDateTime();
         entry.recipient.address = VALID_MAINNET_ADDRESS.toStdString();
         entry.payment_received = true;
-        wallet->saved_receive_requests[std::to_string(entry.id)] = ReceiveRequestHistoryModel::SerializeEntry(entry);
+        wallet->saved_receive_requests[util::ToString(entry.id)] = ReceiveRequestHistoryModel::SerializeEntry(entry);
 
         CMutableTransaction raw;
         raw.nLockTime = i;
@@ -2928,7 +2929,7 @@ void WalletQmlModelTests::saveCurrentTransactionAsPsbt_savesUnsignedPreparedTran
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{temp_dir.filePath(QStringLiteral("prepared.psbt"))};
+    QString path{temp_dir.filePath(QStringLiteral("prepared.psbt"))};
     QCOMPARE(model->saveCurrentTransactionAsPsbt(path), QString());
 
     QFile file{path};
@@ -2981,7 +2982,7 @@ void WalletQmlModelTests::importPsbtFromFile_opensOwnedUnsignedPsbtWithoutSignin
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{temp_dir.filePath(QStringLiteral("unsigned.psbt"))};
+    QString path{temp_dir.filePath(QStringLiteral("unsigned.psbt"))};
     QFile file{path};
     QVERIFY(file.open(QIODevice::WriteOnly));
     const QByteArray raw{PsbtQmlModel::SerializePsbtRaw(psbt)};
@@ -3034,7 +3035,7 @@ void WalletQmlModelTests::importPsbtFromFile_opensForeignUnsignedPsbtForReviewOn
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{temp_dir.filePath(QStringLiteral("foreign-unsigned.psbt"))};
+    QString path{temp_dir.filePath(QStringLiteral("foreign-unsigned.psbt"))};
     QFile file{path};
     QVERIFY(file.open(QIODevice::WriteOnly));
     const QByteArray raw{PsbtQmlModel::SerializePsbtRaw(psbt)};
@@ -3123,7 +3124,7 @@ void WalletQmlModelTests::discardCurrentTransaction_clearsReviewState()
     const PartiallySignedTransaction psbt{MakeReviewPsbt()};
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{WritePsbt(psbt, temp_dir, QStringLiteral("discard-review.psbt"))};
+    QString path{WritePsbt(psbt, temp_dir, QStringLiteral("discard-review.psbt"))};
     QVERIFY(!path.isEmpty());
     QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCannotSign);
     QVERIFY(!model->sendTransaction());
@@ -3167,7 +3168,7 @@ void WalletQmlModelTests::importPsbtFromFile_opensWatchOnlyUnsignedPsbtForReview
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{WritePsbt(psbt, temp_dir, QStringLiteral("watch-only.psbt"))};
+    QString path{WritePsbt(psbt, temp_dir, QStringLiteral("watch-only.psbt"))};
     QVERIFY(!path.isEmpty());
 
     QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCannotSign);
@@ -3257,7 +3258,7 @@ void WalletQmlModelTests::sendImportedPsbtWithPassphraseSignsOnceAndRelocks()
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{WritePsbt(psbt, temp_dir, QStringLiteral("locked.psbt"))};
+    QString path{WritePsbt(psbt, temp_dir, QStringLiteral("locked.psbt"))};
     QVERIFY(!path.isEmpty());
     QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCanSign);
 
@@ -3303,7 +3304,7 @@ void WalletQmlModelTests::externalSignerApprovalSignsImportedPsbtOnlyOnce()
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{WritePsbt(psbt, temp_dir, QStringLiteral("external.psbt"))};
+    QString path{WritePsbt(psbt, temp_dir, QStringLiteral("external.psbt"))};
     QVERIFY(!path.isEmpty());
     QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCanSign);
 
@@ -3349,7 +3350,7 @@ void WalletQmlModelTests::externalSignerApprovalKeepsIncompleteSignedPsbt()
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{WritePsbt(psbt, temp_dir, QStringLiteral("incomplete-external.psbt"))};
+    QString path{WritePsbt(psbt, temp_dir, QStringLiteral("incomplete-external.psbt"))};
     QVERIFY(!path.isEmpty());
     QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCanSign);
 
@@ -3419,7 +3420,7 @@ void WalletQmlModelTests::importPsbtFromFile_broadcastsCompleteForeignMultisigPs
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{temp_dir.filePath(QStringLiteral("complete-multisig.psbt"))};
+    QString path{temp_dir.filePath(QStringLiteral("complete-multisig.psbt"))};
     QFile file{path};
     QVERIFY(file.open(QIODevice::WriteOnly));
     const QByteArray raw{PsbtQmlModel::SerializePsbtRaw(psbt)};
@@ -3593,7 +3594,7 @@ void WalletQmlModelTests::importPsbtFromFile_opensUnsignedMultisigPsbtForReviewO
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{WritePsbt(psbt, temp_dir, QStringLiteral("unsigned-multisig.psbt"))};
+    QString path{WritePsbt(psbt, temp_dir, QStringLiteral("unsigned-multisig.psbt"))};
     QVERIFY(!path.isEmpty());
 
     QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCannotSign);
@@ -3632,7 +3633,7 @@ void WalletQmlModelTests::importPsbtFromFile_blocksBroadcastWhenFeeIsInvalid()
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{WritePsbt(psbt, temp_dir, QStringLiteral("complete-with-invalid-fee.psbt"))};
+    QString path{WritePsbt(psbt, temp_dir, QStringLiteral("complete-with-invalid-fee.psbt"))};
     QVERIFY(!path.isEmpty());
 
     QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCannotSign);
@@ -3673,7 +3674,7 @@ void WalletQmlModelTests::importPsbtFromFile_returnsTransactionAlreadyKnownWhenT
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
-    const QString path{WritePsbt(psbt, temp_dir, QStringLiteral("already-known.psbt"))};
+    QString path{WritePsbt(psbt, temp_dir, QStringLiteral("already-known.psbt"))};
     QVERIFY(!path.isEmpty());
 
     QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::TransactionAlreadyKnown);
@@ -3915,4 +3916,4 @@ BITCOINQML_REGISTER_QT_TEST(WalletQmlModelTests)
 #else
 QTEST_MAIN(WalletQmlModelTests)
 #endif
-#include "test_walletqmlmodel.moc"
+#include <test_walletqmlmodel.moc>

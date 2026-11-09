@@ -32,7 +32,7 @@ Append that dependency rule to Core's suppression file before running tests:
 ```sh
 export LSAN_OPTIONS
 LSAN_OPTIONS=$(python3 ci/lsan_suppressions.py --build-dir build-asan)
-python3 build-asan/bitcoin/test/with_sanitizer_env.py ctest --test-dir build-asan --output-on-failure
+python3 ci/with_sanitizer_env.py --build-dir build-asan ctest --test-dir build-asan --output-on-failure
 ```
 
 The helper preserves Core's runtime options and writes the combined suppression

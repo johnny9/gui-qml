@@ -5,6 +5,11 @@ cmake_minimum_required(VERSION 3.22)
 find_package(Qt 6.2 MODULE REQUIRED COMPONENTS Core Gui Network Test Qml Quick QuickTest Widgets)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+add_test(NAME bitcoinqml_cleanup_tests
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_cleanup.py
+)
+set_tests_properties(bitcoinqml_cleanup_tests PROPERTIES LABELS unit)
+
 add_test(NAME bitcoinqml_process_checks
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_process_checks.py
 )
@@ -19,12 +24,13 @@ add_executable(bitcoinqml_bootstrap_tests
   ../qml/quithandler.h
 )
 target_include_directories(bitcoinqml_bootstrap_tests PRIVATE ..)
-target_link_libraries(bitcoinqml_bootstrap_tests PRIVATE Qt6::Widgets Qt6::Quick Qt6::Test)
+target_link_libraries(bitcoinqml_bootstrap_tests PRIVATE Qt6::Widgets Qt6::Quick Qt6::Test sanitize_interface)
 add_test(NAME bitcoinqml_bootstrap_tests COMMAND bitcoinqml_bootstrap_tests -platform minimal)
 set_tests_properties(bitcoinqml_bootstrap_tests PROPERTIES TIMEOUT 30)
 
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
+  test_appmode.cpp
   test_backendexecutor.cpp
   test_bitcoinaddress.cpp
   test_blockclockdial.cpp
@@ -38,9 +44,6 @@ add_executable(bitcoinqml_unit_tests
   test_desktopwindowbehaviormodel.cpp
   test_peerlistmodel.cpp
   test_peerstatsutil.cpp
-  test_psbtqmlmodel.cpp
-  test_walletqmlmodel.cpp
-  test_walletqmlmodeltransaction.cpp
   test_qmlbitcoinunits.cpp
   test_imageprovider.cpp
   test_nodemodel.cpp
@@ -55,26 +58,38 @@ add_executable(bitcoinqml_unit_tests
   test_onboarding_storage.cpp
   test_onboardingasync.cpp
   test_banlistmodel.cpp
-  test_walletlistmodel.cpp
-  test_bumptransactionmodel.cpp
-  test_walletqmlcontroller.cpp
   test_display_settings.cpp
-  test_addresslistmodel.cpp
-  test_receiverequesthistorymodel.cpp
-  test_transaction.cpp
-  test_transactionactivity.cpp
-  test_transactionactivitymodel.cpp
-  test_activityfilterproxymodel.cpp
   test_qtinfolog.cpp
   test_qtmessagefilter.cpp
   test_rpccommandexecutor.cpp
   test_rpcconsolemodel.cpp
-  test_sendrecipientslistmodel.cpp
   test_syncprogresstracker.cpp
-  test_coinslistmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../bitcoin/src/util/chaintype.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/bitcoinuri.cpp
 )
+
+if(ENABLE_TEST_AUTOMATION)
+  target_sources(bitcoinqml_unit_tests PRIVATE test_testbridge.cpp)
+endif()
+
+if(ENABLE_WALLET)
+  target_sources(bitcoinqml_unit_tests PRIVATE
+    test_activityfilterproxymodel.cpp
+    test_addresslistmodel.cpp
+    test_bumptransactionmodel.cpp
+    test_coinslistmodel.cpp
+    test_psbtqmlmodel.cpp
+    test_receiverequesthistorymodel.cpp
+    test_sendrecipientslistmodel.cpp
+    test_transaction.cpp
+    test_transactionactivity.cpp
+    test_transactionactivitymodel.cpp
+    test_walletlistmodel.cpp
+    test_walletqmlmodel.cpp
+    test_walletqmlmodeltransaction.cpp
+    test_walletqmlcontroller.cpp
+  )
+endif()
 
 target_compile_definitions(bitcoinqml_unit_tests
   PRIVATE
@@ -92,7 +107,7 @@ target_include_directories(bitcoinqml_unit_tests
 target_link_libraries(bitcoinqml_unit_tests
   PRIVATE
     bitcoinqml
-    bitcoin_wallet
+    $<TARGET_NAME_IF_EXISTS:bitcoin_wallet>
     bitcoin_common
     bitcoin_util
     bitcoin_node
@@ -161,6 +176,7 @@ target_link_libraries(bitcoinqml_qmltests
     Qt6::Test
     Qt6::Svg
     QRencode::QRencode
+    sanitize_interface
 )
 
 target_include_directories(bitcoinqml_qmltests
@@ -170,7 +186,8 @@ target_include_directories(bitcoinqml_qmltests
     ${PROJECT_BINARY_DIR}/bitcoin/src
 )
 
-set(qml_test_platform minimal)
+set(QML_TEST_RENDERING_PLATFORM "minimal" CACHE STRING "Platform used by the QML component and warning tests")
+set(qml_test_platform "${QML_TEST_RENDERING_PLATFORM}")
 add_test(NAME bitcoinqml_qmltests COMMAND bitcoinqml_qmltests -platform ${qml_test_platform})
 # Qt 6.2 has no QTest::failOnWarning(); leave this check disabled there too,
 # matching the component runner's version guard.
@@ -194,6 +211,8 @@ set_tests_properties(bitcoinqml_unit_tests bitcoinqml_bootstrap_tests bitcoinqml
 set_tests_properties(bitcoinqml_qmltests PROPERTIES LABELS qml)
 set_tests_properties(bitcoinqml_unit_tests bitcoinqml_bootstrap_tests bitcoinqml_qmltests PROPERTIES
   ENVIRONMENT "${gui_test_environment}")
+set_property(TEST bitcoinqml_qmltests PROPERTY ENVIRONMENT
+  "QT_QPA_PLATFORM=${qml_test_platform};QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1")
 # Include severity and category so the console warning check can distinguish
 # console.warn() from console.log() during QML loading and teardown.
 set_property(TEST bitcoinqml_qmltests APPEND PROPERTY ENVIRONMENT

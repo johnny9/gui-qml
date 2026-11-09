@@ -294,18 +294,10 @@ class PeerQmlTestHarness:
         return self._rpc_call_to_port(_rpc_port(peer_idx), method, params)
 
     def wait_for_peer(self, timeout=30):
-        """Poll getpeerinfo until at least one peer is connected."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                peers = self.rpc_call("getpeerinfo")
-                if peers:
-                    print(f"  Peer connected: id={peers[0]['id']} addr={peers[0]['addr']}")
-                    return peers[0]["id"]
-            except Exception:
-                pass
-            time.sleep(0.5)
-        raise RuntimeError(f"No peer connected after {timeout}s")
+        """Wait for the peer process's connection, excluding the readiness probe."""
+        peer = self.gui_peer_for_process(1, timeout=timeout)
+        print(f"  Peer connected: id={peer['id']} addr={peer['addr']}")
+        return peer["id"]
 
     def wait_for_no_peers(self, timeout=PEER_ACTION_TIMEOUT_SECS):
         """Poll getpeerinfo until no peers remain."""

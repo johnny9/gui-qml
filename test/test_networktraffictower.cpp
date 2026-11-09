@@ -210,4 +210,4 @@ BITCOINQML_REGISTER_QT_TEST(NetworkTrafficTowerTests)
 #else
 QTEST_MAIN(NetworkTrafficTowerTests)
 #endif
-#include "test_networktraffictower.moc"
+#include <test_networktraffictower.moc>

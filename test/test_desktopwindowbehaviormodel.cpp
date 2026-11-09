@@ -237,4 +237,4 @@ BITCOINQML_REGISTER_QT_TEST(DesktopWindowBehaviorModelTests)
 #else
 QTEST_MAIN(DesktopWindowBehaviorModelTests)
 #endif
-#include "test_desktopwindowbehaviormodel.moc"
+#include <test_desktopwindowbehaviormodel.moc>

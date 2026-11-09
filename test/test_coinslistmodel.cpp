@@ -134,4 +134,4 @@ private Q_SLOTS:
     }
 };
 BITCOINQML_REGISTER_QT_TEST(CoinsListModelTests)
-#include "test_coinslistmodel.moc"
+#include <test_coinslistmodel.moc>

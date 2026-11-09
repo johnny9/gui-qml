@@ -142,4 +142,4 @@ BITCOINQML_REGISTER_QT_TEST(BitcoinAmountTests)
 #else
 QTEST_MAIN(BitcoinAmountTests)
 #endif
-#include "test_bitcoinamount.moc"
+#include <test_bitcoinamount.moc>

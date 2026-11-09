@@ -245,10 +245,14 @@ TestCase {
         verify(noteInput !== null)
 
         menuActions.sendView.trigger()
+        window.requestActivate()
+        tryCompare(window, "active", true)
         noteInput.forceActiveFocus()
         tryCompare(noteInput, "activeFocus", true)
         noteInput.cursorPosition = noteInput.text.length
+        const originalText = noteInput.text
         keyClick("x")
+        compare(noteInput.text, originalText + "x")
         const editedText = noteInput.text
         tryCompare(menuActions.undo, "enabled", true)
 

@@ -188,4 +188,4 @@ BITCOINQML_REGISTER_QT_TEST(SendRecipientsListModelTests)
 #else
 QTEST_MAIN(SendRecipientsListModelTests)
 #endif
-#include "test_sendrecipientslistmodel.moc"
+#include <test_sendrecipientslistmodel.moc>

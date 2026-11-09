@@ -133,4 +133,4 @@ BITCOINQML_REGISTER_QT_TEST(RpcCommandExecutorTests)
 #else
 QTEST_MAIN(RpcCommandExecutorTests)
 #endif
-#include "test_rpccommandexecutor.moc"
+#include <test_rpccommandexecutor.moc>

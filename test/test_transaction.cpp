@@ -204,4 +204,4 @@ BITCOINQML_REGISTER_QT_TEST(TransactionTests)
 #else
 QTEST_MAIN(TransactionTests)
 #endif
-#include "test_transaction.moc"
+#include <test_transaction.moc>

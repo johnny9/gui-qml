@@ -263,4 +263,4 @@ BITCOINQML_REGISTER_QT_TEST(ShutdownProducersTests)
 #else
 QTEST_MAIN(ShutdownProducersTests)
 #endif
-#include "test_shutdownproducers.moc"
+#include <test_shutdownproducers.moc>

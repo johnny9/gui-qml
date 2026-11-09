@@ -10,7 +10,6 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from qml_test_harness import cleanup_test_directory, create_test_directory
 from qml_driver import QmlDriverError
 from qml_process_checks import check_gui_exit
 from qml_scenarios import (

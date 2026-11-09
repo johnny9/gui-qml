@@ -18,6 +18,10 @@ add_executable(bitcoinqml_integration_tests
   node_tools/test_debug_log.cpp
   node_tools/test_console.cpp
   node_tools/test_blocksonly.cpp
+
+)
+if(ENABLE_WALLET)
+  target_sources(bitcoinqml_integration_tests PRIVATE
   wallet_management/test_wallet.cpp
   wallet_activity/test_activity.cpp
   wallet_activity/test_receive.cpp
@@ -25,10 +29,15 @@ add_executable(bitcoinqml_integration_tests
   psbt/test_psbt.cpp
   signers/test_watchonly.cpp
   payment_import/test_payment_import.cpp
-)
+  )
+endif()
 target_link_libraries(bitcoinqml_integration_tests PRIVATE bitcoinqml_test_application Qt6::QuickTest)
 set(stage 0)
-foreach(group IN ITEMS foundation node_setup node_tools wallet_management wallet_activity wallet_sending psbt signers payment_import)
+set(integration_groups foundation node_setup node_tools)
+if(ENABLE_WALLET)
+  list(APPEND integration_groups wallet_management wallet_activity wallet_sending psbt signers payment_import)
+endif()
+foreach(group IN LISTS integration_groups)
   math(EXPR stage "${stage} + 1")
   add_test(NAME bitcoinqml_integration_${group} COMMAND bitcoinqml_integration_tests
     --stage=${stage}

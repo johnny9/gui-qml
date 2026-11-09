@@ -40,7 +40,7 @@ private Q_SLOTS:
     void clipboardPasteRequiresConfirmationBeforeOverwriting()
     {
         QVERIFY(qmltest::SetText(m_app, "sendNoteInput", "My private note"));
-        const auto uri = "bitcoin:" + m_address + "?amount=0.01234567&label=Alice&message=Lunch";
+        const QString uri = "bitcoin:" + m_address + "?amount=0.01234567&label=Alice&message=Lunch";
         QGuiApplication::clipboard()->setText(uri);
         auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
         QCOMPARE(recipient->label(), QStringLiteral("My private note"));
@@ -159,7 +159,7 @@ private Q_SLOTS:
     void droppedTextAndUrlsReachTheProductionDropArea()
     {
         QFETCH(QString, kind);
-        const auto uri = "bitcoin:" + m_address + "?amount=0.04&label=dropped";
+        const QString uri = "bitcoin:" + m_address + "?amount=0.04&label=dropped";
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         QMimeData mime;

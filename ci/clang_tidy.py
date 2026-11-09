@@ -16,6 +16,7 @@ import subprocess
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path, help="New artifact directory outside the build tree")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--fix", action="store_true", help="Apply clang-tidy's suggested fixes locally")
     parser.add_argument("--plugin", type=Path, help="Reuse a plugin built from the pinned Core source")
@@ -40,17 +41,17 @@ def main():
         if not path.is_absolute():
             path = Path(entry["directory"]) / path
         path = path.resolve()
-        if path.suffix != ".cpp" or not path.is_relative_to(root) or path.is_relative_to(root / "bitcoin"):
-            continue
-        if path.is_relative_to(build) or path in seen:
+        handwritten = path.suffix in (".cpp", ".mm") and path.is_relative_to(root) and not path.is_relative_to(root / "bitcoin") and not path.is_relative_to(build)
+        moc = path.is_relative_to(build) and path.name == "mocs_compilation.cpp" and "bitcoinqml" in str(path)
+        if not (handwritten or moc) or path in seen:
             continue
         seen.add(path)
         entry["file"] = str(path)
         entries.append(entry)
     if not entries:
         raise RuntimeError("No app compilation units selected")
-    output = build / "clang-tidy"
-    output.mkdir(exist_ok=True)
+    output = args.output.resolve() if args.output else build / "clang-tidy"
+    output.mkdir(parents=True, exist_ok=args.output is None)
     (output / "compile_commands.json").write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
     header_filter = "^" + re.escape(str(root)) + r"/(qml|test|cmake)/"
 
@@ -60,13 +61,13 @@ def main():
                    f"--load={plugin}", f"--header-filter={header_filter}", path]
         if args.fix:
             command.append("--fix")
-        log_path = output / (str(Path(path).relative_to(root)).replace("/", "_") + ".log")
+        log_path = output / (str(Path(path).relative_to(root) if Path(path).is_relative_to(root) else Path(path).relative_to(build)).replace("/", "_") + ".log")
         with log_path.open("w", encoding="utf-8") as log:
             result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=False)
-        print(f"{Path(path).relative_to(root)}: {'PASS' if result.returncode == 0 else 'FAIL'}", flush=True)
+        print(f"{path}: {'PASS' if result.returncode == 0 else 'FAIL'}", flush=True)
         if result.returncode:
             print(log_path.read_text(encoding="utf-8"), flush=True)
-        return {"file": path, "exit": result.returncode, "log": str(log_path)}
+        return {"file": path, "exit": result.returncode, "exit_code": result.returncode, "command": command, "log": str(log_path)}
 
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         results = list(pool.map(check, entries))

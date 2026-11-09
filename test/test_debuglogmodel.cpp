@@ -787,4 +787,4 @@ BITCOINQML_REGISTER_QT_TEST(DebugLogModelTests)
 #else
 QTEST_MAIN(DebugLogModelTests)
 #endif
-#include "test_debuglogmodel.moc"
+#include <test_debuglogmodel.moc>

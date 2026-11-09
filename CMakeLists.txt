@@ -36,6 +36,13 @@ find_package(QRencode MODULE REQUIRED)
 
 option(ENABLE_TEST_AUTOMATION "Enable test automation bridge for QML UI testing" OFF)
 option(ENABLE_QML_LINT "Enable strict QML static analysis (Qt 6.10 or newer)" OFF)
+option(ENABLE_APP_COVERAGE "Instrument app and app tests with LLVM source coverage" OFF)
+if(ENABLE_APP_COVERAGE)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "ENABLE_APP_COVERAGE requires Clang and matching LLVM profile tools")
+  endif()
+  include(cmake/AppCoverage.cmake)
+endif()
 
 # Do not build any executable targets from bitcoin submodule
 set(BUILD_BENCH OFF)
@@ -55,7 +62,7 @@ set(BUILD_WALLET_TOOL OFF)
 set(USE_QRCODE TRUE)
 # We need this libraries, can ignore the executable bitcoin-qt
 set(BUILD_GUI ON)
-set(ENABLE_WALLET ON)
+option(ENABLE_WALLET "Build wallet support" ON)
 cmake_dependent_option(BUILD_APP_TESTS "Build tests for the app" ON "BUILD_GUI" OFF)
 
 # Bitcoin Core codebase
@@ -73,12 +80,36 @@ set(CMAKE_AUTOMOC_MOC_OPTIONS "-p${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 # but don't let Qt interfere with bitcoin core libraries
-set_target_properties(bitcoin_wallet PROPERTIES AUTOUIC OFF)
+if(ENABLE_WALLET)
+  set_target_properties(bitcoin_wallet PROPERTIES AUTOUIC OFF)
+endif()
 
 # Compile Qt+QML sources
 set(CMAKE_AUTOMOC_MOC_OPTIONS "-I${CMAKE_CURRENT_SOURCE_DIR}/qml")
 file(GLOB_RECURSE QML_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/qml/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/qml/*.h")
 list(FILTER QML_SOURCES EXCLUDE REGEX "androidnotifier\\.(cpp|h)$")
+# Wallet implementations and their moc objects must not enter a node-only link.
+if(NOT ENABLE_WALLET)
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/walletqmlcontroller\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/activityfilterproxymodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/addresslistmodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/bumptransactionmodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/coinslistmodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/paymentrequest\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/psbtqmlmodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/receiverequesthistorymodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/sendrecipient\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/sendrecipientslistmodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/signverifymessagemodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/transaction\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/transactionactivity\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/transactionactivitymodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/transactionflow\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/walletlistmodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/walletqmlmodel\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/walletqmlmodeltransaction\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/walletunlock\\.(cpp|h)$")
+endif()
 if(NOT ENABLE_TEST_AUTOMATION)
   list(FILTER QML_SOURCES EXCLUDE REGEX "qml/test/")
 endif()
@@ -141,7 +172,7 @@ target_link_libraries(bitcoinqml
     Qt6::Widgets
   PRIVATE
     bitcoin_cli
-    bitcoin_wallet
+    $<TARGET_NAME_IF_EXISTS:bitcoin_wallet>
     $<$<PLATFORM_ID:Darwin>:-framework\ AppKit>
 )
 

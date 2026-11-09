@@ -158,4 +158,4 @@ BITCOINQML_REGISTER_QT_TEST(QmlFileDialogTests)
 #else
 QTEST_MAIN(QmlFileDialogTests)
 #endif
-#include "test_qmlfiledialog.moc"
+#include <test_qmlfiledialog.moc>

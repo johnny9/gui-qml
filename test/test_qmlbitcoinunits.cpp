@@ -121,4 +121,4 @@ BITCOINQML_REGISTER_QT_TEST(QmlBitcoinUnitsTests)
 #else
 QTEST_MAIN(QmlBitcoinUnitsTests)
 #endif
-#include "test_qmlbitcoinunits.moc"
+#include <test_qmlbitcoinunits.moc>

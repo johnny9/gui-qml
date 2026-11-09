@@ -215,4 +215,4 @@ BITCOINQML_REGISTER_QT_TEST(AddressListModelTests)
 #else
 QTEST_MAIN(AddressListModelTests)
 #endif
-#include "test_addresslistmodel.moc"
+#include <test_addresslistmodel.moc>

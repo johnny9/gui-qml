@@ -597,4 +597,4 @@ BITCOINQML_REGISTER_QT_TEST(BlockClockModelTests)
 #else
 QTEST_MAIN(BlockClockModelTests)
 #endif
-#include "test_blockclockmodel.moc"
+#include <test_blockclockmodel.moc>

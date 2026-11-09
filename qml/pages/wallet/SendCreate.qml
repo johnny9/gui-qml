@@ -303,7 +303,12 @@ PageStack {
             padding: 0
             width: Overlay.overlay.width
             height: Overlay.overlay.height
-            onOpened: if (reviewStack.currentItem) (reviewStack.currentItem as SendTransactionReview).focusInitialControl()
+            onOpened: {
+                const review = reviewStack.currentItem as SendTransactionReview
+                const complete = reviewStack.currentItem as SendComplete
+                if (review) review.focusInitialControl()
+                else if (complete) complete.focusInitialControl()
+            }
 
             enter: Transition {
                 NumberAnimation {

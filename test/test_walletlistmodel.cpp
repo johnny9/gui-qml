@@ -563,4 +563,4 @@ BITCOINQML_REGISTER_QT_TEST(WalletListModelTests)
 QTEST_MAIN(WalletListModelTests)
 #endif
 
-#include "test_walletlistmodel.moc"
+#include <test_walletlistmodel.moc>

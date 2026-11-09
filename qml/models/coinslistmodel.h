@@ -106,4 +106,4 @@ private:
     qint64 m_max_amount{-1};
     bool m_descending{true};
 };
-#endif
+#endif // BITCOIN_QML_MODELS_COINSLISTMODEL_H

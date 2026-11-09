@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QML_APPLICATIONMODELS_H
 #define BITCOIN_QML_APPLICATIONMODELS_H
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <qml/models/banlistmodel.h>
 #include <qml/models/blockclockmodel.h>
 #include <qml/models/chainmodel.h>
@@ -19,8 +21,10 @@
 #include <qml/models/peerlistmodel.h>
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/rpcconsolemodel.h>
+#ifdef ENABLE_WALLET
 #include <qml/models/walletlistmodel.h>
 #include <qml/walletqmlcontroller.h>
+#endif
 
 #include <QObject>
 #include <QPointer>
@@ -42,8 +46,16 @@ class ApplicationModels : public QObject
     Q_PROPERTY(BanListModel* banListModel READ banListModel CONSTANT)
     Q_PROPERTY(DebugLogModel* debugLogModel READ debugLogModel CONSTANT)
     Q_PROPERTY(RpcConsoleModel* rpcConsoleModel READ rpcConsoleModel CONSTANT)
+#ifdef ENABLE_WALLET
     Q_PROPERTY(WalletQmlController* walletController READ walletController CONSTANT)
+#else
+    Q_PROPERTY(QObject* walletController READ walletController CONSTANT)
+#endif
+#ifdef ENABLE_WALLET
     Q_PROPERTY(WalletListModel* walletListModel READ walletListModel CONSTANT)
+#else
+    Q_PROPERTY(QObject* walletListModel READ walletListModel CONSTANT)
+#endif
     Q_PROPERTY(DesktopWindowBehaviorModel* desktopWindowBehaviorModel READ desktopWindowBehaviorModel CONSTANT)
     Q_PROPERTY(DesktopTrayIconController* desktopTrayIconController READ desktopTrayIconController CONSTANT)
     Q_PROPERTY(OnboardingOptionsModel* onboardingOptionsModel READ onboardingOptionsModel CONSTANT)
@@ -64,11 +76,19 @@ public:
     BanListModel* banListModel() const { return m_context ? m_context->contextProperty(QStringLiteral("banListModel")).value<BanListModel*>() : nullptr; }
     DebugLogModel* debugLogModel() const { return m_context ? m_context->contextProperty(QStringLiteral("debugLogModel")).value<DebugLogModel*>() : nullptr; }
     RpcConsoleModel* rpcConsoleModel() const { return m_context ? m_context->contextProperty(QStringLiteral("rpcConsoleModel")).value<RpcConsoleModel*>() : nullptr; }
+#ifdef ENABLE_WALLET
     WalletQmlController* walletController() const { return m_context ? m_context->contextProperty(QStringLiteral("walletController")).value<WalletQmlController*>() : nullptr; }
+#else
+    QObject* walletController() const { return nullptr; }
+#endif
+#ifdef ENABLE_WALLET
     WalletListModel* walletListModel() const { return m_context ? m_context->contextProperty(QStringLiteral("walletListModel")).value<WalletListModel*>() : nullptr; }
+#else
+    QObject* walletListModel() const { return nullptr; }
+#endif
     DesktopWindowBehaviorModel* desktopWindowBehaviorModel() const { return m_context ? m_context->contextProperty(QStringLiteral("desktopWindowBehaviorModel")).value<DesktopWindowBehaviorModel*>() : nullptr; }
     DesktopTrayIconController* desktopTrayIconController() const { return m_context ? m_context->contextProperty(QStringLiteral("desktopTrayIconController")).value<DesktopTrayIconController*>() : nullptr; }
-    OnboardingOptionsModel* onboardingOptionsModel() const { return m_context ? m_context->contextProperty(QStringLiteral("optionsModel")).value<OnboardingOptionsModel*>() : nullptr; }
+    OnboardingOptionsModel* onboardingOptionsModel() const { return m_context ? m_context->contextProperty(QStringLiteral("onboardingOptionsModel")).value<OnboardingOptionsModel*>() : nullptr; }
     bool testAutomationEnabled() const { return m_context && m_context->contextProperty(QStringLiteral("testAutomationEnabled")).toBool(); }
     QString startupError() const { return m_context ? m_context->contextProperty(QStringLiteral("message")).toString() : QString{}; }
 

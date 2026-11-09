@@ -306,7 +306,7 @@ void PsbtQmlModel::copyToClipboard()
 QString PsbtQmlModel::saveToFile(const QString& path)
 {
     if (!m_psbt) {
-        const QString err{tr("No PSBT is loaded.")};
+        QString err{tr("No PSBT is loaded.")};
         refreshState(err);
         return err;
     }
@@ -373,7 +373,7 @@ QStringList PsbtQmlModel::buildSummary(const PartiallySignedTransaction& psbt) c
         CTxDestination destination;
         const QString address{ExtractDestination(output.scriptPubKey, destination) ? QString::fromStdString(EncodeDestination(destination)) : tr("unknown destination")};
         const bool own_address{m_wallet && m_wallet->txoutIsMine(output)};
-        lines << tr("Sends %1 to %2%3").arg(FormatBtc(output.nValue), address, own_address ? tr(" (own address)") : QString());
+        lines << tr("Sends %1 to %2%3").arg(FormatBtc(output.nValue), address, own_address ? QString{QStringLiteral(" ") + tr("(own address)")} : QString());
     }
 
     const node::PSBTAnalysis analysis{node::AnalyzePSBT(psbt)};

@@ -70,7 +70,7 @@ QString JoinWarnings(const std::vector<bilingual_str>& warnings)
 
 bool IsBackupLikeFile(const QFileInfo& file_info)
 {
-    const QString file_name = file_info.fileName().toLower();
+    QString file_name = file_info.fileName().toLower();
     return file_name.endsWith(".bak") || file_name.endsWith(".legacy.bak");
 }
 
@@ -116,7 +116,7 @@ WalletQmlController::~WalletQmlController()
 void WalletQmlController::setSelectedWallet(QString path, QString wallet_format)
 {
     if (m_retiring_wallet_names.contains(path)) {
-        const QString error = tr("This wallet is still closing.");
+        QString error = tr("This wallet is still closing.");
         setWalletLoadError(error);
         Q_EMIT walletLoadStateChanged(path, WalletListModel::LoadState::LoadError, error);
         return;
@@ -514,7 +514,7 @@ void WalletQmlController::createWalletAsync(const QString& name,
         QmlUtil::ClearSecureString(passphrase);
         out.warnings = JoinWarnings(warnings);
         if (!wallet) {
-            const auto error = util::ErrorString(wallet);
+            auto error = util::ErrorString(wallet);
             out.error = QString::fromStdString(error.translated.empty() ? error.original : error.translated);
             if (out.error.isEmpty()) out.error = tr("Wallet creation failed.");
         } else if (setup_wallet && !(out.error = setup_wallet(**wallet)).isEmpty()) {
@@ -848,7 +848,7 @@ QString WalletQmlController::walletNameAvailabilityError(const QString& name) co
 
 QString WalletQmlController::walletImportErrorTitle() const
 {
-    const QString error = m_wallet_load_error.trimmed();
+    QString error = m_wallet_load_error.trimmed();
     if (error.isEmpty()) {
         return {};
     }
@@ -870,7 +870,7 @@ QString WalletQmlController::walletImportErrorTitle() const
 
 QString WalletQmlController::walletImportErrorDescription() const
 {
-    const QString error = m_wallet_load_error.trimmed();
+    QString error = m_wallet_load_error.trimmed();
     if (error.isEmpty()) {
         return {};
     }
@@ -1020,7 +1020,7 @@ QString WalletQmlController::inferRestoreWalletName(const QString& normalized_pa
     }
 
     QString wallet_name;
-    const QString file_name = selected_path.fileName();
+    QString file_name = selected_path.fileName();
 
     if (file_name.compare("wallet.dat", Qt::CaseInsensitive) == 0) {
         wallet_name = selected_path.dir().dirName();
@@ -1193,7 +1193,7 @@ void WalletQmlController::startWalletLoad(const QString& path, const QString& wa
     // or as a concrete path under -walletdir. Resolve both into the wallet
     // reference expected by loadWallet() and migrateWallet().
     QString load_target_format = wallet_format;
-    const QString load_target = load_target_format.isEmpty()
+    QString load_target = load_target_format.isEmpty()
         ? resolveManagedWalletReference(path, &load_target_format)
         : QDir::cleanPath(path);
     if (load_target.isEmpty()) {
@@ -1221,7 +1221,7 @@ void WalletQmlController::startWalletLoad(const QString& path, const QString& wa
         setWalletLoadInProgress(false);
         setWalletLoadWarnings(out.warnings);
         if (!out.wallet) {
-            const QString error = out.error.isEmpty() ? tr("Wallet could not be opened.") : out.error;
+            QString error = out.error.isEmpty() ? tr("Wallet could not be opened.") : out.error;
             setWalletLoadError(error);
             Q_EMIT walletLoadStateChanged(load_target, WalletListModel::LoadState::LoadError, error);
             return;
@@ -1230,7 +1230,7 @@ void WalletQmlController::startWalletLoad(const QString& path, const QString& wa
         Q_EMIT walletLoadSucceeded(wallet_model);
     }, [this, load_target](std::exception_ptr) {
         setWalletLoadInProgress(false);
-        const QString error = tr("Wallet could not be opened.");
+        QString error = tr("Wallet could not be opened.");
         setWalletLoadError(error);
         Q_EMIT walletLoadStateChanged(load_target, WalletListModel::LoadState::LoadError, error);
     });

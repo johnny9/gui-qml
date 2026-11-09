@@ -2241,4 +2241,4 @@ BITCOINQML_REGISTER_QT_TEST(NodeModelTests)
 #else
 QTEST_MAIN(NodeModelTests)
 #endif
-#include "test_nodemodel.moc"
+#include <test_nodemodel.moc>

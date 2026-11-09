@@ -188,6 +188,9 @@ private Q_SLOTS:
     void jsonReplyKeyColoringSkipsStringsContainingColons();
     void jsonReplyPreservesNestedFormatting_data();
     void jsonReplyPreservesNestedFormatting();
+    void jsonReplyTraversal_data();
+    void jsonReplyTraversal();
+    void deeplyNestedJsonReply();
     void availableCommandsIncludesHelpVariants();
 };
 
@@ -500,6 +503,51 @@ void RpcConsoleModelTests::jsonReplyPreservesNestedFormatting()
     QCOMPARE(out->data(out->index(1, 0), content_role).toString(), expected);
 }
 
+void RpcConsoleModelTests::jsonReplyTraversal_data()
+{
+    QTest::addColumn<QString>("raw");
+    QTest::addColumn<QString>("expected");
+    QTest::newRow("empty-object") << QStringLiteral("{}") << QStringLiteral("{}");
+    QTest::newRow("empty-array") << QStringLiteral("[]") << QStringLiteral("[]");
+    QTest::newRow("mixed") << QStringLiteral("[{},[],true,false,null,12,\"<x>\"]")
+        << QStringLiteral("[<br>&nbsp;&nbsp;{},<br>&nbsp;&nbsp;[],<br>&nbsp;&nbsp;true,<br>&nbsp;&nbsp;false,<br>&nbsp;&nbsp;null,<br>&nbsp;&nbsp;12,<br>&nbsp;&nbsp;\"&lt;x&gt;\"<br>]");
+    QTest::newRow("nested-key") << QStringLiteral("{\"<key>\":[{\"n\":1}]}")
+        << QStringLiteral("{<br>&nbsp;&nbsp;<span style='color:#98c379'>\"&lt;key&gt;\"</span>: [<br>&nbsp;&nbsp;&nbsp;&nbsp;{<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color:#98c379'>\"n\"</span>: 1<br>&nbsp;&nbsp;&nbsp;&nbsp;}<br>&nbsp;&nbsp;]<br>}");
+    QTest::newRow("non-json") << QStringLiteral(" <help>\n  text") << QStringLiteral("&nbsp;&lt;help&gt;<br>&nbsp;&nbsp;text");
+}
+
+void RpcConsoleModelTests::jsonReplyTraversal()
+{
+    QFETCH(QString, raw);
+    QFETCH(QString, expected);
+    RpcTestStubNode node;
+    RpcConsoleModel model{node};
+    QVERIFY(QMetaObject::invokeMethod(&model, "onResultReady", Qt::DirectConnection,
+        Q_ARG(QString, QString{}), Q_ARG(int, int(RpcConsoleModel::CMD_REPLY)), Q_ARG(QString, raw)));
+    auto* output = qobject_cast<QAbstractListModel*>(model.outputModel());
+    QCOMPARE(output->rowCount(), 1);
+    QCOMPARE(output->data(output->index(0, 0), roleForName(output, "content")).toString(), expected);
+}
+
+void RpcConsoleModelTests::deeplyNestedJsonReply()
+{
+    constexpr int depth{256};
+    const QString raw = QString(depth, '[') + "\"<leaf>\"" + QString(depth, ']');
+    RpcTestStubNode node;
+    RpcConsoleModel model{node};
+    QVERIFY(QMetaObject::invokeMethod(&model, "onResultReady", Qt::DirectConnection,
+        Q_ARG(QString, QString{}), Q_ARG(int, int(RpcConsoleModel::CMD_REPLY)), Q_ARG(QString, raw)));
+    auto* output = qobject_cast<QAbstractListModel*>(model.outputModel());
+    const auto html = output->data(output->index(0, 0), roleForName(output, "content")).toString();
+    QCOMPARE(html.count('['), depth);
+    QCOMPARE(html.count(']'), depth);
+    QCOMPARE(html.count("<br>"), depth * 2);
+    QCOMPARE(html.count("&lt;leaf&gt;"), 1);
+    QVERIFY(!html.contains(','));
+    QVERIFY(html.startsWith("[<br>"));
+    QVERIFY(html.endsWith("<br>]"));
+}
+
 void RpcConsoleModelTests::availableCommandsIncludesHelpVariants()
 {
     CommandListNode mock;
@@ -541,4 +589,4 @@ BITCOINQML_REGISTER_QT_TEST(RpcConsoleModelTests)
 #else
 QTEST_MAIN(RpcConsoleModelTests)
 #endif
-#include "test_rpcconsolemodel.moc"
+#include <test_rpcconsolemodel.moc>

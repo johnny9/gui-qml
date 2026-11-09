@@ -336,4 +336,4 @@ BITCOINQML_REGISTER_QT_TEST(PeerListModelTests)
 #else
 QTEST_MAIN(PeerListModelTests)
 #endif
-#include "test_peerlistmodel.moc"
+#include <test_peerlistmodel.moc>

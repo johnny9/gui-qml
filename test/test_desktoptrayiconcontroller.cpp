@@ -109,4 +109,4 @@ BITCOINQML_REGISTER_QT_TEST(DesktopTrayIconControllerTests)
 #else
 QTEST_MAIN(DesktopTrayIconControllerTests)
 #endif
-#include "test_desktoptrayiconcontroller.moc"
+#include <test_desktoptrayiconcontroller.moc>

@@ -59,6 +59,7 @@
         <file>components/PaymentRequestModal.qml</file>
         <file>components/OnboardingSettingsPopup.qml</file>
         <file>components/WalletCreationModal.qml</file>
+        <file>components/WalletCreationHost.qml</file>
         <file>components/WalletSuccessBadge.qml</file>
         <file>components/PaymentRequestField.qml</file>
         <file>components/SearchBar.qml</file>

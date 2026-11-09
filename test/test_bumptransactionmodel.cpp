@@ -208,4 +208,4 @@ BITCOINQML_REGISTER_QT_TEST(BumpTransactionModelTests)
 #else
 QTEST_MAIN(BumpTransactionModelTests)
 #endif
-#include "test_bumptransactionmodel.moc"
+#include <test_bumptransactionmodel.moc>

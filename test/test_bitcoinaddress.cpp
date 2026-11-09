@@ -61,4 +61,4 @@ BITCOINQML_REGISTER_QT_TEST(BitcoinAddressTests)
 #else
 QTEST_MAIN(BitcoinAddressTests)
 #endif
-#include "test_bitcoinaddress.moc"
+#include <test_bitcoinaddress.moc>

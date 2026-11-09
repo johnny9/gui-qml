@@ -92,7 +92,7 @@ ApplicationWindow {
     }
 
     function openWalletCreation() {
-        if (!appWindow.menuNavigationEnabled) {
+        if (!appWindow.desktopWalletMode || !appWindow.menuNavigationEnabled) {
             return
         }
         walletCreationModal.open()
@@ -110,7 +110,7 @@ ApplicationWindow {
         }
         appWindow.postOnboardingWalletRouteResolved = true
         if (ApplicationModels.walletController.noWalletsFound) {
-            (main.currentItem as DesktopWallets).openNode()
+            appWindow.routeToShell("openNode")
             Qt.callLater(function() { walletCreationModal.openForOnboarding() })
         }
     }
@@ -287,7 +287,7 @@ ApplicationWindow {
         id: main
         objectName: "mainPageStack"
         enabled: !appWindow.shutdownInProgress && !ApplicationModels.nodeModel.fatalException
-        initialItem: appWindow.desktopWalletMode ? desktopWallets : node
+        initialItem: appWindow.desktopWalletMode ? "qrc:/qml/pages/wallet/DesktopWallets.qml" : node
         anchors.fill: parent
         focus: true
         Keys.onReleased: (event) => {
@@ -343,19 +343,23 @@ ApplicationWindow {
         }
     }
 
-    Component {
-        id: desktopWallets
-        DesktopWallets {
-            objectName: "desktopWalletsPage"
-            onAddWallet: {
-                walletCreationModal.open()
-            }
-        }
+    Connections {
+        target: appWindow.desktopWalletMode && !appWindow.shutdownInProgress && main.depth === 1
+            ? main.currentItem : null
+        function onAddWallet() { walletCreationModal.open() }
     }
 
-    WalletCreationModal {
+    Loader {
         id: walletCreationModal
-        onFinished: function(openActivity, wallet) {
+        active: appWindow.desktopWalletMode
+        source: active ? "../components/WalletCreationHost.qml" : ""
+        function open() { if (item) (item as WalletCreationHost).open() }
+        function openForOnboarding() { if (item) (item as WalletCreationHost).openForOnboarding() }
+    }
+
+    Connections {
+        target: walletCreationModal.item
+        function onFinished(openActivity, wallet) {
             if (openActivity) appWindow.routeToShell("openWallet", wallet)
         }
     }

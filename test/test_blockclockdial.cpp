@@ -479,4 +479,4 @@ BITCOINQML_REGISTER_QT_TEST(BlockClockDialTests)
 #else
 QTEST_MAIN(BlockClockDialTests)
 #endif
-#include "test_blockclockdial.moc"
+#include <test_blockclockdial.moc>

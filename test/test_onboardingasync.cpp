@@ -420,4 +420,4 @@ BITCOINQML_REGISTER_QT_TEST(OnboardingAsyncTests)
 #else
 QTEST_MAIN(OnboardingAsyncTests)
 #endif
-#include "test_onboardingasync.moc"
+#include <test_onboardingasync.moc>
