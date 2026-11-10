@@ -4,6 +4,7 @@
 
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
+#include <util/moneystr.h>
 #include <wallet/db.h>
 #include <wallet/wallet.h>
 
@@ -312,6 +313,103 @@ private Q_SLOTS:
         QTRY_VERIFY(!controller->walletLoadError().isEmpty());
         QCOMPARE(imported.count(), 1);
         QVERIFY(controller->isWalletLoaded());
+    }
+
+    void earlierBackupCoverageAfterEncryption_data()
+    {
+        QTest::addColumn<bool>("spend");
+        QTest::newRow("later-receive") << false;
+        QTest::newRow("actual-change") << true;
+    }
+
+    void earlierBackupCoverageAfterEncryption()
+    {
+        QFETCH(bool, spend);
+        auto* miner = qmltest::CreateWallet(m_app, "recovery_miner");
+        QVERIFY(miner);
+        QVERIFY(qmltest::FundWallet(m_app, *miner));
+        QPointer<WalletQmlModel> live{qmltest::CreateWallet(m_app, "recovery_live")};
+        QVERIFY(live);
+        const auto original_address = qmltest::NewAddress(m_app, live->name());
+        const auto mining_address = qmltest::NewAddress(m_app, miner->name());
+        auto mine = [&] {
+            UniValue params{UniValue::VARR}; params.push_back(1); params.push_back(mining_address.toStdString());
+            qmltest::Rpc(m_app, "generatetoaddress", params);
+        };
+        auto pay = [&](const QString& from, const QString& address, const char* amount) {
+            UniValue params{UniValue::VOBJ};
+            params.pushKV("address", address.toStdString());
+            params.pushKV("amount", UniValue{UniValue::VNUM, amount});
+            params.pushKV("fee_rate", 2);
+            return qmltest::Rpc(m_app, "sendtoaddress", params, from).get_str();
+        };
+        auto balance = [&](const QString& name) {
+            return ParseMoney(qmltest::Rpc(m_app, "getbalance", {}, name).getValStr());
+        };
+        auto owns = [&](const QString& name, const QString& address) {
+            UniValue params{UniValue::VARR}; params.push_back(address.toStdString());
+            return qmltest::Rpc(m_app, "getaddressinfo", params, name).find_value("ismine").get_bool();
+        };
+        pay(miner->name(), original_address, "1.0"); mine();
+        QCOMPARE(balance(live->name()), std::optional<CAmount>{100'000'000});
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto old_backup = directory.filePath("before-encryption.bak");
+        const auto new_backup = directory.filePath("after-encryption.bak");
+        QVERIFY(live->backupWallet(old_backup));
+        QFile old_file{old_backup}; QVERIFY(old_file.open(QIODevice::ReadOnly));
+        const auto old_bytes = old_file.readAll(); old_file.close(); QVERIFY(!old_bytes.isEmpty());
+        QVERIFY(live->encryptWallet("recovery password"));
+        QVERIFY(live->isLocked());
+        const auto later_address = qmltest::NewAddress(m_app, live->name());
+        QString actual_change;
+        if (spend) {
+            qmltest::Rpc(m_app, "walletpassphrase", qmltest::Json("[\"recovery password\",60]"), live->name());
+            const auto txid = pay(live->name(), mining_address, "0.25");
+            qmltest::Rpc(m_app, "walletlock", {}, live->name());
+            UniValue tx_params{UniValue::VARR}; tx_params.push_back(txid);
+            const auto transaction = qmltest::Rpc(m_app, "gettransaction", tx_params, live->name());
+            UniValue decode{UniValue::VARR}; decode.push_back(transaction.find_value("hex").get_str());
+            const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", decode);
+            for (const auto& output : decoded.find_value("vout").getValues()) {
+                const auto address = QString::fromStdString(output.find_value("scriptPubKey").find_value("address").get_str());
+                if (owns(live->name(), address)) {
+                    QVERIFY(actual_change.isEmpty()); actual_change = address;
+                }
+            }
+            QVERIFY(!actual_change.isEmpty());
+        } else {
+            pay(miner->name(), later_address, "0.5");
+        }
+        mine();
+        const auto live_balance = balance(live->name());
+        QVERIFY(live_balance && *live_balance > 0);
+        if (!spend) QCOMPARE(*live_balance, CAmount{150'000'000});
+        else QVERIFY(*live_balance < 100'000'000);
+        QVERIFY(live->backupWallet(new_backup));
+        auto restore = [&](const QString& name, const QString& path) {
+            UniValue params{UniValue::VARR}; params.push_back(name.toStdString()); params.push_back(path.toStdString());
+            return qmltest::Rpc(m_app, "restorewallet", params).find_value("name").get_str();
+        };
+        QCOMPARE(restore("recovery_old", old_backup), std::string{"recovery_old"});
+        QCOMPARE(restore("recovery_fresh", new_backup), std::string{"recovery_fresh"});
+        QVERIFY(owns("recovery_old", original_address));
+        QVERIFY(!owns("recovery_old", later_address));
+        QVERIFY(owns("recovery_fresh", later_address));
+        if (spend) {
+            QVERIFY(!owns("recovery_old", actual_change));
+            QVERIFY(owns("recovery_fresh", actual_change));
+        }
+        QCOMPARE(balance("recovery_old"), std::optional<CAmount>{spend ? 0 : 100'000'000});
+        QCOMPARE(balance("recovery_fresh"), live_balance);
+        QCOMPARE(balance("recovery_live"), live_balance); // The live wallet has not lost these funds.
+        QVERIFY(live);
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
+        QVERIFY(controller);
+        controller->setSelectedWallet("recovery_live");
+        QCOMPARE(qmltest::WaitForWallet(m_app, "recovery_live"), live.data());
+        QVERIFY(old_file.open(QIODevice::ReadOnly)); QCOMPARE(old_file.readAll(), old_bytes);
+        qInfo() << "Controlled recovery" << (spend ? "actual change" : "later receive")
+                << "old backup" << *balance("recovery_old") << "fresh backup and preserved live wallet" << *live_balance;
     }
 
     void encryptedBackupRestoresLockedAndRetainsItsSigningKeys()

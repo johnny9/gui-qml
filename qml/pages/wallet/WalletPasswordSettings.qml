@@ -101,7 +101,7 @@ SettingsPage {
         Layout.fillWidth: true
         description: root.updating
             ? qsTr("Enter your current password, then choose a new password for this wallet.\n\nA secure password consists of ten or more random characters, or eight or more words.")
-            : qsTr("The password encrypts the wallet on your hard drive and helps prevent unwanted access.\n\nA secure password consists of ten or more random characters, or eight or more words.")
+            : qsTr("The password encrypts the wallet on your hard drive and helps prevent unwanted access.\n\nA secure password consists of ten or more random characters, or eight or more words.\n\nSetting a password creates new receiving and change keys. Your earlier backups may not cover later payments. Make a fresh backup afterward and keep your older backups.")
     }
 
     FormSection {

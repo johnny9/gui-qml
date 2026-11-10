@@ -7,6 +7,7 @@ import QtQuick.Window 2.15
 import QtTest 1.2
 import "../../qml/controls"
 import "../../qml/pages/wallet"
+import "../../qml/pages/settings" as SettingsPages
 
 TestCase {
     function init() {
@@ -56,6 +57,51 @@ TestCase {
             width: 460
             height: 680
         }
+    }
+
+    Component {
+        id: walletSettingsComponent
+        SettingsPages.WalletSectionPage {
+            wallet: testWalletModel
+            width: 460
+            height: 680
+        }
+    }
+
+    function cleanup() {
+        pageLoader.sourceComponent = null
+        testWalletModel.isEncrypted = false
+        testWalletModel.resetWalletSettingsTestState()
+    }
+
+    function test_set_password_explains_older_backup_coverage() {
+        const page = createWalletPasswordSettingsPage(setPasswordComponent)
+        const intro = findChild(page, "walletPasswordIntroTextDescription")
+        verify(intro.text.indexOf("receiving and change keys") !== -1)
+        verify(intro.text.indexOf("earlier backups") !== -1)
+        verify(intro.text.indexOf("fresh backup") !== -1)
+    }
+
+    function test_encrypted_wallet_keeps_recovery_guidance_and_backup_action() {
+        testWalletModel.isEncrypted = true
+        pageLoader.sourceComponent = walletSettingsComponent
+        const page = pageLoader.item
+        verify(page !== null)
+        const action = findChild(page, "walletBackupRow")
+        verify(action !== null)
+        compare(action.visible, true)
+        verify(action.description.indexOf("earlier backups") !== -1)
+        verify(action.description.indexOf("Keep your older backups") !== -1)
+        const path = findChild(page, "walletSettingsBackupPathField")
+        path.text = "/tmp/recovery-fresh.bak"
+        action.clicked()
+        compare(testWalletModel.backupWalletCalls, 1)
+        compare(testWalletModel.lastBackupPath, "/tmp/recovery-fresh.bak")
+        testWalletModel.isEncrypted = false
+        compare(action.description, "")
+        page.wallet = null
+        compare(action.visible, false)
+        compare(action.description, "")
     }
 
     function createWalletPasswordSettingsPage(component) {

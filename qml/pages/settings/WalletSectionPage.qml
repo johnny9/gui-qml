@@ -190,6 +190,9 @@ SettingsPage {
             objectName: "walletBackupRow"
             Layout.fillWidth: true
             title: qsTr("Back up wallet")
+            description: root.wallet && root.wallet.isEncrypted
+                ? qsTr("After setting a password, earlier backups may not cover new receiving addresses or change. Make a fresh backup. Keep your older backups in a safe place.")
+                : ""
             showsDisclosureIndicator: true
             onClicked: root.startBackup()
         }
