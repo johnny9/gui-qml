@@ -321,6 +321,7 @@ private Q_SLOTS:
     void notificationDuringNestedPresentationKeepsItsContinuation();
     void subscriptionFailureDisablesCatalogCommands();
     void notificationOverflowReportsUnavailableResync();
+    void startupSnapshotMergesNotificationHandlesWithoutDuplicateModels();
     void lifecyclePublicationSurvivesReentrantRetirement_data();
     void lifecyclePublicationSurvivesReentrantRetirement();
     void shutdownDrainsWalletQueueAndPlaceholder();
@@ -467,21 +468,78 @@ void WalletQmlControllerTests::notificationOverflowReportsUnavailableResync()
     controller.initialize();
     QTRY_VERIFY(controller.initialized());
     const auto callback = loader.captured_load_wallet_fn;
-    // Withhold GUI consumption while an independent producer exceeds both
-    // bounded ingress and dirty-key storage. Initial capture is deliberately
-    // not an authoritative resynchronization capability in this composition.
+    struct Probe { QSemaphore entered, release; std::atomic_bool held{false}; };
+    const auto probe = std::make_shared<Probe>();
+    const auto release = qScopeGuard([probe] { probe->release.release(); });
+    struct HeldMetadata : FakeWallet {
+        std::shared_ptr<Probe> probe;
+        explicit HeldMetadata(std::shared_ptr<Probe> p) : FakeWallet("held", nullptr), probe(std::move(p)) {}
+        std::string getWalletName() override {
+            if (!probe->held.exchange(true)) { probe->entered.release(); probe->release.acquire(); }
+            return FakeWallet::getWalletName();
+        }
+    };
+    std::thread first{[callback, probe] { callback(std::make_unique<HeldMetadata>(probe)); }};
+    first.join();
+    QVERIFY(probe->entered.tryAcquire(1, 5000));
+    // Hold actual metadata execution so ingress capacity is deterministically
+    // exceeded. A large ready inventory alone must not trigger this failure.
     std::thread producer{[callback] {
         for (int i{0}; i < 256; ++i) {
             callback(std::make_unique<FakeWallet>(QString::number(i).toStdString(), nullptr));
         }
     }};
     producer.join();
+    probe->release.release();
     QTRY_VERIFY(!controller.initialized());
     QVERIFY(controller.walletLoadError().contains("unavailable"));
     QCOMPARE(loader.get_wallets_calls, 1);
     controller.createSingleSigWallet("after-overflow", "");
     QCOMPARE(loader.create_wallet_calls, 0);
     QVERIFY(controller.walletCreateError().contains("unavailable"));
+}
+
+void WalletQmlControllerTests::startupSnapshotMergesNotificationHandlesWithoutDuplicateModels()
+{
+    StrictMockNode node;
+    [[maybe_unused]] auto verify_node = node.VerifyOnExit();
+    FakeWalletLoader loader;
+    FakeWallet::State state;
+    ConfigureExpectedControllerInitialization(node, loader);
+    struct Probe {
+        QThread* gui{QThread::currentThread()};
+        std::atomic_bool subscribed_before_capture{false}, duplicate_destroyed{false}, duplicate_off_gui{false};
+    };
+    const auto probe = std::make_shared<Probe>();
+    struct DuplicateWallet : FakeWallet {
+        std::shared_ptr<Probe> probe;
+        DuplicateWallet(State* state, std::shared_ptr<Probe> p) : FakeWallet("shared", state), probe(std::move(p)) {}
+        ~DuplicateWallet() override {
+            probe->duplicate_off_gui = QThread::currentThread() != probe->gui;
+            probe->duplicate_destroyed = true;
+        }
+    };
+    loader.get_wallets_fn = [&loader, &state, probe] {
+        probe->subscribed_before_capture = bool(loader.captured_load_wallet_fn);
+        if (loader.captured_load_wallet_fn) {
+            loader.captured_load_wallet_fn(std::make_unique<DuplicateWallet>(&state, probe));
+            loader.captured_load_wallet_fn(std::make_unique<FakeWallet>("notification-only", nullptr));
+        }
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("shared", &state));
+        return wallets;
+    };
+    DrainingWalletController controller{node};
+    controller.initialize();
+    QTRY_VERIFY(controller.initialized());
+    QTRY_VERIFY(probe->duplicate_destroyed.load());
+    QVERIFY(probe->subscribed_before_capture.load());
+    QVERIFY(probe->duplicate_off_gui.load());
+    QCOMPARE(controller.openWallets().size(), 2);
+    QVERIFY(controller.isWalletOpen("shared"));
+    QVERIFY(controller.isWalletOpen("notification-only"));
+    QCOMPARE(loader.get_wallets_calls, 1);
+    QVERIFY(controller.walletLoadError().isEmpty());
 }
 
 void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement_data()

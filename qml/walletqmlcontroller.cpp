@@ -1098,7 +1098,8 @@ void WalletQmlController::initialize()
     m_initializing = true;
     const QPointer<WalletQmlController> guard{this};
     // Pinned Core notifies before AddWallet. Its initial capture is not a
-    // coherent resynchronization capability; R09 owns that backend contract.
+    // coherent resynchronization capability. Seed once and retain notification
+    // handles; the subtree wallet/node interfaces remain unchanged.
     m_load_subscription = std::make_shared<walletlife::LoadSubscription>(
         m_wallet_command_executor->scheduler(),
         [node = &m_node](walletlife::LoadSubscription::Callback callback) {

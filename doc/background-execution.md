@@ -22,8 +22,9 @@ the existing serial transport and GUI completion API.
 
 Default limits are 128 ordinary records/4 MiB, including at most 112
 observations/3 MiB, plus 16 Control records/64 KiB and 16 Cleanup records/64 KiB.
-These are transport budgets. Persistent backend catalog state remains owned by
-its subscription and scales with the authoritative catalog.
+These are transport budgets. Persistent wallet inventory remains owned by the app subscription and scales
+with the wallets retained by the model. The ready inventory is not limited to
+64 wallets and does not trigger another getWallets call when it grows.
 
 A resource owner reserves Cleanup before acquiring backend resources. Its
 private key cannot be reused within the scheduler. Activating the reservation
@@ -59,15 +60,24 @@ event loops that cannot yet claim its data;
 repeated backend changes retain at most one unacknowledged value-only wakeup.
 A disposal outcome supplies the next batch continuation without GUI polling.
 
-Initial capture and coherent resynchronization are separate injected ports.
+The production app subscribes before the startup capture, seeds the wallet
+list from that capture, and merges notification-supplied handles by wallet name.
+A pre-AddWallet notification remains represented by its retained handle even
+when getWallets does not contain it yet. Discovery uses the existing Core APIs;
+the subtree wallet and node modules remain unchanged.
+
+Initial capture and optional coherent resynchronization are separate injected ports.
 Pinned Core calls `NotifyWalletLoaded` before `AddWallet`, so a concurrent
 `getWallets` may miss a wallet whose callback already returned. This Core
 composition supplies no coherent resynchronization port. Overflow therefore
 invalidates wallet discovery, reports an unavailable outcome, disables dependent
 catalog commands and retires the subscription. It never silently treats an
 incomplete snapshot as current. Positive resync tests explicitly inject a
-synthetic backend with the required committed-membership guarantee. R09 owns
-the actual backend protocol and independent RPC consistency tests.
+synthetic backend with the required committed-membership guarantee. A coherent resync port is only a tested alternative-backend capability; it is
+not a requirement to add a Core API. Bounded ingress overload remains an app
+ownership/progress obligation, distinct from the size of the retained wallet
+list. Any backend guarantee unavailable through existing interfaces must be
+recorded and reported to the user; subtree wallet/node changes are prohibited.
 
 `WalletLifecycleTests` cover bounded handoffs, saturation/resync, rejection,
 registration failure, command context and sixteen legal retirement schedules.

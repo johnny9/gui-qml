@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <iterator>
-#include <set>
 #include <stdexcept>
 
 namespace walletlife {
@@ -198,17 +197,6 @@ void LoadSubscription::scan()
             if (!notification.context->deferred_name.empty() && name == notification.context->deferred_name) continue;
             entries.push_back({std::move(name), std::move(notification.wallet), notification.context->select_wallet});
         }
-        std::lock_guard lock{m_mutex};
-        const auto space = DIRTY_KEYS > m_ready.size() ? DIRTY_KEYS - m_ready.size() : 0;
-        std::set<std::string> new_keys;
-        for (const auto& entry : entries) {
-            if (!m_ready.contains(entry.name)) new_keys.insert(entry.name);
-            if (new_keys.size() > space) { resync = true; break; }
-        }
-        if (resync) {
-            m_full_capture_pending = true;
-            resync_select &= m_ready_select;
-        }
     }
     if (resync) {
         // Compact notification churn into one authoritative backend snapshot.
@@ -231,7 +219,6 @@ void LoadSubscription::scan()
         {
             std::lock_guard lock{m_mutex};
             m_ready.swap(snapshot);
-            m_ready_select = m_ready.empty() || resync_select;
             m_full_capture_pending = false;
         }
         return;
@@ -243,7 +230,6 @@ void LoadSubscription::scan()
         for (auto& entry : entries) {
             const auto slot = m_ready.try_emplace(entry.name).first;
             retired.push_back(std::move(slot->second));
-            m_ready_select &= entry.select_wallet;
             slot->second = std::move(entry);
         }
     }
@@ -351,7 +337,6 @@ std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::take(bool initial)
         }
     }
     result->more = initial ? !m_initial.empty() : !m_ready.empty();
-    if (!initial && m_ready.empty()) m_ready_select = true;
     return result;
 }
 

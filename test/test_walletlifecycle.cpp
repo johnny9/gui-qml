@@ -299,43 +299,48 @@ private Q_SLOTS:
         f.drain();                         // Another worker captures the catalog.
         f.catalog.emplace_back("pending-add"); // AddWallet commits with no later notification.
         bool observed{false};
+        size_t claimed{0};
         for (;;) {
             auto handoff = f.owner->takeNotifications();
             if (!handoff || handoff->entries.empty()) break;
-            for (const auto& entry : handoff->entries) observed |= entry.name == "pending-add";
+            for (const auto& entry : handoff->entries) { observed |= entry.name == "pending-add"; ++claimed; }
             handoff.reset(); f.drain();
         }
-        QVERIFY2(observed || f.count(Publication::Failed) == 1,
-                 "A pre-AddWallet callback was lost while the catalog still claimed to be current");
-        QCOMPARE(f.count(Publication::Failed), 1);
-        QCOMPARE(f.publications.back().reason, walletlife::FailureReason::CoherentResyncUnavailable);
+        QVERIFY2(observed, "The notification handle must preserve the pre-AddWallet discovery");
+        QCOMPARE(claimed, size_t{65});
+        QCOMPARE(f.count(Publication::Failed), 0);
         QCOMPARE(f.probe->captures.size(), size_t{1});
+        f.owner->retire(); f.drain();
         QVERIFY(f.env.quiescent());
     }
-    void notificationChurnResyncsBeforeUnpublishedHandlesGrow()
+    void announcedWalletsRemainModelStateWithoutRecapture()
     {
-        Fixture f{execution::Limits::Bounded(), true};
+        Fixture f;
         QVERIFY(f.owner->start()); f.drain();
-        bool invalidated_claim_blocked{false};
-        f.during_capture = [&] { invalidated_claim_blocked = !f.owner->takeNotifications(); };
         for (int i{0}; i < 96; ++i) {
-            const auto name = std::string{"churn-"} + manualexecution_detail::Number(i);
-            f.catalog = {name}; // Previous wallets were independently unloaded.
-            f.notify(name); f.drain();
+            const auto name = std::string{"wallet-"} + manualexecution_detail::Number(i);
+            f.notify(name);
+            f.catalog.push_back(name);
+            f.drain();
         }
-        QVERIFY(f.probe->captures.size() >= 2);
-        QVERIFY(invalidated_claim_blocked);
-        QVERIFY(f.probe->destroyed.size() >= 32);
-        bool found_latest{false};
+        QCOMPARE(f.probe->captures.size(), size_t{1});
+        QCOMPARE(f.count(Publication::Failed), 0);
+        QCOMPARE(f.count(Publication::Changed), 1);
+        QCOMPARE(f.env.scheduler->pending(), size_t{1}); // Only the owner Cleanup reservation.
+        size_t presented{0};
         for (;;) {
             auto handoff = f.owner->takeNotifications();
             QVERIFY(handoff);
             if (handoff->entries.empty()) break;
             QVERIFY(handoff->entries.size() <= 16);
-            for (const auto& entry : handoff->entries) found_latest |= entry.name == "churn-95";
+            presented += handoff->entries.size();
             handoff.reset(); f.drain();
         }
-        QVERIFY(found_latest);
+        QCOMPARE(presented, size_t{96});
+        QCOMPARE(f.probe->captures.size(), size_t{1});
+        QCOMPARE(f.probe->destroyed.size(), size_t{96});
+        f.owner->retire(); f.drain();
+        QVERIFY(f.env.quiescent());
     }
     void realCallbackConcurrentWithInitialCaptureKeepsItsRefresh()
     {
@@ -639,10 +644,13 @@ private Q_SLOTS:
         Fixture f{execution::Limits::Bounded(), true};
         QVERIFY(f.owner->start()); f.drain();
         f.catalog = {"authoritative"};
+        bool invalidated_claim_blocked{false};
+        f.during_capture = [&] { invalidated_claim_blocked = !f.owner->takeNotifications(); };
         for (int i{0}; i < 100; ++i) f.notify("notification-" + manualexecution_detail::Number(i));
         QCOMPARE(f.env.scheduler->pending(), size_t{2}); // Cleanup plus one coalesced refresh.
         QCOMPARE(f.probe->destroyed.size(), size_t{36});
         f.drain();
+        QVERIFY(invalidated_claim_blocked);
         QCOMPARE(f.probe->captures.size(), size_t{2});
         auto handoff = f.owner->takeNotifications();
         QVERIFY(handoff); QCOMPARE(handoff->entries.size(), size_t{1});
