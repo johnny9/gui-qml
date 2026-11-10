@@ -25,6 +25,12 @@ SendRecipient::SendRecipient(WalletQmlModel* wallet, QObject* parent)
         }
     });
     connect(m_amount, &BitcoinAmount::amountChanged, this, &SendRecipient::validateAmount);
+    connect(m_amount, &BitcoinAmount::inputChanged, this, [this] {
+        // Input-only changes update presentation and admission without repeating
+        // the existing canonical amount/address validation work.
+        Q_EMIT amountErrorChanged();
+        Q_EMIT isValidChanged();
+    });
     connect(m_address, &BitcoinAddress::formattedAddressChanged, this, &SendRecipient::validateAddress);
 }
 
@@ -75,7 +81,7 @@ BitcoinAmount* SendRecipient::amount() const
 
 QString SendRecipient::amountError() const
 {
-    return m_amountError;
+    return m_amount->inputAcceptable() ? m_amountError : m_amount->inputError();
 }
 
 void SendRecipient::setAmountError(const QString& error)
@@ -169,5 +175,5 @@ void SendRecipient::validateAmount()
 
 bool SendRecipient::isValid() const
 {
-    return m_addressError.isEmpty() && m_amountError.isEmpty() && m_amount->satoshi() > 0 && !m_address->isEmpty();
+    return m_amount->inputAcceptable() && m_addressError.isEmpty() && m_amountError.isEmpty() && m_amount->satoshi() > 0 && !m_address->isEmpty();
 }

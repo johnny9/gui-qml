@@ -14,6 +14,14 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#include <QLocale>
+#include <QScopeGuard>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QInputMethodEvent>
+#include <core_io.h>
+#include <qml/models/options_model.h>
+
 #include <cmath>
 #include <optional>
 
@@ -77,6 +85,68 @@ public:
     explicit SendIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void localizedTypedSendPreparesExactOutput_data()
+    {
+        QTest::addColumn<QString>("text"); QTest::addColumn<int>("unit"); QTest::addColumn<int>("producer");
+        QTest::newRow("german-comma") << "0,02" << 0 << 0;
+        QTest::newRow("dot-control") << "0.02" << 0 << 0;
+        QTest::newRow("native-clipboard-comma") << "0,02" << 0 << 1;
+        QTest::newRow("ime-commit-comma") << "0,02" << 0 << 2;
+        QTest::newRow("milli-unit") << "20" << 1 << 0;
+        QTest::newRow("micro-unit") << "20000" << 2 << 0;
+        QTest::newRow("sat-unit") << "2000000" << 3 << 0;
+    }
+
+    void localizedTypedSendPreparesExactOutput()
+    {
+        QFETCH(QString, text); QFETCH(int, unit); QFETCH(int, producer);
+        const QLocale previous;
+        const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
+        QLocale::setDefault(QLocale("de_DE"));
+        const auto setup = prepareSweep(false); QVERIFY(setup);
+        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
+        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
+        auto* input = qmltest::WaitForVisible(m_app, "sendAmountInput"); QVERIFY(input);
+        QTRY_VERIFY(qmltest::Click(m_app, "sendAmountInput") && input->property("activeFocus").toBool());
+        QTest::keyClick(m_app.window(), Qt::Key_A, Qt::ControlModifier, 1);
+        QTest::keyClick(m_app.window(), Qt::Key_Backspace, Qt::NoModifier, 1);
+        QCOMPARE(input->property("text").toString(), QString{});
+        if (producer == 1) {
+            QGuiApplication::clipboard()->setText(text);
+            QTest::keyClick(m_app.window(), Qt::Key_V, Qt::ControlModifier, 1);
+        } else if (producer == 2) {
+            const auto before_preedit = setup->wallet->sendRecipientList()->totalAmountSatoshi();
+            QInputMethodEvent preedit(QStringLiteral("0,"), {});
+            QCoreApplication::sendEvent(input, &preedit);
+            QCOMPARE(input->property("preeditText").toString(), QString("0,"));
+            QCOMPARE(setup->wallet->sendRecipientList()->totalAmountSatoshi(), before_preedit);
+            QInputMethodEvent committed;
+            committed.setCommitString(text);
+            QCoreApplication::sendEvent(input, &committed);
+            QVERIFY(committed.isAccepted());
+        } else {
+            for (QChar key : text) QTest::keyClick(m_app.window(), static_cast<Qt::Key>(key.unicode()), Qt::NoModifier, 1);
+        }
+        const QString entered = input->property("text").toString();
+        QVERIFY(qmltest::Click(m_app, "sendAddressInput"));
+        QTRY_VERIFY(!setup->wallet->feeEstimatePending());
+        qInfo() << "Typed Send draft" << text << entered << "canonical sats" << setup->wallet->sendRecipientList()->totalAmountSatoshi()
+                << "available sats" << setup->wallet->availableSendBalanceSatoshi() << "error" << setup->wallet->sendRecipientList()->validationError();
+        QTRY_VERIFY_WITH_TIMEOUT(qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool(), 30'000);
+        QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
+        auto* prepared = setup->wallet->currentTransaction(); QVERIFY(prepared && prepared->getWtx());
+        const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + EncodeHexTx(*prepared->getWtx()) + "\"]"));
+        CAmount recipient_amount{-1};
+        for (const auto& output : decoded.find_value("vout").getValues()) {
+            const auto& destination = output.find_value("scriptPubKey").find_value("address");
+            if (destination.isStr() && destination.get_str() == setup->address.toStdString()) recipient_amount = AmountFromValue(output.find_value("value"));
+        }
+        qInfo() << "Typed Send amount oracle" << text << "accepted text" << entered << "decoded recipient sats" << recipient_amount;
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+        QVERIFY(qmltest::Click(m_app, "sendTransactionReviewCloseButton"));
+        QCOMPARE(recipient_amount, CAmount{2'000'000});
+    }
     void customFeesRespectRelayMinimum_data()
     {
         QTest::addColumn<QString>("rate");

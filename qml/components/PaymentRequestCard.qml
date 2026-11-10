@@ -20,13 +20,10 @@ Pane {
     property bool showRecipientName: false
     property var clipboard: Clipboard
     readonly property int amountUnit: ApplicationModels.optionsModel.displayUnit
-    property string amountErrorText: ""
+    readonly property string amountErrorText: amountDraft.inputError
     property string actionErrorText: ""
     property string addressErrorText: ""
     readonly property string errorText: amountErrorText || actionErrorText || addressErrorText
-    onAmountUnitChanged: {
-        if (amountInput && amountInSatoshis(amountInput.text) >= 0) amountErrorText = ""
-    }
     readonly property bool saved: !!request && request.id !== ""
     readonly property bool paymentReceived: !!request && request.paymentReceived
     readonly property bool sharing: visible && saved && !paymentReceived && !!wallet
@@ -61,7 +58,6 @@ Pane {
     }
 
     function resetFields() {
-        amountErrorText = ""
         actionErrorText = ""
         amountInput.reset()
         labelInput.reset()
@@ -70,7 +66,7 @@ Pane {
     }
     function clearForm() {
         if (!request || saved) return
-        request.amount.satoshi = 0
+        request.amount.clear()
         request.label = ""
         request.message = ""
         request.noteSelf = ""
@@ -79,9 +75,8 @@ Pane {
     function clearPublicField(name, field) {
         if (!request || saved || modalView || !field) return
         if (name === "amount") {
-            request.amount.satoshi = 0
-            amountErrorText = ""
-        } else request[name] = ""
+            request.amount.clear()
+            } else request[name] = ""
         field.reset()
     }
     function revealTemplateFields() {
@@ -97,38 +92,21 @@ Pane {
     }
     Component.onCompleted: resetFields()
 
-    function amountInSatoshis(text) {
-        if (text === "") return 0
-        if (!/^\d*(\.\d*)?$/.test(text) || text === ".") return -1
-        const decimals = amountUnit === BitcoinAmount.SAT ? 0
-            : amountUnit === BitcoinAmount.MilliBTC ? 5 : amountUnit === BitcoinAmount.MicroBTC ? 2 : 8
-        const parts = text.split(".")
-        const fraction = parts.length > 1 ? parts[1] : ""
-        if (fraction.length > decimals) return -1
-        // Build the integer directly to avoid rounding a decimal BTC amount.
-        const sats = Number((parts[0] || "0") + fraction.padEnd(decimals, "0"))
-        return Number.isSafeInteger(sats) && sats <= 2100000000000000 ? sats : -1
-    }
     function saveField(name, field) {
         if (!request || saved || !field.modified) return true
-        const value = name === "amount" ? amountInSatoshis(field.text) : field.text
-        if (name === "amount" && value < 0) {
-            amountErrorText = amountUnit === BitcoinAmount.SAT
-                ? qsTr("Enter a whole number of sats, up to 2,100,000,000,000,000.")
-                : qsTr("Enter a valid amount, up to 21,000,000 BTC.")
-            return false
+        if (name === "amount") {
+            if (!amountDraft.commitTo(request.amount)) return false
+        } else {
+            request[name] = field.text
+            field.acceptEdits()
         }
-        if (name === "amount") request.amount.satoshi = value
-        else request[name] = value
-        field.modified = false
         actionErrorText = ""
         return true
     }
     function saveFields() {
         if (saved) {
-            const amount = paymentReceived ? request.amount.satoshi : amountInSatoshis(amountInput.text)
-            if (amount < 0) { amountErrorText = qsTr("Enter a valid amount."); return false }
-            amountErrorText = ""
+            if (!paymentReceived && !amountDraft.inputAcceptable) return false
+            const amount = paymentReceived ? request.amount.satoshi : amountDraft.satoshi
             if (!wallet.updatePaymentRequest(request.id, amount,
                 paymentReceived ? request.label : labelInput.text,
                 paymentReceived ? request.message : messageInput.text, noteInput.text)) {
@@ -142,12 +120,8 @@ Pane {
             && saveField("message", messageInput) && saveField("noteSelf", noteInput)
     }
     function toggleAmountUnit() {
-        if (paymentReceived) return
-        // Preserve a typed draft. An untouched saved amount simply follows
-        // the app's display unit without becoming an edit to the request.
-        if (!saved) amountInput.modified = true
+        if (paymentReceived || !amountDraft.inputAcceptable) return
         ApplicationModels.optionsModel.displayUnit = amountUnit === BitcoinAmount.SAT ? BitcoinAmount.BTC : BitcoinAmount.SAT
-        if (!saved) saveField("amount", amountInput)
     }
     function createRequest() {
         if (!wallet || !request || saved || !saveFields()) return
@@ -213,6 +187,19 @@ Pane {
     }
 
     BitcoinAmount {
+        id: amountDraft
+        objectName: "requestPaymentAmountEntry"
+        zeroIsEmpty: true
+        unit: root.amountUnit
+    }
+    Binding {
+        target: amountDraft
+        property: "satoshi"
+        value: root.request ? root.request.amount.satoshi : 0
+        when: !amountDraft.inputDirty
+        restoreMode: Binding.RestoreNone
+    }
+    BitcoinAmount {
         id: displayAmount
         satoshi: root.request ? root.request.amount.satoshi : 0
         unit: root.amountUnit
@@ -234,7 +221,6 @@ Pane {
             amountInput.reset()
             labelInput.reset()
             messageInput.reset()
-            root.amountErrorText = ""
             root.actionErrorText = ""
             saveDialog.close()
             moreMenu.close()
@@ -513,20 +499,20 @@ Pane {
                         value: root.request && root.request.amount.satoshi > 0 ? displayAmount.display : ""
                         placeholderText: "0"
                         fieldObjectName: "requestPaymentAmountInput"
+                        amountEntry: amountDraft
                         editable: !root.paymentReceived
                         showDivider: labelInput.visible || messageInput.visible
                         dividerColor: root.modalView ? Theme.color.neutral3 : Theme.color.neutral2
                         fieldTextStyle: Theme.text.monoDescription
                         inputMethodHints: Qt.ImhFormattedNumbersOnly
-                        maximumLength: 32
-                        validator: RegularExpressionValidator { regularExpression: /^0*\d{0,16}(\.\d{0,8})?$/ }
-                        onTextChanged: if (root.amountInSatoshis(text) >= 0) root.amountErrorText = ""
+                        maximumLength: 129
                         onEditingFinished: if (!root.saved) root.saveField("amount", this)
                         unitControl: AmountUnitButton {
                             id: unitButton
                             objectName: "requestPaymentAmountUnitToggle"
                             iconObjectName: "requestPaymentAmountUnitIcon"
                             unit: root.amountUnit
+                            enabled: amountDraft.inputAcceptable
                             onClicked: root.toggleAmountUnit()
                         }
                     }

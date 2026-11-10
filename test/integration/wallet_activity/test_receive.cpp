@@ -7,6 +7,13 @@
 #include <qml/models/activityfilterproxymodel.h>
 
 #include <QSignalSpy>
+#include <QLocale>
+#include <QScopeGuard>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QInputMethodEvent>
+#include <qml/models/options_model.h>
+#include <streams.h>
 
 class ReceiveIntegrationTests : public QObject
 {
@@ -37,6 +44,63 @@ public:
     explicit ReceiveIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void localizedTypedRequestPersistsExactAmount_data()
+    {
+        QTest::addColumn<QString>("text"); QTest::addColumn<int>("unit"); QTest::addColumn<int>("producer");
+        QTest::newRow("german-comma") << "0,02" << 0 << 0;
+        QTest::newRow("dot-control") << "0.02" << 0 << 0;
+        QTest::newRow("native-clipboard-comma") << "0,02" << 0 << 1;
+        QTest::newRow("ime-commit-comma") << "0,02" << 0 << 2;
+        QTest::newRow("milli-unit") << "20" << 1 << 0;
+        QTest::newRow("micro-unit") << "20000" << 2 << 0;
+        QTest::newRow("sat-unit") << "2000000" << 3 << 0;
+    }
+
+    void localizedTypedRequestPersistsExactAmount()
+    {
+        QFETCH(QString, text); QFETCH(int, unit); QFETCH(int, producer);
+        const QLocale previous;
+        const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
+        QLocale::setDefault(QLocale("de_DE"));
+        auto* wallet = qmltest::CreateWallet(m_app); QVERIFY(wallet);
+        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
+        QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "requestPaymentPage"));
+        QVERIFY(qmltest::SetText(m_app, "requestPaymentAmountInput", ""));
+        auto* input = qmltest::Find(m_app, "requestPaymentAmountInput"); QVERIFY(input);
+        QVERIFY(QMetaObject::invokeMethod(input, "forceActiveFocus"));
+        if (producer == 1) {
+            QGuiApplication::clipboard()->setText(text);
+            QTest::keyClick(m_app.window(), Qt::Key_V, Qt::ControlModifier, 1);
+        } else if (producer == 2) {
+            const auto before_preedit = wallet->currentPaymentRequest()->amount()->satoshi();
+            QInputMethodEvent preedit(QStringLiteral("0,"), {});
+            QCoreApplication::sendEvent(input, &preedit);
+            QCOMPARE(input->property("preeditText").toString(), QString("0,"));
+            QCOMPARE(wallet->currentPaymentRequest()->amount()->satoshi(), before_preedit);
+            QInputMethodEvent committed;
+            committed.setCommitString(text);
+            QCoreApplication::sendEvent(input, &committed);
+            QVERIFY(committed.isAccepted());
+        } else {
+            for (QChar key : text) QTest::keyClick(m_app.window(), static_cast<Qt::Key>(key.unicode()), Qt::NoModifier, 1);
+        }
+        const QString entered = input->property("text").toString();
+        QVERIFY(qmltest::Click(m_app, "requestPaymentGenerateButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "paymentRequestModal"));
+        const auto blobs = qmltest::Call(m_app, [backend = wallet->wallet()](interfaces::Node*) { return backend->getAddressReceiveRequests(); }); QCOMPARE(blobs.size(), size_t{1});
+        std::vector<uint8_t> bytes(blobs[0].begin(), blobs[0].end()); DataStream record{bytes};
+        int version, recipient_version; int64_t id; uint32_t timestamp; std::string address, label; CAmount persisted;
+        record >> version >> id >> timestamp >> recipient_version >> address >> label >> persisted;
+        QCOMPARE(version, 1); QCOMPARE(recipient_version, 1); QVERIFY(id > 0); QVERIFY(timestamp > 0); QVERIFY(!address.empty());
+        const QString uri = qmltest::Find(m_app, "requestPaymentQRImage")->property("code").toString();
+        qInfo() << "Typed Receive amount oracle" << text << "accepted text" << entered << "Core stored sats" << persisted << "QR payload" << uri;
+        QVERIFY(qmltest::Click(m_app, "paymentRequestModalClose"));
+        wallet->reloadReceiveRequests(); QCOMPARE(wallet->receiveRequests()->count(), 1);
+        QCOMPARE(persisted, CAmount{2'000'000});
+        QVERIFY(uri.contains("amount=0.02000000"));
+    }
+
     void privateNotesSyncWithoutChangingPublicPaymentMetadata()
     {
         auto* wallet = qmltest::CreateWallet(m_app);

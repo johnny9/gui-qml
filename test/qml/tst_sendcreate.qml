@@ -7,6 +7,7 @@ import QtQuick.Window 2.15
 import QtTest 1.2
 import org.bitcoincore.qt 1.0
 import "../../qml/pages/wallet"
+import "../../qml/components"
 
 TestCase {
     id: testCase
@@ -517,7 +518,7 @@ TestCase {
         const amountInput = findChild(page, "sendAmountInput")
         verify(amountInput !== null)
 
-        amountInput.text = ""
+        verify(testSetup.replaceText(amountInput, ""))
         amountInput.forceActiveFocus()
         verify(amountInput.activeFocus)
         const callsBefore = testWalletModel.scheduleFeeEstimatesCalls
@@ -535,7 +536,7 @@ TestCase {
         const amountInput = findChild(page, "sendAmountInput")
         verify(amountInput !== null)
 
-        amountInput.text = "0.00000000"
+        verify(testSetup.replaceText(amountInput, "0.00000000"))
         amountInput.cursorPosition = 1
         amountInput.forceActiveFocus()
         verify(amountInput.activeFocus)
@@ -564,13 +565,15 @@ TestCase {
         verify(amountInput.activeFocus)
         keyClick("9")
 
-        compare(amountInput.text, "0.12345678")
+        compare(amountInput.text, "0.123456789")
         compare(testSendRecipient.amount.display, "0.12345678")
+        verify(!testSendRecipient.amount.inputAcceptable)
+        verify(testSendRecipient.amount.inputError.length > 0)
 
         amountInput.focus = false
         wait(0)
         compare(amountInput.activeFocus, false)
-        compare(amountInput.text, "0.12345678")
+        compare(amountInput.text, "0.123456789")
     }
 
     function test_send_amount_rejects_extra_decimal_points_while_editing() {
@@ -581,13 +584,15 @@ TestCase {
         verify(amountInput !== null)
 
         testSendRecipient.amount.display = "1.20000000"
-        amountInput.text = "1.2"
+        verify(testSetup.replaceText(amountInput, "1.2"))
         amountInput.cursorPosition = amountInput.text.length
         amountInput.forceActiveFocus()
         verify(amountInput.activeFocus)
         keyClick(".")
 
-        compare(amountInput.text, "1.2")
+        compare(amountInput.text, "1.2.")
+        verify(!testSendRecipient.amount.inputAcceptable)
+        verify(testSendRecipient.amount.inputError.length > 0)
         compare(testSendRecipient.amount.display, "1.20000000")
     }
 
@@ -1198,5 +1203,38 @@ TestCase {
         compare(findChild(popup.contentItem, "sendCoinsList").errorText,
                 "This coin is no longer available. Try again.")
         popup.close()
+    }
+    Component { id: amountPasteComponent; BitcoinAmountInputField { amount: testSendRecipient.amount; interceptPaste: true; property int pasteCalls: 0; onPasteRequested: { pasteCalls += 1; amount.satoshi = 7000000 } } }
+
+    function test_amount_clipboard_uri_provenance_data() {
+        const uri = "bitcoin:bcrt1qexample?amount=0.07"
+        return [
+            {tag: "empty-draft", previous: "", current: uri, clipboard: uri, accepted: true},
+            {tag: "replace-entire-draft", previous: "0.00000000", current: uri, clipboard: uri, accepted: true},
+            {tag: "append", previous: "0.02", current: "0.02" + uri, clipboard: uri, accepted: true},
+            {tag: "prepend", previous: "0.02", current: uri + "0.02", clipboard: uri, accepted: true},
+            {tag: "replace-selection", previous: "12.34", current: "12" + uri + "34", clipboard: uri, accepted: true},
+            {tag: "different-prefix", previous: "12", current: "99" + uri, clipboard: uri, accepted: false},
+            {tag: "typed-other-uri", previous: "", current: "bitcoin:other", clipboard: uri, accepted: false},
+            {tag: "unchanged", previous: uri, current: uri, clipboard: uri, accepted: false},
+            {tag: "numeric-clipboard", previous: "", current: "0.02", clipboard: "0.02", accepted: false}
+        ]
+    }
+
+    function test_amount_clipboard_uri_provenance(data) {
+        const field = createTemporaryObject(amountPasteComponent, this)
+        verify(field !== null)
+        Clipboard.currentText = data.clipboard
+        const before = testSendRecipient.amount.satoshi
+        compare(field.pastedPaymentUri(data.previous, data.current), data.accepted ? data.clipboard : "")
+        compare(testSendRecipient.amount.satoshi, before)
+    }
+    function test_native_text_change_from_empty_draft() {
+        const field = createTemporaryObject(amountPasteComponent, this)
+        field.amount.clear()
+        Clipboard.currentText = "bitcoin:bcrt1qexample?amount=0.07"
+        verify(testSetup.replaceText(field.field, Clipboard.currentText))
+        compare(field.pasteCalls, 1)
+        compare(field.amount.satoshi, 7000000)
     }
 }

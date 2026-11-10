@@ -21,6 +21,36 @@ class SendRecipientsListModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void invalidDraftAndAddressHaveIndependentAdmissionReasons()
+    {
+        SendRecipientsListModel recipients;
+        auto* recipient = recipients.currentRecipient();
+        recipient->setAddress("malformed-address");
+        recipient->amount()->setSatoshi(2'000'000);
+        QVERIFY(!recipient->addressError().isEmpty());
+        QVERIFY(recipient->amount()->inputAcceptable());
+        QVERIFY(!recipient->isValid());
+        QVERIFY(!recipients.allValid());
+        QVERIFY(recipients.validationError().isEmpty()); // Existing single-address presentation.
+
+        const auto address_error = recipient->addressError();
+        recipient->amount()->editInput("1.");
+        QVERIFY(!recipient->amount()->inputAcceptable());
+        QCOMPARE(recipient->addressError(), address_error);
+        QCOMPARE(recipient->amount()->satoshi(), qint64{2'000'000});
+        QVERIFY(!recipient->amountError().isEmpty());
+        QCOMPARE(recipients.validationError(), recipient->amountError());
+        QVERIFY(!recipient->isValid());
+
+        recipient->amount()->editInput("0.02");
+        QVERIFY(recipient->amount()->inputAcceptable());
+        QCOMPARE(recipient->addressError(), address_error);
+        QVERIFY(recipient->amountError().isEmpty());
+        QVERIFY(!recipient->isValid());
+        QVERIFY(recipients.validationError().isEmpty());
+        recipients.add();
+        QVERIFY(!recipients.validationError().isEmpty());
+    }
     void clearKeepsCurrentRecipientValidForQmlBindings();
     void clearToFrontReportsRemovedRows();
     void clearToFrontDetachesRecipientsBeforeDestroyingThem();

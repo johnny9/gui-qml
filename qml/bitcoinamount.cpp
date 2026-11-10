@@ -3,27 +3,15 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/bitcoinamount.h>
+#include <qml/amountparse.h>
 
 #include <qml/bitcoinunits.h>
 
 #include <cassert>
-#include <limits>
 
-#include <QRegularExpression>
-#include <QStringList>
+#include <QLocale>
 
 namespace {
-qint64 UnitFactor(BitcoinAmount::Unit unit)
-{
-    switch (unit) {
-    case BitcoinAmount::Unit::BTC: return COIN;
-    case BitcoinAmount::Unit::MilliBTC: return 100'000;
-    case BitcoinAmount::Unit::MicroBTC: return 100;
-    case BitcoinAmount::Unit::SAT: return 1;
-    }
-    assert(false);
-}
-
 int UnitDecimals(BitcoinAmount::Unit unit)
 {
     switch (unit) {
@@ -52,59 +40,34 @@ BitcoinAmount::BitcoinAmount(QObject* parent)
 {
 }
 
-QString BitcoinAmount::sanitize(const QString &text) const
-{
-    QString result = text;
-
-    // Remove any invalid characters
-    result.remove(QRegularExpression("[^0-9.]"));
-
-    // Ensure only one decimal point
-    QStringList parts = result.split('.');
-    if (parts.size() > 2) {
-        result = parts[0] + "." + parts[1];
-    }
-
-    // Limit decimal places to the selected display unit.
-    const int decimals = UnitDecimals(m_unit);
-    if (parts.size() == 2 && parts[1].length() > decimals) {
-        result = parts[0] + "." + parts[1].left(decimals);
-    }
-
-    return result;
-}
-
 qint64 BitcoinAmount::satoshi() const
 {
     return m_satoshi;
 }
 
-void BitcoinAmount::setSatoshi(qint64 new_amount)
+void BitcoinAmount::assignCanonical(qint64 value, bool is_set, bool reset_input)
 {
-    if (m_satoshi != new_amount || !m_isSet) {
-        const bool label_changes = (m_unit == Unit::SAT) &&
-                                   ((qAbs(m_satoshi) == 1) != (qAbs(new_amount) == 1));
-        m_isSet = true;
-        m_satoshi = new_amount;
-        if (label_changes) Q_EMIT unitChanged();
-        Q_EMIT amountChanged();
-        Q_EMIT displayChanged();
-        Q_EMIT displayWithUnitChanged();
-    }
-}
-
-void BitcoinAmount::clear()
-{
-    if (!m_isSet && m_satoshi == 0) {
-        return;
-    }
-    const bool label_changes = (m_unit == Unit::SAT) && (qAbs(m_satoshi) == 1);
-    m_satoshi = 0;
-    m_isSet = false;
+    const bool changed = m_satoshi != value || m_isSet != is_set;
+    const bool label_changes = (m_unit == Unit::SAT) && ((qAbs(m_satoshi) == 1) != (qAbs(value) == 1));
+    m_satoshi = value;
+    m_isSet = is_set;
+    if (reset_input) resetInput();
+    if (!changed) return;
     if (label_changes) Q_EMIT unitChanged();
     Q_EMIT amountChanged();
     Q_EMIT displayChanged();
     Q_EMIT displayWithUnitChanged();
+}
+
+void BitcoinAmount::setSatoshi(qint64 value)
+{
+    // External canonical intent also retires an invalid or incomplete edit.
+    assignCanonical(value, true, true);
+}
+
+void BitcoinAmount::clear()
+{
+    assignCanonical(0, false, true);
 }
 
 BitcoinAmount::Unit BitcoinAmount::unit() const
@@ -114,8 +77,13 @@ BitcoinAmount::Unit BitcoinAmount::unit() const
 
 void BitcoinAmount::setUnit(const Unit unit)
 {
-    if (m_unit == unit) return;
+    if (unit < Unit::BTC || unit > Unit::SAT || m_unit == unit) return;
     m_unit = unit;
+    if (inputAcceptable()) {
+        m_input_text = formattedInput();
+        if (!m_input_dirty) m_baseline_text = m_input_text;
+    }
+    Q_EMIT inputChanged();
     Q_EMIT unitChanged();
     Q_EMIT displayChanged();
     Q_EMIT displayWithUnitChanged();
@@ -128,10 +96,7 @@ QString BitcoinAmount::unitLabel() const
 
 void BitcoinAmount::flipUnit()
 {
-    m_unit = m_unit == Unit::SAT ? Unit::BTC : Unit::SAT;
-    Q_EMIT unitChanged();
-    Q_EMIT displayChanged();
-    Q_EMIT displayWithUnitChanged();
+    setUnit(m_unit == Unit::SAT ? Unit::BTC : Unit::SAT);
 }
 
 QString BitcoinAmount::satsToBtcString(qint64 sat)
@@ -178,50 +143,70 @@ QString BitcoinAmount::localizedDisplayWithUnit() const
         + QmlBitcoinUnits::label(unit, m_satoshi);
 }
 
-qint64 BitcoinAmount::displayToSats(const QString& sanitized) const
+QString BitcoinAmount::formattedInput() const
 {
-    if (sanitized.isEmpty() || sanitized == ".") return 0;
+    if (!m_isSet || (m_zero_is_empty && m_satoshi == 0)) return {};
+    return toDisplay().replace(QLatin1Char('.'), QLocale().decimalPoint());
+}
 
-    QString cleaned = sanitized;
-    if (cleaned.startsWith('.')) cleaned.prepend('0');
+void BitcoinAmount::resetInput()
+{
+    const bool was_dirty = m_input_dirty;
+    m_input_text = formattedInput();
+    m_baseline_text = m_input_text;
+    m_input_state = m_input_text.isEmpty() ? InputState::Empty : InputState::Valid;
+    m_input_dirty = false;
+    if (was_dirty) Q_EMIT inputDirtyChanged();
+    Q_EMIT inputChanged();
+}
 
-    QStringList parts = cleaned.split('.');
-    const qint64 whole = parts[0].isEmpty() ? 0 : parts[0].toLongLong();
-    qint64 frac = 0;
-    const int decimals = UnitDecimals(m_unit);
-    if (parts.size() == 2) {
-        frac = parts[1].leftJustified(decimals, '0').toLongLong();
-    }
+void BitcoinAmount::setZeroIsEmpty(bool empty)
+{
+    if (m_zero_is_empty == empty) return;
+    m_zero_is_empty = empty;
+    if (!m_input_dirty) resetInput();
+    else Q_EMIT inputChanged();
+}
 
-    const qint64 factor = UnitFactor(m_unit);
-    if (whole > std::numeric_limits<qint64>::max() / factor) {
-        return std::numeric_limits<qint64>::max();
-    }
-
-    return whole * factor + frac;
+QString BitcoinAmount::inputError() const
+{
+    if (m_input_state == InputState::Incomplete) return tr("Complete the amount.");
+    if (m_input_state != InputState::Invalid) return {};
+    return m_unit == Unit::SAT
+        ? tr("Enter a whole number of sats, up to 2,100,000,000,000,000.")
+        : tr("Enter a valid amount, up to 21,000,000 BTC.");
 }
 
 void BitcoinAmount::fromDisplay(const QString& text)
 {
-    if (text.trimmed().isEmpty()) {
-        clear();
-        return;
-    }
+    const auto parsed = amountinput::Parse(text, UnitDecimals(m_unit), QLocale().decimalPoint().at(0));
+    static_assert(static_cast<int>(InputState::Empty) == static_cast<int>(amountinput::State::Empty));
+    static_assert(static_cast<int>(InputState::Incomplete) == static_cast<int>(amountinput::State::Incomplete));
+    static_assert(static_cast<int>(InputState::Invalid) == static_cast<int>(amountinput::State::Invalid));
+    static_assert(static_cast<int>(InputState::Valid) == static_cast<int>(amountinput::State::Valid));
+    m_input_state = static_cast<InputState>(parsed.state);
+    m_input_text = text.left(129);
+    const bool was_dirty = m_input_dirty;
+    m_input_dirty = m_input_text != m_baseline_text;
+    if (parsed.state == amountinput::State::Valid) assignCanonical(parsed.satoshi, true);
+    else if (parsed.state == amountinput::State::Empty) assignCanonical(0, false);
+    if (was_dirty != m_input_dirty) Q_EMIT inputDirtyChanged();
+    Q_EMIT inputChanged();
+}
 
-    qint64 newSat = 0;
-    if (m_unit == Unit::SAT) {
-        QString digitsOnly = text;
-        digitsOnly.remove(QRegularExpression("[^0-9]"));
-        newSat = digitsOnly.trimmed().isEmpty() ? 0 : digitsOnly.toLongLong();
-    } else {
-        QString sanitized = sanitize(text);
-        newSat = displayToSats(sanitized);
-    }
-    setSatoshi(newSat);
+bool BitcoinAmount::commitTo(BitcoinAmount* target)
+{
+    if (!target || !inputAcceptable() || !MoneyRange(m_satoshi)) return false;
+    if (m_input_state == InputState::Empty) target->clear();
+    else target->setSatoshi(m_satoshi);
+    resetInput();
+    return true;
 }
 
 void BitcoinAmount::format()
 {
+    if (!inputAcceptable()) return;
+    resetInput();
     Q_EMIT displayChanged();
     Q_EMIT displayWithUnitChanged();
 }

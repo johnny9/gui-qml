@@ -292,6 +292,7 @@ QString SendRecipientsListModel::validationError() const
     std::set<CTxDestination> destinations;
     for (const auto* recipient : m_recipients) {
         if (recipient == nullptr || !recipient->isValid()) {
+            if (recipient && !recipient->amount()->inputAcceptable()) return recipient->amountError();
             return m_recipients.size() > 1 ? tr("Complete every recipient before continuing.") : QString{};
         }
 

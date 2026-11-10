@@ -110,101 +110,84 @@ TestCase {
         compare(Utils.formatRelativeTime(d1.toISOString()), "1 day ago")
     }
 
-    Component {
-        id: btcValidatorComponent
-        TextField {
-            validator: RegularExpressionValidator {
-                regularExpression: /^0*\d{0,8}(\.\d{0,8})?$/
-            }
-            maximumLength: 32
-        }
-    }
-
-    Component {
-        id: satValidatorComponent
-        TextField {
-            validator: RegularExpressionValidator {
-                regularExpression: /^0*\d{0,16}$/
-            }
-            maximumLength: 32
-        }
-    }
+    Component { id: btcValidatorComponent; BitcoinAmount { unit: BitcoinAmount.BTC } }
+    Component { id: satValidatorComponent; BitcoinAmount { unit: BitcoinAmount.SAT } }
 
     function test_btcValidator_accepts_valid_amounts() {
         var field = createTemporaryObject(btcValidatorComponent, this)
         verify(field !== null)
 
-        field.text = "0"
-        compare(field.acceptableInput, true)
+        field.editInput("0")
+        compare(field.inputAcceptable, true)
 
-        field.text = "1.00000000"
-        compare(field.acceptableInput, true)
+        field.editInput("1.00000000")
+        compare(field.inputAcceptable, true)
 
-        field.text = "21000000.00000000"
-        compare(field.acceptableInput, true)
+        field.editInput("21000000.00000000")
+        compare(field.inputAcceptable, true)
 
-        field.text = "0.00000001"
-        compare(field.acceptableInput, true)
+        field.editInput("0.00000001")
+        compare(field.inputAcceptable, true)
 
-        field.text = "01.00000000"
-        compare(field.acceptableInput, true)
+        field.editInput("01.00000000")
+        compare(field.inputAcceptable, true)
 
-        field.text = "00000001.00000000"
-        compare(field.acceptableInput, true)
+        field.editInput("00000001.00000000")
+        compare(field.inputAcceptable, true)
     }
 
     function test_btcValidator_rejects_invalid_amounts() {
         var field = createTemporaryObject(btcValidatorComponent, this)
         verify(field !== null)
 
-        field.text = "-1"
-        compare(field.acceptableInput, false)
+        field.editInput("-1")
+        compare(field.inputAcceptable, false)
 
-        field.text = "1.2.3"
-        compare(field.acceptableInput, false)
+        field.editInput("1.2.3")
+        compare(field.inputAcceptable, false)
 
-        field.text = "0.000000001"
-        compare(field.acceptableInput, false)
+        field.editInput("0.000000001")
+        compare(field.inputAcceptable, false)
 
-        field.text = "100000000.00000000"
-        compare(field.acceptableInput, false)
+        field.editInput("100000000.00000000")
+        compare(field.inputAcceptable, false)
 
-        field.text = "abc"
-        compare(field.acceptableInput, false)
+        field.editInput("abc")
+        compare(field.inputAcceptable, false)
     }
 
     function test_satValidator_accepts_valid_amounts() {
         var field = createTemporaryObject(satValidatorComponent, this)
         verify(field !== null)
 
-        field.text = "0"
-        compare(field.acceptableInput, true)
+        field.editInput("0")
+        compare(field.inputAcceptable, true)
 
-        field.text = "100000000"
-        compare(field.acceptableInput, true)
+        field.editInput("100000000")
+        compare(field.inputAcceptable, true)
 
-        field.text = "2100000000000000"
-        compare(field.acceptableInput, true)
+        field.editInput("2100000000000000")
+        compare(field.inputAcceptable, true)
 
-        field.text = "00"
-        compare(field.acceptableInput, true)
+        field.editInput("00")
+        compare(field.inputAcceptable, true)
 
-        field.text = "0002100000000000000"
-        compare(field.acceptableInput, true)
+        field.editInput("0002100000000000000")
+        compare(field.inputAcceptable, true)
     }
 
     function test_satValidator_rejects_invalid_amounts() {
         var field = createTemporaryObject(satValidatorComponent, this)
         verify(field !== null)
 
-        field.text = "1.5"
-        compare(field.acceptableInput, false)
+        field.editInput("1.5")
+        compare(field.inputAcceptable, false)
 
-        field.text = "-100"
-        compare(field.acceptableInput, false)
+        field.editInput("-100")
+        compare(field.inputAcceptable, false)
 
-        field.text = "10000000000000000"
-        compare(field.acceptableInput, false)
+        field.editInput("10000000000000000")
+        compare(field.inputAcceptable, false)
     }
 
 
@@ -715,8 +698,7 @@ TestCase {
         if (!card.modalView && objectName === "requestPaymentYourNameInput") card.showRecipientName = true
         const input = findChild(card, objectName)
         input.forceActiveFocus()
-        input.text = text
-        input.textEdited()
+        verify(testSetup.replaceText(input, text))
         return input
     }
 
@@ -815,21 +797,26 @@ TestCase {
 
     function test_amount_input_rejects_invalid_characters_and_preserves_precision() {
         const card = createRequest(createPage())
+        const original = card.request.amount.satoshi
         optionsModel.displayUnit = BitcoinAmount.BTC
         const input = editField(card, "requestPaymentAmountInput", "0.12345678")
         input.cursorPosition = input.text.length
         keyClick("9")
-        compare(input.text, "0.12345678")
+        compare(input.text, "0.123456789")
         keyClick(".")
         keyClick("x")
-        compare(input.text, "0.12345678")
+        compare(input.text, "0.123456789.x")
         input.editingFinished()
+        verify(!card.saveFields())
+        compare(card.request.amount.satoshi, original)
+        verify(card.errorText.length > 0)
+        editField(card, "requestPaymentAmountInput", "0.12345678")
         verify(card.saveFields())
         compare(card.request.amount.satoshi, 12345678)
         compare(input.text, "0.12345678")
     }
 
-    function test_unit_toggle_updates_app_without_converting_edited_text() {
+    function test_unit_toggle_preserves_pending_canonical_amount() {
         const page = createPage()
         const card = createRequest(page)
         optionsModel.displayUnit = BitcoinAmount.BTC
@@ -838,13 +825,13 @@ TestCase {
         compare(card.amountUnit, BitcoinAmount.SAT)
         compare(optionsModel.displayUnit, BitcoinAmount.SAT)
         compare(page.draftCard.amountUnit, BitcoinAmount.SAT)
-        compare(input.text, "12")
+        compare(input.text, "1200000000")
         verify(card.saveFields())
-        compare(card.request.amount.satoshi, 12)
+        compare(card.request.amount.satoshi, 1200000000)
         findChild(card, "requestPaymentAmountUnitToggle").clicked()
-        compare(input.text, "0.00000012")
+        compare(input.text, "12.00000000")
         verify(!findChild(card, "requestPaymentUpdateButton").enabled)
-        compare(card.request.amount.satoshi, 12)
+        compare(card.request.amount.satoshi, 1200000000)
         compare(optionsModel.displayUnit, BitcoinAmount.BTC)
         compare(page.draftCard.amountUnit, BitcoinAmount.BTC)
         optionsModel.displayUnit = BitcoinAmount.SAT

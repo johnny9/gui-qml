@@ -19,6 +19,12 @@ class BitcoinAmount : public QObject
     Q_PROPERTY(QString displayWithUnit READ displayWithUnit NOTIFY displayWithUnitChanged)
     Q_PROPERTY(QString localizedDisplay READ localizedDisplay NOTIFY displayChanged)
     Q_PROPERTY(QString localizedDisplayWithUnit READ localizedDisplayWithUnit NOTIFY displayWithUnitChanged)
+    Q_PROPERTY(QString inputText READ inputText NOTIFY inputChanged)
+    Q_PROPERTY(InputState inputState READ inputState NOTIFY inputChanged)
+    Q_PROPERTY(bool inputAcceptable READ inputAcceptable NOTIFY inputChanged)
+    Q_PROPERTY(bool inputDirty READ inputDirty NOTIFY inputDirtyChanged)
+    Q_PROPERTY(QString inputError READ inputError NOTIFY inputChanged)
+    Q_PROPERTY(bool zeroIsEmpty READ zeroIsEmpty WRITE setZeroIsEmpty NOTIFY inputChanged)
     Q_PROPERTY(qint64 satoshi READ satoshi WRITE setSatoshi NOTIFY amountChanged)
 
 public:
@@ -30,6 +36,9 @@ public:
         SAT
     };
     Q_ENUM(Unit)
+
+    enum class InputState { Empty, Incomplete, Invalid, Valid };
+    Q_ENUM(InputState)
 
     explicit BitcoinAmount(QObject *parent = nullptr);
 
@@ -47,6 +56,17 @@ public:
 
     bool isSet() const { return m_isSet; }
 
+    QString inputText() const { return m_input_text; }
+    InputState inputState() const { return m_input_state; }
+    bool inputAcceptable() const { return m_input_state == InputState::Empty || m_input_state == InputState::Valid; }
+    bool inputDirty() const { return m_input_dirty; }
+    QString inputError() const;
+    bool zeroIsEmpty() const { return m_zero_is_empty; }
+    void setZeroIsEmpty(bool empty);
+    Q_INVOKABLE void editInput(const QString& text) { fromDisplay(text); }
+    Q_INVOKABLE bool commitTo(BitcoinAmount* target);
+    Q_INVOKABLE void resetInput();
+    Q_INVOKABLE void restoreInput() { Q_EMIT inputChanged(); }
     Q_INVOKABLE void format();
 
     static QString satsToBtcString(qint64 sat);
@@ -56,15 +76,22 @@ public Q_SLOTS:
     void clear();
 
 Q_SIGNALS:
+    void inputDirtyChanged();
+    void inputChanged();
     void unitChanged();
     void amountChanged();
     void displayChanged();
     void displayWithUnitChanged();
 
 private:
-    QString sanitize(const QString& text) const;
-    qint64 displayToSats(const QString& sanitized) const;
+    void assignCanonical(qint64 value, bool is_set, bool reset_input = false);
+    QString formattedInput() const;
 
+    QString m_input_text;
+    QString m_baseline_text;
+    InputState m_input_state{InputState::Empty};
+    bool m_input_dirty{false};
+    bool m_zero_is_empty{false};
     qint64 m_satoshi{0};
     bool m_isSet{false};
     Unit m_unit{Unit::BTC};

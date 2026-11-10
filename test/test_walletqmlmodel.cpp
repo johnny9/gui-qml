@@ -690,6 +690,35 @@ private:
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void invalidAmountDraftNeverReachesPreparation_data()
+    {
+        QTest::addColumn<QString>("text");
+        QTest::newRow("incomplete") << "1.";
+        QTest::newRow("malformed") << "1.2.3";
+        QTest::newRow("excess-precision") << "0.000000001";
+        QTest::newRow("out-of-range") << "21000000.00000001";
+        QTest::newRow("bounded-overflow") << QString(1000, u'9');
+    }
+    void invalidAmountDraftNeverReachesPreparation()
+    {
+        QFETCH(QString, text);
+        auto [wallet, model] = MakeWalletModel();
+        SetValidRecipient(*model);
+        auto* amount = model->sendRecipientList()->currentRecipient()->amount();
+        amount->setUnit(BitcoinAmount::Unit::BTC);
+        const auto before = amount->satoshi();
+        [[maybe_unused]] auto verify_wallet = wallet->VerifyOnExit();
+        wallet->ExpectNoCalls(wallet->calls.createTransaction);
+        amount->editInput(text);
+        QCOMPARE(amount->satoshi(), before);
+        QVERIFY(!amount->inputAcceptable());
+        QVERIFY(!model->sendRecipientList()->allValid());
+        QVERIFY(!model->prepareTransaction());
+        QVERIFY(!model->prepareTransactionWithPassphrase("owned fixture password"));
+        QVERIFY(model->currentTransaction() == nullptr);
+        QVERIFY(!model->transactionError().isEmpty());
+        QCOMPARE(wallet->calls.createTransaction.load(), 0);
+    }
     void markedFinalInputsDoNotInventSigningAuthority()
     {
         auto document = psbtfeefixture::Legacy(2, false);

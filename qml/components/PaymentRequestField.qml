@@ -5,13 +5,16 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import org.bitcoincore.qt 1.0
 import "../controls"
 
 FormRow {
     id: root
     property alias label: root.title
     property string value: ""
-    property bool modified: false
+    property BitcoinAmount amountEntry: null
+    property bool textDirty: false
+    readonly property bool modified: amountEntry ? amountEntry.inputDirty : textDirty
     property bool editable: true
     property string fieldObjectName: ""
     property alias text: input.text
@@ -22,12 +25,19 @@ FormRow {
     property var fieldTextStyle: Theme.text.description
     property Component unitControl
     signal editingFinished()
-    function reset() { modified = false; input.text = value }
+    function reset() {
+        if (amountEntry) amountEntry.resetInput()
+        else { textDirty = false; input.text = value }
+    }
+    function acceptEdits() {
+        if (amountEntry) amountEntry.format()
+        else textDirty = false
+    }
     enabled: editable
     showDivider: false
     minimumRowHeight: 56
     titleColor: editable ? Theme.color.neutral7 : Theme.color.neutral4
-    onValueChanged: if (!modified) input.text = value
+    onValueChanged: if (!amountEntry && !modified) input.text = value
     onEditableChanged: if (!editable) reset()
     Component.onCompleted: reset()
     trailingItem: RowLayout {
@@ -43,11 +53,15 @@ FormRow {
             placeholderTextColor: Theme.color.neutral5
             horizontalAlignment: Text.AlignRight
             verticalAlignment: TextInput.AlignVCenter
+            text: root.amountEntry ? root.amountEntry.inputText : root.value
             selectByMouse: true
             padding: 4
             Accessible.name: root.label
             background: FocusBorder { visible: input.activeFocus; border.color: Theme.color.orange; borderRadius: 6 }
-            onTextEdited: root.modified = text !== root.value
+            onTextEdited: {
+                if (root.amountEntry) root.amountEntry.editInput(text)
+                else root.textDirty = text !== root.value
+            }
             onEditingFinished: root.editingFinished()
         }
         Loader { id: unitLoader; sourceComponent: root.unitControl; active: sourceComponent !== null }

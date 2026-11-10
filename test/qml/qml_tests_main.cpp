@@ -20,7 +20,9 @@
 #include <QQmlError>
 #include <QQmlIncubationController>
 #include <QQueue>
+#include <QInputMethodEvent>
 #include <QQuickImageProvider>
+#include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QSortFilterProxyModel>
@@ -174,141 +176,15 @@ Q_SIGNALS:
     void disconnected();
 };
 
-class MockBitcoinAmount : public QObject
+// Real validated values make the component fixtures exercise production parsing.
+class MockBitcoinAmount : public BitcoinAmount
 {
     Q_OBJECT
-    Q_PROPERTY(QString display READ display WRITE setDisplay NOTIFY displayChanged)
-    Q_PROPERTY(Unit unit READ unit WRITE setUnit NOTIFY unitChanged)
-    Q_PROPERTY(qint64 satoshi READ satoshi WRITE setSatoshi NOTIFY amountChanged)
-    Q_PROPERTY(QString unitLabel READ unitLabel NOTIFY displayChanged)
-    Q_PROPERTY(QString displayWithUnit READ displayWithUnit NOTIFY displayChanged)
-    Q_PROPERTY(QString localizedDisplay READ localizedDisplay NOTIFY displayChanged)
-    Q_PROPERTY(QString localizedDisplayWithUnit READ localizedDisplayWithUnit NOTIFY displayChanged)
-
 public:
-    enum Unit {
-        BTC,
-        mBTC,
-        uBTC,
-        SAT
-    };
-    Q_ENUM(Unit)
-
-    QString m_display{QStringLiteral("0.00000000")};
-    Unit m_unit{BTC};
-
-    QString display() const { return m_display; }
-    Unit unit() const { return m_unit; }
-    void setUnit(Unit unit)
-    {
-        if (m_unit == unit) return;
-        const qint64 sats = satoshi();
-        m_unit = unit;
-        m_display = displayForSatoshi(sats);
-        Q_EMIT unitChanged();
-        Q_EMIT displayChanged();
-    }
-    qint64 satoshi() const
-    {
-        const QString amount_text = m_display.split(u' ').constFirst();
-        bool ok{false};
-        if (m_unit == SAT) {
-            const qint64 value = amount_text.toLongLong(&ok);
-            return ok ? value : 0;
-        }
-
-        const double value = amount_text.toDouble(&ok);
-        const double factor = m_unit == mBTC ? 100000.0 : (m_unit == uBTC ? 100.0 : 100000000.0);
-        return ok ? static_cast<qint64>(value * factor + 0.5) : 0;
-    }
-    QString unitLabel() const
-    {
-        if (m_unit == BTC) return QStringLiteral("BTC");
-        if (m_unit == mBTC) return QStringLiteral("mBTC");
-        if (m_unit == uBTC) return QStringLiteral("bits");
-        const qint64 sats = satoshi();
-        return sats == 1 || sats == -1 ? QStringLiteral("sat") : QStringLiteral("sats");
-    }
-    void setSatoshi(qint64 sats)
-    {
-        const QString updated = displayForSatoshi(sats);
-        if (m_display == updated) return;
-        m_display = updated;
-        Q_EMIT displayChanged();
-        Q_EMIT amountChanged();
-    }
-    void setDisplay(const QString& display)
-    {
-        const QString normalized = normalizedDisplay(display);
-        if (m_display == normalized) return;
-        m_display = normalized;
-        Q_EMIT displayChanged();
-        Q_EMIT amountChanged();
-    }
-    QString displayWithUnit() const { return m_display.isEmpty() ? QString{} : m_display + QStringLiteral(" ") + unitLabel(); }
-    QString localizedDisplay() const
-    {
-        const QString formatted = localizedDisplayWithUnit();
-        return formatted.left(formatted.lastIndexOf(QLatin1Char(' ')));
-    }
-    QString localizedDisplayWithUnit() const
-    {
-        if (m_display.isEmpty()) return {};
-        const QLocale locale;
-        if (m_unit == SAT) return locale.toString(satoshi()) + QLatin1Char(' ') + unitLabel();
-        const QStringList parts = m_display.split(QLatin1Char('.'));
-        QString formatted = locale.toString(parts.first().toLongLong());
-        if (parts.size() > 1) formatted += locale.decimalPoint() + parts.at(1);
-        const QString label = m_unit == BTC ? QStringLiteral("BTC")
-            : m_unit == mBTC ? QStringLiteral("mBTC") : QStringLiteral("bits");
-        return formatted + QLatin1Char(' ') + label;
-    }
-    Q_INVOKABLE void format()
-    {
-        const QString normalized = normalizedDisplay(m_display);
-        if (m_display != normalized) {
-            m_display = normalized;
-        }
-        Q_EMIT displayChanged();
-        Q_EMIT amountChanged();
-    }
-    Q_INVOKABLE void flipUnit()
-    {
-        setUnit(m_unit == BTC ? SAT : BTC);
-    }
-
-Q_SIGNALS:
-    void amountChanged();
-    void displayChanged();
-    void unitChanged();
-
-private:
-    QString displayForSatoshi(qint64 sats) const
-    {
-        if (m_unit == SAT) return QString::number(sats);
-        const qint64 whole = sats / 100000000;
-        const qint64 fraction = qAbs(sats % 100000000);
-        return QStringLiteral("%1.%2").arg(whole).arg(fraction, 8, 10, QLatin1Char('0'));
-    }
-
-    QString normalizedDisplay(const QString& display) const
-    {
-        const QString trimmed = display.trimmed();
-        if (trimmed.isEmpty()) return QString{};
-        if (m_unit == SAT) {
-            QString digits_only = trimmed;
-            digits_only.remove(QRegularExpression(QStringLiteral("[^0-9]")));
-            return digits_only.isEmpty() ? QString{} : QString::number(digits_only.toLongLong());
-        }
-
-        QString sanitized = trimmed;
-        sanitized.remove(QRegularExpression(QStringLiteral("[^0-9.]")));
-        const QStringList parts = sanitized.split(u'.');
-        const qint64 whole = parts.value(0).isEmpty() ? 0 : parts.value(0).toLongLong();
-        const QString fraction_text = parts.size() > 1 ? parts.value(1).left(8).leftJustified(8, u'0') : QStringLiteral("00000000");
-        const qint64 fraction = fraction_text.toLongLong();
-        return QStringLiteral("%1.%2").arg(whole).arg(fraction, 8, 10, QLatin1Char('0'));
-    }
+    static constexpr Unit BTC{Unit::BTC};
+    static constexpr Unit SAT{Unit::SAT};
+    QString display() const { return toDisplay(); }
+    void setDisplay(const QString& value) { fromDisplay(value); }
 };
 
 class MockBitcoinAddress : public QObject
@@ -654,8 +530,8 @@ public:
         m_unlock_error.clear();
         m_created_iso.clear();
         m_is_editing = true;
-        m_amount.m_display = QStringLiteral("0.00000000");
-        m_amount.m_unit = MockBitcoinAmount::BTC;
+        m_amount.setUnit(MockBitcoinAmount::BTC);
+        m_amount.setSatoshi(0);
         Q_EMIT idChanged();
         Q_EMIT amountErrorChanged();
         Q_EMIT labelChanged();
@@ -1293,7 +1169,7 @@ public:
     QString m_saved_payment_request_label;
     QString m_saved_payment_request_message;
     QString m_saved_payment_request_note_self;
-    QString m_saved_payment_request_amount_display;
+    qint64 m_saved_payment_request_amount_sat{0};
     QString m_saved_payment_request_address_type;
     QString m_saved_payment_request_address;
     int m_target_blocks{2};
@@ -1475,9 +1351,9 @@ public:
         request->m_address = request_id == "1" ? m_saved_payment_request_address : QStringLiteral("bcrt1qrequestaddress0000000000000000000000");
         request->m_created_iso = QStringLiteral("2026-01-02T00:00:00Z");
         request->m_is_editing = false;
-        request->m_amount.m_display = request_id == "1" ? m_saved_payment_request_amount_display : QStringLiteral("0.00100000");
+        request->m_amount.setUnit(MockBitcoinAmount::BTC);
+        request->m_amount.setSatoshi(request_id == "1" ? m_saved_payment_request_amount_sat : 100'000);
         request->m_address_type = m_saved_payment_request_address_type;
-        request->m_amount.m_unit = MockBitcoinAmount::BTC;
         Q_EMIT request->idChanged();
         Q_EMIT request->labelChanged();
         Q_EMIT request->messageChanged();
@@ -1622,7 +1498,7 @@ public:
         m_saved_payment_request_label = request->m_label;
         m_saved_payment_request_message = request->m_message;
         m_saved_payment_request_note_self = request->m_note_self;
-        m_saved_payment_request_amount_display = request->m_amount.m_display;
+        m_saved_payment_request_amount_sat = request->m_amount.satoshi();
         m_saved_payment_request_address_type = request->m_address_type;
         request->m_id = QStringLiteral("1");
         if (request->m_address.isEmpty()) request->m_address = QStringLiteral("bcrt1qrequestaddress0000000000000000000000");
@@ -1709,7 +1585,7 @@ public:
         request->m_address.clear();
         request->m_address_type = m_saved_payment_request_address_type;
         request->m_is_editing = true;
-        request->m_amount.m_display = m_saved_payment_request_amount_display;
+        request->m_amount.setSatoshi(m_saved_payment_request_amount_sat);
         Q_EMIT request->idChanged();
         Q_EMIT request->labelChanged();
         Q_EMIT request->messageChanged();
@@ -1828,9 +1704,9 @@ class MockWalletQmlModelTransaction : public QObject
 public:
     MockWalletQmlModelTransaction()
     {
-        m_amount_amount.m_display = QStringLiteral("0.01000000");
-        m_fee_amount.m_display = QStringLiteral("0.00001000");
-        m_total_amount.m_display = QStringLiteral("0.01001000");
+        m_amount_amount.setDisplay(QStringLiteral("0.01000000"));
+        m_fee_amount.setDisplay(QStringLiteral("0.00001000"));
+        m_total_amount.setDisplay(QStringLiteral("0.01001000"));
     }
 
     QString m_address{QStringLiteral("bcrt1qexampleaddress")};
@@ -4480,6 +4356,19 @@ public:
     bool supportsApplicationFonts() const { return QGuiApplication::platformName() != QStringLiteral("minimal"); }
 
 public Q_SLOTS:
+    bool replaceText(QObject* object, const QString& text)
+    {
+        auto* item = qobject_cast<QQuickItem*>(object);
+        if (!item || !item->window()) return false;
+        item->forceActiveFocus();
+        if (!QMetaObject::invokeMethod(item, "selectAll")) return false;
+        QTest::keyClick(item->window(), Qt::Key_Backspace, Qt::NoModifier, 1);
+        QInputMethodEvent edit;
+        edit.setCommitString(text);
+        QCoreApplication::sendEvent(item, &edit);
+        return edit.isAccepted();
+    }
+
     void failOnWarnings()
     {
         // QTest::failOnWarning() was added in Qt 6.3. Keep this a no-op on Qt 6.2.
