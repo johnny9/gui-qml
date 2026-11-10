@@ -98,6 +98,9 @@ TestCase {
         compare(actions.exit.enabled, true)
         const button = findChild(popup, "nodeFatalShutdownButton")
         verify(button.enabled)
+        // Qt 6.2 waits for a future frameSwapped without requesting a frame.
+        // Request one even when the popup already finished its last animation.
+        window.update()
         verify(waitForRendering(button))
         shutdownSpy.clear()
         mouseClick(button, button.width / 2, button.height / 2)

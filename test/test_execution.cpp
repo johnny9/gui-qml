@@ -96,11 +96,30 @@ private Q_SLOTS:
             }
         });
         QVERIFY(work); QVERIFY(queue->cancelQueued(work.id));
+        QVERIFY(!queue->cancelQueued(work.id));
         drain(); QCOMPARE(effects, 0); QCOMPARE(failures, 1);
         const auto key = queue->allocateKey();
         const auto reserved = Submit(*queue, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 0, key}, true);
         QVERIFY(reserved); QVERIFY(queue->activateCleanup(reserved.id));
         drain(); QCOMPARE(retired, 1); QCOMPARE(queue->pending(), size_t{0});
+    }
+    void cancellingOneWaitingTaskPreservesItsSameKeySuccessor()
+    {
+        using namespace execution;
+        ManualRoutedExecution env;
+        const auto drain = qScopeGuard([&] { env.drain(); });
+        std::vector<int> effects, outcomes;
+        const auto first = Submit(*env.scheduler, [&] { effects.push_back(1); return 1; }, [&](int n) { outcomes.push_back(n); }, {}, {Lane::Core, 0, {1, 1}});
+        const auto second = Submit(*env.scheduler, [&] { effects.push_back(2); }, [] {}, [&](auto) { outcomes.push_back(-2); }, {Lane::Core, 0, {1, 1}});
+        const auto third = Submit(*env.scheduler, [&] { effects.push_back(3); return 3; }, [&](int n) { outcomes.push_back(n); }, {}, {Lane::Core, 0, {1, 1}});
+        QVERIFY(first && second && third); QVERIFY(env.scheduler->cancelQueued(second.id));
+        env.drain();
+        QCOMPARE(effects, std::vector<int>({1, 3}));
+        QCOMPARE(outcomes.size(), size_t{3});
+        QCOMPARE(std::count(outcomes.begin(), outcomes.end(), -2), 1);
+        QCOMPARE(std::count(outcomes.begin(), outcomes.end(), 1), 1);
+        QCOMPARE(std::count(outcomes.begin(), outcomes.end(), 3), 1);
+        QVERIFY(env.quiescent());
     }
     void cancelledTransportStaysBoundedWhileResourceCleanupProgresses()
     {
@@ -174,6 +193,7 @@ private Q_SLOTS:
         QCOMPARE(outcomes, 1);
         QVERIFY(!env.scheduler->cancelQueued(reserved.id));
         QVERIFY(env.step(Lane::Cleanup));
+        QVERIFY(!env.scheduler->activateCleanup(reserved.id));
         QCOMPARE(cleanup_effects, 1); QCOMPARE(cleanup_outcomes, 0);
         QVERIFY(env.step(Lane::Domain));
         QCOMPARE(cleanup_outcomes, 1);

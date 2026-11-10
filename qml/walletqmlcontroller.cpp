@@ -77,12 +77,15 @@ backup::Services WalletQmlController::backupServices() const
     return services;
 }
 
-WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent)
+WalletQmlController::WalletQmlController(interfaces::Node& node, QObject* parent)
+    : WalletQmlController(node, execution::Limits::Bounded(), parent) {}
+
+WalletQmlController::WalletQmlController(interfaces::Node& node, execution::Limits limits, QObject* parent)
     : QObject(parent)
     , m_node(node)
     , m_empty_wallet(new WalletQmlModel(&node, this))
     , m_selected_wallet(m_empty_wallet)
-    , m_wallet_command_executor(std::make_shared<BackendExecutor>(execution::Limits::Bounded()))
+    , m_wallet_command_executor(std::make_shared<BackendExecutor>(limits))
     , m_notification_bridge(new QObject, [](QObject* bridge) {
         if (QThread::currentThread() == bridge->thread()) delete bridge;
         else bridge->deleteLater();
@@ -1110,7 +1113,7 @@ void WalletQmlController::initialize()
             QMetaObject::invokeMethod(bridge.get(), [guard, update] {
                 if (guard) guard->handleLifecyclePublication(update);
             }, Qt::QueuedConnection);
-        }, walletlife::LoadSubscription::CoherentResync{});
+        });
     if (!m_load_subscription->start()) {
         m_initializing = false;
         m_initialization_failed = true;

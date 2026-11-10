@@ -66,23 +66,17 @@ A pre-AddWallet notification remains represented by its retained handle even
 when getWallets does not contain it yet. Discovery uses the existing Core APIs;
 the subtree wallet and node modules remain unchanged.
 
-Initial capture and optional coherent resynchronization are separate injected ports.
-Pinned Core calls `NotifyWalletLoaded` before `AddWallet`, so a concurrent
-`getWallets` may miss a wallet whose callback already returned. This Core
-composition supplies no coherent resynchronization port. Overflow therefore
-invalidates wallet discovery, reports an owned capacity failure through Control,
-disables dependent catalog commands and retires the subscription. The failure
-does not wait for the blocked Core call; retirement still waits for its real
-outcome and native leases. A rejected incoming handle is a local declared after
-its callback lease, so its final release completes before the lease is dropped. It never silently treats an
-incomplete snapshot as current. Positive resync tests explicitly inject a
-synthetic backend with the required committed-membership guarantee. A coherent resync port is only a tested alternative-backend capability; it is
-not a requirement to add a Core API. Bounded ingress overload remains an app
-ownership/progress obligation, distinct from the size of the retained wallet
-list. Any backend guarantee unavailable through existing interfaces must be
-recorded and reported to the user; subtree wallet/node changes are prohibited.
+The app subscribes before its one startup capture and preserves notification
+handles. Pinned Core notifies before `AddWallet`, so a later `getWallets()` call
+cannot replace those handles or recover discarded notifications. There is no
+alternate-backend resynchronization port. Raw ingress is bounded to 64 pending
+handles; overflow produces one owned, explicit failure through Control even
+while Core work is blocked. Ready inventory grows with retained wallet models
+and GUI claims remain bounded to 16 entries. Cleanup releases all unclaimed
+handles off GUI. Core remains unchanged; API simplification opportunities are
+recorded in the workspace upstream-improvement ledger.
 
-`WalletLifecycleTests` cover bounded handoffs, saturation/resync, rejection,
+`WalletLifecycleTests` cover bounded handoffs, saturation and explicit failure, rejection,
 registration failure, command context and sixteen legal retirement schedules.
 Real-thread cases check registration, metadata, notification, disconnect and
 last-reference affinity, blocked registration, observer loss and join-based

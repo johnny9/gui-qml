@@ -21,10 +21,52 @@ namespace {
 using execution::Lane;
 using walletlife::Publication;
 
+// Pause only at public scheduler boundaries; TaskQueue still owns every
+// admission, lease, key and outcome decision used by production.
+class BoundaryScheduler final : public execution::Scheduler
+{
+public:
+    explicit BoundaryScheduler(std::shared_ptr<execution::Scheduler> target) : m_target(std::move(target)) {}
+    std::function<void()> after_reserve, after_borrow;
+    std::shared_ptr<std::function<void()>> before_execute{std::make_shared<std::function<void()>>()};
+    execution::Admission submit(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override
+    {
+        struct PausedTask final : execution::Task {
+            std::shared_ptr<execution::Task> task;
+            std::shared_ptr<std::function<void()>> pause;
+            PausedTask(std::shared_ptr<execution::Task> t, std::shared_ptr<std::function<void()>> p) : task(std::move(t)), pause(std::move(p)) {}
+            void execute() override { if (*pause) std::exchange(*pause, {})(); task->execute(); }
+            void notStarted(execution::NotStarted::Cause cause) override { task->notStarted(cause); }
+            void deliver() override { task->deliver(); }
+        };
+        return m_target->submit(std::make_shared<PausedTask>(std::move(task), before_execute), spec);
+    }
+    execution::Admission reserveCleanup(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override
+    {
+        auto result = m_target->reserveCleanup(std::move(task), spec);
+        if (after_reserve) std::exchange(after_reserve, {})();
+        return result;
+    }
+    execution::BorrowAdmission borrow(execution::ResourceKey key) override
+    {
+        auto result = m_target->borrow(key);
+        if (after_borrow) std::exchange(after_borrow, {})();
+        return result;
+    }
+    bool activateCleanup(execution::TaskId id) override { return m_target->activateCleanup(id); }
+    execution::ResourceKey allocateKey() override { return m_target->allocateKey(); }
+    size_t pending() const override { return m_target->pending(); }
+    void closeOrdinaryAdmission() override { m_target->closeOrdinaryAdmission(); }
+    bool cancelQueued(execution::TaskId id) override { return m_target->cancelQueued(id); }
+private:
+    const std::shared_ptr<execution::Scheduler> m_target;
+};
+
 struct Probe {
     std::optional<Lane> lane;
     std::vector<std::pair<std::string, std::optional<Lane>>> names, destroyed;
     std::vector<std::optional<Lane>> registrations, captures, disconnects;
+    std::function<void()> during_name;
 };
 
 class TrackedWallet final : public StubWallet
@@ -32,14 +74,14 @@ class TrackedWallet final : public StubWallet
 public:
     TrackedWallet(std::shared_ptr<Probe> probe, std::string name) : m_probe(std::move(probe)), m_name(std::move(name)) {}
     ~TrackedWallet() override { m_probe->destroyed.emplace_back(m_name, m_probe->lane); }
-    std::string getWalletName() override { m_probe->names.emplace_back(m_name, m_probe->lane); return m_name; }
+    std::string getWalletName() override { m_probe->names.emplace_back(m_name, m_probe->lane); if (m_probe->during_name) std::exchange(m_probe->during_name, {})(); return m_name; }
 private:
     const std::shared_ptr<Probe> m_probe;
     const std::string m_name;
 };
 
 struct Fixture {
-    explicit Fixture(execution::Limits limits = execution::Limits::Bounded(), bool coherent_resync = false) : env(limits)
+    explicit Fixture(execution::Limits limits = execution::Limits::Bounded()) : env(limits)
     {
         const auto capture = [this] {
             probe->captures.push_back(probe->lane);
@@ -51,15 +93,14 @@ struct Fixture {
             for (const auto& name : catalog) wallets.push_back(wallet(name));
             return wallets;
         };
-        owner = std::make_shared<walletlife::LoadSubscription>(env.scheduler,
+        owner = std::make_shared<walletlife::LoadSubscription>(boundary,
             [this](walletlife::LoadSubscription::Callback fn) {
                 probe->registrations.push_back(probe->lane);
                 callback = std::move(fn);
                 if (during_registration) during_registration();
                 if (registration_missing) return std::unique_ptr<interfaces::Handler>{};
                 return interfaces::MakeCleanupHandler([this] { probe->disconnects.push_back(probe->lane); });
-            }, capture, [this](walletlife::Update update) { publications.push_back(update); },
-            coherent_resync ? walletlife::LoadSubscription::CoherentResync{capture} : walletlife::LoadSubscription::CoherentResync{});
+            }, capture, [this](walletlife::Update update) { publications.push_back(update); });
     }
     ~Fixture()
     {
@@ -86,6 +127,7 @@ struct Fixture {
         return std::count_if(publications.begin(), publications.end(), [kind](auto update) { return update.kind == kind; });
     }
     ManualRoutedExecution env;
+    std::shared_ptr<BoundaryScheduler> boundary{std::make_shared<BoundaryScheduler>(env.scheduler)};
     std::shared_ptr<Probe> probe{std::make_shared<Probe>()};
     std::shared_ptr<walletlife::LoadSubscription> owner;
     walletlife::LoadSubscription::Callback callback;
@@ -198,6 +240,96 @@ private Q_SLOTS:
         QCOMPARE(probe->disconnected.load(), 1);
         QVERIFY(probe->off_gui.load());
         QCOMPARE(scheduler->pending(), size_t{0});
+    }
+    void retirementBetweenCleanupReservationAndRegistration()
+    {
+        Fixture f;
+        f.boundary->after_reserve = [&] { f.owner->retire(); };
+        QCOMPARE(f.owner->start().rejection, execution::Rejection::Closed);
+        f.drain();
+        QVERIFY(f.probe->registrations.empty()); QVERIFY(f.probe->captures.empty());
+        QCOMPARE(f.count(Publication::Ready), 0); QCOMPARE(f.count(Publication::Retired), 1);
+        QVERIFY(f.env.quiescent());
+    }
+    void handoffAdmissionRacesRetainEveryHandle_data()
+    {
+        QTest::addColumn<int>("boundary");
+        QTest::newRow("close-after-parent-lease") << 0;
+        QTest::newRow("close-after-disposal-reservation") << 1;
+        QTest::newRow("close-after-disposal-lease") << 2;
+        QTest::newRow("disposal-lease-saturated") << 3;
+    }
+    void handoffAdmissionRacesRetainEveryHandle()
+    {
+        QFETCH(int, boundary);
+        auto limits = execution::Limits::Bounded();
+        if (boundary == 3) limits.resource_borrowers = 1;
+        Fixture f{limits}; f.catalog = {"never-exposed"};
+        QVERIFY(f.owner->start()); f.drain();
+        if (boundary == 0) f.boundary->after_borrow = [&] { f.owner->retire(); };
+        if (boundary == 1) f.boundary->after_reserve = [&] { f.owner->retire(); };
+        if (boundary == 2) f.boundary->after_reserve = [&] {
+            f.boundary->after_borrow = [&] { f.owner->retire(); };
+        };
+        QVERIFY(!f.owner->takeInitial());
+        QVERIFY(f.probe->destroyed.empty());
+        f.drain();
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.count(Publication::Failed), boundary == 3 ? 1 : 0);
+        QCOMPARE(f.probe->destroyed.size(), size_t{1});
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Cleanup});
+        QVERIFY(f.env.quiescent());
+    }
+    void callbackRetirementAfterItsLeaseDisposesBeforeCleanup()
+    {
+        Fixture f; QVERIFY(f.owner->start()); f.drain();
+        f.boundary->after_borrow = [&] { f.owner->retire(); };
+        f.notify("retired-in-callback");
+        QCOMPARE(f.probe->destroyed.size(), size_t{1});
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Core});
+        f.drain(); QCOMPARE(f.count(Publication::Changed), 0);
+        QCOMPARE(f.count(Publication::Retired), 1); QVERIFY(f.env.quiescent());
+    }
+    void repeatedFailureBeforeControlConsumptionCoalesces()
+    {
+        Fixture f; QVERIFY(f.owner->start()); f.drain();
+        f.callback({}); f.callback({}); f.notify("after-failure-fence");
+        QVERIFY(!f.owner->takeInitial());
+        f.drain();
+        QCOMPARE(f.count(Publication::Failed), 1); QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.probe->destroyed.size(), size_t{1});
+        QCOMPARE(f.probe->captures.size(), size_t{1}); QVERIFY(f.env.quiescent());
+    }
+    void initialClaimWaitsForRegistrationOutcome()
+    {
+        Fixture f; f.catalog = {"initial"};
+        QVERIFY(f.owner->start()); QVERIFY(f.step(Lane::Core));
+        QVERIFY(!f.owner->takeInitial());
+        f.drain(); auto handoff = f.owner->takeInitial();
+        QVERIFY(handoff); QCOMPARE(handoff->entries.front().name, std::string{"initial"});
+        handoff.reset(); f.owner->retire(); f.drain(); QVERIFY(f.env.quiescent());
+    }
+    void notificationDuringMetadataOwnsANewScanAfterTheCurrentOutcome()
+    {
+        Fixture f; QVERIFY(f.owner->start()); f.drain();
+        f.probe->during_name = [&] { f.notify("second"); };
+        f.notify("first"); f.drain();
+        auto handoff = f.owner->takeNotifications(); QVERIFY(handoff);
+        QCOMPARE(handoff->entries.size(), size_t{2});
+        QCOMPARE(f.probe->captures.size(), size_t{1});
+        QCOMPARE(f.probe->names.size(), size_t{2});
+        QCOMPARE(f.count(Publication::Changed), 1);
+        handoff.reset(); f.owner->retire(); f.drain(); QVERIFY(f.env.quiescent());
+    }
+    void retirementAfterDispatchBeforeScanStartsCannotPublish()
+    {
+        Fixture f; QVERIFY(f.owner->start()); f.drain();
+        *f.boundary->before_execute = [&] { f.owner->retire(); };
+        f.notify("retired-before-scan-body"); f.drain();
+        QVERIFY(f.probe->names.empty());
+        QCOMPARE(f.count(Publication::Changed), 0); QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Core});
+        QVERIFY(f.env.quiescent());
     }
     void missingPortsAreRejected_data()
     {
@@ -324,29 +456,28 @@ private Q_SLOTS:
         QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Core});
         QVERIFY(f.env.quiescent());
     }
-    void coherentResyncPreservesSuppressedSelection_data()
+    void overflowNeverSubstitutesTheStartupGetter_data()
     {
-        QTest::addColumn<bool>("empty");
-        QTest::newRow("all-unloaded") << true;
-        QTest::newRow("committed-wallet") << false;
+        QTest::addColumn<bool>("catalog_empty");
+        QTest::newRow("empty-getter") << true;
+        QTest::newRow("getter-has-unrelated-wallet") << false;
     }
-    void coherentResyncPreservesSuppressedSelection()
+    void overflowNeverSubstitutesTheStartupGetter()
     {
-        QFETCH(bool, empty);
-        Fixture f{execution::Limits::Bounded(), true};
+        QFETCH(bool, catalog_empty);
+        Fixture f;
         QVERIFY(f.owner->start()); f.drain();
-        if (!empty) f.catalog = {"committed"};
+        if (!catalog_empty) f.catalog = {"unrelated"};
         f.owner->setNotificationContext({}, true);
-        // The synthetic backend has independently unloaded the other wallets
-        // before this committed-membership snapshot is captured.
         for (int i{0}; i < 70; ++i) f.notify(manualexecution_detail::Number(i));
+        QVERIFY(!f.owner->takeNotifications());
         f.drain();
-        auto handoff = f.owner->takeNotifications(); QVERIFY(handoff);
-        QCOMPARE(handoff->entries.empty(), empty);
-        if (!empty) QVERIFY(!handoff->entries.front().select_wallet);
-        handoff.reset(); f.drain();
-        QCOMPARE(f.count(Publication::Failed), 0);
-        QCOMPARE(f.probe->captures.size(), size_t{2});
+        QCOMPARE(f.count(Publication::Failed), 1);
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.publications.back().reason, walletlife::FailureReason::IngressCapacity);
+        QCOMPARE(f.probe->captures.size(), size_t{1});
+        QCOMPARE(f.probe->destroyed.size(), size_t{70});
+        QVERIFY(f.env.quiescent());
     }
     void repeatedNotificationsKeepOnePendingPublication()
     {
@@ -721,25 +852,20 @@ private Q_SLOTS:
         QCOMPARE(presented, size_t{35}); QCOMPARE(batches, 3);
         QCOMPARE(f.probe->destroyed.size(), size_t{35});
     }
-    void notificationOverflowCoalescesIntoAnAuthoritativeResync()
+    void overflowInvalidatesAnEarlierUnclaimedReadyInventory()
     {
-        Fixture f{execution::Limits::Bounded(), true};
+        Fixture f;
         QVERIFY(f.owner->start()); f.drain();
-        f.catalog = {"authoritative"};
-        bool invalidated_claim_blocked{false};
-        f.during_capture = [&] { invalidated_claim_blocked = !f.owner->takeNotifications(); };
+        f.notify("earlier-ready"); f.drain();
         for (int i{0}; i < 100; ++i) f.notify("notification-" + manualexecution_detail::Number(i));
-        QCOMPARE(f.env.scheduler->pending(), size_t{2}); // Cleanup plus one coalesced refresh.
-        QCOMPARE(f.probe->destroyed.size(), size_t{36});
+        QVERIFY(!f.owner->takeNotifications());
         f.drain();
-        QVERIFY(invalidated_claim_blocked);
-        QCOMPARE(f.probe->captures.size(), size_t{2});
-        auto handoff = f.owner->takeNotifications();
-        QVERIFY(handoff); QCOMPARE(handoff->entries.size(), size_t{1});
-        QCOMPARE(handoff->entries.front().name, std::string{"authoritative"});
-        handoff.reset(); f.drain();
+        QCOMPARE(f.count(Publication::Failed), 1);
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.probe->captures.size(), size_t{1});
         QCOMPARE(f.probe->destroyed.size(), size_t{101});
-        QCOMPARE(f.count(Publication::Changed), 2); // Refresh and handoff-disposal continuation.
+        QCOMPARE(f.count(Publication::Changed), 1); // Only the earlier inventory's wakeup.
+        QVERIFY(f.env.quiescent());
     }
     void absentProducerIsAnExplicitFailureBeforeSnapshotCapture()
     {

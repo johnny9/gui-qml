@@ -13,8 +13,8 @@ namespace {
 constexpr size_t TRANSPORT_BYTES{sizeof(void*)};
 }
 
-LoadSubscription::LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify, CoherentResync resync)
-    : m_scheduler(std::move(scheduler)), m_registration(std::move(registration)), m_capture(std::move(capture)), m_notify(std::move(notify)), m_coherent_resync(std::move(resync)), m_key(m_scheduler ? m_scheduler->allocateKey() : execution::ResourceKey{})
+LoadSubscription::LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify)
+    : m_scheduler(std::move(scheduler)), m_registration(std::move(registration)), m_capture(std::move(capture)), m_notify(std::move(notify)), m_key(m_scheduler ? m_scheduler->allocateKey() : execution::ResourceKey{})
 {
     if (!m_scheduler || !m_registration || !m_capture || !m_notify) throw std::invalid_argument("Missing wallet lifecycle port");
     m_pending.reserve(PENDING_HANDLES);
@@ -140,9 +140,9 @@ void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
         std::lock_guard lock{m_mutex};
         if (m_stopping || m_failed) return;
         if (m_pending.size() < PENDING_HANDLES) m_pending.push_back({std::move(incoming), m_notification_context});
-        else { m_resync = true; m_resync_select &= m_notification_context->select_wallet; overflow = true; }
+        else overflow = true;
     }
-    if (overflow && !m_coherent_resync.capture) { requestFailure(FailureReason::IngressCapacity); return; }
+    if (overflow) { requestFailure(FailureReason::IngressCapacity); return; }
     requestScan();
 }
 
@@ -164,11 +164,11 @@ void LoadSubscription::requestScan()
     if (m_stopping || m_failed || m_scan_pending.exchange(true)) return;
     const auto self = shared_from_this();
     execution::Admission admitted;
-    bool stopping;
     {
         // Publication is queued, so recording the accepted id under this mutex
         // lets retirement cancel it even when its Core transport is blocked.
         std::lock_guard lock{m_mutex};
+        if (m_stopping) return;
         admitted = execution::Submit(*m_scheduler, [self] { self->scan(); }, [self] {
             { std::lock_guard finished_lock{self->m_mutex}; self->m_scan_id.reset(); }
             self->m_scan_pending = false;
@@ -177,14 +177,12 @@ void LoadSubscription::requestScan()
             bool more;
             {
                 std::lock_guard pending_lock{self->m_mutex};
-                more = !self->m_pending.empty() || self->m_resync;
+                more = !self->m_pending.empty();
             }
             if (more) self->requestScan();
         }, [self](std::exception_ptr) { self->failed(); }, {execution::Lane::Core, TRANSPORT_BYTES, m_key, execution::WorkClass::Observation});
         if (admitted) m_scan_id = admitted.id;
-        stopping = m_stopping;
     }
-    if (stopping && admitted) m_scheduler->cancelQueued(admitted.id);
     if (!admitted && !m_stopping) {
         // Keep the coalescing fence set: a rejected mandatory refresh becomes
         // one explicit failure, rather than an unbounded sequence of retries.
@@ -195,46 +193,17 @@ void LoadSubscription::requestScan()
 void LoadSubscription::scan()
 {
     std::vector<Pending> pending;
-    bool resync, resync_select;
     {
         std::lock_guard lock{m_mutex};
         pending.swap(m_pending);
-        resync = std::exchange(m_resync, false);
-        resync_select = std::exchange(m_resync_select, true);
-        m_full_capture_pending = resync;
     }
     if (m_stopping) return;
     std::vector<Entry> entries;
-    if (!resync) {
-        entries.reserve(pending.size());
-        for (auto& notification : pending) {
-            auto name = notification.wallet->getWalletName();
-            if (!notification.context->deferred_name.empty() && name == notification.context->deferred_name) continue;
-            entries.push_back({std::move(name), std::move(notification.wallet), notification.context->select_wallet});
-        }
-    }
-    if (resync) {
-        // Compact notification churn into one authoritative backend snapshot.
-        // No new GUI claim can observe the invalidated accumulator while the
-        // potentially blocking capture runs outside the mailbox mutex.
-        for (const auto& notification : pending) resync_select &= notification.context->select_wallet;
-        if (!m_coherent_resync.capture) {
-            requestFailure(FailureReason::IngressCapacity);
-            return;
-        }
-        entries = captureEntries(m_coherent_resync.capture());
-        for (auto& entry : entries) entry.select_wallet = resync_select;
-        std::map<std::string, Entry> snapshot;
-        for (auto& entry : entries) {
-            const auto name = entry.name;
-            snapshot.insert_or_assign(name, std::move(entry));
-        }
-        {
-            std::lock_guard lock{m_mutex};
-            m_ready.swap(snapshot);
-            m_full_capture_pending = false;
-        }
-        return;
+    entries.reserve(pending.size());
+    for (auto& notification : pending) {
+        auto name = notification.wallet->getWalletName();
+        if (!notification.context->deferred_name.empty() && name == notification.context->deferred_name) continue;
+        entries.push_back({std::move(name), std::move(notification.wallet), notification.context->select_wallet});
     }
     std::vector<Entry> retired;
     retired.reserve(entries.size());
@@ -306,8 +275,7 @@ std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::take(bool initial)
     }
     {
         std::lock_guard lock{m_mutex};
-        if (m_stopping || m_failed || !m_initial_ready || m_handoff_disposal_pending ||
-            (!initial && (m_resync || m_full_capture_pending))) return {};
+        if (m_stopping || m_failed || !m_initial_ready || m_handoff_disposal_pending) return {};
         if (initial ? m_initial.empty() : m_ready.empty()) return std::unique_ptr<Handoff>{new Handoff};
         m_handoff_disposal_pending = true;
     }

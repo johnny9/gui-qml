@@ -54,6 +54,7 @@ public:
     using OpenLocalPathFn = std::function<bool(const QString&)>;
 
     explicit WalletQmlController(interfaces::Node& node, QObject *parent = nullptr);
+    WalletQmlController(interfaces::Node& node, execution::Limits limits, QObject* parent = nullptr);
     ~WalletQmlController();
 
     Q_INVOKABLE void setSelectedWallet(QString path, QString wallet_format = QString());

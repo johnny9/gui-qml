@@ -31,9 +31,6 @@ public:
     using Callback = std::function<void(std::unique_ptr<interfaces::Wallet>)>;
     using Register = std::function<std::unique_ptr<interfaces::Handler>(Callback)>;
     using Capture = std::function<std::vector<std::unique_ptr<interfaces::Wallet>>()>;
-    // This port must reconcile every completed notification with an
-    // authoritative catalog. Initial capture alone does not imply it.
-    struct CoherentResync { Capture capture; };
     // Called on Domain. The implementation transports only this value to GUI.
     using Notify = std::function<void(Update)>;
     struct Handoff {
@@ -52,7 +49,7 @@ public:
         std::optional<execution::ResourceLease> m_lease;
     };
 
-    LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify, CoherentResync resync = {});
+    LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify);
     execution::Admission start();
     void retire();
     void setNotificationContext(std::string deferred_name, bool action_pending);
@@ -79,19 +76,17 @@ private:
     const Register m_registration;
     const Capture m_capture;
     const Notify m_notify;
-    const CoherentResync m_coherent_resync;
     const execution::ResourceKey m_key;
     State m_state; // Accessed only by Domain outcome consumers.
     std::atomic<FailureReason> m_failure{FailureReason::None};
     std::atomic_bool m_stopping{false}, m_scan_pending{false}, m_failed{false};
     std::mutex m_mutex;
-    bool m_resync{false}, m_started{false}, m_initial_ready{false}, m_handoff_disposal_pending{false}, m_change_publication_pending{false};
+    bool m_started{false}, m_initial_ready{false}, m_handoff_disposal_pending{false}, m_change_publication_pending{false};
     std::optional<execution::TaskId> m_cleanup_id;
     std::optional<execution::TaskId> m_scan_id;
     struct NotificationContext { std::string deferred_name; bool select_wallet{true}; };
     struct Pending { std::unique_ptr<interfaces::Wallet> wallet; std::shared_ptr<const NotificationContext> context; };
     std::shared_ptr<const NotificationContext> m_notification_context{std::make_shared<NotificationContext>()};
-    bool m_resync_select{true}, m_full_capture_pending{false};
     std::unique_ptr<interfaces::Handler> m_handler;
     std::vector<Pending> m_pending;
     std::deque<Entry> m_initial;
