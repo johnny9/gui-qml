@@ -499,7 +499,7 @@ void WalletQmlController::createWalletAsync(const QString& name,
             else setWalletLoadError(out.error);
             return;
         }
-        WalletQmlModel* wallet_model = addOrSelectWalletModel(std::move(out.wallet));
+        WalletQmlModel* wallet_model = addOrSelectWalletModel(out.wallet);
         if (load_action == WalletLoadAction::Load) Q_EMIT walletLoadSucceeded(wallet_model);
         else if (load_action == WalletLoadAction::Create) Q_EMIT walletCreateSucceeded(wallet_model);
     }, [this, report_create_error](std::exception_ptr) {
@@ -1053,7 +1053,7 @@ void WalletQmlController::startWalletImport(const QString& path)
             return;
         }
         setLastImportedWalletInfo(QString::fromStdString(out.wallet->getWalletName()), describeImportedWalletKeyScheme(*out.wallet));
-        WalletQmlModel* wallet_model = addOrSelectWalletModel(std::move(out.wallet));
+        WalletQmlModel* wallet_model = addOrSelectWalletModel(out.wallet);
         Q_EMIT walletImportSucceeded(wallet_model);
     }, [this](std::exception_ptr) {
         setWalletLoadInProgress(false);
@@ -1244,7 +1244,7 @@ void WalletQmlController::startWalletLoad(const QString& path, const QString& wa
             Q_EMIT walletLoadStateChanged(load_target, WalletListModel::LoadState::LoadError, error);
             return;
         }
-        WalletQmlModel* wallet_model = addOrSelectWalletModel(std::move(out.wallet));
+        WalletQmlModel* wallet_model = addOrSelectWalletModel(out.wallet);
         Q_EMIT walletLoadSucceeded(wallet_model);
     }, [this, load_target](std::exception_ptr) {
         setWalletLoadInProgress(false);
@@ -1297,7 +1297,7 @@ void WalletQmlController::startWalletMigration(const QString& path, SecureString
             Q_EMIT walletMigrationFailed();
             return;
         }
-        handleLoadWallet(std::move(out.wallet));
+        handleLoadWallet(out.wallet);
         clearWalletMigrationStatus();
         Q_EMIT walletMigrationSucceeded();
     }, [this](std::exception_ptr) {

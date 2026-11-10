@@ -58,6 +58,7 @@ public:
 
 private:
     static constexpr size_t PENDING_HANDLES{64};
+    static constexpr size_t DIRTY_KEYS{64};
     static constexpr size_t GUI_HANDOFF{16};
     void ingress(std::unique_ptr<interfaces::Wallet> wallet);
     void requestScan();
@@ -83,7 +84,7 @@ private:
     struct NotificationContext { std::string deferred_name; bool select_wallet{true}; };
     struct Pending { std::unique_ptr<interfaces::Wallet> wallet; std::shared_ptr<const NotificationContext> context; };
     std::shared_ptr<const NotificationContext> m_notification_context{std::make_shared<NotificationContext>()};
-    bool m_resync_select{true};
+    bool m_resync_select{true}, m_ready_select{true}, m_full_capture_pending{false};
     std::unique_ptr<interfaces::Handler> m_handler;
     std::vector<Pending> m_pending;
     std::deque<Entry> m_initial;

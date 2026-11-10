@@ -52,7 +52,9 @@ struct Fixture {
             [this] {
                 probe->captures.push_back(probe->lane);
                 if (capture_failure) throw std::runtime_error("synthetic capture failure");
+                if (during_capture) during_capture();
                 std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+                wallets.reserve(catalog.size());
                 for (const auto& name : catalog) wallets.push_back(wallet(name));
                 return wallets;
             },
@@ -86,7 +88,7 @@ struct Fixture {
     std::shared_ptr<Probe> probe{std::make_shared<Probe>()};
     std::shared_ptr<walletlife::LoadSubscription> owner;
     walletlife::LoadSubscription::Callback callback;
-    std::function<void()> during_registration;
+    std::function<void()> during_registration, during_capture;
     std::vector<std::string> catalog;
     std::vector<walletlife::Update> publications;
     bool capture_failure{false}, registration_missing{false};
@@ -125,6 +127,31 @@ class WalletLifecycleTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void notificationChurnResyncsBeforeUnpublishedHandlesGrow()
+    {
+        Fixture f;
+        QVERIFY(f.owner->start()); f.drain();
+        bool invalidated_claim_blocked{false};
+        f.during_capture = [&] { invalidated_claim_blocked = !f.owner->takeNotifications(); };
+        for (int i{0}; i < 96; ++i) {
+            const auto name = std::string{"churn-"} + manualexecution_detail::Number(i);
+            f.catalog = {name}; // Previous wallets were independently unloaded.
+            f.notify(name); f.drain();
+        }
+        QVERIFY(f.probe->captures.size() >= 2);
+        QVERIFY(invalidated_claim_blocked);
+        QVERIFY(f.probe->destroyed.size() >= 32);
+        bool found_latest{false};
+        for (;;) {
+            auto handoff = f.owner->takeNotifications();
+            QVERIFY(handoff);
+            if (handoff->entries.empty()) break;
+            QVERIFY(handoff->entries.size() <= 16);
+            for (const auto& entry : handoff->entries) found_latest |= entry.name == "churn-95";
+            handoff.reset(); f.drain();
+        }
+        QVERIFY(found_latest);
+    }
     void realCallbackConcurrentWithInitialCaptureKeepsItsRefresh()
     {
         const auto probe = std::make_shared<PhysicalProbe>();
@@ -405,7 +432,7 @@ private Q_SLOTS:
     void initialPresentationIsBoundedAndHasAnOwnedContinuation()
     {
         Fixture f;
-        for (int i{0}; i < 35; ++i) f.catalog.push_back("wallet-" + std::to_string(i));
+        for (int i{0}; i < 35; ++i) f.catalog.push_back("wallet-" + manualexecution_detail::Number(i));
         QVERIFY(f.owner->start()); f.drain();
         size_t presented{0}; int batches{0};
         for (;;) {
@@ -427,7 +454,7 @@ private Q_SLOTS:
         Fixture f;
         QVERIFY(f.owner->start()); f.drain();
         f.catalog = {"authoritative"};
-        for (int i{0}; i < 100; ++i) f.notify("notification-" + std::to_string(i));
+        for (int i{0}; i < 100; ++i) f.notify("notification-" + manualexecution_detail::Number(i));
         QCOMPARE(f.env.scheduler->pending(), size_t{2}); // Cleanup plus one coalesced refresh.
         QCOMPARE(f.probe->destroyed.size(), size_t{36});
         f.drain();
@@ -487,4 +514,4 @@ private Q_SLOTS:
 };
 
 BITCOINQML_REGISTER_QT_TEST(WalletLifecycleTests)
-#include "test_walletlifecycle.moc"
+#include <test_walletlifecycle.moc>

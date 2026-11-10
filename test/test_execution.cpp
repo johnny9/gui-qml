@@ -299,7 +299,7 @@ private Q_SLOTS:
         QCOMPARE(Submit(*env.scheduler, [] {}, [] {}).rejection, Rejection::Transport);
         QVERIFY(env.quiescent());
         bool invalid_transport{false};
-        try { std::make_shared<TaskQueue>(TaskQueue::RoutedDispatch{}, Limits::Bounded(), 1); }
+        try { (void)std::make_shared<TaskQueue>(TaskQueue::RoutedDispatch{}, Limits::Bounded(), 1); }
         catch (const std::invalid_argument&) { invalid_transport = true; }
         QVERIFY(invalid_transport);
     }

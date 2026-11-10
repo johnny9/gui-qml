@@ -18,6 +18,15 @@
 #include <string>
 #include <vector>
 
+namespace manualexecution_detail {
+    template <typename Integer>
+    std::string Number(Integer value) {
+        std::array<char, 32> buffer{};
+        const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+        return {buffer.data(), result.ptr};
+    }
+}
+
 /** Manual transport only: production TaskQueue owns admission/key decisions. */
 class ManualRoutedExecution
 {
@@ -29,11 +38,11 @@ public:
             [this](execution::Lane lane, execution::Phase phase, execution::TaskId id, std::function<void()> run) {
                 if (phase == execution::Phase::Queued && reject_lane == lane) {
                     reject_lane.reset();
-                    trace.push_back("reject:" + std::to_string(id.value));
+                    trace.push_back("reject:" + manualexecution_detail::Number(id.value));
                     return false;
                 }
                 queued.push_back({lane, phase, id, std::move(run)});
-                trace.push_back("enqueue:" + std::to_string(static_cast<int>(lane)) + ":" + std::to_string(id.value));
+                trace.push_back("enqueue:" + manualexecution_detail::Number(static_cast<int>(lane)) + ":" + manualexecution_detail::Number(id.value));
                 return true;
             }, limits, core_slots);
     }
@@ -45,7 +54,7 @@ public:
         const auto id = next->id;
         active.emplace(id, std::move(*next));
         queued.erase(next);
-        trace.push_back("dispatch:" + std::to_string(id.value));
+        trace.push_back("dispatch:" + manualexecution_detail::Number(id.value));
         return id;
     }
     bool finishWork(execution::TaskId id)
@@ -54,7 +63,7 @@ public:
         if (next == active.end()) return false;
         auto turn = std::move(next->second);
         active.erase(next);
-        trace.push_back("finish:" + std::to_string(id.value));
+        trace.push_back("finish:" + manualexecution_detail::Number(id.value));
         turn.run();
         return true;
     }
@@ -97,20 +106,20 @@ public:
         : scheduler(std::make_shared<execution::TaskQueue>(
             [this](execution::Phase phase, execution::TaskId id, std::function<void()> turn) {
                 if (phase == execution::Phase::Queued && std::exchange(reject_next, false)) {
-                    m_trace.emplace_back("reject:" + Number(id.value));
+                    m_trace.emplace_back("reject:" + manualexecution_detail::Number(id.value));
                     return false;
                 }
-                m_trace.emplace_back((phase == execution::Phase::Queued ? "enqueue-effect:" : "enqueue-outcome:") + Number(id.value));
+                m_trace.emplace_back((phase == execution::Phase::Queued ? "enqueue-effect:" : "enqueue-outcome:") + manualexecution_detail::Number(id.value));
                 turns.push_back({phase, id, std::move(turn)});
                 return true;
             })) {}
     ~ManualExecutionEnvironment() override { scheduler->closeAdmission(); stop(); drain(); }
-    void restart(std::function<void()> expired) override { m_expired = std::move(expired); m_due = m_now + std::chrono::milliseconds{250}; m_trace.emplace_back("deadline:" + Number(m_due.count())); }
+    void restart(std::function<void()> expired) override { m_expired = std::move(expired); m_due = m_now + std::chrono::milliseconds{250}; m_trace.emplace_back("deadline:" + manualexecution_detail::Number(m_due.count())); }
     void stop() override { m_expired = {}; m_trace.emplace_back("stop-timer"); }
     void advance(std::chrono::milliseconds duration)
     {
         m_now += duration;
-        m_trace.emplace_back("clock:" + Number(m_now.count()));
+        m_trace.emplace_back("clock:" + manualexecution_detail::Number(m_now.count()));
         if (m_expired && m_now >= m_due) {
             m_trace.emplace_back("expire");
             auto expired = std::exchange(m_expired, {});
@@ -122,7 +131,7 @@ public:
         if (turns.empty()) return false;
         auto next = std::move(turns.front());
         turns.pop_front();
-        m_trace.emplace_back((next.phase == execution::Phase::Queued ? "effect:" : "outcome:") + Number(next.id.value));
+        m_trace.emplace_back((next.phase == execution::Phase::Queued ? "effect:" : "outcome:") + manualexecution_detail::Number(next.id.value));
         next.turn();
         return true;
     }
@@ -150,12 +159,6 @@ public:
     bool reject_next{false};
     std::deque<std::function<void()>> publications;
 private:
-    template <typename Integer>
-    static std::string Number(Integer value) {
-        std::array<char, 32> buffer{};
-        const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
-        return {buffer.data(), result.ptr};
-    }
     std::vector<std::string> m_trace;
     std::chrono::milliseconds m_now{0};
     std::chrono::milliseconds m_due{0};

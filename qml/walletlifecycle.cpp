@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <set>
 #include <stdexcept>
 
 namespace walletlife {
@@ -111,7 +112,7 @@ void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
     auto borrowed = m_scheduler->borrow(m_key);
     if (!borrowed) {
         if (borrowed.rejection == execution::Rejection::Capacity) {
-            { std::lock_guard lock{m_mutex}; m_resync = true; }
+            { std::lock_guard lock{m_mutex}; m_resync = true; m_resync_select &= m_notification_context->select_wallet; }
             requestScan();
         }
         return;
@@ -171,10 +172,34 @@ void LoadSubscription::scan()
         pending.swap(m_pending);
         resync = std::exchange(m_resync, false);
         resync_select = std::exchange(m_resync_select, true);
+        m_full_capture_pending = resync;
     }
     if (m_stopping) return;
     std::vector<Entry> entries;
+    if (!resync) {
+        entries.reserve(pending.size());
+        for (auto& notification : pending) {
+            auto name = notification.wallet->getWalletName();
+            if (!notification.context->deferred_name.empty() && name == notification.context->deferred_name) continue;
+            entries.push_back({std::move(name), std::move(notification.wallet), notification.context->select_wallet});
+        }
+        std::lock_guard lock{m_mutex};
+        const auto space = DIRTY_KEYS > m_ready.size() ? DIRTY_KEYS - m_ready.size() : 0;
+        std::set<std::string> new_keys;
+        for (const auto& entry : entries) {
+            if (!m_ready.contains(entry.name)) new_keys.insert(entry.name);
+            if (new_keys.size() > space) { resync = true; break; }
+        }
+        if (resync) {
+            m_full_capture_pending = true;
+            resync_select &= m_ready_select;
+        }
+    }
     if (resync) {
+        // Compact notification churn into one authoritative backend snapshot.
+        // No new GUI claim can observe the invalidated accumulator while the
+        // potentially blocking capture runs outside the mailbox mutex.
+        for (const auto& notification : pending) resync_select &= notification.context->select_wallet;
         entries = captureEntries(m_capture());
         for (auto& entry : entries) entry.select_wallet = resync_select;
         std::map<std::string, Entry> snapshot;
@@ -182,14 +207,13 @@ void LoadSubscription::scan()
             const auto name = entry.name;
             snapshot.insert_or_assign(name, std::move(entry));
         }
-        { std::lock_guard lock{m_mutex}; m_ready.swap(snapshot); }
+        {
+            std::lock_guard lock{m_mutex};
+            m_ready.swap(snapshot);
+            m_ready_select = m_ready.empty() || resync_select;
+            m_full_capture_pending = false;
+        }
         return;
-    }
-    entries.reserve(pending.size());
-    for (auto& notification : pending) {
-        auto name = notification.wallet->getWalletName();
-        if (!notification.context->deferred_name.empty() && name == notification.context->deferred_name) continue;
-        entries.push_back({std::move(name), std::move(notification.wallet), notification.context->select_wallet});
     }
     std::vector<Entry> retired;
     retired.reserve(entries.size());
@@ -198,6 +222,7 @@ void LoadSubscription::scan()
         for (auto& entry : entries) {
             const auto slot = m_ready.try_emplace(entry.name).first;
             retired.push_back(std::move(slot->second));
+            m_ready_select &= entry.select_wallet;
             slot->second = std::move(entry);
         }
     }
@@ -260,7 +285,8 @@ std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::take(bool initial)
     }
     {
         std::lock_guard lock{m_mutex};
-        if (m_stopping || !m_initial_ready || m_handoff_disposal_pending) return {};
+        if (m_stopping || m_failed || !m_initial_ready || m_handoff_disposal_pending ||
+            (!initial && (m_resync || m_full_capture_pending))) return {};
         if (initial ? m_initial.empty() : m_ready.empty()) return std::unique_ptr<Handoff>{new Handoff};
         m_handoff_disposal_pending = true;
     }
@@ -303,6 +329,7 @@ std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::take(bool initial)
         }
     }
     result->more = initial ? !m_initial.empty() : !m_ready.empty();
+    if (!initial && m_ready.empty()) m_ready_select = true;
     return result;
 }
 
