@@ -2,7 +2,12 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <test/integration/runner/test_cases.h>
+#include <test/integration/fixture/test_application.h>
+#ifdef ENABLE_WALLET
+#include <test/integration/fixture/test_wallet.h>
+#endif
 #include <test/integration/fixture/test_util.h>
 #include <qml/models/rpcconsolemodel.h>
 
@@ -13,6 +18,7 @@ class ConsoleIntegrationTests : public QObject
 {
     Q_OBJECT
     BitcoinQmlApplication& m_app;
+    WalletMode m_mode;
 
     bool submitCommand(const QString& command)
     {
@@ -23,7 +29,7 @@ class ConsoleIntegrationTests : public QObject
     }
 
 public:
-    explicit ConsoleIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
+    explicit ConsoleIntegrationTests(BitcoinQmlApplication& app, WalletMode mode) : m_app{app}, m_mode{mode} {}
 
 private Q_SLOTS:
     void init()
@@ -70,6 +76,71 @@ private Q_SLOTS:
         QVERIFY(submitCommand("getblockcount"));
         QTRY_VERIFY(!model->executing());
         QTRY_COMPARE(console->property("outputCount").toInt(), 2);
+    }
+
+    void secretRequestsStayRedactedAfterClear_data()
+    {
+        QTest::addColumn<QString>("method"); QTest::addColumn<QString>("arguments"); QTest::addColumn<bool>("sensitive");
+        QTest::newRow("createwallet-passphrase") << "createwallet" << "privacy-rpc false false unique-native-secret-92" << true;
+        QTest::newRow("migratewallet-passphrase") << "migratewallet" << "privacy-rpc unique-native-secret-92" << true;
+        QTest::newRow("addhdkey-private-key") << "addhdkey" << "unique-native-secret-92" << true;
+        QTest::newRow("walletpassphrase-control") << "walletpassphrase" << "unique-native-secret-92 10" << true;
+        QTest::newRow("ordinary-control") << "help" << "getblockcount" << false;
+    }
+
+    void secretRequestsStayRedactedAfterClear()
+    {
+        QFETCH(QString, method); QFETCH(QString, arguments); QFETCH(bool, sensitive);
+        const bool wallet_enabled = m_mode == WalletMode::Enabled;
+#ifdef ENABLE_WALLET
+        WalletQmlModel* wallet{nullptr};
+        UniValue loaded_before;
+        if (wallet_enabled) {
+            wallet = qmltest::CreateWallet(m_app, "privacy-rpc"); QVERIFY(wallet);
+            QVERIFY(wallet->encryptWallet("owned test fixture password")); QVERIFY(wallet->isLocked());
+            loaded_before = qmltest::Rpc(m_app, "listwallets");
+            QVERIFY(qmltest::SelectSettings(m_app, "rpc-console"));
+            QVERIFY(qmltest::WaitForVisible(m_app, "rpcConsole"));
+        }
+#endif
+        auto* model = qmltest::Model<RpcConsoleModel>(m_app, "rpcConsoleModel"); QVERIFY(model);
+        const QString command = arguments.isEmpty() ? method : method + " " + arguments;
+        QVERIFY(submitCommand(command)); QTRY_VERIFY(!model->executing());
+        auto* output = model->outputModel();
+        bool request_safe{true}; bool expected_reply{false};
+        for (int i = 0; i < output->rowCount(); ++i) {
+            const auto index = output->index(i, 0);
+            const auto text = output->data(index, RpcOutputListModel::ContentRole).toString();
+            request_safe = request_safe && !text.contains("unique-native-secret-92");
+            const auto category = output->data(index, RpcOutputListModel::CategoryRole).toInt();
+            expected_reply = expected_reply || category == (sensitive ? RpcConsoleModel::CMD_ERROR : RpcConsoleModel::CMD_REPLY);
+        }
+        QVERIFY(expected_reply);
+        auto* console = qmltest::Find(m_app, "rpcConsole"); QVERIFY(console);
+        QVERIFY(QMetaObject::invokeMethod(console, "clearInputOrOutput")); QTRY_COMPARE(output->rowCount(), 0);
+        auto* input = qmltest::Find(m_app, "consoleInput"); QVERIFY(input);
+        QVERIFY(QMetaObject::invokeMethod(input, "forceActiveFocus"));
+        QTest::keyClick(m_app.window(), Qt::Key_Up, Qt::NoModifier, 1);
+        QTRY_VERIFY(!input->property("text").toString().isEmpty());
+        const QString recalled = input->property("text").toString();
+        const bool recall_safe = !recalled.contains("unique-native-secret-92");
+        auto* completion = qmltest::Find(m_app, "consoleAutocompletePopup");
+        if (completion && completion->property("visible").toBool()) {
+            QTest::keyClick(m_app.window(), Qt::Key_Escape, Qt::NoModifier, 1);
+            QTRY_VERIFY(!completion->property("visible").toBool());
+            QCOMPARE(input->property("text").toString(), recalled);
+        }
+        QTest::keyClick(m_app.window(), Qt::Key_Down, Qt::NoModifier, 1); QTRY_COMPARE(input->property("text").toString(), QString{});
+#ifdef ENABLE_WALLET
+        if (wallet_enabled) {
+            QVERIFY(wallet->isLocked());
+            QCOMPARE(qmltest::Rpc(m_app, "listwallets").write(), loaded_before.write());
+        }
+#endif
+        qInfo() << "Native RPC privacy oracle" << method << "wallet enabled" << wallet_enabled
+                << "request safe" << request_safe << "recall after Clear safe" << recall_safe;
+        QVERIFY(request_safe); QVERIFY(recall_safe);
+        QCOMPARE(recalled, sensitive ? method + QString::fromUtf8("(…)") : command);
     }
 
     void consoleLayoutAndOutputStayAlignedAcrossFontSizes()
@@ -136,9 +207,9 @@ private Q_SLOTS:
     }
 };
 
-std::unique_ptr<QObject> CreateConsoleTests(BitcoinQmlApplication& app, WalletMode)
+std::unique_ptr<QObject> CreateConsoleTests(BitcoinQmlApplication& app, WalletMode mode)
 {
-    return std::make_unique<ConsoleIntegrationTests>(app);
+    return std::make_unique<ConsoleIntegrationTests>(app, mode);
 }
 
 #include <test_console.moc>

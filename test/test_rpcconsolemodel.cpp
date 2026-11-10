@@ -31,6 +31,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using RpcTestStubNode = StubNode;
@@ -192,6 +193,8 @@ private Q_SLOTS:
     void jsonReplyTraversal();
     void deeplyNestedJsonReply();
     void availableCommandsIncludesHelpVariants();
+    void secretRequestsAreNotRetained_data();
+    void secretRequestsAreNotRetained();
 };
 
 void RpcConsoleModelTests::historyNavigationOldestToNewest()
@@ -581,6 +584,56 @@ void RpcConsoleModelTests::availableCommandsIncludesHelpVariants()
     QStringList deduped = cmds;
     deduped.removeDuplicates();
     QCOMPARE(cmds.size(), deduped.size());
+}
+
+void RpcConsoleModelTests::secretRequestsAreNotRetained_data()
+{
+    QTest::addColumn<QString>("method"); QTest::addColumn<QString>("arguments"); QTest::addColumn<QString>("expected_parameters");
+    QTest::newRow("createwallet-passphrase") << "createwallet" << "redaction-wallet false false unique-rpc-secret-92"
+        << R"(["redaction-wallet",false,false,"unique-rpc-secret-92"])";
+    QTest::newRow("migratewallet-passphrase") << "migratewallet" << "redaction-wallet unique-rpc-secret-92"
+        << R"(["redaction-wallet","unique-rpc-secret-92"])";
+    QTest::newRow("addhdkey-private-key") << "addhdkey" << "unique-rpc-secret-92"
+        << R"(["unique-rpc-secret-92"])";
+    QTest::newRow("walletpassphrase-control") << "walletpassphrase" << "unique-rpc-secret-92 10"
+        << R"(["unique-rpc-secret-92",10])";
+}
+
+void RpcConsoleModelTests::secretRequestsAreNotRetained()
+{
+    QFETCH(QString, method); QFETCH(QString, arguments); QFETCH(QString, expected_parameters);
+    class RecordingNode final : public RpcTestStubNode {
+        QMutex mutex;
+        std::string called_method, called_arguments;
+    public:
+        UniValue executeRpc(const std::string& method, const UniValue& parameters, const std::string&) override
+        {
+            const QMutexLocker lock{&mutex}; called_method = method; called_arguments = parameters.write();
+            return UniValue("safe reply");
+        }
+        std::pair<std::string, std::string> received() { const QMutexLocker lock{&mutex}; return {called_method, called_arguments}; }
+    } node;
+    RpcConsoleModel model{node};
+    QVERIFY(model.submitCommand(method + " " + arguments));
+    QTRY_VERIFY(!model.executing());
+    const auto received = node.received();
+    QCOMPARE(received.first, method.toStdString());
+    QCOMPARE(received.second, expected_parameters.toStdString());
+    QVERIFY(QString::fromStdString(received.second).contains("unique-rpc-secret-92"));
+    const int content = roleForName(model.outputModel(), "content"); QVERIFY(content >= 0);
+    bool requests_safe{true};
+    for (int i = 0; i < model.outputModel()->rowCount(); ++i) {
+        const auto text = model.outputModel()->data(model.outputModel()->index(i, 0), content).toString();
+        requests_safe = requests_safe && !text.contains("unique-rpc-secret-92");
+    }
+    model.clear(); QCOMPARE(model.outputModel()->rowCount(), 0);
+    const QString pending = "ordinary unsent draft";
+    const QString recalled = model.browseHistory(1, pending);
+    const bool history_safe = !recalled.contains("unique-rpc-secret-92");
+    qInfo() << "RPC privacy oracle" << method << "request safe" << requests_safe << "recall after Clear safe" << history_safe;
+    QCOMPARE(model.browseHistory(-1, pending), pending);
+    QVERIFY(requests_safe); QVERIFY(history_safe);
+    QCOMPARE(recalled, method + QString::fromUtf8("(…)"));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

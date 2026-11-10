@@ -7,6 +7,10 @@
 // All tests use fExecute=false so no live node is required.
 
 #include <QtTest/QtTest>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QRegularExpression>
 
 #include <qml/models/rpccommandexecutor.h>
 #include <util/translation.h>
@@ -34,6 +38,9 @@ private Q_SLOTS:
     void sensitiveCmdSignMessage();
     void sensitiveCmdEncryptWallet();
     void sensitiveCmdNonSensitiveUnredacted();
+    void secretCommandMatrix_data();
+    void secretCommandMatrix();
+    void pinnedCoreRedactionPolicy();
 };
 
 void RpcCommandExecutorTests::parseSpaceSeparated()
@@ -127,6 +134,32 @@ void RpcCommandExecutorTests::sensitiveCmdNonSensitiveUnredacted()
     QCOMPARE(QString::fromStdString(filtered), QString("getblockcount"));
 }
 
+void RpcCommandExecutorTests::secretCommandMatrix_data()
+{
+    QTest::addColumn<QString>("command"); QTest::addColumn<QString>("expected");
+    const QString secret = "unique-rpc-secret-92";
+    const QString redacted = QString::fromUtf8("(…)");
+    for (const QString& name : {QString("createwallet"), QString("migratewallet"), QString("addhdkey"),
+                               QString("createwalletdescriptor"), QString("walletpassphrase"),
+                               QString("walletpassphrasechange"), QString("encryptwallet"),
+                               QString("signmessagewithprivkey"), QString("signrawtransactionwithkey")}) {
+        QTest::newRow(qPrintable(name + "-space")) << name + " " + secret << name + redacted;
+        QTest::newRow(qPrintable(name + "-functional")) << name + "('" + secret + "')" << name + redacted;
+        QTest::newRow(qPrintable(name + "-uppercase")) << name.toUpper() + " " + secret << name.toUpper() + redacted;
+        QTest::newRow(qPrintable(name + "-nested")) << "echo(" + name + "('" + secret + "'))" << "echo(" + name + redacted + ")";
+    }
+}
+
+void RpcCommandExecutorTests::secretCommandMatrix()
+{
+    QFETCH(QString, command); QFETCH(QString, expected);
+    std::string result, filtered;
+    QVERIFY(RpcCommandExecutor::RPCParseCommandLine(nullptr, result, command.toStdString() + "\n", false, &filtered));
+    const QString display = QString::fromStdString(filtered).trimmed();
+    QVERIFY2(!display.contains("unique-rpc-secret-92"), qPrintable(display));
+    QCOMPARE(display, expected);
+}
+
 #ifdef BITCOINQML_NO_TEST_MAIN
 #include <test/qt_test_registry.h>
 BITCOINQML_REGISTER_QT_TEST(RpcCommandExecutorTests)
@@ -134,3 +167,24 @@ BITCOINQML_REGISTER_QT_TEST(RpcCommandExecutorTests)
 QTEST_MAIN(RpcCommandExecutorTests)
 #endif
 #include <test_rpccommandexecutor.moc>
+
+// Keep the app policy at least as strict as the pinned Widgets console policy.
+// Reading its source makes a future submodule update demand an explicit review.
+void RpcCommandExecutorTests::pinnedCoreRedactionPolicy()
+{
+    QFile source(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("../bitcoin/src/qt/rpcconsole.cpp"));
+    QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+    const QString text = QString::fromUtf8(source.readAll());
+    const auto declaration = QRegularExpression("const QStringList historyFilter = QStringList\\(\\)([^;]+);").match(text);
+    QVERIFY(declaration.hasMatch());
+    auto names = QRegularExpression("\"([a-z]+)\"").globalMatch(declaration.captured(1));
+    QStringList commands;
+    while (names.hasNext()) commands.append(names.next().captured(1));
+    QCOMPARE(commands.size(), 8);
+    for (const auto& command : commands) {
+        std::string result, filtered;
+        const QString line = command + " unique-policy-secret-92\n";
+        QVERIFY(RpcCommandExecutor::RPCParseCommandLine(nullptr, result, line.toStdString(), false, &filtered));
+        QVERIFY2(!QString::fromStdString(filtered).contains("unique-policy-secret-92"), qPrintable(command));
+    }
+}

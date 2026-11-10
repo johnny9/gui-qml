@@ -22,12 +22,14 @@
 
 namespace {
 
-// Commands whose arguments must be redacted in history / display output.
-// Covers passphrase and signing-key inputs. Note: importprivkey, dumpprivkey,
-// dumpwallet, and importwallet are intentionally omitted — their sensitive data
-// is a file path or key blob, not a passphrase, and redacting them obscures
-// useful history context without a meaningful security benefit.
+// Redact arguments before storing either request output or recall history.
+// Keep the pinned Qt Widgets historyFilter policy, plus addhdkey's private key.
+// The parity regression requires an explicit review when Core's policy changes.
 const QStringList HISTORY_FILTER = QStringList()
+    << "addhdkey"
+    << "createwallet"
+    << "createwalletdescriptor"
+    << "migratewallet"
     << "signmessagewithprivkey"
     << "signrawtransactionwithkey"
     << "walletpassphrase"
