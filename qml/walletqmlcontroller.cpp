@@ -4,6 +4,7 @@
 
 #include <qml/walletqmlcontroller.h>
 #include <qml/backendexecutor.h>
+#include <qml/walletlifecycle.h>
 
 #include <qml/models/walletqmlmodel.h>
 #include <qml/util.h>
@@ -35,25 +36,14 @@
 #include <QMetaObject>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QScopeGuard>
 #include <QStringList>
 #include <QTimer>
 #include <QUrl>
 
-struct WalletLoadNotifications {
-    std::mutex mutex;
-    std::atomic_bool stopping{false};
-    std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
-
-    std::vector<std::unique_ptr<interfaces::Wallet>> takePendingWallets()
-    {
-        const std::lock_guard lock{mutex};
-        return std::exchange(wallets, {});
-    }
-};
-
 namespace {
 struct WalletCommandResult {
-    std::unique_ptr<interfaces::Wallet> wallet;
+    std::shared_ptr<interfaces::Wallet> wallet;
     QString error;
     QString warnings;
 };
@@ -92,8 +82,7 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent
     , m_node(node)
     , m_empty_wallet(new WalletQmlModel(&node, this))
     , m_selected_wallet(m_empty_wallet)
-    , m_wallet_command_executor(std::make_shared<BackendExecutor>())
-    , m_load_notifications(std::make_shared<WalletLoadNotifications>())
+    , m_wallet_command_executor(std::make_shared<BackendExecutor>(execution::Limits::Bounded()))
     , m_notification_bridge(new QObject, [](QObject* bridge) {
         if (QThread::currentThread() == bridge->thread()) delete bridge;
         else bridge->deleteLater();
@@ -106,6 +95,7 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent
     m_wallet_command_executor->setObjectName(QStringLiteral("wallet-commands"));
     connect(m_wallet_command_executor.get(), &BackendExecutor::drained, this, [this] {
         m_controller_drained = true;
+        m_notifications_drained = true;
         checkShutdownFinished();
     });
 
@@ -343,7 +333,8 @@ void WalletQmlController::beginShutdown()
 {
     if (m_shutting_down) return;
     m_shutting_down = true;
-    m_load_notifications->stopping = true;
+    m_wallet_command_executor->scheduler()->closeOrdinaryAdmission();
+    if (m_load_subscription) m_load_subscription->retire();
     m_initialized = false;
     Q_EMIT initializedChanged();
     if (m_selected_wallet != m_empty_wallet) {
@@ -353,21 +344,6 @@ void WalletQmlController::beginShutdown()
     const auto wallets = m_wallets;
     for (auto* wallet : wallets) removeWalletModel(wallet);
     retireWallet(m_empty_wallet, false);
-    m_notification_cleanup_executor = std::make_unique<BackendExecutor>();
-    m_notification_cleanup_executor->setObjectName(QStringLiteral("wallet-notifications"));
-    connect(m_notification_cleanup_executor.get(), &BackendExecutor::drained, this, [this] {
-        m_notifications_drained = true;
-        checkShutdownFinished();
-    });
-    m_notification_cleanup_executor->submit(this, [notifications = m_load_notifications] {
-        auto wallets_to_release = notifications->takePendingWallets();
-        wallets_to_release.clear();
-    }, [] {});
-    m_notification_cleanup_executor->shutdown();
-    m_wallet_command_executor->submit(this, [handler = std::move(m_handler_load_wallet)]() mutable {
-        if (handler) handler->disconnect();
-        handler.reset();
-    }, [] {});
     m_wallet_command_executor->shutdown();
 }
 
@@ -441,63 +417,47 @@ void WalletQmlController::removeWalletModel(WalletQmlModel* wallet_model, bool r
     retireWallet(wallet_model, remove);
 }
 
-WalletQmlModel* WalletQmlController::addOrSelectWalletModel(std::unique_ptr<interfaces::Wallet> wallet)
+WalletQmlModel* WalletQmlController::addOrSelectWalletModel(std::shared_ptr<interfaces::Wallet> wallet, const std::optional<QString>& captured_name, bool select_wallet)
 {
-    if (!wallet) {
-        return nullptr;
-    }
-
+    if (!wallet) return nullptr;
     if (m_shutting_down) {
-        retireWallet(new WalletQmlModel(std::move(wallet), &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices()), false);
+        retireWallet(new WalletQmlModel(WalletQmlModel::SharedWallet{std::move(wallet)}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices()), false);
         return nullptr;
     }
-
-    bool selected_existing_wallet{false};
+    const QPointer<WalletQmlController> guard{this};
+    const QString name = captured_name ? *captured_name : QString::fromStdString(wallet->getWalletName());
+    WalletQmlModel* model{nullptr};
     {
         QMutexLocker locker(&m_wallets_mutex);
-        if (!m_wallets.empty()) {
-            const QString name = QString::fromStdString(wallet->getWalletName());
-            for (WalletQmlModel* wallet_model : m_wallets) {
-                if (wallet_model->name() == name) {
-                    m_selected_wallet = wallet_model;
-                    selected_existing_wallet = true;
-                    publishWalletInfo(wallet_model);
-                    break;
-                }
-            }
-        }
+        select_wallet |= m_wallets.empty();
+        for (auto* existing : m_wallets) if (existing->name() == name) { model = existing; break; }
     }
-    if (selected_existing_wallet) {
-        applyWalletDisplayName(m_selected_wallet);
-        Q_EMIT walletLoadStateChanged(m_selected_wallet->name(),
-                                      WalletListModel::LoadState::Open,
-                                      QString{});
+    const bool added = !model;
+    if (added) {
+        model = new WalletQmlModel(WalletQmlModel::SharedWallet{std::move(wallet)}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
+        registerWalletModel(model);
+        subscribeWalletInfo(model);
+        QMutexLocker locker(&m_wallets_mutex);
+        m_wallets.push_back(model);
+    }
+    applyWalletDisplayName(model);
+    if (select_wallet) m_selected_wallet = model;
+    if (added) {
+        Q_EMIT openWalletsChanged();
+        if (!guard || m_shutting_down) return nullptr;
+    }
+    Q_EMIT walletLoadStateChanged(name, WalletListModel::LoadState::Open, QString{});
+    if (!guard || m_shutting_down) return nullptr;
+    publishWalletInfo(model);
+    if (!guard || m_shutting_down) return nullptr;
+    if (select_wallet) {
         Q_EMIT selectedWalletChanged();
-        setWalletLoaded(true);
-        setNoWalletsFound(false);
-        return m_selected_wallet;
+        if (!guard || m_shutting_down) return nullptr;
     }
-
-    const QString loaded_wallet_name = QString::fromStdString(wallet->getWalletName());
-    auto wallet_model = new WalletQmlModel(std::move(wallet), &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
-    wallet_model->moveToThread(this->thread());
-    registerWalletModel(wallet_model);
-    {
-        QMutexLocker locker(&m_wallets_mutex);
-        applyWalletDisplayName(wallet_model);
-        m_selected_wallet = wallet_model;
-        m_wallets.push_back(m_selected_wallet);
-    }
-    Q_EMIT openWalletsChanged();
-    subscribeWalletInfo(wallet_model);
-    Q_EMIT walletLoadStateChanged(loaded_wallet_name,
-                                  WalletListModel::LoadState::Open,
-                                  QString{});
-    publishWalletInfo(wallet_model);
-    Q_EMIT selectedWalletChanged();
     setWalletLoaded(true);
+    if (!guard || m_shutting_down) return nullptr;
     setNoWalletsFound(false);
-    return wallet_model;
+    return guard ? model : nullptr;
 }
 
 void WalletQmlController::createWalletAsync(const QString& name,
@@ -530,7 +490,7 @@ void WalletQmlController::createWalletAsync(const QString& name,
             out.wallet = std::move(*wallet);
         }
         return out;
-    }, [this, wallet_name, load_action, report_create_error](WalletCommandResult out) {
+    }, [this, wallet_name, load_action, report_create_error](const WalletCommandResult& out) {
         if (m_deferred_wallet_name == wallet_name) m_deferred_wallet_name.clear();
         setWalletLoadWarnings(out.warnings);
         setWalletLoadInProgress(false);
@@ -1085,7 +1045,7 @@ void WalletQmlController::startWalletImport(const QString& path)
         if (!wallet) out.error = QString::fromStdString(util::ErrorString(wallet).translated);
         else out.wallet = std::move(*wallet);
         return out;
-    }, [this](WalletCommandResult out) {
+    }, [this](const WalletCommandResult& out) {
         setWalletLoadInProgress(false);
         setWalletLoadWarnings(out.warnings);
         if (!out.wallet) {
@@ -1103,71 +1063,122 @@ void WalletQmlController::startWalletImport(const QString& path)
 
 void WalletQmlController::consumeWalletNotifications()
 {
-    if (m_shutting_down) return;
-    auto loaded_wallets = m_load_notifications->takePendingWallets();
-    for (auto& wallet : loaded_wallets) handleLoadWallet(std::move(wallet));
+    if (m_shutting_down || m_initialization_failed || !m_initialized || m_projecting_notifications) return;
+    const QPointer<WalletQmlController> guard{this};
+    m_projecting_notifications = true;
+    const auto restore = qScopeGuard([guard] { if (guard) guard->m_projecting_notifications = false; });
+    auto handoff = m_load_subscription->takeNotifications();
+    if (!handoff) return;
+    for (const auto& entry : handoff->entries) {
+        // Keep the handoff's shadow until its reserved background disposal.
+        handleLoadWallet(entry.wallet, QString::fromStdString(entry.name), entry.select_wallet);
+        if (!guard || m_shutting_down) return;
+    }
 }
 
-void WalletQmlController::handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet)
+void WalletQmlController::handleLoadWallet(std::shared_ptr<interfaces::Wallet> wallet, const std::optional<QString>& captured_name, bool select_wallet)
 {
-    // Multi-step create flows (currently watch-only) finish setup from the
-    // worker result before publishing the wallet model.
-    if (wallet && !m_deferred_wallet_name.isEmpty() &&
-        QString::fromStdString(wallet->getWalletName()) == m_deferred_wallet_name) {
-        return;
-    }
-    addOrSelectWalletModel(std::move(wallet));
+    // Multi-step create flows finish setup before publishing the wallet model.
+    if (wallet && !m_deferred_wallet_name.isEmpty() && captured_name && *captured_name == m_deferred_wallet_name) return;
+    addOrSelectWalletModel(std::move(wallet), captured_name, select_wallet);
 }
 
 void WalletQmlController::initialize()
 {
-    if (m_initialized || m_shutting_down) return;
+    if (m_initialized || m_initializing || m_initialization_failed || m_shutting_down) return;
     // wallet_loader is not set when -disablewallet is passed; bail out.
-    if (gArgs.GetBoolArg("-disablewallet", false)) {
+    if (gArgs.GetBoolArg("-disablewallet", false)) return;
+    m_initializing = true;
+    const QPointer<WalletQmlController> guard{this};
+    m_load_subscription = std::make_shared<walletlife::LoadSubscription>(
+        m_wallet_command_executor->scheduler(),
+        [node = &m_node](walletlife::LoadSubscription::Callback callback) {
+            return node->walletLoader().handleLoadWallet(std::move(callback));
+        },
+        [node = &m_node] { return node->walletLoader().getWallets(); },
+        [guard, bridge = m_notification_bridge](walletlife::Update update) {
+            QMetaObject::invokeMethod(bridge.get(), [guard, update] {
+                if (guard) guard->handleLifecyclePublication(update);
+            }, Qt::QueuedConnection);
+        });
+    if (!m_load_subscription->start()) {
+        m_initializing = false;
+        m_initialization_failed = true;
+        setWalletLoadError(tr("Wallet loading could not be started."));
+    }
+}
+
+void WalletQmlController::handleLifecyclePublication(walletlife::Update update)
+{
+    if (m_shutting_down) return;
+    switch (update.kind) {
+    case walletlife::Publication::Ready:
+    case walletlife::Publication::InitialHandoff:
+        finishInitialization();
+        break;
+    case walletlife::Publication::Changed:
+        consumeWalletNotifications();
+        break;
+    case walletlife::Publication::Failed:
+    case walletlife::Publication::Retired: {
+        const QPointer<WalletQmlController> guard{this};
+        const bool initialized_changed = m_initialized;
+        const QString error = update.kind == walletlife::Publication::Failed ? tr("Wallet loading failed.") :
+            update.cleanup_failed ? tr("Wallet notification cleanup failed.") : tr("Wallet notifications are unavailable.");
+        const bool error_changed = m_wallet_load_error != error;
+        m_initializing = false;
+        m_initialized = false;
+        m_initialization_failed = true;
+        m_wallet_load_error = error;
+        if (initialized_changed) {
+            Q_EMIT initializedChanged();
+            if (!guard || m_shutting_down) return;
+        }
+        if (error_changed) Q_EMIT walletLoadErrorChanged();
+        break;
+    }
+    }
+}
+
+void WalletQmlController::finishInitialization()
+{
+    if (m_shutting_down || m_initialization_failed || !m_initializing) return;
+    const QPointer<WalletQmlController> guard{this};
+    auto handoff = m_load_subscription->takeInitial();
+    if (!handoff) return;
+    if (!handoff->entries.empty()) {
+        for (const auto& entry : handoff->entries) {
+            auto* wallet_model = new WalletQmlModel(WalletQmlModel::SharedWallet{entry.wallet}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
+            registerWalletModel(wallet_model);
+            applyWalletDisplayName(wallet_model);
+            m_wallets.push_back(wallet_model);
+            subscribeWalletInfo(wallet_model);
+            Q_EMIT walletLoadStateChanged(QString::fromStdString(entry.name), WalletListModel::LoadState::Open, QString{});
+            if (!guard || m_shutting_down) return;
+            publishWalletInfo(wallet_model);
+            if (!guard || m_shutting_down) return;
+        }
+        // Background disposal publishes the next bounded presentation batch.
         return;
     }
-    const QPointer<WalletQmlController> guard{this};
-    m_handler_load_wallet = m_node.walletLoader().handleLoadWallet([guard, bridge = m_notification_bridge, notifications = m_load_notifications](std::unique_ptr<interfaces::Wallet> wallet) {
-        {
-            std::lock_guard lock(notifications->mutex);
-            if (notifications->stopping) return;
-            notifications->wallets.push_back(std::move(wallet));
-        }
-        QMetaObject::invokeMethod(bridge.get(), [guard] {
-            if (guard) guard->consumeWalletNotifications();
-        }, Qt::QueuedConnection);
-    });
-
-    auto wallets = m_node.walletLoader().getWallets();
-    QStringList loaded_wallet_names;
-    loaded_wallet_names.reserve(static_cast<qsizetype>(wallets.size()));
-    for (auto& wallet : wallets) {
-        loaded_wallet_names.append(QString::fromStdString(wallet->getWalletName()));
-        auto* wallet_model = new WalletQmlModel(std::move(wallet), &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
-        registerWalletModel(wallet_model);
-        applyWalletDisplayName(wallet_model);
-        m_wallets.push_back(wallet_model);
-        subscribeWalletInfo(wallet_model);
-    }
-    for (const QString& wallet_name : loaded_wallet_names) {
-        Q_EMIT walletLoadStateChanged(wallet_name,
-                                      WalletListModel::LoadState::Open,
-                                      QString{});
-    }
-    for (WalletQmlModel* wallet_model : m_wallets) {
-        publishWalletInfo(wallet_model);
-    }
+    m_initializing = false;
+    m_initialized = true;
     if (!m_wallets.empty()) {
         m_selected_wallet = m_wallets.front();
         Q_EMIT openWalletsChanged();
+        if (!guard || m_shutting_down) return;
         setWalletLoaded(true);
+        if (!guard || m_shutting_down) return;
         setNoWalletsFound(false);
+        if (!guard || m_shutting_down) return;
         Q_EMIT selectedWalletChanged();
+        if (!guard || m_shutting_down) return;
     }
-
     refreshExternalSignerStatus();
-    m_initialized = true;
+    if (!guard || m_shutting_down) return;
     Q_EMIT initializedChanged();
+    if (!guard || m_shutting_down) return;
+    consumeWalletNotifications();
 }
 
 void WalletQmlController::setWalletLoaded(bool loaded)
@@ -1224,7 +1235,7 @@ void WalletQmlController::startWalletLoad(const QString& path, const QString& wa
         if (!wallet) out.error = QString::fromStdString(util::ErrorString(wallet).translated);
         else out.wallet = std::move(*wallet);
         return out;
-    }, [this, load_target](WalletCommandResult out) {
+    }, [this, load_target](const WalletCommandResult& out) {
         setWalletLoadInProgress(false);
         setWalletLoadWarnings(out.warnings);
         if (!out.wallet) {
@@ -1279,7 +1290,7 @@ void WalletQmlController::startWalletMigration(const QString& path, SecureString
             if (out.error.isEmpty()) out.error = tr("Wallet update failed.");
         } else out.wallet = std::move(result->wallet);
         return out;
-    }, [this](WalletCommandResult out) {
+    }, [this](const WalletCommandResult& out) {
         setWalletMigrationInProgress(false);
         if (!out.error.isEmpty()) {
             setWalletMigrationError(out.error);
@@ -1306,6 +1317,7 @@ void WalletQmlController::setWalletCreateError(const QString& error)
 
 void WalletQmlController::setWalletLoadInProgress(bool in_progress)
 {
+    if (m_load_subscription) m_load_subscription->setNotificationContext(m_deferred_wallet_name.toStdString(), in_progress);
     if (m_wallet_load_in_progress != in_progress) {
         m_wallet_load_in_progress = in_progress;
         Q_EMIT walletLoadInProgressChanged();

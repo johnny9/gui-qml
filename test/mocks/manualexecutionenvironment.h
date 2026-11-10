@@ -9,6 +9,7 @@
 #include <qml/models/feereadservices.h>
 
 #include <array>
+#include <algorithm>
 #ifndef Q_MOC_RUN
 #include <charconv>
 #endif
@@ -16,6 +17,77 @@
 #include <deque>
 #include <string>
 #include <vector>
+
+/** Manual transport only: production TaskQueue owns admission/key decisions. */
+class ManualRoutedExecution
+{
+public:
+    struct Turn { execution::Lane lane; execution::Phase phase; execution::TaskId id; std::function<void()> run; };
+    explicit ManualRoutedExecution(execution::Limits limits = execution::Limits::Bounded(), size_t core_slots = 1)
+    {
+        scheduler = std::make_shared<execution::TaskQueue>(
+            [this](execution::Lane lane, execution::Phase phase, execution::TaskId id, std::function<void()> run) {
+                if (phase == execution::Phase::Queued && reject_lane == lane) {
+                    reject_lane.reset();
+                    trace.push_back("reject:" + std::to_string(id.value));
+                    return false;
+                }
+                queued.push_back({lane, phase, id, std::move(run)});
+                trace.push_back("enqueue:" + std::to_string(static_cast<int>(lane)) + ":" + std::to_string(id.value));
+                return true;
+            }, limits, core_slots);
+    }
+    std::optional<execution::TaskId> dispatchNext(execution::Lane lane)
+    {
+        if (lane != execution::Lane::Core && std::any_of(active.begin(), active.end(), [lane](const auto& entry) { return entry.second.lane == lane; })) return {};
+        const auto next = std::find_if(queued.begin(), queued.end(), [lane](const Turn& turn) { return turn.lane == lane; });
+        if (next == queued.end()) return {};
+        const auto id = next->id;
+        active.emplace(id, std::move(*next));
+        queued.erase(next);
+        trace.push_back("dispatch:" + std::to_string(id.value));
+        return id;
+    }
+    bool finishWork(execution::TaskId id)
+    {
+        const auto next = active.find(id);
+        if (next == active.end()) return false;
+        auto turn = std::move(next->second);
+        active.erase(next);
+        trace.push_back("finish:" + std::to_string(id.value));
+        turn.run();
+        return true;
+    }
+    std::optional<execution::TaskId> deliverOutcome()
+    {
+        const auto next = std::find_if(queued.begin(), queued.end(), [](const Turn& turn) { return turn.lane == execution::Lane::Domain; });
+        if (next == queued.end() || next->phase != execution::Phase::OutcomeReady) return {};
+        return dispatchNext(execution::Lane::Domain);
+    }
+    bool stepMailbox(execution::TaskId id)
+    {
+        const auto next = active.find(id);
+        return next != active.end() && next->second.lane == execution::Lane::Domain && finishWork(id);
+    }
+    bool step(execution::Lane lane)
+    {
+        const auto id = dispatchNext(lane);
+        return id && finishWork(*id);
+    }
+    void drain()
+    {
+        while (!active.empty() || !queued.empty()) {
+            if (!active.empty()) finishWork(active.begin()->first);
+            else step(queued.front().lane);
+        }
+    }
+    bool quiescent() const { return queued.empty() && active.empty() && scheduler->pending() == 0; }
+    std::shared_ptr<execution::TaskQueue> scheduler;
+    std::optional<execution::Lane> reject_lane;
+    std::deque<Turn> queued;
+    std::map<execution::TaskId, Turn> active;
+    std::vector<std::string> trace;
+};
 
 /** Timing/transport controller; executes the production ledger and decisions. */
 class ManualExecutionEnvironment final : public FeeReadTimer

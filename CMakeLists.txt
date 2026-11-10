@@ -69,8 +69,10 @@ cmake_dependent_option(BUILD_APP_TESTS "Build tests for the app" ON "BUILD_GUI" 
 # Builds libraries: univalue, core_interface, bitcoin_node, bitcoin_wallet
 add_subdirectory(bitcoin)
 
-# Match Core's DEBUG_LOCKORDER and sanitizer settings.
-foreach(rule CMAKE_CXX_COMPILE_OBJECT CMAKE_CXX_CREATE_SHARED_LIBRARY CMAKE_CXX_LINK_EXECUTABLE)
+# Match Core's compiler launchers, DEBUG_LOCKORDER and sanitizer settings.
+# Core configures ccache in its directory; propagate it to the app and tests.
+foreach(rule CMAKE_C_COMPILER_LAUNCHER CMAKE_CXX_COMPILER_LAUNCHER
+    CMAKE_CXX_COMPILE_OBJECT CMAKE_CXX_CREATE_SHARED_LIBRARY CMAKE_CXX_LINK_EXECUTABLE)
   get_directory_property(${rule} DIRECTORY bitcoin DEFINITION ${rule})
 endforeach()
 
@@ -91,6 +93,7 @@ list(FILTER QML_SOURCES EXCLUDE REGEX "androidnotifier\\.(cpp|h)$")
 # Wallet implementations and their moc objects must not enter a node-only link.
 if(NOT ENABLE_WALLET)
   list(FILTER QML_SOURCES EXCLUDE REGEX "qml/walletqmlcontroller\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/walletlifecycle\\.(cpp|h)$")
   list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/activityfilterproxymodel\\.(cpp|h)$")
   list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/addresslistmodel\\.(cpp|h)$")
   list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/bumptransactionmodel\\.(cpp|h)$")

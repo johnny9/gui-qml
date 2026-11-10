@@ -19,6 +19,10 @@
 #include <utility>
 #include <variant>
 
+class QThread;
+class BackendExecutorWorker;
+struct BackendExecutionGroup;
+
 class BackendExecutor : public QObject
 {
     Q_OBJECT
@@ -34,6 +38,8 @@ public:
     using Outcome = std::variant<std::conditional_t<std::is_void_v<T>, std::monostate, T>, std::exception_ptr, Cancelled>;
 
     explicit BackendExecutor(QObject* parent = nullptr);
+    // Bounded Core/Domain/Control/Cleanup plus legacy compatibility transport.
+    explicit BackendExecutor(execution::Limits limits, QObject* parent = nullptr);
     ~BackendExecutor() override;
 
     template <typename Work, typename Done>
@@ -95,7 +101,7 @@ public:
     // Drains accepted work without cancelling it, including submitTask completions
     // and worker cleanup. Rejection callbacks are queued independently and do not
     // delay draining.
-    // Background-owned completion port, independent of a GUI observer.
+    // Copy at composition time; outcomes are consumed on background Domain.
     std::shared_ptr<execution::Scheduler> scheduler() const { return m_scheduler; }
 
     void shutdown();
@@ -135,9 +141,13 @@ private:
 
     struct ExecutorState;
     TaskId enqueueTask(std::function<void(bool)> work, std::function<void(std::optional<Cancelled>)> gui_completion, CancelPolicy policy);
+    BackendExecutor(std::optional<execution::Limits> limits, QObject* parent);
     bool enqueue(std::function<void()> work, std::function<void()> gui_completion);
     std::shared_ptr<ExecutorState> m_state;
     std::shared_ptr<execution::TaskQueue> m_scheduler;
+    BackendExecutorWorker* m_worker;
+    QThread* m_thread;
+    std::shared_ptr<BackendExecutionGroup> m_group;
     std::map<quint64, std::function<void()>> m_gui_completions;
     quint64 m_next_task_id{0};
     bool m_stopping{false};

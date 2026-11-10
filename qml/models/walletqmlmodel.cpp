@@ -602,8 +602,16 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, inter
 WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                              FeeReadServices fee_services, psbtfee::Services psbt_services, backup::Services backup_services,
                              QObject* parent)
+    : WalletQmlModel(SharedWallet{std::move(wallet)}, node,
+                     std::move(fee_services), std::move(psbt_services), std::move(backup_services), parent)
+{
+}
+
+WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
+                             FeeReadServices fee_services, psbtfee::Services psbt_services, backup::Services backup_services,
+                             QObject* parent)
     : QObject(parent)
-    , m_wallet(std::move(wallet))
+    , m_wallet(std::move(wallet.wallet))
     , m_node(node)
     , m_backup_services(std::move(backup_services))
     , m_psbt_fee_services(std::move(psbt_services))

@@ -162,6 +162,10 @@ public:
     WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                    FeeReadServices fee_services, psbtfee::Services proof_services, backup::Services backup_services,
                    QObject* parent = nullptr);
+    struct SharedWallet { std::shared_ptr<interfaces::Wallet> wallet; };
+    WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
+                   FeeReadServices fee_services, psbtfee::Services proof_services, backup::Services backup_services,
+                   QObject* parent = nullptr);
     WalletQmlModel(interfaces::Node* node, QObject* parent = nullptr);
     WalletQmlModel(QObject *parent = nullptr);
     ~WalletQmlModel();

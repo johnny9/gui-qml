@@ -16,13 +16,14 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include <QMutex>
 #include <QObject>
 #include <QThread>
 #include <QSet>
 
-struct WalletLoadNotifications;
+namespace walletlife { class LoadSubscription; struct Update; }
 
 class WalletQmlController : public QObject
 {
@@ -152,9 +153,11 @@ private:
         Create,
     };
 
-    void handleLoadWallet(std::unique_ptr<interfaces::Wallet> wallet);
+    void handleLoadWallet(std::shared_ptr<interfaces::Wallet> wallet, const std::optional<QString>& captured_name = {}, bool select_wallet = true);
     void consumeWalletNotifications();
-    WalletQmlModel* addOrSelectWalletModel(std::unique_ptr<interfaces::Wallet> wallet);
+    void finishInitialization();
+    void handleLifecyclePublication(walletlife::Update update);
+    WalletQmlModel* addOrSelectWalletModel(std::shared_ptr<interfaces::Wallet> wallet, const std::optional<QString>& captured_name = {}, bool select_wallet = true);
     void registerWalletModel(WalletQmlModel* wallet_model);
     void removeWalletModel(WalletQmlModel* wallet_model, bool remove = false);
     void retireWallet(WalletQmlModel* wallet_model, bool remove);
@@ -194,6 +197,9 @@ private:
     backup::Services backupServices() const;
     std::shared_ptr<backup::InstallCoordinator> m_backup_installs{std::make_shared<backup::InstallCoordinator>()};
     bool m_initialized{false};
+    bool m_initializing{false};
+    bool m_initialization_failed{false};
+    bool m_projecting_notifications{false};
     bool m_shutting_down{false};
     bool m_controller_drained{false};
     bool m_notifications_drained{false};
@@ -204,11 +210,9 @@ private:
     WalletQmlModel* m_empty_wallet;
     WalletQmlModel* m_selected_wallet;
     std::shared_ptr<BackendExecutor> m_wallet_command_executor;
-    std::unique_ptr<BackendExecutor> m_notification_cleanup_executor;
     mutable QMutex m_wallets_mutex;
     std::vector<WalletQmlModel*> m_wallets;
-    std::unique_ptr<interfaces::Handler> m_handler_load_wallet;
-    std::shared_ptr<WalletLoadNotifications> m_load_notifications;
+    std::shared_ptr<walletlife::LoadSubscription> m_load_subscription;
     std::shared_ptr<QObject> m_notification_bridge;
     bool m_is_wallet_loaded{false};
     bool m_no_wallets_found{false};

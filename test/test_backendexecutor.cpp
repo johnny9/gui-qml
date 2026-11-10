@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -31,6 +32,141 @@ class BackendExecutorTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void activeGuiCallbackRetainsOwningPacketThroughReentrantShutdown()
+    {
+        struct Probe {
+            std::atomic_bool destroyed{false}, off_gui{false}, callback_done{false}, shutdown_seen{false};
+            QSemaphore inactive_released;
+        };
+        auto probe = std::make_shared<Probe>();
+        const auto gui = QThread::currentThread();
+        struct Value {
+            std::shared_ptr<Probe> probe;
+            QThread* gui;
+            bool marker;
+            Value(std::shared_ptr<Probe> p, QThread* thread, bool is_marker) : probe(std::move(p)), gui(thread), marker(is_marker) {}
+            ~Value()
+            {
+                if (marker) probe->inactive_released.release();
+                else { probe->off_gui = QThread::currentThread() != gui; probe->destroyed = true; }
+            }
+        };
+        auto executor = std::make_unique<BackendExecutor>();
+        QVERIFY(executor->submit(this, [probe, gui] { return std::make_shared<Value>(probe, gui, false); },
+            [&, probe, gui](const std::shared_ptr<Value>& value) {
+                if (!value) return;
+                executor->submit(this, [probe, gui] { return std::make_shared<Value>(probe, gui, true); }, [](const std::shared_ptr<Value>&) {});
+                executor.reset();
+                // The inactive marker is released only by beginShutdown. Hold
+                // GUI completion until that actual worker boundary is reached.
+                probe->shutdown_seen = probe->inactive_released.tryAcquire(1, TIMEOUT);
+                probe->callback_done = true;
+            }));
+        QTRY_VERIFY(probe->callback_done.load());
+        QVERIFY(probe->shutdown_seen.load());
+        QTRY_VERIFY(probe->destroyed.load());
+        QVERIFY(probe->off_gui.load());
+    }
+    void routedControlAndCleanupProgressWhileCoreIsHeld()
+    {
+        using namespace execution;
+        BackendExecutor executor{Limits{{1, 0}, {1, 0}, {1, 0}}};
+        auto scheduler = executor.scheduler();
+        auto gate = std::make_shared<Gate>();
+        const auto release = qScopeGuard([gate] { gate->release.release(); });
+        const auto gui = QThread::currentThread();
+        struct Probe {
+            std::atomic<QThread*> core{nullptr}, domain{nullptr}, control{nullptr}, cleanup{nullptr};
+            std::atomic<int> written{0}, consumed{0};
+            QSemaphore control_done, cleanup_done;
+            bool heartbeat{false};
+        };
+        const auto probe = std::make_shared<Probe>();
+        QVERIFY(Submit(*scheduler, [gate, probe] {
+            probe->core = QThread::currentThread();
+            gate->entered.release(); gate->release.acquire();
+            probe->written = 1;
+            return 42;
+        }, [probe](int value) { probe->domain = QThread::currentThread(); probe->consumed = value; }));
+        QVERIFY(gate->entered.tryAcquire(1, TIMEOUT));
+        QCOMPARE(Submit(*scheduler, [] {}, [] {}).rejection, Rejection::Capacity);
+        scheduler->closeOrdinaryAdmission();
+        QCOMPARE(Submit(*scheduler, [] {}, [] {}).rejection, Rejection::Closed);
+        QVERIFY(Submit(*scheduler, [probe] { probe->control = QThread::currentThread(); }, [probe] {
+            probe->domain = QThread::currentThread(); probe->control_done.release();
+        }, {}, {Lane::Control, 0}));
+        QVERIFY(Submit(*scheduler, [probe] { probe->cleanup = QThread::currentThread(); }, [probe] {
+            probe->domain = QThread::currentThread(); probe->cleanup_done.release();
+        }, {}, {Lane::Cleanup, 0}));
+        // GUI processing is withheld: all three background transports progress.
+        QVERIFY(probe->control_done.tryAcquire(1, TIMEOUT));
+        QVERIFY(probe->cleanup_done.tryAcquire(1, TIMEOUT));
+        QCOMPARE(probe->written.load(), 0);
+        for (auto* thread : {probe->core.load(), probe->domain.load(), probe->control.load(), probe->cleanup.load()}) {
+            QVERIFY(thread); QVERIFY(thread != gui);
+        }
+        QCOMPARE(std::set<QThread*>({probe->core.load(), probe->domain.load(), probe->control.load(), probe->cleanup.load()}).size(), size_t{4});
+        QSignalSpy drained{&executor, &BackendExecutor::drained};
+        executor.shutdown();
+        QTimer::singleShot(0, &executor, [probe] { probe->heartbeat = true; });
+        QTRY_VERIFY(probe->heartbeat);
+        QVERIFY(drained.empty());
+        QCOMPARE(probe->consumed.load(), 0);
+        gate->release.release();
+        QTRY_COMPARE(drained.size(), 1);
+        QCOMPARE(probe->written.load(), 1);
+        QCOMPARE(probe->consumed.load(), 42);
+        QCOMPARE(scheduler->pending(), size_t{0});
+        QVERIFY(executor.isDrained());
+    }
+    void routedOwningOutcomeSurvivesDestroyedGuiOwner()
+    {
+        using namespace execution;
+        auto executor = std::make_unique<BackendExecutor>(Limits::Bounded());
+        auto scheduler = executor->scheduler();
+        auto gate = std::make_shared<Gate>();
+        const auto release = qScopeGuard([gate] { gate->release.release(); });
+        const auto gui = QThread::currentThread();
+        struct Probe {
+            QSemaphore wrote;
+            std::atomic<int> effects{0}, outcomes{0};
+            bool drained{false}, heartbeat{false};
+        };
+        const auto probe = std::make_shared<Probe>();
+        auto destroyed = std::make_shared<std::atomic_bool>(false);
+        auto destroyed_off_gui = std::make_shared<std::atomic_bool>(false);
+        struct Value {
+            std::shared_ptr<std::atomic_bool> destroyed, off_gui;
+            QThread* gui;
+            Value(std::shared_ptr<std::atomic_bool> d, std::shared_ptr<std::atomic_bool> off, QThread* thread)
+                : destroyed(std::move(d)), off_gui(std::move(off)), gui(thread) {}
+            ~Value() { *off_gui = QThread::currentThread() != gui; *destroyed = true; }
+        };
+        QVERIFY(Submit(*scheduler, [gate] {
+            gate->entered.release(); gate->release.acquire();
+        }, [] {}, {}, {Lane::Domain, 0}));
+        QVERIFY(gate->entered.tryAcquire(1, TIMEOUT));
+        QVERIFY(Submit(*scheduler, [probe, destroyed, destroyed_off_gui, gui] {
+            auto result = std::make_unique<Value>(destroyed, destroyed_off_gui, gui);
+            ++probe->effects; probe->wrote.release(); return result;
+        }, [probe, gui](std::unique_ptr<Value> value) {
+            if (value && probe->effects == 1 && QThread::currentThread() != gui) ++probe->outcomes;
+        }));
+        QVERIFY(probe->wrote.tryAcquire(1, TIMEOUT));
+        executor.reset();
+        QCOMPARE(probe->effects.load(), 1);
+        QCOMPARE(probe->outcomes.load(), 0);
+        QVERIFY(!destroyed->load());
+        BackendExecutor::shutdownAll(this, [probe] { probe->drained = true; });
+        QTimer::singleShot(0, this, [probe] { probe->heartbeat = true; });
+        QTRY_VERIFY(probe->heartbeat);
+        QVERIFY(!probe->drained);
+        gate->release.release();
+        QTRY_VERIFY(probe->drained);
+        QCOMPARE(probe->outcomes.load(), 1);
+        QVERIFY(destroyed->load()); QVERIFY(destroyed_off_gui->load());
+        QCOMPARE(scheduler->pending(), size_t{0});
+    }
     void domainCompletionDoesNotNeedGuiTurn() {
         BackendExecutor executor;
         auto scheduler = executor.scheduler();
