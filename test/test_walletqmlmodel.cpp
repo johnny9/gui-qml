@@ -27,6 +27,7 @@
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <test/mocks/mocknode.h>
+#include <test/mocks/manualexecutionenvironment.h>
 #include <test/mocks/mockwallet.h>
 #include <txmempool.h>
 #include <wallet/coincontrol.h>
@@ -194,7 +195,7 @@ private:
     wallet::CWallet* m_raw_wallet;
 };
 
-WalletModelHarness<MockWallet> MakeWalletModel(interfaces::Node* node = nullptr, wallet::CWallet* raw_wallet = nullptr)
+WalletModelHarness<MockWallet> MakeWalletModel(interfaces::Node* node = nullptr, wallet::CWallet* raw_wallet = nullptr, FeeReadServices services = {})
 {
     auto wallet = std::make_unique<ReviewMockWallet>(raw_wallet);
     MockWallet* const wallet_view{wallet.get()};
@@ -212,7 +213,7 @@ WalletModelHarness<MockWallet> MakeWalletModel(interfaces::Node* node = nullptr,
         return DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
     };
 
-    return {wallet_view, std::unique_ptr<WalletQmlModel, DrainWalletModel>{new WalletQmlModel(std::move(wallet), node)}};
+    return {wallet_view, std::unique_ptr<WalletQmlModel, DrainWalletModel>{new WalletQmlModel(std::move(wallet), node, std::move(services))}};
 }
 
 void SetValidRecipient(WalletQmlModel& model,
@@ -703,6 +704,269 @@ private Q_SLOTS:
         QCOMPARE(model->sendTotalSatoshi(), 50'300);
     }
     void estimatedFeeForTarget_returnsEmptyWhenUnavailable();
+    void rejectedFeeDispatchSettlesPending() {
+        auto [wallet, model] = MakeWalletModel();
+        SetValidRecipient(*model);
+        model->backendExecutor()->shutdown();
+        model->scheduleFeeEstimates();
+        // Fire the real timer producer without using elapsed time as ordering.
+        QTimer* debounce{nullptr};
+        for (auto* timer : model->findChildren<QTimer*>()) {
+            if (timer->isSingleShot() && timer->interval() == 250) debounce = timer;
+        }
+        QVERIFY(debounce);
+        debounce->stop();
+        QVERIFY(QMetaObject::invokeMethod(debounce, "timeout", Qt::DirectConnection));
+        const bool settled = !model->feeEstimatePending();
+        QTRY_VERIFY(model->backendExecutor()->isDrained());
+        QVERIFY(settled);
+        QVERIFY(QMetaObject::invokeMethod(debounce, "timeout", Qt::DirectConnection));
+        QVERIFY(!model->feeEstimatePending());
+        QCOMPARE(wallet->calls.createTransaction.load(), 0);
+    }
+    void manualFeeClockSeparatesCheckpoints() {
+        auto env = std::make_shared<ManualExecutionEnvironment>();
+        int reads{0};
+        FeeReadServices services{env->scheduler, env, [&](const FeeReadInput& input) {
+            ++reads;
+            if (input.recipients.size() != 1) throw std::runtime_error("unexpected recipient count");
+            FeeReadResult result;
+            result.estimates.insert(6, SendFeePreview{500, 2, 2500, {}, false});
+            return result;
+        }, [env](std::function<void()> publication) { env->post(std::move(publication)); }};
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        const auto cleanup = qScopeGuard([&] { model.reset(); env->drain(); env->publishAll(); });
+        SetValidRecipient(*model);
+        model->scheduleFeeEstimates();
+        env->drain();
+        env->advance(std::chrono::milliseconds{249});
+        QCOMPARE(reads, 0);
+        env->advance(std::chrono::milliseconds{1});
+        QCOMPARE(reads, 0);
+        QVERIFY(env->step()); // Backend effect.
+        QCOMPARE(reads, 1);
+        QCOMPARE(model->estimatedFeeForTarget(6), QString{});
+        QVERIFY(env->step()); // Domain consumes result, publication remains queued.
+        QVERIFY(model->feeEstimatePending());
+        QCOMPARE(model->estimatedFeeForTarget(6), QString{});
+        env->publishAll();
+        QCOMPARE(model->estimatedFeeSatoshi(), 500);
+        QVERIFY(!model->feeEstimatePending());
+        QCOMPARE(wallet->calls.createTransaction.load(), 0); // Fake service, no real Core closure.
+        QVERIFY(env->quiescent());
+        model.reset();
+        env->drain();
+        QVERIFY(env->quiescent());
+        model.reset();
+        env->drain();
+        env->publishAll();
+        QVERIFY(env->quiescent());
+        qInfo().noquote() << "R01_TRACE" << QString::fromStdString(env->trace());
+    }
+    void manualFeeOldResultCannotRetargetNewInput_data() {
+        QTest::addColumn<bool>("old_error");
+        QTest::newRow("old-success") << false;
+        QTest::newRow("old-error") << true;
+    }
+    void manualFeeOldResultCannotRetargetNewInput() {
+        QFETCH(bool, old_error);
+        auto env = std::make_shared<ManualExecutionEnvironment>();
+        std::vector<CAmount> captured;
+        FeeReadServices services{env->scheduler, env, [&](const FeeReadInput& input) {
+            captured.push_back(input.recipients.front().amount);
+            if (old_error && captured.size() == 1) throw std::runtime_error("old fee failure");
+            FeeReadResult result;
+            result.estimates.insert(6, SendFeePreview{input.recipients.front().amount == 50000 ? 500 : 600, 1, 1000, {}, false});
+            return result;
+        }, [env](std::function<void()> publication) { env->post(std::move(publication)); }};
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        const auto cleanup = qScopeGuard([&] { model.reset(); env->drain(); env->publishAll(); });
+        SetValidRecipient(*model);
+        model->scheduleFeeEstimates();
+        env->drain();
+        env->advance(std::chrono::milliseconds{250}); // Captures A.
+        model->sendRecipientList()->currentRecipient()->amount()->setSatoshi(60000);
+        model->scheduleFeeEstimates(); // B invalidates before A's outcome turn.
+        QVERIFY(env->step()); // A still owns the original 50000 input.
+        env->drain();
+        env->publishAll();
+        QCOMPARE(captured, std::vector<CAmount>{50000});
+        QVERIFY(model->feeEstimatePending());
+        QCOMPARE(model->estimatedFeeForTarget(6), QString{});
+        env->advance(std::chrono::milliseconds{250});
+        env->drain();
+        env->publishAll();
+        QCOMPARE(captured, std::vector<CAmount>({50000, 60000}));
+        QCOMPARE(model->estimatedFeeSatoshi(), 600);
+        QVERIFY(!model->feeEstimatePending());
+        QCOMPARE(wallet->calls.createTransaction.load(), 0);
+        model.reset();
+        env->drain();
+        QVERIFY(env->quiescent());
+        model.reset();
+        env->drain();
+        env->publishAll();
+        QVERIFY(env->quiescent());
+        qInfo().noquote() << "R01_TRACE" << QString::fromStdString(env->trace());
+    }
+    void manualFeeRejectionExceptionAndObserverLoss_data() {
+        QTest::addColumn<bool>("error");
+        QTest::newRow("success") << false;
+        QTest::newRow("exception") << true;
+    }
+    void manualFeeRejectionExceptionAndObserverLoss() {
+        QFETCH(bool, error);
+        auto env = std::make_shared<ManualExecutionEnvironment>();
+        int reads{0};
+        FeeReadServices services{env->scheduler, env, [&](const FeeReadInput&) -> FeeReadResult {
+            ++reads;
+            if (error) throw std::runtime_error("synthetic fee failure");
+            FeeReadResult result;
+            result.estimates.insert(6, SendFeePreview{500, 1, 1000, {}, false});
+            return result;
+        }, [env](std::function<void()> publication) { env->post(std::move(publication)); }};
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        const auto cleanup = qScopeGuard([&] { model.reset(); env->drain(); env->publishAll(); });
+        SetValidRecipient(*model);
+        model->scheduleFeeEstimates();
+        env->drain();
+        env->reject_next = true;
+        env->advance(std::chrono::milliseconds{250});
+        QCOMPARE(reads, 0);
+        QVERIFY(!model->feeEstimatePending());
+        model->scheduleFeeEstimates();
+        env->advance(std::chrono::milliseconds{250});
+        env->drain();
+        env->publishAll();
+        QCOMPARE(reads, 1);
+        QCOMPARE(model->estimatedFeeSatoshi(), error ? -1 : 500);
+        QVERIFY(!model->feeEstimatePending());
+        model->scheduleFeeEstimates();
+        env->advance(std::chrono::milliseconds{250});
+        model.reset();
+        env->drain(); // Accepted effect/outcome is accounted after GUI observer loss.
+        env->publishAll();
+        QCOMPARE(reads, 2);
+        QVERIFY(env->quiescent());
+        model.reset();
+        env->drain();
+        env->publishAll();
+        QVERIFY(env->quiescent());
+        qInfo().noquote() << "R01_TRACE" << QString::fromStdString(env->trace());
+    }
+    void capturedFeeReadRejectsAnAddressInvalidatedBeforeExpiry() {
+        auto clock = std::make_shared<ManualExecutionEnvironment>();
+        FeeReadServices services;
+        services.timer = clock; // A manual clock with the real background effect transport.
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        SetValidRecipient(*model);
+        model->scheduleFeeEstimates();
+        model->sendRecipientList()->currentRecipient()->address()->setAddress("invalid", 0);
+        clock->advance(std::chrono::milliseconds{250});
+        QTRY_VERIFY(!model->feeEstimatePending());
+        QCOMPARE(wallet->calls.createTransaction.load(), 0);
+        QCOMPARE(model->estimatedFeeForTarget(6), QString{});
+        QVERIFY(clock->quiescent());
+    }
+    void manualMaximumPublication_data() {
+        QTest::addColumn<int>("variant");
+        QTest::newRow("standard-maximum") << 0;
+        QTest::newRow("custom-maximum") << 1;
+        QTest::newRow("no-preview") << 2;
+        QTest::newRow("preview-without-maximum") << 3;
+    }
+    void manualMaximumPublication() {
+        QFETCH(int, variant);
+        auto env = std::make_shared<ManualExecutionEnvironment>();
+        int reads{0};
+        FeeReadServices services{env->scheduler, env, [&](const FeeReadInput& input) {
+            ++reads;
+            if (input.remainder_index != 0) throw std::runtime_error("maximum owner changed");
+            FeeReadResult result;
+            SendFeePreview preview{500, 1, 1000, variant < 2 ? std::make_optional<CAmount>(99000) : std::nullopt, false};
+            if (variant == 1) result.custom = preview;
+            else if (variant != 2) result.estimates.insert(6, preview);
+            return result;
+        }, [env](std::function<void()> publication) { env->post(std::move(publication)); }};
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        const auto cleanup = qScopeGuard([&] { model.reset(); env->drain(); env->publishAll(); });
+        SetValidRecipient(*model);
+        if (variant == 1) { model->setCustomFeeEnabled(true); model->setCustomFeeRate("2.5"); }
+        model->useMaximum();
+        env->drain();
+        connect(model->sendRecipientList()->currentRecipient()->amount(), &BitcoinAmount::amountChanged,
+                model.get(), &WalletQmlModel::scheduleFeeEstimates);
+        env->advance(std::chrono::milliseconds{250});
+        env->drain();
+        QCOMPARE(reads, 1);
+        QCOMPARE(model->sendRecipientList()->currentRecipient()->cAmount(), CAmount{50000});
+        QVERIFY(env->publishNext());
+        QCOMPARE(model->sendRecipientList()->currentRecipient()->cAmount(), variant < 2 ? CAmount{99000} : CAmount{50000});
+        QVERIFY(!model->feeEstimatePending());
+        env->advance(std::chrono::milliseconds{250});
+        env->drain();
+        QCOMPARE(reads, 1); // Publication must not schedule another business read.
+        QCOMPARE(wallet->calls.createTransaction.load(), 0);
+        QVERIFY(env->quiescent());
+        model.reset();
+        env->drain();
+        env->publishAll();
+        QVERIFY(env->quiescent());
+        qInfo().noquote() << "R01_TRACE" << QString::fromStdString(env->trace());
+    }
+    void manualQueuedPublicationKeepsItsOwner_data() {
+        QTest::addColumn<int>("boundary");
+        QTest::addColumn<bool>("error");
+        for (bool error : {false, true}) {
+            QTest::newRow(error ? "old-error-new-draft" : "old-success-new-draft") << 0 << error;
+            QTest::newRow(error ? "error-after-close" : "success-after-close") << 1 << error;
+            QTest::newRow(error ? "error-after-observer-loss" : "success-after-observer-loss") << 2 << error;
+        }
+    }
+    void manualQueuedPublicationKeepsItsOwner() {
+        QFETCH(int, boundary);
+        QFETCH(bool, error);
+        auto env = std::make_shared<ManualExecutionEnvironment>();
+        int reads{0}, notifications{0};
+        FeeReadServices services{env->scheduler, env, [&](const FeeReadInput&) {
+            ++reads;
+            if (error) throw std::runtime_error("queued old error");
+            FeeReadResult result;
+            result.estimates.insert(6, SendFeePreview{500, 1, 1000, {}, false});
+            return result;
+        }, [env](std::function<void()> publication) { env->post(std::move(publication)); }};
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        const auto cleanup = qScopeGuard([&] { model.reset(); env->drain(); env->publishAll(); });
+        connect(model.get(), &WalletQmlModel::estimatedFeeChanged, this, [&] { ++notifications; });
+        connect(model.get(), &WalletQmlModel::feeEstimatePendingChanged, this, [&] { ++notifications; });
+        SetValidRecipient(*model);
+        model->scheduleFeeEstimates();
+        env->drain();
+        env->advance(std::chrono::milliseconds{250});
+        env->drain();
+        QCOMPARE(reads, 1);
+        QCOMPARE(env->publications.size(), size_t{1});
+        QCOMPARE(env->scheduler->pending(), size_t{0});
+        if (boundary == 0) {
+            model->sendRecipientList()->currentRecipient()->amount()->setSatoshi(60000);
+            model->scheduleFeeEstimates();
+        } else if (boundary == 1) model->beginShutdown();
+        else model.reset();
+        notifications = 0;
+        QVERIFY(env->publishNext());
+        QVERIFY(!env->publishNext());
+        QCOMPARE(notifications, 0);
+        QCOMPARE(reads, 1);
+        if (model) {
+            QCOMPARE(model->estimatedFeeForTarget(6), QString{});
+            QCOMPARE(model->feeEstimatePending(), boundary == 0);
+        }
+        model.reset();
+        env->drain();
+        env->publishAll();
+        QVERIFY(env->quiescent());
+        qInfo().noquote() << "R01_TRACE" << QString::fromStdString(env->trace());
+    }
     void scheduleFeeEstimates_populatesFormattedEstimates();
     void scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesUnavailable();
     void scheduleFeeEstimates_usesStaticRegtestFeeOverride();
@@ -1089,6 +1353,8 @@ void WalletQmlModelTests::scheduleFeeEstimates_populatesFormattedEstimates()
     std::atomic<bool> first_call_started{false};
     std::atomic<bool> first_call_blocked{false};
     ThreadSafeCallLog<FeeEstimateCall> calls;
+    const auto gui_thread = QThread::currentThread();
+    std::atomic<bool> fee_calls_off_gui{true};
 
     [[maybe_unused]] auto verify_wallet = wallet->VerifyOnExit();
     wallet->ExpectNoCalls(wallet->calls.getNewDestination);
@@ -1097,6 +1363,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_populatesFormattedEstimates()
                                         bool sign,
                                         int& change_pos,
                                         CAmount& fee) -> util::Result<CTransactionRef> {
+        if (QThread::currentThread() == gui_thread) fee_calls_off_gui = false;
         calls.Append({
             coin_control.m_confirm_target.value_or(0),
             sign,
@@ -1132,6 +1399,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_populatesFormattedEstimates()
     QCOMPARE(model->estimatedFeeForTarget(6), QStringLiteral("0.00000200 BTC"));
     QCOMPARE(model->estimatedFeeForTarget(10), QStringLiteral("0.00000600 BTC"));
     QCOMPARE(model->estimatedFee(), QStringLiteral("0.00000200 BTC"));
+    QVERIFY(fee_calls_off_gui);
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesUnavailable()

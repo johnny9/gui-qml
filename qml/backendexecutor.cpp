@@ -68,6 +68,7 @@ struct BackendExecutor::ExecutorState {
         std::function<void(std::optional<Cancelled>)> completion;
     };
 
+    std::shared_ptr<execution::TaskQueue> scheduler;
     BackendExecutorWorker* worker{new BackendExecutorWorker};
     QThread* worker_thread{new QThread};
     std::map<TaskId, Pending> pending;
@@ -79,7 +80,7 @@ struct BackendExecutor::ExecutorState {
 
     void finishShutdownIfReady()
     {
-        if (!worker_barrier || !pending.empty() || active_callbacks || finish_scheduled) return;
+        if (!worker_barrier || !pending.empty() || active_callbacks || finish_scheduled || scheduler->pending() != 0) return;
         finish_scheduled = true;
         QMetaObject::invokeMethod(worker, [worker = worker, thread = worker_thread] {
             worker->releaseAllTasks();
@@ -113,6 +114,16 @@ BackendExecutor::BackendExecutor(QObject* parent)
     Q_ASSERT(QThread::currentThread() == QCoreApplication::instance()->thread());
     auto* const worker = m_state->worker;
     auto* const worker_thread = m_state->worker_thread;
+    m_scheduler = std::make_shared<execution::TaskQueue>(
+        [worker, state = std::weak_ptr<ExecutorState>{m_state}](execution::Phase, execution::TaskId, std::function<void()> turn) {
+            return QMetaObject::invokeMethod(worker, [state, turn = std::move(turn)] {
+                turn();
+                if (const auto owner = state.lock()) {
+                    QMetaObject::invokeMethod(QCoreApplication::instance(), [owner] { owner->finishShutdownIfReady(); }, Qt::QueuedConnection);
+                }
+            }, Qt::QueuedConnection);
+        });
+    m_state->scheduler = m_scheduler;
     // Keep the name on the thread so cleanup remains identifiable after its owner is destroyed.
     connect(this, &QObject::objectNameChanged, worker_thread, [thread = worker_thread](const QString& name) {
         thread->setObjectName(name);
@@ -238,6 +249,7 @@ void BackendExecutor::shutdown()
     Q_ASSERT(QThread::currentThread() == thread());
     if (m_stopping) return;
     m_stopping = true;
+    m_scheduler->closeAdmission();
     qDebug() << __func__ << ": Stopping thread" << m_state->worker_thread;
     m_gui_completions.clear();
     disconnect(m_state->worker, nullptr, this, nullptr);

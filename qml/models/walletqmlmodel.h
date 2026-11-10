@@ -7,6 +7,8 @@
 
 #include <qml/models/addresslistmodel.h>
 #include <qml/backendexecutor.h>
+#include <qml/models/feereadservices.h>
+#include <qml/models/feereadstate.h>
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/paymentrequest.h>
@@ -30,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <vector>
 
 #include <QHash>
@@ -54,6 +57,19 @@ struct SendFeePreview {
     std::optional<CAmount> maximum_amount;
     bool sweeps_wallet{false};
     bool operator==(const SendFeePreview&) const = default;
+};
+
+struct FeeReadInput {
+    struct Recipient { std::string address; CAmount amount; };
+    std::vector<Recipient> recipients;
+    wallet::CCoinControl coin_control;
+    int remainder_index{-1};
+    bool custom_fee_enabled{false};
+    QString custom_fee_rate;
+};
+struct FeeReadResult {
+    QHash<unsigned int, SendFeePreview> estimates;
+    std::optional<SendFeePreview> custom;
 };
 
 class WalletQmlModel : public QObject
@@ -134,6 +150,8 @@ private:
 
 public:
     WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node = nullptr, QObject* parent = nullptr);
+    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
+                   FeeReadServices fee_services, QObject* parent = nullptr);
     WalletQmlModel(interfaces::Node* node, QObject* parent = nullptr);
     WalletQmlModel(QObject *parent = nullptr);
     ~WalletQmlModel();
@@ -334,6 +352,7 @@ private:
     void setMaximumRecipient(SendRecipient* recipient);
     void updateMaximumAmount();
     void requestFeeEstimatesNow();
+    void invalidateFeeRead(bool close = false);
     void applyFeeEstimates(const QHash<unsigned int, SendFeePreview>& estimates,
                            const std::optional<SendFeePreview>& custom_estimate,
                            quint64 request_id);
@@ -406,7 +425,8 @@ private:
     bool m_current_transaction_sweeps_wallet{false};
     bool m_current_transaction_can_broadcast{false};
     QString m_current_transaction_review_message;
-    QTimer* m_fee_estimation_timer{nullptr};
+    FeeReadServices m_fee_read_services;
+    std::shared_ptr<FeeReadState> m_fee_read_state{std::make_shared<FeeReadState>()};
     QHash<unsigned int, SendFeePreview> m_fee_estimates;
     std::optional<SendFeePreview> m_custom_fee_estimate;
     QString m_custom_fee_rate;

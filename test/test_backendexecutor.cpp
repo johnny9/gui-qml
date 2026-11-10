@@ -31,6 +31,47 @@ class BackendExecutorTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void domainCompletionDoesNotNeedGuiTurn() {
+        BackendExecutor executor;
+        auto scheduler = executor.scheduler();
+        QSemaphore completed;
+        std::atomic<bool> worker_ok{false}, completion_ok{false};
+        execution::Admission admitted;
+        std::thread submitter{[&] {
+            admitted = execution::Submit(*scheduler, [&] {
+                worker_ok = QThread::currentThread() != qApp->thread();
+                return 17;
+            }, [&](int value) {
+                completion_ok = value == 17 && QThread::currentThread() != qApp->thread();
+                completed.release();
+            });
+        }};
+        submitter.join();
+        QVERIFY(admitted);
+        // Intentionally withhold GUI processing: a GUI completion hop fails.
+        QVERIFY(completed.tryAcquire(1, TIMEOUT));
+        QVERIFY(worker_ok);
+        QVERIFY(completion_ok);
+        QTRY_COMPARE(scheduler->pending(), size_t{0});
+    }
+    void acceptedDomainOutcomeSurvivesOwnerDestruction() {
+        auto executor = std::make_unique<BackendExecutor>();
+        auto scheduler = executor->scheduler();
+        auto gate = std::make_shared<Gate>();
+        const auto release = qScopeGuard([gate] { gate->release.release(); });
+        std::atomic<int> consumed{0};
+        QVERIFY(execution::Submit(*scheduler, [gate] {
+            gate->entered.release();
+            gate->release.acquire();
+            return 3;
+        }, [&](int value) { consumed = value; }));
+        QVERIFY(gate->entered.tryAcquire(1, TIMEOUT));
+        executor.reset();
+        QCOMPARE(execution::Submit(*scheduler, [] {}, [] {}).rejection, execution::Rejection::Closed);
+        gate->release.release();
+        QTRY_COMPARE(consumed.load(), 3);
+        QTRY_COMPARE(scheduler->pending(), size_t{0});
+    }
     void threadJoinCompletesOnGui();
     void finalDrainIncludesDestroyedValueOwners();
     void finalDrainWaitsForDeferredThreadCleanup();

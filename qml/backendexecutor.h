@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QML_BACKENDEXECUTOR_H
 #define BITCOIN_QML_BACKENDEXECUTOR_H
 
+#include <qml/execution.h>
+
 #include <QObject>
 #include <QPointer>
 
@@ -93,6 +95,9 @@ public:
     // Drains accepted work without cancelling it, including submitTask completions
     // and worker cleanup. Rejection callbacks are queued independently and do not
     // delay draining.
+    // Background-owned completion port, independent of a GUI observer.
+    std::shared_ptr<execution::Scheduler> scheduler() const { return m_scheduler; }
+
     void shutdown();
     static void shutdownAll(QObject* receiver, std::function<void()> done);
     bool isDrained() const;
@@ -132,6 +137,7 @@ private:
     TaskId enqueueTask(std::function<void(bool)> work, std::function<void(std::optional<Cancelled>)> gui_completion, CancelPolicy policy);
     bool enqueue(std::function<void()> work, std::function<void()> gui_completion);
     std::shared_ptr<ExecutorState> m_state;
+    std::shared_ptr<execution::TaskQueue> m_scheduler;
     std::map<quint64, std::function<void()>> m_gui_completions;
     quint64 m_next_task_id{0};
     bool m_stopping{false};

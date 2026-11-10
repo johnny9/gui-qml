@@ -580,10 +580,17 @@ QString OutputTypeDescription(OutputType type)
 
 } // namespace
 
-WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node, QObject *parent)
+WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node, QObject* parent)
+    : WalletQmlModel(std::move(wallet), node, FeeReadServices{}, parent)
+{
+}
+
+WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
+                             FeeReadServices fee_services, QObject* parent)
     : QObject(parent)
     , m_wallet(std::move(wallet))
     , m_node(node)
+    , m_fee_read_services(std::move(fee_services))
 {
     m_receive_requests = new ReceiveRequestHistoryModel(this);
     m_receive_payment_poll_timer.setInterval(1000);
@@ -642,8 +649,8 @@ WalletQmlModel::WalletQmlModel(QObject* parent)
 WalletQmlModel::~WalletQmlModel()
 {
     beginShutdown();
-    if (m_fee_estimation_timer) {
-        m_fee_estimation_timer->stop();
+    if (m_fee_read_services.timer) {
+        m_fee_read_services.timer->stop();
     }
     delete m_transaction_activity_model;
     delete m_address_list_model;
@@ -693,7 +700,9 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
     if (was_available) Q_EMIT availableChanged();
     m_receive_payment_poll_timer.stop();
     if (m_transaction_activity_model) m_transaction_activity_model->stop();
-    if (m_fee_estimation_timer) m_fee_estimation_timer->stop();
+    if (m_fee_read_services.timer) m_fee_read_services.timer->stop();
+    clearFeeEstimates();
+    invalidateFeeRead(true);
     auto handlers = std::make_tuple(std::move(m_handler_status_changed), std::move(m_handler_address_list_changed),
                                    std::move(m_handler_transaction_changed), std::move(m_handler_unload));
     if (m_bump_transaction_model) m_bump_transaction_model->detachWallet();
@@ -708,12 +717,79 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
     m_backend_executor->shutdown();
 }
 
+namespace {
+class QtFeeReadTimer final : public FeeReadTimer
+{
+public:
+    explicit QtFeeReadTimer(QObject* parent) : m_timer(new QTimer(parent))
+    {
+        m_timer->setSingleShot(true);
+        m_timer->setInterval(FEE_ESTIMATE_DEBOUNCE_MS);
+        QObject::connect(m_timer, &QTimer::timeout, m_timer, [this] {
+            auto expired = std::exchange(m_expired, {});
+            if (expired) expired();
+        });
+    }
+    ~QtFeeReadTimer() override { delete m_timer; }
+    void restart(std::function<void()> expired) override
+    {
+        m_expired = std::move(expired);
+        m_timer->start();
+    }
+    void stop() override
+    {
+        m_timer->stop();
+        m_expired = {};
+    }
+private:
+    QTimer* m_timer;
+    std::function<void()> m_expired;
+};
+}
+
 void WalletQmlModel::initializeFeeEstimator()
 {
-    m_fee_estimation_timer = new QTimer(this);
-    m_fee_estimation_timer->setSingleShot(true);
-    m_fee_estimation_timer->setInterval(FEE_ESTIMATE_DEBOUNCE_MS);
-    connect(m_fee_estimation_timer, &QTimer::timeout, this, &WalletQmlModel::requestFeeEstimatesNow);
+    if (!m_fee_read_services.scheduler) m_fee_read_services.scheduler = m_backend_executor->scheduler();
+    if (!m_fee_read_services.timer) m_fee_read_services.timer = std::make_shared<QtFeeReadTimer>(this);
+    if (!m_fee_read_services.post) {
+        m_fee_read_services.post = [bridge = m_notification_bridge](std::function<void()> publication) {
+            QMetaObject::invokeMethod(bridge.get(), std::move(publication), Qt::QueuedConnection);
+        };
+    }
+    if (!m_fee_read_services.read) {
+        m_fee_read_services.read = [weak = std::weak_ptr<interfaces::Wallet>{m_wallet}](const FeeReadInput& input) {
+            FeeReadResult result;
+            const auto wallet = weak.lock();
+            if (!wallet) return result;
+            std::vector<wallet::CRecipient> recipients;
+            recipients.reserve(input.recipients.size());
+            for (const auto& recipient : input.recipients) {
+                const auto destination = DecodeDestination(recipient.address);
+                if (!IsValidDestination(destination)) return result;
+                recipients.push_back({destination, recipient.amount, false});
+            }
+            if (recipients.empty()) return result;
+            const auto change_type = input.coin_control.m_change_type.value_or(wallet->getDefaultAddressType());
+            const auto custom_rate = ParseCustomFeeRatePerKvB(input.custom_fee_rate, MinimumCustomFeeRatePerKvB(wallet.get()));
+            for (const unsigned int target : STANDARD_FEE_TARGETS) {
+                if (const auto estimate = EstimatePreviewFee(*wallet, recipients, input.coin_control, change_type, target, input.remainder_index)) {
+                    result.estimates.insert(target, *estimate);
+                }
+            }
+            if (input.custom_fee_enabled && custom_rate) {
+                result.custom = EstimateCustomPreviewFee(*wallet, recipients, input.coin_control, change_type, *custom_rate, input.remainder_index);
+            }
+            return result;
+        };
+    }
+}
+
+void WalletQmlModel::invalidateFeeRead(bool close)
+{
+    const FeeReadState::Event event{close ? FeeReadState::Kind::Close : FeeReadState::Kind::Invalidate,
+                                    FeeReadRevision{m_fee_estimate_request_id}};
+    execution::Submit(*m_fee_read_services.scheduler,
+        [state = m_fee_read_state, event] { state->apply(event); }, [] {});
 }
 
 QString WalletQmlModel::balance() const
@@ -2095,10 +2171,10 @@ std::unique_ptr<interfaces::Handler> WalletQmlModel::handleTransactionChanged(Tr
 
 void WalletQmlModel::scheduleFeeEstimates()
 {
-    if (m_updating_maximum || m_fee_estimation_timer == nullptr) {
+    if (m_updating_maximum || m_fee_read_services.timer == nullptr) {
         return;
     }
-    m_fee_estimation_timer->stop();
+    m_fee_read_services.timer->stop();
 
     // Until a destination is entered, show the gross remainder. A valid
     // address enables the sendall preview, which replaces it with the net amount.
@@ -2119,6 +2195,7 @@ void WalletQmlModel::scheduleFeeEstimates()
     }
 
     ++m_fee_estimate_request_id;
+    invalidateFeeRead();
 
     bool estimates_changed{!m_fee_estimates.isEmpty()};
     bool custom_estimate_changed{m_custom_fee_estimate.has_value()};
@@ -2144,31 +2221,24 @@ void WalletQmlModel::scheduleFeeEstimates()
         Q_EMIT feeEstimateRevisionChanged();
     }
 
-    m_fee_estimation_timer->start();
+    m_fee_read_services.timer->restart([this] { requestFeeEstimatesNow(); });
 }
 
 void WalletQmlModel::requestFeeEstimatesNow()
 {
-    if (!m_wallet || !m_send_recipients) {
+    if (m_stopping || !m_wallet || !m_send_recipients) {
         clearFeeEstimates();
         return;
     }
-
-    const auto recipients = BuildRecipients(*m_send_recipients, m_maximum_recipient);
-    if (!recipients.has_value()) {
-        clearFeeEstimates();
-        return;
+    FeeReadInput input;
+    input.coin_control = m_coin_control;
+    input.remainder_index = m_send_recipients->recipients().indexOf(m_maximum_recipient);
+    input.custom_fee_enabled = m_custom_fee_enabled;
+    input.custom_fee_rate = m_custom_fee_rate;
+    for (const auto* recipient : m_send_recipients->recipients()) {
+        input.recipients.push_back({recipient->address()->address().toStdString(), recipient->cAmount()});
     }
-
-    const int remainder_index = m_send_recipients->recipients().indexOf(m_maximum_recipient);
     const quint64 request_id = ++m_fee_estimate_request_id;
-    const wallet::CCoinControl base_coin_control{m_coin_control};
-    const OutputType preview_change_type{base_coin_control.m_change_type.value_or(m_wallet->getDefaultAddressType())};
-    const bool custom_fee_enabled{m_custom_fee_enabled};
-    const std::optional<CAmount> custom_fee_rate_per_kvb{
-        ParseCustomFeeRatePerKvB(m_custom_fee_rate, MinimumCustomFeeRatePerKvB(m_wallet.get()))};
-    const auto wallet = m_wallet;
-
     if (!m_fee_estimate_pending) {
         m_fee_estimate_pending = true;
         Q_EMIT feeEstimatePendingChanged();
@@ -2176,43 +2246,33 @@ void WalletQmlModel::requestFeeEstimatesNow()
         Q_EMIT feeEstimateRevisionChanged();
     }
 
-    m_backend_executor->submit(this, [remainder_index, recipients = *recipients, base_coin_control, preview_change_type, custom_fee_enabled, custom_fee_rate_per_kvb, wallet]() {
-        QHash<unsigned int, SendFeePreview> estimates;
-        std::optional<SendFeePreview> custom_estimate;
-
-        for (const unsigned int target : STANDARD_FEE_TARGETS) {
-            if (const auto estimate = EstimatePreviewFee(*wallet,
-                                                         recipients,
-                                                         base_coin_control,
-                                                         preview_change_type,
-                                                         target, remainder_index)) {
-                estimates.insert(target, *estimate);
-            }
-        }
-
-        if (custom_fee_enabled && custom_fee_rate_per_kvb.has_value()) {
-            if (const auto estimate = EstimateCustomPreviewFee(*wallet,
-                                                               recipients,
-                                                               base_coin_control,
-                                                               preview_change_type,
-                                                               *custom_fee_rate_per_kvb, remainder_index)) {
-                custom_estimate = *estimate;
-            }
-        }
-
-        return std::pair{std::move(estimates), std::move(custom_estimate)};
-    }, [this, request_id](const auto& result) {
-        applyFeeEstimates(result.first, result.second, request_id);
-    }, [this, request_id](std::exception_ptr) {
-        applyFeeEstimates({}, {}, request_id);
-    });
+    // Only this presentation adapter knows the GUI receiver. The domain never
+    // dereferences it, and its completion/accounting does not await publication.
+    auto publish = [post = m_fee_read_services.post, receiver = QPointer<WalletQmlModel>{this}, request_id](FeeReadResult result) {
+        post([receiver, request_id, result = std::move(result)] {
+            if (receiver) receiver->applyFeeEstimates(result.estimates, result.custom, request_id);
+        });
+    };
+    const FeeReadRevision revision{request_id};
+    const auto admitted = execution::Submit(*m_fee_read_services.scheduler,
+        [state = m_fee_read_state, revision, input = std::move(input), read = m_fee_read_services.read]() -> std::optional<FeeReadResult> {
+            if (!state->apply({FeeReadState::Kind::Dispatch, revision})) return std::nullopt;
+            return read(input);
+        },
+        [state = m_fee_read_state, revision, publish](std::optional<FeeReadResult> result) {
+            if (result && state->apply({FeeReadState::Kind::Complete, revision})) publish(std::move(*result));
+        },
+        [state = m_fee_read_state, revision, publish](std::exception_ptr) {
+            if (state->apply({FeeReadState::Kind::Complete, revision})) publish({});
+        });
+    if (!admitted) applyFeeEstimates({}, {}, request_id);
 }
 
 void WalletQmlModel::applyFeeEstimates(const QHash<unsigned int, SendFeePreview>& estimates,
                                        const std::optional<SendFeePreview>& custom_estimate,
                                        const quint64 request_id)
 {
-    if (request_id != m_fee_estimate_request_id) {
+    if (m_stopping || request_id != m_fee_estimate_request_id) {
         return;
     }
 
@@ -2224,7 +2284,12 @@ void WalletQmlModel::applyFeeEstimates(const QHash<unsigned int, SendFeePreview>
     if (custom_estimate_changed) {
         m_custom_fee_estimate = custom_estimate;
     }
-    updateMaximumAmount();
+    const auto preview = m_custom_fee_enabled ? m_custom_fee_estimate
+        : (m_fee_estimates.contains(feeTargetBlocks()) ? std::make_optional(m_fee_estimates.value(feeTargetBlocks())) : std::nullopt);
+    if (m_maximum_recipient && preview && preview->maximum_amount) {
+        QScopedValueRollback<bool> updating{m_updating_maximum, true};
+        m_maximum_recipient->amount()->setSatoshi(*preview->maximum_amount);
+    }
     if (estimates_changed || custom_estimate_changed) {
         Q_EMIT estimatedFeeChanged();
         Q_EMIT sendAmountExhaustsBalanceChanged();
@@ -2245,6 +2310,7 @@ void WalletQmlModel::applyFeeEstimates(const QHash<unsigned int, SendFeePreview>
 void WalletQmlModel::clearFeeEstimates()
 {
     ++m_fee_estimate_request_id;
+    invalidateFeeRead();
 
     bool estimates_changed{!m_fee_estimates.isEmpty()};
     bool custom_estimate_changed{m_custom_fee_estimate.has_value()};
