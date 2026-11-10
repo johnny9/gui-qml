@@ -54,7 +54,8 @@ delayed watch-only callback cannot publish a wallet whose setup failed, and an
 unrelated delayed notification cannot take selection from a completed user
 command. Context updates and ownership transfer perform no backend query on
 GUI. Deferred or duplicate handles return through background disposal. A
-notification presentation claim acknowledges the previous change publication;
+GUI delivery acknowledges the previous change publication, even during nested
+event loops that cannot yet claim its data;
 repeated backend changes retain at most one unacknowledged value-only wakeup.
 A disposal outcome supplies the next batch continuation without GUI polling.
 

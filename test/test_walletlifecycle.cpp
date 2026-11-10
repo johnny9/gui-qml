@@ -46,6 +46,7 @@ struct Fixture {
             if (capture_failure) throw std::runtime_error("synthetic capture failure");
             if (during_capture) during_capture();
             std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+            if (invalid_snapshot) { wallets.emplace_back(); return wallets; }
             wallets.reserve(catalog.size());
             for (const auto& name : catalog) wallets.push_back(wallet(name));
             return wallets;
@@ -91,7 +92,7 @@ struct Fixture {
     std::function<void()> during_registration, during_capture;
     std::vector<std::string> catalog;
     std::vector<walletlife::Update> publications;
-    bool capture_failure{false}, registration_missing{false};
+    bool capture_failure{false}, registration_missing{false}, invalid_snapshot{false};
 };
 
 struct PhysicalProbe {
@@ -127,6 +128,144 @@ class WalletLifecycleTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void missingPortsAreRejected_data()
+    {
+        QTest::addColumn<int>("missing");
+        for (int i{0}; i < 4; ++i) QTest::newRow(QByteArray::number(i).constData()) << i;
+    }
+    void missingPortsAreRejected()
+    {
+        QFETCH(int, missing);
+        ManualRoutedExecution env;
+        auto scheduler = std::static_pointer_cast<execution::Scheduler>(env.scheduler);
+        walletlife::LoadSubscription::Register registration = [](auto) { return interfaces::MakeCleanupHandler([] {}); };
+        walletlife::LoadSubscription::Capture capture = [] { return std::vector<std::unique_ptr<interfaces::Wallet>>{}; };
+        walletlife::LoadSubscription::Notify notify = [](auto) {};
+        if (missing == 0) scheduler.reset();
+        if (missing == 1) registration = {};
+        if (missing == 2) capture = {};
+        if (missing == 3) notify = {};
+        bool rejected{false};
+        try { walletlife::LoadSubscription owner{scheduler, registration, capture, notify}; }
+        catch (const std::invalid_argument&) { rejected = true; }
+        QVERIFY(rejected);
+        QVERIFY(env.quiescent());
+    }
+    void repeatedStartAndLateCallbackCannotResurrectSubscription()
+    {
+        Fixture f;
+        QVERIFY(f.owner->start());
+        QCOMPARE(f.owner->start().rejection, execution::Rejection::Invalid);
+        f.drain();
+        f.owner->retire(); f.drain();
+        QCOMPARE(f.owner->start().rejection, execution::Rejection::Closed);
+        f.owner.reset();
+        f.notify("after-owner-loss");
+        QCOMPARE(f.count(Publication::Ready), 1);
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.probe->destroyed.size(), size_t{1});
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Core});
+        QVERIFY(f.env.quiescent());
+    }
+    void invalidSnapshotFailsAndDisconnectsProducer()
+    {
+        Fixture f; f.invalid_snapshot = true;
+        QVERIFY(f.owner->start()); f.drain();
+        QCOMPARE(f.count(Publication::Ready), 0);
+        QCOMPARE(f.count(Publication::Failed), 1);
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.probe->disconnects.size(), size_t{1});
+        QVERIFY(f.env.quiescent());
+    }
+    void ordinarySaturationBeforeRegistrationOwnsFailure()
+    {
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 0;
+        Fixture f{limits};
+        QCOMPARE(f.owner->start().rejection, execution::Rejection::Capacity);
+        f.drain();
+        QVERIFY(f.probe->registrations.empty()); QVERIFY(f.probe->captures.empty());
+        QCOMPARE(f.count(Publication::Failed), 1);
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QVERIFY(f.env.quiescent());
+    }
+    void rejectedRefreshHasAnOwnedTerminalOutcome_data()
+    {
+        QTest::addColumn<bool>("control_capacity");
+        QTest::newRow("control-available") << true;
+        QTest::newRow("control-saturated") << false;
+    }
+    void rejectedRefreshHasAnOwnedTerminalOutcome()
+    {
+        QFETCH(bool, control_capacity);
+        auto limits = execution::Limits::Bounded(); limits.observations.tasks = 0;
+        if (!control_capacity) limits.control.tasks = 0;
+        Fixture f{limits};
+        QVERIFY(f.owner->start()); f.drain();
+        f.notify("rejected-refresh"); f.drain();
+        QCOMPARE(f.probe->captures.size(), size_t{1});
+        QCOMPARE(f.count(Publication::Failed), 1);
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.probe->destroyed.size(), size_t{1});
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Cleanup});
+        QVERIFY(f.env.quiescent());
+    }
+    void callbackLeaseSaturationReportsUnavailableResync()
+    {
+        auto limits = execution::Limits::Bounded(); limits.resource_borrowers = 0;
+        Fixture f{limits};
+        QVERIFY(f.owner->start()); f.drain();
+        f.notify("lease-rejected"); f.drain();
+        QCOMPARE(f.count(Publication::Failed), 1);
+        QCOMPARE(f.publications.back().reason, walletlife::FailureReason::CoherentResyncUnavailable);
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Core});
+        QVERIFY(f.env.quiescent());
+    }
+    void presentationLeaseSaturationRetiresTheSubscription()
+    {
+        auto limits = execution::Limits::Bounded(); limits.resource_borrowers = 0;
+        Fixture f{limits}; f.catalog = {"unclaimed"};
+        QVERIFY(f.owner->start()); f.drain();
+        QVERIFY(!f.owner->takeInitial()); f.drain();
+        QCOMPARE(f.count(Publication::Failed), 1);
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Cleanup});
+        QVERIFY(f.env.quiescent());
+    }
+    void schedulerClosureFencesProducerBeforeCleanupExecutes()
+    {
+        Fixture f;
+        QVERIFY(f.owner->start()); f.drain();
+        f.env.scheduler->closeAdmission();
+        f.notify("after-fence"); f.drain();
+        QCOMPARE(f.count(Publication::Changed), 0);
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Core});
+        QVERIFY(f.env.quiescent());
+    }
+    void coherentResyncPreservesSuppressedSelection_data()
+    {
+        QTest::addColumn<bool>("empty");
+        QTest::newRow("all-unloaded") << true;
+        QTest::newRow("committed-wallet") << false;
+    }
+    void coherentResyncPreservesSuppressedSelection()
+    {
+        QFETCH(bool, empty);
+        Fixture f{execution::Limits::Bounded(), true};
+        QVERIFY(f.owner->start()); f.drain();
+        if (!empty) f.catalog = {"committed"};
+        f.owner->setNotificationContext({}, true);
+        // The synthetic backend has independently unloaded the other wallets
+        // before this committed-membership snapshot is captured.
+        for (int i{0}; i < 70; ++i) f.notify(manualexecution_detail::Number(i));
+        f.drain();
+        auto handoff = f.owner->takeNotifications(); QVERIFY(handoff);
+        QCOMPARE(handoff->entries.empty(), empty);
+        if (!empty) QVERIFY(!handoff->entries.front().select_wallet);
+        handoff.reset(); f.drain();
+        QCOMPARE(f.count(Publication::Failed), 0);
+        QCOMPARE(f.probe->captures.size(), size_t{2});
+    }
     void repeatedNotificationsKeepOnePendingPublication()
     {
         Fixture f;
@@ -158,7 +297,7 @@ private Q_SLOTS:
         }
         f.notify("pending-add");           // Producer pauses after Notify returns.
         f.drain();                         // Another worker captures the catalog.
-        f.catalog.push_back("pending-add"); // AddWallet commits with no later notification.
+        f.catalog.emplace_back("pending-add"); // AddWallet commits with no later notification.
         bool observed{false};
         for (;;) {
             auto handoff = f.owner->takeNotifications();

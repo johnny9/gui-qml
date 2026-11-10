@@ -17,6 +17,91 @@ class ExecutionTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void invalidRoutedConfigurationIsRejected_data()
+    {
+        QTest::addColumn<int>("invalid");
+        QTest::newRow("missing-transport") << 0;
+        QTest::newRow("zero-core-slots") << 1;
+        QTest::newRow("zero-action-burst") << 2;
+    }
+    void invalidRoutedConfigurationIsRejected()
+    {
+        QFETCH(int, invalid);
+        using namespace execution;
+        TaskQueue::RoutedDispatch dispatch = [](Lane, Phase, TaskId, auto) { return true; };
+        auto limits = Limits::Bounded();
+        if (invalid == 0) dispatch = {};
+        if (invalid == 2) limits.actions_before_observation = 0;
+        bool rejected{false};
+        try { TaskQueue queue{dispatch, limits, invalid == 1 ? size_t{0} : size_t{1}}; }
+        catch (const std::invalid_argument&) { rejected = true; }
+        QVERIFY(rejected);
+    }
+    void observationByteQuotaLeavesActionsAvailable()
+    {
+        using namespace execution;
+        auto limits = Limits::Bounded(); limits.observations = {3, 2};
+        ManualRoutedExecution env{limits};
+        const auto cleanup = qScopeGuard([&] { env.drain(); });
+        int observations{0}, actions{0};
+        QVERIFY(Submit(*env.scheduler, [&] { ++observations; }, [] {}, {}, {Lane::Core, 2, {1, 1}, WorkClass::Observation}));
+        QCOMPARE(Submit(*env.scheduler, [&] { ++observations; }, [] {}, {}, {Lane::Core, 1, {2, 1}, WorkClass::Observation}).rejection, Rejection::Capacity);
+        for (int i{0}; i < 6; ++i) QVERIFY(Submit(*env.scheduler, [&] { ++actions; }, [] {}, {}, {Lane::Core, 0, {3, 1}}));
+        env.drain();
+        QCOMPARE(observations, 1); QCOMPARE(actions, 6);
+        QVERIFY(env.quiescent());
+    }
+    void cancellingWaitingKeysAndControlOwnsEveryOutcome()
+    {
+        using namespace execution;
+        ManualRoutedExecution env;
+        const auto cleanup = qScopeGuard([&] { env.drain(); });
+        int effects{0}, cancelled{0};
+        const auto failure = [&](std::exception_ptr error) {
+            try { std::rethrow_exception(error); }
+            catch (const NotStarted& stopped) { if (stopped.cause == NotStarted::Cause::Cancelled) ++cancelled; }
+        };
+        const auto first = Submit(*env.scheduler, [&] { ++effects; }, [] {}, {}, {Lane::Core, 0, {1, 1}});
+        QVERIFY(first);
+        const auto sibling = Submit(*env.scheduler, [&] { ++effects; }, [] {}, failure, {Lane::Core, 0, {1, 1}});
+        const auto waiting = Submit(*env.scheduler, [&] { ++effects; }, [] {}, failure, {Lane::Core, 0, {2, 1}});
+        const auto control = Submit(*env.scheduler, [&] { ++effects; }, [] {}, failure, {Lane::Control});
+        QVERIFY(sibling && waiting && control);
+        QVERIFY(env.scheduler->cancelQueued(sibling.id));
+        QVERIFY(env.scheduler->cancelQueued(waiting.id));
+        QVERIFY(env.scheduler->cancelQueued(control.id));
+        QVERIFY(!env.scheduler->cancelQueued(control.id));
+        env.drain();
+        QCOMPARE(effects, 1); QCOMPARE(cancelled, 3);
+        QVERIFY(env.quiescent());
+        QVERIFY(Submit(*env.scheduler, [&] { ++effects; }, [] {}, {}, {Lane::Core, 0, {2, 1}}));
+        env.drain(); QCOMPARE(effects, 2);
+    }
+    void compatibilityCancellationAndReservedCleanupRemainOwned()
+    {
+        using namespace execution;
+        std::deque<std::function<void()>> turns;
+        auto queue = std::make_shared<TaskQueue>([&](Phase, TaskId, std::function<void()> turn) {
+            turns.push_back(std::move(turn)); return true;
+        });
+        const auto drain = [&] { while (!turns.empty()) { auto turn = std::move(turns.front()); turns.pop_front(); turn(); } };
+        const auto cleanup = qScopeGuard([&] { queue->closeAdmission(); drain(); });
+        int effects{0}, failures{0}, retired{0};
+        const auto work = Submit(*queue, [&] { ++effects; }, [] {}, [&](std::exception_ptr error) {
+            try { std::rethrow_exception(error); }
+            catch (const NotStarted& stopped) {
+                QCOMPARE(stopped.cause, NotStarted::Cause::Cancelled);
+                QCOMPARE(QString::fromLatin1(stopped.what()), QStringLiteral("Task did not start"));
+                ++failures;
+            }
+        });
+        QVERIFY(work); QVERIFY(queue->cancelQueued(work.id));
+        drain(); QCOMPARE(effects, 0); QCOMPARE(failures, 1);
+        const auto key = queue->allocateKey();
+        const auto reserved = Submit(*queue, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 0, key}, true);
+        QVERIFY(reserved); QVERIFY(queue->activateCleanup(reserved.id));
+        drain(); QCOMPARE(retired, 1); QCOMPARE(queue->pending(), size_t{0});
+    }
     void cancelledTransportStaysBoundedWhileResourceCleanupProgresses()
     {
         using namespace execution;

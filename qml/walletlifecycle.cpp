@@ -299,12 +299,7 @@ struct LoadSubscription::ReturnPacket {
 
 std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::take(bool initial)
 {
-    if (!initial) {
-        // A presentation claim acknowledges the previous value-only wakeup.
-        // Backend churn can retain only one unacknowledged change publication.
-        std::lock_guard lock{m_mutex};
-        m_change_publication_pending = false;
-    }
+    if (!initial) acknowledgeChange();
     auto borrowed = m_scheduler->borrow(m_key);
     if (!borrowed) {
         if (borrowed.rejection == execution::Rejection::Capacity) { m_failed = true; retire(); }
@@ -358,6 +353,15 @@ std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::take(bool initial)
     result->more = initial ? !m_initial.empty() : !m_ready.empty();
     if (!initial && m_ready.empty()) m_ready_select = true;
     return result;
+}
+
+void LoadSubscription::acknowledgeChange()
+{
+    // Delivery can occur during a nested GUI event loop while the previous
+    // handoff is still active. Acknowledge the wakeup even if data cannot yet
+    // be claimed, so background disposal can publish the next continuation.
+    std::lock_guard lock{m_mutex};
+    m_change_publication_pending = false;
 }
 
 std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::takeInitial() { return take(true); }

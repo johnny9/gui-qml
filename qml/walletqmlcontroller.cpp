@@ -93,6 +93,7 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent
 {
     m_empty_wallet->setNode(&m_node);
     m_wallet_command_executor->setObjectName(QStringLiteral("wallet-commands"));
+    m_notification_bridge->setObjectName(QStringLiteral("wallet-notifications"));
     connect(m_wallet_command_executor.get(), &BackendExecutor::drained, this, [this] {
         m_controller_drained = true;
         m_notifications_drained = true;
@@ -1125,6 +1126,7 @@ void WalletQmlController::handleLifecyclePublication(walletlife::Update update)
         finishInitialization();
         break;
     case walletlife::Publication::Changed:
+        m_load_subscription->acknowledgeChange();
         consumeWalletNotifications();
         break;
     case walletlife::Publication::Failed:

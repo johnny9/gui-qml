@@ -56,6 +56,7 @@ public:
     execution::Admission start();
     void retire();
     void setNotificationContext(std::string deferred_name, bool action_pending);
+    void acknowledgeChange();
     std::unique_ptr<Handoff> takeInitial();
     std::unique_ptr<Handoff> takeNotifications();
 
