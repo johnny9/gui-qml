@@ -127,6 +127,25 @@ class WalletLifecycleTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void repeatedNotificationsKeepOnePendingPublication()
+    {
+        Fixture f;
+        QVERIFY(f.owner->start()); f.drain();
+        for (int i{0}; i < 256; ++i) { f.notify("same-wallet"); f.drain(); }
+        QCOMPARE(f.count(Publication::Changed), 1);
+        QCOMPARE(f.probe->destroyed.size(), size_t{255});
+        auto handoff = f.owner->takeNotifications();
+        QVERIFY(handoff); QCOMPARE(handoff->entries.size(), size_t{1});
+        handoff.reset(); f.drain();
+        QCOMPARE(f.count(Publication::Changed), 2);
+        auto empty = f.owner->takeNotifications();
+        QVERIFY(empty); QVERIFY(empty->entries.empty());
+        f.notify("new-wallet"); f.drain();
+        QCOMPARE(f.count(Publication::Changed), 3);
+        auto next = f.owner->takeNotifications();
+        QVERIFY(next); QCOMPARE(next->entries.front().name, std::string{"new-wallet"});
+        next.reset(); f.drain();
+    }
     void preAddOverflowMustNotClaimACompleteCatalog()
     {
         Fixture f;

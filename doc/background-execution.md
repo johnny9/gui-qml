@@ -53,7 +53,10 @@ Notification ingress captures the producing command's adoption context. A
 delayed watch-only callback cannot publish a wallet whose setup failed, and an
 unrelated delayed notification cannot take selection from a completed user
 command. Context updates and ownership transfer perform no backend query on
-GUI. Deferred or duplicate handles return through background disposal.
+GUI. Deferred or duplicate handles return through background disposal. A
+notification presentation claim acknowledges the previous change publication;
+repeated backend changes retain at most one unacknowledged value-only wakeup.
+A disposal outcome supplies the next batch continuation without GUI polling.
 
 Initial capture and coherent resynchronization are separate injected ports.
 Pinned Core calls `NotifyWalletLoaded` before `AddWallet`, so a concurrent

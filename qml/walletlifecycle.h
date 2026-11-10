@@ -67,6 +67,7 @@ private:
     void requestScan();
     void scan();
     void registered();
+    void publishChanged();
     void failed();
     bool cleanup();
     std::unique_ptr<Handoff> take(bool initial);
@@ -83,7 +84,7 @@ private:
     std::atomic<FailureReason> m_failure{FailureReason::None};
     std::atomic_bool m_stopping{false}, m_scan_pending{false}, m_failed{false};
     std::mutex m_mutex;
-    bool m_resync{false}, m_started{false}, m_initial_ready{false}, m_handoff_disposal_pending{false};
+    bool m_resync{false}, m_started{false}, m_initial_ready{false}, m_handoff_disposal_pending{false}, m_change_publication_pending{false};
     std::optional<execution::TaskId> m_cleanup_id;
     std::optional<execution::TaskId> m_scan_id;
     struct NotificationContext { std::string deferred_name; bool select_wallet{true}; };

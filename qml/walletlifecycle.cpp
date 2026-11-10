@@ -110,6 +110,17 @@ void LoadSubscription::failed()
     retire();
 }
 
+void LoadSubscription::publishChanged()
+{
+    const auto publication = m_state.apply(Event::Notification);
+    if (!publication) return;
+    {
+        std::lock_guard lock{m_mutex};
+        if (std::exchange(m_change_publication_pending, true)) return;
+    }
+    m_notify({*publication, false});
+}
+
 void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
 {
     if (m_stopping) return;
@@ -146,7 +157,7 @@ void LoadSubscription::requestScan()
             { std::lock_guard finished_lock{self->m_mutex}; self->m_scan_id.reset(); }
             self->m_scan_pending = false;
             if (self->m_stopping) return;
-            if (const auto publication = self->m_state.apply(Event::Notification)) self->m_notify({*publication, false});
+            self->publishChanged();
             bool more;
             {
                 std::lock_guard pending_lock{self->m_mutex};
@@ -288,6 +299,12 @@ struct LoadSubscription::ReturnPacket {
 
 std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::take(bool initial)
 {
+    if (!initial) {
+        // A presentation claim acknowledges the previous value-only wakeup.
+        // Backend churn can retain only one unacknowledged change publication.
+        std::lock_guard lock{m_mutex};
+        m_change_publication_pending = false;
+    }
     auto borrowed = m_scheduler->borrow(m_key);
     if (!borrowed) {
         if (borrowed.rejection == execution::Rejection::Capacity) { m_failed = true; retire(); }
@@ -308,7 +325,7 @@ std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::take(bool initial)
         { std::lock_guard lock{self->m_mutex}; self->m_handoff_disposal_pending = false; }
         if (self->m_stopping) return;
         if (initial) self->m_notify({Publication::InitialHandoff, false});
-        else if (const auto publication = self->m_state.apply(Event::Notification)) self->m_notify({*publication, false});
+        else self->publishChanged();
     }, {}, {execution::Lane::Cleanup, TRANSPORT_BYTES, key}, true);
     if (!disposal) {
         { std::lock_guard lock{m_mutex}; m_handoff_disposal_pending = false; }
