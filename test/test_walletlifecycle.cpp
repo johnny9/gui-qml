@@ -39,8 +39,17 @@ private:
 };
 
 struct Fixture {
-    explicit Fixture(execution::Limits limits = execution::Limits::Bounded()) : env(limits)
+    explicit Fixture(execution::Limits limits = execution::Limits::Bounded(), bool coherent_resync = false) : env(limits)
     {
+        const auto capture = [this] {
+            probe->captures.push_back(probe->lane);
+            if (capture_failure) throw std::runtime_error("synthetic capture failure");
+            if (during_capture) during_capture();
+            std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+            wallets.reserve(catalog.size());
+            for (const auto& name : catalog) wallets.push_back(wallet(name));
+            return wallets;
+        };
         owner = std::make_shared<walletlife::LoadSubscription>(env.scheduler,
             [this](walletlife::LoadSubscription::Callback fn) {
                 probe->registrations.push_back(probe->lane);
@@ -48,17 +57,8 @@ struct Fixture {
                 if (during_registration) during_registration();
                 if (registration_missing) return std::unique_ptr<interfaces::Handler>{};
                 return interfaces::MakeCleanupHandler([this] { probe->disconnects.push_back(probe->lane); });
-            },
-            [this] {
-                probe->captures.push_back(probe->lane);
-                if (capture_failure) throw std::runtime_error("synthetic capture failure");
-                if (during_capture) during_capture();
-                std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
-                wallets.reserve(catalog.size());
-                for (const auto& name : catalog) wallets.push_back(wallet(name));
-                return wallets;
-            },
-            [this](walletlife::Update update) { publications.push_back(update); });
+            }, capture, [this](walletlife::Update update) { publications.push_back(update); },
+            coherent_resync ? walletlife::LoadSubscription::CoherentResync{capture} : walletlife::LoadSubscription::CoherentResync{});
     }
     ~Fixture()
     {
@@ -127,9 +127,36 @@ class WalletLifecycleTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
-    void notificationChurnResyncsBeforeUnpublishedHandlesGrow()
+    void preAddOverflowMustNotClaimACompleteCatalog()
     {
         Fixture f;
+        QVERIFY(f.owner->start()); f.drain();
+        for (int i{0}; i < 64; ++i) {
+            const auto name = std::string{"committed-"} + manualexecution_detail::Number(i);
+            f.notify(name);                 // Core NotifyWalletLoaded.
+            f.catalog.push_back(name);      // Core AddWallet completes.
+            f.drain();
+        }
+        f.notify("pending-add");           // Producer pauses after Notify returns.
+        f.drain();                         // Another worker captures the catalog.
+        f.catalog.push_back("pending-add"); // AddWallet commits with no later notification.
+        bool observed{false};
+        for (;;) {
+            auto handoff = f.owner->takeNotifications();
+            if (!handoff || handoff->entries.empty()) break;
+            for (const auto& entry : handoff->entries) observed |= entry.name == "pending-add";
+            handoff.reset(); f.drain();
+        }
+        QVERIFY2(observed || f.count(Publication::Failed) == 1,
+                 "A pre-AddWallet callback was lost while the catalog still claimed to be current");
+        QCOMPARE(f.count(Publication::Failed), 1);
+        QCOMPARE(f.publications.back().reason, walletlife::FailureReason::CoherentResyncUnavailable);
+        QCOMPARE(f.probe->captures.size(), size_t{1});
+        QVERIFY(f.env.quiescent());
+    }
+    void notificationChurnResyncsBeforeUnpublishedHandlesGrow()
+    {
+        Fixture f{execution::Limits::Bounded(), true};
         QVERIFY(f.owner->start()); f.drain();
         bool invalidated_claim_blocked{false};
         f.during_capture = [&] { invalidated_claim_blocked = !f.owner->takeNotifications(); };
@@ -451,7 +478,7 @@ private Q_SLOTS:
     }
     void notificationOverflowCoalescesIntoAnAuthoritativeResync()
     {
-        Fixture f;
+        Fixture f{execution::Limits::Bounded(), true};
         QVERIFY(f.owner->start()); f.drain();
         f.catalog = {"authoritative"};
         for (int i{0}; i < 100; ++i) f.notify("notification-" + manualexecution_detail::Number(i));

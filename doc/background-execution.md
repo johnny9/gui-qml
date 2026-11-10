@@ -8,7 +8,12 @@ cancellation or subsequent transport rejection produces an owned `NotStarted`
 outcome and disposes effect captures on Cleanup.
 
 The explicit bounded `BackendExecutor` constructor supplies shared Core,
-Domain, Control and Cleanup transports. Core has one physical worker. Domain
+Domain, Control and Cleanup transports. Migrated Core effects have one physical
+worker. A fifth compatibility worker retains legacy blocking commands and GUI
+completion until their callers migrate. This permits the consumer's audited
+immutable wallet-name and locked wallet-catalog reads to progress while a legacy
+operation waits for transferred handles to retire. It does not authorize
+concurrent arbitrary wallet operations. Domain
 consumes decisions and outcomes; Control and Cleanup remain available while
 Core is blocked. Independent resource keys receive fair turns; each key keeps
 FIFO order. Observation quotas leave room for actions, and bounded action
@@ -37,7 +42,7 @@ queue in both manual and real-thread tests.
 | Producer or effect | Execution and ownership | Progress and retirement |
 | --- | --- | --- |
 | Registration | Core; owner and Cleanup reservation already exist | Callbacks during registration enter the live ingress |
-| Core load callback | Backend producer; counted lease and at most 64 pending handles | Sets one refresh/coalescing flag; overflow requests an authoritative resync |
+| Core load callback | Backend producer; counted lease and at most 64 pending handles | Sets one refresh/coalescing flag; overflow requires a coherent resync capability or an explicit unavailable outcome |
 | Initial capture and refresh | Core; names and interface handles remain backend-owned | Same-key FIFO; queued refresh can retire through Cleanup while Core is blocked |
 | Registered/changed/failure outcome | Domain; explicit lifecycle state guards publication | Produces value-only GUI messages; an absent observer cannot lose the outcome |
 | GUI compatibility handoff | At most 16 entries per presentation turn | Background shadows retain every handle; separately reserved disposal owns their retirement |
@@ -49,6 +54,16 @@ delayed watch-only callback cannot publish a wallet whose setup failed, and an
 unrelated delayed notification cannot take selection from a completed user
 command. Context updates and ownership transfer perform no backend query on
 GUI. Deferred or duplicate handles return through background disposal.
+
+Initial capture and coherent resynchronization are separate injected ports.
+Pinned Core calls `NotifyWalletLoaded` before `AddWallet`, so a concurrent
+`getWallets` may miss a wallet whose callback already returned. This Core
+composition supplies no coherent resynchronization port. Overflow therefore
+invalidates wallet discovery, reports an unavailable outcome, disables dependent
+catalog commands and retires the subscription. It never silently treats an
+incomplete snapshot as current. Positive resync tests explicitly inject a
+synthetic backend with the required committed-membership guarantee. R09 owns
+the actual backend protocol and independent RPC consistency tests.
 
 `WalletLifecycleTests` cover bounded handoffs, saturation/resync, rejection,
 registration failure, command context and sixteen legal retirement schedules.

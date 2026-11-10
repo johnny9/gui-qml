@@ -119,7 +119,7 @@ void WalletQmlController::setSelectedWallet(QString path, QString wallet_format)
         return;
     }
     if (!m_initialized) {
-        setWalletLoadError(tr("Wallets are still loading. Try again in a moment."));
+        setWalletLoadError(walletDiscoveryError());
         return;
     }
 
@@ -244,7 +244,7 @@ void WalletQmlController::clearWalletLocationOpenError()
 void WalletQmlController::closeWallet(const QString& path)
 {
     if (!m_initialized) {
-        setWalletLoadError(tr("Wallets are still loading. Try again in a moment."));
+        setWalletLoadError(walletDiscoveryError());
         return;
     }
 
@@ -519,7 +519,7 @@ void WalletQmlController::createSingleSigWallet(const QString &name, const QStri
     clearWalletLoadStatus();
     clearWalletMigrationStatus();
     if (!m_initialized) {
-        setWalletCreateError(tr("Wallets are still loading. Try again in a moment."));
+        setWalletCreateError(walletDiscoveryError());
         return;
     }
 
@@ -542,7 +542,7 @@ bool WalletQmlController::createExternalSignerWallet(const QString& name)
     clearWalletLoadStatus();
     clearWalletMigrationStatus();
     if (!m_initialized) {
-        setWalletLoadError(tr("Wallets are still loading. Try again in a moment."));
+        setWalletLoadError(walletDiscoveryError());
         return false;
     }
 
@@ -590,7 +590,7 @@ void WalletQmlController::createWatchOnlyWallet(const QString &name, const QStri
     clearWalletLoadStatus();
     clearWalletMigrationStatus();
     if (!m_initialized) {
-        setWalletLoadError(tr("Wallets are still loading. Try again in a moment."));
+        setWalletLoadError(walletDiscoveryError());
         return;
     }
 
@@ -664,7 +664,7 @@ void WalletQmlController::createWatchOnlyWallet(const QString &name, const QStri
 void WalletQmlController::importWallet(const QString& path)
 {
     if (!m_initialized) {
-        setWalletLoadError(tr("Wallets are still loading. Try again in a moment."));
+        setWalletLoadError(walletDiscoveryError());
         return;
     }
     startWalletImport(path);
@@ -685,7 +685,7 @@ void WalletQmlController::clearWalletLoadStatus()
 void WalletQmlController::migrateWallet(const QString& path, const QString& passphrase)
 {
     if (!m_initialized) {
-        setWalletMigrationError(tr("Wallets are still loading. Try again in a moment."));
+        setWalletMigrationError(walletDiscoveryError());
         return;
     }
     startWalletMigration(path, QmlUtil::SecureStringFromQString(passphrase));
@@ -1061,6 +1061,12 @@ void WalletQmlController::startWalletImport(const QString& path)
     });
 }
 
+QString WalletQmlController::walletDiscoveryError() const
+{
+    return m_initialization_failed ? tr("Wallet discovery is unavailable. Restart the app to refresh the wallet list.") :
+        tr("Wallets are still loading. Try again in a moment.");
+}
+
 void WalletQmlController::consumeWalletNotifications()
 {
     if (m_shutting_down || m_initialization_failed || !m_initialized || m_projecting_notifications) return;
@@ -1090,6 +1096,8 @@ void WalletQmlController::initialize()
     if (gArgs.GetBoolArg("-disablewallet", false)) return;
     m_initializing = true;
     const QPointer<WalletQmlController> guard{this};
+    // Pinned Core notifies before AddWallet. Its initial capture is not a
+    // coherent resynchronization capability; R09 owns that backend contract.
     m_load_subscription = std::make_shared<walletlife::LoadSubscription>(
         m_wallet_command_executor->scheduler(),
         [node = &m_node](walletlife::LoadSubscription::Callback callback) {
@@ -1100,7 +1108,7 @@ void WalletQmlController::initialize()
             QMetaObject::invokeMethod(bridge.get(), [guard, update] {
                 if (guard) guard->handleLifecyclePublication(update);
             }, Qt::QueuedConnection);
-        });
+        }, walletlife::LoadSubscription::CoherentResync{});
     if (!m_load_subscription->start()) {
         m_initializing = false;
         m_initialization_failed = true;
@@ -1123,7 +1131,9 @@ void WalletQmlController::handleLifecyclePublication(walletlife::Update update)
     case walletlife::Publication::Retired: {
         const QPointer<WalletQmlController> guard{this};
         const bool initialized_changed = m_initialized;
-        const QString error = update.kind == walletlife::Publication::Failed ? tr("Wallet loading failed.") :
+        const QString error = update.reason == walletlife::FailureReason::CoherentResyncUnavailable ?
+            tr("Wallet discovery is unavailable. Restart the app to refresh the wallet list.") :
+            update.kind == walletlife::Publication::Failed ? tr("Wallet loading failed.") :
             update.cleanup_failed ? tr("Wallet notification cleanup failed.") : tr("Wallet notifications are unavailable.");
         const bool error_changed = m_wallet_load_error != error;
         m_initializing = false;

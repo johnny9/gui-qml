@@ -14,8 +14,8 @@ namespace {
 constexpr size_t TRANSPORT_BYTES{sizeof(void*)};
 }
 
-LoadSubscription::LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify)
-    : m_scheduler(std::move(scheduler)), m_registration(std::move(registration)), m_capture(std::move(capture)), m_notify(std::move(notify)), m_key(m_scheduler ? m_scheduler->allocateKey() : execution::ResourceKey{})
+LoadSubscription::LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify, CoherentResync resync)
+    : m_scheduler(std::move(scheduler)), m_registration(std::move(registration)), m_capture(std::move(capture)), m_notify(std::move(notify)), m_coherent_resync(std::move(resync)), m_key(m_scheduler ? m_scheduler->allocateKey() : execution::ResourceKey{})
 {
     if (!m_scheduler || !m_registration || !m_capture || !m_notify) throw std::invalid_argument("Missing wallet lifecycle port");
     m_pending.reserve(PENDING_HANDLES);
@@ -42,11 +42,13 @@ execution::Admission LoadSubscription::start()
     }
     const auto self = shared_from_this();
     const auto cleanup = execution::Submit(*m_scheduler, [self] { return self->cleanup(); }, [self](bool cleanup_failed) {
+        auto reason = self->m_failure.load();
         if (self->m_failed) {
-            if (const auto publication = self->m_state.apply(Event::RegistrationFailed)) self->m_notify({*publication, false});
+            if (reason == FailureReason::None) reason = FailureReason::Backend;
+            if (const auto publication = self->m_state.apply(Event::RegistrationFailed)) self->m_notify({*publication, false, reason});
         }
         self->m_state.apply(Event::Close);
-        if (const auto publication = self->m_state.apply(Event::CleanupFinished)) self->m_notify({*publication, cleanup_failed});
+        if (const auto publication = self->m_state.apply(Event::CleanupFinished)) self->m_notify({*publication, cleanup_failed, reason});
     }, {}, {execution::Lane::Cleanup, TRANSPORT_BYTES, m_key}, true);
     if (!cleanup) {
         m_stopping = true;
@@ -102,7 +104,9 @@ void LoadSubscription::failed()
 {
     if (m_stopping) return;
     m_failed = true;
-    if (const auto publication = m_state.apply(Event::RegistrationFailed)) m_notify({*publication, false});
+    auto reason = FailureReason::None;
+    m_failure.compare_exchange_strong(reason, FailureReason::Backend);
+    if (const auto publication = m_state.apply(Event::RegistrationFailed)) m_notify({*publication, false, m_failure.load()});
     retire();
 }
 
@@ -200,7 +204,13 @@ void LoadSubscription::scan()
         // No new GUI claim can observe the invalidated accumulator while the
         // potentially blocking capture runs outside the mailbox mutex.
         for (const auto& notification : pending) resync_select &= notification.context->select_wallet;
-        entries = captureEntries(m_capture());
+        if (!m_coherent_resync.capture) {
+            auto reason = FailureReason::None;
+            m_failure.compare_exchange_strong(reason, FailureReason::CoherentResyncUnavailable);
+            m_failed = true;
+            throw std::runtime_error("Coherent wallet resynchronization unavailable");
+        }
+        entries = captureEntries(m_coherent_resync.capture());
         for (auto& entry : entries) entry.select_wallet = resync_select;
         std::map<std::string, Entry> snapshot;
         for (auto& entry : entries) {

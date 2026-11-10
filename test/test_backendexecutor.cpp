@@ -32,6 +32,48 @@ class BackendExecutorTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void compatibilityWorkCannotBlockMigratedCoreReads()
+    {
+        using namespace execution;
+        BackendExecutor executor{Limits::Bounded()};
+        const auto scheduler = executor.scheduler();
+        const auto gate = std::make_shared<Gate>();
+        const auto release = qScopeGuard([gate] { gate->release.release(); });
+        struct Probe {
+            std::atomic<QThread*> compatibility{nullptr}, core{nullptr};
+            QSemaphore outcome;
+            std::atomic_int value{0};
+        };
+        const auto probe = std::make_shared<Probe>();
+        const auto gui = QThread::currentThread();
+        QVERIFY(executor.submit(this, [gate, probe] {
+            probe->compatibility = QThread::currentThread();
+            gate->entered.release();
+            gate->release.acquire();
+        }, [] {}));
+        QVERIFY(gate->entered.tryAcquire(1, TIMEOUT));
+        QVERIFY(Submit(*scheduler, [probe] {
+            probe->core = QThread::currentThread();
+            return 42;
+        }, [probe](int value) {
+            probe->value = value;
+            probe->outcome.release();
+        }));
+        // No GUI event processing and no legacy completion are needed for the
+        // migrated read and its owned Domain outcome to make progress.
+        QVERIFY(probe->outcome.tryAcquire(1, TIMEOUT));
+        QCOMPARE(probe->value.load(), 42);
+        QVERIFY(probe->compatibility.load() != gui);
+        QVERIFY(probe->core.load() != gui);
+        QVERIFY(probe->compatibility.load() != probe->core.load());
+        QSignalSpy drained{&executor, &BackendExecutor::drained};
+        executor.shutdown();
+        QVERIFY(drained.empty());
+        gate->release.release();
+        QTRY_COMPARE(drained.size(), 1);
+        QCOMPARE(scheduler->pending(), size_t{0});
+        QVERIFY(executor.isDrained());
+    }
     void activeGuiCallbackRetainsOwningPacketThroughReentrantShutdown()
     {
         struct Probe {

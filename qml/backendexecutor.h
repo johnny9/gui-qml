@@ -38,7 +38,9 @@ public:
     using Outcome = std::variant<std::conditional_t<std::is_void_v<T>, std::monostate, T>, std::exception_ptr, Cancelled>;
 
     explicit BackendExecutor(QObject* parent = nullptr);
-    // Bounded Core/Domain/Control/Cleanup plus legacy compatibility transport.
+    // One shared Core lane plus independent domain/control/cleanup transports.
+    // Migrated Core effects use one worker. Legacy GUI-completion commands
+    // retain a separate compatibility worker until their callers migrate.
     explicit BackendExecutor(execution::Limits limits, QObject* parent = nullptr);
     ~BackendExecutor() override;
 

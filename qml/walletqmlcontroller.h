@@ -156,6 +156,7 @@ private:
     void handleLoadWallet(std::shared_ptr<interfaces::Wallet> wallet, const std::optional<QString>& captured_name = {}, bool select_wallet = true);
     void consumeWalletNotifications();
     void finishInitialization();
+    QString walletDiscoveryError() const;
     void handleLifecyclePublication(walletlife::Update update);
     WalletQmlModel* addOrSelectWalletModel(std::shared_ptr<interfaces::Wallet> wallet, const std::optional<QString>& captured_name = {}, bool select_wallet = true);
     void registerWalletModel(WalletQmlModel* wallet_model);

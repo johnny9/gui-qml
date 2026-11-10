@@ -26,6 +26,7 @@
 #include <atomic>
 #include <mutex>
 #include <stdexcept>
+#include <thread>
 
 #ifndef BITCOINQML_NO_TEST_MAIN
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -317,6 +318,7 @@ class WalletQmlControllerTests : public QObject
 private Q_SLOTS:
     void initTestCase();
     void subscriptionFailureDisablesCatalogCommands();
+    void notificationOverflowReportsUnavailableResync();
     void shutdownDrainsWalletQueueAndPlaceholder();
     void reentrantShutdownRetiresTheNewWalletModel();
     void shutdownRetiresQueuedLoadNotificationOffGui();
@@ -392,6 +394,33 @@ void WalletQmlControllerTests::subscriptionFailureDisablesCatalogCommands()
     controller.createSingleSigWallet("after-failure", "");
     QCOMPARE(loader.create_wallet_calls, 0);
     QVERIFY(!controller.walletCreateError().isEmpty());
+}
+
+void WalletQmlControllerTests::notificationOverflowReportsUnavailableResync()
+{
+    StrictMockNode node;
+    [[maybe_unused]] auto verify_node = node.VerifyOnExit();
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    DrainingWalletController controller{node};
+    controller.initialize();
+    QTRY_VERIFY(controller.initialized());
+    const auto callback = loader.captured_load_wallet_fn;
+    // Withhold GUI consumption while an independent producer exceeds both
+    // bounded ingress and dirty-key storage. Initial capture is deliberately
+    // not an authoritative resynchronization capability in this composition.
+    std::thread producer{[callback] {
+        for (int i{0}; i < 256; ++i) {
+            callback(std::make_unique<FakeWallet>(QString::number(i).toStdString(), nullptr));
+        }
+    }};
+    producer.join();
+    QTRY_VERIFY(!controller.initialized());
+    QVERIFY(controller.walletLoadError().contains("unavailable"));
+    QCOMPARE(loader.get_wallets_calls, 1);
+    controller.createSingleSigWallet("after-overflow", "");
+    QCOMPARE(loader.create_wallet_calls, 0);
+    QVERIFY(controller.walletCreateError().contains("unavailable"));
 }
 
 void WalletQmlControllerTests::shutdownDrainsWalletQueueAndPlaceholder()
