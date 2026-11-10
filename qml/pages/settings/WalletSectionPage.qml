@@ -5,9 +5,11 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQml.Models 2.15
 import org.bitcoincore.qt 1.0
 
 import "../../controls"
+import "../../components"
 
 SettingsPage {
     id: root
@@ -16,7 +18,10 @@ SettingsPage {
     showBackButton: false
 
     property var wallet: null
-    property string errorText: ""
+    readonly property string errorText: root.wallet
+        ? (root.wallet.settingsError.length > 0 ? root.wallet.settingsError
+            : root.wallet.backupOperation ? root.wallet.backupOperation.error : "")
+        : ""
     readonly property bool walletLoaded: root.wallet !== null
     readonly property bool noWalletsAvailable: ApplicationModels.walletController.noWalletsFound
     readonly property bool canManagePassphrase: root.wallet !== null && root.wallet.canManagePassphrase
@@ -38,27 +43,13 @@ SettingsPage {
         return "file://" + ApplicationModels.walletController.homePath() + "/" + root.backupFileName()
     }
 
-    function resolvedBackupPath(rawPath) {
-        let normalized = ApplicationModels.walletController.normalizeWalletPath(rawPath)
-        if (normalized.length === 0) return ""
-
-        const hasKnownSuffix = /\.(bak|dat)$/i.test(normalized)
-        if (ApplicationModels.walletController.walletPathExists(normalized) && !hasKnownSuffix) {
-            normalized += "/" + root.backupFileName()
-        } else if (!hasKnownSuffix) {
-            normalized += ".bak"
-        }
-        return normalized
-    }
-
     function startBackup() {
         if (!root.wallet) return
-        root.errorText = ""
         root.wallet.clearSettingsError()
         if (backupAutomationPath.text.length > 0) {
-            const automatedPath = root.resolvedBackupPath(backupAutomationPath.text)
+            const automatedPath = backupAutomationPath.text
             backupAutomationPath.text = ""
-            if (!root.wallet.backupWallet(automatedPath)) root.errorText = root.wallet.settingsError
+            root.wallet.backupWallet(automatedPath)
             return
         }
         backupDialog.targetWallet = root.wallet
@@ -72,15 +63,14 @@ SettingsPage {
         currentFolder: "file://" + ApplicationModels.walletController.homePath()
         currentFile: root.backupDefaultFileUrl()
         defaultSuffix: "bak"
+        confirmOverwrite: false // The operation confirms the resolved final path.
         nameFilters: [qsTr("Wallet backup files (*.bak *.dat)"), qsTr("All files (*)")]
         property var targetWallet: null
         onAccepted: {
             const wallet = targetWallet
             targetWallet = null
             if (!wallet || wallet !== root.wallet || backupDialog.selectedFile.toString().length === 0) return
-            const normalized = root.resolvedBackupPath(backupDialog.selectedFile.toString())
-            if (!wallet.backupWallet(normalized)) root.errorText = wallet.settingsError
-            else root.errorText = ""
+            wallet.backupWallet(backupDialog.selectedFile.toString())
         }
         onRejected: targetWallet = null
     }
@@ -91,15 +81,15 @@ SettingsPage {
         visible: false
     }
 
-    Connections {
-        target: root.wallet
-
-        function onSettingsErrorChanged() {
-            root.errorText = root.wallet ? root.wallet.settingsError : ""
+    Instantiator {
+        model: root.wallet && root.wallet.backupOperation ? [root.wallet.backupOperation] : []
+        delegate: WalletBackupConfirmation {
+            required property BackupFileOperation modelData
+            parent: root.Overlay.overlay
+            operation: modelData
+            visible: root.visible && modelData.confirmationRequired
         }
     }
-
-    onWalletChanged: root.errorText = ""
 
     PageHeading {
         objectName: "walletSettingsEmptyHeading"
@@ -190,6 +180,11 @@ SettingsPage {
             objectName: "walletBackupRow"
             Layout.fillWidth: true
             title: qsTr("Back up wallet")
+            enabled: root.wallet && (!root.wallet.backupOperation || !root.wallet.backupOperation.pending)
+            supportingText: root.wallet && root.wallet.backupOperation
+                ? (root.wallet.backupOperation.pending ? qsTr("Preparing backup...")
+                    : root.wallet.backupOperation.phase === BackupFileOperation.Succeeded ? qsTr("Backup saved.") : "")
+                : ""
             description: root.wallet && root.wallet.isEncrypted
                 ? qsTr("After setting a password, earlier backups may not cover new receiving addresses or change. Make a fresh backup. Keep your older backups in a safe place.")
                 : ""

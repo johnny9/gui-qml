@@ -191,6 +191,8 @@ private:
     void subscribeWalletInfo(WalletQmlModel* wallet_model);
     void setWalletLocationOpenError(const QString& error);
 
+    backup::Services backupServices() const;
+    std::shared_ptr<backup::InstallCoordinator> m_backup_installs{std::make_shared<backup::InstallCoordinator>()};
     bool m_initialized{false};
     bool m_shutting_down{false};
     bool m_controller_drained{false};

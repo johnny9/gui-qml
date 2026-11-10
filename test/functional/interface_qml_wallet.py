@@ -36,6 +36,7 @@ def wallet_smoke(harness, checkpoint):
     gui = harness.driver
     gui.set_text("walletSettingsBackupPathField", str(directory))
     gui.click("walletBackupRow")
+    gui.wait_for_property("walletBackupRow", "supportingText", "Backup saved.", timeout_ms=30000)
     backup = directory / f"{name}.bak"
     gui.wait_for_property("walletSettingsPage", "errorText", "")
     assert backup.is_file() and backup.stat().st_size > 0
@@ -72,6 +73,7 @@ def backup_recovery_disclosure(harness, checkpoint):
     open_wallet_settings(gui)
     gui.set_text("walletSettingsBackupPathField", str(old_backup))
     gui.click("walletBackupRow")
+    gui.wait_for_property("walletBackupRow", "supportingText", "Backup saved.", timeout_ms=30000)
     assert old_backup.is_file()
     original_bytes = old_backup.read_bytes()
     gui.click("walletPasswordRow")
@@ -91,6 +93,7 @@ def backup_recovery_disclosure(harness, checkpoint):
     later_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet=name)
     gui.set_text("walletSettingsBackupPathField", str(fresh_backup))
     gui.click("walletBackupRow")
+    gui.wait_for_property("walletBackupRow", "supportingText", "Backup saved.", timeout_ms=30000)
     assert fresh_backup.is_file() and fresh_backup.stat().st_size > 0
     checkpoint("password disclosure retained; fresh-backup action wrote a real encrypted backup")
     for restored, backup in (("recovery_old", old_backup), ("recovery_fresh", fresh_backup)):
@@ -107,8 +110,78 @@ def backup_recovery_disclosure(harness, checkpoint):
     checkpoint("separate old/fresh restores verify coverage; original live wallet and old backup preserved")
 
 
+def backup_final_destination(harness, checkpoint):
+    """The backend enforces final-path consent and preserves both sentinels."""
+    harness.start_gui()
+    gui = harness.driver
+    gui.wait_for_property("walletBadge", "loading", False, timeout_ms=30000)
+    rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": "destination_original"})
+    original_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="destination_original")
+    selected = Path(harness.tmpdir) / "archive.v1"
+    final = Path(str(selected) + ".bak")
+    rpc_call(harness.gui_rpc_port, "backupwallet", [str(final)], wallet="destination_original")
+    original_bytes = final.read_bytes()
+    selected.write_bytes(b"selected sentinel")
+    rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": "destination_replacement"})
+    replacement_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="destination_replacement")
+    gui.wait_for_property("walletBadge", "text", "destination_replacement", timeout_ms=30000)
+    open_wallet_settings(gui)
+    gui.set_text("walletSettingsBackupPathField", str(selected))
+    gui.click("walletBackupRow")
+    gui.wait_for_property("walletBackupOverwritePopup", "visible", True)
+    assert gui.get_property("walletBackupFinalPathText", "text") == str(final)
+    gui.click("walletBackupOverwriteRejectButton")
+    gui.wait_for_property("walletBackupRow", "enabled", True)
+    assert selected.read_bytes() == b"selected sentinel" and final.read_bytes() == original_bytes
+    checkpoint("declining the normalized destination preserved both files")
+
+    # A direct model request follows exactly the same policy as a native chooser.
+    gui.set_text("walletSettingsBackupPathField", str(selected))
+    gui.click("walletBackupRow")
+    gui.wait_for_property("walletBackupOverwritePopup", "visible", True)
+    changed_bytes = original_bytes + b"external change while confirmation is open"
+    final.write_bytes(changed_bytes)
+    gui.click("walletBackupOverwriteApproveButton")
+    gui.wait_for_property("walletBackupRow", "enabled", True)
+    assert "destination changed" in gui.get_property("walletSettingsPage", "errorText").lower()
+    assert final.read_bytes() == changed_bytes and selected.read_bytes() == b"selected sentinel"
+    checkpoint("stale overwrite approval refused after an independent file change")
+
+    final.write_bytes(original_bytes)
+    gui.set_text("walletSettingsBackupPathField", str(selected))
+    gui.click("walletBackupRow")
+    gui.wait_for_property("walletBackupOverwritePopup", "visible", True)
+    gui.click("walletBackupOverwriteApproveButton")
+    gui.wait_for_property("walletBackupRow", "supportingText", "Backup saved.", timeout_ms=30000)
+    assert final.read_bytes() != original_bytes and selected.read_bytes() == b"selected sentinel"
+    rpc_call(harness.gui_rpc_port, "restorewallet", ["destination_restored", str(final)])
+    assert rpc_call(harness.gui_rpc_port, "getaddressinfo", [replacement_address], wallet="destination_restored")["ismine"]
+    assert not rpc_call(harness.gui_rpc_port, "getaddressinfo", [original_address], wallet="destination_restored")["ismine"]
+    checkpoint("approved replacement restored independently with the replacement wallet keys")
+
+    open_wallet_selector(gui)
+    gui.click("walletSelectItem_destination_replacement")
+    gui.wait_for_property("walletBadge", "text", "destination_replacement", timeout_ms=30000)
+    if not gui.get_property("desktopWalletSettingsTabButton", "checked"):
+        open_wallet_settings(gui)
+    gui.wait_for_page("walletSettingsPage")
+    gui.wait_for_property("walletNameRow", "value", "destination_replacement", timeout_ms=30000)
+    new_selected = Path(harness.tmpdir) / "new.archive"
+    new_final = Path(str(new_selected) + ".bak")
+    gui.set_text("walletSettingsBackupPathField", str(new_selected))
+    gui.click("walletBackupRow")
+    gui.wait_for_property("walletBackupOverwritePopup", "visible", True)
+    assert gui.get_property("walletBackupFinalPathText", "text") == str(new_final)
+    assert not new_selected.exists() and not new_final.exists()
+    gui.click("walletBackupOverwriteApproveButton")
+    gui.wait_for_property("walletBackupRow", "supportingText", "Backup saved.", timeout_ms=30000)
+    assert not new_selected.exists() and new_final.stat().st_size > 0
+    checkpoint("new rewritten destination required confirmation before the background write")
+
+
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('Wallet management process journeys', [
         wallet_scenario("backup-reload-restore", 4, wallet_smoke),
         wallet_scenario("password-backup-recovery", 4, backup_recovery_disclosure),
+        wallet_scenario("backup-final-destination", 4, backup_final_destination),
     ]))

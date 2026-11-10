@@ -70,6 +70,13 @@ void QmlFileDialog::setSelectedFile(const QUrl& file)
     Q_EMIT selectedFileChanged();
 }
 
+void QmlFileDialog::setConfirmOverwrite(bool confirm)
+{
+    if (m_confirm_overwrite == confirm) return;
+    m_confirm_overwrite = confirm;
+    Q_EMIT confirmOverwriteChanged();
+}
+
 bool QmlFileDialog::isVisible() const
 {
     return m_dialog && m_dialog->isVisible();
@@ -80,6 +87,9 @@ QFileDialog* QmlFileDialog::dialog()
     if (m_dialog) return m_dialog;
 
     m_dialog = new QFileDialog(nullptr);
+    // This native handoff must not become an application window whose close
+    // requests node shutdown (notably with mixed Widgets/Quick on Qt 6.2).
+    m_dialog->setAttribute(Qt::WA_QuitOnClose, false);
     connect(m_dialog, &QFileDialog::accepted, this, [this] {
         setSelectedFile(m_dialog->selectedUrls().value(0));
         Q_EMIT accepted();
@@ -95,6 +105,7 @@ void QmlFileDialog::open()
     dlg->setWindowTitle(m_title);
     dlg->setNameFilters(m_name_filters);
     dlg->setDefaultSuffix(m_default_suffix);
+    dlg->setOption(QFileDialog::DontConfirmOverwrite, !m_confirm_overwrite);
 
     switch (m_file_mode) {
     case OpenFile:

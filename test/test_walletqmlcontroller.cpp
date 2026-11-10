@@ -317,6 +317,7 @@ class WalletQmlControllerTests : public QObject
 private Q_SLOTS:
     void initTestCase();
     void shutdownDrainsWalletQueueAndPlaceholder();
+    void reentrantShutdownRetiresTheNewWalletModel();
     void shutdownRetiresQueuedLoadNotificationOffGui();
     void shutdownReleasesNotificationsBeforeMigrationRollback();
     void shutdownWaitsForNotificationRetirement();
@@ -400,6 +401,34 @@ void WalletQmlControllerTests::shutdownDrainsWalletQueueAndPlaceholder()
     release.release();
     QTRY_COMPARE(drained.size(), 1);
     QVERIFY(empty_executor->isDrained());
+}
+
+void WalletQmlControllerTests::reentrantShutdownRetiresTheNewWalletModel()
+{
+    FakeWallet::State state; StrictMockNode node;
+    [[maybe_unused]] auto verify_node = node.VerifyOnExit();
+    FakeWalletLoader loader; ConfigureExpectedControllerInitialization(node, loader);
+    struct Probe { std::atomic_bool destroyed{false}, off_gui{false}; };
+    auto probe = std::make_shared<Probe>();
+    struct RetiringWallet : FakeWallet {
+        std::shared_ptr<Probe> probe; QThread* gui;
+        RetiringWallet(State* state, std::shared_ptr<Probe> value, QThread* thread)
+            : FakeWallet("reentrant-wallet", state), probe(std::move(value)), gui(thread) {}
+        ~RetiringWallet() override { probe->off_gui = QThread::currentThread() != gui; probe->destroyed = true; }
+    };
+    const auto gui = QThread::currentThread();
+    loader.create_wallet_fn = [&](const auto&, const auto&, uint64_t, auto&) {
+        return util::Result<std::unique_ptr<interfaces::Wallet>>{std::make_unique<RetiringWallet>(&state, probe, gui)};
+    };
+    DrainingWalletController controller{node}; controller.initialize();
+    QSignalSpy drained{&controller, &WalletQmlController::walletsDrained};
+    connect(&controller, &WalletQmlController::walletLoadInProgressChanged, &controller, [&] {
+        if (!controller.walletLoadInProgress()) controller.beginShutdown();
+    });
+    controller.createSingleSigWallet("reentrant-wallet", "");
+    QTRY_COMPARE(drained.count(), 1);
+    QVERIFY(probe->destroyed.load()); QVERIFY(probe->off_gui.load());
+    QVERIFY(!controller.isWalletOpen("reentrant-wallet")); QVERIFY(!controller.isWalletLoaded());
 }
 
 void WalletQmlControllerTests::shutdownRetiresQueuedLoadNotificationOffGui()

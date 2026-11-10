@@ -14,6 +14,7 @@
 #include <qml/controls/linegraph.h>
 #include <qml/models/activityfilterproxymodel.h>
 #include <qml/models/addresslistmodel.h>
+#include <qml/models/backuppolicyoperation.h>
 #include <qml/models/banlistmodel.h>
 #include <qml/models/bitcoinaddress.h>
 #include <qml/models/bitcoinurimodel.h>
@@ -105,6 +106,13 @@ struct BitcoinUriModelForeign {
     QML_FOREIGN(BitcoinUriModel)
     QML_NAMED_ELEMENT(BitcoinUri)
     QML_SINGLETON
+};
+
+struct BackupFileOperationForeign {
+    Q_GADGET
+    QML_FOREIGN(BackupFileOperation)
+    QML_NAMED_ELEMENT(BackupFileOperation)
+    QML_UNCREATABLE("Owned by a wallet")
 };
 
 struct QmlFileDialogForeign {

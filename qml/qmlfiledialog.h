@@ -35,6 +35,7 @@ class QmlFileDialog : public QObject
     Q_PROPERTY(QUrl currentFolder READ currentFolder WRITE setCurrentFolder NOTIFY currentFolderChanged)
     Q_PROPERTY(QUrl currentFile READ currentFile WRITE setCurrentFile NOTIFY currentFileChanged)
     Q_PROPERTY(QUrl selectedFile READ selectedFile WRITE setSelectedFile NOTIFY selectedFileChanged)
+    Q_PROPERTY(bool confirmOverwrite READ confirmOverwrite WRITE setConfirmOverwrite NOTIFY confirmOverwriteChanged)
     Q_PROPERTY(bool visible READ isVisible NOTIFY visibleChanged)
 
 public:
@@ -69,6 +70,8 @@ public:
     QUrl selectedFile() const { return m_selected_file; }
     void setSelectedFile(const QUrl& file);
 
+    bool confirmOverwrite() const { return m_confirm_overwrite; }
+    void setConfirmOverwrite(bool confirm);
     bool isVisible() const;
 
     Q_INVOKABLE void open();
@@ -82,6 +85,7 @@ Q_SIGNALS:
     void currentFolderChanged();
     void currentFileChanged();
     void selectedFileChanged();
+    void confirmOverwriteChanged();
     void visibleChanged();
     void accepted();
     void rejected();
@@ -96,6 +100,7 @@ private:
     QUrl m_current_folder;
     QUrl m_current_file;
     QUrl m_selected_file;
+    bool m_confirm_overwrite{true};
     QPointer<QFileDialog> m_dialog;
 };
 

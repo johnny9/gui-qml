@@ -5,6 +5,7 @@
 #ifndef BITCOIN_QML_MODELS_WALLETQMLMODEL_H
 #define BITCOIN_QML_MODELS_WALLETQMLMODEL_H
 
+#include <qml/models/backuppolicyoperation.h>
 #include <qml/models/psbtfeeservices.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/backendexecutor.h>
@@ -148,6 +149,7 @@ private:
     Q_PROPERTY(bool transactionFeePending READ transactionFeePending NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanBroadcast READ currentTransactionCanBroadcast NOTIFY currentTransactionChanged)
     Q_PROPERTY(QString currentTransactionReviewMessage READ currentTransactionReviewMessage NOTIFY currentTransactionChanged)
+    Q_PROPERTY(BackupFileOperation* backupOperation READ backupOperation NOTIFY backupOperationChanged)
     Q_PROPERTY(QString settingsError READ settingsError NOTIFY settingsErrorChanged)
     Q_PROPERTY(PsbtQmlModel* importedPsbt READ importedPsbt CONSTANT)
 
@@ -157,6 +159,9 @@ public:
                    FeeReadServices fee_services, QObject* parent = nullptr);
     WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                    FeeReadServices fee_services, psbtfee::Services proof_services, QObject* parent = nullptr);
+    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
+                   FeeReadServices fee_services, psbtfee::Services proof_services, backup::Services backup_services,
+                   QObject* parent = nullptr);
     WalletQmlModel(interfaces::Node* node, QObject* parent = nullptr);
     WalletQmlModel(QObject *parent = nullptr);
     ~WalletQmlModel();
@@ -227,7 +232,9 @@ public:
     Q_INVOKABLE bool setCurrentPaymentRequestAddress(QString address);
     Q_INVOKABLE bool encryptWallet(const QString& passphrase);
     Q_INVOKABLE bool changeWalletPassphrase(const QString& old_passphrase, const QString& new_passphrase);
+    // Returns admission, not write success. Observe the owned operation outcome.
     Q_INVOKABLE bool backupWallet(const QString& path);
+    BackupFileOperation* backupOperation() const { return m_backup_operation; }
     Q_INVOKABLE void clearSettingsError();
     Q_INVOKABLE void setDefaultReceiveAddressType(const QString& address_type);
     Q_INVOKABLE QString receiveAddressTypeLabel(const QString& address_type) const;
@@ -340,6 +347,7 @@ Q_SIGNALS:
     void transactionNeedsUnlockChanged();
     void availableChanged();
     void walletUnloaded();
+    void backupOperationChanged();
     void settingsErrorChanged();
     void addressListChanged();
     // Forwarded on the GUI thread; models must not read wallet state from the
@@ -430,6 +438,8 @@ private:
     bool requestPsbtFeeProof();
     void applyPsbtFeeProof(const std::shared_ptr<const psbtfee::RequestIdentity>& token, psbtfee::Resolution result, bool publish = true);
     bool matchesReviewedPsbtFee(const PartiallySignedTransaction& psbt) const;
+    backup::Services m_backup_services;
+    QPointer<BackupFileOperation> m_backup_operation;
     psbtfee::Services m_psbt_fee_services;
     bool m_custom_psbt_lookup{false};
     std::shared_ptr<const psbtfee::RequestIdentity> m_psbt_fee_request;

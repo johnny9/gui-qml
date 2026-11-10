@@ -8,11 +8,55 @@
 #include <wallet/db.h>
 #include <wallet/wallet.h>
 
+#include <QApplication>
+#include <QEvent>
+#include <QFileDialog>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QScopeGuard>
+#include <QTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QPointer>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+
+namespace {
+class RefuseNativeOverwrite final : public QObject
+{
+public:
+    int prompts{0};
+    bool eventFilter(QObject* object, QEvent* event) override
+    {
+        auto* message = qobject_cast<QMessageBox*>(object);
+        if (message && event->type() == QEvent::Show) {
+            ++prompts;
+            QTimer::singleShot(0, message, [message] { message->done(QMessageBox::No); });
+        }
+        return false;
+    }
+};
+QFileDialog* VisibleBackupChooser()
+{
+    for (auto* widget : QApplication::topLevelWidgets()) {
+        if (auto* dialog = qobject_cast<QFileDialog*>(widget); dialog && dialog->isVisible()) return dialog;
+    }
+    return nullptr;
+}
+QByteArray BackupBytes(const QString& path)
+{
+    QFile file{path};
+    if (!file.open(QIODevice::ReadOnly)) throw std::runtime_error{"Cannot read backup oracle"};
+    return file.readAll();
+}
+// The same source runs against the exact parent for red evidence. That parent
+// has a synchronous backup API and no operation handle. Only this test harness
+// uses property discovery; production QML binds the typed operation interface.
+QObject* BackupOperationFor(WalletQmlModel* wallet)
+{
+    return wallet->property("backupOperation").value<QObject*>();
+}
+} // namespace
 
 class WalletIntegrationTests : public QObject
 {
@@ -288,6 +332,138 @@ private Q_SLOTS:
         QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
     }
 
+    void backupRefusalPreservesSelectedAndFinalFiles_data()
+    {
+        QTest::addColumn<bool>("selected_exists");
+        QTest::newRow("dotted-new-name-existing-final-backup") << false;
+        QTest::newRow("selected-and-final-sentinels") << true;
+    }
+
+    void backupRefusalPreservesSelectedAndFinalFiles()
+    {
+        QFETCH(bool, selected_exists);
+        const bool previous = QCoreApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+        const auto restore = qScopeGuard([previous] { QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, previous); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto selected = directory.filePath("archive.v1");
+        const QString final{selected + ".bak"};
+        auto* original = qmltest::CreateWallet(m_app, "backup_original");
+        QVERIFY(original);
+        const auto original_address = qmltest::NewAddress(m_app, original->name());
+        QVERIFY(original->backupWallet(final));
+        QTRY_VERIFY(QFileInfo{final}.size() > 0);
+        if (auto* operation = BackupOperationFor(original)) QTRY_VERIFY(!operation->property("pending").toBool());
+        const auto final_before = BackupBytes(final);
+        QVERIFY(!final_before.isEmpty());
+        QByteArray selected_before;
+        if (selected_exists) {
+            QFile sentinel{selected}; QVERIFY(sentinel.open(QIODevice::WriteOnly));
+            selected_before = "selected path sentinel - retain every byte";
+            QCOMPARE(sentinel.write(selected_before), qint64{selected_before.size()}); sentinel.close();
+        }
+        auto* replacement = qmltest::CreateWallet(m_app, "backup_replacement");
+        QVERIFY(replacement);
+        const auto replacement_address = qmltest::NewAddress(m_app, replacement->name());
+        RefuseNativeOverwrite refuse;
+        qApp->installEventFilter(&refuse);
+        const auto filter_cleanup = qScopeGuard([&refuse] { qApp->removeEventFilter(&refuse); });
+        QVERIFY(qmltest::Click(m_app, "desktopWalletSettingsTabButton"));
+        QVERIFY(qmltest::Click(m_app, "settingsSidebar_wallet"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "walletSettingsPage"));
+        QVERIFY(qmltest::Click(m_app, "walletBackupRow"));
+        QTRY_VERIFY(VisibleBackupChooser());
+        auto* chooser = VisibleBackupChooser();
+        auto* name_field = chooser->findChild<QLineEdit*>("fileNameEdit");
+        QVERIFY(name_field); // Actual Widgets fallback, not a fabricated accepted event.
+        chooser->selectNameFilter("All files (*)");
+        chooser->setDirectory(directory.path());
+        name_field->clear();
+        QTest::keyClicks(name_field, "archive.v1");
+        QSignalSpy accepted{chooser, &QFileDialog::accepted};
+        qInfo() << "Fallback typed name" << name_field->text() << "selected files before Return" << chooser->selectedFiles();
+        QTest::keyClick(name_field, Qt::Key_Return);
+        QTRY_VERIFY(accepted.count() == 1 || refuse.prompts > 0);
+        qInfo() << "Fallback after Return selected files" << chooser->selectedFiles()
+                << "bound current wallet" << replacement->name()
+                << "QML error" << qmltest::Find(m_app, "walletSettingsPage")->property("errorText");
+        int app_refusals{0};
+        if (refuse.prompts > 0) {
+            chooser->reject();
+        } else if (auto* operation = BackupOperationFor(replacement)) {
+            QTRY_VERIFY(operation->property("confirmationRequired").toBool() || !operation->property("pending").toBool());
+            if (operation->property("confirmationRequired").toBool()) {
+                QCOMPARE(operation->property("finalPath").toString(), final);
+                QVERIFY(qmltest::WaitForVisible(m_app, "walletBackupOverwritePopup"));
+                QVERIFY(qmltest::Click(m_app, "walletBackupOverwriteRejectButton"));
+                ++app_refusals;
+                QTRY_VERIFY(!operation->property("pending").toBool());
+            }
+        }
+        const auto final_after = BackupBytes(final);
+        const bool selected_preserved = selected_exists ? BackupBytes(selected) == selected_before : !QFileInfo::exists(selected);
+        // Independently restore the resulting file before checking bytes, so
+        // the red run records whose real keys replaced the disposable backup.
+        UniValue params{UniValue::VARR}; params.push_back("backup_restored"); params.push_back(final.toStdString());
+        qmltest::Rpc(m_app, "restorewallet", params);
+        auto owns = [&](const QString& address) {
+            UniValue request{UniValue::VARR}; request.push_back(address.toStdString());
+            return qmltest::Rpc(m_app, "getaddressinfo", request, "backup_restored").find_value("ismine").get_bool();
+        };
+        const bool owns_original = owns(original_address), owns_replacement = owns(replacement_address);
+        qInfo() << "Backup refusal oracle native prompts" << refuse.prompts << "app refusals" << app_refusals
+                << "selected bytes preserved" << selected_preserved << "final bytes preserved" << (final_after == final_before)
+                << "restored original/replacement ownership" << owns_original << owns_replacement;
+        QVERIFY(selected_preserved);
+        QCOMPARE(final_after, final_before);
+        QVERIFY(owns_original); QVERIFY(!owns_replacement);
+        QCOMPARE(refuse.prompts + app_refusals, 1);
+    }
+
+    void newBackupDestinationIsTheApprovedPath_data()
+    {
+        QTest::addColumn<bool>("rewritten");
+        QTest::newRow("known-suffix-new-file") << false;
+        QTest::newRow("dotted-name-new-final-file") << true;
+    }
+
+    void newBackupDestinationIsTheApprovedPath()
+    {
+        QFETCH(bool, rewritten);
+        const bool previous = QCoreApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+        const auto restore = qScopeGuard([previous] { QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, previous); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto* wallet = qmltest::CreateWallet(m_app, "approved_source"); QVERIFY(wallet);
+        const auto address = qmltest::NewAddress(m_app, wallet->name());
+        const QString name = rewritten ? "new.archive" : "new.bak";
+        const QString selected = directory.filePath(name);
+        const QString final = rewritten ? selected + ".bak" : selected;
+        QVERIFY(qmltest::Click(m_app, "desktopWalletSettingsTabButton"));
+        QVERIFY(qmltest::Click(m_app, "settingsSidebar_wallet"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "walletSettingsPage"));
+        QVERIFY(qmltest::Click(m_app, "walletBackupRow"));
+        QTRY_VERIFY(VisibleBackupChooser()); auto* chooser = VisibleBackupChooser();
+        chooser->selectNameFilter("All files (*)"); chooser->setDirectory(directory.path());
+        auto* field = chooser->findChild<QLineEdit*>("fileNameEdit"); QVERIFY(field);
+        field->clear(); QTest::keyClicks(field, name); QTest::keyClick(field, Qt::Key_Return);
+        QTRY_VERIFY(wallet->backupOperation()); auto* operation = wallet->backupOperation();
+        if (rewritten) {
+            QTRY_VERIFY(operation->confirmationRequired());
+            QCOMPARE(operation->finalPath(), final);
+            QVERIFY(!QFileInfo::exists(selected)); QVERIFY(!QFileInfo::exists(final));
+            QVERIFY(qmltest::WaitForVisible(m_app, "walletBackupOverwritePopup"));
+            QVERIFY(qmltest::Click(m_app, "walletBackupOverwriteApproveButton"));
+        }
+        QTRY_COMPARE(operation->phase(), BackupFileOperation::Phase::Succeeded);
+        QCOMPARE(operation->finalPath(), final); QVERIFY(QFileInfo{final}.size() > 0);
+        if (rewritten) QVERIFY(!QFileInfo::exists(selected));
+        UniValue restore_params{UniValue::VARR}; restore_params.push_back("approved_restored"); restore_params.push_back(final.toStdString());
+        qmltest::Rpc(m_app, "restorewallet", restore_params);
+        UniValue info{UniValue::VARR}; info.push_back(address.toStdString());
+        QVERIFY(qmltest::Rpc(m_app, "getaddressinfo", info, "approved_restored").find_value("ismine").get_bool());
+    }
+
     void backupRestoresAddressesAndRejectsInvalidFiles()
     {
         auto* wallet = qmltest::CreateWallet(m_app, "original");
@@ -297,6 +473,7 @@ private Q_SLOTS:
         QVERIFY(directory.isValid());
         const auto backup = directory.filePath(QString::fromUtf8("wallet backup ü.dat"));
         QVERIFY(wallet->backupWallet(backup));
+        QTRY_COMPARE(wallet->backupOperation()->phase(), BackupFileOperation::Phase::Succeeded);
         QVERIFY(QFileInfo{backup}.size() > 0);
         auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
         QVERIFY(controller);
@@ -356,6 +533,7 @@ private Q_SLOTS:
         const auto old_backup = directory.filePath("before-encryption.bak");
         const auto new_backup = directory.filePath("after-encryption.bak");
         QVERIFY(live->backupWallet(old_backup));
+        QTRY_COMPARE(live->backupOperation()->phase(), BackupFileOperation::Phase::Succeeded);
         QFile old_file{old_backup}; QVERIFY(old_file.open(QIODevice::ReadOnly));
         const auto old_bytes = old_file.readAll(); old_file.close(); QVERIFY(!old_bytes.isEmpty());
         QVERIFY(live->encryptWallet("recovery password"));
@@ -386,6 +564,7 @@ private Q_SLOTS:
         if (!spend) QCOMPARE(*live_balance, CAmount{150'000'000});
         else QVERIFY(*live_balance < 100'000'000);
         QVERIFY(live->backupWallet(new_backup));
+        QTRY_COMPARE(live->backupOperation()->phase(), BackupFileOperation::Phase::Succeeded);
         auto restore = [&](const QString& name, const QString& path) {
             UniValue params{UniValue::VARR}; params.push_back(name.toStdString()); params.push_back(path.toStdString());
             return qmltest::Rpc(m_app, "restorewallet", params).find_value("name").get_str();
@@ -423,6 +602,7 @@ private Q_SLOTS:
         QVERIFY(directory.isValid());
         const auto backup = directory.filePath("encrypted_restore.bak");
         QVERIFY(wallet->backupWallet(backup));
+        QTRY_COMPARE(wallet->backupOperation()->phase(), BackupFileOperation::Phase::Succeeded);
         auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
         QVERIFY(controller);
         controller->closeWallet(wallet->name());

@@ -33,6 +33,8 @@ add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
   test_appmode.cpp
   test_backendexecutor.cpp
+  test_backuppolicy.cpp
+  test_backuppolicyoperation.cpp
   test_execution.cpp
   test_bitcoinaddress.cpp
   test_blockclockdial.cpp

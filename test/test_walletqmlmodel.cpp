@@ -422,7 +422,8 @@ public:
     {
         ++backup_calls;
         last_backup_path = path;
-        return !path.empty();
+        QFile file{QString::fromStdString(path)};
+        return file.open(QIODevice::WriteOnly) && file.write("fake-wallet-backup") == 18;
     }
     std::string getWalletName() override { return "fake-wallet"; }
     bool getPubKey(const CScript&, const CKeyID&, CPubKey&) override { return false; }
@@ -1835,6 +1836,10 @@ private Q_SLOTS:
     void encryptWalletUpdatesSecurityState();
     void changeWalletPassphraseForwardsPasswords();
     void backupWalletForwardsPath();
+    void backupAdmissionGuards();
+    void backupInjectedPortsRequireOwnedWalletAdapter_data();
+    void backupInjectedPortsRequireOwnedWalletAdapter();
+    void backupRefusalAndRepeatedRequestsUseInjectedExecutor();
     void signVerifyMessageRejectsNonP2PKHAddress();
     void signVerifyMessageSignsWithLegacyP2PKHAddress();
     void signVerifyMessageSignsEmptyMessage();
@@ -1918,10 +1923,70 @@ void WalletQmlModelTests::backupWalletForwardsPath()
 {
     auto [wallet, model] = MakePasswordWalletModel();
 
-    QVERIFY(model->backupWallet("/tmp/fake-wallet.bak"));
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString final{dir.filePath("fake-wallet.bak")};
+    QVERIFY(model->backupWallet(final));
+    QVERIFY(model->backupOperation());
+    QTRY_COMPARE(model->backupOperation()->phase(), BackupFileOperation::Phase::Succeeded);
     QCOMPARE(wallet->backup_calls, 1);
-    QCOMPARE(wallet->last_backup_path, std::string("/tmp/fake-wallet.bak"));
+    QVERIFY(QString::fromStdString(wallet->last_backup_path).startsWith(dir.path() + "/.bitcoin-backup-"));
+    QFile saved{final}; QVERIFY(saved.open(QIODevice::ReadOnly));
+    QCOMPARE(saved.readAll(), QByteArray("fake-wallet-backup"));
     QVERIFY(model->settingsError().isEmpty());
+}
+
+void WalletQmlModelTests::backupAdmissionGuards()
+{
+    WalletQmlModel empty;
+    QVERIFY(!empty.backupWallet("/backup.bak")); QVERIFY(!empty.settingsError().isEmpty());
+    auto [wallet, model] = MakePasswordWalletModel();
+    QVERIFY(!model->backupWallet("  ")); QVERIFY(!model->settingsError().isEmpty());
+    QVERIFY(!model->backupWallet(QString(32'769, 'x'))); QVERIFY(!model->backupOperation());
+    model->beginShutdown(); QVERIFY(!model->backupWallet("/backup.bak")); QVERIFY(!model->settingsError().isEmpty());
+}
+
+void WalletQmlModelTests::backupInjectedPortsRequireOwnedWalletAdapter_data()
+{
+    QTest::addColumn<int>("missing");
+    QTest::newRow("both-adapters") << 0;
+    QTest::newRow("writer-only") << 1;
+    QTest::newRow("wallet-name-only") << 2;
+}
+
+void WalletQmlModelTests::backupInjectedPortsRequireOwnedWalletAdapter()
+{
+    QFETCH(int, missing);
+    ManualExecutionEnvironment environment; backup::Services services; services.scheduler = environment.scheduler;
+    if (missing == 1) services.wallet_name = [] { return "owned"; };
+    if (missing == 2) services.write = [](const auto&, bool) { return backup::WriteResult{}; };
+    auto wallet = std::make_unique<FakePasswordWallet>();
+    WalletQmlModel model{std::move(wallet), nullptr, FeeReadServices{}, psbtfee::Services{}, services};
+    QVERIFY(!model.backupWallet("/backup.bak")); QVERIFY(!model.backupOperation());
+    QVERIFY(!model.settingsError().isEmpty()); QVERIFY(environment.quiescent());
+}
+
+void WalletQmlModelTests::backupRefusalAndRepeatedRequestsUseInjectedExecutor()
+{
+    ManualExecutionEnvironment environment; int writes{0}, inspections{0};
+    backup::Services services; services.scheduler = environment.scheduler;
+    services.post = [&](auto publication) { environment.post(std::move(publication)); };
+    services.wallet_name = [] { return "owned-wallet"; };
+    services.inspect = [&](const auto&, const auto&) { ++inspections; return backup::Proposal{"/final.bak", "hash", true}; };
+    services.write = [&](const auto&, bool) { ++writes; return backup::WriteResult{}; };
+    services.coordinator = std::make_shared<backup::InstallCoordinator>();
+    auto wallet = std::make_unique<FakePasswordWallet>();
+    WalletQmlModel model{std::move(wallet), nullptr, FeeReadServices{}, psbtfee::Services{}, services};
+    QVERIFY(model.backupWallet("/selected.v1")); auto* first = model.backupOperation();
+    QCOMPARE(inspections, 0); QVERIFY(!model.backupWallet("/another.bak"));
+    environment.drain(); environment.publishAll(); QVERIFY(first->confirmationRequired()); QCOMPARE(inspections, 1);
+    QVERIFY(first->refuse()); environment.drain(); environment.publishAll(); QCOMPARE(writes, 0);
+    QVERIFY(model.backupWallet("/another.bak")); QVERIFY(model.backupOperation() != first);
+    environment.drain(); environment.publishAll(); QCOMPARE(inspections, 2);
+    QVERIFY(model.backupOperation()->approve()); environment.drain(); environment.publishAll(); QCOMPARE(writes, 1);
+    QCOMPARE(model.backupOperation()->phase(), BackupFileOperation::Phase::Succeeded);
+    QVERIFY(model.backupWallet("/last.bak")); model.beginShutdown(); environment.drain(); environment.publishAll();
+    QCOMPARE(model.backupOperation()->phase(), BackupFileOperation::Phase::Retired); QCOMPARE(writes, 1);
 }
 
 void WalletQmlModelTests::availableReceiveAddressTypesHideUnavailableTaproot()

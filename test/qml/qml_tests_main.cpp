@@ -536,6 +536,7 @@ class MockFileDialog : public QObject
     Q_PROPERTY(QString title MEMBER m_title NOTIFY titleChanged)
     Q_PROPERTY(int fileMode MEMBER m_file_mode NOTIFY fileModeChanged)
     Q_PROPERTY(QString defaultSuffix MEMBER m_default_suffix NOTIFY defaultSuffixChanged)
+    Q_PROPERTY(bool confirmOverwrite MEMBER m_confirm_overwrite NOTIFY confirmOverwriteChanged)
     Q_PROPERTY(QStringList nameFilters MEMBER m_name_filters NOTIFY nameFiltersChanged)
     Q_PROPERTY(QUrl currentFolder MEMBER m_current_folder NOTIFY currentFolderChanged)
     Q_PROPERTY(QUrl currentFile MEMBER m_current_file NOTIFY currentFileChanged)
@@ -550,6 +551,7 @@ public:
     QString m_title;
     int m_file_mode{OpenFile};
     QString m_default_suffix;
+    bool m_confirm_overwrite{true};
     QStringList m_name_filters;
     QUrl m_current_folder;
     QUrl m_current_file;
@@ -585,6 +587,7 @@ Q_SIGNALS:
     void titleChanged();
     void fileModeChanged();
     void defaultSuffixChanged();
+    void confirmOverwriteChanged();
     void nameFiltersChanged();
     void currentFolderChanged();
     void currentFileChanged();
@@ -1151,6 +1154,28 @@ private:
     bool m_descending{true};
 };
 
+class MockBackupFileOperation : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(int phase MEMBER m_phase NOTIFY changed)
+    Q_PROPERTY(bool pending MEMBER m_pending NOTIFY changed)
+    Q_PROPERTY(bool confirmationRequired MEMBER m_confirmation NOTIFY changed)
+    Q_PROPERTY(bool replacing MEMBER m_replacing NOTIFY changed)
+    Q_PROPERTY(QString finalPath MEMBER m_path NOTIFY changed)
+    Q_PROPERTY(QString error MEMBER m_error NOTIFY changed)
+public:
+    explicit MockBackupFileOperation(QObject* parent = nullptr) : QObject(parent) {}
+    enum Phase { Queued, Inspecting, AwaitingConfirmation, Ready, Writing, Succeeded, Failed, Declined, Retired };
+    Q_ENUM(Phase)
+    int m_phase{Succeeded};
+    bool m_pending{false}, m_confirmation{false}, m_replacing{false};
+    QString m_path, m_error;
+    Q_INVOKABLE bool approve() { m_phase = Succeeded; m_pending = m_confirmation = false; Q_EMIT changed(); return true; }
+    Q_INVOKABLE bool refuse() { m_phase = Declined; m_pending = m_confirmation = false; Q_EMIT changed(); return true; }
+Q_SIGNALS:
+    void changed();
+};
+
 class MockWalletQmlModel : public QObject
 {
     Q_OBJECT
@@ -1213,6 +1238,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString externalSignerStatus MEMBER m_external_signer_status NOTIFY walletInfoChanged)
     Q_PROPERTY(bool canManagePassphrase MEMBER m_can_manage_passphrase NOTIFY walletInfoChanged)
     Q_PROPERTY(QString settingsError MEMBER m_settings_error NOTIFY settingsErrorChanged)
+    Q_PROPERTY(MockBackupFileOperation* backupOperation MEMBER m_backup_operation NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(QString lastBackupPath READ lastBackupPath NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(int backupWalletCalls READ backupWalletCalls NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(QString transactionError MEMBER m_transaction_error NOTIFY transactionErrorChanged)
@@ -1636,8 +1662,21 @@ public:
         Q_EMIT backupWalletCallsChanged();
         return true;
     }
+    Q_INVOKABLE void prepareBackupConfirmationTestState(const QString& path, bool replacing)
+    {
+        auto* operation = new MockBackupFileOperation(this);
+        operation->m_phase = MockBackupFileOperation::AwaitingConfirmation;
+        operation->m_pending = operation->m_confirmation = true;
+        operation->m_replacing = replacing;
+        operation->m_path = path;
+        if (m_backup_operation) m_backup_operation->deleteLater();
+        m_backup_operation = operation;
+        Q_EMIT backupWalletCallsChanged();
+    }
     Q_INVOKABLE void resetWalletSettingsTestState()
     {
+        if (m_backup_operation) m_backup_operation->deleteLater();
+        m_backup_operation = nullptr;
         m_last_backup_path.clear();
         m_backup_wallet_calls = 0;
         m_key_scheme = QStringLiteral("Descriptor");
@@ -1755,6 +1794,7 @@ private:
     QString m_external_signer_status{QStringLiteral("Not used")};
     bool m_can_manage_passphrase{true};
     QString m_settings_error;
+    MockBackupFileOperation* m_backup_operation{nullptr};
     QString m_last_backup_path;
     int m_backup_wallet_calls{0};
     QString m_transaction_error;
@@ -4582,6 +4622,7 @@ public Q_SLOTS:
         qmlRegisterUncreatableType<MockTransaction>("org.bitcoincore.qt", 1, 0, "Transaction", "Test stub type");
         qmlRegisterUncreatableType<MockSendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "Test stub type");
         qmlRegisterUncreatableType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Test stub type");
+        qmlRegisterUncreatableType<MockBackupFileOperation>("org.bitcoincore.qt", 1, 0, "BackupFileOperation", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModelTransaction>(

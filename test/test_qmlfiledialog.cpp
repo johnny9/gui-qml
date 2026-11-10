@@ -9,6 +9,7 @@
 #include <QApplication>
 #include <QFileDialog>
 #include <QLineEdit>
+#include <QQuickWindow>
 #include <QSignalSpy>
 #include <QUrl>
 
@@ -36,6 +37,8 @@ private Q_SLOTS:
     void onlyDirectoryModeShowsHiddenEntries();
     void propertiesReachTheDialog();
     void acceptedCarriesTheSelectedFile();
+    void overwritePolicyIsExplicitAndRetained();
+    void closingChooserDoesNotCloseTheApplication();
 };
 
 void QmlFileDialogTests::saveModeAsksToSaveNotToOpen()
@@ -118,6 +121,41 @@ void QmlFileDialogTests::propertiesReachTheDialog()
     QCOMPARE(dialog->nameFilters(), QStringList{QStringLiteral("Comma separated file (*.csv)")});
     QCOMPARE(dialog->directory().absolutePath(), QDir::tempPath());
     chooser.close();
+}
+
+void QmlFileDialogTests::overwritePolicyIsExplicitAndRetained()
+{
+    QmlFileDialog chooser;
+    QVERIFY(chooser.confirmOverwrite());
+    QSignalSpy changes{&chooser, &QmlFileDialog::confirmOverwriteChanged};
+    chooser.setFileMode(QmlFileDialog::SaveFile);
+    chooser.open();
+    QVERIFY(VisibleFileDialog());
+    QVERIFY(!VisibleFileDialog()->testOption(QFileDialog::DontConfirmOverwrite));
+    chooser.close();
+    chooser.setConfirmOverwrite(false);
+    chooser.setConfirmOverwrite(false);
+    QCOMPARE(changes.count(), 1);
+    chooser.open();
+    QVERIFY(VisibleFileDialog()->testOption(QFileDialog::DontConfirmOverwrite));
+    chooser.close();
+    chooser.setConfirmOverwrite(true);
+    chooser.open();
+    QVERIFY(!VisibleFileDialog()->testOption(QFileDialog::DontConfirmOverwrite));
+    chooser.close();
+    QCOMPARE(changes.count(), 2);
+}
+
+void QmlFileDialogTests::closingChooserDoesNotCloseTheApplication()
+{
+    QQuickWindow main;
+    main.show();
+    QmlFileDialog chooser; chooser.open();
+    auto* dialog = VisibleFileDialog(); QVERIFY(dialog);
+    QVERIFY(!dialog->testAttribute(Qt::WA_QuitOnClose));
+    QSignalSpy last_closed{qGuiApp, &QGuiApplication::lastWindowClosed};
+    chooser.close(); QCoreApplication::processEvents();
+    QCOMPARE(last_closed.count(), 0); QVERIFY(main.isVisible());
 }
 
 void QmlFileDialogTests::acceptedCarriesTheSelectedFile()

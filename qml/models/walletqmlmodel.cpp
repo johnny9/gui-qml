@@ -595,9 +595,17 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, inter
 
 WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                              FeeReadServices fee_services, psbtfee::Services psbt_services, QObject* parent)
+    : WalletQmlModel(std::move(wallet), node, std::move(fee_services), std::move(psbt_services), backup::Services{}, parent)
+{
+}
+
+WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
+                             FeeReadServices fee_services, psbtfee::Services psbt_services, backup::Services backup_services,
+                             QObject* parent)
     : QObject(parent)
     , m_wallet(std::move(wallet))
     , m_node(node)
+    , m_backup_services(std::move(backup_services))
     , m_psbt_fee_services(std::move(psbt_services))
     , m_custom_psbt_lookup(bool(m_psbt_fee_services.lookup))
     , m_fee_read_services(std::move(fee_services))
@@ -714,6 +722,7 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
 {
     if (m_stopping) return;
     m_stopping = true;
+    if (m_backup_operation) m_backup_operation->retire();
     const bool was_available{available()};
     m_unload_requested->store(true);
     if (was_available) Q_EMIT availableChanged();
@@ -1226,17 +1235,38 @@ bool WalletQmlModel::backupWallet(const QString& path)
         setSettingsError(tr("This wallet is closing."));
         return false;
     }
-    if (path.trimmed().isEmpty()) {
+    if (path.size() > 32'768 || path.trimmed().isEmpty()) {
         setSettingsError(tr("Choose a location for the wallet backup."));
         return false;
     }
 
-    if (!m_wallet->backupWallet(path.toStdString())) {
-        setSettingsError(tr("The wallet could not be backed up."));
+    if (m_backup_operation && m_backup_operation->pending()) {
+        setSettingsError(tr("A backup operation is already pending."));
         return false;
     }
-
-    return true;
+    auto services = m_backup_services;
+    const auto wallet_lane = m_backend_executor->scheduler();
+    if (services.scheduler && (!services.wallet_name || !services.write)) {
+        setSettingsError(tr("The backup service has no owned wallet adapter."));
+        return false;
+    }
+    if (!services.scheduler) services.scheduler = wallet_lane;
+    if (!services.post) services.post = m_fee_read_services.post;
+    if (!services.wallet_name) services.wallet_name = [wallet = m_wallet.get()] { return wallet->getWalletName(); };
+    if (!services.inspect) services.inspect = backup::Inspect;
+    if (!m_backup_services.coordinator) m_backup_services.coordinator = std::make_shared<backup::InstallCoordinator>();
+    if (!services.write) {
+        services.write = [wallet = m_wallet.get(), coordinator = m_backup_services.coordinator](const backup::Proposal& target, bool replace) {
+            return backup::Write(target, replace, [wallet](const std::string& staged) { return wallet->backupWallet(staged); }, *coordinator);
+        };
+    }
+    auto* operation = new BackupFileOperation(path, std::move(services), this);
+    const QPointer<BackupFileOperation> previous{m_backup_operation};
+    m_backup_operation = operation;
+    const bool admitted = operation->start();
+    Q_EMIT backupOperationChanged();
+    if (previous) previous->deleteLater();
+    return admitted;
 }
 
 void WalletQmlModel::clearSettingsError()

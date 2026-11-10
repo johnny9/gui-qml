@@ -104,6 +104,42 @@ TestCase {
         compare(action.description, "")
     }
 
+    function test_backup_confirmation_data() {
+        return [ { tag: "new-final-name", replacing: false, approve: true },
+                 { tag: "replace-approved", replacing: true, approve: true },
+                 { tag: "replace-declined", replacing: true, approve: false },
+                 { tag: "escape-declined", replacing: true, approve: false, escape: true } ]
+    }
+
+    function test_backup_confirmation(data) {
+        pageLoader.sourceComponent = walletSettingsComponent
+        testWalletModel.prepareBackupConfirmationTestState("/tmp/final <wallet>.bak", data.replacing)
+        const popup = findChild(pageLoader.item, "walletBackupOverwritePopup")
+        verify(popup !== null)
+        console.log("Backup confirmation attachment", pageLoader.item.visible, popup.parent, popup.visible, popup.operation.confirmationRequired)
+        tryCompare(popup, "visible", true)
+        compare(popup.title, data.replacing ? "Replace backup?" : "Save backup?")
+        const path = findChild(popup, "walletBackupFinalPathText")
+        compare(path.text, "/tmp/final <wallet>.bak")
+        compare(path.textFormat, Text.PlainText)
+        const action = findChild(pageLoader.item, "walletBackupRow")
+        compare(action.enabled, false)
+        const button = findChild(popup, data.approve ? "walletBackupOverwriteApproveButton" : "walletBackupOverwriteRejectButton")
+        if (data.escape) {
+            testWindow.requestActivate()
+            tryCompare(testWindow, "active", true)
+            popup.contentItem.forceActiveFocus()
+            tryCompare(popup.contentItem, "activeFocus", true)
+            keyClick(Qt.Key_Escape)
+        } else {
+            button.clicked()
+        }
+        tryCompare(popup, "visible", false)
+        compare(action.enabled, true)
+        compare(testWalletModel.backupOperation.pending, false)
+        compare(action.supportingText, data.approve ? "Backup saved." : "")
+    }
+
     function createWalletPasswordSettingsPage(component) {
         pageLoader.sourceComponent = component
         const page = pageLoader.item

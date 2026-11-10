@@ -80,6 +80,13 @@ bool ErrorContains(const QString& error, const QString& needle)
 }
 } // namespace
 
+backup::Services WalletQmlController::backupServices() const
+{
+    backup::Services services;
+    services.coordinator = m_backup_installs;
+    return services;
+}
+
 WalletQmlController::WalletQmlController(interfaces::Node& node, QObject *parent)
     : QObject(parent)
     , m_node(node)
@@ -441,7 +448,7 @@ WalletQmlModel* WalletQmlController::addOrSelectWalletModel(std::unique_ptr<inte
     }
 
     if (m_shutting_down) {
-        retireWallet(new WalletQmlModel(std::move(wallet), &m_node), false);
+        retireWallet(new WalletQmlModel(std::move(wallet), &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices()), false);
         return nullptr;
     }
 
@@ -472,7 +479,7 @@ WalletQmlModel* WalletQmlController::addOrSelectWalletModel(std::unique_ptr<inte
     }
 
     const QString loaded_wallet_name = QString::fromStdString(wallet->getWalletName());
-    auto wallet_model = new WalletQmlModel(std::move(wallet), &m_node);
+    auto wallet_model = new WalletQmlModel(std::move(wallet), &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
     wallet_model->moveToThread(this->thread());
     registerWalletModel(wallet_model);
     {
@@ -1136,7 +1143,7 @@ void WalletQmlController::initialize()
     loaded_wallet_names.reserve(static_cast<qsizetype>(wallets.size()));
     for (auto& wallet : wallets) {
         loaded_wallet_names.append(QString::fromStdString(wallet->getWalletName()));
-        auto* wallet_model = new WalletQmlModel(std::move(wallet), &m_node);
+        auto* wallet_model = new WalletQmlModel(std::move(wallet), &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
         registerWalletModel(wallet_model);
         applyWalletDisplayName(wallet_model);
         m_wallets.push_back(wallet_model);
