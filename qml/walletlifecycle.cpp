@@ -124,27 +124,44 @@ void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
 {
     if (m_stopping) return;
     auto borrowed = m_scheduler->borrow(m_key);
+    // Parameter destruction occurs after local destruction. Keep the incoming
+    // handle local and after the lease so even a rejected handle is destroyed
+    // before its counted callback can allow parent Cleanup/drain to finish.
+    auto incoming = std::move(wallet);
     if (!borrowed) {
         if (borrowed.rejection == execution::Rejection::Capacity) {
-            { std::lock_guard lock{m_mutex}; m_resync = true; m_resync_select &= m_notification_context->select_wallet; }
-            requestScan();
+            requestFailure(FailureReason::IngressCapacity);
         }
         return;
     }
+    if (!incoming) { requestFailure(FailureReason::Backend); return; }
+    bool overflow{false};
     {
         std::lock_guard lock{m_mutex};
-        if (m_stopping) return;
-        if (wallet && m_pending.size() < PENDING_HANDLES) m_pending.push_back({std::move(wallet), m_notification_context});
-        else { m_resync = true; m_resync_select &= m_notification_context->select_wallet; }
+        if (m_stopping || m_failed) return;
+        if (m_pending.size() < PENDING_HANDLES) m_pending.push_back({std::move(incoming), m_notification_context});
+        else { m_resync = true; m_resync_select &= m_notification_context->select_wallet; overflow = true; }
     }
+    if (overflow && !m_coherent_resync.capture) { requestFailure(FailureReason::IngressCapacity); return; }
     requestScan();
-    // The counted lease covers transfer/admission; an overflow handle remains
-    // on the backend producer, while the full-resync marker retains its fact.
+}
+
+void LoadSubscription::requestFailure(FailureReason reason)
+{
+    auto previous = FailureReason::None;
+    m_failure.compare_exchange_strong(previous, reason);
+    if (m_failed.exchange(true)) return;
+    const auto self = shared_from_this();
+    // A mandatory failure must not wait behind the Core work that prevented
+    // ingress from making progress. The existing Cleanup owns the fallback if
+    // even Control admission is rejected.
+    const auto reported = execution::Submit(*m_scheduler, [] {}, [self] { self->failed(); }, {}, {execution::Lane::Control, TRANSPORT_BYTES, m_key});
+    if (!reported) retire();
 }
 
 void LoadSubscription::requestScan()
 {
-    if (m_stopping || m_scan_pending.exchange(true)) return;
+    if (m_stopping || m_failed || m_scan_pending.exchange(true)) return;
     const auto self = shared_from_this();
     execution::Admission admitted;
     bool stopping;
@@ -155,7 +172,7 @@ void LoadSubscription::requestScan()
         admitted = execution::Submit(*m_scheduler, [self] { self->scan(); }, [self] {
             { std::lock_guard finished_lock{self->m_mutex}; self->m_scan_id.reset(); }
             self->m_scan_pending = false;
-            if (self->m_stopping) return;
+            if (self->m_stopping || self->m_failed) return;
             self->publishChanged();
             bool more;
             {
@@ -171,9 +188,7 @@ void LoadSubscription::requestScan()
     if (!admitted && !m_stopping) {
         // Keep the coalescing fence set: a rejected mandatory refresh becomes
         // one explicit failure, rather than an unbounded sequence of retries.
-        m_failed = true;
-        const auto reported = execution::Submit(*m_scheduler, [] {}, [self] { self->failed(); }, {}, {execution::Lane::Control, TRANSPORT_BYTES, m_key});
-        if (!reported) retire();
+        requestFailure(FailureReason::Backend);
     }
 }
 
@@ -204,10 +219,8 @@ void LoadSubscription::scan()
         // potentially blocking capture runs outside the mailbox mutex.
         for (const auto& notification : pending) resync_select &= notification.context->select_wallet;
         if (!m_coherent_resync.capture) {
-            auto reason = FailureReason::None;
-            m_failure.compare_exchange_strong(reason, FailureReason::CoherentResyncUnavailable);
-            m_failed = true;
-            throw std::runtime_error("Coherent wallet resynchronization unavailable");
+            requestFailure(FailureReason::IngressCapacity);
+            return;
         }
         entries = captureEntries(m_coherent_resync.capture());
         for (auto& entry : entries) entry.select_wallet = resync_select;

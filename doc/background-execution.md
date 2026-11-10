@@ -43,7 +43,7 @@ queue in both manual and real-thread tests.
 | Producer or effect | Execution and ownership | Progress and retirement |
 | --- | --- | --- |
 | Registration | Core; owner and Cleanup reservation already exist | Callbacks during registration enter the live ingress |
-| Core load callback | Backend producer; counted lease and at most 64 pending handles | Sets one refresh/coalescing flag; overflow requires a coherent resync capability or an explicit unavailable outcome |
+| Core load callback | Backend producer; counted lease and at most 64 pending handles | Sets one refresh/coalescing flag; production overload posts an owned capacity failure through independent Control |
 | Initial capture and refresh | Core; names and interface handles remain backend-owned | Same-key FIFO; queued refresh can retire through Cleanup while Core is blocked |
 | Registered/changed/failure outcome | Domain; explicit lifecycle state guards publication | Produces value-only GUI messages; an absent observer cannot lose the outcome |
 | GUI compatibility handoff | At most 16 entries per presentation turn | Background shadows retain every handle; separately reserved disposal owns their retirement |
@@ -70,8 +70,11 @@ Initial capture and optional coherent resynchronization are separate injected po
 Pinned Core calls `NotifyWalletLoaded` before `AddWallet`, so a concurrent
 `getWallets` may miss a wallet whose callback already returned. This Core
 composition supplies no coherent resynchronization port. Overflow therefore
-invalidates wallet discovery, reports an unavailable outcome, disables dependent
-catalog commands and retires the subscription. It never silently treats an
+invalidates wallet discovery, reports an owned capacity failure through Control,
+disables dependent catalog commands and retires the subscription. The failure
+does not wait for the blocked Core call; retirement still waits for its real
+outcome and native leases. A rejected incoming handle is a local declared after
+its callback lease, so its final release completes before the lease is dropped. It never silently treats an
 incomplete snapshot as current. Positive resync tests explicitly inject a
 synthetic backend with the required committed-membership guarantee. A coherent resync port is only a tested alternative-backend capability; it is
 not a requirement to add a Core API. Bounded ingress overload remains an app

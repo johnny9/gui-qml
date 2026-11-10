@@ -1134,8 +1134,8 @@ void WalletQmlController::handleLifecyclePublication(walletlife::Update update)
     case walletlife::Publication::Retired: {
         const QPointer<WalletQmlController> guard{this};
         const bool initialized_changed = m_initialized;
-        const QString error = update.reason == walletlife::FailureReason::CoherentResyncUnavailable ?
-            tr("Wallet discovery is unavailable. Restart the app to refresh the wallet list.") :
+        const QString error = update.reason == walletlife::FailureReason::IngressCapacity ?
+            tr("Wallet discovery is unavailable because it could not keep up with wallet notifications. Restart the app to refresh the wallet list.") :
             update.kind == walletlife::Publication::Failed ? tr("Wallet loading failed.") :
             update.cleanup_failed ? tr("Wallet notification cleanup failed.") : tr("Wallet notifications are unavailable.");
         const bool error_changed = m_wallet_load_error != error;

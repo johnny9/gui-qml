@@ -128,6 +128,77 @@ class WalletLifecycleTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void rejectedHandleReleasePrecedesCallbackLeaseAndDrain()
+    {
+        struct Probe {
+            QThread* gui{QThread::currentThread()};
+            QSemaphore capture_entered, capture_release, rejected_entered, rejected_release, core_outcome, witness;
+            std::atomic_int destroyed{0}, disconnected{0};
+            std::atomic_bool off_gui{true};
+            walletlife::LoadSubscription::Callback callback;
+        };
+        const auto probe = std::make_shared<Probe>();
+        struct Wallet : StubWallet {
+            std::shared_ptr<Probe> probe;
+            bool reject;
+            Wallet(std::shared_ptr<Probe> p, bool r) : probe(std::move(p)), reject(r) {}
+            ~Wallet() override {
+                if (reject) { probe->rejected_entered.release(); probe->rejected_release.acquire(); }
+                if (QThread::currentThread() == probe->gui) probe->off_gui = false;
+                ++probe->destroyed;
+            }
+            std::string getWalletName() override { return "wallet"; }
+        };
+        BackendExecutor executor{execution::Limits::Bounded()};
+        const auto scheduler = executor.scheduler();
+        auto owner = std::make_shared<walletlife::LoadSubscription>(scheduler,
+            [probe](walletlife::LoadSubscription::Callback callback) {
+                probe->callback = std::move(callback);
+                // Deliberately do not make disconnect wait for this producer.
+                // The subscription's counted callback lease must do that work.
+                return interfaces::MakeCleanupHandler([probe] { ++probe->disconnected; });
+            }, [probe] {
+                probe->capture_entered.release(); probe->capture_release.acquire();
+                return std::vector<std::unique_ptr<interfaces::Wallet>>{};
+            }, [](walletlife::Update) {});
+        std::thread producer;
+        const auto cleanup = qScopeGuard([&] {
+            probe->capture_release.release(); probe->rejected_release.release();
+            if (producer.joinable()) producer.join();
+            owner->retire(); executor.shutdown();
+            QTRY_VERIFY(executor.isDrained());
+        });
+        const auto registration = owner->start(); QVERIFY(registration);
+        QVERIFY(probe->capture_entered.tryAcquire(1, 5000));
+        const auto witness_key = scheduler->allocateKey();
+        const auto witness = execution::Submit(*scheduler, [probe] { probe->witness.release(); }, [] {}, {},
+            {Lane::Cleanup, 0, witness_key}, true);
+        QVERIFY(witness);
+        const auto core_key = scheduler->allocateKey();
+        QVERIFY(execution::Submit(*scheduler, [] {}, [probe] { probe->core_outcome.release(); }, {},
+            {Lane::Core, 0, core_key}));
+        producer = std::thread{[probe] {
+            for (int i{0}; i < 64; ++i) probe->callback(std::make_unique<Wallet>(probe, false));
+            probe->callback(std::make_unique<Wallet>(probe, true));
+        }};
+        QVERIFY(probe->rejected_entered.tryAcquire(1, 5000));
+        owner->retire(); probe->capture_release.release();
+        // One Core worker posts registration's outcome before this independent
+        // effect's outcome. Domain consumption of the latter is our barrier.
+        QVERIFY(probe->core_outcome.tryAcquire(1, 5000));
+        // This Cleanup turn is posted after registration's outcome is consumed.
+        // Any prematurely eligible parent Cleanup must run before the witness.
+        QVERIFY(scheduler->activateCleanup(witness.id));
+        QVERIFY(probe->witness.tryAcquire(1, 5000));
+        QCOMPARE(probe->disconnected.load(), 0);
+        QCOMPARE(probe->destroyed.load(), 0);
+        probe->rejected_release.release(); producer.join();
+        executor.shutdown(); QTRY_VERIFY(executor.isDrained());
+        QCOMPARE(probe->destroyed.load(), 65);
+        QCOMPARE(probe->disconnected.load(), 1);
+        QVERIFY(probe->off_gui.load());
+        QCOMPARE(scheduler->pending(), size_t{0});
+    }
     void missingPortsAreRejected_data()
     {
         QTest::addColumn<int>("missing");
@@ -177,6 +248,17 @@ private Q_SLOTS:
         QCOMPARE(f.probe->disconnects.size(), size_t{1});
         QVERIFY(f.env.quiescent());
     }
+    void nullNotificationOwnsFailureWithoutRecapture()
+    {
+        Fixture f;
+        QVERIFY(f.owner->start()); f.drain();
+        f.callback({}); f.drain();
+        QCOMPARE(f.count(Publication::Failed), 1);
+        QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.probe->captures.size(), size_t{1});
+        QCOMPARE(f.publications.back().reason, walletlife::FailureReason::Backend);
+        QVERIFY(f.env.quiescent());
+    }
     void ordinarySaturationBeforeRegistrationOwnsFailure()
     {
         auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 0;
@@ -216,7 +298,7 @@ private Q_SLOTS:
         QVERIFY(f.owner->start()); f.drain();
         f.notify("lease-rejected"); f.drain();
         QCOMPARE(f.count(Publication::Failed), 1);
-        QCOMPARE(f.publications.back().reason, walletlife::FailureReason::CoherentResyncUnavailable);
+        QCOMPARE(f.publications.back().reason, walletlife::FailureReason::IngressCapacity);
         QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Core});
         QVERIFY(f.env.quiescent());
     }

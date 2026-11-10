@@ -11,7 +11,7 @@ namespace walletlife {
 enum class Phase { Registering, Active, Failed, Closing, Closed };
 enum class Event { Registered, RegistrationFailed, Notification, Close, CleanupFinished };
 enum class Publication { Ready, Changed, Failed, Retired, InitialHandoff };
-enum class FailureReason { None, Backend, CoherentResyncUnavailable };
+enum class FailureReason { None, Backend, IngressCapacity };
 struct Update { Publication kind; bool cleanup_failed{false}; FailureReason reason{FailureReason::None}; };
 
 class State

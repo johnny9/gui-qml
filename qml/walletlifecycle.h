@@ -68,6 +68,7 @@ private:
     void scan();
     void registered();
     void publishChanged();
+    void requestFailure(FailureReason reason);
     void failed();
     bool cleanup();
     std::unique_ptr<Handoff> take(bool initial);

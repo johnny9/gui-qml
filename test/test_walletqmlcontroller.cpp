@@ -490,9 +490,9 @@ void WalletQmlControllerTests::notificationOverflowReportsUnavailableResync()
         }
     }};
     producer.join();
-    probe->release.release();
     QTRY_VERIFY(!controller.initialized());
     QVERIFY(controller.walletLoadError().contains("unavailable"));
+    probe->release.release();
     QCOMPARE(loader.get_wallets_calls, 1);
     controller.createSingleSigWallet("after-overflow", "");
     QCOMPARE(loader.create_wallet_calls, 0);
