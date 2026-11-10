@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/psbtqmlmodel.h>
+#include <qml/models/psbtfee.h>
 
 #include <common/messages.h>
 #include <interfaces/node.h>
@@ -34,6 +35,7 @@
 #include <QIODevice>
 #include <QSaveFile>
 #include <QUrl>
+#include <QPointer>
 
 namespace {
 
@@ -183,8 +185,23 @@ PsbtQmlModel::PsbtQmlModel(interfaces::Wallet* wallet, interfaces::Node* node, Q
 {
 }
 
+void PsbtQmlModel::setNode(interfaces::Node* node)
+{
+    const bool recheck = m_fee_pending;
+    m_fee_request.reset();
+    m_fee_pending = false;
+    m_node = node;
+    if (recheck && !m_detached) {
+        m_fee_attempted = false;
+        refreshState();
+    }
+}
+
 void PsbtQmlModel::clear()
 {
+    m_fee_request.reset();
+    m_fee_proof.reset();
+    m_fee_pending = m_fee_attempted = false;
     m_psbt.reset();
     m_status.clear();
     m_error.clear();
@@ -192,6 +209,7 @@ void PsbtQmlModel::clear()
     m_can_sign = false;
     m_can_broadcast = false;
     m_complete = false;
+    m_reviewed_fee.reset();
     m_unsigned_inputs = 0;
     m_could_sign_inputs = 0;
     m_matched_txid.clear();
@@ -200,6 +218,9 @@ void PsbtQmlModel::clear()
 
 void PsbtQmlModel::setError(const QString& error)
 {
+    m_fee_request.reset();
+    m_fee_proof.reset();
+    m_fee_pending = m_fee_attempted = false;
     m_psbt.reset();
     m_status.clear();
     m_error = error;
@@ -207,6 +228,7 @@ void PsbtQmlModel::setError(const QString& error)
     m_can_sign = false;
     m_can_broadcast = false;
     m_complete = false;
+    m_reviewed_fee.reset();
     m_unsigned_inputs = 0;
     m_could_sign_inputs = 0;
     m_matched_txid.clear();
@@ -229,7 +251,10 @@ QString PsbtQmlModel::loadFromFile(const QString& path)
         return error;
     }
 
-    m_psbt = std::make_unique<PartiallySignedTransaction>(std::move(psbt));
+    m_fee_request.reset();
+    m_fee_proof.reset();
+    m_fee_pending = m_fee_attempted = false;
+    m_psbt = std::make_shared<const PartiallySignedTransaction>(std::move(psbt));
     refreshState();
     return QString{};
 }
@@ -245,15 +270,30 @@ void PsbtQmlModel::sign()
         return;
     }
 
+    const auto approved_fee = m_reviewed_fee;
+    if (!m_fee_proof || !psbtfee::MatchesReview(*m_psbt, *m_fee_proof, approved_fee)) {
+        m_error = tr("The transaction fee is missing or invalid.");
+        m_can_sign = m_can_broadcast = false;
+        Q_EMIT changed();
+        return;
+    }
+    PartiallySignedTransaction candidate{*m_psbt};
+    if (m_fee_proof) psbtfee::FillMissing(candidate, *m_fee_proof);
     bool complete{false};
     size_t signed_inputs{0};
     const std::optional<common::PSBTError> error{
-        m_wallet->fillPSBT({.sign = true, .bip32_derivs = true}, &signed_inputs, *m_psbt, complete)};
+        m_wallet->fillPSBT({.sign = true, .bip32_derivs = true}, &signed_inputs, candidate, complete)};
     if (error) {
         refreshState(tr("Could not sign PSBT: %1").arg(PsbtErrorText(*error)));
         return;
     }
 
+    complete = FinalizePSBT(candidate);
+    if (!psbtfee::MatchesReview(candidate, *m_fee_proof, approved_fee)) {
+        refreshState(tr("The transaction fee changed after review."));
+        return;
+    }
+    m_psbt = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
     if (complete) {
         refreshState(tr("PSBT signed. Transaction is ready for broadcast."));
     } else if (signed_inputs > 0) {
@@ -265,6 +305,10 @@ void PsbtQmlModel::sign()
 
 void PsbtQmlModel::broadcast()
 {
+    if (m_detached) {
+        setError(tr("This wallet is closing."));
+        return;
+    }
     if (!m_psbt) {
         setError(tr("No PSBT is loaded."));
         return;
@@ -274,8 +318,17 @@ void PsbtQmlModel::broadcast()
         return;
     }
 
+    PartiallySignedTransaction candidate{*m_psbt};
+    if (m_fee_proof) psbtfee::FillMissing(candidate, *m_fee_proof);
     CMutableTransaction mutable_tx;
-    if (!FinalizeAndExtractPSBT(*m_psbt, mutable_tx)) {
+    const bool complete = FinalizeAndExtractPSBT(candidate, mutable_tx);
+    if (!m_fee_proof || !psbtfee::MatchesReview(candidate, *m_fee_proof, m_reviewed_fee)) {
+        m_error = tr("The transaction fee is missing or invalid.");
+        m_can_sign = m_can_broadcast = false;
+        Q_EMIT changed();
+        return;
+    }
+    if (!complete) {
         refreshState(tr("PSBT is not complete and cannot be broadcast."));
         return;
     }
@@ -321,22 +374,29 @@ QString PsbtQmlModel::saveToFile(const QString& path)
 
 void PsbtQmlModel::refreshState(const QString& status_override)
 {
-    if (!m_psbt) {
-        return;
-    }
-    bool complete{FinalizePSBT(*m_psbt)};
+    if (!m_psbt || m_detached) return;
+    auto fee = psbtfee::Analyze(*m_psbt, m_fee_proof ? m_fee_proof->verified : psbtfee::Outputs{});
+    auto candidate = *m_psbt;
+    bool complete{false};
     size_t could_sign{0};
     std::optional<common::PSBTError> fill_error;
-    if (m_wallet) {
-        fill_error = m_wallet->fillPSBT({.sign = false, .bip32_derivs = true}, &could_sign, *m_psbt, complete);
+    if (fee.state != psbtfee::State::Invalid) {
+        if (m_fee_proof) psbtfee::FillMissing(candidate, *m_fee_proof);
+        complete = FinalizePSBT(candidate);
+        if (m_wallet) {
+            fill_error = m_wallet->fillPSBT({.sign = false, .bip32_derivs = true}, &could_sign, candidate, complete);
+        }
+        fee = psbtfee::Analyze(candidate, m_fee_proof ? m_fee_proof->verified : psbtfee::Outputs{});
+        m_psbt = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
     }
-
-    m_error = fill_error ? PsbtErrorText(*fill_error) : QString();
+    m_fee_proof = std::make_shared<const psbtfee::Analysis>(fee);
+    m_reviewed_fee = fee.amount;
+    m_error = fill_error ? PsbtErrorText(*fill_error) : !fee.amount ? tr("The transaction fee is missing or invalid.") : QString{};
     m_complete = complete;
-    m_can_broadcast = complete;
+    m_can_broadcast = complete && fee.amount.has_value();
     m_could_sign_inputs = static_cast<int>(could_sign);
     m_unsigned_inputs = static_cast<int>(CountPSBTUnsignedInputs(*m_psbt));
-    m_can_sign = !complete && m_wallet && !m_wallet->privateKeysDisabled() && could_sign > 0;
+    m_can_sign = fee.amount && !complete && m_wallet && !m_wallet->privateKeysDisabled() && could_sign > 0;
     m_summary = buildSummary(*m_psbt);
 
     if (!status_override.isEmpty()) {
@@ -355,7 +415,32 @@ void PsbtQmlModel::refreshState(const QString& status_override)
         m_status = tr("This wallet does not have the right keys to sign this PSBT.");
     }
 
+    if (fee.state == psbtfee::State::Missing && !m_fee_attempted && m_fee_services.lookup) requestFeeProof();
+    if (m_fee_pending) {
+        m_status = tr("Checking transaction fee.");
+        m_error.clear();
+    }
     Q_EMIT changed();
+}
+
+void PsbtQmlModel::requestFeeProof()
+{
+    m_fee_attempted = m_fee_pending = true;
+    const auto token = std::make_shared<const psbtfee::RequestIdentity>();
+    m_fee_request = token;
+    const QPointer<PsbtQmlModel> observer{this};
+    const auto admission = psbtfee::Request(m_fee_services, m_psbt, m_fee_proof,
+        [observer, token](psbtfee::Resolution result) {
+            if (!observer || observer->m_fee_request != token) return;
+            observer->m_fee_request.reset();
+            observer->m_fee_pending = false;
+            if (!result.failed && result.proof) observer->m_fee_proof = std::move(result.proof);
+            observer->refreshState();
+        });
+    if (!admission) {
+        m_fee_request.reset();
+        m_fee_pending = false;
+    }
 }
 
 QStringList PsbtQmlModel::buildSummary(const PartiallySignedTransaction& psbt) const
@@ -367,9 +452,13 @@ QStringList PsbtQmlModel::buildSummary(const PartiallySignedTransaction& psbt) c
         return lines;
     }
 
-    CAmount total{0};
+    const auto fee = psbtfee::Analyze(psbt, m_fee_proof ? m_fee_proof->verified : psbtfee::Outputs{});
+    if (fee.state == psbtfee::State::Invalid) {
+        lines << tr("The transaction fee is missing or invalid.") << tr("Transaction fee is not available.");
+        return lines;
+    }
+    const CAmount total{fee.output_total};
     for (const CTxOut& output : unsigned_tx->vout) {
-        total += output.nValue;
         CTxDestination destination;
         const QString address{ExtractDestination(output.scriptPubKey, destination) ? QString::fromStdString(EncodeDestination(destination)) : tr("unknown destination")};
         const bool own_address{m_wallet && m_wallet->txoutIsMine(output)};
@@ -380,8 +469,8 @@ QStringList PsbtQmlModel::buildSummary(const PartiallySignedTransaction& psbt) c
     if (!analysis.error.empty()) {
         lines << tr("Analysis: %1").arg(QString::fromStdString(analysis.error));
     }
-    if (analysis.fee) {
-        lines << tr("Pays transaction fee: %1").arg(FormatBtc(*analysis.fee));
+    if (fee.amount) {
+        lines << tr("Pays transaction fee: %1").arg(FormatBtc(*fee.amount));
     } else {
         lines << tr("Transaction fee is not available.");
     }

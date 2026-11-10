@@ -265,7 +265,7 @@ PageStack {
             sendOptionsPopup.close()
             if (result === WalletQmlModel.WalletCanSign) {
                 root.openTransactionReview()
-            } else if (result === WalletQmlModel.WalletCannotSign) {
+            } else if (result === WalletQmlModel.WalletCannotSign || result === WalletQmlModel.ReviewPending) {
                 root.openTransactionReview()
             } else if (result === WalletQmlModel.TransactionAlreadyKnown) {
                 knownPsbtTxPopup.txid = root.wallet.importedPsbt.matchedTxid

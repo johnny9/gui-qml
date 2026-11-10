@@ -1172,6 +1172,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QVariantMap currentTransactionFlow MEMBER m_current_transaction_flow NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionIsImportedPsbt MEMBER m_current_transaction_is_imported_psbt NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanSend MEMBER m_current_transaction_can_send NOTIFY currentTransactionChanged)
+    Q_PROPERTY(bool transactionFeePending MEMBER m_transaction_fee_pending NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanBroadcast MEMBER m_current_transaction_can_broadcast NOTIFY currentTransactionChanged)
     Q_PROPERTY(QString currentTransactionReviewMessage MEMBER m_current_transaction_review_message NOTIFY currentTransactionChanged)
     Q_PROPERTY(QObject* currentPaymentRequest READ currentPaymentRequest CONSTANT)
@@ -1231,6 +1232,15 @@ public:
         ExternalSigner,
     };
     Q_ENUM(KeyScheme)
+    enum class PsbtImportResult {
+        PsbtUnsupported = 0,
+        WalletCanSign,
+        WalletCannotSign,
+        TransactionAlreadyKnown,
+        ReviewPending,
+    };
+    Q_ENUM(PsbtImportResult)
+
 
     QString m_name{QStringLiteral("testwallet")};
     QString m_balance{QStringLiteral("1.00000000 BTC")};
@@ -1266,6 +1276,7 @@ public:
     QVariantMap m_current_transaction_flow;
     bool m_current_transaction_is_imported_psbt{false};
     bool m_current_transaction_can_broadcast{false};
+    bool m_transaction_fee_pending{false};
     QString m_current_transaction_review_message;
     QString m_last_saved_psbt_path;
 

@@ -5,6 +5,7 @@
 #ifndef BITCOIN_QML_MODELS_WALLETQMLMODEL_H
 #define BITCOIN_QML_MODELS_WALLETQMLMODEL_H
 
+#include <qml/models/psbtfeeservices.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/backendexecutor.h>
 #include <qml/models/feereadservices.h>
@@ -90,6 +91,7 @@ public:
         WalletCanSign,
         WalletCannotSign,
         TransactionAlreadyKnown,
+        ReviewPending,
     };
     Q_ENUM(PsbtImportResult)
 
@@ -143,6 +145,7 @@ private:
     Q_PROPERTY(QString transactionError READ transactionError NOTIFY transactionErrorChanged)
     Q_PROPERTY(bool transactionNeedsUnlock READ transactionNeedsUnlock NOTIFY transactionNeedsUnlockChanged)
     Q_PROPERTY(bool currentTransactionCanSend READ currentTransactionCanSend NOTIFY currentTransactionChanged)
+    Q_PROPERTY(bool transactionFeePending READ transactionFeePending NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanBroadcast READ currentTransactionCanBroadcast NOTIFY currentTransactionChanged)
     Q_PROPERTY(QString currentTransactionReviewMessage READ currentTransactionReviewMessage NOTIFY currentTransactionChanged)
     Q_PROPERTY(QString settingsError READ settingsError NOTIFY settingsErrorChanged)
@@ -152,6 +155,8 @@ public:
     WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node = nullptr, QObject* parent = nullptr);
     WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                    FeeReadServices fee_services, QObject* parent = nullptr);
+    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
+                   FeeReadServices fee_services, psbtfee::Services proof_services, QObject* parent = nullptr);
     WalletQmlModel(interfaces::Node* node, QObject* parent = nullptr);
     WalletQmlModel(QObject *parent = nullptr);
     ~WalletQmlModel();
@@ -303,6 +308,7 @@ public:
     QString transactionError() const { return m_transaction_error; }
     bool transactionNeedsUnlock() const { return m_transaction_needs_unlock; }
     bool currentTransactionCanSend() const { return m_current_transaction && m_current_transaction_can_send; }
+    bool transactionFeePending() const { return m_psbt_fee_pending; }
     bool currentTransactionCanBroadcast() const { return m_current_transaction && m_current_transaction_can_broadcast; }
     QString currentTransactionReviewMessage() const { return m_current_transaction_review_message; }
     QString settingsError() const { return m_settings_error; }
@@ -382,7 +388,8 @@ private:
     void setTransactionStatus(const QString& error, bool needs_unlock = false);
     void setSettingsError(const QString& error);
     QString persistedReceiveAddressTypeKey() const;
-    bool tryImportPsbtToReview(const PartiallySignedTransaction& psbt, PsbtImportResult& result, QString& reason);
+    bool tryImportPsbtToReview(const PartiallySignedTransaction& psbt, PsbtImportResult& result, QString& reason,
+                               std::shared_ptr<const PartiallySignedTransaction>& reviewed_document);
 
     std::shared_ptr<BackendExecutor> m_backend_executor{std::make_shared<BackendExecutor>()};
     std::shared_ptr<QObject> m_notification_bridge;
@@ -419,7 +426,18 @@ private:
     QMetaObject::Connection m_maximum_amount_connection;
     QMetaObject::Connection m_maximum_recipient_destroyed_connection;
     bool m_updating_maximum{false};
-    std::unique_ptr<PartiallySignedTransaction> m_current_psbt;
+    void initializePsbtFeeReader();
+    bool requestPsbtFeeProof();
+    void applyPsbtFeeProof(const std::shared_ptr<const psbtfee::RequestIdentity>& token, psbtfee::Resolution result, bool publish = true);
+    bool matchesReviewedPsbtFee(const PartiallySignedTransaction& psbt) const;
+    psbtfee::Services m_psbt_fee_services;
+    bool m_custom_psbt_lookup{false};
+    std::shared_ptr<const psbtfee::RequestIdentity> m_psbt_fee_request;
+    std::shared_ptr<const psbtfee::Analysis> m_psbt_fee_proof;
+    bool m_psbt_fee_pending{false};
+    bool m_psbt_key_can_send{false};
+    bool m_psbt_can_commit_complete{false};
+    std::shared_ptr<const PartiallySignedTransaction> m_current_psbt;
     CurrentTransactionSource m_current_transaction_source{CurrentTransactionSource::None};
     bool m_current_transaction_can_send{false};
     bool m_current_transaction_sweeps_wallet{false};

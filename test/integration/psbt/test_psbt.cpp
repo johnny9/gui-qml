@@ -5,6 +5,9 @@
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <qml/models/psbtqmlmodel.h>
+#include <key_io.h>
+#include <util/moneystr.h>
+#include <util/string.h>
 
 #include <QFile>
 #include <QTemporaryDir>
@@ -18,6 +21,98 @@ public:
     explicit PsbtIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void authenticatedLegacyFeeReview_data()
+    {
+        QTest::addColumn<uint>("version"); QTest::addColumn<int>("owned"); QTest::addColumn<bool>("forged"); QTest::addColumn<bool>("confirmed");
+        for (uint version : {0U, 2U}) for (int owned : {0, 1, 2}) for (bool forged : {false, true}) {
+            const auto name = QString("v%1-owned%2-%3").arg(version).arg(owned).arg(forged ? "forged" : "control").toUtf8();
+            QTest::newRow(name.constData()) << version << owned << forged << true;
+        }
+        for (uint version : {0U, 2U}) for (bool forged : {false, true}) {
+            const auto name = QString("v%1-unconfirmed-%2").arg(version).arg(forged ? "forged" : "control").toUtf8();
+            QTest::newRow(name.constData()) << version << 0 << forged << false;
+        }
+    }
+    void authenticatedLegacyFeeReview()
+    {
+        QFETCH(uint, version); QFETCH(int, owned); QFETCH(bool, forged); QFETCH(bool, confirmed);
+        auto* miner = qmltest::CreateWallet(m_app, "fee-miner"); QVERIFY(miner);
+        auto* foreign = qmltest::CreateWallet(m_app, "fee-foreign"); QVERIFY(foreign);
+        auto* reviewer = qmltest::CreateWallet(m_app, "fee-reviewer"); QVERIFY(reviewer);
+        QVERIFY(qmltest::FundWallet(m_app, *miner));
+        const auto first = qmltest::NewAddress(m_app, owned > 0 ? reviewer->name() : foreign->name(), "legacy");
+        const auto second = qmltest::NewAddress(m_app, owned > 1 ? reviewer->name() : foreign->name(), "legacy");
+        const auto mining = qmltest::NewAddress(m_app, miner->name());
+        const std::vector<QString> addresses{first, second};
+        std::vector<std::string> funding;
+        funding.reserve(addresses.size());
+        for (const auto& address : addresses) {
+            funding.push_back(qmltest::Rpc(m_app, "sendtoaddress", qmltest::Json("[\"" + address.toStdString() + "\", 0.01]"), miner->name()).get_str());
+        }
+        if (confirmed) qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1, \"" + mining.toStdString() + "\"]"));
+        CMutableTransaction tx;
+        CAmount actual_inputs{0};
+        for (size_t i = 0; i < addresses.size(); ++i) {
+            const auto raw = qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + funding[i] + "\"]"), miner->name()).find_value("hex").get_str();
+            const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + raw + "\"]"));
+            for (const auto& output : decoded.find_value("vout").getValues()) {
+                const auto address = output.find_value("scriptPubKey").find_value("address");
+                if (!address.isStr() || address.get_str() != addresses[i].toStdString()) continue;
+                const auto index = output.find_value("n").getInt<int>();
+                tx.vin.emplace_back(COutPoint{*Txid::FromHex(funding[i]), uint32_t(index)});
+                const auto coin = qmltest::Rpc(m_app, "gettxout", qmltest::Json("[\"" + funding[i] + "\", " + util::ToString(index) + "]"));
+                const auto value = ParseMoney(coin.find_value("value").getValStr());
+                QVERIFY(value); QCOMPARE(*value, CAmount{1'000'000}); actual_inputs += *value;
+            }
+        }
+        QCOMPARE(tx.vin.size(), size_t{2});
+        tx.vout.emplace_back(1'500'000, GetScriptForDestination(DecodeDestination(mining.toStdString())));
+        const CAmount actual_fee{actual_inputs - tx.vout[0].nValue};
+        QCOMPARE(actual_fee, CAmount{500'000}); // Independent live gettxout oracle, not PSBT analysis.
+        PartiallySignedTransaction unsigned_psbt{tx, version};
+        auto encoded = PsbtQmlModel::SerializePsbtRaw(unsigned_psbt).toBase64().toStdString();
+        for (const auto* signer : {reviewer, foreign}) {
+            encoded = qmltest::Rpc(m_app, "walletprocesspsbt", qmltest::Json("[\"" + encoded + "\", true, \"ALL\", true, true]"), signer->name()).find_value("psbt").get_str();
+        }
+        const auto parsed = DecodeBase64PSBT(encoded); QVERIFY(parsed);
+        auto psbt = *parsed;
+        CMutableTransaction signed_control; QVERIFY(FinalizeAndExtractPSBT(psbt, signed_control));
+        if (forged || !confirmed) {
+            for (size_t i{0}; i < psbt.inputs.size(); ++i) {
+                if (confirmed && i != 1) continue;
+                auto& input = psbt.inputs[i]; QVERIFY(input.non_witness_utxo);
+                input.witness_utxo = input.non_witness_utxo->vout[input.prev_out];
+                input.non_witness_utxo = nullptr;
+                if (forged && i == 1) input.witness_utxo.nValue -= actual_fee - 1;
+            }
+        }
+        auto verification = psbt;
+        CMutableTransaction signed_candidate; QVERIFY(FinalizeAndExtractPSBT(verification, signed_candidate));
+        QCOMPARE(signed_candidate.GetHash(), signed_control.GetHash());
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("legacy.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(psbt, path), QString{});
+        QVERIFY(qmltest::Click(m_app, "sendTabButton"));
+        QVERIFY(qmltest::Find(m_app, "psbtImportPathField")->setProperty("text", path));
+        QVERIFY(qmltest::Click(m_app, "sendOptionsButton"));
+        QVERIFY(qmltest::Click(m_app, "sendImportPsbtFromFileButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
+        QVERIFY(reviewer->currentTransaction());
+        QTRY_VERIFY(!reviewer->transactionFeePending());
+        const auto fee_text = qmltest::Find(m_app, "sendTransactionReviewFee")->property("value").toString();
+        if (forged) {
+            QVERIFY(!reviewer->currentTransactionCanSend()); QVERIFY(!reviewer->currentTransactionCanBroadcast());
+            QCOMPARE(fee_text, QString("Unknown"));
+            QVERIFY(!reviewer->currentTransactionFlow().value("feeKnown").toBool());
+            QVERIFY(!reviewer->broadcastCurrentTransaction()); QVERIFY(!reviewer->sendTransaction());
+            QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), confirmed ? 0U : 2U);
+        } else {
+            QCOMPARE(reviewer->currentTransaction()->getTransactionFee(), actual_fee);
+            QVERIFY(reviewer->currentTransactionCanBroadcast());
+            QVERIFY2(reviewer->broadcastCurrentTransaction(), qPrintable(reviewer->transactionError()));
+            const auto entry = qmltest::Rpc(m_app, "getmempoolentry", qmltest::Json("[\"" + signed_control.GetHash().GetHex() + "\"]"));
+            QCOMPARE(ParseMoney(entry.find_value("fees").find_value("base").getValStr()), std::optional<CAmount>{actual_fee});
+        }
+    }
     void failedImportPreservesTheDraftAndAllowsRetry_data()
     {
         QTest::addColumn<bool>("create_invalid_file");

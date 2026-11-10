@@ -5,6 +5,7 @@
 
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/signertransaction.h>
+#include <qml/models/psbtfee.h>
 #include <qml/backendexecutor.h>
 
 #include <common/messages.h>
@@ -588,9 +589,17 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, inter
 
 WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                              FeeReadServices fee_services, QObject* parent)
+    : WalletQmlModel(std::move(wallet), node, std::move(fee_services), psbtfee::Services{}, parent)
+{
+}
+
+WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
+                             FeeReadServices fee_services, psbtfee::Services psbt_services, QObject* parent)
     : QObject(parent)
     , m_wallet(std::move(wallet))
     , m_node(node)
+    , m_psbt_fee_services(std::move(psbt_services))
+    , m_custom_psbt_lookup(bool(m_psbt_fee_services.lookup))
     , m_fee_read_services(std::move(fee_services))
 {
     m_receive_requests = new ReceiveRequestHistoryModel(this);
@@ -614,6 +623,7 @@ WalletQmlModel::WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, inter
     m_imported_psbt_model = new PsbtQmlModel(m_wallet.get(), m_node, this);
     initializeBackend();
     initializeFeeEstimator();
+    initializePsbtFeeReader();
     refreshSecurityState();
     subscribeToWalletSignals();
 }
@@ -640,6 +650,7 @@ WalletQmlModel::WalletQmlModel(interfaces::Node* node, QObject* parent)
     m_imported_psbt_model = new PsbtQmlModel(nullptr, m_node, this);
     initializeBackend();
     initializeFeeEstimator();
+    initializePsbtFeeReader();
 }
 
 WalletQmlModel::WalletQmlModel(QObject* parent)
@@ -676,10 +687,17 @@ TransactionActivityModel* WalletQmlModel::transactionActivityModel()
 
 void WalletQmlModel::setNode(interfaces::Node* node)
 {
+    const QPointer<WalletQmlModel> observer{this};
+    const bool recheck_fee = m_psbt_fee_pending;
+    m_psbt_fee_request.reset();
+    m_psbt_fee_pending = false;
     m_node = node;
+    if (!m_custom_psbt_lookup) m_psbt_fee_services.lookup = psbtfee::NodeLookup(node);
     if (m_imported_psbt_model) {
+        m_imported_psbt_model->setFeeServices(m_psbt_fee_services);
         m_imported_psbt_model->setNode(node);
     }
+    if (observer && recheck_fee && !m_stopping && m_current_psbt) requestPsbtFeeProof();
 }
 
 void WalletQmlModel::initializeBackend()
@@ -704,6 +722,8 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
     if (m_fee_read_services.timer) m_fee_read_services.timer->stop();
     clearFeeEstimates();
     invalidateFeeRead(true);
+    m_psbt_fee_request.reset();
+    m_psbt_fee_pending = false;
     auto handlers = std::make_tuple(std::move(m_handler_status_changed), std::move(m_handler_address_list_changed),
                                    std::move(m_handler_transaction_changed), std::move(m_handler_unload));
     if (m_bump_transaction_model) m_bump_transaction_model->detachWallet();
@@ -783,6 +803,61 @@ void WalletQmlModel::initializeFeeEstimator()
             return result;
         };
     }
+}
+
+void WalletQmlModel::initializePsbtFeeReader()
+{
+    if (!m_psbt_fee_services.scheduler) m_psbt_fee_services.scheduler = m_backend_executor->scheduler();
+    if (!m_psbt_fee_services.post) m_psbt_fee_services.post = m_fee_read_services.post;
+    if (!m_custom_psbt_lookup) m_psbt_fee_services.lookup = psbtfee::NodeLookup(m_node);
+    m_imported_psbt_model->setFeeServices(m_psbt_fee_services);
+}
+
+bool WalletQmlModel::matchesReviewedPsbtFee(const PartiallySignedTransaction& psbt) const
+{
+    return m_current_transaction && m_psbt_fee_proof
+        && psbtfee::MatchesReview(psbt, *m_psbt_fee_proof, m_current_transaction->reviewedFee());
+}
+
+bool WalletQmlModel::requestPsbtFeeProof()
+{
+    const auto token = std::make_shared<const psbtfee::RequestIdentity>();
+    m_psbt_fee_request = token;
+    m_psbt_fee_pending = true;
+    m_current_transaction_review_message = tr("Checking transaction fee.");
+    const QPointer<WalletQmlModel> observer{this};
+    const auto admission = psbtfee::Request(m_psbt_fee_services, m_current_psbt, m_psbt_fee_proof,
+        [observer, token](psbtfee::Resolution result) {
+            if (observer) observer->applyPsbtFeeProof(token, std::move(result));
+        });
+    if (!admission) applyPsbtFeeProof(token, {{}, false, true}, false);
+    Q_EMIT currentTransactionChanged();
+    return admission && observer && observer->m_psbt_fee_request == token;
+}
+
+void WalletQmlModel::applyPsbtFeeProof(const std::shared_ptr<const psbtfee::RequestIdentity>& token, psbtfee::Resolution result, bool publish)
+{
+    if (m_stopping || !m_current_transaction || m_psbt_fee_request != token) return;
+    m_psbt_fee_request.reset();
+    m_psbt_fee_pending = false;
+    if (!result.failed && result.proof) m_psbt_fee_proof = std::move(result.proof);
+    const bool known = !result.failed && m_psbt_fee_proof && m_psbt_fee_proof->amount.has_value();
+    QPointer<WalletQmlModelTransaction> previous;
+    if (known) {
+        // Publish a complete value projection. Observers of the old document
+        // cannot close or replace it halfway through fee-amount notifications.
+        auto* authenticated = new WalletQmlModelTransaction(*m_current_transaction, *m_psbt_fee_proof->amount, this);
+        previous = m_current_transaction;
+        m_current_transaction = authenticated;
+    }
+    m_current_transaction_can_send = known && (m_psbt_key_can_send || (result.complete && m_psbt_can_commit_complete));
+    m_current_transaction_can_broadcast = known && result.complete;
+    m_current_transaction_review_message = !known
+        ? tr("The transaction fee is missing or invalid. Add valid input information before broadcasting.")
+        : m_current_transaction_can_send || m_current_transaction_can_broadcast ? QString{}
+        : tr("This wallet does not have the keys to sign this transaction.");
+    if (publish) Q_EMIT currentTransactionChanged();
+    if (previous) previous->deleteLater();
 }
 
 void WalletQmlModel::invalidateFeeRead(bool close)
@@ -2464,6 +2539,9 @@ bool WalletQmlModel::prepareTransactionInternal(std::optional<SecureString> pass
             delete m_current_transaction;
         }
         m_current_transaction = new WalletQmlModelTransaction(m_send_recipients, this);
+        m_psbt_fee_request.reset();
+        m_psbt_fee_pending = false;
+        m_psbt_fee_proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Prepared(*newTx, result->fee));
         m_current_psbt.reset();
         m_current_transaction_source = CurrentTransactionSource::SendDraft;
         m_current_transaction_sweeps_wallet = !result->change_pos && TransactionSweepsAvailableFunds(*m_wallet, *newTx, coin_control);
@@ -2508,6 +2586,11 @@ void WalletQmlModel::approveExternalSignerTransaction()
         return;
     }
 
+    if (!m_current_transaction->feeKnown() || (m_current_psbt && !matchesReviewedPsbtFee(*m_current_psbt))) {
+        Q_EMIT externalSignerApprovalFailed(m_current_transaction->feeKnown()
+            ? tr("The transaction fee changed after review.") : tr("The transaction fee is missing or invalid."), false);
+        return;
+    }
     const CMutableTransaction approved_tx{*current_tx};
     try {
         CMutableTransaction empty_tx;
@@ -2520,6 +2603,11 @@ void WalletQmlModel::approveExternalSignerTransaction()
             psbtx = PartiallySignedTransaction{unsigned_tx, /*version=*/2};
         }
 
+        if (!matchesReviewedPsbtFee(psbtx)) {
+            Q_EMIT externalSignerApprovalFailed(tr("The transaction fee is missing or invalid."), false);
+            return;
+        }
+        psbtfee::FillMissing(psbtx, *m_psbt_fee_proof);
         const PartiallySignedTransaction approved_psbt{psbtx};
         bool complete{false};
         const auto draft_err = m_wallet->fillPSBT({.sign = false, .bip32_derivs = true},
@@ -2565,7 +2653,13 @@ void WalletQmlModel::approveExternalSignerTransaction()
         }
 
         CMutableTransaction signed_tx;
-        if (!FinalizeAndExtractPSBT(psbtx, signed_tx)) {
+        const bool extracted = FinalizeAndExtractPSBT(psbtx, signed_tx);
+        if (!matchesReviewedPsbtFee(psbtx)) {
+            m_current_psbt = std::make_unique<PartiallySignedTransaction>(approved_psbt);
+            Q_EMIT externalSignerApprovalFailed(tr("The transaction fee changed after review."), false);
+            return;
+        }
+        if (!extracted) {
             m_current_psbt = std::make_unique<PartiallySignedTransaction>(std::move(psbtx));
             m_current_transaction_can_send = false;
             m_current_transaction_can_broadcast = false;
@@ -2610,12 +2704,12 @@ bool WalletQmlModel::broadcastCurrentTransaction()
     }
 
     PartiallySignedTransaction psbt{*m_current_psbt};
-    const node::PSBTAnalysis analysis{node::AnalyzePSBT(psbt)};
-    if (!analysis.fee || *analysis.fee < 0) {
+    if (!matchesReviewedPsbtFee(psbt)) {
         setTransactionStatus(tr("The transaction fee is missing or invalid."));
         return false;
     }
 
+    psbtfee::FillMissing(psbt, *m_psbt_fee_proof);
     CMutableTransaction mutable_tx;
     if (!FinalizeAndExtractPSBT(psbt, mutable_tx)) {
         setTransactionStatus(tr("This transaction is not fully signed."));
@@ -2678,8 +2772,14 @@ bool WalletQmlModel::sendTransactionInternal(std::optional<SecureString> passphr
                 : m_current_transaction_review_message);
             return false;
         }
+        if (!matchesReviewedPsbtFee(*m_current_psbt)) {
+            if (passphrase) QmlUtil::ClearSecureString(*passphrase);
+            setTransactionStatus(tr("The transaction fee is missing or invalid."));
+            return false;
+        }
         const CMutableTransaction approved_tx{*m_current_transaction->getWtx()};
         PartiallySignedTransaction psbt{*m_current_psbt};
+        psbtfee::FillMissing(psbt, *m_psbt_fee_proof);
         CMutableTransaction mutable_tx;
         PartiallySignedTransaction finalized_psbt{psbt};
         bool complete{FinalizeAndExtractPSBT(finalized_psbt, mutable_tx)};
@@ -2728,6 +2828,10 @@ bool WalletQmlModel::sendTransactionInternal(std::optional<SecureString> passphr
             passphrase.reset();
         }
 
+        if (!matchesReviewedPsbtFee(psbt)) {
+            setTransactionStatus(tr("The transaction fee changed after review."));
+            return false;
+        }
         const CTransactionRef signed_tx{MakeTransactionRef(std::move(mutable_tx))};
         m_wallet->commitTransaction(/*tx=*/signed_tx, /*messages=*/{});
         saveSentRecipientLabels();
@@ -2818,8 +2922,10 @@ WalletQmlModel::PsbtImportResult WalletQmlModel::importPsbtFromFile(const QStrin
 
     PsbtImportResult result{PsbtImportResult::PsbtUnsupported};
     QString reason;
-    if (tryImportPsbtToReview(psbt, result, reason)) {
-        m_imported_psbt_model->clear();
+    const QPointer<WalletQmlModel> observer{this};
+    std::shared_ptr<const PartiallySignedTransaction> reviewed_document;
+    if (tryImportPsbtToReview(psbt, result, reason, reviewed_document)) {
+        if (observer && observer->m_current_psbt == reviewed_document) observer->m_imported_psbt_model->clear();
         return result;
     }
 
@@ -2870,7 +2976,8 @@ QString WalletQmlModel::saveCurrentTransactionAsPsbt(const QString& path)
     return PsbtQmlModel::SavePsbtToFile(psbtx, path);
 }
 
-bool WalletQmlModel::tryImportPsbtToReview(const PartiallySignedTransaction& psbt, PsbtImportResult& result, QString& reason)
+bool WalletQmlModel::tryImportPsbtToReview(const PartiallySignedTransaction& psbt, PsbtImportResult& result, QString& reason,
+                                           std::shared_ptr<const PartiallySignedTransaction>& reviewed_document)
 {
     if (!m_wallet) {
         reason = tr("No wallet is loaded.");
@@ -2887,6 +2994,11 @@ bool WalletQmlModel::tryImportPsbtToReview(const PartiallySignedTransaction& psb
     }
     if (psbt.inputs.size() != unsigned_tx->vin.size() || psbt.outputs.size() != unsigned_tx->vout.size()) {
         reason = tr("The PSBT is malformed.");
+        return false;
+    }
+
+    if (!psbtfee::Analyze(psbt).outputs_valid) {
+        reason = tr("The transaction fee is missing or invalid.");
         return false;
     }
 
@@ -2919,11 +3031,16 @@ bool WalletQmlModel::tryImportPsbtToReview(const PartiallySignedTransaction& psb
         }
     }
 
-    const node::PSBTAnalysis analysis{node::AnalyzePSBT(analysis_psbt)};
-    const bool fee_is_known{analysis.fee && *analysis.fee >= 0};
+    const auto fee = psbtfee::Analyze(analysis_psbt);
+    if (!fee.outputs_valid) {
+        reason = tr("The transaction fee is missing or invalid.");
+        return false;
+    }
+    const bool fee_is_known{fee.amount.has_value()};
     const size_t unsigned_inputs{CountPSBTUnsignedInputs(analysis_psbt)};
     const bool wallet_has_signer{!m_wallet->privateKeysDisabled() || m_wallet->hasExternalSigner()};
-    const bool can_send{fee_is_known && !multisig_sig_info && spends_only_wallet_inputs && (complete || (wallet_has_signer && unsigned_inputs > 0 && could_sign >= unsigned_inputs))};
+    const bool may_send{!multisig_sig_info && spends_only_wallet_inputs && (complete || (wallet_has_signer && unsigned_inputs > 0 && could_sign >= unsigned_inputs))};
+    const bool can_send{fee_is_known && may_send};
     const bool can_broadcast{fee_is_known && complete};
     const QString review_message{
         !fee_is_known
@@ -2950,7 +3067,7 @@ bool WalletQmlModel::tryImportPsbtToReview(const PartiallySignedTransaction& psb
             reason = tr("Only PSBTs with standard address outputs are supported right now.");
             return false;
         }
-        if (can_send && m_wallet->txoutIsMine(output)) {
+        if (may_send && m_wallet->txoutIsMine(output)) {
             continue;
         }
         const QString address{QString::fromStdString(EncodeDestination(destination))};
@@ -2995,18 +3112,28 @@ bool WalletQmlModel::tryImportPsbtToReview(const PartiallySignedTransaction& psb
         reason = tr("Unable to match the imported transaction's recipients.");
         return false;
     }
-    if (analysis.fee) {
-        m_current_transaction->setTransactionFee(*analysis.fee);
+    if (fee.amount) {
+        m_current_transaction->setTransactionFee(*fee.amount);
     }
     m_current_transaction->setDisplayUnit(m_display_unit);
-    m_current_psbt = std::make_unique<PartiallySignedTransaction>(psbt);
+    m_psbt_fee_request.reset();
+    m_psbt_fee_pending = false;
+    m_psbt_fee_proof = std::make_shared<const psbtfee::Analysis>(fee);
+    m_psbt_key_can_send = !multisig_sig_info && spends_only_wallet_inputs && wallet_has_signer && unsigned_inputs > 0 && could_sign >= unsigned_inputs;
+    m_psbt_can_commit_complete = !multisig_sig_info && spends_only_wallet_inputs;
+    m_current_psbt = std::make_shared<const PartiallySignedTransaction>(psbt);
+    reviewed_document = m_current_psbt;
     m_current_transaction_source = CurrentTransactionSource::ImportedPsbt;
     m_current_transaction_can_send = can_send;
     m_current_transaction_can_broadcast = can_broadcast;
     m_current_transaction_review_message = review_message;
-    Q_EMIT currentTransactionChanged();
-
-    result = can_send ? PsbtImportResult::WalletCanSign : PsbtImportResult::WalletCannotSign;
+    if (fee.state == psbtfee::State::Missing && m_psbt_fee_services.lookup) {
+        const bool pending = requestPsbtFeeProof();
+        result = pending ? PsbtImportResult::ReviewPending : PsbtImportResult::WalletCannotSign;
+    } else {
+        result = can_send ? PsbtImportResult::WalletCanSign : PsbtImportResult::WalletCannotSign;
+        Q_EMIT currentTransactionChanged();
+    }
     return true;
 }
 
@@ -3020,9 +3147,14 @@ QVariantMap WalletQmlModel::currentTransactionFlow() const
     preview.debit = 0;
     std::vector<std::optional<CTxOut>> prevouts;
     prevouts.reserve(tx->vin.size());
+    const auto psbt_fee = m_current_psbt ? m_psbt_fee_proof : nullptr;
     for (size_t i = 0; i < tx->vin.size(); ++i) {
         const auto& input = tx->vin[i];
         preview.txin_is_mine.push_back(m_wallet->txinIsMine(input));
+        if (psbt_fee) {
+            prevouts.push_back(i < psbt_fee->prevouts.size() ? psbt_fee->prevouts[i] : std::nullopt);
+            continue;
+        }
         preview.debit += m_wallet->getDebit(input);
         const auto parent = m_wallet->getTx(input.prevout.hash);
         if (parent && input.prevout.n < parent->vout.size()) {
@@ -3049,6 +3181,11 @@ QVariantMap WalletQmlModel::currentTransactionFlow() const
     }
     QVariantMap flow = BuildTransactionFlow(preview, prevouts);
     if (flow.isEmpty()) return flow;
+    if (m_current_psbt) {
+        const bool known = m_current_transaction->feeKnown();
+        flow.insert("feeKnown", known);
+        flow.insert("feeSat", known ? QVariant{qint64(m_current_transaction->getTransactionFee())} : QVariant{});
+    }
     const auto unit = QmlBitcoinUnits::fromDisplayUnit(m_display_unit);
     const auto format_amount = [unit](CAmount amount) -> QString {
         return QmlBitcoinUnits::formatForDisplay(unit, amount) + QLatin1Char(' ')
@@ -3077,6 +3214,9 @@ QVariantMap WalletQmlModel::currentTransactionFlow() const
 
 void WalletQmlModel::discardCurrentTransaction()
 {
+    m_psbt_fee_request.reset();
+    m_psbt_fee_proof.reset();
+    m_psbt_fee_pending = false;
     const bool had_transaction_state{
         m_current_transaction ||
         m_current_psbt ||

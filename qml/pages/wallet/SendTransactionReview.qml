@@ -20,6 +20,7 @@ Page {
     readonly property WalletQmlModelTransaction transaction: wallet ? wallet.currentTransaction : null
     readonly property bool importedPsbt: wallet && wallet.currentTransactionIsImportedPsbt === true
     readonly property bool canSend: wallet && wallet.currentTransactionCanSend
+    readonly property bool feePending: wallet && wallet.transactionFeePending
     readonly property bool canBroadcast: wallet && wallet.currentTransactionCanBroadcast
     readonly property bool showBroadcast: importedPsbt && canBroadcast
     readonly property bool showSend: !showBroadcast && canSend

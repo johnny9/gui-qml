@@ -14,6 +14,7 @@
 #include <QMap>
 #include <QVariantList>
 
+#include <optional>
 #include <vector>
 
 class WalletQmlModelTransaction : public QObject
@@ -24,6 +25,7 @@ class WalletQmlModelTransaction : public QObject
     Q_PROPERTY(BitcoinAmount* totalAmount READ totalAmount CONSTANT)
     Q_PROPERTY(QString amount READ amount NOTIFY amountChanged)
     Q_PROPERTY(QString fee READ fee NOTIFY feeChanged)
+    Q_PROPERTY(bool feeKnown READ feeKnown NOTIFY feeChanged)
     Q_PROPERTY(QString total READ total NOTIFY totalChanged)
     Q_PROPERTY(QString label READ label CONSTANT)
     Q_PROPERTY(QString txid READ txid NOTIFY txidChanged)
@@ -32,6 +34,8 @@ class WalletQmlModelTransaction : public QObject
     Q_PROPERTY(QString reviewFeeRate READ reviewFeeRate CONSTANT)
 public:
     explicit WalletQmlModelTransaction(const SendRecipientsListModel* recipient, QObject* parent = nullptr);
+
+    WalletQmlModelTransaction(const WalletQmlModelTransaction& reviewed, CAmount authenticated_fee, QObject* parent);
 
     BitcoinAmount* amountAmount() const;
     BitcoinAmount* feeAmount() const;
@@ -52,6 +56,8 @@ public:
 
     void setTransactionFee(const CAmount& newFee);
     CAmount getTransactionFee() const;
+    bool feeKnown() const { return m_fee_known; }
+    std::optional<CAmount> reviewedFee() const { return m_fee_known ? std::optional{m_fee} : std::nullopt; }
 
     CAmount getTotalTransactionAmount() const;
 
@@ -86,6 +92,7 @@ private:
     QString m_review_fee_rate;
     CAmount m_amount;
     CAmount m_fee{0};
+    bool m_fee_known{false};
     BitcoinAmount* m_amount_amount;
     BitcoinAmount* m_fee_amount;
     BitcoinAmount* m_total_amount;

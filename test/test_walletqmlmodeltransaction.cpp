@@ -6,6 +6,7 @@
 
 #include <QLocale>
 #include <QScopeGuard>
+#include <QSignalSpy>
 
 #include <qml/bitcoinamount.h>
 #include <qml/models/sendrecipient.h>
@@ -21,6 +22,23 @@ class WalletQmlModelTransactionTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void unknownFeeIsDistinctFromKnownZero()
+    {
+        SendRecipientsListModel recipients;
+        recipients.currentRecipient()->amount()->setSatoshi(1250);
+        WalletQmlModelTransaction transaction(&recipients);
+        QVERIFY(!transaction.feeKnown()); QVERIFY(!transaction.reviewedFee());
+        QCOMPARE(transaction.fee(), QString("Unknown")); QCOMPARE(transaction.total(), QString("Unknown"));
+        QSignalSpy fee_changed{&transaction, &WalletQmlModelTransaction::feeChanged};
+        QSignalSpy total_changed{&transaction, &WalletQmlModelTransaction::totalChanged};
+        transaction.setTransactionFee(0);
+        QVERIFY(transaction.feeKnown()); QCOMPARE(transaction.reviewedFee(), std::optional<CAmount>{0});
+        QVERIFY(transaction.fee() != QString("Unknown")); QVERIFY(transaction.total() != QString("Unknown"));
+        QCOMPARE(fee_changed.count(), 1); QCOMPARE(total_changed.count(), 1);
+        transaction.setTransactionFee(0);
+        QCOMPARE(fee_changed.count(), 1); QCOMPARE(total_changed.count(), 1);
+    }
+
     void singleRecipientReviewAmountsInheritRecipientUnit();
     void multipleRecipientReviewAmountsInheritSharedUnit();
     void recipientRolesExposeFormattedAddressAndUnitLabel();

@@ -81,6 +81,7 @@ if(ENABLE_WALLET)
     test_bumptransactionmodel.cpp
     test_signertransaction.cpp
     test_coinslistmodel.cpp
+    test_psbtfee.cpp
     test_psbtqmlmodel.cpp
     test_receiverequesthistorymodel.cpp
     test_sendrecipientslistmodel.cpp

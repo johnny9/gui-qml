@@ -36,6 +36,32 @@ WalletQmlModelTransaction::WalletQmlModelTransaction(const SendRecipientsListMod
     m_total_amount->setSatoshi(m_amount);
 }
 
+WalletQmlModelTransaction::WalletQmlModelTransaction(const WalletQmlModelTransaction& reviewed, CAmount authenticated_fee, QObject* parent)
+    : QObject(parent),
+      m_address(reviewed.m_address),
+      m_label(reviewed.m_label),
+      m_recipient_labels(reviewed.m_recipient_labels),
+      m_reviewed_recipients(reviewed.m_reviewed_recipients),
+      m_review_target_blocks(reviewed.m_review_target_blocks),
+      m_review_fee_rate(reviewed.m_review_fee_rate),
+      m_amount(reviewed.m_amount),
+      m_fee(authenticated_fee),
+      m_fee_known(true),
+      m_amount_amount(new BitcoinAmount(this)),
+      m_fee_amount(new BitcoinAmount(this)),
+      m_total_amount(new BitcoinAmount(this)),
+      m_wtx(reviewed.m_wtx),
+      m_display_unit(reviewed.m_display_unit)
+{
+    const auto unit = reviewed.m_amount_amount->unit();
+    m_amount_amount->setUnit(unit);
+    m_amount_amount->setSatoshi(m_amount);
+    m_fee_amount->setUnit(unit);
+    m_fee_amount->setSatoshi(m_fee);
+    m_total_amount->setUnit(unit);
+    m_total_amount->setSatoshi(m_amount + m_fee);
+}
+
 BitcoinAmount* WalletQmlModelTransaction::amountAmount() const
 {
     return m_amount_amount;
@@ -65,12 +91,12 @@ BitcoinAmount* WalletQmlModelTransaction::totalAmount() const
 
 QString WalletQmlModelTransaction::fee() const
 {
-    return formatWithUnit(m_fee, m_display_unit);
+    return m_fee_known ? formatWithUnit(m_fee, m_display_unit) : tr("Unknown");
 }
 
 QString WalletQmlModelTransaction::total() const
 {
-    return formatWithUnit(m_amount + m_fee, m_display_unit);
+    return m_fee_known ? formatWithUnit(m_amount + m_fee, m_display_unit) : tr("Unknown");
 }
 
 QString WalletQmlModelTransaction::label() const
@@ -178,10 +204,13 @@ CAmount WalletQmlModelTransaction::getTotalTransactionAmount() const
 
 void WalletQmlModelTransaction::setTransactionFee(const CAmount& newFee)
 {
-    if (m_fee != newFee) {
+    if (!m_fee_known || m_fee != newFee) {
+        m_fee_known = true;
         m_fee = newFee;
         m_fee_amount->setSatoshi(m_fee);
         m_total_amount->setSatoshi(m_amount + m_fee);
+        Q_EMIT feeChanged();
+        Q_EMIT totalChanged();
     }
 }
 

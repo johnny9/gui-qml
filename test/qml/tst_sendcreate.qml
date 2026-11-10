@@ -43,6 +43,7 @@ TestCase {
         testWalletModel.prepareTransactionResult = true
         testWalletModel.sendAmountExhaustsBalance = false
         testWalletModel.currentTransactionCanSend = true
+        testWalletModel.transactionFeePending = false
         testWalletModel.currentTransactionCanBroadcast = false
         testWalletModel.currentTransactionIsImportedPsbt = false
         testWalletModel.currentTransactionReviewMessage = ""
@@ -254,6 +255,37 @@ TestCase {
         review.width = 390
         tryCompare(recipients, "width", 358)
         compare(review.header.leftPadding, 16)
+    }
+
+    function test_pending_psbt_fee_uses_bound_capabilities_data() {
+        return [{tag: "trusted", known: true}, {tag: "unavailable", known: false}]
+    }
+
+    function test_pending_psbt_fee_uses_bound_capabilities(data) {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
+        verify(page !== null)
+        page.width = testCase.width
+        page.height = testCase.height
+        page.visible = true
+        testWalletModel.currentTransactionIsImportedPsbt = true
+        testWalletModel.currentTransactionCanSend = false
+        testWalletModel.currentTransactionCanBroadcast = false
+        testWalletModel.transactionFeePending = true
+        testWalletModel.currentTransactionReviewMessage = "Checking transaction fee."
+        findChild(page, "walletSendPage").handlePsbtImportResult(WalletQmlModel.ReviewPending)
+        const popup = findChild(page, "transactionReviewPopup")
+        tryCompare(popup, "opened", true)
+        const review = findChild(popup, "sendTransactionReviewPage")
+        compare(review.feePending, true)
+        compare(findChild(popup, "sendTransactionReviewSendButton").visible, false)
+        compare(findChild(popup, "sendTransactionReviewSaveButton").visible, true)
+        testWalletModel.transactionFeePending = false
+        testWalletModel.currentTransactionCanBroadcast = data.known
+        testWalletModel.currentTransactionReviewMessage = data.known ? "" : "The transaction fee is missing or invalid."
+        tryCompare(review, "feePending", false)
+        tryCompare(findChild(popup, "sendTransactionReviewSendButton"), "visible", data.known)
+        compare(review.canSend, false)
+        popup.close()
     }
 
     function test_imported_psbt_without_signing_keys_only_offers_save() {

@@ -7,6 +7,7 @@
 
 #include <common/messages.h>
 #include <psbt.h>
+#include <qml/models/psbtfeeservices.h>
 
 #include <cstddef>
 #include <memory>
@@ -38,7 +39,7 @@ class PsbtQmlModel : public QObject
     Q_PROPERTY(QString matchedTxid READ matchedTxid NOTIFY changed)
 
 public:
-    void detachWallet() { m_wallet = nullptr; }
+    void detachWallet() { m_fee_request.reset(); m_fee_pending = false; m_detached = true; m_wallet = nullptr; m_can_sign = m_can_broadcast = false; }
     explicit PsbtQmlModel(interfaces::Wallet* wallet, interfaces::Node* node, QObject* parent = nullptr);
 
     bool loaded() const { return m_psbt != nullptr; }
@@ -62,7 +63,8 @@ public:
     const PartiallySignedTransaction* psbt() const { return m_psbt.get(); }
     void setError(const QString& error);
     void setMatchedTxid(const QString& txid);
-    void setNode(interfaces::Node* node) { m_node = node; }
+    void setNode(interfaces::Node* node);
+    void setFeeServices(psbtfee::Services services) { m_fee_services = std::move(services); }
     void refreshState(const QString& status_override = {});
 
     static QString LocalFilePath(const QString& path);
@@ -82,13 +84,21 @@ private:
 
     interfaces::Wallet* m_wallet;
     interfaces::Node* m_node;
-    std::unique_ptr<PartiallySignedTransaction> m_psbt;
+    std::shared_ptr<const PartiallySignedTransaction> m_psbt;
+    psbtfee::Services m_fee_services;
+    std::shared_ptr<const psbtfee::Analysis> m_fee_proof;
+    std::shared_ptr<const psbtfee::RequestIdentity> m_fee_request;
+    bool m_detached{false};
+    bool m_fee_pending{false};
+    bool m_fee_attempted{false};
+    void requestFeeProof();
     QString m_status;
     QString m_error;
     QStringList m_summary;
     bool m_can_sign{false};
     bool m_can_broadcast{false};
     bool m_complete{false};
+    std::optional<CAmount> m_reviewed_fee;
     int m_unsigned_inputs{0};
     int m_could_sign_inputs{0};
     QString m_matched_txid;
