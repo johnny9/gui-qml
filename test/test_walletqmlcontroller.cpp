@@ -325,6 +325,7 @@ private Q_SLOTS:
     void earlierNotificationKeepsItsOriginWhenCreationStartsDuringMetadata();
     void initialHandoffCapacityFailureNeverPublishesReady();
     void cleanupFailureKeepsItsExplicitTerminalError();
+    void successfulEmptyMigrationDoesNotFabricateAWallet();
     void changedWakeupWaitsForAnEarlierShadowDisposal();
     void failureConsumedBeforeAnEarlierReadyMessageCannotResurrectInitialization();
     void catalogCommandsBeforeInitializationAcquireNoWalletResources();
@@ -589,6 +590,27 @@ void WalletQmlControllerTests::failureConsumedBeforeAnEarlierReadyMessageCannotR
     controller.initialize(); QTRY_VERIFY(before.entered);
     QVERIFY(invalidated); QVERIFY(!controller.initialized());
     QCOMPARE(controller.openWallets().size(), 0); QCOMPARE(loader.get_wallets_calls, 1);
+}
+
+void WalletQmlControllerTests::successfulEmptyMigrationDoesNotFabricateAWallet()
+{
+    StrictMockNode node;
+    [[maybe_unused]] auto verify_node = node.VerifyOnExit();
+    FakeWalletLoader loader; loader.wallet_dir_entries = {{"empty-legacy", "bdb"}};
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.migrate_wallet_fn = [](const auto&, const auto&) {
+        // Pinned Core can remove an empty migrated wallet and return success
+        // without loading a primary handle. The result is still owned.
+        return util::Result<interfaces::WalletMigrationResult>{interfaces::WalletMigrationResult{}};
+    };
+    DrainingWalletController controller{node}; controller.initialize(); QTRY_VERIFY(controller.initialized());
+    QSignalSpy completed{&controller, &WalletQmlController::walletMigrationSucceeded};
+    controller.migrateWallet("empty-legacy", "");
+    QTRY_COMPARE(completed.count(), 1);
+    QVERIFY(controller.initialized()); QCOMPARE(controller.openWallets().size(), 0);
+    QVERIFY(!controller.isWalletLoaded()); QCOMPARE(controller.selectedWallet()->name(), QString{});
+    QVERIFY(!controller.walletMigrationInProgress()); QVERIFY(controller.walletMigrationError().isEmpty());
+    QCOMPARE(loader.migrate_wallet_calls, 1);
 }
 
 void WalletQmlControllerTests::catalogCommandsBeforeInitializationAcquireNoWalletResources()
