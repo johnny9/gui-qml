@@ -161,14 +161,13 @@ void LoadSubscription::requestFailure(FailureReason reason)
 
 void LoadSubscription::requestScan()
 {
-    if (m_stopping || m_failed || m_scan_pending.exchange(true)) return;
     const auto self = shared_from_this();
     execution::Admission admitted;
     {
         // Publication is queued, so recording the accepted id under this mutex
         // lets retirement cancel it even when its Core transport is blocked.
         std::lock_guard lock{m_mutex};
-        if (m_stopping) return;
+        if (m_stopping || m_failed || m_scan_pending.exchange(true)) return;
         admitted = execution::Submit(*m_scheduler, [self] { self->scan(); }, [self] {
             { std::lock_guard finished_lock{self->m_mutex}; self->m_scan_id.reset(); }
             self->m_scan_pending = false;

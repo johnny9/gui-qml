@@ -27,7 +27,7 @@ class BoundaryScheduler final : public execution::Scheduler
 {
 public:
     explicit BoundaryScheduler(std::shared_ptr<execution::Scheduler> target) : m_target(std::move(target)) {}
-    std::function<void()> after_reserve, after_borrow;
+    std::function<void()> after_reserve, after_borrow, after_submit;
     std::shared_ptr<std::function<void()>> before_execute{std::make_shared<std::function<void()>>()};
     execution::Admission submit(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override
     {
@@ -39,7 +39,9 @@ public:
             void notStarted(execution::NotStarted::Cause cause) override { task->notStarted(cause); }
             void deliver() override { task->deliver(); }
         };
-        return m_target->submit(std::make_shared<PausedTask>(std::move(task), before_execute), spec);
+        auto result = m_target->submit(std::make_shared<PausedTask>(std::move(task), before_execute), spec);
+        if (after_submit) std::exchange(after_submit, {})();
+        return result;
     }
     execution::Admission reserveCleanup(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override
     {
@@ -241,6 +243,56 @@ private Q_SLOTS:
         QVERIFY(probe->off_gui.load());
         QCOMPARE(scheduler->pending(), size_t{0});
     }
+    void lateRefreshContinuationCannotReopenStoppingOrFailedOwner_data()
+    {
+        QTest::addColumn<bool>("failure");
+        QTest::newRow("close-before-continuation") << false;
+        QTest::newRow("failure-before-continuation") << true;
+    }
+    void lateRefreshContinuationCannotReopenStoppingOrFailedOwner()
+    {
+        QFETCH(bool, failure);
+        Fixture f; QVERIFY(f.owner->start()); f.drain();
+        if (failure) f.callback({}); else f.owner->retire();
+        const auto before = f.env.scheduler->pending();
+        // Resume a continuation that had passed its producer-side check before
+        // close/failure. The real admission entry must reject it without work.
+        f.owner->requestScan();
+        QCOMPARE(f.env.scheduler->pending(), before);
+        f.drain();
+        QCOMPARE(f.count(Publication::Ready), 1); QCOMPARE(f.count(Publication::Changed), 0);
+        QCOMPARE(f.count(Publication::Failed), failure ? 1 : 0);
+        QCOMPARE(f.count(Publication::Retired), 1); QCOMPARE(f.probe->captures.size(), size_t{1});
+        QVERIFY(f.env.quiescent());
+    }
+    void retirementDuringRefreshAdmissionPreservesOwnedOutcomes_data()
+    {
+        QTest::addColumn<bool>("accept");
+        QTest::newRow("accepted-before-close") << true;
+        QTest::newRow("rejected-during-close") << false;
+    }
+    void retirementDuringRefreshAdmissionPreservesOwnedOutcomes()
+    {
+        QFETCH(bool, accept);
+        auto limits = execution::Limits::Bounded();
+        if (!accept) limits.observations.tasks = 0;
+        Fixture f{limits}; QVERIFY(f.owner->start()); f.drain();
+        std::thread stopper;
+        const auto join = qScopeGuard([&] { if (stopper.joinable()) stopper.join(); });
+        f.boundary->after_submit = [&] {
+            stopper = std::thread{[&] { f.owner->retire(); }};
+            // retire sets this atomic intent before waiting for the mailbox
+            // mutex held at admission. The observed flag is the barrier;
+            // the timeout only detects lack of progress.
+            QVERIFY(QTest::qWaitFor([&] { return f.owner->m_stopping.load(); }, 5000));
+        };
+        f.notify("closing"); stopper.join(); f.drain();
+        QCOMPARE(f.count(Publication::Changed), 0); QCOMPARE(f.count(Publication::Failed), 0);
+        QCOMPARE(f.count(Publication::Retired), 1); QCOMPARE(f.probe->captures.size(), size_t{1});
+        QVERIFY(f.probe->names.empty()); QCOMPARE(f.probe->destroyed.size(), size_t{1});
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Cleanup});
+        QVERIFY(f.env.quiescent());
+    }
     void retirementBetweenCleanupReservationAndRegistration()
     {
         Fixture f;
@@ -267,7 +319,7 @@ private Q_SLOTS:
         Fixture f{limits}; f.catalog = {"never-exposed"};
         QVERIFY(f.owner->start()); f.drain();
         if (boundary == 0) f.boundary->after_borrow = [&] { f.owner->retire(); };
-        if (boundary == 1) f.boundary->after_reserve = [&] { f.owner->retire(); };
+        if (boundary == 1) f.boundary->after_reserve = [&] { f.owner->retire(); f.env.scheduler->closeAdmission(); };
         if (boundary == 2) f.boundary->after_reserve = [&] {
             f.boundary->after_borrow = [&] { f.owner->retire(); };
         };

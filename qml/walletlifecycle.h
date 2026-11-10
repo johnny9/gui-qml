@@ -21,10 +21,15 @@
 #include <string>
 #include <vector>
 
+class WalletLifecycleTests;
+
 namespace walletlife {
 /** One existing catalog subscription, not the full wallet/session model. */
 class LoadSubscription : public std::enable_shared_from_this<LoadSubscription>
 {
+    // Unit tests inject a continuation paused at the private admission entry;
+    // they retain the production scheduler and never mutate lifecycle state.
+    friend class ::WalletLifecycleTests;
     struct ReturnPacket;
 public:
     struct Entry { std::string name; std::shared_ptr<interfaces::Wallet> wallet; bool select_wallet{true}; };

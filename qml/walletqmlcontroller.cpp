@@ -1088,8 +1088,8 @@ void WalletQmlController::consumeWalletNotifications()
 
 void WalletQmlController::handleLoadWallet(std::shared_ptr<interfaces::Wallet> wallet, const std::optional<QString>& captured_name, bool select_wallet)
 {
-    // Multi-step create flows finish setup before publishing the wallet model.
-    if (wallet && !m_deferred_wallet_name.isEmpty() && captured_name && *captured_name == m_deferred_wallet_name) return;
+    // Subscription effects already applied the context captured at ingress.
+    // A later GUI command must not reinterpret an earlier notification.
     addOrSelectWalletModel(std::move(wallet), captured_name, select_wallet);
 }
 
