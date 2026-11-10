@@ -7,6 +7,7 @@
 #include <interfaces/wallet.h>
 #include <qml/bitcoinamount.h>
 #include <qml/models/walletunlock.h>
+#include <qml/models/signertransaction.h>
 #include <qml/util.h>
 #include <wallet/coincontrol.h>
 
@@ -173,15 +174,21 @@ bool BumpTransactionModel::confirmFeeBumpInternal(std::optional<SecureString> pa
         return false;
     }
 
-    if (!m_wallet->signBumpTransaction(m_bump_mtx)) {
+    CMutableTransaction signed_tx{m_bump_mtx};
+    if (!m_wallet->signBumpTransaction(signed_tx)) {
         relock_guard.relock();
         setError(tr("Failed to sign transaction."));
         return false;
     }
 
+    if (!MatchesUnsignedTransaction(m_bump_mtx, signed_tx)) {
+        relock_guard.relock();
+        setError(tr("Signer changed the reviewed replacement transaction."));
+        return false;
+    }
     std::vector<bilingual_str> errors;
     Txid bumped_txid;
-    if (!m_wallet->commitBumpTransaction(m_original_txid, std::move(m_bump_mtx), errors, bumped_txid)) {
+    if (!m_wallet->commitBumpTransaction(m_original_txid, std::move(signed_tx), errors, bumped_txid)) {
         relock_guard.relock();
         setError(errors.empty() ? tr("Failed to commit transaction.") : QString::fromStdString(errors[0].translated));
         return false;

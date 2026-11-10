@@ -5,6 +5,7 @@
 #include <QtTest/QtTest>
 
 #include <test/mocks/mockwallet.h>
+#include <test/mocks/signertransactions.h>
 #include <qml/models/bumptransactionmodel.h>
 
 #include <QSignalSpy>
@@ -27,6 +28,35 @@ class BumpTransactionModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void signerSubstitutionCannotCommitReplacement_data()
+    {
+        QTest::addColumn<int>("mutation");
+        for (size_t i = 0; i < signerfixture::CASES.size(); ++i)
+            QTest::newRow(signerfixture::CASES[i].first) << int(i);
+    }
+    void signerSubstitutionCannotCommitReplacement()
+    {
+        QFETCH(int, mutation);
+        auto wallet = MakeBumpableWallet();
+        wallet->create_bump_transaction_fn = [](const Txid&, const wallet::CCoinControl&, std::vector<bilingual_str>&,
+                                               CAmount& old_fee, CAmount& new_fee, CMutableTransaction& tx) {
+            old_fee = 500; new_fee = 1000;
+            tx = *signerfixture::Review().GetUnsignedTx();
+            return true;
+        };
+        wallet->sign_bump_transaction_fn = [mutation](CMutableTransaction& tx) {
+            signerfixture::Change(tx, signerfixture::CASES.at(mutation).second);
+            return true;
+        };
+        wallet->commit_bump_transaction_fn = [](const Txid&, CMutableTransaction&&, std::vector<bilingual_str>&, Txid&) { return true; };
+        BumpTransactionModel model(wallet.get());
+        model.prepareFeeBump(TEST_TXID, 1);
+        QVERIFY(!model.confirmFeeBump());
+        QCOMPARE(model.state(), BumpTransactionModel::Failed);
+        QCOMPARE(wallet->calls.signBumpTransaction.load(), 1);
+        QCOMPARE(wallet->calls.commitBumpTransaction.load(), 0);
+        QVERIFY(model.newTxid().isEmpty());
+    }
     void stateIsIdleByDefault()
     {
         auto wallet = MakeBumpableWallet();
@@ -131,6 +161,71 @@ private Q_SLOTS:
         QVERIFY(!model.newTxid().isEmpty());
     }
 
+    void confirmFeeBumpAllowsSignatureDataAndKeepsOriginalConflict()
+    {
+        auto wallet = MakeBumpableWallet();
+        const auto approved = *signerfixture::Review().GetUnsignedTx();
+        wallet->create_bump_transaction_fn = [approved](const Txid&, const wallet::CCoinControl&, std::vector<bilingual_str>&,
+                                                       CAmount&, CAmount&, CMutableTransaction& tx) { tx = approved; return true; };
+        wallet->sign_bump_transaction_fn = [](CMutableTransaction& tx) {
+            for (auto& input : tx.vin) { input.scriptSig << OP_TRUE; input.scriptWitness.stack = {{1, 2}}; }
+            return true;
+        };
+        std::optional<Txid> original;
+        std::optional<CMutableTransaction> committed;
+        wallet->commit_bump_transaction_fn = [&](const Txid& txid, CMutableTransaction&& tx, std::vector<bilingual_str>&, Txid&) {
+            original = txid; committed = std::move(tx); return true;
+        };
+        BumpTransactionModel model(wallet.get());
+        model.prepareFeeBump(TEST_TXID, 1);
+        QVERIFY(model.confirmFeeBump());
+        QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);
+        QVERIFY(original); QVERIFY(committed);
+        QCOMPARE(original->GetHex(), TEST_TXID.toStdString());
+        QVERIFY(!committed->vin[0].scriptSig.empty());
+        QVERIFY(!committed->vin[0].scriptWitness.IsNull());
+        for (auto& input : committed->vin) { input.scriptSig.clear(); input.scriptWitness.SetNull(); }
+        QCOMPARE(committed->GetHash(), approved.GetHash());
+    }
+    void confirmFeeBumpReportsCommitFailure_data()
+    {
+        QTest::addColumn<bool>("explicit_error");
+        QTest::newRow("default-error") << false;
+        QTest::newRow("core-error") << true;
+    }
+    void confirmFeeBumpReportsCommitFailure()
+    {
+        QFETCH(bool, explicit_error);
+        auto wallet = MakeBumpableWallet();
+        const auto approved = *signerfixture::Review().GetUnsignedTx();
+        wallet->create_bump_transaction_fn = [approved](const Txid&, const wallet::CCoinControl&, std::vector<bilingual_str>&,
+                                                       CAmount&, CAmount&, CMutableTransaction& tx) { tx = approved; return true; };
+        wallet->sign_bump_transaction_fn = [](CMutableTransaction& tx) { tx.vin[0].scriptSig << OP_TRUE; return true; };
+        std::optional<Txid> original;
+        std::optional<CMutableTransaction> attempted;
+        wallet->commit_bump_transaction_fn = [&](const Txid& txid, CMutableTransaction&& tx, std::vector<bilingual_str>& errors, Txid& bumped_txid) {
+            original = txid;
+            attempted = std::move(tx); // Core may consume its argument even when commit fails.
+            bumped_txid = Txid::FromUint256(uint256::ONE);
+            if (explicit_error) errors.emplace_back(Untranslated("commit refused"));
+            return false;
+        };
+        BumpTransactionModel model(wallet.get());
+        model.prepareFeeBump(TEST_TXID, 1);
+        QVERIFY(!model.confirmFeeBump());
+        QCOMPARE(model.state(), BumpTransactionModel::Failed);
+        QCOMPARE(model.errorText(), explicit_error ? QString("commit refused") : QString("Failed to commit transaction."));
+        QVERIFY(model.newTxid().isEmpty());
+        QCOMPARE(wallet->calls.signBumpTransaction.load(), 1);
+        QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);
+        QVERIFY(original); QVERIFY(attempted);
+        QCOMPARE(original->GetHex(), TEST_TXID.toStdString());
+        QVERIFY(!attempted->vin[0].scriptSig.empty());
+        attempted->vin[0].scriptSig.clear();
+        QCOMPARE(attempted->GetHash(), approved.GetHash());
+        QVERIFY(!model.confirmFeeBump()); // Failure is terminal until a new review.
+        QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);
+    }
     void confirmFeeBump_signFailureDoesNotCommit()
     {
         auto wallet = MakeBumpableWallet();

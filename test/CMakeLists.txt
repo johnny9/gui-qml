@@ -79,6 +79,7 @@ if(ENABLE_WALLET)
     test_activityfilterproxymodel.cpp
     test_addresslistmodel.cpp
     test_bumptransactionmodel.cpp
+    test_signertransaction.cpp
     test_coinslistmodel.cpp
     test_psbtqmlmodel.cpp
     test_receiverequesthistorymodel.cpp

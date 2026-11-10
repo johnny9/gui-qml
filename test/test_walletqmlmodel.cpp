@@ -29,6 +29,7 @@
 #include <test/mocks/mocknode.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/mocks/mockwallet.h>
+#include <test/mocks/signertransactions.h>
 #include <txmempool.h>
 #include <wallet/coincontrol.h>
 #include <wallet/types.h>
@@ -668,6 +669,24 @@ private:
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void signerSubstitutionIsRejected_data() {
+        QTest::addColumn<int>("mutation");
+        QTest::addColumn<bool>("partial");
+        QTest::addColumn<bool>("direct_send");
+        QTest::addColumn<bool>("draft");
+        for (size_t i = 0; i < signerfixture::CASES.size(); ++i) {
+            const auto name = QString::fromLatin1(signerfixture::CASES[i].first);
+            QTest::newRow(qPrintable(name + "-complete")) << int(i) << false << false << false;
+            QTest::newRow(qPrintable(name + "-partial")) << int(i) << true << false << false;
+            QTest::newRow(qPrintable(name + "-direct-send")) << int(i) << false << true << false;
+            QTest::newRow(qPrintable(name + "-send-draft-complete")) << int(i) << false << false << true;
+            QTest::newRow(qPrintable(name + "-send-draft-partial")) << int(i) << true << false << true;
+        }
+        QTest::newRow("invalid-locktimes") << -1 << true << false << false;
+        QTest::newRow("invalid-locktimes-direct-send") << -1 << true << true << false;
+    }
+    void signerApprovalRetainsValidPartialSignatures();
+    void signerSubstitutionIsRejected();
     void initTestCase();
     void cleanupTestCase();
     void feeTargetIndex_mapsStandardTargets();
@@ -3541,6 +3560,154 @@ void WalletQmlModelTests::sendImportedPsbtWithPassphraseSignsOnceAndRelocks()
     QVERIFY(wallet->locked);
     QCOMPARE(wallet->commit_calls, 1);
     QCOMPARE(std::count(wallet->fill_psbt_sign_args.begin(), wallet->fill_psbt_sign_args.end(), true), 1);
+}
+
+void WalletQmlModelTests::signerSubstitutionIsRejected()
+{
+    QFETCH(int, mutation);
+    QFETCH(bool, partial);
+    QFETCH(bool, direct_send);
+    QFETCH(bool, draft);
+    auto [wallet, model] = MakePasswordWalletModel();
+    wallet->private_keys_disabled = true;
+    wallet->external_signer = true;
+    wallet->balance = COIN;
+    wallet->encrypted = false;
+    wallet->locked = false;
+    wallet->txin_is_mine_fn = [](const CTxIn&) { return true; };
+    wallet->fill_psbt_fn = [wallet, mutation, partial](const common::PSBTFillOptions& options, size_t* n_signed,
+                                                    PartiallySignedTransaction& psbt, bool& complete) {
+        wallet->fill_psbt_sign_args.push_back(options.sign);
+        if (n_signed) *n_signed = psbt.inputs.size();
+        complete = false;
+        if (options.sign) {
+            if (mutation < 0) {
+                psbt.inputs[0].time_locktime = 500000001;
+                psbt.inputs[1].height_locktime = 42;
+            } else {
+                auto changed = *psbt.GetUnsignedTx();
+                signerfixture::Change(changed, signerfixture::CASES.at(mutation).second);
+                psbt = PartiallySignedTransaction{changed};
+            }
+            for (auto& input : psbt.inputs) {
+                input.unknown[{0x53}] = {0x99};
+                if (!partial) input.final_script_sig = CScript{} << std::vector<unsigned char>{};
+            }
+        }
+        return std::optional<common::PSBTError>{};
+    };
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto reviewed = signerfixture::Review();
+    const auto unsigned_review = *reviewed.GetUnsignedTx();
+    const auto original = unsigned_review.GetHash();
+    const auto file = WritePsbt(reviewed, dir, QStringLiteral("reviewed.psbt"));
+    if (draft) {
+        wallet->create_transaction_fn = [reviewed](const std::vector<wallet::CRecipient>&, const wallet::CCoinControl&, bool,
+                                                 int& change_pos, CAmount& fee) -> util::Result<CTransactionRef> {
+            change_pos = -1; fee = 500;
+            return MakeTransactionRef(*reviewed.GetUnsignedTx());
+        };
+        for (size_t i = 0; i < unsigned_review.vout.size(); ++i) {
+            if (i) model->sendRecipientList()->add();
+            CTxDestination destination;
+            QVERIFY(ExtractDestination(unsigned_review.vout[i].scriptPubKey, destination));
+            auto* recipient = model->sendRecipientList()->currentRecipient();
+            recipient->setAddress(QString::fromStdString(EncodeDestination(destination)));
+            recipient->amount()->setSatoshi(unsigned_review.vout[i].nValue);
+        }
+        QVERIFY2(model->prepareTransaction(), qPrintable(model->transactionError()));
+    } else {
+        QCOMPARE(model->importPsbtFromFile(file), WalletQmlModel::PsbtImportResult::WalletCanSign);
+    }
+    QCOMPARE(model->currentTransaction()->getWtx()->GetHash(), original);
+    QSignalSpy failed{model.get(), &WalletQmlModel::externalSignerApprovalFailed};
+    QSignalSpy succeeded{model.get(), &WalletQmlModel::externalSignerApprovalSucceeded};
+    QSignalSpy partial_result{model.get(), &WalletQmlModel::externalSignerApprovalPartiallySucceeded};
+    const bool sent = direct_send ? model->sendTransaction() : false;
+    if (!direct_send) model->approveExternalSignerTransaction();
+    const int failures = failed.count(), successes = succeeded.count(), partials = partial_result.count();
+    const auto failure_reason = direct_send ? model->transactionError()
+        : failed.empty() ? QString{} : failed[0][0].toString();
+    const auto after = model->currentTransaction()->getWtx()->GetHash();
+    const bool can_send = model->currentTransactionCanSend(), can_broadcast = model->currentTransactionCanBroadcast();
+    const bool sent_again = partial ? model->sendTransactionWithPassphrase("unused") : model->sendTransaction();
+    const int commits = wallet->commit_calls;
+    const auto saved_path = dir.filePath("retained.psbt");
+    const auto save_error = model->saveCurrentTransactionAsPsbt(saved_path);
+    PartiallySignedTransaction saved{CMutableTransaction{}};
+    const auto load_error = PsbtQmlModel::LoadPsbtFromFile(saved_path, saved);
+    const auto saved_tx = saved.GetUnsignedTx();
+    model.reset(); // Drain before the red behavioral assertions, including on failure.
+    QVERIFY(!sent);
+    if (!direct_send) { QCOMPARE(failures, 1); QCOMPARE(successes, 0); QCOMPARE(partials, 0); }
+    QCOMPARE(failure_reason, QString("External signer changed the reviewed transaction."));
+    QCOMPARE(commits, 0);
+    QCOMPARE(after, original);
+    QVERIFY(can_send); // The untouched review remains eligible for a fresh signing attempt.
+    QVERIFY(!can_broadcast);
+    QVERIFY(!sent_again);
+    QCOMPARE(save_error, QString{});
+    QCOMPARE(load_error, QString{});
+    QVERIFY(saved_tx);
+    QCOMPARE(saved_tx->GetHash(), original);
+}
+
+void WalletQmlModelTests::signerApprovalRetainsValidPartialSignatures()
+{
+    auto [wallet, model] = MakePasswordWalletModel();
+    wallet->private_keys_disabled = true;
+    wallet->external_signer = true;
+    wallet->txin_is_mine_fn = [](const CTxIn&) { return true; };
+    CKey first, second;
+    first.MakeNewKey(true); second.MakeNewKey(true);
+    const auto witness_script = GetScriptForMultisig(2, {first.GetPubKey(), second.GetPubKey()});
+    CMutableTransaction tx;
+    tx.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0});
+    tx.vout.emplace_back(1500, GetScriptForDestination(DecodeDestination(VALID_MAINNET_ADDRESS.toStdString())));
+    PartiallySignedTransaction reviewed{tx};
+    reviewed.inputs[0].witness_utxo = CTxOut{2000, GetScriptForDestination(WitnessV0ScriptHash(witness_script))};
+    reviewed.inputs[0].witness_script = witness_script;
+    auto partial = reviewed;
+    FillableSigningProvider provider;
+    QVERIFY(provider.AddCScript(witness_script));
+    QVERIFY(provider.AddKey(first));
+    const auto txdata = PrecomputePSBTData(partial);
+    QVERIFY(txdata);
+    QCOMPARE(SignPSBTInput(provider, partial, 0, &*txdata, {.finalize = false}), PSBTError::INCOMPLETE);
+    QCOMPARE(partial.inputs[0].partial_sigs.size(), size_t{1});
+    auto cannot_finalize = partial;
+    QVERIFY(!FinalizePSBT(cannot_finalize));
+    wallet->fill_psbt_fn = [partial](const common::PSBTFillOptions& options, size_t* n_signed,
+                                    PartiallySignedTransaction& result, bool& complete) {
+        if (n_signed) *n_signed = 1;
+        complete = false;
+        if (options.sign) result = partial;
+        return std::optional<common::PSBTError>{};
+    };
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = WritePsbt(reviewed, directory, "review.psbt");
+    QCOMPARE(model->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCannotSign);
+    QSignalSpy accepted{model.get(), &WalletQmlModel::externalSignerApprovalPartiallySucceeded};
+    QSignalSpy failed{model.get(), &WalletQmlModel::externalSignerApprovalFailed};
+    model->approveExternalSignerTransaction();
+    QCOMPARE(accepted.count(), 1);
+    QCOMPARE(failed.count(), 0);
+    QVERIFY(!model->currentTransactionCanSend());
+    QVERIFY(!model->currentTransactionCanBroadcast());
+    QCOMPARE(wallet->commit_calls, 0);
+    const auto saved_path = directory.filePath("partial.psbt");
+    QCOMPARE(model->saveCurrentTransactionAsPsbt(saved_path), QString{});
+    PartiallySignedTransaction saved{CMutableTransaction{}};
+    QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(saved_path, saved), QString{});
+    QCOMPARE(saved.GetUnsignedTx()->GetHash(), tx.GetHash());
+    QVERIFY(saved.inputs[0].partial_sigs == partial.inputs[0].partial_sigs);
+    QVERIFY(provider.AddKey(second));
+    const auto saved_data = PrecomputePSBTData(saved);
+    QVERIFY(saved_data);
+    QCOMPARE(SignPSBTInput(provider, saved, 0, &*saved_data, {.finalize = false}), PSBTError::OK);
+    QVERIFY(FinalizePSBT(saved)); // The retained real signature remains usable.
 }
 
 void WalletQmlModelTests::externalSignerApprovalSignsImportedPsbtOnlyOnce()

@@ -5,6 +5,7 @@
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <qml/models/psbtqmlmodel.h>
+#include <qml/models/signertransaction.h>
 
 #include <QRegularExpression>
 #include <QFile>
@@ -67,6 +68,14 @@ private Q_SLOTS:
         QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(path, psbt), QString{});
         QVERIFY(!psbt.inputs.empty());
         for (const auto& input : psbt.inputs) QVERIFY(input.partial_sigs.empty());
+        const auto exported = psbt.GetUnsignedTx();
+        QVERIFY(exported);
+        const CMutableTransaction reviewed{*wallet->currentTransaction()->getWtx()};
+        // The real Core producer and export preserve the commitment consumed by
+        // signer approval. Actual hostile-return wiring is exercised by the
+        // two external-signer subprocess scenarios in stage 8.
+        QVERIFY(MatchesUnsignedTransaction(reviewed, *exported));
+        QCOMPARE(exported->GetHash(), reviewed.GetHash());
     }
 
     void invalidXpubDoesNotCreateWallet()

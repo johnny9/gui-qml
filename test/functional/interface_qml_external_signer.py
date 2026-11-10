@@ -4,6 +4,10 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """End-to-end GUI coverage for the external signer send flow."""
 
+import base64
+from decimal import Decimal
+import hashlib
+import struct
 import json
 import os
 import re
@@ -19,6 +23,8 @@ from qml_scenarios import (
 from qml_test_harness import dump_qml_tree
 from qml_wallet_test_lib import (
     WalletFlowHarness,
+    RPC_USER,
+    RPC_PASS,
     rpc_call,
     wait_for_rpc,
 )
@@ -58,6 +64,100 @@ def find_mock_signer_path(mock_name="signer"):
     if not os.access(signer_path, os.X_OK):
         raise PermissionError(f"Mock signer is not executable: {signer_path}")
     return signer_path
+
+
+def exact_signer_config(harness, **changes):
+    path = os.path.join(harness.tmpdir, "signer-config.json")
+    current = {}
+    if os.path.exists(path):
+        with open(path, encoding="utf8") as source:
+            current = json.load(source)
+    current.update(changes)
+    temporary = path + ".new"
+    with open(temporary, "w", encoding="utf8") as output:
+        json.dump(current, output)
+    os.replace(temporary, path)
+    return path
+
+
+def create_exact_signer(harness):
+    fixture = os.path.join(os.path.dirname(__file__), "mocks", "signer.py")
+    config = exact_signer_config(harness, port=harness.gui_rpc_port, user=RPC_USER,
+                                password=RPC_PASS, wallet="mock", mode="match",
+                                log=os.path.join(harness.tmpdir, "signer-jobs.jsonl"))
+    wrapper = os.path.join(harness.tmpdir, "signer.py")
+    with open(wrapper, "w", encoding="utf8") as output:
+        output.write("#!/usr/bin/env python3\nimport os\nimport sys\n")
+        output.write(f"os.execv(sys.executable, [sys.executable, {fixture!r}, '--config', {config!r}, *sys.argv[1:]])\n")
+    os.chmod(wrapper, 0o700)
+    return wrapper
+
+
+def decoded_unsigned_transaction(harness, psbt):
+    decoded = rpc_call(harness.gui_rpc_port, "decodepsbt", [psbt])
+    if "tx" in decoded:
+        return decoded["tx"]
+    # Core's PSBTv2 RPC exposes terms in the maps, not a v0 global transaction.
+    assert decoded["psbt_version"] == 2
+    assert all("height_locktime" not in item and "time_locktime" not in item for item in decoded["inputs"])
+    tx = {"version": decoded["tx_version"], "locktime": decoded.get("fallback_locktime", 0),
+          "vin": [{"txid": item["previous_txid"], "vout": item["previous_vout"],
+                   "sequence": item.get("sequence", 0xffffffff)} for item in decoded["inputs"]],
+          "vout": [{"value": item["amount"], "scriptPubKey": item["script"]} for item in decoded["outputs"]]}
+    # Independent fixture oracle: serialize the small unsigned regtest request.
+    assert len(tx["vin"]) < 253 and len(tx["vout"]) < 253
+    raw = struct.pack("<iB", tx["version"], len(tx["vin"]))
+    for item in tx["vin"]:
+        raw += bytes.fromhex(item["txid"])[::-1] + struct.pack("<IBI", item["vout"], 0, item["sequence"])
+    raw += bytes([len(tx["vout"])])
+    for item in tx["vout"]:
+        script = bytes.fromhex(item["scriptPubKey"]["hex"])
+        assert len(script) < 253
+        amount = Decimal(str(item["value"])) * 100_000_000
+        assert amount == int(amount)
+        raw += struct.pack("<qB", int(amount), len(script)) + script
+    raw += struct.pack("<I", tx["locktime"])
+    tx["txid"] = hashlib.sha256(hashlib.sha256(raw).digest()).digest()[::-1].hex()
+    return tx
+
+
+def export_review(harness, name="reviewed"):
+    path = os.path.join(harness.tmpdir, name + ".psbt")
+    error = harness.driver.invoke_property_object("sendTransactionReviewPage", "wallet",
+                                                  "saveCurrentTransactionAsPsbt", [path])
+    assert error in (None, ""), error  # Qt may serialize an empty null QString as JSON null.
+    assert os.path.isfile(path), "Review export did not produce a PSBT"
+    with open(path, "rb") as source:
+        psbt = base64.b64encode(source.read()).decode("ascii")
+    return psbt, decoded_unsigned_transaction(harness, psbt)
+
+
+def matching_signed_review(harness):
+    psbt, approved = export_review(harness)
+    processed = rpc_call(harness.gui_rpc_port, "walletprocesspsbt", [psbt, True, "ALL", True, True], wallet="mock")
+    assert processed["complete"] is True
+    decoded = rpc_call(harness.gui_rpc_port, "decoderawtransaction", [processed["hex"]])
+    assert decoded["txid"] == approved["txid"]
+    assert rpc_call(harness.gui_rpc_port, "testmempoolaccept", [[processed["hex"]]])[0]["allowed"] is True
+    legacy = os.path.join(harness.tmpdir, "mock_psbt")
+    if os.path.exists(legacy):
+        with open(legacy, encoding="utf8") as source:
+            stale = decoded_unsigned_transaction(harness, source.read())
+        differing = [field for field in ("version", "locktime", "vin", "vout") if stale[field] != approved[field]]
+        print(f"[fixture] independent fixed-response comparison: changed fields={differing}")
+    return decoded["txid"]
+
+
+def substituted_reply(harness, destination, inputs=None):
+    options = {"replaceable": True, "feeRate": 0.00001000}
+    if inputs is not None:
+        options["add_inputs"] = False
+    psbt = rpc_call(harness.gui_rpc_port, "walletcreatefundedpsbt",
+                    [inputs or [], {destination: 0.75}, 0, options, True], wallet="mock")["psbt"]
+    signed = rpc_call(harness.gui_rpc_port, "walletprocesspsbt", [psbt, True, "ALL", True, True], wallet="mock")
+    assert signed["complete"] is True
+    assert rpc_call(harness.gui_rpc_port, "testmempoolaccept", [[signed["hex"]]])[0]["allowed"] is True
+    return signed["psbt"], rpc_call(harness.gui_rpc_port, "decoderawtransaction", [signed["hex"]])
 
 
 class CheckpointRecorder:
@@ -481,7 +581,7 @@ def run_test(args):
     harness = ExternalSignerHarness(case_name, port_offset=90)
     checkpoints = CheckpointRecorder(case_name, args.save_screenshots, screenshot_root)
     try:
-        signer_path = find_mock_signer_path("signer")
+        signer_path = create_exact_signer(harness)
         no_signer_path = find_mock_signer_path("no_signer")
 
         print(f"[{case_name}] starting")
@@ -562,9 +662,13 @@ def run_test(args):
         wait_for_wallet_balance(harness.gui_rpc_port, wallet_name)
         wait_for_wallet_badge_balance(harness.driver, 5_000_000_000)
         checkpoints.checkpoint("wallet badge balance confirmed after signer restore", harness.driver)
+        if "mock" not in rpc_call(harness.gui_rpc_port, "listwallets"):
+            rpc_call(harness.gui_rpc_port, "loadwallet", ["mock", False])
+        select_wallet(harness.driver, wallet_name)
 
         open_external_signer_review(harness.driver, destination_address, "0.50000000")
         checkpoints.checkpoint("signer review displayed", harness.driver)
+        expected_txid = matching_signed_review(harness)
         harness.driver.click("sendTransactionReviewSignerButton")
         assert_signer_status(
             harness.driver,
@@ -589,7 +693,120 @@ def run_test(args):
         harness.stop()
 
 
+def substitution_journey(args, replacement):
+    case_name = "signer-substitution-speed-up" if replacement else "signer-substitution-send"
+    harness = ExternalSignerHarness(case_name, port_offset=94 if replacement else 92)
+    checkpoints = CheckpointRecorder(case_name, False, None)
+    try:
+        signer = create_exact_signer(harness)
+        harness.start_gui(cwd=harness.tmpdir)
+        harness.finish_onboarding()
+        wait_for_rpc(harness.gui_rpc_port)
+        configure_external_signer_via_gui(harness, checkpoints, signer)
+        wallet_name = create_and_verify_external_wallet(harness, checkpoints)
+        create_wallet(harness.gui_rpc_port, "miner", load_on_startup=False)
+        setup_mock_wallet(harness.gui_rpc_port)
+        intended = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="miner")
+        other = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="miner")
+        prepare_signed_mock_psbt(harness, wallet_name, intended)
+        # Two independent mature coins make a genuinely disjoint replacement possible.
+        mining = rpc_call(harness.gui_rpc_port, "getnewaddress", ["", "bech32m"], wallet=wallet_name)
+        rpc_call(harness.gui_rpc_port, "generatetoaddress", [2, mining])
+        select_wallet(harness.driver, wallet_name)
+        wait_for_wallet_balance(harness.gui_rpc_port, wallet_name)
+        open_external_signer_review(harness.driver, intended, "0.50000000")
+        _, approved = export_review(harness)
+        expected = matching_signed_review(harness)
+        original_inputs = {(item["txid"], item["vout"]) for item in approved["vin"]}
+        if replacement:
+            harness.driver.click("sendTransactionReviewSignerButton")
+            assert_signer_status(harness.driver, "sendTransactionReviewSignerStatus", "Signed on external signer. Ready to send.")
+            harness.driver.click("sendTransactionReviewSignerButton")
+            wait_until(lambda: expected in rpc_call(harness.gui_rpc_port, "getrawmempool"), description="original payment")
+            coins = rpc_call(harness.gui_rpc_port, "listunspent", [1], wallet="mock")
+            independent = next(coin for coin in coins if (coin["txid"], coin["vout"]) not in original_inputs)
+            reply, counterfeit = substituted_reply(harness, other, [{"txid": independent["txid"], "vout": independent["vout"]}])
+            assert original_inputs.isdisjoint({(item["txid"], item["vout"]) for item in counterfeit["vin"]})
+            exact_signer_config(harness, mode="reply", psbt=reply)
+            gui = harness.driver
+            gui.click("activityTabButton")
+            gui.set_text("activitySearchField", expected)
+            gui.wait_for_property("activityFilterProxyModel", "count", 1, timeout_ms=30000)
+            gui.click_list_item("activityListView", 0, "activityRowOpenButton")
+            gui.wait_for_page("activityDetailsPage")
+            gui.wait_for_property("activityDetailsPage", "detailsLoading", False, timeout_ms=30000)
+            gui.click("speedUpBannerPrimaryButton")
+            gui.wait_for_property("speedUpOverlay", "opened", True)
+            gui.wait_for_property("updateTransactionButton", "enabled", True, timeout_ms=30000)
+            gui.click("updateTransactionButton")
+            gui.wait_for_property("speedUpErrorText", "text", "Signer changed the reviewed replacement transaction.")
+            assert set(rpc_call(harness.gui_rpc_port, "getrawmempool")) == {expected}
+            original = rpc_call(harness.gui_rpc_port, "gettransaction", [expected], wallet=wallet_name)
+            assert not original.get("replaced_by_txid")
+            assert counterfeit["txid"] not in original["walletconflicts"]
+            print("[oracle] disjoint independently valid signer response rejected; original remains unreplaced")
+            # A fresh exact response must still replace the original successfully.
+            gui.click("speedUpCloseButton")
+            gui.wait_for_property("speedUpOverlay", "visible", False)
+            exact_signer_config(harness, mode="match")
+            gui.click("speedUpBannerPrimaryButton")
+            gui.wait_for_property("speedUpOverlay", "opened", True)
+            gui.wait_for_property("updateTransactionButton", "enabled", True, timeout_ms=30000)
+            gui.click("updateTransactionButton")
+            wait_until(lambda: expected not in rpc_call(harness.gui_rpc_port, "getrawmempool"),
+                       description="exact approved replacement")
+            pool = rpc_call(harness.gui_rpc_port, "getrawmempool")
+            assert len(pool) == 1 and counterfeit["txid"] not in pool
+            replacement_txid = pool[0]
+            original = rpc_call(harness.gui_rpc_port, "gettransaction", [expected], wallet=wallet_name)
+            assert replacement_txid in original["walletconflicts"]
+            decoded = rpc_call(harness.gui_rpc_port, "getrawtransaction", [replacement_txid, True])
+            assert original_inputs.intersection({(item["txid"], item["vout"]) for item in decoded["vin"]})
+            rpc_call(harness.gui_rpc_port, "generatetoaddress", [1, mining])
+            wait_until(lambda: rpc_call(harness.gui_rpc_port, "gettransaction", [replacement_txid],
+                                      wallet=wallet_name)["confirmations"] >= 1, description="matching replacement confirmation")
+            print("[oracle] exact replacement accepted, original conflict preserved, replacement confirmed")
+        else:
+            inputs = [{"txid": item["txid"], "vout": item["vout"]} for item in approved["vin"]]
+            reply, counterfeit = substituted_reply(harness, other, inputs)
+            assert counterfeit["txid"] != expected
+            exact_signer_config(harness, mode="reply", psbt=reply)
+            harness.driver.click("sendTransactionReviewSignerButton")
+            assert_signer_status(harness.driver, "sendTransactionReviewSignerStatus", "External signer changed the reviewed transaction.")
+            _, retained = export_review(harness, "retained")
+            assert retained["txid"] == approved["txid"]
+            assert rpc_call(harness.gui_rpc_port, "getrawmempool") == []
+            assert harness.driver.get_text("sendTransactionReviewSignerButton") == "Retry external signer"
+            exact_signer_config(harness, mode="match")
+            harness.driver.click("sendTransactionReviewSignerButton")
+            assert_signer_status(harness.driver, "sendTransactionReviewSignerStatus", "Signed on external signer. Ready to send.")
+            harness.driver.click("sendTransactionReviewSignerButton")
+            wait_until(lambda: expected in rpc_call(harness.gui_rpc_port, "getrawmempool"), description="matching original payment")
+            assert counterfeit["txid"] not in rpc_call(harness.gui_rpc_port, "getrawmempool")
+            print("[oracle] independently valid substituted payment rejected; exact matching retry accepted")
+        with open(os.path.join(harness.tmpdir, "signer-jobs.jsonl"), encoding="utf8") as jobs:
+            effects = [json.loads(line) for line in jobs]
+        assert len(effects) == (3 if replacement else 2), effects
+        print(f"[oracle] signer subprocess effects={len(effects)}")
+        return 0
+    except Exception as err:  # noqa: BLE001 - preserve the failed scenario and process evidence
+        fail_case(case_name, harness, checkpoints, err)
+        return 1
+    finally:
+        harness.stop()
+
+
+def substitution_send(args):
+    return substitution_journey(args, False)
+
+
+def substitution_speed_up(args):
+    return substitution_journey(args, True)
+
+
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('External signer subprocess and restart journey', [
         Scenario("signer-devices-and-restart", 8, run_test),
+        Scenario("signer-substitution-send", 8, substitution_send),
+        Scenario("signer-substitution-speed-up", 8, substitution_speed_up),
     ]))

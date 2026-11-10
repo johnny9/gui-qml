@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/walletqmlmodel.h>
+#include <qml/models/signertransaction.h>
 #include <qml/backendexecutor.h>
 
 #include <common/messages.h>
@@ -2507,6 +2508,7 @@ void WalletQmlModel::approveExternalSignerTransaction()
         return;
     }
 
+    const CMutableTransaction approved_tx{*current_tx};
     try {
         CMutableTransaction empty_tx;
         PartiallySignedTransaction psbtx{empty_tx, /*version=*/2};
@@ -2518,6 +2520,7 @@ void WalletQmlModel::approveExternalSignerTransaction()
             psbtx = PartiallySignedTransaction{unsigned_tx, /*version=*/2};
         }
 
+        const PartiallySignedTransaction approved_psbt{psbtx};
         bool complete{false};
         const auto draft_err = m_wallet->fillPSBT({.sign = false, .bip32_derivs = true},
             /*n_signed=*/nullptr, psbtx, complete);
@@ -2548,6 +2551,17 @@ void WalletQmlModel::approveExternalSignerTransaction()
                 Q_EMIT externalSignerApprovalFailed(message, signer_not_found);
                 return;
             }
+        }
+
+        const auto returned_tx = psbtx.GetUnsignedTx();
+        if (!returned_tx || !MatchesUnsignedTransaction(approved_tx, *returned_tx)) {
+            // Keep only our reviewed document. A later explicit Send must sign
+            // and validate this document again, including ordinary Send drafts.
+            m_current_psbt = std::make_unique<PartiallySignedTransaction>(approved_psbt);
+            m_current_transaction_review_message = tr("External signer changed the reviewed transaction.");
+            Q_EMIT currentTransactionChanged();
+            Q_EMIT externalSignerApprovalFailed(m_current_transaction_review_message, false);
+            return;
         }
 
         CMutableTransaction signed_tx;
@@ -2664,7 +2678,7 @@ bool WalletQmlModel::sendTransactionInternal(std::optional<SecureString> passphr
                 : m_current_transaction_review_message);
             return false;
         }
-
+        const CMutableTransaction approved_tx{*m_current_transaction->getWtx()};
         PartiallySignedTransaction psbt{*m_current_psbt};
         CMutableTransaction mutable_tx;
         PartiallySignedTransaction finalized_psbt{psbt};
@@ -2695,6 +2709,13 @@ bool WalletQmlModel::sendTransactionInternal(std::optional<SecureString> passphr
                 m_wallet->fillPSBT({.sign = true, .bip32_derivs = true}, &signed_inputs, psbt, complete)};
             if (fill_error) {
                 setTransactionStatus(PsbtQmlModel::PsbtErrorText(*fill_error));
+                return false;
+            }
+            const auto returned_tx = psbt.GetUnsignedTx();
+            if (!returned_tx || !MatchesUnsignedTransaction(approved_tx, *returned_tx)) {
+                m_current_transaction_review_message = tr("External signer changed the reviewed transaction.");
+                setTransactionStatus(m_current_transaction_review_message);
+                Q_EMIT currentTransactionChanged();
                 return false;
             }
             if (!complete || !FinalizeAndExtractPSBT(psbt, mutable_tx)) {
