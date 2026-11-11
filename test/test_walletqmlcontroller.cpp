@@ -598,7 +598,9 @@ void WalletQmlControllerTests::successfulEmptyMigrationDoesNotFabricateAWallet()
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     FakeWalletLoader loader; loader.wallet_dir_entries = {{"empty-legacy", "bdb"}};
     ConfigureExpectedControllerInitialization(node, loader);
-    loader.migrate_wallet_fn = [](const auto&, const auto&) {
+    std::atomic_bool load_requested{false};
+    loader.migrate_wallet_fn = [&load_requested](const auto&, const auto&, bool load_wallet) {
+        load_requested = load_wallet;
         // Pinned Core can remove an empty migrated wallet and return success
         // without loading a primary handle. The result is still owned.
         return util::Result<interfaces::WalletMigrationResult>{interfaces::WalletMigrationResult{}};
@@ -607,6 +609,7 @@ void WalletQmlControllerTests::successfulEmptyMigrationDoesNotFabricateAWallet()
     QSignalSpy completed{&controller, &WalletQmlController::walletMigrationSucceeded};
     controller.migrateWallet("empty-legacy", "");
     QTRY_COMPARE(completed.count(), 1);
+    QVERIFY(load_requested.load());
     QVERIFY(controller.initialized()); QCOMPARE(controller.openWallets().size(), 0);
     QVERIFY(!controller.isWalletLoaded()); QCOMPARE(controller.selectedWallet()->name(), QString{});
     QVERIFY(!controller.walletMigrationInProgress()); QVERIFY(controller.walletMigrationError().isEmpty());
@@ -723,7 +726,9 @@ void WalletQmlControllerTests::successfulMigrationPublishesTheOwnedReturnedWalle
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     FakeWalletLoader loader; loader.wallet_dir_entries = {{"legacy", "bdb"}};
     ConfigureExpectedControllerInitialization(node, loader);
-    loader.migrate_wallet_fn = [](const auto&, const auto&) {
+    std::atomic_bool load_requested{false};
+    loader.migrate_wallet_fn = [&load_requested](const auto&, const auto&, bool load_wallet) {
+        load_requested = load_wallet;
         interfaces::WalletMigrationResult result;
         result.wallet = std::make_unique<FakeWallet>("migrated", nullptr);
         return util::Result<interfaces::WalletMigrationResult>{std::move(result)};
@@ -732,6 +737,7 @@ void WalletQmlControllerTests::successfulMigrationPublishesTheOwnedReturnedWalle
     QSignalSpy migrated{&controller, &WalletQmlController::walletMigrationSucceeded};
     controller.migrateWallet("legacy", "");
     QTRY_COMPARE(migrated.count(), 1);
+    QVERIFY(load_requested.load());
     QVERIFY(controller.isWalletOpen("migrated"));
     QCOMPARE(controller.selectedWallet()->name(), QString{"migrated"});
     QVERIFY(!controller.walletMigrationInProgress()); QVERIFY(controller.walletMigrationError().isEmpty());

@@ -1383,7 +1383,7 @@ private Q_SLOTS:
         const auto message = errors ? failed[0][0].toString() : QString{};
         const auto retained_path = directory.filePath("retained.psbt");
         const auto save_error = model->saveCurrentTransactionAsPsbt(retained_path);
-        PartiallySignedTransaction retained{CMutableTransaction{}};
+        PartiallySignedTransaction retained{CMutableTransaction{}, /*version=*/2};
         const auto load_error = PsbtQmlModel::LoadPsbtFromFile(retained_path, retained);
         const auto before_retry = model->currentTransaction()->getWtx()->GetHash();
         wallet->fill_psbt_fn = [](const common::PSBTFillOptions&, size_t* count, PartiallySignedTransaction&, bool& complete) {
@@ -4428,7 +4428,7 @@ void WalletQmlModelTests::signerSubstitutionIsRejected()
             } else {
                 auto changed = *psbt.GetUnsignedTx();
                 signerfixture::Change(changed, signerfixture::CASES.at(mutation).second);
-                psbt = PartiallySignedTransaction{changed};
+                psbt = PartiallySignedTransaction{changed, /*version=*/2};
             }
             for (auto& input : psbt.inputs) {
                 input.unknown[{0x53}] = {0x99};
@@ -4476,7 +4476,7 @@ void WalletQmlModelTests::signerSubstitutionIsRejected()
     const int commits = wallet->commit_calls;
     const auto saved_path = dir.filePath("retained.psbt");
     const auto save_error = model->saveCurrentTransactionAsPsbt(saved_path);
-    PartiallySignedTransaction saved{CMutableTransaction{}};
+    PartiallySignedTransaction saved{CMutableTransaction{}, /*version=*/2};
     const auto load_error = PsbtQmlModel::LoadPsbtFromFile(saved_path, saved);
     const auto saved_tx = saved.GetUnsignedTx();
     model.reset(); // Drain before the red behavioral assertions, including on failure.
@@ -4510,7 +4510,9 @@ void WalletQmlModelTests::signerApprovalRetainsValidPartialSignatures()
     QVERIFY(provider.AddKey(first));
     const auto txdata = PrecomputePSBTData(partial);
     QVERIFY(txdata);
-    QCOMPARE(SignPSBTInput(provider, partial, 0, &*txdata, {.finalize = false}), PSBTError::INCOMPLETE);
+    const auto partial_signing = SignPSBTInput(provider, partial, 0, &*txdata, {.finalize = false});
+    QVERIFY(!partial_signing);
+    QCOMPARE(partial_signing.error(), PSBTError::INCOMPLETE);
     QCOMPARE(partial.inputs[0].partial_sigs.size(), size_t{1});
     auto cannot_finalize = partial;
     QVERIFY(!FinalizePSBT(cannot_finalize));
@@ -4535,7 +4537,7 @@ void WalletQmlModelTests::signerApprovalRetainsValidPartialSignatures()
     QCOMPARE(wallet->commit_calls, 0);
     const auto saved_path = directory.filePath("partial.psbt");
     QCOMPARE(model->saveCurrentTransactionAsPsbt(saved_path), QString{});
-    PartiallySignedTransaction saved{CMutableTransaction{}};
+    PartiallySignedTransaction saved{CMutableTransaction{}, /*version=*/2};
     QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(saved_path, saved), QString{});
     QCOMPARE(saved.GetUnsignedTx()->GetHash(), reviewed.GetUnsignedTx()->GetHash());
     QVERIFY(saved.inputs[0].partial_sigs == partial.inputs[0].partial_sigs);
