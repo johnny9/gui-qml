@@ -1,0 +1,100 @@
+name: Debug Qt 6.2 QML crash
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  debug:
+    name: Qt 6.2 debug ${{ matrix.run }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libsqlite3-dev \
+            zlib1g-dev \
+            libboost-all-dev \
+            libqt6svg6-dev qt6-base-dev \
+            qt6-base-dev-tools \
+            qt6-tools-dev \
+            qt6-l10n-tools \
+            qt6-tools-dev-tools \
+            qt6-declarative-dev \
+            qml6-module-qt-labs-platform \
+            qml6-module-qt-labs-settings \
+            qml6-module-qtquick \
+            qml6-module-qtquick-controls \
+            qml6-module-qtquick-dialogs \
+            qml6-module-qtquick-shapes qml6-module-qtquick-layouts \
+            qml6-module-qtquick-templates \
+            qml6-module-qtquick-window \
+            qml6-module-qtqml-models qml6-module-qtqml \
+            qml6-module-qtqml-workerscript \
+            libgl-dev \
+            libqrencode-dev \
+            g++-12 gdb xvfb xauth
+
+      - name: Configure (CMake)
+        run: |
+          cmake -E env CXXFLAGS="-Werror -Wno-error=free-nonheap-object -Wno-error=redundant-move -Wno-error=restrict -Wno-error=stringop-overread -Wno-error=maybe-uninitialized" \
+            cmake -S . -B build -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_APP_TESTS=ON \
+              -DENABLE_IPC=OFF \
+              -DCMAKE_CXX_COMPILER=g++-12 \
+              -DQML_TEST_RENDERING_PLATFORM=xcb
+
+      - name: Build
+        run: cmake --build build --target bitcoinqml_qmltests --parallel
+
+      - name: Loop QML tests under gdb
+        env:
+          QT_QPA_PLATFORM: minimal
+          QT_QUICK_BACKEND: software
+          QML_DISABLE_DISK_CACHE: "1"
+        run: |
+          set +e
+          mkdir -p crashes
+          for i in $(seq 1 6); do
+            echo "===== run $i ====="
+            xvfb-run -a gdb -batch \
+              -ex "set pagination off" \
+              -ex "set print thread-events off" \
+              -ex run \
+              -ex "bt full" \
+              -ex "thread apply all bt" \
+              --args ./build/bin/bitcoinqml_qmltests -platform minimal \
+              > "run-${{ matrix.run }}-$i.log" 2>&1
+            rc=$?
+            echo "gdb rc=$rc"
+            if grep -q "Program received signal\|SIGSEGV\|SIGABRT\|SIGBUS" "run-${{ matrix.run }}-$i.log"; then
+              echo "CRASH in run $i"
+              cp "run-${{ matrix.run }}-$i.log" crashes/
+              exit 0
+            fi
+          done
+
+      - name: Upload crash logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-qt62-${{ matrix.run }}
+          path: crashes/
+          if-no-files-found: ignore
