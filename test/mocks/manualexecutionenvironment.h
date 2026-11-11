@@ -150,7 +150,7 @@ public:
     bool quiescent() const { return turns.empty() && scheduler->pending() == 0 && !m_expired && publications.empty(); }
     std::string trace() const {
         std::string result;
-        for (const auto& entry : m_trace) { if (!result.empty()) result += " "; result += entry; }
+        for (const auto& entry : m_trace) { if (!result.empty()) result += ' '; result += entry; }
         return result;
     }
     struct Turn { execution::Phase phase; execution::TaskId id; std::function<void()> turn; };

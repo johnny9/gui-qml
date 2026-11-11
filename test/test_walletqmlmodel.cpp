@@ -34,6 +34,9 @@
 #include <test/mocks/psbtfeefixture.h>
 #include <txmempool.h>
 #include <wallet/coincontrol.h>
+#include <wallet/sqlite.h>
+#include <test/mocks/feepreviewchain.h>
+#include <wallet/transaction.h>
 #include <wallet/types.h>
 #include <util/moneystr.h>
 #include <util/strencodings.h>
@@ -1474,6 +1477,8 @@ private Q_SLOTS:
     void signerApprovalRetainsValidPartialSignatures();
     void signerSubstitutionIsRejected();
     void initTestCase();
+    void coreApiFeePreviews_data();
+    void coreApiFeePreviews();
     void cleanupTestCase();
     void feeTargetIndex_mapsStandardTargets();
     void customFeeRateUpdatesEstimatedTarget();
@@ -5160,6 +5165,107 @@ void WalletQmlModelTests::sendTransactionWithPrivateKeysDisabledDoesNotCommit()
     QCOMPARE(model->transactionError(), QString("This wallet cannot sign transactions."));
     QCOMPARE(wallet->commit_calls, 0);
     QVERIFY(wallet->fill_psbt_sign_args.empty());
+}
+
+
+void WalletQmlModelTests::coreApiFeePreviews_data()
+{
+    QTest::addColumn<int>("scenario");
+    QTest::addColumn<bool>("available");
+    const std::array<std::pair<const char*, int>, 13> maximum{{
+        {"maximum-known-input", 0}, {"maximum-below-minimum", 1},
+        {"maximum-fallback-disabled", 2}, {"maximum-fallback-allowed", 3},
+        {"maximum-missing-input", 4}, {"maximum-bad-index", 5},
+        {"maximum-foreign-input", 6}, {"maximum-spent-input", 7},
+        {"maximum-unconfirmed-truc", 8}, {"maximum-confirmed-truc", 9},
+        {"maximum-absolute-fee-limit", 10}, {"maximum-feerate-limit", 11},
+        {"maximum-custom-rate", 12}}};
+    for (const auto& [name, scenario] : maximum) QTest::newRow(name) << scenario << (scenario == 0 || scenario == 3 || scenario == 9 || scenario == 12);
+    const std::array<std::pair<const char*, int>, 10> insufficient{{
+        {"insufficient-valid-input", 100}, {"insufficient-zero-fallback", 101},
+        {"insufficient-below-minimum", 102}, {"insufficient-fallback-disabled", 103},
+        {"insufficient-fallback-allowed", 104}, {"insufficient-missing-input", 105},
+        {"insufficient-bad-index", 106}, {"insufficient-foreign-input", 107},
+        {"insufficient-spent-input", 108}, {"sufficient-input-no-error-estimate", 109}}};
+    for (const auto& [name, scenario] : insufficient) QTest::newRow(name) << scenario << (scenario == 100 || scenario == 104);
+}
+
+void WalletQmlModelTests::coreApiFeePreviews()
+{
+    QFETCH(int, scenario);
+    QFETCH(bool, available);
+    const bool maximum{scenario < 100};
+    const bool mainnet{scenario == 2 || scenario == 3 || scenario == 101 || scenario == 103 || scenario == 104};
+    ChainSelectionGuard chain_guard{mainnet ? ChainType::MAIN : ChainType::REGTEST};
+    auto chain = std::make_unique<FeePreviewChain>();
+    wallet::CWallet raw_wallet{chain.get(), "core-api-preview", wallet::MakeInMemoryWalletDatabase()};
+    const CAmount funding_amount{1'000'000};
+    CTxDestination own_destination;
+    COutPoint selected;
+    {
+        LOCK(raw_wallet.cs_wallet);
+        raw_wallet.m_keypool_size = 1;
+        raw_wallet.SetWalletFlag(wallet::WALLET_FLAG_DESCRIPTORS);
+        raw_wallet.SetupDescriptorScriptPubKeyMans();
+        const auto generated = raw_wallet.GetNewDestination(OutputType::BECH32, "");
+        QVERIFY(generated);
+        own_destination = *generated;
+        raw_wallet.SetLastBlockProcessed(1, uint256{});
+        raw_wallet.m_min_fee = CFeeRate{scenario == 1 || scenario == 102 ? 2'000 : 1'000};
+        raw_wallet.m_fallback_fee = CFeeRate{scenario == 101 ? 0 : 1'000};
+        raw_wallet.m_allow_fallback_fee = !(scenario == 2 || scenario == 103 || scenario == 101);
+        if (scenario == 10) raw_wallet.m_max_tx_fee = 1;
+        if (scenario == 11) raw_wallet.m_max_tx_fee_rate = CFeeRate{1};
+        CMutableTransaction funding;
+        funding.version = scenario == 8 || scenario == 9 ? 3 : 2;
+        funding.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0});
+        const bool foreign{scenario == 6 || scenario == 107};
+        const auto destination = foreign ? DecodeDestination((mainnet ? VALID_MAINNET_ADDRESS : VALID_REGTEST_ADDRESS).toStdString()) : own_destination;
+        funding.vout.emplace_back(funding_amount, GetScriptForDestination(destination));
+        const auto tx = MakeTransactionRef(funding);
+        QVERIFY(raw_wallet.AddToWallet(tx, scenario == 9 ? wallet::TxState{wallet::TxStateConfirmed{uint256::ONE, 1, 0}} : wallet::TxState{wallet::TxStateInMempool{}}));
+        selected = COutPoint{tx->GetHash(), 0};
+        if (scenario == 4 || scenario == 105) selected.hash = Txid::FromUint256(uint256{42});
+        if (scenario == 5 || scenario == 106) selected.n = 1;
+        if (scenario == 7 || scenario == 108) {
+            CMutableTransaction spend;
+            spend.vin.emplace_back(selected);
+            spend.vout.emplace_back(funding_amount - 1000, GetScriptForDestination(own_destination));
+            QVERIFY(raw_wallet.AddToWallet(MakeTransactionRef(spend), wallet::TxStateInMempool{}));
+        }
+    }
+    auto env = std::make_shared<ManualExecutionEnvironment>();
+    FeeReadServices services{env->scheduler, env, {}, [env](std::function<void()> publish) { env->post(std::move(publish)); }};
+    auto [wallet, model] = MakeWalletModel(nullptr, &raw_wallet, std::move(services));
+    wallet->get_minimum_fee_fn = [](const wallet::CCoinControl&) { return CAmount{1'000}; };
+    // A minimum-fee fallback is an independent existing app policy. These
+    // two cases make that accessor unavailable to test the backend failure.
+    if (scenario == 101 || scenario == 103) wallet->get_required_fee_fn = [](unsigned int) { return CAmount{0}; };
+    if (!maximum) wallet->create_transaction_fn = [](const std::vector<wallet::CRecipient>&, const wallet::CCoinControl&, bool, int&, CAmount&) -> util::Result<CTransactionRef> { return util::Error{Untranslated("Insufficient funds")}; };
+    // Paying the wallet itself prevents unrelated sweep-discovery state from
+    // entering this concrete fee/API contract; selected inputs remain explicit.
+    SetValidRecipient(*model, QString::fromStdString(EncodeDestination(own_destination)));
+    model->selectCoin(selected);
+    if (!maximum) model->sendRecipientList()->currentRecipient()->amount()->setSatoshi(scenario == 109 ? 50'000 : funding_amount);
+    if (scenario == 12) { model->setCustomFeeEnabled(true); model->setCustomFeeRate("2"); }
+    if (maximum) model->useMaximum();
+    else model->scheduleFeeEstimates();
+    env->advance(std::chrono::milliseconds{250});
+    env->drain(); env->publishAll();
+    QVERIFY2(chain->unexpected.empty(), chain->unexpected.empty() ? "" : chain->unexpected.front().c_str());
+    const auto fee = model->estimatedFeeSatoshi();
+    const auto amount = model->sendRecipientList()->currentRecipient()->cAmount();
+    const auto input_count = model->estimatedInputCount();
+    const bool pending = model->feeEstimatePending();
+    model.reset(); env->drain(); env->publishAll();
+    QVERIFY(env->quiescent());
+    QVERIFY(!pending);
+    QCOMPARE(fee >= 0, available);
+    if (available) {
+        QVERIFY(fee > 0);
+        QCOMPARE(input_count, 1);
+        if (maximum) QCOMPARE(amount + fee, funding_amount);
+    }
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

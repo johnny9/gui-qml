@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <node/caches.h>
 #include <QtTest/QtTest>
 
 #include <bitcoin-build-config.h> // IWYU pragma: keep
@@ -183,6 +184,8 @@ private Q_SLOTS:
     void revertingToDefaultValueDeletesRwOverride();
     void languageCommandLineOverrideDoesNotPersist();
     void legacyQtSettingsMigrateToCoreSettings();
+    void coreApiHistoricalCacheMigration_data();
+    void coreApiHistoricalCacheMigration();
     void legacyQtSettingsPreviewDoesNotRemoveQSettings();
     void legacyQtSettingsCommandLineOverrideStillMigratesPersistentValue();
     void legacyQtSettingsBitcoinConfBlocksMigration();
@@ -3801,6 +3804,35 @@ void OptionsModelTests::onboardingApplyWritesTouchedParameterInteractionOverride
     QVERIFY(!has_forced_listen);
     QVERIFY(!has_forced_natpmp);
     QVERIFY(!has_forced_discover);
+}
+
+
+void OptionsModelTests::coreApiHistoricalCacheMigration_data()
+{
+    QTest::addColumn<int>("version"); QTest::addColumn<int>("cache"); QTest::addColumn<qlonglong>("expected"); QTest::addColumn<bool>("persisted");
+    QTest::newRow("old-default") << 120000 << 100 << qlonglong{DEFAULT_KERNEL_CACHE / 1_MiB} << false;
+    QTest::newRow("old-custom") << 120000 << 101 << qlonglong{101} << true;
+    QTest::newRow("new-custom") << 130000 << 100 << qlonglong{100} << true;
+}
+void OptionsModelTests::coreApiHistoricalCacheMigration()
+{
+    QFETCH(int, version); QFETCH(int, cache); QFETCH(qlonglong, expected); QFETCH(bool, persisted);
+    SavedNamedSettings current{QStringLiteral("BitcoinCore"), QStringLiteral("BitcoinCore-App-regtest")};
+    SavedNamedSettings legacy{QStringLiteral("Bitcoin"), QStringLiteral("Bitcoin-Qt-regtest")};
+    legacy.settings().setValue(QStringLiteral("nSettingsVersion"), version);
+    legacy.settings().setValue(QStringLiteral("nDatabaseCache"), cache);
+    QTemporaryDir directory; QVERIFY(directory.isValid());
+    ArgsManager args; PrepareArgsForDataDir(args, directory.path());
+    const auto result = QmlLegacySettings::MigrateCoreSettings(args, QmlLegacySettings::MigrationMode::Persist);
+    QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+    QCOMPARE(result.settings_changed, persisted);
+    const auto stored = args.GetPersistentSetting("dbcache");
+    if (persisted) QCOMPARE(SettingTo<int64_t>(stored).value_or(-1), expected);
+    else {
+        QVERIFY(stored.isNull());
+        QCOMPARE(SettingTo<int64_t>(QmlCoreSettings::DefaultCoreSettingValue(QStringLiteral("dbcache"))).value_or(-1), expected);
+    }
+    QVERIFY(!legacy.settings().contains(QStringLiteral("nDatabaseCache")));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN
