@@ -39,7 +39,7 @@ inline PartiallySignedTransaction Legacy(uint32_t version, bool forged, bool wit
     const auto data = PrecomputePSBTData(psbt);
     if (!data) throw std::runtime_error("fixture precompute");
     for (size_t i = 0; i < psbt.inputs.size(); ++i) {
-        if (SignPSBTInput(provider, psbt, i, &*data, {}) != PSBTError::OK) throw std::runtime_error("fixture signing");
+        if (!SignPSBTInput(provider, psbt, i, &*data, {})) throw std::runtime_error("fixture signing");
     }
     if (!FinalizePSBT(psbt)) throw std::runtime_error("fixture finalization");
     if (forged) {

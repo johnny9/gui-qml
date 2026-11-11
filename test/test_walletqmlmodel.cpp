@@ -4542,7 +4542,7 @@ void WalletQmlModelTests::signerApprovalRetainsValidPartialSignatures()
     QVERIFY(provider.AddKey(second));
     const auto saved_data = PrecomputePSBTData(saved);
     QVERIFY(saved_data);
-    QCOMPARE(SignPSBTInput(provider, saved, 0, &*saved_data, {.finalize = false}), PSBTError::OK);
+    QVERIFY(SignPSBTInput(provider, saved, 0, &*saved_data, {.finalize = false}));
     QVERIFY(FinalizePSBT(saved)); // The retained real signature remains usable.
 }
 
