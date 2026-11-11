@@ -175,7 +175,7 @@ void WalletListModel::setDisplayUnit(int unit)
     }
 }
 
-void WalletListModel::setWalletInfo(const QString& name, qint64 balance, int keySchemeKind)
+void WalletListModel::setWalletInfo(const QString& name, qint64 balance, int keySchemeKind, bool balanceKnown)
 {
     if (name.isEmpty()) {
         return;
@@ -186,8 +186,9 @@ void WalletListModel::setWalletInfo(const QString& name, qint64 balance, int key
             continue;
         }
         bool changed = false;
-        if (item.balance != balance) {
-            item.balance = balance;
+        const auto observed_balance = balanceKnown ? std::make_optional(balance) : std::nullopt;
+        if (item.balance != observed_balance) {
+            item.balance = observed_balance;
             changed = true;
         }
         if (item.keySchemeKind != keySchemeKind) {
@@ -196,7 +197,7 @@ void WalletListModel::setWalletInfo(const QString& name, qint64 balance, int key
         }
         if (changed) {
             const QModelIndex idx = index(row, 0);
-            Q_EMIT dataChanged(idx, idx, {BalanceRole, BalanceSatoshiRole, KeySchemeKindRole});
+            Q_EMIT dataChanged(idx, idx, {BalanceRole, BalanceSatoshiRole, BalanceKnownRole, KeySchemeKindRole});
         }
         return;
     }
@@ -238,6 +239,8 @@ QVariant WalletListModel::data(const QModelIndex &index, int role) const
         return item.balance ? QmlBitcoinUnits::formatForDisplay(QmlBitcoinUnits::fromDisplayUnit(m_display_unit), *item.balance) : QString{};
     case BalanceSatoshiRole:
         return item.balance.value_or(0);
+    case BalanceKnownRole:
+        return item.balance.has_value();
     case WalletSectionRole:
         return m_open_wallet_names.contains(item.name) ? QStringLiteral("open") : QStringLiteral("closed");
     case KeySchemeKindRole:
@@ -257,6 +260,7 @@ QHash<int, QByteArray> WalletListModel::roleNames() const
     roles[ErrorMessageRole] = "errorMessage";
     roles[BalanceRole] = "balance";
     roles[BalanceSatoshiRole] = "balanceSatoshi";
+    roles[BalanceKnownRole] = "balanceKnown";
     roles[KeySchemeKindRole] = "keySchemeKind";
     roles[WalletSectionRole] = "walletSection";
     return roles;

@@ -46,6 +46,7 @@ public:
         KeySchemeKindRole,
         WalletSectionRole,
         BalanceSatoshiRole,
+        BalanceKnownRole,
     };
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -61,7 +62,7 @@ public Q_SLOTS:
     void listWalletDir();
     void setWalletLoadState(const QString& name, LoadState state, const QString& error = {});
     void setDisplayUnit(int unit);
-    void setWalletInfo(const QString& name, qint64 balance, int keySchemeKind);
+    void setWalletInfo(const QString& name, qint64 balance, int keySchemeKind, bool balanceKnown = true);
     void refreshDisplayNames();
 
 private:

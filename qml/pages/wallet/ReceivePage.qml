@@ -48,15 +48,15 @@ Page {
     // Saved requests always use the same modal, including this entry point.
     onVisibleChanged: {
         if (visible) Qt.callLater(function() {
-            if (root.visible) root.prepareReceivingAddress()
-            if (root.visible && root.request && root.request.id && !requestModal.visible) {
+            if (root && root.visible) root.prepareReceivingAddress()
+            if (root && root.visible && root.request && root.request.id && !requestModal.visible) {
                 root.presentedRequest = root.request
                 requestModal.openRequest(root.request.id)
             }
         })
     }
     Component.onCompleted: Qt.callLater(function() {
-        if (root.visible) root.prepareReceivingAddress()
+        if (root && root.visible) root.prepareReceivingAddress()
     })
 
     Item {
@@ -238,7 +238,7 @@ Page {
             if (wallet !== root.wallet) return
             Qt.callLater(function() {
                 card.resetFields()
-                if (root.visible) root.prepareReceivingAddress()
+                if (root && root.visible) root.prepareReceivingAddress()
             })
         }
     }
@@ -248,6 +248,6 @@ Page {
         requestModal.close()
         if (root.request) root.request.clear()
         card.resetFields()
-        Qt.callLater(function() { if (root.visible) root.ensureReceivingAddress(false, "") })
+        Qt.callLater(function() { if (root && root.visible) root.ensureReceivingAddress(false, "") })
     }
 }

@@ -99,9 +99,9 @@ public:
     bool external_signer{false};
     int address_writes{0};
     int commits{0};
-    bool busy{false};
+    std::atomic_bool busy{false};
     bool snapshot_on_worker{false};
-    uint256 tip{1};
+    std::atomic<uint8_t> tip{1};
     int status_reads{0};
     int label_reads{0};
     int snapshots{0};
@@ -152,10 +152,11 @@ public:
         time = 1'789'200'000;
         return true;
     }
-    bool tryGetBalances(interfaces::WalletBalances&, uint256& hash) override
+    bool tryGetBalances(interfaces::WalletBalances& balances, uint256& hash) override
     {
         if (busy) return false;
-        hash = tip;
+        hash = uint256{tip.load()};
+        balances.balance = 10 * COIN;
         return true;
     }
     bool getAddress(const CTxDestination& address, std::string* label, wallet::AddressPurpose* purpose) override
@@ -1274,7 +1275,7 @@ void TransactionActivityModelTests::refreshesOnWalletTipAndSameHeightReorg()
     f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 6;
     QTRY_COMPARE(source->index(0).data(Model::DepthRole).toInt(), 6);
     f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 0;
-    f.state->tip = uint256{2}; // Same height, different wallet-processed block.
+    f.state->tip = 2; // Same height, different wallet-processed block.
     QTRY_COMPARE(source->index(0).data(Model::DepthRole).toInt(), 0);
     QVERIFY(source->index(0).data(Model::IsPendingRole).toBool());
 }

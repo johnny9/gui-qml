@@ -41,6 +41,7 @@ TestCase {
         walletController.noWalletsFound = false
         walletController.setOpenWallets([testWalletModel])
         walletController.setSelectedWalletObject(testWalletModel)
+        testWalletModel.balanceKnown = true
         walletListModel.reset()
         nodeModel.numPeers = 0
         nodeModel.initialSyncComplete = false
@@ -118,6 +119,20 @@ TestCase {
 
         compare(balanceText.font.family, optionsModel.moneyFont.family)
         compare(balanceText.font.weight, optionsModel.moneyFont.weight)
+    }
+
+    function test_unknown_balance_is_not_presented_as_zero() {
+        const page = createDesktopWallets()
+        const balance = findChild(page, "walletBadgeBalanceText")
+        const unavailable = findChild(page, "walletBadgeBalanceUnavailable")
+        verify(balance !== null)
+        verify(unavailable !== null)
+        testWalletModel.balanceKnown = false
+        tryCompare(balance, "visible", false)
+        tryCompare(unavailable, "visible", true)
+        testWalletModel.balanceKnown = true
+        tryCompare(balance, "visible", true)
+        tryCompare(unavailable, "visible", false)
     }
 
     function test_wallet_badge_balance_updates_unit_suffix() {

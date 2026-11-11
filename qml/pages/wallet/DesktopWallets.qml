@@ -270,6 +270,7 @@ Page {
             walletType: ApplicationModels.walletController.selectedWallet.keyScheme
             text: ApplicationModels.walletController.selectedWallet.displayName
             balance: ApplicationModels.walletController.selectedWallet.balance
+            balanceKnown: ApplicationModels.walletController.selectedWallet.balanceKnown
             balanceSatoshi: ApplicationModels.walletController.selectedWallet.balanceSatoshi
             loading: !ApplicationModels.walletController.initialized
             noWalletLoaded: !ApplicationModels.walletController.isWalletLoaded

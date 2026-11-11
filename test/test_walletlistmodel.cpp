@@ -433,16 +433,26 @@ void WalletListModelTests::setWalletInfoUpdatesBalanceAndKeySchemeRolesForRowOnl
     QCOMPARE(bottom_right.row(), 0);
     const QVector<int> roles = args.at(2).value<QVector<int>>();
     QVERIFY(roles.contains(WalletListModel::BalanceRole));
+    QVERIFY(roles.contains(WalletListModel::BalanceKnownRole));
     QVERIFY(roles.contains(WalletListModel::KeySchemeKindRole));
 
     QCOMPARE(model.data(model.index(0, 0), WalletListModel::BalanceRole).toString(), QString{"0.00167930"});
     QCOMPARE(model.data(model.index(0, 0), WalletListModel::KeySchemeKindRole).toInt(), 2);
     QCOMPARE(model.data(model.index(1, 0), WalletListModel::BalanceRole).toString(), QString{});
+    QVERIFY(!model.data(model.index(1, 0), WalletListModel::BalanceKnownRole).toBool());
+    QVERIFY(model.data(model.index(0, 0), WalletListModel::BalanceKnownRole).toBool());
     QCOMPARE(model.data(model.index(1, 0), WalletListModel::KeySchemeKindRole).toInt(), -1);
 
     // No-op when nothing changed.
     model.setWalletInfo("alpha_wallet", 167930, /*keySchemeKind=*/2);
     QCOMPARE(data_changed_spy.count(), 0);
+    // Opening metadata can arrive before its first observed balance. Preserve
+    // the key type while distinguishing absence from a known zero.
+    model.setWalletInfo("alpha_wallet", 0, /*keySchemeKind=*/2, /*balanceKnown=*/false);
+    QCOMPARE(data_changed_spy.count(), 1);
+    QVERIFY(!model.data(model.index(0, 0), WalletListModel::BalanceKnownRole).toBool());
+    QCOMPARE(model.data(model.index(0, 0), WalletListModel::BalanceRole).toString(), QString{});
+    QCOMPARE(model.data(model.index(0, 0), WalletListModel::KeySchemeKindRole).toInt(), 2);
 }
 
 void WalletListModelTests::listWalletDirPreservesBalanceAndKeySchemeAcrossRebuilds()

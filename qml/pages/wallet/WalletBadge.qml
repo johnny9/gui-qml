@@ -13,6 +13,7 @@ Button {
     objectName: "walletBadge"
 
     property string balance: ""
+    property bool balanceKnown: true
     property var balanceSatoshi: 0
     property bool loading: false
     property bool noWalletLoaded: false
@@ -96,7 +97,7 @@ Button {
             BitcoinAmountDisplayLabel {
                 objectName: "walletBadgeBalanceText"
                 Layout.fillWidth: true
-                visible: !root.loading && !root.noWalletLoaded
+                visible: !root.loading && !root.noWalletLoaded && root.balanceKnown
                 amount: root.balance
                 unit: ApplicationModels.optionsModel.displayUnit === BitcoinAmount.SAT
                     ? (root.balanceSatoshi === 1 ? "sat" : "sats") : ApplicationModels.optionsModel.displayUnitLabel
@@ -107,6 +108,14 @@ Button {
                 horizontalAlignment: Text.AlignLeft
                 wrap: false
                 elide: Text.ElideRight
+            }
+            CoreText {
+                objectName: "walletBadgeBalanceUnavailable"
+                Layout.fillWidth: true
+                visible: !root.loading && !root.noWalletLoaded && !root.balanceKnown
+                text: qsTr("Balance unavailable")
+                color: Theme.color.neutral8
+                font.pixelSize: 13
             }
         }
 

@@ -96,6 +96,8 @@ if(ENABLE_WALLET)
     test_walletqmlmodeltransaction.cpp
     test_walletqmlcontroller.cpp
     test_walletlifecycle.cpp
+    test_walletbalanceadapter.cpp
+    test_walletbalancereader.cpp
   )
 endif()
 

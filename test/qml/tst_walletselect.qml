@@ -47,7 +47,7 @@ TestCase {
         const model = createTemporaryObject(typedWalletModel, this)
         model.append({ name: "testwallet", displayName: "Test wallet",
             format: "sqlite", loadState: 1, errorMessage: "",
-            balance: "0", balanceSatoshi: 0, keySchemeKind: 0, walletSection: "open" })
+            balance: "0", balanceSatoshi: 0, balanceKnown: true, keySchemeKind: 0, walletSection: "open" })
         const popup = createTemporaryObject(walletSelectComponent, this, { model: model })
         popup.open()
         tryCompare(popup, "opened", true)
@@ -83,7 +83,7 @@ TestCase {
         const model = createTemporaryObject(typedWalletModel, this)
         model.append({ name: "typedwallet", displayName: "Typed wallet",
             format: "sqlite", loadState: 1, errorMessage: "",
-            balance: "1.23", balanceSatoshi: 123000000, keySchemeKind: data.kind, walletSection: "open" })
+            balance: "1.23", balanceSatoshi: 123000000, balanceKnown: true, keySchemeKind: data.kind, walletSection: "open" })
         const popup = createTemporaryObject(walletSelectComponent, this, { model: model })
         popup.open()
         tryCompare(popup, "opened", true)
@@ -113,7 +113,7 @@ TestCase {
         for (let i = 0; i < data.groups.length; ++i) {
             model.append({ name: "wallet" + i, displayName: "Wallet " + i,
                 format: "sqlite", loadState: data.groups[i] === "open" ? 1 : 0,
-                errorMessage: "", balance: "1.23", balanceSatoshi: 123000000, keySchemeKind: 0,
+                errorMessage: "", balance: "1.23", balanceSatoshi: 123000000, balanceKnown: true, keySchemeKind: 0,
                 walletSection: data.groups[i] })
         }
         const popup = createTemporaryObject(walletSelectComponent, this, { model: model })
@@ -125,6 +125,22 @@ TestCase {
             compare(heading !== null && heading.visible, data.groups.indexOf(group) !== -1)
             if (heading !== null) compare(heading.text, group === "open" ? "Open wallets" : "Closed wallets")
         }
+    }
+
+    function test_open_wallet_unknown_balance_is_distinct_from_known_zero() {
+        const model = createTemporaryObject(typedWalletModel, this)
+        model.append({ name: "unknown", displayName: "Unknown balance",
+            format: "sqlite", loadState: 1, errorMessage: "",
+            balance: "0", balanceSatoshi: 0, balanceKnown: false, keySchemeKind: 0, walletSection: "open" })
+        const popup = createTemporaryObject(walletSelectComponent, this, { model: model })
+        popup.open()
+        tryCompare(popup, "opened", true)
+        const list = findChild(popup, "walletSelectList")
+        tryVerify(function() { return list.itemAtIndex(0) !== null })
+        const row = list.itemAtIndex(0)
+        compare(row.statusText, "Balance unavailable")
+        model.setProperty(0, "balanceKnown", true)
+        compare(row.statusText, "0 " + optionsModel.displayUnitLabel)
     }
 
     function test_closed_wallet_menu_opens_wallet() {

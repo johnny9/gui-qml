@@ -15,7 +15,7 @@ CoinsListModel::CoinsListModel(WalletQmlModel* parent)
     if (parent) {
         connect(parent, &WalletQmlModel::transactionChanged, this, &CoinsListModel::update);
         connect(parent, &WalletQmlModel::addressListChanged, this, &CoinsListModel::update);
-        connect(parent, &WalletQmlModel::balanceChanged, this, &CoinsListModel::update);
+        connect(parent, &WalletQmlModel::walletContentsChanged, this, &CoinsListModel::update);
     }
     update();
 }

@@ -158,11 +158,23 @@ bool WalletQmlController::isWalletOpen(const QString& path)
 
 void WalletQmlController::publishWalletInfo(WalletQmlModel* wallet_model)
 {
-    if (!wallet_model) return;
+    const auto found = m_wallet_information.find(wallet_model);
+    if (found == m_wallet_information.end()) return;
+    const auto information = found->second;
     Q_EMIT walletInfoChanged(
-        wallet_model->name(),
-        wallet_model->balanceSatoshi(),
-        static_cast<int>(wallet_model->keySchemeKind()));
+        information.name,
+        wallet_model->displayedBalanceSatoshi(),
+        information.key_scheme,
+        wallet_model->balanceKnown());
+}
+
+void WalletQmlController::initializeWalletInfo(WalletQmlModel* wallet_model)
+{
+    // Preserve the existing opening-metadata capture/publication point. Its
+    // legacy queries belong to the opening migration, not balance callbacks.
+    m_wallet_information.emplace(wallet_model, WalletInformation{
+        wallet_model->name(), static_cast<int>(wallet_model->keySchemeKind())});
+    publishWalletInfo(wallet_model);
 }
 
 void WalletQmlController::publishOpenWalletsInfo()
@@ -354,6 +366,7 @@ void WalletQmlController::beginShutdown()
 void WalletQmlController::retireWallet(WalletQmlModel* model, bool remove)
 {
     if (!model || m_retiring_wallets.contains(model)) return;
+    m_wallet_information.erase(model);
     m_retiring_wallets.insert(model);
     const auto name = model->name();
     if (model != m_empty_wallet) m_retiring_wallet_names.insert(name);
@@ -404,6 +417,7 @@ void WalletQmlController::removeWalletModel(WalletQmlModel* wallet_model, bool r
             }
         }
         m_wallets.erase(wallet_it);
+        m_wallet_information.erase(wallet_model);
     }
 
     if (m_selected_wallet == wallet_model) {
@@ -425,7 +439,7 @@ WalletQmlModel* WalletQmlController::addOrSelectWalletModel(std::shared_ptr<inte
 {
     if (!wallet) return nullptr;
     if (m_shutting_down) {
-        retireWallet(new WalletQmlModel(WalletQmlModel::SharedWallet{std::move(wallet)}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices()), false);
+        retireWallet(new WalletQmlModel(WalletQmlModel::SharedWallet{std::move(wallet), m_wallet_command_executor->scheduler()}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices()), false);
         return nullptr;
     }
     const QPointer<WalletQmlController> guard{this};
@@ -438,7 +452,7 @@ WalletQmlModel* WalletQmlController::addOrSelectWalletModel(std::shared_ptr<inte
     }
     const bool added = !model;
     if (added) {
-        model = new WalletQmlModel(WalletQmlModel::SharedWallet{std::move(wallet)}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
+        model = new WalletQmlModel(WalletQmlModel::SharedWallet{std::move(wallet), m_wallet_command_executor->scheduler()}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
         registerWalletModel(model);
         subscribeWalletInfo(model);
         QMutexLocker locker(&m_wallets_mutex);
@@ -452,7 +466,7 @@ WalletQmlModel* WalletQmlController::addOrSelectWalletModel(std::shared_ptr<inte
     }
     Q_EMIT walletLoadStateChanged(name, WalletListModel::LoadState::Open, QString{});
     if (!guard || m_shutting_down) return nullptr;
-    publishWalletInfo(model);
+    initializeWalletInfo(model);
     if (!guard || m_shutting_down) return nullptr;
     if (select_wallet) {
         Q_EMIT selectedWalletChanged();
@@ -1164,14 +1178,14 @@ void WalletQmlController::finishInitialization()
     if (!handoff) return;
     if (!handoff->entries.empty()) {
         for (const auto& entry : handoff->entries) {
-            auto* wallet_model = new WalletQmlModel(WalletQmlModel::SharedWallet{entry.wallet}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
+            auto* wallet_model = new WalletQmlModel(WalletQmlModel::SharedWallet{entry.wallet, m_wallet_command_executor->scheduler()}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
             registerWalletModel(wallet_model);
             applyWalletDisplayName(wallet_model);
             m_wallets.push_back(wallet_model);
             subscribeWalletInfo(wallet_model);
             Q_EMIT walletLoadStateChanged(QString::fromStdString(entry.name), WalletListModel::LoadState::Open, QString{});
             if (!guard || m_shutting_down) return;
-            publishWalletInfo(wallet_model);
+            initializeWalletInfo(wallet_model);
             if (!guard || m_shutting_down) return;
         }
         // Background disposal publishes the next bounded presentation batch.

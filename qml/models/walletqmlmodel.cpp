@@ -7,6 +7,7 @@
 #include <qml/models/signertransaction.h>
 #include <qml/models/psbtfee.h>
 #include <qml/backendexecutor.h>
+#include <qml/walletbalanceadapter.h>
 
 #include <common/messages.h>
 #include <qml/bitcoinamount.h>
@@ -611,6 +612,7 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
                              FeeReadServices fee_services, psbtfee::Services psbt_services, backup::Services backup_services,
                              QObject* parent)
     : QObject(parent)
+    , m_balance_scheduler(std::move(wallet.observations))
     , m_wallet(std::move(wallet.wallet))
     , m_node(node)
     , m_backup_services(std::move(backup_services))
@@ -642,6 +644,7 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
     initializePsbtFeeReader();
     refreshSecurityState();
     subscribeToWalletSignals();
+    initializeBalanceReader();
 }
 
 WalletQmlModel::WalletQmlModel(interfaces::Node* node, QObject* parent)
@@ -733,6 +736,10 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
     if (m_backup_operation) m_backup_operation->retire();
     const bool was_available{available()};
     m_unload_requested->store(true);
+    m_balance_timer.stop();
+    if (m_balance_reader) m_balance_reader->close();
+    m_balance_known = false;
+    m_balance_state = BalanceState::Closed;
     if (was_available) Q_EMIT availableChanged();
     m_receive_payment_poll_timer.stop();
     if (m_transaction_activity_model) m_transaction_activity_model->stop();
@@ -753,6 +760,7 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
         if (wallet && remove_wallet) wallet->remove();
     }, [] {});
     m_backend_executor->shutdown();
+    Q_EMIT balanceObservationChanged();
 }
 
 namespace {
@@ -890,7 +898,7 @@ QString WalletQmlModel::balance() const
     if (!m_wallet) {
         return "0";
     }
-    return QmlBitcoinUnits::formatForDisplay(QmlBitcoinUnits::fromDisplayUnit(m_display_unit), m_wallet->getBalance());
+    return QmlBitcoinUnits::formatForDisplay(QmlBitcoinUnits::fromDisplayUnit(m_display_unit), m_balance);
 }
 
 qint64 WalletQmlModel::balanceSatoshi() const
@@ -899,6 +907,53 @@ qint64 WalletQmlModel::balanceSatoshi() const
         return 0;
     }
     return m_wallet->getBalance();
+}
+
+void WalletQmlModel::initializeBalanceReader()
+{
+    m_balance_state = BalanceState::Unknown;
+    const QPointer<WalletQmlModel> observer{this};
+    const auto scheduler = m_balance_scheduler ? m_balance_scheduler : m_backend_executor->scheduler();
+    m_balance_reader = std::make_shared<walletbalance::Reader>(scheduler,
+        walletbalance::WalletRead(m_wallet), [bridge = m_notification_bridge, observer] {
+            QMetaObject::invokeMethod(bridge.get(), [observer] {
+                if (observer && !observer->m_stopping) observer->publishBalance();
+            }, Qt::QueuedConnection);
+        }, m_unload_requested);
+    m_balance_timer.setInterval(1000);
+    connect(&m_balance_timer, &QTimer::timeout, this, &WalletQmlModel::refreshBalance);
+    m_balance_timer.start();
+    refreshBalance();
+}
+
+void WalletQmlModel::refreshBalance()
+{
+    if (m_balance_reader && !m_stopping) m_balance_reader->refresh();
+}
+
+void WalletQmlModel::publishBalance()
+{
+    const auto result = m_balance_reader->take();
+    if (!result) return;
+    BalanceState state{BalanceState::Unknown};
+    switch (result->status) {
+    case walletbalance::Status::Ready: state = BalanceState::Ready; break;
+    case walletbalance::Status::Busy: state = BalanceState::Busy; break;
+    case walletbalance::Status::Unavailable: state = BalanceState::Unavailable; break;
+    case walletbalance::Status::Failed: state = BalanceState::Failed; break;
+    case walletbalance::Status::Rejected: state = BalanceState::Rejected; break;
+    case walletbalance::Status::Closed: state = BalanceState::Closed; break;
+    }
+    const bool changed = result->snapshot && (!m_balance_known || m_balance != result->snapshot->trusted);
+    const bool observation_changed = state != m_balance_state || (result->snapshot && !m_balance_known);
+    m_balance_state = state;
+    if (result->snapshot) {
+        m_balance = result->snapshot->trusted;
+        m_balance_known = true;
+    }
+    const QPointer<WalletQmlModel> observer{this};
+    if (observation_changed) Q_EMIT balanceObservationChanged();
+    if (observer && !m_stopping && changed) Q_EMIT balanceChanged();
 }
 
 QString WalletQmlModel::estimatedFee() const
@@ -3459,6 +3514,7 @@ void WalletQmlModel::setDisplayUnit(int unit)
         }
         Q_EMIT balanceChanged();
         Q_EMIT displayUnitChanged(unit);
+        Q_EMIT walletContentsChanged();
     }
 }
 
@@ -3472,7 +3528,8 @@ void WalletQmlModel::subscribeToWalletSignals()
         QMetaObject::invokeMethod(bridge.get(), [guard] {
             if (!guard || guard->m_stopping) return;
             guard->refreshSecurityState();
-            Q_EMIT guard->balanceChanged();
+            guard->refreshBalance();
+            Q_EMIT guard->walletContentsChanged();
             Q_EMIT guard->sendAmountExhaustsBalanceChanged();
         }, Qt::QueuedConnection);
     });
@@ -3494,7 +3551,8 @@ void WalletQmlModel::subscribeToWalletSignals()
                 }
                 guard->updateReceivedPaymentRequestAmounts();
                 Q_EMIT guard->transactionChanged(QString::fromStdString(txid.ToString()), change);
-                Q_EMIT guard->balanceChanged();
+                guard->refreshBalance();
+                Q_EMIT guard->walletContentsChanged();
                 Q_EMIT guard->sendAmountExhaustsBalanceChanged();
             }
             pending->fetch_sub(1);

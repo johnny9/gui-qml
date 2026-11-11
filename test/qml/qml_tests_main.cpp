@@ -1065,6 +1065,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString displayName MEMBER m_name NOTIFY nameChanged)
     Q_PROPERTY(bool available MEMBER m_available NOTIFY availableChanged)
     Q_PROPERTY(QString balance MEMBER m_balance NOTIFY balanceChanged)
+    Q_PROPERTY(bool balanceKnown MEMBER m_balance_known NOTIFY balanceChanged)
     Q_PROPERTY(QObject* transactionActivityModel READ transactionActivityModel CONSTANT)
     Q_PROPERTY(QObject* bumpModel READ bumpModel CONSTANT)
     Q_PROPERTY(QObject* recipients READ recipients CONSTANT)
@@ -1146,6 +1147,7 @@ public:
 
     QString m_name{QStringLiteral("testwallet")};
     QString m_balance{QStringLiteral("1.00000000 BTC")};
+    bool m_balance_known{true};
     bool m_available{true};
     QObject* m_transaction_activity_model{nullptr};
     QObject* m_bump_model{nullptr};
@@ -3222,6 +3224,7 @@ public:
         KeySchemeKindRole,
         WalletSectionRole,
         BalanceSatoshiRole,
+        BalanceKnownRole,
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex{}) const override
@@ -3240,6 +3243,7 @@ public:
         if (role == ErrorMessageRole) return QString{};
         if (role == BalanceRole) return QString{};
         if (role == BalanceSatoshiRole) return qint64{0};
+        if (role == BalanceKnownRole) return false;
         if (role == WalletSectionRole) return m_wallet_load_states.at(index.row()) == 1 ? QStringLiteral("open") : QStringLiteral("closed");
         if (role == KeySchemeKindRole) return 0;
         return {};
@@ -3257,6 +3261,7 @@ public:
             {KeySchemeKindRole, "keySchemeKind"},
             {WalletSectionRole, "walletSection"},
             {BalanceSatoshiRole, "balanceSatoshi"},
+            {BalanceKnownRole, "balanceKnown"},
         };
     }
 

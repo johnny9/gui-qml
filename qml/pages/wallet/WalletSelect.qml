@@ -154,6 +154,7 @@ Popup {
                 required property int loadState;
                 required property string errorMessage;
                 required property string balance;
+                required property bool balanceKnown;
                 required property var balanceSatoshi;
                 required property int keySchemeKind;
 
@@ -175,6 +176,7 @@ Popup {
                     case WalletListModel.LoadError:
                         return qsTr("Failed to open wallet")
                     case WalletListModel.Open:
+                        if (!balanceKnown) return qsTr("Balance unavailable")
                         return balance + " " + (ApplicationModels.optionsModel.displayUnit === BitcoinAmount.SAT
                             ? (balanceSatoshi === 1 ? "sat" : "sats") : ApplicationModels.optionsModel.displayUnitLabel)
                     case WalletListModel.Closed:

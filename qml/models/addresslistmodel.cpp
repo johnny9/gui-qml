@@ -62,7 +62,7 @@ AddressListModel::AddressListModel(WalletQmlModel* parent)
 {
     if (m_wallet_model) {
         connect(m_wallet_model, &WalletQmlModel::addressListChanged, this, &AddressListModel::refresh);
-        connect(m_wallet_model, &WalletQmlModel::balanceChanged, this, &AddressListModel::refresh);
+        connect(m_wallet_model, &WalletQmlModel::walletContentsChanged, this, &AddressListModel::refresh);
     }
     refresh();
 }

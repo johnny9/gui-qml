@@ -693,6 +693,291 @@ private:
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void displayedBalanceNeverReadsCoreOnGui()
+    {
+        struct Reads { std::atomic<int> gui{0}, grouped{0}; };
+        struct Wallet final : StubWallet {
+            explicit Wallet(std::shared_ptr<Reads> reads) : reads(std::move(reads)) {}
+            CAmount getBalance() override
+            {
+                if (QThread::currentThread() == qApp->thread()) ++reads->gui;
+                return 42;
+            }
+            bool tryGetBalances(interfaces::WalletBalances& balances, uint256& tip) override
+            {
+                if (QThread::currentThread() == qApp->thread()) ++reads->gui;
+                ++reads->grouped;
+                balances.balance = 42;
+                tip = uint256::ONE;
+                return true;
+            }
+            const std::shared_ptr<Reads> reads;
+        };
+        const auto reads = std::make_shared<Reads>();
+        WalletQmlModel model{std::make_unique<Wallet>(reads)};
+        for (int i = 0; i < 100; ++i) {
+            (void)model.property("balance");
+            (void)model.property("balanceSatoshi");
+        }
+        QCOMPARE(reads->gui.load(), 0);
+        QTRY_COMPARE(model.property("balanceSatoshi").toLongLong(), qint64{42});
+        QVERIFY(reads->grouped.load() > 0);
+    }
+    void busyAndFailedBalanceRefreshRetainKnownValue()
+    {
+        struct ReadState { std::atomic<int> result{0}; };
+        const auto read = std::make_shared<ReadState>();
+        auto wallet = std::make_unique<MockWallet>();
+        wallet->try_get_balances_fn = [read](interfaces::WalletBalances& balances, uint256&) {
+            if (read->result == 1) return false;
+            if (read->result == 2) throw std::runtime_error("synthetic grouped-read failure");
+            balances.balance = read->result == 3 ? 0 : 42;
+            return true;
+        };
+        WalletQmlModel model{std::move(wallet)};
+        QVERIFY(!model.balanceKnown());
+        QTRY_COMPARE(model.balanceState(), WalletQmlModel::BalanceState::Ready);
+        QVERIFY(model.balanceKnown());
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{42});
+        read->result = 1;
+        model.refreshBalance();
+        QTRY_COMPARE(model.balanceState(), WalletQmlModel::BalanceState::Busy);
+        QVERIFY(model.balanceKnown());
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{42});
+        read->result = 2;
+        model.refreshBalance();
+        QTRY_COMPARE(model.balanceState(), WalletQmlModel::BalanceState::Failed);
+        QVERIFY(model.balanceKnown());
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{42});
+        read->result = 3;
+        model.refreshBalance();
+        QTRY_COMPARE(model.balanceState(), WalletQmlModel::BalanceState::Ready);
+        QVERIFY(model.balanceKnown());
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{0});
+        model.beginShutdown();
+        QVERIFY(!model.balanceKnown());
+        QCOMPARE(model.balanceState(), WalletQmlModel::BalanceState::Closed);
+    }
+    void balancePublicationDoesNotStartOtherWalletReads()
+    {
+        const auto gui_reads = std::make_shared<std::atomic<int>>(0);
+        const auto count_gui = [gui_reads] {
+            if (QThread::currentThread() == qApp->thread()) ++*gui_reads;
+        };
+        auto wallet = std::make_unique<MockWallet>();
+        wallet->get_balance_fn = [] { return 42; };
+        wallet->get_wallet_txs_fn = [count_gui] { count_gui(); return std::set<interfaces::WalletTx>{}; };
+        wallet->list_coins_fn = [count_gui] { count_gui(); return interfaces::Wallet::CoinsList{}; };
+        WalletQmlModel model{std::move(wallet)};
+        gui_reads->store(0); // Constructor reads belong to their legacy consumers.
+        QSignalSpy contents{&model, &WalletQmlModel::walletContentsChanged};
+        QTRY_VERIFY(model.balanceKnown());
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{42});
+        QCOMPARE(gui_reads->load(), 0);
+        QCOMPARE(contents.count(), 0);
+    }
+    void balanceUsesInjectedSchedulerAndSeparateGuiPublication()
+    {
+        ManualRoutedExecution env;
+        auto wallet = std::make_shared<MockWallet>();
+        wallet->get_balance_fn = [] { return 42; };
+        WalletQmlModel model{WalletQmlModel::SharedWallet{wallet, env.scheduler}, nullptr,
+                             FeeReadServices{}, psbtfee::Services{}, backup::Services{}};
+        QSignalSpy balance{&model, &WalletQmlModel::balanceChanged};
+        QVERIFY(!model.balanceKnown());
+        QCOMPARE(env.scheduler->pending(), size_t{1});
+        QVERIFY(env.step(execution::Lane::Core));
+        QVERIFY(!model.balanceKnown());
+        QVERIFY(env.step(execution::Lane::Domain));
+        QVERIFY(!model.balanceKnown());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(model.balanceKnown());
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{42});
+        QCOMPARE(balance.count(), 1);
+        QVERIFY(env.quiescent());
+        model.refreshBalance();
+        QCOMPARE(env.scheduler->pending(), size_t{1});
+        model.beginShutdown();
+        env.drain();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(balance.count(), 1);
+        QVERIFY(env.quiescent());
+    }
+    void emptyAndRetiredBalanceReadersDoNotAdmitWork()
+    {
+        WalletQmlModel empty;
+        empty.refreshBalance();
+        QCOMPARE(empty.displayedBalanceSatoshi(), qint64{0});
+        QVERIFY(!empty.balanceKnown());
+        QCOMPARE(empty.balanceState(), WalletQmlModel::BalanceState::Unavailable);
+        ManualRoutedExecution env;
+        WalletQmlModel model{WalletQmlModel::SharedWallet{std::make_shared<MockWallet>(), env.scheduler}, nullptr,
+                             FeeReadServices{}, psbtfee::Services{}, backup::Services{}};
+        QSignalSpy balance{&model, &WalletQmlModel::balanceChanged};
+        env.drain(); // Hold a completed observation's GUI wakeup across close.
+        model.beginShutdown();
+        model.refreshBalance();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(env.quiescent());
+        QVERIFY(!model.balanceKnown());
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{0});
+        QCOMPARE(balance.count(), 0);
+        struct RetainedCallbackWallet final : MockWallet {
+            StatusChangedFn retained;
+            std::unique_ptr<interfaces::Handler> handleStatusChanged(StatusChangedFn callback) override
+            {
+                retained = std::move(callback);
+                return MakeNoopHandler();
+            }
+        };
+        // A Core callback lease may retain the bridge after the facade is gone.
+        const auto callback_wallet = std::make_shared<RetainedCallbackWallet>();
+        auto lost = std::make_unique<WalletQmlModel>(WalletQmlModel::SharedWallet{callback_wallet, env.scheduler}, nullptr,
+                                                    FeeReadServices{}, psbtfee::Services{}, backup::Services{});
+        QSignalSpy lost_balance{lost.get(), &WalletQmlModel::balanceChanged};
+        env.drain(); // A second queued wakeup loses its QObject before delivery.
+        lost.reset();
+        QVERIFY(callback_wallet->retained);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(lost_balance.count(), 0);
+        QVERIFY(env.quiescent());
+    }
+    void rejectedBalanceProjectionRecoversOnNewInterest()
+    {
+        ManualRoutedExecution env;
+        env.reject_lane = execution::Lane::Core;
+        auto wallet = std::make_shared<MockWallet>();
+        wallet->get_balance_fn = [] { return 42; };
+        WalletQmlModel model{WalletQmlModel::SharedWallet{wallet, env.scheduler}, nullptr,
+                             FeeReadServices{}, psbtfee::Services{}, backup::Services{}};
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(model.balanceState(), WalletQmlModel::BalanceState::Rejected);
+        QVERIFY(!model.balanceKnown());
+        QVERIFY(env.quiescent());
+        model.refreshBalance();
+        env.drain();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(model.balanceState(), WalletQmlModel::BalanceState::Ready);
+        QVERIFY(model.balanceKnown());
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{42});
+    }
+    void heldGuiRetainsFirstValueAlongsideSameBusyState()
+    {
+        ManualRoutedExecution env;
+        auto wallet = std::make_shared<MockWallet>();
+        bool busy{true};
+        wallet->try_get_balances_fn = [&busy](interfaces::WalletBalances& balances, uint256&) {
+            if (busy) return false;
+            balances.balance = 42;
+            return true;
+        };
+        WalletQmlModel model{WalletQmlModel::SharedWallet{wallet, env.scheduler}, nullptr,
+                             FeeReadServices{}, psbtfee::Services{}, backup::Services{}};
+        env.drain();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(model.balanceState(), WalletQmlModel::BalanceState::Busy);
+        QVERIFY(!model.balanceKnown());
+        QSignalSpy observation{&model, &WalletQmlModel::balanceObservationChanged};
+        QSignalSpy balance{&model, &WalletQmlModel::balanceChanged};
+        busy = false;
+        model.refreshBalance();
+        env.drain();
+        busy = true;
+        model.refreshBalance();
+        env.drain();
+        QVERIFY(!model.balanceKnown());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(model.balanceState(), WalletQmlModel::BalanceState::Busy);
+        QVERIFY(model.balanceKnown());
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{42});
+        QCOMPARE(observation.count(), 1);
+        QCOMPARE(balance.count(), 1);
+    }
+    void balanceObservationMayRetireItsFacade_data()
+    {
+        QTest::addColumn<bool>("destroy");
+        QTest::newRow("close") << false;
+        QTest::newRow("destroy") << true;
+    }
+    void balanceObservationMayRetireItsFacade()
+    {
+        QFETCH(bool, destroy);
+        ManualRoutedExecution env;
+        auto wallet = std::make_shared<MockWallet>();
+        wallet->get_balance_fn = [] { return 42; };
+        auto model = std::make_unique<WalletQmlModel>(WalletQmlModel::SharedWallet{wallet, env.scheduler}, nullptr,
+                                                     FeeReadServices{}, psbtfee::Services{}, backup::Services{});
+        QSignalSpy balance{model.get(), &WalletQmlModel::balanceChanged};
+        bool retired{false};
+        connect(model.get(), &WalletQmlModel::balanceObservationChanged, this, [&] {
+            if (std::exchange(retired, true)) return;
+            if (destroy) model.reset();
+            else model->beginShutdown();
+        });
+        env.drain();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(retired);
+        QCOMPARE(balance.count(), 0);
+        QVERIFY(env.quiescent());
+        if (model) QCOMPARE(model->balanceState(), WalletQmlModel::BalanceState::Closed);
+    }
+    void unloadIngressFencesAnAlreadyQueuedBalancePublication()
+    {
+        struct Wallet final : MockWallet {
+            UnloadFn unloaded;
+            std::unique_ptr<interfaces::Handler> handleUnload(UnloadFn callback) override
+            {
+                unloaded = std::move(callback);
+                return MakeNoopHandler();
+            }
+        };
+        ManualRoutedExecution env;
+        auto wallet = std::make_shared<Wallet>();
+        wallet->get_balance_fn = [] { return 42; };
+        WalletQmlModel model{WalletQmlModel::SharedWallet{wallet, env.scheduler}, nullptr,
+                             FeeReadServices{}, psbtfee::Services{}, backup::Services{}};
+        QSignalSpy balance{&model, &WalletQmlModel::balanceChanged};
+        QSignalSpy unloaded{&model, &WalletQmlModel::walletUnloaded};
+        env.drain(); // The value's GUI wakeup precedes the unload wakeup.
+        wallet->unloaded(); // Ingress fence is already authoritative locally.
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(balance.count(), 0);
+        QCOMPARE(unloaded.count(), 1);
+        QVERIFY(!model.balanceKnown());
+        QVERIFY(!model.available());
+        QVERIFY(env.quiescent());
+    }
+    void statusNoticeRefreshesBalanceWithoutPublishingItsOldValue()
+    {
+        struct Wallet final : MockWallet {
+            StatusChangedFn changed;
+            std::unique_ptr<interfaces::Handler> handleStatusChanged(StatusChangedFn callback) override
+            {
+                changed = std::move(callback);
+                return MakeNoopHandler();
+            }
+        };
+        ManualRoutedExecution env;
+        auto wallet = std::make_shared<Wallet>();
+        int observed{42};
+        wallet->get_balance_fn = [&observed] { return observed; };
+        WalletQmlModel model{WalletQmlModel::SharedWallet{wallet, env.scheduler}, nullptr,
+                             FeeReadServices{}, psbtfee::Services{}, backup::Services{}};
+        env.drain();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QSignalSpy contents{&model, &WalletQmlModel::walletContentsChanged};
+        QSignalSpy balance{&model, &WalletQmlModel::balanceChanged};
+        observed = 84;
+        wallet->changed();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(contents.count(), 1);
+        QCOMPARE(balance.count(), 0);
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{42});
+        env.drain();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(model.displayedBalanceSatoshi(), qint64{84});
+        QCOMPARE(balance.count(), 1);
+    }
     void invalidAmountDraftNeverReachesPreparation_data()
     {
         QTest::addColumn<QString>("text");
@@ -3009,25 +3294,25 @@ void WalletQmlModelTests::transactionChangedEmitsBalanceChanged()
     auto wallet = std::make_unique<MockWallet>();
     auto* wallet_ptr = wallet.get();
 
-    CAmount balance{50 * COIN};
+    std::atomic<CAmount> balance{50 * COIN};
     interfaces::Wallet::TransactionChangedFn transaction_changed;
-    wallet_ptr->get_balance_fn = [&] { return balance; };
+    wallet_ptr->get_balance_fn = [&] { return balance.load(); };
     wallet_ptr->handle_transaction_changed_fn = [&](interfaces::Wallet::TransactionChangedFn fn) {
         transaction_changed = std::move(fn);
         return std::unique_ptr<interfaces::Handler>{};
     };
 
     WalletQmlModel model{std::move(wallet)};
+    QTRY_COMPARE(model.balance(), QStringLiteral("50.00000000"));
     QSignalSpy balance_spy{&model, &WalletQmlModel::balanceChanged};
-
-    QCOMPARE(model.balance(), QStringLiteral("50.00000000"));
     QVERIFY(transaction_changed);
 
     balance = 75 * COIN;
     transaction_changed(Txid::FromUint256(uint256{}), CT_UPDATED);
 
-    QTRY_COMPARE(balance_spy.count(), 1);
-    QCOMPARE(model.balance(), QStringLiteral("75.00000000"));
+    QTRY_COMPARE(model.balance(), QStringLiteral("75.00000000"));
+    // Only a changed cached balance notifies presentation consumers.
+    QCOMPARE(balance_spy.count(), 1);
 }
 
 void WalletQmlModelTests::commitPaymentRequestUsesSelectedAddressType()

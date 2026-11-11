@@ -179,6 +179,7 @@ public:
     struct State {
         std::atomic<int> remove_calls{0};
         std::atomic<CAmount> balance{0};
+        std::atomic<int> name_reads{0};
         std::mutex mutex;
         interfaces::Wallet::UnloadFn unload_fn;
         void setUnload(interfaces::Wallet::UnloadFn fn) { std::lock_guard lock(mutex); unload_fn = std::move(fn); }
@@ -200,7 +201,7 @@ public:
     util::Expected<void, wallet::WalletError> changeWalletPassphrase(const SecureString&, const SecureString&) override { return {}; }
     void abortRescan() override {}
     bool backupWallet(const std::string&) override { return true; }
-    std::string getWalletName() override { return m_wallet_name; }
+    std::string getWalletName() override { if (m_state) ++m_state->name_reads; return m_wallet_name; }
     util::Result<CTxDestination> getNewDestination(const OutputType, const std::string&) override
     {
         return CTxDestination{CNoDestination{}};
@@ -251,7 +252,12 @@ public:
     }
     std::vector<wallet::ImportResult> importDescriptors(std::vector<wallet::ImportDescriptorRequest>&) override { return {wallet::ImportResult{wallet::WalletErrorCode::GenericError, "not implemented", /*warnings=*/{}, /*general_error=*/true}}; }
     interfaces::WalletBalances getBalances() override { return {}; }
-    bool tryGetBalances(interfaces::WalletBalances&, uint256&) override { return false; }
+    bool tryGetBalances(interfaces::WalletBalances& balances, uint256& tip) override
+    {
+        balances.balance = m_state ? m_state->balance.load() : 0;
+        tip = uint256{};
+        return true;
+    }
     CAmount getBalance() override { return m_state ? m_state->balance.load() : 0; }
     CAmount getAvailableBalance(const wallet::CCoinControl&) override { return 0; }
     bool txinIsMine(const CTxIn&) override { return false; }
@@ -2284,9 +2290,13 @@ void WalletQmlControllerTests::publishOpenWalletsInfoEmitsWalletInfoChangedForEa
     QTRY_VERIFY(controller.initialized());
 
     controller.setSelectedWallet("alpha_wallet", "sqlite");
+    QTRY_COMPARE(controller.selectedWallet()->displayedBalanceSatoshi(), qint64{13900000000LL});
     controller.setSelectedWallet("beta_wallet", "sqlite");
+    QTRY_COMPARE(controller.selectedWallet()->displayedBalanceSatoshi(), qint64{1});
     QSignalSpy info_spy(&controller, &WalletQmlController::walletInfoChanged);
+    const auto metadata_reads = alpha_state.name_reads.load() + beta_state.name_reads.load();
     controller.publishOpenWalletsInfo();
+    QCOMPARE(alpha_state.name_reads.load() + beta_state.name_reads.load(), metadata_reads);
 
     QCOMPARE(info_spy.count(), 2);
     QStringList names;
@@ -2298,6 +2308,7 @@ void WalletQmlControllerTests::publishOpenWalletsInfoEmitsWalletInfoChangedForEa
         for (const auto& args : info_spy) {
             QCOMPARE(args.at(1).metaType().id(), QMetaType::LongLong);
             QCOMPARE(args.at(1).toLongLong(), args.at(0).toString() == "alpha_wallet" ? 13900000000LL : 1LL);
+            QVERIFY(args.at(3).toBool());
         }
     };
     verify_raw_balances();

@@ -20,6 +20,7 @@
 #include <qml/models/signverifymessagemodel.h>
 #include <qml/models/transactionactivitymodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/models/walletbalancereader.h>
 
 #include <consensus/amount.h>
 #include <interfaces/handler.h>
@@ -79,6 +80,8 @@ class WalletQmlModel : public QObject
     Q_OBJECT
 
 public:
+    enum class BalanceState { Unknown, Ready, Busy, Unavailable, Failed, Rejected, Closed };
+    Q_ENUM(BalanceState)
     enum class KeyScheme {
         SingleKey = 0,
         WatchOnly,
@@ -101,7 +104,9 @@ private:
     Q_PROPERTY(QString name READ name NOTIFY nameChanged)
     Q_PROPERTY(QString displayName READ displayName NOTIFY displayNameChanged)
     Q_PROPERTY(QString balance READ balance NOTIFY balanceChanged)
-    Q_PROPERTY(qint64 balanceSatoshi READ balanceSatoshi NOTIFY balanceChanged)
+    Q_PROPERTY(qint64 balanceSatoshi READ displayedBalanceSatoshi NOTIFY balanceChanged)
+    Q_PROPERTY(bool balanceKnown READ balanceKnown NOTIFY balanceObservationChanged)
+    Q_PROPERTY(BalanceState balanceState READ balanceState NOTIFY balanceObservationChanged)
     Q_PROPERTY(bool hasExternalSigner READ hasExternalSigner CONSTANT)
     Q_PROPERTY(TransactionActivityModel* transactionActivityModel READ transactionActivityModel CONSTANT)
     Q_PROPERTY(AddressListModel* addressListModel READ addressListModel CONSTANT)
@@ -123,7 +128,7 @@ private:
     Q_PROPERTY(QString estimatedFeeRate READ estimatedFeeRate NOTIFY estimatedFeeChanged)
     Q_PROPERTY(int estimatedInputCount READ estimatedInputCount NOTIFY estimatedFeeChanged)
     Q_PROPERTY(qint64 sendTotalSatoshi READ sendTotalSatoshi NOTIFY sendAmountExhaustsBalanceChanged)
-    Q_PROPERTY(qint64 availableSendBalanceSatoshi READ availableSendBalanceSatoshi NOTIFY balanceChanged)
+    Q_PROPERTY(qint64 availableSendBalanceSatoshi READ availableSendBalanceSatoshi NOTIFY walletContentsChanged)
     Q_PROPERTY(SendRecipient* maximumRecipient READ maximumRecipient NOTIFY maximumRecipientChanged)
     Q_PROPERTY(QString estimatedFee READ estimatedFee NOTIFY estimatedFeeChanged)
     Q_PROPERTY(bool sendAmountExhaustsBalance READ sendAmountExhaustsBalance NOTIFY sendAmountExhaustsBalanceChanged)
@@ -162,7 +167,11 @@ public:
     WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                    FeeReadServices fee_services, psbtfee::Services proof_services, backup::Services backup_services,
                    QObject* parent = nullptr);
-    struct SharedWallet { std::shared_ptr<interfaces::Wallet> wallet; };
+    struct SharedWallet {
+        std::shared_ptr<interfaces::Wallet> wallet;
+        // Production composition shares the controller's bounded R08 lanes.
+        std::shared_ptr<execution::Scheduler> observations{};
+    };
     WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
                    FeeReadServices fee_services, psbtfee::Services proof_services, backup::Services backup_services,
                    QObject* parent = nullptr);
@@ -174,7 +183,13 @@ public:
     QString displayName() const;
     void setDisplayName(const QString& display_name);
     QString balance() const;
+    qint64 displayedBalanceSatoshi() const { return m_wallet ? m_balance : 0; }
+    // Legacy send validation query, retained for its owning migration. QML and
+    // wallet-list presentation must use displayedBalanceSatoshi instead.
     qint64 balanceSatoshi() const;
+    bool balanceKnown() const { return m_balance_known; }
+    BalanceState balanceState() const { return m_balance_state; }
+    void refreshBalance();
     bool hasExternalSigner() const { return m_wallet && m_wallet->hasExternalSigner(); }
     Q_INVOKABLE bool commitPaymentRequest();
     Q_INVOKABLE bool commitPaymentRequestWithPassphrase(const QString& passphrase);
@@ -326,6 +341,9 @@ public:
     void setNode(interfaces::Node* node);
 
 Q_SIGNALS:
+    void balanceObservationChanged();
+    // Backend content invalidation is separate from cached presentation data.
+    void walletContentsChanged();
     void shutdownFinished();
     void nameChanged();
     void displayNameChanged();
@@ -366,6 +384,8 @@ private:
     };
 
     void initializeBackend();
+    void initializeBalanceReader();
+    void publishBalance();
     void initializeFeeEstimator();
     void setMaximumRecipient(SendRecipient* recipient);
     void updateMaximumAmount();
@@ -405,6 +425,12 @@ private:
 
     std::shared_ptr<BackendExecutor> m_backend_executor{std::make_shared<BackendExecutor>()};
     std::shared_ptr<QObject> m_notification_bridge;
+    std::shared_ptr<execution::Scheduler> m_balance_scheduler;
+    std::shared_ptr<walletbalance::Reader> m_balance_reader;
+    QTimer m_balance_timer;
+    qint64 m_balance{0};
+    bool m_balance_known{false};
+    BalanceState m_balance_state{BalanceState::Unavailable};
     bool m_stopping{false};
     std::shared_ptr<interfaces::Wallet> m_wallet;
     interfaces::Node* m_node{nullptr};

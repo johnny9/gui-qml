@@ -301,8 +301,8 @@ PageStack {
             dim: false
             closePolicy: Popup.NoAutoClose
             padding: 0
-            width: Overlay.overlay.width
-            height: Overlay.overlay.height
+            width: Overlay.overlay ? Overlay.overlay.width : 0
+            height: Overlay.overlay ? Overlay.overlay.height : 0
             onOpened: {
                 const review = reviewStack.currentItem as SendTransactionReview
                 const complete = reviewStack.currentItem as SendComplete

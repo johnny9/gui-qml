@@ -15,6 +15,7 @@
 #include <support/allocators/secure.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 
@@ -125,7 +126,8 @@ Q_SIGNALS:
     void walletCreateErrorChanged();
     void walletInfoChanged(const QString& name,
                            qint64 balance,
-                           int keySchemeKind);
+                           int keySchemeKind,
+                           bool balanceKnown);
     // Each carries the wallet that was opened, or null if it could not be.
     void walletLoadSucceeded(WalletQmlModel* wallet);
     void walletImportSucceeded(WalletQmlModel* wallet);
@@ -194,6 +196,7 @@ private:
     void setExternalSignerStatus(bool path_configured, int signer_count, const QString& signer_name, const QString& error);
     void publishWalletInfo(WalletQmlModel* wallet_model);
     void subscribeWalletInfo(WalletQmlModel* wallet_model);
+    void initializeWalletInfo(WalletQmlModel* wallet_model);
     void setWalletLocationOpenError(const QString& error);
 
     backup::Services backupServices() const;
@@ -214,6 +217,9 @@ private:
     std::shared_ptr<BackendExecutor> m_wallet_command_executor;
     mutable QMutex m_wallets_mutex;
     std::vector<WalletQmlModel*> m_wallets;
+    struct WalletInformation { QString name; int key_scheme; };
+    // GUI-owned opening metadata; balance publications never query Core for it.
+    std::map<WalletQmlModel*, WalletInformation> m_wallet_information;
     std::shared_ptr<walletlife::LoadSubscription> m_load_subscription;
     std::shared_ptr<QObject> m_notification_bridge;
     bool m_is_wallet_loaded{false};
