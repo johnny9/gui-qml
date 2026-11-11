@@ -1810,6 +1810,7 @@ private Q_SLOTS:
     void replacementNotificationRechecksReceiverOriginal();
     void cancelledPaymentWithoutNotificationClearsReceivedAmount();
     void reconciliationBatchesActivityRebuilds();
+    void reconciliationPreservesPaymentNotifiedDuringScan();
     void openingRequestRemainsResponsiveDuringLargeHistoryScan();
     void requestDetailEditsPreserveReceiveDraft();
     void setCurrentPaymentRequestAddressEditsExistingRequest();
@@ -3337,6 +3338,47 @@ void WalletQmlModelTests::reconciliationBatchesActivityRebuilds()
     QVERIFY(activity->index(0).data(TransactionActivityModel::PaymentRequestsRole)
         .toList().first().toMap().value("paymentReceived").toBool());
     QVERIFY(activity->paymentRequestUri(QStringLiteral("1")).isEmpty());
+}
+
+void WalletQmlModelTests::reconciliationPreservesPaymentNotifiedDuringScan()
+{
+    auto [wallet, model] = MakePasswordWalletModel();
+    QTRY_VERIFY(!model->transactionActivityModel()->loading());
+    QVERIFY(model->commitPaymentRequest());
+    const QString id = model->currentPaymentRequest()->id();
+    QVERIFY(model->loadPaymentRequestDetail(id));
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
+
+    CMutableTransaction incoming;
+    incoming.vout.emplace_back(100, GetScriptForDestination(model->detailPaymentRequest()->destination()));
+    const auto payment = MakeIncomingPayment(incoming, {true});
+    QSemaphore scan_gate;
+    std::atomic<bool> scan_started{false};
+    const auto drain_before_fixture_destruction = qScopeGuard([&] {
+        scan_gate.release();
+        model.reset();
+    });
+    wallet->setWalletTxsFn([&] {
+        scan_started = true;
+        scan_gate.tryAcquire(1, 10'000);
+        // This snapshot predates the payment notification below.
+        return std::set<interfaces::WalletTx>{};
+    });
+    model->reloadReceiveRequests();
+    QTRY_VERIFY(scan_started.load());
+    QVERIFY(model->receiveRequestReconciliationPending());
+    wallet->setTransactionDetails(payment);
+    QSignalSpy changed{model.get(), &WalletQmlModel::transactionChanged};
+    wallet->transaction_changed_fn(payment.tx->GetHash(), CT_NEW);
+    QTRY_COMPARE(changed.size(), 1);
+    QVERIFY(model->receiveRequestReconciliationPending());
+    QCOMPARE(model->detailPaymentRequest()->receivedAmountSatoshi(), qint64{100});
+
+    scan_gate.release();
+    QTRY_VERIFY(!model->receiveRequestReconciliationPending());
+    QCOMPARE(model->detailPaymentRequest()->receivedAmountSatoshi(), qint64{100});
+    QVERIFY(model->detailPaymentRequest()->paymentReceived());
+    QVERIFY(model->receiveRequests()->entryById(id)->payment_received);
 }
 
 void WalletQmlModelTests::openingRequestRemainsResponsiveDuringLargeHistoryScan()
