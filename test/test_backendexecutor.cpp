@@ -273,10 +273,13 @@ private Q_SLOTS:
     void taskShutdownPreservesOutcomesAndCleanup();
     void taskCompletionSurvivesExecutorDestruction();
     void taskCompletionCanDestroyOwners();
+    void taskDrainWaitsForCompletionCleanup_data();
     void taskDrainWaitsForCompletionCleanup();
     void discardedTaskResultIsDestroyedOnWorker_data();
     void discardedTaskResultIsDestroyedOnWorker();
+    void drainCallbacksAreQueuedAndLifetimeGuarded_data();
     void drainCallbacksAreQueuedAndLifetimeGuarded();
+    void groupedDrainWaitsForIndependentCoreAndOwnedTask();
 };
 
 void BackendExecutorTests::threadJoinCompletesOnGui()
@@ -931,9 +934,18 @@ void BackendExecutorTests::taskCompletionCanDestroyOwners()
     }
 }
 
+void BackendExecutorTests::taskDrainWaitsForCompletionCleanup_data()
+{
+    QTest::addColumn<bool>("bounded");
+    QTest::newRow("compatibility") << false;
+    QTest::newRow("bounded-group") << true;
+}
+
 void BackendExecutorTests::taskDrainWaitsForCompletionCleanup()
 {
-    BackendExecutor executor;
+    QFETCH(bool, bounded);
+    auto owner = bounded ? std::make_unique<BackendExecutor>(execution::Limits::Bounded()) : std::make_unique<BackendExecutor>();
+    auto& executor = *owner;
     QObject receiver;
     auto gate = std::make_shared<Gate>();
     const auto unblock = qScopeGuard([gate] { gate->release.release(); });
@@ -1050,9 +1062,18 @@ void BackendExecutorTests::discardedTaskResultIsDestroyedOnWorker()
     QCOMPARE(completions, cancel ? 1 : 0);
 }
 
+void BackendExecutorTests::drainCallbacksAreQueuedAndLifetimeGuarded_data()
+{
+    QTest::addColumn<bool>("bounded");
+    QTest::newRow("compatibility") << false;
+    QTest::newRow("bounded-group") << true;
+}
+
 void BackendExecutorTests::drainCallbacksAreQueuedAndLifetimeGuarded()
 {
-    BackendExecutor executor;
+    QFETCH(bool, bounded);
+    auto owner = bounded ? std::make_unique<BackendExecutor>(execution::Limits::Bounded()) : std::make_unique<BackendExecutor>();
+    auto& executor = *owner;
     QObject receiver;
     int completions{0};
     bool destroyed_receiver_called{false};
@@ -1076,6 +1097,41 @@ void BackendExecutorTests::drainCallbacksAreQueuedAndLifetimeGuarded()
     destroyed_receiver.reset();
     QTRY_COMPARE_WITH_TIMEOUT(completions, 2, TIMEOUT);
     QVERIFY(!destroyed_receiver_called);
+}
+
+
+void BackendExecutorTests::groupedDrainWaitsForIndependentCoreAndOwnedTask()
+{
+    auto executor = std::make_unique<BackendExecutor>(execution::Limits::Bounded());
+    const auto scheduler = executor->scheduler();
+    const auto gate = std::make_shared<Gate>();
+    const auto unblock = qScopeGuard([gate] { gate->release.release(); });
+    std::atomic_int consumed{0};
+    QVERIFY(execution::Submit(*scheduler, [gate] {
+        gate->entered.release();
+        gate->release.acquire();
+        return 17;
+    }, [&](int value) { consumed = value; }));
+    QVERIFY(gate->entered.tryAcquire(1, TIMEOUT));
+    int completions{0};
+    executor->submitTask(this, [] { return 42; }, [&](BackendExecutor::Outcome<int> outcome) {
+        QVERIFY(std::holds_alternative<int>(outcome));
+        QCOMPARE(std::get<int>(outcome), 42);
+        ++completions;
+    });
+    bool drained{false};
+    executor->whenDrained(this, [&] {
+        QCOMPARE(consumed.load(), 17);
+        QCOMPARE(completions, 1);
+        QCOMPARE(scheduler->pending(), size_t{0});
+        drained = true;
+    });
+    executor.reset();
+    QTRY_COMPARE_WITH_TIMEOUT(completions, 1, TIMEOUT);
+    QCOMPARE(consumed.load(), 0);
+    QVERIFY(!drained);
+    gate->release.release();
+    QTRY_VERIFY_WITH_TIMEOUT(drained, TIMEOUT);
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

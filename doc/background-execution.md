@@ -90,3 +90,24 @@ still require the wallet/session extraction. Node question producers, other
 feature owners and independent Core/RPC consistency guarantees retain their
 own follow-up obligations. The lifecycle foundation does not establish those
 consumers' full schedule or platform coverage.
+
+## Upstream task API and rebased Core
+
+The base now includes PR1109's task IDs, explicit value/error/cancellation
+outcomes and replayable `whenDrained()` observation. The stock Core pin is
+44901d8f64cb617714707bd025ecd83f108353c2. Wallet-controller shutdown consumes
+`whenDrained()` after the final physical join, including all five workers in a
+bounded group; observation remains safe after executor-facade destruction.
+Accepted task packets remain on their native worker until the GUI completion
+has released its callback state. Cancellation or lost observation cannot move
+discarded backend-resource destruction onto GUI.
+
+`submitTask()` is the GUI compatibility transport. Its callbacks carry bounded
+presentation values. A submission after shutdown returns a task ID and queues
+Rejected rather than returning the old submit API's boolean rejection. New
+feature migrations explicitly handle that outcome. Running-result discard is
+for replaceable observations; mutation results stay owned and are reconciled.
+Migrated domain owners continue to use the injected scheduler port: their
+outcomes and decisions execute on background Domain, independently of GUI
+observers. The compatibility API does not authorize domain/Core work in a GUI
+completion or replace the scheduler's keyed admission and reserved cleanup.

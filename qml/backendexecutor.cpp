@@ -140,7 +140,6 @@ struct BackendExecutor::ExecutorState {
     size_t threads_remaining{0};
     std::map<TaskId, Pending> pending;
     std::vector<std::pair<QPointer<QObject>, std::function<void()>>> drain_callbacks;
-    size_t active_callbacks{0};
     bool drained{false};
 
     void complete(TaskId id)
@@ -150,17 +149,14 @@ struct BackendExecutor::ExecutorState {
         if (it == pending.end()) return;
         auto task = std::move(it->second);
         pending.erase(it);
-        ++active_callbacks;
         const auto cleanup = qScopeGuard([&] {
             task.completion = {};
             QMetaObject::invokeMethod(worker, [worker = worker, id] { worker->releaseTask(id); worker->maybeQuit(); }, Qt::QueuedConnection);
-            --active_callbacks;
         });
         const bool cancelled = task.control->phase.load() == Phase::Cancelled;
         task.completion(cancelled ? std::make_optional(Cancelled{Cancelled::Reason::Requested}) : std::nullopt);
     }
 };
-
 
 BackendExecutor::BackendExecutor(QObject* parent) : BackendExecutor(std::nullopt, parent) {}
 BackendExecutor::BackendExecutor(execution::Limits limits, QObject* parent) : BackendExecutor(std::make_optional(limits), parent) {}

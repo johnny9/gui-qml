@@ -97,7 +97,7 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, execution::Limi
     m_empty_wallet->setNode(&m_node);
     m_wallet_command_executor->setObjectName(QStringLiteral("wallet-commands"));
     m_notification_bridge->setObjectName(QStringLiteral("wallet-notifications"));
-    connect(m_wallet_command_executor.get(), &BackendExecutor::drained, this, [this] {
+    m_wallet_command_executor->whenDrained(this, [this] {
         m_controller_drained = true;
         m_notifications_drained = true;
         checkShutdownFinished();
