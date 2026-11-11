@@ -180,7 +180,12 @@ void RpcCommandExecutorTests::pinnedCoreRedactionPolicy()
     auto names = QRegularExpression("\"([a-z]+)\"").globalMatch(declaration.captured(1));
     QStringList commands;
     while (names.hasNext()) commands.append(names.next().captured(1));
-    QCOMPARE(commands.size(), 8);
+    const QStringList reviewed_policy{QStringLiteral("addhdkey"), QStringLiteral("createwallet"),
+                                      QStringLiteral("createwalletdescriptor"), QStringLiteral("migratewallet"),
+                                      QStringLiteral("signmessagewithprivkey"), QStringLiteral("signrawtransactionwithkey"),
+                                      QStringLiteral("walletpassphrase"), QStringLiteral("walletpassphrasechange"),
+                                      QStringLiteral("encryptwallet")};
+    QCOMPARE(commands, reviewed_policy);
     for (const auto& command : commands) {
         std::string result, filtered;
         const QString line = command + " unique-policy-secret-92\n";
