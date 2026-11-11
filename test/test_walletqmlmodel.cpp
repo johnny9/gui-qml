@@ -650,7 +650,7 @@ PartiallySignedTransaction MakeWitnessReviewPsbt(const CScript& witness_script, 
     CMutableTransaction transaction;
     transaction.vin.emplace_back(COutPoint{parent->GetHash(), 0});
     transaction.vout.emplace_back(output_amount, GetScriptForDestination(DecodeDestination(VALID_MAINNET_ADDRESS.toStdString())));
-    PartiallySignedTransaction result{transaction};
+    PartiallySignedTransaction result{transaction, /*version=*/2};
     result.inputs[0].non_witness_utxo = parent;
     result.inputs[0].witness_utxo = parent->vout[0];
     result.inputs[0].witness_script = witness_script;
@@ -1413,7 +1413,7 @@ private Q_SLOTS:
     {
         QFETCH(uint, version); QFETCH(int, owned); QFETCH(bool, forged);
         MockNode node;
-        node.broadcast_transaction_fn = [](CTransactionRef, CAmount, std::string&) { return node::TransactionError::OK; };
+        node.broadcast_transaction_fn = [](CTransactionRef, CAmount, CFeeRate, std::string&) { return node::TransactionError::OK; };
         auto [wallet, model] = MakePasswordWalletModel(&node);
         wallet->fill_psbt_fn = [](const common::PSBTFillOptions&, size_t* count, PartiallySignedTransaction&, bool& complete) {
             if (count) *count = 0;

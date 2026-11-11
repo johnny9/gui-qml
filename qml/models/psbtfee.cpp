@@ -64,7 +64,7 @@ psbtfee::Analysis psbtfee::Prepared(const CTransaction& transaction, CAmount fee
 {
     Analysis result;
     if (!MoneyRange(fee)) return result;
-    const PartiallySignedTransaction psbt{CMutableTransaction{transaction}};
+    const PartiallySignedTransaction psbt{CMutableTransaction{transaction}, /*version=*/2};
     result.commitment = psbt.GetUnsignedTx()->GetHash();
     result.amount = fee;
     result.state = State::Known;

@@ -286,7 +286,7 @@ private Q_SLOTS:
     {
         QFETCH(uint, version); QFETCH(bool, forged);
         MockNode node;
-        node.broadcast_transaction_fn = [](CTransactionRef, CAmount, std::string&) { return node::TransactionError::OK; };
+        node.broadcast_transaction_fn = [](CTransactionRef, CAmount, CFeeRate, std::string&) { return node::TransactionError::OK; };
         PsbtQmlModel model{nullptr, &node};
         auto psbt = psbtfeefixture::Legacy(version, forged);
         CMutableTransaction extracted;

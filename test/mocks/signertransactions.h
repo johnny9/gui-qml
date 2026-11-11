@@ -36,7 +36,7 @@ inline PartiallySignedTransaction Review()
     tx.vin.emplace_back(COutPoint{prev->GetHash(), 1}, CScript{}, 0xfffffffc);
     tx.vout.emplace_back(2000, CScript{} << OP_DUP << OP_HASH160 << std::vector<unsigned char>(20, 1) << OP_EQUALVERIFY << OP_CHECKSIG);
     tx.vout.emplace_back(4500, CScript{} << OP_DUP << OP_HASH160 << std::vector<unsigned char>(20, 2) << OP_EQUALVERIFY << OP_CHECKSIG);
-    PartiallySignedTransaction psbt{tx};
+    PartiallySignedTransaction psbt{tx, /*version=*/2};
     for (auto& input : psbt.inputs) input.non_witness_utxo = prev;
     return psbt;
 }

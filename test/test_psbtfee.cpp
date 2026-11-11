@@ -26,7 +26,7 @@ PartiallySignedTransaction Amounts(const std::vector<CAmount>& input_values, con
     CMutableTransaction tx;
     for (size_t i = 0; i < input_values.size(); ++i) tx.vin.emplace_back(COutPoint{parent->GetHash(), uint32_t(i)});
     for (auto value : output_values) tx.vout.emplace_back(value, CScript{} << OP_TRUE);
-    PartiallySignedTransaction psbt{tx};
+    PartiallySignedTransaction psbt{tx, /*version=*/2};
     for (auto& input : psbt.inputs) input.non_witness_utxo = parent;
     return psbt;
 }
