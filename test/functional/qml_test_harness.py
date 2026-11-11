@@ -26,7 +26,7 @@ from qml_driver import QmlDriver, QmlDriverError
 GUI_STARTUP_TIMEOUT = 30
 
 
-_owned_directories = {}
+_owned_directories: dict[Path, tuple[int, int]] = {}
 
 
 def create_test_directory(*, prefix, dir=None):

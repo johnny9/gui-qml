@@ -5,7 +5,7 @@
 #ifndef BITCOIN_QML_TEST_MOCKS_MOCKWALLET_H
 #define BITCOIN_QML_TEST_MOCKS_MOCKWALLET_H
 
-#include "wallet/imports.h"
+#include <wallet/imports.h>
 #include <interfaces/wallet.h>
 #include <outputtype.h>
 #include <test/mocks/callcounter.h>
