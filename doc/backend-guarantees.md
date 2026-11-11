@@ -78,3 +78,20 @@ Any later adapter workaround must record its actual guarantee, remaining race
 or blocking limit, evidence, consumer owner and the Core logic/public contract
 that would remove the workaround. An optional upstream simplification does not
 block supported app work; a missing required backend guarantee remains open.
+
+## Display observation retirement
+
+The balance reader retains one private retirement lease in every admitted
+effect/outcome packet. Closing stops new refresh interest and releases the
+reader's own lease; retirement is notified only when the last admitted packet
+releases its captures after Domain consumption. In-flight submission also
+retains that lease, including transport/capacity rejection during close.
+Notification enqueues bounded GUI work and never runs under the reader mutex.
+
+The facade reports shutdown finished after both its older executor physically
+drains and its shared balance observations retire. Closing one opening does
+not shut down the shared scheduler or prevent another reader from running.
+This adds no thread, second task ledger or cleanup reservation per idle wallet.
+It covers this actual read consumer; complete session borrower/handler/effect
+ownership remains the R10 extraction. It is not a general cancellation or
+backend early-unload guarantee.

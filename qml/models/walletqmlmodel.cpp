@@ -726,7 +726,18 @@ void WalletQmlModel::initializeBackend()
         if (QThread::currentThread() == object->thread()) delete object;
         else object->deleteLater();
     }};
-    connect(m_backend_executor.get(), &BackendExecutor::drained, this, &WalletQmlModel::shutdownFinished);
+    connect(m_backend_executor.get(), &BackendExecutor::drained, this, [this] {
+        m_backend_drained = true;
+        checkShutdownFinished();
+    });
+}
+
+void WalletQmlModel::checkShutdownFinished()
+{
+    if (m_stopping && m_backend_drained && m_balance_drained && !m_shutdown_finished) {
+        m_shutdown_finished = true;
+        Q_EMIT shutdownFinished();
+    }
 }
 
 void WalletQmlModel::beginShutdown(bool remove_wallet)
@@ -760,7 +771,9 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
         if (wallet && remove_wallet) wallet->remove();
     }, [] {});
     m_backend_executor->shutdown();
+    const QPointer<WalletQmlModel> observer{this};
     Q_EMIT balanceObservationChanged();
+    if (observer) observer->checkShutdownFinished();
 }
 
 namespace {
@@ -911,6 +924,7 @@ qint64 WalletQmlModel::balanceSatoshi() const
 
 void WalletQmlModel::initializeBalanceReader()
 {
+    m_balance_drained = false;
     m_balance_state = BalanceState::Unknown;
     const QPointer<WalletQmlModel> observer{this};
     const auto scheduler = m_balance_scheduler ? m_balance_scheduler : m_backend_executor->scheduler();
@@ -919,7 +933,13 @@ void WalletQmlModel::initializeBalanceReader()
             QMetaObject::invokeMethod(bridge.get(), [observer] {
                 if (observer && !observer->m_stopping) observer->publishBalance();
             }, Qt::QueuedConnection);
-        }, m_unload_requested);
+        }, m_unload_requested, [bridge = m_notification_bridge, observer] {
+            QMetaObject::invokeMethod(bridge.get(), [observer] {
+                if (!observer) return;
+                observer->m_balance_drained = true;
+                observer->checkShutdownFinished();
+            }, Qt::QueuedConnection);
+        });
     m_balance_timer.setInterval(1000);
     connect(&m_balance_timer, &QTimer::timeout, this, &WalletQmlModel::refreshBalance);
     m_balance_timer.start();

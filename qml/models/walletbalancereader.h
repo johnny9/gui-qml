@@ -35,17 +35,25 @@ class Reader : public std::enable_shared_from_this<Reader>
 public:
     using Read = std::function<Result()>;
     // Only enqueue a GUI wakeup. May be called from any submitting thread.
+    // The optional retirement notification must not throw; its transport stays
+    // alive until every admitted effect/outcome capture has been released.
     using Notify = std::function<void()>;
     Reader(std::shared_ptr<execution::Scheduler> scheduler, Read read, Notify notify,
-           std::shared_ptr<std::atomic_bool> closed);
+           std::shared_ptr<std::atomic_bool> closed, Notify drained = {});
     execution::Rejection refresh();
     void close();
     std::optional<Result> take();
 
 private:
-    struct Attempt { bool started{false}; };
+    // Ownership lease, not a second task ledger. An admitted packet retains
+    // this until its effect and Domain outcome captures have been released.
+    struct Drain {
+        Notify notify;
+        ~Drain();
+    };
+    struct Attempt { bool started{false}; std::shared_ptr<Drain> drain; };
     // Call only after reserving m_active under m_mutex; never submit while locked.
-    execution::Rejection submitReserved();
+    execution::Rejection submitReserved(std::shared_ptr<Drain> drain);
     void complete(const std::shared_ptr<Attempt>& attempt, Result result);
     void publish(Result result);
     const std::shared_ptr<execution::Scheduler> m_scheduler;
@@ -54,6 +62,7 @@ private:
     const std::shared_ptr<std::atomic_bool> m_closed;
     const execution::ResourceKey m_key;
     // Never held across Core, scheduler, transport or observer calls.
+    std::shared_ptr<Drain> m_drain;
     std::mutex m_mutex;
     std::optional<Snapshot> m_last_snapshot;
     std::optional<Result> m_latest;

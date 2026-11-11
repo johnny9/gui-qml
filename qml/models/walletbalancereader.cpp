@@ -7,29 +7,37 @@
 #include <utility>
 
 namespace walletbalance {
+Reader::Drain::~Drain()
+{
+    if (notify) notify();
+}
+
 Reader::Reader(std::shared_ptr<execution::Scheduler> scheduler, Read read, Notify notify,
-               std::shared_ptr<std::atomic_bool> closed)
+               std::shared_ptr<std::atomic_bool> closed, Notify drained)
     : m_scheduler(std::move(scheduler)), m_read(std::move(read)), m_notify(std::move(notify)),
-      m_closed(std::move(closed)), m_key(m_scheduler->allocateKey())
+      m_closed(std::move(closed)), m_key(m_scheduler->allocateKey()),
+      m_drain(std::make_shared<Drain>(std::move(drained)))
 {
 }
 
 execution::Rejection Reader::refresh()
 {
+    std::shared_ptr<Drain> drain;
     {
         std::lock_guard lock{m_mutex};
         if (m_closed->load()) return execution::Rejection::Closed;
         m_dirty = true;
         if (m_active) return execution::Rejection::None;
         m_active = true;
+        drain = m_drain;
     }
-    return submitReserved();
+    return submitReserved(std::move(drain));
 }
 
-execution::Rejection Reader::submitReserved()
+execution::Rejection Reader::submitReserved(std::shared_ptr<Drain> drain)
 {
     const auto self = shared_from_this();
-    const auto attempt = std::make_shared<Attempt>();
+    const auto attempt = std::make_shared<Attempt>(Attempt{false, std::move(drain)});
     const auto admission = execution::Submit(*m_scheduler, [self, attempt] {
         {
             std::lock_guard lock{self->m_mutex};
@@ -56,6 +64,7 @@ execution::Rejection Reader::submitReserved()
 void Reader::complete(const std::shared_ptr<Attempt>& attempt, Result result)
 {
     bool repeat{false};
+    std::shared_ptr<Drain> drain;
     // Keep admission occupied until this outcome has been published. A later
     // rejection cannot overtake it, including a reentrant refresh from Notify.
     publish(std::move(result));
@@ -66,9 +75,12 @@ void Reader::complete(const std::shared_ptr<Attempt>& attempt, Result result)
         // A rejected dispatch retains refresh interest, but never spins on a
         // saturated/closed transport. The next timer or notice retries it.
         repeat = attempt->started && m_dirty;
-        if (repeat) m_active = true;
+        if (repeat) {
+            m_active = true;
+            drain = m_drain;
+        }
     }
-    if (repeat) submitReserved();
+    if (repeat) submitReserved(std::move(drain));
 }
 
 void Reader::publish(Result result)
@@ -102,9 +114,15 @@ std::optional<Result> Reader::take()
 void Reader::close()
 {
     m_closed->store(true);
-    std::lock_guard lock{m_mutex};
-    m_latest.reset();
-    m_last_snapshot.reset();
-    m_dirty = false;
+    std::shared_ptr<Drain> drain;
+    {
+        std::lock_guard lock{m_mutex};
+        m_latest.reset();
+        m_last_snapshot.reset();
+        m_dirty = false;
+        drain = std::move(m_drain);
+    }
+    // A release notification may reenter; never invoke it under m_mutex.
+    drain.reset();
 }
 } // namespace walletbalance

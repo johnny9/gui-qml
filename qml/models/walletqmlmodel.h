@@ -385,6 +385,7 @@ private:
 
     void initializeBackend();
     void initializeBalanceReader();
+    void checkShutdownFinished();
     void publishBalance();
     void initializeFeeEstimator();
     void setMaximumRecipient(SendRecipient* recipient);
@@ -432,6 +433,7 @@ private:
     bool m_balance_known{false};
     BalanceState m_balance_state{BalanceState::Unavailable};
     bool m_stopping{false};
+    bool m_backend_drained{false}, m_balance_drained{true}, m_shutdown_finished{false};
     std::shared_ptr<interfaces::Wallet> m_wallet;
     interfaces::Node* m_node{nullptr};
     TransactionActivityModel* m_transaction_activity_model{nullptr};

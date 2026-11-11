@@ -693,6 +693,86 @@ private:
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void shutdownCompletionSurvivesNestedGuiDelivery()
+    {
+        WalletQmlModel model{std::make_unique<MockWallet>()};
+        QSignalSpy stopped{&model, &WalletQmlModel::shutdownFinished};
+        bool nested{false};
+        connect(&model, &WalletQmlModel::balanceObservationChanged, this, [&] {
+            if (model.balanceState() != WalletQmlModel::BalanceState::Closed) return;
+            nested = true;
+            // A native handoff may run a nested GUI loop during the close
+            // publication. Wait for the actual legacy drain producer.
+            QTRY_VERIFY(model.backendExecutor()->isDrained());
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+            QCOMPARE(stopped.count(), 1);
+        });
+        model.beginShutdown();
+        QVERIFY(nested);
+        QCOMPARE(stopped.count(), 1);
+        model.beginShutdown();
+        QCOMPARE(stopped.count(), 1);
+    }
+    void shutdownPublicationMayDestroyItsFacade()
+    {
+        ManualRoutedExecution env;
+        auto model = std::make_unique<WalletQmlModel>(
+            WalletQmlModel::SharedWallet{std::make_shared<MockWallet>(), env.scheduler}, nullptr,
+            FeeReadServices{}, psbtfee::Services{}, backup::Services{});
+        bool destroyed{false};
+        connect(model.get(), &WalletQmlModel::balanceObservationChanged, this, [&] {
+            if (!model || model->balanceState() != WalletQmlModel::BalanceState::Closed) return;
+            model.reset();
+            destroyed = true;
+        });
+        model->beginShutdown();
+        QVERIFY(destroyed);
+        QVERIFY(!model);
+        env.drain();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(env.quiescent());
+    }
+    void openingShutdownMustWaitForSharedBalanceEffect()
+    {
+        struct Read {
+            QSemaphore entered, release;
+            std::atomic_bool finished{false};
+            std::atomic<QThread*> effect_thread{nullptr};
+        };
+        BackendExecutor shared{execution::Limits::Bounded()};
+        const auto read = std::make_shared<Read>();
+        const auto release_on_exit = qScopeGuard([&] { read->release.release(); });
+        auto wallet = std::make_shared<MockWallet>();
+        wallet->try_get_balances_fn = [read](interfaces::WalletBalances& balances, uint256&) {
+            read->effect_thread = QThread::currentThread();
+            read->entered.release();
+            read->release.acquire();
+            balances.balance = 42;
+            read->finished = true;
+            return true;
+        };
+        WalletQmlModel model{WalletQmlModel::SharedWallet{wallet, shared.scheduler()}, nullptr,
+                             FeeReadServices{}, psbtfee::Services{}, backup::Services{}};
+        QTRY_VERIFY(read->entered.available() > 0);
+        QVERIFY(read->effect_thread.load() != qApp->thread());
+        QSignalSpy stopped{&model, &WalletQmlModel::shutdownFinished};
+        model.beginShutdown();
+        shared.shutdown();
+        QTRY_VERIFY(model.backendExecutor()->isDrained());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        const bool opening_reported_finished = !stopped.empty();
+        QCOMPARE(shared.scheduler()->pending(), size_t{1});
+        QVERIFY(!read->finished.load());
+        bool heartbeat{false};
+        QMetaObject::invokeMethod(qApp, [&] { heartbeat = true; }, Qt::QueuedConnection);
+        QTRY_VERIFY(heartbeat);
+        read->release.release();
+        QTRY_VERIFY(shared.isDrained());
+        QVERIFY(read->finished.load());
+        QCOMPARE(stopped.count(), 1);
+        QVERIFY2(!opening_reported_finished,
+                 "Opening reported shutdownFinished while its shared balance effect was still held on Core");
+    }
     void displayedBalanceNeverReadsCoreOnGui()
     {
         struct Reads { std::atomic<int> gui{0}, grouped{0}; };
