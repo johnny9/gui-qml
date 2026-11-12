@@ -173,8 +173,11 @@ and reports. Qt Test also reports the parent's setup and cleanup results.
 The subprocess fixture starts a fresh application and regtest node for each result,
 including production startup and shutdown. Modules are grouped into the nine
 [staging-plan stages](doc/integration-testing.md). Stages 1–3 run with wallets
-disabled and enabled; stages 4–9 require wallets. Each stage has its own CTest
-entry and feature-group label (for example, `wallet_sending`), so stages can run independently or in parallel.
+disabled and enabled; stages 4–9 require wallets. Each stage has a feature-group label (for example, `wallet_sending`). Sending
+has two CTest entries; the other stages have one each. All ten entries can run
+independently or in parallel. Sending partitions alternate discovered cases,
+including data rows, using `--shard=0/2` and `--shard=1/2`. Running `--stage=6`
+without a shard still selects every sending case.
 The command above runs up to three groups concurrently; cases within each group
 remain serial. Use `--parallel 2` on a memory-constrained machine or
 `--parallel 1` for serial comparisons. Stage numbers describe feature coverage,
@@ -234,7 +237,7 @@ in `build/test-profiles/`. Both test workflows upload these directories and the
 CTest logs even after failures, with a separate artifact for each matrix job.
 The source-build workflow records non-integration CTest results in `ctest.xml`
 and parallel integration CTest results in `ctest-integration.xml`. The depends
-workflow records all CTest results in `ctest.xml`. `integration-<group>.xml` (for example, `integration-wallet_sending.xml`) provides
+workflow records all CTest results in `ctest.xml`. `integration-<group>.xml` (for example, `integration-wallet_sending_0.xml`) provides
 the individual test results, including application startup and shutdown failures.
 The process exit status remains authoritative if the parent itself is interrupted
 before finishing its report.

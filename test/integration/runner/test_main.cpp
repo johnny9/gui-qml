@@ -32,6 +32,7 @@ struct RunnerOptions {
     QString profile_dir;
     QString selector;
     std::optional<int> stage;
+    std::optional<std::pair<int, int>> shard;
     int timeout_ms{120'000};
     bool discover{false};
     bool list_functions{false};
@@ -104,6 +105,18 @@ QString CaseName(const IntegrationCase& test)
     if (!test.module) return "selection";
     return QString::fromUtf8(test.module->name) + "." + WalletModeName(test.mode) + "." +
            (test.selector.isEmpty() ? "discovery" : test.selector);
+}
+
+void SelectShard(std::vector<IntegrationCase>& cases, const RunnerOptions& options)
+{
+    if (!options.shard) return;
+    const auto [index, count] = *options.shard;
+    int position{0};
+    std::erase_if(cases, [&](const IntegrationCase& test) {
+        const bool other_shard = position++ % count != index;
+        // Discovery failures must remain visible even when selecting a shard.
+        return !test.result && other_shard;
+    });
 }
 
 QStringList ChildOptions(const QStringList& arguments)
@@ -188,6 +201,7 @@ private Q_SLOTS:
     {
         QTest::addColumn<int>("index");
         m_cases = TestCases(m_options.module, m_options.wallet_mode, m_options.selector, m_options.profile_dir, m_options.stage);
+        SelectShard(m_cases, m_options);
         if (m_cases.empty()) {
             m_cases.push_back({nullptr, WalletMode::Disabled, {},
                                IntegrationTestResult{IntegrationTestStatus::Failed, "No tests match the selected module, wallet mode, and test function/data row"}});
@@ -259,6 +273,17 @@ std::optional<RunnerOptions> ParseOptions(int& argc, char* argv[])
                 return std::nullopt;
             }
             options.stage = value[0] - '0';
+        } else if (argument.starts_with("--shard=")) {
+            const auto parts = QString::fromUtf8(argv[i] + std::string_view{"--shard="}.size()).split('/');
+            bool index_ok{false};
+            bool count_ok{false};
+            const int index = parts.value(0).toInt(&index_ok);
+            const int count = parts.value(1).toInt(&count_ok);
+            if (options.shard || parts.size() != 2 || !index_ok || !count_ok || index < 0 || count <= 0 || index >= count) {
+                std::cerr << "Specify --shard=INDEX/COUNT once, with 0 <= INDEX < COUNT.\n";
+                return std::nullopt;
+            }
+            options.shard = std::pair{index, count};
         } else if (argument.starts_with("--wallet=")) {
             const auto value = argument.substr(std::string_view{"--wallet="}.size());
             if (options.wallet_mode || (value != "disabled" && value != "enabled")) {
@@ -290,6 +315,10 @@ std::optional<RunnerOptions> ParseOptions(int& argc, char* argv[])
     }
     argc = output_index;
     argv[argc] = nullptr;
+    if (options.shard && (!options.profile.isEmpty() || options.discover)) {
+        std::cerr << "Shards select parent test cases, not child processes.\n";
+        return std::nullopt;
+    }
     if (options.module && options.wallet_mode &&
         std::find(options.module->wallet_modes.begin(), options.module->wallet_modes.end(), *options.wallet_mode) == options.module->wallet_modes.end()) {
         std::cerr << "Module " << options.module->name << " does not support wallets " << WalletModeName(*options.wallet_mode) << '\n';
@@ -308,6 +337,7 @@ void PrintModules(bool help)
         std::cout << "Run one integration test suite with isolated application processes.\n"
                      "Options: --stage=1..9 --module=NAME --wallet=disabled|enabled --list-modules\n"
                      "         --test=FUNCTION[:ROW] (select a function or data row)\n"
+                     "         --shard=INDEX/COUNT (zero-based partition of selected cases)\n"
                      "         --profile-dir=PATH (retain failed profiles here)\n"
                      "Omitted options select all modules and their supported wallet modes.\n"
                      "QML_TEST_TIMEOUT sets the child timeout in milliseconds (default: 120000).\n"
@@ -327,7 +357,8 @@ int RunParent(int argc, char* argv[], const RunnerOptions& options)
     QCoreApplication app(argc, argv);
     if (!PrepareReports(app.arguments())) return EXIT_FAILURE;
     if (options.list_functions) {
-        const auto cases = TestCases(options.module, options.wallet_mode, options.selector, options.profile_dir, options.stage, true);
+        auto cases = TestCases(options.module, options.wallet_mode, options.selector, options.profile_dir, options.stage, !options.shard);
+        SelectShard(cases, options);
         for (const auto& test : cases) std::cout << CaseName(test).toStdString() << "()\n";
         return cases.empty() ? EXIT_FAILURE : EXIT_SUCCESS;
     }

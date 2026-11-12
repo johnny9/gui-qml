@@ -30,7 +30,9 @@ stage 9. Earlier stages should not depend on helpers that require a loaded walle
 Keep shared process/UI helpers in `fixture/test_util.h` and wallet setup helpers
 in `fixture/test_wallet.h`. RPC is useful for arranging chain/wallet state and
 checking results; exercise the UI or public model operation under test directly.
-The nine CTest entries retain function/data-row isolation and may run in parallel.
+The ten CTest entries retain function/data-row isolation and may run in parallel.
+Sending has two independent partitions (`wallet_sending_0` and
+`wallet_sending_1`), both selected by the `wallet_sending` label.
 Directories, CTest entries and report filenames use descriptive group names, such
 as `node_setup`, `bitcoinqml_integration_node_setup` and
 `integration-node_setup.xml`. The runner's `--stage=1..9` option selects the

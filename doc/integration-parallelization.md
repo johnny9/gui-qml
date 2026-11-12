@@ -8,9 +8,10 @@ the validation artifacts.
 
 ## Scope and isolation
 
-Use CTest's existing group-level parallelism. Each of the nine groups has a
-separate report, and each runtime case retains its own application process,
-regtest node, temporary data directory, and GUI settings. Cases within a group
+Use CTest's group-level parallelism. The nine feature groups now have ten
+CTest entries: sending is split into two partitions with separate reports.
+Each runtime case retains its own application process,
+regtest node, temporary data directory, and GUI settings. Cases within each CTest entry
 remain serial. Groups have no ordering dependencies, and no test consumes
 another test's output. Assertions, test selection, timeouts, fixtures, and
 failure diagnostics are unchanged.
@@ -125,3 +126,22 @@ per-case JSON summary.
 
 The workflow YAML was parsed, and the CTest label selections were checked to be
 disjoint and exhaustive. The Linux workflow itself has not been run locally.
+
+## Sending partitions and funding research
+
+A temporary exclusive-time profile of all 12 sending cases attributed 42.445
+of 79.212 seconds to mining RPCs. Alternating discovered rows partitions this
+profile into 38.494 and 40.682 seconds, six cases each. The runner now supports
+`--shard=INDEX/COUNT`; CTest uses `0/2` and `1/2` for sending only. Filtering
+happens before partitioning, and discovery failures remain visible. Each child
+still starts a fresh application and node. No shared runtime fixtures are added.
+
+The selection regression test checks exhaustive, disjoint partitions including
+data rows and rejects invalid arguments. A full three-job run passed the exact
+baseline inventory of 122 runtime cases without skips in 119.919 seconds.
+Existing timing history had no entries for the new partitions, so they started
+late. This is a correctness result, not a demonstrated speedup; repeated
+contemporary scheduling comparisons are still needed.
+
+See [funding fixture research](funding-fixture-research.md) for the subsequent
+comparison of chain caching and reducing wallet-owned coinbase rewards.
