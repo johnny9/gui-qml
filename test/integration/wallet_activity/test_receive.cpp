@@ -57,7 +57,7 @@ private Q_SLOTS:
         QCOMPARE(wallet->getAddressLabel(address), QStringLiteral("Private lunch note"));
         QSignalSpy changed{wallet->receiveRequests(), &QAbstractItemModel::dataChanged};
         QVERIFY(wallet->addressListModel()->setAddressLabel(address, "Renamed on Addresses page"));
-        QTRY_VERIFY(!changed.isEmpty());
+        QVERIFY(qmltest::AwaitSignal(changed));
         QVERIFY(wallet->loadPaymentRequestDetail(id));
         QCOMPARE(wallet->detailPaymentRequest()->noteSelf(), QStringLiteral("Renamed on Addresses page"));
         QCOMPARE(wallet->detailPaymentRequest()->label(), QStringLiteral("Alice"));
@@ -67,7 +67,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", "Renamed on Addresses page"));
         auto* filter = qobject_cast<ActivityFilterProxyModel*>(qmltest::Find(m_app, "activityFilterProxyModel"));
         QVERIFY(filter);
-        QTRY_COMPARE(filter->rowCount(), 1);
+        QCOMPARE_AWAIT(filter->rowCount(), 1, qmltest::Rows(filter));
         QCOMPARE(filter->data(filter->index(0, 0), TransactionActivityModel::LabelRole).toString(), QStringLiteral("Renamed on Addresses page"));
         wallet->reloadReceiveRequests();
         QVERIFY(wallet->loadPaymentRequestDetail(id));
@@ -129,10 +129,10 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
         auto* popup = qmltest::WaitForVisible(m_app, "receivePassphrasePopup");
         QVERIFY(popup);
-        QTRY_VERIFY(popup->property("opened").toBool());
+        QVERIFY_AWAIT(popup->property("opened").toBool(), qmltest::Property(popup, "opened"));
         QVERIFY(qmltest::SetText(m_app, "receivePassphraseField", "cancelled password"));
         QVERIFY(qmltest::Click(m_app, "receivePassphraseCancelButton"));
-        QTRY_VERIFY(!popup->property("visible").toBool());
+        QVERIFY_AWAIT(!popup->property("visible").toBool(), qmltest::Property(popup, "visible"));
         QVERIFY(qmltest::SecretTextLocations(m_app.window(), "cancelled password").isEmpty());
         QCOMPARE(qmltest::Find(m_app, "receivePassphraseField")->property("text").toString(), QString{});
         QVERIFY(wallet->receivingAddress()->address().isEmpty());
@@ -143,7 +143,7 @@ private Q_SLOTS:
         // Reopening Receive retries the exhausted keypool, with a visible password error.
         QVERIFY(qmltest::Click(m_app, "activityTabButton"));
         QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
-        QTRY_VERIFY(popup->property("opened").toBool());
+        QVERIFY_AWAIT(popup->property("opened").toBool(), qmltest::Property(popup, "opened"));
         QVERIFY(qmltest::SetText(m_app, "receivePassphraseField", "wrong password"));
         QVERIFY(qmltest::Click(m_app, "receivePassphraseConfirmButton"));
         auto* error = qmltest::WaitForVisible(m_app, "receivePassphraseError");
@@ -160,11 +160,11 @@ private Q_SLOTS:
         // A correct password generates the requested address and immediately relocks.
         QVERIFY(qmltest::SetText(m_app, "receivePassphraseField", "receiving password"));
         QVERIFY(qmltest::Click(m_app, "receivePassphraseConfirmButton"));
-        QTRY_VERIFY(!popup->property("visible").toBool());
+        QVERIFY_AWAIT(!popup->property("visible").toBool(), qmltest::Property(popup, "visible"));
         QVERIFY(qmltest::SecretTextLocations(m_app.window(), "receiving password").isEmpty());
         const auto address = wallet->receivingAddress()->address();
         QVERIFY(!address.isEmpty());
-        QTRY_VERIFY(qmltest::Find(m_app, "requestPaymentGenerateButton")->property("enabled").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "requestPaymentGenerateButton")->property("enabled").toBool(), qmltest::Property(qmltest::Find(m_app, "requestPaymentGenerateButton"), "enabled"));
         const auto address_info = qmltest::Rpc(m_app, "getaddressinfo", qmltest::Json("[\"" + address.toStdString() + "\"]"), wallet->name());
         QVERIFY(address_info.find_value("ismine").get_bool());
         QCOMPARE(address_info.find_value("witness_version").getInt<int>(), 0);
@@ -176,10 +176,10 @@ private Q_SLOTS:
         // The next-address request must survive another unlock, without reusing this address.
         QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "requestPaymentPage"), "ensureReceivingAddress",
                                          Q_ARG(QVariant, true), Q_ARG(QVariant, QStringLiteral("bech32"))));
-        QTRY_VERIFY(popup->property("opened").toBool());
+        QVERIFY_AWAIT(popup->property("opened").toBool(), qmltest::Property(popup, "opened"));
         QVERIFY(qmltest::SetText(m_app, "receivePassphraseField", "receiving password"));
         QVERIFY(qmltest::Click(m_app, "receivePassphraseConfirmButton"));
-        QTRY_VERIFY(!popup->property("visible").toBool());
+        QVERIFY_AWAIT(!popup->property("visible").toBool(), qmltest::Property(popup, "visible"));
         QVERIFY(qmltest::SecretTextLocations(m_app.window(), "receiving password").isEmpty());
         QVERIFY(!wallet->receivingAddress()->address().isEmpty());
         QVERIFY(wallet->receivingAddress()->address() != address);
@@ -196,7 +196,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::SelectSettings(m_app, "wallet"));
         QVERIFY(qmltest::Click(m_app, "walletAddressesRow"));
         QVERIFY(qmltest::WaitForVisible(m_app, "addressListPage"));
-        QTRY_VERIFY(addressRow(address));
+        QVERIFY_AWAIT(addressRow(address), qmltest::Ui(m_app.window()));
         QVERIFY(qmltest::Click(qmltest::Find(addressRow(address), "addressRowDetailsButton")));
         QVERIFY(qmltest::WaitForVisible(m_app, "addressDetailsPopup"));
         QVERIFY(qmltest::Click(m_app, "addressDetailsCreatePaymentRequestButton"));
@@ -213,7 +213,7 @@ private Q_SLOTS:
         // The Addresses stack is retained, and its action now views the saved request.
         QVERIFY(qmltest::Click(m_app, "desktopWalletSettingsTabButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "addressListPage"));
-        QTRY_VERIFY(addressRow(address));
+        QVERIFY_AWAIT(addressRow(address), qmltest::Ui(m_app.window()));
         QVERIFY(qmltest::Click(qmltest::Find(addressRow(address), "addressRowDetailsButton")));
         auto* action = qmltest::WaitForVisible(m_app, "addressDetailsCreatePaymentRequestButton");
         QVERIFY(action);
@@ -250,13 +250,13 @@ private Q_SLOTS:
         auto* detail = receiver->detailPaymentRequest();
 
         const auto original = qmltest::Rpc(m_app, "sendtoaddress", qmltest::Json("{\"address\":\"" + address.toStdString() + "\",\"amount\":0.00001,\"fee_rate\":1}"), payer->name()).get_str();
-        QTRY_VERIFY_WITH_TIMEOUT(detail->paymentReceived(), 30'000);
-        QTRY_COMPARE(detail->receivedAmountSatoshi(), 1'000);
+        QVERIFY_AWAIT_TIMEOUT(detail->paymentReceived(), 30'000, qmltest::Property(detail, "paymentReceived"));
+        QCOMPARE_AWAIT(detail->receivedAmountSatoshi(), 1'000, qmltest::Property(detail, "receivedAmountSatoshi"));
         QVERIFY(detail->qrPayload().isEmpty());
         const auto replacement = qmltest::Rpc(m_app, "bumpfee", qmltest::Json("[\"" + original + "\",{\"fee_rate\":20}]"), payer->name());
         const auto replacement_id = QString::fromStdString(replacement.find_value("txid").get_str());
         QVERIFY(replacement_id != QString::fromStdString(original));
-        QTRY_VERIFY_WITH_TIMEOUT(hasTransaction(*receiver, replacement_id), 30'000);
+        QVERIFY_AWAIT_TIMEOUT(hasTransaction(*receiver, replacement_id), 30'000, qmltest::Rows(receiver->transactionActivityModel()));
         QCOMPARE(detail->receivedAmountSatoshi(), 1'000);
 
         const auto mining_address = qmltest::NewAddress(m_app, payer->name());
@@ -266,17 +266,17 @@ private Q_SLOTS:
             qmltest::Rpc(m_app, "syncwithvalidationinterfacequeue");
         };
         mine();
-        QTRY_VERIFY_WITH_TIMEOUT(!receiver->receiveRequestReconciliationPending(), 30'000);
+        QVERIFY_AWAIT_TIMEOUT(!receiver->receiveRequestReconciliationPending(), 30'000, qmltest::Property(receiver, "receiveRequestReconciliationPending"));
         QCOMPARE(detail->receivedAmountSatoshi(), 1'000);
         const auto second = QString::fromStdString(qmltest::Rpc(m_app, "sendtoaddress", qmltest::Json("{\"address\":\"" + address.toStdString() + "\",\"amount\":0.00002,\"fee_rate\":1}"), payer->name()).get_str());
-        QTRY_VERIFY_WITH_TIMEOUT(hasTransaction(*receiver, second), 30'000);
-        QTRY_COMPARE(detail->receivedAmountSatoshi(), 3'000);
+        QVERIFY_AWAIT_TIMEOUT(hasTransaction(*receiver, second), 30'000, qmltest::Rows(receiver->transactionActivityModel()));
+        QCOMPARE_AWAIT(detail->receivedAmountSatoshi(), 3'000, qmltest::Property(detail, "receivedAmountSatoshi"));
         mine();
-        QTRY_VERIFY_WITH_TIMEOUT(!receiver->receiveRequestReconciliationPending(), 30'000);
+        QVERIFY_AWAIT_TIMEOUT(!receiver->receiveRequestReconciliationPending(), 30'000, qmltest::Property(receiver, "receiveRequestReconciliationPending"));
         QCOMPARE(detail->receivedAmountSatoshi(), 3'000);
         // Saves can also be refused while a queued transaction notification is
         // pending. Retry that busy result without changing the public metadata.
-        QTRY_VERIFY_WITH_TIMEOUT(receiver->updatePaymentRequest(id, 10'000, {}, "pizza", "Partial payment received"), 30'000);
+        QVERIFY_AWAIT_TIMEOUT(receiver->updatePaymentRequest(id, 10'000, {}, "pizza", "Partial payment received"), 30'000, qmltest::Property(receiver, "receiveRequestReconciliationPending"), qmltest::Rows(receiver->transactionActivityModel()));
         QVERIFY(receiver->loadPaymentRequestDetail(id));
         QCOMPARE(detail->noteSelf(), QStringLiteral("Partial payment received"));
         QCOMPARE(detail->message(), QStringLiteral("pizza"));

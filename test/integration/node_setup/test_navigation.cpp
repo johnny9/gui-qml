@@ -26,9 +26,9 @@ private Q_SLOTS:
         QVERIFY(qmltest::ReturnToNode(m_app));
         auto* clock = qmltest::Find(m_app, "blockClock");
         QVERIFY(clock);
-        QVERIFY(QTest::qWaitFor([&] {
+        QVERIFY(qmltest::Await([&] {
             return clock->property("visible").toBool() && qmltest::TransitionsFinished(m_app.window());
-        }));
+        }, {qmltest::Ui(m_app.window())}));
     }
 
     void canceledPressIsNotReportedAsAClick()
@@ -122,10 +122,10 @@ private Q_SLOTS:
         QVERIFY(clock);
         QSignalSpy warnings{&m_app.engine(), &QQmlEngine::warnings};
         QVERIFY(qmltest::OpenSettings(m_app));
-        QTRY_VERIFY(qmltest::Find(m_app, "settingsView"));
+        QVERIFY_AWAIT(qmltest::Find(m_app, "settingsView"), qmltest::Ui(m_app.window()));
         auto* settings = qmltest::Find(m_app, "settingsView");
-        QTRY_VERIFY(settings->property("visible").toBool());
-        QTRY_VERIFY(qmltest::TransitionsFinished(m_app.window()));
+        QVERIFY_AWAIT(settings->property("visible").toBool(), qmltest::Property(settings, "visible"));
+        QVERIFY_AWAIT(qmltest::TransitionsFinished(m_app.window()), qmltest::Ui(m_app.window()));
         auto* container = qmltest::Find(m_app, "settingsPageContainer");
         QVERIFY(container);
         auto* sidebar = qobject_cast<QQuickItem*>(qmltest::Find(m_app, "settingsSidebarList"));
@@ -143,27 +143,27 @@ private Q_SLOTS:
             QVERIFY2(button, section);
             const int index = button->parentItem()->property("index").toInt();
             QVERIFY(QMetaObject::invokeMethod(sidebar, "positionViewAtIndex", Q_ARG(int, index), Q_ARG(int, contain)));
-            QTRY_VERIFY(sidebar->contains(button->mapToItem(sidebar, button->boundingRect().center())));
+            QVERIFY_AWAIT(sidebar->contains(button->mapToItem(sidebar, button->boundingRect().center())), qmltest::Property(button, "y"), qmltest::Property(button, "height"), qmltest::Frame(m_app.window()));
             QVERIFY(qmltest::Click(button));
-            QTRY_COMPARE(settings->property("selectedSectionId").toString(), QString::fromLatin1(section));
+            QCOMPARE_AWAIT(settings->property("selectedSectionId").toString(), QString::fromLatin1(section), qmltest::Property(settings, "selectedSectionId"));
             QCOMPARE(container->property("currentSectionId").toString(), QString::fromLatin1(section));
             auto* page = qobject_cast<QQuickItem*>(container->property("currentItem").value<QObject*>());
             QVERIFY(page);
             QCOMPARE(page->objectName(), QString::fromLatin1(page_name));
-            QTRY_VERIFY(page->isVisible());
-            QTRY_VERIFY(page->width() > 0 && page->height() > 0);
+            QVERIFY_AWAIT(page->isVisible(), qmltest::Property(page, "visible"));
+            QVERIFY_AWAIT(page->width() > 0 && page->height() > 0, qmltest::Property(page, "width"), qmltest::Property(page, "height"));
             QVERIFY(page->mapRectToScene(page->boundingRect()).intersects(m_app.window()->contentItem()->boundingRect()));
             if (QString::fromLatin1(section) == "about") {
                 QVERIFY(qmltest::Click(m_app, "aboutDeveloperRow"));
                 QVERIFY(qmltest::WaitForVisible(m_app, "settingsDeveloper"));
                 QVERIFY(qmltest::Click(m_app, "settingsDeveloperBack"));
-                QTRY_VERIFY(page->isVisible());
+                QVERIFY_AWAIT(page->isVisible(), qmltest::Property(page, "visible"));
             }
             QCOMPARE(warnings.count(), 0);
         }
         QVERIFY(qmltest::ReturnToNode(m_app));
-        QTRY_VERIFY(clock && clock->property("visible").toBool());
-        QTRY_VERIFY(qmltest::TransitionsFinished(m_app.window()));
+        QVERIFY_AWAIT(clock && clock->property("visible").toBool(), qmltest::Property(clock, "visible"));
+        QVERIFY_AWAIT(qmltest::TransitionsFinished(m_app.window()), qmltest::Ui(m_app.window()));
         QCOMPARE(qmltest::Find(m_app, "blockClock"), clock.data());
         QCOMPARE(warnings.count(), 0);
     }

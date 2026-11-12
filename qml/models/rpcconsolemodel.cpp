@@ -201,6 +201,7 @@ public:
 public Q_SLOTS:
     void execute(const QString& command, const QString& wallet_name)
     {
+        Q_EMIT commandStarted();
         QString time = QDateTime::currentDateTime().toString("hh:mm:ss");
         try {
             // Append "\n" as the parser requires a line terminator to finalize
@@ -261,6 +262,7 @@ public Q_SLOTS:
     }
 
 Q_SIGNALS:
+    void commandStarted();
     void resultReady(const QString& time, int category, const QString& rawText);
 
 private:
@@ -279,6 +281,9 @@ RpcConsoleModel::RpcConsoleModel(interfaces::Node& node, QObject* parent)
     m_worker_thread->setObjectName(QStringLiteral("rpc-console"));
     m_worker = new RpcConsoleWorker(m_node);
     m_worker->moveToThread(m_worker_thread);
+
+    connect(m_worker, &RpcConsoleWorker::commandStarted,
+            this, &RpcConsoleModel::commandStarted, Qt::QueuedConnection);
 
     connect(m_worker, &RpcConsoleWorker::resultReady,
             this,     &RpcConsoleModel::onResultReady,

@@ -68,7 +68,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "sendImportPsbtFromFileButton"));
         auto* error = qmltest::WaitForVisible(m_app, "unsupportedPsbtPopup");
         QVERIFY(error);
-        QTRY_VERIFY(error->property("opened").toBool());
+        QVERIFY_AWAIT(error->property("opened").toBool(), qmltest::Property(error, "opened"));
         QVERIFY(qmltest::Find(m_app, "unsupportedPsbtPopupMessage")->property("text").toString().contains(expected_error));
         QVERIFY(!qmltest::Find(m_app, "transactionReviewPopup")->property("visible").toBool());
         QVERIFY(!wallet->currentTransaction());
@@ -80,12 +80,12 @@ private Q_SLOTS:
 
         // Closing the error must allow a valid import without restarting or clearing the draft.
         QVERIFY(qmltest::Click(m_app, "unsupportedPsbtPopupOkButton"));
-        QTRY_VERIFY(!error->property("visible").toBool());
+        QVERIFY_AWAIT(!error->property("visible").toBool(), qmltest::Property(error, "visible"));
         QVERIFY(path->setProperty("text", valid.fileName()));
         QVERIFY(qmltest::Click(m_app, "sendOptionsButton"));
         QVERIFY(qmltest::Click(m_app, "sendImportPsbtFromFileButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
-        QTRY_VERIFY(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "transactionReviewPopup"), "opened"));
         QVERIFY(wallet->currentTransaction());
         QVERIFY(wallet->currentTransactionIsImportedPsbt());
         QVERIFY(wallet->currentTransactionCanSend());
@@ -148,7 +148,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "sendOptionsButton"));
         QVERIFY(qmltest::Click(m_app, "sendImportPsbtFromFileButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
-        QTRY_VERIFY(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "transactionReviewPopup"), "opened"));
         auto* warning = qmltest::WaitForVisible(m_app, "sendTransactionReviewWarning");
         QVERIFY(warning);
         QCOMPARE(warning->property("message").toString(), QStringLiteral("This wallet does not have the keys to sign this transaction."));
@@ -161,7 +161,7 @@ private Q_SLOTS:
         QVERIFY(!reviewer->sendTransaction());
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
         QVERIFY(qmltest::Click(m_app, "sendTransactionReviewCloseButton"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "transactionReviewPopup")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "transactionReviewPopup")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "transactionReviewPopup"), "visible"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendOptionsButton"));
         QCOMPARE(qmltest::Find(m_app, "sendAddressInput")->property("text").toString(), QString{});
         QCOMPARE(qmltest::Find(m_app, "sendAmountInput")->property("text").toString(), QString{});

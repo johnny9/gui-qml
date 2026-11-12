@@ -51,25 +51,25 @@ private Q_SLOTS:
         QVERIFY(console);
 
         QVERIFY(submitCommand(command));
-        QTRY_VERIFY(!model->executing());
-        QTRY_COMPARE(console->property("outputCount").toInt(), 2);
+        QVERIFY_AWAIT(!model->executing(), qmltest::Property(model, "executing"));
+        QCOMPARE_AWAIT(console->property("outputCount").toInt(), 2, qmltest::Property(console, "outputCount"));
         auto* output = qmltest::WaitForVisible(m_app, "consoleOutputArea_content_1");
         QVERIFY(output);
-        QTRY_VERIFY2(output->property("text").toString().contains(expected_reply), qPrintable(output->property("text").toString()));
+        QVERIFY_AWAIT(output->property("text").toString().contains(expected_reply), qmltest::Property(output, "text"));
 
         // Searching narrows the matches without removing console history.
         QVERIFY(qmltest::SetText(m_app, "rpcConsoleSearchField", command));
-        QTRY_COMPARE(console->property("searchResultCount").toInt(), 1);
+        QCOMPARE_AWAIT(console->property("searchResultCount").toInt(), 1, qmltest::Property(console, "searchResultCount"));
         QCOMPARE(console->property("outputCount").toInt(), 2);
         QVERIFY(qmltest::SetText(m_app, "rpcConsoleSearchField", ""));
         QVERIFY(QMetaObject::invokeMethod(console, "clearInputOrOutput"));
-        QTRY_COMPARE(console->property("outputCount").toInt(), 0);
+        QCOMPARE_AWAIT(console->property("outputCount").toInt(), 0, qmltest::Property(console, "outputCount"));
         QVERIFY(!qmltest::Find(m_app, "rpcConsoleHelpFooter")->property("text").toString().isEmpty());
 
         // A successful command still works after clearing either kind of reply.
         QVERIFY(submitCommand("getblockcount"));
-        QTRY_VERIFY(!model->executing());
-        QTRY_COMPARE(console->property("outputCount").toInt(), 2);
+        QVERIFY_AWAIT(!model->executing(), qmltest::Property(model, "executing"));
+        QCOMPARE_AWAIT(console->property("outputCount").toInt(), 2, qmltest::Property(console, "outputCount"));
     }
 
     void consoleLayoutAndOutputStayAlignedAcrossFontSizes()
@@ -98,21 +98,21 @@ private Q_SLOTS:
 
         // Both the command and its result must stay aligned at every font size.
         QVERIFY(submitCommand("getblockcount"));
-        QTRY_COMPARE(console->property("outputCount").toInt(), 2);
+        QCOMPARE_AWAIT(console->property("outputCount").toInt(), 2, qmltest::Property(console, "outputCount"));
         const int original_size = console->property("outputFontPixelSize").toInt();
         const int minimum = console->property("minimumOutputFontPixelSize").toInt();
         const int maximum = console->property("maximumOutputFontPixelSize").toInt();
         for (int size{original_size}; size > minimum; --size) QVERIFY(qmltest::Click(m_app, "consoleFontDecreaseButton"));
         for (int size{minimum}; size <= maximum; ++size) {
-            QTRY_COMPARE(console->property("outputFontPixelSize").toInt(), size);
+            QCOMPARE_AWAIT(console->property("outputFontPixelSize").toInt(), size, qmltest::Property(console, "outputFontPixelSize"));
             for (int row{0}; row < 2; ++row) {
                 const auto row_name = QString{"consoleOutputArea_row_%1"}.arg(row);
                 const auto timestamp_name = QString{"consoleOutputArea_left_%1"}.arg(row);
                 const auto content_name = QString{"consoleOutputArea_content_%1"}.arg(row);
                 QVERIFY(qmltest::WaitForVisible(m_app, qPrintable(row_name)));
-                QTRY_VERIFY(qAbs(geometry(qPrintable(row_name), "width") - console->property("width").toDouble() + 32) <= 1);
-                QTRY_VERIFY(geometry(qPrintable(timestamp_name), "width") >= std::max(60.0, geometry(qPrintable(timestamp_name), "contentWidth")));
-                QTRY_VERIFY(qAbs(geometry(qPrintable(content_name), "x") - geometry(qPrintable(timestamp_name), "width") - 20) <= 1);
+                QVERIFY_AWAIT(qAbs(geometry(qPrintable(row_name), "width") - console->property("width").toDouble() + 32) <= 1, qmltest::Property(console, "width"), qmltest::Frame(m_app.window()));
+                QVERIFY_AWAIT(geometry(qPrintable(timestamp_name), "width") >= std::max(60.0, geometry(qPrintable(timestamp_name), "contentWidth")), qmltest::Frame(m_app.window()));
+                QVERIFY_AWAIT(qAbs(geometry(qPrintable(content_name), "x") - geometry(qPrintable(timestamp_name), "width") - 20) <= 1, qmltest::Frame(m_app.window()));
                 QCOMPARE(qmltest::Find(m_app, qPrintable(row_name))->property("rowCategory").toInt(), row);
             }
             if (size < maximum) QVERIFY(qmltest::Click(m_app, "consoleFontIncreaseButton"));
@@ -128,9 +128,9 @@ private Q_SLOTS:
         QVERIFY(qmltest::SetText(m_app, "consoleInput", "getblockcou"));
         QVERIFY(qmltest::WaitForVisible(m_app, "consoleAutocompletePopup"));
         QVERIFY(qmltest::Click(m_app, "consoleAutocomplete_0"));
-        QTRY_COMPARE(qmltest::Find(m_app, "consoleInput")->property("text").toString().trimmed(), QStringLiteral("getblockcount"));
+        QCOMPARE_AWAIT(qmltest::Find(m_app, "consoleInput")->property("text").toString().trimmed(), QStringLiteral("getblockcount"), qmltest::Property(qmltest::Find(m_app, "consoleInput"), "text"));
         QVERIFY(qmltest::SetText(m_app, "consoleInput", "zzzznotacommand"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "consoleAutocompletePopup")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "consoleAutocompletePopup")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "consoleAutocompletePopup"), "visible"));
         QVERIFY(qmltest::SetText(m_app, "consoleInput", "help get"));
         QVERIFY(qmltest::WaitForVisible(m_app, "consoleAutocompletePopup"));
     }

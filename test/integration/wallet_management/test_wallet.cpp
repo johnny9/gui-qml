@@ -47,7 +47,7 @@ private Q_SLOTS:
         QVERIFY(controller);
         QVERIFY(qmltest::CreateWallet(m_app, "closed"));
         controller->closeWallet("closed");
-        QTRY_VERIFY(!controller->isWalletOpen("closed"));
+        QVERIFY_AWAIT(!controller->isWalletOpen("closed"), qmltest::Property(controller, "openWallets"));
         QVERIFY(qmltest::CreateWallet(m_app, "loaded"));
         QVERIFY(qmltest::CreateWallet(m_app, "alias_target"));
         QVERIFY(controller->setWalletDisplayName("alias_target", "Savings"));
@@ -63,13 +63,14 @@ private Q_SLOTS:
             QVERIFY(qmltest::Click(m_app, "createWalletFormCreateButton"));
             auto* error = qmltest::Find(m_app, "createWalletFormErrorText");
             QVERIFY(error);
-            QTRY_VERIFY(error->property("text").toString().contains("already exists"));
+            QVERIFY_AWAIT(error->property("text").toString().contains("already exists"), qmltest::Property(error, "text"));
         }
         QCOMPARE(controller->walletNameAvailabilityError("My new wallet"), QString{});
         QSignalSpy created{controller, &WalletQmlController::walletCreateSucceeded};
         QVERIFY(qmltest::SetText(m_app, "createWalletNameInput", "My new wallet"));
         QVERIFY(qmltest::Click(m_app, "createWalletFormCreateButton"));
-        QTRY_COMPARE_WITH_TIMEOUT(created.count(), 1, 30'000);
+        QVERIFY(qmltest::AwaitSignal(created, 30'000));
+        QCOMPARE(created.count(), 1);
         QVERIFY(qmltest::WaitForVisible(m_app, "walletCreationReadyPage"));
         QVERIFY(qmltest::Click(m_app, "createWalletReadyDoneButton"));
         auto* wallet = qmltest::WaitForWallet(m_app, "My new wallet");
@@ -89,8 +90,8 @@ private Q_SLOTS:
         QVERIFY(original);
         QSignalSpy selected{controller, &WalletQmlController::selectedWalletChanged};
         controller->closeWallet("reload");
-        QTRY_VERIFY(!controller->isWalletLoaded());
-        QTRY_VERIFY(original.isNull());
+        QVERIFY_AWAIT(!controller->isWalletLoaded(), qmltest::Property(controller, "isWalletLoaded"));
+        QVERIFY_AWAIT(original.isNull(), qmltest::Destroyed(original.data()));
         QVERIFY(!selected.isEmpty());
         QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
         controller->setSelectedWallet("reload");
@@ -98,7 +99,7 @@ private Q_SLOTS:
         QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 1U);
         auto* list = qmltest::Model<WalletListModel>(m_app, "walletListModel");
         QVERIFY(list);
-        QTRY_COMPARE(list->rowCount(), 1);
+        QCOMPARE_AWAIT(list->rowCount(), 1, qmltest::Rows(list));
         QCOMPARE(list->data(list->index(0), WalletListModel::LoadStateRole).toInt(), static_cast<int>(WalletListModel::LoadState::Open));
     }
 
@@ -107,7 +108,7 @@ private Q_SLOTS:
         auto* wallet = qmltest::CreateWallet(m_app);
         QVERIFY(wallet);
         QVERIFY(wallet->encryptWallet("old password"));
-        QTRY_VERIFY(wallet->isLocked());
+        QVERIFY_AWAIT(wallet->isLocked(), qmltest::Property(wallet, "isLocked"));
         QVERIFY(!wallet->changeWalletPassphrase("wrong password", "new password"));
         QVERIFY(!wallet->settingsError().isEmpty());
         QVERIFY(wallet->isLocked());
@@ -115,9 +116,9 @@ private Q_SLOTS:
         QVERIFY(wallet->settingsError().isEmpty());
         QVERIFY(wallet->isLocked());
         qmltest::Rpc(m_app, "walletpassphrase", qmltest::Json("[\"new password\", 10]"), wallet->name());
-        QTRY_VERIFY(!wallet->isLocked());
+        QVERIFY_AWAIT(!wallet->isLocked(), qmltest::Property(wallet, "isLocked"));
         qmltest::Rpc(m_app, "walletlock", {}, wallet->name());
-        QTRY_VERIFY(wallet->isLocked());
+        QVERIFY_AWAIT(wallet->isLocked(), qmltest::Property(wallet, "isLocked"));
     }
 
     void settingsExposeReadOnlyNameAndBackUpToTheChosenDirectory()
@@ -134,7 +135,7 @@ private Q_SLOTS:
         QVERIFY(path);
         QVERIFY(path->setProperty("text", directory.path()));
         QVERIFY(qmltest::Click(m_app, "walletBackupRow"));
-        QTRY_VERIFY(QFileInfo{directory.filePath("settings.bak")}.size() > 0);
+        QVERIFY(QFileInfo{directory.filePath("settings.bak")}.size() > 0);
         QCOMPARE(qmltest::Find(m_app, "walletSettingsPage")->property("errorText").toString(), QString{});
     }
 
@@ -143,7 +144,7 @@ private Q_SLOTS:
         auto* wallet = qmltest::CreateWallet(m_app);
         QVERIFY(wallet);
         QVERIFY(wallet->encryptWallet("old password"));
-        QTRY_VERIFY(wallet->isLocked());
+        QVERIFY_AWAIT(wallet->isLocked(), qmltest::Property(wallet, "isLocked"));
         QVERIFY(qmltest::SelectSettings(m_app, "wallet"));
         QVERIFY(qmltest::Click(m_app, "walletPasswordRow"));
         QVERIFY(qmltest::WaitForVisible(m_app, "walletPasswordSettingsPage"));
@@ -151,7 +152,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::SetText(m_app, "walletPasswordNewField", "new integration password"));
         QVERIFY(qmltest::SetText(m_app, "walletPasswordConfirmField", "new integration password"));
         QVERIFY(qmltest::Click(m_app, "walletPasswordSaveButton"));
-        QTRY_VERIFY(qmltest::Find(m_app, "walletPasswordErrorText")->property("text").toString().contains("incorrect", Qt::CaseInsensitive));
+        QVERIFY_AWAIT(qmltest::Find(m_app, "walletPasswordErrorText")->property("text").toString().contains("incorrect", Qt::CaseInsensitive), qmltest::Property(qmltest::Find(m_app, "walletPasswordErrorText"), "text"));
         QCOMPARE(qmltest::Find(m_app, "walletPasswordCurrentField")->property("text").toString(), QStringLiteral("wrong password"));
         QVERIFY(wallet->isLocked());
     }
@@ -176,9 +177,11 @@ private Q_SLOTS:
         QVERIFY(qmltest::WaitForVisible(m_app, "walletPasswordSettingsPage"));
 
         if (close_wallet) {
+            QPointer<WalletQmlModel> retiring{alpha};
             QVERIFY(walletAction("alpha", "Close"));
             QVERIFY(qmltest::Click(m_app, "walletCloseConfirmationConfirmButton"));
-            QTRY_COMPARE(qmltest::Rpc(m_app, "listwallets").size(), 1U);
+            QVERIFY_AWAIT(retiring.isNull(), qmltest::Destroyed(retiring.data()));
+            QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 1U);
         } else {
             QVERIFY(selectWallet("beta"));
         }
@@ -214,13 +217,15 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "walletCloseConfirmationCancelButton"));
         QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 2U);
         QVERIFY(walletAction("beta", "Close"));
+        QPointer<WalletQmlModel> retiring{controller->selectedWallet()};
         QVERIFY(qmltest::Click(m_app, "walletCloseConfirmationConfirmButton"));
-        QTRY_COMPARE(qmltest::Rpc(m_app, "listwallets").size(), 1U);
+        QVERIFY_AWAIT(retiring.isNull(), qmltest::Destroyed(retiring.data()));
+        QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 1U);
         QVERIFY(qmltest::WaitForWallet(m_app, "alpha"));
         QVERIFY(openSelector());
         auto* row = qmltest::Find(m_app, "walletSelectItem_beta");
         QVERIFY(row);
-        QTRY_COMPARE(row->property("loadState").toInt(), static_cast<int>(WalletListModel::LoadState::Closed));
+        QCOMPARE_AWAIT(row->property("loadState").toInt(), static_cast<int>(WalletListModel::LoadState::Closed), qmltest::Property(row, "loadState"));
         QCOMPARE(row->property("iconSource").toString(), QStringLiteral("image://images/wallet"));
         QVERIFY(!qmltest::Find(m_app, "walletSelectActionsMenu_beta")->property("visible").toBool());
     }
@@ -239,10 +244,10 @@ private Q_SLOTS:
         auto* wallets = qmltest::Model<WalletListModel>(m_app, "walletListModel");
         QVERIFY(wallets);
         wallets->listWalletDir();
-        QTRY_VERIFY(wallets->walletDirLoaded());
+        QVERIFY_AWAIT(wallets->walletDirLoaded(), qmltest::Property(wallets, "walletDirLoaded"));
         controller->closeWallet("broken");
-        QTRY_VERIFY(wallet.isNull());
-        QTRY_COMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
+        QVERIFY_AWAIT(wallet.isNull(), qmltest::Destroyed(wallet.data()));
+        QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
         QVERIFY(openSelector());
 
         // Keep SQLite's format signature so directory discovery still lists it,
@@ -255,10 +260,10 @@ private Q_SLOTS:
         QVERIFY(!qmltest::Find(m_app, "walletLoadErrorPopupText")->property("text").toString().isEmpty());
         auto* row = qmltest::Find(m_app, "walletSelectItem_broken");
         QVERIFY(row);
-        QTRY_COMPARE(row->property("loadState").toInt(), static_cast<int>(WalletListModel::LoadState::LoadError));
+        QCOMPARE_AWAIT(row->property("loadState").toInt(), static_cast<int>(WalletListModel::LoadState::LoadError), qmltest::Property(row, "loadState"));
         QVERIFY(qmltest::Find(m_app, "walletSelectStatus_broken")->property("text").toString().contains("failed", Qt::CaseInsensitive));
         QVERIFY(qmltest::Click(m_app, "walletLoadErrorPopupDismissButton"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "walletLoadErrorPopup")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "walletLoadErrorPopup")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "walletLoadErrorPopup"), "visible"));
         QCOMPARE(row->property("loadState").toInt(), static_cast<int>(WalletListModel::LoadState::LoadError));
     }
 
@@ -300,16 +305,17 @@ private Q_SLOTS:
         auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
         QVERIFY(controller);
         controller->closeWallet("original");
-        QTRY_VERIFY(!controller->isWalletLoaded());
+        QVERIFY_AWAIT(!controller->isWalletLoaded(), qmltest::Property(controller, "isWalletLoaded"));
         QSignalSpy imported{controller, &WalletQmlController::walletImportSucceeded};
         controller->importWallet(backup);
-        QTRY_COMPARE_WITH_TIMEOUT(imported.count(), 1, 30'000);
+        QVERIFY(qmltest::AwaitSignal(imported, 30'000));
+        QCOMPARE(imported.count(), 1);
         QVERIFY(controller->isWalletLoaded());
         UniValue params{UniValue::VARR};
         params.push_back(address.toStdString());
         QVERIFY(qmltest::Rpc(m_app, "getaddressinfo", params, controller->selectedWallet()->name()).find_value("ismine").get_bool());
         controller->importWallet(directory.filePath("missing.dat"));
-        QTRY_VERIFY(!controller->walletLoadError().isEmpty());
+        QVERIFY_AWAIT(!controller->walletLoadError().isEmpty(), qmltest::Property(controller, "walletLoadError"));
         QCOMPARE(imported.count(), 1);
         QVERIFY(controller->isWalletLoaded());
     }
@@ -320,16 +326,18 @@ private Q_SLOTS:
         QVERIFY(wallet);
         const auto address = qmltest::NewAddress(m_app, wallet->name(), "legacy");
         QVERIFY(wallet->encryptWallet("backup password"));
-        QTRY_VERIFY(wallet->isLocked());
+        QVERIFY_AWAIT(wallet->isLocked(), qmltest::Property(wallet, "isLocked"));
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         const auto backup = directory.filePath("encrypted_restore.bak");
         QVERIFY(wallet->backupWallet(backup));
         auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
         QVERIFY(controller);
+        QPointer<WalletQmlModel> retiring{wallet};
         controller->closeWallet(wallet->name());
-        QTRY_VERIFY(!controller->isWalletLoaded());
-        QTRY_COMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
+        QVERIFY_AWAIT(!controller->isWalletLoaded(), qmltest::Property(controller, "isWalletLoaded"));
+        QVERIFY_AWAIT(retiring.isNull(), qmltest::Destroyed(retiring.data()));
+        QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
         controller->importWallet(backup);
         auto* restored = qmltest::WaitForWallet(m_app, "encrypted_restore");
         QVERIFY(restored);

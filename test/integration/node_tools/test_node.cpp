@@ -28,7 +28,7 @@ private Q_SLOTS:
     {
         qmltest::Call(m_app, &interfaces::Node::setNetworkActive, m_network_was_active);
         QVERIFY(qmltest::ReturnToNode(m_app));
-        QTRY_VERIFY(qmltest::TransitionsFinished(m_app.window()));
+        QVERIFY_AWAIT(qmltest::TransitionsFinished(m_app.window()), qmltest::Ui(m_app.window()));
     }
 
     void networkActionsAndCoreNotificationsAgree_data()
@@ -43,26 +43,26 @@ private Q_SLOTS:
         QFETCH(bool, active);
         auto* model = &m_app.nodeModel();
         QVERIFY(model);
-        QTRY_VERIFY(model->networkActionReady());
+        QVERIFY_AWAIT(model->networkActionReady(), qmltest::Property(model, "networkActionReady"));
         model->setPause(!active);
-        QTRY_VERIFY(!model->networkActionPending());
-        QTRY_COMPARE(model->pause(), !active);
-        QTRY_COMPARE(qmltest::Call(m_app, &interfaces::Node::getNetworkActive), active);
+        QVERIFY_AWAIT(!model->networkActionPending(), qmltest::Property(model, "networkActionPending"));
+        QCOMPARE_AWAIT(model->pause(), !active, qmltest::Property(model, "pause"));
+        QCOMPARE(qmltest::Call(m_app, &interfaces::Node::getNetworkActive), active);
         qmltest::Call(m_app, &interfaces::Node::setNetworkActive, !active);
-        QTRY_COMPARE(model->pause(), active);
+        QCOMPARE_AWAIT(model->pause(), active, qmltest::Property(model, "pause"));
         model->setPause(!active);
-        QTRY_VERIFY(!model->networkActionPending());
-        QTRY_COMPARE(model->pause(), !active);
-        QTRY_COMPARE(qmltest::Call(m_app, &interfaces::Node::getNetworkActive), active);
+        QVERIFY_AWAIT(!model->networkActionPending(), qmltest::Property(model, "networkActionPending"));
+        QCOMPARE_AWAIT(model->pause(), !active, qmltest::Property(model, "pause"));
+        QCOMPARE(qmltest::Call(m_app, &interfaces::Node::getNetworkActive), active);
         QCOMPARE(model->numPeers(), static_cast<int>(qmltest::Call(m_app, &interfaces::Node::getNodeCount, ConnectionDirection::Both)));
     }
 
     void navigationStaysResponsiveDuringRpc()
     {
-        auto* model = &m_app.nodeModel();
         auto* console = qmltest::Model<RpcConsoleModel>(m_app, "rpcConsoleModel");
         QVERIFY(console);
         const auto tip = qmltest::Call(m_app, &interfaces::Node::executeRpc, "getbestblockhash", UniValue{UniValue::VARR}, "").get_str();
+        QSignalSpy started{console, &RpcConsoleModel::commandStarted};
         // Keep the RPC active until cleanup mines a block, even if the GUI is slow.
         QVERIFY(console->submitCommand(QString::fromStdString("waitfornewblock 0 " + tip)));
         const auto finish_rpc = qScopeGuard([&] {
@@ -70,18 +70,20 @@ private Q_SLOTS:
             params.push_back(1);
             params.push_back("raw(51)");
             qmltest::Call(m_app, &interfaces::Node::executeRpc, "generatetodescriptor", params, "");
-            QVERIFY(QTest::qWaitFor([&] { return !console->executing(); }, 5000));
+            QVERIFY_AWAIT(!console->executing(), qmltest::Property(console, "executing"));
         });
-        QTRY_VERIFY(qmltest::RpcCommandRunning(m_app, "waitfornewblock"));
+        QVERIFY(qmltest::AwaitSignal(started));
         QVERIFY(qmltest::OpenSettings(m_app));
-        QTRY_VERIFY(qmltest::Find(m_app, "settingsView"));
-        QTRY_VERIFY(qmltest::TransitionsFinished(m_app.window()));
-        bool delivered{false};
-        QTimer::singleShot(0, model, [&] { delivered = true; });
-        QTRY_VERIFY(delivered);
+        QVERIFY_AWAIT(qmltest::Find(m_app, "settingsView"), qmltest::Ui(m_app.window()));
+        QVERIFY_AWAIT(qmltest::TransitionsFinished(m_app.window()), qmltest::Ui(m_app.window()));
+        QTimer turn;
+        turn.setSingleShot(true);
+        QSignalSpy delivered{&turn, &QTimer::timeout};
+        turn.start(0);
+        QVERIFY(qmltest::AwaitSignal(delivered));
         QVERIFY(console->executing());
         QVERIFY(qmltest::ReturnToNode(m_app));
-        QTRY_VERIFY(qmltest::TransitionsFinished(m_app.window()));
+        QVERIFY_AWAIT(qmltest::TransitionsFinished(m_app.window()), qmltest::Ui(m_app.window()));
     }
 
 
@@ -128,15 +130,14 @@ private Q_SLOTS:
                 answered = true;
             });
         });
-        auto result = std::async(std::launch::async, [=] {
+        const bool result = qmltest::Async([=] {
             if (question) return uiInterface.ThreadSafeQuestion(Untranslated(message.toStdString()), "", style);
             uiInterface.ThreadSafeMessageBox(Untranslated(message.toStdString()), style);
             return false;
         });
-        QTRY_VERIFY(result.wait_for(std::chrono::milliseconds{0}) == std::future_status::ready);
         QVERIFY(answered);
         QVERIFY(!m_app.nodeModel().runtimeDialogVisible());
-        QVERIFY(!result.get());
+        QVERIFY(!result);
     }
 
 };

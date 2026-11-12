@@ -16,7 +16,7 @@ public:
 private Q_SLOTS:
     void mempoolToolsFollowNodeCapabilities()
     {
-        QTRY_VERIFY(!m_app.nodeModel().mempoolInformationAvailable());
+        QVERIFY_AWAIT(!m_app.nodeModel().mempoolInformationAvailable(), qmltest::Property(&m_app.nodeModel(), "mempoolInformationAvailable"));
         QVERIFY(qmltest::OpenSettings(m_app));
         QVERIFY(qmltest::WaitForVisible(m_app, "settingsView"));
         QVERIFY(!qmltest::Find(m_app, "settingsSidebar_mempool"));

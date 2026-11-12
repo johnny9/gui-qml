@@ -62,7 +62,7 @@ class SendIntegrationTests : public QObject
             if (!qmltest::Click(m_app, "sendCoinControlPickerOption_1")) return std::nullopt;
             auto* model = wallet->coinsListModel();
             model->update();
-            if (!QTest::qWaitFor([&] { return model->rowCount() >= 2; }, 30'000)) return std::nullopt;
+            if (!qmltest::Await([&] { return model->rowCount() >= 2; }, {qmltest::Rows(model)}, 30'000)) return std::nullopt;
             model->beginSelection();
             for (const auto& input : inputs.getValues()) {
                 const QString id = QString::fromStdString(input.find_value("txid").get_str()) + ":" + QString::number(input.find_value("vout").getInt<int>());
@@ -104,8 +104,8 @@ private Q_SLOTS:
         // A rate below the relay minimum must fail before review or broadcast.
         if (reject_low_rate) {
             QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "0.1"));
-            QTRY_VERIFY(!wallet->customFeeRateValid());
-            QTRY_VERIFY(!wallet->feeEstimatePending());
+            QVERIFY_AWAIT(!wallet->customFeeRateValid(), qmltest::Property(wallet, "customFeeRateValid"));
+            QVERIFY_AWAIT(!wallet->feeEstimatePending(), qmltest::Property(wallet, "feeEstimatePending"));
             QCOMPARE(wallet->estimatedFee(), QString{});
             QVERIFY(!qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
             QCOMPARE(qmltest::Find(m_app, "feeSelectionEstimateLabel")->property("value").toString(), QString::fromUtf8("—"));
@@ -115,7 +115,7 @@ private Q_SLOTS:
         }
 
         QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", rate));
-        QTRY_VERIFY(wallet->customFeeRateValid());
+        QVERIFY_AWAIT(wallet->customFeeRateValid(), qmltest::Property(wallet, "customFeeRateValid"));
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
         QVERIFY(wallet->currentTransaction());
@@ -166,7 +166,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::FundWallet(m_app, *wallet));
         auto* coins = wallet->coinsListModel();
         coins->update();
-        QTRY_VERIFY(coins->rowCount() > 0);
+        QVERIFY_AWAIT(coins->rowCount() > 0, qmltest::Rows(coins));
         const auto coin_id = coins->data(coins->index(0), CoinsListModel::CoinIdRole).toString();
 
         // Filtering keeps the pending selection; cancelling discards it.
@@ -212,12 +212,12 @@ private Q_SLOTS:
         auto* coins = wallet->coinsListModel();
         wallet->clearSelectedCoins();
         coins->update();
-        QTRY_COMPARE(coins->selectedCoinsCount(), 0);
+        QCOMPARE_AWAIT(coins->selectedCoinsCount(), 0, qmltest::Property(coins, "selectedCoinsCount"));
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
 
         // Apply one real input through the dialog's production controls.
         QVERIFY(qmltest::Click(m_app, "sendSelectInputsButton"));
-        QTRY_VERIFY(qmltest::Find(m_app, "coinSelectionPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "coinSelectionPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "coinSelectionPopup"), "opened"));
         int selectable{-1};
         for (int row{0}; row < coins->rowCount(); ++row) {
             if (!coins->data(coins->index(row), CoinsListModel::LockedRole).toBool()) {
@@ -227,32 +227,32 @@ private Q_SLOTS:
         }
         QVERIFY(selectable >= 0);
         QVERIFY(qmltest::Click(m_app, qPrintable(QString{"coinSelectionItem_%1"}.arg(selectable))));
-        QTRY_COMPARE(coins->selectedCoinsCount(), 1);
+        QCOMPARE_AWAIT(coins->selectedCoinsCount(), 1, qmltest::Property(coins, "selectedCoinsCount"));
         QVERIFY(qmltest::Click(m_app, "coinSelectionDoneButton"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "coinSelectionPopup")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "coinSelectionPopup")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "coinSelectionPopup"), "visible"));
         QCOMPARE(wallet->listSelectedCoins().size(), 1U);
         QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton"));
-        QTRY_VERIFY(wallet->estimatedFeeSatoshi() > 0);
-        QTRY_COMPARE(wallet->sendRecipientList()->totalAmountSatoshi() + wallet->estimatedFeeSatoshi(), 50 * COIN);
+        QVERIFY_AWAIT(wallet->estimatedFeeSatoshi() > 0, qmltest::Property(wallet, "estimatedFeeSatoshi"));
+        QCOMPARE_AWAIT(wallet->sendRecipientList()->totalAmountSatoshi() + wallet->estimatedFeeSatoshi(), 50 * COIN, qmltest::Property(wallet->sendRecipientList(), "totalAmountSatoshi"), qmltest::Property(wallet, "estimatedFeeSatoshi"));
         const auto original_amount = wallet->sendRecipientList()->totalAmountSatoshi();
         const auto original_fee = wallet->estimatedFeeSatoshi();
 
         // Cancelling a pending deselection retains both the committed input and maximum.
         QVERIFY(qmltest::Click(m_app, "sendSelectInputsButton"));
-        QTRY_VERIFY(qmltest::Find(m_app, "coinSelectionPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "coinSelectionPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "coinSelectionPopup"), "opened"));
         QVERIFY(qmltest::Click(m_app, qPrintable(QString{"coinSelectionItem_%1"}.arg(selectable))));
-        QTRY_COMPARE(coins->selectedCoinsCount(), 0);
+        QCOMPARE_AWAIT(coins->selectedCoinsCount(), 0, qmltest::Property(coins, "selectedCoinsCount"));
         QVERIFY(qmltest::Click(m_app, "coinSelectionCancelButton"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "coinSelectionPopup")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "coinSelectionPopup")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "coinSelectionPopup"), "visible"));
         QCOMPARE(wallet->listSelectedCoins().size(), 1U);
-        QTRY_COMPARE(wallet->sendRecipientList()->totalAmountSatoshi(), original_amount);
+        QCOMPARE_AWAIT(wallet->sendRecipientList()->totalAmountSatoshi(), original_amount, qmltest::Property(wallet->sendRecipientList(), "totalAmountSatoshi"));
 
         QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "2"));
-        QTRY_COMPARE(wallet->estimatedFeeSatoshi(), 2 * original_fee);
-        QTRY_COMPARE(wallet->sendRecipientList()->totalAmountSatoshi() + wallet->estimatedFeeSatoshi(), 50 * COIN);
+        QCOMPARE_AWAIT(wallet->estimatedFeeSatoshi(), 2 * original_fee, qmltest::Property(wallet, "estimatedFeeSatoshi"));
+        QCOMPARE_AWAIT(wallet->sendRecipientList()->totalAmountSatoshi() + wallet->estimatedFeeSatoshi(), 50 * COIN, qmltest::Property(wallet->sendRecipientList(), "totalAmountSatoshi"), qmltest::Property(wallet, "estimatedFeeSatoshi"));
         QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "1"));
         QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "3"));
-        QTRY_VERIFY(!wallet->feeEstimatePending());
+        QVERIFY_AWAIT(!wallet->feeEstimatePending(), qmltest::Property(wallet, "feeEstimatePending"));
         QCOMPARE(wallet->sendRecipientList()->totalAmountSatoshi(), COIN);
     }
 
@@ -264,27 +264,27 @@ private Q_SLOTS:
         QVERIFY(setup);
         auto* wallet = setup->wallet;
         QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton"));
-        QTRY_COMPARE(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), 100 * COIN);
+        QCOMPARE_AWAIT(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), 100 * COIN, qmltest::Property(wallet->sendRecipientList()->currentRecipient()->amount(), "satoshi"));
         QVERIFY(!qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
-        QTRY_COMPARE_WITH_TIMEOUT(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), setup->expected_amount, 30'000);
+        QCOMPARE_AWAIT_TIMEOUT(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), setup->expected_amount, 30'000, qmltest::Property(wallet->sendRecipientList()->currentRecipient()->amount(), "satoshi"));
         QCOMPARE(qmltest::Find(m_app, "sendCoinControlPicker")->property("currentIndex").toInt(), manual ? 1 : 0);
         QCOMPARE(qmltest::Find(m_app, "sendUseMaximumButton")->property("text").toString(),
                  manual ? QStringLiteral("Use maximum from selected coins") : QStringLiteral("Use maximum"));
-        QTRY_COMPARE(wallet->sendDraftSweepsWallet(), !self_send);
+        QCOMPARE_AWAIT(wallet->sendDraftSweepsWallet(), !self_send, qmltest::Property(wallet, "sendDraftSweepsWallet"));
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         if (!self_send) {
             QVERIFY(qmltest::WaitForVisible(m_app, "sendReviewSweepAlert"));
             QVERIFY(qmltest::Click(m_app, "sendReviewSweepCancelButton"));
-            QTRY_VERIFY(!qmltest::Find(m_app, "sendReviewSweepAlert")->property("visible").toBool());
+            QVERIFY_AWAIT(!qmltest::Find(m_app, "sendReviewSweepAlert")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "sendReviewSweepAlert"), "visible"));
             QCOMPARE(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), setup->expected_amount);
             QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
             QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
             QVERIFY(qmltest::Click(m_app, "sendReviewSweepConfirmButton"));
         }
-        QTRY_VERIFY(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "transactionReviewPopup"), "opened"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "sendReviewSweepAlert")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "sendReviewSweepAlert")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "sendReviewSweepAlert"), "visible"));
         QCOMPARE(wallet->currentTransactionSweepsWallet(), !self_send);
         QCOMPARE(wallet->currentTransaction()->getWtx()->vin.size(), 2U);
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
@@ -301,36 +301,36 @@ private Q_SLOTS:
         QVERIFY(setup);
         auto* wallet = setup->wallet;
         QVERIFY(wallet->encryptWallet("review password"));
-        QTRY_VERIFY(wallet->isLocked());
+        QVERIFY_AWAIT(wallet->isLocked(), qmltest::Property(wallet, "isLocked"));
         QCOMPARE(wallet->listSelectedCoins().size(), 2U);
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
         const auto amount = BitcoinUnits::format(BitcoinUnits::Unit::BTC, setup->expected_amount - 100, false, BitcoinUnits::SeparatorStyle::NEVER);
         QVERIFY(qmltest::SetText(m_app, "sendAmountInput", amount));
-        QTRY_COMPARE(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), setup->expected_amount - 100);
+        QCOMPARE_AWAIT(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), setup->expected_amount - 100, qmltest::Property(wallet->sendRecipientList()->currentRecipient()->amount(), "satoshi"));
         QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "sendReviewButton"), "forceActiveFocus"));
-        QTRY_VERIFY_WITH_TIMEOUT(wallet->sendDraftSweepsWallet(), 30'000);
-        QTRY_VERIFY(!wallet->feeEstimatePending());
+        QVERIFY_AWAIT_TIMEOUT(wallet->sendDraftSweepsWallet(), 30'000, qmltest::Property(wallet, "sendDraftSweepsWallet"));
+        QVERIFY_AWAIT(!wallet->feeEstimatePending(), qmltest::Property(wallet, "feeEstimatePending"));
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendReviewSweepAlert"));
         QVERIFY(!qmltest::Find(m_app, "reviewPassphrasePopup")->property("visible").toBool());
         QVERIFY(qmltest::Click(m_app, "sendReviewSweepCancelButton"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "sendReviewSweepAlert")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "sendReviewSweepAlert")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "sendReviewSweepAlert"), "visible"));
         QVERIFY(!qmltest::Find(m_app, "reviewPassphrasePopup")->property("visible").toBool());
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         QVERIFY(qmltest::Click(m_app, "sendReviewSweepConfirmButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "reviewPassphrasePopup"));
         // onOpened clears the passphrase; wait for it before entering text.
-        QTRY_VERIFY(qmltest::Find(m_app, "reviewPassphrasePopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "reviewPassphrasePopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "reviewPassphrasePopup"), "opened"));
         QVERIFY(qmltest::SetText(m_app, "reviewPassphraseField", "review password"));
         QVERIFY(qmltest::Click(m_app, "reviewPassphraseConfirmButton"));
-        QTRY_VERIFY(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "transactionReviewPopup"), "opened"));
         QVERIFY(qmltest::SecretTextLocations(m_app.window(), "review password").isEmpty());
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
         QVERIFY(wallet->isLocked());
         QVERIFY(qmltest::Click(m_app, "sendTransactionReviewSendButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendSweepAlert"));
         QVERIFY(qmltest::Click(m_app, "sendSweepCancelButton"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "sendSweepAlert")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "sendSweepAlert")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "sendSweepAlert"), "visible"));
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
         QVERIFY(qmltest::Click(m_app, "sendTransactionReviewSendButton"));
         QVERIFY(qmltest::Click(m_app, "sendSweepConfirmButton"));
@@ -345,7 +345,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", txid));
         auto* filter = qmltest::Find(m_app, "activityFilterProxyModel");
         QVERIFY(filter);
-        QTRY_COMPARE(filter->property("count").toInt(), 1);
+        QCOMPARE_AWAIT(filter->property("count").toInt(), 1, qmltest::Property(filter, "count"));
         auto* row = qmltest::WaitForVisible(m_app, qPrintable("activityItem_" + txid));
         QVERIFY(row);
         QCOMPARE(row->property("netAmountSat").toLongLong(), -100 * COIN);
@@ -361,7 +361,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton"));
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         QVERIFY(qmltest::Click(m_app, "sendReviewSweepConfirmButton"));
-        QTRY_VERIFY(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "transactionReviewPopup"), "opened"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
         auto* amount = qmltest::Find(m_app, "sendTransactionReviewRecipient0Amount");
         auto* destination = qmltest::Find(m_app, "sendTransactionReviewRecipient0Description");
@@ -371,7 +371,7 @@ private Q_SLOTS:
         const auto incoming = qmltest::NewAddress(m_app, wallet->name());
         qmltest::Rpc(m_app, "sendtoaddress", qmltest::Json("{\"address\":\"" + incoming.toStdString() + "\",\"amount\":0.5,\"fee_rate\":1}"), setup->destination_wallet->name());
         qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + setup->address.toStdString() + "\"]"));
-        QTRY_VERIFY_WITH_TIMEOUT(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi() > setup->expected_amount, 30'000);
+        QVERIFY_AWAIT_TIMEOUT(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi() > setup->expected_amount, 30'000, qmltest::Property(wallet->sendRecipientList()->currentRecipient()->amount(), "satoshi"));
         QCOMPARE(amount->property("text").toString(), reviewed_amount);
         QCOMPARE(destination->property("text").toString(), reviewed_destination);
 
@@ -381,7 +381,7 @@ private Q_SLOTS:
         auto* save_path = qmltest::Find(m_app, "sendTransactionReviewSavePsbtPathField");
         QVERIFY(save_path && save_path->setProperty("text", path));
         QVERIFY(qmltest::Click(m_app, "sendTransactionReviewSaveButton"));
-        QTRY_VERIFY(QFileInfo{path}.size() > 0);
+        QVERIFY(QFileInfo{path}.size() > 0);
         QFile psbt{path};
         QVERIFY(psbt.open(QIODevice::ReadOnly));
         const auto decoded = qmltest::Rpc(m_app, "decodepsbt", qmltest::Json("[\"" + psbt.readAll().toBase64().toStdString() + "\"]"));
@@ -408,22 +408,22 @@ private Q_SLOTS:
         const auto second_address = qmltest::NewAddress(m_app, setup->destination_wallet->name());
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", second_address));
         QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "2"));
-        QTRY_COMPARE(wallet->sendRecipientList()->count(), 2);
+        QCOMPARE_AWAIT(wallet->sendRecipientList()->count(), 2, qmltest::Property(wallet->sendRecipientList(), "count"));
         QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "sendReviewButton"), "forceActiveFocus"));
-        QTRY_VERIFY(!wallet->feeEstimatePending());
-        QTRY_COMPARE(wallet->sendRecipientList()->totalAmountSatoshi() + wallet->estimatedFeeSatoshi(), 100 * COIN);
-        QTRY_VERIFY_WITH_TIMEOUT(wallet->sendDraftSweepsWallet(), 30'000);
+        QVERIFY_AWAIT(!wallet->feeEstimatePending(), qmltest::Property(wallet, "feeEstimatePending"));
+        QCOMPARE_AWAIT(wallet->sendRecipientList()->totalAmountSatoshi() + wallet->estimatedFeeSatoshi(), 100 * COIN, qmltest::Property(wallet->sendRecipientList(), "totalAmountSatoshi"), qmltest::Property(wallet, "estimatedFeeSatoshi"));
+        QVERIFY_AWAIT_TIMEOUT(wallet->sendDraftSweepsWallet(), 30'000, qmltest::Property(wallet, "sendDraftSweepsWallet"));
         const auto first_amount = wallet->sendRecipientList()->recipients()[0]->amount()->satoshi();
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendReviewSweepAlert"));
         QCOMPARE(qmltest::Find(m_app, "sendReviewSweepAlert")->property("title").toString(), QStringLiteral("Use all available funds?"));
         QVERIFY(qmltest::Click(m_app, "sendReviewSweepCancelButton"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "sendReviewSweepAlert")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "sendReviewSweepAlert")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "sendReviewSweepAlert"), "visible"));
         QCOMPARE(wallet->sendRecipientList()->recipients()[0]->amount()->satoshi(), first_amount);
         QCOMPARE(wallet->sendRecipientList()->recipients()[1]->amount()->satoshi(), 2 * COIN);
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         QVERIFY(qmltest::Click(m_app, "sendReviewSweepConfirmButton"));
-        QTRY_VERIFY(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "transactionReviewPopup"), "opened"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
         QCOMPARE(wallet->currentTransaction()->getWtx()->vout.size(), 2U);
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
@@ -456,10 +456,10 @@ private Q_SLOTS:
         QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "sendReviewButton"), "forceActiveFocus"));
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "reviewPassphrasePopup"));
-        QTRY_VERIFY(qmltest::Find(m_app, "reviewPassphrasePopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "reviewPassphrasePopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "reviewPassphrasePopup"), "opened"));
         QVERIFY(qmltest::SetText(m_app, "reviewPassphraseField", "fallback password"));
         QVERIFY(qmltest::Click(m_app, "reviewPassphraseConfirmButton"));
-        QTRY_VERIFY(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "transactionReviewPopup"), "opened"));
         QVERIFY(qmltest::SecretTextLocations(m_app.window(), "fallback password").isEmpty());
         QVERIFY(wallet->isLocked());
         QVERIFY(qmltest::Click(m_app, "sendTransactionReviewSendButton"));

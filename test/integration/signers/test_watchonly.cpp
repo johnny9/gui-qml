@@ -61,7 +61,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         QCOMPARE(reviewed.count(), 1);
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
-        QTRY_VERIFY(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, "transactionReviewPopup")->property("opened").toBool(), qmltest::Property(qmltest::Find(m_app, "transactionReviewPopup"), "opened"));
         QVERIFY(!qmltest::Find(m_app, "sendTransactionReviewSendButton")->property("visible").toBool());
         QVERIFY(qmltest::Find(m_app, "sendTransactionReviewSaveButton")->property("visible").toBool());
         QVERIFY(wallet->currentTransaction());
@@ -73,7 +73,7 @@ private Q_SLOTS:
         auto* save_path = qmltest::Find(m_app, "sendTransactionReviewSavePsbtPathField");
         QVERIFY(save_path && save_path->setProperty("text", path));
         QVERIFY(qmltest::Click(m_app, "sendTransactionReviewSaveButton"));
-        QTRY_VERIFY(QFileInfo{path}.size() > 0);
+        QVERIFY(QFileInfo{path}.size() > 0);
         QVERIFY(!wallet->sendTransaction());
         QVERIFY(!wallet->broadcastCurrentTransaction());
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);

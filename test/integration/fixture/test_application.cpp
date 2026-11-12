@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test/integration/fixture/test_application.h>
+#include <test/integration/fixture/test_wait.h>
 
 #include <qml/models/nodemodel.h>
 #include <qml/models/walletlistmodel.h>
@@ -101,9 +102,9 @@ bool TestApplication::waitForWallets()
     if (m_wallet_mode == WalletMode::Disabled) return true;
     auto* controller = qobject_cast<WalletQmlController*>(engine().rootContext()->contextProperty("walletController").value<QObject*>());
     auto* wallets = qobject_cast<WalletListModel*>(engine().rootContext()->contextProperty("walletListModel").value<QObject*>());
-    return controller && wallets && QTest::qWaitFor([&] {
+    return controller && wallets && qmltest::Await([&] {
         return controller->initialized() && wallets->walletDirLoaded();
-    }, 30'000);
+    }, {qmltest::Property(controller, "initialized"), qmltest::Property(wallets, "walletDirLoaded")}, 30'000);
 }
 
 void TestApplication::qmlEngineCreated(QQmlApplicationEngine& engine)
@@ -138,7 +139,7 @@ void TestApplication::windowCreated()
     }
     auto initialized = std::make_shared<QSignalSpy>(&nodeModel(), &NodeModel::nodeInitialized);
     QTimer::singleShot(0, &engine(), [this, initialized] {
-        if (!QTest::qWaitFor([&] { return !initialized->isEmpty(); }, 30'000) || nodeModel().errorState()) {
+        if (!qmltest::AwaitSignal(*initialized, 30'000) || nodeModel().errorState()) {
             std::cerr << "The application did not initialize its regtest node\n";
             m_status = EXIT_FAILURE;
         } else if (!waitForWallets()) {

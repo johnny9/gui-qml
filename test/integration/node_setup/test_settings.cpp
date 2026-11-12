@@ -56,12 +56,12 @@ private Q_SLOTS:
             QVERIFY(opened);
             if (popup) QCOMPARE(opened, popup.data());
             popup = opened;
-            QTRY_VERIFY(popup->property("opened").toBool());
+            QVERIFY_AWAIT(popup->property("opened").toBool(), qmltest::Property(popup, "opened"));
             QCOMPARE(popup->property("link").toUrl(), QUrl{QString::fromLatin1(link)});
             QVERIFY(qmltest::WaitForVisible(m_app, "externalLinkCancel"));
             QVERIFY(qmltest::WaitForVisible(m_app, "externalLinkConfirm"));
             QVERIFY(qmltest::Click(m_app, "externalLinkCancel"));
-            QTRY_VERIFY(!popup->property("visible").toBool());
+            QVERIFY_AWAIT(!popup->property("visible").toBool(), qmltest::Property(popup, "visible"));
             QVERIFY(about && about->property("visible").toBool());
             QVERIFY(m_opened_urls.isEmpty());
         }
@@ -81,19 +81,19 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "displayUnitSAT"));
         auto* picker = qmltest::Find(m_app, "displayUnitPicker");
         QVERIFY(picker);
-        QTRY_COMPARE(picker->property("currentValue").toInt(), 3);
+        QCOMPARE_AWAIT(picker->property("currentValue").toInt(), 3, qmltest::Property(picker, "currentValue"));
         QCOMPARE(picker->property("currentText").toString(), QStringLiteral("sat"));
         QVERIFY(qmltest::Click(m_app, "displayLanguageRow"));
         QVERIFY(qmltest::SetText(m_app, "languageSearch", QString::fromUtf8("español")));
         QVERIFY(qmltest::Click(m_app, "language_es"));
         QVERIFY(qmltest::WaitForVisible(m_app, "displayLanguageRow"));
-        QTRY_COMPARE(qmltest::Find(m_app, "displayLanguageRow")->property("title").toString(), QStringLiteral("Idioma"));
+        QCOMPARE_AWAIT(qmltest::Find(m_app, "displayLanguageRow")->property("title").toString(), QStringLiteral("Idioma"), qmltest::Property(qmltest::Find(m_app, "displayLanguageRow"), "title"));
         QCOMPARE(qmltest::Find(m_app, "displayUnitRow")->property("title").toString(), QString::fromUtf8("Unidad de visualización"));
         QVERIFY(qmltest::Click(m_app, "displayLanguageRow"));
         QVERIFY(qmltest::SetText(m_app, "languageSearch", ""));
         QVERIFY(qmltest::Click(m_app, "language_"));
         QVERIFY(qmltest::WaitForVisible(m_app, "displayLanguageRow"));
-        QTRY_COMPARE(qmltest::Find(m_app, "displayLanguageRow")->property("title").toString(), QStringLiteral("Language"));
+        QCOMPARE_AWAIT(qmltest::Find(m_app, "displayLanguageRow")->property("title").toString(), QStringLiteral("Language"), qmltest::Property(qmltest::Find(m_app, "displayLanguageRow"), "title"));
     }
 
     void proxyValidationKeepsInvalidDraftsOutOfCoreSettings_data()
@@ -116,19 +116,19 @@ private Q_SLOTS:
         QVERIFY(!qmltest::Find(m_app, enable)->property("checked").toBool());
         QVERIFY(!qmltest::Find(m_app, "proxyRestartNotice")->property("visible").toBool());
         QVERIFY(qmltest::Click(m_app, enable));
-        QTRY_VERIFY(qmltest::Find(m_app, address)->property("enabled").toBool());
+        QVERIFY_AWAIT(qmltest::Find(m_app, address)->property("enabled").toBool(), qmltest::Property(qmltest::Find(m_app, address), "enabled"));
         QVERIFY(qmltest::SetText(m_app, address, "999.999.999.999:9050"));
-        QTRY_VERIFY(!page->property(error).toString().isEmpty());
+        QVERIFY_AWAIT(!page->property(error).toString().isEmpty(), qmltest::Property(page, error));
         QVERIFY(!qmltest::Find(m_app, "proxySettingsSaveButton")->property("enabled").toBool());
         QCOMPARE(persistentProxy(key), original);
         QVERIFY(!qmltest::Find(m_app, "proxyRestartNotice")->property("visible").toBool());
 
         QVERIFY(qmltest::SetText(m_app, address, "127.0.0.1:9050"));
-        QTRY_COMPARE(page->property(error).toString(), QString{});
-        QTRY_VERIFY(qmltest::Find(m_app, "proxySettingsSaveButton")->property("enabled").toBool());
+        QCOMPARE_AWAIT(page->property(error).toString(), QString{}, qmltest::Property(page, error));
+        QVERIFY_AWAIT(qmltest::Find(m_app, "proxySettingsSaveButton")->property("enabled").toBool(), qmltest::Property(qmltest::Find(m_app, "proxySettingsSaveButton"), "enabled"));
         QCOMPARE(persistentProxy(key), original);
         QVERIFY(qmltest::Click(m_app, enable));
-        QTRY_VERIFY(!qmltest::Find(m_app, address)->property("enabled").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, address)->property("enabled").toBool(), qmltest::Property(qmltest::Find(m_app, address), "enabled"));
     }
 
     void cancellingBackPreservesProxyDraftAndConfirmingDiscardsIt()
@@ -138,10 +138,10 @@ private Q_SLOTS:
         const auto original = persistentProxy("proxy");
         QVERIFY(qmltest::Click(m_app, "proxyEnableSwitch"));
         QVERIFY(qmltest::SetText(m_app, "proxyAddressInput", "10.0.0.5:9050"));
-        QTRY_VERIFY(page->property("proxyDraftDirty").toBool());
+        QVERIFY_AWAIT(page->property("proxyDraftDirty").toBool(), qmltest::Property(page, "proxyDraftDirty"));
         QVERIFY(qmltest::Click(m_app, "proxySettingsBackButton"));
         QVERIFY(qmltest::Click(m_app, "discardProxyChangesCancelButton"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "discardProxyChangesPopup")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "discardProxyChangesPopup")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "discardProxyChangesPopup"), "visible"));
         QCOMPARE(qmltest::Find(m_app, "proxyAddressInput")->property("text").toString(), QStringLiteral("10.0.0.5:9050"));
         QVERIFY(qmltest::Click(m_app, "proxySettingsBackButton"));
         QVERIFY(qmltest::Click(m_app, "discardProxyChangesConfirmButton"));
@@ -166,8 +166,8 @@ private Q_SLOTS:
         }
         QVERIFY(qmltest::Click(m_app, "proxySettingsSaveButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "proxySettingsRow"));
-        QTRY_COMPARE(persistentProxy("proxy"), QStringLiteral("10.0.0.1:9050"));
-        QTRY_COMPARE(persistentProxy("onion"), QStringLiteral("127.0.0.1:9150"));
+        QCOMPARE(persistentProxy("proxy"), QStringLiteral("10.0.0.1:9050"));
+        QCOMPARE(persistentProxy("onion"), QStringLiteral("127.0.0.1:9150"));
         QVERIFY(core->values().proxy_enabled);
         QVERIFY(core->values().tor_enabled);
     }
@@ -182,11 +182,11 @@ private Q_SLOTS:
         QVERIFY(!qmltest::Find(m_app, "minimizeToTraySwitch")->property("checked").toBool());
         QVERIFY(!qmltest::Find(m_app, "minimizeOnCloseSwitch")->property("checked").toBool());
         QVERIFY(qmltest::Click(m_app, "showTrayIconSwitch"));
-        QTRY_VERIFY(!behavior->showTrayIcon());
+        QVERIFY_AWAIT(!behavior->showTrayIcon(), qmltest::Property(behavior, "showTrayIcon"));
         QVERIFY(qmltest::Click(m_app, "showTrayIconSwitch"));
-        QTRY_VERIFY(behavior->showTrayIcon());
+        QVERIFY_AWAIT(behavior->showTrayIcon(), qmltest::Property(behavior, "showTrayIcon"));
         QVERIFY(qmltest::Click(m_app, "minimizeOnCloseSwitch"));
-        QTRY_VERIFY(behavior->minimizeOnClose());
+        QVERIFY_AWAIT(behavior->minimizeOnClose(), qmltest::Property(behavior, "minimizeOnClose"));
         QVERIFY(qmltest::SelectSettings(m_app, "about"));
         QVERIFY(qmltest::WaitForVisible(m_app, "aboutSettingsPage"));
         QVERIFY(qmltest::SelectSettings(m_app, "window-behavior"));

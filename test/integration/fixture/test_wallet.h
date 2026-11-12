@@ -33,10 +33,11 @@ inline UniValue Json(const std::string& text)
 inline WalletQmlModel* WaitForWallet(BitcoinQmlApplication& app, const QString& name)
 {
     auto* controller = Model<WalletQmlController>(app, "walletController");
-    if (!controller || !QTest::qWaitFor([&] {
+    if (!controller || !Await([&] {
             return controller->isWalletLoaded() && !controller->walletLoadInProgress() &&
                    controller->selectedWallet()->name() == name;
-        }, 30'000)) return nullptr;
+        }, {Property(controller, "isWalletLoaded"), Property(controller, "walletLoadInProgress"),
+            Property(controller, "selectedWallet")}, 30'000)) return nullptr;
     return controller->selectedWallet();
 }
 
@@ -97,7 +98,7 @@ inline bool FundWallet(BitcoinQmlApplication& app, WalletQmlModel& wallet)
     params.push_back(101);
     params.push_back(NewAddress(app, wallet.name()).toStdString());
     Rpc(app, "generatetoaddress", params);
-    return QTest::qWaitFor([&] { return wallet.balanceSatoshi() > 0; }, 30'000);
+    return Await([&] { return wallet.balanceSatoshi() > 0; }, {Property(&wallet, "balanceSatoshi")}, 30'000);
 }
 } // namespace qmltest
 

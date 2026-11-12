@@ -32,7 +32,7 @@ private Q_SLOTS:
         QVERIFY(!model->fileLoggingEnabled());
         QVERIFY(qmltest::SelectSettings(m_app, "debug-log"));
         QVERIFY(qmltest::WaitForVisible(m_app, "debugLogView"));
-        QTRY_COMPARE(qmltest::Find(m_app, "debugLogOpenErrorBanner")->property("opacity").toDouble(), 1.0);
+        QCOMPARE_AWAIT(qmltest::Find(m_app, "debugLogOpenErrorBanner")->property("opacity").toDouble(), 1.0, qmltest::Property(qmltest::Find(m_app, "debugLogOpenErrorBanner"), "opacity"));
         QCOMPARE(qmltest::Find(m_app, "debugLogOpenErrorText")->property("text").toString(), QStringLiteral("Writing the debug log to a file is turned off."));
         QCOMPARE(model->rowCount(), 0);
         QVERIFY(!model->logAvailable());
@@ -44,7 +44,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::SelectSettings(m_app, "display"));
         QVERIFY(qmltest::SelectSettings(m_app, "debug-log"));
         QVERIFY(qmltest::WaitForVisible(m_app, "debugLogView"));
-        QTRY_COMPARE(qmltest::Find(m_app, "debugLogOpenErrorBanner")->property("opacity").toDouble(), 1.0);
+        QCOMPARE_AWAIT(qmltest::Find(m_app, "debugLogOpenErrorBanner")->property("opacity").toDouble(), 1.0, qmltest::Property(qmltest::Find(m_app, "debugLogOpenErrorBanner"), "opacity"));
         QVERIFY(!qmltest::Find(m_app, "debugLogSearchBar")->property("enabled").toBool());
         QCOMPARE(model->rowCount(), 0);
     }
@@ -64,14 +64,14 @@ private Q_SLOTS:
         QVERIFY(model);
         QVERIFY(qmltest::SelectSettings(m_app, "debug-log"));
         QVERIFY(qmltest::WaitForVisible(m_app, "debugLogView"));
-        QTRY_VERIFY(model->rowCount() > 0);
+        QVERIFY_AWAIT(model->rowCount() > 0, qmltest::Rows(model));
         QVERIFY(model->openError().isEmpty());
         QVERIFY(qmltest::SetText(m_app, "debugLogSearchField", "stale history marker"));
-        QTRY_COMPARE(model->rowCount(), 0);
+        QCOMPARE_AWAIT(model->rowCount(), 0, qmltest::Rows(model));
         QVERIFY(qmltest::SetText(m_app, "debugLogSearchField", "configured log marker"));
-        QTRY_COMPARE(model->rowCount(), 1);
+        QCOMPARE_AWAIT(model->rowCount(), 1, qmltest::Rows(model));
         QVERIFY(qmltest::SetText(m_app, "debugLogSearchField", ""));
-        QTRY_VERIFY(model->rowCount() > 0);
+        QVERIFY_AWAIT(model->rowCount() > 0, qmltest::Rows(model));
     }
 
     void liveLogFilteringAndPagination()
@@ -87,31 +87,31 @@ private Q_SLOTS:
         QVERIFY(model);
         QVERIFY(qmltest::SelectSettings(m_app, "debug-log"));
         QVERIFY(qmltest::WaitForVisible(m_app, "debugLogView"));
-        QTRY_VERIFY(model->active());
-        QTRY_COMPARE(model->rowCount(), model->loadLimit());
+        QVERIFY_AWAIT(model->active(), qmltest::Property(model, "active"));
+        QCOMPARE_AWAIT(model->rowCount(), model->loadLimit(), qmltest::Rows(model));
         QVERIFY(model->hasMoreLines());
         QVERIFY(qmltest::SetText(m_app, "debugLogSearchField", "integration live"));
-        QTRY_COMPARE(model->rowCount(), 0);
+        QCOMPARE_AWAIT(model->rowCount(), 0, qmltest::Rows(model));
         const QByteArray lines{"2026-01-01T00:00:00.654321Z [net:warning] integration live warning\n"
                                "2026-01-01T00:00:01.654321Z [rpc:error] integration live error\n"
                                "2026-01-01T00:00:02.654321Z [net] integration live normal\n"};
         QCOMPARE(log.write(lines), lines.size());
         log.close();
-        QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(), 3, 10'000);
+        QCOMPARE_AWAIT_TIMEOUT(model->rowCount(), 3, 10'000, qmltest::Rows(model));
         QCOMPARE(model->data(model->index(0), DebugLogModel::TimestampRole).toString(),
                  QDateTime::fromString("2026-01-01T00:00:00.654321Z", Qt::ISODateWithMs).toLocalTime().toString("HH:mm:ss"));
         model->setWarningsAndErrorsOnly(true);
-        QTRY_COMPARE(model->rowCount(), 2);
+        QCOMPARE_AWAIT(model->rowCount(), 2, qmltest::Rows(model));
         QVERIFY(model->data(model->index(1), DebugLogModel::IsErrorRole).toBool());
         QVERIFY(model->data(model->index(0), DebugLogModel::IsWarningRole).toBool());
         model->setWarningsAndErrorsOnly(false);
         QVERIFY(qmltest::SetText(m_app, "debugLogSearchField", ""));
         model->loadMore();
-        QTRY_VERIFY(model->rowCount() > 1200);
+        QVERIFY_AWAIT(model->rowCount() > 1200, qmltest::Rows(model));
         QVERIFY(qmltest::SetText(m_app, "debugLogSearchField", "integration history 0"));
-        QTRY_COMPARE(model->rowCount(), 1);
+        QCOMPARE_AWAIT(model->rowCount(), 1, qmltest::Rows(model));
         QVERIFY(qmltest::ReturnToNode(m_app));
-        QTRY_VERIFY(!model->active());
+        QVERIFY_AWAIT(!model->active(), qmltest::Property(model, "active"));
     }
 };
 

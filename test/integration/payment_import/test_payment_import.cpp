@@ -50,16 +50,16 @@ private Q_SLOTS:
         QVERIFY(QMetaObject::invokeMethod(field, "paste"));
         auto* popup = qmltest::Find(m_app, "sendPaymentUriOverwritePopup");
         QVERIFY(popup);
-        QTRY_VERIFY(popup->property("opened").toBool());
+        QVERIFY_AWAIT(popup->property("opened").toBool(), qmltest::Property(popup, "opened"));
         QCOMPARE(recipient->label(), QStringLiteral("My private note"));
         QVERIFY(qmltest::Click(m_app, "sendPaymentUriOverwriteCancelButton"));
-        QTRY_VERIFY(!popup->property("opened").toBool());
+        QVERIFY_AWAIT(!popup->property("opened").toBool(), qmltest::Property(popup, "opened"));
         QCOMPARE(recipient->label(), QStringLiteral("My private note"));
         QVERIFY(QMetaObject::invokeMethod(field, "forceActiveFocus"));
         QVERIFY(QMetaObject::invokeMethod(field, "paste"));
-        QTRY_VERIFY(popup->property("opened").toBool());
+        QVERIFY_AWAIT(popup->property("opened").toBool(), qmltest::Property(popup, "opened"));
         QVERIFY(qmltest::Click(m_app, "sendPaymentUriOverwriteConfirmButton"));
-        QTRY_VERIFY(!popup->property("opened").toBool());
+        QVERIFY_AWAIT(!popup->property("opened").toBool(), qmltest::Property(popup, "opened"));
         QCOMPARE(recipient->amount()->satoshi(), 1'234'567);
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Alice"));
         QCOMPARE(recipient->message(), QStringLiteral("Lunch"));
@@ -78,13 +78,13 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "sendUriImportApplyButton"));
         auto* status = qmltest::WaitForVisible(m_app, "sendPaymentRequestStatusText");
         QVERIFY(status);
-        QTRY_VERIFY(status->property("text").toString().contains("bitcoin://"));
+        QVERIFY_AWAIT(status->property("text").toString().contains("bitcoin://"), qmltest::Property(status, "text"));
         QCOMPARE(recipient->amount()->satoshi(), 10'000);
         QVERIFY(qmltest::Click(m_app, "sendOptionsButton"));
         QVERIFY(qmltest::Click(m_app, "sendOptionsOpenPaymentRequestButton"));
         QVERIFY(qmltest::SetText(m_app, "sendUriImportInput", "bitcoin:" + m_address + "?amount=0.02&label=manual"));
         QVERIFY(qmltest::Click(m_app, "sendUriImportApplyButton"));
-        QTRY_COMPARE(recipient->amount()->satoshi(), 2'000'000);
+        QCOMPARE_AWAIT(recipient->amount()->satoshi(), 2'000'000, qmltest::Property(recipient->amount(), "satoshi"));
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("manual"));
     }
 
@@ -109,7 +109,7 @@ private Q_SLOTS:
         auto* page = qmltest::Find(m_app, "walletSendPage");
         QVERIFY(QMetaObject::invokeMethod(page, "applyPaymentRequestFromFile", Q_ARG(QVariant, path)));
         auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
-        QTRY_COMPARE(recipient->amount()->satoshi(), 3'000'000);
+        QCOMPARE_AWAIT(recipient->amount()->satoshi(), 3'000'000, qmltest::Property(recipient->amount(), "satoshi"));
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("file"));
         QCOMPARE(recipient->message(), QStringLiteral("invoice"));
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
@@ -132,7 +132,7 @@ private Q_SLOTS:
         QVERIFY(QMetaObject::invokeMethod(input, "forceActiveFocus"));
         QVERIFY(QMetaObject::invokeMethod(input, "paste"));
         auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
-        QTRY_COMPARE(recipient->amount()->satoshi(), 7'000'000);
+        QCOMPARE_AWAIT(recipient->amount()->satoshi(), 7'000'000, qmltest::Property(recipient->amount(), "satoshi"));
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("field-paste"));
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
     }
@@ -144,7 +144,7 @@ private Q_SLOTS:
         auto* input = qmltest::Find(m_app, "sendNoteInput");
         QVERIFY(input);
         QVERIFY(QMetaObject::invokeMethod(input, "paste"));
-        QTRY_COMPARE(input->property("text").toString(), QStringLiteral("Private note-ordinary-paste"));
+        QCOMPARE_AWAIT(input->property("text").toString(), QStringLiteral("Private note-ordinary-paste"), qmltest::Property(input, "text"));
         QVERIFY(m_wallet->sendRecipientList()->currentRecipient()->paymentRequestLabel().isEmpty());
     }
 
@@ -185,7 +185,7 @@ private Q_SLOTS:
         QDropEvent drop{position, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
         QCoreApplication::sendEvent(m_app.window(), &drop);
         auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
-        QTRY_COMPARE(recipient->amount()->satoshi(), 4'000'000);
+        QCOMPARE_AWAIT(recipient->amount()->satoshi(), 4'000'000, qmltest::Property(recipient->amount(), "satoshi"));
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("dropped"));
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
     }

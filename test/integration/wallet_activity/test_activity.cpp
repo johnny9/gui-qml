@@ -23,14 +23,15 @@ bool SelectActivityTypes(BitcoinQmlApplication& app, std::initializer_list<const
     }
     auto* popup = qmltest::Find(app, "activityTypeFilterPopup");
     return popup && QMetaObject::invokeMethod(popup, "close") &&
-           QTest::qWaitFor([&] { return !popup->property("visible").toBool(); });
+           qmltest::Await([&] { return !popup->property("visible").toBool(); }, {qmltest::Property(popup, "visible")});
 }
 
 bool ClearActivityFilters(BitcoinQmlApplication& app)
 {
     if (!qmltest::Click(app, "activityActiveFiltersButton")) return false;
     if (!qmltest::Click(app, "activityClearFiltersAction")) return false;
-    return QTest::qWaitFor([&] { return qmltest::Find(app, "activityPage")->property("activeFilterCount").toInt() == 0; });
+    auto* page = qmltest::Find(app, "activityPage");
+    return qmltest::Await([&] { return page->property("activeFilterCount").toInt() == 0; }, {qmltest::Property(page, "activeFilterCount")});
 }
 
 bool ExportActivityCsv(BitcoinQmlApplication& app, const QString& path, QString& csv)
@@ -97,7 +98,7 @@ class ActivityIntegrationTests : public QObject
         const auto reward_address = QString::fromStdString(qmltest::Rpc(m_app, "getnewaddress", params, m_wallet->name()).get_str());
         m_reward_txid = mineBlockToAddress(reward_address);
         return !m_request_id.isEmpty() && !m_request_address.isEmpty() && reward_address != m_request_address &&
-               QTest::qWaitFor([&] { return m_filter->rowCount() == 2; }, 30'000);
+               qmltest::Await([&] { return m_filter->rowCount() == 2; }, {qmltest::Rows(m_filter)}, 30'000);
     }
 
 public:
@@ -115,7 +116,7 @@ private Q_SLOTS:
 
     void emptyWalletShowsSourceEmptyState()
     {
-        QTRY_VERIFY(!m_wallet->transactionActivityModel()->loading());
+        QVERIFY_AWAIT(!m_wallet->transactionActivityModel()->loading(), qmltest::Property(m_wallet->transactionActivityModel(), "loading"));
         QCOMPARE(m_filter->rowCount(), 0);
         QVERIFY(qmltest::WaitForVisible(m_app, "activityEmptyState"));
         const auto title = qmltest::Find(m_app, "activityEmptyStateTitle")->property("text").toString();
@@ -131,17 +132,17 @@ private Q_SLOTS:
 
         // Search isolates the pending request, then clearing it restores both rows.
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", m_request_address));
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
         QCOMPARE(m_filter->index(0, 0).data(TransactionActivityModel::RequestIdRole).toString(), m_request_id);
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", ""));
-        QTRY_COMPARE(m_filter->rowCount(), 2);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 2, qmltest::Rows(m_filter));
 
         // Export only today's mining reward.
         QVERIFY(qmltest::Click(m_app, "activityDateFilterButton"));
         QVERIFY(qmltest::Click(m_app, "activityDateToday"));
         QCOMPARE(m_filter->dateFilter(), ActivityFilterProxyModel::Today);
         QVERIFY(SelectActivityTypes(m_app, {"activityTypeMined"}));
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
 
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
@@ -156,13 +157,13 @@ private Q_SLOTS:
 
         // Type selections combine, and label search still finds the request.
         QVERIFY(SelectActivityTypes(m_app, {"activityTypeMined", "activityTypePaymentRequest"}));
-        QTRY_COMPARE(m_filter->rowCount(), 2);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 2, qmltest::Rows(m_filter));
         QVERIFY(qmltest::Find(m_app, "activityTypeMined")->property("selected").toBool());
         QVERIFY(qmltest::Find(m_app, "activityTypePaymentRequest")->property("selected").toBool());
         QVERIFY(SelectActivityTypes(m_app, {"activityTypePaymentRequest"}));
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", "Alice"));
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
         QCOMPARE(m_filter->index(0, 0).data(TransactionActivityModel::RequestIdRole).toString(), m_request_id);
     }
 
@@ -171,21 +172,21 @@ private Q_SLOTS:
         QVERIFY(createPendingRequestAndMiningReward());
         QVERIFY(SelectActivityTypes(m_app, {"activityTypePaymentRequest"}));
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", "Alice"));
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
         QVERIFY(qmltest::Click(m_app, "activityDateFilterButton"));
         QVERIFY(qmltest::Click(m_app, "activityDateToday"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "activityDateFilterPopup")->property("visible").toBool());
+        QVERIFY_AWAIT(!qmltest::Find(m_app, "activityDateFilterPopup")->property("visible").toBool(), qmltest::Property(qmltest::Find(m_app, "activityDateFilterPopup"), "visible"));
         QVERIFY(qmltest::SelectSettings(m_app, "display"));
         QVERIFY(qmltest::Click(m_app, "displayUnitPickerButton"));
         QVERIFY(qmltest::Click(m_app, "displayUnitSAT"));
         QVERIFY(qmltest::Click(m_app, "activityTabButton"));
 
         // Changing the unit keeps the active search and filters.
-        QTRY_COMPARE(m_filter->displayUnit(), static_cast<int>(BitcoinUnits::Unit::SAT));
+        QCOMPARE_AWAIT(m_filter->displayUnit(), static_cast<int>(BitcoinUnits::Unit::SAT), qmltest::Property(m_filter, "displayUnit"));
         QCOMPARE(m_filter->searchText(), QStringLiteral("Alice"));
         QCOMPARE(m_filter->typeFilters(), QList<int>{ActivityFilterProxyModel::PaymentRequest});
         QCOMPARE(m_filter->dateFilter(), ActivityFilterProxyModel::Today);
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
 
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
@@ -201,16 +202,16 @@ private Q_SLOTS:
         // The list and transaction details must use the same display unit.
         QVERIFY(SelectActivityTypes(m_app, {}));
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", m_reward_txid));
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
         auto* row = qmltest::WaitForVisible(m_app, qPrintable("activityItem_" + m_reward_txid));
         QVERIFY(row);
-        QTRY_COMPARE(row->property("amount").toString(), m_filter->index(0, 0).data(TransactionActivityModel::AmountRole).toString());
+        QCOMPARE_AWAIT(row->property("amount").toString(), m_filter->index(0, 0).data(TransactionActivityModel::AmountRole).toString(), qmltest::Property(row, "amount"));
         const auto amount = row->property("amount").toString();
         QVERIFY(!amount.isEmpty());
         QVERIFY(qmltest::Click(qmltest::Find(row, "activityRowOpenButton")));
         auto* details = qmltest::WaitForVisible(m_app, "activityDetailsPage");
         QVERIFY(details);
-        QTRY_COMPARE(details->property("amount").toString(), amount);
+        QCOMPARE_AWAIT(details->property("amount").toString(), amount, qmltest::Property(details, "amount"));
     }
 
     void clearingFiltersPreservesSearchAndRestoresRows()
@@ -220,7 +221,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "activityDateFilterButton"));
         QVERIFY(qmltest::Click(m_app, "activityDateToday"));
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", "not-present"));
-        QTRY_COMPARE(m_filter->rowCount(), 0);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 0, qmltest::Rows(m_filter));
         QVERIFY(qmltest::WaitForVisible(m_app, "activityEmptyState"));
         QCOMPARE(qmltest::Find(m_app, "activityEmptyStateTitle")->property("text").toString(), QStringLiteral("No activity matches your filters."));
         QCOMPARE(qmltest::Find(m_app, "activityEmptyStateDescription")->property("text").toString(), QStringLiteral("Try changing your search, date, type, or amount filters."));
@@ -234,8 +235,8 @@ private Q_SLOTS:
         QVERIFY(qmltest::Find(m_app, "activityTypeAll")->property("selected").toBool());
 
         QVERIFY(qmltest::Click(m_app, "activityClearSearchButton"));
-        QTRY_COMPARE(m_filter->searchText(), QString{});
-        QTRY_COMPARE(m_filter->rowCount(), 2);
+        QCOMPARE_AWAIT(m_filter->searchText(), QString{}, qmltest::Property(m_filter, "searchText"));
+        QCOMPARE_AWAIT(m_filter->rowCount(), 2, qmltest::Rows(m_filter));
     }
 
     void amountRangeFiltersLiveRowsAndCsv()
@@ -250,7 +251,7 @@ private Q_SLOTS:
         QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "activityPage"), "applyAmountRange"));
         QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "activityAmountFilterPopup"), "close"));
         QCOMPARE(m_filter->minAmount(), 100'000);
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
 
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
@@ -262,7 +263,7 @@ private Q_SLOTS:
         QVERIFY(ClearActivityFilters(m_app));
         QCOMPARE(m_filter->minAmount(), -1);
         QCOMPARE(m_filter->maxAmount(), -1);
-        QTRY_COMPARE(m_filter->rowCount(), 2);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 2, qmltest::Rows(m_filter));
     }
 
     void calendarRangeFiltersAndResetsLiveRows()
@@ -282,9 +283,9 @@ private Q_SLOTS:
         const auto start = month.addDays(9);
         const auto end = month.addDays(19);
         QVERIFY(qmltest::Click(m_app, qPrintable("calendarDay_" + start.toString(Qt::ISODate))));
-        QTRY_COMPARE(calendar->property("startIso").toString(), start.toString(Qt::ISODate));
+        QCOMPARE_AWAIT(calendar->property("startIso").toString(), start.toString(Qt::ISODate), qmltest::Property(calendar, "startIso"));
         QVERIFY(qmltest::Click(m_app, qPrintable("calendarDay_" + end.toString(Qt::ISODate))));
-        QTRY_COMPARE(calendar->property("endIso").toString(), end.toString(Qt::ISODate));
+        QCOMPARE_AWAIT(calendar->property("endIso").toString(), end.toString(Qt::ISODate), qmltest::Property(calendar, "endIso"));
 
         auto* apply = qmltest::Find(m_app, "activityDateRangeApply");
         QVERIFY(apply);
@@ -293,30 +294,30 @@ private Q_SLOTS:
         QCOMPARE(m_filter->dateFilter(), ActivityFilterProxyModel::CustomRange);
         QCOMPARE(m_filter->rangeStart(), start);
         QCOMPARE(m_filter->rangeEnd(), end);
-        QTRY_COMPARE(m_filter->rowCount(), 0);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 0, qmltest::Rows(m_filter));
 
         QVERIFY(qmltest::Click(m_app, "activityDateFilterButton"));
         QVERIFY(qmltest::Click(m_app, "activityDateRangeReset"));
         QCOMPARE(m_filter->dateFilter(), ActivityFilterProxyModel::DateAll);
-        QTRY_COMPARE(m_filter->rowCount(), 2);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 2, qmltest::Rows(m_filter));
     }
 
     void fulfilledRequestBecomesAnAssociatedTransactionWithoutDuplicates()
     {
         QVERIFY(createPendingRequestAndMiningReward());
         QVERIFY(SelectActivityTypes(m_app, {"activityTypePaymentRequest"}));
-        QTRY_COMPARE(m_filter->requestCount(), 1);
+        QCOMPARE_AWAIT(m_filter->requestCount(), 1, qmltest::Property(m_filter, "requestCount"));
 
         // Pay the request and find the new transaction under the mining filter.
         const auto fulfilling_txid = mineBlockToAddress(m_request_address);
         QVERIFY(SelectActivityTypes(m_app, {"activityTypeMined"}));
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", m_request_address));
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
         QCOMPARE(m_filter->index(0, 0).data(TransactionActivityModel::TxidRole).toString(), fulfilling_txid);
 
         // The request filter finds its transaction instead of a second pending row.
         QVERIFY(SelectActivityTypes(m_app, {"activityTypePaymentRequest"}));
-        QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 1, qmltest::Rows(m_filter));
         QCOMPARE(m_filter->requestCount(), 0);
         QCOMPARE(m_filter->transactionCount(), 1);
         const auto row = m_filter->index(0, 0);
@@ -335,7 +336,7 @@ private Q_SLOTS:
 
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", ""));
         QVERIFY(SelectActivityTypes(m_app, {}));
-        QTRY_COMPARE(m_filter->rowCount(), 2);
+        QCOMPARE_AWAIT(m_filter->rowCount(), 2, qmltest::Rows(m_filter));
         QCOMPARE(m_filter->transactionCount(), 2);
         QCOMPARE(m_filter->requestCount(), 0);
     }

@@ -1,10 +1,14 @@
-add_library(bitcoinqml_test_application STATIC fixture/test_application.cpp)
+add_library(bitcoinqml_test_application STATIC fixture/test_application.cpp fixture/test_wait.cpp)
 target_include_directories(bitcoinqml_test_application PUBLIC
   ${PROJECT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/bitcoin/src
   ${PROJECT_BINARY_DIR}/bitcoin/src
 )
 target_link_libraries(bitcoinqml_test_application PUBLIC bitcoinqml bitcoinqt Qt6::Test)
+
+add_executable(bitcoinqml_signal_wait_tests fixture/test_wait_tests.cpp)
+target_link_libraries(bitcoinqml_signal_wait_tests PRIVATE bitcoinqml_test_application)
+add_test(NAME bitcoinqml_signal_waits COMMAND bitcoinqml_signal_wait_tests)
 
 add_executable(bitcoinqml_integration_tests
   runner/test_main.cpp

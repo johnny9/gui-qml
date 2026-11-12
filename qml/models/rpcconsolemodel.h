@@ -130,6 +130,8 @@ public Q_SLOTS:
 
 Q_SIGNALS:
     void drained();
+    //! The worker has begun processing an accepted command.
+    void commandStarted();
     void executingChanged();
     void availableCommandsChanged();
 

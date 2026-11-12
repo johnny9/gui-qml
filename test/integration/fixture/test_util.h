@@ -10,6 +10,7 @@
 #include <qml/bitcoinqmlapplication.h>
 #include <qml/models/nodemodel.h>
 #include <univalue.h>
+#include <test/integration/fixture/test_wait.h>
 
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -33,9 +34,7 @@ namespace qmltest {
 template <typename Method, typename... Args>
 auto Call(BitcoinQmlApplication& app, Method method, Args&&... args)
 {
-    auto result = std::async(std::launch::async, method, &app.node(), std::forward<Args>(args)...);
-    while (result.wait_for(std::chrono::milliseconds{0}) != std::future_status::ready) QTest::qWait(1);
-    return result.get();
+    return Async([&] { return std::invoke(method, &app.node(), std::forward<Args>(args)...); });
 }
 
 inline bool RpcCommandRunning(BitcoinQmlApplication& app, const std::string& command)
@@ -145,48 +144,62 @@ inline bool TransitionsFinished(QObject* root)
 inline bool WaitForPolish(QQuickItem* item)
 {
     if (!item || !item->window()) return false;
+    QPointer<QQuickItem> guarded{item};
+    SignalWait wait;
+    bool dispatched{false};
+    // Let deferred QML layout work run once, then wait for rendering only if
+    // polish is pending. An already settled item needs no extra frame.
+    QMetaObject::invokeMethod(&wait, [&] {
+        dispatched = true;
+        wait.wake();
+    }, Qt::QueuedConnection);
+    QObject::connect(item->window(), &QQuickWindow::afterRendering, &wait, &SignalWait::wake, Qt::QueuedConnection);
+    wait.destruction(item);
+    item->window()->update();
+    return wait.run([&] {
+        if (!guarded || !dispatched) return false;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 4, 0)
-    return QQuickTest::qWaitForPolish(item->window());
+        return !QQuickTest::qIsPolishScheduled(guarded->window());
 #else
-    for (QPointer<QQuickItem> current{item}; current; current = current->parentItem()) {
-        if (!QQuickTest::qWaitForItemPolished(current)) return false;
-    }
-    return true;
+        for (auto* current = guarded.data(); current; current = current->parentItem()) {
+            if (QQuickTest::qIsPolishScheduled(current)) return false;
+        }
+        return true;
 #endif
+    }, 5'000);
 }
 
-inline bool ClickWithRetries(QObject* object)
+inline bool ClickWithRetries(QObject* object, bool polished = false)
 {
     QPointer<QQuickItem> item = qobject_cast<QQuickItem*>(object);
-    if (!item || !item->isVisible() || !item->isEnabled() || !WaitForPolish(item) || !item ||
+    if (!item || !item->isVisible() || !item->isEnabled() || (!polished && !WaitForPolish(item)) || !item ||
         item->width() <= 0 || item->height() <= 0) return false;
     const auto click = [&] {
         if (!item || !item->isVisible() || !item->isEnabled() || !item->window()) return false;
+        const auto position = item->mapToScene(item->boundingRect().center());
+        if (!item->window()->contentItem()->contains(position)) return false;
         QTest::mouseClick(item->window(), Qt::LeftButton, Qt::NoModifier,
-                         item->mapToScene(item->boundingRect().center()).toPoint());
+                         position.toPoint());
         return true;
     };
     if (item->metaObject()->indexOfSignal("clicked()") < 0) return click();
     QSignalSpy clicked{item, SIGNAL(clicked())};
     const auto pressed = item->metaObject()->indexOfSignal("pressed()") < 0 ? nullptr : std::make_unique<QSignalSpy>(item, SIGNAL(pressed()));
     const auto delivered = [&] { return !clicked.isEmpty(); };
-    // Modal exit can consume a gesture. Keep retries visible in the report so
-    // a successful test does not silently conceal swallowed input.
+    if (!Await([&] { return TransitionsFinished(item->window()); }, {Ui(item->window())}, 10'000)) return false;
     const QString target = item->objectName();
     int attempts{0};
-    const bool success = QTest::qWaitFor([&] {
-        if (delivered()) return true;
-        // A press reached the target but was canceled (for example by becoming
-        // disabled). Do not retry a delivered gesture or report it as a click.
-        if (pressed && !pressed->isEmpty()) return true;
+    const bool success = Await([&] {
+        if (delivered() || (pressed && !pressed->isEmpty())) return true;
         ++attempts;
         return click() && (delivered() || (pressed && !pressed->isEmpty()));
-    }, 10'000);
+    }, {Frame(item->window()), Ui(item->window()), Property(item, "enabled")}, 10'000);
     if (attempts > 1) qWarning() << "Click retries for" << target << "attempts:" << attempts << "delivered:" << delivered();
     return success && delivered();
 }
 
-// Existing journeys tolerate modal-exit retries, but each retry is reported.
+// Retry swallowed input only after a frame or readiness notification. A
+// delivered but canceled press still fails without sending another gesture.
 inline bool Click(QObject* object)
 {
     return ClickWithRetries(object);
@@ -201,10 +214,10 @@ inline bool OpenSettings(BitcoinQmlApplication& app)
 inline QObject* WaitForVisible(BitcoinQmlApplication& app, const char* name)
 {
     QObject* object{nullptr};
-    const bool ready = QTest::qWaitFor([&] {
+    const bool ready = Await([&] {
         object = Find(app, name);
         return object && object->property("visible").toBool() && TransitionsFinished(app.window());
-    }, 10'000);
+    }, {Ui(app.window())}, 10'000);
     if (!ready) qWarning() << "Control did not become ready:" << name << object << "visible:" << (object && object->property("visible").toBool()) << "transitions finished:" << TransitionsFinished(app.window());
     return ready ? object : nullptr;
 }
@@ -213,8 +226,15 @@ inline bool Click(BitcoinQmlApplication& app, const char* name)
 {
     auto* object = WaitForVisible(app, name);
     QPointer<QQuickItem> item = qobject_cast<QQuickItem*>(object);
-    if (!item || !WaitForPolish(item) || !item) return false;
-    const bool ready = QTest::qWaitFor([&] {
+    if (!item) return false;
+    SignalWait wait;
+    wait.tree(app.window());
+    wait.frame(app.window());
+    for (auto* current = item.data(); current; current = current->parentItem()) {
+        for (const char* property : {"x", "y", "width", "height", "enabled"}) wait.property(current, property);
+        if (current->inherits("QQuickFlickable")) wait.property(current, "contentY");
+    }
+    const bool ready = wait.run([&] {
         if (!item || !WaitForPolish(item) || !item) return false;
         bool scrolled{false};
         for (auto* parent = item->parentItem(); parent; parent = parent->parentItem()) {
@@ -236,9 +256,9 @@ inline bool Click(BitcoinQmlApplication& app, const char* name)
             if (parent->clip() && !parent->contains(item->mapToItem(parent, center))) return false;
         }
         return app.window()->contentItem()->contains(item->mapToItem(app.window()->contentItem(), center));
-    });
+    }, 5'000);
     if (!ready) qWarning() << "Cannot click" << name;
-    return ready && item && Click(item.data());
+    return ready && item && ClickWithRetries(item.data(), true);
 }
 
 inline bool SetText(BitcoinQmlApplication& app, const char* name, const QString& text)
@@ -266,7 +286,8 @@ inline bool SelectSettings(BitcoinQmlApplication& app, const char* section)
     const int contain = position_mode.keyToValue("Contain");
     const int index = button->parentItem()->property("index").toInt();
     if (contain < 0 || !QMetaObject::invokeMethod(sidebar, "positionViewAtIndex", Q_ARG(int, index), Q_ARG(int, contain))) return false;
-    return QTest::qWaitFor([&] { return sidebar->contains(button->mapToItem(sidebar, button->boundingRect().center())); }) && Click(button);
+    return Await([&] { return sidebar->contains(button->mapToItem(sidebar, button->boundingRect().center())); },
+                 {Property(button, "y"), Property(sidebar, "contentY"), Frame(app.window())}) && Click(button);
 }
 
 inline bool ReturnToNode(BitcoinQmlApplication& app)

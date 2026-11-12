@@ -26,17 +26,17 @@ private Q_SLOTS:
     {
         auto* clock = qmltest::Find(m_app, "blockClock");
         QVERIFY(clock);
-        QTRY_COMPARE(clock->property("state").toString(), QStringLiteral("CONNECTING"));
+        QCOMPARE_AWAIT(clock->property("state").toString(), QStringLiteral("CONNECTING"), qmltest::Property(clock, "state"));
         QCOMPARE(clock->property("header").toString(), QStringLiteral("Connecting"));
         QCOMPARE(clock->property("subText").toString(), QStringLiteral("Please wait"));
         m_app.nodeModel().setPause(true);
-        QTRY_COMPARE(clock->property("state").toString(), QStringLiteral("PAUSE"));
-        QTRY_VERIFY(!qmltest::Call(m_app, &interfaces::Node::getNetworkActive));
+        QCOMPARE_AWAIT(clock->property("state").toString(), QStringLiteral("PAUSE"), qmltest::Property(clock, "state"));
+        QVERIFY(!qmltest::Call(m_app, &interfaces::Node::getNetworkActive));
         QCOMPARE(clock->property("header").toString(), QStringLiteral("Paused"));
         QCOMPARE(clock->property("subText").toString(), QString{});
         m_app.nodeModel().setPause(false);
-        QTRY_COMPARE(clock->property("state").toString(), QStringLiteral("CONNECTING"));
-        QTRY_VERIFY(qmltest::Call(m_app, &interfaces::Node::getNetworkActive));
+        QCOMPARE_AWAIT(clock->property("state").toString(), QStringLiteral("CONNECTING"), qmltest::Property(clock, "state"));
+        QVERIFY(qmltest::Call(m_app, &interfaces::Node::getNetworkActive));
         QCOMPARE(clock->property("header").toString(), QStringLiteral("Connecting"));
         QCOMPARE(clock->property("subText").toString(), QStringLiteral("Please wait"));
     }
@@ -51,7 +51,7 @@ private Q_SLOTS:
         params.push_back(1);
         params.push_back("raw(51)");
         QCOMPARE(qmltest::Call(m_app, &interfaces::Node::executeRpc, "generatetodescriptor", params, "").size(), 1U);
-        QTRY_COMPARE(model->blockTipHeight(), previous_height + 1);
+        QCOMPARE_AWAIT(model->blockTipHeight(), previous_height + 1, qmltest::Property(model, "blockTipHeight"));
         QCOMPARE(model->blockTipHeight(), qmltest::Call(m_app, &interfaces::Node::getNumBlocks));
         QVERIFY(!tips.isEmpty());
         QVERIFY(model->verificationProgress() > 0.0);
@@ -79,7 +79,7 @@ private Q_SLOTS:
             return rpc("generatetodescriptor", params);
         };
         const auto matches = [&](const QList<qint64>& timestamps) {
-            // Recalculate at each poll, including across noon/midnight.
+            // Recalculate after notifications, including across noon/midnight.
             QList<qreal> expected;
             for (const auto timestamp : timestamps) {
                 if (timestamp >= model->periodStart() && timestamp < model->periodStart() + BlockClockModel::PERIOD_SECONDS) {
@@ -97,22 +97,22 @@ private Q_SLOTS:
 
         mock_time(1'300'000'000);
         QCOMPARE(generate(100).size(), 100U);
-        QTRY_VERIFY(matches({}));
+        QVERIFY_AWAIT(matches({}), qmltest::Property(model, "blockTimeFractions"), qmltest::Property(model, "periodStart"));
 
         const auto timestamp = QDateTime::currentSecsSinceEpoch();
         mock_time(timestamp);
         const auto blocks = generate(3);
         QCOMPARE(blocks.size(), 3U);
-        QTRY_VERIFY(matches({timestamp, timestamp, timestamp}));
+        QVERIFY_AWAIT(matches({timestamp, timestamp, timestamp}), qmltest::Property(model, "blockTimeFractions"), qmltest::Property(model, "periodStart"));
 
         UniValue invalidate{UniValue::VARR};
         invalidate.push_back(blocks[1].get_str());
         rpc("invalidateblock", invalidate);
-        QTRY_VERIFY(matches({timestamp}));
+        QVERIFY_AWAIT(matches({timestamp}), qmltest::Property(model, "blockTimeFractions"), qmltest::Property(model, "periodStart"));
 
         mock_time(timestamp + 1);
         QCOMPARE(generate(2).size(), 2U);
-        QTRY_VERIFY(matches({timestamp, timestamp + 1, timestamp + 1}));
+        QVERIFY_AWAIT(matches({timestamp, timestamp + 1, timestamp + 1}), qmltest::Property(model, "blockTimeFractions"), qmltest::Property(model, "periodStart"));
     }
 };
 
