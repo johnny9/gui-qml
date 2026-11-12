@@ -99,3 +99,50 @@ comparison (prototype first, control second). Repetition and Linux CI measuremen
 are still needed. `results/funding-gui-comparison.json` records the comparison;
 `results/funding-{sparse,control}-gui.xml` and matching top-level logs retain
 the individual results.
+
+## Prepared wallet plus chain snapshot
+
+A follow-up copied a cleanly closed, normally created and funded wallet together
+with its matching `blocks` and `chainstate`. This preserves all 101 original
+wallet rewards rather than importing keys or reducing the reward history. Three
+independent copies each loaded with 50 BTC spendable and reached three 50 BTC
+spendable coins after mining two private blocks. No wallet rescan was requested.
+
+| Cost | Three-run range |
+| --- | ---: |
+| Copy wallet and chain | 0.013–0.039 s |
+| Start daemon | 0.182–0.263 s |
+| Load wallet | 0.191–0.214 s |
+| Combined | 0.396–0.515 s |
+
+These daemon-only samples exclude the once-per-run cost of generating the seed
+and GUI/model initialization. They demonstrate that a prepared wallet avoids the
+1.7–1.9 s import/rescan cost of a chain-only cache. The generator and results are
+`funding_prepared_probe.py` and `results/funding-prepared-probe.json` alongside
+the earlier artifacts.
+
+This makes a prepared snapshot worth testing for cases whose precondition is an
+existing funded wallet: fee policy, coin selection/locking, and PSBT import,
+signing, broadcasting, and replacement. Sweep tests additionally require their
+three-coin arrangement; retain their two live blocks initially. The frozen-review
+case requires a funded second wallet and still needs its incoming payment and
+confirmation performed live. Keep hardened-keypool setup explicit initially.
+Wallet lifecycle cases and receive/activity cases that inspect creation, funding,
+notifications, or precise history require individual review before opting in.
+
+Use explicit opt-in, not a global replacement for `CreateWallet` or `FundWallet`.
+Build one small seed with the current binaries before dependent cases, close it
+cleanly, and copy it into each child's private profile before application startup.
+Copy the matching wallet and chain together, load through normal application
+interfaces, and assert the fixture's expected balance/coin shape. Do not copy GUI
+settings or reuse a live wallet directory. All subsequent actions remain local
+to that child. A setup generator may precede cases, but no case produces another
+case's state. Generating once per test invocation avoids persistent-cache
+invalidation and committed database artifacts. Keep the fixture set small rather
+than making a separate snapshot for every test.
+
+The original recommendation to try sparse funding remains the smaller code
+change. Prepared wallets offer better preservation of original funding history
+and potentially lower repeated setup cost, at the price of a fixture lifecycle
+and integration into the subprocess launcher. Neither prepared-wallet GUI
+coverage nor end-to-end timing has been measured yet.
