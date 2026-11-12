@@ -8,6 +8,7 @@
 #include <test/integration/fixture/test_util.h>
 #include <qml/walletqmlcontroller.h>
 #include <script/descriptor.h>
+#include <consensus/amount.h>
 
 #include <stdexcept>
 
@@ -46,6 +47,20 @@ inline WalletQmlModel* CreateWallet(BitcoinQmlApplication& app, const QString& n
     params.pushKV("wallet_name", name.toStdString());
     Rpc(app, "createwallet", params);
     return WaitForWallet(app, name);
+}
+
+// Only for cases explicitly opted into a prepared profile in their module.
+inline WalletQmlModel* LoadFundedWallet(BitcoinQmlApplication& app, const QString& name = "integration")
+{
+    UniValue params{UniValue::VARR};
+    params.push_back(name.toStdString());
+    Rpc(app, "loadwallet", params);
+    auto* wallet = WaitForWallet(app, name);
+    if (!wallet || !QTest::qWaitFor([&] { return wallet->balanceSatoshi() == 50 * COIN; }, 30'000)) return nullptr;
+    const auto coins = Rpc(app, "listunspent", {}, name);
+    if (Rpc(app, "getblockcount").getInt<int>() != 101 || coins.size() != 1 ||
+        !Rpc(app, "getrawmempool").empty() || !Rpc(app, "listlockunspent", {}, name).empty()) return nullptr;
+    return wallet;
 }
 
 // Hardened derivation cannot replenish an exhausted keypool while locked.

@@ -13,8 +13,9 @@ CTest entries: sending is split into two partitions with separate reports.
 Each runtime case retains its own application process,
 regtest node, temporary data directory, and GUI settings. Cases within each CTest entry
 remain serial. Groups have no ordering dependencies, and no test consumes
-another test's output. Assertions, test selection, timeouts, fixtures, and
-failure diagnostics are unchanged.
+another test's output. Assertions, test selection, and timeouts are unchanged. Selected sending and
+PSBT cases now use private copies of a prepared funded wallet; see the funding
+fixture research report for scope and validation.
 
 The source-build CI workflow runs non-integration tests with its existing serial
 scheduling, then integration tests with up to three jobs, capped at the CPU
@@ -145,3 +146,14 @@ contemporary scheduling comparisons are still needed.
 
 See [funding fixture research](funding-fixture-research.md) for the subsequent
 comparison of chain caching and reducing wallet-owned coinbase rewards.
+
+
+## Prepared-wallet implementation
+
+Selected sending and PSBT cases now use independent copies of a funded wallet
+and its matching chain, generated once per runner invocation. The controlled
+three-job comparison against the preceding partitioned implementation reduced
+the median from **108.441 s to 81.359 s (24.97%)**. All four measured runs passed
+the same 122 cases. Setup-specific cases retain their existing fixtures. See the
+[funding fixture report](funding-fixture-research.md#implemented-opt-in-fixture)
+for scope, measurement details, and artifacts.

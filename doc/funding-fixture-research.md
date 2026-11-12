@@ -2,7 +2,8 @@
 
 Measured locally on 2026-11-12 with the pinned Core revision and macOS environment
 in [the parallel execution report](integration-parallelization.md).
-These are daemon microbenchmarks, not GUI-suite speedup measurements.
+The initial probes are daemon microbenchmarks; later sections record GUI
+experiments and implementation validation.
 
 ## What the sending cases require
 
@@ -144,5 +145,63 @@ than making a separate snapshot for every test.
 The original recommendation to try sparse funding remains the smaller code
 change. Prepared wallets offer better preservation of original funding history
 and potentially lower repeated setup cost, at the price of a fixture lifecycle
-and integration into the subprocess launcher. Neither prepared-wallet GUI
-coverage nor end-to-end timing has been measured yet.
+and integration into the subprocess launcher. At that research stage, prepared-wallet GUI coverage and end-to-end timing
+had not yet been measured. The implementation results follow below.
+
+
+## Implemented opt-in fixture
+
+The integration runner now generates a funded seed lazily with its own executable,
+waits for clean application shutdown, and copies the matching wallet, blocks, and
+chainstate into each selected child's private directory. It generates at most one
+seed per runner invocation (each CTest partition has its own). No daemon executable,
+persistent cache, fixture-generating test case, or dependency between CTest entries
+is required. Setup time is included in elapsed suite time. A single selected case
+also generates its own seed, so the saving is intended for repeated setup across
+several cases, not necessarily a faster isolated case.
+
+Ten sending rows and five PSBT rows opt in explicitly. The two-wallet incoming
+payment scenario and hardened-keypool scenario retain their original setup, as
+do all other modules. The original 101 wallet rewards are preserved; the sparse
+four-reward prototype is not part of this implementation. Sending still mines its
+two subsequent blocks live and performs the original coin-selection, locking,
+review, signing, and broadcast assertions. PSBT cases retain live recipient/reviewer
+wallet creation and their import/sign/broadcast/replacement assertions.
+
+Each load checks a 50 BTC balance, height 101, one spendable coin, no locked inputs,
+and an empty mempool. Copying uses separate files, with no hard links. GUI settings
+and node settings are not copied. Failed seed generation fails dependent cases
+and retains diagnostics; successful seeds are removed at parent exit. A regression
+check verifies that discovery generates no seed and a forced generator startup
+failure fails the selected case with retained logs. The shard-selection regression
+also continues to pass.
+
+An initial full three-job correctness run passed the exact baseline inventory of
+122 runtime cases with no failures or skips in 83.873 seconds. The stricter height
+and unlocked-input preconditions were then added before the controlled comparison.
+The comparison uses the previous committed implementation (including sending
+partitions) as the control, with matching build options and Core revision.
+
+
+| Implementation | Sample 1 | Sample 2 | Median |
+| --- | ---: | ---: | ---: |
+| Previous implementation with sending partitions | 108.637 s | 108.246 s | 108.441 s |
+| Prepared wallet copies | 81.020 s | 81.699 s | 81.359 s |
+
+At three jobs, the prepared-wallet median is **24.97% lower**, saving 27.082
+seconds per full-suite run on this host. Samples ran in control/prepared/prepared/
+control order, restoring identical CTest scheduling hints before each sample.
+Every sample passed the exact same 122-case inventory with no failures or skips.
+Including the initial correctness run, that is 610 passing runtime results.
+The seed-generation cost is included; no build or other test jobs overlapped
+these timed samples. Normal host activity was not controlled. Linux CI and Qt 6.2
+have not been run locally, so these timings apply to the documented macOS host.
+
+`results/prepared-benchmark.json` records the samples, medians, and executable
+SHA-256 fingerprints. Sample directories retain CTest logs, ten XML reports,
+and complete inventories. `prepared_control_build.py` builds the control from
+`8d7680e` and restores/rebuilds the implementation; `prepared_benchmark.py` drove
+the comparison. An initial comparison attempt restored old source timestamps
+and reused the control executable; those samples are marked `INVALID.txt` and
+excluded. The corrected comparison verifies the prepared-mode argument and
+records distinct executable fingerprints.

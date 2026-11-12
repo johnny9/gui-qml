@@ -21,6 +21,8 @@ struct IntegrationTestModule {
     std::unique_ptr<QObject> (*create)(BitcoinQmlApplication&, WalletMode);
     int stage;
     QStringList (*arguments)(const QString& selector){nullptr};
+    // Empty means fresh setup; otherwise copy the seed wallet under this name.
+    QString (*prepared_wallet)(const QString& selector){nullptr};
 };
 
 std::span<const IntegrationTestModule> IntegrationTestModules();
@@ -42,6 +44,8 @@ std::unique_ptr<QObject> CreateSendTests(BitcoinQmlApplication& app, WalletMode 
 std::unique_ptr<QObject> CreatePsbtTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
 std::unique_ptr<QObject> CreateWatchOnlyTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
 std::unique_ptr<QObject> CreatePaymentImportTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
+QString SendPreparedWallet(const QString& selector);
+QString PsbtPreparedWallet(const QString& selector);
 QStringList SendTestArguments(const QString& selector);
 QStringList ReceiveTestArguments(const QString& selector);
 QStringList DebugLogTestArguments(const QString& selector);

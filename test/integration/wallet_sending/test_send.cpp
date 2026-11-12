@@ -35,8 +35,8 @@ class SendIntegrationTests : public QObject
         auto* destination = qmltest::CreateWallet(m_app, "destination");
         if (!destination || (fund_destination && !qmltest::FundWallet(m_app, *destination))) return std::nullopt;
         const auto external_address = qmltest::NewAddress(m_app, destination->name());
-        auto* wallet = qmltest::CreateWallet(m_app, "sender");
-        if (!wallet || !qmltest::FundWallet(m_app, *wallet)) return std::nullopt;
+        auto* wallet = fund_destination ? qmltest::CreateWallet(m_app, "sender") : qmltest::LoadFundedWallet(m_app, "sender");
+        if (!wallet || (fund_destination && !qmltest::FundWallet(m_app, *wallet))) return std::nullopt;
         const auto mining_address = qmltest::NewAddress(m_app, wallet->name());
         qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[2,\"" + mining_address.toStdString() + "\"]"));
         const auto address = self_send ? qmltest::NewAddress(m_app, wallet->name()) : external_address;
@@ -89,9 +89,8 @@ private Q_SLOTS:
     {
         QFETCH(QString, rate);
         QFETCH(bool, reject_low_rate);
-        auto* wallet = qmltest::CreateWallet(m_app, "custom_fee");
+        auto* wallet = qmltest::LoadFundedWallet(m_app, "custom_fee");
         QVERIFY(wallet);
-        QVERIFY(qmltest::FundWallet(m_app, *wallet));
         const auto destination = qmltest::NewAddress(m_app, wallet->name());
 
         // Choose a custom fee for a payment from the funded wallet.
@@ -161,9 +160,8 @@ private Q_SLOTS:
 
     void coinSelectionCancelApplyAndLockReachTheWallet()
     {
-        auto* wallet = qmltest::CreateWallet(m_app);
+        auto* wallet = qmltest::LoadFundedWallet(m_app);
         QVERIFY(wallet);
-        QVERIFY(qmltest::FundWallet(m_app, *wallet));
         auto* coins = wallet->coinsListModel();
         coins->update();
         QTRY_VERIFY(coins->rowCount() > 0);
@@ -468,6 +466,20 @@ private Q_SLOTS:
         QVERIFY(wallet->isLocked());
     }
 };
+
+QString SendPreparedWallet(const QString& selector)
+{
+    const auto function = selector.section(':', 0, 0);
+    if (function == "customFeesRespectRelayMinimum") return "custom_fee";
+    if (function == "coinSelectionCancelApplyAndLockReachTheWallet") return "integration";
+    for (const auto* name : {"coinSelectionDialogCommitsOrDiscardsInputsAndRepricesTheMaximum",
+                             "maximumAndSweepReviewRespectOwnershipAndSelection",
+                             "fixedManualSweepWarnsBeforeUnlockAndBeforeBroadcast",
+                             "multipleRecipientsShareTheMaximumAndKeepTheirDraftOnCancel"}) {
+        if (function == name) return "sender";
+    }
+    return {};
+}
 
 QStringList SendTestArguments(const QString& selector)
 {
