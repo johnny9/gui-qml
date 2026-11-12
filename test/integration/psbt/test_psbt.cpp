@@ -237,9 +237,8 @@ private Q_SLOTS:
         auto* recipient = qmltest::CreateWallet(m_app, "recipient");
         QVERIFY(recipient);
         const auto address = qmltest::NewAddress(m_app, recipient->name());
-        auto* wallet = qmltest::CreateWallet(m_app, "signer");
+        auto* wallet = qmltest::LoadFundedWallet(m_app, "signer");
         QVERIFY(wallet);
-        QVERIFY(qmltest::FundWallet(m_app, *wallet));
         const auto params = qmltest::Json("[[], {\"" + address.toStdString() + "\": 1}, 0, {\"fee_rate\": 2}, true]");
         const auto psbt = qmltest::Rpc(m_app, "walletcreatefundedpsbt", params, wallet->name()).find_value("psbt").get_str();
         QTemporaryDir directory;
@@ -300,9 +299,8 @@ private Q_SLOTS:
 
     void importSignBroadcastAndRecognizeKnownTransaction()
     {
-        auto* wallet = qmltest::CreateWallet(m_app, "psbt");
+        auto* wallet = qmltest::LoadFundedWallet(m_app, "psbt");
         QVERIFY(wallet);
-        QVERIFY(qmltest::FundWallet(m_app, *wallet));
         auto* recipient = qmltest::CreateWallet(m_app, "recipient");
         QVERIFY(recipient);
         const auto address = qmltest::NewAddress(m_app, recipient->name());
@@ -331,9 +329,8 @@ private Q_SLOTS:
 
     void foreignPsbtCanBeReviewedWithoutSigning()
     {
-        auto* source = qmltest::CreateWallet(m_app, "source");
+        auto* source = qmltest::LoadFundedWallet(m_app, "source");
         QVERIFY(source);
-        QVERIFY(qmltest::FundWallet(m_app, *source));
         auto* reviewer = qmltest::CreateWallet(m_app, "reviewer");
         QVERIFY(reviewer);
         const auto address = qmltest::NewAddress(m_app, reviewer->name());
@@ -357,9 +354,8 @@ private Q_SLOTS:
 
     void feeReplacementRequiresConfirmation()
     {
-        auto* wallet = qmltest::CreateWallet(m_app);
+        auto* wallet = qmltest::LoadFundedWallet(m_app);
         QVERIFY(wallet);
-        QVERIFY(qmltest::FundWallet(m_app, *wallet));
         auto* recipient = wallet->sendRecipientList()->currentRecipient();
         recipient->setAddress(qmltest::NewAddress(m_app, wallet->name()));
         recipient->amount()->setSatoshi(COIN);
@@ -380,6 +376,16 @@ private Q_SLOTS:
         QCOMPARE(pool[0].get_str(), bump->newTxid().toStdString());
     }
 };
+
+QString PsbtPreparedWallet(const QString& selector)
+{
+    const auto function = selector.section(':', 0, 0);
+    if (function == "failedImportPreservesTheDraftAndAllowsRetry") return "signer";
+    if (function == "importSignBroadcastAndRecognizeKnownTransaction") return "psbt";
+    if (function == "foreignPsbtCanBeReviewedWithoutSigning") return "source";
+    if (function == "feeReplacementRequiresConfirmation") return "integration";
+    return {};
+}
 
 std::unique_ptr<QObject> CreatePsbtTests(BitcoinQmlApplication& app, WalletMode)
 {

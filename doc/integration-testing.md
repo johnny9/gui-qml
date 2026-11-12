@@ -30,6 +30,25 @@ stage 9. Earlier stages should not depend on helpers that require a loaded walle
 Keep shared process/UI helpers in `fixture/test_util.h` and wallet setup helpers
 in `fixture/test_wallet.h`. RPC is useful for arranging chain/wallet state and
 checking results; exercise the UI or public model operation under test directly.
+
+Modules may explicitly name a prepared wallet for individual selectors via
+`IntegrationTestModule::prepared_wallet`. The parent lazily generates one seed
+per runner invocation with the current executable, waits for clean shutdown,
+and copies `blocks`, `chainstate`, and the wallet into each private profile.
+`LoadFundedWallet()` loads that copy and checks its expected initial balance,
+height, coin count, empty mempool, and unlocked inputs. No GUI or node settings
+are copied. Other wallets and all actions under test are created/performed live.
+The seed is temporary, needs no daemon binary or persistent cache, and is never
+modified by cases. Setup failures fail dependent cases and retain the seed's
+logs; successful seeds are removed when the parent exits.
+
+The initial opt-in covers ten sending rows and five PSBT rows. The sending
+case that funds both sender and destination, the hardened-keypool case, and
+all wallet management and activity cases retain their existing setup. New
+selectors default to fresh setup; do not opt in cases that validate the setup
+being omitted. Stage partitions own separate seeds, so there are no cross-CTest
+fixture dependencies.
+
 The ten CTest entries retain function/data-row isolation and may run in parallel.
 Sending has two independent partitions (`wallet_sending_0` and
 `wallet_sending_1`), both selected by the `wallet_sending` label.

@@ -171,7 +171,12 @@ The parent runs one Qt Test suite. Each test function, data row, and wallet mode
 has its own result, named `module.wallet.function[:row]`, in the combined output
 and reports. Qt Test also reports the parent's setup and cleanup results.
 The subprocess fixture starts a fresh application and regtest node for each result,
-including production startup and shutdown. Modules are grouped into the nine
+including production startup and shutdown. Selected sending and PSBT cases opt into a
+prepared funded wallet: the runner generates a seed once, closes it, and copies
+its wallet and matching chain into each case's private profile. Cases load their
+own copy through the normal wallet interface. Wallet creation, live funding,
+and special keypool scenarios keep fresh setup. No case produces another case's
+input; discovery does not generate a seed. Modules are grouped into the nine
 [staging-plan stages](doc/integration-testing.md). Stages 1–3 run with wallets
 disabled and enabled; stages 4–9 require wallets. Each stage has a feature-group label (for example, `wallet_sending`). Sending
 has two CTest entries; the other stages have one each. All ten entries can run

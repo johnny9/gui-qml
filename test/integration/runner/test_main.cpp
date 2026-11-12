@@ -4,6 +4,7 @@
 
 #include <test/integration/fixture/test_application.h>
 #include <test/integration/fixture/test_process.h>
+#include <test/integration/fixture/test_wallet.h>
 #include <test/integration/runner/test_cases.h>
 
 #include <QCoreApplication>
@@ -35,6 +36,7 @@ struct RunnerOptions {
     std::optional<std::pair<int, int>> shard;
     int timeout_ms{120'000};
     bool discover{false};
+    bool prepare_wallet{false};
     bool list_functions{false};
     bool list_modules{false};
     bool help{false};
@@ -273,6 +275,8 @@ std::optional<RunnerOptions> ParseOptions(int& argc, char* argv[])
                 return std::nullopt;
             }
             options.stage = value[0] - '0';
+        } else if (argument == "--test-prepare-funded-wallet") {
+            options.prepare_wallet = true;
         } else if (argument.starts_with("--shard=")) {
             const auto parts = QString::fromUtf8(argv[i] + std::string_view{"--shard="}.size()).split('/');
             bool index_ok{false};
@@ -315,6 +319,11 @@ std::optional<RunnerOptions> ParseOptions(int& argc, char* argv[])
     }
     argc = output_index;
     argv[argc] = nullptr;
+    if (options.prepare_wallet && (options.profile.isEmpty() || options.discover || !options.selector.isEmpty() ||
+                                   options.wallet_mode != WalletMode::Enabled)) {
+        std::cerr << "Preparing a wallet requires an enabled-wallet child profile without a test selector.\n";
+        return std::nullopt;
+    }
     if (options.shard && (!options.profile.isEmpty() || options.discover)) {
         std::cerr << "Shards select parent test cases, not child processes.\n";
         return std::nullopt;
@@ -381,7 +390,7 @@ int RunChild(int argc, char* argv[], const RunnerOptions& options)
     QStringList arguments;
     for (int i{0}; i < argc; ++i) arguments.push_back(QString::fromUtf8(argv[i]));
     const auto child_options = ChildOptions(arguments);
-    if (!options.module || !options.wallet_mode || (!options.discover && options.selector.isEmpty()) ||
+    if (!options.module || !options.wallet_mode || (!options.discover && !options.prepare_wallet && options.selector.isEmpty()) ||
         child_options != arguments.mid(1) || options.list_functions) {
         std::cerr << "A child requires a module, wallet mode, and a test or discovery request\n";
         return EXIT_FAILURE;
@@ -408,6 +417,10 @@ int RunChild(int argc, char* argv[], const RunnerOptions& options)
     QStringList startup_arguments{"-qml_onboarded=1"};
     if (options.module->arguments) startup_arguments.append(options.module->arguments(options.selector));
     return app.runTests(argv[0], startup_arguments, [&](BitcoinQmlApplication& application) {
+        if (options.prepare_wallet) {
+            auto* wallet = qmltest::CreateWallet(application, "funded");
+            return wallet && qmltest::FundWallet(application, *wallet) ? EXIT_SUCCESS : EXIT_FAILURE;
+        }
         const auto tests = options.module->create(application, *options.wallet_mode);
         return QTest::qExec(tests.get(), QStringList{QString::fromUtf8(argv[0]), options.selector, "-o", "qt-results.xml,xml"} + child_options);
     });
