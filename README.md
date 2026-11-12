@@ -162,7 +162,7 @@ Build and run the application and node integration tests:
 ```sh
 cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_APP_TESTS=ON -DWITH_CCACHE=ON
 cmake --build build --target bitcoinqml_integration -j12
-ctest --test-dir build --output-on-failure -L integration
+ctest --test-dir build --output-on-failure -L integration --parallel 3
 ```
 
 The integration target builds `bitcoinqml_integration_tests`, which CTest invokes
@@ -175,6 +175,12 @@ including production startup and shutdown. Modules are grouped into the nine
 [staging-plan stages](doc/integration-testing.md). Stages 1–3 run with wallets
 disabled and enabled; stages 4–9 require wallets. Each stage has its own CTest
 entry and feature-group label (for example, `wallet_sending`), so stages can run independently or in parallel.
+The command above runs up to three groups concurrently; cases within each group
+remain serial. Use `--parallel 2` on a memory-constrained machine or
+`--parallel 1` for serial comparisons. Stage numbers describe feature coverage,
+not execution dependencies: no group requires another group to run first.
+See [parallel execution results](doc/integration-parallelization.md) for the
+measured job-count comparison and CI configuration.
 Each process has its own temporary data directory and GUI settings, so changes to
 wallets, the chain, settings, and UI state cannot affect the next test or data row.
 The fixture uses Core's subprocess helper and returns the child's test and process
@@ -226,7 +232,9 @@ they are not streamed live. Other Qt options affect the parent only.
 CTest writes integration reports to `build/test-reports/` and keeps failed profiles
 in `build/test-profiles/`. Both test workflows upload these directories and the
 CTest logs even after failures, with a separate artifact for each matrix job.
-The `ctest.xml` report records the overall CTest results; `integration-<group>.xml` (for example, `integration-wallet_sending.xml`) provides
+The source-build workflow records non-integration CTest results in `ctest.xml`
+and parallel integration CTest results in `ctest-integration.xml`. The depends
+workflow records all CTest results in `ctest.xml`. `integration-<group>.xml` (for example, `integration-wallet_sending.xml`) provides
 the individual test results, including application startup and shutdown failures.
 The process exit status remains authoritative if the parent itself is interrupted
 before finishing its report.

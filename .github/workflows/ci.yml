@@ -88,14 +88,24 @@ jobs:
             ${{ matrix.cmake_options }}
 
       - name: Build
+        id: build
         run: cmake --build build --parallel
 
-      - name: Run tests
+      - name: Run non-integration tests
         if: env.BUILD_APP_TESTS == 'ON'
         run: |
           mkdir -p build/test-reports
-          ${{ matrix.test_wrapper }} ctest --test-dir build --output-on-failure \
+          ${{ matrix.test_wrapper }} ctest --test-dir build --output-on-failure -LE '^integration$' \
             --output-junit "${PWD}/build/test-reports/ctest.xml"
+
+      - name: Run integration tests
+        if: ${{ !cancelled() && env.BUILD_APP_TESTS == 'ON' && steps.build.outcome == 'success' }}
+        run: |
+          mkdir -p build/test-reports
+          test_jobs="$(nproc)"
+          if (( test_jobs > 3 )); then test_jobs=3; fi
+          ${{ matrix.test_wrapper }} ctest --test-dir build --output-on-failure -L '^integration$' \
+            --parallel "${test_jobs}" --output-junit "${PWD}/build/test-reports/ctest-integration.xml"
 
       - name: Upload test reports and failed profiles
         uses: actions/upload-artifact@v7
