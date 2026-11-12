@@ -57,6 +57,37 @@ individual groups become slower under contention even though the suite finishes
 sooner. These measurements establish a local wall-time improvement, not lower
 total CPU usage or a guarantee for every CI runner.
 
+## Higher-concurrency follow-up
+
+A second comparison tested three, four, and six jobs on the same eight-CPU,
+12 GiB host and unchanged binary. Each setting ran three times. Orders rotated
+as `(3, 4, 6)`, `(4, 6, 3)`, and `(6, 3, 4)`. Before every sample, the same saved
+CTest timing hints were restored, avoiding scheduling estimates learned under
+one job count affecting the next. Original timing history was restored afterward.
+
+| Jobs | Sample 1 | Sample 2 | Sample 3 | Median |
+| --- | ---: | ---: | ---: | ---: |
+| 3 | 111.018 s | 105.925 s | 106.118 s | **106.118 s** |
+| 4 | 103.851 s | 107.790 s | 105.104 s | **105.104 s** |
+| 6 | 104.895 s | 109.442 s | 114.758 s | **109.442 s** |
+
+All nine runs passed identical inventories of 122 runtime cases, with zero
+failures or skips: 1,098 passing runtime results. Four jobs reduced the median
+by only 1.014 seconds (0.96%) relative to the fresh three-job control. Six jobs
+increased it by 3.323 seconds (3.13%). The observed ranges overlap; these samples
+do not establish a useful improvement from increasing the cap. Sending finished
+last in every four- and six-job sample, while other groups experienced contention.
+
+Keep the CI cap at three. The earlier three-job median and this fresh control
+differ, reinforcing the need for contemporary controls instead of comparing
+higher job counts only against older timings. These results do not establish
+the best setting on other hardware or Linux runners.
+
+`parallel_higher.py` reproduces this comparison. `results/higher.json` contains
+the aggregate results, `results/higher-environment.json` records CPU and memory,
+and each `results/higher-j{3,4,6}-{1,2,3}/` directory retains its CTest log,
+nine XML reports, and case summary. The follow-up changes no CI or test code.
+
 ## Measurement conditions
 
 Measured on 2026-11-12: macOS 26.6.2 arm64, eight logical CPUs, Qt 6.11.2,
