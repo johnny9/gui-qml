@@ -41,10 +41,30 @@ TestCase {
 
     function cleanup() {
         if (windowUnderTest) {
-            // Preserve the real close route. QtTest owns destruction after
-            // cleanup, before the next test, while this fixture stays alive.
+            // The shared mock outlives this window. Retire its delegates while
+            // their creation context is alive, including deferred descendants.
+            const desktop = findChild(windowUnderTest, "desktopWalletsPage")
+            const receipts = []
+            if (desktop) {
+                for (let i = 0; i < desktop.walletViews.count; ++i) {
+                    const receipt = testSetup.watchDestruction(desktop.walletViews.itemAt(i))
+                    verify(receipt.count > 0)
+                    receipts.push(receipt)
+                }
+            }
+            walletController.setOpenWallets([])
+            for (let i = 0; i < receipts.length; ++i) {
+                tryCompare(receipts[i], "pending", 0)
+                testSetup.releaseDestructionWatch(receipts[i])
+            }
+            // Some tests create another window before returning to QtTest.
+            // Observe deletion before resetting the shared model for that one.
+            const windowReceipt = testSetup.watchDestruction(windowUnderTest)
             windowUnderTest.close()
+            windowUnderTest.destroy()
             windowUnderTest = null
+            tryCompare(windowReceipt, "pending", 0)
+            testSetup.releaseDestructionWatch(windowReceipt)
         }
         nodeModel.fatalException = false
         nodeModel.setStartupErrorForTest("")

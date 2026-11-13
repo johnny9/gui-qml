@@ -30,6 +30,7 @@
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QSet>
 #include <QSortFilterProxyModel>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -5454,6 +5455,49 @@ private:
     QQmlContext* m_context;
 };
 
+// A fixture can observe physical deletion without keeping its QML objects alive.
+// Include visual children: a Repeater delegate need not have the visual parent
+// as its QObject parent.
+class DestructionReceipt : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(int pending READ pending NOTIFY pendingChanged)
+    Q_PROPERTY(int count READ count CONSTANT)
+
+public:
+    DestructionReceipt(QObject* root, QObject* parent) : QObject(parent)
+    {
+        QList<QObject*> queue;
+        if (root) queue.push_back(root);
+        QSet<QObject*> visited;
+        while (!queue.empty()) {
+            auto* object = queue.takeLast();
+            if (visited.contains(object)) continue;
+            visited.insert(object);
+            queue.append(object->children());
+            if (auto* item = qobject_cast<QQuickItem*>(object)) {
+                for (auto* child : item->childItems()) queue.push_back(child);
+            }
+            if (auto* window = qobject_cast<QQuickWindow*>(object)) queue.push_back(window->contentItem());
+            connect(object, &QObject::destroyed, this, [this] {
+                --m_pending;
+                Q_EMIT pendingChanged();
+            });
+        }
+        m_count = m_pending = static_cast<int>(visited.size());
+    }
+
+    int pending() const { return m_pending; }
+    int count() const { return m_count; }
+
+Q_SIGNALS:
+    void pendingChanged();
+
+private:
+    int m_pending{0};
+    int m_count{0};
+};
+
 class QmlTestsSetup : public QObject
 {
     Q_OBJECT
@@ -5466,6 +5510,11 @@ public:
     bool supportsApplicationFonts() const { return QGuiApplication::platformName() != QStringLiteral("minimal"); }
 
 public Q_SLOTS:
+    QObject* watchDestruction(QObject* root) { return new DestructionReceipt(root, this); }
+    void releaseDestructionWatch(QObject* receipt)
+    {
+        if (receipt && receipt->parent() == this) delete qobject_cast<DestructionReceipt*>(receipt);
+    }
     int namedChildCount(QObject* object, const QString& name) const { return object ? object->findChildren<QObject*>(name).size() : 0; }
     QString entryFieldText(QObject* object, const QString& field) const {
         const auto* model = qobject_cast<QAbstractItemModel*>(object); QString text;
