@@ -27,7 +27,7 @@ class BoundaryScheduler final : public execution::Scheduler
 {
 public:
     explicit BoundaryScheduler(std::shared_ptr<execution::Scheduler> target) : m_target(std::move(target)) {}
-    std::function<void()> after_reserve, after_borrow, after_submit;
+    std::function<void()> before_reserve, after_reserve, after_borrow, after_submit;
     std::shared_ptr<std::function<void()>> before_execute{std::make_shared<std::function<void()>>()};
     execution::Admission submit(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override
     {
@@ -45,6 +45,7 @@ public:
     }
     execution::Admission reserveCleanup(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override
     {
+        if (before_reserve) std::exchange(before_reserve, {})();
         auto result = m_target->reserveCleanup(std::move(task), spec);
         if (after_reserve) std::exchange(after_reserve, {})();
         return result;
@@ -83,7 +84,7 @@ private:
 };
 
 struct Fixture {
-    explicit Fixture(execution::Limits limits = execution::Limits::Bounded()) : env(limits)
+    explicit Fixture(execution::Limits limits = execution::Limits::Bounded(), std::function<uint64_t()> ingress_stamp = {}) : env(limits)
     {
         const auto capture = [this] {
             probe->captures.push_back(probe->lane);
@@ -102,7 +103,7 @@ struct Fixture {
                 if (during_registration) during_registration();
                 if (registration_missing) return std::unique_ptr<interfaces::Handler>{};
                 return interfaces::MakeCleanupHandler([this] { probe->disconnects.push_back(probe->lane); });
-            }, capture, [this](walletlife::Update update) { publications.push_back(update); });
+            }, capture, [this](walletlife::Update update) { publications.push_back(update); }, std::move(ingress_stamp));
     }
     ~Fixture()
     {
@@ -172,6 +173,86 @@ class WalletLifecycleTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void delayedOlderNativeCallbackCannotReplaceANewerHandle()
+    {
+        QSemaphore first_entered, release_first;
+        std::atomic_uint64_t stamp{0};
+        Fixture f{execution::Limits::Bounded(), [&] {
+            const auto current = ++stamp;
+            if (current == 1) { first_entered.release(); release_first.acquire(); }
+            return current;
+        }};
+        QVERIFY(f.owner->start()); f.drain();
+        auto older = f.wallet("same");
+        std::thread first{[&] { f.callback(std::move(older)); }};
+        const auto join = qScopeGuard([&] { release_first.release(); if (first.joinable()) first.join(); });
+        QVERIFY(first_entered.tryAcquire(1, 10'000));
+        f.notify("same"); f.drain();
+        QCOMPARE(f.probe->destroyed.size(), size_t{0});
+        release_first.release(); first.join();
+        f.drain();
+        QCOMPARE(f.probe->destroyed.size(), size_t{1});
+        QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Core});
+        auto handoff = f.owner->takeNotifications();
+        QVERIFY(handoff); QCOMPARE(handoff->entries.size(), size_t{1});
+        QCOMPARE(handoff->entries.front().ingress_sequence, uint64_t{2});
+        QCOMPARE(handoff->entries.front().name, std::string{"same"});
+        handoff.reset(); f.drain(); f.owner->retire(); f.drain();
+        QCOMPARE(f.probe->destroyed.size(), size_t{2});
+        QCOMPARE(f.count(Publication::Retired), 1);
+    }
+    void unavailableIngressIdentityAndRejectedContextFailClosed_data()
+    {
+        QTest::addColumn<int>("failure");
+        QTest::newRow("stamp-capacity") << 0;
+        QTest::newRow("stamp-exception") << 1;
+        QTest::newRow("context-adapter-rejected") << 2;
+    }
+    void unavailableIngressIdentityAndRejectedContextFailClosed()
+    {
+        QFETCH(int, failure);
+        Fixture f{execution::Limits::Bounded(), [failure]() -> uint64_t {
+            if (failure == 1) throw std::runtime_error{"Synthetic native clock failure"};
+            return 0;
+        }};
+        QVERIFY(f.owner->start()); f.drain();
+        if (failure == 2) f.owner->rejectNotificationContext();
+        else f.notify("must-not-be-adopted");
+        f.drain();
+        QVERIFY(!f.owner->takeNotifications());
+        QCOMPARE(f.count(Publication::Failed), 1); QCOMPARE(f.count(Publication::Retired), 1);
+        QCOMPARE(f.publications.back().reason, failure == 1 ? walletlife::FailureReason::Backend : walletlife::FailureReason::IngressCapacity);
+        QVERIFY(!f.owner->setNotificationContext("late-origin", true, 3));
+        QVERIFY(f.env.quiescent());
+    }
+    void contextRetentionRacingRetirementReleasesItsInventory()
+    {
+        Fixture f; QVERIFY(f.owner->start()); f.drain();
+        f.boundary->after_borrow = [&] { f.owner->retire(); };
+        QVERIFY(!f.owner->setNotificationContext("original-command", true, 9));
+        f.drain();
+        QCOMPARE(f.count(Publication::Retired), 1); QCOMPARE(f.count(Publication::Changed), 0);
+        {
+            std::lock_guard lock{f.owner->m_context_inventory->mutex};
+            QCOMPARE(f.owner->m_context_inventory->count, size_t{0});
+            QCOMPARE(f.owner->m_context_inventory->bytes, size_t{0});
+        }
+        QVERIFY(f.env.quiescent());
+    }
+    void throwingContextReservationReportsFailureWithoutRetainingTheOrigin()
+    {
+        Fixture f; QVERIFY(f.owner->start()); f.drain();
+        f.boundary->before_reserve = [] { throw std::runtime_error{"Synthetic cleanup reservation failure"}; };
+        QVERIFY(!f.owner->setNotificationContext("original-command", true, 4));
+        f.drain();
+        QCOMPARE(f.count(Publication::Failed), 1); QCOMPARE(f.count(Publication::Retired), 1);
+        {
+            std::lock_guard lock{f.owner->m_context_inventory->mutex};
+            QCOMPARE(f.owner->m_context_inventory->count, size_t{0});
+            QCOMPARE(f.owner->m_context_inventory->bytes, size_t{0});
+        }
+        QVERIFY(f.env.quiescent());
+    }
     void rejectedHandleReleasePrecedesCallbackLeaseAndDrain()
     {
         struct Probe {
