@@ -132,6 +132,9 @@ target_compile_definitions(bitcoinqml_unit_tests
   PRIVATE
     BITCOINQML_NO_TEST_MAIN
 )
+set_source_files_properties(test_rpccommandexecutor.cpp PROPERTIES
+  COMPILE_DEFINITIONS BITCOINQML_CORE_RPC_CONSOLE_SOURCE="${PROJECT_SOURCE_DIR}/bitcoin/src/qt/rpcconsole.cpp"
+)
 
 target_include_directories(bitcoinqml_unit_tests
   PRIVATE

@@ -7,9 +7,7 @@
 // All tests use fExecute=false so no live node is required.
 
 #include <QtTest/QtTest>
-#include <QDir>
 #include <QFile>
-#include <QFileInfo>
 #include <QRegularExpression>
 
 #include <qml/models/rpccommandexecutor.h>
@@ -172,7 +170,7 @@ QTEST_MAIN(RpcCommandExecutorTests)
 // Reading its source makes a future submodule update demand an explicit review.
 void RpcCommandExecutorTests::pinnedCoreRedactionPolicy()
 {
-    QFile source(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("../bitcoin/src/qt/rpcconsole.cpp"));
+    QFile source(QStringLiteral(BITCOINQML_CORE_RPC_CONSOLE_SOURCE));
     QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
     const QString text = QString::fromUtf8(source.readAll());
     const auto declaration = QRegularExpression("const QStringList historyFilter = QStringList\\(\\)([^;]+);").match(text);
