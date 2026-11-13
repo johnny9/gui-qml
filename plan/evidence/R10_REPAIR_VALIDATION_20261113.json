@@ -752,7 +752,8 @@
     "full_gap_ledger": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/coverage-gap-ledger.json",
     "changed_function_scope": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/r10-changed-function-coverage.json",
     "gap_counter_audit": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/coverage-report/gap-resumption-audit.json",
-    "tool_identity": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/tool-identity.json"
+    "tool_identity": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/tool-identity.json",
+    "lifecycle_reachability_proposals": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/lifecycle-reachability-proposals.json"
   },
   "limitations": [
     "Unit and combined denominators retain all emitted handwritten app files, including legacy areas; combined here means unit/bootstrap plus QML components, not process/integration coverage.",
@@ -763,5 +764,21 @@
     "Qt picker and Windows deferrals remain explicit standing user decisions; MSan/static-depends/native platform obligations are not certified by Linux ASan.",
     "Prior failed red, stale-resource/profile-reuse and setup attempts remain in their original artifact directories.",
     "Shared finding registers and accepted program head have not been advanced."
-  ]
+  ],
+  "lint": {
+    "app_and_core": {
+      "exit_code": 0,
+      "app_revision": "0b5270a9f1a49ea0345abf8ad6c4d6acc95aedb8",
+      "app_range": "13df783d481..0b5270a9f1a",
+      "core_revision": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "command": "COMMIT_RANGE=13df783d481..HEAD python3 ci/lint.py --no-build",
+      "log": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/lint-repair-final.log",
+      "branch_rechecked": "work/qt6-r10-completion-20261113"
+    }
+  },
+  "qt62_final_qml_elf_identity": {
+    "prior_qualified_elf": "ac0f07c2362fab29dc60e8e2fb6fffb903d07b478809bc3ddadba9e1767ea66b",
+    "current_elf": "ac0f07c2362fab29dc60e8e2fb6fffb903d07b478809bc3ddadba9e1767ea66b",
+    "identical": true
+  }
 }
