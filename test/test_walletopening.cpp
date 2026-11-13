@@ -76,6 +76,185 @@ class WalletOpeningTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void callbackRacingShutdownCannotRefreshTheClosingOpening()
+    {
+        struct Boundary final : execution::Scheduler {
+            explicit Boundary(std::shared_ptr<execution::Scheduler> target) : target(std::move(target)) {}
+            execution::Admission submit(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override { return target->submit(std::move(task), spec); }
+            execution::Admission reserveCleanup(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override { return target->reserveCleanup(std::move(task), spec); }
+            bool activateCleanup(execution::TaskId id) override { return target->activateCleanup(id); }
+            execution::BorrowAdmission borrow(execution::ResourceKey key) override {
+                auto borrowed = target->borrow(key);
+                if (after_borrow) std::exchange(after_borrow, {})();
+                return borrowed;
+            }
+            execution::ResourceKey allocateKey() override { return target->allocateKey(); }
+            size_t pending() const override { return target->pending(); }
+            void closeOrdinaryAdmission() override { target->closeOrdinaryAdmission(); }
+            bool cancelQueued(execution::TaskId id) override { return target->cancelQueued(id); }
+            const std::shared_ptr<execution::Scheduler> target;
+            std::function<void()> after_borrow;
+        };
+        ManualRoutedExecution commands, retirement;
+        auto boundary = std::make_shared<Boundary>(retirement.scheduler);
+        auto gate = std::make_shared<std::atomic_bool>(false);
+        auto native = std::make_shared<Wallet>();
+        auto session = std::make_shared<walletopening::Session>(commands.scheduler, boundary,
+            std::make_shared<std::atomic_bool>(false), [] {}, walletopening::Session::Preferences{},
+            [] { return std::chrono::steady_clock::now(); }, gate);
+        const auto cleanup = qScopeGuard([&] { session->retire(); commands.drain(); retirement.drain(); });
+        QVERIFY(session->start(native)); commands.drain(); session->take();
+        boundary->after_borrow = [&] { gate->store(true); };
+        native->status(); commands.drain();
+        QVERIFY(!session->available()); QCOMPARE(native->reads, 1); QVERIFY(!session->take());
+        QVERIFY(commands.quiescent());
+    }
+    void transactionAcknowledgementWaitsForBothRefreshAndConsumer()
+    {
+        Fixture fixture; fixture.start();
+        fixture.wallet->transaction(Txid::FromUint256(uint256::ONE), CT_NEW);
+        fixture.session->acknowledgeTransactions(); QVERIFY(fixture.session->notificationsPending());
+        fixture.commands.drain();
+        fixture.session->acknowledgeTransactions(); QVERIFY(fixture.session->notificationsPending());
+        const auto update = fixture.session->take();
+        QVERIFY(update && update->transactions.size() == 1); QVERIFY(!update->rescan);
+        fixture.session->acknowledgeTransactions(); QVERIFY(!fixture.session->notificationsPending());
+        fixture.commands.rejectLane(Lane::Domain);
+        fixture.session->onTransactions([](auto, auto, bool) {});
+        fixture.commands.drain();
+        fixture.session->acknowledgeTransactions(); QVERIFY(fixture.session->notificationsPending());
+        const auto rescan = fixture.session->take();
+        QVERIFY(rescan && rescan->rescan && rescan->transactions.empty());
+        fixture.session->acknowledgeTransactions(); QVERIFY(!fixture.session->notificationsPending());
+    }
+    void publicPreferencePortRepairsMalformedSettingsWithoutCopyingTheirPayload()
+    {
+        struct Settings final : FeePreviewChain {
+            common::SettingsValue getRwSetting(const std::string&) override { return values; }
+            bool updateRwSetting(const std::string&, const interfaces::SettingsUpdate& update) override
+            {
+                const auto action = update(values);
+                return action && *action == interfaces::SettingsAction::WRITE;
+            }
+            common::SettingsValue values{std::string(65'537, 'x')};
+        } settings;
+        const auto port = walletopening::ChainPreferences(settings);
+        QCOMPARE(port.read("original"), std::string{});
+        QVERIFY(port.write("original", "legacy"));
+        QVERIFY(settings.values.isObject()); QCOMPARE(settings.values.size(), size_t{1});
+        QCOMPARE(port.read("original"), std::string{"legacy"});
+    }
+    void retirementBeforeStartRejectsEveryNativeAction()
+    {
+        Fixture fixture;
+        fixture.session->retire();
+        QVERIFY(!fixture.session->available()); QVERIFY(!fixture.session->borrow());
+        QVERIFY(!fixture.session->startAction());
+        QCOMPARE(fixture.session->read([](auto&) { return 1; }, [](int) {}).rejection, execution::Rejection::Closed);
+        QVERIFY(fixture.commands.quiescent()); QVERIFY(fixture.retirement.quiescent());
+    }
+    void unavailableNativeHandleNeverExecutesRead()
+    {
+        Fixture fixture;
+        int effects{0};
+        QCOMPARE(fixture.session->read([&](auto&) { return ++effects; }, [](int) {}).rejection,
+                 execution::Rejection::Closed);
+        QCOMPARE(effects, 0);
+        fixture.commands.rejectLane(Lane::Core);
+        const auto started = fixture.session->start(fixture.wallet);
+        QVERIFY(!started);
+        QCOMPARE(fixture.wallet->reads, 0);
+        QVERIFY(!fixture.wallet->status);
+        QVERIFY(!fixture.session->available());
+    }
+    void saturatedCallbackBorrowersFenceAndDrainWithoutLosingExistingLeases()
+    {
+        auto limits = execution::Limits::Bounded(); limits.resource_borrowers = 3;
+        ManualRoutedExecution commands, retirement{limits};
+        auto native = std::make_shared<Wallet>();
+        auto session = std::make_shared<walletopening::Session>(commands.scheduler, retirement.scheduler,
+            std::make_shared<std::atomic_bool>(false), [] {});
+        const auto cleanup = qScopeGuard([&] { session->retire(); commands.drain(); retirement.drain(); });
+        auto started = session->start(native); QVERIFY(started); commands.drain(); session->take();
+        auto second = session->borrow(); auto third = session->borrow();
+        QVERIFY(second); QVERIFY(third); QVERIFY(!session->borrow());
+        QVERIFY(!session->startAction());
+        native->status();
+        const auto failed = session->take();
+        QVERIFY(failed && failed->failed); QCOMPARE(failed->phase, Phase::Closing);
+        QVERIFY(!session->available()); QVERIFY(!retirement.step(Lane::Cleanup));
+        // A copied callback after fencing cannot create a second failure.
+        native->status(); QVERIFY(!session->take());
+        started.borrower.reset(); second.reset(); third.reset();
+        retirement.drain(); commands.drain();
+        QCOMPARE(session->take()->phase, Phase::Closed);
+        QVERIFY(retirement.quiescent()); QVERIFY(commands.quiescent());
+    }
+    void rejectedCloseControlNeverGrantsConsent()
+    {
+        Fixture fixture; fixture.start();
+        fixture.commands.rejectLane(Lane::Control); fixture.session->requestClose(); fixture.commands.drain();
+        const auto failed_request = fixture.session->take();
+        QVERIFY(failed_request && failed_request->failed); QVERIFY(!failed_request->question);
+        QVERIFY(fixture.session->available());
+        const auto question = fixture.question();
+        fixture.commands.rejectLane(Lane::Control); fixture.session->answerClose(question, true); fixture.commands.drain();
+        QVERIFY(fixture.session->take()->failed); QVERIFY(fixture.session->available());
+        fixture.session->retire();
+        fixture.session->answerClose(question, true); fixture.session->requestClose(); fixture.commands.drain();
+        const auto closed = fixture.session->take();
+        QVERIFY(closed); QCOMPARE(closed->phase, Phase::Closing); QVERIFY(!closed->question);
+    }
+    void shutdownGateCancelsQueuedObservationAndConsumesAnAbsentErrorObserver()
+    {
+        ManualRoutedExecution commands, retirement;
+        auto gate = std::make_shared<std::atomic_bool>(false);
+        auto native = std::make_shared<Wallet>();
+        auto session = std::make_shared<walletopening::Session>(commands.scheduler, retirement.scheduler,
+            std::make_shared<std::atomic_bool>(false), [] {}, walletopening::Session::Preferences{},
+            [] { return std::chrono::steady_clock::now(); }, gate);
+        const auto cleanup = qScopeGuard([&] { session->retire(); commands.drain(); retirement.drain(); });
+        QVERIFY(session->start(native)); commands.drain(); session->take();
+        int effects{0}, outcomes{0};
+        QVERIFY(session->read([&](auto&) { return ++effects; }, [&](int) { ++outcomes; }));
+        gate->store(true); commands.drain();
+        QCOMPARE(effects, 0); QCOMPARE(outcomes, 0); QVERIFY(commands.quiescent());
+        QVERIFY(!session->startAction());
+    }
+    void unsupportedOrUnconfirmedPreferenceNeverClaimsPersistence_data()
+    {
+        QTest::addColumn<bool>("addresses"); QTest::addColumn<bool>("write_ok");
+        QTest::newRow("no-address-capability") << false << true;
+        QTest::newRow("write-failed") << true << false;
+        QTest::newRow("write-succeeded-readback-differs") << true << true;
+    }
+    void unsupportedOrUnconfirmedPreferenceNeverClaimsPersistence()
+    {
+        QFETCH(bool, addresses); QFETCH(bool, write_ok);
+        ManualRoutedExecution commands, retirement;
+        auto native = std::make_shared<Wallet>(); native->addresses = addresses;
+        int writes{0};
+        auto session = std::make_shared<walletopening::Session>(commands.scheduler, retirement.scheduler,
+            std::make_shared<std::atomic_bool>(false), [] {}, walletopening::Session::Preferences{
+                [](const auto&) { return std::string{"bech32"}; },
+                [&](const auto&, const auto&) { ++writes; return write_ok; }});
+        const auto cleanup = qScopeGuard([&] { session->retire(); commands.drain(); retirement.drain(); });
+        QVERIFY(session->start(native)); commands.drain(); session->take();
+        QVERIFY(session->setReceivePreference("legacy")); commands.drain();
+        const auto result = session->take();
+        QVERIFY(result && result->metadata && result->preference_saved);
+        QVERIFY(!*result->preference_saved);
+        QCOMPARE(result->metadata->receive_preference, std::string{"bech32"});
+        QCOMPARE(result->preference_revision, uint64_t{1}); QCOMPARE(writes, addresses ? 1 : 0);
+    }
+    void failedStatusRefreshDoesNotInventTransactionWork()
+    {
+        Fixture fixture; fixture.start();
+        fixture.wallet->fail_read = true; fixture.wallet->status(); fixture.commands.drain();
+        const auto failed = fixture.session->take();
+        QVERIFY(failed && failed->failed); QVERIFY(!failed->rescan);
+        QVERIFY(!fixture.session->notificationsPending());
+    }
     void concurrentNativeCallbacksReceiveUniqueOrderedStamps()
     {
         walletopening::NativeEventClock clock;

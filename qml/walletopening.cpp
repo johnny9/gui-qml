@@ -275,7 +275,7 @@ void Session::ingress(int kind, const Txid& txid, ChangeType change)
         return;
     }
     if (!callback_lifetime) {
-        if (available()) { Update failed; failed.failed = true; publish(std::move(failed)); retire(); }
+        if (available()) { retire(); Update failed; failed.failed = true; publish(std::move(failed)); }
         return;
     }
     {
