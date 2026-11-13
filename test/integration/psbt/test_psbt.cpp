@@ -2,15 +2,23 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <test/mocks/preparationtest.h>
+#include <test/mocks/sendtest.h>
+#include <test/mocks/psbtactiontest.h>
+#include <test/mocks/messagebumptest.h>
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <qml/models/psbtqmlmodel.h>
+#include <core_io.h>
+#include <key.h>
 #include <key_io.h>
 #include <util/moneystr.h>
 #include <util/string.h>
+#include <util/strencodings.h>
 
 #include <QFile>
 #include <QTemporaryDir>
+#include <array>
 
 class PsbtIntegrationTests : public QObject
 {
@@ -21,6 +29,86 @@ public:
     explicit PsbtIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void watchOnlySignedScriptsSurviveOriginalExport_data()
+    {
+        QTest::addColumn<bool>("nested"); QTest::addColumn<bool>("send");
+        for (bool nested : {false, true}) for (bool send : {false, true})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(nested ? "nested" : "witness").arg(send ? "send" : "broadcast"))) << nested << send;
+    }
+    void watchOnlySignedScriptsSurviveOriginalExport()
+    {
+        QFETCH(bool, nested); QFETCH(bool, send);
+        auto* miner = qmltest::CreateWallet(m_app, "scripts-miner"); QVERIFY(miner);
+        QVERIFY(qmltest::FundWallet(m_app, *miner));
+        UniValue create{UniValue::VOBJ};
+        create.pushKV("wallet_name", "scripts-reviewer"); create.pushKV("disable_private_keys", true); create.pushKV("blank", true);
+        qmltest::Rpc(m_app, "createwallet", create);
+        auto* reviewer = qmltest::WaitForWallet(m_app, "scripts-reviewer"); QVERIFY(reviewer);
+        const auto descriptors = qmltest::Call(m_app, [nested](interfaces::Node*) {
+            std::array<unsigned char, 32> bytes{};
+            bytes.back() = 1; CKey first; first.Set(bytes.begin(), bytes.end(), true);
+            bytes.back() = 2; CKey second; second.Set(bytes.begin(), bytes.end(), true);
+            auto private_desc = "wsh(multi(2," + EncodeSecret(first) + "," + EncodeSecret(second) + "))";
+            auto public_desc = "wsh(multi(2," + HexStr(first.GetPubKey()) + "," + HexStr(second.GetPubKey()) + "))";
+            if (nested) { private_desc = "sh(" + private_desc + ")"; public_desc = "sh(" + public_desc + ")"; }
+            return std::pair{private_desc + "#" + GetDescriptorChecksum(private_desc), public_desc + "#" + GetDescriptorChecksum(public_desc)};
+        });
+        for (const auto& [wallet, descriptor] : std::array<std::pair<QString, std::string>, 2>{{
+                 {miner->name(), descriptors.first}, {reviewer->name(), descriptors.second}}}) {
+            UniValue entry{UniValue::VOBJ}; entry.pushKV("desc", descriptor); entry.pushKV("timestamp", "now");
+            UniValue entries{UniValue::VARR}; entries.push_back(entry);
+            UniValue params{UniValue::VARR}; params.push_back(entries);
+            const auto imported = qmltest::Rpc(m_app, "importdescriptors", params, wallet);
+            QVERIFY(imported[0].find_value("success").get_bool());
+        }
+        UniValue derive{UniValue::VARR}; derive.push_back(descriptors.second);
+        const auto address = qmltest::Rpc(m_app, "deriveaddresses", derive)[0].get_str();
+        const auto funding = qmltest::Rpc(m_app, "sendtoaddress", qmltest::Json("[\"" + address + "\",0.01]"), miner->name()).get_str();
+        const auto mining = qmltest::NewAddress(m_app, miner->name());
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
+        const auto received = qmltest::Json("[0,9999999,[\"" + address + "\"]]");
+        QVERIFY(QTest::qWaitFor([&] { return qmltest::Rpc(m_app, "listunspent", received, reviewer->name()).size() == 1; }, 5000));
+        const auto coin = qmltest::Rpc(m_app, "listunspent", received, reviewer->name())[0];
+        QCOMPARE(coin.find_value("txid").get_str(), funding);
+        QCOMPARE(coin.find_value("amount").getValStr(), std::string{"0.01000000"});
+        const auto parent = qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + funding + "\"]"), miner->name()).find_value("hex").get_str();
+        const auto destination = qmltest::NewAddress(m_app, miner->name()).toStdString();
+        const auto index = coin.find_value("vout").getInt<int>();
+        const auto unsigned_psbt = qmltest::Call(m_app, [parent, destination, index](interfaces::Node*) {
+            CMutableTransaction funding_tx;
+            if (!DecodeHexTx(funding_tx, parent)) throw std::runtime_error("funding decode");
+            const auto previous = MakeTransactionRef(funding_tx);
+            if (index < 0 || size_t(index) >= previous->vout.size() || previous->vout[index].nValue != 1'000'000) throw std::runtime_error("funding output");
+            CMutableTransaction transaction;
+            transaction.vin.emplace_back(COutPoint{previous->GetHash(), uint32_t(index)});
+            transaction.vout.emplace_back(990'000, GetScriptForDestination(DecodeDestination(destination)));
+            PartiallySignedTransaction document{transaction, 2}; document.inputs[0].non_witness_utxo = previous;
+            return PsbtQmlModel::SerializePsbtRaw(document).toBase64().toStdString();
+        });
+        const auto signed_psbt = qmltest::Rpc(m_app, "walletprocesspsbt", qmltest::Json("[\"" + unsigned_psbt + "\",true,\"ALL\",false,false]"), miner->name()).find_value("psbt").get_str();
+        const auto original = qmltest::Call(m_app, [signed_psbt](interfaces::Node*) {
+            const auto parsed = DecodeBase64PSBT(signed_psbt);
+            if (!parsed || parsed->inputs[0].partial_sigs.size() != 2) throw std::runtime_error("original signatures");
+            auto complete = *parsed; CMutableTransaction extracted;
+            if (!FinalizeAndExtractPSBT(complete, extracted)) throw std::runtime_error("signed control");
+            auto withheld = *parsed; withheld.inputs[0].witness_script.clear(); withheld.inputs[0].redeem_script.clear();
+            auto control = withheld; CMutableTransaction absent;
+            if (FinalizeAndExtractPSBT(control, absent)) throw std::runtime_error("scripts were not necessary");
+            return std::pair{PsbtQmlModel::SerializePsbtRaw(withheld), MakeTransactionRef(extracted)->GetWitnessHash().ToString()};
+        });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto source_path = directory.filePath("withheld.psbt");
+        QFile source{source_path}; QVERIFY(source.open(QIODevice::WriteOnly)); QCOMPARE(source.write(original.first), original.first.size()); source.close();
+        QCOMPARE(AwaitPsbtImport(*reviewer, source_path), WalletQmlModel::PsbtImportResult::WalletCanSign);
+        QVERIFY(reviewer->currentTransactionCanSend()); QVERIFY(reviewer->currentTransactionCanBroadcast());
+        QVERIFY(!qmltest::Rpc(m_app, "getwalletinfo", {}, reviewer->name()).find_value("private_keys_enabled").get_bool());
+        const auto saved_path = directory.filePath("preserved.psbt"); QVERIFY(AwaitPsbtSave(*reviewer, saved_path));
+        QFile saved{saved_path}; QVERIFY(saved.open(QIODevice::ReadOnly)); QCOMPARE(saved.readAll(), original.first);
+        QVERIFY2(send ? AwaitCommittedSend(*reviewer) : AwaitPsbtBroadcast(*reviewer), qPrintable(reviewer->transactionError()));
+        const auto txid = reviewer->currentTransaction()->getWtx()->GetHash().ToString();
+        const auto actual = qmltest::Rpc(m_app, "getrawtransaction", qmltest::Json("[\"" + txid + "\",true]"));
+        QCOMPARE(actual.find_value("hash").get_str(), original.second);
+    }
     void authenticatedLegacyFeeReview_data()
     {
         QTest::addColumn<uint>("version"); QTest::addColumn<int>("owned"); QTest::addColumn<bool>("forged"); QTest::addColumn<bool>("confirmed");
@@ -51,9 +139,18 @@ private Q_SLOTS:
         }
         if (confirmed) qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1, \"" + mining.toStdString() + "\"]"));
         CMutableTransaction tx;
+        std::vector<CTransactionRef> funding_transactions;
+        funding_transactions.reserve(addresses.size());
         CAmount actual_inputs{0};
         for (size_t i = 0; i < addresses.size(); ++i) {
             const auto raw = qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + funding[i] + "\"]"), miner->name()).find_value("hex").get_str();
+            const auto funding_transaction = qmltest::Call(m_app, [raw](interfaces::Node*) -> CTransactionRef {
+                CMutableTransaction transaction;
+                return DecodeHexTx(transaction, raw) ? MakeTransactionRef(std::move(transaction)) : CTransactionRef{};
+            });
+            QVERIFY(funding_transaction);
+            QCOMPARE(funding_transaction->GetHash(), *Txid::FromHex(funding[i]));
+            funding_transactions.push_back(funding_transaction);
             const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + raw + "\"]"));
             for (const auto& output : decoded.find_value("vout").getValues()) {
                 const auto address = output.find_value("scriptPubKey").find_value("address");
@@ -62,7 +159,10 @@ private Q_SLOTS:
                 tx.vin.emplace_back(COutPoint{*Txid::FromHex(funding[i]), uint32_t(index)});
                 const auto coin = qmltest::Rpc(m_app, "gettxout", qmltest::Json("[\"" + funding[i] + "\", " + util::ToString(index) + "]"));
                 const auto value = ParseMoney(coin.find_value("value").getValStr());
-                QVERIFY(value); QCOMPARE(*value, CAmount{1'000'000}); actual_inputs += *value;
+                QVERIFY(value); QCOMPARE(*value, CAmount{1'000'000});
+                QVERIFY(index >= 0 && size_t(index) < funding_transaction->vout.size());
+                QCOMPARE(funding_transaction->vout[index].nValue, *value);
+                actual_inputs += *value;
             }
         }
         QCOMPARE(tx.vin.size(), size_t{2});
@@ -70,6 +170,15 @@ private Q_SLOTS:
         const CAmount actual_fee{actual_inputs - tx.vout[0].nValue};
         QCOMPARE(actual_fee, CAmount{500'000}); // Independent live gettxout oracle, not PSBT analysis.
         PartiallySignedTransaction unsigned_psbt{tx, version};
+        // Supply independently authenticated funding transactions explicitly.
+        // A sender RPC result does not acknowledge the recipient wallet's
+        // asynchronous unconfirmed notification, which walletprocesspsbt would
+        // otherwise need to fill missing non-witness UTXOs from wallet history.
+        QCOMPARE(unsigned_psbt.inputs.size(), funding_transactions.size());
+        for (size_t i{0}; i < unsigned_psbt.inputs.size(); ++i) {
+            QCOMPARE(funding_transactions[i]->GetHash(), tx.vin[i].prevout.hash);
+            unsigned_psbt.inputs[i].non_witness_utxo = funding_transactions[i];
+        }
         auto encoded = PsbtQmlModel::SerializePsbtRaw(unsigned_psbt).toBase64().toStdString();
         for (const auto* signer : {reviewer, foreign}) {
             encoded = qmltest::Rpc(m_app, "walletprocesspsbt", qmltest::Json("[\"" + encoded + "\", true, \"ALL\", true, true]"), signer->name()).find_value("psbt").get_str();
@@ -103,12 +212,12 @@ private Q_SLOTS:
             QVERIFY(!reviewer->currentTransactionCanSend()); QVERIFY(!reviewer->currentTransactionCanBroadcast());
             QCOMPARE(fee_text, QString("Unknown"));
             QVERIFY(!reviewer->currentTransactionFlow().value("feeKnown").toBool());
-            QVERIFY(!reviewer->broadcastCurrentTransaction()); QVERIFY(!reviewer->sendTransaction());
+            QVERIFY(!AwaitPsbtBroadcast(*reviewer)); QVERIFY(!AwaitCommittedSend(*reviewer));
             QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), confirmed ? 0U : 2U);
         } else {
             QCOMPARE(reviewer->currentTransaction()->getTransactionFee(), actual_fee);
             QVERIFY(reviewer->currentTransactionCanBroadcast());
-            QVERIFY2(reviewer->broadcastCurrentTransaction(), qPrintable(reviewer->transactionError()));
+            QVERIFY2(AwaitPsbtBroadcast(*reviewer), qPrintable(reviewer->transactionError()));
             const auto entry = qmltest::Rpc(m_app, "getmempoolentry", qmltest::Json("[\"" + signed_control.GetHash().GetHex() + "\"]"));
             QCOMPARE(ParseMoney(entry.find_value("fees").find_value("base").getValStr()), std::optional<CAmount>{actual_fee});
         }
@@ -207,17 +316,17 @@ private Q_SLOTS:
         const auto bytes = QByteArray::fromBase64(QByteArray::fromStdString(psbt));
         QCOMPARE(file.write(bytes), bytes.size());
         file.close();
-        QCOMPARE(wallet->importPsbtFromFile(path), WalletQmlModel::PsbtImportResult::WalletCanSign);
+        QCOMPARE(AwaitPsbtImport(*wallet, path), WalletQmlModel::PsbtImportResult::WalletCanSign);
         QVERIFY(wallet->currentTransaction());
         QVERIFY(wallet->currentTransactionIsImportedPsbt());
         QVERIFY(wallet->currentTransactionCanSend());
         QVERIFY(!wallet->currentTransactionCanBroadcast());
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
         const auto exported_path = directory.filePath("exported.psbt");
-        QCOMPARE(wallet->saveCurrentTransactionAsPsbt(exported_path), QString{});
-        QVERIFY2(wallet->sendTransaction(), qPrintable(wallet->transactionError()));
+        QVERIFY(AwaitPsbtSave(*wallet, exported_path));
+        QVERIFY2(AwaitCommittedSend(*wallet), qPrintable(wallet->transactionError()));
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 1U);
-        QCOMPARE(wallet->importPsbtFromFile(exported_path), WalletQmlModel::PsbtImportResult::TransactionAlreadyKnown);
+        QCOMPARE(AwaitPsbtImport(*wallet, exported_path), WalletQmlModel::PsbtImportResult::TransactionAlreadyKnown);
     }
 
     void foreignPsbtCanBeReviewedWithoutSigning()
@@ -237,12 +346,12 @@ private Q_SLOTS:
         const auto bytes = QByteArray::fromBase64(QByteArray::fromStdString(psbt));
         QCOMPARE(file.write(bytes), bytes.size());
         file.close();
-        QCOMPARE(reviewer->importPsbtFromFile(file.fileName()), WalletQmlModel::PsbtImportResult::WalletCannotSign);
+        QCOMPARE(AwaitPsbtImport(*reviewer, file.fileName()), WalletQmlModel::PsbtImportResult::WalletCannotSign);
         QVERIFY(reviewer->currentTransaction());
         QVERIFY(reviewer->currentTransactionIsImportedPsbt());
         QVERIFY(!reviewer->currentTransactionCanSend());
         QVERIFY(!reviewer->currentTransactionCanBroadcast());
-        QVERIFY(!reviewer->sendTransaction());
+        QVERIFY(!AwaitCommittedSend(*reviewer));
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
     }
 
@@ -256,14 +365,14 @@ private Q_SLOTS:
         recipient->amount()->setSatoshi(COIN);
         wallet->setCustomFeeEnabled(true);
         wallet->setCustomFeeRate("1");
-        QVERIFY2(wallet->prepareTransaction(), qPrintable(wallet->transactionError()));
-        QVERIFY2(wallet->sendTransaction(), qPrintable(wallet->transactionError()));
+        QVERIFY2(AwaitPreparation(*wallet), qPrintable(wallet->transactionError()));
+        QVERIFY2(AwaitCommittedSend(*wallet), qPrintable(wallet->transactionError()));
         const auto txid = wallet->currentTransaction()->txid();
         auto* bump = wallet->bumpModel();
-        bump->prepareFeeBump(txid, 2);
+        QVERIFY(AwaitBumpPreparation(*bump, txid, 2));
         QCOMPARE(bump->state(), BumpTransactionModel::NeedsConfirmation);
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool")[0].get_str(), txid.toStdString());
-        QVERIFY2(bump->confirmFeeBump(), qPrintable(bump->errorText()));
+        QVERIFY2(AwaitBumpCommit(*bump), qPrintable(bump->errorText()));
         QCOMPARE(bump->state(), BumpTransactionModel::Succeeded);
         QVERIFY(bump->newTxid() != txid);
         const auto pool = qmltest::Rpc(m_app, "getrawmempool");

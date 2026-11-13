@@ -94,8 +94,10 @@ TestCase {
         compare(icon.height, 24)
 
         Theme.dark = !originalDark
+        tryCompare(Theme, "dark", !originalDark)
         tryCompare(icon, "width", 24)
         tryCompare(icon, "height", 24)
         Theme.dark = originalDark
+        tryCompare(Theme, "dark", originalDark)
     }
 }

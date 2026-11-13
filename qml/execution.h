@@ -56,7 +56,12 @@ struct Limits {
     size_t actions_before_observation{4};
     size_t resource_borrowers{128};
     uint64_t first_resource_owner{1};
-    static Limits Bounded() { return {{128, 4 * 1024 * 1024}, {16, 64 * 1024}, {16, 64 * 1024}, {112, 3 * 1024 * 1024}, 4}; }
+    // Idle ownership records are not runnable Cleanup turns. Both inventories
+    // remain bounded, independently of Core/Domain/Control queue admission.
+    Budget cleanup_reservations{};
+    Budget action_scopes{};
+    static Limits Bounded() { return {{128, 4 * 1024 * 1024}, {16, 64 * 1024}, {16, 64 * 1024},
+        {112, 3 * 1024 * 1024}, 4, 65'536, 1, {65'536, 16 * 1024 * 1024}, {16, 64 * 1024}}; }
 };
 struct Admission {
     TaskId id;
@@ -104,6 +109,10 @@ class Scheduler
 {
 public:
     virtual ~Scheduler() = default;
+    // Admit an original action before quiet close. Its capability can complete
+    // dependent stages after parent admission closes, under all shared budgets.
+    // An unsupported or rejected capability returns null, before any effect.
+    virtual std::shared_ptr<Scheduler> openActionScope(size_t = 256) { return {}; }
     virtual Admission submit(std::shared_ptr<Task> task, TaskSpec spec = {}) = 0;
     virtual Admission reserveCleanup(std::shared_ptr<Task> task, TaskSpec spec) = 0;
     virtual bool activateCleanup(TaskId id) = 0;
@@ -180,6 +189,7 @@ public:
     explicit TaskQueue(Dispatch dispatch) : m_dispatch(std::move(dispatch)) {}
     TaskQueue(Dispatch dispatch, Limits limits) : m_dispatch(std::move(dispatch)), m_limits(limits) {}
     TaskQueue(RoutedDispatch dispatch, Limits limits, size_t core_slots);
+    std::shared_ptr<Scheduler> openActionScope(size_t payload_bytes = 256) override;
     Admission submit(std::shared_ptr<Task> task, TaskSpec spec = {}) override;
     Admission reserveCleanup(std::shared_ptr<Task> task, TaskSpec spec) override;
     bool activateCleanup(TaskId id) override;
@@ -193,6 +203,8 @@ public:
 
 private:
     friend class ResourceLease;
+    class ScopedScheduler;
+    friend class ScopedScheduler;
     void execute(TaskId id);
     void deliver(TaskId id);
     struct Record {
@@ -204,12 +216,22 @@ private:
         bool cleanup_requested{false};
         bool transport_pending{false};
         bool outcome_consumed{false};
+        bool resource_counted{false};
+        bool cleanup_queued{false};
+        uint64_t scope{0};
     };
     static std::optional<size_t> budgetIndex(Lane lane);
     void erase(std::map<TaskId, Record>::iterator record);
-    Admission admit(std::shared_ptr<Task> task, TaskSpec spec, bool reserve_cleanup);
+    Admission admit(std::shared_ptr<Task> task, TaskSpec spec, bool reserve_cleanup, uint64_t scope = 0);
+    BorrowAdmission borrowForScope(ResourceKey key, uint64_t scope);
+    void releaseScope(uint64_t scope);
+    void unindexCleanup(TaskId id, uint64_t scope);
+    bool activateCleanupForScope(TaskId id, uint64_t scope);
+    bool cancelQueuedForScope(TaskId id, uint64_t scope);
     void activateCleanupLocked(TaskId id);
-    void maybeActivateCleanups();
+    void maybeActivateCleanup(ResourceKey key);
+    void pumpCleanups();
+    void releaseWorkKey(Record& record);
     void releaseBorrower(ResourceKey key);
     bool pumpCore(std::optional<TaskId> proposed = {});
     void releaseCore(ResourceKey key);
@@ -223,6 +245,15 @@ private:
     struct Usage { size_t tasks{0}; size_t payload_bytes{0}; };
     std::array<Usage, 3> m_usage{};
     Usage m_observations;
+    Usage m_cleanup_reservations;
+    Usage m_scope_usage;
+    std::map<uint64_t, size_t> m_scopes;
+    std::map<uint64_t, std::set<TaskId>> m_scope_idle_cleanups;
+    std::set<uint64_t> m_released_cleanup_scopes;
+    uint64_t m_next_scope{0};
+    std::map<ResourceKey, size_t> m_work_by_key;
+    std::set<TaskId> m_idle_cleanups, m_ready_cleanups;
+    bool m_cleanup_all_requested{false};
     std::map<ResourceKey, std::deque<TaskId>> m_waiting;
     std::deque<ResourceKey> m_ready;
     std::set<ResourceKey> m_running;

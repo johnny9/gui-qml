@@ -15,12 +15,14 @@ OnboardingView {
 
     property bool modalView: false
     property string defaultWalletName: ""
-    property string nameError: ""
+    readonly property WalletProvisioningCheck validation: ApplicationModels.walletController.createProvisioningCheck()
+    readonly property string nameError: root.fieldsView && root.fieldsView.walletName.trim().length > 0 && validation && !validation.pending ? (validation.error.length > 0 ? validation.error : validation.nameError) : ""
+    Binding { target: root.validation; property: "name"; value: root.fieldsView ? root.fieldsView.walletName : "" }
     property bool submitted: false
     readonly property bool creatingWallet: submitted || ApplicationModels.walletController.walletLoadInProgress
     readonly property bool canCreate: ApplicationModels.walletController.initialized
         && ApplicationModels.walletController.canCreateExternalSignerWallet
-        && !creatingWallet && root.fieldsView
+        && !creatingWallet && validation && validation.ready && validation.nameError.length === 0 && root.fieldsView
         && root.fieldsView.walletName.trim().length > 0
 
     signal cancel()
@@ -28,8 +30,6 @@ OnboardingView {
 
     function submit() {
         if (!canCreate) return
-        nameError = ApplicationModels.walletController.walletNameAvailabilityError(root.fieldsView.walletName)
-        if (nameError.length > 0) return
         submitted = true
         if (!ApplicationModels.walletController.createExternalSignerWallet(root.fieldsView.walletName.trim()))
             submitted = false
@@ -45,7 +45,7 @@ OnboardingView {
     maximumContentWidth: 800
     showBackButton: !creatingWallet && navigationStack && navigationStack.depth > 1
     showCloseButton: modalView && !creatingWallet
-    primaryButtonText: creatingWallet ? qsTr("Creating…") : qsTr("Create wallet")
+    primaryButtonText: creatingWallet ? qsTr("Creating…") : validation && validation.pending ? qsTr("Checking…") : qsTr("Create wallet")
     primaryButtonObjectName: "createExternalWalletButton"
     primaryButtonEnabled: canCreate
     onCloseClicked: root.cancel()
@@ -56,6 +56,8 @@ OnboardingView {
         ApplicationModels.walletController.refreshExternalSignerStatus()
     }
 
+    Component.onDestruction: if (validation) validation.closeAdmission()
+
     Connections {
         target: ApplicationModels.walletController
         function onWalletLoadSucceeded(wallet) {
@@ -64,7 +66,7 @@ OnboardingView {
             root.created(wallet)
         }
         function onWalletLoadErrorChanged() {
-            if (root.submitted && ApplicationModels.walletController.walletLoadError.length > 0)
+            if (root.submitted && ApplicationModels.walletController.walletLoadHasError)
                 root.submitted = false
         }
     }
@@ -73,7 +75,6 @@ OnboardingView {
         defaultWalletName: root.defaultWalletName
         nameError: root.nameError
         creatingWallet: root.creatingWallet
-        onNameEdited: root.nameError = ""
     }
 
 }

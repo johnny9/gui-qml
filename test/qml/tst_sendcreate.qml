@@ -30,11 +30,13 @@ TestCase {
 
     function init() {
         testSetup.failOnWarnings()
+        BitcoinUri.releasePublications()
         walletController.setSelectedWallet("send-create-test-wallet")
         testWalletModel.sendDraftSweepsWallet = false
         testWalletModel.currentTransactionSweepsWallet = false
         testWalletModel.useMaximumCalls = 0
         testWalletModel.clearMaximum()
+        testWalletModel.resetSendForTest()
         testWalletModel.sendTransactionResult = true
         testWalletModel.transactionNeedsUnlock = false
         testWalletModel.feeEstimatePending = false
@@ -234,6 +236,7 @@ TestCase {
             address: "bcrt1qsecondaddress", formattedAddress: "bcrt1qsecondaddress",
             label: "recipient-2", amount: "0.00200000 BTC", hasPaymentRequest: true
         }])
+        tryVerify(function() { return findChild(popup.contentItem, "sendTransactionReviewRecipient1") !== null })
         const second = findChild(popup.contentItem, "sendTransactionReviewRecipient1")
         verify(second !== null)
         compare(findChild(second, "sendTransactionReviewRecipient1Title").text, "recipient-2")
@@ -241,6 +244,27 @@ TestCase {
         compare(second.showDivider, false)
         compare(findChild(second, "sendTransactionReviewRecipient1RequestBadge").visible, true)
         popup.close()
+    }
+
+    function test_large_review_recipients_virtualize_and_preserve_complete_late_entry() {
+        const literal = "private-note-".repeat(8192)
+        const recipients = []
+        for (let i = 0; i < 1001; ++i) recipients.push({address: "address-" + i, formattedAddress: "address-" + i,
+            label: i === 1000 ? literal : "recipient-" + i, amountSat: 1000, amount: "0.00001000 BTC", hasPaymentRequest: false})
+        testWalletTransaction.reviewedRecipients = recipients
+        const review = createTemporaryObject(reviewComponent, testCase.Window.window.contentItem,
+            {width: 1000, height: 800, visible: true})
+        const rows = findChild(review, "sendTransactionReviewRecipientRows")
+        tryCompare(rows, "count", 1001)
+        verify(waitForRendering(review))
+        verify(testSetup.namedChildCount(review, "sendReviewRecipientPreview") < 32)
+        review.openReviewEntry("recipients", 1000)
+        const popup = findChild(review, "sendReviewEntryPopup")
+        tryCompare(popup, "opened", true)
+        tryVerify(function() { return !testWalletModel.currentTransactionFlowDetails.entryDetailsBusy })
+        compare(testSetup.entryFieldText(testWalletModel.currentTransactionFlowDetails.entryDocument, "label"), literal)
+        review.visible = false
+        tryCompare(popup, "visible", false)
     }
 
     function test_review_content_width_matches_activity_detail() {
@@ -308,6 +332,67 @@ TestCase {
         compare(findChild(popup, "sendTransactionReviewNetworkFee").visible, false)
         verify(findChild(popup.contentItem, "sendTransactionReviewReadyPill") === null)
         popup.close()
+    }
+
+    function test_completion_retains_the_original_submission_outcome() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
+        verify(page !== null); page.width = testCase.width; page.height = testCase.height; page.visible = true
+        testWalletModel.sendSubmission = WalletQmlModel.SubmissionNotInMempool
+        page.openTransactionReview()
+        const popup = findChild(page, "transactionReviewPopup"), stack = findChild(popup, "sendTransactionReviewStack")
+        tryCompare(popup, "opened", true)
+        findChild(popup.contentItem, "sendTransactionReviewSendButton").clicked()
+        tryCompare(stack, "depth", 2)
+        const complete = findChild(stack, "sendCompletePage")
+        compare(complete.submissionState, WalletQmlModel.SubmissionNotInMempool)
+        compare(complete.titleText, "Transaction saved")
+        verify(complete.descriptionText.indexOf("not in the mempool") >= 0)
+        testWalletModel.sendSubmission = WalletQmlModel.SubmissionMempool
+        compare(complete.submissionState, WalletQmlModel.SubmissionNotInMempool)
+        compare(complete.titleText, "Transaction saved")
+        verify(complete.descriptionText.indexOf("confirm within") === -1)
+    }
+
+    function test_old_send_completion_cannot_complete_a_replacement_review() {
+        testWalletModel.holdSendForTest = true
+        const review = createTemporaryObject(reviewComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        const original = testWalletModel.currentTransaction
+        let sent = 0
+        review.transactionSent.connect(function() { ++sent })
+        try {
+            review.commitSend()
+            compare(testWalletModel.sendBusy, true)
+            testWalletModel.replaceCurrentTransactionForTest(testSecondWalletModel.currentTransaction)
+            testWalletModel.finishSendForTest()
+            compare(sent, 0)
+            compare(review.sending, false)
+            compare(testWalletModel.sendState, WalletQmlModel.SendClosed)
+        } finally {
+            testWalletModel.replaceCurrentTransactionForTest(original)
+            testWalletModel.resetSendForTest()
+        }
+    }
+
+    function test_send_admission_waits_for_the_committed_outcome() {
+        testWalletModel.holdSendForTest = true
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
+        verify(page !== null)
+        page.width = testCase.width; page.height = testCase.height; page.visible = true
+        page.openTransactionReview()
+        const popup = findChild(page, "transactionReviewPopup")
+        const stack = findChild(popup, "sendTransactionReviewStack")
+        tryCompare(popup, "opened", true)
+        const button = findChild(popup.contentItem, "sendTransactionReviewSendButton")
+        button.clicked()
+        compare(testWalletModel.sendBusy, true)
+        compare(stack.depth, 1)
+        compare(button.enabled, false)
+        const before = testWalletModel.sendTransactionCalls
+        button.clicked()
+        compare(testWalletModel.sendTransactionCalls, before)
+        testWalletModel.finishSendForTest()
+        tryCompare(stack, "depth", 2)
+        page.destroy()
     }
 
     function test_review_send_pushes_complete_within_modal() {
@@ -385,7 +470,7 @@ TestCase {
         verify(completePage !== null)
         compare(completePage.targetBlocks, 0)
         compare(completePage.descriptionText,
-                "Your transaction was broadcast. Confirmation depends on its fee rate.")
+                "Your node accepted the transaction. Confirmation depends on its fee rate.")
         popup.close()
     }
 
@@ -475,8 +560,10 @@ TestCase {
     }
 
     function test_send_prepare_transaction_success_and_failure_paths() {
-        const page = createTemporaryObject(sendComponent, this)
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
         verify(page !== null)
+        verify(page.visible)
 
         const continueButton = findChild(page, "sendReviewButton")
         const prepareError = findChild(page, "sendPrepareTransactionErrorText")
@@ -493,14 +580,14 @@ TestCase {
         testWalletModel.prepareTransactionResult = false
         continueButton.clicked()
         compare(testWalletModel.prepareTransactionCalls, callsBefore + 1)
-        compare(page.prepareTransactionErrorText, "Amount plus fee exceeds available balance. Some of your coins are locked.")
+        tryCompare(page, "prepareTransactionErrorText", "Amount plus fee exceeds available balance. Some of your coins are locked.")
         compare(prepareErrorText.text, "Amount plus fee exceeds available balance. Some of your coins are locked.")
 
         page.prepareTransactionErrorText = ""
         testCoinsListModel.toggleCoinSelection(0)
         continueButton.clicked()
         compare(testWalletModel.prepareTransactionCalls, callsBefore + 2)
-        compare(page.prepareTransactionErrorText, "Selected inputs do not cover the amount plus fee")
+        tryCompare(page, "prepareTransactionErrorText", "Selected inputs do not cover the amount plus fee")
         compare(prepareErrorText.text, "Selected inputs do not cover the amount plus fee")
 
         testWalletModel.prepareTransactionResult = true
@@ -597,8 +684,10 @@ TestCase {
     }
 
     function test_send_uri_import_schedules_fee_estimate() {
-        const page = createTemporaryObject(sendComponent, this)
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
         verify(page !== null)
+        verify(page.visible)
 
         const sendPage = findChild(page, "walletSendPage")
         verify(sendPage !== null)
@@ -630,8 +719,10 @@ TestCase {
     }
 
     function test_plain_address_paste_into_send_field() {
-        const page = createTemporaryObject(sendComponent, this)
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
         verify(page !== null)
+        verify(page.visible)
 
         const input = findChild(page, "sendAddressInput")
         verify(input !== null)
@@ -642,18 +733,101 @@ TestCase {
         verify(input.activeFocus)
         pasteShortcut()
 
-        compare(testSendRecipient.address.address, address)
+        tryCompare(testSendRecipient.address, "address", address)
 
         const replacement = "bcrt1qreplacementaddress000000000000000000000"
         Clipboard.currentText = replacement
         input.selectAll()
         pasteShortcut()
-        compare(testSendRecipient.address.address, replacement)
+        tryCompare(testSendRecipient.address, "address", replacement)
+    }
+
+    function test_paste_uses_captured_literal_and_selection_while_clipboard_changes() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
+        const sendPage = findChild(page, "walletSendPage")
+        const component = findChild(page, "sendAddressField")
+        const input = component.field
+        const original = "bcrt1qcapturedaddress"
+        input.selectAll()
+        Clipboard.currentText = original
+        BitcoinUri.holdPublications = true
+        try {
+            component.paste()
+            verify(sendPage.uriActionPending)
+            compare(findChild(page, "sendReviewButton").enabled, false)
+            Clipboard.currentText = "bcrt1qchangedclipboard"
+            input.cursorPosition = 0
+            BitcoinUri.releasePublications()
+            tryCompare(testSendRecipient.address, "address", original)
+            tryCompare(sendPage, "uriActionPending", false)
+        } finally { BitcoinUri.releasePublications() }
+    }
+
+    function test_uri_probe_is_fenced_by_draft_and_visibility_data() {
+        return [{tag: "edited", action: 0}, {tag: "hidden", action: 1}, {tag: "opening-unavailable", action: 2}]
+    }
+    function test_uri_probe_is_fenced_by_draft_and_visibility(data) {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
+        const sendPage = findChild(page, "walletSendPage")
+        const original = testSendRecipient.address.address
+        BitcoinUri.holdPublications = true
+        try {
+            sendPage.applyPaymentRequestFromText("bitcoin:bcrt1qstaleresult?amount=0.42", "clipboard")
+            verify(sendPage.uriActionPending)
+            if (data.action === 0) testSendRecipient.label = "new draft"
+            else if (data.action === 1) page.visible = false
+            else testWalletModel.available = false
+            BitcoinUri.releasePublications()
+            compare(testSendRecipient.address.address, original)
+            compare(testSendRecipient.amount.satoshi, 0)
+        } finally { BitcoinUri.releasePublications(); testWalletModel.available = true }
+    }
+
+    function test_long_leading_space_uri_is_probed_without_prefix_truncation_data() {
+        return [{tag: "keyboard", menu: false}, {tag: "context-menu", menu: true}]
+    }
+    function test_long_leading_space_uri_is_probed_without_prefix_truncation(data) {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
+        const input = findChild(page, "sendAddressInput")
+        Clipboard.currentText = " ".repeat(8192) + "BITCOIN:bcrt1qlongrequest?amount=0.07"
+        input.forceActiveFocus()
+        if (data.menu) {
+            const addressField = findChild(page, "sendAddressField")
+            verify(addressField !== null)
+            const menu = addressField.contextMenu
+            verify(menu !== null)
+            verify(waitForRendering(page))
+            mouseClick(input, input.width / 2, input.height / 2, Qt.RightButton)
+            tryCompare(menu, "opened", true)
+            findChild(menu, "sendAddressInputContextMenuPaste").triggered()
+        } else pasteShortcut()
+        tryCompare(testSendRecipient.address, "address", "bcrt1qlongrequest")
+        compare(testSendRecipient.amount.satoshi, 7000000)
+    }
+
+    function test_overlong_ordinary_amount_paste_never_accepts_numeric_prefix() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
+        const input = findChild(page, "sendAmountInput")
+        const sendPage = findChild(page, "walletSendPage")
+        input.selectAll()
+        Clipboard.currentText = "0.1" + " ".repeat(126) + "junk"
+        input.forceActiveFocus()
+        pasteShortcut()
+        tryCompare(sendPage, "uriActionPending", false)
+        verify(!testSendRecipient.amount.inputAcceptable)
+        compare(testSendRecipient.amount.satoshi, 0)
+        verify(testSendRecipient.amount.inputOperationError.length > 0)
     }
 
     function test_send_payment_uri_paste_applies_from_each_recipient_field(data) {
-        const page = createTemporaryObject(sendComponent, this)
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
         verify(page !== null)
+        verify(page.visible)
 
         const sendPage = findChild(page, "walletSendPage")
         const input = findChild(page, data.inputObjectName)
@@ -669,8 +843,9 @@ TestCase {
         verify(input.activeFocus)
         pasteShortcut()
 
+        tryCompare(sendPage, "uriActionPending", false)
         compare(overwritePopup.opened, false)
-        compare(testSendRecipient.address.address, address)
+        tryCompare(testSendRecipient.address, "address", address)
         compare(testSendRecipient.amount.satoshi, 10000000000)
         compare(testSendRecipient.paymentRequestLabel, "Alice")
         compare(testSendRecipient.label, "Pay me - Alice")
@@ -704,6 +879,7 @@ TestCase {
         compare(section.visible, false)
 
         sendPage.applyPaymentRequestFromText("bitcoin:bcrt1qreplacement" + data.params, "clipboard")
+        tryCompare(sendPage, "uriActionPending", false)
         compare(testSendRecipient.hasPaymentRequest, true)
         compare(testSendRecipient.label, data.note)
         compare(findChild(page, "sendNoteInput").text, data.note)
@@ -726,6 +902,7 @@ TestCase {
 
         // Importing another request without public details hides the section.
         sendPage.applyPaymentRequestFromText("bitcoin:bcrt1qreplacement?amount=0.01", "clipboard")
+        tryCompare(sendPage, "uriActionPending", false)
         compare(section.visible, false)
         compare(testSendRecipient.label, "My edited note")
     }
@@ -755,6 +932,7 @@ TestCase {
 
         // Pasting the same details again does not prompt for a matching note.
         sendPage.handlePaymentUriPaste(uri, "address")
+        tryCompare(sendPage, "uriActionPending", false)
         compare(popup.opened, false)
     }
 
@@ -807,8 +985,10 @@ TestCase {
     }
 
     function test_send_payment_uri_model_label_is_not_reparsed() {
-        const page = createTemporaryObject(sendComponent, this)
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
         verify(page !== null)
+        verify(page.visible)
 
         const sendPage = findChild(page, "walletSendPage")
         const addressInput = findChild(page, "sendAddressInput")
@@ -822,7 +1002,8 @@ TestCase {
         verify(addressInput.activeFocus)
         pasteShortcut()
 
-        compare(testSendRecipient.address.address, address)
+        tryCompare(testSendRecipient.address, "address", address)
+        tryCompare(sendPage, "uriActionPending", false)
         compare(testSendRecipient.paymentRequestLabel, nestedUri)
         compare(testSendRecipient.label, "")
         compare(testSendRecipient.amount.satoshi, 0)
@@ -841,6 +1022,7 @@ TestCase {
 
         sendPage.handlePaymentUriPaste("bitcoin:bcrt1qreplacement", "address")
 
+        tryCompare(sendPage, "uriActionPending", false)
         compare(overwritePopup.opened, false)
         compare(testSendRecipient.address.address, "bcrt1qreplacement")
         compare(testSendRecipient.amount.satoshi, 100000000)
@@ -1169,7 +1351,7 @@ TestCase {
         const stack = popup.contentItem
         compare(popup.opened, false)
         verify(stack.currentItem !== null)
-        stack.currentItem.transactionSent("fast-completion")
+        stack.currentItem.transactionSent("fast-completion", WalletQmlModel.SubmissionAccepted)
         tryVerify(function() { return stack.currentItem && stack.currentItem.objectName === "sendCompletePage" })
         tryCompare(popup, "opened", true)
         const done = findChild(stack.currentItem, "sendResultDoneButton")
@@ -1204,7 +1386,7 @@ TestCase {
                 "This coin is no longer available. Try again.")
         popup.close()
     }
-    Component { id: amountPasteComponent; BitcoinAmountInputField { amount: testSendRecipient.amount; interceptPaste: true; property int pasteCalls: 0; onPasteRequested: { pasteCalls += 1; amount.satoshi = 7000000 } } }
+    Component { id: amountPasteComponent; BitcoinAmountInputField { amount: testSendRecipient.amount; interceptPaste: true; property int pasteCalls: 0; onPasteRequested: (payload) => { pasteCalls += 1; amount.satoshi = 7000000; payload.origin.complete(payload) } } }
 
     function test_amount_clipboard_uri_provenance_data() {
         const uri = "bitcoin:bcrt1qexample?amount=0.07"
@@ -1230,11 +1412,80 @@ TestCase {
         compare(testSendRecipient.amount.satoshi, before)
     }
     function test_native_text_change_from_empty_draft() {
-        const field = createTemporaryObject(amountPasteComponent, this)
+        const field = createTemporaryObject(amountPasteComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, visible: true})
+        verify(field !== null)
+        verify(field.visible)
         field.amount.clear()
         Clipboard.currentText = "bitcoin:bcrt1qexample?amount=0.07"
         verify(testSetup.replaceText(field.field, Clipboard.currentText))
         compare(field.pasteCalls, 1)
         compare(field.amount.satoshi, 7000000)
     }
+    function test_send_password_closes_when_opening_context_ends_data() {
+        return [{tag: "hidden", action: 0}, {tag: "changed-opening", action: 1}, {tag: "unloaded", action: 2}]
+    }
+
+    function test_send_password_closes_when_opening_context_ends(data) {
+        const review = createTemporaryObject(reviewComponent, testCase.Window.window.contentItem,
+            {width: 1000, height: 900, visible: true})
+        const prompt = findChild(review, "sendTransactionPassphrasePopup")
+        verify(prompt !== null)
+        prompt.passphraseFieldObjectName = "reviewSendContextField"
+        const field = findChild(prompt, "reviewSendContextField")
+        verify(field !== null)
+        testWalletModel.available = true
+        prompt.reviewedTransaction = testWalletModel.currentTransaction
+        prompt.open()
+        tryCompare(prompt, "opened", true)
+        field.text = "original-opening-password"
+        const originalCalls = testWalletModel.sendTransactionWithPassphraseCalls
+        const otherCalls = testSecondWalletModel.sendTransactionWithPassphraseCalls
+        try {
+            if (data.action === 0) review.visible = false
+            else if (data.action === 1) review.wallet = testSecondWalletModel
+            else testWalletModel.available = false
+            tryCompare(prompt, "visible", false)
+            compare(field.text, "")
+            prompt.submitted("delayed-password")
+            compare(testWalletModel.sendTransactionWithPassphraseCalls, originalCalls)
+            compare(testSecondWalletModel.sendTransactionWithPassphraseCalls, otherCalls)
+        } finally {
+            testWalletModel.available = true
+            prompt.close()
+        }
+    }
+
+    function test_prepare_password_closes_when_opening_context_ends_data() {
+        return [{tag: "hidden", action: 0}, {tag: "changed-opening", action: 1}, {tag: "unloaded", action: 2}]
+    }
+
+    function test_prepare_password_closes_when_opening_context_ends(data) {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: 1000, height: 900, visible: true})
+        verify(page !== null)
+        const prompt = findChild(page, "reviewPassphrasePopup")
+        const field = findChild(prompt, "reviewPassphraseField")
+        verify(prompt !== null && field !== null)
+        testWalletModel.available = true
+        prompt.open()
+        tryCompare(prompt, "opened", true)
+        field.text = "original-opening-password"
+        const originalCalls = testWalletModel.prepareTransactionCalls
+        const otherCalls = testSecondWalletModel.prepareTransactionCalls
+        try {
+            if (data.action === 0) page.visible = false
+            else if (data.action === 1) page.wallet = testSecondWalletModel
+            else testWalletModel.available = false
+            tryCompare(prompt, "visible", false)
+            compare(field.text, "")
+            prompt.submitted("delayed-password")
+            compare(testWalletModel.prepareTransactionCalls, originalCalls)
+            compare(testSecondWalletModel.prepareTransactionCalls, otherCalls)
+        } finally {
+            testWalletModel.available = true
+            prompt.close()
+        }
+    }
+
 }

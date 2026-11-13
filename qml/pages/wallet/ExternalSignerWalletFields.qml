@@ -14,6 +14,7 @@ ColumnLayout {
     required property bool creatingWallet
     signal nameEdited()
     property alias walletName: nameEntry.text
+    property bool showOperationErrorDetails: false
     spacing: 20
 
     CoreText {
@@ -47,10 +48,37 @@ ColumnLayout {
         objectName: "externalWalletNameError"
         Layout.fillWidth: true
         visible: text.length > 0
-        text: fields.nameError.length > 0 ? fields.nameError : ApplicationModels.walletController.walletLoadError
+        text: fields.nameError.length > 0 ? fields.nameError : ApplicationModels.walletController.walletLoadErrorDisplay
         color: Theme.color.red
         font: Theme.text.caption.font
         wrap: true
         horizontalAlignment: Text.AlignLeft
+    }
+
+    TextButton {
+        objectName: "walletOperationErrorDetailsButton"
+        visible: fields.nameError.length === 0 && operationErrorDetails.count > 0
+        text: fields.showOperationErrorDetails ? qsTr("Hide error details") : qsTr("Show error details")
+        onClicked: fields.showOperationErrorDetails = !fields.showOperationErrorDetails
+    }
+
+    ListView {
+        id: operationErrorDetails
+        objectName: "walletOperationErrorDetails"
+        Layout.fillWidth: true
+        Layout.preferredHeight: visible ? 120 : 0
+        visible: fields.showOperationErrorDetails && fields.nameError.length === 0 && count > 0
+        model: ApplicationModels.walletController.walletImportErrorHelpModel
+        clip: true
+        reuseItems: true
+        cacheBuffer: 0
+        delegate: CoreText {
+            required property string content
+            width: operationErrorDetails.width
+            text: content
+            textFormat: Text.PlainText
+            font: Theme.text.caption.font
+            wrapMode: Text.WordWrap
+        }
     }
 }

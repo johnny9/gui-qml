@@ -14,12 +14,14 @@ Page {
     objectName: "peerDetails"
 
     signal back
-    signal peerDisconnected(int nodeId)
+    signal peerDisconnected(double nodeId)
 
     property PeerDetailsModel details
     property bool compact: width <= SizeClass.compactWidthMax
     property Item popupParent: null
     property int sectionIndex: 0
+    property double peerActionTicket: 0
+    onDetailsChanged: peerActionTicket = 0
     property var pendingBanTarget: null
     property var pendingDisconnectTarget: null
     property int pendingBanDuration: 3600
@@ -99,11 +101,10 @@ Page {
         peerActionError.open()
     }
     function disconnectPeer() {
-        if (pendingDisconnectTarget && ApplicationModels.nodeModel.disconnectPeer(pendingDisconnectTarget.nodeId)) {
-            ApplicationModels.peerTableModel.refresh()
-        } else {
-            showActionError(qsTr("Could not disconnect peer. The peer may already be disconnected or the node state may have changed."))
-        }
+        const ticket = pendingDisconnectTarget
+            ? ApplicationModels.nodeModel.requestDisconnectPeer(pendingDisconnectTarget.nodeId) : 0
+        if (ticket) peerActionTicket = ticket
+        else showActionError(qsTr("Could not start the disconnect request. The node may be busy or closing."))
     }
     function requestDisconnect() {
         if (!details) return
@@ -118,11 +119,22 @@ Page {
         banConfirmation.open()
     }
     function confirmBan() {
-        if (pendingBanTarget && ApplicationModels.nodeModel.banPeer(pendingBanTarget.rawAddress, pendingBanDuration)) {
-            ApplicationModels.peerTableModel.refresh()
-            ApplicationModels.banListModel.refresh()
-        } else {
-            showActionError(qsTr("Could not ban peer. The peer may already be disconnected or the node state may have changed."))
+        const ticket = pendingBanTarget
+            ? ApplicationModels.nodeModel.requestBanPeer(pendingBanTarget.rawAddress, pendingBanDuration) : 0
+        if (ticket) peerActionTicket = ticket
+        else showActionError(qsTr("Could not start the ban request. The node may be busy or closing."))
+    }
+
+    Connections {
+        target: ApplicationModels.nodeModel
+        function onPeerActionFinished(ticket, outcome, error) {
+            if (ticket !== root.peerActionTicket) return
+            root.peerActionTicket = 0
+            if (root.visible && outcome !== NodeModel.Rejected) {
+                ApplicationModels.peerTableModel.refresh()
+                ApplicationModels.banListModel.refresh()
+            }
+            if (root.visible && error.length > 0) root.showActionError(error)
         }
     }
 

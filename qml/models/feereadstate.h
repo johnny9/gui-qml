@@ -16,7 +16,9 @@ struct FeeReadRevision {
     auto operator<=>(const FeeReadRevision&) const = default;
 };
 
-/** Deterministic guards for the existing reader, confined to its serial lane. */
+/** Deterministic guards owned exclusively by the serial Domain lane.
+ * Native effects carry immutable inputs and return results; they never inspect
+ * or mutate this decision state. */
 class FeeReadState
 {
 public:

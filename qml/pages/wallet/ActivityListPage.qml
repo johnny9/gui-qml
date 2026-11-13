@@ -12,7 +12,7 @@ import "../../components"
 Page {
     id: root
     objectName: "activityPage"
-    property var wallet: null
+    property WalletQmlModel wallet: null
     property bool exportSucceeded: true
     property bool ready: false
     readonly property bool activitySourceEmpty: !wallet || wallet.transactionActivityModel.count === 0
@@ -59,14 +59,16 @@ Page {
     }
 
     function emptyActivityTitle() {
-        if (wallet && wallet.transactionActivityModel.loadError) return qsTr("Activity could not be loaded")
+        if (activityFilterProxy.error) return qsTr("Activity could not be loaded")
+        if (activityFilterProxy.busy) return qsTr("Loading wallet activity…")
         if (activitySourceEmpty && wallet && wallet.transactionActivityModel.loading) return qsTr("Loading wallet activity…")
         if (activitySourceEmpty)
             return ApplicationModels.nodeModel.blockSyncActive ? qsTr("Syncing wallet activity…") : qsTr("No activity yet")
         return qsTr("No activity matches your filters.")
     }
     function emptyActivityDescription() {
-        if (wallet && wallet.transactionActivityModel.loadError) return wallet.transactionActivityModel.loadError
+        if (activityFilterProxy.error) return activityFilterProxy.error
+        if (activityFilterProxy.busy) return ""
         if (activitySourceEmpty && wallet && wallet.transactionActivityModel.loading) return ""
         if (activitySourceEmpty)
             return ApplicationModels.nodeModel.blockSyncActive ? qsTr("Transactions may appear as your wallet catches up.")
@@ -76,27 +78,22 @@ Page {
     function exportResultTitle() { return exportSucceeded ? qsTr("Export complete") : qsTr("Export failed") }
     function exportResultDescription() {
         return exportSucceeded ? qsTr("Your Activity CSV has been saved.")
-            : qsTr("The Activity CSV could not be saved. Check the file path and try again.")
-    }
-
-    function normalizeLocalPath(path) {
-        var value = String(path)
-        if (value.indexOf("file:///") === 0) {
-            if (Qt.platform.os === "windows") {
-                return decodeURIComponent(value.substring(8))
-            }
-            return decodeURIComponent(value.substring(7))
-        }
-        if (value.indexOf("file://") === 0) {
-            return decodeURIComponent(value.substring(7))
-        }
-        return value
+            : activityFilterProxy.exportError || qsTr("The Activity CSV could not be saved. Check the file path and try again.")
     }
 
     function exportActivity(path) {
-        const ok = activityFilterProxy.exportCsv(normalizeLocalPath(path))
-        exportSucceeded = ok
-        exportResultPopup.open()
+        if (activityFilterProxy.requestExportCsv(String(path)) === 0) {
+            exportSucceeded = false
+            exportResultPopup.open()
+        }
+    }
+
+    Connections {
+        target: activityFilterProxy
+        function onExportFinished(ticket, saved, path, error) {
+            root.exportSucceeded = saved
+            exportResultPopup.open()
+        }
     }
 
     // A filter popup right-aligns to its button, but a wide popup on a
@@ -158,11 +155,7 @@ Page {
         unit: ApplicationModels.optionsModel.displayUnit
         satoshi: Math.round(amountSlider.upperValue)
     }
-    AppSettings {
-        id: activitySettings
-        property string activityGrouping: "month"
-        property string activityDisplayDensity: "comfortable"
-    }
+    AppPreferences { id: activitySettings }
     AppFileDialog {
         id: exportDialog
         objectName: "activityExportDialog"
@@ -191,6 +184,17 @@ Page {
         anchors.left: parent.left
         anchors.right: parent.right
         spacing: 0
+
+        InfoBanner {
+            objectName: "outgoingNoteStatus"
+            visible: root.wallet !== null && root.wallet.recipientLabelsError.length > 0
+            Layout.fillWidth: true
+            Layout.leftMargin: root.activitySideInset
+            Layout.rightMargin: root.activitySideInset
+            Layout.bottomMargin: visible ? 16 : 0
+            title: qsTr("Outgoing notes")
+            message: root.wallet ? root.wallet.recipientLabelsError : ""
+        }
 
         RowLayout {
             Layout.fillWidth: true
@@ -339,11 +343,11 @@ Page {
                 objectName: "activityListView"
                 anchors.fill: parent
                 clip: true
-                model: activityFilterProxy
+                model: root.visible ? activityFilterProxy : null
                 reuseItems: true
                 boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
-                section.property: "sectionLabel"
+                section.property: root.visible ? "sectionLabel" : ""
                 section.criteria: ViewSection.FullString
                 section.delegate: Item {
                     id: sectionHeader
@@ -380,8 +384,20 @@ Page {
                 delegate: Item {
                     id: activityDelegate
                     required property var model
+                    required property int index
                     width: listView.width
-                    height: activityRow.implicitHeight
+                    height: activityRow.implicitHeight + (activityPreviewNotice.visible ? activityPreviewNotice.implicitHeight + 8 : 0)
+                    CoreText {
+                        id: activityPreviewNotice
+                        anchors.top: activityRow.bottom
+                        anchors.topMargin: 4
+                        x: root.activitySideInset
+                        width: root.activityContentWidth
+                        visible: activityDelegate.model.presentationLimited === true
+                        text: qsTr("A preview is shown. Open the transaction for complete details.")
+                        font: Theme.text.description.font
+                        color: Theme.color.neutral7
+                    }
                     ActivityRow {
                         id: activityRow
                         isCompact: activitySettings.activityDisplayDensity === "compact"
@@ -409,6 +425,8 @@ Page {
                         lastInSection: activityDelegate.ListView.section !== activityDelegate.ListView.nextSection
                         onContextMenuRequested: function(x, y) {
                             const point = activityRow.mapToItem(activityRowMenu.parent, x, y)
+                            activityRowMenu.contextToken = activityFilterProxy.captureRowContext(activityDelegate.index)
+                            if (activityRowMenu.contextToken === 0) return
                             activityRowMenu.txid = activityRow.txid
                             activityRowMenu.requestId = activityRow.requestId
                             activityRowMenu.isRequest = activityRow.isPendingRequest
@@ -478,6 +496,8 @@ Page {
         property string requestId: ""
         property bool isRequest: false
         property string deleteError: ""
+        property double contextToken: 0
+        onClosed: activityFilterProxy.releaseRowContext(contextToken)
         onAboutToShow: deleteError = ""
         ContextMenuButton {
             objectName: "activityCopyTransactionId"
@@ -489,9 +509,10 @@ Page {
             objectName: "activityCopyRawTransaction"
             visible: !activityRowMenu.isRequest
             text: qsTr("Copy raw transaction hex")
+            autoClose: false
             onTriggered: {
-                const hex = root.wallet ? root.wallet.transactionActivityModel.rawTransaction(activityRowMenu.txid) : ""
-                if (hex.length > 0) Clipboard.setText(hex)
+                activityFilterProxy.requestCopyRawTransaction(activityRowMenu.contextToken)
+                activityRowMenu.close()
             }
         }
         ContextMenuButton {
@@ -580,6 +601,7 @@ Page {
         ContextMenuDivider {}
         ContextMenuButton {
             objectName: "activityExportButton"
+            enabled: !activityFilterProxy.exportBusy && !activityFilterProxy.busy
             text: qsTr("Export CSV")
             iconSource: "qrc:/icons/export"
             onTriggered: {

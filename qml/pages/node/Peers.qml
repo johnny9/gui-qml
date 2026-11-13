@@ -21,6 +21,7 @@ Page {
     property bool showBackButton: true
     property Item popupParent: null
     property int selectedNodeId: -1
+    property double peerActionTicket: 0
     property var contextPeerDetails: null
     property int pendingContextBanDuration: 3600
     property string pendingContextBanLabel: qsTr("1 hour")
@@ -71,81 +72,27 @@ Page {
         }
     }
 
-    AppSettings {
-        id: settings
-        objectName: "peerFilterSettings"
-        property string peerListSortBy: "nodeId"
-        property bool peerListSortAscending: true
-        property string peerDirectionFilters: ""
-        property string peerConnectionTypeFilters: ""
-        property string peerNetworkFilters: ""
-        property string peerTransportFilters: ""
-    }
+    AppPreferences { id: settings; objectName: "peerFilterSettings" }
+    Binding { target: ApplicationModels.peerListModelProxy; property: "sortBy"; value: settings.peerListSortBy }
+    Binding { target: ApplicationModels.peerListModelProxy; property: "sortAscending"; value: settings.peerListSortAscending }
+    Binding { target: ApplicationModels.peerListModelProxy; property: "directionFilters"; value: settings.peerDirectionFilters }
+    Binding { target: ApplicationModels.peerListModelProxy; property: "connectionTypeFilters"; value: settings.peerConnectionTypeFilters }
+    Binding { target: ApplicationModels.peerListModelProxy; property: "networkFilters"; value: settings.peerNetworkFilters }
+    Binding { target: ApplicationModels.peerListModelProxy; property: "transportFilters"; value: settings.peerTransportFilters }
 
-    function decodeFilter(value, options, singleSelection) {
-        const candidates = value.split(",")
-        const selected = []
-        for (let i = 0; i < candidates.length; ++i) {
-            if (selected.indexOf(candidates[i]) >= 0) continue
-            for (let j = 0; j < options.length; ++j) {
-                if (options[j].value === candidates[i]) {
-                    selected.push(candidates[i])
-                    break
-                }
-            }
-            if (singleSelection && selected.length > 0) return selected
-        }
-        return selected.length === options.length ? [] : selected
-    }
     function filtersFor(group) {
         if (group === "direction") return ApplicationModels.peerListModelProxy.directionFilters
         if (group === "connectionType") return ApplicationModels.peerListModelProxy.connectionTypeFilters
         if (group === "network") return ApplicationModels.peerListModelProxy.networkFilters
         return ApplicationModels.peerListModelProxy.transportFilters
     }
-    function validSort(value) {
-        for (let i = 0; i < sortOptions.length; ++i) {
-            if (sortOptions[i].value === value) return value
-        }
-        return "nodeId"
-    }
-    function setFilters(group, values) {
-        if (group === "direction") ApplicationModels.peerListModelProxy.directionFilters = values
-        else if (group === "connectionType") ApplicationModels.peerListModelProxy.connectionTypeFilters = values
-        else if (group === "network") ApplicationModels.peerListModelProxy.networkFilters = values
-        else if (group === "transport") ApplicationModels.peerListModelProxy.transportFilters = values
-        storeFilters()
-    }
-    function toggleFilter(group, value, options) {
-        const filters = filtersFor(group)
-        const selected = []
-        for (let i = 0; i < filters.length; ++i) selected.push(filters[i])
-        const index = selected.indexOf(value)
-        if (group === "direction") {
-            setFilters(group, index >= 0 ? [] : [value])
-            return
-        }
-        if (index >= 0) selected.splice(index, 1)
-        else selected.push(value)
-        setFilters(group, selected.length === options.length ? [] : selected)
-    }
-    function clearFilters() {
-        ApplicationModels.peerListModelProxy.directionFilters = []
-        ApplicationModels.peerListModelProxy.connectionTypeFilters = []
-        ApplicationModels.peerListModelProxy.networkFilters = []
-        ApplicationModels.peerListModelProxy.transportFilters = []
-        storeFilters()
-    }
+    function clearFilter(group) { settings.clearPeerFilter(group) }
+    function toggleFilter(group, value, options) { settings.togglePeerFilter(group, value) }
+    function clearFilters() { settings.clearPeerFilters() }
     function filterPopupX(button, popup) {
         const anchorX = button.mapToItem(root, 0, 0).x
         return Math.max(12 - anchorX, Math.min(button.width - popup.width,
             root.width - popup.width - anchorX - 12))
-    }
-    function storeFilters() {
-        settings.peerDirectionFilters = ApplicationModels.peerListModelProxy.directionFilters.join(",")
-        settings.peerConnectionTypeFilters = ApplicationModels.peerListModelProxy.connectionTypeFilters.join(",")
-        settings.peerNetworkFilters = ApplicationModels.peerListModelProxy.networkFilters.join(",")
-        settings.peerTransportFilters = ApplicationModels.peerListModelProxy.transportFilters.join(",")
     }
     function filterCount() {
         return (ApplicationModels.peerListModelProxy.directionFilters.length > 0 ? 1 : 0)
@@ -181,19 +128,27 @@ Page {
         peerListBanConfirmation.open()
     }
     function confirmContextPeerBan() {
-        if (contextPeerDetails
-                && ApplicationModels.nodeModel.banPeer(contextPeerDetails.rawAddress, pendingContextBanDuration)) {
-            ApplicationModels.peerTableModel.refresh()
-            ApplicationModels.banListModel.refresh()
-        } else {
-            showPeerListActionError(qsTr("Could not ban peer. The peer may already be disconnected or the node state may have changed."))
-        }
+        const ticket = contextPeerDetails
+            ? ApplicationModels.nodeModel.requestBanPeer(contextPeerDetails.rawAddress, pendingContextBanDuration) : 0
+        if (ticket) peerActionTicket = ticket
+        else showPeerListActionError(qsTr("Could not start the ban request. The node may be busy or closing."))
     }
     function disconnectContextPeer() {
-        if (contextPeerDetails && ApplicationModels.nodeModel.disconnectPeer(contextPeerDetails.nodeId)) {
-            ApplicationModels.peerTableModel.refresh()
-        } else {
-            showPeerListActionError(qsTr("Could not disconnect peer. The peer may already be disconnected or the node state may have changed."))
+        const ticket = contextPeerDetails
+            ? ApplicationModels.nodeModel.requestDisconnectPeer(contextPeerDetails.nodeId) : 0
+        if (ticket) peerActionTicket = ticket
+        else showPeerListActionError(qsTr("Could not start the disconnect request. The node may be busy or closing."))
+    }
+    Connections {
+        target: ApplicationModels.nodeModel
+        function onPeerActionFinished(ticket, outcome, error) {
+            if (ticket !== root.peerActionTicket) return
+            root.peerActionTicket = 0
+            if (root.visible && outcome !== NodeModel.Rejected) {
+                ApplicationModels.peerTableModel.refresh()
+                ApplicationModels.banListModel.refresh()
+            }
+            if (root.visible && error.length > 0) root.showPeerListActionError(error)
         }
     }
     function requestContextPeerDisconnect() {
@@ -204,17 +159,8 @@ Page {
         peerListActionError.open()
     }
 
-    Component.onCompleted: {
-        ApplicationModels.peerListModelProxy.searchText = ""
-        ApplicationModels.peerListModelProxy.sortAscending = settings.peerListSortAscending
-        ApplicationModels.peerListModelProxy.sortBy = validSort(settings.peerListSortBy)
-        settings.peerListSortBy = ApplicationModels.peerListModelProxy.sortBy
-        ApplicationModels.peerListModelProxy.directionFilters = decodeFilter(settings.peerDirectionFilters, directionOptions, true)
-        ApplicationModels.peerListModelProxy.connectionTypeFilters = decodeFilter(settings.peerConnectionTypeFilters, connectionTypeOptions)
-        ApplicationModels.peerListModelProxy.networkFilters = decodeFilter(settings.peerNetworkFilters, networkOptions)
-        ApplicationModels.peerListModelProxy.transportFilters = decodeFilter(settings.peerTransportFilters, transportOptions)
-        storeFilters()
-    }
+    Component.onCompleted: ApplicationModels.peerListModelProxy.searchText = ""
+
 
     Item {
         objectName: "peersContentFrame"
@@ -321,7 +267,6 @@ Page {
                             model: root.sortOptions
                             currentValue: ApplicationModels.peerListModelProxy.sortBy
                             onActivated: (value) => {
-                                ApplicationModels.peerListModelProxy.sortBy = value
                                 settings.peerListSortBy = value
                             }
                         }
@@ -333,7 +278,6 @@ Page {
                             ]
                             currentValue: ApplicationModels.peerListModelProxy.sortAscending
                             onActivated: (value) => {
-                                ApplicationModels.peerListModelProxy.sortAscending = value
                                 settings.peerListSortAscending = value
                             }
                         }
@@ -712,7 +656,7 @@ Page {
             objectName: "peerConnectionAllPicker"
             model: [{ text: qsTr("All"), value: "" }]
             currentValue: ApplicationModels.peerListModelProxy.connectionTypeFilters.length === 0 ? "" : undefined
-            onActivated: root.setFilters("connectionType", [])
+            onActivated: root.clearFilter("connectionType")
         }
         ContextMenuDivider { }
         ContextMenuPicker {
@@ -737,7 +681,7 @@ Page {
             objectName: "peerNetworkAllPicker"
             model: [{ text: qsTr("All"), value: "" }]
             currentValue: ApplicationModels.peerListModelProxy.networkFilters.length === 0 ? "" : undefined
-            onActivated: root.setFilters("network", [])
+            onActivated: root.clearFilter("network")
         }
         ContextMenuDivider { }
         ContextMenuPicker {
@@ -762,7 +706,7 @@ Page {
             objectName: "peerTransportAllPicker"
             model: [{ text: qsTr("All"), value: "" }]
             currentValue: ApplicationModels.peerListModelProxy.transportFilters.length === 0 ? "" : undefined
-            onActivated: root.setFilters("transport", [])
+            onActivated: root.clearFilter("transport")
         }
         ContextMenuDivider { }
         ContextMenuPicker {

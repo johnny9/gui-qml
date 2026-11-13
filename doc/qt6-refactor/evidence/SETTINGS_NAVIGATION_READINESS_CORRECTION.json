@@ -1,0 +1,10 @@
+{
+  "file": "test/functional/interface_qml_node.py",
+  "sha256": "878231e72ae6ea86b9c3b534147d59cc09a36902664bad6b8a7ec6e93f046115",
+  "change": "Await actual nested display StackView idle and original language action enabled; same click and page/Spanish/persistence/RPC oracles.",
+  "evidence": "Original TSan failure constructed language page but did not observe visibility. One sameELF probe reached proper visible page with corrected Applyreceipt and read-only property observations.",
+  "cause_limit": "Original language failure not yet reproduced by diagnostic; readiness barrier is explicit fixture precondition, not a claimed production/Qt root-cause fix.",
+  "sleeps_added": 0,
+  "original_deadlines_increased": false,
+  "validation": "pending final corrected candidate"
+}

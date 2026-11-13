@@ -1,0 +1,144 @@
+{
+  "files": [
+    {
+      "path": "CHECKPOINT.md",
+      "sha256": "fbd64ca394ba3f1e9029d343832aba3edd983cf8f31857132794b4211cf55587",
+      "bytes": 10034
+    },
+    {
+      "path": "README.md",
+      "sha256": "507ef07b9d4500db9eb0e9aec124088423c57350678c3d6029adf940f2e0fc58",
+      "bytes": 325
+    },
+    {
+      "path": "evidence/BROAD_ASAN_V34_RESULT.md",
+      "sha256": "0413073b2014be3d9adc5c6b3089d230d6d4717f4aaf97690f0a87e304afd6b8",
+      "bytes": 3253
+    },
+    {
+      "path": "evidence/BROAD_V34_TSAN_RESULT.md",
+      "sha256": "9e66d25efa6e006a75c1561808601a8cb96f12a40d6299d90247bdb9858c348a",
+      "bytes": 2735
+    },
+    {
+      "path": "evidence/CONSOLE_EXECUTABLE_MODE_APPLIED.json",
+      "sha256": "a01fa50e7b7c5018765469d14fb7b68d483bc4f818b0434f850fe7f00ef0d7f8",
+      "bytes": 633
+    },
+    {
+      "path": "evidence/FEE_FIXTURE_REVIEWED_INTEGRATION.json",
+      "sha256": "0d5ca27e3e8bf30753250e5c1b68ba4ad5a4f6d4225cc2f14eb3083d3c7225b4",
+      "bytes": 696
+    },
+    {
+      "path": "evidence/FOCUSED_V34_ASSESSMENT.json",
+      "sha256": "e76f8d25343dd2e8a5a639dbfc6cbb0ecbe8e4c1c0d8d26b28620bbe69f4824c",
+      "bytes": 1871
+    },
+    {
+      "path": "evidence/FOCUSED_V34_RESULT.md",
+      "sha256": "36528af132d66f67d8b16debf35b623c1e9756f725ff3803c20b69bb2ff99e2c",
+      "bytes": 1618
+    },
+    {
+      "path": "evidence/NATIVE_QT_DEFER_POLICY.json",
+      "sha256": "5032c5c7187372d5bb4c8e02db83ae4b7864b8e8183043fac57cba1dd85b7d63",
+      "bytes": 531
+    },
+    {
+      "path": "evidence/QT_PICKER_DEFERRED_USER_DECISION.json",
+      "sha256": "fa292589329cca6efb943dcf09e294fdfe97d0ce4b449c57b2c7c221869b6b37",
+      "bytes": 563
+    },
+    {
+      "path": "evidence/R10_SCHEDULE_EXECUTED_V34.json",
+      "sha256": "7fdf992320b243687b6e4748acf7d6355674c15b51f7458b7967af1d34985372",
+      "bytes": 76709
+    },
+    {
+      "path": "evidence/SETTINGS_NAVIGATION_READINESS_CORRECTION.json",
+      "sha256": "9caafb6d8af646064ae6a57c56155f09d3d79e20bcb691dff9358c0390230813",
+      "bytes": 782
+    },
+    {
+      "path": "evidence/SETTINGS_ORIGINAL_APPLY_RECEIPT_CORRECTION.json",
+      "sha256": "3c48f87c15be44ced1f1f11ac5d987d8c9434820f4feac55c41560be05ec7f47",
+      "bytes": 1047
+    },
+    {
+      "path": "evidence/THREAD_RECEIPT_COMPARISON_CORRECTION.json",
+      "sha256": "ccf4bae4ee6434fb3dc7a0eb2e1759444b59c5f993edb6c1353d83c1a4b48b55",
+      "bytes": 1336
+    },
+    {
+      "path": "evidence/checkpoint-source.json",
+      "sha256": "dd571c29109cf3142ae647e079cf669699354cd3731b3df447d75d75e19084e5",
+      "bytes": 141197
+    },
+    {
+      "path": "evidence/tracking-copy-provenance.json",
+      "sha256": "3f0a6530828b983d2b8b4b4303e604d0eca8106ca82e94009058440a78952b3f",
+      "bytes": 1411
+    },
+    {
+      "path": "plan-snapshots/QT6_ARCHITECTURE_FOUNDATION.md",
+      "sha256": "e4e375f2526b9b9070ef98e75f21770b9163e3d126315e464ea49ab21dd3994c",
+      "bytes": 22942
+    },
+    {
+      "path": "plan-snapshots/QT6_BASE_UPDATE.md",
+      "sha256": "dc9938eb9a4d747596fb51425c23a2c16a2fde85b665f0e96c0dbdba20bf1188",
+      "bytes": 4954
+    },
+    {
+      "path": "plan-snapshots/QT6_FSM_PROPOSAL_REVIEW.md",
+      "sha256": "d400b99a0020911d7b0b0ca66fe4ababecbc9dee18b928eb0af7ea2d4eea6ef4",
+      "bytes": 13367
+    },
+    {
+      "path": "plan-snapshots/QT6_R00_REQUIREMENTS.md",
+      "sha256": "3185e3bc1957f6cf2b0bba87f297c9c6b9601b1a7e6e818ca167c0e49f3a0da5",
+      "bytes": 20400
+    },
+    {
+      "path": "plan-snapshots/QT6_REFACTOR_HANDOFF.md",
+      "sha256": "2f5fd613f7f2d0a1b6d637248a80b8255f166acbe45e49c7c9701fcb33319ba1",
+      "bytes": 26045
+    },
+    {
+      "path": "plan-snapshots/QT6_TOTAL_REFACTOR_PLAN.md",
+      "sha256": "abcf5439db18ed67efbb065d9fe3c409a0249bac36af739b13bf4c76e8e3c15f",
+      "bytes": 62637
+    },
+    {
+      "path": "plan-snapshots/QT6_UPSTREAM_IMPROVEMENTS.md",
+      "sha256": "92a918bceeaac3e82a1c644539c94c0c15b603b8904832e2d9db506f3da40d47",
+      "bytes": 58641
+    },
+    {
+      "path": "plan-snapshots/QT6_WALLET_ADAPTER_PLAN.md",
+      "sha256": "1091e0892805aff64c39088340b20eb122e7a2dce3edb3c6339d27d0a062b60d",
+      "bytes": 18094
+    },
+    {
+      "path": "tracking-snapshots/schedule-ownership.csv",
+      "sha256": "4b124867dca06f05a03ca80710f14c10b475e71c94412756f0676a5866916ffe",
+      "bytes": 10548
+    },
+    {
+      "path": "tracking-snapshots/scope-assignments.csv",
+      "sha256": "2175d7677527b186eca1aef2267fa1d907afe390f23645dbbbca546820541c81",
+      "bytes": 366624
+    },
+    {
+      "path": "tracking-snapshots/steps.csv",
+      "sha256": "cd75706faee53ce55e5499278ef6c8fd66b46f216d59ea03a880882e791289de",
+      "bytes": 25740
+    },
+    {
+      "path": "tracking-snapshots/worker-orders.md",
+      "sha256": "53c13702f180b1f9fcd8e232ba6a8452c6b76b651b52c05a1bceb1f2c34b70be",
+      "bytes": 195340
+    }
+  ]
+}

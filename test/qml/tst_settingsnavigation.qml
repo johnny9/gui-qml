@@ -130,7 +130,9 @@ TestCase {
         AppMode.isDesktop = true
         nodeModel.mempoolInformationAvailable = true
         Theme.dark = true
+        tryCompare(Theme, "dark", true)
         Theme.blockclocksize = 5 / 12
+        tryCompare(Theme, "blockclocksize", 5 / 12)
         optionsModel.settingsReady = true
         optionsModel.settingsPending = false
         optionsModel.settingsError = ""
@@ -232,6 +234,7 @@ TestCase {
         for (let index = 0; index < address.length; ++index) keyClick(address.charAt(index))
         compare(input.text, address)
         compare(proxyPage.draftProxyAddress, address)
+        tryCompare(proxyPage.proxyDraft, "pending", false)
         verify(proxyPage.proxyDraftDirty)
         verify(save.enabled)
         view.selectSection("display")
@@ -243,6 +246,7 @@ TestCase {
         compare(view.pageContainer.currentItem, proxyPage)
         compare(save.enabled, false)
         compare(proxyPage.draftProxyAddress, "10.0.0.1:9050")
+        tryCompare(proxyPage.proxyDraft, "pending", false)
         verify(proxyPage.proxyDraftDirty)
         view.selectSection("wallet")
         const walletStack = findChild(view, "walletSettingsStack")
@@ -256,6 +260,7 @@ TestCase {
         compare(view.pageContainer.currentItem, proxyPage)
         compare(view.pageContainer.depth, 2)
         compare(proxyPage.draftProxyAddress, address)
+        tryCompare(proxyPage.proxyDraft, "pending", false)
         verify(proxyPage.proxyDraftDirty)
         mouseClick(save)
         tryCompare(view.pageContainer, "depth", 1)
@@ -468,7 +473,7 @@ TestCase {
         compare(networkTrafficSentRow.bottomPadding, 16)
         compare(networkTrafficRangePicker.model.length, 4)
         networkTrafficRangePicker.selected(1, networkTrafficRangePicker.model[1])
-        compare(testNetworkTrafficTower.lastFilterWindowSize, 360)
+        tryCompare(testNetworkTrafficTower, "lastFilterWindowSize", 360)
 
         view.selectSection("debug-log")
         compare(findChild(view, "networkTrafficSettingsPage"), networkTrafficPage)
@@ -480,7 +485,7 @@ TestCase {
         view.selectSection("network-traffic")
         compare(findChild(view, "networkTrafficSettingsPage"), networkTrafficPage)
         compare(findChild(view, "debugLogView"), debugLogPage)
-        compare(networkTrafficPage.trafficGraphScale, 3600)
+        tryCompare(networkTrafficPage, "trafficGraphScale", 3600)
         tryCompare(testNetworkTrafficTower, "active", true)
         tryCompare(testDebugLogModel, "active", false)
 
@@ -885,7 +890,7 @@ TestCase {
             "Satoshi, the smallest unit (1 sat = 0.00000001 BTC)")
 
         themePicker.selected(0, "Light")
-        compare(Theme.dark, false)
+        tryCompare(Theme, "dark", false)
 
         compare(blockStatusSizePicker.subtitleRole, "description")
         compare(blockStatusSizePicker.iconRole, "icon")
@@ -904,7 +909,7 @@ TestCase {
         compare(blockStatusSizePicker.itemAtIndex(0).implicitHeight, 52)
         compare(blockStatusSizePicker.itemAtIndex(1).implicitHeight, 52)
         blockStatusSizePicker.activated(1 / 2)
-        compare(Theme.blockclocksize, 1 / 2)
+        tryCompare(Theme, "blockclocksize", 1 / 2)
         compare(blockStatusSizePicker.currentText, "Showcase")
 
         compare(moneyFontPicker.subtitleRole, "description")
@@ -1034,6 +1039,7 @@ TestCase {
         compare(proxyAddressRow.titleTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
         compare(proxyAddressRow.enabled, false)
 
+        tryCompare(proxyPage.proxyDraft, "ready", true)
         proxySwitch.checked = true
         proxySwitch.toggled()
         compare(proxyPage.draftProxyEnabled, true)
@@ -1041,22 +1047,27 @@ TestCase {
 
         proxySwitch.checked = false
         proxySwitch.toggled()
+        tryCompare(proxyPage.proxyDraft, "pending", false)
         compare(proxyPage.proxyDraftDirty, false)
         compare(saveButton.enabled, false)
 
+        tryCompare(proxyPage.proxyDraft, "ready", true)
         proxySwitch.checked = true
         proxySwitch.toggled()
+        tryCompare(proxyPage.proxyDraft, "pending", false)
         compare(proxyPage.proxyDraftDirty, true)
         compare(saveButton.enabled, true)
 
         proxyAddressRow.text = ""
         proxyAddressRow.textEdited(proxyAddressRow.text)
-        verify(proxyPage.draftProxyValidationError.length > 0)
+        tryVerify(function() { return !proxyPage.proxyDraft.pending && proxyPage.draftProxyValidationError.length > 0 })
         compare(saveButton.enabled, false)
 
         proxyAddressRow.text = "10.0.0.1:9050"
         proxyAddressRow.textEdited(proxyAddressRow.text)
+        tryCompare(proxyPage.proxyDraft, "pending", false)
         compare(proxyPage.proxyDraftDirty, true)
+        tryCompare(proxyPage.proxyDraft, "pending", false)
         compare(proxyPage.draftProxyValidationError, "")
         compare(saveButton.enabled, true)
 

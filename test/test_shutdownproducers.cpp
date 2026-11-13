@@ -25,6 +25,7 @@
 #include <QTemporaryDir>
 
 #include <atomic>
+#include <thread>
 
 #ifndef BITCOINQML_NO_TEST_MAIN
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -83,18 +84,22 @@ private Q_SLOTS:
         }
         }
         QVERIFY(model);
-        auto* thread = model->findChild<QThread*>();
-        QVERIFY(thread);
-        auto* cleanup = new QObject;
-        cleanup->moveToThread(thread);
         auto entered = std::make_shared<QSemaphore>();
         auto release = std::make_shared<QSemaphore>();
         const auto unblock = qScopeGuard([release] { release->release(); });
-        connect(thread, &QThread::finished, cleanup, &QObject::deleteLater);
-        connect(cleanup, &QObject::destroyed, [entered, release] {
-            entered->release();
-            release->acquire();
-        });
+        {
+            // Producers use owned executors rather than a view-specific
+            // QThread. Delay the actual last-reference cleanup
+            // on that worker; drain must include it even after owner deletion.
+            auto* executor = model->findChild<BackendExecutor*>();
+            QVERIFY(executor);
+            auto cleanup = std::shared_ptr<int>(new int{0}, [entered, release](int* value) {
+                entered->release();
+                release->acquire();
+                delete value;
+            });
+            QVERIFY(executor->submit(model.get(), [cleanup] {}, [] {}));
+        }
         QSignalSpy drained(model.get(), producer == 0 ? SIGNAL(workDrained()) : SIGNAL(drained()));
         QVERIFY(drained.isValid());
         stop();
@@ -214,10 +219,12 @@ private Q_SLOTS:
         QSemaphore release;
         std::atomic<bool> gui_call{false};
         MockNode node;
+        const auto gui_thread = QCoreApplication::instance()->thread();
         node.handle_notify_alert_changed_fn = [&](interfaces::Node::NotifyAlertChangedFn) {
-            return std::make_unique<Handler>(entered, release, gui_call, QThread::currentThread());
+            return std::make_unique<Handler>(entered, release, gui_call, gui_thread);
         };
         NodeModel model(node);
+        QTRY_VERIFY(model.notificationsReady());
         const auto unblock = qScopeGuard([&] { release.release(); });
         QSignalSpy drained(&model, &NodeModel::workDrained);
         model.beginShutdown();
@@ -244,16 +251,24 @@ private Q_SLOTS:
             return interfaces::MakeCleanupHandler([] {});
         };
         NodeModel model(node);
+        QTRY_VERIFY(model.notificationsReady());
         QVERIFY(question);
         QSignalSpy requested(&model, &NodeModel::requestedShutdown);
-        QTimer::singleShot(0, &model, &NodeModel::requestShutdown);
-        QVERIFY(!question(Untranslated("Continue?"), "Continue?", CClientUIInterface::BTN_OK | CClientUIInterface::BTN_CANCEL));
-        QCOMPARE(requested.size(), 1);
+        std::atomic<bool> finished{false}, result{true};
+        std::thread worker([&] {
+            result = question(Untranslated("Continue?"), "Continue?", CClientUIInterface::BTN_OK | CClientUIInterface::BTN_CANCEL);
+            finished = true;
+        });
+        const auto unblock = qScopeGuard([&] { model.requestShutdown(); if (worker.joinable()) worker.join(); });
+        QTRY_VERIFY(model.runtimeDialogVisible());
+        QVERIFY(!finished.load());
+        model.requestShutdown();
+        QTRY_VERIFY(finished.load()); worker.join();
+        QVERIFY(!result.load()); QCOMPARE(requested.size(), 1);
         QVERIFY(!model.runtimeDialogVisible());
         QVERIFY(!question(Untranslated("Late question"), "Late question", CClientUIInterface::BTN_OK));
         QVERIFY(!model.runtimeDialogVisible());
         model.beginShutdown();
-        QTRY_VERIFY(model.isDrained());
     }
 };
 

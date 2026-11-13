@@ -1,0 +1,11 @@
+{
+  "file": "/home/codex/workspaces/bitcoin-core-app/.validation/issue-remediation-pr1090-20261109/source/test/functional/interface_qml_console.py",
+  "frozen34_original_mode": "0o664",
+  "corrected_primary_mode": "0o775",
+  "git_file_mode": "100755",
+  "content_sha256": "beb55033ea954be04aa4d00fce1dc3ec09bbf57a62781b57721d008a2f178275",
+  "primary_index_unchanged": true,
+  "frozen34_unchanged": true,
+  "lint_recheck": "pending next corrected candidate",
+  "setup_assertion_note": "Initial correction asserted exact POSIX0755, but workspace group-write bit yields0775; valid tracked executable100755. Content/index unchanged."
+}

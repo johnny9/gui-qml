@@ -1,0 +1,3731 @@
+{
+  "recorded_utc": "2026-11-13T12:58:13.105652+00:00",
+  "parent": "715fb5449366a9a267e6d111169f226b429947ef",
+  "validated_candidate34": "8ae9ce530f76e3522e932997f7120af705598246",
+  "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "source_file_count": 928,
+  "source_files": {
+    ".gitattributes": {
+      "sha256": "54f0ace475d59565cba9b9bb0bc3c4b88077b91685213fdecabd2c5060fe73e4",
+      "mode": 33204
+    },
+    ".github/actionlint.yaml": {
+      "sha256": "4929c724efee5aa5de5d545b9344f5943368340311afcf2b64b877cff409d4f8",
+      "mode": 33204
+    },
+    ".github/workflows/artifacts.yml": {
+      "sha256": "daedeb98eb642b5128d1a3825876d4abaaf4b61db9edecbbe20c9330e6fe1ef2",
+      "mode": 33204
+    },
+    ".github/workflows/ci.yml": {
+      "sha256": "0fc09c4be69d30dc0482ab131d28f5a7bcd8d663070cbebbd2248be94bbd2612",
+      "mode": 33204
+    },
+    ".github/workflows/depends-build.yml": {
+      "sha256": "e9d741f721dbc2a0950b1601d3159fdabd750c6d9f468071146adc31b59201af",
+      "mode": 33204
+    },
+    ".github/workflows/gui-functional-tests.yml": {
+      "sha256": "5e13245a362d897ce0f524ae5d5555732f39e103031f687978187d248a3b0dc5",
+      "mode": 33204
+    },
+    ".gitignore": {
+      "sha256": "b09b0920d8c9a78ccd799a22c63ebd934ab304db97d54e1f1843f16f98a02050",
+      "mode": 33204
+    },
+    ".gitmodules": {
+      "sha256": "27c0707f5b332ed26a819f5c48669eeb3b4d3bd1cdddeba8d409ab9246a33abb",
+      "mode": 33204
+    },
+    ".python-version": {
+      "sha256": "01a2aae23aa21d8ef8a86fa06a9123925dc2d48a8b8e009cd3675082a3371678",
+      "mode": 33204
+    },
+    "CMakeLists.txt": {
+      "sha256": "18089aff394aeedd06ca9b89cb28bb5d02d91d0ca44b541828ff99187646b729",
+      "mode": 33204
+    },
+    "README.md": {
+      "sha256": "40ccc0ea2daab3c7300f2adad58bfc59650739858fea2f3828bc4f8effaca93a",
+      "mode": 33204
+    },
+    "ci/clang_tidy.py": {
+      "sha256": "0124f874dcd9c7614e7c34c78549757d952415dd5753755317354bf7289ac146",
+      "mode": 33277
+    },
+    "ci/configure.py": {
+      "sha256": "2829c52ed07440529264f2024c5f66121da1c57af488c5900dee080ba130e840",
+      "mode": 33277
+    },
+    "ci/core_sanitizer_env.py": {
+      "sha256": "dc1dc0d9cef84819336995170257e62eb6ede09bd9138c629014e8ec7dcf3814",
+      "mode": 33204
+    },
+    "ci/lint-policy.json": {
+      "sha256": "6ba496cfcc2c95234f63f55c55c7a096558614fb36246609b8748d656dd5158b",
+      "mode": 33204
+    },
+    "ci/lint.py": {
+      "sha256": "e83de5a2ba6b2b3bee7e903e8e90c92996cd7bb6e26e1dd3accb989402a9b90e",
+      "mode": 33277
+    },
+    "ci/lint/layout_checks.py": {
+      "sha256": "6dea4d80c01064160acee44dafff2f3c0557503bb650d400d2fdbaa766b9dec0",
+      "mode": 33277
+    },
+    "ci/lint/runner.py": {
+      "sha256": "d7edb8f7c74213e73b7d3a9198ac54e0f421c15edaf080307bd6a999b80c5874",
+      "mode": 33277
+    },
+    "ci/lsan_suppressions.py": {
+      "sha256": "778e640e667c4ad9aba66a4b17c059d0bca43c95607826aedb63559b5c490eb8",
+      "mode": 33277
+    },
+    "ci/with_sanitizer_env.py": {
+      "sha256": "c5ed09af65ec1728f965c2160bbeb7081fc7833332be0a99ba50eea1a8e9e163",
+      "mode": 33277
+    },
+    "cmake/AppCoverage.cmake": {
+      "sha256": "8dcbdb88e90f9a3776a43449d75f2a1ac6c0300b3b3f15d05ad9762b5560fd02",
+      "mode": 33204
+    },
+    "cmake/QmlLint.cmake": {
+      "sha256": "ce74e46c831245cbf99e2f9b545b357cb00609c351ceda6b2c687e823baf0d9c",
+      "mode": 33204
+    },
+    "cmake/Sanitizers.cmake": {
+      "sha256": "54b7a6cee7167ce1722150525711122b897a752de27fd0d3b9e756d83984a119",
+      "mode": 33204
+    },
+    "cmake/module/FindQRencode.cmake": {
+      "sha256": "89a2e366a21a1a39f375b636cb4af5406cf747a52cd307f98973da96b97546bc",
+      "mode": 33204
+    },
+    "cmake/module/FindQt.cmake": {
+      "sha256": "061a17220bc5e4be8a8f1a4d351189e1576b24561c7983b629310e331d39d1d1",
+      "mode": 33204
+    },
+    "cmake/qmltypes.h": {
+      "sha256": "deb95ab44ddc4f326368aa038a3182e24c6e557f036b90b302ae81b20d482d3c",
+      "mode": 33204
+    },
+    "doc/amount-entry.md": {
+      "sha256": "c81f7e2e474381504cc4f46ae8a8dd81f0a609c0a6f452e47913151bec86f5b8",
+      "mode": 33204
+    },
+    "doc/backend-guarantees.md": {
+      "sha256": "00c4f850331473df699e41cff999107b83ceb7f10952fb91aad458c1479ba719",
+      "mode": 33204
+    },
+    "doc/background-execution.md": {
+      "sha256": "8e4d5c5806afc248fd19b6284003d20d50ef748a5e4cb31e3c5bb94d0127cbbd",
+      "mode": 33204
+    },
+    "doc/backup-destination.md": {
+      "sha256": "d9502646adb21f0055f96e4b1698e972035efa79b7353c72db77397893c29c84",
+      "mode": 33204
+    },
+    "doc/backup-recovery.md": {
+      "sha256": "cb05e7738a8ccd70e48a9d8d0875bead67a2faf1fa8d6ddd0c7171a2976ae948",
+      "mode": 33204
+    },
+    "doc/ci-checks.md": {
+      "sha256": "21593404b83bb1def65b8e951288cb4a832a9d08c3a446798cdc6daf1b278840",
+      "mode": 33204
+    },
+    "doc/execution.md": {
+      "sha256": "07b4b139cb9eef71d461cf26abc118c8585a11832d069552dadca717bcf80453",
+      "mode": 33204
+    },
+    "doc/icon-policy.md": {
+      "sha256": "90ae14323788199d4c1a6296c9cdcdd2f2d1d3eace4325ceeb3cea28678bed7e",
+      "mode": 33204
+    },
+    "doc/integration-testing.md": {
+      "sha256": "bdb2e691857766b15d41fc77a158eac7284e7c8a48eaffb27f040328339d9a94",
+      "mode": 33204
+    },
+    "doc/psbt-fee-authentication.md": {
+      "sha256": "658d4add132217226091aba9b5808893d1cabaf6a9f434d83d4f4e6f72de0182",
+      "mode": 33204
+    },
+    "doc/qml-lint.md": {
+      "sha256": "bf10fc0de66dcd5decd148ce40344109e26f6a8261fc35c48c5c71c6bfdc3a54",
+      "mode": 33204
+    },
+    "doc/rpc-console-privacy.md": {
+      "sha256": "ecd36924df8c48cbaacf982d00becb3848b48ac2d6c39fefc912a93d783c0a38",
+      "mode": 33204
+    },
+    "doc/sanitizers.md": {
+      "sha256": "a80f6f72e3f7397d7d22aee0a5707e1eea8f566440b9db802efa236521ed74ff",
+      "mode": 33204
+    },
+    "doc/signer-approval.md": {
+      "sha256": "9206fa976201e9d1f3888c3bd3e5b0b284f48b358c7f1ab6e91f10ce25e0b5d1",
+      "mode": 33204
+    },
+    "doc/test-bridge.md": {
+      "sha256": "5b31d383dafcb0e2fbce63e192a8bc8e6b184c38757ceefa33efa67fe680bb52",
+      "mode": 33204
+    },
+    "doc/translator-comments.md": {
+      "sha256": "d71f14bb782e5138517687ea341e10d470ed56fe8cfbf70d20e9cdb62dfd9534",
+      "mode": 33204
+    },
+    "main.cpp": {
+      "sha256": "df9530bcd90f8e359d16116a0dd15fd8bf960f7f68ab97ced13636f44bd2c04b",
+      "mode": 33204
+    },
+    "patches/depends-Add-Qt-Qml-and-Qt-Quick-modules.patch": {
+      "sha256": "c8e7fe9e6722b90e7568ad7c7d838e8a9986f09a89b21f53c2b56e05938bb89d",
+      "mode": 33204
+    },
+    "qml/.gitignore": {
+      "sha256": "aaa5e7e74c6b43a1e3634f48e038da899b8f66e7dc759a425db951be9df818c9",
+      "mode": 33204
+    },
+    "qml/amountparse.cpp": {
+      "sha256": "1b26629f7e0726141b1211d7457361e97715902d3eaf15be61a783d73f5ebe4d",
+      "mode": 33204
+    },
+    "qml/amountparse.h": {
+      "sha256": "4b4e95c1ebeff907d6e2bb707da415df34ff2f158ec8a17a63b09d3a98a76e4f",
+      "mode": 33204
+    },
+    "qml/androidnotifier.cpp": {
+      "sha256": "96ca3658425af2049306faebe044d1d11fe41320d9d823ab21a7a41ae6f2ce20",
+      "mode": 33204
+    },
+    "qml/androidnotifier.h": {
+      "sha256": "924b1ab5f616a546bda9876ad85af7310fd368cc0dc0e5032f5fc0a000eac77f",
+      "mode": 33204
+    },
+    "qml/applicationmodels.h": {
+      "sha256": "155652659f3b1cdba49da8e0b867476386bebfdc0099e30ba6c6414c2841c56a",
+      "mode": 33204
+    },
+    "qml/appmode.h": {
+      "sha256": "4a12651030a58c4fb94371af88a7dc025fe3ff6c07a1b00b5b33c0974173aaa4",
+      "mode": 33204
+    },
+    "qml/asyncjoin.h": {
+      "sha256": "b493db26a1576791f2548d654a9bb3b09fac9159a5ce662fca7dd19c8be896a0",
+      "mode": 33204
+    },
+    "qml/atomicsharedptr.h": {
+      "sha256": "759b713911ab0b53b293acb5540c8e5a1fd0b5844e0966deb695bd582a9b6396",
+      "mode": 33204
+    },
+    "qml/backendexecutor.cpp": {
+      "sha256": "bbbb17d0d8e89e60633040339b2ac6853f9d81aff680714b7f4c5faf859ea676",
+      "mode": 33204
+    },
+    "qml/backendexecutor.h": {
+      "sha256": "d8156aa8592c45a6caf20650f9d26f16654bc0764a065e28c7564c138d140ce9",
+      "mode": 33204
+    },
+    "qml/bitcoin.cpp": {
+      "sha256": "1dd983095e89197d01bbe7eec2a1f9f87fabccdf1eb1869ca51c9ad73e5cd559",
+      "mode": 33204
+    },
+    "qml/bitcoin.h": {
+      "sha256": "1fa284df4f60dad90c1fb29f8f92b7ffc2acd4d9e25f845455328dc313370a82",
+      "mode": 33204
+    },
+    "qml/bitcoin_qml.qrc": {
+      "sha256": "c440d6c72f0a9d71e054a5f14488b9968a0d9f1c6bbe79c9342d5d174a02a249",
+      "mode": 33204
+    },
+    "qml/bitcoinamount.cpp": {
+      "sha256": "8c000629d38cca3f914b7c7b0801dbe9dc53bca366529a12c41b924552d50b5a",
+      "mode": 33204
+    },
+    "qml/bitcoinamount.h": {
+      "sha256": "efc8016511af11762d0897c7535815e9632534a2f6ce2e6a15026a3d1d729197",
+      "mode": 33204
+    },
+    "qml/bitcoinqmlapplication.h": {
+      "sha256": "343d10b1aded1c1b8db8660dce871faaa1b16daa01870b30fbcb6ff7efd8aeaa",
+      "mode": 33204
+    },
+    "qml/bitcoinunits.cpp": {
+      "sha256": "6c40231235a2e9ee53f650ea1c01e21709e87e5bbefb3b6dafeaa4423d8b82fe",
+      "mode": 33204
+    },
+    "qml/bitcoinunits.h": {
+      "sha256": "e4af44d3ebc2cc24d18bf4b0213c32646d50c5529137245a0241b373f186897f",
+      "mode": 33204
+    },
+    "qml/blockclockprojection.h": {
+      "sha256": "a0c3833305d8d97a565d9774a43717b53b74804af8351be70f065fb59d815c61",
+      "mode": 33204
+    },
+    "qml/buildinfo.h": {
+      "sha256": "faff52f4f41642f94f2464022dd35fcedb9ac604e346f1b1e78c59482db6624e",
+      "mode": 33204
+    },
+    "qml/clipboard.h": {
+      "sha256": "7dd99af22fb7d37b38e345b794e7abdd6c5f160de8b21ab29b31a6398ca4346f",
+      "mode": 33204
+    },
+    "qml/compat/qt62/AppSettings.qml": {
+      "sha256": "d8bdadf85c818d91616356019d65e3ec0370fd01af3154ec22b962704f902f09",
+      "mode": 33204
+    },
+    "qml/compat/qt62/BitcoinAmountDigit.qml": {
+      "sha256": "90eebe4f10ee61d4b9113cd889b73e273dc45e9abdb27c5a10f53c5e7fb80c21",
+      "mode": 33204
+    },
+    "qml/compat/qt62/bitcoin_compat.qrc": {
+      "sha256": "733ce827810acc30a078b694cf02a8072881498a6767d2bd7d950ad35fe18675",
+      "mode": 33204
+    },
+    "qml/compat/qt65/AppSettings.qml": {
+      "sha256": "8d145364b81c3be3dfa3576dec9df30cf8aea7834a318dd28fa6b684576d96fc",
+      "mode": 33204
+    },
+    "qml/compat/qt65/BitcoinAmountDigit.qml": {
+      "sha256": "65d1b8953c161ffe9da2e321e1e5d09953562a3b40220b0f85567809b5150e68",
+      "mode": 33204
+    },
+    "qml/compat/qt65/bitcoin_compat.qrc": {
+      "sha256": "733ce827810acc30a078b694cf02a8072881498a6767d2bd7d950ad35fe18675",
+      "mode": 33204
+    },
+    "qml/components/AddressDetailRow.qml": {
+      "sha256": "d9949c34a3d76c30ae07bedebd84677d2c4d0970ec2503be40e0ae28b7a38a8b",
+      "mode": 33204
+    },
+    "qml/components/AddressLabel.qml": {
+      "sha256": "cec492329c075f22eff7b613cc179d4275270190a1ff2a649d4e89437ec881a9",
+      "mode": 33204
+    },
+    "qml/components/AlertAction.qml": {
+      "sha256": "868ff5ca0f298455d741738c8633eef73361e309564965efa2871e63a5014195",
+      "mode": 33204
+    },
+    "qml/components/AlertPopup.qml": {
+      "sha256": "e4c39cc1f41b44841c624feb430850d353442fe7bb7e0327e604a5cb3d21bb31",
+      "mode": 33204
+    },
+    "qml/components/BannedPeersPopup.qml": {
+      "sha256": "51ec5fd7b24cd4e86dd5561d7ad1c044c8d7879809b0c9460ac7f2dbf4376b69",
+      "mode": 33204
+    },
+    "qml/components/BitcoinAddressDisplayField.qml": {
+      "sha256": "945e23ea961bee0ccbbfde70d15a771f07b355e11398888144b2aef68c3cc590",
+      "mode": 33204
+    },
+    "qml/components/BitcoinAddressInputField.qml": {
+      "sha256": "2398ce592ec0298f91a9c8bbafeff3baa46276c0c51afe751894ed0712ca99b3",
+      "mode": 33204
+    },
+    "qml/components/BitcoinAmountInputField.qml": {
+      "sha256": "c962f210b63fc487ab84d0144161a7623989f865459e48a0ba2a572cd35322e7",
+      "mode": 33204
+    },
+    "qml/components/BlockClock.qml": {
+      "sha256": "edc79b2343d771fab96510480f8f1cb0ca1112c96564f035c6fa75ea8ee9705c",
+      "mode": 33204
+    },
+    "qml/components/BlockCounter.qml": {
+      "sha256": "2f862af793711d1cae3416ab3eb51da35ffc95007fb17c6b776690721bc02c64",
+      "mode": 33204
+    },
+    "qml/components/CoinsList.qml": {
+      "sha256": "6bcce29ca2dae8808e95876b4994139edcb43a888a5f8553058209d937eadf8e",
+      "mode": 33204
+    },
+    "qml/components/ConfirmationPill.qml": {
+      "sha256": "b5b69fbfc7c5993936a2fb75c72bd2d055e6afc6443ce0a019b62791ebad9e78",
+      "mode": 33204
+    },
+    "qml/components/ConnectionOptions.qml": {
+      "sha256": "8215a108235aa0d667ac1a387972e8778ceb05c57951ff4f8f894279ab2d014c",
+      "mode": 33204
+    },
+    "qml/components/ConnectionSettings.qml": {
+      "sha256": "4052f941547338ad044b1107567b541ae7a9db9870dad8ad9b86bcd62449aa1e",
+      "mode": 33204
+    },
+    "qml/components/DebugLogItemRow.qml": {
+      "sha256": "da712d06570c92f605b59804c11ad0a575e7c2b6f4e107c29a5d3cd0a493d82f",
+      "mode": 33204
+    },
+    "qml/components/DebugLogTitlesHeader.qml": {
+      "sha256": "e4c460409039f471812b92583cdac348cfba5c619508071063a607dc86753313",
+      "mode": 33204
+    },
+    "qml/components/DesktopMenuActions.qml": {
+      "sha256": "a213ef73fc8489cb035ad93e4ec58e302e82729ed69cd6496372d951dcc06bf3",
+      "mode": 33204
+    },
+    "qml/components/DesktopNativeMenuBar.qml": {
+      "sha256": "b11ccc59f46c2851d017a6ede23285b3de69e8e9472914071e2fb798f5edce71",
+      "mode": 33204
+    },
+    "qml/components/DetailEditRow.qml": {
+      "sha256": "22f5aa024595a535792cacdca45619602f51401c41edf3fc4da4e247dffe68fa",
+      "mode": 33204
+    },
+    "qml/components/DeveloperOptions.qml": {
+      "sha256": "d5caaf8e83530632918284cead1590c8a445310fb7af57a43c8e0c5c5b41d906",
+      "mode": 33204
+    },
+    "qml/components/ExternalPopup.qml": {
+      "sha256": "a2690b3d7dab10c2b62b297f30078baed06c60b95ccc31f8a69b1b48e4ace01f",
+      "mode": 33204
+    },
+    "qml/components/ExternalSignerReviewActions.qml": {
+      "sha256": "0ea291333a988c0844e0f50c6354e238d7f58a2c666e08d61ac953e88744e22b",
+      "mode": 33204
+    },
+    "qml/components/FeeSelection.qml": {
+      "sha256": "a44f7d0cf66be8c509ba5f72957dacea8ae15216358d96af2c1198f5dfc9fbb2",
+      "mode": 33204
+    },
+    "qml/components/InfoBanner.qml": {
+      "sha256": "872cd3120ae3458f39813f983ea9229a5fbdc46371e8648e714b6da32c026cde",
+      "mode": 33204
+    },
+    "qml/components/LabeledBitcoinAddressField.qml": {
+      "sha256": "5a8e561d956c3595b6fc56363f500605b6d97d4ee254f9e2e5694ccdfea01c73",
+      "mode": 33204
+    },
+    "qml/components/LabeledValueField.qml": {
+      "sha256": "40c1dc2b08edd5b7037e7af833a397fc088574bec465dfb87f565c2008f38995",
+      "mode": 33204
+    },
+    "qml/components/MempoolInformationRows.qml": {
+      "sha256": "80dc76e7d368ee221d9647ebaca0349b5635d447045df53df2b1e3a76bbf84ee",
+      "mode": 33204
+    },
+    "qml/components/MenuCommand.qml": {
+      "sha256": "5d307b7efc4d513642ca474098846e2b1da71a1bf848cb3f3ba9d24c6dca0051",
+      "mode": 33204
+    },
+    "qml/components/MiniBlockClock.qml": {
+      "sha256": "4120280cac46c4e289e5caaf7a8ebae6a8594b90cf544025d91f68c558bf24b1",
+      "mode": 33204
+    },
+    "qml/components/MonospaceOutputRow.qml": {
+      "sha256": "2ca3c3b583834c701f6a5d8ee9c6cac2852c5d7a0926c63b7682c5deba42efba",
+      "mode": 33204
+    },
+    "qml/components/MonospaceOutputView.qml": {
+      "sha256": "2e9c43cdf7cb80573fda0e5bcfd00f48951036866416265a4681e094ce72b36e",
+      "mode": 33204
+    },
+    "qml/components/NetworkIndicator.qml": {
+      "sha256": "88a87f092cbb5440cfd3955f6d96cc92f7ce3d9fcd45f0e810767eada9537dba",
+      "mode": 33204
+    },
+    "qml/components/NetworkTrafficGraph.qml": {
+      "sha256": "4a592ea91a600f41a732adba78eedc0b9445427d098592ec8344b31b09891be7",
+      "mode": 33204
+    },
+    "qml/components/NodeFatalErrorPopup.qml": {
+      "sha256": "5a274aecddbfb5790c6b7bea00fd520a6e568dfffb6682c3bf7d894fe9c6d858",
+      "mode": 33204
+    },
+    "qml/components/NodeInformationPopup.qml": {
+      "sha256": "04f33f453d1401120ba20437c1b30bd372f70592527a79425dbba064914ed755",
+      "mode": 33204
+    },
+    "qml/components/NodeInformationRow.qml": {
+      "sha256": "9fc180c091ae427c9048d644ee5077216e82652266aaef87e8ffbb989b5fd593",
+      "mode": 33204
+    },
+    "qml/components/NodeRuntimeDialog.qml": {
+      "sha256": "79980610fd13672e3be61b94a8cb218c365e8740613e586cc10f918ba7877ce6",
+      "mode": 33204
+    },
+    "qml/components/NodeStatusActions.qml": {
+      "sha256": "f4de7c52d9a7ac7825764f247bbe3e7790b0b1151b24a28cf13f265ae3c90492",
+      "mode": 33204
+    },
+    "qml/components/NodeWarningRow.qml": {
+      "sha256": "83359886d3aabc38e00ccce0483d3fd445d35ef2811e54e3caabfb8da020f0fe",
+      "mode": 33204
+    },
+    "qml/components/NodeWarningsPopup.qml": {
+      "sha256": "fb6c6718560298d320bc8dd43e1aeeff340cea2080ab61d753fcea3f953a909c",
+      "mode": 33204
+    },
+    "qml/components/OnboardingSettingsPopup.qml": {
+      "sha256": "eee037fe3d6be3ab1c947062c13c2068c133be782abbca17ab67fedf076da083",
+      "mode": 33204
+    },
+    "qml/components/OptionPopup.qml": {
+      "sha256": "e7a85620cb5009cfa8a9bd9191bb6380122ae100ef41d8fa6fb02fc428061aa1",
+      "mode": 33204
+    },
+    "qml/components/PaymentRequestCard.qml": {
+      "sha256": "594c174a772e92744f0eec19a8cb197547eb769aafe3d53365910fdb57deb39e",
+      "mode": 33204
+    },
+    "qml/components/PaymentRequestField.qml": {
+      "sha256": "e29b98e48dd6fa95ae7cbc98faccf87a29202aad9bcf10085efe1739ebb4db65",
+      "mode": 33204
+    },
+    "qml/components/PaymentRequestModal.qml": {
+      "sha256": "c0ff6f086d5880a896ae8a106daac120ac5fefb4851240465fc975af108fe8da",
+      "mode": 33204
+    },
+    "qml/components/PeerActionsMenu.qml": {
+      "sha256": "283579dfc5c99da51f7adf129e862f4e00b8f5546a05fa695b160e4cc56905fb",
+      "mode": 33204
+    },
+    "qml/components/PeersIndicator.qml": {
+      "sha256": "110966c3b6e731530acddad521ac57b5d3d8d62135903cda339f4e73d6ba6acc",
+      "mode": 33204
+    },
+    "qml/components/ProxySettings.qml": {
+      "sha256": "eb8431d31ef227827a17cfadcdbdb4357877c11264cfe679ece5730e42a5a825",
+      "mode": 33204
+    },
+    "qml/components/QRCodePopup.qml": {
+      "sha256": "2af860c54ede08b8a2dcaf0fe9e21387144f50fbc171d1fddc9cb5fb669a5745",
+      "mode": 33204
+    },
+    "qml/components/SearchBar.qml": {
+      "sha256": "4941f1bead1e3147e807afd4432637e18dc8be98a0824999da299238e6743319",
+      "mode": 33204
+    },
+    "qml/components/SendCoinSelection.qml": {
+      "sha256": "b762bc753dda4afa93b9109581d88464fe6e0b29c89c00f5536c62938f5e3366",
+      "mode": 33204
+    },
+    "qml/components/SendFeeSelection.qml": {
+      "sha256": "9e482bbc64777611bd0da1eb653b3b22bf700b6f82ae9446e643176897bf506a",
+      "mode": 33204
+    },
+    "qml/components/SendRecipientCard.qml": {
+      "sha256": "74f4652702dbb37653f37e8b533811b27074eeebbe851cb1b3f59907c24fd5e8",
+      "mode": 33204
+    },
+    "qml/components/SendRecipientEditor.qml": {
+      "sha256": "467d81ef7248b4474f304a14d5d94c3c28dc8b2b6bb2d8bc383b959e991d69b2",
+      "mode": 33204
+    },
+    "qml/components/SendSection.qml": {
+      "sha256": "521c907470e7520f1583abf6dd4bed841cd1663974043a6e562d46a906877067",
+      "mode": 33204
+    },
+    "qml/components/Separator.qml": {
+      "sha256": "5f1ff3f8f157847c9714eab6c9438949d8c1b1544ae8e7f420ee7e8b7310669c",
+      "mode": 33204
+    },
+    "qml/components/SettingsPageContainer.qml": {
+      "sha256": "c6814ad54dceecab14d5c4c0282edfe5207b150525348f9136277d72e561c19a",
+      "mode": 33204
+    },
+    "qml/components/SettingsRestartNotice.qml": {
+      "sha256": "081fd26ce638d9a874fe0d9a0e3150f60de58c95f79deab63d0b42c456514e29",
+      "mode": 33204
+    },
+    "qml/components/SettingsSidebar.qml": {
+      "sha256": "75478ca88a966fe017919150d56337e6a7a7d966b89eac875b4bc4c70ca6a30d",
+      "mode": 33204
+    },
+    "qml/components/SettingsView.qml": {
+      "sha256": "c8295ad3cabfa625bbd713b756b7e7fba8b6ea1d016102d3ede18bca9539b256",
+      "mode": 33204
+    },
+    "qml/components/StatusPill.qml": {
+      "sha256": "bdc8f76ec9039819407c099fc8ff1faff60777bd9becc0de27e7e3b4a281c6c6",
+      "mode": 33204
+    },
+    "qml/components/StorageLocations.qml": {
+      "sha256": "6ce63017552df224c5c05e52b7cf7ba21a6c0d975917c72dc39b94279061c151",
+      "mode": 33204
+    },
+    "qml/components/StorageOptions.qml": {
+      "sha256": "261a5948b3cc7467f7a270614d26007c641fa218cf8bf2aa039875889df4ae51",
+      "mode": 33204
+    },
+    "qml/components/StorageSettings.qml": {
+      "sha256": "af81dbb93c85a62ee65a687474a6c802acadf9f117ad73bfc0095ef8f25d7a25",
+      "mode": 33204
+    },
+    "qml/components/ToastBanner.qml": {
+      "sha256": "937bec2fdf7d746358592c6db2420e5289631323fca8eb0cc11d57eed7ea7bcb",
+      "mode": 33204
+    },
+    "qml/components/ToastPopup.qml": {
+      "sha256": "e420c8c9362b8f6e3e2e32cd1cc66ebfc94a690d66df3a8c651fc89e2e97e22d",
+      "mode": 33204
+    },
+    "qml/components/Tooltip.qml": {
+      "sha256": "4abc43e518ae54cf48161d7d93ccce07d1bdd14babde91021e7629e819d51ffa",
+      "mode": 33204
+    },
+    "qml/components/TotalBytesIndicator.qml": {
+      "sha256": "26810ff4f5f15a51d79ede577afe69b20b5339b1baf0fd4b7183e6d7b71b0c64",
+      "mode": 33204
+    },
+    "qml/components/TransactionDetailsGrid.qml": {
+      "sha256": "1499f4c98e607fd07bbd6e95a7ac5e584ac6e4ad07e0dd8af0807f20f4114bb6",
+      "mode": 33204
+    },
+    "qml/components/TransactionDetailsSection.qml": {
+      "sha256": "3e54a8f1c87aa0b68dc5ca871f5ddeb7df7c065836b6cf02a353835e16d8295f",
+      "mode": 33204
+    },
+    "qml/components/TransactionEntriesList.qml": {
+      "sha256": "e335ff8fd2dc14f7f690a5a2dc219f6decb5b7da0915545af420acda92b1448c",
+      "mode": 33204
+    },
+    "qml/components/TransactionFlow.qml": {
+      "sha256": "c984101330500fe3ca6548ee536378cffe1e07baf4c5b6821bb23b9875e81168",
+      "mode": 33204
+    },
+    "qml/components/TransactionFlowLayout.js": {
+      "sha256": "d38b8efc30d249d75b9a69166aa1120974792784fa99c0de44b98260e7c5e9aa",
+      "mode": 33204
+    },
+    "qml/components/TransactionFlowNode.qml": {
+      "sha256": "65cfd2eb59b8e942ac2917e0c55cd45a72024f8403d5079677a12d08e7c7f1b0",
+      "mode": 33204
+    },
+    "qml/components/TransactionFlowRibbon.qml": {
+      "sha256": "c3aa1be36c5e47b1d37401a83fe850cae0cba0f19718634c1be8a2336ac06d4e",
+      "mode": 33204
+    },
+    "qml/components/TransactionSummary.qml": {
+      "sha256": "3c02da6264bb485d55fbc840732a5c792835561dd4a823385e5a7b251fb8419e",
+      "mode": 33204
+    },
+    "qml/components/WalletBackupConfirmation.qml": {
+      "sha256": "53c15b52613bd94102d42f2b5b0570a23a59c05e916fbcddd10cbc78ce9cd2d2",
+      "mode": 33204
+    },
+    "qml/components/WalletCreationHost.qml": {
+      "sha256": "9547e369b4eb1112ef68e8e4da2b35ab067ac63d87462862f497b9849e070623",
+      "mode": 33204
+    },
+    "qml/components/WalletCreationModal.qml": {
+      "sha256": "3b32fdd2b4c75bba29922422c82b59806790e7698c96e5bc608cb9d3d15405f3",
+      "mode": 33204
+    },
+    "qml/components/WalletMigrationPopup.qml": {
+      "sha256": "ec487df1a409664eec5f88d904b6c3d57f80925fa81ddaf35289ef904ae81c5a",
+      "mode": 33204
+    },
+    "qml/components/WalletPassphrasePopup.qml": {
+      "sha256": "5969ac7a3b7059da24377dd1bad7b95d013b0ad509f58a5e3e37a53002597637",
+      "mode": 33204
+    },
+    "qml/components/WalletSuccessBadge.qml": {
+      "sha256": "997828dc09733cfbd30d28841b6e496ad7ca4513100afe7967e858088cca0794",
+      "mode": 33204
+    },
+    "qml/components/blockclockdial.cpp": {
+      "sha256": "0147faf9e28e6c35971d3aadb72c90b977144355a7cb4c46fb83ed62269684f7",
+      "mode": 33204
+    },
+    "qml/components/blockclockdial.h": {
+      "sha256": "735672bafd27a8c41aaac6c0234ed6be2253478bb1d398e7b02f92e6ad44b141",
+      "mode": 33204
+    },
+    "qml/controls/ActivityCalendar.qml": {
+      "sha256": "55fc5835be695b9742d511bb55a22d70f8bcd7d674c9374ab9d2ed0eb0f156bf",
+      "mode": 33204
+    },
+    "qml/controls/AddWalletButton.qml": {
+      "sha256": "636651a5380b6836db060ee24b20d56ac7a98b2fb40ea060b7526b07ccd60257",
+      "mode": 33204
+    },
+    "qml/controls/AmountDisplayLayout.js": {
+      "sha256": "578342c8728c61c552be8c82a96ec4e9990962d18140d0147ee2e8ee602190ee",
+      "mode": 33204
+    },
+    "qml/controls/AmountUnitButton.qml": {
+      "sha256": "6ff7a34ae1a261cf6a356ea1e561bb09f3100b7c991b9d399903d89c5c8811ac",
+      "mode": 33204
+    },
+    "qml/controls/AppFolderDialog.qml": {
+      "sha256": "ad0368c4378c57850c89efc7084a12d023f3ee446d7da72455bf5293918aa6d1",
+      "mode": 33204
+    },
+    "qml/controls/BitcoinAmountColumn.qml": {
+      "sha256": "63b58b2910d4f238520a6abb6b5ca3a3f02b0b703efc705417205b446edbb3e1",
+      "mode": 33204
+    },
+    "qml/controls/BitcoinAmountDigitBase.qml": {
+      "sha256": "d2e50b7fd02e62ac790da9aac776ccaf7f3c14a96e6e3c523e61c7a44e10dd47",
+      "mode": 33204
+    },
+    "qml/controls/BitcoinAmountDisplayLabel.qml": {
+      "sha256": "1260267cf1df823251f510e70cb14706a26b6877fad1e42a351d7b4507a979ba",
+      "mode": 33204
+    },
+    "qml/controls/BitcoinAmountDisplayLabelBase.qml": {
+      "sha256": "d67d785335f57ad38af8bc76b7b4079de3452bbcc71c0f452f6c0b8a589238fb",
+      "mode": 33204
+    },
+    "qml/controls/BitcoinAmountUnitGlyph.qml": {
+      "sha256": "5757612eac53272f9ff9c8db2047049cd4aa61c5e0310ca26b13a936a5c9fdf6",
+      "mode": 33204
+    },
+    "qml/controls/CapturedPaste.qml": {
+      "sha256": "f7414f611520531225b9f637e91759d55db01f0ee30ff58e1ce83e9609dfc7fb",
+      "mode": 33204
+    },
+    "qml/controls/CaretRightIcon.qml": {
+      "sha256": "82ce4c502e4a490f5090ce9e74cb4fb8261b15e60e952ef354cb5bdd9c898324",
+      "mode": 33204
+    },
+    "qml/controls/CheckBox.qml": {
+      "sha256": "b49cdb40fe308e66004af8ba83e879851d9ce7abeeeaf8476fe060d86ff60cb6",
+      "mode": 33204
+    },
+    "qml/controls/CloseButton.qml": {
+      "sha256": "af56d3acd50bb6927076225879a58d94c13362f2450cf7ec0ef34fa979860233",
+      "mode": 33204
+    },
+    "qml/controls/ContextMenu.qml": {
+      "sha256": "cd8f252dc57c6cb96a3338a46ef8657e693accd596bd3bd2a1f20aa72e1843f7",
+      "mode": 33204
+    },
+    "qml/controls/ContextMenuButton.qml": {
+      "sha256": "af50f6f2de30b0201e3af7843c92063383343288441152e69ea2ba9471e5782d",
+      "mode": 33204
+    },
+    "qml/controls/ContextMenuDivider.qml": {
+      "sha256": "33fa6649961d5978bf7da1da3398105d35027f8ad22bd1759311b9fe5a915558",
+      "mode": 33204
+    },
+    "qml/controls/ContextMenuPicker.qml": {
+      "sha256": "9efaffe36dba181833ae687acaf9357c14e542b975e3a6b755a501a58d0633c0",
+      "mode": 33204
+    },
+    "qml/controls/ContextMenuToggle.qml": {
+      "sha256": "a6e81a0d72d62189161d30926c83b32d20f102d12fc1ca3d13410796417e30d4",
+      "mode": 33204
+    },
+    "qml/controls/ContinueButton.qml": {
+      "sha256": "f9600fb0ef13e30f1d6f739fe2edbe9455f148c5075a0d5e3c2036e90cd40bff",
+      "mode": 33204
+    },
+    "qml/controls/CopyButton.qml": {
+      "sha256": "f9979a090098bae899d34ab1a7e3035b1efc848cb26a53594db7bc56888147fe",
+      "mode": 33204
+    },
+    "qml/controls/CoreCheckBox.qml": {
+      "sha256": "3f0943e4f1f9a76d901e16cd2382f5d7f80a54b3c3c4107fa154ee5d959fdee3",
+      "mode": 33204
+    },
+    "qml/controls/CoreText.qml": {
+      "sha256": "dfa5ade264e8156790ac4d85345fd655cfa90671ec1a11399bc4d04f085facc8",
+      "mode": 33204
+    },
+    "qml/controls/CoreTextField.qml": {
+      "sha256": "a63147f556947ccc391a784d517f443ab6dca309e3fa4a73b1f6a7012d0579c1",
+      "mode": 33204
+    },
+    "qml/controls/DropdownButton.qml": {
+      "sha256": "2d316fed717de26b7229ee102547b7f64b386c54461b6ff0682ac1de7b885717",
+      "mode": 33204
+    },
+    "qml/controls/EditableKeyValueRow.qml": {
+      "sha256": "503fa96de61baaa235c843446129300681ef4fe6c54852b3a60372e4af7e790d",
+      "mode": 33204
+    },
+    "qml/controls/FieldBorderRings.qml": {
+      "sha256": "6a2a18666abaa70abb0e093a8b749e9dd67d4daa8e3963bfdd62d95816b733aa",
+      "mode": 33204
+    },
+    "qml/controls/FilterButton.qml": {
+      "sha256": "8027ce1af76502afd91531f8f295ec3b82b904c980048438232ecc5141892237",
+      "mode": 33204
+    },
+    "qml/controls/FocusBorder.qml": {
+      "sha256": "6cd0c1c5e2a004a1f05eb4f75e274ef2e7087ca6a449c10a693431e7475d054d",
+      "mode": 33204
+    },
+    "qml/controls/FormRow.qml": {
+      "sha256": "42be5d1fa46f90c50292ee790d8ce08a7a8152f1b426ede71a3c0189fbac919e",
+      "mode": 33204
+    },
+    "qml/controls/FormSection.qml": {
+      "sha256": "c560a4a6f44fddb57d511a31488f7bc644c3b63f3cb88cc09767365609c22ef1",
+      "mode": 33204
+    },
+    "qml/controls/Header.qml": {
+      "sha256": "05067aa884a0da52c3cf598377cc7107c677fbf023c6cab8fd239a8264c9f23a",
+      "mode": 33204
+    },
+    "qml/controls/Icon.qml": {
+      "sha256": "92b374cbf2a980ee97de55451d8f04bbf3e0a96502132430dacd389072229cd0",
+      "mode": 33204
+    },
+    "qml/controls/IconButton.qml": {
+      "sha256": "9f29e0f6cc4fcd330a2321e392cd7d665fb6e063381c160f6070ac38cf4159d0",
+      "mode": 33204
+    },
+    "qml/controls/InformationPage.qml": {
+      "sha256": "0905b2dcb62cc6362a593e79ad25d35c98bfe87a6d68384b3563a16421c878f3",
+      "mode": 33204
+    },
+    "qml/controls/KeyValueRow.qml": {
+      "sha256": "d5177026ef799b218b8c74094589075ab18aea9d01891c1772958d2bfc4b41c3",
+      "mode": 33204
+    },
+    "qml/controls/LabeledCoinControlButton.qml": {
+      "sha256": "525646ad7ccb82581e77734a2dbcd7b07349c0b0ff74176661c00df94ab603d7",
+      "mode": 33204
+    },
+    "qml/controls/LabeledField.qml": {
+      "sha256": "76e269a78371dfc16eae33c0c62a59b4e47964808074575e5d84c451596207a3",
+      "mode": 33204
+    },
+    "qml/controls/LabeledTextArea.qml": {
+      "sha256": "84ae59d99a9feba57a60823e030a91ec8710a3a9acbba7a525aa50d48adf4bb5",
+      "mode": 33204
+    },
+    "qml/controls/LabeledTextField.qml": {
+      "sha256": "2f1bc04fbb74b60b965d8435cfd914c329d88f6c43469b7ceda13d932b861a3c",
+      "mode": 33204
+    },
+    "qml/controls/LabeledTextInput.qml": {
+      "sha256": "93f8de38bc30c8fe016d2d597f3357b9863cb91678521d1efeefd31609061e31",
+      "mode": 33204
+    },
+    "qml/controls/LabeledTextView.qml": {
+      "sha256": "b0cae6403f1d0548aa7a68bbf99239d4a3c99abc2b23fc1d6d60d2bdde043f05",
+      "mode": 33204
+    },
+    "qml/controls/LinkButton.qml": {
+      "sha256": "3027ca51fc4871cef8a4212dc3299b1044617660482adcc7c8541de903a6df28",
+      "mode": 33204
+    },
+    "qml/controls/LinkRow.qml": {
+      "sha256": "50fac80c28918f5fd5dce93dfea9cc0aa2487d0ccc5000c30d853cbaebac3652",
+      "mode": 33204
+    },
+    "qml/controls/ListRow.qml": {
+      "sha256": "3f1094a1f17cb3fbc65213ec1785871a5b49ef2896862012fbedf1e30b9dfa5e",
+      "mode": 33204
+    },
+    "qml/controls/NavButton.qml": {
+      "sha256": "083c9f3ed0c342fcabf5c6ab492a3e376a56e5cfea6f21feb2e63acad47d84ff",
+      "mode": 33204
+    },
+    "qml/controls/NavigationBar.qml": {
+      "sha256": "6b560e1a075e89bf9050b5693c11af860d4839cb5220f3e4698f24391baf8bbf",
+      "mode": 33204
+    },
+    "qml/controls/NavigationBar2.qml": {
+      "sha256": "840d3e47c4eb9a6babb7d6b16bf09410cdd49ffaba8bd8b45af43b9dbc764222",
+      "mode": 33204
+    },
+    "qml/controls/NavigationSplitView.qml": {
+      "sha256": "ac8ce2479b693504c6a6c8bbd7bbc1578eb5016f185fa356f0b6903406575dd6",
+      "mode": 33204
+    },
+    "qml/controls/NavigationTab.qml": {
+      "sha256": "5bf6ffd6ac23edef4280798cb75e0554476d142193c2f27cac5b4f54d367b5ae",
+      "mode": 33204
+    },
+    "qml/controls/NeutralButton.qml": {
+      "sha256": "7f1a01049daf7ae49a7ba10656df69dde3c3fea60cf032121c37aab42bd92b39",
+      "mode": 33204
+    },
+    "qml/controls/OnboardingBackButton.qml": {
+      "sha256": "4d9256855ac4796f370ca41489a5ab034aa781c7aeb8e787b6784160c7c34fd2",
+      "mode": 33204
+    },
+    "qml/controls/OnboardingFooter.qml": {
+      "sha256": "a4a137111f79d4e27ded69df02115d50904754a3dbe886905d3ca4601494ec3b",
+      "mode": 33204
+    },
+    "qml/controls/OnboardingNavigationBar.qml": {
+      "sha256": "93d4dccff5a58596c00b170488654020e3943685e4010bcfc131bfe3d5ad08a5",
+      "mode": 33204
+    },
+    "qml/controls/OnboardingView.qml": {
+      "sha256": "3699b300fdf9b1be9ea01e5cedb0bd35c1f64074e5208a2693da4e8a938bc0ca",
+      "mode": 33204
+    },
+    "qml/controls/OptionButton.qml": {
+      "sha256": "6ef7e302cb453d8b80ed3acd43d4e8b6ea3b49a4746aed488d140e787b107e85",
+      "mode": 33204
+    },
+    "qml/controls/OptionSwitch.qml": {
+      "sha256": "bcce4d7cf7adbd76db3232e32c6a05d0c0a6d424f72f7071ec89a9b708f9d8da",
+      "mode": 33204
+    },
+    "qml/controls/OutlineButton.qml": {
+      "sha256": "72b8854ed1df91508a96000f105e42aa01dd9290ed32df446653fa9bfc2feaed",
+      "mode": 33204
+    },
+    "qml/controls/OverflowMenuButton.qml": {
+      "sha256": "e87edc3998bc1e9afa3cc5ea61ee42b0e76929f61c4f2925a1490dafda00c350",
+      "mode": 33204
+    },
+    "qml/controls/PageHeading.qml": {
+      "sha256": "993befe2778dd45d2e149635faad75a8252f7fc294b8161d454a65a73f61d99a",
+      "mode": 33204
+    },
+    "qml/controls/PageIndicator.qml": {
+      "sha256": "7b0d60b38b3bd28bc2b1c668c5f5947ee87953b3c123ce7fd62ef4f08f6b82ec",
+      "mode": 33204
+    },
+    "qml/controls/PageStack.qml": {
+      "sha256": "04e947b9a71136a25c3c2e02548c77d37891ec4f8ee95d01508a389ab8712dcb",
+      "mode": 33204
+    },
+    "qml/controls/PasswordTextField.qml": {
+      "sha256": "2e8c4e9b8aef9f21441034544bd1063c896532e3e70000e1e7acdabc5867cb7f",
+      "mode": 33204
+    },
+    "qml/controls/PopupPicker.qml": {
+      "sha256": "d0e38c97d944aca5c4c04f8818d03365460d0cac994978055dcb78cf92e4f251",
+      "mode": 33204
+    },
+    "qml/controls/ProgressIndicator.qml": {
+      "sha256": "411025ec0ffdac67f4a48ec51793b984c3afbd5289501e757f2a25b095fb46eb",
+      "mode": 33204
+    },
+    "qml/controls/ProxyLocationInput.qml": {
+      "sha256": "dbd18549e9d2864b3c487561ab479b6f5e9f065f0971096fa53ba30c1de4867a",
+      "mode": 33204
+    },
+    "qml/controls/QRImage.qml": {
+      "sha256": "1e2d190011ea1c8c9d82bb1c69b343d9ff1e085420a5bfba4c8816650024fd5f",
+      "mode": 33204
+    },
+    "qml/controls/RangeSlider.qml": {
+      "sha256": "28ecff1657069d7dce0dda4935295d9a6ba7bfb0bee2542a58b20a8f2faa58e6",
+      "mode": 33204
+    },
+    "qml/controls/SegmentedPicker.qml": {
+      "sha256": "02e18366afde3c530d85aa1b0d73e2921bea94dcc66927f77619a1c6a30d5b61",
+      "mode": 33204
+    },
+    "qml/controls/SendCreateOptionsPopup.qml": {
+      "sha256": "2ee8b5afeefa41d040ed9374a8dc1f194ebd95e2b0f0f0964464cfa07c844d0e",
+      "mode": 33204
+    },
+    "qml/controls/SendOptionsPopup.qml": {
+      "sha256": "e8610732f9e85c111bb684052a4bd1efb2892b427a31e12de9490bf2c6bb28bf",
+      "mode": 33204
+    },
+    "qml/controls/Setting.qml": {
+      "sha256": "8d45bcc2a90dcdb104828ce57f7674ed38c7636eb204d0e4b5d6a1e562fa3176",
+      "mode": 33204
+    },
+    "qml/controls/SettingsHeader.qml": {
+      "sha256": "adbe6eff334f2a09f2a54f615a44834bc8cb274e9a60ca619e61263656bcb9b4",
+      "mode": 33204
+    },
+    "qml/controls/SettingsPage.qml": {
+      "sha256": "63eb0aea98fe3b6ce3d7690a41b91ee5fe7636dfa9008aa894ee13e7ccfe7faa",
+      "mode": 33204
+    },
+    "qml/controls/SizeClass.qml": {
+      "sha256": "4ecc56e66417679416f7b6a1fb4aa39a598c31bd114d81603476e36719aa33ac",
+      "mode": 33204
+    },
+    "qml/controls/Skeleton.qml": {
+      "sha256": "f09a8833ee874bafedc94f838a29d74c439f2f0b83450e2c3de93db233b3fe4a",
+      "mode": 33204
+    },
+    "qml/controls/Slider.qml": {
+      "sha256": "993c9fc12f0f6a1ebc6b35febec6cbc159b99e2f2b683048dea18ef475ecee58",
+      "mode": 33204
+    },
+    "qml/controls/SpinningIndicator.qml": {
+      "sha256": "2cac99326011486e12890f77ca9b8464fa947ecfa8a7e3ce0fb8f16db4b8035c",
+      "mode": 33204
+    },
+    "qml/controls/SurfaceGradientBorder.qml": {
+      "sha256": "5caf47c1d95036fd9d9ee6be32a4c919144a0eb5016abc2c7d410cb6bf8eada5",
+      "mode": 33204
+    },
+    "qml/controls/TextButton.qml": {
+      "sha256": "42dc3c4318ca2c2cc251b1fbe0283ac274a65a3e4c25548ebd03d37e302699e8",
+      "mode": 33204
+    },
+    "qml/controls/TextFieldRow.qml": {
+      "sha256": "b2e4ae98f619ab9ab61db5d03062202865d72fd40b5e1a6d2410cc1f9ce598fa",
+      "mode": 33204
+    },
+    "qml/controls/Theme.qml": {
+      "sha256": "1b3db7210c61efc3da946eb3625fa8de9de179036f473a0106ea4676a9d1457e",
+      "mode": 33204
+    },
+    "qml/controls/ToggleButton.qml": {
+      "sha256": "6a3677507cfaff207d68eb44593eb8f010543a33134dfd8fb055f5c4f1578ffe",
+      "mode": 33204
+    },
+    "qml/controls/ValueInput.qml": {
+      "sha256": "57926c9df41717104c5205242d2befeda119e49e27ca1b110babb5675e895814",
+      "mode": 33204
+    },
+    "qml/controls/ValueRow.qml": {
+      "sha256": "d53f69b8098074afadb0780f03d17793f52132cab374fe687d018e2fd67ab395",
+      "mode": 33204
+    },
+    "qml/controls/WalletCreationTypeRow.qml": {
+      "sha256": "94c5d2c1e047849752458683b84fa53e3bbf3e039aee97bd1ab30606984a8f07",
+      "mode": 33204
+    },
+    "qml/controls/linegraph.cpp": {
+      "sha256": "0fc52ceaeaa0d857f3ceb53f582fdf24e8a601221f04abdecf3878526850f631",
+      "mode": 33204
+    },
+    "qml/controls/linegraph.h": {
+      "sha256": "4387979671060e2f15b04470d809133220040ebd8604e67b87dc435b7c77d984",
+      "mode": 33204
+    },
+    "qml/controls/qmldir": {
+      "sha256": "92128bc4f78e98dcaebd7a932184c9e63220e2ad95e9916e41c0815ece4409b2",
+      "mode": 33204
+    },
+    "qml/controls/utils.js": {
+      "sha256": "868e43afb8c941f50f68cff88de4594ce7b6a5847f188a239e8253ece442c868",
+      "mode": 33204
+    },
+    "qml/core_settings.cpp": {
+      "sha256": "ae640d15c8ad5522bf22dd6369e107c62536f09b94c8c607c4e019be603c019e",
+      "mode": 33204
+    },
+    "qml/core_settings.h": {
+      "sha256": "a80396ce33d795b4cde5acfb4fa5463425db47139180af9575be48fcdb9c1e43",
+      "mode": 33204
+    },
+    "qml/datadir.cpp": {
+      "sha256": "8ed3c318102ce2dcbbc8991ff69a52dd51d59ae0a05102cc802eb80dbb2df16f",
+      "mode": 33204
+    },
+    "qml/datadir.h": {
+      "sha256": "a3acbaf6858eff38115285fab570360c56a767559566b6e6f5a8f7915920373d",
+      "mode": 33204
+    },
+    "qml/execution.cpp": {
+      "sha256": "87ad596a4bcba6afad9e0df6c4b38155d2e9726765b30b81d8c737ada3dd94da",
+      "mode": 33204
+    },
+    "qml/execution.h": {
+      "sha256": "281978c9188bee53b43949a2ca67fd02e72315c7dd94ba534b725f03425f9975",
+      "mode": 33204
+    },
+    "qml/flowpresentation.cpp": {
+      "sha256": "094c9d71616c7f1c25180f838050a346b363ad04a8e8778c71b45459d2c2bf41",
+      "mode": 33204
+    },
+    "qml/flowpresentation.h": {
+      "sha256": "9c46c3299f42723fc619dce8e2c282e07705f636163cbb8ce345c520ed0516f0",
+      "mode": 33204
+    },
+    "qml/guiargs.cpp": {
+      "sha256": "ede1a5e1af01c50bb2016cc03b528d7633fe86601891db2997bbfa71fe5929e4",
+      "mode": 33204
+    },
+    "qml/guiargs.h": {
+      "sha256": "2cc1659077b4a4f5dc946c7b703e076ea9efb677df97b3b70563726adbf95c9b",
+      "mode": 33204
+    },
+    "qml/guiconstants.h": {
+      "sha256": "faa1ccba6dbdd61b6b9052fcd7fa70d5cccc3a402559e537e5dfd2427f749ddc",
+      "mode": 33204
+    },
+    "qml/guipresentation.h": {
+      "sha256": "5934796be0f04ad37c414857641ef84f593556e4a44c11ae17338eb5cb3e06ba",
+      "mode": 33204
+    },
+    "qml/imageprovider.cpp": {
+      "sha256": "687b0c0896632a84c55cf925bfb082ea6f25a4d0845a44d8bceb3f5e44e15829",
+      "mode": 33204
+    },
+    "qml/imageprovider.h": {
+      "sha256": "2ffedfb8967502833acac41f6d28fe0e3d0cba1cf2f38d5b8f852727e311687f",
+      "mode": 33204
+    },
+    "qml/indexedsequence.h": {
+      "sha256": "899d07daef7284b669f3bce340700b71a78c322f26fbe9f71629db5ba9afc40b",
+      "mode": 33204
+    },
+    "qml/initexecutor.cpp": {
+      "sha256": "3b04cc9fe24e5dd837465805a9552f3809069fdbe6ef9a8ded53c69b96776f18",
+      "mode": 33204
+    },
+    "qml/initexecutor.h": {
+      "sha256": "4a0d3376e7b8cb5073e8f4ae2d6cb5e0cbbdec92677b5fa07374e2e6992e0add",
+      "mode": 33204
+    },
+    "qml/legacy_settings_migration.cpp": {
+      "sha256": "4db6e08093165bcc161b96fb154d6075d3e7ab6813935548955e5eb54ffab204",
+      "mode": 33204
+    },
+    "qml/legacy_settings_migration.h": {
+      "sha256": "d7de5a10244186055aaf18bc72abb149ce3414347940a21f6d5e974aa8094e7e",
+      "mode": 33204
+    },
+    "qml/locale/bitcoin_qml.ts": {
+      "sha256": "4e60d50aac7323412906bd19aee8f799f9216c61cd472d2ca99481c21fdaaee0",
+      "mode": 33204
+    },
+    "qml/locale/bitcoin_qml_es.ts": {
+      "sha256": "6ac168987b5ce82cb34053574cb2606458452e1fdd83e8f6c34a17832bf09c18",
+      "mode": 33204
+    },
+    "qml/models/activitydetailmodel.cpp": {
+      "sha256": "5045b3b48c64dc8353837ba8a37d1b1fc00b9b8bc37dc99022fff96e37e4ede2",
+      "mode": 33204
+    },
+    "qml/models/activitydetailmodel.h": {
+      "sha256": "3d7377e4686b9d61eb884170501e0ca5dcaadae01b293c1b6e08b52cafff88d8",
+      "mode": 33204
+    },
+    "qml/models/activityfilterproxymodel.cpp": {
+      "sha256": "fb7da1709ca52e245b36fb0f2afafb121380bf0b26e4c472208edf4cad667106",
+      "mode": 33204
+    },
+    "qml/models/activityfilterproxymodel.h": {
+      "sha256": "1effb8b6bf1134e654247d09656b40eff592e2bfebb2ce629181860c1d9959c9",
+      "mode": 33204
+    },
+    "qml/models/activitysnapshot.h": {
+      "sha256": "6d53191e51cb70281f344a4b11213852cddac259550889cee6f5d4891d600820",
+      "mode": 33204
+    },
+    "qml/models/addresslistmodel.cpp": {
+      "sha256": "6cfd2032f70a2f537aa73a8f857ec354aacf25d6d352618294823ac5c8a533ad",
+      "mode": 33204
+    },
+    "qml/models/addresslistmodel.h": {
+      "sha256": "09f24ed917ef8357a64ce4f75044d599b0d65309c043fd89e466ccff3b23bc00",
+      "mode": 33204
+    },
+    "qml/models/backuppolicy.cpp": {
+      "sha256": "7fa6492dc6625221a1581ba3d45db50c66e351b7487e1172723d721ea141021b",
+      "mode": 33204
+    },
+    "qml/models/backuppolicy.h": {
+      "sha256": "2ac477b559920fcafc3c7dcd41a940537031affccc250d339b1df747b8c65c99",
+      "mode": 33204
+    },
+    "qml/models/backuppolicyio.cpp": {
+      "sha256": "ea316d3d3300fe19dc789ad4ee32cf160b054bb4dc6fe6403977054db92764bd",
+      "mode": 33204
+    },
+    "qml/models/backuppolicyio.h": {
+      "sha256": "77b7b5ce1de2786034fff5617ef6ec80133e6e1d7068d15d9b69f05565f9a4ac",
+      "mode": 33204
+    },
+    "qml/models/backuppolicyoperation.cpp": {
+      "sha256": "65d90b8b38a5b672c77fffa0c762ff1687f2468e83f3cdff38eb3eebfb2bc930",
+      "mode": 33204
+    },
+    "qml/models/backuppolicyoperation.h": {
+      "sha256": "9e187de9c361b95f1e8fbdc56957b7d2d1c91a0f4160f56fb9e2a0025ab64760",
+      "mode": 33204
+    },
+    "qml/models/banlistmodel.cpp": {
+      "sha256": "dde29aa00a920f76e9851289581814ffa9b567b1e02c88abbee9044bace19ac8",
+      "mode": 33204
+    },
+    "qml/models/banlistmodel.h": {
+      "sha256": "42e9d554f3446bf5f1d55fc8e555ae4d6d27fe58b51c7df3d13f2653d4e75cce",
+      "mode": 33204
+    },
+    "qml/models/bitcoinaddress.cpp": {
+      "sha256": "ce343866e24ebff1dab061336fb1e8f595a7a85ba3faf3982f533276ca32b8e8",
+      "mode": 33204
+    },
+    "qml/models/bitcoinaddress.h": {
+      "sha256": "a1c2fc27e013bd329e777e302f52e8c71628701593f89994918dd72562808ba1",
+      "mode": 33204
+    },
+    "qml/models/bitcoinuri.cpp": {
+      "sha256": "68277d7ca768e19b78b780c5e215b47c27c4856afd9da01d1ff217b33fd8a120",
+      "mode": 33204
+    },
+    "qml/models/bitcoinuri.h": {
+      "sha256": "750c90dd594c954999b3a189c750c8bd5e4d10209f2e7df220954d574f42c2b2",
+      "mode": 33204
+    },
+    "qml/models/bitcoinurimodel.cpp": {
+      "sha256": "8dc8dd8242679537e65e90373afb3fd9d345a0114f9135d932341701d7a36940",
+      "mode": 33204
+    },
+    "qml/models/bitcoinurimodel.h": {
+      "sha256": "7dbbfdb3684a7cfc1b684825839582c812b22f4faf6a1758a9d516825ceafc81",
+      "mode": 33204
+    },
+    "qml/models/blockclockhistory.cpp": {
+      "sha256": "0d4ac4085b4b93a92c3b41d27d0b9ace2ef64f2d6885dcfb22991768b16896b2",
+      "mode": 33204
+    },
+    "qml/models/blockclockhistory.h": {
+      "sha256": "774ec59139d91642d244fa775746036dcb8c9f3d32707e6867d331f22fb506d8",
+      "mode": 33204
+    },
+    "qml/models/blockclockmodel.cpp": {
+      "sha256": "8e42fd33a229b0e17f5b4f8d23f1fad553ecefd722c69e4fc545692fcd5ffce5",
+      "mode": 33204
+    },
+    "qml/models/blockclockmodel.h": {
+      "sha256": "7b223aac75283c051a0eff0a82a8dc85a7a71cb5e0f050e633f9e8097ecab79e",
+      "mode": 33204
+    },
+    "qml/models/bumptransactionmodel.cpp": {
+      "sha256": "735b880a531e0ea816976e3aa61ed2050a64e8e5163c567aa84d868643b886b6",
+      "mode": 33204
+    },
+    "qml/models/bumptransactionmodel.h": {
+      "sha256": "a85d6754ccbfcd6b7b15c2820a8a7ed8af7d6819c40fde24a034b60a6f0b4e60",
+      "mode": 33204
+    },
+    "qml/models/chainmodel.cpp": {
+      "sha256": "414d9858a32297eb42fe5550303777f8437a8bfe8a48f6e0db8cd46ae0a1a085",
+      "mode": 33204
+    },
+    "qml/models/chainmodel.h": {
+      "sha256": "60f01bd5f0c178d4c55d3bfe9d6c8338dd8ef5741ac27d597f8d83dc498e1293",
+      "mode": 33204
+    },
+    "qml/models/coinslistmodel.cpp": {
+      "sha256": "de5de88ea05662c4ed59ef508aa6f06b4fbda1cbf381c5bf380ee75cdd0b3ca5",
+      "mode": 33204
+    },
+    "qml/models/coinslistmodel.h": {
+      "sha256": "16a7a6f52b0469a8f084fd36a3eee0cd179349c56cab544e5837083ebf5ed513",
+      "mode": 33204
+    },
+    "qml/models/core_settings_model.cpp": {
+      "sha256": "180aac1a7bc8f7d376160f7071f0c7c147e214dec8ad495a1f8c7e4a689e6669",
+      "mode": 33204
+    },
+    "qml/models/core_settings_model.h": {
+      "sha256": "3b2c3ed8a54a4185df103f74169b39268bed282e3d29653675424eadab102af5",
+      "mode": 33204
+    },
+    "qml/models/debuglogmodel.cpp": {
+      "sha256": "ec118fde602fcb459a78c0f5bd15e6b0843afecd0c489bfe4cd64c7dfeeccca5",
+      "mode": 33204
+    },
+    "qml/models/debuglogmodel.h": {
+      "sha256": "a60828341c204d85627be95b3405f5c86677928ca70d911ce540a7c97b9f061d",
+      "mode": 33204
+    },
+    "qml/models/desktoptrayiconcontroller.cpp": {
+      "sha256": "9284b71752cbf3687ef0bb97e4c4caf6dc98305734081e4cfe81f40fc404e816",
+      "mode": 33204
+    },
+    "qml/models/desktoptrayiconcontroller.h": {
+      "sha256": "0e49efa5c7fcdc51481f530c71cfa9e1876fce58ba34d04d5428f876bcfa7594",
+      "mode": 33204
+    },
+    "qml/models/desktopwindowbehaviormodel.cpp": {
+      "sha256": "56b5938dca338df20b2d5f70abb30d6c07bf267ef51363e57a5dbb192ad8ff54",
+      "mode": 33204
+    },
+    "qml/models/desktopwindowbehaviormodel.h": {
+      "sha256": "98905a8a0a36dc0eba55fc5ca4c19c43c337d2d0054529bc5ac1a55922285512",
+      "mode": 33204
+    },
+    "qml/models/feereadservices.h": {
+      "sha256": "c29306a4565966d1e0bd9175dea9115c558d2e6adb8bd283491bd6b13328ec32",
+      "mode": 33204
+    },
+    "qml/models/feereadstate.h": {
+      "sha256": "4324180c03a62eebfe4756bbea21cbe05fbd98a2cae92387abb81706c2c12205",
+      "mode": 33204
+    },
+    "qml/models/flowdetailsmodel.cpp": {
+      "sha256": "ae13485b8519c2ccfe5c44539a242322ff629a489a012b0c98de460588bac5e7",
+      "mode": 33204
+    },
+    "qml/models/flowdetailsmodel.h": {
+      "sha256": "ae1a057a18674b6a25b6cbd2afa472cd1408e30d7820fcd0cb49bbbbe2fb16c8",
+      "mode": 33204
+    },
+    "qml/models/imageexportoperation.cpp": {
+      "sha256": "74db31ebe4d9bcf1fe29c8466d53587a9fe613b6748978e98000f343f3a759e8",
+      "mode": 33204
+    },
+    "qml/models/imageexportoperation.h": {
+      "sha256": "51b9ce39501c9c7f41b6cf2e72a8ce5f0e761e56fd605e638cdd49b64cedb390",
+      "mode": 33204
+    },
+    "qml/models/macdockiconhandler.h": {
+      "sha256": "60713cf757c87190b1549b469a9f8fd43ef8abcfc0488fb6a7858e989c666466",
+      "mode": 33204
+    },
+    "qml/models/macdockiconhandler.mm": {
+      "sha256": "d5d5630a97b17ba6be6e3b30f74d610a7466f2e7874c446279ff4318ebc9d5d4",
+      "mode": 33204
+    },
+    "qml/models/monospaceoutputmodel.cpp": {
+      "sha256": "5884f028bc9afa92d47d8b8a5e67d2da3c7369ce7d5a6abe107e411bdf1b57e3",
+      "mode": 33204
+    },
+    "qml/models/monospaceoutputmodel.h": {
+      "sha256": "f4cd095b725a741b69311944898ba94ed039fa13c0632acf6a29fe9c758b8617",
+      "mode": 33204
+    },
+    "qml/models/networkstatusmodel.cpp": {
+      "sha256": "72c775e758d1b3062152a5373abbf56b3fc85db8c1ab301c9d4eae7c32e6be4d",
+      "mode": 33204
+    },
+    "qml/models/networkstatusmodel.h": {
+      "sha256": "e258bc766778ca5bedc57ddc7d3bdfb327015e121c0d8f8235d32e176ee08b2b",
+      "mode": 33204
+    },
+    "qml/models/networktraffictower.cpp": {
+      "sha256": "189a0f2d56b65a64bceb1fadd7ebcad284f07901bc03b9c766cddd4004978f7f",
+      "mode": 33204
+    },
+    "qml/models/networktraffictower.h": {
+      "sha256": "130c15683482300d2100821041456891ef81eb8f8b52af24d7b0a0da6e85ca27",
+      "mode": 33204
+    },
+    "qml/models/nodemodel.cpp": {
+      "sha256": "6bd36e9773a58ea042ab2afc869b683f4db522fab9280da93300bafae13816ae",
+      "mode": 33204
+    },
+    "qml/models/nodemodel.h": {
+      "sha256": "9dd8d0d5c086147cba952bc6209c8bf04dd5d35d505a3a3ed19239d4a7993b4e",
+      "mode": 33204
+    },
+    "qml/models/onboardingoptionsmodel.cpp": {
+      "sha256": "c64fd7be6696c289f408016d0584c5c1b37b021225f2e9f7e4abdc1992cf35c9",
+      "mode": 33204
+    },
+    "qml/models/onboardingoptionsmodel.h": {
+      "sha256": "2b5e44f1122a9faf917f1aa274e4615adf02bb51764d704d85179b28ca7a5096",
+      "mode": 33204
+    },
+    "qml/models/options_model.cpp": {
+      "sha256": "807c7a0f1099062f2b40f0fd387bed75fda90fe35fee319912368448544ff821",
+      "mode": 33204
+    },
+    "qml/models/options_model.h": {
+      "sha256": "80224047d433859016a8f2e6b73968d38dced45b6ae8c4d4342ff6f2ecd996eb",
+      "mode": 33204
+    },
+    "qml/models/paymentrequest.cpp": {
+      "sha256": "bbc2abb7cfca1812a181df8eae832b01935461269e12979b579570943e4a16c7",
+      "mode": 33204
+    },
+    "qml/models/paymentrequest.h": {
+      "sha256": "f15a824aab86e720886df0ebab02791eeaf0d5474121d05f8ac2a9fb334c1054",
+      "mode": 33204
+    },
+    "qml/models/peerdetailsmodel.cpp": {
+      "sha256": "4d79055619450bce1004913e0629d28decb04fc5c4bd80faffb3c443ba024f30",
+      "mode": 33204
+    },
+    "qml/models/peerdetailsmodel.h": {
+      "sha256": "5f45d732291df9ac29e0ae38d11823fab03844ed20fd7eb0fbfa9b7260e0982f",
+      "mode": 33204
+    },
+    "qml/models/peerlistmodel.cpp": {
+      "sha256": "9bf37b44b22f482aa5dcd4a89be2650aa8202ab5f0bd203cfefa4dc93aabf92c",
+      "mode": 33204
+    },
+    "qml/models/peerlistmodel.h": {
+      "sha256": "37356b53ef8e8abf320c18fcdb3e12273f642363b8f1bc9efeb1577edbf8b4fc",
+      "mode": 33204
+    },
+    "qml/models/peerlistsortproxy.cpp": {
+      "sha256": "f44e602d5fee84e4329ef448e6a5f9f1bc3155977bb4f05fc7e1c159b18c9602",
+      "mode": 33204
+    },
+    "qml/models/peerlistsortproxy.h": {
+      "sha256": "b742b57b58fa275636bd5f1e4a348d19c6caeacfd99360c2abc09e294da47fcc",
+      "mode": 33204
+    },
+    "qml/models/peerrecord.h": {
+      "sha256": "bad7c4d9fe7d3b8428e3753bcdd39a422f922e660764e7608775c8d4bf30ba39",
+      "mode": 33204
+    },
+    "qml/models/psbtfee.cpp": {
+      "sha256": "3ed4a11dc968d258f9a747e89ce1cf76e5b602a06954e4258a23f2d802f00599",
+      "mode": 33204
+    },
+    "qml/models/psbtfee.h": {
+      "sha256": "a6b7dd57f7fc75a771195ed4cb562ece08e2fb27ab07fa5269eeb98e39e1aaa5",
+      "mode": 33204
+    },
+    "qml/models/psbtfeeservices.cpp": {
+      "sha256": "03ae0fad56164dbc80b7c5db90ade468c3a1581a142cc8dcefdfe02acd1336cc",
+      "mode": 33204
+    },
+    "qml/models/psbtfeeservices.h": {
+      "sha256": "d5674e1ce3cb30afe4cc35ee7ea29bb7f9fd943a97988de699254e748411670c",
+      "mode": 33204
+    },
+    "qml/models/psbtqmlmodel.cpp": {
+      "sha256": "b08940e4bd666e9c3ede6e0a09b4be14485a58fd47fcf66ffcb91e8ab85788c9",
+      "mode": 33204
+    },
+    "qml/models/psbtqmlmodel.h": {
+      "sha256": "3500e79b96afbb1a58a83656a469338ed075612ebb4969fe80e4cbee9a3f7593",
+      "mode": 33204
+    },
+    "qml/models/receiverequestentry.h": {
+      "sha256": "ca4767f0bc0afd464f93b1fb423bbb8793fee3edee2c950b941e593ad19fbaad",
+      "mode": 33204
+    },
+    "qml/models/receiverequesthistorymodel.cpp": {
+      "sha256": "76c952fe29a10f4fdcf8e661698b80678f45afc5f6b3ae7187ba77bd61a064a8",
+      "mode": 33204
+    },
+    "qml/models/receiverequesthistorymodel.h": {
+      "sha256": "813d25d03ee8e0d9342b67c125db0c65040a0bc5ebb97e6ebbd3a49780ea64a3",
+      "mode": 33204
+    },
+    "qml/models/receiverequestoperation.cpp": {
+      "sha256": "450a2f931b3fd0e6a18e4c7cecf3f0dfef90d36c7f4856c7e99f20b6d656e87e",
+      "mode": 33204
+    },
+    "qml/models/receiverequestoperation.h": {
+      "sha256": "13ffbaef68a6a5ebec7dcf1791b71e6b06b7ed8e94ce03edb544b0585799d5aa",
+      "mode": 33204
+    },
+    "qml/models/rpccommandexecutor.cpp": {
+      "sha256": "17bec48ee0c076f69381f3a552d8fc2edfa4f6f3065d613c0e07f4780e20727f",
+      "mode": 33204
+    },
+    "qml/models/rpccommandexecutor.h": {
+      "sha256": "ab3cd939f1e72e5e09360c5237d337005243dc8793464ae2fabd71667719640b",
+      "mode": 33204
+    },
+    "qml/models/rpcconsolemodel.cpp": {
+      "sha256": "83f49bc388782cb2762dd181360a0d6b2864be3452e762b806a4220cd71872e8",
+      "mode": 33204
+    },
+    "qml/models/rpcconsolemodel.h": {
+      "sha256": "76df08e107f4184c296271fab06cc74e902ea561a1ea299e7924e05b5f83e1db",
+      "mode": 33204
+    },
+    "qml/models/sendrecipient.cpp": {
+      "sha256": "7803ff635b413a95604d119e01e6c5d494bf86ca372151036c7636424b8700e6",
+      "mode": 33204
+    },
+    "qml/models/sendrecipient.h": {
+      "sha256": "619179b2e25670c7d01b0d6bffd29df1c339055fc536b5651a2f673632f8640c",
+      "mode": 33204
+    },
+    "qml/models/sendrecipientslistmodel.cpp": {
+      "sha256": "eae393d5849768eb5a1c53038b8884f972baf6d0f3a0d44bb2385d638dca1812",
+      "mode": 33204
+    },
+    "qml/models/sendrecipientslistmodel.h": {
+      "sha256": "b04e7743954625a2bab5ccda7920eefe4fea9ae08ac74b053553cb1483e0fae0",
+      "mode": 33204
+    },
+    "qml/models/settings_keys.h": {
+      "sha256": "90836ed0cc002db49f097a82af2db144a86c4cff921b6bbde1dbefb86c853098",
+      "mode": 33204
+    },
+    "qml/models/signertransaction.cpp": {
+      "sha256": "9fae5d052c09ca5dc6ede7bbce556337e165bf0e2eaf90ae42c20dca6c4e71ab",
+      "mode": 33204
+    },
+    "qml/models/signertransaction.h": {
+      "sha256": "530f40e447892b6c8cc23e1184157550d9d49bb252a619d03e0e5c8ff19a9833",
+      "mode": 33204
+    },
+    "qml/models/signverifymessagemodel.cpp": {
+      "sha256": "e237c59562431e9eb365612b36426f1b5171ae21aed25afeba8d7fc6df3598b8",
+      "mode": 33204
+    },
+    "qml/models/signverifymessagemodel.h": {
+      "sha256": "fb66a7010ded2d0d6851c3a444b49dc24d7abe60ba325fa1d5a22837a4c75a39",
+      "mode": 33204
+    },
+    "qml/models/startupdiagnosticsmodel.cpp": {
+      "sha256": "00afaad3bfab0962d9f3e4bae96e83e99a2f4b5c63221f575bd73cd224ce912e",
+      "mode": 33204
+    },
+    "qml/models/startupdiagnosticsmodel.h": {
+      "sha256": "fcf1639359442114adbeefccdd56598b9682ba93dfe00bf09ff641620cf5328e",
+      "mode": 33204
+    },
+    "qml/models/syncprogresstracker.cpp": {
+      "sha256": "53f1f6ef9f68aa12b32d308039115960ac7a5c4cdb4021593ba3b35319a5b22c",
+      "mode": 33204
+    },
+    "qml/models/syncprogresstracker.h": {
+      "sha256": "be4b45996cd683df0903cdcead9ed8cd6bf94918ab5cb4ad24353111ba452436",
+      "mode": 33204
+    },
+    "qml/models/transaction.cpp": {
+      "sha256": "b95d5b504cef36ac96f2d5be758c19dae3640f3ce232ca5a92ddca101d125ad1",
+      "mode": 33204
+    },
+    "qml/models/transaction.h": {
+      "sha256": "f869c3f55a022aeafc6508b99a95870254b047957dc55e4986474fc6fc42b4c5",
+      "mode": 33204
+    },
+    "qml/models/transactionactivity.cpp": {
+      "sha256": "d307d6f71efd727413c85a7698cd1339d8c10949ce2a52b4eefb995dc2a0b017",
+      "mode": 33204
+    },
+    "qml/models/transactionactivity.h": {
+      "sha256": "01fd2e7c3bf7154c512360d3458c3806b307fbf6573e4429ae775f5c988c2cb7",
+      "mode": 33204
+    },
+    "qml/models/transactionactivitymodel.cpp": {
+      "sha256": "d262f6989da2705f91d7b783bdcb1e35a931aec629d73a613151899e20ef599a",
+      "mode": 33204
+    },
+    "qml/models/transactionactivitymodel.h": {
+      "sha256": "2b23a9b7df3bc1ab0a83b859a7443d258baa019265bcb9fc79c7a15bf451fa48",
+      "mode": 33204
+    },
+    "qml/models/transactionflow.cpp": {
+      "sha256": "301bc486f5a0cf3e034625d81df9e434c3c1095cce469c3ec72e4c6bf2383f3f",
+      "mode": 33204
+    },
+    "qml/models/transactionflow.h": {
+      "sha256": "fc00167c7b484db6fcd721fc250914cdcd18eb5c5c75713d112da1ab82df3cc8",
+      "mode": 33204
+    },
+    "qml/models/uipreferences.cpp": {
+      "sha256": "9fd2d862dfd677d95b042294709e6641bb8bd42fff8111d2513d27c950261b03",
+      "mode": 33204
+    },
+    "qml/models/uipreferences.h": {
+      "sha256": "0001410205f7b4d10c6c3397134fcc1e589d7ba33304835d40b9f0bbe742abd2",
+      "mode": 33204
+    },
+    "qml/models/walletbalancereader.cpp": {
+      "sha256": "79952b08fb13675afcdf6a6a8366d87ffffc6c7b66f59653cd57c9595c22d25f",
+      "mode": 33204
+    },
+    "qml/models/walletbalancereader.h": {
+      "sha256": "5872ab72964a710e0b7ffea8b0954dcea9cd6138c559a765cd01012f3f088014",
+      "mode": 33204
+    },
+    "qml/models/walletlistmodel.cpp": {
+      "sha256": "94d093cbd29236a3ff1aadec5a4a731f1c9bbad97a69d54e99e06bb5f67cae5a",
+      "mode": 33204
+    },
+    "qml/models/walletlistmodel.h": {
+      "sha256": "4c1a3d9a04b3d6af32f2a3bdf2c83f86f251fb854ede3547798d50a95cf17a62",
+      "mode": 33204
+    },
+    "qml/models/walletqmlmodel.cpp": {
+      "sha256": "570295447b06c8536aa2fb64f9494c14951f8fdc7f1fdcabb73dea9aec96c4f0",
+      "mode": 33204
+    },
+    "qml/models/walletqmlmodel.h": {
+      "sha256": "6637212304dbc05838ebddc7e4caa98bf30674838b66eec65f05138294174132",
+      "mode": 33204
+    },
+    "qml/models/walletqmlmodeltransaction.cpp": {
+      "sha256": "87e07069837085c59fa8012c81174c2658fb70ce0753f50115f1d597a0e94217",
+      "mode": 33204
+    },
+    "qml/models/walletqmlmodeltransaction.h": {
+      "sha256": "9a484d284b820d84df1b740511c31c1fdd92f6739ce4b3c79f9609a8b61e5477",
+      "mode": 33204
+    },
+    "qml/models/walletunlock.cpp": {
+      "sha256": "bdd71c508d674756baef0ccd7bcbf91713fe8359f2660c1fc21be818aa4dcd96",
+      "mode": 33204
+    },
+    "qml/models/walletunlock.h": {
+      "sha256": "2fe6ffb08179c107c66c3fa721d389ed311c2fabbe4facd4349f3a291bf15bb7",
+      "mode": 33204
+    },
+    "qml/nativelistmodel.cpp": {
+      "sha256": "87d717a5429f2da2196f9d708916cbb77b5b1d343c5f8d3513219770feaf6348",
+      "mode": 33204
+    },
+    "qml/nativelistmodel.h": {
+      "sha256": "26ce58de967cc1e2c5c086a7ea8bdd645bb297ab3bd3cab1636532bc5b864f53",
+      "mode": 33204
+    },
+    "qml/networkstyle.cpp": {
+      "sha256": "2d0713f203fb888c1394a9d9175c9ba6b257e47920fdb9cbb5feffec3fd3ae4f",
+      "mode": 33204
+    },
+    "qml/networkstyle.h": {
+      "sha256": "de02c40d5adbdf58a590198227d094728244375fddbdeace2d25e836e0cc7d21",
+      "mode": 33204
+    },
+    "qml/observationretirement.h": {
+      "sha256": "765a24a4cdc11bdd378df46bdaf7e87af72bc477c60c115b319d4ec603097770",
+      "mode": 33204
+    },
+    "qml/onboarding_settings.cpp": {
+      "sha256": "65594a1632e05f268537481fcd57444d536de50b901e59f4037c949647fd5296",
+      "mode": 33204
+    },
+    "qml/onboarding_settings.h": {
+      "sha256": "279b1c693577bb53ce41d9a2281ffaab7af64e048cca473027424080bcafac43",
+      "mode": 33204
+    },
+    "qml/onboarding_storage.cpp": {
+      "sha256": "e8fd6af52271b7073059907ad15cd040ebf0d7f977e06eb9ec8c8439371f8c92",
+      "mode": 33204
+    },
+    "qml/onboarding_storage.h": {
+      "sha256": "11c43f9d6a163c46edb986e2a3c8daa12d8fed05babdc722ab9060b449dae4c0",
+      "mode": 33204
+    },
+    "qml/ownedwork.h": {
+      "sha256": "e0666ce74d4e9f782dedea45b3514bcc2893613f5ad1b933c1401e3873e1380f",
+      "mode": 33204
+    },
+    "qml/pages/MainWindow.qml": {
+      "sha256": "5ece9b0d9a579dbac51fb8141937b06368acd33f0631c78b5ed0159837f64ddd",
+      "mode": 33204
+    },
+    "qml/pages/initerrormessage.qml": {
+      "sha256": "083af11e20c300047ac1ab3df9462fd3a71d69c96b7762d6738a80b79947da76",
+      "mode": 33204
+    },
+    "qml/pages/node/CommandConsole.qml": {
+      "sha256": "f64e151ad1df20f0811451a7deb28b2c6513ff80ce13191f6a97eb59f3c7cd99",
+      "mode": 33204
+    },
+    "qml/pages/node/NetworkTraffic.qml": {
+      "sha256": "1b521895dc8832f2f3aef9c34e74fd9a2be9d45f7f54695f12c459889e88767b",
+      "mode": 33204
+    },
+    "qml/pages/node/NodeRunner.qml": {
+      "sha256": "9edc5ddbdad4cd57514b573bbf7fa82f42d7b6476ab6fcd966ae8e548eb42a47",
+      "mode": 33204
+    },
+    "qml/pages/node/PeerDetails.qml": {
+      "sha256": "63a45016d079b027d8166fbc8e7d1bf65f24a67c575a9b9bd0a2fb243b5d7fb9",
+      "mode": 33204
+    },
+    "qml/pages/node/PeerDetailsTable.qml": {
+      "sha256": "4b0279e9790b1746ed1661e5222f3c0300ef1e3401acb241e00e697b3f672ad3",
+      "mode": 33204
+    },
+    "qml/pages/node/Peers.qml": {
+      "sha256": "2d8561714a40604c5d7d3374dcbccc6ffa76cbfff9c66c35b58b2d5e55b79ce1",
+      "mode": 33204
+    },
+    "qml/pages/node/PeersView.qml": {
+      "sha256": "611f7db56d13d1cbd8289ec906267168b7d2e5d30631f4314ae4ee0c67eb31a7",
+      "mode": 33204
+    },
+    "qml/pages/node/Shutdown.qml": {
+      "sha256": "023c0cf8b2685c483e8863948bc3db04c52792655bec3ac30906f61da0c37c13",
+      "mode": 33204
+    },
+    "qml/pages/onboarding/OnboardingBlockchain.qml": {
+      "sha256": "3531c571a93e98aafd5b0a31c381e594ec0c59135b5222de234c0b5a8e87d4eb",
+      "mode": 33204
+    },
+    "qml/pages/onboarding/OnboardingBlockclock.qml": {
+      "sha256": "9ed27b71471e3d768307bc29ec57b4c12fa04dac23bb1185c221c86607d373ad",
+      "mode": 33204
+    },
+    "qml/pages/onboarding/OnboardingConnection.qml": {
+      "sha256": "fd0435ff431f5e96ea7f448f1fa431a4557f0116ca18a3a8062ee0082fa03bae",
+      "mode": 33204
+    },
+    "qml/pages/onboarding/OnboardingCover.qml": {
+      "sha256": "9ebc5ceb37ba59ae10fe1eb9c8e272949742039a0f615d7bae6ac304f84c8920",
+      "mode": 33204
+    },
+    "qml/pages/onboarding/OnboardingMotion.qml": {
+      "sha256": "7c8f5b3f6fbf703b2da3511cf1da03d8565020cf5fd39684ba094affab882ee0",
+      "mode": 33204
+    },
+    "qml/pages/onboarding/OnboardingStorageAmount.qml": {
+      "sha256": "3571b56f9171f4642b15df89de18f8cae0904022dcd928fe7fe24938926a466f",
+      "mode": 33204
+    },
+    "qml/pages/onboarding/OnboardingStorageLocation.qml": {
+      "sha256": "9aa83abf89a87addf44d5f79e3d9be553b780fdec14d1a108defeb9729c89771",
+      "mode": 33204
+    },
+    "qml/pages/onboarding/OnboardingStrengthen.qml": {
+      "sha256": "3ca6c48a968ff2327d9df3615a0289e7e6c4c621df465ccde440fedb5b924808",
+      "mode": 33204
+    },
+    "qml/pages/onboarding/OnboardingWizard.qml": {
+      "sha256": "4769e2b06f15e5e79e9745b026281f0e45e06e1b6d30b442bf49fd475f03d345",
+      "mode": 33204
+    },
+    "qml/pages/preinit.qml": {
+      "sha256": "704a8f9608aff3576cfc2adccafc669a640d69f8be100a42bad96ec49c26aa30",
+      "mode": 33204
+    },
+    "qml/pages/settings/AboutSettingsPage.qml": {
+      "sha256": "c51edbc99c7a5034f6c2e2110e6c92bfa70c920818fad5e8387828c58430f2a2",
+      "mode": 33204
+    },
+    "qml/pages/settings/ConnectionSettingsPage.qml": {
+      "sha256": "6770d63d3df27c7f459724ad1f5646cd99ec904c3a718d7b607b81816f042b89",
+      "mode": 33204
+    },
+    "qml/pages/settings/DisplaySettingsPage.qml": {
+      "sha256": "852d6ab89791549ce3b2e06750b7a9d12abd5a3fc168e4216bc9c881f9999da5",
+      "mode": 33204
+    },
+    "qml/pages/settings/ExternalSignerSettingsPage.qml": {
+      "sha256": "ddbbd63632076b7e35ec34b75c69fd2d7f6798b157b469085a8716b92a6b643d",
+      "mode": 33204
+    },
+    "qml/pages/settings/MempoolSettingsPage.qml": {
+      "sha256": "d2c7326480de35e8f0d10c911d600ca3eafe27ffd6dc10c6e1c0cd21061bdf29",
+      "mode": 33204
+    },
+    "qml/pages/settings/NetworkTrafficSettingsPage.qml": {
+      "sha256": "887e05c3ed552bfe5d835c63ea565c55dc5d76d841f7a1473ec6e136ed57d109",
+      "mode": 33204
+    },
+    "qml/pages/settings/ProxySettingsPage.qml": {
+      "sha256": "7f8956c27de914b8a4797a24266b85630dad79d832088e33c6ba4775e9910259",
+      "mode": 33204
+    },
+    "qml/pages/settings/SettingsConnection.qml": {
+      "sha256": "fc3263a26e91b5b4c5e6e455e39c17883ffcef0f9b2036becdc3aa4004893ef9",
+      "mode": 33204
+    },
+    "qml/pages/settings/SettingsDebugLogView.qml": {
+      "sha256": "7e093a39709baa90fdb1929d21be1c4e40bd19550fb8a3364f39cee56b754062",
+      "mode": 33204
+    },
+    "qml/pages/settings/SettingsDesignSystem.qml": {
+      "sha256": "0af03b325295172d4db28707b4390176ef72112c330f4ee159fb7a35c0b13a13",
+      "mode": 33204
+    },
+    "qml/pages/settings/SettingsDeveloper.qml": {
+      "sha256": "542a72f2787ae8d5b8e9137cabd8182c55669bbee514e49ce084439c43113614",
+      "mode": 33204
+    },
+    "qml/pages/settings/SettingsLanguage.qml": {
+      "sha256": "0b5370e075c17211c09c373bcaa223c651ab8ea0ac9725f7030c072ca149474f",
+      "mode": 33204
+    },
+    "qml/pages/settings/SettingsProxy.qml": {
+      "sha256": "0baca1e90b948b2ee175ec19aff22c72680ee0618ba6fc0b878b426be797300d",
+      "mode": 33204
+    },
+    "qml/pages/settings/SettingsRpcConsoleView.qml": {
+      "sha256": "d28d2fbcd349de40971f5b492745f851e48d67e8c7f3a3748e9f96d8f8855ad2",
+      "mode": 33204
+    },
+    "qml/pages/settings/SettingsStorage.qml": {
+      "sha256": "2015b0a15ae98f9926c265d8ac5b5bc02da0cb2d81587a7fe93234a44428361e",
+      "mode": 33204
+    },
+    "qml/pages/settings/StorageSettingsPage.qml": {
+      "sha256": "11a0c2fd3a6c307d2ac2d9fc86970cecc0802535f6e897bf55fcee6596d4ebaa",
+      "mode": 33204
+    },
+    "qml/pages/settings/WalletSectionPage.qml": {
+      "sha256": "3cd6850a43c8017949609b93a59d8842b96931b430a0690d436113cab6012fef",
+      "mode": 33204
+    },
+    "qml/pages/settings/WindowBehaviorSettingsPage.qml": {
+      "sha256": "687ba19e92432a15f63df14e3388c23a544d4bb208c9fc2118d2ca395866f0e3",
+      "mode": 33204
+    },
+    "qml/pages/wallet/ActivityIcon.qml": {
+      "sha256": "026ae466f3dfa894489368e3c3ce3836a61ad06e9749ea4e6dd8abb84e8e4f5e",
+      "mode": 33204
+    },
+    "qml/pages/wallet/ActivityList.qml": {
+      "sha256": "0c69ae31988737161543a43bc66267511069438fb8a24531c3ee852deb6beef2",
+      "mode": 33204
+    },
+    "qml/pages/wallet/ActivityListPage.qml": {
+      "sha256": "05dcc8048cb80c4f396df85c21db73e98b59e27be2caef1aa18db158c5316a7c",
+      "mode": 33204
+    },
+    "qml/pages/wallet/ActivityRequestBadge.qml": {
+      "sha256": "96445f9834538fa07397f2d747663d4d9affe063b4d003ea6680a9d29b14fef6",
+      "mode": 33204
+    },
+    "qml/pages/wallet/ActivityRow.qml": {
+      "sha256": "3d02437d7a22c25c8ce75c712fb03e700b8d64663fa7ff71911510ae76c33253",
+      "mode": 33204
+    },
+    "qml/pages/wallet/AddressDetails.qml": {
+      "sha256": "6a75616ed22920340cff612104d66e81dbe21ec78a48bd33881af951001be368",
+      "mode": 33204
+    },
+    "qml/pages/wallet/AddressList.qml": {
+      "sha256": "35f8640012e1acff87e3a33dd5fe0c85bcc750d4e2c490c3200977d7b70a3db3",
+      "mode": 33204
+    },
+    "qml/pages/wallet/AddressRow.qml": {
+      "sha256": "4b882ecd8b7b99b05d6235c8f5ff560dc6d87f5d94c2939fdf63325db739d583",
+      "mode": 33204
+    },
+    "qml/pages/wallet/CoinSelection.qml": {
+      "sha256": "9808082cf05e6803f110e8207373360c76cbd8bf4c8b293965228eb606755630",
+      "mode": 33204
+    },
+    "qml/pages/wallet/CreateWalletFields.qml": {
+      "sha256": "bda58375bfe325f2b90f4a57838e301e6392e11c6e489aa4518580233ed2bcf2",
+      "mode": 33204
+    },
+    "qml/pages/wallet/CreateWalletForm.qml": {
+      "sha256": "f9e76af2dd6cac00d5bb98f6ab2b0c858a495471c8c5c5a6f576d4287bac213d",
+      "mode": 33204
+    },
+    "qml/pages/wallet/DesktopWallets.qml": {
+      "sha256": "02294ac2b0cebf742414a4c9c1ea244e07fe70fbcb96db5b062f4691f82819c5",
+      "mode": 33204
+    },
+    "qml/pages/wallet/ExternalSignerWalletFields.qml": {
+      "sha256": "863c3fda724148094c7e45182d4f9991c1c54eeb6e0f622e91c4560b8ab7c959",
+      "mode": 33204
+    },
+    "qml/pages/wallet/ExternalSignerWalletForm.qml": {
+      "sha256": "e1e353f7696e4dbf20adb91e39e1aa18c298cb9883c46f68cf3a4c8e9aa9bf03",
+      "mode": 33204
+    },
+    "qml/pages/wallet/ReceivePage.qml": {
+      "sha256": "803d0378eebdf7ade7202cfa8b07253cd8ca17a14b4983844cc2f317d76e4d86",
+      "mode": 33204
+    },
+    "qml/pages/wallet/SendComplete.qml": {
+      "sha256": "7b6b4414d853fb6edb628dc41afab9c6faea8b728b69eff391f27a3460c28328",
+      "mode": 33204
+    },
+    "qml/pages/wallet/SendCreate.qml": {
+      "sha256": "cca0ef497cfec687dbb0de50bd4c324bff272c7681789873e84b8d8d3ef434b2",
+      "mode": 33204
+    },
+    "qml/pages/wallet/SendTransactionReview.qml": {
+      "sha256": "6bce71200264e621b19ba57b9b353dc40a8d06ab30344f6d260f498054f7292e",
+      "mode": 33204
+    },
+    "qml/pages/wallet/SignVerifyMessage.qml": {
+      "sha256": "b1617b0f87d8907b05ca87ad82e5b8fa56907bc4ddf356d23504f7fc900ae563",
+      "mode": 33204
+    },
+    "qml/pages/wallet/SpeedUpComplete.qml": {
+      "sha256": "a652155046c3369be0e7de233ab4ecac8f21ae5bf76f733272911124b4003a15",
+      "mode": 33204
+    },
+    "qml/pages/wallet/SpeedUpOverlay.qml": {
+      "sha256": "c54a3fdb36acc8a228e6ab8c0fccb89b685aaad1110c39a9ad503971cf64ac2c",
+      "mode": 33204
+    },
+    "qml/pages/wallet/TransactionDetail.qml": {
+      "sha256": "fc902a164dd50d99bcdd704331331b594f8d8199e9d51ddbf5bf175dccb62546",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletBadge.qml": {
+      "sha256": "b1092c75c2e8473575023ad37ba409691dbb9a3f914c472cdc4cd21cf6c050b5",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletCoins.qml": {
+      "sha256": "1ed88b30f45c71c20047782152c9989586f46b2f2d91c884f89d85f39420f4e6",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletCreationExternalReadyPage.qml": {
+      "sha256": "3c60bbabcdc603bb3101ec8463e785259308ceb729222bcf2bbdad6f30d002a6",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletCreationFlow.qml": {
+      "sha256": "291aafab241c8d880f364c05123d2317ae859dcb89553a9204cdae0932731142",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletCreationReadyPage.qml": {
+      "sha256": "ae364eecd0e4208d484ae9201de7ad39b1af77850c3d8e82a74104cbd6073b84",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletCreationTypePage.qml": {
+      "sha256": "f5064f7192668db61925f39c4f1435b6660ee7df3804ef68b90040db77468d2d",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletImportCompletePage.qml": {
+      "sha256": "1259d89dfb4f220f0f20d83ada6dd291298a45c1f128b0d64c1a3abe4aaab2f4",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletImportErrorPage.qml": {
+      "sha256": "d4b482abc7a7844c1641c1c1aa65fb6df0c0ba97f267f103bf4d80c456a56011",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletNavigationTab.qml": {
+      "sha256": "bffcbdcad18503341e1c860e3c210dcdf96c61fd343936a152f4456590eb48da",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletPasswordSettings.qml": {
+      "sha256": "03c334202bed583a18e9e101e86e9fe113f940c5606988cfa95777a4cadfab0e",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletSelect.qml": {
+      "sha256": "74093d13e1619a1c31cef9686428c484a82f347b4ea3370601e2d98f9a88e333",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletSettingsStack.qml": {
+      "sha256": "07f2744550b7a5009e3fdde598b7e6b709930e877cc3f6481b80ed55dd63d9bd",
+      "mode": 33204
+    },
+    "qml/pages/wallet/WalletView.qml": {
+      "sha256": "da397004bb19c14e9d0b984cf99fd35d8c678314a58450c07975d2140461e9b5",
+      "mode": 33204
+    },
+    "qml/peerstatsutil.cpp": {
+      "sha256": "d6f7e37ddcf3c9546b21f09ecacf8cdb8b0461055b7d272ea95975acac6a52b2",
+      "mode": 33204
+    },
+    "qml/peerstatsutil.h": {
+      "sha256": "caf4db73833eef6428076aa45943c6af548c11fb7ff8854875cb1cd75b765872",
+      "mode": 33204
+    },
+    "qml/psbtwork.cpp": {
+      "sha256": "d782888d3fbe48f84e17963498d09da46094174d1730d292506dd75d839ab23b",
+      "mode": 33204
+    },
+    "qml/psbtwork.h": {
+      "sha256": "4d80b2c69ec08a285273f54db5925baf1d4e5f8bd162d4eb2302ff9d68c2ac38",
+      "mode": 33204
+    },
+    "qml/qmlfiledialog.cpp": {
+      "sha256": "a52c3edd2bcbfe71d91b3251381e7a7ecbd5b30f922ca60ae60213ff55940b8c",
+      "mode": 33204
+    },
+    "qml/qmlfiledialog.h": {
+      "sha256": "93c6067c43c8dc51a49cf4c77411ec5d6d02d30071747e02c6b9cc91194dad05",
+      "mode": 33204
+    },
+    "qml/qrimageprovider.cpp": {
+      "sha256": "36a93c2620a8765723df7cebd6028457337c082724ed75c6dce80c97d3a17245",
+      "mode": 33204
+    },
+    "qml/qrimageprovider.h": {
+      "sha256": "da18af2c2098f2ebe0ca203063f5a71a5fbe0e1bc75ed9840238b3fb6cd8b465",
+      "mode": 33204
+    },
+    "qml/qtlogsink.cpp": {
+      "sha256": "eef6533f8f5b9c3249a3375c065cec33af2d0aa4c5e24dddad5bceec60275f45",
+      "mode": 33204
+    },
+    "qml/qtlogsink.h": {
+      "sha256": "81759d35fd4ca717112a687a9de87aa56874877875630732730f31f9c2eb06ec",
+      "mode": 33204
+    },
+    "qml/quithandler.h": {
+      "sha256": "b77d72eeab3bcd1a35c67d9bccf58c41e838e5dc26f0e6ee896c9b22b01a2e62",
+      "mode": 33204
+    },
+    "qml/res/fonts/BitcoinCoreSans-NOTICE.txt": {
+      "sha256": "fa1b9bef130aa5c0557953220b5c0e2152c2d37cc7c332727f3b0a42b89e2da6",
+      "mode": 33204
+    },
+    "qml/res/fonts/BitcoinCoreSans-OFL-1.1.txt": {
+      "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a",
+      "mode": 33204
+    },
+    "qml/res/fonts/BitcoinCoreSans-Regular.otf": {
+      "sha256": "a2d0259927cbc5c0ee49202e5cba245bf51f95e526dd541af294cb46920f7c70",
+      "mode": 33204
+    },
+    "qml/res/fonts/BitcoinCoreSans-SemiBold.otf": {
+      "sha256": "898c3f09ebc2e70f4ccaf8cc71fdf138e769aa079425d5e72f2b878b0df2502f",
+      "mode": 33204
+    },
+    "qml/res/fonts/RobotoMono-Regular.ttf": {
+      "sha256": "af0bff7599c3df3831755c16e39b3c496df74b8c8d8a1161b14dc8461be17cb4",
+      "mode": 33204
+    },
+    "qml/res/icons/activity-consolidation.png": {
+      "sha256": "fb05e8c9fe2d200d173fc2e136603a0acc77a836da207bba134ffcab02c3a065",
+      "mode": 33204
+    },
+    "qml/res/icons/activity-internal.png": {
+      "sha256": "05071757a7088d1782b0d879519c5b44c6a41a419d4a36b2ff03f18595f55b06",
+      "mode": 33204
+    },
+    "qml/res/icons/activity-invoice.png": {
+      "sha256": "525a264ca1bc1a0de67d515ca69d557c645cd3162a7a29388552bfccaea71662",
+      "mode": 33204
+    },
+    "qml/res/icons/activity-multiple.png": {
+      "sha256": "18b895cdfcf1e64c4b52c7d73ae4e15aedc73fda70d47386ff254f57b1b8bf70",
+      "mode": 33204
+    },
+    "qml/res/icons/activity-payment-request.png": {
+      "sha256": "61c6f8c317f022d2557e9316a5630e3181120ad2e45c83996b046d1de50d3c9d",
+      "mode": 33204
+    },
+    "qml/res/icons/activity-receive.png": {
+      "sha256": "f61d98019826c3ff8d8dd0d2638d40e79fabf3ace7349c959a92567d13d62c6d",
+      "mode": 33204
+    },
+    "qml/res/icons/activity-send.png": {
+      "sha256": "76299f54d1d80f5456c482f8fe95392df1424b5d9760913841546c8afac391c9",
+      "mode": 33204
+    },
+    "qml/res/icons/activity-split.png": {
+      "sha256": "6cd1cd54b9910d27d15d08cc0433f4d07979322493de9c31c1553bc9678535d2",
+      "mode": 33204
+    },
+    "qml/res/icons/add-wallet-dark.png": {
+      "sha256": "8e2a72aac6e4938d9e453c243fdb8d62c1e041b37a5a0c6b66eda204c2b028a2",
+      "mode": 33204
+    },
+    "qml/res/icons/alert-filled.png": {
+      "sha256": "1ec49983390458fa50f67ae2c36d5d5e3b0439082ab33407d759a80620e4f1b7",
+      "mode": 33204
+    },
+    "qml/res/icons/arrow-diagonal-square.png": {
+      "sha256": "06d33c61d30e43c58cbc95c56cd9c9f317831e067fab8c487e20311e25084ca5",
+      "mode": 33204
+    },
+    "qml/res/icons/arrow-down.png": {
+      "sha256": "c9d6e0300ec61060ef776d3a9701c0ba9dc5ce64b114764768b47c22ecab2988",
+      "mode": 33204
+    },
+    "qml/res/icons/arrow-up.png": {
+      "sha256": "0e721cec8a4cfd0983853aa56a26befaa62ae209f56bfb5be66d87ace8667f05",
+      "mode": 33204
+    },
+    "qml/res/icons/bitcoin-circle.png": {
+      "sha256": "8c6c6e3d01d77db4d397836095fb687aba450d8605a0018800268b24597e50d7",
+      "mode": 33204
+    },
+    "qml/res/icons/bitcoin.png": {
+      "sha256": "6f05fca7dc65cfbb55a4077f95c0c4661deb6c5cdb90a77d89d90f75a3460a5c",
+      "mode": 33204
+    },
+    "qml/res/icons/blockclock-icon.png": {
+      "sha256": "5fad2cb9986b3771f51e4711168257e9526783c99725f09d5b58adfe5d4e9175",
+      "mode": 33204
+    },
+    "qml/res/icons/blockclock-size-compact.png": {
+      "sha256": "e40710ed0847692bcd619e7ddf21e69d45db91a0018da957185e97fdf0257470",
+      "mode": 33204
+    },
+    "qml/res/icons/blockclock-size-showcase.png": {
+      "sha256": "3e5f9f09d41e5e1e0f9824a3bc13c6354440a8d690193c9f67ca1fa4015be89d",
+      "mode": 33204
+    },
+    "qml/res/icons/blocktime-dark.png": {
+      "sha256": "3bacece46e540d5d27327d21ce222223e6a951e48f2c1c9ba1b382e3874db093",
+      "mode": 33204
+    },
+    "qml/res/icons/blocktime-light.png": {
+      "sha256": "706e0fb520aedf624ca70bbc929a9e1673e28d8864d84ed056a7029434608f82",
+      "mode": 33204
+    },
+    "qml/res/icons/caret-down-medium-filled.png": {
+      "sha256": "c8c5b9889e23f486af40db2be963b411680c460ee78f1ff9e99110ae38030623",
+      "mode": 33204
+    },
+    "qml/res/icons/caret-left.png": {
+      "sha256": "1b1139cf7e940571eddacb1d63d8a35a91ba011c3a67f4c02f2227fff8ca8fc9",
+      "mode": 33204
+    },
+    "qml/res/icons/caret-right.png": {
+      "sha256": "3a54985fb8987cc0c77e1d15f66c9e04b98ef25f11de67d95e76143fe722d170",
+      "mode": 33204
+    },
+    "qml/res/icons/check-bold.png": {
+      "sha256": "78a2931338f122b8f859d4677b6f32e0bfbafd95e2df1e4943fd80e667f11d51",
+      "mode": 33204
+    },
+    "qml/res/icons/check.png": {
+      "sha256": "c8f95de9fa3c98fa318f0eaa55e658f61d6a19e78761b2ccd774f9f9ba6d8ee4",
+      "mode": 33204
+    },
+    "qml/res/icons/circle-file.png": {
+      "sha256": "d098c8e2e165da3567812236e1a328336cc746a55984e6453dff97b606065c0c",
+      "mode": 33204
+    },
+    "qml/res/icons/circle-green-check.png": {
+      "sha256": "686580961c817f1cc3129fd7c6d2a8d60c71e205f761cad7aacf22c6e85fd4bf",
+      "mode": 33204
+    },
+    "qml/res/icons/circle-red-cross.png": {
+      "sha256": "e5a19085217d5bb328bb68dc2da0b61b44dbeb24c9e85b8bd6c4e970e74e45bd",
+      "mode": 33204
+    },
+    "qml/res/icons/coinbase.png": {
+      "sha256": "b5561f9172a773f541a90871123f08337eea3ee63f5317b77984604aa1bf9edf",
+      "mode": 33204
+    },
+    "qml/res/icons/console.png": {
+      "sha256": "21104ee5de7740d75a8c0b22afc6fe058c9f1c136daad5953cded6b97a0311ae",
+      "mode": 33204
+    },
+    "qml/res/icons/copy.png": {
+      "sha256": "afb102f6a9fdcb37ce0d5be2b6628ed21d9d262cce4ad2559f3018415551a815",
+      "mode": 33204
+    },
+    "qml/res/icons/cross-circle-filled.png": {
+      "sha256": "a54b099e852224a5181c535255285b63aaa90c9ec3c9176e0ff1c8dad8ae87d7",
+      "mode": 33204
+    },
+    "qml/res/icons/cross-filled.png": {
+      "sha256": "68e4ce14471de2e6219f6ca33d91f464e2c0acec454ba6ad4e99e1d9073dcc2f",
+      "mode": 33204
+    },
+    "qml/res/icons/cross.png": {
+      "sha256": "15af3b4b9047843b9103f4c778450094eae120b53adf7a7ef79710c231cc7d0b",
+      "mode": 33204
+    },
+    "qml/res/icons/devices-filled.png": {
+      "sha256": "a5f488c82c2fbabb576425eb44361162e92f8384ac45e27b5592b4cc395e682a",
+      "mode": 33204
+    },
+    "qml/res/icons/edit.png": {
+      "sha256": "58c8072bc0307941b7dc15f910582764b459946e4f87b91fdab880fad03a3f6d",
+      "mode": 33204
+    },
+    "qml/res/icons/ellipsis.png": {
+      "sha256": "c992bb0c8c8939374bd71f15ee41d0441ccf354d129c63c7cd4e337a11d1bd4d",
+      "mode": 33204
+    },
+    "qml/res/icons/error.png": {
+      "sha256": "4c72f57849c038dd0c3fd5dd1ba89a173be380ac03d927e47a53b353528e47a0",
+      "mode": 33204
+    },
+    "qml/res/icons/export.png": {
+      "sha256": "c0605b933dfaae15b26254d08d11d2e9e9e4b20d5a9748386cd9a9f680502266",
+      "mode": 33204
+    },
+    "qml/res/icons/file.png": {
+      "sha256": "5591d9a729c8cf0183055eed182a0379aa396237995cf45acc82a4fa146bea5c",
+      "mode": 33204
+    },
+    "qml/res/icons/flip-vertical.png": {
+      "sha256": "c424990e4686e2d22690fbdefb6999561f8dc8b1b6615634fe2903df31fda882",
+      "mode": 33204
+    },
+    "qml/res/icons/gear-outline.png": {
+      "sha256": "8e5acfa6545f4a2c8119c1e2bd37bd409747cb5a50de18277bd37ff599bcd538",
+      "mode": 33204
+    },
+    "qml/res/icons/gear.png": {
+      "sha256": "82ecc96596a824583fe5e661ac670767bc7aeae3f420c268f38e30346e2376ff",
+      "mode": 33204
+    },
+    "qml/res/icons/green-check.png": {
+      "sha256": "c90f708cf27bb9647b52419eba44ba32a0c15864a3a566b2a1ecd6c6c6c0d40f",
+      "mode": 33204
+    },
+    "qml/res/icons/hidden.png": {
+      "sha256": "5069f73f96dce132f1c402e2f07f0fa5fcaa6c6aae62feee7d4783c09240285c",
+      "mode": 33204
+    },
+    "qml/res/icons/info-filled.png": {
+      "sha256": "aa98064d37d364e7220d2b235fb37e3fdb95f65b898ebcea050cb2c98370811c",
+      "mode": 33204
+    },
+    "qml/res/icons/info.png": {
+      "sha256": "097dcdcd795f88cd5f9d61c131078d73806f5e024994ed09930e43cdd9e4ed80",
+      "mode": 33204
+    },
+    "qml/res/icons/key-filled.png": {
+      "sha256": "63dfae59e2c712cfaaa7c4f2f4ca5c6dada7bc1119faac8502372e6ac3f899e3",
+      "mode": 33204
+    },
+    "qml/res/icons/key.png": {
+      "sha256": "2718b79894a407436dbd6ad50dc9a90775220ca8f2e3da79236534f6335d60a9",
+      "mode": 33204
+    },
+    "qml/res/icons/lock.png": {
+      "sha256": "024ef30f49c0b3a903c46951e0fb62eb30554e5a209ac42e3ef45ec0d77409fe",
+      "mode": 33204
+    },
+    "qml/res/icons/minus.png": {
+      "sha256": "b6c2ed72015f869d46c8bcc842ece82a24fb95a3fe4646fc6ba3b4da260e8230",
+      "mode": 33204
+    },
+    "qml/res/icons/network-dark.png": {
+      "sha256": "9be93ea8b2c7df192d031b16817a7c9112ef752a5cf140206431b1bb467e42f5",
+      "mode": 33204
+    },
+    "qml/res/icons/network-light.png": {
+      "sha256": "ae3e3ef968d7886bca34e46de04dcdbcb62c66efb81254318c2bf6f93b200e60",
+      "mode": 33204
+    },
+    "qml/res/icons/node-0-connections.png": {
+      "sha256": "bc4a49339dd176d1bc542adcd099e23e3fcabae0045eff52ca6ac094e22aa3fc",
+      "mode": 33204
+    },
+    "qml/res/icons/node-1-connection.png": {
+      "sha256": "676c1f08c7f6fb8e0b856560dcf5b5f80a5fe69fef13953a50af5b17e7f3fdbc",
+      "mode": 33204
+    },
+    "qml/res/icons/node-2-connections.png": {
+      "sha256": "f2b982dee68dac959c06ad18e6acdb74590993c093efe560bdf828d3cc004987",
+      "mode": 33204
+    },
+    "qml/res/icons/node-3-connections.png": {
+      "sha256": "456893b7481331d1c88e342302f9c0a088d770b1f7497f5662dc1ae564a92e8d",
+      "mode": 33204
+    },
+    "qml/res/icons/node-4-connections.png": {
+      "sha256": "414a5365a157186f529f7f2597b47e1bcd7f0fecd79ce8f0909d24690e756126",
+      "mode": 33204
+    },
+    "qml/res/icons/pending-dark.png": {
+      "sha256": "bd81154576804a91b35dc575297b925ab8de0dd38ea57b8ecd7de7aed3970712",
+      "mode": 33204
+    },
+    "qml/res/icons/pending-light.png": {
+      "sha256": "fee09188ee30d0cdbd4e7eb40b20e5f78c07fddb56b3f6bfff10b963994a65f6",
+      "mode": 33204
+    },
+    "qml/res/icons/pending.png": {
+      "sha256": "bd81154576804a91b35dc575297b925ab8de0dd38ea57b8ecd7de7aed3970712",
+      "mode": 33204
+    },
+    "qml/res/icons/plus-big-filled.png": {
+      "sha256": "9fda7c086fdb6ca492937debf9481a6e191a76a4f554314f406b8ac0b45f20e7",
+      "mode": 33204
+    },
+    "qml/res/icons/plus-filled.png": {
+      "sha256": "02fbef461eb42588a01664b7c91bc808647bf1f6e2812c758c741dd618096837",
+      "mode": 33204
+    },
+    "qml/res/icons/plus.png": {
+      "sha256": "cf8af08ae5985592bb75d0afd11f051195bf5f195946efa9cd19b3358d4f575e",
+      "mode": 33204
+    },
+    "qml/res/icons/qr-code.png": {
+      "sha256": "fe76a266e7ad2cb6195d9f80f71e1247053191cf04c3231b935b281873c3fc08",
+      "mode": 33204
+    },
+    "qml/res/icons/refresh.png": {
+      "sha256": "2641261f65c9fac074250fa6240a527603d63e352ba1492d3275f3d344290b3d",
+      "mode": 33204
+    },
+    "qml/res/icons/search.png": {
+      "sha256": "f8f563d131eccc3c0b3a95eb0d6ca2271e862354d3e22f897077b30f3bacf27b",
+      "mode": 33204
+    },
+    "qml/res/icons/share.png": {
+      "sha256": "c16cc7a71b5330f68780f67a6921697b5a9763f21db2c537642b551ba141ceaa",
+      "mode": 33204
+    },
+    "qml/res/icons/shield.png": {
+      "sha256": "b61448aaf3a1f7cb4b53b969aa6d3cccdffe0d8ccc8919a6ed9ab486f6ac505e",
+      "mode": 33204
+    },
+    "qml/res/icons/shutdown.png": {
+      "sha256": "5efe4692f14274878b45d4b93fd384b4e70fccd2557c0eb243dcbb0bef772b9e",
+      "mode": 33204
+    },
+    "qml/res/icons/singlesig-wallet.png": {
+      "sha256": "215c55dac3da6a15c649fef3f7e58e471d996dbe822acf4dd118879d86e45beb",
+      "mode": 33204
+    },
+    "qml/res/icons/storage-dark.png": {
+      "sha256": "8a3c195ee3b44624c89ab648020005a0e955b7e6086a89c966de0547f337b98b",
+      "mode": 33204
+    },
+    "qml/res/icons/storage-light.png": {
+      "sha256": "38ad2e515a55980d01cfeaeee0bb7264005a739e65fc57f4bb99cdb92e39f3c6",
+      "mode": 33204
+    },
+    "qml/res/icons/tooltip-arrow-dark.png": {
+      "sha256": "3a04bd6e26ccbad047346cad613048a98fd5da9909363ac36c76dc78c0acd7f9",
+      "mode": 33204
+    },
+    "qml/res/icons/tooltip-arrow-light.png": {
+      "sha256": "48119516b0a81b0648ac7b1b4dc8d2dde81737108c99428d445904add941c5b2",
+      "mode": 33204
+    },
+    "qml/res/icons/triangle-down.png": {
+      "sha256": "e63fed2f10bb7922a3e9e30390a1ff0218a6bf0187ab8b34b81d7d29b1e21e4c",
+      "mode": 33204
+    },
+    "qml/res/icons/triangle-up.png": {
+      "sha256": "62486487f8d03f925d78ed206b4d527860f67efabc703ab3d3e29ae0724bd983",
+      "mode": 33204
+    },
+    "qml/res/icons/two-keys-filled.png": {
+      "sha256": "dbfb20289e96b6c6532e1ebc68b9fad5dcc23bd1c7a0540512871416da0845ff",
+      "mode": 33204
+    },
+    "qml/res/icons/two-keys.png": {
+      "sha256": "878704c18ca90543a923799d083a365b8278799c5173ca28de2537964a3cd2ed",
+      "mode": 33204
+    },
+    "qml/res/icons/visible-filled.png": {
+      "sha256": "f70d9b9d4df0a668d092381a69db9eef04bf86effa057922b8f3951dd2af3958",
+      "mode": 33204
+    },
+    "qml/res/icons/visible.png": {
+      "sha256": "07cc61c40da5888b5d7532568d169d737e2fdf681bec870740411dbf8c7aac1b",
+      "mode": 33204
+    },
+    "qml/res/icons/wallet.png": {
+      "sha256": "280f40083a6d21e4d4a141e04d5e2c3dca5f4c897bb36f07739d274c584e16ba",
+      "mode": 33204
+    },
+    "qml/res/src/activity-consolidation.svg": {
+      "sha256": "f250ab444968caaca09d363bf50fafab85bf926fc6b60146f84fd5ad2ff641c2",
+      "mode": 33204
+    },
+    "qml/res/src/activity-internal.svg": {
+      "sha256": "45435fbf5446074a9b6c6b254bab3c9acf1be5eaf12773dfa1b624e5e827cda2",
+      "mode": 33204
+    },
+    "qml/res/src/activity-invoice.svg": {
+      "sha256": "b13cf4cfbb1536515e248e2b83db221e941f6cc07525ea7517bb801040ae9863",
+      "mode": 33204
+    },
+    "qml/res/src/activity-multiple.svg": {
+      "sha256": "f837dd33b6063e74c12106cff207be5c788f3b0e3b5498f03ba68f7ccfbebc55",
+      "mode": 33204
+    },
+    "qml/res/src/activity-payment-request.svg": {
+      "sha256": "6ff11482f35d2219cc9cb9a950f2f9492d896ba8f986fc1a461feb727d64d999",
+      "mode": 33204
+    },
+    "qml/res/src/activity-receive.svg": {
+      "sha256": "517db69bad7e7846bb722cf8cd6058a005f8776ff6edc9c9148e95ddbcc952ee",
+      "mode": 33204
+    },
+    "qml/res/src/activity-send.svg": {
+      "sha256": "b2a0467407804f60ea95d2cd25d88c6e9f88ddb8e7c77d06f45f8a084c2a100e",
+      "mode": 33204
+    },
+    "qml/res/src/activity-split.svg": {
+      "sha256": "5f382dc74a562ae078d776c568072e1766dd0669e9238ae9412a7c8bd7ad1740",
+      "mode": 33204
+    },
+    "qml/res/src/add-wallet-dark.svg": {
+      "sha256": "1e7765e61fbf28f0c67d8e4d3334dd195274e9b3d96d9e2d96c55bb2aecd24fa",
+      "mode": 33204
+    },
+    "qml/res/src/address-settings.svg": {
+      "sha256": "a9dcf960060ff12cbec8460ffaf103169070f2e40e27e1d3cb03f86f4ca7e935",
+      "mode": 33204
+    },
+    "qml/res/src/alert-filled.svg": {
+      "sha256": "faa6a1c5b22b8e56be2109642d24c54ee63f07756fbf377ae2ae6d165d8b1818",
+      "mode": 33204
+    },
+    "qml/res/src/arrow-down.svg": {
+      "sha256": "87d7c93c647f095f45b315b5455bbc1272eaa59a2600178861e83c21721cea2e",
+      "mode": 33204
+    },
+    "qml/res/src/arrow-up-down.svg": {
+      "sha256": "cd1339d5d4dfe51199791f59a300363c40bc84d63753636cef9bf4e54a2acb25",
+      "mode": 33204
+    },
+    "qml/res/src/arrow-up.svg": {
+      "sha256": "2ac52803688399eb335f6e31e4956cda2d9ad661cfd5dea2810820c1c55e221b",
+      "mode": 33204
+    },
+    "qml/res/src/bitcoin-circle.svg": {
+      "sha256": "fee0dc64ca045df27f6d12082389f9c1fec7554aba9d12103fe498795c476576",
+      "mode": 33204
+    },
+    "qml/res/src/blockclock-icon.svg": {
+      "sha256": "4b5cb7ad75bd7af5a0959ef31d9bd25e4095559a9e942384c6003b92e154f6ba",
+      "mode": 33204
+    },
+    "qml/res/src/blockclock-size-compact.svg": {
+      "sha256": "a61276fea022bd7e314f6476d2155ab4b28e79f259a5c75e6d6c486643f30d1c",
+      "mode": 33204
+    },
+    "qml/res/src/blockclock-size-showcase.svg": {
+      "sha256": "c21c176eea1c9cec992481c2b613cda6f95b64e7586a8fa0d8d8179204f1c00c",
+      "mode": 33204
+    },
+    "qml/res/src/blocktime-dark.svg": {
+      "sha256": "2795ae9a108a3013175b9b35ae25f353d788f2be635c9b11cbd846bb4364564f",
+      "mode": 33204
+    },
+    "qml/res/src/blocktime-light.svg": {
+      "sha256": "0cad5fd1ae6f0d9d018679dfbd6f2a4b215dfad48d93a1a35b1580a8e3c46ed7",
+      "mode": 33204
+    },
+    "qml/res/src/caret-down-medium-filled.svg": {
+      "sha256": "7b4fc0c11ef06cb8be11a27e181a418e9e8b407906d58d127fa5aabcb1542304",
+      "mode": 33204
+    },
+    "qml/res/src/caret-left.svg": {
+      "sha256": "264311a5a387d264bf8a6485fdc83c1a5c662b2123880b49ee30f0db2a847836",
+      "mode": 33204
+    },
+    "qml/res/src/caret-right.svg": {
+      "sha256": "0020a03005a36a645561d69cce6bfc1d6829869543f17235b385059142aa3e02",
+      "mode": 33204
+    },
+    "qml/res/src/check.svg": {
+      "sha256": "c0d57f3236f45139de0a537d1057c27d6094bc5188fdb3ecfcaac092ad5f83c9",
+      "mode": 33204
+    },
+    "qml/res/src/checklist.svg": {
+      "sha256": "ea62bc6bdb825ac6b720efbf9b310fc82a43e93b4a11eaa8862932f40386a254",
+      "mode": 33204
+    },
+    "qml/res/src/circle-file.svg": {
+      "sha256": "ad5f3f8ae60c4494368cde61453211dee9812c5d51ef730b99882b4acd61ea5d",
+      "mode": 33204
+    },
+    "qml/res/src/circle-green-check.svg": {
+      "sha256": "b4068d64b5d029e94661a3431e5c4a43a02dcb7ffdc4a0fcc1dff3f942228783",
+      "mode": 33204
+    },
+    "qml/res/src/coinbase.svg": {
+      "sha256": "6539b0571bbb37e8a641df93f6bb2a4cea20e75dbe4af6179a0f184c4c847d72",
+      "mode": 33204
+    },
+    "qml/res/src/console.svg": {
+      "sha256": "313e8da997446e178d2a999c7430a40607aa120b6d36ed90e9cc9beeb428e661",
+      "mode": 33204
+    },
+    "qml/res/src/copy.svg": {
+      "sha256": "b435034d60a4033a77c92e67ba3c3521d92b2ae625216cb0a16238b63c163c37",
+      "mode": 33204
+    },
+    "qml/res/src/cross.svg": {
+      "sha256": "e2c0bc95c5453647b164237171c65f4b8661049609aee93734f5affe1032191a",
+      "mode": 33204
+    },
+    "qml/res/src/edit.svg": {
+      "sha256": "6f5d74bcd4107f44a085e37123c05f7bc98d85c2a25676efb6e07ab6701776a1",
+      "mode": 33204
+    },
+    "qml/res/src/ellipsis.svg": {
+      "sha256": "66fc9b03dba586972b42e8da9170a202199a884ab6b807289e438d52f7579454",
+      "mode": 33204
+    },
+    "qml/res/src/error.svg": {
+      "sha256": "088e224f98de5f9584d5520d91ae56eec1c30cec2bc2cc1399af0f4cef4905fb",
+      "mode": 33204
+    },
+    "qml/res/src/export.svg": {
+      "sha256": "2b9cf74bedd52cfe734368a181fa435e377c32654cb11eb3c37ce301f816a005",
+      "mode": 33204
+    },
+    "qml/res/src/file.svg": {
+      "sha256": "7848a5b55a264cf61193a901d6fb72bcdaa6188ae5391531323d72edef7a9866",
+      "mode": 33204
+    },
+    "qml/res/src/flip-vertical.svg": {
+      "sha256": "70ba2f19686a287ca91f499f5b38211289ba158277f02014768422dd0cfc6413",
+      "mode": 33204
+    },
+    "qml/res/src/gear-outline.svg": {
+      "sha256": "93e4919676dfa8c30019d8e340b2996f385cb8786d073d0268e4844e0801e0b5",
+      "mode": 33204
+    },
+    "qml/res/src/gear.svg": {
+      "sha256": "65b47a904f762cbe4b4b63d2d8d612f1f528b2d82665da73d7de74dd2065b2b2",
+      "mode": 33204
+    },
+    "qml/res/src/globe.svg": {
+      "sha256": "389dca00532c306842871f1ccf63f68cb8a3a68d2542f6898d8946b96137bbc9",
+      "mode": 33204
+    },
+    "qml/res/src/green-check.svg": {
+      "sha256": "3b46791d5a0eeb6da264d91b4a89dd22e9515061c6c4571f5430c2fe4c7d662a",
+      "mode": 33204
+    },
+    "qml/res/src/group-by.svg": {
+      "sha256": "9926206a59439db14d45f7285f16d766670d4b1de4c8322fa4c3aa34229d49ca",
+      "mode": 33204
+    },
+    "qml/res/src/hidden.svg": {
+      "sha256": "d8d5ef40e3ee74ad2a60eadede9421633e1d2b3858098489bce98be8198f8c12",
+      "mode": 33204
+    },
+    "qml/res/src/info-filled.svg": {
+      "sha256": "dc6463be283cbf0e665d5b0f86221109bfe4e0507520f1bb9ced14c8b8a9c396",
+      "mode": 33204
+    },
+    "qml/res/src/info.svg": {
+      "sha256": "5e297272c63c605c46dbbb8cede349beee3541aa5bae1b163b0b6e665467f7e7",
+      "mode": 33204
+    },
+    "qml/res/src/lock.fill.svg": {
+      "sha256": "c0d78d268e4749f6b5d724bc5f2e29930224f8bc9bb49c075f832fe9bca10c3e",
+      "mode": 33204
+    },
+    "qml/res/src/lock.svg": {
+      "sha256": "5b6aefa9f7e802497bbd41e4c649bdec56702e3eef3c19a2268efdbd739e27b4",
+      "mode": 33204
+    },
+    "qml/res/src/minus.svg": {
+      "sha256": "dc7f9745d3f346aa78b7fe5b1317d9db1e4bdbe4a0532a76bdb77f456edd5a84",
+      "mode": 33204
+    },
+    "qml/res/src/network-dark.svg": {
+      "sha256": "d4f5fe15b0865d2e2be6ea2c37c2116fecdf81722690013fa6dff880e05cf376",
+      "mode": 33204
+    },
+    "qml/res/src/network-light.svg": {
+      "sha256": "4d8d78cf763e1b72ac0f869a7bf4b500f32fb4632ff93b39d46061e7f87807f3",
+      "mode": 33204
+    },
+    "qml/res/src/node-0-connections.svg": {
+      "sha256": "14687dd592812f2398ec9594c8d175aeb9dd4a8a71ef77a26e84d14bcca93504",
+      "mode": 33204
+    },
+    "qml/res/src/node-1-connection.svg": {
+      "sha256": "2a896eba1fc27f02b32350e7875eb38087836a76657d774a683a6a38e652ed8f",
+      "mode": 33204
+    },
+    "qml/res/src/node-2-connections.svg": {
+      "sha256": "68dd46288b9dad7034731875fb360ce8e63c2ee047600bb1c6f859e47b8b0e4e",
+      "mode": 33204
+    },
+    "qml/res/src/node-3-connections.svg": {
+      "sha256": "0bf2a9e0aac5379a02e45c5d8405791906258cde16e3d0987c19ece06255236d",
+      "mode": 33204
+    },
+    "qml/res/src/node-4-connections.svg": {
+      "sha256": "da0f32cc33d78dd769186d3a8b1a7f4302fe15125d69c42261b3026a104ffe4d",
+      "mode": 33204
+    },
+    "qml/res/src/onboarding-bitcoin.svg": {
+      "sha256": "0b56f90680f6a87d3e1dc0dd2a6c08832a68291a1a3f9c01d7cf095bfb40d4ab",
+      "mode": 33204
+    },
+    "qml/res/src/onboarding-clock-face-dark.svg": {
+      "sha256": "3234695c72b81c073f59ff8f06bfdc93c8c580a22b5ad2e0de05105af48a8c4c",
+      "mode": 33204
+    },
+    "qml/res/src/onboarding-clock-face-light.svg": {
+      "sha256": "88549a9caabeab6f285e5f53f2d2dacd3bc7a6fc7cffc2b887d291761c636f8e",
+      "mode": 33204
+    },
+    "qml/res/src/paste-payment-request.svg": {
+      "sha256": "a62d79e25a07160ea9a3dcc344b66c02fe4c117260361003766bd3cb2e35a8c5",
+      "mode": 33204
+    },
+    "qml/res/src/pending-dark.svg": {
+      "sha256": "5bcaebba653f1f417f2ad3e728be04714f592e4fc792023c218783d248d0fc72",
+      "mode": 33204
+    },
+    "qml/res/src/pending-light.svg": {
+      "sha256": "f0e8394e86d15741d137c2221ba47d1c207bc9291c7c0a1b9b17fef62dba2ff1",
+      "mode": 33204
+    },
+    "qml/res/src/pending.svg": {
+      "sha256": "5bcaebba653f1f417f2ad3e728be04714f592e4fc792023c218783d248d0fc72",
+      "mode": 33204
+    },
+    "qml/res/src/plus-big-filled.svg": {
+      "sha256": "02270a28ac58741c4966ba3368da37b33f4f1f5863c1305aaa36fd84d25a7735",
+      "mode": 33204
+    },
+    "qml/res/src/plus.svg": {
+      "sha256": "d976009e27608d40fe8d6cc8184d731422d23838733086fac186dc9ff84ee44a",
+      "mode": 33204
+    },
+    "qml/res/src/qr-code.svg": {
+      "sha256": "b18bc5b0ed42de040c912d9f5249d1da9cbd6c109112681f8e50f298dd6a815d",
+      "mode": 33204
+    },
+    "qml/res/src/refresh.svg": {
+      "sha256": "23844ba29e3aff029a15f29f86e2c36249dee89d872d327989731439e128958f",
+      "mode": 33204
+    },
+    "qml/res/src/search.svg": {
+      "sha256": "2566689b4c9252758bb0747e4008bcd897567f31911cad4c043eaafb57edac00",
+      "mode": 33204
+    },
+    "qml/res/src/share.svg": {
+      "sha256": "03997d70b4acd91ba558af4b3786b4cb471afd7f43d641138a5567a266e3c001",
+      "mode": 33204
+    },
+    "qml/res/src/shield.svg": {
+      "sha256": "6b4c9245ab55ba820a731b453700cf2a7702b665f29986a9b7e697a95446ad0e",
+      "mode": 33204
+    },
+    "qml/res/src/shutdown.svg": {
+      "sha256": "3f51565a4be7b7770342173bdd348189297b2bee23eac96756ff9915da182dc7",
+      "mode": 33204
+    },
+    "qml/res/src/singlesig-wallet.svg": {
+      "sha256": "332615b054e4b9f737feec9c95fb17bd48efacfe86fefe192e874b725cab915c",
+      "mode": 33204
+    },
+    "qml/res/src/slider.horizontal.svg": {
+      "sha256": "3537f36758679895ed645f3bf76827af37fabf6674ce8db6a627e06d42fd755b",
+      "mode": 33204
+    },
+    "qml/res/src/storage-dark.svg": {
+      "sha256": "f2f60458a2ca5787e89297ff63e0c9e0d76ace768bb44532b08f61abd025314a",
+      "mode": 33204
+    },
+    "qml/res/src/storage-light.svg": {
+      "sha256": "ba5bfdd52514ad798bc59a6a590f86a846d343451915a5fb2ada3c4f9e5283eb",
+      "mode": 33204
+    },
+    "qml/res/src/tooltip-arrow-dark.svg": {
+      "sha256": "66e32db70e431f0b4949a35bd2211d0de62c0027d1c7d497aa310a1eb7f6e685",
+      "mode": 33204
+    },
+    "qml/res/src/tooltip-arrow-light.svg": {
+      "sha256": "4fb325bc6cdce1e8b0e915e1f1a4609b56e60b6d28d2c28b1209b1c0d6627ca5",
+      "mode": 33204
+    },
+    "qml/res/src/triangle-down.svg": {
+      "sha256": "9f15203c9814ab36d2f5d55a2131aa51dca91d0d3a825e59b1175ce7cf98376d",
+      "mode": 33204
+    },
+    "qml/res/src/triangle-up.svg": {
+      "sha256": "be81d5d66ea76e1f621d418f42a329f7112a6ed0027dd7424dd8168bc4ddf506",
+      "mode": 33204
+    },
+    "qml/res/src/visible.svg": {
+      "sha256": "26b653db0525d7e7f23f8d345b5306e6a5a6aa01e2d987e214b00fb73f7d4595",
+      "mode": 33204
+    },
+    "qml/res/src/wallet.svg": {
+      "sha256": "9e46b65323dd8ad7278b9fe35f18306f9c673930468db84ddfe42460bfe8059b",
+      "mode": 33204
+    },
+    "qml/retainedsnapshot.h": {
+      "sha256": "5cbceef118563c2648a5d4ba17f4bd20e20a2cc47b4e08b37900f421ee7f34e6",
+      "mode": 33204
+    },
+    "qml/retainedvalue.h": {
+      "sha256": "6482b74c1f0693ed910a7fa2e4408642680776cde0b9570a0d72bd6dd54c5139",
+      "mode": 33204
+    },
+    "qml/reviewowner.h": {
+      "sha256": "6db1720f1b623d4b5e302cd78bec11c725dd4ed2ead678ba6bf3dba2aa45b919",
+      "mode": 33204
+    },
+    "qml/secretinput.cpp": {
+      "sha256": "8d3b1c572930a5201d48db805e121246dfdeb5de5119c6792088f4cd2ae4f64b",
+      "mode": 33204
+    },
+    "qml/secretinput.h": {
+      "sha256": "5121d234c13a9d5d9a46e5f0f4c097576fbf1cd0ca24dcdf8af5da6c39e8a854",
+      "mode": 33204
+    },
+    "qml/senddraft.h": {
+      "sha256": "d00d2d0985de9cffe2533c49e2271338c30a694df5e2d370daddbb753d82cce4",
+      "mode": 33204
+    },
+    "qml/shutdowncoordinator.cpp": {
+      "sha256": "0af1cbee817ced5a99f4bc2b1caefc7a08af51a90e3cb458d456a4720a49f3ff",
+      "mode": 33204
+    },
+    "qml/shutdowncoordinator.h": {
+      "sha256": "14ff714f3894df91363922fb6d7f1963709ebdc88474b092e6681ab817c91f52",
+      "mode": 33204
+    },
+    "qml/snapshotquery.h": {
+      "sha256": "9dd8bdf8a3614131e1217f3d22f3b94354a19f3b2d3e354cc8a047d4eb595e4e",
+      "mode": 33204
+    },
+    "qml/startupdialog.h": {
+      "sha256": "58b6d8e2bf8c034081b61d2c1001667d12513c07c590721365ea014eed566af7",
+      "mode": 33204
+    },
+    "qml/startupeffects.h": {
+      "sha256": "fd78cbc13a457b36a77fac09d52b04fc6dc442d4f83acfd17abc8649bd81bf2b",
+      "mode": 33204
+    },
+    "qml/test/testbridge.cpp": {
+      "sha256": "10fd3bfafe9e4223fe5adba4a92a05970233a432cdecd836162cd8b3980e8822",
+      "mode": 33204
+    },
+    "qml/test/testbridge.h": {
+      "sha256": "b13b0fa753c6ce7881e057e583d489093e276f67a3092eebc9d39562099221ec",
+      "mode": 33204
+    },
+    "qml/urlopener.h": {
+      "sha256": "019c032b5c645cd3e6caa9f01fcbe4e595a9ea365316d222e8015e0605ac3a91",
+      "mode": 33204
+    },
+    "qml/util.cpp": {
+      "sha256": "ed4ab2a40a3aa4b3baa7b43e3dc864146a09ed5463b4f63f2b0ef918d3bb5f8c",
+      "mode": 33204
+    },
+    "qml/util.h": {
+      "sha256": "21c6a9038cb77564f1e5d273c1f877f7e473d3045b9de3c3564fec2dd36920c2",
+      "mode": 33204
+    },
+    "qml/walletbalanceadapter.cpp": {
+      "sha256": "b9e4623ca36aa0e3c47318d610ea524565bb6d13a1e503908b63e8dffec7012d",
+      "mode": 33204
+    },
+    "qml/walletbalanceadapter.h": {
+      "sha256": "02d210f7c67744974f0401574b946938beaacab4732bf4811b25b73f6477638e",
+      "mode": 33204
+    },
+    "qml/walletbump.cpp": {
+      "sha256": "f8dfcfbedbd5348bd76062d4c7156654fe908f4127561637df10f90ea17e9dd8",
+      "mode": 33204
+    },
+    "qml/walletbump.h": {
+      "sha256": "e62c483c89b99e47ac44bc60b3e91c18e904007439046d2aa2728a1e534e3b97",
+      "mode": 33204
+    },
+    "qml/walletlifecycle.cpp": {
+      "sha256": "9b302ebf3bddb0a81e475cb12520bf91d682bcb26c02d7f0de6d28c45c969371",
+      "mode": 33204
+    },
+    "qml/walletlifecycle.h": {
+      "sha256": "b7b146865dbee46f7f17043574fb8e4123c3d13d109a6a512756fada1933ad5e",
+      "mode": 33204
+    },
+    "qml/walletlifecyclestate.cpp": {
+      "sha256": "a2e56d65738ae9bcd3f91d6cf19cad306c1732e3a5904647352c96d17ea66013",
+      "mode": 33204
+    },
+    "qml/walletlifecyclestate.h": {
+      "sha256": "4c9859331499471ef7f4807315b81552afc7650b6b9645b2a9aa2f24b26fcc40",
+      "mode": 33204
+    },
+    "qml/walletmessage.cpp": {
+      "sha256": "4cbbc84fb55cc84ae1d7590383cb811129e6d942e00c459cf9d2c211c2d5f3d6",
+      "mode": 33204
+    },
+    "qml/walletmessage.h": {
+      "sha256": "38d4fb97e340fa760e256d7900531ce033c88fef820f980de2b690b6f0fe3a6c",
+      "mode": 33204
+    },
+    "qml/walletopening.cpp": {
+      "sha256": "a6dad2c028aa7ab0f0c4f86b244c97a094844022c331bf3a396c9f48bacc9a7d",
+      "mode": 33204
+    },
+    "qml/walletopening.h": {
+      "sha256": "0bb7b4211ac856cde17b97ee395d5cfcd77b8edbcd3058b451ab988adc689271",
+      "mode": 33204
+    },
+    "qml/walletopeningstate.h": {
+      "sha256": "222d7b520dafcecb7d9ac4dedb342182cd28fc5904aec82b49af227df8fb50d2",
+      "mode": 33204
+    },
+    "qml/walletprepare.cpp": {
+      "sha256": "a720170b902be2f9ffe746f97910dc13b5331c99d2e6b37225a4521002312e63",
+      "mode": 33204
+    },
+    "qml/walletprepare.h": {
+      "sha256": "2795d00a3fcd5966883057058866dd1241fd4d4438f38e5a7792ffc48f5c4ed7",
+      "mode": 33204
+    },
+    "qml/walletqmlcontroller.cpp": {
+      "sha256": "af191f388140ccd6a72ebb7ac415d787143ae8af362830a0cd751c197d57c5f2",
+      "mode": 33204
+    },
+    "qml/walletqmlcontroller.h": {
+      "sha256": "ca069d4c56b5a3da24916a511e6c855b0c4df4834ea644e019074d7891b4a7c0",
+      "mode": 33204
+    },
+    "qml/walletreceipts.cpp": {
+      "sha256": "a597ba2e778641472093a774c6e647192d1e4bb8d789363562ed2475bdd9d90b",
+      "mode": 33204
+    },
+    "qml/walletreceipts.h": {
+      "sha256": "8d5949df3682f43b03920c68b06fda61fea50a6987b781d6f1e844d40462c33c",
+      "mode": 33204
+    },
+    "qml/walletrequestdata.cpp": {
+      "sha256": "11fcfbea4eaeaad7623bcdce3602d361689df25b1f5b568785b23d9d5745c528",
+      "mode": 33204
+    },
+    "qml/walletrequestdata.h": {
+      "sha256": "a9dc2b508194d33dcd44419e3173f13a5fe08a3ad66b06bf1225dde9e52e90d3",
+      "mode": 33204
+    },
+    "qml/walletrequests.cpp": {
+      "sha256": "941c3606df1733a33e9edaa4497c70fe4c08f0084c56a316e04e05bec6da396e",
+      "mode": 33204
+    },
+    "qml/walletrequests.h": {
+      "sha256": "4f4f092f18562a22d695718d654098db163a9a8e4438da8b489aad11467cff42",
+      "mode": 33204
+    },
+    "qml/walletreservationdata.h": {
+      "sha256": "954db8dba303fca198edad41235fccee8bd4d9cf8887c5cfbfcbeacc3cea2c61",
+      "mode": 33204
+    },
+    "qml/walletreservations.cpp": {
+      "sha256": "b54a9edd68ce075c0793c3c20115a86f3b3c557ccd23dcba0cbf5ec013b7f4c0",
+      "mode": 33204
+    },
+    "qml/walletreview.cpp": {
+      "sha256": "98b4f4d88b7b90bb035ece71e13f68332c41d80e1a17cf14508a78b62f3840f2",
+      "mode": 33204
+    },
+    "qml/walletreview.h": {
+      "sha256": "e748b2a9b6bfb29b874a5999ad9f4a354d3e0503ccd1c060e3fb4bf5286138ff",
+      "mode": 33204
+    },
+    "qml/walletsecurity.cpp": {
+      "sha256": "1cb1a9f61f8062d9197effa1775611eaed3beedad4500cf4cbc8a7f5a17be56f",
+      "mode": 33204
+    },
+    "qml/walletsecurity.h": {
+      "sha256": "20781ca1cb3ca25c0be6a984e2c91eccf94c740ab6072ac584e1a144e6ec36c8",
+      "mode": 33204
+    },
+    "qml/walletsend.cpp": {
+      "sha256": "aa85f3ae517592a50b7daa13511dd620c60b1a9e7d30b8551da0e2afcd1e47d0",
+      "mode": 33204
+    },
+    "qml/walletsend.h": {
+      "sha256": "e30aea7ed85d5df2f9813897d8c6c9fb07486e07a8e8c334e7b27d0c7af37713",
+      "mode": 33204
+    },
+    "qml/wallettransaction.cpp": {
+      "sha256": "9a453f7c65c3e865a10546979973fff18150579e75486a77b917df5112081080",
+      "mode": 33204
+    },
+    "qml/wallettransaction.h": {
+      "sha256": "89ad402c408e5ed2216a7cc50b500f147a950a56afdb7fafe733707540940a3c",
+      "mode": 33204
+    },
+    "ruff.toml": {
+      "sha256": "d40077ad823ba31d0c659da7688a5035b84f4d473d63d7b2c1ddd8202ebfb390",
+      "mode": 33204
+    },
+    "test/CMakeLists.txt": {
+      "sha256": "50876a65b57b3246648a7cfb99d1802fe8c0a706ff2147f5d1a771400fd3817c",
+      "mode": 33204
+    },
+    "test/functional/interface_qml_backend_guarantees.py": {
+      "sha256": "0b7229c51d7b93a0a551055af175a78e2c96c930fa72074ce62426bcfe92f677",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_console.py": {
+      "sha256": "beb55033ea954be04aa4d00fce1dc3ec09bbf57a62781b57721d008a2f178275",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_external_signer.py": {
+      "sha256": "f0aae985964ce3117377902bc846fe5fbbff2a946f152f6bba591b587db09ddf",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_node.py": {
+      "sha256": "878231e72ae6ea86b9c3b534147d59cc09a36902664bad6b8a7ec6e93f046115",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_payment_import.py": {
+      "sha256": "01742d764576baa1b7809f1611a4276ce1a8594e7fb836c36dd5f5c1733dd6b0",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_peers.py": {
+      "sha256": "ce64b8519d049baaa09687ced6c8577b6a048fcfc564d20a56717532fa632861",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_preinit_onboarding.py": {
+      "sha256": "af3e5058849c44dc629402c6377d4e6de325d8e219decad61e2cc8c309f73329",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_shutdown.py": {
+      "sha256": "137452c223535f321978faa2cbd5818016583adbdec4f6eb808511c3005e1068",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_startup.py": {
+      "sha256": "f3cd96a908deb39dfb4631d6a655e146811a787a94191b397db5f9b14965e53a",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_wallet.py": {
+      "sha256": "42e6f6f2259fa616f9b0e058d49f044ae838faa6be8a6b6435c461b6dca95544",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_wallet_activity.py": {
+      "sha256": "646778feaabb9e8e19e69f627d7b338e704e31da566bab35190e17f1b08ca173",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_wallet_compat.py": {
+      "sha256": "6e1427822db0b63d3e9238abd99e2c75b067d51cdabc0e4900384931443841ae",
+      "mode": 33277
+    },
+    "test/functional/interface_qml_wallet_sending.py": {
+      "sha256": "f3775146b48b7db87bf68f28261ec8b0e91ba8ba6ce1832fbec578e5fd705f13",
+      "mode": 33277
+    },
+    "test/functional/mocks/signer.py": {
+      "sha256": "507dac30ba4781c9d5acc3552af4bd48e2610c2aac33c1d3f0f7ba984fd23c0a",
+      "mode": 33261
+    },
+    "test/functional/qml_driver.py": {
+      "sha256": "846fa45a67351ffc172420404b6d49014e155a3d2951d3a8df5dff9019dcb6bd",
+      "mode": 33204
+    },
+    "test/functional/qml_process_checks.py": {
+      "sha256": "7adfcb379091fe405fdc3e99d777766aeaf7a4adad292cd44d31054929a1470a",
+      "mode": 33204
+    },
+    "test/functional/qml_scenarios.py": {
+      "sha256": "922b11e227e4488c4eaaf0172a6e94ee1b2648199e4f07509865662950f4a779",
+      "mode": 33204
+    },
+    "test/functional/qml_smoke_lib.py": {
+      "sha256": "d233df3d9f23c4b0b180234164fd02d8e25f67af722f94306ec9da11c3224090",
+      "mode": 33204
+    },
+    "test/functional/qml_test_configured_datadir.py": {
+      "sha256": "900d8ec10e6214257233c9d3f9f57255d339ccf91250c29e101e095094799be4",
+      "mode": 33277
+    },
+    "test/functional/qml_test_fatal_exceptions.py": {
+      "sha256": "e27517128c30e2dcf32bd82b669401328016dc79fd344ba8f6077e74a329ffb6",
+      "mode": 33277
+    },
+    "test/functional/qml_test_harness.py": {
+      "sha256": "ba8787e76ac8a712fb05e27654b181dbe369f28b7f5909ca87b3ae6b8afd0e3d",
+      "mode": 33277
+    },
+    "test/functional/qml_wallet_test_lib.py": {
+      "sha256": "fb6f3e7b7b40ba36d5a18ec58dc839ef7c12d0496c0a3f217e66b02074bd2fdc",
+      "mode": 33204
+    },
+    "test/functional/test_qml_cleanup.py": {
+      "sha256": "f848e2fb1a99e9d13d3cf5f9bcb4ae6b6418c464d5e80a788bc91630d58907ee",
+      "mode": 33204
+    },
+    "test/functional/test_qml_process_checks.py": {
+      "sha256": "e8013b77a0dbf0cda996ac4e0e72334df5e6656a33099c0f58e62894bf43b60d",
+      "mode": 33277
+    },
+    "test/functional/test_qml_test_directories.py": {
+      "sha256": "3bc6b51a6531a25d40f3128c246207ec53d1bb3d364c2b7ed176925125029a50",
+      "mode": 33277
+    },
+    "test/integration/CMakeLists.txt": {
+      "sha256": "757de81cf2c4729e9e10bae4648a7de1d39eca3fab09d995339f72130c109e12",
+      "mode": 33204
+    },
+    "test/integration/fixture/test_application.cpp": {
+      "sha256": "3e36817b9ce44fe793a7fbc400123ddeb4b3f86d8c39c4bb8498c6b7290354c4",
+      "mode": 33204
+    },
+    "test/integration/fixture/test_application.h": {
+      "sha256": "d061a67d3491861f5cf7bce802be62c6e2ed67aa4a3d2a2143e5ff540bcfd07c",
+      "mode": 33204
+    },
+    "test/integration/fixture/test_process.cpp": {
+      "sha256": "be12f53c47e435568822af34ebbc7a6a958f2e7cc502aee11974158d6d97e476",
+      "mode": 33204
+    },
+    "test/integration/fixture/test_process.h": {
+      "sha256": "eda56a8cdfa9d7daf63cb47952661c91b628c21fe41f6b93cb8e7e4fbc213b8b",
+      "mode": 33204
+    },
+    "test/integration/fixture/test_util.h": {
+      "sha256": "a72b581888fc6cac7c10d9b0bb79f7cec1fe9334aca66a24095706ff7f79b294",
+      "mode": 33204
+    },
+    "test/integration/fixture/test_wallet.h": {
+      "sha256": "15fcdcacfe7a9a9a13953228476acaab17f0d412f00dca34e58409893df68f74",
+      "mode": 33204
+    },
+    "test/integration/foundation/test_lifecycle.cpp": {
+      "sha256": "a5d9ab548acfbe697f940a1f89604ad6b980427deac5c630b04942c21a0d0078",
+      "mode": 33204
+    },
+    "test/integration/node_setup/test_blockclock.cpp": {
+      "sha256": "16e8e81134044b35bc935c5b0f36f1224ffbf93935a1d0b671bc94242f58e7dc",
+      "mode": 33204
+    },
+    "test/integration/node_setup/test_navigation.cpp": {
+      "sha256": "b5be3f5e716ec8b28e7a7368a6d21347a99c698733270f1a54c5735c61b04481",
+      "mode": 33204
+    },
+    "test/integration/node_setup/test_settings.cpp": {
+      "sha256": "b123a6e7ec9b7ceab18efd197c89e3689197b12bc2fbccb5ea1a7dbf3480d80f",
+      "mode": 33204
+    },
+    "test/integration/node_tools/test_blocksonly.cpp": {
+      "sha256": "6c62df617097830651d4c4a4d3949dce7ed886c3bdd9724bbe41a94435e060a5",
+      "mode": 33204
+    },
+    "test/integration/node_tools/test_console.cpp": {
+      "sha256": "c387728088b261b6e81f0866ff3aebc8788b4da1198989586cbfb2441fcd35be",
+      "mode": 33204
+    },
+    "test/integration/node_tools/test_debug_log.cpp": {
+      "sha256": "e1a8d0282dd87e61278de827377aa8446789c47772abe2100d71f28a3d1cd164",
+      "mode": 33204
+    },
+    "test/integration/node_tools/test_node.cpp": {
+      "sha256": "13579f657d6641b89764f5be0802b030f86fb8d5e1093f8fbccce162973a68a0",
+      "mode": 33204
+    },
+    "test/integration/payment_import/test_payment_import.cpp": {
+      "sha256": "80d05159c82111ab3ea467b1bc46d56280c264cb27081a72ec13096ffab3279d",
+      "mode": 33204
+    },
+    "test/integration/psbt/test_psbt.cpp": {
+      "sha256": "5f3b77bdcec011e031b10d21a59511b07df7b74cfee86a2f9a380ee5da5df14a",
+      "mode": 33204
+    },
+    "test/integration/runner/test_cases.cpp": {
+      "sha256": "ebb911a8fee8ea6789391592f69a69f7c047022f018ed68392b50b191e8b2a09",
+      "mode": 33204
+    },
+    "test/integration/runner/test_cases.h": {
+      "sha256": "e75183a3cef86e6c5a83aaf1590c6c69fd4eb86d07666d7aa7c9ff95f99a279b",
+      "mode": 33204
+    },
+    "test/integration/runner/test_main.cpp": {
+      "sha256": "c54ea8807698821f728b4c55c22bd199039f0a1a6d585ac9b7be7b2b6bf3deda",
+      "mode": 33204
+    },
+    "test/integration/signers/test_watchonly.cpp": {
+      "sha256": "543ed43d132ad31214ae8e1d5ecb04f7541a266fa8e8fee64cdd0a4b2af6bf5c",
+      "mode": 33204
+    },
+    "test/integration/wallet_activity/test_activity.cpp": {
+      "sha256": "4b2888316148f05e6a1010fbb61b2e778dc6d295f89a0a67c26d555bba979cea",
+      "mode": 33204
+    },
+    "test/integration/wallet_activity/test_receive.cpp": {
+      "sha256": "a6cfa1cd631f850c8aae5c59fbe323dcab8bf9f79213adba542253b72335e20d",
+      "mode": 33204
+    },
+    "test/integration/wallet_management/test_wallet.cpp": {
+      "sha256": "60927c01420206b10fb6fb929a9a59f09fda0ecf00c28942b9c28c5cb83e8794",
+      "mode": 33204
+    },
+    "test/integration/wallet_sending/test_bump.cpp": {
+      "sha256": "3b5decc0397285d67594955ad41cf2b44b4fd1fcae2c19b65a6f4d5a6b462b2b",
+      "mode": 33204
+    },
+    "test/integration/wallet_sending/test_send.cpp": {
+      "sha256": "1e1ce1c37690af10100bf8f9f38d08efcf968a23d46fba45d83e1673a1a2d3ba",
+      "mode": 33204
+    },
+    "test/integration/wallet_sending/test_transactionpolicy.cpp": {
+      "sha256": "de38335835a5c3a7b48db6415f189271f2a153233ea5c832d5c4892a1cf72668",
+      "mode": 33204
+    },
+    "test/lint_qml.py": {
+      "sha256": "36df01f56a88d92df2e122dd7fcc0723193712b64a33b3e0c040e35af64efce1",
+      "mode": 33277
+    },
+    "test/mocks/admissionhookscheduler.h": {
+      "sha256": "956e9c2a59c9f54206a86ee0370f9f920c7e6a8fb8a70280462607daaadb1fdf",
+      "mode": 33204
+    },
+    "test/mocks/approvaltest.h": {
+      "sha256": "5f8b7b8e0a013871293c0e7e8b69e9f262d8f0501389f320b677e0ce7f5106b2",
+      "mode": 33204
+    },
+    "test/mocks/callcounter.h": {
+      "sha256": "a4ea69b414974030310b634cd73617ac07ef0c5cea8742610ed49efe36ac4b35",
+      "mode": 33204
+    },
+    "test/mocks/drainexecutors.h": {
+      "sha256": "19b32d795b623996a9c4eb586778dd61f4db24175c07356a5d841e7e6bde9e94",
+      "mode": 33204
+    },
+    "test/mocks/feepreviewchain.h": {
+      "sha256": "608ace8d1b07dac42598c2dd536b48b8141997650f64c3de1a47e4490849e4f7",
+      "mode": 33204
+    },
+    "test/mocks/manualexecutionenvironment.h": {
+      "sha256": "f0fad6ddc33c5695bea7059ee563b129045c0bf7ab2d7199fc3306efd4f7783d",
+      "mode": 33204
+    },
+    "test/mocks/manualfeereceipts.h": {
+      "sha256": "54cd40a7397e6e6c6d86e1fa76c7c3e55ff50a354f7d4f54056784f36eafc455",
+      "mode": 33204
+    },
+    "test/mocks/manualwalletdrain.h": {
+      "sha256": "bdc94a0d58283ac5640e24a74aba59001e0afdd2c88675481fc9db4f85dbca40",
+      "mode": 33204
+    },
+    "test/mocks/messagebumptest.h": {
+      "sha256": "8842b4d51ab762962e54a90b668914871c88f466a63cb8c51cc46a04bb58b81a",
+      "mode": 33204
+    },
+    "test/mocks/mocknode.h": {
+      "sha256": "ebe9b6d3c309da8776ff84f0455c2f53790336f2ffeb9a566306c9b3fff49b52",
+      "mode": 33204
+    },
+    "test/mocks/mockwallet.h": {
+      "sha256": "30796d14a510d65369698275920c96bb5677a1f17b2dd5529f9948ac964f6387",
+      "mode": 33204
+    },
+    "test/mocks/preparationtest.h": {
+      "sha256": "54f0121d1d4c8c264b95e603a5017ad861e9affab3b7a57baece37e7d00aeda7",
+      "mode": 33204
+    },
+    "test/mocks/provisioningtest.h": {
+      "sha256": "4288941f11fc39b5ca81f6a20d77b60b7901ababdb732c6dc7807dc64933250a",
+      "mode": 33204
+    },
+    "test/mocks/psbtactiontest.h": {
+      "sha256": "d23330f4d0ec8f3d01abf0eefe7668dbca2da1fdb92a5909cd8c9705ffba641c",
+      "mode": 33204
+    },
+    "test/mocks/psbtfeefixture.h": {
+      "sha256": "fec380ef18289597d5a4cb121353b56c4f2c10bdf57c43c4177c5840d265a6f8",
+      "mode": 33204
+    },
+    "test/mocks/qml/org/bitcoincore/qt/AppMode.qml": {
+      "sha256": "e3a9af00cd46fc90ebbb09c46cecc04c8f7e744372b9a39e1aa60cc5ccd50af1",
+      "mode": 33204
+    },
+    "test/mocks/qml/org/bitcoincore/qt/BitcoinUri.qml": {
+      "sha256": "faa32d2aff45a515e79c2da7adbcaf4ebea4347f30b2056d22160edbc4177b64",
+      "mode": 33204
+    },
+    "test/mocks/qml/org/bitcoincore/qt/BitcoinUriParseOperation.qml": {
+      "sha256": "af4c726813b5623b6c5bc00c0983fef21817493a4e18eb8f1c3d3cf6660ee909",
+      "mode": 33204
+    },
+    "test/mocks/qml/org/bitcoincore/qt/BlockClockDial.qml": {
+      "sha256": "6a14cb21842889372a10110b5e4bed705c6901f9471244c3a78b7a9275178f4f",
+      "mode": 33204
+    },
+    "test/mocks/qml/org/bitcoincore/qt/Clipboard.qml": {
+      "sha256": "11399669e04a43af2007052bba782b048f87c4aae65b4fa9998c20a71b8c412c",
+      "mode": 33204
+    },
+    "test/mocks/qml/org/bitcoincore/qt/qmldir": {
+      "sha256": "4de6c5e8dbe42622c1b787d5f3b64ba930c79d5f5300961bd58d94fc109412e9",
+      "mode": 33204
+    },
+    "test/mocks/receiverequesttest.h": {
+      "sha256": "a8c023e2552194d2f6f23e2678ec0869dd3e5b42112653d487d6c92d616ed1f4",
+      "mode": 33204
+    },
+    "test/mocks/sendtest.h": {
+      "sha256": "adcc77c269cc13fd8d98ccb770f6659433b78f6b4dbbf7d00418acf8e9bb1464",
+      "mode": 33204
+    },
+    "test/mocks/signertransactions.h": {
+      "sha256": "18b0b47b7d5540951f49154a1980c55f2d38bbbf2b731815c6787804689d8029",
+      "mode": 33204
+    },
+    "test/mocks/stubnode.h": {
+      "sha256": "9ae1811b983e34f46c13e851a167ad6d71c8e06a96a348b3eaf95b341478d005",
+      "mode": 33204
+    },
+    "test/mocks/threadrecordingscheduler.h": {
+      "sha256": "a09bc9656b6045d0fe21de0c7e5dabd1a30490057d6fc7f05f148e231dd35276",
+      "mode": 33204
+    },
+    "test/qml/bitcoin_qmltests.qrc": {
+      "sha256": "083dbc7f934daba1590668ca8697de3e96ab1e2756d97bf93c68e927dfbe4c79",
+      "mode": 33204
+    },
+    "test/qml/qml_tests_main.cpp": {
+      "sha256": "10407fd01241c08177cea3cd7bdce44f04da8ed3947e96a1beff78e8c50f9f31",
+      "mode": 33204
+    },
+    "test/qml/test_warnings.py": {
+      "sha256": "06e1c53a2485eaad375cb56bb45e9d07c9a95a2147ba8b3bf6c763c031f11faf",
+      "mode": 33277
+    },
+    "test/qml/tst_activitylist.qml": {
+      "sha256": "8f59d0625b2320a962ad8efb31cc137b3cd3540c3fa0bacc1ac0901d19e412db",
+      "mode": 33204
+    },
+    "test/qml/tst_address_components.qml": {
+      "sha256": "b38801097cb7c068dea5bf581356d4f72aa2968dbe6fcd126790a71ca8ff889f",
+      "mode": 33204
+    },
+    "test/qml/tst_blockclock.qml": {
+      "sha256": "1288bdf375e0fa838e29e23afb80808abb80e468022ca84582c8c3de3401a4f1",
+      "mode": 33204
+    },
+    "test/qml/tst_capturedpaste.qml": {
+      "sha256": "86813d84a09375a8d2326b54ee1bbfee66bbfe485932ad2f621976b4fb325b44",
+      "mode": 33204
+    },
+    "test/qml/tst_contextmenu.qml": {
+      "sha256": "230e0a9686acd15e0fb8cf999f671fe9fb5bc9b2d99e982bf64715308388c900",
+      "mode": 33204
+    },
+    "test/qml/tst_contextmenubutton.qml": {
+      "sha256": "b32f314e6356103979832097db9a7267c0ee23cb65fb446b7f8d2b63de303ea5",
+      "mode": 33204
+    },
+    "test/qml/tst_contextmenudivider.qml": {
+      "sha256": "e89c7edcd4827d6bbaea051c25117613f81da8743f9b51f6eaed73c82ee0d82b",
+      "mode": 33204
+    },
+    "test/qml/tst_contextmenupicker.qml": {
+      "sha256": "1c8c7669bfa5c07adbacef12b06bf5efd2b37385e261004c1f1c9376b07f8da1",
+      "mode": 33204
+    },
+    "test/qml/tst_contextmenutoggle.qml": {
+      "sha256": "ca98940769cb0eaebc8af78afbac706b3d2196a3e87c4e314a3a8c1fd7ab38f1",
+      "mode": 33204
+    },
+    "test/qml/tst_copybutton.qml": {
+      "sha256": "278985abc70ae6a356cc1df8a18c94eaf0afbe21af0453d6e88a8d517df3a28b",
+      "mode": 33204
+    },
+    "test/qml/tst_corecheckbox.qml": {
+      "sha256": "1e1f1ee187f7881f3f87df312637cd3c2144f633036ac0cb62dcb595ca3f3c1a",
+      "mode": 33204
+    },
+    "test/qml/tst_debuglogview.qml": {
+      "sha256": "e60570b526cc6c9e78d2121b47ad4f6dd59a4555360d4a3947955286915ea916",
+      "mode": 33204
+    },
+    "test/qml/tst_desktopmenuactions.qml": {
+      "sha256": "7d976dc49f4e796e62cbb46ad95816e2b3ff7ef4af15cfd8f44d5192f0f83daa",
+      "mode": 33204
+    },
+    "test/qml/tst_desktopwallets.qml": {
+      "sha256": "f5584c6c437b191fab491e850fdd6b645b226beac609e856fdb5c5f74669c091",
+      "mode": 33204
+    },
+    "test/qml/tst_dropdownbutton.qml": {
+      "sha256": "a403d19e3994e7c42003846d0bf210732b1a5ea9452d61ff857702d681ce1d93",
+      "mode": 33204
+    },
+    "test/qml/tst_externalpopup.qml": {
+      "sha256": "47439fc7ee56046b140f9b352f2459dc005a41ad93fc91b05c38446034e6deb7",
+      "mode": 33204
+    },
+    "test/qml/tst_externalsignerreviewactions.qml": {
+      "sha256": "f74913810c102a486260c87a235850ea7c008850fb44e914986db80b239c271c",
+      "mode": 33204
+    },
+    "test/qml/tst_feeselection.qml": {
+      "sha256": "3a65ff562b3f8320924bd7e3f38e1f91ae0dab411e0db220f31d7bb70998be48",
+      "mode": 33204
+    },
+    "test/qml/tst_formcontrols.qml": {
+      "sha256": "83fde39a6c0a2e8dde2a5c5e10fea44b8cd7cec0357d2c0048325058b2d460c5",
+      "mode": 33204
+    },
+    "test/qml/tst_infobanner.qml": {
+      "sha256": "b5ebd9a2ea95d0483995bf70d7b3dce8edb68545c9c2a9590cead0b26ab1462d",
+      "mode": 33204
+    },
+    "test/qml/tst_mainrouting.qml": {
+      "sha256": "d6f622e4fd20cdf38df99a7f81c59074a38f56d2fc04c3711edcc15615316975",
+      "mode": 33204
+    },
+    "test/qml/tst_mempoolinformationrows.qml": {
+      "sha256": "dd33b927f96363886a444aad9102a100e69b7ae01fc7881aaafcc4c192e24706",
+      "mode": 33204
+    },
+    "test/qml/tst_monospaceoutputview.qml": {
+      "sha256": "15997bc0b5217f01af0b6075d3477dde8c584a2a03e5c0a85775ac7c2a673c33",
+      "mode": 33204
+    },
+    "test/qml/tst_navbutton.qml": {
+      "sha256": "5e15047c97a58a9f8e9f17b6f7bceb4fb08128f9ccb4bde1f84317439559ade5",
+      "mode": 33204
+    },
+    "test/qml/tst_navigationsplitview.qml": {
+      "sha256": "661d43d883d5c1a88e0918ca203d3817ef64a352607b677b79e643a52d1b21cb",
+      "mode": 33204
+    },
+    "test/qml/tst_nodefeedback.qml": {
+      "sha256": "1a0227e24b9caa5cb6369dc3e82db41560c87446f7f6e5d385f4bf8775ec0af2",
+      "mode": 33204
+    },
+    "test/qml/tst_onboarding_datadir.qml": {
+      "sha256": "e957bbef2cee6b60de3623e83ef697028ac0511870b8cc45e65c05fa10b55efb",
+      "mode": 33204
+    },
+    "test/qml/tst_onboardingmotion.qml": {
+      "sha256": "d346a9a4cae9d417d20da2bbf74aa014341cca7461b6c49effb502a5afb9179f",
+      "mode": 33204
+    },
+    "test/qml/tst_onboardingview.qml": {
+      "sha256": "3f64842d35c4f7d8f3c89aca7ff650bb01bc46503cfd8b8673aa6ee0b07f27df",
+      "mode": 33204
+    },
+    "test/qml/tst_peeractions.qml": {
+      "sha256": "3cab2345e4a79ff26f38438c0e153a147cc5d9be3d8287e25b5614e9c19974f7",
+      "mode": 33204
+    },
+    "test/qml/tst_popuppicker.qml": {
+      "sha256": "ebdf67c27e8395065312d9b5b45fdfa0c37272d7ebe87541676e3ec8f0bede2b",
+      "mode": 33204
+    },
+    "test/qml/tst_proxylocationinput.qml": {
+      "sha256": "6d38e76e4cda34c8a68cb741ee0a164b2668a31bd8812579cf1d51c51bbebe12",
+      "mode": 33204
+    },
+    "test/qml/tst_rangeslider.qml": {
+      "sha256": "1ca4d388edd27f53c4df1bc0a643d9f3ab283489a992f11990d22d3ec1d0a4bb",
+      "mode": 33204
+    },
+    "test/qml/tst_requestpayment.qml": {
+      "sha256": "d696b8a4074c6a9fcda42b5322925080e1e32175190712d98a6ee8ff616bf9a7",
+      "mode": 33204
+    },
+    "test/qml/tst_searchbar.qml": {
+      "sha256": "86f9c3b026a39d737e0a579a395463e0cda81c349a919edeef0a2d4ff7325a23",
+      "mode": 33204
+    },
+    "test/qml/tst_sendcomplete.qml": {
+      "sha256": "f396afda728dd4b7fd78d706763e1f075268268c6c6f1fe9db1372883317cd4f",
+      "mode": 33204
+    },
+    "test/qml/tst_sendcreate.qml": {
+      "sha256": "242452dca478bdd06a35bb49e37ebde5cdfc3fa92c7b75186268f02513334293",
+      "mode": 33204
+    },
+    "test/qml/tst_sendfeeselection.qml": {
+      "sha256": "36a6d650e619c9dd08a65fb93ee9f6de2cca11599a2cea0180363d9e6b9a5a78",
+      "mode": 33204
+    },
+    "test/qml/tst_sendoptionspopup.qml": {
+      "sha256": "fba85f8379c7f68914bc8d99227ce12ebb7e7b7d1e1848ce82964615cf560901",
+      "mode": 33204
+    },
+    "test/qml/tst_setting.qml": {
+      "sha256": "4e1e19e703cd362315d6161a375808a6bf622f2cb21bd2b9af58f893eb4fd1f7",
+      "mode": 33204
+    },
+    "test/qml/tst_settingsheader.qml": {
+      "sha256": "8e23ca95e4dce2e568e5a8299a1da13853d3293a8ab407e1fd474b8400278a22",
+      "mode": 33204
+    },
+    "test/qml/tst_settingsnavigation.qml": {
+      "sha256": "965d8e932a1eeb82f64f8dd82916014cdad9d13a91380e46d5541c7983b2f0b5",
+      "mode": 33204
+    },
+    "test/qml/tst_settingsstatus.qml": {
+      "sha256": "271d1ce1b82fb6d3e38654aa5923dfb5410dac81c46d937b791fcf35cfbc9014",
+      "mode": 33204
+    },
+    "test/qml/tst_signverifymessage.qml": {
+      "sha256": "66c0e4c04df8b6d69c8070fe37a1f4f13361a02c91645ca69b804947156b2be4",
+      "mode": 33204
+    },
+    "test/qml/tst_slider.qml": {
+      "sha256": "1aae0281fa1f0bdf6d8ab3b796c15ac878cdad604845b3fe8ee90b86ff9b0fea",
+      "mode": 33204
+    },
+    "test/qml/tst_tooltip.qml": {
+      "sha256": "23dccce7f1b451b26df9e0244e1fc7d1932ed4379d98a0455a352422af80a7ef",
+      "mode": 33204
+    },
+    "test/qml/tst_transactiondetail.qml": {
+      "sha256": "2a4c573d98af857db0092352b991ea7650bb877737c93af0bf7e1bbab508db2f",
+      "mode": 33204
+    },
+    "test/qml/tst_transactionflow.qml": {
+      "sha256": "6f706a6c29e6f14e2eff709f96892a75c26a65ef08ffee1a737151b962f22c56",
+      "mode": 33204
+    },
+    "test/qml/tst_utils.qml": {
+      "sha256": "bc6abd73a70cc73514483367172adab70561b853120b07cec9d43d35f906ce80",
+      "mode": 33204
+    },
+    "test/qml/tst_valueinput.qml": {
+      "sha256": "039ff5dbb890f424654a424ddb013c2550751d7b5a32ae92c493950ccb940bdc",
+      "mode": 33204
+    },
+    "test/qml/tst_walletcreationflow.qml": {
+      "sha256": "13fbf2b9ed143e18c287cc7f077b870821ce02b602ae362dae49c34379ac0347",
+      "mode": 33204
+    },
+    "test/qml/tst_walletpassphrasepopup.qml": {
+      "sha256": "f40a48b3abad1bbfe66a2bd03c9d34b6e0eedac63107dfbff35aec3f6f71ec45",
+      "mode": 33204
+    },
+    "test/qml/tst_walletpasswordsettings.qml": {
+      "sha256": "b2ea1129b08f6b8104ce87a315ad432696a50e69974de638775f852b1c7eb2e6",
+      "mode": 33204
+    },
+    "test/qml/tst_walletselect.qml": {
+      "sha256": "1db92e2f20e9647f9c7a7f3f483617effef3552b3ab2748f593d95009984b690",
+      "mode": 33204
+    },
+    "test/qml/tst_walletviews.qml": {
+      "sha256": "bf38132d65ff4aa479c0dbb47b027d8ee61eb8850aee6a8b32ee1180ec123db9",
+      "mode": 33204
+    },
+    "test/qml/warning_probe.qml": {
+      "sha256": "997724a6ee16c35354797bfeda20407be60ce0c2fe7666ec0c319e44b6cca109",
+      "mode": 33204
+    },
+    "test/qt_test_registry.h": {
+      "sha256": "9d23275bff722536fc6ecd36af615e98906644fe6a4ccbc5f41fe22b9057fa70",
+      "mode": 33204
+    },
+    "test/sanitizer_suppressions/lsan": {
+      "sha256": "f0cba36b75418ba0896308ff80887f3b1d7ac0cd6f6870905594552d84cfe206",
+      "mode": 33204
+    },
+    "test/sanitizer_suppressions/ubsan": {
+      "sha256": "98a2ecb9d914eb7d5a3aa4ed6ad36be797c804184958e25ec8e24f1db403841c",
+      "mode": 33204
+    },
+    "test/sanitizer_suppressions/ubsan.ignorelist": {
+      "sha256": "9112df955489bc82796348c9c15b5000884c23b281f5e1e054d6ce6a1a1f8d68",
+      "mode": 33204
+    },
+    "test/test_activitydetailmodel.cpp": {
+      "sha256": "dbb2539b4214e7de0897ae63a05f9c0d72d0a76e0510abea0c8b710a5b2d1f6d",
+      "mode": 33204
+    },
+    "test/test_activityfilterproxymodel.cpp": {
+      "sha256": "482d716f0f0c70534a8bd757dfa6f76afcdc3050c311954f91c44b2cef9fcf3c",
+      "mode": 33204
+    },
+    "test/test_addresslistmodel.cpp": {
+      "sha256": "59961267e1d79987209d2fbd64ff9f6d29971cf73db52b5982b9bc0814b82de1",
+      "mode": 33204
+    },
+    "test/test_amountparse.cpp": {
+      "sha256": "861c6bd495dc0e31d6784b425e8dc6630d311c854e8b1e0af3afdf552167c4f7",
+      "mode": 33204
+    },
+    "test/test_appmode.cpp": {
+      "sha256": "ab2b855b8660def749c2df4c7b02a2934c7e84942816efeb6ec82026eec197ac",
+      "mode": 33204
+    },
+    "test/test_async_options.cpp": {
+      "sha256": "70bcfa1a80f6eed5d5cf341a6613addc6eed8167c6f530754f1b4b7f9c91e366",
+      "mode": 33204
+    },
+    "test/test_atomicsharedptr.cpp": {
+      "sha256": "20d89c28ae3fd9a8924dd4c51e6045b1317d579a767bda00edc49241beda6467",
+      "mode": 33204
+    },
+    "test/test_backendexecutor.cpp": {
+      "sha256": "26ce2b23c1e01a24340dcc058445ab7e116471b7f326849792fc8f5dc3edef12",
+      "mode": 33204
+    },
+    "test/test_backuppolicy.cpp": {
+      "sha256": "f35eafd59445289ea32ee6730ad807b7e0cd238bec4f199dd03d8c228288a725",
+      "mode": 33204
+    },
+    "test/test_backuppolicyoperation.cpp": {
+      "sha256": "9ae5e886cc594b3de73871bf047817a6b55ac9c37d9b25c768996d8c7b1b3011",
+      "mode": 33204
+    },
+    "test/test_banlistmodel.cpp": {
+      "sha256": "e2bc55b63f5e0db59397e8dc3303da85f9e01fa1c6858f19058efa1322944980",
+      "mode": 33204
+    },
+    "test/test_bitcoinaddress.cpp": {
+      "sha256": "d595f606a57fbb563255444b58329c6281b69e8c73f51b9a864064c3b901480f",
+      "mode": 33204
+    },
+    "test/test_bitcoinamount.cpp": {
+      "sha256": "3403ba4fc8a4cd78960654c1a56ff7055cd31e27952c4c20e83b8d3806c54f1a",
+      "mode": 33204
+    },
+    "test/test_bitcoinuri.cpp": {
+      "sha256": "d3ceb725e567baff4b41912c9a68127f323c82f0b7b24680a7c7985740be1f1d",
+      "mode": 33204
+    },
+    "test/test_bitcoinurimodel.cpp": {
+      "sha256": "071c19196724b90c754c7cc47132d0da7c4da8f657f0435543750c191e637bdd",
+      "mode": 33204
+    },
+    "test/test_blockclockdial.cpp": {
+      "sha256": "1e75d38697583ed83565189bf964e045e46a74d45967f48e63921114cc0463de",
+      "mode": 33204
+    },
+    "test/test_blockclockhistory.cpp": {
+      "sha256": "7bde922209e7bb955977cbfb7734d0f7ffde77b6a4b927a1d050b5ff518fbed9",
+      "mode": 33204
+    },
+    "test/test_blockclockmodel.cpp": {
+      "sha256": "2023e79a8a563abe74f08483b0db48aa9797b30ef041a7aba75402d7933aed1d",
+      "mode": 33204
+    },
+    "test/test_bootstrap.cpp": {
+      "sha256": "03a44f1a8956aad13824fde94510a744d5bf033b1a3750be93bc1c49ca292699",
+      "mode": 33204
+    },
+    "test/test_bumptransactionmodel.cpp": {
+      "sha256": "bd36db157709b71fc570e0a4bed6795314ef82741ac2bc65556be1d2004ae707",
+      "mode": 33204
+    },
+    "test/test_coinslistmodel.cpp": {
+      "sha256": "7c4d0cbf885befdfd1c860bf0f9372ca6a3a60f2521a23a2a9ba710178e99cda",
+      "mode": 33204
+    },
+    "test/test_core_lint.py": {
+      "sha256": "3650db2ea7ddaeb15e703f21df6b0ccbd0ea8fd7935f7e4dc3f5463faa5fd145",
+      "mode": 33277
+    },
+    "test/test_core_settings_model.cpp": {
+      "sha256": "2d3ae74893dd2a89cc5d95465de1b8abe4631a1dc57ea389225c6a9872030dc6",
+      "mode": 33204
+    },
+    "test/test_debuglogmodel.cpp": {
+      "sha256": "7ea52dc126d44d3e70ef81af0413da2fec4611e9d67bf18462461a797db7ffac",
+      "mode": 33204
+    },
+    "test/test_desktoptrayiconcontroller.cpp": {
+      "sha256": "c020ba140dfe98820c61e3ea1f9c17b9af11d5ffe699f60bdb6fa5b5fddce3f6",
+      "mode": 33204
+    },
+    "test/test_desktopwindowbehaviormodel.cpp": {
+      "sha256": "7ad625ab30be2d4cffd1398bf52a87954e2d9d624029b9296bd5beb027e78601",
+      "mode": 33204
+    },
+    "test/test_display_settings.cpp": {
+      "sha256": "d834d0ec5819cc20dda7dda0b8ffb10ec8fd659c658f7bab134d849fb3a33df7",
+      "mode": 33204
+    },
+    "test/test_execution.cpp": {
+      "sha256": "a5796717f81c7b8559874ee2fb3def18b02718890b54dc5ee1e05dfb63ba6652",
+      "mode": 33204
+    },
+    "test/test_flowdetailsmodel.cpp": {
+      "sha256": "8cf6cc2bde182481856cc53301f558a15e90a5818a53f3e940fc7a2a17b91505",
+      "mode": 33204
+    },
+    "test/test_flowpresentation.cpp": {
+      "sha256": "d9ad093cdcb588705905bebf0f2720db8a22809829cdcc86fe348197b315a82d",
+      "mode": 33204
+    },
+    "test/test_guiargs.cpp": {
+      "sha256": "1d07ea3869f8b02e37ed43c2e0fcf54b69ce3fdc0a2759d419f24a86c09b85fd",
+      "mode": 33204
+    },
+    "test/test_guipresentation.cpp": {
+      "sha256": "bba699df418aa760b6f87c3ab931721ae882644c7ae9bdd547e0659114361476",
+      "mode": 33204
+    },
+    "test/test_imageexportoperation.cpp": {
+      "sha256": "0990e436db78e77cb68040e81219865021e80207b3a33e1d259c8c17754042d2",
+      "mode": 33204
+    },
+    "test/test_imageprovider.cpp": {
+      "sha256": "51c12e18da9093b4146977a5132edbb626579bc95898aac88fdffff70e863661",
+      "mode": 33204
+    },
+    "test/test_lint_qml.py": {
+      "sha256": "f65599cb22b512fd3177434426f358160b8b60c372cab84d98fc0b8421948893",
+      "mode": 33277
+    },
+    "test/test_monospaceoutputmodel.cpp": {
+      "sha256": "f06a6be4e2bb8142e1e1288c06427570891cca6718646ad9308a4bb8fdb4f09d",
+      "mode": 33204
+    },
+    "test/test_networkstatusmodel.cpp": {
+      "sha256": "c08609f28acbc4376a90e602a8980978ec044017ecd31ddf44ea8c91016039d1",
+      "mode": 33204
+    },
+    "test/test_networkstyle.cpp": {
+      "sha256": "d4b85e2a87f40f9a1090435d22872078a14f516c2fa4ee2f4c4f1ca20d4ab40d",
+      "mode": 33204
+    },
+    "test/test_networktraffictower.cpp": {
+      "sha256": "8f692ae9cadf577dcc7024be5274a48a534dc5b468bb95b315eeee39a6ae3067",
+      "mode": 33204
+    },
+    "test/test_nodemodel.cpp": {
+      "sha256": "d8b017f33c9b0b37229e3443f4ffb6e19ca1b17769b08d753f040fced5db2216",
+      "mode": 33204
+    },
+    "test/test_onboarding_storage.cpp": {
+      "sha256": "ed3e3bc5e62f32e3c915a50d4da40ef90c7681bfa4fa936f46cfbedeaa2d5cca",
+      "mode": 33204
+    },
+    "test/test_onboardingasync.cpp": {
+      "sha256": "0cd84aa1a9ac3414cc361330a5829eb6300124b0649342476415e2fbb4b8de2b",
+      "mode": 33204
+    },
+    "test/test_options_model.cpp": {
+      "sha256": "9e0c26c223b89d93cc8c54e33dbcc1544130b8385eace44461380263f43700c5",
+      "mode": 33204
+    },
+    "test/test_peerlistmodel.cpp": {
+      "sha256": "29c275ac6a6cc8ec5a9d10e42a12024071b2c1ddb4926abb259537e9abe21b49",
+      "mode": 33204
+    },
+    "test/test_peerstatsutil.cpp": {
+      "sha256": "51e38cc284045267c1704327679247eca7d95fa4e37e6a92503f3c08b9cfa3de",
+      "mode": 33204
+    },
+    "test/test_persistenttrees.cpp": {
+      "sha256": "81914a6615212710de4f9603b9d50a034bcc7dbda6fc9357609732df0a5c66df",
+      "mode": 33204
+    },
+    "test/test_psbtfee.cpp": {
+      "sha256": "3055b83c7d4f9eb92b4c1dd34d156381b5f6885b80dbd6c0caa83a00ce70de46",
+      "mode": 33204
+    },
+    "test/test_psbtqmlmodel.cpp": {
+      "sha256": "cadbe1b01c5ae57fd18750b429a182bd5434af67ee0f1f9c1dbfd8ada6e86ab5",
+      "mode": 33204
+    },
+    "test/test_qmlbitcoinunits.cpp": {
+      "sha256": "420c3baf12d09bae3cac52e96b50f0868692694676623424dc862d1371bdc53a",
+      "mode": 33204
+    },
+    "test/test_qmlfiledialog.cpp": {
+      "sha256": "7bb2c7c36a967dea00d228c96238fe1c8757fd1fd46ccde45be9e446f32d61d4",
+      "mode": 33204
+    },
+    "test/test_qmlinitexecutor_api.cpp": {
+      "sha256": "0b4cb34a3ba226000a7d93c1342aecf227a9bed5a7d5d3fbf77f80f565c7b99e",
+      "mode": 33204
+    },
+    "test/test_qrimageprovider.cpp": {
+      "sha256": "f766afdc3fdd7db8adb1e95aedef2441202a4f9000b9845153e7249b1715cfd2",
+      "mode": 33204
+    },
+    "test/test_qtinfolog.cpp": {
+      "sha256": "cd5030a8658ef1cfb629431111d3dfda5d0b6da6ff01c3fa9aea307ef461b513",
+      "mode": 33204
+    },
+    "test/test_qtlogsink.cpp": {
+      "sha256": "2b768313fea0a41ddea223b41bf1ddb6b39752ac74d8abec4a18f4a13d99810e",
+      "mode": 33204
+    },
+    "test/test_qtmessagefilter.cpp": {
+      "sha256": "5141d5bbf3146060cfc528931288f869fad67b1faf2829d42443877fac295749",
+      "mode": 33204
+    },
+    "test/test_receiverequesthistorymodel.cpp": {
+      "sha256": "b2dedacab0a003b6b89dd9b3dc1fc8094ce143ee13fb40f7086756cc318e5248",
+      "mode": 33204
+    },
+    "test/test_receiverequestoperation.cpp": {
+      "sha256": "4c67869d6806c2b89d894d20ce7dfb3d4e241d0df77d75094724f05641b9ca9e",
+      "mode": 33204
+    },
+    "test/test_rpccommandexecutor.cpp": {
+      "sha256": "1cb4024cb1298bdc82f9670e30773d2f6375622ef3bc2129a6e7e2cef5cd838d",
+      "mode": 33204
+    },
+    "test/test_rpcconsolemodel.cpp": {
+      "sha256": "77c783dd7ce707407290a05dd52677370f84bf528e831f608920349f5d5042bf",
+      "mode": 33204
+    },
+    "test/test_sanitizer_suppressions.cpp": {
+      "sha256": "2867d7dd18e186cad2b9ded2f9aabd4f2f91de2250c0b735e07878d1881afa43",
+      "mode": 33204
+    },
+    "test/test_sanitizer_suppressions.py": {
+      "sha256": "ea2057077f82b00146ff808e4d30a6de08a8b606c7ca3c37e3d7602c5bb276ca",
+      "mode": 33277
+    },
+    "test/test_secretinput.cpp": {
+      "sha256": "2b42a1ad7aeedfe60d5277c9bf897e957970b7cd9eb7372a9e131c8d83989ad3",
+      "mode": 33204
+    },
+    "test/test_sendrecipient.cpp": {
+      "sha256": "2ef47b2cbcc5885a3717e4873fa984ad578c7d9855a5183cda0d36ff9e3e163b",
+      "mode": 33204
+    },
+    "test/test_sendrecipientslistmodel.cpp": {
+      "sha256": "206e3300e2cce0f3014e14187a511df0e0d29eaa21c9c54c49bac8ecbae7efbc",
+      "mode": 33204
+    },
+    "test/test_shutdownproducers.cpp": {
+      "sha256": "2da0973b1046fa68b10998ba26c2fcc058c9d8c157cf6ee73982fb0dc453addb",
+      "mode": 33204
+    },
+    "test/test_signertransaction.cpp": {
+      "sha256": "d63a650e6a705e9d57707433953dc76576fd47a456598be2e18f4d52b86ec22f",
+      "mode": 33204
+    },
+    "test/test_signverifymessagemodel.cpp": {
+      "sha256": "bc42dcbeb28d6a8d06dc3ebb157c57e9add801f2b60fce216632193fa43a0ffd",
+      "mode": 33204
+    },
+    "test/test_startupdiagnosticsmodel.cpp": {
+      "sha256": "2a5f4ab32c47ba6248f56cf24ef7b207e5bbc69ee08750a9521dcb6013a63c00",
+      "mode": 33204
+    },
+    "test/test_startupeffects.cpp": {
+      "sha256": "a635b892f2508bfb25dda95ba8a9756a4512fd217dba729a7f8aa126359c665e",
+      "mode": 33204
+    },
+    "test/test_syncprogresstracker.cpp": {
+      "sha256": "b5cfdb1cf8c5e53465bb9e46386dc80c3a35c469834025a13aad293e741a68d8",
+      "mode": 33204
+    },
+    "test/test_testbridge.cpp": {
+      "sha256": "d0a88427f2d68fca32be99e1831eaf060ee84a00d4bfe5ac25f08aae0e7c2dba",
+      "mode": 33204
+    },
+    "test/test_transaction.cpp": {
+      "sha256": "fdca71e06e70558347fb532755164aff697cef229bb16ba1ed08e17435874754",
+      "mode": 33204
+    },
+    "test/test_transactionactivity.cpp": {
+      "sha256": "d7d0744410fe6d424c8addfc256395c709d07838545d86d8a069e229dc818e75",
+      "mode": 33204
+    },
+    "test/test_transactionactivitymodel.cpp": {
+      "sha256": "ee5dc669723cd12f1540037d0294028ce1a3d016b351c261d9a1be3f8af540fe",
+      "mode": 33204
+    },
+    "test/test_uipreferences.cpp": {
+      "sha256": "e7520a4384fb1514c7afc2a85d4d05c003c47ad5d2d03f830431f18c2c7e4b30",
+      "mode": 33204
+    },
+    "test/test_unit_tests_main.cpp": {
+      "sha256": "59664942d332f54f807d7ab146c9d62d103c74c883da5b05dcb3ce33a7a25ddc",
+      "mode": 33204
+    },
+    "test/test_walletbalanceadapter.cpp": {
+      "sha256": "9f66342dd33410f5e2a284f9f91b9796135fc5b457154967fb068d7944ae2ab6",
+      "mode": 33204
+    },
+    "test/test_walletbalancereader.cpp": {
+      "sha256": "2748e33430869cc5317578c8e16018798fdbc17f1ab5d41bf65b6a95dc7d11fc",
+      "mode": 33204
+    },
+    "test/test_walletlifecycle.cpp": {
+      "sha256": "d682638fe5c0a9756607b5bc39d11fda0fd01fa2339de9f657616903d4bf13de",
+      "mode": 33204
+    },
+    "test/test_walletlistmodel.cpp": {
+      "sha256": "7681291585e17f11757cbe764030daed0ef010d35dbca1114f37054b249b37a7",
+      "mode": 33204
+    },
+    "test/test_walletopening.cpp": {
+      "sha256": "a838fc0f4a61921921641c92985125dd9f64ce1b5c1b26ea1dffa57971087467",
+      "mode": 33204
+    },
+    "test/test_walletprepare.cpp": {
+      "sha256": "e29fac49e75ca9a8c84301f694877a4c9ac82b4812455f201adc7d3fbf0fa759",
+      "mode": 33204
+    },
+    "test/test_walletqmlcontroller.cpp": {
+      "sha256": "d4c172a7c035c96657933401cf004116f5c9d75b805cd30edb11faac896b68c8",
+      "mode": 33204
+    },
+    "test/test_walletqmlmodel.cpp": {
+      "sha256": "f0b87f7e23c6e950570ae6ae6cc7a25c4a8437195c5d2155e9710e976052d1fd",
+      "mode": 33204
+    },
+    "test/test_walletqmlmodeltransaction.cpp": {
+      "sha256": "471f93b2382249e9e411c36d8204ea40639ff2566beb30c84d52e23effb7b261",
+      "mode": 33204
+    },
+    "test/test_walletreceipts.cpp": {
+      "sha256": "2cc35e547f93314a515bea2aa4e07b690807ff129294bb472adb6884780d8aeb",
+      "mode": 33204
+    },
+    "test/test_walletrequests.cpp": {
+      "sha256": "ee6ad0c60b36edf950f9d06c78f02a374c94ccecd18545f909a635ad5e92d9ed",
+      "mode": 33204
+    },
+    "test/test_walletreservations.cpp": {
+      "sha256": "c65562cad2fe646d92d4a0a9220a0d01fa2037a7055eaa0ddaa3f847f76f21b9",
+      "mode": 33204
+    },
+    "test/test_walletsecurity.cpp": {
+      "sha256": "e871b1aac336ff89624e9c9ebb079664f2de70d4703179ddab3bcf434f04aef6",
+      "mode": 33204
+    },
+    "test/test_walletsend.cpp": {
+      "sha256": "8aef2d86d360f9704dc6b83b92aa273b98826329da09894cc4fb577c9043845e",
+      "mode": 33204
+    },
+    "test/test_wallettransaction.cpp": {
+      "sha256": "6f06407be5a56cbac055a30ef9a67d9f4f2affeae962eb1224631c891a8d04c8",
+      "mode": 33204
+    }
+  },
+  "changed_after_candidate34": [
+    "test/functional/interface_qml_console.py",
+    "test/functional/interface_qml_node.py",
+    "test/functional/interface_qml_wallet_sending.py",
+    "test/test_walletrequests.cpp",
+    "test/test_walletreservations.cpp"
+  ],
+  "post34_runtime_validation": false,
+  "all_production_source_bytes_unchanged_since34": true,
+  "primary_index_before_commit_sha256": "f6fddf0bfaee4e0980675405c3938976d4c768b7fefa262fde29eca8c7e40b5b"
+}

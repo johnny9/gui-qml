@@ -25,52 +25,18 @@ PageStack {
         paymentRequestModal.openRequest(requestId)
     }
 
-    function detailProperties(txid, outputIndex) {
-        if (!wallet) return {}
-        const transaction = wallet.transactionActivityModel.transactionDetails(txid, true)
-        if (!transaction.txid) return {}
-        return {
-            transactionData: transaction,
-            wallet: stackView.wallet,
-            outputIndex: outputIndex === undefined ? -1 : outputIndex
-        }
-    }
-
     function navigateToTransaction(txid, outputIndex) {
-        if (!wallet) return
-        wallet.transactionActivityModel.requestTransactionDetails(txid)
-        const details = detailProperties(txid, outputIndex)
-        if (!details.transactionData) return
+        if (!wallet || !wallet.available || !txid) return
+        const details = { transactionId: txid, wallet: stackView.wallet,
+            outputIndex: outputIndex === undefined ? -1 : outputIndex }
         let page
-        if (stackView.currentItem && stackView.currentItem.objectName === "activityDetailsPage") {
-            // Remove the old detail and insert the new one in the same stack
-            // position, without briefly revealing the list or sliding pages.
+        if (stackView.currentItem && stackView.currentItem.objectName === "activityDetailsPage")
             page = stackView.replace(stackView.currentItem, "TransactionDetail.qml", details, StackView.ReplaceTransition)
-        } else {
+        else {
             stackView.pop(null)
             page = stackView.push("TransactionDetail.qml", details)
         }
         page.showTransaction.connect(stackView.navigateToTransaction)
-    }
-
-    function refreshOpenDetails() {
-        const page = stackView.currentItem as TransactionDetail
-        if (!page || page.objectName !== "activityDetailsPage") return
-        const details = detailProperties(page.txid, page.outputIndex)
-        if (!details.transactionData) {
-            stackView.pop(null)
-            return
-        }
-        for (const key in details) page[key] = details[key]
-    }
-
-    onCurrentItemChanged: {
-        refreshOpenDetails()
-        // Navigation can briefly pop to the list before pushing a new detail.
-        Qt.callLater(function() {
-            if (currentItem && currentItem.objectName === "activityPage" && wallet)
-                wallet.transactionActivityModel.requestTransactionDetails("")
-        })
     }
 
     onWalletChanged: { paymentRequestModal.close(); stackView.pop(null) }
@@ -80,10 +46,6 @@ PageStack {
         function onClosePaymentRequestDetailRequested(wallet) {
             if (wallet === stackView.wallet) paymentRequestModal.close()
         }
-    }
-    Connections {
-        target: stackView.wallet ? stackView.wallet.transactionActivityModel : null
-        function onTransactionDetailsChanged() { stackView.refreshOpenDetails() }
     }
     Binding {
         target: stackView.wallet

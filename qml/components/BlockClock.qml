@@ -31,6 +31,7 @@ Item {
 
     width: dial.width
     height: dial.height + (networkIndicator.visible ? networkIndicator.height + networkIndicator.anchors.topMargin : 0)
+        + (renderStatus.visible ? renderStatus.implicitHeight + 8 : 0)
 
     property alias header: mainText.text
     property alias headerSize: mainText.font.pixelSize
@@ -52,22 +53,17 @@ Item {
     property bool faulted: root.nodeModelRef !== null && root.nodeModelRef.faulted
     property bool offline: root.networkStatusModelRef !== null && root.networkStatusModelRef.networkOffline
 
-    AppSettings {
-        id: settings
-        property alias blockclocksize: dial.scale
-    }
-
     BlockClockDial {
         id: dial
         objectName: "blockClockDial"
         anchors.horizontalCenter: root.horizontalCenter
         scale: Theme.blockclocksize
-        width: {Math.max(Math.min(200, Math.min(root.parentWidth - 30, root.parentHeight - 30)),
-                Math.min((root.parentWidth * dial.scale), (root.parentHeight * dial.scale)))}
+        width: Math.max(0, Math.max(Math.min(200, Math.min(root.parentWidth - 30, root.parentHeight - 30)),
+                Math.min(root.parentWidth * dial.scale, root.parentHeight * dial.scale)))
         height: dial.width
         penWidth: dial.width / 50
         currentTimeFraction: root.blockClockModelRef !== null ? root.blockClockModelRef.currentTimeFraction : 0
-        blockTimeFractions: root.blockClockModelRef !== null ? root.blockClockModelRef.blockTimeFractions : []
+        blockSnapshot: root.blockClockModelRef !== null ? root.blockClockModelRef.blockSnapshot : undefined
         syncProgress: root.syncProgressFraction
         paused: root.paused || root.faulted || root.offline
         connected: root.connected && !root.offline
@@ -104,7 +100,7 @@ Item {
         anchors.centerIn: dial
         font.family: "BitcoinCoreSans"
         font.styleName: "Semi Bold"
-        font.pixelSize: dial.width * (4/25)
+        font.pixelSize: Math.max(1, dial.width * (4/25))
         color: Theme.color.neutral9
 
         Behavior on color {
@@ -175,6 +171,37 @@ Item {
         anchors.top: dial.bottom
         anchors.topMargin: networkIndicator.visible ? 30 : 0
         anchors.horizontalCenter: root.horizontalCenter
+    }
+
+    Column {
+        id: renderStatus
+        objectName: "blockClockRenderStatus"
+        anchors.top: networkIndicator.visible ? networkIndicator.bottom : dial.bottom
+        anchors.topMargin: 8
+        anchors.horizontalCenter: root.horizontalCenter
+        width: dial.width
+        readonly property string error: dial.renderError.length > 0 ? dial.renderError
+            : root.blockClockModelRef !== null ? root.blockClockModelRef.historyError : ""
+        readonly property bool pending: root.synced && ((root.blockClockModelRef !== null && root.blockClockModelRef.historyPending)
+            || (dial.renderPending && !dial.renderAvailable))
+        visible: error.length > 0 || pending
+        CoreText {
+            width: parent.width
+            text: renderStatus.error.length > 0 ? renderStatus.error : qsTr("Preparing block clock…")
+            font: Theme.text.caption.font
+            color: Theme.color.neutral6
+            wrapMode: Text.WordWrap
+        }
+        TextButton {
+            objectName: "blockClockRetryRendering"
+            visible: renderStatus.error.length > 0
+            text: qsTr("Retry block clock")
+            enabled: !dial.renderPending
+            onClicked: {
+                if (root.blockClockModelRef !== null) root.blockClockModelRef.refreshHistory()
+                dial.retryRendering()
+            }
+        }
     }
 
     states: [

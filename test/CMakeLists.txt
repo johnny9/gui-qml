@@ -37,21 +37,36 @@ add_executable(bitcoinqml_unit_tests
   test_backuppolicy.cpp
   test_backuppolicyoperation.cpp
   test_execution.cpp
+  test_guipresentation.cpp
+  test_atomicsharedptr.cpp
+  test_persistenttrees.cpp
+  test_core_settings_model.cpp
+  test_uipreferences.cpp
+  test_flowpresentation.cpp
+  test_flowdetailsmodel.cpp
+  test_startupeffects.cpp
+  test_qtlogsink.cpp
   test_bitcoinaddress.cpp
   test_blockclockdial.cpp
   test_blockclockhistory.cpp
   test_blockclockmodel.cpp
   test_bitcoinuri.cpp
+  test_bitcoinurimodel.cpp
   test_qmlfiledialog.cpp
   test_bitcoinamount.cpp
   test_debuglogmodel.cpp
+  test_monospaceoutputmodel.cpp
   test_desktoptrayiconcontroller.cpp
   test_desktopwindowbehaviormodel.cpp
   test_peerlistmodel.cpp
   test_peerstatsutil.cpp
   test_qmlbitcoinunits.cpp
   test_imageprovider.cpp
+  test_qrimageprovider.cpp
+  test_imageexportoperation.cpp
   test_nodemodel.cpp
+  test_startupdiagnosticsmodel.cpp
+  test_secretinput.cpp
   test_networkstyle.cpp
   test_networkstatusmodel.cpp
   test_networktraffictower.cpp
@@ -82,20 +97,32 @@ if(ENABLE_WALLET)
     test_activityfilterproxymodel.cpp
     test_addresslistmodel.cpp
     test_bumptransactionmodel.cpp
+    test_signverifymessagemodel.cpp
     test_signertransaction.cpp
     test_coinslistmodel.cpp
     test_psbtfee.cpp
     test_psbtqmlmodel.cpp
     test_receiverequesthistorymodel.cpp
+    test_receiverequestoperation.cpp
     test_sendrecipientslistmodel.cpp
+    test_sendrecipient.cpp
     test_transaction.cpp
     test_transactionactivity.cpp
     test_transactionactivitymodel.cpp
+    test_activitydetailmodel.cpp
     test_walletlistmodel.cpp
     test_walletqmlmodel.cpp
     test_walletqmlmodeltransaction.cpp
     test_walletqmlcontroller.cpp
     test_walletlifecycle.cpp
+    test_walletopening.cpp
+    test_walletsecurity.cpp
+    test_walletsend.cpp
+    test_walletprepare.cpp
+    test_wallettransaction.cpp
+    test_walletreceipts.cpp
+    test_walletrequests.cpp
+    test_walletreservations.cpp
     test_walletbalanceadapter.cpp
     test_walletbalancereader.cpp
   )
@@ -161,6 +188,13 @@ qt6_add_resources(QMLTESTS_QRC_CPP ${QML_QRC} qml/bitcoin_qmltests.qrc)
 
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/flowpresentation.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/bitcoinaddress.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/bitcoinaddress.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/uipreferences.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/uipreferences.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/backendexecutor.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/execution.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/amountparse.cpp

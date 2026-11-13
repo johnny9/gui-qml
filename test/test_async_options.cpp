@@ -3,8 +3,11 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/options_model.h>
+#include <qml/models/nodemodel.h>
 #include <qml/models/settings_keys.h>
 #include <test/mocks/mocknode.h>
+#include <test/mocks/drainexecutors.h>
+#include <test/mocks/manualexecutionenvironment.h>
 #include <chainparams.h>
 #include <init.h>
 #include <util/translation.h>
@@ -33,6 +36,12 @@ struct ReleaseSemaphore {
     ~ReleaseSemaphore() { semaphore.release(); }
 };
 
+bool SettleManualOptions(ManualRoutedExecution& transport,std::deque<std::function<void()>>& gui)
+{
+    for(int turn=0;turn<1024;++turn){if(!transport.queuedIdle()){if(!transport.stepNext())return false;continue;}
+        if(!gui.empty()){auto publication=std::move(gui.front());gui.pop_front();publication();continue;}return true;}return false;
+}
+
 struct Fixture {
     QTemporaryDir directory;
     ArgsManager args;
@@ -52,6 +61,7 @@ struct Fixture {
     }
     ~Fixture()
     {
+        {const auto drain=DrainExecutorsBeforeNativeOwnerDestruction();}
         QSettings settings;
         settings.clear();
         for (auto it = saved_settings.cbegin(); it != saved_settings.cend(); ++it) settings.setValue(it.key(), it.value());
@@ -193,9 +203,21 @@ private Q_SLOTS:
         model.setNatpmp(!initial);
         QTRY_VERIFY(entered.load());
         QVERIFY(model.settingsPending());
+        QTRY_COMPARE(model.natpmp(), !initial);
         QSignalSpy drained(&model, &OptionsQmlModel::shutdownFinished);
-        model.beginShutdown();
+        // A focused field may emit editingFinished while the window is being
+        // disabled, before draining starts. Close admission without emitting
+        // signals first; the already accepted mapping must still drain.
+        QSignalSpy statuses(&model, &OptionsQmlModel::coreSettingStatusesChanged);
+        model.closeAdmission();
+        QCOMPARE(statuses.size(), 0);
+        const int mempool = model.maxMempoolSizeMB();
+        model.setMaxMempoolSizeMB(mempool + 1);
+        QCOMPARE(model.maxMempoolSizeMB(), mempool);
         model.setNatpmp(initial);
+        QCOMPARE(model.natpmp(), !initial);
+        model.beginShutdown();
+        model.beginShutdown();
         int heartbeats{0};
         QTimer timer;
         connect(&timer, &QTimer::timeout, [&] { ++heartbeats; });
@@ -223,13 +245,126 @@ private Q_SLOTS:
         model.setNatpmp(!initial);
         QTRY_COMPARE(calls.load(), 1);
         model.setNatpmp(initial);
-        QCOMPARE(model.natpmp(), initial);
+        QTRY_COMPARE(model.natpmp(), initial);
         gate.release();
         QTRY_VERIFY(!model.settingsPending());
         QCOMPARE(calls.load(), 2);
         QCOMPARE(model.natpmp(), initial);
         QVERIFY(model.settingsError().isEmpty());
         QVERIFY(!model.restartRequired());
+    }
+
+    void manualReadWriteOutcomeAndQuietDrain()
+    {
+        ManualRoutedExecution transport;std::deque<std::function<void()>> gui;
+        Fixture fixture;
+        OptionsQmlModel model{fixture.node,fixture.args,{transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}}};
+        auto publish=[&]{if(gui.empty())return false;auto turn=std::move(gui.front());gui.pop_front();turn();return true;};
+        QVERIFY(!model.settingsReady());QCOMPARE(fixture.node.calls.getPersistentSetting.load(),0);
+        QVERIFY(transport.step(execution::Lane::Core));QVERIFY(!model.settingsReady());
+        transport.drain();QVERIFY(!model.settingsReady());
+        QVERIFY(SettleManualOptions(transport,gui));QVERIFY(model.settingsReady());QVERIFY(!model.settingsPending());
+        const int initial=model.maxMempoolSizeMB();model.setMaxMempoolSizeMB(initial+10);
+        const auto ticket=model.settingsOperationId();QVERIFY(ticket);QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsPending);
+        QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsApplied);
+        QCOMPARE(SettingTo<int64_t>(fixture.args.GetPersistentSetting("maxmempool")).value_or(0),int64_t{initial+10});
+        QSignalSpy changes{&model,&OptionsQmlModel::settingsPendingChanged};QSignalSpy drained{&model,&OptionsQmlModel::shutdownFinished};
+        model.closeAdmission();model.beginShutdown();QCOMPARE(drained.size(),0);
+        transport.drain();while(publish()){}
+        QCOMPARE(drained.size(),1);QCOMPARE(changes.size(),0);QCOMPARE(model.settingsOperationId(),ticket);
+        QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsApplied);
+        transport.drain();QVERIFY(transport.quiescent());
+    }
+    void manualAdmissionFailureAndSignerRevision()
+    {
+        ManualRoutedExecution transport;std::deque<std::function<void()>> gui;
+        Fixture fixture;
+        OptionsQmlModel model{fixture.node,fixture.args,{transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}}};
+        auto publish=[&]{if(gui.empty())return false;auto turn=std::move(gui.front());gui.pop_front();turn();return true;};
+        QVERIFY(SettleManualOptions(transport,gui));QVERIFY(model.settingsReady());
+        transport.rejectLane(execution::Lane::Core);model.setMaxMempoolSizeMB(model.maxMempoolSizeMB()+10);
+        QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsFailed);QVERIFY(publish());
+        QVERIFY(SettleManualOptions(transport,gui));QVERIFY(!model.settingsPending());QVERIFY(!model.settingsError().isEmpty());
+        model.requestExternalSignerPathValidation("/missing/original");
+        QVERIFY(transport.step(execution::Lane::Core));QVERIFY(transport.step(execution::Lane::Domain));
+        model.requestExternalSignerPathValidation("hwi");QVERIFY(publish());QVERIFY(model.signerPathValidationPending());
+        QVERIFY(!transport.step(execution::Lane::Core)); // Follow-up cannot recurse in the old outcome callback.
+        QVERIFY(publish());
+        QVERIFY(transport.step(execution::Lane::Core));QVERIFY(transport.step(execution::Lane::Domain));QVERIFY(publish());
+        QVERIFY(!model.signerPathValidationPending());QVERIFY(model.signerPathError().isEmpty());
+        model.requestExternalSignerPathValidation("/missing/quiet-original");
+        QVERIFY(transport.step(execution::Lane::Core));QVERIFY(transport.step(execution::Lane::Domain));
+        model.requestExternalSignerPathValidation("hwi");QVERIFY(publish());
+        QVERIFY(!transport.step(execution::Lane::Core));
+        model.closeAdmission();
+        QSignalSpy quiet{&model,&OptionsQmlModel::signerPathValidationChanged};
+        QVERIFY(SettleManualOptions(transport,gui));QCOMPARE(quiet.size(),0);
+        transport.drain();QVERIFY(transport.quiescent());
+    }
+
+    void manualTransactionLinksRetainExactTxidAndRetireOnSourceClose()
+    {
+        ManualRoutedExecution transport;std::deque<std::function<void()>> gui;Fixture fixture;
+        QSettings settings;settings.setValue(SettingsKeys::THIRD_PARTY_TRANSACTION_URLS,"https://example.test/tx/%s|file://host/%s");settings.sync();
+        OptionsQmlModel model{fixture.node,fixture.args,{transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}}};
+        auto publish=[&]{if(gui.empty())return false;auto turn=std::move(gui.front());gui.pop_front();turn();return true;};
+        QVERIFY(SettleManualOptions(transport,gui));QVERIFY(model.settingsReady());
+        std::unique_ptr<OptionsTransactionLinks> links{model.createTransactionLinks()};QVERIFY(links);
+        links->setTxid("old");QVERIFY(links->pending());QVERIFY(links->rowCount()==0);
+        QVERIFY(transport.step(execution::Lane::Domain));QVERIFY(transport.step(execution::Lane::Domain));
+        links->setTxid("new");QVERIFY(publish());QVERIFY(links->pending());QVERIFY(links->rowCount()==0);
+        QVERIFY(transport.step(execution::Lane::Domain));QVERIFY(transport.step(execution::Lane::Domain));QVERIFY(publish());
+        QVERIFY(!links->pending());QCOMPARE(links->rowCount(),1);
+        QCOMPARE(links->data(links->index(0),OptionsTransactionLinks::UrlRole).toString(),QStringLiteral("https://example.test/tx/new"));
+        links->setTxid("closed");QSignalSpy changed{links.get(),&OptionsTransactionLinks::resultChanged};model.closeAdmission();
+        transport.drain();while(publish()){}QCOMPARE(changed.size(),0);QVERIFY(links->rowCount()==0);QVERIFY(transport.quiescent());
+    }
+
+    void manualTransactionLinkPresentationUsesBoundedTurns()
+    {
+        ManualRoutedExecution transport;std::deque<std::function<void()>> gui;Fixture fixture;
+        QStringList templates;for(int row=0;row<96;++row)templates<<QStringLiteral("https://example.test/%1/%s").arg(row);
+        QSettings settings;settings.setValue(SettingsKeys::THIRD_PARTY_TRANSACTION_URLS,templates.join('|'));settings.sync();
+        OptionsQmlModel model{fixture.node,fixture.args,{transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}}};
+        auto publish=[&]{if(gui.empty())return false;auto turn=std::move(gui.front());gui.pop_front();turn();return true;};
+        QVERIFY(SettleManualOptions(transport,gui));QVERIFY(model.settingsReady());
+        std::unique_ptr<OptionsTransactionLinks> links{model.createTransactionLinks()};QVERIFY(links);links->setTxid("exact");
+        QVERIFY(transport.step(execution::Lane::Domain));QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(publish());QCOMPARE(links->rowCount(),32);QVERIFY(links->pending());
+        QVERIFY(publish());QCOMPARE(links->rowCount(),64);QVERIFY(links->pending());
+        QVERIFY(publish());QCOMPARE(links->rowCount(),96);QVERIFY(!links->pending());
+        QCOMPARE(links->data(links->index(95),OptionsTransactionLinks::UrlRole).toString(),QStringLiteral("https://example.test/95/exact"));
+        links->setTxid("later");QVERIFY(transport.step(execution::Lane::Domain));QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(publish());QCOMPARE(links->rowCount(),64);QSignalSpy changed{links.get(),&QAbstractItemModel::rowsRemoved};model.closeAdmission();
+        while(publish()){}QCOMPARE(changed.size(),0);transport.drain();QVERIFY(transport.quiescent());
+    }
+
+    void trackedOptionsIntentSurvivesCloseBeforeNativeAdmission()
+    {
+        ManualRoutedExecution transport;std::deque<std::function<void()>> gui;Fixture fixture;
+        const auto post=[&](std::function<void()> turn){gui.push_back(std::move(turn));};
+        NodeModel::Services services;services.execution={transport.scheduler,post};
+        services.schedule=[](auto,auto,auto){};services.cancel=[](auto){};
+        NodeModel original_node{fixture.node,false,std::move(services)};
+        const auto retire=qScopeGuard([&]{original_node.beginShutdown();SettleManualOptions(transport,gui);});
+        OptionsQmlModel model{fixture.node,fixture.args,{original_node.queryScheduler(),post}};
+        QVERIFY(SettleManualOptions(transport,gui));QVERIFY(model.settingsReady());QVERIFY(!model.settingsPending());
+        struct Mapping{bool requested;int calls{0};};const auto mapping=std::make_shared<Mapping>(Mapping{!model.natpmp()});
+        fixture.node.map_port_fn=[mapping](bool value){QCOMPARE(value,mapping->requested);++mapping->calls;};
+        model.setNatpmp(mapping->requested);const auto ticket=model.settingsOperationId();QVERIFY(ticket);
+        QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsPending);
+        QVERIFY(transport.step(execution::Lane::Domain)); // Original decision has not yet delivered its Native effect request.
+        QCOMPARE(mapping->calls,0);QSignalSpy drained{&model,&OptionsQmlModel::shutdownFinished};
+        QSignalSpy values{&model,&OptionsQmlModel::natpmpChanged};
+        original_node.closeAdmission();model.closeAdmission();model.beginShutdown();QCOMPARE(drained.size(),0);
+        QVERIFY(transport.step(execution::Lane::Domain));QCOMPARE(mapping->calls,0);
+        QVERIFY(transport.step(execution::Lane::Core));QCOMPARE(mapping->calls,1);
+        QCOMPARE(SettingToBool(fixture.args.GetPersistentSetting("natpmp")).value_or(!mapping->requested),mapping->requested);
+        QCOMPARE(model.settingsOperationId(),ticket);QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsApplied);
+        QVERIFY(SettleManualOptions(transport,gui));QCOMPARE(drained.size(),1);QCOMPARE(values.size(),0);QCOMPARE(mapping->calls,1);
+        original_node.beginShutdown();QVERIFY(SettleManualOptions(transport,gui));
+        transport.drain();
     }
 
     void legacyLanguageMatchesStartupFallback_data()

@@ -4,6 +4,7 @@
 
 #ifndef BITCOIN_QML_CORE_SETTINGS_H
 #define BITCOIN_QML_CORE_SETTINGS_H
+#include <QPointer>
 
 #include <common/settings.h>
 
@@ -12,8 +13,10 @@
 #include <QStringList>
 #include <QVariantMap>
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 
 class ArgsManager;
 namespace interfaces {
@@ -34,6 +37,11 @@ struct Values {
     QString tor_address{};
 };
 
+/** Worker/test-only metadata envelope. The producer measures structural values
+ * once on Native; GUI admission reads only the cached byte count. */
+struct StatusProjection {QVariantMap values;size_t payload_bytes{0};std::shared_ptr<const char> identity{};};
+StatusProjection CaptureStatuses(QVariantMap values);
+
 struct Change {
     bool accepted{false};
     QString setting_name;
@@ -41,6 +49,7 @@ struct Change {
     Values after;
     QVariantMap before_statuses;
     QVariantMap after_statuses;
+    bool force_write{false};
 };
 
 bool ValuesEqual(const Values& left, const Values& right);
@@ -60,16 +69,33 @@ template <typename Model>
 void EmitCoreSettingSignals(Model& model, const Change& change)
 {
     if (!change.accepted) return;
+    const QPointer<Model> observer{&model};
+    const auto open=[&] {
+        if(!observer)return false;
+        if constexpr(requires {observer->presentationOpen();})return observer->presentationOpen();
+        return true;
+    };
+    if(!open())return;
     if (StatusesChanged(change)) model.coreSettingStatusesChanged();
+    if(!open())return;
     if (PruneChanged(change)) model.pruneChanged(change.after.prune);
+    if(!open())return;
     if (PruneSizeGBChanged(change)) model.pruneSizeGBChanged(change.after.prune_size_gb);
+    if(!open())return;
     if (ListenChanged(change)) model.listenChanged(change.after.listen);
+    if(!open())return;
     if (NatpmpChanged(change)) model.natpmpChanged(change.after.natpmp);
+    if(!open())return;
     if (ServerChanged(change)) model.serverChanged(change.after.server);
+    if(!open())return;
     if (ProxyAddressChanged(change)) model.proxyAddressChanged(change.after.proxy_address);
+    if(!open())return;
     if (ProxyEnabledChanged(change)) model.proxyEnabledChanged(change.after.proxy_enabled);
+    if(!open())return;
     if (TorAddressChanged(change)) model.torAddressChanged(change.after.tor_address);
+    if(!open())return;
     if (TorEnabledChanged(change)) model.torEnabledChanged(change.after.tor_enabled);
+    if(!open())return;
 }
 
 const QStringList& CoreSettingNames();

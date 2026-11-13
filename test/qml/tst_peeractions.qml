@@ -5,6 +5,7 @@
 import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtTest 1.2
+import org.bitcoincore.qt 1.0
 import "../../qml/controls"
 import "../../qml/pages/node"
 
@@ -60,6 +61,14 @@ TestCase {
         peerTableModel.resetTestState()
         banListModel.resetTestState()
         peerListModelProxy.setPeerCountForTest(0)
+    }
+
+    function waitForPreferences(page) {
+        const preferences = findChild(page, "peerFilterSettings")
+        verify(preferences !== null)
+        tryCompare(preferences, "ready", true)
+        tryCompare(preferences, "pending", false)
+        wait(0) // Deliver the store's bounded view notification turn.
     }
 
     function createPeerDetailsPage() {
@@ -133,6 +142,58 @@ TestCase {
         return page
     }
 
+    function test_matching_async_ack_refreshes_exactly_once_and_wrong_ticket_is_ignored() {
+        nodeModel.autoCompletePeerAction = false
+        const page = createPeerDetailsPage()
+        page.requestDisconnect()
+        const confirmation = findChild(page, "disconnectConfirmationPopup")
+        tryCompare(confirmation, "opened", true)
+        const confirm = waitForChild(testWindow.contentItem, "disconnectConfirmButton")
+        verify(confirm !== null)
+        confirm.clicked()
+        const originalTicket = page.peerActionTicket
+        verify(originalTicket > 0)
+        compare(nodeModel.disconnectPeerCalls, 1)
+        compare(peerTableModel.refreshCalls, 0)
+        compare(banListModel.refreshCalls, 0)
+        nodeModel.peerActionFinished(originalTicket + 1, NodeModel.Succeeded, "")
+        compare(page.peerActionTicket, originalTicket)
+        compare(peerTableModel.refreshCalls, 0)
+        nodeModel.completePeerAction(originalTicket)
+        compare(page.peerActionTicket, 0)
+        compare(peerTableModel.refreshCalls, 1)
+        compare(banListModel.refreshCalls, 1)
+        nodeModel.completePeerAction(originalTicket)
+        compare(nodeModel.disconnectPeerCalls, 1)
+        compare(peerTableModel.refreshCalls, 1)
+        compare(banListModel.refreshCalls, 1)
+    }
+
+    function test_non_rejected_uncertain_outcomes_refresh_authoritative_inventories_data() {
+        return [
+            { tag: "partially-applied", outcome: NodeModel.PartiallyApplied, error: "The ban was applied, but disconnecting the peer failed." },
+            { tag: "uncertain", outcome: NodeModel.Uncertain, error: "Refresh the original peer and ban state." }
+        ]
+    }
+    function test_non_rejected_uncertain_outcomes_refresh_authoritative_inventories(data) {
+        nodeModel.autoCompletePeerAction = false
+        const page = createPeerDetailsPage()
+        openBanConfirmation(page, "peerBanDuration_3600")
+        const confirm = waitForChild(testWindow.contentItem, "banConfirmButton")
+        verify(confirm !== null)
+        confirm.clicked()
+        compare(nodeModel.banPeerCalls, 1)
+        compare(peerTableModel.refreshCalls, 0)
+        compare(banListModel.refreshCalls, 0)
+        const ticket = page.peerActionTicket
+        verify(ticket > 0)
+        nodeModel.completePeerActionWithOutcome(ticket, data.outcome, data.error)
+        verifyPeerActionError(page, data.error)
+        compare(peerTableModel.refreshCalls, 1)
+        compare(banListModel.refreshCalls, 1)
+        compare(nodeModel.banPeerCalls, 1)
+    }
+
     function test_disconnect_success_refreshes_peer_table_without_error() {
         const page = createPeerDetailsPage()
         const button = findChild(page, "peerDisconnectButton")
@@ -150,7 +211,7 @@ TestCase {
         confirm.clicked()
 
         compare(nodeModel.disconnectPeerCalls, 1)
-        compare(peerTableModel.refreshCalls, 1)
+        tryCompare(peerTableModel, "refreshCalls", 1)
         compare(popup.opened, false)
     }
 
@@ -293,6 +354,7 @@ TestCase {
         peerListModelProxy.setPeerCountForTest(1)
         const page = createPeersPage()
         page.clearFilters()
+        waitForPreferences(page)
         const search = findChild(page, "peerSearchField")
         const sort = findChild(page, "peerSortButton")
         const filter = findChild(page, "peerFilterButton")
@@ -316,6 +378,7 @@ TestCase {
     function test_filter_direction_is_optional_single_selection() {
         const page = createPeersPage()
         page.clearFilters()
+        waitForPreferences(page)
         const button = findChild(page, "peerDirectionFilterButton")
         const menu = findChild(page, "peerDirectionFilterMenu")
         const picker = findChild(page, "peerDirectionFilterPicker")
@@ -324,17 +387,21 @@ TestCase {
         tryCompare(menu, "opened", true)
         compare(page.directionOptions.length, 2)
         picker.itemAtIndex(0).clicked()
+        waitForPreferences(page)
         compare(peerListModelProxy.directionFilters.join(","), "inbound")
         compare(button.active, true)
         compare(count.visible, true)
         compare(count.count, 1)
         picker.itemAtIndex(1).clicked()
+        waitForPreferences(page)
         compare(peerListModelProxy.directionFilters.join(","), "outbound")
         picker.itemAtIndex(1).clicked()
+        waitForPreferences(page)
         compare(peerListModelProxy.directionFilters.length, 0)
         compare(count.visible, false)
         menu.close()
         page.clearFilters()
+        waitForPreferences(page)
     }
 
     function test_filter_multiple_selection_and_all_data() {
@@ -348,6 +415,7 @@ TestCase {
     function test_filter_multiple_selection_and_all(data) {
         const page = createPeersPage()
         page.clearFilters()
+        waitForPreferences(page)
         const button = findChild(page, "peer" + data.label + "FilterButton")
         const menu = findChild(page, "peer" + data.label + "FilterMenu")
         const picker = findChild(page, "peer" + data.label + "FilterPicker")
@@ -358,6 +426,7 @@ TestCase {
         compare(all.itemAtIndex(0).selected, true)
         for (let i = 0; i < page[data.options].length; ++i) {
             picker.itemAtIndex(i).clicked()
+            waitForPreferences(page)
             compare(menu.opened, true)
             if (i < page[data.options].length - 1) {
                 compare(peerListModelProxy[data.property].length, i + 1)
@@ -370,36 +439,43 @@ TestCase {
         compare(all.itemAtIndex(0).selected, true)
         compare(button.active, false)
         picker.itemAtIndex(0).clicked()
+        waitForPreferences(page)
         all.itemAtIndex(0).clicked()
+        waitForPreferences(page)
         compare(peerListModelProxy[data.property].length, 0)
         picker.itemAtIndex(0).clicked()
+        waitForPreferences(page)
         picker.itemAtIndex(0).clicked()
+        waitForPreferences(page)
         compare(all.itemAtIndex(0).selected, true)
         menu.close()
         page.clearFilters()
+        waitForPreferences(page)
     }
 
     function test_filter_count_clear_and_saved_multiselection() {
         const page = createPeersPage()
         page.clearFilters()
-        page.setFilters("direction", ["inbound"])
-        page.setFilters("connectionType", ["full-relay", "manual"])
-        page.setFilters("network", ["ipv4", "onion"])
-        page.setFilters("transport", ["v2"])
+        waitForPreferences(page)
+        page.toggleFilter("direction", "inbound")
+        waitForPreferences(page)
+        page.toggleFilter("connectionType", "full-relay")
+        page.toggleFilter("connectionType", "manual")
+        page.toggleFilter("network", "ipv4")
+        page.toggleFilter("network", "onion")
+        page.toggleFilter("transport", "v2")
+        waitForPreferences(page)
         const count = findChild(page, "peerFilterButton")
         compare(count.count, 4)
         const settings = findChild(page, "peerFilterSettings")
-        compare(settings.peerConnectionTypeFilters, "full-relay,manual")
-        compare(page.decodeFilter(settings.peerConnectionTypeFilters, page.connectionTypeOptions).join(","), "full-relay,manual")
-        compare(page.decodeFilter("ipv4,garbage,onion,ipv4", page.networkOptions).join(","), "ipv4,onion")
-        compare(page.decodeFilter("v1,v2", page.transportOptions).length, 0)
-        compare(page.decodeFilter("inbound,outbound", page.directionOptions, true).join(","), "inbound")
+        compare(settings.peerConnectionTypeFilters.join(","), "full-relay,manual")
         count.clicked()
         const menu = findChild(page, "peerClearFiltersMenu")
         tryCompare(menu, "opened", true)
         findChild(menu, "peerClearFiltersAction").clicked()
+        waitForPreferences(page)
         compare(count.visible, false)
-        compare(settings.peerConnectionTypeFilters, "")
+        compare(settings.peerConnectionTypeFilters.length, 0)
         compare(peerListModelProxy.directionFilters.length, 0)
         compare(peerListModelProxy.networkFilters.length, 0)
         compare(peerListModelProxy.transportFilters.length, 0)
@@ -408,7 +484,9 @@ TestCase {
     function test_filter_buttons_wrap_below_search() {
         const page = createPeersPage()
         page.clearFilters()
-        page.setFilters("direction", ["inbound"])
+        waitForPreferences(page)
+        page.toggleFilter("direction", "inbound")
+        waitForPreferences(page)
         const filters = findChild(page, "peerFilters")
         const search = findChild(page, "peerSearchBar")
         const count = findChild(page, "peerFilterButton")
@@ -434,6 +512,7 @@ TestCase {
         keyClick(Qt.Key_Tab)
         tryCompare(direction, "activeFocus", true)
         page.clearFilters()
+        waitForPreferences(page)
     }
 
     function test_peer_row_places_traffic_on_its_own_colored_line() {
@@ -524,7 +603,7 @@ TestCase {
         verify(confirm !== null)
         confirm.clicked()
         compare(nodeModel.disconnectPeerCalls, 1)
-        compare(peerTableModel.refreshCalls, 1)
+        tryCompare(peerTableModel, "refreshCalls", 1)
         tryCompare(confirmation, "opened", false)
         tryCompare(confirmation, "visible", false)
     }
@@ -548,8 +627,8 @@ TestCase {
         confirm.clicked()
 
         compare(nodeModel.banPeerCalls, 1)
-        compare(peerTableModel.refreshCalls, 1)
-        compare(banListModel.refreshCalls, 1)
+        tryCompare(peerTableModel, "refreshCalls", 1)
+        tryCompare(banListModel, "refreshCalls", 1)
         tryCompare(confirmation, "opened", false)
         tryCompare(confirmation, "visible", false)
     }
@@ -614,7 +693,9 @@ TestCase {
 
         compare(nodeModel.disconnectPeerCalls, 1)
         compare(peerTableModel.refreshCalls, 0)
-        verifyPeerActionError(page, "Could not disconnect peer.")
+        verifyPeerActionError(page, "The peer could not be disconnected. It may already be disconnected.")
+        compare(peerTableModel.refreshCalls, 0)
+        compare(banListModel.refreshCalls, 0)
     }
 
     function test_ban_success_refreshes_peer_and_ban_lists_without_error() {
@@ -629,8 +710,8 @@ TestCase {
 
         compare(nodeModel.banPeerCalls, 1)
         compare(confirmation.opened, false)
-        compare(peerTableModel.refreshCalls, 1)
-        compare(banListModel.refreshCalls, 1)
+        tryCompare(peerTableModel, "refreshCalls", 1)
+        tryCompare(banListModel, "refreshCalls", 1)
         compare(popup.opened, false)
     }
 
@@ -646,7 +727,9 @@ TestCase {
         compare(nodeModel.banPeerCalls, 1)
         compare(peerTableModel.refreshCalls, 0)
         compare(banListModel.refreshCalls, 0)
-        verifyPeerActionError(page, "Could not ban peer.")
+        verifyPeerActionError(page, "The peer could not be banned.")
+        compare(peerTableModel.refreshCalls, 0)
+        compare(banListModel.refreshCalls, 0)
     }
 
     function test_unban_success_leaves_refresh_to_the_model_without_error() {

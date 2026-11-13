@@ -48,15 +48,40 @@ OnboardingView {
 
     childView: ColumnLayout {
         objectName: "importWalletErrorView"
-        CoreText {
+        ListView {
+            id: errorDetails
             objectName: "importWalletErrorHelpText"
             Layout.fillWidth: true
-            visible: text.length > 0
-            text: ApplicationModels.walletController.walletImportErrorHelpText
-            color: Theme.color.neutral6
+            Layout.preferredHeight: count > 0 ? Math.min(240, Math.max(48, contentHeight)) : 0
+            visible: count > 0
+            clip: true
+            reuseItems: true
+            cacheBuffer: 0
+            model: ApplicationModels.walletController.walletImportErrorHelpModel
+            delegate: CoreText {
+                required property string content
+                width: errorDetails.width
+                text: content
+                textFormat: Text.PlainText
+                color: Theme.color.neutral6
+                font: Theme.text.caption.font
+                wrap: true
+                horizontalAlignment: Text.AlignLeft
+            }
+        }
+        CoreText {
+            Layout.fillWidth: true
+            visible: ApplicationModels.walletController.walletImportErrorProjectionError.length > 0
+            text: ApplicationModels.walletController.walletImportErrorProjectionError
             font: Theme.text.caption.font
-            wrap: true
-            horizontalAlignment: Text.AlignHCenter
+            color: Theme.color.neutral6
+        }
+        TextButton {
+            objectName: "importWalletRetryErrorDetails"
+            visible: ApplicationModels.walletController.walletImportErrorRetryAvailable
+            enabled: !ApplicationModels.walletController.walletImportErrorPending
+            text: qsTr("Show error details again")
+            onClicked: ApplicationModels.walletController.retryWalletImportErrorPresentation()
         }
     }
 }

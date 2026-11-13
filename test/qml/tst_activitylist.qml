@@ -98,6 +98,7 @@ TestCase {
     function init() {
         testSetup.failOnWarnings()
         Theme.dark = true
+        tryCompare(Theme, "dark", true)
         walletController.reset()
         walletController.initialized = true
         walletController.setSelectedWalletObject(testWalletModel)
@@ -109,6 +110,22 @@ TestCase {
         testWalletModel.lastRemovedRequestId = ""
         testWalletModel.removeReceiveRequestResult = true
         testWalletModel.receiveRequestReconciliationPending = false
+        testWalletModel.setRecipientLabelsErrorForTest("")
+    }
+    function test_outgoing_note_error_is_bound_to_the_original_wallet() {
+        const page = createPage()
+        const banner = findChild(page, "outgoingNoteStatus")
+        verify(banner !== null)
+        compare(banner.visible, false)
+        testWalletModel.setRecipientLabelsErrorForTest("Transaction committed; outgoing notes could not be saved.")
+        tryCompare(banner, "visible", true)
+        compare(banner.message, testWalletModel.recipientLabelsError)
+        page.wallet = null
+        tryCompare(banner, "visible", false)
+        page.wallet = testWalletModel
+        tryCompare(banner, "visible", true)
+        testWalletModel.setRecipientLabelsErrorForTest("")
+        tryCompare(banner, "visible", false)
     }
     function createPage(properties) {
         const page = createTemporaryObject(pageComponent, this, properties || {})
@@ -188,7 +205,7 @@ TestCase {
             mouseClick(target, target.width / 2, target.height / 2, Qt.RightButton)
             tryCompare(menu, "opened", true)
             mouseClick(copyRaw)
-            compare(Clipboard.text(), "02000000abcdef")
+            tryVerify(function() { return testSetup.nativeClipboardText() === "02000000abcdef" })
         }
         tryCompare(menu, "visible", false)
         compare(page.depth, 1)
@@ -556,7 +573,7 @@ TestCase {
         detailModal.close()
         tryCompare(detailModal, "visible", false)
         compare(page.currentItem.txid, "batch")
-        compare(testTransactionActivityModel.requestedTransaction(), "batch")
+        compare(page.currentItem.activityModel.transactionId, "batch")
         page.pop()
         tryCompare(page, "depth", 1)
     }
@@ -570,6 +587,11 @@ TestCase {
         testTransactionActivityModel.loadError = "Please try again."
         tryCompare(findChild(page, "activityEmptyStateTitle"), "text", "Activity could not be loaded")
         verify(findChild(page, "activityRetryButton").visible)
+        testTransactionActivityModel.loadError = ""
+        testTransactionActivityModel.loading = true
+        tryCompare(findChild(page, "activityEmptyStateTitle"), "text", "Loading wallet activity…")
+        testTransactionActivityModel.loading = false
+        tryCompare(findChild(page, "activityEmptyStateTitle"), "text", "No activity yet")
     }
 
     function test_amount_filter_and_empty_states() {
@@ -952,10 +974,12 @@ TestCase {
         verify(amount.y >= metadata.y + metadata.height)
         verify(receive.width <= page.width)
         Theme.dark = false
+        tryCompare(Theme, "dark", false)
         page.width = 1180
         tryCompare(receive, "compact", false)
         tryCompare(findChild(receive, "activityRowAmount"), "color", Theme.color.green)
         compare(page.currentItem.background.color, Theme.color.neutral0)
         Theme.dark = true
+        tryCompare(Theme, "dark", true)
     }
 }

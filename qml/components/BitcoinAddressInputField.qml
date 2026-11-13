@@ -12,7 +12,7 @@ import "../controls"
 ColumnLayout {
     id: root
 
-    property var address
+    property BitcoinAddress address: null
     property string errorText: ""
     property bool showErrorMessage: true
     property string labelText: qsTr("Send to")
@@ -26,41 +26,58 @@ ColumnLayout {
     property bool interceptPaste: false
     property alias inputText: addressInput.text
     property alias placeholderText: addressInput.placeholderText
-    property alias readOnly: addressInput.readOnly
+    property bool readOnly: false
     readonly property alias field: addressInput
+    readonly property alias contextMenu: pasteIntent.pasteMenu
 
     signal textChanged()
     signal editingFinished()
-    signal pasteRequested()
+    signal pasteRequested(var payload)
+    readonly property bool pastePending: pasteIntent.pending
+    property BitcoinAddress pasteModel: null
 
+    // Short editor routing is bounded; large native edits are probed on Domain.
     function paymentUri(text) {
-        const trimmedText = String(text).trim()
-        return root.interceptPaste && trimmedText.toLowerCase().startsWith("bitcoin:")
-            ? trimmedText
-            : ""
+        if (!root.interceptPaste || text.length > 512) return ""
+        const trimmed = String(text).trim()
+        return trimmed.toLowerCase().startsWith("bitcoin:") ? trimmed : ""
     }
-
-    function pastedPaymentUri(previousText, currentText) {
-        const clipboardText = Clipboard.text()
-        const uri = paymentUri(clipboardText)
-        if (uri.length === 0 || previousText === currentText) return ""
-        return String(currentText).indexOf(clipboardText) === -1 ? "" : uri
+    function pastedPaymentUri(previous, current) {
+        const clipboard = Clipboard.text()
+        if (previous.length > 512 || current.length > 512 || clipboard.length > 512) return ""
+        const uri = paymentUri(clipboard)
+        return uri.length && previous !== current && String(current).indexOf(clipboard) >= 0 ? uri : ""
     }
+    function capturePaste(text, primary) { pasteModel = root.address; return pasteIntent.capture(text, primary, false, "", "", undefined) }
+    function applyCapturedPaste(payload) { return pasteIntent.apply(payload) }
+    function cancelPaste(payload) { if (pasteIntent.intent === payload) pasteIntent.cancel() }
+    function paste() { pasteIntent.request(false) }
 
-    function paste() {
-        const clipboardText = Clipboard.text()
-        if (!clipboardText.length || !addressInput.enabled || addressInput.readOnly) return
-        const selected = addressInput.selectedText.length > 0
-        const start = selected ? addressInput.selectionStart : addressInput.cursorPosition
-        const end = selected ? addressInput.selectionEnd : start
-        const nextText = addressInput.text.slice(0, start) + clipboardText + addressInput.text.slice(end)
-        const cursor = start + clipboardText.length
-        if (root.address) {
-            addressInput.cursorPosition = root.address.setAddress(nextText, cursor)
-            addressInput.syncFromAddress()
-        } else {
-            addressInput.text = nextText
-            addressInput.cursorPosition = cursor
+    CapturedPaste {
+        id: pasteIntent
+        textEdit: addressInput
+        context: root.address
+        active: root.visible && root.enabled && !root.readOnly && !!root.address
+        effectPending: root.address ? root.address.normalizationPending : false
+        menuObjectName: root.inputObjectName + "ContextMenu"
+        onRequested: (payload) => {
+            root.pasteModel = root.address
+            if (root.interceptPaste) root.pasteRequested(payload)
+            else apply(payload)
+        }
+        onRestoreRequested: (payload) => addressInput.syncFromAddress()
+        onLiteralRequested: (payload) => {
+            if (!root.address) return
+            const cursor = payload.edited
+                ? root.address.setAddress(payload.current, payload.cursor)
+                : root.address.pasteAddress(payload.text, payload.start, payload.end)
+            payload.ticket = root.address.normalizationId
+            if (cursor >= 0) { addressInput.syncFromAddress(); addressInput.cursorPosition = cursor }
+        }
+        onCancelRequested: (payload) => {
+            const model = root.pasteModel
+            root.pasteModel = null
+            if (model && payload.model === model && payload.ticket) model.cancelNormalization(payload.ticket)
         }
     }
 
@@ -68,7 +85,7 @@ ColumnLayout {
         addressInput.syncFromAddress()
     }
 
-    onAddressChanged: syncFromAddress()
+    onAddressChanged: { pasteIntent.cancel(); syncFromAddress() }
 
     Layout.fillWidth: true
     spacing: 4
@@ -94,6 +111,7 @@ ColumnLayout {
         TextArea {
             id: addressInput
             property bool syncingFromAddress: false
+            readOnly: root.readOnly || pasteIntent.pending || (root.address ? root.address.normalizationPending : false)
 
             function syncFromAddress() {
                 const formattedAddress = root.address ? root.address.formattedAddress : ""
@@ -104,12 +122,18 @@ ColumnLayout {
             }
 
             function handlePaymentUriInput() {
-                const previousText = root.address ? root.address.formattedAddress : ""
-                const uri = root.pastedPaymentUri(previousText, text)
-                if (uri.length === 0) return false
+                if (!root.interceptPaste || pasteIntent.literalActive) return false
+                const previous = root.address ? root.address.formattedAddress : ""
+                const current = text
+                const cursor = cursorPosition
+                const clipboard = Clipboard.text()
+                const longEdit = previous.length > 512 || current.length > 512 || clipboard.length > 512
+                if (!longEdit) {
+                    const uri = root.paymentUri(clipboard)
+                    if (!uri.length || previous === current || current.indexOf(clipboard) < 0) return false
+                }
                 syncFromAddress()
-                root.pasteRequested()
-                syncFromAddress()
+                pasteIntent.nativeEdit(clipboard, previous, current, cursor)
                 return true
             }
             anchors.left: label.right
@@ -140,7 +164,7 @@ ColumnLayout {
 
             Keys.onPressed: (event) => {
                 if (root.interceptPaste && event.matches(StandardKey.Paste)) {
-                    root.pasteRequested()
+                    pasteIntent.request(false)
                     event.accepted = true
                 }
             }
@@ -150,30 +174,41 @@ ColumnLayout {
                     root.textChanged()
                     return
                 }
+                pasteIntent.invalidate()
                 if (handlePaymentUriInput()) return
                 if (root.address) {
-                    cursorPosition = root.address.setAddress(text, cursorPosition)
+                    const cursor = root.address.setAddress(text, cursorPosition)
+                    if (cursor >= 0) cursorPosition = cursor
                 }
                 root.textChanged()
             }
 
             onEditingFinished: {
-                if (root.address) {
+                if (root.address && !pasteIntent.pending && !root.address.normalizationPending) {
                     root.address.setAddress(text, cursorPosition)
                     root.editingFinished()
                 }
             }
 
             onActiveFocusChanged: {
-                if (!activeFocus && root.address) {
+                if (!activeFocus && root.address && !pasteIntent.pending && !root.address.normalizationPending) {
                     root.address.setAddress(text)
                 }
             }
 
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.RightButton | Qt.MiddleButton
+                onPressed: (mouse) => pasteIntent.pointerPressed(mouse)
+            }
+
             Connections {
                 target: root.address ? root.address : null
+                function onAddressChanged() { pasteIntent.invalidate() }
                 function onFormattedAddressChanged() {
                     addressInput.syncFromAddress()
+                    if (root.address && !root.address.normalizationPending)
+                        addressInput.cursorPosition = root.address.normalizedCursor
                 }
             }
         }

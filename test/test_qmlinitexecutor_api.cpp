@@ -53,6 +53,50 @@ class QmlInitExecutorApiTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void runawayExtractionAndExceptionRetirementStayNative_data() {
+        QTest::addColumn<int>("phase");
+        QTest::newRow("initialize") << 0; QTest::newRow("interrupt") << 1; QTest::newRow("shutdown") << 2;
+    }
+    void runawayExtractionAndExceptionRetirementStayNative() {
+        QFETCH(int, phase);
+        struct Trace { std::atomic_int calls{0}, destroyed{0}; std::atomic_bool gui_what{false}, gui_destroy{false}; };
+        struct Tracked final : std::exception {
+            std::shared_ptr<Trace> trace;
+            explicit Tracked(std::shared_ptr<Trace> value) : trace(std::move(value)) {}
+            const char* what() const noexcept override {
+                ++trace->calls;
+                if (QThread::currentThread() == QCoreApplication::instance()->thread()) trace->gui_what = true;
+                return "Native lifecycle diagnostic";
+            }
+            ~Tracked() override {
+                ++trace->destroyed;
+                if (QThread::currentThread() == QCoreApplication::instance()->thread()) trace->gui_destroy = true;
+            }
+        };
+        auto trace = std::make_shared<Trace>();
+        StrictMockNode node;
+        node.is_initial_block_download_fn = [] { return false; }; node.shutdown_requested_fn = [] { return false; };
+        node.app_init_main_fn = [trace, phase](interfaces::BlockAndHeaderTipInfo*) {
+            if (phase == 0) throw Tracked{trace};
+            return true;
+        };
+        node.start_shutdown_fn = [trace, phase] { if (phase == 1) throw Tracked{trace}; };
+        node.app_shutdown_fn = [trace, phase] { if (phase == 2) throw Tracked{trace}; };
+        const auto drain_retired = qScopeGuard([] { DrainRetiredExecutors(); });
+        QmlInitExecutor executor{node}; QSignalSpy fatal{&executor, &QmlInitExecutor::runawayException};
+        QSignalSpy initialized{&executor, &QmlInitExecutor::initializeResult};
+        if (phase == 1) executor.interrupt();
+        else {
+            executor.initialize();
+            if (phase == 2) {
+                QVERIFY(!initialized.empty() || initialized.wait(SIGNAL_TIMEOUT)); executor.shutdown();
+            }
+        }
+        QVERIFY(!fatal.empty() || fatal.wait(SIGNAL_TIMEOUT)); QCOMPARE(fatal.size(), 1);
+        QCOMPARE(fatal[0][0].toString(), QString{"Native lifecycle diagnostic"});
+        QVERIFY(trace->calls.load() > 0); QVERIFY(trace->destroyed.load() > 0);
+        QVERIFY(!trace->gui_what); QVERIFY(!trace->gui_destroy);
+    }
     void initTestCase();
     void subscriptionCleanupPrecedesShutdownFailure();
     void subscriptionCleanupPrecedesShutdown();
@@ -73,6 +117,7 @@ private Q_SLOTS:
     void shutdownEmitsRunawayExceptionOnFailure();
     void interruptionBypassesBlockedInitialization();
     void shutdownWaitsForInterruptionAndEveryParticipant();
+    void asynchronousRetirementPrecedesInterrupt();
     void portMappingDrainsBeforeSingleInterruption();
 };
 
@@ -174,6 +219,9 @@ void QmlInitExecutorApiTests::fatalInitializationRejectsPendingAndLaterShutdown(
     release_interrupt.release();
     QTRY_VERIFY_WITH_TIMEOUT(interrupted.load(), SIGNAL_TIMEOUT);
     QTest::qWait(100);
+    // With no diagnostic owner, the receipt must not leave an idle action
+    // capability on the live executor and prevent physical worker drain.
+    QVERIFY(!executor.fatalDiagnosticScheduler());
     executor.shutdown();
     DrainRetiredExecutors();
     QCOMPARE(interrupt_spy.count(), 0);
@@ -384,6 +432,38 @@ void QmlInitExecutorApiTests::interruptionBypassesBlockedInitialization()
     QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, SIGNAL_TIMEOUT);
 }
 
+void QmlInitExecutorApiTests::asynchronousRetirementPrecedesInterrupt()
+{
+    StrictMockNode node;
+    node.is_initial_block_download_fn = [] { return false; };
+    node.shutdown_requested_fn = [] { return false; };
+    node.start_shutdown_fn = [] {};
+    node.app_shutdown_fn = [] {};
+    const auto drain_retired = qScopeGuard([] { DrainRetiredExecutors(); });
+    QmlInitExecutor executor{node};
+    QmlShutdownCoordinator coordinator{executor};
+    bool fenced{false}, began{false};
+    std::function<void()> acknowledge;
+    coordinator.addAdmissionFence([&] { fenced = true; });
+    coordinator.addBeforeInterruptTask([&](std::function<void()> done) {
+        QVERIFY(fenced);
+        began = true;
+        acknowledge = std::move(done);
+    });
+    QSignalSpy finished{&executor, &QmlInitExecutor::shutdownResult};
+    coordinator.requestShutdown();
+    coordinator.requestShutdown();
+    QVERIFY(began);
+    QCoreApplication::processEvents();
+    QCOMPARE(node.calls.startShutdown.load(), 0);
+    QCOMPARE(node.calls.appShutdown.load(), 0);
+    acknowledge();
+    acknowledge();
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, SIGNAL_TIMEOUT);
+    QCOMPARE(node.calls.startShutdown.load(), 1);
+    QCOMPARE(node.calls.appShutdown.load(), 1);
+}
+
 void QmlInitExecutorApiTests::shutdownWaitsForInterruptionAndEveryParticipant()
 {
     StrictMockNode node;
@@ -434,9 +514,22 @@ void QmlInitExecutorApiTests::portMappingDrainsBeforeSingleInterruption()
     QmlInitExecutor executor{node};
     QmlShutdownCoordinator coordinator{executor};
     ShutdownParticipant settings;
+    int fences{0};
+    coordinator.addAdmissionFence([&] { ++fences; });
+    coordinator.addAdmissionFence([&] { ++fences; });
+    bool ui_notified{false};
+    connect(&coordinator, &QmlShutdownCoordinator::shutdownStarted, this, [&] {
+        QCOMPARE(fences, 2);
+        QVERIFY(!settings.started);
+        QCOMPARE(node.calls.startShutdown.load(), 0);
+        ui_notified = true;
+        coordinator.requestShutdown(); // Reentrant focus handlers cannot restart shutdown.
+    });
     coordinator.addBeforeInterruptParticipant(&settings, &ShutdownParticipant::drained, [&] { settings.started = true; });
     QSignalSpy finished{&executor, &QmlInitExecutor::shutdownResult};
     coordinator.requestShutdown();
+    QVERIFY(ui_notified);
+    QCOMPARE(fences, 2);
     QVERIFY(settings.started);
     QCOMPARE(node.calls.startShutdown.load(), 0);
     bool gui_progress{false};

@@ -13,7 +13,9 @@ LabeledField {
     property alias text: input.text
     property alias placeholderText: input.placeholderText
     property alias inputObjectName: input.objectName
-    property alias readOnly: input.readOnly
+    property bool readOnly: false
+    readonly property alias field: input
+    readonly property bool pastePending: pasteIntent.pending
     readonly property alias inputActiveFocus: input.activeFocus
     property var textStyle: Theme.text.description
     property bool interceptPaste: false
@@ -22,49 +24,84 @@ LabeledField {
 
     signal textEdited()
     signal editingFinished()
-    signal pasteRequested()
+    signal pasteRequested(var payload)
 
     function paymentUri(text) {
+        if (!root.interceptPaste || text.length > 512) return ""
         const trimmed = String(text).trim()
-        return interceptPaste && trimmed.toLowerCase().startsWith("bitcoin:") ? trimmed : ""
+        return trimmed.toLowerCase().startsWith("bitcoin:") ? trimmed : ""
     }
-
-    function pastedPaymentUri(previousText, currentText) {
-        const clipboardText = Clipboard.text()
-        const uri = paymentUri(clipboardText)
-        if (!uri.length || previousText === currentText) return ""
-        const offset = String(currentText).indexOf(clipboardText)
+    function pastedPaymentUri(previous, current) {
+        const clipboard = Clipboard.text()
+        if (previous.length > 512 || current.length > 512 || clipboard.length > 512) return ""
+        const uri = paymentUri(clipboard)
+        if (!uri.length || previous === current) return ""
+        const offset = current.indexOf(clipboard)
         if (offset < 0) return ""
-        const prefix = String(currentText).slice(0, offset)
-        const suffix = String(currentText).slice(offset + clipboardText.length)
-        return String(previousText).startsWith(prefix)
-            && String(previousText).endsWith(suffix) ? uri : ""
+        return previous.startsWith(current.slice(0, offset)) && previous.endsWith(current.slice(offset + clipboard.length)) ? uri : ""
     }
-
-    function paste() { input.paste() }
-
-    onPaymentUriRestoreTextChanged: if (interceptPaste) input.syncFromModel()
+    function capturePaste(text, primary) { return pasteIntent.capture(text, primary, false, "", "", undefined) }
+    function applyCapturedPaste(payload) { return pasteIntent.apply(payload) }
+    function cancelPaste(payload) { if (pasteIntent.intent === payload) pasteIntent.cancel() }
+    function paste() { pasteIntent.request(false) }
+    onPaymentUriRestoreTextChanged: {
+        pasteIntent.invalidate()
+        if (interceptPaste) input.syncFromModel()
+    }
+    CapturedPaste {
+        id: pasteIntent
+        textEdit: input
+        context: root
+        active: root.visible && root.enabled && !root.readOnly
+        menuObjectName: root.inputObjectName + "ContextMenu"
+        onRequested: (payload) => {
+            if (root.interceptPaste) root.pasteRequested(payload)
+            else apply(payload)
+        }
+        onRestoreRequested: (payload) => input.syncFromModel()
+        onLiteralRequested: (payload) => {
+            input.syncingFromModel = true
+            if (payload.edited) {
+                input.text = payload.current
+                input.cursorPosition = payload.cursor
+            } else {
+                input.remove(payload.start, payload.end)
+                input.insert(payload.start, payload.text)
+                input.cursorPosition = payload.start + payload.text.length
+            }
+            input.syncingFromModel = false
+            root.textEdited()
+        }
+    }
 
     TextArea {
         id: input
         property bool syncingFromModel: false
 
         function syncFromModel() {
-            if (text === root.paymentUriRestoreText) return
+            if (text.length <= 512 && root.paymentUriRestoreText.length <= 512 && text === root.paymentUriRestoreText) return
             syncingFromModel = true
             text = root.paymentUriRestoreText
             syncingFromModel = false
         }
 
         function handlePaymentUriInput() {
-            const uri = root.pastedPaymentUri(root.paymentUriRestoreText, text)
-            if (!uri.length) return false
-            syncFromModel()
-            root.pasteRequested()
-            syncFromModel()
+            if (!root.interceptPaste || pasteIntent.literalActive) return false
+            const previous = root.paymentUriRestoreText
+            const current = text
+            const cursor = cursorPosition
+            const clipboard = Clipboard.text()
+            const longEdit = previous.length > 512 || current.length > 512 || clipboard.length > 512
+            if (!longEdit) {
+                const uri = root.paymentUri(clipboard)
+                const offset = current.indexOf(clipboard)
+                if (!uri.length || previous === current || offset < 0
+                        || !previous.startsWith(current.slice(0, offset)) || !previous.endsWith(current.slice(offset + clipboard.length))) return false
+                syncFromModel()
+            }
+            pasteIntent.nativeEdit(clipboard, previous, current, cursor)
             return true
         }
-
         Layout.fillWidth: true
         Layout.preferredHeight: Math.max(56, contentHeight + topPadding + bottomPadding)
         topPadding: 14
@@ -79,12 +116,18 @@ LabeledField {
         placeholderTextColor: enabled ? Theme.color.neutral7 : Theme.color.neutral4
         background: Item {}
         selectByMouse: true
+        readOnly: root.readOnly || pasteIntent.pending
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.RightButton | Qt.MiddleButton
+            onPressed: (mouse) => pasteIntent.pointerPressed(mouse)
+        }
         Accessible.name: root.label
         Accessible.description: root.errorText.length ? root.errorText : root.supportingText
 
         Keys.onPressed: (event) => {
             if (root.interceptPaste && event.matches(StandardKey.Paste)) {
-                root.pasteRequested()
+                pasteIntent.request(false)
                 event.accepted = true
             }
         }
@@ -94,6 +137,7 @@ LabeledField {
         // focused as edits, excluding updates restored from the model.
         onTextChanged: {
             if (syncingFromModel || !activeFocus) return
+            pasteIntent.invalidate()
             if (!handlePaymentUriInput()) root.textEdited()
         }
         onEditingFinished: root.editingFinished()

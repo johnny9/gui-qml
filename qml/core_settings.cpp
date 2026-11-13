@@ -3,6 +3,9 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/core_settings.h>
+#include <limits>
+#include <vector>
+#include <stdexcept>
 
 #include <common/args.h>
 #include <common/system.h>
@@ -165,6 +168,42 @@ bool IsValidHostnameSyntax(const std::string& host)
 } // namespace
 
 namespace QmlCoreSettings {
+namespace {
+size_t StatusBytes(const QVariant& value)
+{
+    const auto add = [](size_t a, size_t b) {
+        if (b > std::numeric_limits<size_t>::max() - a) throw std::length_error("Settings metadata exceeds byte capacity");
+        return a + b;
+    };
+    const auto utf16 = [](qsizetype size) {
+        const auto count = size_t(size);
+        if (count > std::numeric_limits<size_t>::max() / sizeof(QChar)) throw std::length_error("Settings metadata exceeds byte capacity");
+        return count * sizeof(QChar);
+    };
+    size_t bytes{0};
+    std::vector<QVariant> pending{value};
+    while (!pending.empty()) {
+        auto current = std::move(pending.back()); pending.pop_back();
+        bytes = add(bytes, 64);
+        if (current.metaType().id() == QMetaType::QString) {
+            bytes = add(bytes, utf16(current.toString().size()));
+        } else if (current.metaType().id() == QMetaType::QVariantMap) {
+            const auto map = current.toMap();
+            for (auto it = map.cbegin(); it != map.cend(); ++it) {
+                bytes = add(bytes, add(64, utf16(it.key().size())));
+                pending.push_back(it.value());
+            }
+        } else if (current.metaType().id() == QMetaType::QVariantList) {
+            for (const auto& item : current.toList()) pending.push_back(item);
+        } else if (current.metaType().id() == QMetaType::QStringList) {
+            for (const auto& item : current.toStringList()) bytes = add(bytes, add(64, utf16(item.size())));
+        }
+    }
+    return bytes;
+}
+}
+StatusProjection CaptureStatuses(QVariantMap values){const auto bytes=StatusBytes(values);return {std::move(values),bytes,std::make_shared<const char>(0)};}
+
 
 const QStringList& CoreSettingNames()
 {

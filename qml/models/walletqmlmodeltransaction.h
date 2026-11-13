@@ -6,12 +6,14 @@
 #define BITCOIN_QML_MODELS_WALLETQMLMODELTRANSACTION_H
 
 #include <qml/bitcoinamount.h>
-#include <qml/models/sendrecipientslistmodel.h>
+#include <qml/walletreview.h>
+#include <qml/walletopening.h>
 
 #include <consensus/amount.h>
 #include <primitives/transaction.h>
 
 #include <QMap>
+#include <QPointer>
 #include <QVariantList>
 
 #include <optional>
@@ -29,11 +31,18 @@ class WalletQmlModelTransaction : public QObject
     Q_PROPERTY(QString total READ total NOTIFY totalChanged)
     Q_PROPERTY(QString label READ label CONSTANT)
     Q_PROPERTY(QString txid READ txid NOTIFY txidChanged)
+    Q_PROPERTY(bool presentationPending READ presentationPending NOTIFY presentationChanged)
+    Q_PROPERTY(QString presentationError READ presentationError NOTIFY presentationChanged)
     Q_PROPERTY(QVariantList reviewedRecipients READ reviewedRecipients NOTIFY reviewedRecipientsChanged)
     Q_PROPERTY(int reviewTargetBlocks READ reviewTargetBlocks CONSTANT)
     Q_PROPERTY(QString reviewFeeRate READ reviewFeeRate CONSTANT)
 public:
-    explicit WalletQmlModelTransaction(const SendRecipientsListModel* recipient, QObject* parent = nullptr);
+    WalletQmlModelTransaction(std::shared_ptr<const walletreview::Snapshot> snapshot,
+        std::shared_ptr<walletopening::Session> opening, std::function<void(std::function<void()>)> post,
+        QObject* parent = nullptr);
+    WalletQmlModelTransaction(const walletreview::Snapshot& snapshot,
+        std::shared_ptr<walletopening::Session> opening, std::function<void(std::function<void()>)> post,
+        QObject* parent = nullptr);
 
     WalletQmlModelTransaction(const WalletQmlModelTransaction& reviewed, CAmount authenticated_fee, QObject* parent);
 
@@ -45,11 +54,15 @@ public:
     QString total() const;
     QString label() const;
     QString txid() const;
+    bool presentationPending() const { return m_presentation_pending; }
+    QString presentationError() const { return m_presentation_error; }
     QVariantList reviewedRecipients() const;
     bool isReviewedRecipient(const QString& address) const;
     int reviewTargetBlocks() const { return m_review_target_blocks; }
     QString reviewFeeRate() const { return m_review_fee_rate; }
     const QMap<QString, QString>& recipientLabels() const { return m_recipient_labels; }
+    const QSet<QString>& reviewedAddresses() const { return m_reviewed_addresses; }
+    std::shared_ptr<const void> retainedValues() const { return m_review_lifetime; }
 
     CTransactionRef& getWtx();
     void setWtx(const CTransactionRef&);
@@ -62,10 +75,9 @@ public:
     CAmount getTotalTransactionAmount() const;
 
     void setDisplayUnit(int unit);
-    bool captureReviewedRecipients(const SendRecipientsListModel& recipients);
+    void closeAdmission();
     void setReviewFeeDetails(int target_blocks, const QString& fee_rate);
 
-    void reassignAmounts(int nChangePosRet); // synchronize review totals with the transaction outputs
 
 Q_SIGNALS:
     void amountChanged();
@@ -73,21 +85,40 @@ Q_SIGNALS:
     void totalChanged();
     void txidChanged();
     void reviewedRecipientsChanged();
+    void presentationChanged();
 
 private:
+    struct ConstructionInput {
+        std::shared_ptr<const walletreview::Snapshot> snapshot;
+        std::shared_ptr<walletopening::Session> opening;
+        std::function<void(std::function<void()>)> post;
+        QPointer<QObject> parent;
+    };
+    static ConstructionInput prepareConstruction(const walletreview::Snapshot&, std::shared_ptr<walletopening::Session>,
+        std::function<void(std::function<void()>)>, QObject*);
+    explicit WalletQmlModelTransaction(ConstructionInput input);
     static QString formatWithUnit(CAmount value, int display_unit);
 
+    // Declared before cached aliases so they release before the cleanup lease.
+    std::shared_ptr<const walletreview::Snapshot> m_review_lifetime;
+    std::shared_ptr<const void> m_presentation_lifetime;
+    bool m_presentation_pending{false};
+    bool m_closed{false};
+    QString m_presentation_error;
+
     QString m_address;
+    QString m_txid;
     QString m_label;
     // Keep the reviewed notes even if the send form is edited or reset later.
     QMap<QString, QString> m_recipient_labels;
-    struct ReviewedRecipient {
-        QString address;
-        QString label;
-        CAmount amount;
-        bool payment_request;
-    };
-    std::vector<ReviewedRecipient> m_reviewed_recipients;
+    using ReviewedRecipient = walletreview::Recipient;
+    QList<ReviewedRecipient> m_reviewed_recipients;
+    QVariantList m_reviewed_presentation;
+    QSet<QString> m_reviewed_addresses;
+    std::shared_ptr<walletopening::Session> m_opening;
+    std::function<void(std::function<void()>)> m_post;
+    quint64 m_presentation_revision{0};
+    void refreshRecipientPresentation();
     int m_review_target_blocks{0};
     QString m_review_fee_rate;
     CAmount m_amount;
@@ -98,6 +129,7 @@ private:
     BitcoinAmount* m_total_amount;
     CTransactionRef m_wtx;
     int m_display_unit{0};
+    int m_requested_display_unit{0};
 };
 
 #endif // BITCOIN_QML_MODELS_WALLETQMLMODELTRANSACTION_H

@@ -51,6 +51,7 @@ struct PreviewResult {
     QString error;
     QmlCoreSettings::Values values;
     QVariantMap core_setting_statuses;
+    size_t core_setting_statuses_bytes{0};
     int assumed_blockchain_size{0};
     int assumed_chainstate_size{0};
     ProfileSummary profile;

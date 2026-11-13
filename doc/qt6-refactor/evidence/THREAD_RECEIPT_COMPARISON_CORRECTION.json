@@ -1,0 +1,22 @@
+{
+  "attribution": "Application test fixture uses deleted QObject pointers with QtTest formatting; not a deferred Qt component defect.",
+  "evidence": "walletrequests-qt62-v34-stack-symbols/{gdb.log,symbol-offset-attribution.json,crash-disassembly.txt,qtestcase.h,target.stdout}",
+  "crash_symbol": "QTest::toString(QObject const volatile*)+0x40",
+  "observed_crash": "0x26770 in exact Qt6Test6.2.4",
+  "original_oracles": "Exact same-worker equality after physical drain; all original persistence/reservation/lock/outcome/destructor checks retained.",
+  "scope": "One WalletRequests row and two WalletReservation data rows; no production change.",
+  "related_audit": "QmlInitExecutor comparisons occur while executor remains live; current GUI thread comparisons remain live.",
+  "changes": [
+    {
+      "file": "test/test_walletrequests.cpp",
+      "before_sha256": "05ffcc9f2286c8eb3aac4d2c2303c5e38a0afe49890614dec16fdbf1ff7ac7e6",
+      "after_sha256": "ee6ad0c60b36edf950f9d06c78f02a374c94ccecd18545f909a635ad5e92d9ed"
+    },
+    {
+      "file": "test/test_walletreservations.cpp",
+      "before_sha256": "108f0224aed4f73573179b7510bd95e8d3f5a400ca3dbe548e426b331c688e4a",
+      "after_sha256": "c65562cad2fe646d92d4a0a9220a0d01fa2037a7055eaa0ddaa3f847f76f21b9"
+    }
+  ],
+  "validation": "pending complete corrected candidate"
+}

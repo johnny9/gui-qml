@@ -5,9 +5,66 @@
 """Keep secret command arguments out of a real GUI process's console and logs."""
 
 from pathlib import Path
+import re
 from qml_scenarios import run_scenarios
 from qml_smoke_lib import create_wallet, stop_gui_checked, wallet_scenario
 from qml_wallet_test_lib import rpc_call, wait_for_rpc
+
+
+# Public RpcConsoleModel::MessageCategory role values.
+CMD_REQUEST, CMD_REPLY, CMD_ERROR = 0, 1, 2
+
+
+def assert_complete_output_matches(gui, text, expected, *, expected_context="", reply_category=CMD_ERROR):
+    """Search the complete current projection, including virtualized rows."""
+    output = "consoleOutputArea_list"
+    gui.wait_for_property(output, "model.busy", False, timeout_ms=30000)
+    assert gui.get_property(output, "model.error") in (None, "")
+    assert gui.get_property(output, "model.truncated") is False
+    # SplitRows marks each original logical message with a timestamp. Only
+    # the first enabled query adds the exact wallet context banner; Clear
+    # deliberately preserves the last wallet context.
+    source = "model.sourceModel"
+    original = gui.get_model_row(output, source)
+    rows = original["rowCount"]
+    assert 0 < rows <= 5000
+
+    def read(row, role):
+        return gui.get_model_row(output, source, row, role,
+                                 model_id=original["modelId"], expected_rows=rows)["value"]
+
+    starts = []
+    context_messages = int(bool(expected_context))
+    for row in range(rows):
+        timestamp = read(row, "timestamp")
+        if timestamp:
+            assert re.fullmatch(r"[0-9]{2}:[0-9]{2}:[0-9]{2}", timestamp)
+            assert read(row, "continuation") is False
+            starts.append(row)
+        assert 1 <= len(starts) <= 2 + context_messages
+        # RpcConsoleModel's public CMD_REQUEST/REPLY/ERROR role values.
+        assert read(row, "category") == (CMD_REQUEST if len(starts) <= 1 + context_messages else reply_category)
+    assert len(starts) == 2 + context_messages, f"Unexpected logical messages {starts} in {rows} records"
+    gui.set_property("rpcConsole", "searchText", text)
+    gui.wait_for_property(output, "model.searchResultCount", expected, timeout_ms=30000)
+    gui.wait_for_property(output, "model.searchBusy", False, timeout_ms=30000)
+    assert gui.get_property(output, "model.searchText") == text
+    assert gui.get_property(output, "model.searchLimited") is False
+    assert gui.get_property(output, "model.busy") is False
+    assert gui.get_property(output, "model.error") in (None, "")
+    assert gui.get_property(output, "model.searchResultCount") == expected
+
+    if expected_context:
+        assert starts[:2] == [0, 1], "The exact context banner must occupy one record"
+        prepared = gui.get_model_row(output, "model")
+
+        def projected(role):
+            return gui.get_model_row(output, "model", 0, role,
+                                     model_id=prepared["modelId"], expected_rows=prepared["rowCount"])["value"]
+
+        assert projected("plainContent") == expected_context
+        assert projected("leftText") == read(0, "timestamp")
+        assert projected("category") == CMD_REQUEST
 
 
 def console_privacy(harness, checkpoint, wallet_enabled):
@@ -32,23 +89,28 @@ def console_privacy(harness, checkpoint, wallet_enabled):
         f"addhdkey {secret}",
         f"walletpassphrase {secret} 10",
     ]
-    for command in commands:
+    for index, command in enumerate(commands):
         gui.set_text("consoleInput", command)
         gui.invoke("rpcConsole", "submitCommand")
-        gui.wait_for_property("rpcConsole", "outputCount", lambda count: count >= 2)
         gui.wait_for_property("rpcConsole", "executing", False, timeout_ms=30000)
-        count = gui.get_property("rpcConsole", "outputCount")
-        for row in range(count):
-            gui.wait_for_property(f"consoleOutputArea_content_{row}", "text", lambda text: secret not in text)
+        # Positive anchors certify the new request AND its completed reply
+        # before a zero-match privacy assertion can be considered meaningful.
+        context = f'Executing command using "{name}" wallet' if wallet_enabled and index == 0 else ""
+        assert_complete_output_matches(gui, command.split()[0] + "(…)", 1, expected_context=context)
+        assert_complete_output_matches(gui, "(code ", 1, expected_context=context)
+        assert_complete_output_matches(gui, secret, 0, expected_context=context)
+        gui.set_property("rpcConsole", "searchText", "")
         gui.invoke("rpcConsole", "clearInputOrOutput")
         gui.wait_for_property("rpcConsole", "outputCount", 0)
     checkpoint("secret-bearing requests and failures remain redacted")
     gui.set_text("consoleInput", "help getblockcount")
     gui.invoke("rpcConsole", "submitCommand")
-    gui.wait_for_property("rpcConsole", "outputCount", 2)
     gui.wait_for_property("rpcConsole", "executing", False, timeout_ms=30000)
-    gui.wait_for_property("consoleOutputArea_content_0", "text", lambda text: "help getblockcount" in text)
-    gui.wait_for_property("consoleOutputArea_content_1", "text", lambda text: "Returns the height" in text)
+    # One original request and one reply may span many bounded display rows.
+    # Exact search matches establish both messages without assuming their
+    # physical row count or instantiating every virtual delegate.
+    assert_complete_output_matches(gui, "help getblockcount", 1, reply_category=CMD_REPLY)
+    assert_complete_output_matches(gui, "Returns the height", 1, reply_category=CMD_REPLY)
     if wallet_enabled:
         assert rpc_call(harness.gui_rpc_port, "listwallets") == before
         assert rpc_call(harness.gui_rpc_port, "getwalletinfo", wallet=name)["unlocked_until"] == 0

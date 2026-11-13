@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import QtQuick 2.15
+import QtQml 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
@@ -17,14 +18,14 @@ SettingsPage {
 
     property WalletQmlModel wallet: null
     property var signVerifyModel: wallet ? wallet.signVerifyMessageModel : null
-    property string verifyResultText: ""
-    property bool verifyResultSuccess: false
+    readonly property string verifyResultText: signVerifyModel ? signVerifyModel.verificationText : ""
+    readonly property bool verifyResultSuccess: signVerifyModel ? signVerifyModel.verificationValid : false
     property int initialTab: SignVerifyMessage.SignTab
     property int selectedMode: root.initialTab
 
     enum Tabs { SignTab, VerifyTab }
     readonly property bool signingComplete: !!root.signVerifyModel
-        && root.signVerifyModel.signature.length > 0
+        && root.signVerifyModel.signingSucceeded
 
     BitcoinAddress {
         id: signAddressModel
@@ -51,43 +52,35 @@ SettingsPage {
         verifyAddress.text = ""
         verifyMessageText.text = ""
         verifySignature.text = ""
-        root.verifyResultText = ""
-        root.verifyResultSuccess = false
+        if (root.signVerifyModel) root.signVerifyModel.clearVerification()
     }
 
-    function addressErrorText(address) {
-        if (address.length === 0
-                || (root.signVerifyModel && root.signVerifyModel.isLegacyP2PKHAddress(address))) {
-            return ""
-        }
-        return qsTr("Not a valid P2PKH address.")
-    }
+    Binding { target: root.signVerifyModel; property: "signingAddress"; value: signAddressModel.address; when: root.signVerifyModel !== null }
+    Binding { target: root.signVerifyModel; property: "signingMessage"; value: signMessageText.text; when: root.signVerifyModel !== null }
+    Binding { target: root.signVerifyModel; property: "verificationAddress"; value: verifyAddressModel.address; when: root.signVerifyModel !== null }
+    Binding { target: root.signVerifyModel; property: "verificationMessage"; value: verifyMessageText.text; when: root.signVerifyModel !== null }
+    Binding { target: root.signVerifyModel; property: "verificationSignature"; value: verifySignature.text; when: root.signVerifyModel !== null }
 
     function submitSign(passphrase) {
-        if (!root.signVerifyModel) return
-        const signed = arguments.length === 0
-            ? root.signVerifyModel.signMessage(signAddressModel.address, signMessageText.text)
-            : root.signVerifyModel.signMessageWithPassphrase(signAddressModel.address, signMessageText.text, passphrase)
-        if (signed) {
-            signPassphrasePopup.close()
-            return
-        }
-        if (root.signVerifyModel.signingNeedsUnlock) {
-            signPassphrasePopup.errorText = ""
-            signPassphrasePopup.open()
-        }
+        if (!root.signVerifyModel || root.signVerifyModel.signingBusy
+                || signAddressModel.normalizationPending || signAddressModel.normalizationError.length > 0) return
+        if (arguments.length === 0) root.signVerifyModel.requestSignMessage(signAddressModel.address, signMessageText.text)
+        else root.signVerifyModel.requestSignMessageWithPassphrase(signAddressModel.address, signMessageText.text, passphrase)
     }
 
     function submitVerify() {
-        const verified = root.signVerifyModel
-            && root.signVerifyModel.verifyMessage(
-                verifyAddressModel.address,
-                verifyMessageText.text,
-                verifySignature.text)
-        root.verifyResultSuccess = verified
-        root.verifyResultText = verified
-            ? qsTr("Message verified successfully.")
-            : qsTr("Message verification failed.")
+        if (root.signVerifyModel && !root.signVerifyModel.verificationBusy
+                && !verifyAddressModel.normalizationPending && verifyAddressModel.normalizationError.length === 0)
+            root.signVerifyModel.requestVerifyMessage(verifyAddressModel.address, verifyMessageText.text, verifySignature.text)
+    }
+
+    Connections {
+        target: root.signVerifyModel
+        function onSigningStateChanged() {
+            if (!root.visible || !root.signVerifyModel || root.signVerifyModel.signingBusy) return
+            if (root.signVerifyModel.signingSucceeded) signPassphrasePopup.close()
+            else if (root.signVerifyModel.signingNeedsUnlock) signPassphrasePopup.open()
+        }
     }
 
     Component.onCompleted: {
@@ -141,7 +134,7 @@ SettingsPage {
                     placeholderText: qsTr("Enter a legacy P2PKH address")
                     address: signAddressModel
                     fieldTextStyle: Theme.text.monoDescription
-                    errorText: root.addressErrorText(signAddressModel.address)
+                    errorText: signAddressModel.address.length > 0 && root.signVerifyModel && !root.signVerifyModel.addressValidationPending && !root.signVerifyModel.signingAddressValid ? qsTr("Not a valid P2PKH address.") : ""
                     readOnly: root.signingComplete
                     showCopyButton: root.signingComplete
                     copyButtonObjectName: "signMessageCopyAddressButton"
@@ -171,7 +164,8 @@ SettingsPage {
                         Layout.fillWidth: true
                         text: qsTr("Sign message")
                         enabled: !!root.signVerifyModel
-                            && root.signVerifyModel.isLegacyP2PKHAddress(signAddressModel.address)
+                            && root.signVerifyModel.signingAddressValid && !root.signVerifyModel.signingBusy
+                            && !signAddressModel.normalizationPending && signAddressModel.normalizationError.length === 0
                         onClicked: root.submitSign()
                     }
 
@@ -240,7 +234,7 @@ SettingsPage {
                     placeholderText: qsTr("Enter a legacy P2PKH address")
                     address: verifyAddressModel
                     fieldTextStyle: Theme.text.monoDescription
-                    errorText: root.addressErrorText(verifyAddressModel.address)
+                    errorText: verifyAddressModel.address.length > 0 && root.signVerifyModel && !root.signVerifyModel.addressValidationPending && !root.signVerifyModel.verificationAddressValid ? qsTr("Not a valid P2PKH address.") : ""
                 }
 
                 LabeledTextView {
@@ -273,7 +267,8 @@ SettingsPage {
                         Layout.fillWidth: true
                         text: qsTr("Verify message")
                         enabled: !!root.signVerifyModel
-                            && root.signVerifyModel.isLegacyP2PKHAddress(verifyAddressModel.address)
+                            && root.signVerifyModel.verificationAddressValid && !root.signVerifyModel.verificationBusy
+                            && !verifyAddressModel.normalizationPending && verifyAddressModel.normalizationError.length === 0
                             && verifySignature.text.length > 0
                         onClicked: root.submitVerify()
                     }
@@ -315,18 +310,19 @@ SettingsPage {
         descriptionText: qsTr("Enter the wallet password to sign this message.")
         confirmText: qsTr("Unlock and sign")
         busyConfirmText: qsTr("Signing...")
+        property var context: null
+        readonly property bool contextValid: context !== null && root.visible
+            && root.signVerifyModel === context.model
+            && root.signVerifyModel.signingAddress === context.address
+            && root.signVerifyModel.signingMessage === context.message
+        onAboutToShow: context = { model: root.signVerifyModel, address: signAddressModel.address, message: signMessageText.text }
+        onContextValidChanged: if (!contextValid) close()
+        onClosed: context = null
+        busy: contextValid && context.model.signingBusy
+        errorText: contextValid && context.model.signingNeedsUnlock ? context.model.signingError : ""
         onSubmitted: (passphrase) => {
-            signPassphrasePopup.busy = true
-            if (root.signVerifyModel.signMessageWithPassphrase(
-                    signAddressModel.address,
-                    signMessageText.text,
-                    passphrase)) {
-                signPassphrasePopup.busy = false
-                signPassphrasePopup.close()
-                return
-            }
-            signPassphrasePopup.busy = false
-            signPassphrasePopup.errorText = root.signVerifyModel.signingError
+            if (contextValid && !context.model.signingBusy)
+                context.model.requestSignMessageWithPassphrase(context.address, context.message, passphrase)
         }
     }
 

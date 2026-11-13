@@ -5,6 +5,7 @@
 #include <QtTest/QtTest>
 
 #include <qml/models/psbtqmlmodel.h>
+#include <qml/backendexecutor.h>
 #include <test/mocks/mocknode.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/mocks/mockwallet.h>
@@ -19,6 +20,7 @@
 
 #include <QFile>
 #include <QTemporaryDir>
+#include <QThread>
 
 #include <algorithm>
 #include <array>
@@ -37,20 +39,38 @@ class PsbtTestWallet : public StubWallet
 public:
     bool private_keys_disabled{false};
     size_t signable{1};
+    bool encrypted{false},locked{false};int unlock_calls{0},lock_calls{0};
+    std::string expected_password,observed_password;QThread* unlock_thread{nullptr};
+    bool isCrypted() override{return encrypted;}
+    bool isLocked() override{return locked;}
+    bool lock() override{++lock_calls;locked=true;return true;}
+    util::Expected<void,wallet::WalletError> unlock(const SecureString& password) override{
+        ++unlock_calls;unlock_thread=QThread::currentThread();observed_password.assign(password.data(),password.size());
+        if(observed_password!=expected_password)return util::Unexpected{wallet::WalletError{wallet::WalletErrorCode::PassphraseIncorrect,Untranslated("incorrect test password")}};
+        locked=false;return {};
+    }
     std::optional<common::PSBTError> fill_error;
     std::vector<bool> sign_args;
     std::function<void(PartiallySignedTransaction&)> on_sign;
+    std::function<void(PartiallySignedTransaction&)> on_inspect;
+    std::vector<bool> derivation_args;
+    QThread* effect_thread{nullptr};
+    int private_accesses{0};
+    wallet::CWallet* wallet() override { ++private_accesses; throw std::runtime_error("Private wallet access forbidden"); }
 
     std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options,
                                               size_t* n_signed,
                                               PartiallySignedTransaction& psbt,
                                               bool& complete) override
     {
+        effect_thread = QThread::currentThread();
         sign_args.push_back(options.sign);
+        derivation_args.push_back(options.bip32_derivs);
         if (n_signed) {
             *n_signed = signable;
         }
         if (options.sign && on_sign) on_sign(psbt);
+        if (!options.sign && on_inspect) on_inspect(psbt);
         complete = FinalizePSBT(psbt);
         return fill_error;
     }
@@ -111,6 +131,33 @@ std::optional<PartiallySignedTransaction> DecodeRawPsbt(const QString& path)
     }
     return *psbt;
 }
+void Configure(PsbtQmlModel& model, const std::shared_ptr<PsbtTestWallet>& wallet)
+{
+    auto executor = std::make_shared<BackendExecutor>();
+    auto opening = std::make_shared<walletopening::Session>(executor->scheduler(), executor->scheduler(),
+        std::make_shared<std::atomic_bool>(false), [] {});
+    opening->start(wallet);
+    model.configureSession(opening, {executor->scheduler(), {}, {}});
+    QObject::connect(&model, &QObject::destroyed, [opening, executor] {
+        opening->retire(); executor->shutdown();
+    });
+}
+bool AwaitIdle(PsbtQmlModel& model)
+{
+    return QTest::qWaitFor([&] { return !model.busy(); }, 5000);
+}
+QString AwaitLoad(PsbtQmlModel& model, const QString& path)
+{
+    const auto ticket = model.requestLoadFromFile(path);
+    if (!ticket || !AwaitIdle(model) || model.operationId() != ticket) return QStringLiteral("Load did not complete");
+    return model.phase() == PsbtQmlModel::Phase::Ready ? QString{} : model.error();
+}
+QString AwaitSave(PsbtQmlModel& model, const QString& path)
+{
+    const auto ticket = model.requestSaveToFile(path);
+    if (!ticket || !AwaitIdle(model) || model.operationId() != ticket) return QStringLiteral("Save did not complete");
+    return model.saved() ? QString{} : model.error();
+}
 } // namespace
 
 class PsbtQmlModelTests : public QObject
@@ -119,6 +166,87 @@ class PsbtQmlModelTests : public QObject
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void assessedScriptsKeepOriginalExportAndBroadcast_data()
+    {
+        QTest::addColumn<bool>("nested");
+        QTest::addColumn<bool>("close_before_effect");
+        for (bool nested : {false, true}) for (bool close : {false, true})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(nested ? "nested" : "witness").arg(close ? "closed" : "live"))) << nested << close;
+    }
+    void assessedScriptsKeepOriginalExportAndBroadcast()
+    {
+        QFETCH(bool, nested);
+        QFETCH(bool, close_before_effect);
+        const auto original = psbtfeefixture::SignedWithoutScripts(nested);
+        const auto raw = psbtwork::SerializeRaw(original.document);
+        auto expected_document = original.document;
+        expected_document.inputs[0].witness_script = original.witness;
+        expected_document.inputs[0].redeem_script = original.redeem;
+        CMutableTransaction expected;
+        QVERIFY(FinalizeAndExtractPSBT(expected_document, expected));
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        auto wallet = std::make_shared<PsbtTestWallet>();
+        wallet->private_keys_disabled = true;
+        wallet->encrypted = true; wallet->locked = true;
+        wallet->on_inspect = [original](PartiallySignedTransaction& document) {
+            document.inputs[0].witness_script = original.witness;
+            document.inputs[0].redeem_script = original.redeem;
+        };
+        MockNode node;
+        CTransactionRef submitted;
+        node.broadcast_transaction_fn = [&](CTransactionRef transaction, CAmount, CFeeRate, std::string&) {
+            submitted = std::move(transaction);
+            return node::TransactionError::OK;
+        };
+        auto opening = std::make_shared<walletopening::Session>(transport.scheduler, transport.scheduler,
+            std::make_shared<std::atomic_bool>(false), [] {});
+        QVERIFY(opening->start(wallet)); transport.drain(); opening->take();
+        auto model = std::make_unique<PsbtQmlModel>(wallet.get(), &node);
+        model->configureSession(opening, {transport.scheduler, {}, [&](auto turn) { publications.push_back(std::move(turn)); }});
+        const auto publish_all = [&] {
+            while (!publications.empty()) {
+                auto turn = std::exchange(publications.front(), {});
+                publications.pop_front(); turn();
+            }
+        };
+        const auto cleanup = qScopeGuard([&] {
+            model.reset(); opening->retire(); transport.drain(); publish_all(); transport.drain();
+        });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto source_path = directory.filePath("original.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(original.document, source_path), QString{});
+        QVERIFY(model->requestLoadFromFile(source_path));
+        QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(wallet->sign_args, std::vector<bool>{false});
+        QVERIFY(!model->loaded());
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(!model->loaded());
+        publish_all(); transport.drain();
+        QVERIFY(model->complete()); QVERIFY(model->canBroadcast()); QVERIFY(!model->canSign());
+        QVERIFY(model->psbt());
+        QCOMPARE(psbtwork::SerializeRaw(*model->psbt()), raw);
+        QCOMPARE(model->psbt()->inputs[0].partial_sigs.size(), size_t{2});
+        const auto saved_path = directory.filePath("saved.psbt");
+        QVERIFY(model->requestSaveToFile(saved_path)); transport.drain(); publish_all(); transport.drain();
+        QVERIFY(model->saved());
+        QFile saved{saved_path}; QVERIFY(saved.open(QIODevice::ReadOnly)); QCOMPARE(saved.readAll(), raw);
+        QVERIFY(model->requestBroadcast());
+        if (close_before_effect) { model->closeAdmission(); opening->retire(); }
+        QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(node.calls.broadcastTransaction.load(), 1);
+        QVERIFY(submitted);
+        QCOMPARE(submitted->GetWitnessHash(), MakeTransactionRef(expected)->GetWitnessHash());
+        QCOMPARE(wallet->sign_args, (std::vector<bool>{false, false}));
+        QCOMPARE(wallet->derivation_args, (std::vector<bool>{false, false}));
+        QCOMPARE(wallet->unlock_calls, 0); QCOMPARE(wallet->lock_calls, 0); QVERIFY(wallet->locked);
+        QVERIFY(!model->submitted());
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(model->submitted()); // Receipt survives observer close and held GUI.
+        QCOMPARE(psbtwork::SerializeRaw(original.document), raw);
+        model.reset(); opening->retire(); transport.drain(); publish_all(); transport.drain();
+        QVERIFY(transport.quiescent());
+    }
     void authenticatedIncompleteDocumentStillNeedsSigningAuthority_data()
     {
         QTest::addColumn<int>("authority");
@@ -129,21 +257,53 @@ private Q_SLOTS:
     void authenticatedIncompleteDocumentStillNeedsSigningAuthority()
     {
         QFETCH(int, authority);
-        PsbtTestWallet wallet; MockNode node;
+        auto wallet_owner = std::make_shared<PsbtTestWallet>(); auto& wallet = *wallet_owner; MockNode node;
         wallet.private_keys_disabled = authority == 0;
         if (authority != 0) wallet.signable = 0;
         if (authority == 2) wallet.fill_error = common::PSBTError::MISSING_INPUTS;
-        PsbtQmlModel model{&wallet, &node};
+        PsbtQmlModel model{&wallet, &node}; Configure(model, wallet_owner);
         model.refreshState(); // An absent document has no authority.
         QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("partial.psbt");
         QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeUnsignedPsbt(), path), QString{});
-        QCOMPARE(model.loadFromFile(path), QString{});
+        QCOMPARE(AwaitLoad(model, path), QString{});
         QVERIFY(!model.canSign()); QVERIFY(!model.canBroadcast());
-        model.broadcast();
+        model.broadcast(); QVERIFY(AwaitIdle(model));
         QCOMPARE(node.calls.broadcastTransaction.load(), 0);
-        if (authority == 0) model.sign();
+        if (authority == 0) { model.sign(); QVERIFY(AwaitIdle(model)); }
         model.detachWallet(); model.refreshState(); model.setNode(nullptr);
         QVERIFY(!model.canSign()); QVERIFY(!model.canBroadcast());
+    }
+
+    void capturedLongPasswordUsesOriginalActionAndNativeMaterialization_data()
+    {
+        QTest::addColumn<bool>("close_before_effect");
+        QTest::newRow("held-gui-result")<<false;
+        QTest::newRow("original-action-after-close")<<true;
+    }
+    void capturedLongPasswordUsesOriginalActionAndNativeMaterialization()
+    {
+        QFETCH(bool,close_before_effect);ManualExecutionEnvironment environment;
+        auto wallet=std::make_shared<PsbtTestWallet>();wallet->encrypted=true;wallet->locked=true;
+        wallet->expected_password=std::string(40'000,'x');
+        auto opening=std::make_shared<walletopening::Session>(environment.scheduler,environment.scheduler,std::make_shared<std::atomic_bool>(false),[]{});
+        QVERIFY(opening->start(wallet));environment.drain();opening->take();
+        PsbtQmlModel model{wallet.get(),nullptr};model.configureSession(opening,{environment.scheduler,{},[&](auto turn){environment.post(std::move(turn));}});
+        QTemporaryDir directory;QVERIFY(directory.isValid());const auto path=directory.filePath("long-secret.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeUnsignedPsbt(),path),QString{});
+        QVERIFY(model.requestLoadFromFile(path));environment.drain();environment.publishAll();QVERIFY(model.canSign());
+        QString original=QString::fromStdString(wallet->expected_password);
+        const auto ticket=model.requestSignWithPassphrase(original);QVERIFY(ticket);QCOMPARE(wallet->unlock_calls,0);
+        original.fill(QChar{'y'}); // Editing the source cannot retarget the captured action.
+        if(close_before_effect){model.detachWallet();opening->retire();}
+        QVERIFY(environment.step()); // Core owns materialization, unlock, signing and relock.
+        QCOMPARE(wallet->unlock_calls,1);QCOMPARE(wallet->observed_password,wallet->expected_password);
+        QCOMPARE(wallet->lock_calls,1);QVERIFY(wallet->locked);
+        if(!close_before_effect)QVERIFY(model.busy());
+        environment.drain(); // Actual result recorded while GUI publication remains held.
+        QSignalSpy notices{&model,&PsbtQmlModel::changed};environment.publishAll();
+        if(close_before_effect)QCOMPARE(notices.size(),0);
+        else{QCOMPARE(model.operationId(),ticket);QCOMPARE(model.phase(),PsbtQmlModel::Phase::Ready);QCOMPARE(wallet->private_accesses,0);model.detachWallet();opening->retire();}
+        environment.drain();environment.publishAll();QVERIFY(environment.quiescent());
     }
 
     void feeProofCannotOutliveDocument_data()
@@ -152,67 +312,101 @@ private Q_SLOTS:
         const std::array names{"success", "unknown", "throw", "rejected", "cleared", "replaced", "destroyed", "detached", "node-changed"};
         for (int i = 0; i < int(names.size()); ++i) QTest::newRow(names[i]) << i;
     }
+    void acceptedBroadcastAndDrainDoNotRequireGuiPublication()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        MockNode node;
+        QString actually_submitted;
+        node.broadcast_transaction_fn = [&](CTransactionRef tx, CAmount, CFeeRate, std::string&) {
+            actually_submitted = QString::fromStdString(tx->GetHash().ToString());
+            return node::TransactionError::OK;
+        };
+        PsbtQmlModel model{nullptr, &node};
+        model.setFeeServices({transport.scheduler, {}, [&](auto turn) { publications.push_back(std::move(turn)); }});
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("complete.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model.requestLoadFromFile(path));
+        QVERIFY(!model.loaded());
+        QVERIFY(transport.step(execution::Lane::Core));
+        QVERIFY(!model.loaded());
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(!model.loaded()); QCOMPARE(publications.size(), size_t{1});
+        auto publish = std::move(publications.front()); publications.pop_front(); publish();
+        QVERIFY(model.loaded()); QVERIFY(model.canBroadcast());
+        QVERIFY(model.requestBroadcast());
+        QVERIFY(!model.requestBroadcast());
+        QCOMPARE(node.calls.broadcastTransaction.load(), 0);
+        QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(node.calls.broadcastTransaction.load(), 1);
+        QVERIFY(!model.submitted());
+        model.detachWallet();
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(model.submitted());
+        QCOMPARE(model.submittedTxid(), actually_submitted);
+        QVERIFY(!model.canBroadcast());
+        QVERIFY(!publications.empty()); // Completion presentation remains held.
+        transport.drain();
+        QVERIFY(transport.quiescent());
+        QCOMPARE(node.calls.broadcastTransaction.load(), 1);
+    }
     void feeProofCannotOutliveDocument()
     {
         QFETCH(int, scenario);
         ManualExecutionEnvironment environment;
-        PsbtTestWallet wallet;
-        auto model = std::make_unique<PsbtQmlModel>(&wallet, nullptr);
+        auto wallet = std::make_shared<PsbtTestWallet>();
+        auto opening = std::make_shared<walletopening::Session>(environment.scheduler, environment.scheduler,
+            std::make_shared<std::atomic_bool>(false), [] {});
+        QVERIFY(opening->start(wallet)); environment.drain(); opening->take();
+        auto model = std::make_unique<PsbtQmlModel>(wallet.get(), nullptr);
         auto document = psbtfeefixture::Legacy(2, false);
         psbtfee::Outputs actual;
         for (auto& input : document.inputs) {
             actual.emplace(input.GetOutPoint(), input.non_witness_utxo->vout[input.prev_out]);
-            input.witness_utxo = input.non_witness_utxo->vout[input.prev_out];
-            input.non_witness_utxo = nullptr;
+            input.witness_utxo = input.non_witness_utxo->vout[input.prev_out]; input.non_witness_utxo = nullptr;
         }
         int reads{0};
-        model->setFeeServices({environment.scheduler,
+        model->configureSession(opening, {environment.scheduler,
             [&reads, &actual, scenario](const COutPoint& outpoint) -> std::optional<CTxOut> {
                 ++reads;
-                if (scenario == 1) return std::nullopt;
+                if (scenario == 1) return {};
                 if (scenario == 2) throw std::runtime_error("lookup failed");
                 return actual.at(outpoint);
             }, [&environment](auto publication) { environment.post(std::move(publication)); }});
         QTemporaryDir directory; QVERIFY(directory.isValid());
         const auto path = directory.filePath("needs-proof.psbt");
         QCOMPARE(PsbtQmlModel::SavePsbtToFile(document, path), QString{});
-        environment.reject_next = scenario == 3;
-        QCOMPARE(model->loadFromFile(path), QString{});
-        QVERIFY(!model->canBroadcast()); QVERIFY(!model->canSign()); QCOMPARE(reads, 0);
-        model->sign();
-        QCOMPARE(std::count(wallet.sign_args.begin(), wallet.sign_args.end(), true), 0);
+        environment.rejectNext(scenario == 3);
+        QVERIFY(model->requestLoadFromFile(path));
+        QCOMPARE(reads, 0); QVERIFY(!model->loaded()); QVERIFY(!model->canBroadcast());
         if (scenario == 3) {
-            QVERIFY(!model->error().isEmpty());
-            QVERIFY(environment.quiescent());
-            return;
-        }
-        QVERIFY(environment.step());
-        QVERIFY(!model->canBroadcast());
-        QVERIFY(environment.step());
-        QCOMPARE(environment.scheduler->pending(), size_t{0});
-        QVERIFY(!model->canBroadcast());
-        if (scenario == 4) model->clear();
-        if (scenario == 5) {
-            const auto other = directory.filePath("other.psbt");
-            QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeUnsignedPsbt(), other), QString{});
-            QCOMPARE(model->loadFromFile(other), QString{});
-        }
-        if (scenario == 6) model.reset();
-        if (scenario == 7) model->detachWallet();
-        if (scenario == 8) { model->setNode(nullptr); environment.drain(); }
-        environment.publishAll();
-        qInfo().noquote() << QString::fromStdString(environment.trace());
-        QVERIFY2(environment.quiescent(), environment.trace().c_str());
-        if (scenario == 6) return;
-        if (scenario == 0 || scenario == 8) {
-            QVERIFY(model->canBroadcast());
-            QVERIFY(model->summary().join(' ').contains("0.00500000 BTC"));
+            environment.drain(); environment.publishAll();
+            QCOMPARE(reads, 0); QVERIFY(!model->loaded()); QVERIFY(!model->error().isEmpty());
         } else {
-            QVERIFY(!model->canBroadcast());
-            if (scenario == 4) QVERIFY(!model->loaded());
-            if (scenario == 5) { QVERIFY(model->canSign()); QVERIFY(model->summary().join(' ').contains("0.00000500 BTC")); }
-            if (scenario == 7) { model->broadcast(); QVERIFY(!model->canBroadcast()); }
+            QVERIFY(environment.step()); // Native file/decode/lookup, no GUI publication.
+            QVERIFY(reads > 0); QVERIFY(!model->loaded());
+            QVERIFY(environment.step()); // Owned Domain result, GUI still held.
+            QVERIFY(!model->loaded());
+            if (scenario == 4) model->clear();
+            if (scenario == 5) {
+                const auto replacement = directory.filePath("replacement.psbt");
+                QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeUnsignedPsbt(), replacement), QString{});
+                QVERIFY(model->requestLoadFromFile(replacement));
+            }
+            if (scenario == 6) model.reset();
+            if (scenario == 7) model->detachWallet();
+            if (scenario == 8) { MockNode replacement; model->setNode(&replacement); model->setNode(nullptr); }
+            environment.drain(); environment.publishAll();
+            if (scenario == 0) { QVERIFY(model->loaded()); QVERIFY(model->canBroadcast()); }
+            if (scenario == 1 || scenario == 2) { QVERIFY(model->loaded()); QVERIFY(!model->canBroadcast()); QVERIFY(!model->error().isEmpty()); }
+            if (scenario == 4 || scenario == 7 || scenario == 8) { QVERIFY(!model->loaded()); QVERIFY(!model->canBroadcast()); }
+            if (scenario == 5) { QVERIFY(model->loaded()); QVERIFY(!model->canBroadcast()); }
         }
+        if (model) model->detachWallet();
+        model.reset();
+        opening->retire(); environment.drain(); environment.publishAll();
+        QVERIFY(environment.quiescent());
     }
 
     void invalidDataCannotRenderOrSign_data()
@@ -233,46 +427,84 @@ private Q_SLOTS:
         case 2: psbt.inputs[1].prev_out = psbt.inputs[0].prev_out; break;
         case 3: psbt.inputs[0].witness_utxo = psbt.inputs[0].non_witness_utxo->vout[0]; --psbt.inputs[0].witness_utxo.nValue; break;
         }
-        PsbtTestWallet wallet; MockNode node; PsbtQmlModel model{&wallet, &node};
+        auto wallet_owner = std::make_shared<PsbtTestWallet>(); auto& wallet = *wallet_owner; MockNode node; PsbtQmlModel model{&wallet, &node}; Configure(model, wallet_owner);
         QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("invalid.psbt");
         QCOMPARE(PsbtQmlModel::SavePsbtToFile(psbt, path), QString{});
-        QCOMPARE(model.loadFromFile(path), QString{});
+        QCOMPARE(AwaitLoad(model, path), QString{});
         QVERIFY(model.loaded()); QVERIFY(!model.canSign()); QVERIFY(!model.canBroadcast());
         QVERIFY(!model.error().isEmpty()); QVERIFY(!model.summary().isEmpty());
-        model.sign(); model.broadcast();
+        model.sign(); QVERIFY(AwaitIdle(model)); model.broadcast(); QVERIFY(AwaitIdle(model));
         QVERIFY(wallet.sign_args.empty()); QCOMPARE(node.calls.broadcastTransaction.load(), 0);
     }
     void unknownFeeBlocksDirectSigning()
     {
-        PsbtTestWallet wallet; MockNode node; PsbtQmlModel model{&wallet, &node};
+        auto wallet_owner = std::make_shared<PsbtTestWallet>(); auto& wallet = *wallet_owner; MockNode node; PsbtQmlModel model{&wallet, &node}; Configure(model, wallet_owner);
         QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("unknown.psbt");
         QCOMPARE(PsbtQmlModel::SavePsbtToFile(psbtfeefixture::Legacy(2, true), path), QString{});
-        QCOMPARE(model.loadFromFile(path), QString{});
+        QCOMPARE(AwaitLoad(model, path), QString{});
         QVERIFY(!model.canSign()); QVERIFY(!model.canBroadcast());
-        model.sign(); model.broadcast();
+        model.sign(); QVERIFY(AwaitIdle(model)); model.broadcast(); QVERIFY(AwaitIdle(model));
         QCOMPARE(std::count(wallet.sign_args.begin(), wallet.sign_args.end(), true), 0);
         QCOMPARE(node.calls.broadcastTransaction.load(), 0);
     }
+    void signerFailurePreservesAuthenticatedPartialSignatures_data()
+    {
+        QTest::addColumn<bool>("throws");
+        QTest::newRow("reported-error") << false;
+        QTest::newRow("exception-after-signing") << true;
+    }
+    void signerFailurePreservesAuthenticatedPartialSignatures()
+    {
+        QFETCH(bool, throws);
+        auto wallet_owner = std::make_shared<PsbtTestWallet>(); auto& wallet = *wallet_owner;
+        PsbtQmlModel model{&wallet, nullptr}; Configure(model, wallet_owner);
+        const auto signed_document = psbtfeefixture::Legacy(2, false);
+        auto partial = signed_document;
+        for (auto& input : partial.inputs) { input.final_script_sig.clear(); input.final_script_witness.SetNull(); }
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("partial.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(partial, path), QString{});
+        QCOMPARE(AwaitLoad(model, path), QString{});
+        QVERIFY(model.canSign());
+        wallet.on_sign = [&](PartiallySignedTransaction& document) {
+            document.inputs[0] = signed_document.inputs[0];
+            if (throws) throw std::runtime_error("signer failed after adding a valid signature");
+        };
+        if (!throws) wallet.fill_error = common::PSBTError::MISSING_INPUTS;
+        QVERIFY(model.requestSign()); QVERIFY(AwaitIdle(model));
+        QVERIFY(model.loaded()); QVERIFY(!model.complete()); QVERIFY(!model.canBroadcast());
+        QVERIFY(!model.error().isEmpty());
+        QVERIFY(model.psbt()->inputs[0].final_script_sig == signed_document.inputs[0].final_script_sig);
+        QVERIFY(model.psbt()->inputs[1].final_script_sig.empty());
+        QCOMPARE(model.psbt()->GetUnsignedTx()->GetHash(), signed_document.GetUnsignedTx()->GetHash());
+        QCOMPARE(wallet.private_accesses, 0);
+        const auto exported = directory.filePath("retained.psbt");
+        QCOMPARE(AwaitSave(model, exported), QString{});
+        const auto saved = DecodeRawPsbt(exported); QVERIFY(saved.has_value());
+        QVERIFY(saved->inputs[0].final_script_sig == signed_document.inputs[0].final_script_sig);
+    }
     void signingCannotReplaceApprovedFeeMetadata()
     {
-        PsbtTestWallet wallet; MockNode node; PsbtQmlModel model{&wallet, &node};
+        auto wallet_owner = std::make_shared<PsbtTestWallet>(); auto& wallet = *wallet_owner; MockNode node; PsbtQmlModel model{&wallet, &node}; Configure(model, wallet_owner);
         QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("approved.psbt");
         const auto approved = psbtfeefixture::Legacy(2, false);
-        QCOMPARE(PsbtQmlModel::SavePsbtToFile(approved, path), QString{});
-        QCOMPARE(model.loadFromFile(path), QString{});
+        auto incomplete = approved;
+        incomplete.inputs[1].final_script_sig.clear(); incomplete.inputs[1].final_script_witness.SetNull();
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(incomplete, path), QString{});
+        QCOMPARE(AwaitLoad(model, path), QString{});
         wallet.on_sign = [](PartiallySignedTransaction& psbt) {
             auto& input = psbt.inputs[1];
             input.witness_utxo = input.non_witness_utxo->vout[input.prev_out];
             input.witness_utxo.nValue -= psbtfeefixture::ACTUAL_FEE - 1;
             input.non_witness_utxo = nullptr;
         };
-        model.sign();
-        QCOMPARE(model.status(), QString("The transaction fee changed after review."));
+        model.sign(); QVERIFY(AwaitIdle(model));
+        QCOMPARE(model.error(), QString("The transaction fee changed after review."));
         QVERIFY(model.psbt()->inputs[1].non_witness_utxo);
         QCOMPARE(model.psbt()->inputs[1].non_witness_utxo->GetHash(), approved.inputs[1].non_witness_utxo->GetHash());
         QCOMPARE(node.calls.broadcastTransaction.load(), 0);
-        wallet.on_sign = {};
-        model.sign(); QVERIFY(model.canBroadcast());
+        wallet.on_sign = [approved](PartiallySignedTransaction& candidate) { candidate.inputs[1] = approved.inputs[1]; };
+        model.sign(); QVERIFY(AwaitIdle(model)); QVERIFY(model.canBroadcast());
     }
     void legacyFeeMetadataCannotEnableBroadcast_data()
     {
@@ -294,10 +526,10 @@ private Q_SLOTS:
         QTemporaryDir directory; QVERIFY(directory.isValid());
         const auto path = directory.filePath("legacy.psbt");
         QCOMPARE(PsbtQmlModel::SavePsbtToFile(psbt, path), QString{});
-        QCOMPARE(model.loadFromFile(path), QString{});
+        QCOMPARE(AwaitLoad(model, path), QString{});
         QVERIFY(model.complete());
         const bool can_broadcast = model.canBroadcast();
-        model.broadcast();
+        model.broadcast(); QVERIFY(AwaitIdle(model));
         if (forged) {
             QVERIFY(!can_broadcast); QCOMPARE(node.calls.broadcastTransaction.load(), 0);
             QVERIFY(model.summary().contains(QString("Transaction fee is not available.")));
@@ -323,15 +555,15 @@ void PsbtQmlModelTests::initTestCase()
 
 void PsbtQmlModelTests::loadsRawAndBase64Psbt()
 {
-    PsbtTestWallet wallet;
-    PsbtQmlModel model{&wallet, nullptr};
+    auto wallet_owner = std::make_shared<PsbtTestWallet>(); auto& wallet = *wallet_owner;
+    PsbtQmlModel model{&wallet, nullptr}; Configure(model, wallet_owner);
     const PartiallySignedTransaction psbt{MakeUnsignedPsbt()};
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
     const QString raw_path{temp_dir.filePath(QStringLiteral("raw.psbt"))};
     QCOMPARE(PsbtQmlModel::SavePsbtToFile(psbt, raw_path), QString{});
-    QCOMPARE(model.loadFromFile(raw_path), QString{});
+    QCOMPARE(AwaitLoad(model, raw_path), QString{});
     QVERIFY(model.loaded());
     QVERIFY(model.canSign());
     QCOMPARE(model.couldSignInputCount(), 1);
@@ -345,7 +577,7 @@ void PsbtQmlModelTests::loadsRawAndBase64Psbt()
     base64_file.close();
 
     model.clear();
-    QCOMPARE(model.loadFromFile(base64_path), QString{});
+    QCOMPARE(AwaitLoad(model, base64_path), QString{});
     QVERIFY(model.loaded());
     QCOMPARE(model.unsignedInputCount(), 1);
 }
@@ -361,7 +593,7 @@ void PsbtQmlModelTests::invalidFileSetsErrorAndClearResetsState()
     file.close();
 
     PsbtQmlModel model{nullptr, nullptr};
-    QVERIFY(!model.loadFromFile(path).isEmpty());
+    QVERIFY(!AwaitLoad(model, path).isEmpty());
     QVERIFY(!model.loaded());
     QVERIFY(!model.error().isEmpty());
 
@@ -372,16 +604,21 @@ void PsbtQmlModelTests::invalidFileSetsErrorAndClearResetsState()
 
 void PsbtQmlModelTests::signUsesInjectedWallet()
 {
-    PsbtTestWallet wallet;
-    PsbtQmlModel model{&wallet, nullptr};
+    auto wallet_owner = std::make_shared<PsbtTestWallet>(); auto& wallet = *wallet_owner;
+    PsbtQmlModel model{&wallet, nullptr}; Configure(model, wallet_owner);
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
     const QString path{temp_dir.filePath(QStringLiteral("unsigned.psbt"))};
     QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeUnsignedPsbt(), path), QString{});
-    QCOMPARE(model.loadFromFile(path), QString{});
+    QCOMPARE(AwaitLoad(model, path), QString{});
 
-    model.sign();
+    wallet.encrypted=true;wallet.locked=true;wallet.expected_password=std::string(40'000,'p');
+    QVERIFY(model.requestSignWithPassphrase(QString::fromStdString(wallet.expected_password)));QVERIFY(AwaitIdle(model));
+    QCOMPARE(wallet.unlock_calls,1);QCOMPARE(wallet.observed_password,wallet.expected_password);
+    QVERIFY(wallet.unlock_thread!=QThread::currentThread());QVERIFY(wallet.locked);
+    QVERIFY(wallet.effect_thread != QThread::currentThread());
+    QCOMPARE(wallet.private_accesses, 0);
     QCOMPARE(wallet.sign_args, std::vector<bool>({false, true, false}));
     QVERIFY(model.status().contains(QStringLiteral("Signed 1 input")));
 }
@@ -400,8 +637,8 @@ void PsbtQmlModelTests::savePreservesPsbtMetadata()
     QCOMPARE(PsbtQmlModel::SavePsbtToFile(psbt, source_path), QString{});
 
     PsbtQmlModel model{nullptr, nullptr};
-    QCOMPARE(model.loadFromFile(source_path), QString{});
-    QCOMPARE(model.saveToFile(saved_path), QString{});
+    QCOMPARE(AwaitLoad(model, source_path), QString{});
+    QCOMPARE(AwaitSave(model, saved_path), QString{});
 
     const auto saved{DecodeRawPsbt(saved_path)};
     QVERIFY(saved.has_value());
@@ -423,12 +660,14 @@ void PsbtQmlModelTests::broadcastsCompletePsbt()
     QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
 
     PsbtQmlModel model{nullptr, &node};
-    QCOMPARE(model.loadFromFile(path), QString{});
+    QCOMPARE(AwaitLoad(model, path), QString{});
     QVERIFY(model.complete());
     QVERIFY(model.canBroadcast());
 
-    model.broadcast();
-    QVERIFY(model.status().startsWith(QStringLiteral("Transaction broadcast successfully.")));
+    model.broadcast(); QVERIFY(AwaitIdle(model));
+    QVERIFY(model.submitted());
+    QVERIFY(!model.submittedTxid().isEmpty());
+    QVERIFY(model.status().startsWith(QStringLiteral("Transaction accepted by the local node.")));
     QCOMPARE(node.calls.broadcastTransaction.load(), 1);
 }
 

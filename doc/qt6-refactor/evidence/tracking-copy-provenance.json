@@ -1,0 +1,26 @@
+[
+  {
+    "file": "schedule-ownership.csv",
+    "original_sha256": "04be736a6e3441e01289060dce87cecafa66ae4872f2020decf0aca0c35c0666",
+    "published_sha256": "4b124867dca06f05a03ca80710f14c10b475e71c94412756f0676a5866916ffe",
+    "normalization": "CRLF to LF and a single final newline; CSV parsed fields/rows unchanged; original shared file untouched"
+  },
+  {
+    "file": "scope-assignments.csv",
+    "original_sha256": "e1696c328d9d3492d00ee3096565428c0eddedf9c893d0fd416e3cb42df96ca6",
+    "published_sha256": "2175d7677527b186eca1aef2267fa1d907afe390f23645dbbbca546820541c81",
+    "normalization": "CRLF to LF and a single final newline; CSV parsed fields/rows unchanged; original shared file untouched"
+  },
+  {
+    "file": "steps.csv",
+    "original_sha256": "269ee0415f967ff9a48a6d7a7a75ee363accf1bdd527306f643bf003f7d6f237",
+    "published_sha256": "cd75706faee53ce55e5499278ef6c8fd66b46f216d59ea03a880882e791289de",
+    "normalization": "CRLF to LF and a single final newline; CSV parsed fields/rows unchanged; original shared file untouched"
+  },
+  {
+    "file": "worker-orders.md",
+    "original_sha256": "5e793dc800d056a978f20d34f9af25b36f679764b3a22be59c97d138111be6e2",
+    "published_sha256": "53c13702f180b1f9fcd8e232ba6a8452c6b76b651b52c05a1bceb1f2c34b70be",
+    "normalization": "CRLF to LF and a single final newline; CSV parsed fields/rows unchanged; original shared file untouched"
+  }
+]

@@ -29,6 +29,16 @@ TestCase {
         WalletCreationModal { }
     }
 
+    Component {
+        id: boundedCreateFieldsComponent
+        CreateWalletFields { width: 700; watchOnly: false; nameError: ""; xpubChecked: true; validXpub: true }
+    }
+
+    Component {
+        id: boundedExternalFieldsComponent
+        ExternalSignerWalletFields { width: 700; defaultWalletName: "Signer"; nameError: ""; creatingWallet: false }
+    }
+
     function init() {
         testSetup.failOnWarnings()
         walletController.reset()
@@ -53,6 +63,35 @@ TestCase {
             const position = item.mapToItem(viewport, 0, 0)
             return position.y >= 8 && position.y + item.height <= viewport.height - 8
         }, 1000, "Focused control and its focus outline must be visible")
+    }
+
+    function test_operation_errors_use_bounded_summaries_and_virtual_full_details() {
+        const original = "Original operation error: " + "z".repeat(6000)
+        const createFields = createTemporaryObject(boundedCreateFieldsComponent, this)
+        verify(createFields !== null)
+        walletController.walletCreateError = original
+        walletController.walletCreateErrorChanged()
+        const summary = findChild(createFields, "createWalletFormErrorText")
+        compare(summary.text, original.slice(0, 1024))
+        const details = findChild(createFields, "walletOperationErrorDetails")
+        verify(details !== null)
+        tryCompare(details, "count", Math.ceil(original.length / 1024))
+        findChild(createFields, "walletOperationErrorDetailsButton").clicked()
+        tryCompare(details, "visible", true)
+        details.positionViewAtIndex(0, ListView.Beginning)
+        tryVerify(function() { return details.itemAtIndex(0) !== null })
+        compare(details.itemAtIndex(0).content, original.slice(0, 1024))
+        details.positionViewAtEnd()
+        tryVerify(function() { return details.itemAtIndex(details.count - 1) !== null })
+        compare(details.itemAtIndex(details.count - 1).content, original.slice((details.count - 1) * 1024))
+
+        const externalFields = createTemporaryObject(boundedExternalFieldsComponent, this)
+        verify(externalFields !== null)
+        walletController.walletLoadError = original
+        walletController.walletLoadErrorChanged()
+        compare(findChild(externalFields, "externalWalletNameError").text, original.slice(0, 1024))
+        const externalDetails = findChild(externalFields, "walletOperationErrorDetails")
+        tryCompare(externalDetails, "count", Math.ceil(original.length / 1024))
     }
 
     function test_keyboard_navigation_scrolls_wallet_form_at_minimum_window_size() {
@@ -111,8 +150,9 @@ TestCase {
         xpub.text = "invalid"
         compare(form.canCreate, false)
         xpub.text = validXpub
-        compare(form.canCreate, true)
+        tryCompare(form, "canCreate", true)
 
+        tryCompare(form, "canCreate", true)
         findChild(form, "createWalletFormCreateButton").clicked()
         tryVerify(function() { return findChild(flow, "walletCreationReadyPage") !== null })
         const ready = findChild(flow, "walletCreationReadyPage")
@@ -142,7 +182,7 @@ TestCase {
         compare(form.title, "")
         compare(findChild(form, "externalWalletNameInput").text, "trezor_t2")
         compare(form.primaryButton, findChild(form, "createExternalWalletButton"))
-        compare(form.primaryButton.enabled, true)
+        tryCompare(form.primaryButton, "enabled", true)
         form.primaryButton.clicked()
 
         tryVerify(function() { return findChild(flow, "externalWalletCreatedPage") !== null })
@@ -187,7 +227,7 @@ TestCase {
         compare(form.canCreate, false)
         acknowledgement.clicked()
         compare(acknowledgement.loadedTrailingItem.checked, true)
-        compare(form.canCreate, true)
+        tryCompare(form, "canCreate", true)
         encrypt.checked = false
         compare(acknowledgement.loadedTrailingItem.checked, false)
         compare(unencryptedAcknowledgement.visible, true)
@@ -196,7 +236,7 @@ TestCase {
         compare(create.enabled, false)
         unencryptedAcknowledgement.clicked()
         compare(unencryptedAcknowledgement.loadedTrailingItem.checked, true)
-        compare(form.canCreate, true)
+        tryCompare(form, "canCreate", true)
         encrypt.checked = true
         encrypt.checked = false
         compare(unencryptedAcknowledgement.loadedTrailingItem.checked, false)
@@ -224,12 +264,13 @@ TestCase {
         findChild(form, "createWalletPasswordRepeatInput").text = "correct horse battery staple"
         compare(form.canCreate, false)
         findChild(form, "createWalletPasswordConfirmToggle").clicked()
-        compare(form.canCreate, true)
+        tryCompare(form, "canCreate", true)
         let warningOpened = false
         const warning = findChild(form, "createWalletUnencryptedWarning")
         warning.visibleChanged.connect(function() {
             if (warning.visible) warningOpened = true
         })
+        tryCompare(form, "canCreate", true)
         findChild(form, "createWalletFormCreateButton").clicked()
         tryVerify(function() { return findChild(flow, "walletCreationReadyPage") !== null })
         compare(warningOpened, false)
@@ -280,6 +321,7 @@ TestCase {
         findChild(form, "createWalletPasswordInput").text = "correct horse battery staple"
         findChild(form, "createWalletPasswordRepeatInput").text = "correct horse battery staple"
         findChild(form, "createWalletPasswordConfirmToggle").clicked()
+        tryCompare(form, "canCreate", true)
         findChild(form, "createWalletFormCreateButton").clicked()
         tryVerify(function() { return findChild(flow, "walletCreationReadyPage") !== null })
         return findChild(flow, "walletCreationReadyPage")

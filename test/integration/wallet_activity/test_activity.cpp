@@ -2,13 +2,17 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <test/mocks/receiverequesttest.h>
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <qml/models/activityfilterproxymodel.h>
+#include <qml/models/activitydetailmodel.h>
 #include <qt/bitcoinunits.h>
 
 #include <QDate>
 #include <QFile>
+#include <QPointer>
+#include <QQuickItem>
 #include <QTemporaryDir>
 
 #include <initializer_list>
@@ -87,7 +91,7 @@ class ActivityIntegrationTests : public QObject
         request->setLabel("Alice");
         request->setMessage("pizza");
         request->setNoteSelf("Lunch payment");
-        if (!m_wallet->commitPaymentRequest()) return false;
+        if (!AwaitReceiveRequest(m_wallet->commitPaymentRequest())) return false;
         m_request_address = request->address();
         m_request_id = request->id();
 
@@ -202,14 +206,46 @@ private Q_SLOTS:
         QVERIFY(SelectActivityTypes(m_app, {}));
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", m_reward_txid));
         QTRY_COMPARE(m_filter->rowCount(), 1);
-        auto* row = qmltest::WaitForVisible(m_app, qPrintable("activityItem_" + m_reward_txid));
+        const QString row_name = QStringLiteral("activityItem_") + m_reward_txid;
+        const QPointer<QObject> global_row{qmltest::WaitForVisible(m_app, qPrintable(row_name))};
+        QVERIFY(global_row);
+        auto* list = qmltest::Find(m_app, "activityListView"); QVERIFY(list);
+        QCOMPARE(list->property("model").value<QObject*>(), static_cast<QObject*>(m_filter));
+        // QObject traversal includes pooled delegates, whose visible flag and
+        // old role values can survive model detachment while Settings is open.
+        // Inspect the delegate currently assigned to the selected model row.
+        const auto activeRow = [&]() -> QObject* {
+            QQuickItem* delegate{nullptr};
+            if (!QMetaObject::invokeMethod(list, "itemAtIndex", Qt::DirectConnection,
+                    Q_RETURN_ARG(QQuickItem*, delegate), Q_ARG(int, 0)) || !delegate) return nullptr;
+            return qmltest::Find(delegate, row_name);
+        };
+        QPointer<QObject> row;
+        QTRY_VERIFY((row = activeRow()));
+        if (global_row != row) qInfo() << "Pooled Activity lookup:" << global_row.data()
+            << "parent" << (global_row ? global_row->parent() : nullptr)
+            << "amount" << (global_row ? global_row->property("amount") : QVariant{})
+            << "active" << row.data() << "parent" << row->parent() << "amount" << row->property("amount");
+        QTRY_VERIFY((row = activeRow()) && row->property("activityId").toString() == m_filter->index(0, 0).data(TransactionActivityModel::IdRole).toString());
+        QCOMPARE(row->property("txid").toString(), m_reward_txid);
+        QTRY_COMPARE(([&] { row = activeRow(); return row ? row->property("amount").toString() : QString{}; })(),
+                     m_filter->index(0, 0).data(TransactionActivityModel::AmountRole).toString());
         QVERIFY(row);
-        QTRY_COMPARE(row->property("amount").toString(), m_filter->index(0, 0).data(TransactionActivityModel::AmountRole).toString());
+        QCOMPARE(row->property("activityId").toString(), m_filter->index(0, 0).data(TransactionActivityModel::IdRole).toString());
+        QCOMPARE(row->property("txid").toString(), m_reward_txid);
         const auto amount = row->property("amount").toString();
         QVERIFY(!amount.isEmpty());
         QVERIFY(qmltest::Click(qmltest::Find(row, "activityRowOpenButton")));
         auto* details = qmltest::WaitForVisible(m_app, "activityDetailsPage");
         QVERIFY(details);
+        auto* detail_model = qobject_cast<ActivityDetailModel*>(details->property("activityModel").value<QObject*>());
+        QVERIFY(detail_model);
+        QCOMPARE(detail_model->parent(), details);
+        QCOMPARE(detail_model->transactionId(), m_reward_txid);
+        QTRY_VERIFY(!detail_model->pending());
+        QVERIFY(detail_model->error().isEmpty());
+        QCOMPARE(detail_model->selectedTransactionDetails().value("txid").toString(), m_reward_txid);
+        QVERIFY(detail_model->detailOutputs()->rowCount() > 0);
         QTRY_COMPARE(details->property("amount").toString(), amount);
     }
 

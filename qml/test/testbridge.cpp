@@ -12,6 +12,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaMethod>
+#include <QMetaEnum>
+#include <QAbstractItemModel>
 #include <QMetaObject>
 #include <QMetaProperty>
 #include <QEventLoop>
@@ -29,8 +31,74 @@
 #include <QVariant>
 
 #include <algorithm>
+#include <limits>
 
 namespace {
+// Automation observes cached scalar/row ports. Each request traverses a bounded
+// QObject path and, for model data, serializes only one bounded role value.
+QObject* propertyObject(QObject* root, const QString& path)
+{
+    if (!root || path.isEmpty() || path.size() > 512) return nullptr;
+    const auto parts = path.split('.');
+    if (parts.size() > 16) return nullptr;
+    QPointer<QObject> current{root};
+    for (const auto& part : parts) {
+        if (!current || part.isEmpty() || part.size() > 128) return nullptr;
+        const auto value = current->property(part.toUtf8().constData());
+        if (!current) return nullptr;
+        current = value.value<QObject*>();
+    }
+    return current.data();
+}
+
+void insertTypedValue(QJsonObject& response, const QVariant& value)
+{
+    if (value.metaType() == QMetaType::fromType<quint64>()) {
+        // JSON doubles cannot identify every original uint64 action. Keep the
+        // decimal representation lossless; the driver restores a Python int.
+        response[QStringLiteral("valueType")] = QStringLiteral("quint64");
+        response[QStringLiteral("value")] = QString::number(value.toULongLong());
+    } else response[QStringLiteral("value")] = QJsonValue::fromVariant(value);
+}
+
+bool boundedRoleValue(const QVariant& value)
+{
+    std::vector<std::pair<QVariant, int>> pending;
+    pending.reserve(128); pending.emplace_back(value, 0);
+    int nodes{0}; qsizetype characters{0};
+    while (!pending.empty()) {
+        auto [item, depth] = std::move(pending.back()); pending.pop_back();
+        if (depth > 8 || ++nodes > 128) return false;
+        const auto type = item.metaType().id();
+        if (!item.isValid() || item.isNull() || type == QMetaType::Bool || type == QMetaType::Int ||
+            type == QMetaType::UInt || type == QMetaType::Long || type == QMetaType::ULong ||
+            type == QMetaType::LongLong || type == QMetaType::ULongLong || type == QMetaType::Short ||
+            type == QMetaType::UShort || type == QMetaType::Char || type == QMetaType::SChar ||
+            type == QMetaType::UChar || type == QMetaType::Float || type == QMetaType::Double) continue;
+        if (type == QMetaType::QString) {
+            const auto text = item.toString(); characters += text.size();
+            if (text.size() > 1024 || characters > 16384) return false;
+        } else if (type == QMetaType::QVariantMap) {
+            const auto values = item.toMap();
+            if (values.size() > 32 || pending.size() + size_t(values.size()) > 128) return false;
+            for (auto it = values.cbegin(); it != values.cend(); ++it) {
+                characters += it.key().size();
+                if (it.key().size() > 128 || characters > 16384) return false;
+                pending.emplace_back(it.value(), depth + 1);
+            }
+        } else if (type == QMetaType::QStringList) {
+            const auto values = item.toStringList();
+            if (values.size() > 32 || pending.size() + size_t(values.size()) > 128) return false;
+            for (const auto& child : values) pending.emplace_back(QVariant{child}, depth + 1);
+        } else if (type == QMetaType::QVariantList) {
+            const auto values = item.toList();
+            if (values.size() > 32 || pending.size() + size_t(values.size()) > 128) return false;
+            for (const auto& child : values) pending.emplace_back(child, depth + 1);
+        } else return false;
+    }
+    return true;
+}
+
 QByteArray okResponse()
 {
     QJsonObject resp;
@@ -477,6 +545,10 @@ QByteArray TestBridge::processCommand(const QByteArray& json_cmd)
         return cmdGetProperty(
             obj.value(QStringLiteral("objectName")).toString(),
             obj.value(QStringLiteral("prop")).toString());
+    } else if (cmd == QLatin1String("get_enum_property")) {
+        return cmdGetEnumProperty(obj.value(QStringLiteral("objectName")).toString(), obj.value(QStringLiteral("prop")).toString());
+    } else if (cmd == QLatin1String("get_model_row")) {
+        return cmdGetModelRow(obj);
     } else if (cmd == QLatin1String("set_property")) {
         return cmdSetProperty(
             obj.value(QStringLiteral("objectName")).toString(),
@@ -676,8 +748,99 @@ QByteArray TestBridge::cmdGetProperty(const QString& object_name, const QString&
     if (json_value.isNull() && value.canConvert<QVariantList>()) {
         json_value = QJsonValue::fromVariant(value.toList());
     }
-    resp[QStringLiteral("value")] = json_value;
+    if (value.metaType() == QMetaType::fromType<quint64>()) insertTypedValue(resp, value);
+    else resp[QStringLiteral("value")] = json_value;
     return QJsonDocument(resp).toJson(QJsonDocument::Compact);
+}
+
+QByteArray TestBridge::cmdGetEnumProperty(const QString& object_name, const QString& prop)
+{
+    const QPointer<QObject> root{findObjectByName(object_name)};
+    if (!root || prop.isEmpty() || prop.size() > 512) return errorResponse(QStringLiteral("Enum object/property is unavailable"));
+    const auto dot = prop.lastIndexOf('.');
+    const QPointer<QObject> owner{dot < 0 ? root.data() : propertyObject(root, prop.left(dot))};
+    const auto key = prop.mid(dot + 1).toUtf8();
+    if (!owner || key.isEmpty() || key.size() > 128) return errorResponse(QStringLiteral("Enum property owner is unavailable"));
+    const auto index = owner->metaObject()->indexOfProperty(key.constData());
+    if (index < 0) return errorResponse(QStringLiteral("Enum property does not exist"));
+    const auto property = owner->metaObject()->property(index);
+    if (!property.isEnumType()) return errorResponse(QStringLiteral("Property is not a typed enum"));
+    const auto value = property.read(owner);
+    if (!owner || !root) return errorResponse(QStringLiteral("Enum property owner changed"));
+    const auto enumerator = property.enumerator();
+    const auto* name = enumerator.valueToKey(value.toInt());
+    if (!name) return errorResponse(QStringLiteral("Enum has no named value"));
+    QJsonObject response;
+    response[QStringLiteral("key")] = QString::fromLatin1(name);
+    response[QStringLiteral("enum")] = QString::fromLatin1(enumerator.name());
+    response[QStringLiteral("value")] = value.toInt();
+    return QJsonDocument(response).toJson(QJsonDocument::Compact);
+}
+
+QByteArray TestBridge::cmdGetModelRow(const QJsonObject& command)
+{
+    const QPointer<QObject> root{findObjectByName(command.value(QStringLiteral("objectName")).toString())};
+    const auto path = command.value(QStringLiteral("prop")).toString();
+    const QPointer<QAbstractItemModel> model{qobject_cast<QAbstractItemModel*>(propertyObject(root, path))};
+    if (!root || !model) return errorResponse(QStringLiteral("Read-only model is unavailable"));
+    quint64 model_id = m_observed_models.value(model.data());
+    if (!model_id) {
+        if (m_observed_models.size() >= 128 || m_next_model_id == std::numeric_limits<quint64>::max())
+            return errorResponse(QStringLiteral("Model observation inventory is full"));
+        model_id = ++m_next_model_id;
+        auto* const original_model = model.data();
+        m_observed_models.insert(original_model, model_id);
+        connect(original_model, &QObject::destroyed, this, [this, original_model] { m_observed_models.remove(original_model); });
+    }
+    if (command.contains(QStringLiteral("modelId"))) {
+        bool valid{false}; const auto id_text = command.value(QStringLiteral("modelId")).toString();
+        const auto expected_model = id_text.toULongLong(&valid);
+        if (!valid || id_text.size() > 20 || expected_model != model_id)
+            return errorResponse(QStringLiteral("Original model identity changed"));
+    }
+    const auto revision_path = command.value(QStringLiteral("revisionProperty")).toString();
+    bool revision_ok{false};
+    const auto revision_text = command.value(QStringLiteral("revision")).toString();
+    const quint64 expected_revision = revision_text.toULongLong(&revision_ok);
+    if (!revision_path.isEmpty() && (!revision_ok || revision_text.size() > 20 || revision_path.size() > 512))
+        return errorResponse(QStringLiteral("Original model revision is invalid"));
+    const auto original = [&] {
+        if (!root || !model || propertyObject(root, path) != model.data()) return false;
+        if (revision_path.isEmpty()) return true;
+        const auto dot = revision_path.lastIndexOf('.');
+        const QPointer<QObject> owner{dot < 0 ? root.data() : propertyObject(root, revision_path.left(dot))};
+        const auto key = revision_path.mid(dot + 1).toUtf8();
+        if (!owner || key.isEmpty() || key.size() > 128) return false;
+        const auto value = owner->property(key.constData());
+        bool valid{false}; const auto revision = value.toULongLong(&valid);
+        return root && owner && model && valid && revision == expected_revision;
+    };
+    if (!original()) return errorResponse(QStringLiteral("Original model revision no longer matches"));
+    const int count = model->rowCount();
+    const int expected_count = command.value(QStringLiteral("expectedRows")).toInt(-1);
+    if (!original() || (expected_count >= 0 && count != expected_count)) return errorResponse(QStringLiteral("Original model row count changed"));
+    const int row = command.value(QStringLiteral("row")).toInt(-1);
+    if (row < -1 || row >= count) return errorResponse(QStringLiteral("Model row is outside the original inventory"));
+    QVariant value;
+    if (row >= 0) {
+        const auto role_name = command.value(QStringLiteral("role")).toString().toUtf8();
+        if (role_name.isEmpty() || role_name.size() > 128) return errorResponse(QStringLiteral("Model role is invalid"));
+        const auto roles = model->roleNames();
+        if (!original() || roles.size() > 64) return errorResponse(QStringLiteral("Model role inventory is unavailable"));
+        const auto role = std::find_if(roles.cbegin(), roles.cend(), [&](const auto& name) { return name == role_name; });
+        if (role == roles.cend()) return errorResponse(QStringLiteral("Model role does not exist"));
+        const auto index = model->index(row, 0);
+        if (!original()) return errorResponse(QStringLiteral("Original model changed before observation"));
+        value = model->data(index, role.key());
+        if (!original() || model->rowCount() != count) return errorResponse(QStringLiteral("Original model changed during observation"));
+        if (!boundedRoleValue(value)) return errorResponse(QStringLiteral("Model role exceeds bounded observation limits"));
+    }
+    QJsonObject response;
+    response[QStringLiteral("modelId")] = QString::number(model_id);
+    response[QStringLiteral("rowCount")] = count;
+    response[QStringLiteral("revision")] = revision_path.isEmpty() ? QJsonValue{} : QJsonValue{QString::number(expected_revision)};
+    insertTypedValue(response, value);
+    return QJsonDocument(response).toJson(QJsonDocument::Compact);
 }
 
 QByteArray TestBridge::cmdClick(const QString& object_name)
@@ -802,17 +965,19 @@ QByteArray TestBridge::cmdInvokePropertyObject(const QString& object_name, const
 
     const QMetaMethod meta_method = meta->method(idx);
     const bool returns_bool = meta_method.returnMetaType() == QMetaType::fromType<bool>();
+    const bool returns_ticket = meta_method.returnMetaType() == QMetaType::fromType<quint64>();
     bool bool_result{false};
+    quint64 ticket_result{0};
     bool invoked{false};
     if (args.isEmpty()) {
-        invoked = returns_bool
-            ? meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(bool, bool_result))
-            : meta_method.invoke(property_object, Qt::DirectConnection);
+        if (returns_bool) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(bool, bool_result));
+        else if (returns_ticket) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(quint64, ticket_result));
+        else invoked = meta_method.invoke(property_object, Qt::DirectConnection);
     } else {
         const QString arg = args.at(0).toString();
-        invoked = returns_bool
-            ? meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(bool, bool_result), Q_ARG(QString, arg))
-            : meta_method.invoke(property_object, Qt::DirectConnection, Q_ARG(QString, arg));
+        if (returns_bool) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(bool, bool_result), Q_ARG(QString, arg));
+        else if (returns_ticket) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(quint64, ticket_result), Q_ARG(QString, arg));
+        else invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_ARG(QString, arg));
     }
     if (!invoked) {
         return errorResponse(QStringLiteral("Could not invoke %1 on %2.%3").arg(QString::fromUtf8(signature), object_name, prop));
@@ -821,7 +986,7 @@ QByteArray TestBridge::cmdInvokePropertyObject(const QString& object_name, const
     QJsonObject resp = QJsonDocument::fromJson(okResponse()).object();
     if (returns_bool) {
         resp[QStringLiteral("value")] = bool_result;
-    }
+    } else if (returns_ticket) insertTypedValue(resp, QVariant::fromValue(ticket_result));
     return QJsonDocument(resp).toJson(QJsonDocument::Compact);
 }
 

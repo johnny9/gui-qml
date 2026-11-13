@@ -18,6 +18,11 @@ Page {
 
     property WalletQmlModel wallet: null
     readonly property WalletQmlModelTransaction transaction: wallet ? wallet.currentTransaction : null
+    readonly property var flowDetails: wallet ? wallet.currentTransactionFlowDetails : null
+    readonly property bool detailsContextValid: wallet !== null && wallet.available && transaction !== null
+        && flowDetails !== null && flowDetails.context === transaction
+        && flowDetails.revision === wallet.currentTransactionFlowRevision
+    readonly property bool detailsReady: detailsContextValid && !flowDetails.pending && flowDetails.error.length === 0
     readonly property bool importedPsbt: wallet && wallet.currentTransactionIsImportedPsbt === true
     readonly property bool canSend: wallet && wallet.currentTransactionCanSend
     readonly property bool feePending: wallet && wallet.transactionFeePending
@@ -29,22 +34,30 @@ Page {
         || (wallet && wallet.keySchemeKind === WalletQmlModel.WatchOnly && !canBroadcast)
     readonly property real sidePadding: width < 640 ? 16 : 40
     readonly property real reviewContentWidth: Math.max(0, Math.min(1100, width - sidePadding * 2))
+    readonly property bool sendBusy: wallet !== null && (wallet.sendBusy || wallet.psbtActionBusy)
+    property WalletQmlModelTransaction sendReview: null
+    property double sendTicket: 0
     property bool sending: false
+    property double psbtTicket: 0
+    property WalletQmlModelTransaction psbtReview: null
+    property bool psbtSaving: false
     property string saveStatus: ""
     property bool saveError: false
 
     onVisibleChanged: {
         if (!visible) {
             sweepAlert.close()
-            externalSignerActions.reset()
+            reviewEntryPopup.close()
+            sendPassphrasePopup.close()
             sending = false
+            sendTicket = 0
             saveStatus = ""
             saveError = false
         }
     }
 
     signal back()
-    signal transactionSent(string txid)
+    signal transactionSent(string txid, int submissionState)
 
     function focusInitialControl() {
         reviewCloseButton.forceActiveFocus(Qt.TabFocusReason)
@@ -59,11 +72,12 @@ Page {
         }
     }
 
-    onWalletChanged: sweepAlert.close()
-    onTransactionChanged: sweepAlert.close()
+    onWalletChanged: { psbtTicket = 0; psbtReview = null; sendTicket = 0; sendReview = null; sweepAlert.close(); sendPassphrasePopup.close() }
+    onTransactionChanged: { sweepAlert.close(); reviewEntryPopup.close() }
+    onDetailsContextValidChanged: if (!detailsContextValid) reviewEntryPopup.close()
 
     function requestSend() {
-        if (sending || !wallet) return
+        if (sending || sendBusy || !wallet || !detailsReady) return
         if (wallet.currentTransactionSweepsWallet) {
             sweepAlert.reviewedTransaction = wallet.currentTransaction
             sweepAlert.open()
@@ -73,15 +87,11 @@ Page {
     }
 
     function commitSend() {
-        if (sending || !wallet) return
-        if (wallet.sendTransaction()) {
-            sending = true
-            transactionSent(transaction ? transaction.txid : "")
-        } else if (wallet.transactionNeedsUnlock) {
-            sendPassphrasePopup.reviewedTransaction = wallet.currentTransaction
-            sendPassphrasePopup.errorText = ""
-            sendPassphrasePopup.open()
-        }
+        if (sending || sendBusy || !wallet || !detailsReady) return
+        sendReview = wallet.currentTransaction
+        sendTicket = 0
+        sendTicket = wallet.requestSendTransaction()
+        handleSendOutcome()
     }
 
     // The send confirmations authorize the transaction that was shown when
@@ -89,23 +99,53 @@ Page {
     // object, which closes them and makes a pending submit stale; signing
     // updates the same object.
     function isCurrentTransaction(reviewed) {
-        return wallet !== null && reviewed !== null && reviewed === wallet.currentTransaction
+        return visible && wallet !== null && wallet.available && reviewed !== null && reviewed === wallet.currentTransaction
+    }
+
+    function handleSendOutcome() {
+            if (!root.sendTicket || root.wallet.sendOperationId !== root.sendTicket || !root.isCurrentTransaction(root.sendReview) || root.sending) return
+            if (root.wallet.sendState === WalletQmlModel.SendNeedsUnlock) {
+                sendPassphrasePopup.reviewedTransaction = root.sendReview
+                sendPassphrasePopup.errorText = root.wallet.transactionError
+                if (!sendPassphrasePopup.opened) sendPassphrasePopup.open()
+            } else if (root.wallet.sendState === WalletQmlModel.SendCommitted) {
+                sendPassphrasePopup.close()
+                root.sending = true
+                root.transactionSent(root.wallet.sendResultTxid, root.wallet.sendSubmission)
+            } else if (sendPassphrasePopup.opened && !root.sendBusy) {
+                sendPassphrasePopup.errorText = root.wallet.transactionError
+            }
     }
 
     Connections {
         target: root.wallet
+        function onSendOperationChanged() { root.handleSendOutcome() }
+        function onPsbtActionChanged() { root.handlePsbtOutcome() }
         function onCurrentTransactionChanged() {
             if (!root.isCurrentTransaction(sweepAlert.reviewedTransaction)) sweepAlert.close()
             if (!root.isCurrentTransaction(sendPassphrasePopup.reviewedTransaction)) sendPassphrasePopup.close()
         }
     }
 
-    function commitBroadcast() {
-        if (sending || !wallet) return
-        if (wallet.broadcastCurrentTransaction()) {
+    function handlePsbtOutcome() {
+        if (!psbtTicket || !wallet || wallet.psbtActionId !== psbtTicket || wallet.psbtActionBusy) return
+        psbtTicket = 0
+        if (!root.isCurrentTransaction(psbtReview)) return
+        if (psbtSaving) {
+            saveError = wallet.psbtActionState !== WalletQmlModel.PsbtSaved
+            saveStatus = saveError ? wallet.psbtActionError : qsTr("Saved.")
+        } else if (wallet.psbtActionState === WalletQmlModel.PsbtSubmitted && !sending) {
             sending = true
-            transactionSent(transaction ? transaction.txid : "")
+            transactionSent(wallet.psbtSubmittedTxid, WalletQmlModel.SubmissionAccepted)
         }
+    }
+    function commitBroadcast() {
+        if (sending || sendBusy || !wallet || !detailsReady || wallet.psbtActionBusy) return
+        psbtSaving = false
+        psbtReview = transaction
+        psbtTicket = 0
+        psbtTicket = wallet.requestBroadcastCurrentTransaction()
+        handlePsbtOutcome()
     }
 
     function defaultSavePsbtFileUrl() {
@@ -114,10 +154,13 @@ Page {
     }
 
     function savePsbt(path) {
-        if (!wallet || !String(path).length) return
-        const result = wallet.saveCurrentTransactionAsPsbt(String(path))
-        saveStatus = result.length ? result : qsTr("Saved.")
-        saveError = result.length > 0
+        if (!wallet || !String(path).length || wallet.psbtActionBusy) return
+        psbtSaving = true
+        psbtReview = transaction
+        psbtTicket = 0
+        psbtTicket = wallet.requestSaveCurrentTransactionAsPsbt(String(path))
+        if (!psbtTicket) { saveStatus = qsTr("Another wallet action is still running."); saveError = true }
+        else handlePsbtOutcome()
     }
 
     function startSavePsbt() {
@@ -226,41 +269,62 @@ Page {
                 objectName: "sendTransactionReviewRecipients"
                 Layout.fillWidth: true
                 title: qsTr("Recipients")
-                Column {
-                    id: recipientColumn
+                ListView {
+                    id: recipientRows
+                    objectName: "sendTransactionReviewRecipientRows"
                     Layout.fillWidth: true
-                    spacing: 0
-
-                    Repeater {
-                        model: root.transaction ? root.transaction.reviewedRecipients : []
-                        delegate: FormRow {
+                    Layout.preferredHeight: Math.min(360, Math.max(72, contentHeight))
+                    model: root.detailsReady ? root.flowDetails.recipientRows : null
+                    cacheBuffer: 0
+                    reuseItems: true
+                    clip: true
+                    ScrollBar.vertical: ScrollBar {}
+                    delegate: ColumnLayout {
+                        id: recipientCell
+                        objectName: "sendReviewRecipientPreview"
+                        required property int index
+                        required property var entry
+                        width: recipientRows.width
+                        spacing: 0
+                        FormRow {
                             id: recipientRow
-                            required property int index
-                            required property var modelData
-                            objectName: "sendTransactionReviewRecipient" + index
-                            width: recipientColumn.width
-                            showDivider: index < (root.transaction ? root.transaction.reviewedRecipients.length - 1 : 0)
+                            objectName: "sendTransactionReviewRecipient" + recipientCell.index
+                            Layout.fillWidth: true
+                            showDivider: recipientCell.index < recipientRows.count - 1
                             minimumRowHeight: 72
-                            title: modelData.label
-                            description: modelData.formattedAddress
+                            title: recipientCell.entry.label || ""
+                            description: recipientCell.entry.formattedAddress || ""
                             titleTextStyle: Theme.text.subheading
                             descriptionTextStyle: Theme.text.monoCaption
                             descriptionColor: Theme.color.neutral9
-                            showLeadingItem: modelData.hasPaymentRequest
+                            showLeadingItem: !!recipientCell.entry.hasPaymentRequest
                             leadingItem: ActivityRequestBadge {
-                                objectName: "sendTransactionReviewRecipient" + recipientRow.index + "RequestBadge"
+                                objectName: "sendTransactionReviewRecipient" + recipientCell.index + "RequestBadge"
                                 inactive: true
                                 surfaceColor: Theme.color.neutral1
                                 statusText: qsTr("Payment request recipient")
                             }
                             trailingItem: BitcoinAmountDisplayLabel {
-                                objectName: "sendTransactionReviewRecipient" + recipientRow.index + "Amount"
-                                text: recipientRow.modelData.amount
+                                objectName: "sendTransactionReviewRecipient" + recipientCell.index + "Amount"
+                                text: recipientCell.entry.amount || ""
                                 font: Theme.text.monoDescription.font
                                 color: Theme.color.neutral9
                             }
                         }
+                        TextButton {
+                            objectName: "sendTransactionReviewRecipientFields" + recipientCell.index
+                            text: recipientCell.entry.textTruncated ? qsTr("View complete recipient") : qsTr("View recipient fields")
+                            onClicked: root.openReviewEntry("recipients", recipientCell.index)
+                        }
                     }
+                }
+                BusyIndicator { visible: root.detailsContextValid && root.flowDetails.pending; running: visible }
+                CoreText {
+                    Layout.fillWidth: true
+                    visible: root.detailsContextValid && root.flowDetails.error.length > 0
+                    text: root.flowDetails ? root.flowDetails.error : ""
+                    color: Theme.color.red
+                    wrap: true
                 }
             }
 
@@ -317,10 +381,29 @@ Page {
                 interactive: false
             }
 
+            TransactionEntriesList {
+                objectName: "sendReviewAllInputs"
+                Layout.fillWidth: true
+                title: qsTr("All inputs")
+                entryModel: root.detailsReady ? root.flowDetails.inputRows : null
+                input: true
+                walletName: root.wallet && root.wallet.name ? root.wallet.name : qsTr("Your wallet")
+                onEntryRequested: (row) => root.openReviewEntry("inputs", row)
+            }
+            TransactionEntriesList {
+                objectName: "sendReviewAllOutputs"
+                Layout.fillWidth: true
+                title: qsTr("All outputs")
+                entryModel: root.detailsReady ? root.flowDetails.outputRows : null
+                walletName: root.wallet && root.wallet.name ? root.wallet.name : qsTr("Your wallet")
+                onEntryRequested: (row) => root.openReviewEntry("outputs", row)
+            }
+
             Separator { Layout.fillWidth: true }
 
             ExternalSignerReviewActions {
                 id: externalSignerActions
+                enabled: root.detailsReady
                 statusObjectName: "sendTransactionReviewSignerStatus"
                 buttonObjectName: "sendTransactionReviewSignerButton"
                 visible: root.showSend && root.wallet && root.wallet.hasExternalSigner
@@ -336,7 +419,7 @@ Page {
                 NeutralButton {
                     objectName: "sendTransactionReviewSaveButton"
                     buttonSize: NeutralButton.Large
-                    enabled: !!root.transaction && !root.sending
+                    enabled: !!root.transaction && !root.sending && !root.sendBusy
                     width: parent.width < 540 || !root.showSend && !root.showBroadcast || externalSignerActions.visible
                         ? parent.width : (parent.width - 12) / 2
                     height: 46
@@ -346,7 +429,7 @@ Page {
                 ContinueButton {
                     objectName: "sendTransactionReviewSendButton"
                     visible: (root.showSend && !externalSignerActions.visible) || root.showBroadcast
-                    enabled: !root.sending
+                    enabled: root.detailsReady && !root.sending && !root.sendBusy
                     width: parent.width < 540 ? parent.width : (parent.width - 12) / 2
                     height: 46
                     text: root.showBroadcast ? qsTr("Broadcast transaction") : qsTr("Send transaction")
@@ -374,6 +457,64 @@ Page {
             }
 
             Item { Layout.preferredHeight: 24 }
+        }
+    }
+
+    function openReviewEntry(side, row) {
+        if (!root.detailsReady) return
+        if (root.flowDetails.requestEntryDetails(side, row, root.transaction, root.wallet.currentTransactionFlowRevision)) reviewEntryPopup.open()
+    }
+    Popup {
+        id: reviewEntryPopup
+        objectName: "sendReviewEntryPopup"
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(720, Overlay.overlay ? Overlay.overlay.width - 32 : 720)
+        height: Math.min(600, Overlay.overlay ? Overlay.overlay.height - 32 : 600)
+        modal: true
+        padding: 20
+        contentItem: ColumnLayout {
+            spacing: 12
+            CoreText { text: qsTr("Complete entry"); font: Theme.text.subheading.font }
+            BusyIndicator { visible: !!root.flowDetails && root.flowDetails.entryDetailsBusy; running: visible }
+            CoreText {
+                Layout.fillWidth: true
+                visible: !!root.flowDetails && root.flowDetails.entryDetailsError.length > 0
+                text: root.flowDetails ? root.flowDetails.entryDetailsError : ""
+                color: Theme.color.red
+                wrap: true
+            }
+            ListView {
+                id: documentRows
+                objectName: "sendReviewEntryDocument"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                model: reviewEntryPopup.opened && root.detailsContextValid ? root.flowDetails.entryDocument : null
+                cacheBuffer: 0
+                reuseItems: true
+                clip: true
+                spacing: 12
+                ScrollBar.vertical: ScrollBar {}
+                delegate: ColumnLayout {
+                    id: documentRow
+                    required property var entry
+                    width: documentRows.width
+                    CoreText { Layout.fillWidth: true; text: documentRow.entry.field; font: Theme.text.captionStrong.font; wrap: true }
+                    TextArea {
+                        Layout.fillWidth: true
+                        text: documentRow.entry.content
+                        readOnly: true
+                        selectByMouse: true
+                        textFormat: TextEdit.PlainText
+                        wrapMode: TextEdit.WrapAnywhere
+                        font: Theme.text.monoCaption.font
+                        color: Theme.color.neutral9
+                        padding: 0
+                        background: null
+                    }
+                }
+            }
+            TextButton { text: qsTr("Close"); onClicked: reviewEntryPopup.close() }
         }
     }
 
@@ -412,22 +553,24 @@ Page {
         descriptionText: qsTr("Enter your wallet password to send this transaction.")
         confirmText: qsTr("Unlock and send")
         busyConfirmText: qsTr("Unlocking...")
+        property WalletQmlModel actionWallet: null
         property WalletQmlModelTransaction reviewedTransaction: null
+        readonly property bool contextValid: root.visible && actionWallet !== null
+            && actionWallet === root.wallet && actionWallet.available
+            && reviewedTransaction !== null && reviewedTransaction === actionWallet.currentTransaction
+        onAboutToShow: actionWallet = root.wallet
+        onContextValidChanged: if (!contextValid) close()
+        busy: actionWallet !== null && actionWallet.sendBusy
+        onAboutToHide: clearPassphraseField()
         onSubmitted: (passphrase) => {
-            if (!root.isCurrentTransaction(reviewedTransaction)) {
+            if (!opened || !contextValid) {
                 close()
                 return
             }
-            busy = true
-            if (root.wallet.sendTransactionWithPassphrase(passphrase)) {
-                busy = false
-                close()
-                root.sending = true
-                root.transactionSent(root.transaction ? root.transaction.txid : "")
-            } else {
-                busy = false
-                errorText = root.wallet.transactionError
-            }
+            root.sendReview = reviewedTransaction
+            root.sendTicket = 0
+            root.sendTicket = actionWallet.requestSendTransactionWithPassphrase(passphrase)
+            root.handleSendOutcome()
         }
     }
 }

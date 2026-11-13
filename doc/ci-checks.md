@@ -103,7 +103,7 @@ profiles and need their separate expected-exit evidence.
 The extra layout adapter applies Core's includes, guards, locale, translation
 and argument-documentation definitions to nonempty app paths. Guard names retain
 the complete `qml/` and `qml/test/` namespaces. The app's reviewed direct Boost
-inventory is empty; seven inherited dependency cycles are listed in
+inventory is empty; five inherited dependency cycles are listed in
 `ci/lint-policy.json`, checked with Core's graph algorithm, and owned by their
 original consumer orders and R41/R42. These inventories cannot grow or shrink
 without review. Core's inventories still run unchanged inside Core.
@@ -117,7 +117,20 @@ checks; pinned `MakeGuiInit` is not a GUI IPC listener. The independent Core IPC
 scope remains separate. Qt 6.2 uses `QML_TEST_RENDERING_PLATFORM=xcb` under Xvfb
 for component image tests; newer configurations use minimal/software rendering.
 
-TSan/MSan with instrumented dependencies, exact static Qt 6.8.3, native Windows
-and macOS producers, QML/JS coverage and the ten baseline Core compatibility/USDT
+TSan/MSan with instrumented dependencies, the current pinned static Qt 6.8.4
+recipe (Qt 6.8.3 at the original R00 baseline), native Windows and macOS producers, QML/JS coverage and the ten baseline Core compatibility/USDT
 skips remain explicit consumer/platform/R41/R42 obligations. Linux ASan does not
 certify those scopes.
+
+## R10 dependency inventory review
+
+The Native review snapshot migration removed the transaction implementation
+dependencies on SendRecipient and SendRecipientsListModel. The two former
+three-node Send/model/transaction cycles are therefore removed from the reviewed
+inventory; the corresponding two-node Send/model cycles remain. The exact
+removed edges were inspected independently during R10. The new ReviewOwner Qt
+interface keeps review registration independent of WalletQmlModel rather than
+allowing a new model/transaction cycle. No additional cycle is allowed, and the
+remaining five original cycles retain their consumer/R41/R42 ownership. This
+updates a stale inventory after reviewed source removal, not a finding or
+acceptance closure. Pinned Core cycle definitions and lint algorithms are unchanged.

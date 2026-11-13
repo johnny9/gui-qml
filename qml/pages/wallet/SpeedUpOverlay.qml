@@ -16,9 +16,11 @@ Popup {
 
     property string txid: ""
     property var bumpModel: null
+    property double ownedAttemptId: 0
+    readonly property bool ownsAttempt: ownedAttemptId !== 0 && bumpModel && bumpModel.attemptId === ownedAttemptId
     property int bumpState: root.bumpModel ? root.bumpModel.state : BumpTransactionModel.Idle
     property string bumpErrorText: root.bumpModel ? root.bumpModel.errorText : ""
-    property bool readyToConfirm: root.bumpModel
+    property bool readyToConfirm: root.ownsAttempt && root.bumpModel
         && root.bumpModel.state === BumpTransactionModel.NeedsConfirmation
 
     signal done()
@@ -52,15 +54,14 @@ Popup {
     }
 
     onOpened: {
-        if (root.bumpModel) {
-            root.bumpModel.prepareFeeBump(root.txid, 1)
-        }
+        root.newTxid = ""
+        root.ownedAttemptId = root.bumpModel ? root.bumpModel.requestPrepareFeeBump(root.txid, 1) : 0
+        if (!root.ownedAttemptId) root.close()
     }
 
     onClosed: {
-        if (root.bumpModel) {
-            root.bumpModel.reset()
-        }
+        if (root.ownsAttempt) root.bumpModel.reset()
+        root.ownedAttemptId = 0
     }
 
     background: Rectangle {
@@ -82,10 +83,12 @@ Popup {
     Connections {
         target: root.bumpModel
         function onStateChanged() {
-            if (root.bumpModel && root.bumpModel.state === BumpTransactionModel.Succeeded) {
+            if (root.opened && root.ownsAttempt && root.bumpModel.state === BumpTransactionModel.Succeeded) {
                 root.newTxid = root.bumpModel.newTxid
                 root.close()
                 root.bumpSucceeded()
+            } else if (root.opened && root.ownsAttempt && root.bumpModel.needsUnlock && !root.bumpModel.busy) {
+                speedUpPassphrasePopup.open()
             }
         }
     }
@@ -180,11 +183,7 @@ Popup {
                     if (!root.bumpModel) {
                         return
                     }
-                    if (!root.bumpModel.confirmFeeBump() && root.bumpModel.needsUnlock) {
-                        speedUpPassphrasePopup.busy = false
-                        speedUpPassphrasePopup.errorText = ""
-                        speedUpPassphrasePopup.open()
-                    }
+                    if (root.ownsAttempt) root.bumpModel.requestConfirmFeeBump()
                 }
             }
         }
@@ -203,18 +202,16 @@ Popup {
         descriptionText: qsTr("Enter your wallet password to update this transaction.")
         confirmText: qsTr("Unlock and update")
         busyConfirmText: qsTr("Unlocking...")
+        property var context: null
+        readonly property bool contextValid: context !== null && root.opened && root.ownsAttempt
+            && root.bumpModel === context.model && root.ownedAttemptId === context.attempt
+        onAboutToShow: context = { model: root.bumpModel, attempt: root.ownedAttemptId }
+        onClosed: context = null
+        onContextValidChanged: if (!contextValid) close()
+        busy: contextValid && root.bumpModel.busy
+        errorText: contextValid ? root.bumpModel.unlockErrorText : ""
         onSubmitted: (passphrase) => {
-            if (!root.bumpModel) {
-                return
-            }
-            speedUpPassphrasePopup.busy = true
-            if (root.bumpModel.confirmFeeBumpWithPassphrase(passphrase)) {
-                speedUpPassphrasePopup.busy = false
-                speedUpPassphrasePopup.close()
-                return
-            }
-            speedUpPassphrasePopup.busy = false
-            speedUpPassphrasePopup.errorText = root.bumpModel.errorText
+            if (contextValid && !root.bumpModel.busy) root.bumpModel.requestConfirmFeeBumpWithPassphrase(passphrase)
         }
     }
 

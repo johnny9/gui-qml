@@ -1,20 +1,17 @@
 pragma Singleton
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import org.bitcoincore.qt 1.0
 
 Control {
     id: root
-    property bool dark: true
-    property real blockclocksize: (5 / 12)
+    property alias dark: settings.dark
+    property alias blockclocksize: settings.blockclocksize
     readonly property ColorSet color: dark ? darkColorSet : lightColorSet
     readonly property ImageSet image: dark ? darkImageSet : lightImageSet
     readonly property TextSet text: TextSet {}
 
-    AppSettings {
-        id: settings
-        property alias dark: root.dark
-        property alias blockclocksize: root.blockclocksize
-    }
+    AppPreferences { id: settings }
 
     component ColorSet: QtObject {
         required property color white

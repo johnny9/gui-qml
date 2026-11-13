@@ -13,10 +13,17 @@ Page {
     id: root
     objectName: "activityDetailsPage"
     property var wallet: null
-    property var transactionData: ({})
+    property string transactionId: ""
+    readonly property ActivityDetailModel activityModel: wallet ? wallet.transactionActivityModel.createDetailView(root) : null
+    Binding { target: root.activityModel; property: "transactionId"; value: root.transactionId; when: root.activityModel !== null }
+    Binding { target: root.activityModel; property: "active"; value: root.visible && root.wallet !== null && root.wallet.available; when: root.activityModel !== null }
+    property var transactionData: activityModel && activityModel.selectedTransactionDetails.txid === transactionId
+        ? activityModel.selectedTransactionDetails : ({txid: transactionId, detailsLoading: true})
+    readonly property OptionsTransactionLinks transactionLinks: ApplicationModels.optionsModel.createTransactionLinks()
+    Binding { target: root.transactionLinks; property: "txid"; value: root.txid }
     property int outputIndex: -1
     property bool detailsExpanded: false
-    onTxidChanged: detailsExpanded = false
+    onTxidChanged: { detailsExpanded = false; entryPopup.close() }
     readonly property string txid: transactionData.txid || ""
     readonly property bool detailsLoading: !!transactionData.detailsLoading
     readonly property string detailsError: transactionData.detailsError || ""
@@ -87,14 +94,16 @@ Page {
                     onTriggered: Clipboard.setText(root.txid)
                 }
                 Repeater {
-                    model: ApplicationModels.optionsModel.thirdPartyTransactionLinks(root.txid)
+                    model: root.transactionLinks ? root.transactionLinks.links : []
                     delegate: ContextMenuButton {
                         required property int index
-                        required property var modelData
+                        required property string host
+                        required property string url
+                        enabled: root.transactionLinks && !root.transactionLinks.pending && root.transactionLinks.error.length === 0
                         objectName: "transactionThirdPartyLink_" + index
-                        text: qsTr("Show in %1").arg(modelData.host)
+                        text: qsTr("Show in %1").arg(host)
                         iconSource: "image://images/export"
-                        onTriggered: root.openExternalLink(modelData.url)
+                        onTriggered: root.openExternalLink(url)
                     }
                 }
             }
@@ -191,7 +200,7 @@ Page {
                     visible: root.detailsError.length > 0
                     message: root.detailsError
                     primaryButtonText: qsTr("Try again")
-                    onPrimaryClicked: if (root.wallet) root.wallet.transactionActivityModel.requestTransactionDetails(root.txid)
+                    onPrimaryClicked: if (root.activityModel) root.activityModel.reload()
                 }
                 InfoBanner {
                     objectName: "speedUpBanner"
@@ -248,14 +257,110 @@ Page {
                     opened: root.detailsExpanded
                     onClicked: root.detailsExpanded = !root.detailsExpanded
                 }
+                TransactionEntriesList {
+                    objectName: "transactionAllInputs"
+                    visible: root.detailsExpanded
+                    Layout.fillWidth: true
+                    title: qsTr("All inputs")
+                    input: true
+                    entryModel: root.activityModel ? root.activityModel.detailInputs : null
+                    walletName: root.wallet && root.wallet.name ? root.wallet.name : qsTr("Your wallet")
+                    onEntryRequested: (row) => root.openEntry("inputs", row)
+                    onPaymentRequestRequested: (requestId) => root.openPaymentRequestDetail(requestId)
+                }
+                TransactionEntriesList {
+                    objectName: "transactionAllOutputs"
+                    visible: root.detailsExpanded
+                    Layout.fillWidth: true
+                    title: qsTr("All outputs")
+                    entryModel: root.activityModel ? root.activityModel.detailOutputs : null
+                    walletName: root.wallet && root.wallet.name ? root.wallet.name : qsTr("Your wallet")
+                    onEntryRequested: (row) => root.openEntry("outputs", row)
+                    onPaymentRequestRequested: (requestId) => root.openPaymentRequestDetail(requestId)
+                }
+                TransactionEntriesList {
+                    objectName: "transactionAllActions"
+                    visible: root.detailsExpanded
+                    Layout.fillWidth: true
+                    title: qsTr("All actions")
+                    entryModel: root.activityModel ? root.activityModel.detailActions : null
+                    walletName: root.wallet && root.wallet.name ? root.wallet.name : qsTr("Your wallet")
+                    onEntryRequested: (row) => root.openEntry("actions", row)
+                    onPaymentRequestRequested: (requestId) => root.openPaymentRequestDetail(requestId)
+                }
                 TransactionDetailsSection {
                     visible: root.detailsExpanded
                     Layout.fillWidth: true
                     details: root.transactionData
+                    activityModel: root.activityModel
+                    enabled: !!root.wallet && root.wallet.available
                 }
             }
         }
     }
+
+    function openEntry(side, row) {
+        if (!root.wallet || !root.wallet.available || !root.activityModel) return
+        if (root.activityModel.requestEntryDetails(side, row)) entryPopup.open()
+    }
+    Popup {
+        id: entryPopup
+        objectName: "transactionEntryPopup"
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(720, Overlay.overlay ? Overlay.overlay.width - 32 : 720)
+        height: Math.min(600, Overlay.overlay ? Overlay.overlay.height - 32 : 600)
+        modal: true
+        padding: 20
+        contentItem: ColumnLayout {
+            spacing: 12
+            CoreText { text: qsTr("Complete entry"); font: Theme.text.subheading.font }
+            BusyIndicator {
+                visible: root.activityModel && root.activityModel.entryDetailsBusy
+                running: visible
+            }
+            CoreText {
+                Layout.fillWidth: true
+                visible: !!root.activityModel && root.activityModel.entryDetailsError.length > 0
+                text: root.activityModel ? root.activityModel.entryDetailsError : ""
+                color: Theme.color.red
+                wrap: true
+            }
+            ListView {
+                id: entryFields
+                objectName: "transactionEntryDocument"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                cacheBuffer: 0
+                reuseItems: true
+                model: entryPopup.opened && root.activityModel ? root.activityModel.entryDocument : null
+                spacing: 12
+                ScrollBar.vertical: ScrollBar {}
+                delegate: ColumnLayout {
+                    id: documentRow
+                    required property var entry
+                    width: entryFields.width
+                    CoreText { Layout.fillWidth: true; text: documentRow.entry.field; font: Theme.text.captionStrong.font; wrap: true }
+                    TextArea {
+                        Layout.fillWidth: true
+                        text: documentRow.entry.content
+                        readOnly: true
+                        selectByMouse: true
+                        textFormat: TextEdit.PlainText
+                        wrapMode: TextEdit.WrapAnywhere
+                        font: Theme.text.monoCaption.font
+                        color: Theme.color.neutral9
+                        padding: 0
+                        background: null
+                    }
+                }
+            }
+            TextButton { text: qsTr("Close"); onClicked: entryPopup.close() }
+        }
+    }
+    onVisibleChanged: if (!visible) entryPopup.close()
+    onWalletChanged: entryPopup.close()
 
     SpeedUpOverlay {
         id: speedUpOverlay

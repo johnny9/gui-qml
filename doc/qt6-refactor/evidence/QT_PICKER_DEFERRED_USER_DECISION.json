@@ -1,0 +1,13 @@
+{
+  "recorded_utc": "2026-11-13T12:16:00.524834+00:00",
+  "user_selection": "Document and defer; keep the affected TSan result explicitly unresolved (Recommended)",
+  "qt_changes_authorized": false,
+  "core_changes_authorized": false,
+  "replacement_chooser_authorized": false,
+  "existing_picker": "retained",
+  "affected_tsan_result": "unresolved; not passing",
+  "independent_checks": "continue",
+  "blanket_r10_acceptance": false,
+  "supersedes": "earlier app-owned replacement direction and pending Qt patch choice",
+  "proposal_implementation_changes": 0
+}

@@ -41,7 +41,7 @@ Item {
 
     function completedWalletIsOpen() {
         return root.completedWallet !== null && root.completedWallet.available !== false
-            && ApplicationModels.walletController.openWallets.indexOf(root.completedWallet) >= 0
+            && ApplicationModels.walletController.rowForWallet(root.completedWallet) >= 0
     }
 
     // A completion page for a wallet that has since closed has nothing
@@ -84,7 +84,7 @@ Item {
     function importFile(path) {
         if (!path || root.importingWallet) return
         root.importingWallet = true
-        ApplicationModels.walletController.importWallet(ApplicationModels.walletController.normalizeWalletPath(path))
+        ApplicationModels.walletController.importWallet(path)
     }
 
     function showImportResult() {
@@ -136,16 +136,16 @@ Item {
             root.showReady()
         }
         function onWalletCreateErrorChanged() {
-            if (root.creatingWallet && ApplicationModels.walletController.walletCreateError.length > 0)
+            if (root.creatingWallet && ApplicationModels.walletController.walletCreateHasError)
                 root.creatingWallet = false
         }
         function onOpenWalletsChanged() {
             root.closeIfCompletedWalletClosed()
         }
         function onWalletLoadErrorChanged() {
-            if (root.creatingWallet && ApplicationModels.walletController.walletLoadError.length > 0)
+            if (root.creatingWallet && ApplicationModels.walletController.walletLoadHasError)
                 root.creatingWallet = false
-            if (root.importingWallet && ApplicationModels.walletController.walletLoadError.length > 0) {
+            if (root.importingWallet && ApplicationModels.walletController.walletLoadHasError) {
                 root.importingWallet = false
                 root.pendingImportResult = "error"
                 root.showImportResult()

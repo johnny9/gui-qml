@@ -11,9 +11,41 @@
 #include <script/solver.h>
 
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace psbtfeefixture {
+struct WithheldScripts {
+    PartiallySignedTransaction document;
+    CScript witness, redeem;
+};
+inline WithheldScripts SignedWithoutScripts(bool nested)
+{
+    CKey first, second;
+    first.MakeNewKey(true); second.MakeNewKey(true);
+    FillableSigningProvider provider;
+    if (!provider.AddKey(first) || !provider.AddKey(second)) throw std::runtime_error("fixture keys");
+    const CScript witness = GetScriptForMultisig(2, {first.GetPubKey(), second.GetPubKey()});
+    const CScript program = GetScriptForDestination(WitnessV0ScriptHash(witness));
+    if (!provider.AddCScript(witness) || (nested && !provider.AddCScript(program))) throw std::runtime_error("fixture scripts");
+    CMutableTransaction parent;
+    parent.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0});
+    parent.vout.emplace_back(2'000, nested ? GetScriptForDestination(ScriptHash(program)) : program);
+    const auto previous = MakeTransactionRef(parent);
+    CMutableTransaction transaction;
+    transaction.vin.emplace_back(COutPoint{previous->GetHash(), 0});
+    transaction.vout.emplace_back(1'500, GetScriptForDestination(PKHash(first.GetPubKey())));
+    PartiallySignedTransaction document{transaction, 2};
+    document.inputs[0].non_witness_utxo = previous;
+    const auto data = PrecomputePSBTData(document);
+    if (!data || !SignPSBTInput(provider, document, 0, &*data, {.finalize = false})) throw std::runtime_error("fixture signing");
+    if (document.inputs[0].partial_sigs.size() != 2) throw std::runtime_error("fixture signatures");
+    auto complete = document;
+    if (!FinalizePSBT(complete)) throw std::runtime_error("fixture completeness");
+    document.inputs[0].witness_script.clear();
+    document.inputs[0].redeem_script.clear();
+    return {std::move(document), witness, nested ? program : CScript{}};
+}
 inline constexpr CAmount ACTUAL_FEE{500'000};
 inline PartiallySignedTransaction Legacy(uint32_t version, bool forged, bool with_change = false)
 {

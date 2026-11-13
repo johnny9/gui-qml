@@ -6,6 +6,7 @@
 #define BITCOIN_QML_MODELS_WALLETLISTMODEL_H
 
 #include <interfaces/wallet.h>
+#include <qml/snapshotquery.h>
 #include <QAbstractListModel>
 #include <QHash>
 #include <QList>
@@ -15,6 +16,8 @@
 
 #include <optional>
 
+class BackendExecutor;
+
 namespace interfaces {
 class Node;
 }
@@ -23,6 +26,8 @@ class WalletListModel : public QAbstractListModel
 {
     Q_OBJECT
     Q_PROPERTY(bool walletDirLoaded READ walletDirLoaded NOTIFY walletDirLoadedChanged)
+    Q_PROPERTY(bool projectionPending READ projectionPending NOTIFY projectionChanged)
+    Q_PROPERTY(QString readError READ readError NOTIFY projectionChanged)
 
 public:
     enum class LoadState {
@@ -34,7 +39,11 @@ public:
     Q_ENUM(LoadState)
 
     WalletListModel(interfaces::Node& node, QObject *parent = nullptr);
-    ~WalletListModel() = default;
+    WalletListModel(interfaces::Node& node, execution::SnapshotServices services, QObject* parent = nullptr);
+    ~WalletListModel() override;
+    void closeAdmission();
+    bool projectionPending() const { return m_pending; }
+    QString readError() const { return m_error; }
 
     enum Roles {
         NameRole = Qt::UserRole + 1,
@@ -57,6 +66,7 @@ public:
 Q_SIGNALS:
     void walletListChanged(bool has_wallets);
     void walletDirLoadedChanged();
+    void projectionChanged();
 
 public Q_SLOTS:
     void listWalletDir();
@@ -66,28 +76,26 @@ public Q_SLOTS:
     void refreshDisplayNames();
 
 private:
-    struct Item {
-        QString name;
-        QString format;
-        bool from_wallet_dir{false};
-        std::optional<qint64> balance;
-        int keySchemeKind{-1}; // Unknown until this wallet has been loaded.
-    };
-
-    bool itemLess(const Item& a, const Item& b) const;
-    void sortItems(QList<Item>& items) const;
-    bool applyUpdatedItems(QList<Item>&& updated_items);
-    void updateLoadStateForAllRows();
-    void emitTransientStateChanged();
-    int rowForName(const QString& name) const;
-
-    int m_display_unit{0};
-    QList<Item> m_items;
-    QSet<QString> m_open_wallet_names;
-    QString m_loading_wallet;
-    QPair<QString, QString> m_load_error;
+    struct Item;
+    struct Input;
+    struct InputStore;
+    struct State;
+    struct Snapshot;
+    void enqueue(Input input);
+    void publishSnapshot();
+    void publishNotices(quint64 revision);
+    std::shared_ptr<InputStore> m_input;
+    std::shared_ptr<State> m_state;
+    std::shared_ptr<const Snapshot> m_visible;
+    std::shared_ptr<execution::SnapshotQuery<std::shared_ptr<const Snapshot>>> m_query;
+    execution::SnapshotServices m_services;
+    std::shared_ptr<QObject> m_bridge;
+    std::shared_ptr<BackendExecutor> m_owned_executor;
+    quint64 m_revision{0}, m_directory_epoch{0};
+    size_t m_notice{0};
+    bool m_pending{false}, m_stopping{false}, m_wallet_dir_loaded{false};
+    QString m_error;
     interfaces::Node& m_node;
-    bool m_wallet_dir_loaded{false};
 };
 
 #endif // BITCOIN_QML_MODELS_WALLETLISTMODEL_H

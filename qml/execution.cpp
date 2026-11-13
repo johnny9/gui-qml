@@ -6,9 +6,68 @@
 
 #include <cassert>
 #include <algorithm>
+#include <atomic>
 #include <stdexcept>
 
 namespace execution {
+class TaskQueue::ScopedScheduler final : public Scheduler {
+    const std::shared_ptr<TaskQueue> m_queue;
+    const uint64_t m_scope;
+    bool m_registered{false};
+    std::atomic_bool m_closed{false};
+public:
+    ScopedScheduler(std::shared_ptr<TaskQueue> queue, uint64_t scope) : m_queue(std::move(queue)), m_scope(scope) {}
+    ~ScopedScheduler() override { if (m_registered) m_queue->releaseScope(m_scope); }
+    void registered() { m_registered = true; }
+    Admission submit(std::shared_ptr<Task> task, TaskSpec spec) override {
+        if (m_closed) return {{}, Rejection::Closed};
+        if (spec.lane != Lane::Core && spec.lane != Lane::Domain) return {{}, Rejection::Invalid};
+        return m_queue->admit(std::move(task), spec, false, m_scope);
+    }
+    Admission reserveCleanup(std::shared_ptr<Task> task, TaskSpec spec) override { return m_queue->admit(std::move(task), spec, true, m_scope); }
+    bool activateCleanup(TaskId id) override { return m_queue->activateCleanupForScope(id, m_scope); }
+    BorrowAdmission borrow(ResourceKey key) override { return m_closed ? BorrowAdmission{{}, Rejection::Closed} : m_queue->borrowForScope(key, m_scope); }
+    ResourceKey allocateKey() override { return m_queue->allocateKey(); }
+    size_t pending() const override { return m_queue->pending(); }
+    void closeOrdinaryAdmission() override { m_closed = true; }
+    bool cancelQueued(TaskId id) override { return m_queue->cancelQueuedForScope(id, m_scope); }
+};
+
+std::shared_ptr<Scheduler> TaskQueue::openActionScope(size_t bytes)
+{
+    std::lock_guard lock{m_mutex};
+    if (m_closed || m_ordinary_closed || m_next_scope == std::numeric_limits<uint64_t>::max()) return {};
+    if (m_scope_usage.tasks >= m_limits.action_scopes.tasks || bytes > m_limits.action_scopes.payload_bytes - m_scope_usage.payload_bytes) return {};
+    const auto id = ++m_next_scope;
+    // Construct before recording admission so allocation failure leaves no
+    // pending scope that could strand the Native drain.
+    auto result = std::make_shared<ScopedScheduler>(shared_from_this(), id);
+    m_scopes.emplace(id, bytes); ++m_scope_usage.tasks; m_scope_usage.payload_bytes += bytes;
+    result->registered();
+    return result;
+}
+
+void TaskQueue::releaseScope(uint64_t scope)
+{
+    std::lock_guard lock{m_mutex};
+    const auto found = m_scopes.find(scope);
+    assert(found != m_scopes.end());
+    --m_scope_usage.tasks; m_scope_usage.payload_bytes -= found->second; m_scopes.erase(found);
+    if (m_scope_idle_cleanups.contains(scope)) m_released_cleanup_scopes.insert(scope);
+    pumpCleanups();
+    // An idle original capability may be the final ledger entry. Without a
+    // transport turn, workers that already observed it during shutdown would
+    // never recheck quiescence. This wake owns no task, payload or effect.
+    if (m_closed && m_tasks.empty() && m_total_borrowers == 0 && m_scopes.empty()) {
+        const bool posted = m_routed_dispatch
+            ? m_routed_dispatch(Lane::Control, Phase::OutcomeReady, {}, [] {})
+            : m_dispatch(Phase::OutcomeReady, {}, [] {});
+        assert(posted); // The original capability retained its drain transport.
+    }
+    // Every remaining task, cleanup reservation and borrower has its own
+    // ledger entry; cached values do not consume an action-capability slot.
+}
+
 ResourceLease::ResourceLease(ResourceLease&& other) noexcept : m_queue(std::move(other.m_queue)), m_key(other.m_key) {}
 ResourceLease::~ResourceLease() { if (m_queue) m_queue->releaseBorrower(m_key); }
 
@@ -29,18 +88,40 @@ std::optional<size_t> TaskQueue::budgetIndex(Lane lane)
     return std::nullopt;
 }
 
+void TaskQueue::releaseWorkKey(Record& record)
+{
+    if (!std::exchange(record.resource_counted, false)) return;
+    const auto key = record.spec.key;
+    const auto count = m_work_by_key.find(key);
+    assert(count != m_work_by_key.end() && count->second);
+    if (--count->second == 0) m_work_by_key.erase(count);
+}
+
 void TaskQueue::erase(std::map<TaskId, Record>::iterator record)
 {
-    auto& usage = m_usage[*budgetIndex(record->second.spec.lane)];
-    --usage.tasks;
-    usage.payload_bytes -= record->second.spec.payload_bytes;
+    const auto key = record->second.spec.key;
+    const auto bytes = record->second.spec.payload_bytes;
+    if (record->second.cleanup_reservation) {
+        --m_cleanup_reservations.tasks;
+        m_cleanup_reservations.payload_bytes -= bytes;
+        if (record->second.cleanup_queued) {
+            --m_usage[2].tasks;
+            m_usage[2].payload_bytes -= bytes;
+        }
+        m_cleanup_by_key.erase(key);
+        unindexCleanup(record->first, record->second.scope);
+    } else {
+        auto& usage = m_usage[*budgetIndex(record->second.spec.lane)];
+        --usage.tasks;
+        usage.payload_bytes -= bytes;
+        releaseWorkKey(record->second);
+    }
     if (record->second.spec.work_class == WorkClass::Observation) {
         --m_observations.tasks;
-        m_observations.payload_bytes -= record->second.spec.payload_bytes;
+        m_observations.payload_bytes -= bytes;
     }
-    if (record->second.cleanup_reservation) m_cleanup_by_key.erase(record->second.spec.key);
     m_tasks.erase(record);
-    maybeActivateCleanups();
+    maybeActivateCleanup(key);
 }
 
 Admission TaskQueue::submit(std::shared_ptr<Task> task, TaskSpec spec)
@@ -53,10 +134,11 @@ Admission TaskQueue::reserveCleanup(std::shared_ptr<Task> task, TaskSpec spec)
     return admit(std::move(task), spec, true);
 }
 
-Admission TaskQueue::admit(std::shared_ptr<Task> task, TaskSpec spec, bool reserve_cleanup)
+Admission TaskQueue::admit(std::shared_ptr<Task> task, TaskSpec spec, bool reserve_cleanup, uint64_t scope)
 {
     std::lock_guard lock{m_mutex};
-    if (m_closed) return {{}, Rejection::Closed};
+    const bool admitted_action = scope && m_scopes.contains(scope);
+    if ((scope && !admitted_action) || (m_closed && !admitted_action)) return {{}, Rejection::Closed};
     const auto index = budgetIndex(spec.lane);
     if (!task || !index) return {{}, Rejection::Invalid};
     if (reserve_cleanup && spec.lane != Lane::Cleanup) return {{}, Rejection::Invalid};
@@ -65,9 +147,12 @@ Admission TaskQueue::admit(std::shared_ptr<Task> task, TaskSpec spec, bool reser
     if (cleanup != m_cleanup_by_key.end() && m_tasks.at(cleanup->second).cleanup_requested) return {{}, Rejection::Closed};
     if (spec.work_class != WorkClass::Action && spec.work_class != WorkClass::Observation) return {{}, Rejection::Invalid};
     if (spec.work_class == WorkClass::Observation && *index != 0) return {{}, Rejection::Invalid};
-    if (m_ordinary_closed && *index == 0) return {{}, Rejection::Closed};
-    auto& usage = m_usage[*index];
-    const auto budget = std::array{m_limits.ordinary, m_limits.control, m_limits.cleanup}[*index];
+    if (m_ordinary_closed && *index == 0 && !admitted_action) return {{}, Rejection::Closed};
+    auto& usage = reserve_cleanup ? m_cleanup_reservations : m_usage[*index];
+    const auto budget = reserve_cleanup ? m_limits.cleanup_reservations
+        : std::array{m_limits.ordinary, m_limits.control, m_limits.cleanup}[*index];
+    // Reject reservations that could never fit a runnable cleanup turn.
+    if (reserve_cleanup && (m_limits.cleanup.tasks == 0 || spec.payload_bytes > m_limits.cleanup.payload_bytes)) return {{}, Rejection::Capacity};
     // Subtraction avoids overflow even for a producer's oversized request.
     if (usage.tasks >= budget.tasks || spec.payload_bytes > budget.payload_bytes - usage.payload_bytes) {
         return {{}, Rejection::Capacity};
@@ -78,6 +163,7 @@ Admission TaskQueue::admit(std::shared_ptr<Task> task, TaskSpec spec, bool reser
     }
     const TaskId id{++m_next_id};
     m_tasks.emplace(id, Record{reserve_cleanup ? Phase::Reserved : Phase::Queued, task, spec, false, reserve_cleanup});
+    m_tasks.at(id).scope = scope;
     ++usage.tasks;
     usage.payload_bytes += spec.payload_bytes;
     if (spec.work_class == WorkClass::Observation) {
@@ -86,7 +172,13 @@ Admission TaskQueue::admit(std::shared_ptr<Task> task, TaskSpec spec, bool reser
     }
     if (reserve_cleanup) {
         m_cleanup_by_key.emplace(spec.key, id);
+        maybeActivateCleanup(spec.key);
         return {id, Rejection::None};
+    }
+    m_tasks.at(id).resource_counted = true;
+    ++m_work_by_key[spec.key];
+    if (cleanup != m_cleanup_by_key.end()) {
+        unindexCleanup(cleanup->second, m_tasks.at(cleanup->second).scope);
     }
     if (m_routed_dispatch && spec.lane == Lane::Core) {
         auto& waiting = m_waiting[spec.key];
@@ -109,8 +201,13 @@ Admission TaskQueue::admit(std::shared_ptr<Task> task, TaskSpec spec, bool reser
 
 void TaskQueue::activateCleanupLocked(TaskId id)
 {
-    m_tasks.at(id).phase = Phase::Queued;
-    m_tasks.at(id).transport_pending = true;
+    auto& record = m_tasks.at(id);
+    record.phase = Phase::Queued;
+    record.cleanup_requested = true; // Physical retirement fences every later use of this resource key.
+    record.transport_pending = true;
+    record.cleanup_queued = true;
+    ++m_usage[2].tasks;
+    m_usage[2].payload_bytes += record.spec.payload_bytes;
     auto turn = [self = shared_from_this(), id] { self->execute(id); };
     const bool posted = m_routed_dispatch
         ? m_routed_dispatch(Lane::Cleanup, Phase::Queued, id, std::move(turn))
@@ -120,38 +217,84 @@ void TaskQueue::activateCleanupLocked(TaskId id)
     assert(posted);
 }
 
-bool TaskQueue::activateCleanup(TaskId id)
+bool TaskQueue::activateCleanup(TaskId id) { return activateCleanupForScope(id, 0); }
+
+bool TaskQueue::activateCleanupForScope(TaskId id, uint64_t scope)
 {
     std::lock_guard lock{m_mutex};
     const auto record = m_tasks.find(id);
-    if (record == m_tasks.end() || record->second.phase != Phase::Reserved || record->second.cleanup_requested) return false;
+    if ((scope && (!m_scopes.contains(scope) || record == m_tasks.end() || record->second.scope != scope)) ||
+        record == m_tasks.end() || !record->second.cleanup_reservation || record->second.phase != Phase::Reserved || record->second.cleanup_requested ||
+        (m_cleanup_all_requested && (!record->second.scope || !m_scopes.contains(record->second.scope)))) return false;
     record->second.cleanup_requested = true;
-    maybeActivateCleanups();
+    maybeActivateCleanup(record->second.spec.key);
     return true;
 }
 
-void TaskQueue::maybeActivateCleanups()
+void TaskQueue::maybeActivateCleanup(ResourceKey key)
 {
-    for (const auto& [key, id] : m_cleanup_by_key) {
+    const auto cleanup = m_cleanup_by_key.find(key);
+    if (cleanup != m_cleanup_by_key.end()) {
+        const auto id = cleanup->second;
         const auto& record = m_tasks.at(id);
-        if (record.phase != Phase::Reserved || !record.cleanup_requested || m_borrowers.contains(key)) continue;
-        const bool busy = std::any_of(m_tasks.begin(), m_tasks.end(), [&](const auto& task) {
-            return task.first != id && task.second.spec.key == key && !task.second.outcome_consumed;
-        });
-        if (!busy) activateCleanupLocked(id);
+        if (record.phase == Phase::Reserved && !m_borrowers.contains(key) && !m_work_by_key.contains(key)) {
+            if (record.scope && !record.cleanup_requested) {
+                m_scope_idle_cleanups[record.scope].insert(id);
+                if (!m_scopes.contains(record.scope)) m_released_cleanup_scopes.insert(record.scope);
+            } else {
+                m_idle_cleanups.insert(id);
+                if (record.cleanup_requested) m_ready_cleanups.insert(id);
+            }
+        } else {
+            unindexCleanup(id, record.scope);
+        }
+    }
+    pumpCleanups();
+}
+
+void TaskQueue::unindexCleanup(TaskId id, uint64_t scope)
+{
+    m_idle_cleanups.erase(id); m_ready_cleanups.erase(id);
+    const auto group = m_scope_idle_cleanups.find(scope);
+    if (group != m_scope_idle_cleanups.end()) {
+        group->second.erase(id);
+        if (group->second.empty()) { m_scope_idle_cleanups.erase(group); m_released_cleanup_scopes.erase(scope); }
+    }
+}
+
+void TaskQueue::pumpCleanups()
+{
+    // Even legacy unlimited configurations only dispatch a bounded batch per
+    // ingress turn. Outcomes free a slot and continue the indexed ready set.
+    for (size_t dispatched = 0; dispatched < 16; ++dispatched) {
+        const auto& ready = m_cleanup_all_requested ? m_idle_cleanups : m_ready_cleanups;
+        if ((ready.empty() && m_released_cleanup_scopes.empty()) || m_usage[2].tasks >= m_limits.cleanup.tasks) return;
+        const auto id = !ready.empty() ? *ready.begin() : *m_scope_idle_cleanups.at(*m_released_cleanup_scopes.begin()).begin();
+        const auto& record = m_tasks.at(id);
+        if (record.spec.payload_bytes > m_limits.cleanup.payload_bytes - m_usage[2].payload_bytes) return;
+        unindexCleanup(id, record.scope);
+        activateCleanupLocked(id);
     }
 }
 
 BorrowAdmission TaskQueue::borrow(ResourceKey key)
 {
+    return borrowForScope(key, 0);
+}
+
+BorrowAdmission TaskQueue::borrowForScope(ResourceKey key, uint64_t scope)
+{
     std::lock_guard lock{m_mutex};
-    if (m_closed || m_ordinary_closed) return {{}, Rejection::Closed};
+    const bool admitted_action = scope && m_scopes.contains(scope);
+    if ((scope && !admitted_action) || ((m_closed || m_ordinary_closed) && !admitted_action)) return {{}, Rejection::Closed};
     const auto cleanup = m_cleanup_by_key.find(key);
     if (cleanup == m_cleanup_by_key.end()) return {{}, Rejection::Invalid};
-    if (m_tasks.at(cleanup->second).cleanup_requested) return {{}, Rejection::Closed};
+    if (scope && m_tasks.at(cleanup->second).scope != scope) return {{}, Rejection::Invalid};
+    if (m_tasks.at(cleanup->second).cleanup_requested || m_tasks.at(cleanup->second).phase != Phase::Reserved) return {{}, Rejection::Closed};
     if (m_total_borrowers >= m_limits.resource_borrowers) return {{}, Rejection::Capacity};
     ++m_borrowers[key];
     ++m_total_borrowers;
+    unindexCleanup(cleanup->second, m_tasks.at(cleanup->second).scope);
     return {ResourceLease{shared_from_this(), key}, Rejection::None};
 }
 
@@ -160,7 +303,7 @@ void TaskQueue::releaseBorrower(ResourceKey key)
     std::lock_guard lock{m_mutex};
     if (--m_borrowers.at(key) == 0) m_borrowers.erase(key);
     --m_total_borrowers;
-    maybeActivateCleanups();
+    maybeActivateCleanup(key);
 }
 
 ResourceKey TaskQueue::allocateKey()
@@ -286,7 +429,8 @@ void TaskQueue::deliver(TaskId id)
             found->second.outcome_consumed = true;
             found->second.phase = Phase::AwaitingTransport;
             found->second.task.reset();
-            maybeActivateCleanups();
+            releaseWorkKey(found->second);
+            maybeActivateCleanup(found->second.spec.key);
         } else {
             erase(found);
         }
@@ -298,10 +442,8 @@ void TaskQueue::closeAdmission()
 {
     std::lock_guard lock{m_mutex};
     m_closed = true;
-    for (auto& [id, record] : m_tasks) {
-        if (record.phase == Phase::Reserved) record.cleanup_requested = true;
-    }
-    maybeActivateCleanups();
+    m_cleanup_all_requested = true;
+    pumpCleanups();
 }
 
 void TaskQueue::closeOrdinaryAdmission()
@@ -310,11 +452,14 @@ void TaskQueue::closeOrdinaryAdmission()
     m_ordinary_closed = true;
 }
 
-bool TaskQueue::cancelQueued(TaskId id)
+bool TaskQueue::cancelQueued(TaskId id) { return cancelQueuedForScope(id, 0); }
+
+bool TaskQueue::cancelQueuedForScope(TaskId id, uint64_t scope)
 {
     std::lock_guard lock{m_mutex};
     const auto record = m_tasks.find(id);
-    if (record == m_tasks.end() || record->second.phase != Phase::Queued || record->second.cancelled || record->second.cleanup_reservation) return false;
+    if ((scope && (!m_scopes.contains(scope) || record == m_tasks.end() || record->second.scope != scope)) ||
+        record == m_tasks.end() || record->second.phase != Phase::Queued || record->second.cancelled || record->second.cleanup_reservation) return false;
     record->second.cancelled = true;
     if (m_routed_dispatch) {
         if (record->second.spec.lane == Lane::Core) {
@@ -340,7 +485,7 @@ bool TaskQueue::cancelQueued(TaskId id)
 size_t TaskQueue::pending() const
 {
     std::lock_guard lock{m_mutex};
-    return m_tasks.size() + m_total_borrowers;
+    return m_tasks.size() + m_total_borrowers + m_scopes.size();
 }
 
 std::optional<Phase> TaskQueue::phase(TaskId id) const

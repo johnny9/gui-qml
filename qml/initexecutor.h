@@ -8,6 +8,7 @@
 #include <interfaces/node.h>
 #include <qml/backendexecutor.h>
 
+#include <atomic>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -29,8 +30,11 @@ class QmlInitExecutor : public QObject
 public:
     using SubscriptionFactory = std::function<std::unique_ptr<interfaces::Handler>()>;
 
-    explicit QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe = {});
+    explicit QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe = {},
+                             std::shared_ptr<std::atomic_bool> diagnostic_loss = {});
     ~QmlInitExecutor();
+    // Available during direct runawayException receipt delivery only.
+    std::shared_ptr<execution::Scheduler> fatalDiagnosticScheduler() const { return m_fatal_diagnostic_scheduler; }
 
 public Q_SLOTS:
     void initialize();
@@ -45,14 +49,17 @@ Q_SIGNALS:
     void runawayException(const QString& message);
 
 private:
-    void handleRunawayException(std::exception_ptr error);
+    void handleRunawayException(const QString& message);
+    void diagnosticTransportFailed(std::shared_ptr<execution::Scheduler> original_diagnostic_scope = {});
     void finishShutdown();
 
     struct WorkerState;
     interfaces::Node& m_node;
     std::shared_ptr<WorkerState> m_worker_state;
+    std::shared_ptr<std::atomic_bool> m_diagnostic_loss;
     BackendExecutor m_init_and_shutdown_executor;
     BackendExecutor m_interrupt_executor;
+    std::shared_ptr<execution::Scheduler> m_fatal_diagnostic_scheduler;
     bool m_initialize_requested{false};
     bool m_interrupt_requested{false};
     bool m_shutdown_requested{false};

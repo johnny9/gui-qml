@@ -3,7 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/rpcconsolemodel.h>
-#include <qml/asyncjoin.h>
+#include <qml/guipresentation.h>
+#include <qml/retainedvalue.h>
 
 #include <interfaces/node.h>
 #include <qml/models/rpccommandexecutor.h>
@@ -11,7 +12,10 @@
 
 #include <algorithm>
 #include <string>
+#include <stdexcept>
 #include <vector>
+#include <atomic>
+#include <mutex>
 
 #include <QDateTime>
 #include <QString>
@@ -39,6 +43,7 @@ QVariant RpcOutputListModel::data(const QModelIndex& index, int role) const
     case TimestampRole: return r.timestamp;
     case ContentRole:   return r.contentHtml;
     case CategoryRole:  return r.category;
+    case ContinuationRole: return r.continuation;
     }
     return {};
 }
@@ -49,31 +54,51 @@ QHash<int, QByteArray> RpcOutputListModel::roleNames() const
         {TimestampRole, "timestamp"},
         {ContentRole,   "content"},
         {CategoryRole,  "category"},
+        {ContinuationRole, "continuation"},
     };
 }
 
 void RpcOutputListModel::appendRow(const QString& timestamp, const QString& contentHtml, int category)
 {
-    // Cap the row buffer. Drop oldest rows until we have room for the new one.
-    if (m_rows.size() >= kMaxRows) {
-        const int to_remove = m_rows.size() - kMaxRows + 1;
-        beginRemoveRows({}, 0, to_remove - 1);
-        m_rows.remove(0, to_remove);
+    appendRows({Row{timestamp, contentHtml, category}}, 0, 1);
+}
+
+void RpcOutputListModel::appendRows(const Batch& rows, int offset, int count)
+{
+    count = std::min(count, int(rows.size()) - offset);
+    if (count <= 0) return;
+    qsizetype incoming{0};
+    for (int i = 0; i < count; ++i) incoming += rows[offset + i].contentHtml.size();
+    int remove{0};
+    while (remove < m_rows.size() && (m_rows.size() - remove + count > kMaxRows || m_characters + incoming > kMaxCharacters)) {
+        m_characters -= m_rows[remove++].contentHtml.size();
+    }
+    if (remove) {
+        beginRemoveRows({}, 0, remove - 1);
+        m_rows.remove(0, remove);
         endRemoveRows();
     }
-    beginInsertRows({}, m_rows.size(), m_rows.size());
-    m_rows.append(Row{timestamp, contentHtml, category});
+    const int first = m_rows.size();
+    beginInsertRows({}, first, first + count - 1);
+    for (int i = 0; i < count; ++i) m_rows.append(rows[offset + i]);
+    m_characters += incoming;
     endInsertRows();
     Q_EMIT countChanged();
 }
 
+std::shared_ptr<const RpcOutputListModel::Batch> RpcOutputListModel::releaseRows(bool notify)
+{
+    if (m_rows.isEmpty()) return {};
+    if (notify) beginResetModel();
+    auto rows = std::make_shared<const Batch>(std::exchange(m_rows, {}));
+    m_characters = 0;
+    if (notify) { endResetModel(); Q_EMIT countChanged(); }
+    return rows;
+}
+
 void RpcOutputListModel::resetAll()
 {
-    if (m_rows.isEmpty()) return;
-    beginResetModel();
-    m_rows.clear();
-    endResetModel();
-    Q_EMIT countChanged();
+    releaseRows();
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +143,12 @@ void AppendValue(QString& out, const UniValue& value, const QString& key_color_h
     };
     std::vector<Frame> stack{{&value}};
     while (!stack.empty()) {
+        // Deeply nested JSON can expand quadratically through indentation.
+        // Bound the rendered form as well as the original UTF-8 response.
+        if (out.size() > 2 * 1024 * 1024) {
+            out = QObject::tr("[Output truncated while formatting. Use bitcoin-cli for the full result.]");
+            return;
+        }
         auto& frame{stack.back()};
         const auto& current{*frame.value};
         const bool object{current.isObject()};
@@ -194,30 +225,220 @@ QString FormatJsonReply(const std::string& raw, const QString& key_color_hex)
 
 } // anonymous namespace
 
-// ---------------------------------------------------------------------------
-// RpcConsoleWorker — executes RPC commands on a background thread
-// ---------------------------------------------------------------------------
-
-class RpcConsoleWorker : public QObject
+// All queued GUI notices are weak mailbox notifications. A reply is split on
+// the worker, before any Qt model insertion or rich text layout on the GUI.
+namespace {
+using Rows = RpcOutputListModel::Batch;
+std::shared_ptr<const Rows> SplitRows(const QString& time, int category, const QString& html)
 {
-    Q_OBJECT
-public:
-    explicit RpcConsoleWorker(interfaces::Node& node, QObject* parent = nullptr)
-        : QObject(parent), m_node(node) {}
+    auto rows = std::make_shared<Rows>();
+    QString piece, span;
+    int visible{0};
+    bool continuation{false};
+    const auto flush = [&](bool continued) {
+        rows->append({rows->empty() ? time : QString{}, piece + (span.isEmpty() ? QString{} : QStringLiteral("</span>")), category, continuation});
+        piece = span; visible = 0; continuation = continued;
+    };
+    for (qsizetype i = 0; i < html.size();) {
+        if (html.mid(i, 4) == QLatin1String("<br>")) { flush(false); i += 4; continue; }
+        const bool surrogate = html[i].isHighSurrogate() && i + 1 < html.size() && html[i + 1].isLowSurrogate();
+        if (visible + (surrogate ? 2 : 1) > RpcOutputListModel::kRowCharacters || piece.size() >= 6000) flush(true);
+        if (html[i] == QLatin1Char('<')) {
+            const auto end = html.indexOf(QLatin1Char('>'), i);
+            if (end >= 0) {
+                const auto tag = html.mid(i, end - i + 1);
+                if (tag.startsWith(QLatin1String("<span"))) span = tag;
+                else if (tag == QLatin1String("</span>")) span.clear();
+                piece += tag; i = end + 1; continue;
+            }
+        }
+        if (html[i] == QLatin1Char('&')) {
+            const auto end = html.indexOf(QLatin1Char(';'), i);
+            if (end >= i && end - i < 16) { piece += html.mid(i, end - i + 1); i = end + 1; ++visible; continue; }
+        }
+        piece += html[i++]; ++visible;
+        if (i < html.size() && html[i - 1].isHighSurrogate() && html[i].isLowSurrogate()) { piece += html[i++]; ++visible; }
+    }
+    if (!piece.isEmpty() || rows->isEmpty()) flush(false);
+    return rows;
+}
+QString BoundedText(const std::string& text)
+{
+    constexpr size_t limit{50'000};
+    size_t count = std::min(text.size(), limit);
+    if (count < text.size()) while (count && (static_cast<unsigned char>(text[count]) & 0xc0) == 0x80) --count;
+    auto result = QString::fromUtf8(text.data(), int(count));
+    if (count < text.size()) result += QObject::tr("\n[Output truncated. Use bitcoin-cli for the full result.]");
+    return result;
+}
+}
 
-public Q_SLOTS:
-    void execute(const QString& command, const QString& wallet_name)
-    {
-        QString time = QDateTime::currentDateTime().toString("hh:mm:ss");
-        try {
-            // Append "\n" as the parser requires a line terminator to finalize
-            // the last token. submitCommand() passes the raw command without it;
-            // the worker appends it here.
-            std::string executableCommand = command.toStdString() + "\n";
+struct RpcConsoleDrainState {
+    std::atomic_bool retired{false};
+    std::function<void()> notify;
+};
+struct RpcConsoleMailbox {
+    explicit RpcConsoleMailbox(std::shared_ptr<RpcConsoleDrainState> value) : drain(std::move(value)) {}
+    struct Event {
+        std::shared_ptr<const Rows> rows;
+        QString history;
+        std::shared_ptr<const QStringList> commands;
+        bool finished{false};
+        bool stop{false};
+        std::shared_ptr<const QStringList> suggestions;
+        quint64 completion_generation{0};
+    };
+    std::mutex mutex;
+    std::deque<Event> events;
+    std::vector<std::shared_ptr<const void>> retired;
+    std::shared_ptr<RpcConsoleDrainState> drain;
+    ~RpcConsoleMailbox() {
+        // The pre-acquired cleanup resource owns this entire allocation. The
+        // receipt follows actual Native payload destruction, not GUI detachment.
+        releaseRetired(); events.clear(); commands.reset();
+        drain->retired = true;
+        try { drain->notify(); } catch (...) {}
+    }
+    void releaseRetired() {
+        std::vector<std::shared_ptr<const void>> values;
+        { std::lock_guard lock{mutex}; values.swap(retired); }
+    }
+    std::atomic_size_t pending{0};
+    std::shared_ptr<const QStringList> commands;
+    bool closed{false};
+    std::function<void()> notify;
+    struct Pending {
+        std::shared_ptr<RpcConsoleMailbox> owner;
+        explicit Pending(std::shared_ptr<RpcConsoleMailbox> value) : owner(std::move(value)) { ++owner->pending; }
+        ~Pending() { --owner->pending; try { owner->notify(); } catch (...) {} }
+    };
+    void publish(Event event) {
+        {
+            std::lock_guard lock{mutex};
+            if (!closed) {
+                if (event.completion_generation) {
+                    const auto old = std::find_if(events.begin(), events.end(), [](const auto& value) { return value.completion_generation != 0; });
+                    if (old == events.end()) events.push_back(std::move(event));
+                    else if (old->completion_generation <= event.completion_generation) *old = std::move(event);
+                } else events.push_back(std::move(event));
+            }
+        }
+        notify();
+    }
+};
 
-            if (command.trimmed().compare("help-console", Qt::CaseInsensitive) == 0) {
-                Q_EMIT resultReady(time, RpcConsoleModel::CMD_REPLY,
-                                   tr("\n"
+RpcConsoleModel::RpcConsoleModel(interfaces::Node& node, QObject* parent)
+    : RpcConsoleModel(node, execution::SnapshotServices{}, parent) {}
+
+struct RpcConsoleModel::Construction {
+    QPointer<QObject> parent;
+    bool had_parent{false};
+    std::unique_ptr<BackendExecutor> executor;
+    execution::SnapshotServices services;
+    std::shared_ptr<RpcConsoleDrainState> drain;
+    std::shared_ptr<RpcConsoleMailbox> mailbox;
+};
+
+RpcConsoleModel::Construction RpcConsoleModel::prepareConstruction(execution::SnapshotServices services, QObject* parent)
+{
+    // Resource admission can run an injected callback. Do it before attaching
+    // any partially constructed QObject to the original parent's child tree.
+    Construction prepared;
+    prepared.parent = parent; prepared.had_parent = parent != nullptr;
+    prepared.services = std::move(services);
+    if (!prepared.services.scheduler) {
+        prepared.executor = std::make_unique<BackendExecutor>(execution::Limits::Bounded());
+        prepared.services.scheduler = prepared.executor->scheduler();
+    }
+    prepared.services.post = presentation::ReliablePost(std::move(prepared.services.post));
+    prepared.drain = std::make_shared<RpcConsoleDrainState>();
+    prepared.mailbox = execution::RetainValues<RpcConsoleMailbox>(prepared.services.scheduler,
+        [state = prepared.drain] { return std::make_unique<RpcConsoleMailbox>(state); });
+    if (prepared.had_parent && !prepared.parent)
+        throw std::runtime_error{"The original console owner is no longer available"};
+    return prepared;
+}
+
+RpcConsoleModel::RpcConsoleModel(interfaces::Node& node, execution::SnapshotServices services, QObject* parent)
+    : RpcConsoleModel(node, prepareConstruction(std::move(services), parent)) {}
+
+RpcConsoleModel::RpcConsoleModel(interfaces::Node& node, Construction construction)
+    : QObject(construction.parent.data()), m_node(node),
+      m_control_executor(std::move(construction.executor)), m_services(std::move(construction.services)),
+      m_mailbox(std::move(construction.mailbox)), m_drain_state(std::move(construction.drain))
+{
+    if (m_control_executor) m_control_executor->setParent(this);
+    const QPointer<RpcConsoleModel> observer{this};
+    m_drain_state->notify = [observer, post = m_services.post] {
+        post([observer] { if (observer) observer->onResultReady(); });
+    };
+    if (m_mailbox) m_mailbox->notify = m_drain_state->notify;
+    else {
+        m_stopping = true; m_drain_state->retired = true;
+        m_completion_error = tr("Console cleanup capacity is unavailable.");
+    }
+    m_append_timer.setSingleShot(true);
+    connect(&m_append_timer, &QTimer::timeout, this, &RpcConsoleModel::appendPendingRows);
+    if (m_control_executor) connect(m_control_executor.get(), &BackendExecutor::drained, this, &RpcConsoleModel::finishDrain);
+}
+
+RpcConsoleModel::~RpcConsoleModel()
+{
+    // Executor packets and their cleanup anchor outlive this GUI observer.
+    // The Node owner retains its public interface through producer drain.
+    beginShutdown();
+}
+
+void RpcConsoleModel::retireOutput(std::shared_ptr<const void> value)
+{
+    if (!value) return;
+    const auto anchor = m_mailbox;
+    { std::lock_guard lock{anchor->mutex}; anchor->retired.push_back(std::move(value)); }
+    // The reserved final cleanup owns the anchor if this optional eager
+    // release cannot be admitted. Never put large captures in a rejected task.
+    execution::Submit(*m_services.scheduler, [anchor] { anchor->releaseRetired(); }, [] {}, {},
+        {execution::Lane::Cleanup, 256, {}, execution::WorkClass::Action});
+}
+
+bool RpcConsoleModel::submitCommand(const QString& command, const QString& wallet_name)
+{
+    if (m_stopping || command.isEmpty() || (command.size() <= 64 && command.trimmed().isEmpty())) return false;
+    // Only bounded recognition of the independent stop intent occurs on GUI.
+    const bool stop = command.size() <= 64 && command.trimmed() == QLatin1String("stop");
+    bool backpressure{false};
+    { std::lock_guard lock{m_mailbox->mutex}; backpressure = !stop && m_mailbox->retired.size() >= 8; }
+    if (backpressure) { m_completion_error = tr("Console output is still being released. Try again."); Q_EMIT completionChanged(); return false; }
+    if ((stop && m_stop_pending) || (!stop && m_executing)) return false;
+    const auto mailbox = m_mailbox;
+    const auto key_color = m_key_color.name();
+    const auto node = &m_node;
+    const bool context_changed = m_last_wallet_name != wallet_name;
+    const auto pending = std::make_shared<RpcConsoleMailbox::Pending>(mailbox);
+    const auto admission = execution::Submit(*m_services.scheduler,
+        [mailbox, pending, node, command, wallet_name, key_color, stop, context_changed] {
+            const auto time = QDateTime::currentDateTime().toString("hh:mm:ss");
+            const auto publish = [&](int category, const QString& text, QString history = {}) {
+                const auto html = category == CMD_REPLY ? FormatJsonReply(text.toStdString(), key_color) : EscapeAndConvertWhitespace(text);
+                mailbox->publish({SplitRows(time, category, html), std::move(history), {}, false, false, {}, 0});
+            };
+            const auto trimmed = command.trimmed();
+            std::string executable = trimmed.toStdString() + "\n", filtered, unused;
+            try {
+                if (!RpcCommandExecutor::RPCParseCommandLine(nullptr, unused, executable, false, &filtered)) {
+                    publish(CMD_ERROR, tr("Parse error: unbalanced ' or \""));
+                    return;
+                }
+                // Redaction and all request formatting happen before the effect,
+                // on the worker. History retains a bounded, explicitly clipped
+                // representation while the original RPC request stays intact.
+                auto history = QString::fromStdString(filtered).trimmed();
+                if (history.size() > 4096) history = history.left(4096) + QStringLiteral(" ") + tr("[history truncated]");
+                if (!stop && context_changed) publish(CMD_REQUEST, wallet_name.isEmpty()
+                    ? tr("Executing command without any wallet")
+                    : tr("Executing command using \"%1\" wallet").arg(wallet_name.left(1024)));
+                publish(CMD_REQUEST, history, stop ? QString{} : history);
+                if (trimmed.compare(QLatin1String("help-console"), Qt::CaseInsensitive) == 0) {
+                    publish(CMD_REPLY, tr("\n"
                                       "This console accepts RPC commands using the standard syntax.\n"
                                       "   example:    getblockhash 0\n\n"
                                       "This console can also accept RPC commands using the parenthesized syntax.\n"
@@ -231,175 +452,25 @@ public Q_SLOTS:
                                       "   example:    getblock(getblockhash(0) 1)[tx]\n\n"
                                       "Results without keys can be queried with an integer in brackets.\n"
                                       "   example:    getblock(getblockhash(0),1)[tx][0]\n\n"));
-                return;
-            }
-
-            std::string result;
-            if (!RpcCommandExecutor::RPCExecuteCommandLine(m_node, result, executableCommand, nullptr, wallet_name)) {
-                Q_EMIT resultReady(time, RpcConsoleModel::CMD_ERROR,
-                                   tr("Parse error: unbalanced ' or \""));
-                return;
-            }
-            static constexpr int MAX_RESULT_CHARS = 50'000;
-            QString resultStr = QString::fromStdString(result);
-            const bool truncated = resultStr.size() > MAX_RESULT_CHARS;
-            if (truncated) {
-                resultStr = resultStr.left(MAX_RESULT_CHARS);
-                resultStr += "\n" + tr("[Output truncated at %1 characters. "
-                                       "Use bitcoin-cli for the full result.]")
-                                       .arg(MAX_RESULT_CHARS);
-            }
-            Q_EMIT resultReady(time, RpcConsoleModel::CMD_REPLY, resultStr);
-        } catch (UniValue& objError) {
-            try {
-                int code = objError.find_value("code").getInt<int>();
-                std::string message = objError.find_value("message").get_str();
-                QString msg = QString::fromStdString(message)
-                              + " (code " + QString::number(code) + ")";
-                Q_EMIT resultReady(time, RpcConsoleModel::CMD_ERROR, msg);
-            } catch (const std::runtime_error&) {
-                Q_EMIT resultReady(time, RpcConsoleModel::CMD_ERROR,
-                                   QString::fromStdString(objError.write()));
-            }
-        } catch (const std::exception& e) {
-            Q_EMIT resultReady(time, RpcConsoleModel::CMD_ERROR,
-                               tr("Error: %1").arg(QString::fromStdString(e.what())));
-        }
-    }
-
-Q_SIGNALS:
-    void resultReady(const QString& time, int category, const QString& rawText);
-
-private:
-    interfaces::Node& m_node;
-};
-
-#include <qml/models/rpcconsolemodel.moc>
-
-// ---------------------------------------------------------------------------
-// RpcConsoleModel
-// ---------------------------------------------------------------------------
-
-RpcConsoleModel::RpcConsoleModel(interfaces::Node& node, QObject* parent)
-    : QObject(parent), m_node(node), m_worker_thread(new QThread(this))
-{
-    m_worker_thread->setObjectName(QStringLiteral("rpc-console"));
-    m_worker = new RpcConsoleWorker(m_node);
-    m_worker->moveToThread(m_worker_thread);
-
-    connect(m_worker, &RpcConsoleWorker::resultReady,
-            this,     &RpcConsoleModel::onResultReady,
-            Qt::QueuedConnection);
-
-    connect(m_worker_thread, &QThread::finished,
-            m_worker, &RpcConsoleWorker::deleteLater);
-
-    m_worker_thread->start();
-}
-
-RpcConsoleModel::~RpcConsoleModel()
-{
-    if (!m_worker_thread) return;
-    m_worker_thread->quit();
-    m_worker_thread->wait();
-}
-
-void RpcConsoleModel::appendFormattedRow(const QString& time, int category, const QString& rawText)
-{
-    QString body;
-    switch (category) {
-    case CMD_REQUEST:
-        body = EscapeAndConvertWhitespace(rawText);
-        break;
-    case CMD_REPLY:
-        body = FormatJsonReply(rawText.toStdString(), m_key_color.name());
-        break;
-    case CMD_ERROR:
-    default:
-        body = EscapeAndConvertWhitespace(rawText);
-        break;
-    }
-    m_output_model.appendRow(time, body, category);
-}
-
-bool RpcConsoleModel::submitCommand(const QString& command, const QString& wallet_name)
-{
-    if (m_stopping) return false;
-    const QString trimmed_command = command.trimmed();
-    if (trimmed_command.isEmpty()) return false;
-
-    // Compute the filtered version to store in history (passwords redacted).
-    // Mirrors Qt5's rpcconsole.cpp:994-1004: the fExecute=false parse call must be
-    // wrapped in try/catch because the parser throws std::runtime_error on invalid syntax
-    // regardless of fExecute.
-    std::string filtered;
-    std::string dummy;
-    QString time = QDateTime::currentDateTime().toString("hh:mm:ss");
-    try {
-        if (!RpcCommandExecutor::RPCParseCommandLine(nullptr, dummy, trimmed_command.toStdString() + "\n",
-                                                     false, &filtered)) {
-            appendFormattedRow(time, CMD_ERROR, tr("Parse error: unbalanced ' or \""));
-            return true;
-        }
-    } catch (const std::runtime_error& e) {
-        appendFormattedRow(time, CMD_ERROR,
-                           tr("Error: %1").arg(QString::fromStdString(e.what())));
-        return true;
-    }
-    QString filteredCmd = QString::fromStdString(filtered).trimmed();
-
-    // A special case allows requesting shutdown even while a long-running command
-    // is executing, mirroring Core's RPCConsole::on_lineEdit_returnPressed().
-    // "stop" runs synchronously on the calling thread, so it can abort a command
-    // that is blocking the worker, and returns before the request is echoed or
-    // added to history: the GUI shuts down immediately, so that output is never
-    // seen.
-    if (trimmed_command == QLatin1String("stop")) {
-        std::string result;
-        RpcCommandExecutor::RPCExecuteCommandLine(m_node, result, trimmed_command.toStdString());
-        return true;
-    }
-
-    // Keyboard Enter reaches submitCommand() directly, so this guard, not just the
-    // disabled Run button, is what serialises execution: a new command is refused
-    // until the in-flight reply arrives.
-    if (m_executing) return false;
-
-    // Add to history (deduplicate consecutive identical entries).
-    if (m_history.isEmpty() || m_history.last() != filteredCmd) {
-        m_history.append(filteredCmd);
-        if (m_history.size() > HISTORY_MAX) {
-            m_history.removeFirst();
-        }
-    }
-    m_history_idx = -1;
-    m_pending_text.clear();
-
-    // Surface the active wallet context whenever it changes, mirroring Qt Widgets.
-    if (m_last_wallet_name != wallet_name) {
-        if (!wallet_name.isEmpty()) {
-            //: RPC console message shown when a command is run against a specific
-            //: wallet. %1 is the wallet name.
-            appendFormattedRow(time, CMD_REQUEST,
-                               tr("Executing command using \"%1\" wallet").arg(wallet_name));
-        } else {
-            //: RPC console message shown when a command is run without any wallet
-            //: context (the node has no wallet selected).
-            appendFormattedRow(time, CMD_REQUEST, tr("Executing command without any wallet"));
-        }
-        m_last_wallet_name = wallet_name;
-    }
-
-    // Append the request line immediately (main thread) so QML sees it before
-    // the async reply arrives. Mirrors Qt GUI RPCConsole behaviour.
-    appendFormattedRow(time, CMD_REQUEST, filteredCmd);
-
-    setExecuting(true);
-
-    // Dispatch to worker thread.
-    QMetaObject::invokeMethod(m_worker, "execute", Qt::QueuedConnection,
-                              Q_ARG(QString, trimmed_command),
-                              Q_ARG(QString, wallet_name));
+                    return;
+                }
+                std::string result;
+                if (!RpcCommandExecutor::RPCExecuteCommandLine(*node, result, executable, nullptr, wallet_name)) {
+                    publish(CMD_ERROR, tr("Parse error: unbalanced ' or \""));
+                } else publish(CMD_REPLY, BoundedText(result));
+            } catch (UniValue& error) {
+                try { publish(CMD_ERROR, BoundedText(error.find_value("message").get_str()) + QStringLiteral(" ") + tr("(code %1)").arg(error.find_value("code").getInt<int>())); }
+                catch (const std::exception&) { publish(CMD_ERROR, BoundedText(error.write())); }
+            } catch (const std::exception& error) { publish(CMD_ERROR, tr("Error: %1").arg(BoundedText(error.what()))); }
+        }, [mailbox, pending, stop] {
+            mailbox->publish({{}, {}, {}, true, stop, {}, 0});
+        }, [mailbox, pending, stop](std::exception_ptr) {
+            const auto rows = SplitRows({}, CMD_ERROR, QObject::tr("The command did not complete."));
+            mailbox->publish({rows, {}, {}, true, stop, {}, 0});
+        }, {stop ? execution::Lane::Control : execution::Lane::Core, size_t(command.size()) * sizeof(QChar) + size_t(wallet_name.size()) * sizeof(QChar), {}, execution::WorkClass::Action});
+    if (!admission) return false;
+    if (stop) m_stop_pending = true;
+    else { m_last_wallet_name = wallet_name; m_command_finished = false; setExecuting(true); }
     return true;
 }
 
@@ -435,52 +506,173 @@ void RpcConsoleModel::resetHistoryNavigation()
 
 void RpcConsoleModel::clear()
 {
-    m_output_model.resetAll();
+    if (m_stopping) return;
+    for (auto& pending : m_pending_rows) retireOutput(std::move(pending.rows));
+    m_pending_rows.clear();
+    retireOutput(m_output_model.releaseRows());
+}
+
+void RpcConsoleModel::setCompletionPrefix(const QString& prefix)
+{
+    const auto bounded = prefix.left(257);
+    if (m_stopping || m_completion_prefix == bounded) return;
+    m_completion_prefix = bounded;
+    const auto generation = ++m_completion_generation;
+    m_completion_suggestions.clear(); m_completion_error.clear();
+    // RPC command identifiers are bounded metadata. A longer draft is an
+    // argument expression and cannot match a command-name completion.
+    if (prefix.isEmpty() || prefix.size() > 256) { m_completion_busy = false; Q_EMIT completionChanged(); return; }
+    const auto mailbox = m_mailbox;
+    const auto pending = std::make_shared<RpcConsoleMailbox::Pending>(mailbox);
+    m_completion_busy = true;
+    const auto admission = execution::Submit(*m_services.scheduler, [mailbox, pending, prefix = bounded] {
+        std::shared_ptr<const QStringList> commands;
+        { std::lock_guard lock{mailbox->mutex}; commands = mailbox->commands; }
+        auto suggestions = std::make_shared<QStringList>();
+        if (commands) for (const auto& command : *commands) {
+            if (command.startsWith(prefix, Qt::CaseInsensitive)) suggestions->append(command);
+            if (suggestions->size() == 10) break;
+        }
+        return std::shared_ptr<const QStringList>{std::move(suggestions)};
+    }, [mailbox, pending, generation](std::shared_ptr<const QStringList> suggestions) {
+        RpcConsoleMailbox::Event event; event.suggestions = std::move(suggestions); event.completion_generation = generation;
+        mailbox->publish(std::move(event));
+    }, [mailbox, pending, generation](std::exception_ptr) {
+        RpcConsoleMailbox::Event event; event.completion_generation = generation;
+        mailbox->publish(std::move(event));
+    }, {execution::Lane::Domain, size_t(prefix.size()) * sizeof(QChar), {}, execution::WorkClass::Observation});
+    if (!admission) { m_completion_busy = false; m_completion_error = tr("Command suggestions are temporarily unavailable."); }
+    Q_EMIT completionChanged();
 }
 
 void RpcConsoleModel::onNodeInitialized()
 {
-    if (m_stopping) return;
-    std::vector<std::string> cmds = m_node.listRpcCommands();
-    QStringList list;
-    list.reserve(static_cast<int>(cmds.size()));
-    for (const auto& c : cmds) {
-        list.append(QString::fromStdString(c));
-        list.append(QStringLiteral("help ") + QString::fromStdString(c));
-    }
-    list.append(QStringLiteral("help-console"));
-    list.sort(Qt::CaseInsensitive);
-    list.removeDuplicates();
-    m_available_commands = list;
-    Q_EMIT availableCommandsChanged();
+    if (m_stopping || m_metadata_pending) return;
+    { std::lock_guard lock{m_mailbox->mutex}; if (m_mailbox->retired.size() >= 8) return; }
+    m_metadata_pending = true;
+    const auto mailbox = m_mailbox;
+    const auto pending = std::make_shared<RpcConsoleMailbox::Pending>(mailbox);
+    const auto admission = execution::Submit(*m_services.scheduler, [node = &m_node, pending] {
+        auto list = std::make_shared<QStringList>();
+        for (const auto& command : node->listRpcCommands()) {
+            if (list->size() >= 10000 || command.size() > 256) throw std::runtime_error("RPC command metadata exceeds the console limit");
+            const auto name = QString::fromStdString(command);
+            list->append(name); list->append(QStringLiteral("help ") + name);
+        }
+        list->append(QStringLiteral("help-console"));
+        list->sort(Qt::CaseInsensitive); list->removeDuplicates();
+        return std::shared_ptr<const QStringList>{std::move(list)};
+    }, [mailbox, pending](std::shared_ptr<const QStringList> commands) {
+        { std::lock_guard lock{mailbox->mutex}; if (!mailbox->closed) mailbox->commands = commands; }
+        mailbox->publish({{}, {}, std::move(commands), false, false, {}, 0});
+    }, [mailbox, pending](std::exception_ptr error) {
+        auto message = QObject::tr("RPC command discovery failed.");
+        try { std::rethrow_exception(error); } catch (const std::exception& cause) { message += QLatin1Char(' ') + BoundedText(cause.what()); }
+        mailbox->publish({SplitRows({}, CMD_ERROR, EscapeAndConvertWhitespace(message)), {}, std::make_shared<const QStringList>(), false, false, {}, 0});
+    });
+    if (!admission) { m_metadata_pending = false; m_completion_error = tr("RPC command discovery could not be scheduled."); Q_EMIT completionChanged(); }
 }
 
-void RpcConsoleModel::onResultReady(const QString& time, int category, const QString& rawText)
+void RpcConsoleModel::onResultReady()
+{
+    if (!m_mailbox) { finishDrain(); return; }
+    std::deque<RpcConsoleMailbox::Event> events;
+    { std::lock_guard lock{m_mailbox->mutex}; events.swap(m_mailbox->events); }
+    bool commands_changed{false}, completion_changed{false};
+    for (auto& event : events) {
+        if (m_stopping) { retireOutput(std::move(event.rows)); retireOutput(std::move(event.commands)); continue; }
+        if (!event.history.isEmpty()) {
+            if (m_history.isEmpty() || m_history.last() != event.history) m_history.append(std::move(event.history));
+            if (m_history.size() > HISTORY_MAX) m_history.removeFirst();
+            m_history_idx = -1; m_pending_text.clear();
+        }
+        if (event.commands) {
+            m_metadata_pending = false;
+            if (!event.commands->isEmpty()) {
+                retireOutput(std::make_shared<const QStringList>(std::exchange(m_available_commands, *event.commands)));
+                commands_changed = true;
+            }
+            retireOutput(std::move(event.commands));
+        }
+        if (event.completion_generation == m_completion_generation && event.completion_generation) {
+            m_completion_busy = false;
+            m_completion_error = event.suggestions ? QString{} : tr("Command suggestions are temporarily unavailable.");
+            m_completion_suggestions = event.suggestions ? *event.suggestions : QStringList{};
+            completion_changed = true;
+        }
+        if (event.rows) m_pending_rows.push_back({std::move(event.rows), 0});
+        if (event.finished) { if (event.stop) m_stop_pending = false; else m_command_finished = true; }
+    }
+    // Transfer every large event to a retirement anchor/member before emitting
+    // a Qt signal which can close or destroy the observing view.
+    const QPointer<RpcConsoleModel> observer{this};
+    if (commands_changed) {
+        Q_EMIT availableCommandsChanged(); if (!observer || m_stopping) return;
+        const auto prefix = m_completion_prefix; m_completion_prefix.clear(); setCompletionPrefix(prefix);
+        if (!observer || m_stopping) return;
+    }
+    if (completion_changed) { Q_EMIT completionChanged(); if (!observer || m_stopping) return; }
+    if (!m_stopping) appendPendingRows();
+    if (observer) finishDrain();
+}
+
+void RpcConsoleModel::appendPendingRows()
 {
     if (m_stopping) return;
-    // Append the row first so the output line appears before the submit button
-    // is re-enabled, avoiding a single-frame window where the user could submit
-    // again before seeing the reply.
-    appendFormattedRow(time, category, rawText);
-    setExecuting(false);
+    int budget{16};
+    Rows staged;
+    while (budget && !m_pending_rows.empty()) {
+        auto& next = m_pending_rows.front();
+        const int count = std::min(budget, int(next.rows->size()) - next.offset);
+        for (int row = 0; row < count; ++row) staged.append(next.rows->at(next.offset + row));
+        next.offset += count; budget -= count;
+        if (next.offset == next.rows->size()) { retireOutput(std::move(next.rows)); m_pending_rows.pop_front(); }
+    }
+    const QPointer<RpcConsoleModel> observer{this};
+    if (!staged.isEmpty()) m_output_model.appendRows(staged, 0, staged.size());
+    if (!observer || m_stopping) return;
+    if (!m_pending_rows.empty()) m_append_timer.start(0);
+    else if (m_command_finished) setExecuting(false);
 }
 
 void RpcConsoleModel::setExecuting(bool executing)
 {
-    if (m_executing != executing) {
-        m_executing = executing;
-        Q_EMIT executingChanged();
-    }
+    if (m_executing != executing) { m_executing = executing; Q_EMIT executingChanged(); }
+}
+
+void RpcConsoleModel::closeAdmission()
+{
+    if (std::exchange(m_stopping, true)) return;
+    m_append_timer.stop();
+    { std::lock_guard lock{m_mailbox->mutex}; m_mailbox->closed = true;
+      if (m_mailbox->commands) m_mailbox->retired.push_back(std::exchange(m_mailbox->commands, {})); }
+    for (auto& pending : m_pending_rows) retireOutput(std::move(pending.rows));
+    m_pending_rows.clear();
+    retireOutput(m_output_model.releaseRows(false));
+    retireOutput(std::make_shared<const QStringList>(std::exchange(m_available_commands, {})));
+    retireOutput(std::make_shared<const QStringList>(std::exchange(m_history, {})));
+    retireOutput(std::make_shared<const QString>(std::exchange(m_pending_text, {})));
+    retireOutput(std::make_shared<const QString>(std::exchange(m_completion_prefix, {})));
+    retireOutput(std::make_shared<const QString>(std::exchange(m_last_wallet_name, {})));
+    // No large payload enters a queued GUI closure after this point.
+    std::deque<RpcConsoleMailbox::Event> events;
+    { std::lock_guard lock{m_mailbox->mutex}; events.swap(m_mailbox->events); }
+    for (auto& event : events) { retireOutput(std::move(event.rows)); retireOutput(std::move(event.commands)); }
 }
 
 void RpcConsoleModel::beginShutdown()
 {
-    if (m_stopping) return;
-    m_stopping = true;
-    m_worker_thread->quit();
-    JoinThreadAsync(m_worker_thread, this, [this] {
-        m_worker_thread = nullptr;
-        m_worker = nullptr;
-        Q_EMIT drained();
-    });
+    if (std::exchange(m_shutdown_started, true)) return;
+    closeAdmission();
+    m_mailbox.reset();
+    if (m_control_executor) m_control_executor->shutdown();
+    finishDrain();
+}
+
+void RpcConsoleModel::finishDrain()
+{
+    if (!m_shutdown_started || m_drained || !m_drain_state->retired ||
+        (m_control_executor && !m_control_executor->isDrained())) return;
+    m_drained = true;
+    Q_EMIT drained();
 }

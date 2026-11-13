@@ -54,6 +54,95 @@ TestCase {
         nodeModel.blockTipHeight = 0
     }
 
+    function test_load_error_popup_keeps_original_wallet_and_prepared_message() {
+        const page = createDesktopWallets()
+        const popup = findChild(page, "walletLoadErrorPopup")
+        verify(popup !== null)
+        walletController.walletLoadErrorNotice("original-wallet", 42, "Prepared original failure")
+        tryCompare(popup, "opened", true)
+        compare(popup.walletName, "original-wallet")
+        compare(popup.operation, 42)
+        compare(popup.message, "Prepared original failure")
+        walletController.walletLoadError = "Unrelated later error"
+        walletController.walletLoadErrorChanged()
+        compare(popup.message, "Prepared original failure")
+        compare(popup.walletName, "original-wallet")
+    }
+
+    function test_old_close_prompt_keeps_original_pair_after_same_name_reopen() {
+        const page = createDesktopWallets()
+        const oldName = testWalletModel.name
+        const replacementName = testSecondWalletModel.name
+        try {
+            testWalletModel.available = true
+            testSecondWalletModel.available = true
+            testSecondWalletModel.name = oldName
+            walletController.requestCloseWallet(testWalletModel)
+            const questions = findChild(page, "walletCloseQuestions")
+            verify(questions !== null)
+            tryCompare(questions, "count", 1)
+            // The popup belongs to this immutable question delegate, while its
+            // visual parent is the window Overlay rather than the page tree.
+            const originalQuestionView = questions.itemAt(0)
+            verify(originalQuestionView !== null)
+            const popup = originalQuestionView.confirmation
+            verify(popup !== null)
+            compare(popup.objectName, "walletCloseConfirmationPopup")
+            tryCompare(popup, "opened", true)
+            const originalQuestion = popup.questionToken
+            verify(originalQuestion.length > 0)
+            compare(popup.targetWallet, testWalletModel)
+
+            // Hold the old presentation while its original facade is already
+            // fenced and a distinct facade with the same name becomes selected.
+            testWalletModel.available = false
+            walletController.setOpenWallets([testSecondWalletModel])
+            walletController.setSelectedWalletObject(testSecondWalletModel)
+            testSecondWalletModel.requestClose()
+            const replacementQuestion = testSecondWalletModel.closeQuestionToken
+            verify(replacementQuestion.length > 0)
+            compare(popup.targetWallet, testWalletModel)
+            compare(popup.questionToken, originalQuestion)
+            verify(popup.contentItem !== null)
+            // Popup's visual contents are hosted by its popup item. Resolve the
+            // actual button in this original popup's content, not its QObject tree.
+            const confirm = findChild(popup.contentItem, "walletCloseConfirmationConfirmButton")
+            verify(confirm !== null)
+            mouseClick(confirm)
+            tryCompare(popup, "visible", false)
+            compare(walletController.closeWalletCalls, 0)
+            compare(testSecondWalletModel.closeQuestionToken, replacementQuestion)
+            compare(testSecondWalletModel.available, true)
+            compare(walletController.selectedWallet, testSecondWalletModel)
+        } finally {
+            walletController.reset()
+            testWalletModel.available = true
+            testWalletModel.closeQuestionToken = ""
+            testSecondWalletModel.available = true
+            testSecondWalletModel.closeQuestionToken = ""
+            testSecondWalletModel.name = replacementName
+        }
+    }
+
+    function test_migration_error_uses_typed_original_wallet_notice() {
+        const page = createDesktopWallets()
+        walletController.walletMigrationRequired("legacy-original")
+        const popup = findChild(page, "walletMigrationPopup")
+        verify(popup !== null)
+        tryCompare(popup, "opened", true)
+        walletController.walletMigrationError = "Complete original details"
+        walletController.walletMigrationErrorNotice("legacy-original", 9, false, "Prepared short message")
+        const text = findChild(page, "walletMigrationErrorText")
+        verify(text !== null)
+        compare(text.text, "Prepared short message")
+        const details = popup.errorDetailsModel
+        verify(details !== null)
+        walletController.walletMigrationError = "Unrelated full details"
+        walletController.walletMigrationErrorNotice("another-wallet", 10, true, "Unrelated short message")
+        compare(text.text, "Prepared short message")
+        compare(popup.errorDetailsModel, details)
+    }
+
     function test_leaving_peers_tab_stops_refresh() {
         const page = createDesktopWallets()
         const peers = findChild(page, "peersTabButton")

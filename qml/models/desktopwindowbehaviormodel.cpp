@@ -3,113 +3,170 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/desktopwindowbehaviormodel.h>
+#include <qml/backendexecutor.h>
+#include <qml/guipresentation.h>
 
+#include <QPointer>
 #include <QSettings>
+#include <stdexcept>
+#include <array>
 
-void DesktopWindowBehaviorModel::loadFromSettings()
+namespace {
+constexpr bool DesktopPlatform()
 {
-    QSettings settings;
-    // fHideTrayIcon stores the inverse of showTrayIcon (default: show = true → hide = false)
-    m_show_tray_icon = !settings.value(KEY_HIDE_TRAY_ICON, false).toBool();
-    // Treat persisted settings as untrusted external input: a stale or manually
-    // edited QSettings could hold minimizeToTray=true while the tray is hidden,
-    // a state unreachable through the UI. Clamp it and rewrite the bad value so
-    // runtime can never observe showTrayIcon=false && minimizeToTray=true.
-    const bool raw_minimize_to_tray = settings.value(KEY_MINIMIZE_TO_TRAY, false).toBool();
-    m_minimize_to_tray = raw_minimize_to_tray && m_show_tray_icon;
-    if (raw_minimize_to_tray && !m_show_tray_icon) {
-        settings.setValue(KEY_MINIMIZE_TO_TRAY, false);
-    }
-    m_minimize_on_close = settings.value(KEY_MINIMIZE_ON_CLOSE, false).toBool();
-
-    if (!m_desktop_platform) {
-        m_show_tray_icon = false;
-        m_minimize_to_tray = false;
-        m_minimize_on_close = false;
-    }
+#ifdef Q_OS_ANDROID
+    return false;
+#else
+    return true;
+#endif
+}
 }
 
 DesktopWindowBehaviorModel::DesktopWindowBehaviorModel(QObject* parent)
-    : QObject(parent)
-{
-#ifdef Q_OS_ANDROID
-    m_desktop_platform = false;
-#else
-    m_desktop_platform = true;
-#endif
-    loadFromSettings();
-}
-
+    : DesktopWindowBehaviorModel(DesktopPlatform(), {}, {}, parent) {}
 DesktopWindowBehaviorModel::DesktopWindowBehaviorModel(bool desktop_platform, QObject* parent)
-    : QObject(parent)
-    , m_desktop_platform(desktop_platform)
+    : DesktopWindowBehaviorModel(desktop_platform, {}, {}, parent) {}
+DesktopWindowBehaviorModel::DesktopWindowBehaviorModel(bool desktop_platform, execution::SnapshotServices services, Store store, QObject* parent)
+    : QObject(parent), m_services(std::move(services)), m_store(std::move(store)), m_desktop_platform(desktop_platform)
 {
-    loadFromSettings();
+    if (!m_services.scheduler) {
+        m_executor = std::make_unique<BackendExecutor>(execution::Limits::Bounded());
+        m_executor->setObjectName(QStringLiteral("desktop-preferences"));
+        m_services.scheduler = m_executor->scheduler();
+    }
+    if (!m_services.post) m_services.post = presentation::QueuedPost();
+    m_key = m_services.scheduler->allocateKey();
+    if (!m_store.read) m_store.read = [] {
+        QSettings settings;
+        Values values{!settings.value(KEY_HIDE_TRAY_ICON, false).toBool(),
+            settings.value(KEY_MINIMIZE_TO_TRAY, false).toBool(), settings.value(KEY_MINIMIZE_ON_CLOSE, false).toBool()};
+        if (!values.show_tray && values.minimize_tray) {
+            values.minimize_tray = false;
+            settings.setValue(KEY_MINIMIZE_TO_TRAY, false);
+            settings.sync();
+        }
+        if (settings.status() != QSettings::NoError) throw std::runtime_error("Desktop preferences could not be read");
+        return values;
+    };
+    if (!m_store.write) m_store.write = [](Values values) {
+        QSettings settings;
+        settings.setValue(KEY_HIDE_TRAY_ICON, !values.show_tray);
+        settings.setValue(KEY_MINIMIZE_TO_TRAY, values.minimize_tray);
+        settings.setValue(KEY_MINIMIZE_ON_CLOSE, values.minimize_close);
+        settings.sync();
+        if (settings.status() != QSettings::NoError) throw std::runtime_error("Desktop preferences could not be saved");
+    };
+    if (!desktop_platform) apply({false, false, false});
+    submit({}, true);
 }
-
-bool DesktopWindowBehaviorModel::desktopPlatform() const
+DesktopWindowBehaviorModel::~DesktopWindowBehaviorModel() { closeAdmission(); }
+void DesktopWindowBehaviorModel::retryPersistence()
 {
-    return m_desktop_platform;
+    if (m_stopping) return;
+    // A failed GUI transport does not erase an accepted write's actual result.
+    // Recover bounded cached outcomes first; successful writes are never replayed.
+    std::array<std::pair<quint64, bool>, 128> ready{};
+    size_t count{0};
+    for (const auto& [id, operation] : m_operations) if (operation.command->result()) ready[count++] = {id, operation.load};
+    const QPointer<DesktopWindowBehaviorModel> guard{this};
+    for (size_t i = 0; i < count; ++i) {
+        publish(ready[i].first, ready[i].second);
+        if (!guard || m_stopping) return;
+    }
+    if (!m_operations.empty() || (count > 0 && m_error.isEmpty())) return;
+    submit({m_show_tray_icon, m_minimize_to_tray, m_minimize_on_close}, !m_ready);
 }
-
-bool DesktopWindowBehaviorModel::showTrayIcon() const
+void DesktopWindowBehaviorModel::closeAdmission()
 {
-    return m_show_tray_icon;
+    if (std::exchange(m_stopping, true)) return;
+    // Accepted writes own their captured values and finish independently.
+    if (m_executor) m_executor->shutdown();
 }
-
+bool DesktopWindowBehaviorModel::submit(Values values, bool load)
+{
+    if (m_stopping) return false;
+    const auto id = ++m_next_id;
+    m_state_id = id;
+    if (m_operations.size() >= 128) {
+        m_error = tr("Desktop preferences are busy. Try again after saving finishes.");
+        Q_EMIT settingsStateChanged(); return false;
+    }
+    const QPointer<DesktopWindowBehaviorModel> observer{this};
+    auto operation = std::make_shared<execution::OwnedCommand<Values>>(m_services.scheduler,
+        [post = m_services.post, observer, id, load] {
+            post([observer, id, load] { if (observer && !observer->m_stopping) observer->publish(id, load); });
+        });
+    const auto admitted = operation->start([store = m_store, values, load] {
+        if (load) return store.read();
+        store.write(values); return values;
+    }, {execution::Lane::Core, 128, m_key, execution::WorkClass::Action});
+    if (!admitted) {
+        m_error = tr("Desktop preferences could not be queued.");
+        Q_EMIT settingsStateChanged();
+        return false;
+    }
+    m_operations.emplace(id, Pending{load, std::move(operation)});
+    m_error.clear();
+    const QPointer<DesktopWindowBehaviorModel> guard{this};
+    if (!load) apply(values);
+    if (guard) Q_EMIT settingsStateChanged();
+    return true;
+}
+void DesktopWindowBehaviorModel::publish(quint64 id, bool load)
+{
+    const auto found = m_operations.find(id);
+    if (found == m_operations.end()) return;
+    const auto result = found->second.command->result();
+    if (!result) return;
+    m_operations.erase(found);
+    const QPointer<DesktopWindowBehaviorModel> guard{this};
+    if (id == m_state_id) {
+        if (result->error || !result->value) m_error = load ? tr("Desktop preferences could not be read.") : tr("Desktop preferences could not be saved.");
+        else {
+            m_error.clear();
+            if (load) {
+                m_ready = true;
+                apply(m_desktop_platform ? *result->value : Values{false, false, false});
+            }
+        }
+    }
+    if (guard) Q_EMIT settingsStateChanged();
+}
+void DesktopWindowBehaviorModel::apply(Values values)
+{
+    values.minimize_tray = values.minimize_tray && values.show_tray;
+    const auto revision = m_state_id;
+    const QPointer<DesktopWindowBehaviorModel> guard{this};
+    const bool show_changed = m_show_tray_icon != values.show_tray;
+    const bool tray_changed = m_minimize_to_tray != values.minimize_tray;
+    const bool close_changed = m_minimize_on_close != values.minimize_close;
+    m_show_tray_icon = values.show_tray;
+    m_minimize_to_tray = values.minimize_tray;
+    m_minimize_on_close = values.minimize_close;
+    if (tray_changed) Q_EMIT minimizeToTrayChanged(m_minimize_to_tray);
+    if (!guard || m_stopping || revision != m_state_id) return;
+    if (show_changed) Q_EMIT showTrayIconChanged(m_show_tray_icon);
+    if (!guard || m_stopping || revision != m_state_id) return;
+    if (close_changed) Q_EMIT minimizeOnCloseChanged(m_minimize_on_close);
+}
+bool DesktopWindowBehaviorModel::desktopPlatform() const { return m_desktop_platform; }
+bool DesktopWindowBehaviorModel::showTrayIcon() const { return m_show_tray_icon; }
+bool DesktopWindowBehaviorModel::minimizeToTray() const { return m_minimize_to_tray; }
+bool DesktopWindowBehaviorModel::minimizeOnClose() const { return m_minimize_on_close; }
 void DesktopWindowBehaviorModel::setShowTrayIcon(bool show)
 {
-    if (m_show_tray_icon == show) return;
-
-    m_show_tray_icon = show;
-    QSettings settings;
-    settings.setValue(KEY_HIDE_TRAY_ICON, !show);
-
-    if (!show && m_minimize_to_tray) {
-        setMinimizeToTray(false);
-    }
-
-    Q_EMIT showTrayIconChanged(m_show_tray_icon);
+    if (!m_ready || !m_desktop_platform || m_show_tray_icon == show) return;
+    submit({show, show && m_minimize_to_tray, m_minimize_on_close}, false);
 }
-
-bool DesktopWindowBehaviorModel::minimizeToTray() const
-{
-    return m_minimize_to_tray;
-}
-
 void DesktopWindowBehaviorModel::setMinimizeToTray(bool minimize)
 {
-    // No-op when tray icon is disabled
-    if (!m_show_tray_icon && minimize) return;
-    if (m_minimize_to_tray == minimize) return;
-
-    m_minimize_to_tray = minimize;
-    QSettings settings;
-    settings.setValue(KEY_MINIMIZE_TO_TRAY, minimize);
-    Q_EMIT minimizeToTrayChanged(m_minimize_to_tray);
+    if (!m_ready || !m_desktop_platform || (!m_show_tray_icon && minimize) || m_minimize_to_tray == minimize) return;
+    submit({m_show_tray_icon, minimize, m_minimize_on_close}, false);
 }
-
-bool DesktopWindowBehaviorModel::minimizeOnClose() const
-{
-    return m_minimize_on_close;
-}
-
 void DesktopWindowBehaviorModel::setMinimizeOnClose(bool minimize)
 {
-    if (m_minimize_on_close == minimize) return;
-
-    m_minimize_on_close = minimize;
-    QSettings settings;
-    settings.setValue(KEY_MINIMIZE_ON_CLOSE, minimize);
-    Q_EMIT minimizeOnCloseChanged(m_minimize_on_close);
+    if (!m_ready || !m_desktop_platform || m_minimize_on_close == minimize) return;
+    submit({m_show_tray_icon, m_minimize_to_tray, minimize}, false);
 }
-
-bool DesktopWindowBehaviorModel::shouldHideToTrayOnMinimize() const
-{
-    return m_desktop_platform && m_show_tray_icon && m_minimize_to_tray;
-}
-
-bool DesktopWindowBehaviorModel::shouldMinimizeWindowOnClose() const
-{
-    return m_desktop_platform && m_minimize_on_close;
-}
+bool DesktopWindowBehaviorModel::shouldHideToTrayOnMinimize() const { return m_desktop_platform && m_show_tray_icon && m_minimize_to_tray; }
+bool DesktopWindowBehaviorModel::shouldMinimizeWindowOnClose() const { return m_desktop_platform && m_minimize_on_close; }

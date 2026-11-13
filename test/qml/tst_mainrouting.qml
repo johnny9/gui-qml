@@ -41,8 +41,9 @@ TestCase {
 
     function cleanup() {
         if (windowUnderTest) {
+            // Preserve the real close route. QtTest owns destruction after
+            // cleanup, before the next test, while this fixture stays alive.
             windowUnderTest.close()
-            windowUnderTest.destroy()
             windowUnderTest = null
         }
         nodeModel.fatalException = false
@@ -63,7 +64,7 @@ TestCase {
         walletController.setOpenWallets(no_wallets_found ? [] : [testWalletModel])
         walletController.setSelectedWalletObject(testWalletModel)
         walletListModel.setWalletDirLoaded(wallet_dir_loaded === undefined ? true : wallet_dir_loaded)
-        windowUnderTest = mainWindowComponent.createObject(null)
+        windowUnderTest = createTemporaryObject(mainWindowComponent, testCase)
         verify(windowUnderTest !== null)
         wait(0)
         return windowUnderTest
@@ -158,9 +159,13 @@ TestCase {
         findChild(form, "createWalletNameInput").text = "Watch wallet"
         findChild(form, "watchOnlyXpubInput").text =
             "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8"
-        findChild(form, "createWalletFormCreateButton").clicked()
+        const createButton = findChild(form, "createWalletFormCreateButton")
+        tryCompare(createButton, "enabled", true)
+        createButton.clicked()
         tryVerify(function() { return findChild(wizard, "walletCreationReadyPage") !== null })
-        findChild(wizard, "createWalletReadyDoneButton").clicked()
+        const doneButton = findChild(wizard, "createWalletReadyDoneButton")
+        tryCompare(doneButton, "enabled", true)
+        doneButton.clicked()
 
         tryCompare(findChild(window, "walletCreationModal"), "visible", false)
         compare(findChild(window, "mainPageStack").depth, 1)
@@ -185,11 +190,15 @@ TestCase {
         findChild(form, "createWalletNameInput").text = "Onboarding watch wallet"
         findChild(form, "watchOnlyXpubInput").text =
             "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8"
-        findChild(form, "createWalletFormCreateButton").clicked()
+        const createButton = findChild(form, "createWalletFormCreateButton")
+        tryCompare(createButton, "enabled", true)
+        createButton.clicked()
         tryVerify(function() { return findChild(wizard, "walletCreationReadyPage") !== null })
         walletController.setOpenWallets([testWalletModel])
         walletController.setWalletLoaded(true)
-        findChild(wizard, "createWalletReadyDoneButton").clicked()
+        const doneButton = findChild(wizard, "createWalletReadyDoneButton")
+        tryCompare(doneButton, "enabled", true)
+        doneButton.clicked()
 
         tryCompare(findChild(window, "walletCreationModal"), "visible", false)
         tryCompare(findChild(window, "walletCreationModal"), "onboardingEntry", false)

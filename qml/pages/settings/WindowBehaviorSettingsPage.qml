@@ -21,9 +21,21 @@ SettingsPage {
 
         FormRow {
             Layout.fillWidth: true
+            visible: root.windowBehaviorModel.persistenceError.length > 0
+            title: qsTr("Desktop preferences")
+            description: root.windowBehaviorModel.persistenceError
+            trailingItem: TextButton {
+                text: qsTr("Retry")
+                enabled: !root.windowBehaviorModel.persistencePending
+                onClicked: root.windowBehaviorModel.retryPersistence()
+            }
+        }
+
+        FormRow {
+            Layout.fillWidth: true
             title: qsTr("Show tray icon")
             description: qsTr("Keep the app available in the system tray.")
-            enabled: root.windowBehaviorModel.desktopPlatform
+            enabled: root.windowBehaviorModel.desktopPlatform && root.windowBehaviorModel.settingsReady
             trailingItem: OptionSwitch {
                 objectName: "showTrayIconSwitch"
                 checked: root.windowBehaviorModel.showTrayIcon
@@ -36,6 +48,7 @@ SettingsPage {
             title: qsTr("Minimize to tray")
             description: qsTr("Hide the window in the tray when minimized.")
             enabled: root.windowBehaviorModel.desktopPlatform
+                && root.windowBehaviorModel.settingsReady
                 && root.windowBehaviorModel.showTrayIcon
             trailingItem: OptionSwitch {
                 objectName: "minimizeToTraySwitch"
@@ -48,7 +61,7 @@ SettingsPage {
             Layout.fillWidth: true
             title: qsTr("Minimize on close")
             description: qsTr("Keep the node running when the window is closed.")
-            enabled: root.windowBehaviorModel.desktopPlatform
+            enabled: root.windowBehaviorModel.desktopPlatform && root.windowBehaviorModel.settingsReady
             showDivider: false
             trailingItem: OptionSwitch {
                 objectName: "minimizeOnCloseSwitch"

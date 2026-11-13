@@ -21,64 +21,51 @@ Page {
     readonly property bool proxySettingsDirty: settingsModel.proxySettingsDirty
     readonly property var proxySetting: coreSettingsModel.entry("proxy")
     readonly property var onionSetting: coreSettingsModel.entry("onion")
-    property bool draftProxyEnabled: false
-    property string draftProxyAddress: ""
-    property string draftProxyValidationError: ""
-    property bool draftTorEnabled: false
-    property string draftTorAddress: ""
-    property string draftTorValidationError: ""
-    readonly property bool proxyDraftDirty: draftProxyEnabled !== proxySetting.enabled
-                                           || draftProxyAddress !== displayAddress(proxySetting)
-                                           || draftTorEnabled !== onionSetting.enabled
-                                           || draftTorAddress !== displayAddress(onionSetting)
-    readonly property bool proxyDraftValid: !draftProxyEnabled || draftProxyValidationError.length === 0
-    readonly property bool torDraftValid: !draftTorEnabled || draftTorValidationError.length === 0
-    readonly property bool canSaveProxyDraft: proxyDraftValid && torDraftValid
+    readonly property CoreProxyDraft proxyDraft: coreSettingsModel.createProxyDraft()
+    readonly property bool draftProxyEnabled: proxyDraft.proxyEnabled
+    readonly property string draftProxyAddress: proxyDraft.proxyAddress
+    readonly property string draftProxyValidationError: proxyDraft.proxyError
+    readonly property bool draftTorEnabled: proxyDraft.torEnabled
+    readonly property string draftTorAddress: proxyDraft.torAddress
+    readonly property string draftTorValidationError: proxyDraft.torError
+    readonly property bool proxyDraftDirty: proxyDraft.dirty
+    readonly property bool canSaveProxyDraft: proxyDraft.canApply
+    property bool awaitingApply: false
+    Connections {
+        target: root.proxyDraft
+        function onChanged() {
+            if (!root.awaitingApply) return
+            if (root.proxyDraft.operationState === CoreSettingsModel.Applied) {
+                root.awaitingApply = false
+                root.back()
+            } else if (root.proxyDraft.operationState === CoreSettingsModel.Failed
+                       || root.proxyDraft.operationState === CoreSettingsModel.Rejected) {
+                root.awaitingApply = false
+            }
+        }
+    }
 
     background: null
 
     Component.onCompleted: resetProxyDraft()
 
-    function displayAddress(setting) {
-        return setting.address.length > 0 ? setting.address : setting.defaultAddress()
-    }
-
-    function resetProxyDraft() {
-        draftProxyEnabled = proxySetting.enabled
-        draftProxyAddress = displayAddress(proxySetting)
-        draftProxyValidationError = proxySetting.validate(draftProxyAddress)
-        draftTorEnabled = onionSetting.enabled
-        draftTorAddress = displayAddress(onionSetting)
-        draftTorValidationError = onionSetting.validate(draftTorAddress)
-    }
-
-    function commitProxyDraftEntry(setting, enabled, address, validationError) {
-        const trimmedAddress = address.trim()
-        if (!setting.canEdit) return true
-        if (validationError.length === 0 && trimmedAddress !== setting.address) {
-            if (!setting.commitAddress(trimmedAddress)) return false
-        }
-        if (setting.enabled !== enabled) {
-            setting.enabled = enabled
-            if (setting.enabled !== enabled) return false
-        }
-        return true
-    }
-
+    function resetProxyDraft() { proxyDraft.reset() }
+    function updateProxyAddress(address) { proxyDraft.proxyAddress = address }
+    function updateTorAddress(address) { proxyDraft.torAddress = address }
     function commitProxyDraft() {
-        if (!canSaveProxyDraft) return false
-        if (!commitProxyDraftEntry(proxySetting, draftProxyEnabled, draftProxyAddress, draftProxyValidationError)) return false
-        if (!commitProxyDraftEntry(onionSetting, draftTorEnabled, draftTorAddress, draftTorValidationError)) return false
-        resetProxyDraft()
-        return true
+        if (!canSaveProxyDraft || awaitingApply) return 0
+        awaitingApply = true
+        const ticket = proxyDraft.requestApply()
+        if (!ticket) awaitingApply = false
+        return ticket
     }
-
     function done() {
-        if (proxyDraftDirty && !commitProxyDraft()) return
-        root.back()
+        if (!proxyDraftDirty && !proxyDraft.pending) { root.back(); return }
+        commitProxyDraft()
     }
 
     function requestBack() {
+        if (awaitingApply) return
         if (proxyDraftDirty) {
             discardProxyChangesPopup.open()
             return
@@ -115,6 +102,13 @@ Page {
                 visible: !root.onboarding && root.settingsModel.proxySettingsDirty
             }
 
+            CoreText {
+                Layout.fillWidth: true
+                text: root.proxyDraft.error
+                visible: text.length > 0
+                wrapMode: Text.WordWrap
+            }
+
             ProxySettings {
                 settingsModel: root.settingsModel
                 proxyEnabled: root.draftProxyEnabled
@@ -123,15 +117,14 @@ Page {
                 torEnabled: root.draftTorEnabled
                 torAddress: root.draftTorAddress
                 torValidationError: root.draftTorValidationError
-                onProxyEnabledEdited: (enabled) => root.draftProxyEnabled = enabled
+                proxyDraft: root.proxyDraft
+                onProxyEnabledEdited: (enabled) => root.proxyDraft.proxyEnabled = enabled
                 onProxyAddressEdited: (address, validationError) => {
-                    root.draftProxyAddress = address
-                    root.draftProxyValidationError = validationError
+                    root.proxyDraft.proxyAddress = address
                 }
-                onTorEnabledEdited: (enabled) => root.draftTorEnabled = enabled
+                onTorEnabledEdited: (enabled) => root.proxyDraft.torEnabled = enabled
                 onTorAddressEdited: (address, validationError) => {
-                    root.draftTorAddress = address
-                    root.draftTorValidationError = validationError
+                    root.proxyDraft.torAddress = address
                 }
                 Layout.fillWidth: true
             }

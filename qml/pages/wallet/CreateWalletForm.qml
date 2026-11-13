@@ -16,15 +16,17 @@ OnboardingView {
     property bool watchOnly: false
     property bool modalView: false
     property bool creating: false
-    property string nameError: ""
-    readonly property bool validXpub: root.fieldsView
-        && root.fieldsView.xpubText.trim().length >= 100
-        && ApplicationModels.walletController.validateXpub(root.fieldsView.xpubText.trim())
+    readonly property WalletProvisioningCheck validation: ApplicationModels.walletController.createProvisioningCheck()
+    readonly property string nameError: root.fieldsView && root.fieldsView.walletName.trim().length > 0 && validation && !validation.pending ? (validation.error.length > 0 ? validation.error : validation.nameError) : ""
+    readonly property bool validXpub: validation !== null && validation.xpubValid
+    Binding { target: root.validation; property: "name"; value: root.fieldsView ? root.fieldsView.walletName : "" }
+    Binding { target: root.validation; property: "xpub"; value: root.fieldsView ? root.fieldsView.xpubText : "" }
     readonly property bool passwordsMatch: root.fieldsView
         && root.fieldsView.passwordText.length > 0
         && root.fieldsView.passwordText === root.fieldsView.confirmText
     readonly property bool canCreate: root.fieldsView && ApplicationModels.walletController.initialized && !creating
-        && !ApplicationModels.walletController.walletLoadInProgress && root.fieldsView.walletName.trim().length > 0
+        && !ApplicationModels.walletController.walletLoadInProgress && validation && validation.ready && validation.nameError.length === 0
+        && root.fieldsView.walletName.trim().length > 0
         && (watchOnly ? validXpub : root.fieldsView.encryptWallet
             ? passwordsMatch && root.fieldsView.passwordLossAcknowledged
             : root.fieldsView.unencryptedWalletAcknowledged)
@@ -34,11 +36,6 @@ OnboardingView {
 
     function submit() {
         if (!canCreate) return
-        const availabilityError = ApplicationModels.walletController.walletNameAvailabilityError(root.fieldsView.walletName)
-        if (availabilityError.length > 0) {
-            nameError = availabilityError
-            return
-        }
         createRequested(root.fieldsView.walletName.trim(), root.fieldsView.xpubText.trim(),
             watchOnly || !root.fieldsView.encryptWallet ? "" : root.fieldsView.passwordText)
     }
@@ -57,7 +54,7 @@ OnboardingView {
         ? (navigationStack.canGoBack !== undefined
             ? navigationStack.canGoBack : navigationStack.depth > 1) : false
     showCloseButton: modalView && !creating
-    primaryButtonText: creating ? qsTr("Creating…") : qsTr("Create wallet")
+    primaryButtonText: creating ? qsTr("Creating…") : validation && validation.pending ? qsTr("Checking…") : qsTr("Create wallet")
     primaryButtonObjectName: "createWalletFormCreateButton"
     primaryButtonEnabled: canCreate
     onCloseClicked: root.cancel()
@@ -71,13 +68,13 @@ OnboardingView {
         ApplicationModels.walletController.clearWalletCreateStatus()
         ApplicationModels.walletController.clearWalletLoadStatus()
     }
-    Component.onDestruction: clearSecrets()
+    Component.onDestruction: { clearSecrets(); if (validation) validation.closeAdmission() }
 
     childView: CreateWalletFields {
         watchOnly: root.watchOnly
         nameError: root.nameError
         validXpub: root.validXpub
-        onNameEdited: root.nameError = ""
+        xpubChecked: root.validation !== null && root.validation.ready
         onSubmitRequested: root.submit()
     }
 

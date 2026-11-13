@@ -28,6 +28,35 @@ def wait_until(predicate, description, timeout=30):
     raise AssertionError(f"Timed out waiting for {description}")
 
 
+def wait_review_action(gui, ticket, *, send=False, terminal):
+    """Observe this original typed action, never another operation's result."""
+    assert isinstance(ticket, int) and not isinstance(ticket, bool) and ticket > 0, "Action was not admitted"
+    page = "sendTransactionReviewPage"
+    identity, busy, state, enum = (("sendOperationId", "sendBusy", "sendState", "SendState") if send
+                                  else ("psbtActionId", "psbtActionBusy", "psbtActionState", "PsbtActionState"))
+    def original_terminal():
+        assert gui.get_property(page, "wallet." + identity) == ticket, "Another action replaced the original outcome"
+        if gui.get_property(page, "wallet." + busy):
+            assert gui.get_property(page, "wallet." + identity) == ticket
+            return False
+        observed = gui.get_enum_property(page, "wallet." + state)
+        assert observed["enum"] == enum and observed["key"] == terminal, observed
+        assert gui.get_property(page, "wallet." + identity) == ticket
+        assert gui.get_property(page, "wallet." + busy) is False
+        return True
+    wait_until(original_terminal, "the original " + terminal + " action receipt")
+
+
+def save_review_psbt(gui, path):
+    """Wait for the original saved receipt before independently reading it."""
+    gui.wait_for_property("sendTransactionReviewPage", "detailsReady", True, timeout_ms=30000)
+    ticket = gui.invoke_property_object("sendTransactionReviewPage", "wallet", "requestSaveCurrentTransactionAsPsbt", [str(path)])
+    wait_review_action(gui, ticket, terminal="PsbtSaved")
+    assert gui.get_property("sendTransactionReviewPage", "wallet.psbtSavedPath") == str(path)
+    assert gui.get_property("sendTransactionReviewPage", "wallet.psbtActionError") in (None, "")
+    return ticket
+
+
 def stop_gui_checked(harness):
     process = harness.gui_process
     harness.stop_gui()
@@ -83,9 +112,22 @@ def close_wallet(harness, wallet_name):
     gui.click(f"walletSelectActions_{wallet_name}")
     gui.click(f"walletSelectClose_{wallet_name}")
     gui.wait_for_property("walletCloseConfirmationPopup", "opened", True)
+    question = gui.get_property("walletCloseConfirmationPopup", "questionToken")
+    assert question and gui.get_property("walletCloseConfirmationPopup", "targetWallet.name") == wallet_name
+    assert gui.get_property("walletCloseConfirmationPopup", "questionToken") == question
     gui.click("walletCloseConfirmationConfirmButton")
-    gui.wait_for_property("walletCloseConfirmationPopup", "visible", False)
+    def original_question_gone():
+        if not gui.object_exists("walletCloseConfirmationPopup"):
+            return True
+        # Never answer or dismiss another opening's replacement question.
+        if gui.get_property("walletCloseConfirmationPopup", "questionToken") != question:
+            return True
+        return gui.get_property("walletCloseConfirmationPopup", "visible") is False
+    wait_until(original_question_gone, "the original close question to retire")
+    # Popup retirement alone is not a completed wallet close. Require the
+    # original public Core unload and the independent GUI catalog projection.
     wait_for_loaded_wallets(harness.gui_rpc_port, [])
+    gui.wait_for_property("walletBadge", "noWalletLoaded", True, timeout_ms=30000)
 
 
 def create_wallet(harness, name, password):

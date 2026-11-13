@@ -328,6 +328,48 @@ TestCase {
         }
     }
 
+    Component { id: receiveSignalSpy; SignalSpy { signalName: "receiveRequested" } }
+
+    function test_addressSelection_waits_for_outcome_and_applied_projection_data() {
+        return [{tag: "outcome-first", outcomeFirst: true}, {tag: "projection-first", outcomeFirst: false}]
+    }
+
+    function test_addressSelection_waits_for_outcome_and_applied_projection(data) {
+        testPaymentRequest.clear()
+        testWalletModel.receivingAddress.clear()
+        testWalletModel.receivingAddressReady = false
+        const page = createTemporaryObject(addressListComponent, host)
+        verify(page !== null)
+        const spy = createTemporaryObject(receiveSignalSpy, this, {target: page})
+        const address = "bcrt1qcontrolledselection"
+        const operation = testWalletModel.pendingReceiveOperation("")
+        page.selectedAddress = address
+        page.receiveOperationWallet = testWalletModel
+        page.receiveOperationAddress = address
+        page.receiveOperation = operation
+        function publishProjection() {
+            testPaymentRequest.address = address
+            testWalletModel.receivingAddress.address = address
+            testWalletModel.receivingAddressReady = true
+        }
+        function deliverOutcome() {
+            operation.addressReady = true
+            operation.pending = false
+        }
+        if (data.outcomeFirst) deliverOutcome()
+        else publishProjection()
+        compare(spy.count, 0)
+        compare(page.receiveOperationHandled, false)
+        if (data.outcomeFirst) publishProjection()
+        else deliverOutcome()
+        compare(spy.count, 1)
+        compare(page.receiveOperationHandled, true)
+        operation.changed()
+        testWalletModel.receivingAddressReady = false
+        testWalletModel.receivingAddressReady = true
+        compare(spy.count, 1)
+    }
+
     Component {
         id: addressDisplayFieldComponent
 

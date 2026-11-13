@@ -7,6 +7,7 @@
 
 #include <qml/core_settings.h>
 #include <qml/backendexecutor.h>
+#include <qml/ownedwork.h>
 #include <qml/models/core_settings_model.h>
 #include <qml/onboarding_settings.h>
 #include <qml/onboarding_storage.h>
@@ -17,6 +18,7 @@
 #include <QUrl>
 #include <QVariantMap>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -34,8 +36,8 @@ class OnboardingOptionsModel : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QString dataDir READ dataDir NOTIFY dataDirChanged)
-    Q_PROPERTY(QString getDefaultDataDirString READ getDefaultDataDirString CONSTANT)
-    Q_PROPERTY(QUrl getDefaultDataDirectory READ getDefaultDataDirectory CONSTANT)
+    Q_PROPERTY(QString getDefaultDataDirString READ getDefaultDataDirString NOTIFY dataDirDefaultsChanged)
+    Q_PROPERTY(QUrl getDefaultDataDirectory READ getDefaultDataDirectory NOTIFY dataDirDefaultsChanged)
     Q_PROPERTY(bool prune READ prune WRITE setPrune NOTIFY pruneChanged)
     Q_PROPERTY(int pruneSizeGB READ pruneSizeGB WRITE setPruneSizeGB NOTIFY pruneSizeGBChanged)
     Q_PROPERTY(bool listen READ listen WRITE setListen NOTIFY listenChanged)
@@ -71,13 +73,20 @@ class OnboardingOptionsModel : public QObject
     Q_PROPERTY(bool storageEnoughForFull READ storageEnoughForFull NOTIFY storageStatusChanged)
 
 public:
-    explicit OnboardingOptionsModel(std::vector<std::string> argv, bool can_listen_ipc, QObject* parent = nullptr);
+    explicit OnboardingOptionsModel(std::vector<std::string> argv, bool can_listen_ipc, QObject* parent = nullptr, execution::SnapshotServices services = {});
     ~OnboardingOptionsModel() override;
+
+    enum PreparationState {PreparationIdle,PreparationPending,PreparationSucceeded,PreparationFailed,PreparationUncertain};
+    Q_ENUM(PreparationState)
+    Q_PROPERTY(PreparationState preparationState READ preparationState NOTIFY preparationStateChanged)
+    PreparationState preparationState() const {return PreparationState(m_preparation_state->load());}
 
     // Keep args and the preparation callback's dependencies alive until nodePrepared.
     void prepareNode(ArgsManager& args, std::function<bool()> prepare_node);
 
     void beginShutdown();
+    void closeAdmission();
+    bool presentationOpen() const {return !m_stopping;}
     bool validationPending() const { return m_preview_pending; }
     QString dataDir() const { return m_data_dir; }
     QString getDefaultDataDirString() const;
@@ -111,12 +120,12 @@ public:
     QObject* coreSettings() { return &m_core_settings; }
     QVariantMap coreSettingStatuses() const { return m_core_settings.statuses(); }
     QString previewError() const { return m_preview_error; }
-    bool canFinish() const { return !m_preparing && !m_stopping && !m_preview_pending && m_preview_error.isEmpty() && !m_storage_check_pending && m_storage_error_text.isEmpty(); }
+    bool canFinish() const { return !m_preparing && !m_stopping && !m_core_settings.pending() && !m_preview_pending && m_preview_error.isEmpty() && !m_storage_check_pending && !m_storage_projection_pending && m_storage_error_text.isEmpty(); }
     bool dirtyState() const { return false; }
     int assumedBlockchainSize() const { return m_assumed_blockchain_size; }
     int assumedChainstateSize() const { return m_assumed_chainstate_size; }
     bool existingProfile() const { return m_profile.existing_profile; }
-    bool storageCheckPending() const { return m_storage_check_pending; }
+    bool storageCheckPending() const { return m_storage_check_pending||m_storage_projection_pending; }
     QString storageStatus() const;
     int storageAvailableGB() const;
     QString storageAvailableText() const;
@@ -130,16 +139,16 @@ public:
     bool storageEnoughForSelected() const;
     bool storageEnoughForFull() const;
 
-    Q_INVOKABLE QString validateProxyLocation(const QString& location) const;
-    Q_INVOKABLE bool commitProxyLocation(const QString& location);
-    Q_INVOKABLE bool commitTorLocation(const QString& location);
+    Q_INVOKABLE quint64 requestProxyLocation(const QString& location);
+    Q_INVOKABLE quint64 requestTorLocation(const QString& location);
     Q_INVOKABLE QString defaultProxyAddress() const;
 
-    bool applyToArgs(ArgsManager& args, QString* error = nullptr) const;
     QmlOnboardingSettings::ApplyRequest applyRequest() const;
 
 Q_SIGNALS:
     void nodePrepared(bool success, const QString& error);
+    void preparationStateChanged();
+    void dataDirDefaultsChanged();
     void customDataDirStringChanged(QString path);
     void dataDirChanged(QString path);
     void pruneChanged(bool prune);
@@ -164,32 +173,47 @@ private:
     void finishNodePreparation(bool success, const QString& error);
     void setDataDir(const QString& path);
     void refreshPreview();
+    void queuePreview();
     void startPreview();
-    void applyPreview(const QmlOnboardingSettings::PreviewResult& preview);
+    void applyPreview(const QmlOnboardingSettings::PreviewResult& preview,uint64_t request_id,quint64 context);
     void setPreviewPending(bool pending);
-    void applyPreviewValues(const QmlCoreSettings::Values& values, const QVariantMap& statuses);
     void requestStorageCheck();
+    void queueStorageCheck();
     void startStorageCheck(uint64_t request_id, const QString& path);
     void applyStorageCheckResult(uint64_t request_id, const QmlDataDir::StorageSpaceResult& result);
-    void applyAutomaticPruneRecommendation();
     void emitStorageStatusChanged();
     QmlCoreSettings::Values coreValues() const;
     QmlOnboardingStorage::State storageState() const;
-    QmlOnboardingStorage::Info storageInfo() const;
+    QmlOnboardingStorage::Info storageInfo() const {return m_storage_info;}
+    void queueStorageProjection();
+    void startStorageProjection();
+    void publishShutdown();
     void setPreviewError(const QString& error);
 
     std::unique_ptr<BackendExecutor> m_executor;
+    execution::SnapshotServices m_services;
+    std::unique_ptr<execution::OwnedWork> m_work,m_preparation_work;
+    QString m_default_data_dir;
+    QUrl m_default_data_directory;
+    bool m_preparation_started{false},m_preparation_terminal_pending{false},m_preparation_published{false},m_shutdown_published{false};
+    quint64 m_path_revision{0};
+    QString m_path_source;
+    QmlOnboardingStorage::Info m_storage_info;
+    quint64 m_storage_projection_revision{0};
+    bool m_storage_projection_pending{false},m_storage_projection_inflight{false};
+    std::shared_ptr<std::atomic<int>> m_preparation_state{std::make_shared<std::atomic<int>>(PreparationIdle)};
     bool m_preparing{false};
     bool m_stopping{false};
     bool m_shutdown_requested{false};
     bool m_preview_pending{true};
     bool m_preview_in_flight{false};
     uint64_t m_preview_request_id{0};
-    std::vector<std::string> m_argv;
+    std::shared_ptr<const std::vector<std::string>> m_argv;
     bool m_can_listen_ipc;
     QString m_data_dir;
     QmlOnboardingSettings::DataDirSource m_data_dir_source{QmlOnboardingSettings::DataDirSource::Default};
     QString m_custom_datadir_string;
+    QString m_custom_datadir_display;
     CoreSettingsModel m_core_settings;
     QString m_preview_error;
     QmlOnboardingSettings::ProfileSummary m_profile;

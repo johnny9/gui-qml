@@ -2,12 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <test/mocks/preparationtest.h>
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <rpc/util.h>
-#include <sync.h>
-#include <wallet/spend.h>
-#include <wallet/wallet.h>
 #include <qt/bitcoinunits.h>
 
 #include <QFile>
@@ -171,36 +169,104 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "feeSelectionPickerButton"));
         QVERIFY(qmltest::Click(m_app, "feeSelectionOption3"));
 
+        // Finish the initial preset projection before editing the captured literal.
+        QTRY_VERIFY(!wallet->customFeeTargetPending());
+        QTRY_VERIFY(!wallet->feeEstimatePending());
+        QTRY_VERIFY(wallet->availableSendBalanceKnown());
+        QTRY_COMPARE(qmltest::Find(m_app, "feeSelectionCustomRateInput")->property("text").toString(), wallet->customFeeRate());
+        const auto network = qmltest::Rpc(m_app, "getnetworkinfo");
+        QCOMPARE(wallet->minimumCustomFeeRate(), static_cast<double>(AmountFromValue(network.find_value("relayfee"))) / 1000.0);
+
         // A rate below the relay minimum must fail before review or broadcast.
         if (reject_low_rate) {
             QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "0.1"));
+            QTRY_COMPARE(wallet->customFeeRate(), QStringLiteral("0.1"));
             QTRY_VERIFY(!wallet->customFeeRateValid());
             QTRY_VERIFY(!wallet->feeEstimatePending());
             QCOMPARE(wallet->estimatedFee(), QString{});
             QVERIFY(!qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
             QCOMPARE(qmltest::Find(m_app, "feeSelectionEstimateLabel")->property("value").toString(), QString::fromUtf8("—"));
             QCOMPARE(qmltest::Find(m_app, "feeSelectionCustomRateRow")->property("errorText").toString(), QStringLiteral("Enter a fee rate of at least 1 sat/vB."));
-            QVERIFY(!wallet->prepareTransaction());
+            QVERIFY(!AwaitPreparation(*wallet));
             QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
         }
 
         QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", rate));
+        QTRY_COMPARE(wallet->customFeeRate(), rate);
         QTRY_VERIFY(wallet->customFeeRateValid());
+        QTRY_VERIFY(!wallet->feeEstimatePending());
+        QTRY_VERIFY(qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
         QVERIFY(wallet->currentTransaction());
         const auto reviewed_fee = wallet->currentTransaction()->getTransactionFee();
 
-        // Derive the expected fee independently using Core's size estimate.
-        auto* core_wallet = wallet->wallet()->wallet();
-        QVERIFY(core_wallet);
-        int64_t maximum_signed_vsize;
-        {
-            LOCK(core_wallet->cs_wallet);
-            maximum_signed_vsize = wallet::CalculateMaximumSignedTxSize(*wallet->currentTransaction()->getWtx(), core_wallet).vsize;
+        // Reconstruct the original input value through independent public RPC reads.
+        // Refund the fee into output zero, then force fundrawtransaction to price
+        // the same immutable shape by subtracting its fee from that output.
+        const auto reviewed = wallet->currentTransaction()->getWtx();
+        const auto raw = qmltest::Call(m_app, [reviewed](interfaces::Node*) { return EncodeHexTx(*reviewed); });
+        const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + raw + "\"]"));
+        UniValue inputs{UniValue::VARR};
+        UniValue outputs{UniValue::VARR};
+        CAmount input_value{0};
+        CAmount output_value{0};
+        for (const auto& input : decoded.find_value("vin").getValues()) {
+            UniValue entry{UniValue::VOBJ};
+            entry.pushKV("txid", input.find_value("txid"));
+            entry.pushKV("vout", input.find_value("vout"));
+            entry.pushKV("sequence", input.find_value("sequence"));
+            inputs.push_back(entry);
+            const auto coin = qmltest::Rpc(m_app, "gettxout", qmltest::Json("[\"" + input.find_value("txid").get_str() + "\"," + input.find_value("vout").write() + "]"));
+            QVERIFY(!coin.isNull());
+            input_value += AmountFromValue(coin.find_value("value"));
         }
+        for (const auto& output : decoded.find_value("vout").getValues()) output_value += AmountFromValue(output.find_value("value"));
+        const auto independently_paid_fee = input_value - output_value;
+        QCOMPARE(reviewed_fee, independently_paid_fee);
+        for (size_t i{0}; i < decoded.find_value("vout").size(); ++i) {
+            const auto& output = decoded.find_value("vout")[i];
+            UniValue entry{UniValue::VOBJ};
+            entry.pushKV(output.find_value("scriptPubKey").find_value("address").get_str(), ValueFromAmount(AmountFromValue(output.find_value("value")) + (i == 0 ? independently_paid_fee : 0)));
+            outputs.push_back(entry);
+        }
+        UniValue raw_params{UniValue::VARR};
+        raw_params.push_back(inputs);
+        raw_params.push_back(outputs);
+        raw_params.push_back(decoded.find_value("locktime"));
+        const auto refunded_raw = qmltest::Rpc(m_app, "createrawtransaction", raw_params).get_str();
+        const auto reference = [&](double fee_rate) {
+            UniValue options{UniValue::VOBJ};
+            options.pushKV("add_inputs", false);
+            options.pushKV("lockUnspents", false);
+            options.pushKV("fee_rate", fee_rate);
+            options.pushKV("subtract_fee_from_outputs", qmltest::Json("[0]"));
+            UniValue params{UniValue::VARR};
+            params.push_back(refunded_raw);
+            params.push_back(options);
+            return qmltest::Rpc(m_app, "fundrawtransaction", params, wallet->name());
+        };
+        const auto size_reference = reference(1.0);
+        const auto actual_reference = reference(rate.toDouble());
+        QCOMPARE(size_reference.find_value("changepos").getInt<int>(), -1);
+        QCOMPARE(actual_reference.find_value("changepos").getInt<int>(), -1);
+        const auto maximum_signed_vsize = AmountFromValue(size_reference.find_value("fee"));
         QVERIFY(maximum_signed_vsize > 0);
+        const auto funded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + actual_reference.find_value("hex").get_str() + "\"]"));
+        const auto refunded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + refunded_raw + "\"]"));
+        const auto sized = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + size_reference.find_value("hex").get_str() + "\"]"));
+        QCOMPARE(sized.find_value("vin").write(), refunded.find_value("vin").write());
+        QCOMPARE(sized.find_value("vout").size(), decoded.find_value("vout").size());
+        for (size_t i{0}; i < decoded.find_value("vout").size(); ++i) {
+            QCOMPARE(sized.find_value("vout")[i].find_value("scriptPubKey").write(), decoded.find_value("vout")[i].find_value("scriptPubKey").write());
+        }
+        QCOMPARE(funded.find_value("locktime").write(), decoded.find_value("locktime").write());
+        QCOMPARE(funded.find_value("vin").write(), refunded.find_value("vin").write());
+        QCOMPARE(funded.find_value("vout").write(), decoded.find_value("vout").write());
+        QCOMPARE(AmountFromValue(actual_reference.find_value("fee")), reviewed_fee);
 
+        QTRY_VERIFY(wallet->currentTransactionCanSend());
+        QTRY_VERIFY(qmltest::Find(m_app, "sendTransactionReviewSendButton")->property("enabled").toBool());
         QVERIFY(qmltest::Click(m_app, "sendTransactionReviewSendButton"));
         auto* send_complete_page = qmltest::WaitForVisible(m_app, "sendCompletePage");
         QVERIFY(send_complete_page);
@@ -242,25 +308,31 @@ private Q_SLOTS:
         // Filtering keeps the pending selection; cancelling discards it.
         coins->beginSelection();
         QVERIFY(coins->toggleCoinSelectionById(coin_id));
-        QCOMPARE(coins->selectedCoinsCount(), 1);
+        QTRY_COMPARE(coins->selectedCoinsCount(), 1);
         coins->setSearchText("no matching note");
-        QCOMPARE(coins->rowCount(), 0);
-        QCOMPARE(coins->selectedCoinsCount(), 1);
+        QTRY_COMPARE(coins->rowCount(), 0);
+        QTRY_COMPARE(coins->selectedCoinsCount(), 1);
         coins->cancelSelection();
-        QCOMPARE(coins->selectedCoinsCount(), 0);
-        QVERIFY(wallet->listSelectedCoins().empty());
+        QTRY_COMPARE(coins->selectedCoinsCount(), 0);
+        QTRY_VERIFY(wallet->selectedCoins()->empty());
 
         // Applying commits the selection to the wallet.
         coins->setSearchText("");
+        QTRY_VERIFY(!coins->loading());
+        QTRY_VERIFY(coins->rowCount() > 0);
         coins->beginSelection();
         QVERIFY(coins->toggleCoinSelectionById(coin_id));
         coins->applySelection();
-        QCOMPARE(wallet->listSelectedCoins().size(), 1U);
+        QTRY_COMPARE(wallet->selectedCoins()->size(), 1U);
 
         // Lock changes must reach Core, independently of the selection state.
         QVERIFY(coins->setCoinsLocked({coin_id}, true));
+        QTRY_VERIFY(!coins->lockPending());
+        QVERIFY2(coins->lockError().isEmpty(), qPrintable(coins->lockError()));
         QCOMPARE(qmltest::Rpc(m_app, "listlockunspent", {}, wallet->name()).size(), 1U);
         QVERIFY(coins->setCoinsLocked({coin_id}, false));
+        QTRY_VERIFY(!coins->lockPending());
+        QVERIFY2(coins->lockError().isEmpty(), qPrintable(coins->lockError()));
         QCOMPARE(qmltest::Rpc(m_app, "listlockunspent", {}, wallet->name()).size(), 0U);
     }
 
@@ -300,7 +372,7 @@ private Q_SLOTS:
         QTRY_COMPARE(coins->selectedCoinsCount(), 1);
         QVERIFY(qmltest::Click(m_app, "coinSelectionDoneButton"));
         QTRY_VERIFY(!qmltest::Find(m_app, "coinSelectionPopup")->property("visible").toBool());
-        QCOMPARE(wallet->listSelectedCoins().size(), 1U);
+        QTRY_COMPARE(wallet->selectedCoins()->size(), 1U);
         QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton"));
         QTRY_VERIFY(wallet->estimatedFeeSatoshi() > 0);
         QTRY_COMPARE(wallet->sendRecipientList()->totalAmountSatoshi() + wallet->estimatedFeeSatoshi(), 50 * COIN);
@@ -314,7 +386,7 @@ private Q_SLOTS:
         QTRY_COMPARE(coins->selectedCoinsCount(), 0);
         QVERIFY(qmltest::Click(m_app, "coinSelectionCancelButton"));
         QTRY_VERIFY(!qmltest::Find(m_app, "coinSelectionPopup")->property("visible").toBool());
-        QCOMPARE(wallet->listSelectedCoins().size(), 1U);
+        QTRY_COMPARE(wallet->selectedCoins()->size(), 1U);
         QTRY_COMPARE(wallet->sendRecipientList()->totalAmountSatoshi(), original_amount);
 
         QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "2"));
@@ -371,8 +443,9 @@ private Q_SLOTS:
         QVERIFY(setup);
         auto* wallet = setup->wallet;
         QVERIFY(wallet->encryptWallet("review password"));
+        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
         QTRY_VERIFY(wallet->isLocked());
-        QCOMPARE(wallet->listSelectedCoins().size(), 2U);
+        QTRY_COMPARE(wallet->selectedCoins()->size(), 2U);
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
         const auto amount = BitcoinUnits::format(BitcoinUnits::Unit::BTC, setup->expected_amount - 100, false, BitcoinUnits::SeparatorStyle::NEVER);
         QVERIFY(qmltest::SetText(m_app, "sendAmountInput", amount));

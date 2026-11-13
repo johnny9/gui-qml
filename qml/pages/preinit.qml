@@ -21,6 +21,26 @@ ApplicationWindow {
     property bool starting: false
     signal finished()
 
+    AppPreferences { id: preferences }
+
+    Popup {
+        objectName: "preInitPreferencesError"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        visible: !appWindow.starting && preferences.error.length > 0
+        closePolicy: Popup.NoAutoClose
+        Column {
+            spacing: 12
+            CoreText { text: preferences.error; wrapMode: Text.WordWrap; width: 360 }
+            Button {
+                objectName: "preInitPreferencesRetry"
+                text: qsTr("Retry preferences")
+                enabled: !preferences.pending
+                onClicked: preferences.retry()
+            }
+        }
+    }
+
     OnboardingWizard {
         anchors.fill: parent
         preInit: true

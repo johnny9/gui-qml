@@ -6,13 +6,28 @@
 
 #include <QLocale>
 #include <QScopeGuard>
+#include <QPointer>
+#include <memory>
 
 #include <qml/bitcoinamount.h>
+#include <qml/amountparse.h>
 
 class BitcoinAmountTests : public QObject {
     Q_OBJECT
 
 private Q_SLOTS:
+    void sharedAdmissionGatesFenceAllEditorIntakes_data();
+    void sharedAdmissionGatesFenceAllEditorIntakes();
+    void reentrantOwnerCloseStopsFurtherPresentation();
+    void capturedLiteralBudget_data();
+    void capturedLiteralBudget();
+    void capturedSelectionAndRevision_data();
+    void capturedSelectionAndRevision();
+    void capturedInputPublicationCanCloseOrSupersede_data();
+    void capturedInputPublicationCanCloseOrSupersede();
+    void notificationCanDestroyTheAmount_data();
+    void notificationCanDestroyTheAmount();
+    void commitDoesNotAccessASourceDestroyedByTheTarget();
     void localizedInputKeepsExactSatoshis_data();
     void localizedInputKeepsExactSatoshis();
     void inputStatesGuardCommits();
@@ -29,6 +44,203 @@ private Q_SLOTS:
     void localizedDisplayWithUnit_usesLocaleAndKeepsCanonicalDisplay();
     void flipUnit_changesLabelAndDisplaySignal();
 };
+
+void BitcoinAmountTests::sharedAdmissionGatesFenceAllEditorIntakes_data()
+{
+    QTest::addColumn<bool>("application");
+    QTest::newRow("application-quiet") << true;
+    QTest::newRow("owner-quiet") << false;
+}
+void BitcoinAmountTests::sharedAdmissionGatesFenceAllEditorIntakes()
+{
+    QFETCH(bool, application);
+    auto gate = std::make_shared<std::atomic_bool>(false);
+    const auto reset = qScopeGuard([] { BitcoinAmount::setDefaultAdmissionGate({}); });
+    if (application) BitcoinAmount::setDefaultAdmissionGate(gate);
+    BitcoinAmount amount, target;
+    if (!application) amount.setOwnerAdmissionGate(gate);
+    amount.setSatoshi(123); target.setSatoshi(456);
+    const auto input = amount.inputText(); const auto revision = amount.inputRevision();
+    const auto unit = amount.unit(); const auto ticket = amount.inputOperationId();
+    QSignalSpy changed{&amount, &BitcoinAmount::amountChanged};
+    QSignalSpy input_changed{&amount, &BitcoinAmount::inputChanged};
+    QSignalSpy operation_changed{&amount, &BitcoinAmount::inputOperationChanged};
+    *gate = true;
+    amount.setSatoshi(999); amount.clear(); amount.fromDisplay("1"); amount.editInput("2");
+    amount.setUnit(BitcoinAmount::Unit::SAT); amount.flipUnit(); amount.setZeroIsEmpty(true);
+    amount.resetInput(); amount.restoreInput(); amount.format();
+    QCOMPARE(amount.requestPaste("3", 0, 0), quint64{0});
+    QCOMPARE(amount.requestEditInput("4"), quint64{0});
+    QVERIFY(!amount.commitTo(&target));
+    QCOMPARE(amount.satoshi(), qint64{123}); QCOMPARE(target.satoshi(), qint64{456});
+    QCOMPARE(amount.inputText(), input); QCOMPARE(amount.inputRevision(), revision);
+    QCOMPARE(amount.unit(), unit); QCOMPARE(amount.inputOperationId(), ticket); QVERIFY(!amount.zeroIsEmpty());
+    QCOMPARE(changed.count(), 0); QCOMPARE(input_changed.count(), 0); QCOMPARE(operation_changed.count(), 0);
+}
+void BitcoinAmountTests::reentrantOwnerCloseStopsFurtherPresentation()
+{
+    auto gate = std::make_shared<std::atomic_bool>(false); BitcoinAmount amount;
+    amount.setOwnerAdmissionGate(gate);
+    QSignalSpy changed{&amount, &BitcoinAmount::amountChanged};
+    QSignalSpy display{&amount, &BitcoinAmount::displayChanged};
+    connect(&amount, &BitcoinAmount::amountChanged, &amount, [gate] { *gate = true; });
+    amount.setSatoshi(123);
+    QCOMPARE(amount.satoshi(), qint64{123}); QCOMPARE(changed.count(), 1); QCOMPARE(display.count(), 0);
+    amount.setSatoshi(999); QCOMPARE(amount.satoshi(), qint64{123});
+}
+
+void BitcoinAmountTests::capturedLiteralBudget_data()
+{
+    QTest::addColumn<bool>("paste"); QTest::addColumn<QString>("literal"); QTest::addColumn<bool>("accepted");
+    for (bool paste : {false, true}) {
+        const auto prefix = paste ? QStringLiteral("paste-") : QStringLiteral("native-edit-");
+        QTest::newRow(qPrintable(prefix + "boundary128")) << paste << (QStringLiteral("0.1") + QString(125, u' ')) << true;
+        QTest::newRow(qPrintable(prefix + "boundary129")) << paste << (QStringLiteral("0.1") + QString(126, u' ')) << false;
+        QTest::newRow(qPrintable(prefix + "hidden-numeric-tail")) << paste << (QStringLiteral("0.1") + QString(200000, u' ') + "9") << false;
+        QTest::newRow(qPrintable(prefix + "oversized-leading-space")) << paste << (QString(200000, u' ') + "0.1") << false;
+    }
+}
+void BitcoinAmountTests::capturedLiteralBudget()
+{
+    QFETCH(bool, paste); QFETCH(QString, literal); QFETCH(bool, accepted);
+    BitcoinAmount amount, target;
+    amount.setSatoshi(2 * COIN); target.setSatoshi(123);
+    const auto before = amount.satoshi();
+    const auto revision = amount.inputRevision();
+    const auto old_text = amount.inputText();
+    QSignalSpy completed{&amount, &BitcoinAmount::inputOperationChanged};
+    const auto ticket = paste ? amount.requestPaste(literal, 0, static_cast<int>(old_text.size()), revision)
+        : amount.requestEditInput(literal, revision);
+    QVERIFY(ticket); QCOMPARE(amount.inputOperationId(), ticket); QCOMPARE(completed.size(), 1);
+    QVERIFY(!amount.inputPending()); QVERIFY(amount.inputRevision() != revision);
+    if (accepted) {
+        QCOMPARE(amount.inputOperationState(), BitcoinAmount::InputOperationState::InputApplied);
+        QCOMPARE(amount.satoshi(), qint64{COIN / 10}); QVERIFY(amount.commitTo(&target));
+        QCOMPARE(target.satoshi(), qint64{COIN / 10});
+    } else {
+        QCOMPARE(amount.inputOperationState(), BitcoinAmount::InputOperationState::InputRejected);
+        QCOMPARE(amount.inputState(), BitcoinAmount::InputState::Invalid);
+        QCOMPARE(amount.inputText().size(), qsizetype{129});
+        QCOMPARE(amount.satoshi(), before); QVERIFY(!amount.inputOperationError().isEmpty());
+        QVERIFY(!amount.commitTo(&target)); QCOMPARE(target.satoshi(), qint64{123});
+        QVERIFY(amount.inputCursorPosition() <= 129);
+        if (literal.startsWith("0.1")) {
+            // Truncating/then trimming this original would manufacture a valid
+            // amount. The exact-source request must still refuse it.
+            QCOMPARE(amountinput::Parse(QStringView{literal}.left(128), 8, u'.').state, amountinput::State::Valid);
+        }
+    }
+}
+void BitcoinAmountTests::capturedSelectionAndRevision_data()
+{
+    QTest::addColumn<int>("change");
+    QTest::newRow("keyboard-edit") << 0;
+    QTest::newRow("unit") << 1;
+    QTest::newRow("canonical") << 2;
+    QTest::newRow("reset") << 3;
+    QTest::newRow("clear") << 4;
+}
+void BitcoinAmountTests::capturedSelectionAndRevision()
+{
+    QFETCH(int, change);
+    BitcoinAmount amount;
+    amount.editInput("123");
+    const auto applied = amount.requestPaste("4", 1, 2, amount.inputRevision());
+    QVERIFY(applied); QCOMPARE(amount.inputText(), QStringLiteral("143")); QCOMPARE(amount.satoshi(), qint64{143 * COIN});
+    const auto captured_revision = amount.inputRevision();
+    if (change == 0) amount.editInput("12");
+    if (change == 1) amount.setUnit(BitcoinAmount::Unit::SAT);
+    if (change == 2) amount.setSatoshi(456);
+    if (change == 3) amount.resetInput();
+    if (change == 4) amount.clear();
+    const auto retained = amount.satoshi(); const auto text = amount.inputText(); const auto state = amount.inputState(); const auto unit = amount.unit();
+    const auto stale = amount.requestPaste("9", 0, 1, captured_revision);
+    QVERIFY(stale); QCOMPARE(amount.inputOperationState(), BitcoinAmount::InputOperationState::InputStale);
+    QCOMPARE(amount.satoshi(), retained); QCOMPARE(amount.inputText(), text); QCOMPARE(amount.inputState(), state); QCOMPARE(amount.unit(), unit);
+    const auto latest = amount.requestEditInput("2", amount.inputRevision());
+    QVERIFY(latest > stale); QVERIFY(!amount.cancelInput(stale)); QVERIFY(!amount.cancelInput(latest));
+    QCOMPARE(amount.inputOperationId(), latest); QCOMPARE(amount.inputOperationState(), BitcoinAmount::InputOperationState::InputApplied);
+    QCOMPARE(amount.satoshi(), change == 1 ? qint64{2} : qint64{2 * COIN});
+    QSignalSpy quiet{&amount, &BitcoinAmount::inputOperationChanged};
+    amount.closeAdmission(); QCOMPARE(quiet.size(), 0);
+    QCOMPARE(amount.requestPaste("1", 0, 1), quint64{0}); QCOMPARE(amount.requestEditInput("1"), quint64{0});
+    QCOMPARE(quiet.size(), 0);
+}
+void BitcoinAmountTests::capturedInputPublicationCanCloseOrSupersede_data()
+{
+    QTest::addColumn<int>("action");
+    QTest::newRow("destroy") << 0;
+    QTest::newRow("newer-request") << 1;
+    QTest::newRow("quiet-close") << 2;
+}
+void BitcoinAmountTests::capturedInputPublicationCanCloseOrSupersede()
+{
+    QFETCH(int, action);
+    auto amount = std::make_unique<BitcoinAmount>(); amount->editInput("1");
+    const QPointer<BitcoinAmount> held{amount.get()};
+    bool acted{false}; quint64 newer{0};
+    if (action == 0) connect(amount.get(), &BitcoinAmount::inputOperationChanged, this, [&] { amount.reset(); });
+    if (action == 1) connect(amount.get(), &BitcoinAmount::amountChanged, this, [&] {
+        if (acted) return;
+        acted = true; newer = amount->requestEditInput("3", amount->inputRevision());
+    });
+    if (action == 2) connect(amount.get(), &BitcoinAmount::inputChanged, this, [&] { amount->closeAdmission(); });
+    const auto original = amount->requestPaste("2", 0, 1, amount->inputRevision());
+    QVERIFY(original);
+    if (action == 0) QVERIFY(!held);
+    else if (action == 1) { QVERIFY(newer > original); QCOMPARE(amount->inputOperationId(), newer); QCOMPARE(amount->satoshi(), qint64{3 * COIN}); }
+    else { QCOMPARE(amount->inputOperationState(), BitcoinAmount::InputOperationState::InputClosed); QCOMPARE(amount->satoshi(), qint64{2 * COIN}); }
+}
+
+void BitcoinAmountTests::notificationCanDestroyTheAmount_data()
+{
+    QTest::addColumn<int>("action"); QTest::addColumn<QByteArray>("signal");
+    QTest::newRow("canonical-input") << 0 << QByteArray{SIGNAL(inputChanged())};
+    QTest::newRow("canonical-amount") << 0 << QByteArray{SIGNAL(amountChanged())};
+    QTest::newRow("canonical-display") << 0 << QByteArray{SIGNAL(displayChanged())};
+    QTest::newRow("clear-input") << 1 << QByteArray{SIGNAL(inputChanged())};
+    QTest::newRow("clear-amount") << 1 << QByteArray{SIGNAL(amountChanged())};
+    QTest::newRow("unit-input") << 2 << QByteArray{SIGNAL(inputChanged())};
+    QTest::newRow("unit-unit") << 2 << QByteArray{SIGNAL(unitChanged())};
+    QTest::newRow("text-amount") << 3 << QByteArray{SIGNAL(amountChanged())};
+    QTest::newRow("reset-dirty") << 4 << QByteArray{SIGNAL(inputDirtyChanged())};
+    QTest::newRow("format-input") << 5 << QByteArray{SIGNAL(inputChanged())};
+}
+
+void BitcoinAmountTests::notificationCanDestroyTheAmount()
+{
+    QFETCH(int, action); QFETCH(QByteArray, signal);
+    auto* amount = new BitcoinAmount;
+    amount->setUnit(BitcoinAmount::Unit::SAT); amount->setSatoshi(1); amount->editInput("2");
+    const QPointer<BitcoinAmount> held{amount};
+    // QObject deletion is direct; deleteLater would not exercise continuation
+    // after a signal's synchronous receiver destroys its sender.
+    // A separate observer deletes the sender synchronously at the selected edge.
+    auto destroy = [amount] { delete amount; };
+    if (signal == SIGNAL(inputChanged())) connect(amount, &BitcoinAmount::inputChanged, destroy);
+    else if (signal == SIGNAL(amountChanged())) connect(amount, &BitcoinAmount::amountChanged, destroy);
+    else if (signal == SIGNAL(displayChanged())) connect(amount, &BitcoinAmount::displayChanged, destroy);
+    else if (signal == SIGNAL(unitChanged())) connect(amount, &BitcoinAmount::unitChanged, destroy);
+    else connect(amount, &BitcoinAmount::inputDirtyChanged, destroy);
+    switch (action) {
+    case 0: amount->setSatoshi(3); break;
+    case 1: amount->clear(); break;
+    case 2: amount->setUnit(BitcoinAmount::Unit::BTC); break;
+    case 3: amount->editInput("3"); break;
+    case 4: amount->resetInput(); break;
+    case 5: amount->format(); break;
+    }
+    QVERIFY(!held);
+}
+
+void BitcoinAmountTests::commitDoesNotAccessASourceDestroyedByTheTarget()
+{
+    auto* source = new BitcoinAmount; source->setSatoshi(12);
+    const QPointer<BitcoinAmount> held{source}; BitcoinAmount target;
+    connect(&target, &BitcoinAmount::amountChanged, [source] { delete source; });
+    QVERIFY(!source->commitTo(&target)); QVERIFY(!held);
+    QCOMPARE(target.satoshi(), qint64{12});
+}
 
 void BitcoinAmountTests::localizedInputKeepsExactSatoshis_data()
 {

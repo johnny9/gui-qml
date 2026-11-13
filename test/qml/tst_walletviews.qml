@@ -44,6 +44,45 @@ TestCase {
         testSecondWalletModel.currentPaymentRequest.label = ""
     }
 
+    function test_close_question_presentation_uses_original_context_data() {
+        return [{tag: "another-opening", sameOpening: false}, {tag: "new-question", sameOpening: true}]
+    }
+
+    function test_close_question_presentation_uses_original_context(data) {
+        testWalletModel.available = true
+        testSecondWalletModel.available = true
+        const page = createShell()
+        walletController.requestCloseWallet(testWalletModel)
+        const questions = findChild(page, "walletCloseQuestions")
+        verify(questions !== null)
+        let originalPopup = null
+        tryVerify(function() {
+            originalPopup = questions.count === 1 ? questions.itemAt(0).confirmation : null
+            return originalPopup && originalPopup.opened
+        })
+        const originalToken = originalPopup.questionToken
+        const oldAction = findChild(originalPopup.contentItem, "walletCloseConfirmationConfirmButton")
+        verify(oldAction !== null)
+        const next = data.sameOpening ? testWalletModel : testSecondWalletModel
+        const before = walletController.closeWalletCalls
+        Qt.callLater(function() {
+            if (oldAction && typeof oldAction.clicked === "function") oldAction.clicked()
+        })
+        walletController.requestCloseWallet(next)
+        let currentPopup = null
+        tryVerify(function() {
+            currentPopup = questions.count === 1 ? questions.itemAt(0).confirmation : null
+            return currentPopup && currentPopup !== originalPopup && currentPopup.opened
+        })
+        compare(currentPopup.targetWallet, next)
+        compare(walletController.closeWalletCalls, before)
+        testWalletModel.answerClose(originalToken, true)
+        compare(walletController.closeWalletCalls, before)
+        findChild(currentPopup.contentItem, "walletCloseConfirmationConfirmButton").clicked()
+        compare(walletController.closeWalletCalls, before + 1)
+        compare(walletController.lastClosedWalletName, next.name)
+    }
+
     function createShell() {
         const page = createTemporaryObject(desktopWalletsComponent, testCase)
         verify(page !== null)

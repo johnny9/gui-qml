@@ -5,15 +5,22 @@
 #include <QtTest/QtTest>
 
 #include <qml/components/blockclockdial.h>
+#include <qml/backendexecutor.h>
+#include <test/mocks/manualexecutionenvironment.h>
 
 #include <QImage>
 #include <QPainter>
 #include <QPoint>
 #include <QQuickWindow>
+#include <QRegularExpression>
+#include <QScopeGuard>
 #include <QtMath>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <limits>
+#include <vector>
 
 namespace {
 constexpr int DIAL_SIZE{120};
@@ -71,6 +78,11 @@ void ConfigureSyncedDial(BlockClockDial& dial, qreal current_fraction,
 
 QImage RenderDial(BlockClockDial& dial)
 {
+    if (!QTest::qWaitFor([&] { return !dial.renderPending(); }, 10000) || !dial.renderError().isEmpty()) {
+        const auto message = QStringLiteral("Native block overlay did not complete: pending=%1 capacityWaiting=%2 error=%3")
+            .arg(dial.renderPending()).arg(dial.renderCapacityWaiting()).arg(dial.renderError());
+        QTest::qFail(qPrintable(message), __FILE__, __LINE__); return {};
+    }
     QImage image{DIAL_SIZE, DIAL_SIZE, QImage::Format_ARGB32_Premultiplied};
     image.fill(Qt::transparent);
 
@@ -121,6 +133,16 @@ class BlockClockDialTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void initTestCase();
+    void cleanupTestCase();
+    void manualRendererCoalescesLatestViewportAndRejectsLatePublication();
+    void oversizedViewportUsesBoundedRasterWithoutDroppingBlocks();
+    void invalidPenGeometryReportsNativeFailureAndRecovers_data();
+    void invalidPenGeometryReportsNativeFailureAndRecovers();
+    void heldEarlierFailureKeepsNewerRenderPending();
+    void retainedRasterCapacityResumesOriginalLatestView_data();
+    void retainedRasterCapacityResumesOriginalLatestView();
+    void rawFractionInventoryRejectsWithoutReplacingOriginalAndRecovers();
     void ibdProgressRendersImmediateHalfArc();
     void syncedGradientToggleChangesRenderedColors();
     void syncedGradientRunsFromOlderToNewerConfirmationColors();
@@ -139,7 +161,242 @@ private Q_SLOTS:
     void coalescedBlocksSaturateAtHighestConfirmationColor();
     void blocksCoalescedWithCurrentTimePreserveConfirmationDepth();
     void blocksCoalescedWithPeriodStartDoNotShiftVisibleDepth();
+private:
+    std::unique_ptr<BackendExecutor> m_executor;
 };
+
+void BlockClockDialTests::initTestCase()
+{
+    m_executor = std::make_unique<BackendExecutor>(execution::Limits::Bounded());
+    BlockClockDial::setDefaultServices({m_executor->scheduler(), {}});
+}
+void BlockClockDialTests::cleanupTestCase()
+{
+    bool retired{false}; BlockClockDial::closeAll(); BlockClockDial::whenRetired(this, [&] { retired = true; });
+    QTRY_VERIFY(retired); BlockClockDial::setDefaultServices({});
+    bool drained{false}; m_executor->whenDrained(this, [&] { drained = true; }); m_executor->shutdown();
+    QTRY_VERIFY(drained); m_executor.reset();
+}
+
+void BlockClockDialTests::manualRendererCoalescesLatestViewportAndRejectsLatePublication()
+{
+    ManualRoutedExecution env;
+    std::deque<std::function<void()>> publications;
+    const auto publish_all = [&] { while (!publications.empty()) { auto publish = std::move(publications.front()); publications.pop_front(); publish(); } };
+    BlockClockDial dial{execution::SnapshotServices{env.scheduler, [&](auto publish) { publications.push_back(std::move(publish)); }}};
+    ConfigureSyncedDial(dial, 0.75, {0.5, 0.25, 0.5});
+    env.drain(); // Native normalized and rendered original geometry; GUI output remains held.
+    QVERIFY(dial.renderPending());
+    dial.setWidth(240);
+    publish_all(); QVERIFY(dial.renderPending()); // The old viewport's image cannot become current.
+    for (int turn = 0; turn < 32 && (!env.queuedIdle() || !publications.empty()); ++turn) { env.drain(); publish_all(); }
+    QVERIFY(!dial.renderPending()); QVERIFY(dial.renderError().isEmpty());
+    QCOMPARE(dial.renderedPixelSize(), QSize(240, DIAL_SIZE));
+    const QList<qreal> expected{0.25, 0.5, 0.5}; QCOMPARE(dial.blockTimeFractions(), expected);
+    dial.setWidth(241);
+    const auto active = env.dispatchNext(execution::Lane::Domain); QVERIFY(active);
+    for (int width = 242; width < 400; ++width) dial.setWidth(width);
+    QCOMPARE(env.queuedCountIf([](const auto& turn) { return turn.lane == execution::Lane::Domain && turn.phase == execution::Phase::Queued; }), 0);
+    QVERIFY(env.finishWork(*active));
+    for (int turn = 0; turn < 32 && (!env.queuedIdle() || !publications.empty()); ++turn) { env.drain(); publish_all(); }
+    QCOMPARE(dial.renderedPixelSize(), QSize(399, DIAL_SIZE));
+    QSignalSpy changes{&dial, &BlockClockDial::renderStateChanged};
+    dial.setWidth(400); env.drain(); dial.closeAdmission();
+    const int before = changes.count(); publish_all(); env.drain();
+    QCOMPARE(changes.count(), before); QVERIFY(env.quiescent());
+}
+void BlockClockDialTests::invalidPenGeometryReportsNativeFailureAndRecovers_data()
+{
+    QTest::addColumn<qreal>("pen");
+    QTest::newRow("negative") << qreal{-1};
+    QTest::newRow("not-finite") << std::numeric_limits<qreal>::quiet_NaN();
+    QTest::newRow("infinite") << std::numeric_limits<qreal>::infinity();
+}
+void BlockClockDialTests::invalidPenGeometryReportsNativeFailureAndRecovers()
+{
+    QFETCH(qreal, pen);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0)
+    QTest::failOnWarning(QRegularExpression{QStringLiteral("^QPen::setWidthF:.*")});
+#endif
+    ManualRoutedExecution env;
+    std::deque<std::function<void()>> publications;
+    const auto settle = [&] {
+        for (int turn = 0; turn < 32 && (!env.queuedIdle() || !publications.empty()); ++turn) {
+            env.drain();
+            while (!publications.empty()) {
+                auto publish = std::move(publications.front()); publications.pop_front(); publish();
+            }
+        }
+    };
+    BlockClockDial dial{execution::SnapshotServices{env.scheduler, [&](auto publish) { publications.push_back(std::move(publish)); }}};
+    ConfigureSyncedDial(dial, 0.75, {0.5, 0.25}); settle();
+    QVERIFY(dial.renderAvailable());
+    dial.setPenWidth(pen);
+    QImage empty{DIAL_SIZE, DIAL_SIZE, QImage::Format_ARGB32_Premultiplied};
+    empty.fill(Qt::transparent);
+    {
+        QPainter painter{&empty};
+        dial.paint(&painter); // No Qt pen construction for invalid presentation input.
+    }
+    QCOMPARE(empty.pixelColor(DIAL_SIZE / 2, DIAL_SIZE / 2), QColor(Qt::transparent));
+    env.drain(); QVERIFY(dial.renderPending());
+    settle(); QVERIFY(!dial.renderPending()); QVERIFY(!dial.renderError().isEmpty());
+    QVERIFY(!dial.renderAvailable());
+    dial.setPenWidth(12); settle();
+    QVERIFY(dial.renderError().isEmpty()); QVERIFY(dial.renderAvailable());
+    dial.closeAdmission(); settle(); QVERIFY(env.quiescent());
+}
+void BlockClockDialTests::heldEarlierFailureKeepsNewerRenderPending()
+{
+    ManualRoutedExecution env;
+    std::deque<std::function<void()>> publications;
+    const auto publish_all = [&] { while (!publications.empty()) { auto publish = std::move(publications.front()); publications.pop_front(); publish(); } };
+    BlockClockDial dial{execution::SnapshotServices{env.scheduler, [&](auto publish) { publications.push_back(std::move(publish)); }}};
+    ConfigureSyncedDial(dial, 0.75, {std::numeric_limits<qreal>::quiet_NaN()});
+    env.drain(); // R1 typed failure exists; its GUI notice remains held.
+    dial.retryRendering(); // Same content epoch, newer R2 is admitted but not executed.
+    publish_all();
+    QVERIFY(dial.renderPending()); QVERIFY(dial.renderError().isEmpty());
+    env.drain(); publish_all();
+    QVERIFY(!dial.renderPending()); QVERIFY(!dial.renderError().isEmpty());
+    dial.closeAdmission(); env.drain(); publish_all(); env.drain(); QVERIFY(env.quiescent());
+}
+void BlockClockDialTests::retainedRasterCapacityResumesOriginalLatestView_data()
+{
+    QTest::addColumn<int>("boundary");
+    QTest::newRow("latest-viewport") << 0;
+    QTest::newRow("closed-before-actual-release") << 1;
+    QTest::newRow("inactive-until-original-reactivation") << 2;
+    QTest::newRow("invalid-successor-does-not-auto-retry") << 3;
+}
+void BlockClockDialTests::retainedRasterCapacityResumesOriginalLatestView()
+{
+    QFETCH(int, boundary);
+    ManualRoutedExecution env;
+    std::deque<std::function<void()>> publications;
+    const auto publish_all = [&] {
+        while (!publications.empty()) {
+            auto publish = std::move(publications.front()); publications.pop_front(); publish();
+        }
+    };
+    const auto domain_only = [&] { for (int turn = 0; turn < 128 && env.step(execution::Lane::Domain); ++turn) {} };
+    const auto settle = [&] {
+        for (int turn = 0; turn < 32 && (!env.queuedIdle() || !publications.empty()); ++turn) { env.drain(); publish_all(); }
+    };
+    TestableBlockClockDial dial{execution::SnapshotServices{env.scheduler, [&](auto turn) { publications.push_back(std::move(turn)); }}};
+    const auto cleanup = qScopeGuard([&] { dial.closeAdmission(); settle(); });
+    dial.complete(); ConfigureSyncedDial(dial, 0.75, {0.25, 0.5}); settle();
+    QVERIFY(dial.renderAvailable()); QCOMPARE(dial.renderedPixelSize(), QSize(DIAL_SIZE, DIAL_SIZE));
+    // Keep actual retained Native destructors queued. Each successful replacement
+    // now leaves one old raster plus its accounting alive on Cleanup.
+    for (int width : {121, 122}) {
+        dial.setWidth(width); domain_only(); publish_all();
+        QVERIFY(!dial.renderPending()); QVERIFY(dial.renderError().isEmpty());
+        QCOMPARE(dial.renderedPixelSize(), QSize(width, DIAL_SIZE));
+    }
+    QVERIFY(env.queuedCountIf([](const auto& turn) { return turn.lane == execution::Lane::Cleanup; }) > 0);
+    dial.setWidth(123); domain_only(); publish_all();
+    QVERIFY(dial.renderPending()); QVERIFY(dial.renderCapacityWaiting());
+    QVERIFY(!dial.renderError().isEmpty()); QCOMPARE(dial.renderedPixelSize(), QSize(122, DIAL_SIZE));
+    dial.setWidth(124); domain_only(); publish_all();
+    QVERIFY(dial.renderCapacityWaiting());
+    QCOMPARE(env.queuedCountIf([](const auto& turn) { return turn.lane == execution::Lane::Domain; }), 0);
+    QSignalSpy notices{&dial, &BlockClockDial::renderStateChanged};
+    if (boundary == 1) dial.closeAdmission();
+    if (boundary == 2) { dial.setRenderingActive(false); dial.setWidth(125); publish_all(); }
+    if (boundary == 3) {
+        dial.setPenWidth(-1); domain_only(); publish_all();
+        QVERIFY(!dial.renderCapacityWaiting()); QVERIFY(!dial.renderPending()); QVERIFY(!dial.renderError().isEmpty());
+    }
+    const auto before_release = notices.count();
+    // Execute the real queued Cleanup packets, not a synthetic budget refund.
+    // Input cleanup does not wake; the first actual Frame destruction does.
+    std::vector<execution::TaskId> released_cleanup;
+    released_cleanup.reserve(128);
+    for (int turn = 0; turn < 128 && publications.empty(); ++turn) {
+        const auto id = env.dispatchNext(execution::Lane::Cleanup);
+        if (!id) break;
+        released_cleanup.push_back(*id);
+        QVERIFY(env.finishWork(*id));
+    }
+    if (boundary != 1) QVERIFY(!publications.empty());
+    publish_all();
+    const auto only_original_cleanup_outcomes = [&] {
+        const auto total = env.queuedCountIf([](const auto& turn) { return turn.lane == execution::Lane::Domain; });
+        const auto original_outcomes = env.queuedCountIf([&](const auto& turn) {
+            if (turn.lane != execution::Lane::Domain) return false;
+            const bool original = std::find(released_cleanup.begin(), released_cleanup.end(), turn.id) != released_cleanup.end();
+            qInfo() << "DIAL_RELEASE_DOMAIN_PACKET" << turn.id.value << "phase" << static_cast<int>(turn.phase)
+                    << "originalCleanup" << original;
+            return turn.phase == execution::Phase::OutcomeReady && original;
+        });
+        qInfo() << "DIAL_RELEASE_DOMAIN_COUNTS" << total << original_outcomes;
+        return total == original_outcomes;
+    };
+    if (boundary == 1) {
+        domain_only(); publish_all(); QCOMPARE(notices.count(), before_release);
+        QVERIFY(!dial.renderPending()); QVERIFY(!dial.renderCapacityWaiting());
+    } else if (boundary == 2) {
+        QVERIFY(only_original_cleanup_outcomes());
+        QCOMPARE(env.queuedCountIf([](const auto& turn) { return turn.lane == execution::Lane::Domain && turn.phase == execution::Phase::Queued; }), 0);
+        QCOMPARE(dial.renderedPixelSize(), QSize(122, DIAL_SIZE));
+        dial.setRenderingActive(true); domain_only(); publish_all();
+        QVERIFY(!dial.renderPending()); QVERIFY(dial.renderError().isEmpty());
+        QCOMPARE(dial.renderedPixelSize(), QSize(125, DIAL_SIZE));
+    } else if (boundary == 3) {
+        QVERIFY(only_original_cleanup_outcomes());
+        QCOMPARE(env.queuedCountIf([](const auto& turn) { return turn.lane == execution::Lane::Domain && turn.phase == execution::Phase::Queued; }), 0);
+        QVERIFY(!dial.renderCapacityWaiting()); QVERIFY(!dial.renderError().isEmpty());
+        dial.setPenWidth(12); domain_only(); publish_all();
+        QVERIFY(!dial.renderPending()); QVERIFY(dial.renderError().isEmpty());
+    } else {
+        QVERIFY(dial.renderPending()); domain_only(); publish_all();
+        QVERIFY(!dial.renderCapacityWaiting()); QVERIFY(!dial.renderPending()); QVERIFY(dial.renderError().isEmpty());
+        QCOMPARE(dial.renderedPixelSize(), QSize(124, DIAL_SIZE));
+    }
+    dial.closeAdmission(); settle(); QVERIFY(env.quiescent());
+}
+void BlockClockDialTests::rawFractionInventoryRejectsWithoutReplacingOriginalAndRecovers()
+{
+    QVERIFY(QTest::qWaitFor([] { std::lock_guard lock{blockclock::FRACTION_BUDGET->mutex}; return blockclock::FRACTION_BUDGET->frames == 0; }, 10000));
+    ManualRoutedExecution env;
+    std::deque<std::function<void()>> publications;
+    const auto publish_all = [&] { while (!publications.empty()) { auto publish = std::move(publications.front()); publications.pop_front(); publish(); } };
+    const auto settle = [&] { for (int turn = 0; turn < 32 && (!env.queuedIdle() || !publications.empty()); ++turn) { env.drain(); publish_all(); } };
+    BlockClockDial dial{execution::SnapshotServices{env.scheduler, [&](auto publish) { publications.push_back(std::move(publish)); }}};
+    ConfigureDial(dial); dial.setAnimateDial(false); dial.setConnected(true); dial.setSynced(true); dial.setCurrentTimeFraction(0.75);
+    const QList<qreal> original(1024 * 1024, 0.25); // 8 MiB raw plus 8 MiB reserved Native normalization peak.
+    dial.setBlockTimeFractions(original);
+    dial.setBlockTimeFractions(original); // Cleanup remains held; both original reservations must still count.
+    { std::lock_guard lock{blockclock::FRACTION_BUDGET->mutex}; QCOMPARE(blockclock::FRACTION_BUDGET->bytes, size_t{32 * 1024 * 1024}); }
+    auto refused = original; refused[0] = 0.6;
+    dial.setBlockTimeFractions(refused);
+    QCOMPARE(dial.blockTimeFractions().first(), qreal{0.25});
+    QCOMPARE(dial.blockTimeFractions().last(), qreal{0.25});
+    QVERIFY(!dial.renderError().isEmpty());
+    dial.retryRendering(); QVERIFY(!dial.renderError().isEmpty()); // Old data cannot claim acceptance of a refused update.
+    settle(); QVERIFY(!dial.renderError().isEmpty()); // Actual old rendering success still cannot erase capture refusal.
+    dial.setBlockTimeFractions(refused); // Retry the same original payload after actual Native retirement progress.
+    settle();
+    QCOMPARE(dial.blockTimeFractions().size(), original.size());
+    QCOMPARE(dial.blockTimeFractions().first(), qreal{0.25});
+    QCOMPARE(dial.blockTimeFractions().last(), qreal{0.6});
+    QVERIFY(dial.renderError().isEmpty());
+    dial.closeAdmission(); settle(); QVERIFY(env.quiescent());
+    { std::lock_guard lock{blockclock::FRACTION_BUDGET->mutex}; QCOMPARE(blockclock::FRACTION_BUDGET->frames, size_t{0}); QCOMPARE(blockclock::FRACTION_BUDGET->bytes, size_t{0}); }
+}
+void BlockClockDialTests::oversizedViewportUsesBoundedRasterWithoutDroppingBlocks()
+{
+    BlockClockDial dial; ConfigureSyncedDial(dial, 0.75, {0.25, 0.5, 0.5});
+    dial.setWidth(1.0e12); dial.setHeight(1.0e12);
+    QVERIFY(QTest::qWaitFor([&] { return !dial.renderPending(); }, 10000));
+    QVERIFY(dial.renderError().isEmpty());
+    const auto pixels = dial.renderedPixelSize();
+    QVERIFY(pixels.width() > 0 && pixels.height() > 0);
+    QVERIFY(pixels.width() <= 1024 && pixels.height() <= 1024);
+    QVERIFY(qint64(pixels.width()) * pixels.height() <= 512 * 1024);
+    QCOMPARE(dial.blockTimeFractions(), (QList<qreal>{0.25, 0.5, 0.5}));
+}
 
 void BlockClockDialTests::ibdProgressRendersImmediateHalfArc()
 {

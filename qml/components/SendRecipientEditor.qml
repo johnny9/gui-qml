@@ -10,6 +10,8 @@ ColumnLayout {
     property var wallet
     property var recipient
     property bool clipboardRequest: false
+    property string clipboardText: ""
+    property double clipboardRevision: -1
     property bool canRemove: false
     property string removeButtonObjectName: "sendRemoveRecipientButton"
     property alias addressField: addressField
@@ -18,7 +20,7 @@ ColumnLayout {
     readonly property bool sendingMaximum: root.wallet && root.recipient
         && root.wallet.maximumRecipient === root.recipient
     readonly property bool selectedCoins: root.wallet && root.wallet.coinsListModel.selectedCoinsCount > 0
-    signal pasteRequested(string field)
+    signal pasteRequested(string field, var payload)
     signal edited()
     signal removeRequested()
     spacing: 18
@@ -35,7 +37,10 @@ ColumnLayout {
         actionText: root.clipboardRequest ? qsTr("Use payment request") : ""
         actionIconSource: "qrc:/icons/paste-payment-request.svg"
         actionObjectName: "clipboardUriPasteButton"
-        onActionRequested: root.pasteRequested("address")
+        onActionRequested: {
+            const payload = addressField.capturePaste(root.clipboardText, false)
+            if (payload) { payload.clipboardRevision = root.clipboardRevision; root.pasteRequested("address", payload) }
+        }
         BitcoinAddressInputField {
             id: addressField
             objectName: "sendAddressField"
@@ -49,7 +54,7 @@ ColumnLayout {
             address: root.recipient ? root.recipient.address : null
             errorText: root.recipient ? root.recipient.addressError : ""
             placeholderText: qsTr("Enter a Bitcoin address or payment request")
-            onPasteRequested: root.pasteRequested("address")
+            onPasteRequested: (payload) => root.pasteRequested("address", payload)
             onTextChanged: root.edited()
         }
     }
@@ -123,7 +128,7 @@ ColumnLayout {
             interceptPaste: true
             onInputTextChanged: root.edited()
             onEditingFinished: root.edited()
-            onPasteRequested: root.pasteRequested("amount")
+            onPasteRequested: (payload) => root.pasteRequested("amount", payload)
         }
     }
 
@@ -142,8 +147,8 @@ ColumnLayout {
         interceptPaste: true
         placeholderText: qsTr("Add a note for yourself")
         paymentUriRestoreText: root.recipient ? root.recipient.label : ""
-        onTextEdited: if (root.recipient) root.recipient.label = text
-        onPasteRequested: root.pasteRequested("label")
+        onTextEdited: { if (root.recipient) root.recipient.label = text; root.edited() }
+        onPasteRequested: (payload) => root.pasteRequested("label", payload)
     }
 
     Separator { visible: root.canRemove; Layout.fillWidth: true }

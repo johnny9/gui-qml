@@ -13,9 +13,11 @@ ColumnLayout {
     id: fields
     required property bool watchOnly
     required property string nameError
+    required property bool xpubChecked
     required property bool validXpub
     signal nameEdited()
     signal submitRequested()
+    property bool showOperationErrorDetails: false
     property alias walletName: nameEntry.text
     property alias xpubText: xpubEntry.text
     property alias encryptWallet: encryptCheck.checked
@@ -163,7 +165,7 @@ ColumnLayout {
         labelSpacing: 6
         messageSpacing: 8
         fieldBackgroundColor: Theme.color.neutral2
-        errorText: text.trim().length > 0 && !fields.validXpub
+        errorText: text.trim().length > 0 && fields.xpubChecked && !fields.validXpub
             ? qsTr("Enter a valid extended public key (xpub)") : ""
         onTextEdited: ApplicationModels.walletController.clearWalletLoadStatus()
     }
@@ -173,11 +175,38 @@ ColumnLayout {
         visible: text.length > 0
         Layout.fillWidth: true
         text: fields.nameError.length > 0 ? fields.nameError
-            : fields.watchOnly ? ApplicationModels.walletController.walletLoadError : ApplicationModels.walletController.walletCreateError
+            : fields.watchOnly ? ApplicationModels.walletController.walletLoadErrorDisplay : ApplicationModels.walletController.walletCreateErrorDisplay
         color: Theme.color.red
         font: Theme.text.caption.font
         wrapMode: Text.WordWrap
         horizontalAlignment: Text.AlignLeft
+    }
+
+    TextButton {
+        objectName: "walletOperationErrorDetailsButton"
+        visible: fields.nameError.length === 0 && operationErrorDetails.count > 0
+        text: fields.showOperationErrorDetails ? qsTr("Hide error details") : qsTr("Show error details")
+        onClicked: fields.showOperationErrorDetails = !fields.showOperationErrorDetails
+    }
+
+    ListView {
+        id: operationErrorDetails
+        objectName: "walletOperationErrorDetails"
+        Layout.fillWidth: true
+        Layout.preferredHeight: visible ? 120 : 0
+        visible: fields.showOperationErrorDetails && fields.nameError.length === 0 && count > 0
+        model: fields.watchOnly ? ApplicationModels.walletController.walletImportErrorHelpModel : ApplicationModels.walletController.walletCreateErrorHelpModel
+        clip: true
+        reuseItems: true
+        cacheBuffer: 0
+        delegate: CoreText {
+            required property string content
+            width: operationErrorDetails.width
+            text: content
+            textFormat: Text.PlainText
+            font: Theme.text.caption.font
+            wrapMode: Text.WordWrap
+        }
     }
 
     AlertPopup {

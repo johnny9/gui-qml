@@ -127,7 +127,7 @@ QVariantMap BuildTransactionFlow(const interfaces::WalletTx& wtx,
             : all_mine && MoneyRange(wtx.debit) ? std::optional{wtx.debit} : std::nullopt;
         if (debit && *debit >= total_output) fee = *debit - total_output;
     }
-    return {
+    QVariantMap flow{
         {"inputs", inputs}, {"outputs", outputs}, {"inputCount", int(tx.vin.size())}, {"outputCount", int(tx.vout.size())},
         {"totalInputKnown", inputs_known}, {"totalInputSat", inputs_known ? QVariant{qint64(total_input)} : QVariant{}},
         {"totalOutputSat", qint64(total_output)}, {"feeKnown", fee.has_value()},
@@ -137,4 +137,6 @@ QVariantMap BuildTransactionFlow(const interfaces::WalletTx& wtx,
         {"size", qint64(GetSerializeSize(TX_WITH_WITNESS(tx)))}, {"weight", qint64(GetTransactionWeight(tx))},
         {"version", qint64(tx.version)}, {"lockTime", qint64(tx.nLockTime)},
     };
+    flow["presentation"] = PrepareTransactionFlowPresentation(flow);
+    return flow;
 }

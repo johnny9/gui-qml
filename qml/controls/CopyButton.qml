@@ -22,6 +22,8 @@ AbstractButton {
     property url copiedIconSource: "qrc:/icons/check"
     property int iconSize: 16
     property int resetInterval: 1000
+    property bool autoAcknowledge: true
+    function acknowledgeCopy() { copiedResetTimer.restart() }
     readonly property bool copied: copiedResetTimer.running
 
     readonly property bool _showsIcon: displayMode !== CopyButton.TextOnly
@@ -47,7 +49,7 @@ AbstractButton {
     scale: enabled && down ? 0.98 : 1.0
 
     onClicked: {
-        copiedResetTimer.restart()
+        if (autoAcknowledge) root.acknowledgeCopy()
         root.copyRequested()
     }
 

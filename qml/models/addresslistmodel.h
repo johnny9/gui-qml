@@ -6,14 +6,19 @@
 #define BITCOIN_QML_MODELS_ADDRESSLISTMODEL_H
 
 #include <consensus/amount.h>
+#include <qml/models/receiverequestoperation.h>
+#include <qml/snapshotquery.h>
+#include <qml/walletopening.h>
 
 #include <QAbstractListModel>
 #include <QString>
 #include <QVariantList>
 
+#include <exception>
 #include <vector>
 
 class WalletQmlModel;
+namespace interfaces { class Wallet; }
 
 class AddressListModel : public QAbstractListModel
 {
@@ -22,6 +27,8 @@ class AddressListModel : public QAbstractListModel
     Q_PROPERTY(QVariantList categoryOptions READ categoryOptions CONSTANT)
     Q_PROPERTY(bool showUsed READ showUsed WRITE setShowUsed NOTIFY showUsedChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
+    Q_PROPERTY(QString readError READ readError NOTIFY readErrorChanged)
+    Q_PROPERTY(bool refreshPending READ refreshPending NOTIFY refreshStateChanged)
 
 public:
     enum Category {
@@ -46,6 +53,12 @@ public:
     };
 
     explicit AddressListModel(WalletQmlModel* parent = nullptr);
+    ~AddressListModel() override;
+    void closeAdmission();
+    QString readError() const { return m_read_error; }
+    bool refreshPending() const;
+    void configureSession(std::shared_ptr<walletopening::Session> opening, execution::SnapshotServices services);
+    QModelIndex index(int row, int column = 0, const QModelIndex& parent = {}) const override;
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     int count() const;
@@ -60,15 +73,20 @@ public:
     void setDisplayUnit(int unit);
 
     Q_INVOKABLE void refresh();
-    Q_INVOKABLE bool setAddressLabel(const QString& address, const QString& label);
+    void refreshLabels();
+    Q_INVOKABLE ReceiveRequestOperation* setAddressLabel(const QString& address, const QString& label);
     Q_INVOKABLE QString addressAt(int row) const;
 
 Q_SIGNALS:
     void categoryChanged();
     void showUsedChanged();
     void countChanged();
+    void readErrorChanged();
+    void refreshStateChanged();
 
 private:
+    void closeAdmissionImpl(bool notify);
+    void attachSession(std::shared_ptr<walletopening::Session> opening, execution::SnapshotServices services);
     struct AddressEntry {
         QString address;
         QString label;
@@ -78,13 +96,35 @@ private:
         QString script_type;
         bool can_edit_label{false};
         bool can_create_payment_request{false};
+        QString formatted_address, ellipses_address, category_text, balance_text, display_amount;
+        bool operator==(const AddressEntry&) const = default;
     };
 
+    struct RowSlot;
+    struct Node;
+    struct Projection;
+    struct LabelJob;
     void rebuild();
-    std::vector<AddressEntry> collectEntries() const;
-
+    void rebuildLabels();
+    void cancelLabelJob();
+    void notifyRefreshState();
+    bool prepareLabelPublication(quint64 generation, bool failed);
+    void publishLabels(std::shared_ptr<const Projection> projection, std::exception_ptr error, quint64 generation);
+    void publishSnapshot();
+    void applyTurn(quint64 generation);
+    static std::vector<AddressEntry> collectEntries(interfaces::Wallet& wallet, Category category, bool show_used, int unit);
+    std::shared_ptr<execution::SnapshotQuery<std::shared_ptr<const Projection>>> m_query;
+    std::shared_ptr<LabelJob> m_label_job;
+    std::shared_ptr<walletopening::Session> m_opening;
+    execution::SnapshotServices m_services;
+    std::shared_ptr<QObject> m_bridge;
+    std::shared_ptr<const Projection> m_visible, m_pending;
+    const Node* m_root{nullptr};
+    size_t m_pending_step{0};
+    quint64 m_query_generation{0};
+    QString m_read_error;
+    bool m_stopping{false}, m_dirty{true}, m_labels_dirty{false}, m_pending_labels{false}, m_refresh_pending{false}, m_inventory_failed{false}, m_notifying{false};
     WalletQmlModel* m_wallet_model{nullptr};
-    std::vector<AddressEntry> m_entries;
     Category m_category{SingleUse};
     bool m_show_used{false};
     int m_display_unit{0};

@@ -7,6 +7,7 @@
 
 #include <qml/execution.h>
 #include <qml/walletlifecyclestate.h>
+#include <QString>
 
 #include <interfaces/handler.h>
 #include <interfaces/wallet.h>
@@ -32,7 +33,7 @@ class LoadSubscription : public std::enable_shared_from_this<LoadSubscription>
     friend class ::WalletLifecycleTests;
     struct ReturnPacket;
 public:
-    struct Entry { std::string name; std::shared_ptr<interfaces::Wallet> wallet; bool select_wallet{true}; };
+    struct Entry { std::string name; std::shared_ptr<interfaces::Wallet> wallet; bool select_wallet{true}; uint64_t selection_revision{0}; std::shared_ptr<void> adoption_origin{}; uint64_t ingress_sequence{0}; };
     using Callback = std::function<void(std::unique_ptr<interfaces::Wallet>)>;
     using Register = std::function<std::unique_ptr<interfaces::Handler>(Callback)>;
     using Capture = std::function<std::vector<std::unique_ptr<interfaces::Wallet>>()>;
@@ -54,10 +55,12 @@ public:
         std::optional<execution::ResourceLease> m_lease;
     };
 
-    LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify);
+    LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify, std::function<uint64_t()> ingress_stamp = {});
     execution::Admission start();
     void retire();
-    void setNotificationContext(std::string deferred_name, bool action_pending);
+    bool setNotificationContext(QString deferred_name, bool action_pending, uint64_t selection_revision = 0, std::shared_ptr<void> adoption_origin = {});
+    // GUI adapter could not retain an original notification context.
+    void rejectNotificationContext();
     void acknowledgeChange();
     std::unique_ptr<Handoff> takeInitial();
     std::unique_ptr<Handoff> takeNotifications();
@@ -81,6 +84,7 @@ private:
     const Register m_registration;
     const Capture m_capture;
     const Notify m_notify;
+    const std::function<uint64_t()> m_ingress_stamp;
     const execution::ResourceKey m_key;
     State m_state; // Accessed only by Domain outcome consumers.
     std::atomic<FailureReason> m_failure{FailureReason::None};
@@ -89,9 +93,25 @@ private:
     bool m_started{false}, m_initial_ready{false}, m_handoff_disposal_pending{false}, m_change_publication_pending{false};
     std::optional<execution::TaskId> m_cleanup_id;
     std::optional<execution::TaskId> m_scan_id;
-    struct NotificationContext { std::string deferred_name; bool select_wallet{true}; };
-    struct Pending { std::unique_ptr<interfaces::Wallet> wallet; std::shared_ptr<const NotificationContext> context; };
-    std::shared_ptr<const NotificationContext> m_notification_context{std::make_shared<NotificationContext>()};
+    // Contexts are captured on GUI without UTF8 conversion, then retained and
+    // converted only by the original Native subscription scan. Inventory counts
+    // contexts held by ingress and contexts awaiting Native final retirement.
+    struct ContextInventory {
+        std::mutex mutex;size_t count{0},bytes{0};
+        static constexpr size_t MAX_COUNT{128},MAX_BYTES{4*1024*1024};
+        bool reserve(size_t weight);void release(size_t weight);
+    };
+    struct NotificationContext {
+        QString deferred_name;bool select_wallet{true};uint64_t selection_revision{0};
+        std::shared_ptr<void> adoption_origin;
+        std::shared_ptr<ContextInventory> inventory;size_t bytes{0};
+        mutable std::optional<std::string> native_name;
+        ~NotificationContext();
+        const std::string& nativeName()const;
+    };
+    struct Pending { std::unique_ptr<interfaces::Wallet> wallet; std::shared_ptr<const NotificationContext> context; uint64_t ingress_sequence{0}; };
+    const std::shared_ptr<ContextInventory> m_context_inventory{std::make_shared<ContextInventory>()};
+    std::shared_ptr<const NotificationContext> m_notification_context;
     std::unique_ptr<interfaces::Handler> m_handler;
     std::vector<Pending> m_pending;
     std::deque<Entry> m_initial;

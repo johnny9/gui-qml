@@ -16,6 +16,7 @@
 #include <QTimer>
 #include <qml/backendexecutor.h>
 #include <test/mocks/mocknode.h>
+#include <test/mocks/drainexecutors.h>
 #include <chainparams.h>
 #include <qml/core_settings.h>
 #include <qml/datadir.h>
@@ -39,6 +40,40 @@
 #ifndef BITCOINQML_NO_TEST_MAIN
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 #endif
+
+namespace {
+template<typename Model>
+QString CheckedProxyLiteral(Model& owner,const QString& literal)
+{
+    auto* model=qobject_cast<CoreSettingsModel*>(owner.coreSettings());if(!model){QTest::qFail("Missing Core settings adapter",__FILE__,__LINE__);return QStringLiteral("Missing adapter");}
+    std::unique_ptr<CoreProxyDraft> draft{model->createProxyDraft()};if(!draft){QTest::qFail("Proxy draft rejected",__FILE__,__LINE__);return QStringLiteral("Draft rejected");}
+    if(!QTest::qWaitFor([&]{return !draft->pending();})){QTest::qFail("Proxy draft opening timed out",__FILE__,__LINE__);return QStringLiteral("Draft timeout");}
+    draft->setProxyEnabled(true);draft->setProxyAddress(literal);
+    if(!QTest::qWaitFor([&]{return !draft->pending();})){QTest::qFail("Proxy validation timed out",__FILE__,__LINE__);return QStringLiteral("Validation timeout");}
+    return draft->proxyError();
+}
+template<typename Model>
+bool AwaitProxyLocation(Model& owner,bool tor,const QString& literal)
+{
+    auto* model=qobject_cast<CoreSettingsModel*>(owner.coreSettings());if(!model)return false;
+    QSignalSpy outcomes{model,&CoreSettingsModel::operationFinished};
+    const auto ticket=tor?model->changeTorLocation(literal):model->changeProxyLocation(literal);if(!ticket)return false;
+    std::optional<CoreSettingsModel::OperationState> outcome;
+    if(!QTest::qWaitFor([&]{for(const auto& row:outcomes)if(row[0].toULongLong()==ticket){outcome=row[1].value<CoreSettingsModel::OperationState>();return true;}return false;})){QTest::qFail("Original proxy operation did not deliver its outcome",__FILE__,__LINE__);return false;}
+    return *outcome==CoreSettingsModel::Applied;
+}
+template<typename Model>
+bool AwaitCoreSettled(Model& owner)
+{
+    auto* model=qobject_cast<CoreSettingsModel*>(owner.coreSettings());
+    if(!model||!QTest::qWaitFor([&]{return !model->pending();})){QTest::qFail("Core settings outcome was not delivered",__FILE__,__LINE__);return false;}return true;
+}
+bool ApplyOnboardingModelRequest(const OnboardingOptionsModel& model,ArgsManager& args,QString* error)
+{
+    const auto request=model.applyRequest();
+    return QmlOnboardingSettings::ApplyToArgs(args,request.data_dir,request.touched_settings,request.values,error);
+}
+}
 
 class OptionsModelTests : public QObject
 {
@@ -424,6 +459,7 @@ static void PrepareRuntimePersistence(MockNode& node, ArgsManager& args, const Q
 void OptionsModelTests::proxyDisabledRemovesKey()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     // Simulate a previously-saved proxy address so that m_proxy_enabled=true on construction.
     node.SetPersistentSetting("proxy", MakeAddress("127.0.0.1:9050"));
 
@@ -449,6 +485,7 @@ void OptionsModelTests::proxyDisabledRemovesKey()
 void OptionsModelTests::torDisabledRemovesKey()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     node.SetPersistentSetting("onion", MakeAddress("127.0.0.1:9150"));
 
     ArgsManager model_args;
@@ -472,6 +509,7 @@ void OptionsModelTests::torDisabledRemovesKey()
 void OptionsModelTests::proxyEnabledWritesAddress()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     // Construct with no saved proxy — m_proxy_enabled=false, m_proxy_address="".
     ArgsManager model_args;
@@ -503,6 +541,7 @@ void OptionsModelTests::proxyEnabledWritesAddress()
 void OptionsModelTests::proxyDirtySetAtRuntime()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -521,6 +560,7 @@ void OptionsModelTests::proxyDirtySetAtRuntime()
 void OptionsModelTests::proxyDirtyResetWhenReverted()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     // Start onboarded with proxy disabled (no saved proxy).
     ArgsManager model_args;
@@ -554,6 +594,7 @@ void OptionsModelTests::proxyDirtyResetWhenReverted()
 void OptionsModelTests::mempoolSizeLoadedFromSettings()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     node.SetPersistentSetting("maxmempool", MakeInt(456));
 
     ArgsManager model_args;
@@ -569,6 +610,7 @@ void OptionsModelTests::mempoolSizeLoadedFromSettings()
 void OptionsModelTests::mempoolSizeWritesSetting()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -590,6 +632,7 @@ void OptionsModelTests::mempoolSizeWritesSetting()
 void OptionsModelTests::mempoolSizeDoesNotRewriteUnchangedSetting()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     node.SetPersistentSetting("maxmempool", MakeInt(456));
 
     ArgsManager model_args;
@@ -610,6 +653,7 @@ void OptionsModelTests::mempoolSizeDoesNotRewriteUnchangedSetting()
 void OptionsModelTests::legacyNumericSettingsWriteStrings()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -635,6 +679,7 @@ void OptionsModelTests::legacyNumericSettingsWriteStrings()
 void OptionsModelTests::externalSignerPathWritesSigner()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -656,6 +701,7 @@ void OptionsModelTests::externalSignerPathWritesSigner()
 void OptionsModelTests::externalSignerPathClearedRemovesKey()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     node.SetPersistentSetting("signer", MakeAddress("hwi"));
 
     ArgsManager model_args;
@@ -678,6 +724,7 @@ void OptionsModelTests::externalSignerPathClearedRemovesKey()
 void OptionsModelTests::walletSettingsDirtyTracksExternalSignerPath()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -700,6 +747,7 @@ void OptionsModelTests::walletSettingsDirtyTracksExternalSignerPath()
 void OptionsModelTests::signerPathLoadedFromSettings()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     node.SetPersistentSetting("signer", MakeAddress("ledger-signer"));
 
     ArgsManager model_args;
@@ -715,6 +763,7 @@ void OptionsModelTests::signerPathLoadedFromSettings()
 void OptionsModelTests::signerPathWritesSetting()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -737,6 +786,7 @@ void OptionsModelTests::signerPathWritesSetting()
 void OptionsModelTests::signerDirtySetAtRuntime()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -755,6 +805,7 @@ void OptionsModelTests::signerDirtySetAtRuntime()
 void OptionsModelTests::signerDirtyResetWhenReverted()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -777,6 +828,7 @@ void OptionsModelTests::signerDirtyResetWhenReverted()
 void OptionsModelTests::externalSignerPathValidationRejectsMissingPath()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -794,6 +846,7 @@ void OptionsModelTests::externalSignerPathValidationRejectsMissingPath()
 void OptionsModelTests::externalSignerPathValidationAcceptsExecutablePath()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     QTemporaryDir temp_dir;
     QVERIFY(temp_dir.isValid());
@@ -820,6 +873,7 @@ void OptionsModelTests::externalSignerPathValidationAcceptsExecutablePath()
 void OptionsModelTests::connectionDirtyTracksRestartSettings()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     node.SetPersistentSetting("listen", common::SettingsValue{true});
 
     ArgsManager model_args;
@@ -846,6 +900,7 @@ void OptionsModelTests::connectionDirtyTracksRestartSettings()
 void OptionsModelTests::natpmpAppliesLiveWithoutRestartDirty()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     ArgsManager args;
     QTemporaryDir directory;
     PrepareRuntimePersistence(node, args, directory);
@@ -875,6 +930,7 @@ void OptionsModelTests::natpmpAppliesLiveWithoutRestartDirty()
 void OptionsModelTests::storageDirtyIgnoresDisabledPruneSize()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -897,6 +953,7 @@ void OptionsModelTests::storageDirtyIgnoresDisabledPruneSize()
 void OptionsModelTests::pruneDisabledPreservesPreviousValue()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     node.SetPersistentSetting("prune", MakeInt(QmlCoreSettings::PruneGBToMiB(10)));
 
     ArgsManager model_args;
@@ -924,6 +981,7 @@ void OptionsModelTests::pruneDisabledPreservesPreviousValue()
 void OptionsModelTests::developerDirtyTracksRestartSettings()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -948,6 +1006,7 @@ void OptionsModelTests::developerDirtyTracksRestartSettings()
 void OptionsModelTests::mempoolDirtyTracksRestartSettings()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -976,6 +1035,7 @@ void OptionsModelTests::mempoolDirtyTracksRestartSettings()
 void OptionsModelTests::proxyValidationAndCommit()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -984,27 +1044,27 @@ void OptionsModelTests::proxyValidationAndCommit()
     OptionsQmlModel model(node, model_args);
     QTRY_VERIFY(model.settingsReady());
     QTRY_VERIFY(!model.settingsPending());
-    QVERIFY(model.validateProxyLocation("127.0.0.1:9050").isEmpty());
-    QVERIFY(model.validateProxyLocation("[::1]:9050").isEmpty());
-    QVERIFY(model.validateProxyLocation("127.0.0.1").isEmpty());
-    QVERIFY(model.validateProxyLocation("[::1]").isEmpty());
-    QVERIFY(model.validateProxyLocation("proxy.example:9050").isEmpty());
-    QVERIFY(model.validateProxyLocation("proxy.example").isEmpty());
+    QVERIFY(CheckedProxyLiteral(model,"127.0.0.1:9050").isEmpty());
+    QVERIFY(CheckedProxyLiteral(model,"[::1]:9050").isEmpty());
+    QVERIFY(CheckedProxyLiteral(model,"127.0.0.1").isEmpty());
+    QVERIFY(CheckedProxyLiteral(model,"[::1]").isEmpty());
+    QVERIFY(CheckedProxyLiteral(model,"proxy.example:9050").isEmpty());
+    QVERIFY(CheckedProxyLiteral(model,"proxy.example").isEmpty());
 #ifdef HAVE_SOCKADDR_UN
-    QVERIFY(model.validateProxyLocation("unix:/tmp/bitcoin-core-proxy.sock").isEmpty());
+    QVERIFY(CheckedProxyLiteral(model,"unix:/tmp/bitcoin-core-proxy.sock").isEmpty());
 #else
-    QVERIFY(!model.validateProxyLocation("unix:/tmp/bitcoin-core-proxy.sock").isEmpty());
+    QVERIFY(!CheckedProxyLiteral(model,"unix:/tmp/bitcoin-core-proxy.sock").isEmpty());
 #endif
-    QVERIFY(!model.validateProxyLocation("abc..abc:23456").isEmpty());
-    QVERIFY(!model.validateProxyLocation("999.999.999.999:9050").isEmpty());
-    QVERIFY(!model.validateProxyLocation("127.0.0.1:0").isEmpty());
-    QVERIFY(!model.validateProxyLocation("127.0.0.1:65536").isEmpty());
-    QVERIFY(!model.validateProxyLocation("127.0.0.1:9050=ipv4").isEmpty());
-    QVERIFY(!model.validateProxyLocation("0=cjdns").isEmpty());
-    QVERIFY(!model.commitProxyLocation("999.999.999.999:9050"));
+    QVERIFY(!CheckedProxyLiteral(model,"abc..abc:23456").isEmpty());
+    QVERIFY(!CheckedProxyLiteral(model,"999.999.999.999:9050").isEmpty());
+    QVERIFY(!CheckedProxyLiteral(model,"127.0.0.1:0").isEmpty());
+    QVERIFY(!CheckedProxyLiteral(model,"127.0.0.1:65536").isEmpty());
+    QVERIFY(!CheckedProxyLiteral(model,"127.0.0.1:9050=ipv4").isEmpty());
+    QVERIFY(!CheckedProxyLiteral(model,"0=cjdns").isEmpty());
+    QVERIFY(!AwaitProxyLocation(model,false,"999.999.999.999:9050"));
     QVERIFY(model.proxyAddress().isEmpty());
 
-    QVERIFY(model.commitProxyLocation("proxy.example"));
+    QVERIFY(AwaitProxyLocation(model,false,"proxy.example"));
     QTRY_VERIFY(!model.settingsPending());
     QCOMPARE(model.proxyAddress(), QString("proxy.example"));
 }
@@ -1012,6 +1072,7 @@ void OptionsModelTests::proxyValidationAndCommit()
 void OptionsModelTests::proxyDisabledPreservesPreviousValue()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     node.SetPersistentSetting("proxy", MakeAddress("127.0.0.1:9050"));
 
     ArgsManager model_args;
@@ -1044,6 +1105,8 @@ void OptionsModelTests::customDataDirValidationRejectsFile()
 
     MockNode node;
 
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
+
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
     QVERIFY(model_settings_dir.isValid());
@@ -1071,6 +1134,8 @@ void OptionsModelTests::customDataDirSelectionCreatesDirectoryAndPersists()
     QVERIFY(!QFileInfo::exists(data_dir));
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -1106,6 +1171,8 @@ void OptionsModelTests::customDataDirSelectionPreservesExistingWalletDiscovery()
     QVERIFY(!QFileInfo::exists(wallets_dir));
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -1234,6 +1301,8 @@ void OptionsModelTests::runtimeDataDirUsesExplicitDatadirOverSavedGuiSetting()
     PrepareArgsForDataDir(args, explicit_data_dir.path());
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
 
     QTemporaryDir model_settings_dir;
@@ -1520,7 +1589,7 @@ void OptionsModelTests::resetGuiSettingsApplyClearsSelectedCustomDataDirSettings
     ArgsManager apply_args;
     QVERIFY2(PrepareTestArgs(apply_args, argv, parse_error), parse_error.c_str());
     QString apply_error;
-    QVERIFY2(model.applyToArgs(apply_args, &apply_error), qPrintable(apply_error));
+    QVERIFY2(ApplyOnboardingModelRequest(model,apply_args,&apply_error), qPrintable(apply_error));
 
     fs::path backup_path;
     QVERIFY(apply_args.GetSettingsPath(&backup_path, /*temp=*/false, /*backup=*/true));
@@ -1899,7 +1968,7 @@ void OptionsModelTests::explicitDatadirApplyDoesNotPersistGuiDataDir()
     std::string parse_error;
     QVERIFY2(PrepareTestArgs(args, argv, parse_error), parse_error.c_str());
     QString apply_error;
-    QVERIFY2(model.applyToArgs(args, &apply_error), qPrintable(apply_error));
+    QVERIFY2(ApplyOnboardingModelRequest(model,args,&apply_error), qPrintable(apply_error));
 
     QVERIFY(!settings.contains(SettingsKeys::DATA_DIR));
     QCOMPARE(SettingToBool(args.GetPersistentSetting("qml_onboarded")), true);
@@ -2401,7 +2470,7 @@ void OptionsModelTests::fullOnboardingApplyWritesQmlOnboardedMarker()
     std::string parse_error;
     QVERIFY2(PrepareTestArgs(args, argv, parse_error), parse_error.c_str());
     QString apply_error;
-    QVERIFY2(model.applyToArgs(args, &apply_error), qPrintable(apply_error));
+    QVERIFY2(ApplyOnboardingModelRequest(model,args,&apply_error), qPrintable(apply_error));
     QCOMPARE(SettingToBool(args.GetPersistentSetting("qml_onboarded")), true);
     QCOMPARE(settings.value(SettingsKeys::DATA_DIR).toString(), data_dir.path());
 }
@@ -2466,6 +2535,8 @@ void OptionsModelTests::thirdPartyTransactionLinksParseValidUrls()
 
     MockNode node;
 
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
+
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
     QVERIFY(model_settings_dir.isValid());
@@ -2483,7 +2554,11 @@ void OptionsModelTests::thirdPartyTransactionLinksParseValidUrls()
         "not-a-url|"
         "https:///tx/%s");
     QTRY_VERIFY(!model.settingsPending());
-    const QVariantList links = model.thirdPartyTransactionLinks("abc");
+    std::unique_ptr<OptionsTransactionLinks> link_model{model.createTransactionLinks()};
+    QVERIFY(link_model);link_model->setTxid("abc");QTRY_VERIFY(!link_model->pending());
+    QVariantList links;for(int row=0;row<link_model->rowCount();++row)links.push_back(QVariantMap{
+        {"host",link_model->data(link_model->index(row),OptionsTransactionLinks::HostRole)},
+        {"url",link_model->data(link_model->index(row),OptionsTransactionLinks::UrlRole)}});
     QCOMPARE(links.size(), 2);
     const QVariantMap https_link = links.at(0).toMap();
     QCOMPARE(https_link.value("host").toString(), QString("example.com"));
@@ -2508,6 +2583,8 @@ void OptionsModelTests::moneyFontChoicePersists()
     settings.remove(SettingsKeys::MONEY_FONT_CHOICE);
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -2538,6 +2615,8 @@ void OptionsModelTests::displayUnitUsesQtCompatibleSettingsKey()
     settings.setValue(SettingsKeys::DISPLAY_UNIT, QVariant::fromValue(LegacyDisplayUnit::SAT));
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
 
     ArgsManager model_args;
     QTemporaryDir model_settings_dir;
@@ -2601,6 +2680,8 @@ DisplayBitcoinUnit=@Variant(\0\0\0\x7f\0\0\0\fBitcoinUnit\0\x3)
     args.SelectConfigNetwork(args.GetChainTypeString());
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
 
     QTemporaryDir model_settings_dir;
@@ -2630,6 +2711,8 @@ void OptionsModelTests::displayUnitPrefersQmlSettingOverLegacyQtFallback()
     args.SelectConfigNetwork(args.GetChainTypeString());
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
 
     QTemporaryDir model_settings_dir;
@@ -2757,6 +2840,8 @@ void OptionsModelTests::coreSettingsModelEntryMutatesRuntimeModel()
     QVERIFY(PrepareTestArgs(args, TestArgv(), error));
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
     InstallRwSettingsWriter(node, args);
 
@@ -2945,6 +3030,7 @@ void OptionsModelTests::coreSettingsSessionProxyDisabledPreservesPreviousValue()
 void OptionsModelTests::coreSettingsLoadPersistentPrunePreviousValue()
 {
     MockNode node;
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     node.SetPersistentSetting("prune-prev", MakeInt(QmlCoreSettings::PruneGBToMiB(10)));
 
     const QmlCoreSettings::Values values = QmlCoreSettings::LoadPersistentValues(node);
@@ -3012,6 +3098,8 @@ void OptionsModelTests::coreSettingStatusTracksSourcePrecedence()
         });
 
         MockNode node;
+
+        const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
         InstallPersistentSettings(node, args);
 
         QTemporaryDir model_settings_dir;
@@ -3036,6 +3124,8 @@ void OptionsModelTests::coreSettingStatusTracksSourcePrecedence()
         });
 
         MockNode node;
+
+        const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
         InstallPersistentSettings(node, args);
 
         QTemporaryDir model_settings_dir;
@@ -3059,6 +3149,8 @@ void OptionsModelTests::coreSettingStatusTracksSourcePrecedence()
         });
 
         MockNode node;
+
+        const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
         InstallPersistentSettings(node, args);
 
         QTemporaryDir model_settings_dir;
@@ -3082,6 +3174,8 @@ void OptionsModelTests::runtimeCoreSettingStatusesRefreshAfterWrite()
     args.SelectConfigNetwork("main");
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
     InstallRwSettingsWriter(node, args);
 
@@ -3112,6 +3206,8 @@ void OptionsModelTests::commandLineOverriddenSettingDoesNotWrite()
     });
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
 
     QTemporaryDir model_settings_dir;
@@ -3156,6 +3252,8 @@ void OptionsModelTests::runtimeCommandLineOverridesDisplayEffectiveValues()
     });
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
 
     QTemporaryDir model_settings_dir;
@@ -3185,18 +3283,20 @@ void OptionsModelTests::runtimeCommandLineOverridesDisplayEffectiveValues()
 
 void OptionsModelTests::runtimeParameterInteractionsDisplayEffectiveValues()
 {
-
+    std::string parse_error;
+    {
     std::vector<std::string> proxy_argv = TestArgv();
     proxy_argv.emplace_back("-proxy=127.0.0.1:9050");
 
     ArgsManager proxy_args;
-    std::string parse_error;
     QVERIFY2(PrepareTestArgs(proxy_args, proxy_argv, parse_error), parse_error.c_str());
     SelectParams(proxy_args.GetChainType());
     proxy_args.SelectConfigNetwork(proxy_args.GetChainTypeString());
     InitParameterInteraction(proxy_args);
 
     MockNode proxy_node;
+
+    const auto drain_proxy_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(proxy_node, proxy_args);
     InstallRwSettingsWriter(proxy_node, proxy_args);
 
@@ -3248,6 +3348,7 @@ void OptionsModelTests::runtimeParameterInteractionsDisplayEffectiveValues()
     });
     QVERIFY(!has_listen_override);
 
+    } // Retire the first facade before its borrowed Node's global drain.
     std::vector<std::string> blocksonly_argv = TestArgv();
     blocksonly_argv.emplace_back("-blocksonly");
 
@@ -3258,6 +3359,8 @@ void OptionsModelTests::runtimeParameterInteractionsDisplayEffectiveValues()
     InitParameterInteraction(blocksonly_args);
 
     MockNode blocksonly_node;
+
+    const auto drain_blocksonly_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(blocksonly_node, blocksonly_args);
 
     QTemporaryDir blocksonly_model_settings_dir;
@@ -3297,6 +3400,8 @@ void OptionsModelTests::commandLineOverriddenSettingsPreservePersistentValues()
     });
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
 
     QTemporaryDir model_settings_dir;
@@ -3345,6 +3450,8 @@ void OptionsModelTests::revertingToConfigValueDeletesRwOverride()
     });
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
     InstallRwSettingsWriter(node, args);
 
@@ -3373,6 +3480,8 @@ void OptionsModelTests::revertingToDefaultValueDeletesRwOverride()
     });
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
     InstallRwSettingsWriter(node, args);
 
@@ -3406,6 +3515,8 @@ void OptionsModelTests::languageCommandLineOverrideDoesNotPersist()
     });
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
 
     QTemporaryDir model_settings_dir;
@@ -3513,6 +3624,8 @@ void OptionsModelTests::legacyQtSettingsMigrateToCoreSettings()
     QVERIFY(!settings.contains(QStringLiteral("language")));
 
     MockNode node;
+
+    const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
     InstallPersistentSettings(node, args);
     QTemporaryDir model_settings_dir;
     QVERIFY(model_settings_dir.isValid());
@@ -3631,13 +3744,14 @@ void OptionsModelTests::onboardingApplyMigratesLegacySettingsBeforeTouchedOverri
     QVERIFY(model.server());
 
     model.setListen(true);
+    QVERIFY(AwaitCoreSettled(model));
     QVERIFY(model.listen());
 
     ArgsManager args;
     std::string parse_error;
     QVERIFY2(PrepareTestArgs(args, argv, parse_error), parse_error.c_str());
     QString apply_error;
-    QVERIFY2(model.applyToArgs(args, &apply_error), qPrintable(apply_error));
+    QVERIFY2(ApplyOnboardingModelRequest(model,args,&apply_error), qPrintable(apply_error));
 
     bool has_listen_override{true};
     common::SettingsValue server;
@@ -3711,7 +3825,7 @@ void OptionsModelTests::onboardingApplyDoesNotCopyUntouchedConfig()
     std::string parse_error;
     QVERIFY2(PrepareTestArgs(args, argv, parse_error), parse_error.c_str());
     QString apply_error;
-    QVERIFY2(model.applyToArgs(args, &apply_error), qPrintable(apply_error));
+    QVERIFY2(ApplyOnboardingModelRequest(model,args,&apply_error), qPrintable(apply_error));
 
     bool has_listen_override{false};
     args.LockSettings([&](common::Settings& settings) {

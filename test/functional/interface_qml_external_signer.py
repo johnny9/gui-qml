@@ -21,6 +21,7 @@ from qml_scenarios import (
     run_scenarios,
 )
 from qml_test_harness import dump_qml_tree
+from qml_smoke_lib import save_review_psbt
 from qml_wallet_test_lib import (
     WalletFlowHarness,
     RPC_USER,
@@ -123,9 +124,7 @@ def decoded_unsigned_transaction(harness, psbt):
 
 def export_review(harness, name="reviewed"):
     path = os.path.join(harness.tmpdir, name + ".psbt")
-    error = harness.driver.invoke_property_object("sendTransactionReviewPage", "wallet",
-                                                  "saveCurrentTransactionAsPsbt", [path])
-    assert error in (None, ""), error  # Qt may serialize an empty null QString as JSON null.
+    save_review_psbt(harness.driver, path)
     assert os.path.isfile(path), "Review export did not produce a PSBT"
     with open(path, "rb") as source:
         psbt = base64.b64encode(source.read()).decode("ascii")

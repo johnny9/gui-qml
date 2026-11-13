@@ -36,7 +36,7 @@ inline WalletQmlModel* WaitForWallet(BitcoinQmlApplication& app, const QString& 
     auto* controller = Model<WalletQmlController>(app, "walletController");
     if (!controller || !QTest::qWaitFor([&] {
             return controller->isWalletLoaded() && !controller->walletLoadInProgress() &&
-                   controller->selectedWallet()->name() == name;
+                   controller->selectedWallet()->name() == name && controller->selectedWallet()->capabilitiesKnown();
         }, 30'000)) return nullptr;
     return controller->selectedWallet();
 }
@@ -58,10 +58,14 @@ inline WalletQmlModel* CreateLockedHardenedWallet(BitcoinQmlApplication& app, co
     Rpc(app, "createwallet", params);
     auto* wallet = WaitForWallet(app, name);
     if (!wallet || !wallet->encryptWallet(passphrase)) return nullptr;
+    if (!QTest::qWaitFor([&] {
+            return wallet->securityState() == WalletQmlModel::SecurityState::SecuritySucceeded && wallet->isLocked();
+        }, 30'000)) return nullptr;
     UniValue unlock{UniValue::VARR};
     unlock.push_back(passphrase.toStdString());
     unlock.push_back(60);
     Rpc(app, "walletpassphrase", unlock, name);
+    if (!QTest::qWaitFor([&] { return !wallet->isLocked(); }, 30'000)) return nullptr;
 
     const std::string key{"tprv8ZgxMBicQKsPdYeeZbPSKd2KYLmeVKtcFA7kqCxDvDR13MQ6us8HopUR2wLcS2ZKPhLyKsqpDL2FtL73LMHcgoCL7DXsciA8eX8nbjCR2eG"};
     UniValue descriptors{UniValue::VARR};
@@ -81,6 +85,7 @@ inline WalletQmlModel* CreateLockedHardenedWallet(BitcoinQmlApplication& app, co
     }
     Rpc(app, "keypoolrefill", Json("[1]"), name);
     Rpc(app, "walletlock", {}, name);
+    if (!QTest::qWaitFor([&] { return wallet->isLocked(); }, 30'000)) return nullptr;
     return wallet;
 }
 

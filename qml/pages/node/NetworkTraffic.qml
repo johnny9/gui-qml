@@ -12,13 +12,11 @@ import org.bitcoincore.qt 1.0
 InformationPage {
     id: root
     objectName: "networkTrafficPage"
-    property int trafficGraphScale: 300
+    property alias trafficGraphScale: settings.trafficGraphScale
     property bool showBackButton: true
 
-    AppSettings {
-        id: settings
-        property alias trafficGraphScale: root.trafficGraphScale
-    }
+    AppPreferences { id: settings }
+    onTrafficGraphScaleChanged: ApplicationModels.networkTrafficTower.updateFilterWindowSize(root.trafficGraphScale / 10)
     showNavBar: false
     header: SettingsHeader {
         title: qsTr("Network traffic")
@@ -67,7 +65,6 @@ InformationPage {
 
                     onClicked: {
                         root.trafficGraphScale = 300
-                        ApplicationModels.networkTrafficTower.updateFilterWindowSize(root.trafficGraphScale / 10)
                     }
                 }
 
@@ -83,7 +80,6 @@ InformationPage {
 
                     onClicked: {
                         root.trafficGraphScale = 3600
-                        ApplicationModels.networkTrafficTower.updateFilterWindowSize(root.trafficGraphScale / 10)
                     }
                 }
 
@@ -99,7 +95,6 @@ InformationPage {
 
                     onClicked: {
                         root.trafficGraphScale = 3600 * 12
-                        ApplicationModels.networkTrafficTower.updateFilterWindowSize(root.trafficGraphScale / 10)
                     }
                 }
 
@@ -115,7 +110,6 @@ InformationPage {
 
                     onClicked: {
                         root.trafficGraphScale = 3600 * 24
-                        ApplicationModels.networkTrafficTower.updateFilterWindowSize(root.trafficGraphScale / 10)
                     }
                 }
             }

@@ -2,11 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <test/mocks/messagebumptest.h>
+#include <test/mocks/provisioningtest.h>
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <util/moneystr.h>
-#include <wallet/db.h>
-#include <wallet/wallet.h>
 
 #include <QApplication>
 #include <QEvent>
@@ -102,17 +102,35 @@ private Q_SLOTS:
         QVERIFY(qmltest::SetText(m_app, "createWalletPasswordInput", "test wallet password"));
         QVERIFY(qmltest::SetText(m_app, "createWalletPasswordRepeatInput", "test wallet password"));
         QVERIFY(qmltest::Click(m_app, "createWalletPasswordConfirmToggle"));
+        auto* form = qmltest::Find(m_app, "createWalletFormPage"); QVERIFY(form);
+        auto* validation = qobject_cast<WalletProvisioningCheck*>(form->property("validation").value<QObject*>()); QVERIFY(validation);
+        auto* button = qmltest::Find(m_app, "createWalletFormCreateButton"); QVERIFY(button);
+        QSignalSpy created{controller, &WalletQmlController::walletCreateSucceeded};
+        const auto original_directories = qmltest::Rpc(m_app, "listwalletdir").write();
         for (const auto* name : {"closed", "loaded", "Savings", "savings"}) {
-            QVERIFY2(controller->walletNameAvailabilityError(name).contains("already exists"), name);
+            QVERIFY2(AwaitWalletNameCheck(*controller, name).contains("already exists"), name);
             QVERIFY(qmltest::SetText(m_app, "createWalletNameInput", name));
-            QVERIFY(qmltest::Click(m_app, "createWalletFormCreateButton"));
+            QTRY_VERIFY(validation->name() == QString::fromUtf8(name) && validation->ready());
+            QVERIFY(validation->nameError().contains("already exists"));
+            QVERIFY(!button->property("enabled").toBool());
             auto* error = qmltest::Find(m_app, "createWalletFormErrorText");
             QVERIFY(error);
             QTRY_VERIFY(error->property("text").toString().contains("already exists"));
+            // The declarative form rejects before submission. The Native
+            // command must independently reject the same original name too.
+            const auto previous = controller->walletOperationId();
+            controller->createSingleSigWallet(QString::fromUtf8(name), QStringLiteral("test wallet password"));
+            QTRY_VERIFY(controller->walletOperationId() != previous);
+            QTRY_COMPARE(controller->walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationFailed);
+            QVERIFY(controller->walletCreateError().contains("already exists"));
+            QCOMPARE(created.count(), 0);
+            QCOMPARE(qmltest::Rpc(m_app, "listwalletdir").write(), original_directories);
         }
-        QCOMPARE(controller->walletNameAvailabilityError("My new wallet"), QString{});
-        QSignalSpy created{controller, &WalletQmlController::walletCreateSucceeded};
+        QCOMPARE(AwaitWalletNameCheck(*controller, "My new wallet"), QString{});
         QVERIFY(qmltest::SetText(m_app, "createWalletNameInput", "My new wallet"));
+        QTRY_VERIFY(validation->name() == QStringLiteral("My new wallet") && validation->ready());
+        QVERIFY(validation->nameError().isEmpty());
+        QTRY_VERIFY(button->property("enabled").toBool());
         QVERIFY(qmltest::Click(m_app, "createWalletFormCreateButton"));
         QTRY_COMPARE_WITH_TIMEOUT(created.count(), 1, 30'000);
         QVERIFY(qmltest::WaitForVisible(m_app, "walletCreationReadyPage"));
@@ -147,19 +165,37 @@ private Q_SLOTS:
         QCOMPARE(list->data(list->index(0), WalletListModel::LoadStateRole).toInt(), static_cast<int>(WalletListModel::LoadState::Open));
     }
 
+    void passwordChangesRelockAndPreserveTheWallet_data()
+    {
+        QTest::addColumn<QString>("original");
+        QTest::addColumn<QString>("replacement");
+        QTest::newRow("short") << QStringLiteral("old password") << QStringLiteral("new password");
+        QTest::newRow("long_utf8")
+            << QString::fromUtf8("old-\xc3\xa9-") + QString(40'000, QChar{'x'})
+            << QString::fromUtf8("new-\xf0\x9f\x94\x91-") + QString(40'000, QChar{'y'});
+    }
+
     void passwordChangesRelockAndPreserveTheWallet()
     {
-        auto* wallet = qmltest::CreateWallet(m_app);
+        QFETCH(QString, original);
+        QFETCH(QString, replacement);
+        auto* wallet = qmltest::CreateWallet(m_app, QStringLiteral("password_%1").arg(QString::fromLatin1(QTest::currentDataTag())));
         QVERIFY(wallet);
-        QVERIFY(wallet->encryptWallet("old password"));
+        QVERIFY(wallet->encryptWallet(original));
+        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
         QTRY_VERIFY(wallet->isLocked());
-        QVERIFY(!wallet->changeWalletPassphrase("wrong password", "new password"));
+        QVERIFY(wallet->changeWalletPassphrase("wrong password", replacement));
+        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecurityFailed);
         QVERIFY(!wallet->settingsError().isEmpty());
         QVERIFY(wallet->isLocked());
-        QVERIFY(wallet->changeWalletPassphrase("old password", "new password"));
+        QVERIFY(wallet->changeWalletPassphrase(original, replacement));
+        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
         QVERIFY(wallet->settingsError().isEmpty());
         QVERIFY(wallet->isLocked());
-        qmltest::Rpc(m_app, "walletpassphrase", qmltest::Json("[\"new password\", 10]"), wallet->name());
+        UniValue unlock{UniValue::VARR};
+        unlock.push_back(replacement.toStdString());
+        unlock.push_back(10);
+        qmltest::Rpc(m_app, "walletpassphrase", unlock, wallet->name());
         QTRY_VERIFY(!wallet->isLocked());
         qmltest::Rpc(m_app, "walletlock", {}, wallet->name());
         QTRY_VERIFY(wallet->isLocked());
@@ -188,6 +224,7 @@ private Q_SLOTS:
         auto* wallet = qmltest::CreateWallet(m_app);
         QVERIFY(wallet);
         QVERIFY(wallet->encryptWallet("old password"));
+        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
         QTRY_VERIFY(wallet->isLocked());
         QVERIFY(qmltest::SelectSettings(m_app, "wallet"));
         QVERIFY(qmltest::Click(m_app, "walletPasswordRow"));
@@ -214,6 +251,7 @@ private Q_SLOTS:
         auto* alpha = qmltest::CreateWallet(m_app, "alpha");
         QVERIFY(alpha);
         QVERIFY(alpha->encryptWallet("alpha password"));
+        QTRY_COMPARE(alpha->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
         QVERIFY(qmltest::CreateWallet(m_app, "beta"));
         QVERIFY(selectWallet("alpha"));
         QVERIFY(qmltest::SelectSettings(m_app, "wallet"));
@@ -274,11 +312,16 @@ private Q_SLOTS:
     {
         QPointer<WalletQmlModel> wallet{qmltest::CreateWallet(m_app, "broken")};
         QVERIFY(wallet);
-        const auto database_path = QString::fromStdString(wallet->wallet()->wallet()->GetDatabase().Filename());
-        QFile database{database_path};
-        QVERIFY(database.open(QIODevice::ReadOnly));
-        const auto header = database.read(32);
-        database.close();
+        QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, "broken").find_value("format").get_str(), std::string{"sqlite"});
+        const auto database_path = qmltest::Call(m_app, [](interfaces::Node* node) -> QString {
+            return QString::fromStdString(node->walletLoader().getWalletDir()) + QStringLiteral("/broken/wallet.dat");
+        });
+        const auto header = qmltest::Call(m_app, [database_path](interfaces::Node*) {
+            QFile database{database_path};
+            return database.open(QIODevice::ReadOnly) ? database.read(32) : QByteArray{};
+        });
+        QCOMPARE(header.size(), 32);
+        QVERIFY(header.startsWith(QByteArray{"SQLite format 3\0", 16}));
         auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
         QVERIFY(controller);
         auto* wallets = qmltest::Model<WalletListModel>(m_app, "walletListModel");
@@ -292,9 +335,11 @@ private Q_SLOTS:
 
         // Keep SQLite's format signature so directory discovery still lists it,
         // while opening the truncated database produces a real load error.
-        QVERIFY(database.open(QIODevice::WriteOnly | QIODevice::Truncate));
-        QCOMPARE(database.write(header), header.size());
-        database.close();
+        const auto written = qmltest::Call(m_app, [database_path, header](interfaces::Node*) -> qint64 {
+            QFile database{database_path};
+            return database.open(QIODevice::WriteOnly | QIODevice::Truncate) ? database.write(header) : -1;
+        });
+        QCOMPARE(written, header.size());
         QVERIFY(qmltest::Click(m_app, "walletSelectItem_broken"));
         QVERIFY(qmltest::WaitForVisible(m_app, "walletLoadErrorPopup"));
         QVERIFY(!qmltest::Find(m_app, "walletLoadErrorPopupText")->property("text").toString().isEmpty());
@@ -327,7 +372,14 @@ private Q_SLOTS:
         QVERIFY(qmltest::WaitForVisible(m_app, "walletImportErrorPage"));
         QVERIFY(!controller->walletLoadError().isEmpty());
         QCOMPARE(qmltest::Find(m_app, "importWalletErrorTitle")->property("text").toString(), QStringLiteral("This wallet type is not supported"));
-        QVERIFY(qmltest::Find(m_app, "importWalletErrorHelpText")->property("text").toString().contains("Data is not in recognized format."));
+        QTRY_VERIFY(!controller->walletImportErrorPending());
+        QVERIFY(controller->walletImportErrorProjectionError().isEmpty());
+        auto* help = controller->walletImportErrorHelpModel(); QVERIFY(help);
+        QTRY_VERIFY(help->rowCount() > 0);
+        QString details;
+        for (int row{0}; row < help->rowCount(); ++row)
+            details += help->data(help->index(row, 0), Qt::UserRole).toString() + QLatin1Char('\n');
+        QVERIFY2(details.contains("Data is not in recognized format."), qPrintable(details));
         QVERIFY(!QFileInfo::exists(QString::fromStdString(m_app.node().walletLoader().getWalletDir()) + "/invalid"));
         QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
     }
@@ -537,6 +589,7 @@ private Q_SLOTS:
         QFile old_file{old_backup}; QVERIFY(old_file.open(QIODevice::ReadOnly));
         const auto old_bytes = old_file.readAll(); old_file.close(); QVERIFY(!old_bytes.isEmpty());
         QVERIFY(live->encryptWallet("recovery password"));
+        QTRY_COMPARE(live->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
         QVERIFY(live->isLocked());
         const auto later_address = qmltest::NewAddress(m_app, live->name());
         QString actual_change;
@@ -597,6 +650,7 @@ private Q_SLOTS:
         QVERIFY(wallet);
         const auto address = qmltest::NewAddress(m_app, wallet->name(), "legacy");
         QVERIFY(wallet->encryptWallet("backup password"));
+        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
         QTRY_VERIFY(wallet->isLocked());
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
@@ -614,8 +668,8 @@ private Q_SLOTS:
         QVERIFY(restored->isEncrypted());
         QVERIFY(restored->isLocked());
         auto* signer = restored->signVerifyMessageModel();
-        QVERIFY(signer->signMessageWithPassphrase(address, "restored wallet", "backup password"));
-        QVERIFY(signer->verifyMessage(address, "restored wallet", signer->signature()));
+        QVERIFY(AwaitMessageSigning(*signer, address, "restored wallet", "backup password"));
+        QVERIFY(AwaitMessageVerification(*signer, address, "restored wallet", signer->signature()));
         QVERIFY(restored->isLocked());
     }
 };

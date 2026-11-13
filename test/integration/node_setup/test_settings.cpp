@@ -176,6 +176,7 @@ private Q_SLOTS:
     {
         auto* behavior = qmltest::Model<DesktopWindowBehaviorModel>(m_app, "desktopWindowBehaviorModel");
         QVERIFY(behavior);
+        QTRY_VERIFY(behavior->settingsReady());
         QVERIFY(qmltest::SelectSettings(m_app, "window-behavior"));
         QVERIFY(qmltest::WaitForVisible(m_app, "windowBehaviorSettingsPage"));
         QVERIFY(qmltest::Find(m_app, "showTrayIconSwitch")->property("checked").toBool());

@@ -114,6 +114,8 @@ Q_SIGNALS:
     void drained();
 
 private:
+    friend class BackendExecutorTests;
+    std::function<void()> m_shutdown_started_for_testing; // Native phase acknowledgment; unset in production.
     template <typename Work>
     struct Task {
         using Return = std::invoke_result_t<Work>;

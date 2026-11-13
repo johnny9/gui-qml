@@ -1,0 +1,13 @@
+{
+  "policy": "native-qt-defer-20261113",
+  "recorded_utc": "2026-11-13T12:17:19.886231+00:00",
+  "scope": "all current and future work orders",
+  "qt_owned_defects": "document and defer",
+  "replace_native_component": false,
+  "modify_qt": false,
+  "application_attribution_required": true,
+  "affected_validation": "explicitly unresolved/deferred, never passing by deferral",
+  "independent_work": "continue",
+  "blanket_acceptance": false,
+  "plan": "QT6_TOTAL_REFACTOR_PLAN.md#native-qt-component-defects-document-and-defer"
+}

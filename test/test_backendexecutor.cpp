@@ -32,6 +32,30 @@ class BackendExecutorTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void lastIdleOriginalScopeWakesActualNativeShutdown_data()
+    {
+        QTest::addColumn<bool>("routed");
+        QTest::newRow("legacy-single-worker") << false;
+        QTest::newRow("routed-five-workers") << true;
+    }
+    void lastIdleOriginalScopeWakesActualNativeShutdown()
+    {
+        QFETCH(bool, routed);
+        auto executor = routed ? std::make_unique<BackendExecutor>(execution::Limits::Bounded()) : std::make_unique<BackendExecutor>();
+        auto scope = executor->scheduler()->openActionScope(); QVERIFY(scope);
+        struct Probe { std::atomic<int> acknowledged{0}; std::atomic_bool on_gui{false}; };
+        const auto probe = std::make_shared<Probe>();
+        executor->m_shutdown_started_for_testing = [probe] { if (QThread::currentThread() == qApp->thread()) probe->on_gui = true; ++probe->acknowledged; };
+        const auto cleanup = qScopeGuard([&] { scope.reset(); executor->shutdown(); QVERIFY(QTest::qWaitFor([&] { return executor->isDrained(); }, TIMEOUT)); });
+        QSignalSpy drained(executor.get(), &BackendExecutor::drained);
+        executor->shutdown();
+        QTRY_COMPARE_WITH_TIMEOUT(probe->acknowledged.load(), routed ? 5 : 1, TIMEOUT);
+        QVERIFY(!probe->on_gui); QVERIFY(!executor->isDrained()); QCOMPARE(drained.size(), 0);
+        bool heartbeat{false}; QTimer::singleShot(0, [&] { heartbeat = true; }); QTRY_VERIFY_WITH_TIMEOUT(heartbeat, TIMEOUT);
+        scope.reset(); // No task, result, resource borrower or cleanup turn remains to wake a worker.
+        QTRY_VERIFY_WITH_TIMEOUT(executor->isDrained(), TIMEOUT); QCOMPARE(drained.size(), 1);
+    }
+
     void compatibilityWorkCannotBlockMigratedCoreReads()
     {
         using namespace execution;

@@ -6,6 +6,10 @@
 #define BITCOIN_QML_MODELS_DESKTOPWINDOWBEHAVIORMODEL_H
 
 #include <QObject>
+#include <qml/snapshotquery.h>
+#include <map>
+
+class BackendExecutor;
 
 class DesktopWindowBehaviorModel : public QObject
 {
@@ -14,6 +18,9 @@ class DesktopWindowBehaviorModel : public QObject
     Q_PROPERTY(bool showTrayIcon READ showTrayIcon WRITE setShowTrayIcon NOTIFY showTrayIconChanged)
     Q_PROPERTY(bool minimizeToTray READ minimizeToTray WRITE setMinimizeToTray NOTIFY minimizeToTrayChanged)
     Q_PROPERTY(bool minimizeOnClose READ minimizeOnClose WRITE setMinimizeOnClose NOTIFY minimizeOnCloseChanged)
+    Q_PROPERTY(bool settingsReady READ settingsReady NOTIFY settingsStateChanged)
+    Q_PROPERTY(bool persistencePending READ persistencePending NOTIFY settingsStateChanged)
+    Q_PROPERTY(QString persistenceError READ persistenceError NOTIFY settingsStateChanged)
 
 public:
     explicit DesktopWindowBehaviorModel(QObject* parent = nullptr);
@@ -21,6 +28,18 @@ public:
     // Constructor for unit-testing: allows injecting the platform flag without
     // relying on QGuiApplication::platformName().
     explicit DesktopWindowBehaviorModel(bool desktop_platform, QObject* parent = nullptr);
+    struct Values { bool show_tray{true}, minimize_tray{false}, minimize_close{false}; };
+    struct Store {
+        std::function<Values()> read;
+        std::function<void(Values)> write;
+    };
+    DesktopWindowBehaviorModel(bool desktop_platform, execution::SnapshotServices services, Store store = {}, QObject* parent = nullptr);
+    ~DesktopWindowBehaviorModel() override;
+    void closeAdmission();
+    Q_INVOKABLE void retryPersistence();
+    bool settingsReady() const { return m_ready; }
+    bool persistencePending() const { return !m_operations.empty(); }
+    QString persistenceError() const { return m_error; }
 
     bool desktopPlatform() const;
 
@@ -40,6 +59,7 @@ Q_SIGNALS:
     void showTrayIconChanged(bool show);
     void minimizeToTrayChanged(bool minimize);
     void minimizeOnCloseChanged(bool minimize);
+    void settingsStateChanged();
 
 private:
     // QSettings keys (kept compatible with legacy Bitcoin Qt GUI)
@@ -47,7 +67,18 @@ private:
     static constexpr const char* KEY_MINIMIZE_TO_TRAY{"fMinimizeToTray"};
     static constexpr const char* KEY_MINIMIZE_ON_CLOSE{"fMinimizeOnClose"};
 
-    void loadFromSettings();
+    bool submit(Values values, bool load);
+    void publish(quint64 id, bool load);
+    void apply(Values values);
+    execution::SnapshotServices m_services;
+    Store m_store;
+    std::unique_ptr<BackendExecutor> m_executor;
+    execution::ResourceKey m_key;
+    struct Pending { bool load; std::shared_ptr<execution::OwnedCommand<Values>> command; };
+    std::map<quint64, Pending> m_operations;
+    quint64 m_next_id{0}, m_state_id{0};
+    QString m_error;
+    bool m_ready{false}, m_stopping{false};
 
     bool m_desktop_platform{false};
     bool m_show_tray_icon{true};

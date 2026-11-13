@@ -54,12 +54,30 @@ public:
                                       node::TxBroadcast broadcast_method,
                                       std::string& err_string) override { unexpected.emplace_back("broadcastTransaction"); throw std::logic_error("Unexpected chain call: broadcastTransaction"); }
     void getTransactionAncestry(const Txid& txid, size_t& ancestors, size_t& cluster_count, size_t* ancestorsize = nullptr, CAmount* ancestorfees = nullptr) override { unexpected.emplace_back("getTransactionAncestry"); throw std::logic_error("Unexpected chain call: getTransactionAncestry"); }
-    std::map<COutPoint, CAmount> calculateIndividualBumpFees(const std::vector<COutPoint>& outpoints, const CFeeRate& target_feerate) override { unexpected.emplace_back("calculateIndividualBumpFees"); throw std::logic_error("Unexpected chain call: calculateIndividualBumpFees"); }
+    std::map<COutPoint, CAmount> calculateIndividualBumpFees(const std::vector<COutPoint>& outpoints, const CFeeRate&) override
+    {
+        // This fixture has no mempool ancestors. Match the public Chain
+        // contract (and ChainImpl's no-mempool branch): every requested
+        // outpoint must be present, with zero ancestor fee to contribute.
+        std::map<COutPoint, CAmount> fees;
+        for (const auto& outpoint : outpoints) fees.emplace(outpoint, CAmount{0});
+        return fees;
+    }
     std::optional<CAmount> calculateCombinedBumpFee(const std::vector<COutPoint>& outpoints, const CFeeRate& target_feerate) override { return CAmount{0}; }
     void getPackageLimits(unsigned int& limit_ancestor_count, unsigned int& limit_descendant_count) override { unexpected.emplace_back("getPackageLimits"); throw std::logic_error("Unexpected chain call: getPackageLimits"); }
-    util::Result<void> checkChainLimits(const CTransactionRef& tx) override { unexpected.emplace_back("checkChainLimits"); throw std::logic_error("Unexpected chain call: checkChainLimits"); }
+    util::Result<void> checkChainLimits(const CTransactionRef&) override
+    {
+        // Match ChainImpl without a mempool: no ancestor/cluster policy can
+        // reject this fixture's transaction after native fee construction.
+        return {};
+    }
     util::Expected<FeeRateEstimation, FeeRateEstimationError> getFeeRateEstimate(int num_blocks, bool conservative) const override { return EstimationError(FeeRateEstimatorType::AUTO, 0, {}); }
-    unsigned int maximumFeeEstimationTargetBlocks() const override { unexpected.emplace_back("maximumFeeEstimationTargetBlocks"); throw std::logic_error("Unexpected chain call: maximumFeeEstimationTargetBlocks"); }
+    unsigned int maximumFeeEstimationTargetBlocks() const override
+    {
+        // GetDiscardRate queries this even when estimation is unavailable.
+        // Zero is ChainImpl's exact answer without a fee estimator manager.
+        return 0;
+    }
     CFeeRate mempoolMinFee() override { return CFeeRate{0}; }
     CFeeRate relayMinFee() override { return CFeeRate{1000}; }
     CFeeRate relayIncrementalFee() override { return CFeeRate{1000}; }

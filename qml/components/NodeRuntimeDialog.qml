@@ -13,6 +13,7 @@ Popup {
     id: root
     objectName: "nodeRuntimeDialog"
     readonly property int contentMargin: 28
+    property bool showCompleteDiagnostics: false
 
     function runtimeButtonSpecs() {
         return [
@@ -125,6 +126,7 @@ Popup {
 
         ScrollView {
             id: runtimeMessageScroll
+            visible: !root.showCompleteDiagnostics
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.margins: root.contentMargin
@@ -140,6 +142,24 @@ Popup {
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignLeft
             }
+        }
+
+        MonospaceOutputView {
+            objectName: "nodeRuntimeCompleteDiagnostics"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.margins: root.contentMargin
+            visible: root.showCompleteDiagnostics
+            listModel: ApplicationModels.nodeModel.runtimeDialogDiagnostics
+            autoScrollToBottom: false
+        }
+
+        OutlineButton {
+            objectName: "nodeRuntimeDetailsButton"
+            Layout.alignment: Qt.AlignHCenter
+            visible: ApplicationModels.nodeModel.runtimeDialogDiagnostics !== null
+            text: root.showCompleteDiagnostics ? qsTr("Show summary") : qsTr("Show complete diagnostics")
+            onClicked: root.showCompleteDiagnostics = !root.showCompleteDiagnostics
         }
 
         DialogButtonBox {

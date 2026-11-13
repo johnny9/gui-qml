@@ -5,19 +5,24 @@
 #ifndef BITCOIN_QML_MODELS_RPCCONSOLEMODEL_H
 #define BITCOIN_QML_MODELS_RPCCONSOLEMODEL_H
 
+#include <qml/backendexecutor.h>
+#include <qml/snapshotquery.h>
+
 #include <QAbstractListModel>
 #include <QColor>
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QThread>
+#include <QTimer>
+#include <deque>
 #include <QVector>
 
 namespace interfaces {
 class Node;
 }
 
-class RpcConsoleWorker;
+struct RpcConsoleMailbox;
+struct RpcConsoleDrainState;
 
 /**
  * List model exposing the console output rows.
@@ -37,9 +42,19 @@ public:
         TimestampRole = Qt::UserRole + 1,
         ContentRole,
         CategoryRole,
+        ContinuationRole,
     };
 
     static constexpr int kMaxRows = 5000;
+    static constexpr qsizetype kMaxCharacters = 2 * 1024 * 1024;
+    static constexpr int kRowCharacters = 1024;
+    struct Row {
+        QString timestamp;
+        QString contentHtml;
+        int category;
+        bool continuation{false};
+    };
+    using Batch = QList<Row>;
 
     explicit RpcOutputListModel(QObject* parent = nullptr);
 
@@ -48,18 +63,16 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     void appendRow(const QString& timestamp, const QString& contentHtml, int category);
+    void appendRows(const Batch& rows, int offset, int count);
     void resetAll();
+    std::shared_ptr<const Batch> releaseRows(bool notify = true);
 
 Q_SIGNALS:
     void countChanged();
 
 private:
-    struct Row {
-        QString timestamp;
-        QString contentHtml;
-        int category;
-    };
-    QVector<Row> m_rows;
+    Batch m_rows;
+    qsizetype m_characters{0};
 };
 
 /**
@@ -85,6 +98,10 @@ class RpcConsoleModel : public QObject
 {
     Q_OBJECT
 
+    Q_PROPERTY(QString completionPrefix READ completionPrefix WRITE setCompletionPrefix NOTIFY completionChanged)
+    Q_PROPERTY(QStringList completionSuggestions READ completionSuggestions NOTIFY completionChanged)
+    Q_PROPERTY(QString completionError READ completionError NOTIFY completionChanged)
+    Q_PROPERTY(bool completionBusy READ completionBusy NOTIFY completionChanged)
     Q_PROPERTY(bool executing READ executing NOTIFY executingChanged)
     Q_PROPERTY(QStringList availableCommands READ availableCommands NOTIFY availableCommandsChanged)
     Q_PROPERTY(RpcOutputListModel* outputModel READ outputModel CONSTANT)
@@ -102,9 +119,16 @@ public:
     Q_ENUM(MessageCategory)
 
     explicit RpcConsoleModel(interfaces::Node& node, QObject* parent = nullptr);
+    RpcConsoleModel(interfaces::Node& node, execution::SnapshotServices services, QObject* parent = nullptr);
     ~RpcConsoleModel();
+    void closeAdmission();
     void beginShutdown();
 
+    QString completionPrefix() const { return m_completion_prefix; }
+    void setCompletionPrefix(const QString& prefix);
+    QStringList completionSuggestions() const { return m_completion_suggestions; }
+    QString completionError() const { return m_completion_error; }
+    bool completionBusy() const { return m_completion_busy; }
     bool executing() const { return m_executing; }
     QStringList availableCommands() const { return m_available_commands; }
     RpcOutputListModel* outputModel() { return &m_output_model; }
@@ -131,14 +155,20 @@ public Q_SLOTS:
 Q_SIGNALS:
     void drained();
     void executingChanged();
+    void completionChanged();
     void availableCommandsChanged();
 
 private Q_SLOTS:
-    void onResultReady(const QString& time, int category, const QString& rawText);
+    void onResultReady();
 
 private:
+    struct Construction;
+    static Construction prepareConstruction(execution::SnapshotServices services, QObject* parent);
+    RpcConsoleModel(interfaces::Node& node, Construction construction);
     void setExecuting(bool executing);
-    void appendFormattedRow(const QString& time, int category, const QString& rawText);
+    void finishDrain();
+    void appendPendingRows();
+    void retireOutput(std::shared_ptr<const void> value);
 
     interfaces::Node& m_node;
     bool m_executing{false};
@@ -159,8 +189,22 @@ private:
     QString m_last_wallet_name; // last wallet context surfaced in the output
 
     bool m_stopping{false};
-    QThread* m_worker_thread{nullptr};
-    RpcConsoleWorker* m_worker{nullptr};
+    bool m_shutdown_started{false};
+    bool m_drained{false};
+    bool m_stop_pending{false};
+    std::unique_ptr<BackendExecutor> m_control_executor;
+    execution::SnapshotServices m_services;
+    std::shared_ptr<RpcConsoleMailbox> m_mailbox;
+    std::shared_ptr<RpcConsoleDrainState> m_drain_state;
+    QString m_completion_prefix, m_completion_error;
+    QStringList m_completion_suggestions;
+    quint64 m_completion_generation{0};
+    bool m_completion_busy{false};
+    bool m_metadata_pending{false};
+    bool m_command_finished{false};
+    QTimer m_append_timer;
+    struct PendingRows { std::shared_ptr<const RpcOutputListModel::Batch> rows; int offset{0}; };
+    std::deque<PendingRows> m_pending_rows;
 };
 
 #endif // BITCOIN_QML_MODELS_RPCCONSOLEMODEL_H

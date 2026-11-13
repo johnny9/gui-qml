@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/walletlifecycle.h>
+#include <qml/retainedsnapshot.h>
 
 #include <algorithm>
 #include <iterator>
@@ -13,8 +14,8 @@ namespace {
 constexpr size_t TRANSPORT_BYTES{sizeof(void*)};
 }
 
-LoadSubscription::LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify)
-    : m_scheduler(std::move(scheduler)), m_registration(std::move(registration)), m_capture(std::move(capture)), m_notify(std::move(notify)), m_key(m_scheduler ? m_scheduler->allocateKey() : execution::ResourceKey{})
+LoadSubscription::LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify, std::function<uint64_t()> ingress_stamp)
+    : m_scheduler(std::move(scheduler)), m_registration(std::move(registration)), m_capture(std::move(capture)), m_notify(std::move(notify)), m_ingress_stamp(std::move(ingress_stamp)), m_key(m_scheduler ? m_scheduler->allocateKey() : execution::ResourceKey{})
 {
     if (!m_scheduler || !m_registration || !m_capture || !m_notify) throw std::invalid_argument("Missing wallet lifecycle port");
     m_pending.reserve(PENDING_HANDLES);
@@ -123,6 +124,11 @@ void LoadSubscription::publishChanged()
 void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
 {
     if (m_stopping) return;
+    uint64_t stamp{0};
+    if (m_ingress_stamp) {
+        try { stamp = m_ingress_stamp(); } catch (...) { requestFailure(FailureReason::Backend); return; }
+        if (!stamp) { requestFailure(FailureReason::IngressCapacity); return; }
+    }
     auto borrowed = m_scheduler->borrow(m_key);
     // Parameter destruction occurs after local destruction. Keep the incoming
     // handle local and after the lease so even a rejected handle is destroyed
@@ -139,7 +145,7 @@ void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
     {
         std::lock_guard lock{m_mutex};
         if (m_stopping || m_failed) return;
-        if (m_pending.size() < PENDING_HANDLES) m_pending.push_back({std::move(incoming), m_notification_context});
+        if (m_pending.size() < PENDING_HANDLES) m_pending.push_back({std::move(incoming), m_notification_context, stamp});
         else overflow = true;
     }
     if (overflow) { requestFailure(FailureReason::IngressCapacity); return; }
@@ -201,8 +207,9 @@ void LoadSubscription::scan()
     entries.reserve(pending.size());
     for (auto& notification : pending) {
         auto name = notification.wallet->getWalletName();
-        if (!notification.context->deferred_name.empty() && name == notification.context->deferred_name) continue;
-        entries.push_back({std::move(name), std::move(notification.wallet), notification.context->select_wallet});
+        const auto& context=notification.context;
+        if(context&&!context->deferred_name.isEmpty()){const auto& deferred=context->nativeName();if(!deferred.empty()&&name==deferred)continue;}
+        entries.push_back({std::move(name),std::move(notification.wallet),context?context->select_wallet:true,context?context->selection_revision:0,context?context->adoption_origin:std::shared_ptr<void>{},notification.ingress_sequence});
     }
     std::vector<Entry> retired;
     retired.reserve(entries.size());
@@ -210,6 +217,10 @@ void LoadSubscription::scan()
         std::lock_guard lock{m_mutex};
         for (auto& entry : entries) {
             const auto slot = m_ready.try_emplace(entry.name).first;
+            if (slot->second.wallet && slot->second.ingress_sequence > entry.ingress_sequence) {
+                retired.push_back(std::move(entry));
+                continue;
+            }
             retired.push_back(std::move(slot->second));
             slot->second = std::move(entry);
         }
@@ -217,11 +228,47 @@ void LoadSubscription::scan()
     // Replaced backend handles die outside the mailbox mutex, on Core.
 }
 
-void LoadSubscription::setNotificationContext(std::string deferred_name, bool action_pending)
+bool LoadSubscription::ContextInventory::reserve(size_t weight)
 {
-    auto context = std::make_shared<NotificationContext>(NotificationContext{std::move(deferred_name), !action_pending});
-    std::lock_guard lock{m_mutex};
-    m_notification_context = std::move(context);
+    std::lock_guard lock{mutex};if(count>=MAX_COUNT||weight>MAX_BYTES-bytes)return false;++count;bytes+=weight;return true;
+}
+void LoadSubscription::ContextInventory::release(size_t weight)
+{
+    std::lock_guard lock{mutex};--count;bytes-=weight;
+}
+LoadSubscription::NotificationContext::~NotificationContext(){if(inventory)inventory->release(bytes);}
+const std::string& LoadSubscription::NotificationContext::nativeName()const
+{
+    // Only the subscription's keyed Native scan calls this method.
+    if(!native_name)native_name.emplace(deferred_name.trimmed().toStdString());
+    return *native_name;
+}
+bool LoadSubscription::setNotificationContext(QString deferred_name,bool action_pending,uint64_t selection_revision,std::shared_ptr<void> adoption_origin)
+{
+    if(m_stopping||m_failed)return false;
+    // Account retained UTF16 plus Native UTF8 conversion/cache peak using only
+    // scalar lengths, including the temporary trimmed QString. This is
+    // transport capacity, never a wallet-name rewrite.
+    constexpr size_t fixed{256};const auto units=size_t(deferred_name.size());
+    if(units>(ContextInventory::MAX_BYTES-fixed)/12){requestFailure(FailureReason::IngressCapacity);return false;}
+    const auto bytes=fixed+12*units;
+    if(!m_context_inventory->reserve(bytes)){requestFailure(FailureReason::IngressCapacity);return false;}
+    bool captured{false};std::shared_ptr<NotificationContext> context;
+    try{context=execution::RetainSnapshot<NotificationContext>(m_scheduler,[&]{
+        auto value=std::make_unique<NotificationContext>();value->inventory=m_context_inventory;value->bytes=bytes;captured=true;
+        value->deferred_name=std::move(deferred_name);value->select_wallet=!action_pending;value->selection_revision=selection_revision;value->adoption_origin=std::move(adoption_origin);return value;
+    });}catch(...){if(!captured)m_context_inventory->release(bytes);requestFailure(FailureReason::IngressCapacity);return false;}
+    if(!context){if(!captured)m_context_inventory->release(bytes);requestFailure(FailureReason::IngressCapacity);return false;}
+    std::shared_ptr<const NotificationContext> published=std::move(context);
+    {std::lock_guard lock{m_mutex};if(m_stopping||m_failed)return false;m_notification_context.swap(published);}
+    // The replaced context's QString/cache last release belongs to Cleanup,
+    // even when there was no Native ingress retaining that old origin.
+    return true;
+}
+
+void LoadSubscription::rejectNotificationContext()
+{
+    requestFailure(FailureReason::IngressCapacity);
 }
 
 void LoadSubscription::retire()
@@ -249,8 +296,10 @@ bool LoadSubscription::cleanup()
     std::vector<Pending> pending;
     std::deque<Entry> initial;
     std::map<std::string, Entry> ready;
+    std::shared_ptr<const NotificationContext> context;
     {
         std::lock_guard lock{m_mutex};
+        context=std::move(m_notification_context);
         pending.swap(m_pending);
         initial.swap(m_initial);
         ready.swap(m_ready);

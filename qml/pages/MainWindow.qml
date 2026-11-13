@@ -115,18 +115,35 @@ ApplicationWindow {
         }
     }
 
-    AppSettings {
-        id: windowSettings
-        property real windowX
-        property real windowY
-        property real windowWidth
-        property real windowHeight
+    property bool preferenceGeometryRestored: false
+    function restorePreferenceGeometry() {
+        if (preferenceGeometryRestored || !windowSettings.ready) return
+        if (windowSettings.windowWidth > 0 && windowSettings.windowHeight > 0) {
+            width = windowSettings.windowWidth
+            height = windowSettings.windowHeight
+            x = windowSettings.windowX
+            y = windowSettings.windowY
+        }
+        preferenceGeometryRestored = true
     }
-
-    onXChanged: if (visibility === Window.Windowed) windowSettings.windowX = x
-    onYChanged: if (visibility === Window.Windowed) windowSettings.windowY = y
-    onWidthChanged: if (visibility === Window.Windowed) windowSettings.windowWidth = width
-    onHeightChanged: if (visibility === Window.Windowed) windowSettings.windowHeight = height
+    AppPreferences { id: windowSettings; onChanged: appWindow.restorePreferenceGeometry() }
+    // Geometry is a bounded native GUI handoff; storage is owned by the shared
+    // background store and always captures the original full rectangle.
+    onXChanged: if (visibility === Window.Windowed && preferenceGeometryRestored && windowSettings.ready) windowSettings.requestGeometry(x, y, width, height)
+    onYChanged: if (visibility === Window.Windowed && preferenceGeometryRestored && windowSettings.ready) windowSettings.requestGeometry(x, y, width, height)
+    onWidthChanged: if (visibility === Window.Windowed && preferenceGeometryRestored && windowSettings.ready) windowSettings.requestGeometry(x, y, width, height)
+    onHeightChanged: if (visibility === Window.Windowed && preferenceGeometryRestored && windowSettings.ready) windowSettings.requestGeometry(x, y, width, height)
+    Popup {
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        visible: windowSettings.error.length > 0
+        closePolicy: Popup.NoAutoClose
+        Column {
+            spacing: 12
+            CoreText { text: windowSettings.error; wrapMode: Text.WordWrap; width: 360 }
+            Button { text: qsTr("Retry preferences"); enabled: !windowSettings.pending; onClicked: windowSettings.retry() }
+        }
+    }
 
 
     Behavior on color {
@@ -242,10 +259,7 @@ ApplicationWindow {
         // assign that breaks the size binding doesn't re-trigger them), so without
         // this the initial size is never saved (windowWidth/Height stay 0).
         if (visibility === Window.Windowed) {
-            windowSettings.windowX = x
-            windowSettings.windowY = y
-            windowSettings.windowWidth = width
-            windowSettings.windowHeight = height
+            if (windowSettings.ready) windowSettings.requestGeometry(x, y, width, height)
         }
 
         if (visibility === Window.Minimized &&
@@ -287,6 +301,7 @@ ApplicationWindow {
         id: main
         objectName: "mainPageStack"
         enabled: !appWindow.shutdownInProgress && !ApplicationModels.nodeModel.fatalException
+        visible: !appWindow.shutdownInProgress
         initialItem: appWindow.desktopWalletMode ? "qrc:/qml/pages/wallet/DesktopWallets.qml" : node
         anchors.fill: parent
         focus: true
@@ -308,8 +323,6 @@ ApplicationWindow {
         }
         function onRequestedShutdown() {
             appWindow.shutdownInProgress = true
-            main.clear()
-            main.push(shutdown)
         }
     }
 
@@ -369,6 +382,15 @@ ApplicationWindow {
         Shutdown {}
     }
 
+    // Keep page/delegate contexts alive until the scene is torn down after
+    // workers drain. Clearing a live Activity ListView during shutdown can
+    // invalidate Qt's pending section/delegate changes (upstream #1116).
+    Loader {
+        anchors.fill: parent
+        active: appWindow.shutdownInProgress
+        sourceComponent: shutdown
+    }
+
     Component.onCompleted: {
         // Apply the saved geometry once, while the window is still hidden, then
         // show it. Sizing before the first expose lays the scene out a single
@@ -376,16 +398,7 @@ ApplicationWindow {
         // no resize of an already-laid-out scene (which crashes Qt 6.4 Quick
         // Layouts). Position is restored imperatively; moving a window does not
         // relayout its contents.
-        if (windowSettings.windowWidth > 0) {
-            width = windowSettings.windowWidth
-        }
-        if (windowSettings.windowHeight > 0) {
-            height = windowSettings.windowHeight
-        }
-        if (windowSettings.windowWidth > 0 && windowSettings.windowHeight > 0) {
-            x = windowSettings.windowX
-            y = windowSettings.windowY
-        }
+        restorePreferenceGeometry()
         visible = true
         if (appWindow.desktopWalletMode) {
             ApplicationModels.nodeModel.startNodeInitializionThread()

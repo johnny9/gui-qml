@@ -9,6 +9,8 @@
 
 #include <QObject>
 #include <QString>
+#include <atomic>
+#include <memory>
 
 class BitcoinAmount : public QObject
 {
@@ -25,6 +27,12 @@ class BitcoinAmount : public QObject
     Q_PROPERTY(bool inputDirty READ inputDirty NOTIFY inputDirtyChanged)
     Q_PROPERTY(QString inputError READ inputError NOTIFY inputChanged)
     Q_PROPERTY(bool zeroIsEmpty READ zeroIsEmpty WRITE setZeroIsEmpty NOTIFY inputChanged)
+    Q_PROPERTY(quint64 inputRevision READ inputRevision NOTIFY inputChanged)
+    Q_PROPERTY(bool inputPending READ inputPending CONSTANT)
+    Q_PROPERTY(quint64 inputOperationId READ inputOperationId NOTIFY inputOperationChanged)
+    Q_PROPERTY(InputOperationState inputOperationState READ inputOperationState NOTIFY inputOperationChanged)
+    Q_PROPERTY(QString inputOperationError READ inputOperationError NOTIFY inputOperationChanged)
+    Q_PROPERTY(int inputCursorPosition READ inputCursorPosition NOTIFY inputOperationChanged)
     Q_PROPERTY(qint64 satoshi READ satoshi WRITE setSatoshi NOTIFY amountChanged)
 
 public:
@@ -40,7 +48,11 @@ public:
     enum class InputState { Empty, Incomplete, Invalid, Valid };
     Q_ENUM(InputState)
 
+    enum class InputOperationState { InputIdle, InputApplied, InputRejected, InputStale, InputClosed };
+    Q_ENUM(InputOperationState)
     explicit BitcoinAmount(QObject *parent = nullptr);
+    static void setDefaultAdmissionGate(std::shared_ptr<std::atomic_bool> gate);
+    void setOwnerAdmissionGate(std::shared_ptr<std::atomic_bool> gate) { m_owner_gate = std::move(gate); }
 
     Unit unit() const;
     void setUnit(Unit unit);
@@ -64,9 +76,22 @@ public:
     bool zeroIsEmpty() const { return m_zero_is_empty; }
     void setZeroIsEmpty(bool empty);
     Q_INVOKABLE void editInput(const QString& text) { fromDisplay(text); }
+    // Parse has an existing 128-character ORIGINAL-input budget. Long literals
+    // are refused before any trim/prefix parse; the 129-character view is an
+    // invalid overflow sentinel, never a silently accepted numeric prefix.
+    Q_INVOKABLE quint64 requestPaste(const QString& literal, int selection_start, int selection_end, qint64 expected_revision = -1);
+    Q_INVOKABLE quint64 requestEditInput(const QString& text, qint64 expected_revision = -1, int cursor = -1);
+    Q_INVOKABLE bool cancelInput(quint64 ticket);
+    void closeAdmission();
+    quint64 inputRevision() const { return m_input_revision; }
+    bool inputPending() const { return false; }
+    quint64 inputOperationId() const { return m_input_operation_id; }
+    InputOperationState inputOperationState() const { return m_input_operation_state; }
+    QString inputOperationError() const { return m_input_operation_error; }
+    int inputCursorPosition() const { return m_input_cursor; }
     Q_INVOKABLE bool commitTo(BitcoinAmount* target);
     Q_INVOKABLE void resetInput();
-    Q_INVOKABLE void restoreInput() { Q_EMIT inputChanged(); }
+    Q_INVOKABLE void restoreInput() { if (!admissionClosed()) Q_EMIT inputChanged(); }
     Q_INVOKABLE void format();
 
     static QString satsToBtcString(qint64 sat);
@@ -76,6 +101,7 @@ public Q_SLOTS:
     void clear();
 
 Q_SIGNALS:
+    void inputOperationChanged();
     void inputDirtyChanged();
     void inputChanged();
     void unitChanged();
@@ -84,9 +110,18 @@ Q_SIGNALS:
     void displayWithUnitChanged();
 
 private:
+    bool admissionClosed() const { return m_input_closed || (m_app_gate && m_app_gate->load()) || (m_owner_gate && m_owner_gate->load()); }
+    std::shared_ptr<std::atomic_bool> m_app_gate, m_owner_gate;
     void assignCanonical(qint64 value, bool is_set, bool reset_input = false);
     QString formattedInput() const;
 
+    quint64 beginInputRequest(qint64 expected_revision);
+    quint64 applyInputRequest(const QString& bounded_text, bool over_budget, int cursor, quint64 ticket);
+    quint64 m_input_revision{0}, m_input_operation_id{0};
+    InputOperationState m_input_operation_state{InputOperationState::InputIdle};
+    QString m_input_operation_error;
+    int m_input_cursor{0};
+    bool m_input_closed{false};
     QString m_input_text;
     QString m_baseline_text;
     InputState m_input_state{InputState::Empty};

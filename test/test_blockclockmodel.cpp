@@ -4,6 +4,9 @@
 
 #include <qml/models/blockclockhistory.h>
 #include <qml/models/blockclockmodel.h>
+#include <qml/backendexecutor.h>
+#include <qml/retainedsnapshot.h>
+#include <test/mocks/manualexecutionenvironment.h>
 
 #include <kernel/chain.h>
 #include <kernel/types.h>
@@ -24,16 +27,16 @@
 #include <QTimeZone>
 
 namespace {
-class QueuedDeliveryCounter : public QObject
+bool AwaitHistory(BlockClockModel& model)
 {
-public:
-    int deliveries{0};
-    bool eventFilter(QObject*, QEvent* event) override
-    {
-        if (event->type() == QEvent::MetaCall) ++deliveries;
-        return false;
-    }
-};
+    QCoreApplication::processEvents();
+    return QTest::qWaitFor([&] { return !model.historyPending(); }, 10000) && model.historyError().isEmpty();
+}
+bool AwaitHistory(const std::unique_ptr<BlockClockModel>& model)
+{
+    if (model) return AwaitHistory(*model);
+    QCoreApplication::processEvents(); return true;
+}
 
 QDateTime UtcTime(int hour, int minute = 0, int second = 0)
 {
@@ -66,6 +69,16 @@ class BlockClockModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void initTestCase();
+    void cleanupTestCase();
+    void fractionWaitersAreBoundedAndWakeOutsideTheBudgetLock();
+    void actualCapacityRetirementResumesLatestWorkerHistory_data();
+    void actualCapacityRetirementResumesLatestWorkerHistory();
+    void manualHistoryFencesHeldOldPeriodAndCoalescesNativeBursts();
+    void manualHistoryQuietCloseReleasesAcceptedProjection();
+    void retentionRequestsDoNotWaitForNativeHistoryMutex();
+    void replacementObserverSurvivesOriginalNativeRetirement();
+    void throwingPresentationPortCannotEscapeCoreOrStickWakeup();
     void currentTimeUsesNamedTwelveHourFraction();
     void unchangedSecondDoesNotRepublishCurrentTime();
     void blockArrivalRefreshesCurrentTime();
@@ -87,7 +100,264 @@ private Q_SLOTS:
     void timerAlignsToNextMinute();
     void minuteTimerAdvancesWithoutBlockNotifications();
     void stoppedModelDoesNotConsumeHistoryOrRestartTimers();
+private:
+    std::unique_ptr<BackendExecutor> m_executor;
 };
+
+void BlockClockModelTests::initTestCase()
+{
+    m_executor = std::make_unique<BackendExecutor>(execution::Limits::Bounded());
+    BlockClockModel::setDefaultServices({m_executor->scheduler(), {}});
+}
+void BlockClockModelTests::cleanupTestCase()
+{
+    BlockClockModel::setDefaultServices({});
+    bool drained{false}; m_executor->whenDrained(this, [&] { drained = true; }); m_executor->shutdown();
+    QTRY_VERIFY(drained); m_executor.reset();
+}
+
+void BlockClockModelTests::actualCapacityRetirementResumesLatestWorkerHistory_data()
+{
+    QTest::addColumn<int>("boundary");
+    QTest::newRow("global-then-local-retirement") << 0;
+    QTest::newRow("close-before-retirement") << 1;
+    QTest::newRow("period-before-retirement") << 2;
+    QTest::newRow("availability-before-held-failure") << 3;
+}
+void BlockClockModelTests::fractionWaitersAreBoundedAndWakeOutsideTheBudgetLock()
+{
+    auto budget = std::make_shared<blockclock::ProjectionBudget>(3, 24 * 1024 * 1024);
+    auto held = blockclock::ReserveFractions(budget, 0, 3); QVERIFY(held);
+    std::atomic_int called{0}; std::atomic_bool on_gui{false};
+    const auto* gui_thread = QThread::currentThread();
+    std::vector<std::shared_ptr<blockclock::FractionWaiter>> waiters; waiters.reserve(128);
+    const auto release = qScopeGuard([&] { held.reset(); });
+    for (int index = 0; index < 128; ++index) {
+        auto waiter = std::make_shared<blockclock::FractionWaiter>([budget, &called, &on_gui, gui_thread] {
+            std::lock_guard lock{budget->mutex}; // Callback must reenter successfully.
+            if (QThread::currentThread() == gui_thread) on_gui = true;
+            ++called;
+        });
+        QCOMPARE(blockclock::WaitForFractions(budget, 0, waiter), blockclock::FractionWait::Registered);
+        waiters.push_back(std::move(waiter));
+    }
+    auto refused = std::make_shared<blockclock::FractionWaiter>([&] { ++called; });
+    QCOMPARE(blockclock::WaitForFractions(budget, 0, refused), blockclock::FractionWait::Full);
+    QCOMPARE(called.load(), 0);
+    std::thread native{[held = std::move(held)]() mutable { held.reset(); }}; native.join();
+    QCOMPARE(called.load(), 128); QVERIFY(!on_gui.load()); QVERIFY(!refused->notified.load());
+    auto available = std::make_shared<blockclock::FractionWaiter>([&] {
+        std::lock_guard lock{budget->mutex}; ++called;
+    });
+    QCOMPARE(blockclock::WaitForFractions(budget, 0, available), blockclock::FractionWait::Available);
+    QCOMPARE(called.load(), 128); // Availability is returned; client callback runs unlocked.
+    available->notify(); available->notify(); QCOMPARE(called.load(), 129);
+    { std::lock_guard lock{budget->mutex}; QCOMPARE(budget->frames, size_t{0}); }
+}
+void BlockClockModelTests::actualCapacityRetirementResumesLatestWorkerHistory()
+{
+    QFETCH(int, boundary);
+    ManualRoutedExecution env;
+    ManualExecutionEnvironment gui;
+    auto history = std::make_shared<BlockClockHistory>(); history->initialize({});
+    auto now = UtcTime(15);
+    blockclock::Snapshot first, second, global_hold;
+    BlockClockModel model{history, {env.scheduler, [&](auto post) { gui.post(std::move(post)); }}, false, [&] { return now; }};
+    const auto finish = qScopeGuard([&] {
+        model.closeAdmission(); first.reset(); second.reset(); global_hold.reset();
+        env.drain(); gui.publishAll(); env.drain();
+    });
+    const auto settle = [&](bool cleanup) {
+        for (int budget = 0; budget < 128; ++budget) {
+            bool ran{false};
+            if (cleanup) { env.drain(); ran = !gui.publicationsIdle(); }
+            else while (env.step(execution::Lane::Domain)) ran = true;
+            while (gui.publishNext()) ran = true;
+            if (!ran) return;
+        }
+        QFAIL("Original bounded block history turns did not settle");
+    };
+    settle(true); QVERIFY(model.historyError().isEmpty()); QVERIFY(!model.historyPending());
+    first = model.blockSnapshot().value<blockclock::WeakSnapshot>().lock(); QVERIFY(first);
+    ConnectBlock(*history, 1, UtcTime(13).toSecsSinceEpoch()); settle(false);
+    second = model.blockSnapshot().value<blockclock::WeakSnapshot>().lock(); QVERIFY(second);
+    ConnectBlock(*history, 2, UtcTime(13).toSecsSinceEpoch()); settle(false);
+    QCOMPARE(model.blockTimeFractions(), (QList<qreal>{1.0 / 12.0, 1.0 / 12.0}));
+    const auto local = first->reservations[1]->budget;
+    { std::lock_guard lock{local->mutex}; QCOMPARE(local->frames, size_t{3}); QCOMPARE(local->max_frames, size_t{3}); }
+    if (boundary == 0) {
+        size_t remaining;
+        { std::lock_guard lock{blockclock::FRACTION_BUDGET->mutex}; remaining = blockclock::FRACTION_BUDGET->max_frames - blockclock::FRACTION_BUDGET->frames; }
+        QVERIFY(remaining > 0);
+        global_hold = execution::RetainSnapshot<blockclock::Projection>(env.scheduler, [&] {
+            auto frame = std::make_unique<blockclock::Projection>();
+            frame->reservations[0] = blockclock::ReserveFractions(blockclock::FRACTION_BUDGET, 0, remaining);
+            return frame;
+        });
+        QVERIFY(global_hold && global_hold->reservations[0]);
+        std::lock_guard lock{blockclock::FRACTION_BUDGET->mutex};
+        QCOMPARE(blockclock::FRACTION_BUDGET->frames, size_t{128});
+        QCOMPARE(blockclock::FRACTION_BUDGET->max_frames, size_t{128});
+    }
+    QSignalSpy published{&model, &BlockClockModel::blockTimeFractionsChanged};
+    std::thread worker{[history] {
+        DisconnectBlock(*history, 1, UtcTime(13).toSecsSinceEpoch());
+        ConnectBlock(*history, 3, UtcTime(14).toSecsSinceEpoch());
+    }}; worker.join();
+    if (boundary == 3) {
+        gui.publishAll(); // History wake only; leave its failed GUI outcome held.
+        while (env.step(execution::Lane::Domain)) {}
+        QCOMPARE(gui.publicationCount(), size_t{1});
+        QVERIFY(model.historyPending()); QVERIFY(model.historyError().isEmpty());
+    } else {
+        settle(false);
+        QVERIFY(model.historyError().contains(QStringLiteral("retained")));
+        QVERIFY(!model.historyPending());
+    }
+    QVERIFY(!model.timerActive());
+    const auto waiting_budget = boundary == 0 ? blockclock::FRACTION_BUDGET : local;
+    {
+        std::lock_guard lock{waiting_budget->mutex};
+        QCOMPARE(std::count_if(waiting_budget->waiters.begin(), waiting_budget->waiters.end(),
+            [](const auto& waiter) { return !waiter.expired(); }), 1);
+    }
+    QCOMPARE(published.count(), 0);
+    QVERIFY(!env.step(execution::Lane::Domain));
+    if (boundary != 3) QVERIFY(gui.publicationsIdle());
+    if (boundary == 1) model.closeAdmission();
+    if (boundary == 2) {
+        now = UtcTime(3).addDays(1); model.updateCurrentTime(now);
+        ConnectBlock(*history, 4, UtcTime(1).addDays(1).toSecsSinceEpoch());
+        settle(false); QVERIFY(!model.historyError().isEmpty());
+    }
+    if (global_hold) {
+        global_hold.reset(); // Admission is not physical reservation retirement.
+        QVERIFY(gui.publicationsIdle());
+        while (env.step(execution::Lane::Cleanup)) {}
+        QVERIFY(!gui.publicationsIdle()); settle(false);
+        QVERIFY(model.historyError().contains(QStringLiteral("retained"))); // Local three-frame inventory is still held.
+        QCOMPARE(published.count(), 0);
+    }
+    first.reset();
+    if (boundary != 3) QVERIFY(gui.publicationsIdle());
+    while (env.step(execution::Lane::Cleanup)) {}
+    if (boundary != 1) QVERIFY(!gui.publicationsIdle());
+    if (boundary == 3) {
+        QCOMPARE(gui.publicationCount(), size_t{2});
+        auto availability = gui.takePublicationBack(); QVERIFY(availability); availability();
+        QVERIFY(model.historyPending());
+        QVERIFY(gui.publishNext()); // Late old failed frame cannot clear the newer interest.
+        QVERIFY(model.historyPending()); QVERIFY(model.historyError().isEmpty());
+    }
+    settle(false);
+    if (boundary == 1) QCOMPARE(published.count(), 0);
+    else {
+        QVERIFY(model.historyError().isEmpty()); QVERIFY(!model.historyPending());
+        QCOMPARE(model.blockTimeFractions(), boundary == 0 || boundary == 3 ? (QList<qreal>{1.0 / 12.0, 2.0 / 12.0}) : (QList<qreal>{1.0 / 12.0}));
+        QCOMPARE(published.count(), 1);
+    }
+    model.closeAdmission(); second.reset(); env.drain(); gui.publishAll(); env.drain();
+    QVERIFY(env.quiescent()); QVERIFY(gui.quiescent());
+}
+
+void BlockClockModelTests::manualHistoryFencesHeldOldPeriodAndCoalescesNativeBursts()
+{
+    ManualExecutionEnvironment env;
+    auto history = std::make_shared<BlockClockHistory>(); history->initialize({});
+    QDateTime now = UtcTime(15);
+    BlockClockModel model{history, {env.scheduler, [&](auto publish) { env.post(std::move(publish)); }}, false, [&] { return now; }};
+    const auto settle = [&] { for (int turn = 0; turn < 32 && (!env.turnsIdle() || !env.publicationsIdle()); ++turn) { env.drain(); env.publishAll(); } };
+    settle(); QVERIFY(!model.historyPending()); QVERIFY(model.historyError().isEmpty());
+    QSignalSpy changes{&model, &BlockClockModel::blockTimeFractionsChanged};
+    std::thread notifications{[history] {
+        for (uint8_t id = 1; id <= 100; ++id) ConnectBlock(*history, id, UtcTime(13).toSecsSinceEpoch());
+        for (int repeat = 0; repeat < 10000; ++repeat) {
+            DisconnectBlock(*history, 100, UtcTime(13).toSecsSinceEpoch());
+            ConnectBlock(*history, 100, UtcTime(13).toSecsSinceEpoch());
+        }
+    }};
+    notifications.join();
+    QCOMPARE(env.publicationCount(), size_t{1}); // Exact Native ingress coalescing, independent of QObject transport identity.
+    QVERIFY(env.turnsIdle()); QCOMPARE(changes.count(), 0);
+    QVERIFY(env.publishNext()); env.drain(); // Old-period output is prepared, GUI outcome held.
+    QVERIFY(model.blockTimeFractions().isEmpty());
+    now = UtcTime(3).addDays(1); model.updateCurrentTime(now);
+    ConnectBlock(*history, 200, UtcTime(1).addDays(1).toSecsSinceEpoch());
+    env.publishAll(); QCOMPARE(changes.count(), 0); // Neither old period nor known-stale generation may publish.
+    settle();
+    QCOMPARE(model.periodStart(), UtcTime(0).addDays(1).toSecsSinceEpoch());
+    QCOMPARE(model.blockTimeFractions(), QList<qreal>{1.0 / 12.0});
+    QCOMPARE(changes.count(), 1);
+    model.closeAdmission(); settle(); QVERIFY(env.quiescent());
+}
+void BlockClockModelTests::manualHistoryQuietCloseReleasesAcceptedProjection()
+{
+    ManualExecutionEnvironment env;
+    auto history = std::make_shared<BlockClockHistory>();
+    history->initialize({{uint256{1}, UtcTime(13).toSecsSinceEpoch()}});
+    auto model = std::make_unique<BlockClockModel>(history, execution::SnapshotServices{env.scheduler, [&](auto publish) { env.post(std::move(publish)); }}, false, [] { return UtcTime(15); });
+    QSignalSpy changes{model.get(), &BlockClockModel::blockTimeFractionsChanged};
+    env.drain(); QVERIFY(model->historyPending());
+    model->closeAdmission(); model.reset();
+    env.drain(); env.publishAll(); env.drain();
+    QCOMPARE(changes.count(), 0); QVERIFY(env.quiescent());
+    std::thread retire{[history = std::move(history)]() mutable { history.reset(); }}; retire.join();
+}
+void BlockClockModelTests::retentionRequestsDoNotWaitForNativeHistoryMutex()
+{
+    auto history = std::make_shared<BlockClockHistory>();
+    QSemaphore entered, release;
+    std::atomic_bool timed_out{false};
+    history->setChangedCallback([&] { entered.release(); timed_out = !release.tryAcquire(1, 5000); });
+    std::thread native{[history] { history->initialize({{uint256{1}, UtcTime(13).toSecsSinceEpoch()}}); }};
+    auto finish = qScopeGuard([&] { release.release(); native.join(); });
+    QVERIFY(entered.tryAcquire(1, 5000));
+    ManualExecutionEnvironment env;
+    BlockClockModel model{history, {env.scheduler, [&](auto publish) { env.post(std::move(publish)); }}, false, [] { return UtcTime(15); }};
+    model.updateCurrentTime(UtcTime(3).addDays(1));
+    model.closeAdmission(); // Neither atomic retention nor quiet destruction takes the held Native mutex.
+    QVERIFY(!timed_out.load());
+    release.release(); native.join(); finish.dismiss();
+    env.drain(); env.publishAll(); env.drain(); QVERIFY(env.quiescent());
+}
+
+void BlockClockModelTests::replacementObserverSurvivesOriginalNativeRetirement()
+{
+    ManualRoutedExecution env;
+    std::deque<std::function<void()>> publications;
+    const auto publish_all = [&] { while (!publications.empty()) { auto publish = std::move(publications.front()); publications.pop_front(); publish(); } };
+    const auto settle = [&] { for (int turn = 0; turn < 32 && (!env.queuedIdle() || !publications.empty()); ++turn) { env.drain(); publish_all(); } };
+    const execution::SnapshotServices services{env.scheduler, [&](auto publish) { publications.push_back(std::move(publish)); }};
+    auto history = std::make_shared<BlockClockHistory>(); history->initialize({{uint256{1}, UtcTime(13).toSecsSinceEpoch()}});
+    BlockClockModel original{history, services, false, [] { return UtcTime(15); }};
+    settle(); QCOMPARE(original.blockTimeFractions(), QList<qreal>{1.0 / 12.0});
+    original.closeAdmission(); // Original callback cleanup remains held on Cleanup.
+    BlockClockModel replacement{history, services, false, [] { return UtcTime(15); }};
+    while (env.step(execution::Lane::Domain)) {} // Register the new original observer before retiring the old token.
+    settle(); QCOMPARE(replacement.blockTimeFractions(), QList<qreal>{1.0 / 12.0});
+    ConnectBlock(*history, 2, UtcTime(14).toSecsSinceEpoch());
+    QCOMPARE(publications.size(), size_t{1});
+    settle(); QCOMPARE(replacement.blockTimeFractions(), (QList<qreal>{1.0 / 12.0, 2.0 / 12.0}));
+    replacement.closeAdmission(); settle(); QVERIFY(env.quiescent());
+}
+
+void BlockClockModelTests::throwingPresentationPortCannotEscapeCoreOrStickWakeup()
+{
+    ManualExecutionEnvironment env;
+    auto history = std::make_shared<BlockClockHistory>(); history->initialize({});
+    std::atomic_int rejected{0};
+    BlockClockModel model{history, {env.scheduler, [&](auto) { ++rejected; throw std::runtime_error("injected post rejection"); }}, false, [] { return UtcTime(15); }};
+    const auto settle = [&] { for (int turn = 0; turn < 32; ++turn) { env.drain(); QCoreApplication::processEvents(); if (env.turnsIdle() && !model.historyPending()) break; } };
+    settle(); QVERIFY(model.historyError().isEmpty());
+    for (uint8_t id = 1; id <= 2; ++id) {
+        std::atomic_bool escaped{false};
+        std::thread native{[&] { try { ConnectBlock(*history, id, UtcTime(12 + id).toSecsSinceEpoch()); } catch (...) { escaped = true; } }};
+        native.join(); QVERIFY(!escaped.load());
+        settle(); QCOMPARE(model.blockTimeFractions().size(), qsizetype{id});
+    }
+    QVERIFY(rejected.load() >= 3);
+    model.closeAdmission(); settle(); QVERIFY(env.quiescent());
+}
 
 void BlockClockModelTests::currentTimeUsesNamedTwelveHourFraction()
 {
@@ -117,12 +387,12 @@ void BlockClockModelTests::blockArrivalRefreshesCurrentTime()
     QDateTime current_time{UtcTime(15)};
     BlockClockModel model{history, false, [&] { return current_time; }};
     history->initialize({});
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QSignalSpy current_time_spy{&model, &BlockClockModel::currentTimeFractionChanged};
 
     current_time = UtcTime(15, 1);
     ConnectBlock(*history, 1, UtcTime(15, 0, 30).toSecsSinceEpoch());
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
 
     QCOMPARE(current_time_spy.count(), 1);
     QVERIFY(qAbs(model.currentTimeFraction() - (181.0 / 720.0)) < 0.000001);
@@ -145,12 +415,12 @@ void BlockClockModelTests::blockHistoryPreservesEqualTimestampsAndPeriodBounds()
         {uint256{4}, start + 7200},
         {uint256{5}, start + BlockClockModel::PERIOD_SECONDS},
     });
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
 
     const QList<qreal> expected{1.0 / 12.0, 2.0 / 12.0, 2.0 / 12.0};
     QCOMPARE(model.blockTimeFractions(), expected);
     QCOMPARE(history_spy.count(), 1);
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(history_spy.count(), 1);
 }
 
@@ -160,7 +430,7 @@ void BlockClockModelTests::initialHistoryCanArriveAfterTheModel()
     BlockClockModel model{history, false, [] { return UtcTime(15); }};
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
 
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QVERIFY(model.blockTimeFractions().isEmpty());
     QCOMPARE(history_spy.count(), 0);
 
@@ -191,7 +461,7 @@ void BlockClockModelTests::workerNotificationsPublishWithoutHistoryTimer()
     auto history{std::make_shared<BlockClockHistory>()};
     BlockClockModel model{history, false, [] { return UtcTime(15); }};
     history->initialize({});
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
     bool delivered_on_gui{false};
     const auto gui_thread = QThread::currentThread();
@@ -226,7 +496,7 @@ void BlockClockModelTests::notificationDuringPublicationSchedulesFollowup()
     auto history{std::make_shared<BlockClockHistory>()};
     BlockClockModel model{history, false, [] { return UtcTime(15); }};
     history->initialize({});
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
     connect(&model, &BlockClockModel::blockTimeFractionsChanged, &model, [&] {
         if (model.blockTimeFractions().size() == 1) {
@@ -248,7 +518,7 @@ void BlockClockModelTests::idleHistoryDoesNotScheduleRepeatedUpdates()
     BlockClockModel model{history, false, [&] { ++clock_reads; return UtcTime(15); }};
     history->initialize({{uint256{1}, UtcTime(13).toSecsSinceEpoch()}});
     QTRY_COMPARE(model.blockTimeFractions().size(), 1);
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     const int reads_after_publication = clock_reads;
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
     QTest::qWait(250);
@@ -284,7 +554,7 @@ void BlockClockModelTests::destroyedModelIgnoresPendingAndLateWorkerNotification
     release.release();
     model.reset();
     QTRY_VERIFY(finished.load());
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(history_spy.count(), 0);
     QVERIFY(history->retentionStart().has_value());
 }
@@ -299,7 +569,7 @@ void BlockClockModelTests::cachedHistorySurvivesPeriodRollover()
         {uint256{2}, UtcTime(12, 1).toSecsSinceEpoch()},
         {uint256{3}, UtcTime(12, 1).toSecsSinceEpoch()},
     });
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(model.blockTimeFractions(), QList<qreal>{11.5 / 12.0});
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
 
@@ -310,6 +580,7 @@ void BlockClockModelTests::cachedHistorySurvivesPeriodRollover()
 
     QCOMPARE(model.periodStart(), UtcTime(12).toSecsSinceEpoch());
     const QList<qreal> expected{1.0 / 720.0, 1.0 / 720.0};
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(model.blockTimeFractions(), expected);
     QCOMPARE(history_spy.count(), 1);
 }
@@ -319,10 +590,8 @@ void BlockClockModelTests::blockNotificationsAreCoalesced()
     auto history{std::make_shared<BlockClockHistory>()};
     BlockClockModel model{history, false, [] { return UtcTime(15); }};
     history->initialize({});
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
-    QueuedDeliveryCounter queued;
-    model.installEventFilter(&queued);
 
     std::thread notifications{[history] {
         for (uint8_t id{1}; id <= 100; ++id) {
@@ -339,14 +608,13 @@ void BlockClockModelTests::blockNotificationsAreCoalesced()
     QCOMPARE(history_spy.count(), 0);
     QVERIFY(model.blockTimeFractions().isEmpty());
 
-    QCoreApplication::processEvents();
-    QCOMPARE(queued.deliveries, 1);
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(history_spy.count(), 1);
     QCOMPARE(model.blockTimeFractions().size(), 100);
     for (const qreal fraction : model.blockTimeFractions()) {
         QVERIFY(qAbs(fraction - 1.0 / 12.0) < 0.000001);
     }
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(history_spy.count(), 1);
 }
 
@@ -356,17 +624,17 @@ void BlockClockModelTests::repeatedBlockNotificationDoesNotDuplicateHistory()
     BlockClockModel model{history, false, [] { return UtcTime(15); }};
     const qint64 timestamp{UtcTime(13).toSecsSinceEpoch()};
     history->initialize({{uint256{1}, timestamp}});
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
 
     ConnectBlock(*history, 1, timestamp);
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(model.blockTimeFractions(), QList<qreal>{1.0 / 12.0});
     QCOMPARE(history_spy.count(), 0);
 
     ConnectBlock(*history, 2, timestamp);
     ConnectBlock(*history, 2, timestamp);
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     const QList<qreal> expected{1.0 / 12.0, 1.0 / 12.0};
     QCOMPARE(model.blockTimeFractions(), expected);
     QCOMPARE(history_spy.count(), 1);
@@ -381,21 +649,21 @@ void BlockClockModelTests::disconnectRemovesOnlyTheMatchingBlock()
         {uint256{2}, UtcTime(13).toSecsSinceEpoch()},
         {uint256{3}, UtcTime(14).toSecsSinceEpoch()},
     });
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
 
     // A replacement outside the displayed period still removes the former
     // tip. Equal timestamps must not cause the other block to disappear.
     DisconnectBlock(*history, 2, UtcTime(13).toSecsSinceEpoch());
     ConnectBlock(*history, 4, UtcTime(11).toSecsSinceEpoch());
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     const QList<qreal> expected{1.0 / 12.0, 2.0 / 12.0};
     QCOMPARE(model.blockTimeFractions(), expected);
     QCOMPARE(history_spy.count(), 1);
 
     DisconnectBlock(*history, 1, UtcTime(13).toSecsSinceEpoch());
     ConnectBlock(*history, 5, UtcTime(15).toSecsSinceEpoch());
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     const QList<qreal> reorganized{2.0 / 12.0, 3.0 / 12.0};
     QCOMPARE(model.blockTimeFractions(), reorganized);
     QCOMPARE(history_spy.count(), 2);
@@ -406,12 +674,12 @@ void BlockClockModelTests::oldIbdNotificationsDoNotRepublishHistory()
     auto history{std::make_shared<BlockClockHistory>()};
     BlockClockModel model{history, false, [] { return UtcTime(15); }};
     history->initialize({{uint256{1}, UtcTime(13).toSecsSinceEpoch()}});
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
 
     for (uint8_t id{2}; id <= 200; ++id) {
         ConnectBlock(*history, id, UtcTime(0).toSecsSinceEpoch() - id);
-        QCoreApplication::processEvents();
+        QVERIFY(AwaitHistory(model));
     }
 
     QCOMPARE(model.blockTimeFractions(), QList<qreal>{1.0 / 12.0});
@@ -425,10 +693,8 @@ void BlockClockModelTests::blockArrivalAtRolloverIsNotCountedTwice()
     BlockClockModel model{history, false, [&] { return current_time; }};
     const qint64 timestamp{UtcTime(12, 1).toSecsSinceEpoch()};
     history->initialize({{uint256{1}, timestamp}});
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QVERIFY(model.blockTimeFractions().isEmpty());
-    QueuedDeliveryCounter queued;
-    model.installEventFilter(&queued);
 
     current_time = UtcTime(12, 1);
     std::thread first_notification{[history, timestamp] {
@@ -436,22 +702,22 @@ void BlockClockModelTests::blockArrivalAtRolloverIsNotCountedTwice()
         ConnectBlock(*history, 2, timestamp);
     }};
     first_notification.join();
-    // The minute update consumes the dirty snapshot while notification delivery
-    // remains pending. A new block must share that event without getting lost.
+    QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
+    // The minute update queues Native consumption while GUI notification delivery
+    // remains pending. A newer generation must join the same final publication.
     model.updateCurrentTime(current_time);
-    const QList<qreal> initial{1.0 / 720.0, 1.0 / 720.0};
-    QCOMPARE(model.blockTimeFractions(), initial);
-    QCOMPARE(queued.deliveries, 0);
+    QVERIFY(model.historyPending()); // Full snapshot consumption remains held on Native.
+    QVERIFY(model.blockTimeFractions().isEmpty());
     std::thread second_notification{[history] {
         ConnectBlock(*history, 3, UtcTime(12, 2).toSecsSinceEpoch());
     }};
     second_notification.join();
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
 
     QCOMPARE(model.periodStart(), UtcTime(12).toSecsSinceEpoch());
     const QList<qreal> expected{1.0 / 720.0, 1.0 / 720.0, 2.0 / 720.0};
     QCOMPARE(model.blockTimeFractions(), expected);
-    QCOMPARE(queued.deliveries, 1);
+    QCOMPARE(history_spy.count(), 1);
 }
 
 void BlockClockModelTests::emptyHistoryDoesNotEmitRedundantChanges()
@@ -461,35 +727,35 @@ void BlockClockModelTests::emptyHistoryDoesNotEmitRedundantChanges()
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
 
     history->initialize({});
-    QCoreApplication::processEvents();
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(history_spy.count(), 0);
 
     // Filtering a nonempty snapshot leaves an empty list with allocated storage.
     // It must compare equal to the model's initially unallocated empty history.
     const qint64 future_timestamp{UtcTime(23).toSecsSinceEpoch() + BlockClockModel::PERIOD_SECONDS};
     ConnectBlock(*history, 1, future_timestamp);
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QVERIFY(model.blockTimeFractions().isEmpty());
     QCOMPARE(history_spy.count(), 0);
 
     DisconnectBlock(*history, 1, future_timestamp);
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(history_spy.count(), 0);
 
     const qint64 visible_timestamp{UtcTime(13).toSecsSinceEpoch()};
     ConnectBlock(*history, 2, visible_timestamp);
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(model.blockTimeFractions(), QList<qreal>{1.0 / 12.0});
     QCOMPARE(history_spy.count(), 1);
 
     DisconnectBlock(*history, 2, visible_timestamp);
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QVERIFY(model.blockTimeFractions().isEmpty());
     QCOMPARE(history_spy.count(), 2);
 
     ConnectBlock(*history, 3, future_timestamp);
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QVERIFY(model.blockTimeFractions().isEmpty());
     QCOMPARE(history_spy.count(), 2);
 }
@@ -540,7 +806,7 @@ void BlockClockModelTests::minuteTimerAdvancesWithoutBlockNotifications()
     // waiting a minute or calling the model's update method directly.
     QDateTime current_time{UtcTime(15, 0, 59).addMSecs(950)};
     BlockClockModel model{history, true, [&] { return current_time; }};
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     const QList<qreal> expected_history{1.0 / 6.0};
     QCOMPARE(model.blockTimeFractions(), expected_history);
     auto* timer = model.findChild<QTimer*>();
@@ -565,7 +831,7 @@ void BlockClockModelTests::stoppedModelDoesNotConsumeHistoryOrRestartTimers()
     auto history{std::make_shared<BlockClockHistory>()};
     BlockClockModel model{history, true, [] { return UtcTime(15); }};
     history->initialize({{uint256{1}, UtcTime(14).toSecsSinceEpoch()}});
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     const auto fractions = model.blockTimeFractions();
     const auto period = model.periodStart();
     QSignalSpy history_spy{&model, &BlockClockModel::blockTimeFractionsChanged};
@@ -581,7 +847,7 @@ void BlockClockModelTests::stoppedModelDoesNotConsumeHistoryOrRestartTimers()
         }
     }};
     late_notifications.join();
-    QCoreApplication::processEvents();
+    QVERIFY(AwaitHistory(model));
     QCOMPARE(history_spy.count(), 0);
     model.updateCurrentTime(UtcTime(15).addDays(1));
     QCOMPARE(model.blockTimeFractions(), fractions);

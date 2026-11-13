@@ -29,6 +29,23 @@ SettingsPage {
     property bool selectedHasPaymentRequest: false
     property string errorText: ""
     property var pendingNotesByAddress: ({})
+    property ReceiveRequestOperation noteOperation: null
+    property WalletQmlModel noteOperationWallet: null
+    property string noteOperationAddress: ""
+    property string noteOperationLabel: ""
+    property bool noteOperationHandled: false
+    property ReceiveRequestOperation receiveOperation: null
+    property WalletQmlModel receiveOperationWallet: null
+    property string receiveOperationAddress: ""
+    property bool receiveOperationHandled: false
+    readonly property bool receiveSelectionApplied: receiveOperation !== null && wallet !== null
+        && receiveOperationWallet === wallet
+        && (receiveOperation.requestLoaded
+            ? wallet.currentPaymentRequest.id === receiveOperation.requestId
+            : receiveOperation.addressReady && wallet.receivingAddressReady
+              && wallet.currentPaymentRequest.address === receiveOperationAddress
+              && wallet.receivingAddress.address === receiveOperationAddress)
+    onReceiveSelectionAppliedChanged: if (receiveSelectionApplied) finishReceiveSelection()
 
     signal paymentRequestRequested(string requestId)
     signal receiveRequested
@@ -41,26 +58,60 @@ SettingsPage {
     }
 
     function createPaymentRequestFromSelected(closeAction) {
+        if (receiveOperation && receiveOperation.pending) return;
         root.errorText = "";
-        const requests = wallet && wallet.receiveRequests
-            ? wallet.receiveRequests.matchingEntriesForAddress(root.selectedAddress) : [];
-        if (requests.length > 0) {
+        const requestId = wallet && wallet.receiveRequests
+            ? wallet.receiveRequests.firstRequestIdForAddress(root.selectedAddress) : "";
+        if (requestId !== "") {
             if (closeAction) closeAction();
-            root.paymentRequestRequested(requests[0].requestId);
+            root.paymentRequestRequested(requestId);
             return;
         }
-        if (wallet && wallet.setCurrentPaymentRequestAddress(root.selectedAddress)) {
-            if (closeAction) {
-                closeAction();
-            }
-            root.receiveRequested();
+        const operation = wallet ? wallet.setCurrentPaymentRequestAddress(root.selectedAddress) : null;
+        if (operation) {
+            receiveOperationWallet = wallet;
+            receiveOperationAddress = root.selectedAddress;
+            receiveOperationHandled = false;
+            receiveOperation = operation;
+            if (closeAction) closeAction();
+            finishReceiveSelection();
             return;
         }
         if (closeAction) {
             closeAction();
         }
-        root.addressModel.refresh();
+        if (root.addressModel) root.addressModel.refresh();
         root.errorText = qsTr("This address is no longer available.");
+    }
+
+    function finishReceiveSelection() {
+        if (!receiveOperation || receiveOperation.pending || receiveOperationHandled) return;
+        if (!visible || !wallet || receiveOperationWallet !== wallet || selectedAddress !== receiveOperationAddress) {
+            receiveOperationHandled = true;
+            return;
+        }
+        if (receiveOperation.requestLoaded || receiveOperation.addressReady) {
+            // The command outcome and facade publication can arrive in either
+            // order. The binding above wakes this intent when both are ready.
+            if (!receiveSelectionApplied) return;
+            receiveOperationHandled = true;
+            if (receiveOperation.requestLoaded) root.paymentRequestRequested(receiveOperation.requestId);
+            else root.receiveRequested();
+        } else {
+            receiveOperationHandled = true;
+            if (addressModel) addressModel.refresh();
+            errorText = receiveOperation.errorText || qsTr("This address is no longer available.");
+        }
+    }
+    Connections {
+        target: root.receiveOperation
+        function onChanged() { root.finishReceiveSelection() }
+    }
+    onWalletChanged: {
+        receiveOperation = null;
+        receiveOperationWallet = null;
+        noteOperation = null;
+        noteOperationWallet = null;
     }
 
     function pendingNote(address, fallbackLabel) {
@@ -86,16 +137,33 @@ SettingsPage {
     }
 
     function updateAddressLabel(address, label) {
+        if (noteOperation && noteOperation.pending) return false
         root.errorText = ""
-        if (root.addressModel.setAddressLabel(address, label)) {
-            if (root.selectedAddress === address) root.selectedLabel = label
-            root.clearPendingNote(address)
-            return true
+        const command = root.addressModel.setAddressLabel(address, label)
+        if (!command) {
+            root.errorText = qsTr("The address note could not be saved.")
+            return false
         }
-        root.clearPendingNote(address)
-        root.addressModel.refresh()
-        root.errorText = qsTr("This address is no longer available.")
-        return false
+        noteOperationWallet = wallet
+        noteOperationAddress = address
+        noteOperationLabel = label
+        noteOperationHandled = false
+        noteOperation = command
+        finishAddressLabel()
+        return true
+    }
+    function finishAddressLabel() {
+        if (!noteOperation || noteOperation.pending || noteOperationHandled || !wallet || noteOperationWallet !== wallet) return
+        noteOperationHandled = true
+        if (noteOperation.labelSaved) {
+            if (selectedAddress === noteOperationAddress) selectedLabel = noteOperationLabel
+            clearPendingNote(noteOperationAddress)
+        }
+        errorText = noteOperation.errorText
+    }
+    Connections {
+        target: root.noteOperation
+        function onChanged() { root.finishAddressLabel() }
     }
 
     rightItem: IconButton {
@@ -299,7 +367,7 @@ SettingsPage {
                     // request model would go stale, since it cannot see
                     // requests added while the same address stays selected.
                     root.selectedHasPaymentRequest = root.wallet && root.wallet.receiveRequests
-                        ? root.wallet.receiveRequests.matchingEntriesForAddress(address).length > 0
+                        ? root.wallet.receiveRequests.firstRequestIdForAddress(address) !== ""
                         : false;
                     addressDetails.resetNoteEditor();
                     detailsPopup.open();

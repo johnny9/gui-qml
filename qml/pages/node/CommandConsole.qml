@@ -50,12 +50,10 @@ Page {
     property bool tabActive: true
     onTabActiveChanged: if (!tabActive) autocompletePopup.close()
 
-    function _pushPalette() {
-        ApplicationModels.rpcConsoleModel.requestColor = consoleRequestColor
-        ApplicationModels.rpcConsoleModel.replyColor   = consoleReplyColor
-        ApplicationModels.rpcConsoleModel.errorColor   = Theme.color.red
-        ApplicationModels.rpcConsoleModel.keyColor     = consoleKeyColor
-    }
+    Binding { target: ApplicationModels.rpcConsoleModel; property: "requestColor"; value: root.consoleRequestColor }
+    Binding { target: ApplicationModels.rpcConsoleModel; property: "replyColor"; value: root.consoleReplyColor }
+    Binding { target: ApplicationModels.rpcConsoleModel; property: "errorColor"; value: Theme.color.red }
+    Binding { target: ApplicationModels.rpcConsoleModel; property: "keyColor"; value: root.consoleKeyColor }
     // Focus the command input when the console becomes the active view, so the
     // user can type immediately. Mirrors Core's RPCConsole, which focuses its
     // line edit when the Console tab is activated. Desktop only: on mobile this
@@ -72,18 +70,19 @@ Page {
     onVisibleChanged: if (visible) focusInput()
 
     Component.onCompleted: {
-        _pushPalette()
         Qt.callLater(function() { if (root.visible) root.focusInput() })
-    }
-    Connections {
-        target: Theme
-        function onDarkChanged() { root._pushPalette() }
     }
 
     Shortcut {
         enabled: root.visible
         sequence: Qt.platform.os === "osx" ? "Meta+L" : "Ctrl+L"
         onActivated: ApplicationModels.rpcConsoleModel.clear()
+    }
+
+    Shortcut {
+        enabled: root.visible
+        sequence: Qt.platform.os === "osx" ? "Meta+Shift+C" : "Ctrl+Shift+C"
+        onActivated: outputView.copyAll()
     }
 
     // Exposed for E2E output-content verification.
@@ -125,9 +124,8 @@ Page {
         }
     }
 
-    // Output area — MonospaceOutputView (Flickable + Column + Repeater)
-    // keeps contentHeight exact (no ListView estimation) and gives each
-    // row a TextEdit for single-row select + copy.
+    // Output uses virtualized, bounded text chunks. Search also includes rows
+    // without instantiated delegates; each visible chunk supports select/copy.
     MonospaceOutputView {
         id: outputView
         objectName: "consoleOutputArea"
@@ -139,6 +137,16 @@ Page {
             bottomMargin: 4
         }
 
+        header: Component {
+            Text {
+                text: ApplicationModels.rpcConsoleModel.completionError
+                visible: text.length > 0
+                height: visible ? implicitHeight : 0
+                color: Theme.color.red
+                wrapMode: Text.Wrap
+                font.pixelSize: root.outputFontPixelSize
+            }
+        }
         listModel: ApplicationModels.rpcConsoleModel.outputModel
         contentRole: "content"
         contentTextFormat: Text.RichText
@@ -191,7 +199,7 @@ Page {
         // the highlighted suggestion. Dismissal on outside taps is handled by the
         // input losing focus (see the TapHandler and inputField.onActiveFocusChanged).
         closePolicy: Popup.CloseOnEscape
-        onClosed: root.filteredCommands = []
+        onClosed: if (root.filteredCommands.length > 0) root.completionDismissed = true
 
         ListView {
             id: autocompleteList
@@ -224,6 +232,7 @@ Page {
     function applySuggestion(cmd) {
         inputField.text = cmd + " "
         inputField.cursorPosition = inputField.text.length
+        completionDismissed = true
         autocompletePopup.close()
         inputField.forceActiveFocus()
     }
@@ -342,7 +351,7 @@ Page {
                     if (!internal.navigatingHistory) {
                         ApplicationModels.rpcConsoleModel.resetHistoryNavigation()
                     }
-                    root.updateFilteredCommands()
+                    root.completionDismissed = internal.navigatingHistory
                 }
 
                 // Auto-select existing text when the field gains focus
@@ -358,41 +367,22 @@ Page {
         }
     }
 
-    // Filtered autocomplete model. Note: list<string> requires Qt 6.5+;
-    // use var for compatibility with Qt 6.2.
-    property var filteredCommands: []
+    // Matching is owned by the background model. The view owns dismissal and
+    // keyboard selection; no full command-catalog scan happens in JavaScript.
+    property bool completionDismissed: false
+    readonly property var filteredCommands: completionDismissed || ApplicationModels.rpcConsoleModel.completionBusy
+        ? [] : ApplicationModels.rpcConsoleModel.completionSuggestions
     property int autocompleteIndex: 0
-
-    function updateFilteredCommands() {
-        // Guard: availableCommands is empty until the node is initialised.
-        // Calling this before init used to throw and abort the textChanged
-        // handler, which (combined with the oversized popup) made the
-        // whole console appear blank on first keystroke.
-        var cmds = ApplicationModels.rpcConsoleModel ? ApplicationModels.rpcConsoleModel.availableCommands : null
-        if (!cmds || cmds.length === 0) {
-            filteredCommands = []
-            autocompletePopup.close()
-            return
-        }
-        var t = inputField.text.toLowerCase()
-        if (t.length === 0) {
-            filteredCommands = []
-            autocompletePopup.close()
-            return
-        }
-        var matches = []
-        for (var i = 0; i < cmds.length && matches.length < 10; ++i) {
-            if (cmds[i].toLowerCase().startsWith(t)) {
-                matches.push(cmds[i])
-            }
-        }
-        filteredCommands = matches
-        root.autocompleteIndex = 0
-        if (matches.length > 0 && !internal.navigatingHistory) {
+    Binding {
+        target: ApplicationModels.rpcConsoleModel
+        property: "completionPrefix"
+        value: root.completionDismissed ? "" : inputField.text
+    }
+    onFilteredCommandsChanged: {
+        autocompleteIndex = 0
+        if (filteredCommands.length > 0 && !internal.navigatingHistory && tabActive && inputField.activeFocus)
             autocompletePopup.open()
-        } else {
-            autocompletePopup.close()
-        }
+        else autocompletePopup.close()
     }
 
     // Unfocus inputField when the user taps anywhere outside it.
@@ -445,14 +435,14 @@ Page {
     }
 
     function submitCommand() {
-        var cmd = inputField.text.trim()
+        const cmd = inputField.text
         if (cmd.length === 0) return
         // Only clear the input if the command was accepted. submitCommand()
         // returns false when another command is still executing, so a refused
         // command stays in the field instead of silently vanishing.
         if (ApplicationModels.rpcConsoleModel.submitCommand(cmd, root.walletName)) {
             inputField.text = ""
-            filteredCommands = []
+            completionDismissed = true
         }
     }
 }

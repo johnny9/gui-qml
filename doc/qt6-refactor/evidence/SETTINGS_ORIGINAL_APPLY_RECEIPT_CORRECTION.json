@@ -1,0 +1,16 @@
+{
+  "file": "test/functional/interface_qml_node.py",
+  "before_sha256": "d85d1963689da3bc40bfb26c21e0c40928aa99bea473690b96eda57361a698f2",
+  "after_sha256": "b47ea6bd97ce78a88c50540ff454b3a24f7ad444f03d651f1d97e5c75a7695b5",
+  "old_observation": "CoreSettingsModel.operationId is m_next for every Preview and User mutation; cannot identify a stable user Apply effect.",
+  "correct_observation": "OptionsQmlModel.settingsOperationId minted for user Apply effect by existing m_capture_effect; settingsOperationState is the actual retained atomic effect receipt.",
+  "oracles_retained": [
+    "Exactly one captured ticket, unchanged throughout wait",
+    "Wait actual settingsPending false",
+    "Typed SettingsOperationState SettingsApplied only",
+    "Actual settingsError empty",
+    "Original GUI restart, proxy values, geometry, language, blockclock reorg/history and RPC effects unchanged"
+  ],
+  "validation": "pending complete corrected candidate; separate language visibility failure still under diagnosis",
+  "production_changes": false
+}

@@ -13,11 +13,32 @@ from pathlib import Path
 from qml_scenarios import run_scenarios
 from qml_smoke_lib import (
     create_wallet,
+    save_review_psbt,
     stop_gui_checked,
     wait_until,
     wallet_scenario,
+    wait_review_action,
 )
 from qml_wallet_test_lib import rpc_call
+
+
+def original_review_outputs(gui, expected_count):
+    """Observe complete typed rows of this review, not its graph preview."""
+    page = "sendTransactionReviewPage"
+    gui.wait_for_property(page, "detailsReady", True, timeout_ms=30000)
+    revision = gui.get_property(page, "flowDetails.revision")
+    assert isinstance(revision, int) and revision > 0
+    model = "flowDetails.outputRows"
+    guard = {"revision_property": "flowDetails.revision", "revision": revision}
+    original = gui.get_model_row(page, model, **guard)
+    count = original["rowCount"]
+    assert count == expected_count
+    entries = [gui.get_model_row(page, model, row, "entry", model_id=original["modelId"], expected_rows=count, **guard)["value"]
+               for row in range(count)]
+    assert gui.get_property(page, "flowDetails.revision") == revision
+    assert gui.get_property(page, "detailsContextValid") is True
+    assert gui.get_property(page, "detailsReady") is True
+    return entries
 
 
 def send_receive_smoke(harness, checkpoint):
@@ -245,8 +266,16 @@ def legacy_fee_matrix(harness, checkpoint, version, confirmed=True):
             gui.wait_for_page("sendTransactionReviewPage")
             gui.wait_for_property("sendTransactionReviewPage", "importedPsbt", True, timeout_ms=30000)
             gui.wait_for_property("sendTransactionReviewPage", "feePending", False, timeout_ms=30000)
-            flow = gui.get_property("sendTransactionReviewPage", "wallet.currentTransactionFlow")
-            fee_node = f"transactionFlowOutput_{len(flow['outputs'])}"
+            full_outputs = original_review_outputs(gui, len(outputs))
+            graph_outputs = gui.get_property("sendTransactionReviewFlow", "outputEntries")
+            fee_indices = [index for index, entry in enumerate(graph_outputs) if entry.get("kind") == "fee"]
+            assert len(fee_indices) == 1, graph_outputs
+            fee_known = gui.get_property("sendTransactionReviewPage", "wallet.currentTransaction.feeKnown")
+            fee_sat = gui.get_property("sendTransactionReviewPage", "wallet.currentTransaction.feeAmount.satoshi") if fee_known else None
+            fee_entry = graph_outputs[fee_indices[0]]
+            assert fee_entry["amountKnown"] == fee_known
+            assert fee_entry["amountSat"] == fee_sat
+            fee_node = f"transactionFlowOutput_{fee_indices[0]}"
             gui.wait_for_property(fee_node, "title", "Network fee")
             gui.wait_for_property(
                 fee_node, "amountText",
@@ -254,23 +283,28 @@ def legacy_fee_matrix(harness, checkpoint, version, confirmed=True):
             )
             print("[fee-observation] " + json.dumps({"version": version, "owned_inputs": owned, "forged": forged,
                   "confirmed": confirmed, "actual_fee_sat": 500000, "summary": gui.get_property("sendTransactionReviewFee", "value"),
-                  "flow_fee_known": flow["feeKnown"], "flow_fee_sat": flow["feeSat"],
+                  "flow_fee_known": fee_known, "flow_fee_sat": fee_sat,
                   "can_send": gui.get_property("sendTransactionReviewPage", "canSend"),
                   "can_broadcast": gui.get_property("sendTransactionReviewPage", "canBroadcast")}), flush=True)
             assert gui.get_property("sendTransactionReviewPage", "wallet.recipients.count") == 1
-            assert sum(bool(output["isChange"]) for output in flow["outputs"]) == (1 if owned == 2 else 0)
+            assert sum(bool(output["isChange"]) for output in full_outputs) == (1 if owned == 2 else 0)
             if forged:
-                assert not flow["feeKnown"] and flow["feeSat"] is None
+                assert not fee_known and fee_sat is None
                 assert not gui.get_property("sendTransactionReviewPage", "canSend")
                 assert not gui.get_property("sendTransactionReviewPage", "canBroadcast")
                 assert gui.get_property("sendTransactionReviewFee", "value") == "Unknown"
                 assert gui.get_property("sendTransactionReviewWarning", "visible")
-                for action in ("sendTransaction", "broadcastCurrentTransaction"):
-                    assert not gui.invoke_property_object("sendTransactionReviewPage", "wallet", action)
+                send_ticket = gui.invoke_property_object("sendTransactionReviewPage", "wallet", "requestSendTransaction")
+                wait_review_action(gui, send_ticket, send=True, terminal="SendFailed")
+                assert gui.get_property("sendTransactionReviewPage", "wallet.transactionError")
+                assert gui.get_property("sendTransactionReviewPage", "wallet.sendResultTxid") in (None, "")
+                broadcast_ticket = gui.invoke_property_object("sendTransactionReviewPage", "wallet", "requestBroadcastCurrentTransaction")
+                wait_review_action(gui, broadcast_ticket, terminal="PsbtFailed")
+                assert gui.get_property("sendTransactionReviewPage", "wallet.psbtActionError")
+                assert gui.get_property("sendTransactionReviewPage", "wallet.psbtSubmittedTxid") in (None, "")
                 assert expected_txid not in rpc_call(harness.gui_rpc_port, "getrawmempool")
                 exported = Path(harness.tmpdir) / "rejected-document.psbt"
-                error = gui.invoke_property_object("sendTransactionReviewPage", "wallet", "saveCurrentTransactionAsPsbt", [str(exported)])
-                assert error in (None, "")
+                save_review_psbt(gui, exported)
                 retained = base64.b64encode(exported.read_bytes()).decode("ascii")
                 assert rpc_call(harness.gui_rpc_port, "finalizepsbt", [retained])["hex"] == control_hex
                 gui.click("sendTransactionReviewCloseButton")
@@ -278,7 +312,7 @@ def legacy_fee_matrix(harness, checkpoint, version, confirmed=True):
                 if not confirmed:
                     rpc_call(harness.gui_rpc_port, "generatetoaddress", [1, mining])
             else:
-                assert flow["feeKnown"] and flow["feeSat"] == 500000
+                assert fee_known and fee_sat == 500000
                 assert gui.get_property("sendTransactionReviewPage", "canBroadcast")
                 assert gui.get_property("sendTransactionReviewFee", "value") == "0.00500000 BTC"
                 gui.click("sendTransactionReviewSendButton")

@@ -5,9 +5,11 @@
 #include <QtTest/QtTest>
 
 #include <test/mocks/mocknode.h>
+#include <test/mocks/manualexecutionenvironment.h>
 #include <test/qt_test_registry.h>
 
 #include <qml/models/nodemodel.h>
+#include <qml/retainedvalue.h>
 #include <qml/initexecutor.h>
 #include <qml/quithandler.h>
 #include <qml/shutdowncoordinator.h>
@@ -20,6 +22,7 @@
 #include <util/time.h>
 #include <validation.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -132,7 +135,112 @@ class NodeModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void longNativeStartupWarningHasFullDetailsAndDoesNotHoldShutdown_data() {
+        QTest::addColumn<bool>("close_first");
+        QTest::newRow("publish-full-details") << false; QTest::newRow("close-before-publication") << true;
+    }
+    void longNativeStartupWarningHasFullDetailsAndDoesNotHoldShutdown() {
+        QFETCH(bool, close_first);
+        MockNode node; ConfigureNodeModelDefaults(node); MempoolState mempool; ConfigureMempoolGetters(node, mempool);
+        interfaces::Node::MessageBoxFn message_box;
+        node.handle_message_box_fn = [&](auto callback) { message_box = std::move(callback); return MakeNoopHandler(); };
+        ManualExecutionEnvironment env;
+        auto loss = std::make_shared<std::atomic_bool>(false);
+        NodeModel::Services services; services.execution = {env.scheduler, [&env](auto work) { env.post(std::move(work)); }};
+        services.diagnostic_loss = loss;
+        NodeModel model{node, false, std::move(services)};
+        const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+        env.drain(); env.publishAll(); QVERIFY(model.notificationsReady()); QVERIFY(message_box);
+        const std::string text = std::string(300'000, 'w') + " complete original warning tail";
+        std::thread native([&] { message_box(Untranslated(text), CClientUIInterface::ICON_WARNING); });
+        native.join(); env.publishAll();
+        QSignalSpy initialized{&model, &NodeModel::nodeInitialized};
+        model.initializeResult(false, {}); QVERIFY(model.startupDiagnosticsPending());
+        env.drain(); QCOMPARE(initialized.size(), 0); QVERIFY(model.startupError().isEmpty());
+        if (close_first) model.beginShutdown();
+        env.publishAll();
+        if (!close_first) {
+            QCOMPARE(initialized.size(), 1); QVERIFY(model.startupError().size() < 16500);
+            auto* details = model.startupDiagnostics(); QVERIFY(details->rowCount() > 250);
+            QString full;
+            for (int row = 0; row < details->rowCount(); ++row) {
+                const auto chunk = details->data(details->index(row, 0), Qt::UserRole + 1).toString();
+                QVERIFY(chunk.size() <= 1024); full += chunk;
+            }
+            QVERIFY(full.contains(QString::fromStdString(text))); QVERIFY(full.endsWith("Node initialization failed."));
+        } else { QCOMPARE(initialized.size(), 0); QVERIFY(model.startupError().isEmpty()); }
+        model.beginShutdown();
+        const auto settle = [&] { env.drain(); env.publishAll(); return model.isDrained(); };
+        QTRY_VERIFY_WITH_TIMEOUT(settle(), ASYNC_TIMEOUT_MS); QVERIFY(!loss->load());
+    }
+
+    void fatalLifecycleDiagnosticUsesOriginalScopeAfterQuietClose_data() {
+        QTest::addColumn<bool>("workers_stopped");
+        QTest::newRow("interrupt-after-admission-close") << false;
+        QTest::newRow("shutdown-after-worker-drain") << true;
+    }
+    void fatalLifecycleDiagnosticUsesOriginalScopeAfterQuietClose() {
+        QFETCH(bool, workers_stopped);
+        ManualExecutionEnvironment env;
+        MockNode node; ConfigureNodeModelDefaults(node);
+        MempoolState mempool; ConfigureMempoolGetters(node, mempool);
+        auto loss = std::make_shared<std::atomic_bool>(false);
+        {
+            NodeModel::Services services;
+            services.execution = {env.scheduler, [&env](auto work) { env.post(std::move(work)); }};
+            services.diagnostic_loss = loss;
+            NodeModel model{node, false, std::move(services)};
+            env.drain(); env.publishAll();
+            auto original_scope = env.scheduler->openActionScope();
+            QVERIFY(original_scope);
+            model.closeAdmission();
+            if (workers_stopped) { model.beginShutdown(); env.drain(); env.publishAll(); }
+            env.scheduler->closeOrdinaryAdmission();
+            QVERIFY(!env.scheduler->openActionScope());
+            QVERIFY(!model.queryScheduler()->openActionScope());
+            const QString diagnostic = QString(300'000, QLatin1Char('x')) + QStringLiteral(" original lifecycle fatal tail");
+            model.handleLifecycleException(diagnostic, original_scope);
+            original_scope.reset(); // The accepted receipt now owns its continuation.
+            QVERIFY(model.fatalException()); QVERIFY(model.startupDiagnosticsPending());
+            QVERIFY(model.startupError().isEmpty());
+            env.drain();
+            QVERIFY(model.startupError().isEmpty()); // Native completion alone does not publish.
+            env.publishAll();
+            QVERIFY(!model.startupDiagnosticsPending());
+            QVERIFY(model.startupError().contains(QStringLiteral("can no longer continue safely")));
+            QVERIFY(model.startupError().size() < 16500);
+            QString complete;
+            auto* details = model.startupDiagnostics();
+            for (int row = 0; row < details->rowCount(); ++row) {
+                const auto chunk = details->data(details->index(row, 0), Qt::UserRole + 1).toString();
+                QVERIFY(chunk.size() <= 1024); complete += chunk;
+            }
+            QVERIFY(complete.endsWith(diagnostic)); QVERIFY(!loss->load());
+            QVERIFY(!model.queryScheduler()->openActionScope());
+            model.closeAdmission(); model.beginShutdown();
+            env.drain(); env.publishAll(); env.drain();
+            QCOMPARE(env.scheduler->pending(), size_t{0});
+            QVERIFY(model.isDrained()); // Quiet publication must not require facade destruction.
+        }
+        env.drain(); env.publishAll();
+        QCOMPARE(env.scheduler->pending(), size_t{0});
+    }
+
     void initTestCase() { SelectParams(ChainType::REGTEST); }
+    void acceptedNetworkActionOutlivesFacade();
+    void originalAdmissionIsCountedBeforeQuietClose_data();
+    void originalAdmissionIsCountedBeforeQuietClose();
+    void manualOriginalActionScopeOwnsLateStagesAndNativeCleanup();
+    void sharedRetirementUsesControlledCleanupAndActualDrain_data() {
+        QTest::addColumn<bool>("fence_first");
+        QTest::newRow("ordinary-admission-open") << false;
+        QTest::newRow("ordinary-admission-closed") << true;
+    }
+    void sharedRetirementUsesControlledCleanupAndActualDrain();
+    void manualInitializationWaitsForNativeSubscriptionAndPublication();
+    void manualPollingCachesFactsAndRejectsStaleDeadlines();
+    void guiQuestionFailsClosedWithoutNestedEventLoop();
+    void shutdownPollBypassesBlockedObservation();
     void latestNotificationsSurviveStaleInitializationAndReorg();
     void caughtUpInitializationClearsEarlierInitialDownloadNotification();
     void networkCommandsCoalesceDesiredStateWithoutBlockingGui();
@@ -187,6 +295,256 @@ private Q_SLOTS:
     void shutdownPollingOnlyRequestsLifecycleControl();
 };
 
+void NodeModelTests::acceptedNetworkActionOutlivesFacade()
+{
+    struct NetworkNode final : MockNode {
+        int effects{0}; bool active{true};
+        void setNetworkActive(bool value) override { ++effects; active = value; }
+    } node;
+    ConfigureNodeModelDefaults(node);
+    node.get_network_active_fn = [&] { return node.active; };
+    ManualExecutionEnvironment env;
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
+    auto model = std::make_unique<NodeModel>(node, false, std::move(services));
+    env.drain(); env.publishAll(); QVERIFY(model->notificationsReady());
+    model->initializeResult(true, {}, false, false); env.drain(); env.publishAll();
+    model->setPause(true); QVERIFY(model->networkActionPending()); QCOMPARE(node.effects, 0);
+    model.reset(); // Accepted effect and its outcome survive GUI observer loss.
+    QCOMPARE(node.effects, 0);
+    env.drain(); env.publishAll();
+    QCOMPARE(node.effects, 1); QVERIFY(!node.active); QVERIFY(env.quiescent());
+    bool stopped{false}; BackendExecutor::shutdownAll(this, [&] { stopped = true; });
+    QTRY_VERIFY_WITH_TIMEOUT(stopped, ASYNC_TIMEOUT_MS);
+}
+
+void NodeModelTests::originalAdmissionIsCountedBeforeQuietClose_data()
+{
+    QTest::addColumn<int>("kind");
+    QTest::newRow("scope-origin") << 0;
+    QTest::newRow("ordinary-packet") << 1;
+    QTest::newRow("owned-cleanup-reservation") << 2;
+}
+void NodeModelTests::originalAdmissionIsCountedBeforeQuietClose()
+{
+    QFETCH(int, kind);
+    struct Probe { QSemaphore entered, release; std::atomic<int> pause{-1}, effects{0}; };
+    const auto probe = std::make_shared<Probe>();
+    struct PausingScheduler final : execution::Scheduler {
+        std::shared_ptr<execution::Scheduler> upstream;
+        std::shared_ptr<Probe> probe;
+        PausingScheduler(std::shared_ptr<execution::Scheduler> value, std::shared_ptr<Probe> state) : upstream(std::move(value)), probe(std::move(state)) {}
+        void pause(int kind) { int expected = kind; if (probe->pause.compare_exchange_strong(expected, -1)) { probe->entered.release(); probe->release.acquire(); } }
+        std::shared_ptr<execution::Scheduler> openActionScope(size_t bytes = 256) override { pause(0); return upstream->openActionScope(bytes); }
+        execution::Admission submit(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override { pause(1); return upstream->submit(std::move(task), spec); }
+        execution::Admission reserveCleanup(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override { pause(2); return upstream->reserveCleanup(std::move(task), spec); }
+        bool activateCleanup(execution::TaskId id) override { return upstream->activateCleanup(id); }
+        execution::BorrowAdmission borrow(execution::ResourceKey key) override { return upstream->borrow(key); }
+        execution::ResourceKey allocateKey() override { return upstream->allocateKey(); }
+        size_t pending() const override { return upstream->pending(); }
+        void closeOrdinaryAdmission() override { upstream->closeOrdinaryAdmission(); }
+        bool cancelQueued(execution::TaskId id) override { return upstream->cancelQueued(id); }
+    };
+    MockNode node; ConfigureNodeModelDefaults(node); ManualExecutionEnvironment env;
+    auto pausing = std::make_shared<PausingScheduler>(env.scheduler, probe);
+    NodeModel::Services services; services.execution = {pausing, [&](auto callback) { env.post(std::move(callback)); }};
+    NodeModel model{node, false, std::move(services)}; env.drain(); env.publishAll(); QVERIFY(model.notificationsReady());
+    const auto port = model.queryScheduler();
+    std::shared_ptr<execution::Scheduler> original;
+    execution::Admission admitted{{}, execution::Rejection::Invalid};
+    std::thread producer;
+    const auto cleanup = qScopeGuard([&] {
+        probe->release.release(); if (producer.joinable()) producer.join(); original.reset(); model.beginShutdown();
+        env.scheduler->closeAdmission(); env.drain(); env.publishAll();
+        QVERIFY(QTest::qWaitFor([&] { env.drain(); env.publishAll(); return model.isDrained(); }, ASYNC_TIMEOUT_MS));
+    });
+    probe->pause = kind;
+    producer = std::thread([&, port, probe] {
+        if (kind == 0) original = port->openActionScope();
+        else if (kind == 1) admitted = execution::Submit(*port, [probe] { ++probe->effects; }, [] {}, {}, {execution::Lane::Core, 256, {}, execution::WorkClass::Action});
+        else admitted = execution::Submit(*port, [probe] { ++probe->effects; }, [] {}, {}, {execution::Lane::Cleanup, 256, port->allocateKey()}, true);
+    });
+    QVERIFY(probe->entered.tryAcquire(1, ASYNC_TIMEOUT_MS));
+    model.closeAdmission(); QVERIFY(!port->openActionScope());
+    model.beginShutdown(); env.drain(); env.publishAll(); QCoreApplication::processEvents();
+    QVERIFY(!model.isDrained()); // Upstream has not accepted anything yet, but the original admission is already counted.
+    probe->release.release(); producer.join();
+    if (kind == 0) {
+        QVERIFY(original);
+        QVERIFY(execution::Submit(*original, [probe] { ++probe->effects; }, [] {}, {}, {execution::Lane::Core, 256, {}, execution::WorkClass::Action}));
+    } else { QVERIFY(admitted); if (kind == 2) QVERIFY(port->activateCleanup(admitted.id)); }
+    env.drain(); env.publishAll(); QCOMPARE(probe->effects.load(), 1);
+    if (original) QVERIFY(!model.isDrained());
+    original.reset(); env.drain(); env.publishAll();
+    QTRY_VERIFY_WITH_TIMEOUT(model.isDrained(), ASYNC_TIMEOUT_MS);
+}
+
+void NodeModelTests::sharedRetirementUsesControlledCleanupAndActualDrain()
+{
+    MockNode node;ConfigureNodeModelDefaults(node);ManualRoutedExecution transport;
+    std::deque<std::function<void()>> gui;
+    NodeModel::Services services;services.execution={transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}};
+    NodeModel model{node,false,std::move(services)};
+    const auto settle=[&]{for(int turn=0;turn<128;++turn){transport.drain();while(!gui.empty()){auto next=std::move(gui.front());gui.pop_front();next();}
+        QCoreApplication::sendPostedEvents(nullptr,QEvent::MetaCall);if(transport.queuedIdle()&&transport.activeIdle()&&gui.empty())return true;}return false;};
+    const auto cleanup=qScopeGuard([&]{model.beginShutdown();settle();});
+    QVERIFY(settle());QVERIFY(model.notificationsReady());QVERIFY(model.findChildren<BackendExecutor*>().isEmpty());
+    QFETCH(bool, fence_first);
+    if (fence_first) {
+        model.closeAdmission();
+        QVERIFY(!model.queryScheduler()->openActionScope());
+        for (const auto lane : {execution::Lane::Core, execution::Lane::Domain, execution::Lane::Cleanup}) {
+            const auto admission = execution::Submit(*model.queryScheduler(), [] {}, [] {}, {},
+                {lane, 256, {}, execution::WorkClass::Action});
+            QVERIFY(!admission);
+            QCOMPARE(admission.rejection, execution::Rejection::Closed);
+        }
+    }
+    int retired{0};QVERIFY(model.retireValues([&]{++retired;}));QCOMPARE(retired,0);
+    QVERIFY((transport.queuedCountIf([](const auto& turn){return turn.lane==execution::Lane::Cleanup;}) != 0));
+    model.beginShutdown();QVERIFY(!model.isDrained());QCOMPARE(retired,0);
+    QVERIFY(!model.retireValues([&]{retired+=100;}));
+    QVERIFY(settle());QCOMPARE(retired,1);QVERIFY(model.isDrained());QCOMPARE(transport.scheduler->pending(),size_t{0});
+}
+
+void NodeModelTests::manualOriginalActionScopeOwnsLateStagesAndNativeCleanup()
+{
+    MockNode node; ConfigureNodeModelDefaults(node); ManualExecutionEnvironment env;
+    NodeModel::Services services; services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
+    NodeModel model{node, false, std::move(services)};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    env.drain(); env.publishAll(); QVERIFY(model.notificationsReady());
+    auto original = model.queryScheduler()->openActionScope(); QVERIFY(original);
+    model.closeAdmission(); QVERIFY(!model.queryScheduler()->openActionScope());
+    int effects{0}, outcomes{0}, retired{0};
+    QVERIFY(execution::Submit(*original, [&] { ++effects; return 7; }, [&](int value) { QCOMPARE(value, 7); ++outcomes; }, {}, {execution::Lane::Core, 256, {}, execution::WorkClass::Action}));
+    // A late pure value result reserves its cleanup through the original scope,
+    // rather than opening a fresh untracked executor after quiet close.
+    struct Value { int& retired; explicit Value(int& count) : retired(count) {} ~Value() { ++retired; } };
+    auto value = execution::RetainValues<Value>(original, [&] { return std::make_unique<Value>(retired); }); QVERIFY(value);
+    model.beginShutdown(); QCOMPARE(effects, 0); QVERIFY(!model.isDrained());
+    env.drain(); env.publishAll(); QCoreApplication::processEvents();
+    QCOMPARE(effects, 1); QCOMPARE(outcomes, 1); QCOMPARE(retired, 0); QVERIFY(!model.isDrained());
+    QVERIFY(execution::Submit(*original, [&] { effects += 10; }, [&] { ++outcomes; }, {}, {execution::Lane::Domain, 256, {}, execution::WorkClass::Action}));
+    env.drain(); env.publishAll(); QCOMPARE(effects, 11); QCOMPARE(outcomes, 2); QVERIFY(!model.isDrained());
+    value.reset(); env.drain(); env.publishAll(); QCOMPARE(retired, 1); QVERIFY(!model.isDrained());
+    original.reset(); env.drain(); env.publishAll();
+    QTRY_VERIFY_WITH_TIMEOUT(model.isDrained(), ASYNC_TIMEOUT_MS);
+}
+
+void NodeModelTests::manualInitializationWaitsForNativeSubscriptionAndPublication()
+{
+    MockNode node; ConfigureNodeModelDefaults(node);
+    int disconnected{0};
+    node.handle_question_fn = [&](auto) {
+        return interfaces::MakeCleanupHandler([&] { ++disconnected; });
+    };
+    ManualExecutionEnvironment env;
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
+    NodeModel model{node, false, std::move(services)};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    QSignalSpy initialize(&model, &NodeModel::requestedInitialize);
+    model.startNodeInitializionThread(); model.startNodeInitializionThread();
+    QCOMPARE(initialize.size(), 0); QVERIFY(!model.notificationsReady());
+    QCOMPARE(node.calls.handleQuestion.load(), 0);
+    QVERIFY(env.step()); // Native installs all public notification handlers.
+    QCOMPARE(node.calls.handleQuestion.load(), 1); QCOMPARE(initialize.size(), 0);
+    QCOMPARE(disconnected, 0);
+    QVERIFY(env.step()); // Domain records subscription outcome.
+    QCOMPARE(initialize.size(), 0);
+    env.publishAll();
+    QVERIFY(model.notificationsReady()); QCOMPARE(initialize.size(), 1);
+    QCOMPARE(disconnected, 0); // Activated retirement still waits for the owner lease.
+    model.startNodeInitializionThread(); QCOMPARE(initialize.size(), 1);
+    model.beginShutdown(); QCOMPARE(disconnected, 0);
+    env.drain(); QCOMPARE(disconnected, 1); env.publishAll();
+    QCOMPARE(model.queryScheduler()->pending(), size_t{0});
+}
+
+void NodeModelTests::manualPollingCachesFactsAndRejectsStaleDeadlines()
+{
+    MockNode node; ConfigureNodeModelDefaults(node);
+    MempoolState mempool; ConfigureMempoolGetters(node, mempool); mempool.count = 7;
+    node.get_total_bytes_recv_fn = [] { return int64_t{123}; };
+    node.get_total_bytes_sent_fn = [] { return int64_t{456}; };
+    ManualExecutionEnvironment env;
+    std::map<NodeModel::Poll, std::function<void()>> deadlines;
+    std::map<NodeModel::Poll, std::chrono::milliseconds> delays;
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
+    services.schedule = [&](auto poll, auto delay, auto callback) { delays[poll] = delay; deadlines[poll] = std::move(callback); };
+    services.cancel = [&](auto poll) { deadlines.erase(poll); };
+    services.wall_seconds = [] { return int64_t{1'800'000'000}; };
+    int64_t elapsed{0}; services.monotonic_milliseconds = [&] { return elapsed; };
+    NodeModel model{node, false, std::move(services)};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    env.drain(); env.publishAll(); QVERIFY(model.notificationsReady());
+    model.initializeResult(true, {}, false, false);
+    env.drain(); env.publishAll();
+    QCOMPARE(node.calls.getMempoolSize.load(), 0);
+    model.setMempoolInfoPollingActive(true);
+    QCOMPARE(delays.at(NodeModel::Poll::Mempool).count(), int64_t{3000});
+    env.drain();
+    QCOMPARE(model.mempoolTransactionCount(), 0); QCOMPARE(model.getTotalBytesReceived(), 0.0f);
+    env.publishAll();
+    QCOMPARE(model.mempoolTransactionCount(), 7); QCOMPARE(model.getTotalBytesReceived(), 123.0f); QCOMPARE(model.getTotalBytesSent(), 456.0f);
+    const int calls = node.calls.getMempoolSize.load();
+    mempool.count = 19;
+    auto deadline = deadlines.at(NodeModel::Poll::Mempool); deadline();
+    QCOMPARE(node.calls.getMempoolSize.load(), calls);
+    env.drain(); QCOMPARE(model.mempoolTransactionCount(), 7);
+    env.publishAll(); QCOMPARE(model.mempoolTransactionCount(), 19);
+    auto stale = deadlines.at(NodeModel::Poll::Mempool);
+    model.setMempoolInfoPollingActive(false); stale(); env.drain(); env.publishAll();
+    QCOMPARE(model.mempoolTransactionCount(), 19); QVERIFY(!deadlines.contains(NodeModel::Poll::Mempool));
+    node.shutdown_requested_fn = [] { return true; };
+    QSignalSpy shutdown(&model, &NodeModel::requestedShutdown);
+    model.startShutdownPolling();
+    QCOMPARE(delays.at(NodeModel::Poll::Shutdown).count(), int64_t{200});
+    auto poll = deadlines.at(NodeModel::Poll::Shutdown); poll();
+    QCOMPARE(shutdown.size(), 0); env.drain(); QCOMPARE(shutdown.size(), 0);
+    env.publishAll(); QCOMPARE(shutdown.size(), 1);
+}
+
+void NodeModelTests::guiQuestionFailsClosedWithoutNestedEventLoop()
+{
+    MockNode node; ConfigureNodeModelDefaults(node);
+    interfaces::Node::QuestionFn question;
+    node.handle_question_fn = [&](auto callback) { question = std::move(callback); return MakeNoopHandler(); };
+    NodeModel model{node, false}; const auto cleanup = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
+    QVERIFY(question);
+    QVERIFY(!question(Untranslated("GUI cannot block"), {}, CClientUIInterface::BTN_OK));
+    QVERIFY(!model.runtimeDialogVisible());
+}
+
+void NodeModelTests::shutdownPollBypassesBlockedObservation()
+{
+    MockNode node; ConfigureNodeModelDefaults(node);
+    QSemaphore entered, release;
+    std::atomic_bool blocked{true};
+    node.get_mempool_size_fn = [&] {
+        if (blocked.load()) { entered.release(); release.acquire(); }
+        return size_t{0};
+    };
+    node.shutdown_requested_fn = [] { return true; };
+    NodeModel model{node};
+    const auto cleanup = qScopeGuard([&] {
+        // Release the original blocked read and make any already admitted
+        // follow-up nonblocking before draining the original Native owner.
+        blocked = false; release.release(); DrainNodeModel(model);
+    });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
+    QTRY_VERIFY_WITH_TIMEOUT(entered.available() > 0, ASYNC_TIMEOUT_MS);
+    QSignalSpy shutdown(&model, &NodeModel::requestedShutdown);
+    model.startShutdownPolling();
+    bool heartbeat{false}; QTimer::singleShot(0, &model, [&] { heartbeat = true; });
+    QTRY_VERIFY_WITH_TIMEOUT(heartbeat, ASYNC_TIMEOUT_MS);
+    QTRY_COMPARE_WITH_TIMEOUT(shutdown.size(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(node.calls.getMempoolMaxUsage.load(), 0); // Core observation is still blocked.
+}
+
 void NodeModelTests::refreshMempoolInfoUpdatesProperties()
 {
     MockNode node;
@@ -196,6 +554,7 @@ void NodeModelTests::refreshMempoolInfoUpdatesProperties()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     mempool.count = 12;
@@ -220,6 +579,7 @@ void NodeModelTests::activatingMempoolPollingEmitsSignalsAndRefreshesImmediately
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     mempool.count = 3;
@@ -265,6 +625,7 @@ void NodeModelTests::peerCountsInitializeAndRefreshFromDirectionalNodeCounts()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(connections_changed_fn);
     QTRY_COMPARE_WITH_TIMEOUT(model.numPeers(), 3, ASYNC_TIMEOUT_MS);
@@ -309,6 +670,7 @@ void NodeModelTests::disconnectPeerReturnsNodeResult()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -318,9 +680,15 @@ void NodeModelTests::disconnectPeerReturnsNodeResult()
         return id == 7;
     };
     node.ExpectExactly(node.calls.disconnectById, 2);
-    QVERIFY(model.disconnectPeer(7));
-
-    QVERIFY(!model.disconnectPeer(8));
+    QSignalSpy outcomes{&model, &NodeModel::peerActionFinished};
+    const auto first = model.requestDisconnectPeer(7); QVERIFY(first);
+    QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(outcomes.at(0).at(0).toULongLong(), first);
+    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Succeeded));
+    const auto second = model.requestDisconnectPeer(8); QVERIFY(second); QVERIFY(second != first);
+    QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 2, ASYNC_TIMEOUT_MS);
+    QCOMPARE(outcomes.at(1).at(0).toULongLong(), second);
+    QCOMPARE(outcomes.at(1).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Rejected));
     QCOMPARE(disconnected_ids, std::vector<NodeId>({7, 8}));
 }
 
@@ -333,15 +701,21 @@ void NodeModelTests::banPeerRejectsInvalidInputs()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     node.ExpectNoCalls(node.calls.ban);
     node.ExpectNoCalls(node.calls.disconnectByAddress);
 
-    QVERIFY(!model.banPeer(QStringLiteral("not an address"), 3600));
-    QVERIFY(!model.banPeer(QStringLiteral("127.0.0.1"), 0));
-    QVERIFY(!model.banPeer(QStringLiteral("127.0.0.1"), -1));
+    QSignalSpy outcomes{&model, &NodeModel::peerActionFinished};
+    const auto ticket = model.requestBanPeer(QStringLiteral("not an address"), 3600); QVERIFY(ticket);
+    QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(outcomes.at(0).at(0).toULongLong(), ticket);
+    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Rejected));
+    QVERIFY(!model.requestBanPeer(QStringLiteral("127.0.0.1"), 0));
+    QVERIFY(!model.requestBanPeer(QStringLiteral("127.0.0.1"), -1));
+    QCOMPARE(outcomes.size(), 1);
 }
 
 void NodeModelTests::banPeerReturnsFalseWithoutDisconnectWhenBackendFails()
@@ -353,6 +727,7 @@ void NodeModelTests::banPeerReturnsFalseWithoutDisconnectWhenBackendFails()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -364,7 +739,11 @@ void NodeModelTests::banPeerReturnsFalseWithoutDisconnectWhenBackendFails()
     node.ExpectExactly(node.calls.ban, 1);
     node.ExpectNoCalls(node.calls.disconnectByAddress);
 
-    QVERIFY(!model.banPeer(QStringLiteral("127.0.0.1"), 3600));
+    QSignalSpy outcomes{&model, &NodeModel::peerActionFinished};
+    const auto ticket = model.requestBanPeer(QStringLiteral("127.0.0.1"), 3600); QVERIFY(ticket);
+    QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(outcomes.at(0).at(0).toULongLong(), ticket);
+    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Rejected));
     QVERIFY(received_expected_ban);
 }
 
@@ -377,6 +756,7 @@ void NodeModelTests::banPeerDisconnectsAddressAfterSuccessfulBan()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -393,7 +773,11 @@ void NodeModelTests::banPeerDisconnectsAddressAfterSuccessfulBan()
     node.ExpectExactly(node.calls.ban, 1);
     node.ExpectExactly(node.calls.disconnectByAddress, 1);
 
-    QVERIFY(model.banPeer(QStringLiteral("127.0.0.1"), 3600));
+    QSignalSpy outcomes{&model, &NodeModel::peerActionFinished};
+    const auto ticket = model.requestBanPeer(QStringLiteral("127.0.0.1"), 3600); QVERIFY(ticket);
+    QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 1, ASYNC_TIMEOUT_MS);
+    QCOMPARE(outcomes.at(0).at(0).toULongLong(), ticket);
+    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Succeeded));
     QVERIFY(received_expected_ban);
     QVERIFY(received_expected_disconnect);
 }
@@ -418,10 +802,12 @@ void NodeModelTests::networkActionReadyFollowsInitializationAndShutdown()
     ConfigureMempoolGetters(node, mempool);
     NodeModel model{node, false};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     QSignalSpy ready{&model, &NodeModel::networkActionReadyChanged};
     QVERIFY(!model.networkActionReady());
 
     model.initializeResult(initialize_success, {}, false, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QCOMPARE(model.networkActionReady(), initialize_success);
     QCOMPARE(ready.count(), initialize_success ? 1 : 0);
 
@@ -436,6 +822,7 @@ void NodeModelTests::networkActionReadyFollowsInitializationAndShutdown()
     if (direct_drain) model.beginShutdown();
     else model.requestShutdown();
     model.initializeResult(true, {}, false, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QVERIFY(!model.networkActionReady());
     QCOMPARE(ready.count(), notifications);
 }
@@ -449,6 +836,7 @@ void NodeModelTests::requestShutdownEmitsOnlyOnce()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
@@ -468,12 +856,14 @@ void NodeModelTests::initializationFailureRequestsShutdownWhenCoreWasInterrupted
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     QSignalSpy error_state_spy{&model, &NodeModel::errorStateChanged};
     QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
     QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
     model.initializeResult(false, {}, false, true);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QCOMPARE(error_state_spy.count(), 1);
     QVERIFY(model.errorState());
@@ -491,12 +881,14 @@ void NodeModelTests::initializationFailureWithoutCoreInterruptOnlySetsErrorState
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     QSignalSpy error_state_spy{&model, &NodeModel::errorStateChanged};
     QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
     QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
     model.initializeResult(false, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QCOMPARE(error_state_spy.count(), 1);
     QVERIFY(model.errorState());
@@ -514,12 +906,14 @@ void NodeModelTests::initializationSuccessDuringCoreShutdownSkipsReadyState()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
     QSignalSpy initialized_spy{&model, &NodeModel::nodeInitialized};
     QSignalSpy ready_state_spy{&model, &NodeModel::chainStateReady};
     model.initializeResult(true, {}, false, true);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QCOMPARE(shutdown_spy.count(), 1);
     QCOMPARE(initialized_spy.count(), 0);
@@ -603,6 +997,7 @@ void NodeModelTests::nodeNotificationHandlersUpdateModelThroughQueuedSignals()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(block_tip_fn);
     QVERIFY(connections_changed_fn);
@@ -654,6 +1049,7 @@ void NodeModelTests::bannedListNotificationFromGuiThreadIsNotDeliveredReentrantl
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(banned_list_changed_fn);
 
@@ -666,16 +1062,16 @@ void NodeModelTests::bannedListNotificationFromGuiThreadIsNotDeliveredReentrantl
     QCOMPARE(banned_list_spy.count(), 0);
 
     // Process queued calls only: delivery must not depend on a timer firing.
-    QCoreApplication::sendPostedEvents(&model, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
     QCOMPARE(banned_list_spy.count(), 1);
 
     // A burst needs only one queued delivery, and a later change must wake the
     // GUI again after the previous batch has been consumed.
     for (int i = 0; i < 100; ++i) banned_list_changed_fn();
-    QCoreApplication::sendPostedEvents(&model, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
     QCOMPARE(banned_list_spy.count(), 2);
     banned_list_changed_fn();
-    QCoreApplication::sendPostedEvents(&model, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
     QCOMPARE(banned_list_spy.count(), 3);
 }
 
@@ -693,6 +1089,7 @@ void NodeModelTests::notificationsDuringAndAfterShutdownAreIgnored()
         };
 
         auto model{std::make_unique<NodeModel>(node, false)};
+        QTRY_VERIFY_WITH_TIMEOUT(model->notificationsReady(), ASYNC_TIMEOUT_MS);
         QSignalSpy changed{model.get(), &NodeModel::bannedListChanged};
         QVERIFY(banned_list_changed);
         banned_list_changed(); // Leave a delivery queued when shutdown starts.
@@ -739,6 +1136,7 @@ void NodeModelTests::blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(block_tip_fn);
 
@@ -762,7 +1160,7 @@ void NodeModelTests::blockTipUpdatesQueuedAcrossThreadsRetainPayloadValues()
     });
     worker.join();
 
-    QCoreApplication::sendPostedEvents(&model, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
     QCOMPARE(seen_progress.size(), size_t{1});
     QTRY_COMPARE_WITH_TIMEOUT(seen_heights.size(), size_t{1}, ASYNC_TIMEOUT_MS);
     QTRY_COMPARE_WITH_TIMEOUT(seen_times.size(), size_t{1}, ASYNC_TIMEOUT_MS);
@@ -790,6 +1188,7 @@ void NodeModelTests::blockSyncActiveFollowsInitializationAndBlockTipState()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(block_tip_fn);
     QVERIFY(!model.blockSyncActive());
@@ -804,6 +1203,7 @@ void NodeModelTests::blockSyncActiveFollowsInitializationAndBlockTipState()
         .header_time = GetTime(),
         .verification_progress = 0.25,
     }, initial_block_download, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QCOMPARE(block_sync_spy.count(), 1);
     QVERIFY(model.blockSyncActive());
@@ -834,6 +1234,7 @@ void NodeModelTests::initialSyncCompletionIgnoresVerificationEstimateForGenesis(
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QSignalSpy sync_complete_spy{&model, &NodeModel::initialSyncCompleteChanged};
 
@@ -846,6 +1247,7 @@ void NodeModelTests::initialSyncCompletionIgnoresVerificationEstimateForGenesis(
         .header_time = GetTime(),
         .verification_progress = 0.25,
     });
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QVERIFY(!model.blockSyncActive());
     QVERIFY(model.initialSyncComplete());
@@ -873,6 +1275,7 @@ void NodeModelTests::initialSyncCompletionWaitsForStartupCatchUpAndLatches()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(block_tip_fn);
     QVERIFY(header_tip_fn);
@@ -887,6 +1290,7 @@ void NodeModelTests::initialSyncCompletionWaitsForStartupCatchUpAndLatches()
         .header_time = stale_header_time,
         .verification_progress = 0.90,
     });
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     // Core can latch out of IBD before connecting to a peer when the saved tip
     // is recent by Core's standard. The stale header still keeps the startup
@@ -956,6 +1360,7 @@ void NodeModelTests::syncCompletionResetsForLargeHeaderGap()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(block_tip_fn);
     QVERIFY(header_tip_fn);
@@ -966,6 +1371,7 @@ void NodeModelTests::syncCompletionResetsForLargeHeaderGap()
         .header_time = GetTime(),
         .verification_progress = 1.0,
     });
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QVERIFY(model.initialSyncComplete());
     QSignalSpy sync_complete_spy{&model, &NodeModel::initialSyncCompleteChanged};
 
@@ -1014,6 +1420,7 @@ void NodeModelTests::coalescedTipsDoNotLatchCompletionFromIntermediateHeights()
     };
     NodeModel model{node, false};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     QVERIFY(block_tip);
     QVERIFY(header_tip);
     const auto now = GetTime();
@@ -1022,6 +1429,7 @@ void NodeModelTests::coalescedTipsDoNotLatchCompletionFromIntermediateHeights()
         .header_height = 100, .header_time = now,
         .verification_progress = 1.0,
     }, false, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QVERIFY(model.initialSyncComplete());
 
     header_tip(SynchronizationState::POST_INIT, interfaces::BlockTip{200, now, uint256{1}}, false);
@@ -1061,6 +1469,7 @@ void NodeModelTests::alertNotificationsRefreshWarningList()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(alert_changed_fn);
     QVERIFY(!model.hasWarnings());
@@ -1090,6 +1499,7 @@ void NodeModelTests::headerTipNotificationsExposeHeaderSyncProgress()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(header_tip_fn);
 
@@ -1131,6 +1541,7 @@ void NodeModelTests::startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     model.addStartupWarnings({QStringLiteral("Translated early startup warning")});
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(alert_changed_fn);
@@ -1143,6 +1554,7 @@ void NodeModelTests::startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings()
     QCOMPARE(runtime_dialog_spy.count(), 0);
 
     model.initializeResult(true, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QCOMPARE(runtime_dialog_spy.count(), 1);
     QVERIFY(model.runtimeDialogVisible());
@@ -1182,9 +1594,11 @@ void NodeModelTests::runtimeMessageHandlerOpensAfterInitialization()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(message_box_fn);
     model.initializeResult(true, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     std::atomic<bool> finished{false};
     int prompt_count{0};
@@ -1228,6 +1642,7 @@ void NodeModelTests::runtimeQuestionHandlerBlocksForAnswerAndReturnsResult()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(question_fn);
 
@@ -1277,6 +1692,7 @@ void NodeModelTests::runtimeStartupQuestionFailureLetsInitializeResultRequestShu
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(question_fn);
 
@@ -1315,6 +1731,7 @@ void NodeModelTests::runtimeStartupQuestionFailureLetsInitializeResultRequestShu
     QVERIFY(!model.runtimeDialogVisible());
 
     model.initializeResult(false, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QCOMPARE(shutdown_spy.count(), 1);
     QCOMPARE(initialized_spy.count(), 1);
     QCOMPARE(faulted_spy.count(), 0);
@@ -1338,6 +1755,7 @@ void NodeModelTests::runtimeStartupErrorDialogLetsInitializeResultRequestShutdow
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(message_box_fn);
 
@@ -1374,6 +1792,7 @@ void NodeModelTests::runtimeStartupErrorDialogLetsInitializeResultRequestShutdow
     QVERIFY(!model.runtimeDialogVisible());
 
     model.initializeResult(false, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QCOMPARE(shutdown_spy.count(), 1);
     QCOMPARE(initialized_spy.count(), 1);
     QCOMPARE(faulted_spy.count(), 0);
@@ -1397,9 +1816,11 @@ void NodeModelTests::runtimeDialogDefaultsToOkWhenNoButtonsAreSpecified()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(message_box_fn);
     model.initializeResult(true, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     std::atomic<bool> finished{false};
     QObject::connect(&model, &NodeModel::runtimeDialogChanged, &model, [&] {
@@ -1438,9 +1859,11 @@ void NodeModelTests::runtimeDialogExposesFullCoreButtonMask()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(message_box_fn);
     model.initializeResult(true, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     const unsigned int full_button_mask{CClientUIInterface::BTN_MASK};
     std::atomic<bool> finished{false};
@@ -1483,42 +1906,38 @@ void NodeModelTests::runtimeBlockingDialogsAreQueued()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(question_fn);
     model.initializeResult(true, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QStringList prompts;
-    bool first_result{false};
-    bool second_result{true};
-
+    std::atomic<bool> first_result{false}, second_result{true};
+    std::atomic<bool> first_done{false}, second_done{false};
     QObject::connect(&model, &NodeModel::runtimeDialogChanged, &model, [&] {
-        if (!model.runtimeDialogVisible()) return;
-
-        prompts.push_back(model.runtimeDialogMessage());
-        if (model.runtimeDialogMessage() == QStringLiteral("Translated first?")) {
-            QTimer::singleShot(0, &model, [&model] {
-                model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
-            });
-            second_result = question_fn(
-                bilingual_str{"Second?", "Translated second?"},
-                "Non interactive",
-                CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
-        } else if (model.runtimeDialogMessage() == QStringLiteral("Translated second?")) {
-            QTimer::singleShot(0, &model, [&model] {
-                model.answerRuntimeDialog(CClientUIInterface::BTN_ABORT);
-            });
-        }
+        if (model.runtimeDialogVisible()) prompts.push_back(model.runtimeDialogMessage());
     });
-
-    first_result = question_fn(
-        bilingual_str{"First?", "Translated first?"},
-        "Non interactive",
-        CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
-
+    std::thread first([&] {
+        first_result = question_fn(bilingual_str{"First?", "Translated first?"}, "Non interactive", CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
+        first_done = true;
+    });
+    QTRY_COMPARE_WITH_TIMEOUT(model.runtimeDialogMessage(), QStringLiteral("Translated first?"), ASYNC_TIMEOUT_MS);
+    std::thread second([&] {
+        second_result = question_fn(bilingual_str{"Second?", "Translated second?"}, "Non interactive", CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
+        second_done = true;
+    });
+    bool heartbeat{false}; QTimer::singleShot(0, &model, [&] { heartbeat = true; });
+    QTRY_VERIFY_WITH_TIMEOUT(heartbeat, ASYNC_TIMEOUT_MS);
+    QVERIFY(!first_done); QVERIFY(!second_done);
+    model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+    QTRY_COMPARE_WITH_TIMEOUT(model.runtimeDialogMessage(), QStringLiteral("Translated second?"), ASYNC_TIMEOUT_MS);
+    model.answerRuntimeDialog(CClientUIInterface::BTN_ABORT);
+    QTRY_VERIFY_WITH_TIMEOUT(first_done.load() && second_done.load(), ASYNC_TIMEOUT_MS);
+    first.join(); second.join();
     QCOMPARE(prompts, QStringList({QStringLiteral("Translated first?"), QStringLiteral("Translated second?")}));
-    QVERIFY(first_result);
-    QVERIFY(!second_result);
-    QVERIFY(!model.runtimeDialogVisible());
+    QVERIFY(first_result); QVERIFY(!second_result); QVERIFY(!model.runtimeDialogVisible());
+
 }
 
 void NodeModelTests::runtimeNonBlockingDialogsAreQueued()
@@ -1536,21 +1955,24 @@ void NodeModelTests::runtimeNonBlockingDialogsAreQueued()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(message_box_fn);
     model.initializeResult(true, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QSignalSpy runtime_dialog_spy{&model, &NodeModel::runtimeDialogChanged};
     message_box_fn(
         bilingual_str{"First", "Translated first"},
         CClientUIInterface::ICON_INFORMATION);
-    QCOMPARE(runtime_dialog_spy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(runtime_dialog_spy.count(), 1, ASYNC_TIMEOUT_MS);
     QVERIFY(model.runtimeDialogVisible());
     QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated first"));
 
     message_box_fn(
         bilingual_str{"Second", "Translated second"},
         CClientUIInterface::ICON_WARNING);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
     QCOMPARE(runtime_dialog_spy.count(), 1);
     QVERIFY(model.runtimeDialogVisible());
     QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated first"));
@@ -1576,15 +1998,17 @@ void NodeModelTests::initializeFailureShowsStartupWarningsWithoutMakingThemCurre
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     model.addStartupWarnings({QStringLiteral("Translated startup warning")});
     WaitForInitialMempoolRefresh(mempool);
 
     QSignalSpy faulted_spy{&model, &NodeModel::errorStateChanged};
     QSignalSpy startup_error_spy{&model, &NodeModel::startupErrorChanged};
     model.initializeResult(false, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QCOMPARE(faulted_spy.count(), 1);
-    QCOMPARE(startup_error_spy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(startup_error_spy.count(), 1, ASYNC_TIMEOUT_MS);
     QVERIFY(model.errorState());
     QTRY_COMPARE_WITH_TIMEOUT(model.warningList(), QStringList({QStringLiteral("Translated pre-release warning")}), ASYNC_TIMEOUT_MS);
     QCOMPARE(model.startupError(), QStringLiteral("Startup warnings:\nTranslated startup warning\n\nNode initialization failed."));
@@ -1606,6 +2030,7 @@ void NodeModelTests::initializeFailureUsesNodeErrorMessages()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     QVERIFY(message_box_fn);
 
@@ -1630,9 +2055,10 @@ void NodeModelTests::initializeFailureUsesNodeErrorMessages()
     QSignalSpy faulted_spy{&model, &NodeModel::errorStateChanged};
     QSignalSpy startup_error_spy{&model, &NodeModel::startupErrorChanged};
     model.initializeResult(false, {});
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QCOMPARE(faulted_spy.count(), 1);
-    QCOMPARE(startup_error_spy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(startup_error_spy.count(), 1, ASYNC_TIMEOUT_MS);
     QVERIFY(model.errorState());
     QTRY_COMPARE_WITH_TIMEOUT(model.warningList(), QStringList({QStringLiteral("Translated pre-release warning")}), ASYNC_TIMEOUT_MS);
     QCOMPARE(model.startupError(), QStringLiteral("Translated unable to bind\n\nTranslated failed to listen"));
@@ -1648,9 +2074,11 @@ void NodeModelTests::runawayExceptionSetsFatalStartupError()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     model.handleRunawayException(QStringLiteral("std::runtime_error: boom"));
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QVERIFY(model.errorState());
     QVERIFY(model.fatalException());
     QVERIFY(model.startupError().contains(QStringLiteral("can no longer continue safely")));
@@ -1705,7 +2133,9 @@ void NodeModelTests::fatalExceptionExitsWithoutDraining()
     QmlQuitHandler quit_handler;
     connect(&quit_handler, &QmlQuitHandler::quitRequested, &model, &NodeModel::requestShutdown);
     connect(&model, &NodeModel::requestedShutdown, &coordinator, &QmlShutdownCoordinator::requestShutdown);
-    connect(&executor, &QmlInitExecutor::runawayException, &model, &NodeModel::handleRunawayException);
+    connect(&executor, &QmlInitExecutor::runawayException, &model, [&](const QString& message) {
+        model.handleLifecycleException(message, executor.fatalDiagnosticScheduler());
+    });
     connect(&coordinator, &QmlShutdownCoordinator::finished, this, [] { std::_Exit(86); });
 
     QSemaphore entered, release;
@@ -1767,6 +2197,7 @@ void NodeModelTests::nodeInformationRowsAvoidChainmanBeforeInitialization()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     const QVariantList rows = model.nodeInformationRows();
@@ -1807,6 +2238,7 @@ void NodeModelTests::nodeInformationRowsExposeDiagnostics()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
     model.initializeResult(true, interfaces::BlockAndHeaderTipInfo{
         .block_height = 320,
@@ -1815,6 +2247,7 @@ void NodeModelTests::nodeInformationRowsExposeDiagnostics()
         .header_time = 1'700'000'333,
         .verification_progress = 0.5,
     });
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QTRY_COMPARE_WITH_TIMEOUT(model.numPeers(), 3, ASYNC_TIMEOUT_MS);
     const QVariantList rows = model.nodeInformationRows();
@@ -1838,10 +2271,11 @@ void NodeModelTests::initEmitsRequestedInitialize()
     ConfigureNodeModelDefaults(node);
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
 
     QSignalSpy spy{&model, &NodeModel::requestedInitialize};
     model.startNodeInitializionThread();
-    QCOMPARE(spy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, ASYNC_TIMEOUT_MS);
 }
 
 void NodeModelTests::initGuardBlocksSecondEmission()
@@ -1850,11 +2284,12 @@ void NodeModelTests::initGuardBlocksSecondEmission()
     ConfigureNodeModelDefaults(node);
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
 
     QSignalSpy spy{&model, &NodeModel::requestedInitialize};
     model.startNodeInitializionThread();
     model.startNodeInitializionThread();
-    QCOMPARE(spy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, ASYNC_TIMEOUT_MS);
 }
 
 void NodeModelTests::shutdownPollingOnlyRequestsLifecycleControl()
@@ -1867,6 +2302,7 @@ void NodeModelTests::shutdownPollingOnlyRequestsLifecycleControl()
 
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     WaitForInitialMempoolRefresh(mempool);
 
     QSignalSpy shutdown_spy{&model, &NodeModel::requestedShutdown};
@@ -1901,6 +2337,7 @@ void NodeModelTests::latestNotificationsSurviveStaleInitializationAndReorg()
     };
     NodeModel model{node, false};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     QVERIFY(block);
     QVERIFY(header);
     const auto now = GetTime();
@@ -1911,6 +2348,7 @@ void NodeModelTests::latestNotificationsSurviveStaleInitializationAndReorg()
         .header_height = 100, .header_time = now - 100,
         .verification_progress = 0.1,
     }, true, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QCOMPARE(model.blockTipHeight(), 200);
     QCOMPARE(model.verificationProgress(), 0.9);
     QVERIFY(!model.blockSyncActive());
@@ -1926,6 +2364,7 @@ void NodeModelTests::latestNotificationsSurviveStaleInitializationAndReorg()
     QCOMPARE(model.verificationProgress(), 0.7);
     QVERIFY(!model.blockSyncActive());
     model.initializeResult(true, {}, true, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QCOMPARE(model.blockTipHeight(), 199);
     QCOMPARE(model.verificationProgress(), 0.7);
     QVERIFY(!model.blockSyncActive());
@@ -1947,6 +2386,7 @@ void NodeModelTests::caughtUpInitializationClearsEarlierInitialDownloadNotificat
     };
     NodeModel model{node, false};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     QVERIFY(block);
     const auto now = GetTime();
     // LoadChainTip reports INIT_DOWNLOAD even when the existing chain is caught up.
@@ -1956,6 +2396,7 @@ void NodeModelTests::caughtUpInitializationClearsEarlierInitialDownloadNotificat
         .header_height = 200, .header_time = now,
         .verification_progress = 1.0,
     }, false, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QCOMPARE(model.blockTipHeight(), 200);
     QVERIFY(!model.blockSyncActive());
     QVERIFY(model.initialSyncComplete());
@@ -1991,9 +2432,11 @@ void NodeModelTests::networkCommandsCoalesceDesiredStateWithoutBlockingGui()
     };
     NodeModel model{node, false};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     const auto unblock = qScopeGuard([&] { release.release(); });
     QSignalSpy status_ready{&model, &NodeModel::nodeInformationChanged};
     model.initializeResult(true, {}, false, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QTRY_VERIFY_WITH_TIMEOUT(!status_ready.isEmpty(), ASYNC_TIMEOUT_MS);
     QTRY_COMPARE_WITH_TIMEOUT(InformationValue(model, QStringLiteral("Network active")), QStringLiteral("Yes"), ASYNC_TIMEOUT_MS);
     QSignalSpy pending{&model, &NodeModel::networkActionPendingChanged};
@@ -2052,9 +2495,11 @@ void NodeModelTests::newerNetworkNotificationSupersedesBlockedCommandResult()
     };
     NodeModel model{node, false};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     const auto unblock = qScopeGuard([&] { release.release(); });
     QSignalSpy status_ready{&model, &NodeModel::nodeInformationChanged};
     model.initializeResult(true, {}, false, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QTRY_VERIFY_WITH_TIMEOUT(!status_ready.isEmpty(), ASYNC_TIMEOUT_MS);
     QTRY_COMPARE_WITH_TIMEOUT(InformationValue(model, QStringLiteral("Local addresses")), QStringLiteral("None"), ASYNC_TIMEOUT_MS);
     QCOMPARE(InformationValue(model, QStringLiteral("Network active")), QStringLiteral("Yes"));
@@ -2112,6 +2557,7 @@ void NodeModelTests::statusNotificationBurstUsesOneFollowupSnapshot()
     };
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     const auto unblock = qScopeGuard([&] { release.release(); });
     QTRY_VERIFY_WITH_TIMEOUT(entered.available() > 0, ASYNC_TIMEOUT_MS);
     QVERIFY(connections_changed);
@@ -2126,7 +2572,7 @@ void NodeModelTests::statusNotificationBurstUsesOneFollowupSnapshot()
     bool heartbeat{false};
     QTimer::singleShot(0, &model, [&] { heartbeat = true; });
     QTRY_VERIFY_WITH_TIMEOUT(heartbeat, ASYNC_TIMEOUT_MS);
-    QCoreApplication::sendPostedEvents(&model, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
     QCOMPARE(node.calls.getNodeCount.load(), 1);
     QCOMPARE(node.calls.getWarnings.load(), 0);
     release.release();
@@ -2172,6 +2618,7 @@ void NodeModelTests::overlappingStatusNotificationsPublishEachCompletedSnapshot(
     };
     NodeModel model{node};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     const auto unblock = qScopeGuard([&] { release.release(5); });
     QTRY_VERIFY_WITH_TIMEOUT(entered.available() > 0, ASYNC_TIMEOUT_MS);
     entered.acquire();
@@ -2180,11 +2627,11 @@ void NodeModelTests::overlappingStatusNotificationsPublishEachCompletedSnapshot(
         // interval in which the old implementation would publish a result.
         connections_changed(100 + completed);
         warnings_changed();
-        QCoreApplication::sendPostedEvents(&model, QEvent::MetaCall);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         release.release();
         QTRY_VERIFY_WITH_TIMEOUT(entered.available() > 0, ASYNC_TIMEOUT_MS);
         entered.acquire();
-        QCOMPARE(model.numInboundPeers(), completed);
+        QTRY_COMPARE_WITH_TIMEOUT(model.numInboundPeers(), completed, ASYNC_TIMEOUT_MS);
         QCOMPARE(model.numOutboundPeers(), 2 * completed);
         QCOMPARE(model.numPeers(), 100 + completed);
         QCOMPARE(model.warnings(), QStringLiteral("Status %1").arg(completed));
@@ -2222,8 +2669,10 @@ void NodeModelTests::networkNotificationSupersedesBlockedStatusSnapshot()
     };
     NodeModel model{node, false};
     const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
+    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
     const auto unblock = qScopeGuard([&] { release.release(); });
     model.initializeResult(true, {}, false, false);
+    QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QTRY_VERIFY_WITH_TIMEOUT(entered.available() > 0, ASYNC_TIMEOUT_MS);
     active = false;
     network_changed(false);

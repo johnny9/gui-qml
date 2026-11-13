@@ -17,6 +17,9 @@ Popup {
     property string confirmText: qsTr("Continue")
     property string busyConfirmText: qsTr("Working...")
     property string errorText: ""
+    property var errorDetailsModel: null
+    property bool showErrorDetails: false
+    onErrorTextChanged: showErrorDetails = false
     property string passphraseFieldObjectName: ""
     property string errorTextObjectName: ""
     property string cancelButtonObjectName: ""
@@ -174,6 +177,37 @@ Popup {
             color: Theme.color.red
             font.pixelSize: 15
             wrapMode: Text.WordWrap
+        }
+
+        TextButton {
+            objectName: root.errorTextObjectName + "DetailsButton"
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            visible: root.errorText.length > 0 && root.errorDetailsModel !== null
+            text: root.showErrorDetails ? qsTr("Hide details") : qsTr("Show details")
+            onClicked: root.showErrorDetails = !root.showErrorDetails
+        }
+
+        ListView {
+            id: errorDetails
+            objectName: root.errorTextObjectName + "Details"
+            Layout.fillWidth: true
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            Layout.preferredHeight: visible ? 120 : 0
+            visible: root.showErrorDetails && root.errorText.length > 0 && root.errorDetailsModel !== null
+            model: root.errorDetailsModel
+            clip: true
+            reuseItems: true
+            cacheBuffer: 0
+            delegate: CoreText {
+                required property string content
+                width: errorDetails.width
+                text: content
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                font.pixelSize: 15
+            }
         }
 
         RowLayout {

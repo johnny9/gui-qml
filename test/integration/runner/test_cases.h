@@ -38,7 +38,9 @@ std::unique_ptr<QObject> CreateBlocksonlyTests(BitcoinQmlApplication& app, Walle
 std::unique_ptr<QObject> CreateWalletTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
 std::unique_ptr<QObject> CreateReceiveTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
 std::unique_ptr<QObject> CreateActivityTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
+std::unique_ptr<QObject> CreateTransactionPolicyTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
 std::unique_ptr<QObject> CreateSendTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
+std::unique_ptr<QObject> CreateFeeBumpTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
 std::unique_ptr<QObject> CreatePsbtTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
 std::unique_ptr<QObject> CreateWatchOnlyTests(BitcoinQmlApplication& app, WalletMode wallet_mode);
 std::unique_ptr<QObject> CreatePaymentImportTests(BitcoinQmlApplication& app, WalletMode wallet_mode);

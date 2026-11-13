@@ -2,6 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <test/mocks/sendtest.h>
+#include <test/mocks/preparationtest.h>
+#include <test/mocks/provisioningtest.h>
+#include <test/mocks/psbtactiontest.h>
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <qml/models/psbtqmlmodel.h>
@@ -53,16 +57,18 @@ private Q_SLOTS:
         recipient->amount()->setSatoshi(COIN);
         wallet->setCustomFeeEnabled(true);
         wallet->setCustomFeeRate("2");
-        QVERIFY2(wallet->prepareTransaction(), qPrintable(wallet->transactionError()));
+        QVERIFY2(AwaitPreparation(*wallet), qPrintable(wallet->transactionError()));
         QVERIFY(wallet->currentTransaction());
         QVERIFY(!wallet->currentTransactionCanSend());
         QVERIFY(!wallet->currentTransactionCanBroadcast());
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         const auto path = directory.filePath("watchonly.psbt");
-        QCOMPARE(wallet->saveCurrentTransactionAsPsbt(path), QString{});
-        QVERIFY(!wallet->sendTransaction());
-        QVERIFY(!wallet->broadcastCurrentTransaction());
+        QCOMPARE(AwaitPsbtSaveError(*wallet, path), QString{});
+        QVERIFY(!AwaitCommittedSend(*wallet));
+        const auto broadcast = wallet->requestBroadcastCurrentTransaction();
+        QVERIFY(AwaitPsbtAction(*wallet, broadcast));
+        QCOMPARE(wallet->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtFailed);
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
         PartiallySignedTransaction psbt{CMutableTransaction{}, /*version=*/2};
         QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(path, psbt), QString{});
@@ -84,11 +90,11 @@ private Q_SLOTS:
         QVERIFY(controller);
         QSignalSpy created{controller, &WalletQmlController::walletCreateSucceeded};
         controller->createWatchOnlyWallet("invalid", "not an extended public key");
-        QVERIFY(!controller->walletLoadError().isEmpty());
-        QVERIFY(!controller->walletLoadInProgress());
+        QTRY_VERIFY(!controller->walletLoadError().isEmpty());
+        QTRY_VERIFY(!controller->walletLoadInProgress());
         QCOMPARE(created.count(), 0);
         QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
-        QVERIFY(!controller->walletPathExists("invalid"));
+        QVERIFY(!AwaitWalletPathCheck(*controller, "invalid"));
     }
 };
 

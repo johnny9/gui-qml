@@ -26,6 +26,8 @@ if(ENABLE_WALLET)
   wallet_activity/test_activity.cpp
   wallet_activity/test_receive.cpp
   wallet_sending/test_send.cpp
+  wallet_sending/test_transactionpolicy.cpp
+  wallet_sending/test_bump.cpp
   psbt/test_psbt.cpp
   signers/test_watchonly.cpp
   payment_import/test_payment_import.cpp

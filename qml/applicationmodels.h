@@ -60,10 +60,14 @@ class ApplicationModels : public QObject
     Q_PROPERTY(DesktopTrayIconController* desktopTrayIconController READ desktopTrayIconController CONSTANT)
     Q_PROPERTY(OnboardingOptionsModel* onboardingOptionsModel READ onboardingOptionsModel CONSTANT)
     Q_PROPERTY(bool testAutomationEnabled READ testAutomationEnabled CONSTANT)
-    Q_PROPERTY(QString startupError READ startupError CONSTANT)
+    Q_PROPERTY(QString startupError READ startupError NOTIFY startupErrorChanged)
+    Q_PROPERTY(QAbstractItemModel* startupErrorDetails READ startupErrorDetails CONSTANT)
+    Q_PROPERTY(bool startupErrorPending READ startupErrorPending NOTIFY startupErrorChanged)
 
 public:
-    explicit ApplicationModels(QQmlEngine* engine) : QObject(engine), m_context(engine->rootContext()) {}
+    explicit ApplicationModels(QQmlEngine* engine) : QObject(engine), m_context(engine->rootContext()) {
+        if (auto* source = startupSource()) connect(source, &StartupDiagnosticsModel::changed, this, &ApplicationModels::startupErrorChanged);
+    }
 
     NodeModel* nodeModel() const { return m_context ? m_context->contextProperty(QStringLiteral("nodeModel")).value<NodeModel*>() : nullptr; }
     ChainModel* chainModel() const { return m_context ? m_context->contextProperty(QStringLiteral("chainModel")).value<ChainModel*>() : nullptr; }
@@ -90,9 +94,21 @@ public:
     DesktopTrayIconController* desktopTrayIconController() const { return m_context ? m_context->contextProperty(QStringLiteral("desktopTrayIconController")).value<DesktopTrayIconController*>() : nullptr; }
     OnboardingOptionsModel* onboardingOptionsModel() const { return m_context ? m_context->contextProperty(QStringLiteral("onboardingOptionsModel")).value<OnboardingOptionsModel*>() : nullptr; }
     bool testAutomationEnabled() const { return m_context && m_context->contextProperty(QStringLiteral("testAutomationEnabled")).toBool(); }
-    QString startupError() const { return m_context ? m_context->contextProperty(QStringLiteral("message")).toString() : QString{}; }
+    QString startupError() const {
+        const auto* source = startupSource();
+        if (source && !source->error().isEmpty()) return source->error();
+        if (source && !source->summary().isEmpty()) return source->summary();
+        return m_context ? m_context->contextProperty(QStringLiteral("message")).toString() : QString{};
+    }
+    QAbstractItemModel* startupErrorDetails() const { return startupSource(); }
+    bool startupErrorPending() const { const auto* source = startupSource(); return source && source->busy(); }
+Q_SIGNALS:
+    void startupErrorChanged();
 
 private:
+    StartupDiagnosticsModel* startupSource() const {
+        return m_context ? qobject_cast<StartupDiagnosticsModel*>(m_context->contextProperty(QStringLiteral("startupDiagnostics")).value<QObject*>()) : nullptr;
+    }
     QPointer<QQmlContext> m_context;
 };
 

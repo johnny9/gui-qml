@@ -2,14 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
-// Tests for RpcConsoleModel history navigation logic.
-//
-// RpcConsoleModel::browseHistory(), resetHistoryNavigation(), and the history
-// append logic in submitCommand() do not use the node interface at all.  The
-// worker-thread dispatch in submitCommand() is a QueuedConnection invoke, so
-// with no Qt event loop running the worker's execute() slot is never called
-// and executeRpc() is never reached.  A minimal RpcTestStubNode that compiles is
-// therefore sufficient.
+// RPC work and delivery use separate executor and GUI turns. Tests cover both
+// manual transport ordering and the actual independently routed worker lanes.
 
 #include <coins.h>
 #include <interfaces/handler.h>
@@ -17,6 +11,10 @@
 #include <interfaces/wallet.h>
 #include <qml/models/rpcconsolemodel.h>
 #include <test/mocks/stubnode.h>
+#include <test/mocks/manualexecutionenvironment.h>
+#include <test/mocks/admissionhookscheduler.h>
+#include <QTextDocument>
+#include <QScopeGuard>
 #include <univalue.h>
 #include <util/result.h>
 #include <util/translation.h>
@@ -28,9 +26,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -105,15 +106,15 @@ private:
 
 // RpcTestStubNode whose long-running command blocks the worker thread until
 // "stop" is executed. "stop" records that it ran and releases the blocked
-// command, modelling shutdown aborting an in-flight RPC. This only works if
-// "stop" runs on the caller's thread: a worker-queued "stop" would sit behind
-// the blocked command and never release it.
+// command, modelling shutdown aborting an in-flight RPC. Stop must use an
+// independent background lane, without occupying the GUI or blocked RPC lane.
 class StopAbortNode : public RpcTestStubNode
 {
 public:
     UniValue executeRpc(const std::string& method, const UniValue&, const std::string&) override
     {
         if (method == "stop") {
+            m_stop_on_gui = QThread::currentThread() == QCoreApplication::instance()->thread();
             m_stop_executed = true;
             m_gate.release();
             return {};
@@ -122,10 +123,12 @@ public:
         return {};
     }
     bool stopExecuted() const { return m_stop_executed; }
+    bool stopOnGui() const { return m_stop_on_gui; }
 
 private:
     QSemaphore m_gate{0};
     std::atomic<bool> m_stop_executed{false};
+    std::atomic<bool> m_stop_on_gui{false};
 };
 
 // RpcTestStubNode that records the URI executeRpc() is invoked with, so tests can
@@ -170,18 +173,43 @@ static int roleForName(QAbstractItemModel* model, const QByteArray& name)
     return -1;
 }
 
+// Reconstruct the formatted reply for the structural HTML oracle. Physical
+// line records introduce <br>; continuation records retain the same line.
+static QString replyHtml(QAbstractItemModel* output)
+{
+    QString result;
+    bool first{true};
+    for (int i = 0; i < output->rowCount(); ++i) {
+        const auto index = output->index(i, 0);
+        if (output->data(index, RpcOutputListModel::CategoryRole).toInt() != RpcConsoleModel::CMD_REPLY) continue;
+        if (!first && !output->data(index, RpcOutputListModel::ContinuationRole).toBool()) result += QStringLiteral("<br>");
+        first = false;
+        result += output->data(index, RpcOutputListModel::ContentRole).toString();
+    }
+    return result;
+}
+
 class RpcConsoleModelTests : public QObject
 {
     Q_OBJECT
 
 private Q_SLOTS:
+    void constructorReservationKeepsOriginalParentLifetime();
+    void cleanup() {
+        bool done{false}; BackendExecutor::shutdownAll(this, [&] { done = true; });
+        QTRY_VERIFY(done);
+    }
+    void manualExecutionSeparatesEffectOutcomeAndPublication();
+    void acceptedCommandSurvivesObserverLoss();
+    void sharedSchedulerClosureWaitsForActualNativeRetirement();
+    void aggregateOutputAndRowsStayBounded();
     void historyNavigationOldestToNewest();
     void historyNavigationRestoresPendingText();
     void historyDeduplicatesConsecutiveDuplicates();
     void historyTruncatesAtMax();
     void resetHistoryNavigationClearsState();
     void submitRefusedWhileExecuting();
-    void stopRunsSynchronouslyWhileExecuting();
+    void stopRunsIndependentlyWhileExecuting();
     void walletNameScopesRpcToWalletUri();
     void outputRowsExposeCategoryAndRawTimestamp();
     void clearRemovesOutput();
@@ -193,9 +221,148 @@ private Q_SLOTS:
     void jsonReplyTraversal();
     void deeplyNestedJsonReply();
     void availableCommandsIncludesHelpVariants();
+    void autocompleteRejectsStaleManualResults();
     void secretRequestsAreNotRetained_data();
     void secretRequestsAreNotRetained();
 };
+
+void RpcConsoleModelTests::constructorReservationKeepsOriginalParentLifetime()
+{
+    struct Node final : RpcTestStubNode {
+        int effects{0}, metadata{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return UniValue{7}; }
+        std::vector<std::string> listRpcCommands() override { ++metadata; return {"help"}; }
+    } node;
+    ManualRoutedExecution env;
+    auto scheduler = std::make_shared<AdmissionHookScheduler>(env.scheduler);
+    std::deque<std::function<void()>> publications;
+    auto parent = std::make_unique<QObject>();
+    const QPointer<QObject> original_parent{parent.get()};
+    std::unique_ptr<RpcConsoleModel> model;
+    int children_at_admission{-1};
+    const auto settle = [&] {
+        for (int turn{0}; turn < 128 && (turn == 0 || !env.queuedIdle() || !publications.empty()); ++turn) {
+            env.drain();
+            while (!publications.empty()) { auto callback = std::move(publications.front()); publications.pop_front(); callback(); }
+        }
+    };
+    const auto cleanup = qScopeGuard([&] { scheduler->disarm(); model.reset(); settle(); });
+    auto trigger = scheduler->armCleanup(1, [&] {
+        children_at_admission = parent->children().size(); parent.reset();
+    });
+    bool original_parent_lost{false};
+    try {
+        model = std::make_unique<RpcConsoleModel>(node,
+            execution::SnapshotServices{scheduler, [&](auto callback) { publications.push_back(std::move(callback)); }}, parent.get());
+    } catch (const std::runtime_error&) { original_parent_lost = true; }
+    QVERIFY(original_parent_lost);
+    QCOMPARE(trigger->calls.load(), size_t{1}); QVERIFY(trigger->originalId.load() != 0);
+    QCOMPARE(children_at_admission, 0); QVERIFY(!original_parent); QVERIFY(!model);
+    QCOMPARE(node.metadata, 0); QCOMPARE(node.effects, 0); QVERIFY(env.scheduler->pending() != 0);
+    QCOMPARE(env.queuedCountIf([&](const auto& turn) {
+        return turn.id.value == trigger->originalId.load() && turn.lane == execution::Lane::Cleanup && turn.phase == execution::Phase::Queued;
+    }), 1);
+    const auto actual_cleanup = env.dispatchNext(execution::Lane::Cleanup); QVERIFY(actual_cleanup);
+    QCOMPARE(actual_cleanup->value, trigger->originalId.load()); QVERIFY(env.finishWork(*actual_cleanup));
+    // Native destruction is complete, but its actual Domain outcome has not
+    // yet retired the producer's ledger entry.
+    QVERIFY(env.scheduler->pending() != 0);
+    settle(); QCOMPARE(node.effects, 0); QCOMPARE(node.metadata, 0); QCOMPARE(env.scheduler->pending(), size_t{0});
+}
+
+void RpcConsoleModelTests::manualExecutionSeparatesEffectOutcomeAndPublication()
+{
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return UniValue{7}; }
+    } node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    QVERIFY(model.submitCommand("getblockcount"));
+    QCOMPARE(node.effects, 0); QVERIFY(model.executing()); QCOMPARE(model.outputModel()->rowCount(), 0);
+    QVERIFY(env.step());
+    QCOMPARE(node.effects, 1); QVERIFY(model.executing()); QCOMPARE(model.outputModel()->rowCount(), 0);
+    QVERIFY(env.step()); // Domain owns the actual outcome, GUI still untouched.
+    QCOMPARE(node.effects, 1); QCOMPARE(model.outputModel()->rowCount(), 0);
+    env.publishAll();
+    QVERIFY(!model.executing()); QCOMPARE(model.outputModel()->rowCount(), 2);
+    QCOMPARE(replyHtml(model.outputModel()), QStringLiteral("7"));
+}
+
+void RpcConsoleModelTests::acceptedCommandSurvivesObserverLoss()
+{
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
+    } node;
+    ManualExecutionEnvironment env;
+    auto model = std::make_unique<RpcConsoleModel>(node, execution::SnapshotServices{env.scheduler, [&](auto callback) { env.post(std::move(callback)); }});
+    QVERIFY(model->submitCommand("getblockcount"));
+    model.reset(); // No nested GUI loop or cancellation of the accepted effect.
+    QCOMPARE(node.effects, 0);
+    env.drain(); env.publishAll();
+    QCOMPARE(node.effects, 1); QVERIFY(env.quiescent());
+}
+
+void RpcConsoleModelTests::sharedSchedulerClosureWaitsForActualNativeRetirement()
+{
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override {
+            ++effects; return UniValue{std::string(200'000, 'r')};
+        }
+    } node;
+    ManualRoutedExecution env;
+    std::deque<std::function<void()>> gui;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { gui.push_back(std::move(turn)); }}};
+    QSignalSpy drained{&model, &RpcConsoleModel::drained};
+    QVERIFY(model.submitCommand("getblockcount")); QCOMPARE(node.effects, 0);
+    env.scheduler->closeAdmission();
+    model.beginShutdown();
+    QVERIFY(!model.submitCommand("getblockcount")); QCOMPARE(drained.size(), 0);
+    QVERIFY(env.step(execution::Lane::Core)); QCOMPARE(node.effects, 1); QCOMPARE(drained.size(), 0);
+    QVERIFY(env.step(execution::Lane::Domain));
+    while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+    QCOMPARE(drained.size(), 0); // The actual outcome finished; Native payload retirement has not.
+    QVERIFY(env.step(execution::Lane::Cleanup)); QCOMPARE(drained.size(), 0);
+    env.drain(); QVERIFY(env.quiescent());
+    while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+    QCOMPARE(drained.size(), 1); QCOMPARE(model.outputModel()->rowCount(), 0);
+    model.beginShutdown(); QCOMPARE(drained.size(), 1); QCOMPARE(node.effects, 1);
+}
+
+void RpcConsoleModelTests::aggregateOutputAndRowsStayBounded()
+{
+    LargeResultNode node;
+    RpcConsoleModel model{node};
+    for (int command = 0; command < 50; ++command) submitAndSettle(model, "getblockcount");
+    auto* output = model.outputModel();
+    QVERIFY(output->rowCount() <= RpcOutputListModel::kMaxRows);
+    qsizetype characters{0};
+    for (int row = 0; row < output->rowCount(); ++row) characters += output->data(output->index(row, 0), RpcOutputListModel::ContentRole).toString().size();
+    QVERIFY(characters <= RpcOutputListModel::kMaxCharacters);
+    QVERIFY(characters > 1'000'000); // Exercise eviction, never an empty pass.
+}
+
+void RpcConsoleModelTests::autocompleteRejectsStaleManualResults()
+{
+    CommandListNode node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    model.onNodeInitialized(); env.drain(); env.publishAll();
+    QVERIFY(!model.availableCommands().isEmpty());
+    model.setCompletionPrefix("getb");
+    QVERIFY(model.completionBusy()); QCOMPARE(model.completionSuggestions().size(), 0);
+    env.drain(); // Older match set is retained in the mailbox, not yet GUI.
+    model.setCompletionPrefix("help getblockc");
+    env.publishAll();
+    QVERIFY(model.completionBusy()); QVERIFY(model.completionSuggestions().isEmpty());
+    env.drain(); env.publishAll();
+    QVERIFY(!model.completionBusy());
+    QCOMPARE(model.completionSuggestions(), QStringList{QStringLiteral("help getblockcount")});
+}
 
 void RpcConsoleModelTests::historyNavigationOldestToNewest()
 {
@@ -314,7 +481,7 @@ void RpcConsoleModelTests::submitRefusedWhileExecuting()
     QCOMPARE(model.browseHistory(1, ""), QString("waitfornewblock")); // clamped: no 2nd entry
 }
 
-void RpcConsoleModelTests::stopRunsSynchronouslyWhileExecuting()
+void RpcConsoleModelTests::stopRunsIndependentlyWhileExecuting()
 {
     StopAbortNode mock;
     RpcConsoleModel model{mock};
@@ -323,14 +490,13 @@ void RpcConsoleModelTests::stopRunsSynchronouslyWhileExecuting()
     QVERIFY(model.submitCommand("waitfornewblock"));
     QVERIFY(model.executing());
 
-    // "stop" is exempt from the executing guard and runs synchronously on the
-    // calling thread (matching Core), so its effect is already visible here
-    // without spinning the event loop. A worker-queued "stop" would not have run
-    // yet, since the worker is blocked on the in-flight command.
+    // Stop is admitted independently of the blocked command. Admission does
+    // not claim that Core has already executed the shutdown request.
     QVERIFY(model.submitCommand("stop"));
-    QVERIFY(mock.stopExecuted());
+    QTRY_VERIFY(mock.stopExecuted());
+    QVERIFY(!mock.stopOnGui());
 
-    // The synchronous "stop" released the blocked command, so the model settles.
+    // The independent stop released the blocked command, so the model settles.
     QTRY_VERIFY(!model.executing());
 }
 
@@ -365,7 +531,7 @@ void RpcConsoleModelTests::outputRowsExposeCategoryAndRawTimestamp()
     QVERIFY(category_role != -1);
 
     QVERIFY(model.submitCommand("getblockcount"));
-    QCOMPARE(out->rowCount(), 1);
+    QTRY_VERIFY(out->rowCount() >= 1);
 
     const QModelIndex request_index = out->index(0, 0);
     const QString timestamp = out->data(request_index, timestamp_role).toString();
@@ -406,22 +572,23 @@ void RpcConsoleModelTests::outputTruncatedWhenResultTooLong()
     QVERIFY(out != nullptr);
     QSignalSpy spy{out, &QAbstractItemModel::rowsInserted};
 
-    // submitCommand inserts the CMD_REQUEST row synchronously, then dispatches
-    // the execute() slot to the worker thread via QueuedConnection.
-    model.submitCommand("getblockcount");
-    QCOMPARE(out->rowCount(), 1); // CMD_REQUEST arrived synchronously
-
-    // Process events until the worker thread's CMD_REPLY row is inserted
-    // (or until the 5-second safety timeout expires).
-    QVERIFY(spy.wait(5000));
-    QCOMPARE(out->rowCount(), 2);
+    QVERIFY(model.submitCommand("getblockcount"));
+    QTRY_VERIFY(!model.executing());
+    QVERIFY(out->rowCount() > 2);
+    for (int i = 0; i < out->rowCount(); ++i) {
+        QTextDocument document;
+        const auto html = out->data(out->index(i, 0), RpcOutputListModel::ContentRole).toString();
+        document.setHtml(html);
+        QVERIFY(document.toPlainText().size() <= RpcOutputListModel::kRowCharacters);
+        QVERIFY(html.size() < 8192);
+    }
 
     // Look up the content role dynamically — the model's roleNames map
     // "content" to the ContentRole integer.
     int content_role = roleForName(out, "content");
     QVERIFY(content_role != -1);
 
-    const QString reply_html = out->data(out->index(1, 0), content_role).toString();
+    const QString reply_html = replyHtml(out);
 
     // Formatted reply must be well below the raw 100,000-character input.
     QVERIFY2(reply_html.size() < 100'000,
@@ -441,14 +608,13 @@ void RpcConsoleModelTests::jsonReplyKeyColoringSkipsStringsContainingColons()
     QSignalSpy spy{out, &QAbstractItemModel::rowsInserted};
 
     model.submitCommand("getsomething");
-    QCOMPARE(out->rowCount(), 1); // CMD_REQUEST arrived synchronously
-    QVERIFY(spy.wait(5000));
-    QCOMPARE(out->rowCount(), 2);
+    QTRY_VERIFY(!model.executing());
+    QVERIFY(out->rowCount() > 2);
 
     int content_role = roleForName(out, "content");
     QVERIFY(content_role != -1);
 
-    const QString html = out->data(out->index(1, 0), content_role).toString();
+    const QString html = replyHtml(out);
 
     // Real keys are wrapped in a key-colour span that closes immediately
     // after the quoted key — the structural formatter produces literally
@@ -500,10 +666,10 @@ void RpcConsoleModelTests::jsonReplyPreservesNestedFormatting()
     QVERIFY(model.setProperty("keyColor", QColor{"#123456"}));
     submitAndSettle(model, "getsomething");
     auto* out{model.outputModel()};
-    QCOMPARE(out->rowCount(), 2);
+    QVERIFY(out->rowCount() >= 2);
     const int content_role{roleForName(out, "content")};
     QVERIFY(content_role != -1);
-    QCOMPARE(out->data(out->index(1, 0), content_role).toString(), expected);
+    QCOMPARE(replyHtml(out), expected);
 }
 
 void RpcConsoleModelTests::jsonReplyTraversal_data()
@@ -523,25 +689,32 @@ void RpcConsoleModelTests::jsonReplyTraversal()
 {
     QFETCH(QString, raw);
     QFETCH(QString, expected);
-    RpcTestStubNode node;
+    UniValue reply;
+    if (!reply.read(raw.toStdString())) reply = UniValue(raw.toStdString());
+    StructuredReplyNode node{std::move(reply)};
     RpcConsoleModel model{node};
-    QVERIFY(QMetaObject::invokeMethod(&model, "onResultReady", Qt::DirectConnection,
-        Q_ARG(QString, QString{}), Q_ARG(int, int(RpcConsoleModel::CMD_REPLY)), Q_ARG(QString, raw)));
+    submitAndSettle(model, "getsomething");
     auto* output = qobject_cast<QAbstractListModel*>(model.outputModel());
-    QCOMPARE(output->rowCount(), 1);
-    QCOMPARE(output->data(output->index(0, 0), roleForName(output, "content")).toString(), expected);
+    QVERIFY(output->rowCount() >= 2);
+    QCOMPARE(replyHtml(output), expected);
 }
 
 void RpcConsoleModelTests::deeplyNestedJsonReply()
 {
     constexpr int depth{256};
     const QString raw = QString(depth, '[') + "\"<leaf>\"" + QString(depth, ']');
-    RpcTestStubNode node;
+    UniValue reply;
+    if (!reply.read(raw.toStdString())) reply = UniValue(raw.toStdString());
+    // Exercise the complete iterative formatter at depth256. Core pretty
+    // serialization of an array at this depth exceeds the independent50k
+    // console transport limit. A compact JSON string traverses the same reply
+    // formatter without hitting that deliberately separate truncation policy.
+    QVERIFY(reply.isArray());
+    StructuredReplyNode node{UniValue{raw.toStdString()}};
     RpcConsoleModel model{node};
-    QVERIFY(QMetaObject::invokeMethod(&model, "onResultReady", Qt::DirectConnection,
-        Q_ARG(QString, QString{}), Q_ARG(int, int(RpcConsoleModel::CMD_REPLY)), Q_ARG(QString, raw)));
+    submitAndSettle(model, "getsomething");
     auto* output = qobject_cast<QAbstractListModel*>(model.outputModel());
-    const auto html = output->data(output->index(0, 0), roleForName(output, "content")).toString();
+    const auto html = replyHtml(output);
     QCOMPARE(html.count('['), depth);
     QCOMPARE(html.count(']'), depth);
     QCOMPARE(html.count("<br>"), depth * 2);
@@ -559,6 +732,7 @@ void RpcConsoleModelTests::availableCommandsIncludesHelpVariants()
     // Populate availableCommands via the public slot.
     model.onNodeInitialized();
 
+    QTRY_VERIFY(!model.availableCommands().isEmpty());
     QStringList cmds = model.availableCommands();
 
     // Original commands present

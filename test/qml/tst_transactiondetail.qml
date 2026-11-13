@@ -50,9 +50,11 @@ TestCase {
     function init() {
         testSetup.failOnWarnings()
         Theme.dark = true
+        tryCompare(Theme, "dark", true)
         walletController.reset()
         walletController.initialized = true
         walletController.setSelectedWalletObject(testWalletModel)
+        testWalletModel.available = true
         optionsModel.thirdPartyTransactionUrls = ""
         testWalletModel.lastLoadedPaymentRequestDetailId = ""
         testBumpModel.reset()
@@ -77,8 +79,11 @@ TestCase {
     }
 
     function createDetail(data, properties) {
+        const value = data || transaction()
+        if (value.flow) value.flow = testSetup.prepareTransactionFlow(value.flow)
+        testTransactionActivityModel.setRows([value])
         const page = createTemporaryObject(detailComponent, this,
-            Object.assign({transactionData: data || transaction()}, properties || {}))
+            Object.assign({transactionId: value.txid}, properties || {}))
         verify(page !== null)
         waitForRendering(page)
         return page
@@ -226,7 +231,7 @@ TestCase {
         findChild(page, "speedUpBanner").primaryClicked()
         const overlay = findChild(page, "speedUpOverlay")
         tryCompare(overlay, "opened", true)
-        verify(overlay.readyToConfirm)
+        tryCompare(overlay, "readyToConfirm", true)
         compare(overlay.verticalOffset, 0)
         compare(overlay.background.color, Theme.color.neutral1)
         compare(overlay.background.border.color, Theme.color.neutral3)
@@ -241,6 +246,7 @@ TestCase {
         findChild(page, "speedUpBanner").primaryClicked()
         const overlay = findChild(page, "speedUpOverlay")
         tryCompare(overlay, "opened", true)
+        tryCompare(overlay, "readyToConfirm", true)
         mouseClick(findChild(overlay.contentItem, "updateTransactionButton"))
 
         const complete = findChild(page, "speedUpCompletePopup")
@@ -325,23 +331,99 @@ TestCase {
         verify(toggle.opened)
         verify(overview.visible && technical.visible && section.visible)
         compare(section.width, findChild(page, "transactionDetailsGrid").width)
+        tryVerify(function() { return findChild(page, "transactionRawText") !== null })
         const text = findChild(page, "transactionRawText")
-        compare(text.text, raw)
+        verify(text.text.length <= 1024)
+        compare(text.text, raw.slice(0, text.text.length))
         verify(text.readOnly)
         const scroll = findChild(page, "transactionRawScroll")
-        tryVerify(function() { return text.contentHeight > scroll.height })
+        verify(scroll.count > 1)
         verify(text.width <= scroll.width)
         const copy = findChild(page, "transactionRawCopyButton")
         verify(copy.enabled)
         copy.clicked()
-        verify(copy.copied)
-        compare(Clipboard.text(), raw)
+        compare(copy.copied, false)
+        tryCompare(copy, "copied", true)
+        compare(testSetup.nativeClipboardText(), raw)
         toggle.clicked()
         verify(!overview.visible && !technical.visible && !section.visible)
-        compare(text.text, "")
-        page.transactionData = transaction({rawTransaction: ""})
+        compare(scroll.model, null)
+        testTransactionActivityModel.setRows([transaction({rawTransaction: ""})])
         toggle.clicked()
         verify(!copy.enabled)
+    }
+
+    function test_complete_lists_virtualize_all_rows_and_document_preserves_long_fields() {
+        const data = transaction()
+        const literal = "abcdef0123456789".repeat(8192)
+        data.flow.outputs = []
+        for (let i = 0; i < 1001; ++i) data.flow.outputs.push(entry("output:" + i, 1000, "external"))
+        data.flow.outputCount = 1001
+        data.flow.outputs[0].scriptHex = literal
+        data.flow.outputs[0].paymentRequests = []
+        for (let i = 0; i < 20; ++i) data.flow.outputs[0].paymentRequests.push({requestId: "request-" + i})
+        const page = createDetail(data)
+        page.detailsExpanded = true
+        const rows = findChild(page, "transactionAllOutputsRows")
+        tryCompare(rows, "count", 1001)
+        verify(waitForRendering(page))
+        verify(testSetup.namedChildCount(page, "transactionEntryPreview") < 32)
+        page.openEntry("outputs", 0)
+        const popup = findChild(page, "transactionEntryPopup")
+        tryCompare(popup, "opened", true)
+        const document = findChild(page, "transactionEntryDocument")
+        tryVerify(function() { return document.count > 128 })
+        compare(testSetup.entryFieldText(page.activityModel.entryDocument, "scriptHex"), literal)
+        compare(testSetup.entryFieldText(page.activityModel.entryDocument, "paymentRequests[19].requestId"), "request-19")
+        page.visible = false
+        tryCompare(popup, "visible", false)
+    }
+
+    function test_late_copy_outcome_does_not_acknowledge_another_transaction() {
+        const original = transaction({rawTransaction: "02000000aabbcc"})
+        const page = createDetail(original)
+        page.detailsExpanded = true
+        const copy = findChild(page, "transactionRawCopyButton")
+        copy.clicked()
+        verify(!copy.copied)
+        const successor = transaction({txid: "28c8263f6b9a0000000000000000000000000000000000000000419b4d41c441", rawTransaction: "02000000ddeeff"})
+        testTransactionActivityModel.setRows([successor])
+        page.transactionId = successor.txid
+        tryVerify(function() { return testSetup.nativeClipboardText() === original.rawTransaction })
+        verify(!copy.copied)
+        compare(page.txid, successor.txid)
+    }
+
+    function test_same_opening_details_have_independent_view_interest() {
+        const firstValue = transaction({label: "First detail"})
+        const secondValue = transaction({txid: "28c8263f6b9a0000000000000000000000000000000000000000419b4d41c441", label: "Second detail"})
+        testTransactionActivityModel.setRows([firstValue, secondValue])
+        const first = createTemporaryObject(detailComponent, this, {transactionId: firstValue.txid})
+        const second = createTemporaryObject(detailComponent, this, {transactionId: secondValue.txid})
+        verify(first !== null && second !== null)
+        verify(first.wallet === second.wallet)
+        verify(first.activityModel !== second.activityModel)
+        tryCompare(first, "txid", firstValue.txid)
+        tryCompare(second, "txid", secondValue.txid)
+        compare(first.transactionData.label, "First detail")
+        compare(second.transactionData.label, "Second detail")
+        testTransactionActivityModel.setRows([
+            Object.assign({}, firstValue, {depth: 7}), Object.assign({}, secondValue, {depth: 7})])
+        tryCompare(first, "depth", 7)
+        tryCompare(second, "depth", 7)
+        first.visible = false
+        tryCompare(first.activityModel, "active", false)
+        compare(second.activityModel.active, true)
+        compare(second.txid, secondValue.txid)
+        first.transactionId = secondValue.txid
+        compare(second.txid, secondValue.txid)
+        testTransactionActivityModel.setRows([Object.assign({}, secondValue, {depth: 8})])
+        tryCompare(second, "depth", 8)
+        first.visible = true
+        tryCompare(first, "depth", 8)
+        testWalletModel.available = false
+        tryCompare(first.activityModel, "active", false)
+        tryCompare(second.activityModel, "active", false)
     }
 
     function test_overview_and_details_show_transaction_metadata() {

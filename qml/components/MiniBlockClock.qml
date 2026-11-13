@@ -60,7 +60,6 @@ Item {
         penWidth: root.strokeWidth
         connectingAnimationDelayMs: 0
         currentTimeFraction: root.pageSelected ? 1.0 : (root.blockClockModelRef !== null ? root.blockClockModelRef.currentTimeFraction : 0)
-        blockTimeFractions: []
         syncProgress: root.pageSelected ? 1.0 : root.syncProgressFraction
         connected: root.pageSelected || root.connected
         synced: root.pageSelected || root.synced

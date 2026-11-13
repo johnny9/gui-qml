@@ -388,7 +388,7 @@ private Q_SLOTS:
                 QVERIFY(admission);
             }
         } else {
-            f.env.reject_lane = Lane::Core;
+            f.env.rejectLane(Lane::Core);
         }
         QCOMPARE(f.reader->refresh(), capacity ? execution::Rejection::Capacity : execution::Rejection::Transport);
         const auto rejected = f.reader->take();
@@ -433,7 +433,7 @@ private Q_SLOTS:
         Fixture f;
         QVERIFY(execution::Submit(*f.env.scheduler, [] {}, [] {}));
         f.refresh(); // Core is occupied; the reader is accepted but not sent yet.
-        f.env.reject_lane = Lane::Core;
+        f.env.rejectLane(Lane::Core);
         f.env.drain();
         const auto value = f.reader->take();
         QVERIFY(value);

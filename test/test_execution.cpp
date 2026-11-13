@@ -3,20 +3,502 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/execution.h>
+#include <qml/retainedsnapshot.h>
+#include <qml/snapshotquery.h>
 #include <qml/models/feereadstate.h>
 #include <qml/walletlifecyclestate.h>
 #include <test/mocks/manualexecutionenvironment.h>
+#include <test/mocks/manualfeereceipts.h>
 #include <test/qt_test_registry.h>
 
 #include <QtTest/QtTest>
 #include <QScopeGuard>
+#include <QSemaphore>
 
+#include <atomic>
+#include <thread>
+
+#include <deque>
+#include <functional>
+#include <optional>
 #include <stdexcept>
 
 class ExecutionTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void feeReceiptKeepsConcurrentNativeFactsIndependent()
+    {
+        auto env = std::make_shared<ManualExecutionEnvironment>();
+        auto receipts = std::make_shared<ManualFeeReceipts>(env);
+        int reads{0}, fee_observed{0}, facts_observed{0}, outcome_value{0};
+        QSemaphore start, posted;
+        std::thread native{[&] {
+            start.acquire();
+            receipts->post([&] { ++facts_observed; });
+            posted.release();
+        }};
+        const auto cleanup = qScopeGuard([&] {
+            start.release();
+            if (native.joinable()) native.join();
+            receipts->drain(); receipts->publishAll(); env->publishAll();
+        });
+        const auto original = execution::Submit(*env->scheduler, [&] {
+            receipts->readStarted(); ++reads; return 42;
+        }, [&](int value) {
+            outcome_value = value;
+            start.release(); posted.acquire(); // Native posts inside the actual fee outcome window.
+            receipts->post([&] { ++fee_observed; });
+        });
+        QVERIFY(original); QCOMPARE(reads, 0);
+        QCOMPARE(receipts->startRead(), std::make_optional(original.id));
+        QCOMPARE(reads, 1); QCOMPARE(fee_observed, 0); QCOMPARE(facts_observed, 0);
+        QVERIFY(receipts->finishOutcome(original.id));
+        start.release(); // Cleanup remains possible even if a broken outcome was not invoked.
+        native.join();
+        QCOMPARE(outcome_value, 42);
+        QCOMPARE(receipts->publicationCount(), size_t{1});
+        QCOMPARE(env->publicationCount(), size_t{1});
+        QVERIFY(!env->scheduler->phase(original.id));
+        env->publishAll(); QCOMPARE(facts_observed, 1); QCOMPARE(fee_observed, 0);
+        QVERIFY(receipts->publish(original.id)); QVERIFY(!receipts->publish(original.id));
+        QCOMPARE(fee_observed, 1); QCOMPARE(facts_observed, 1);
+        QVERIFY(env->quiescent());
+    }
+    void manualDuplicatePublicationCopiesMutableCapture()
+    {
+        ManualExecutionEnvironment env;
+        std::vector<int> observed;
+        const auto cleanup = qScopeGuard([&] { env.stop(); env.drain(); env.publishAll(); });
+        env.post([state = 0, &observed]() mutable { observed.push_back(++state); });
+        QVERIFY(env.duplicateFirstPublication());
+        QCOMPARE(env.publicationCount(), size_t{2});
+        QVERIFY(observed.empty());
+        env.publishAll();
+        QCOMPARE(observed, std::vector<int>({1, 1}));
+        QVERIFY(env.quiescent());
+    }
+    void routedNativeCleanupIngressKeepsOriginalManualOutcome()
+    {
+        using namespace execution;
+        ManualRoutedExecution env;
+        int retired{0}, outcomes{0};
+        const auto key = env.scheduler->allocateKey();
+        const auto original = Submit(*env.scheduler, [&] { ++retired; }, [&] { ++outcomes; }, {},
+            {Lane::Cleanup, 32, key, WorkClass::Action}, true);
+        QVERIFY(original);
+        auto borrowed = env.scheduler->borrow(key);
+        QVERIFY(borrowed);
+        QVERIFY(env.scheduler->activateCleanup(original.id));
+        QVERIFY(env.queuedIdle());
+        QSemaphore start;
+        std::atomic_bool finished{false};
+        std::thread native{[&, lease = std::move(borrowed.lease)]() mutable {
+            start.acquire();
+            lease.reset(); // Actual Native final borrower dispatches Cleanup.
+            finished = true;
+        }};
+        const auto cleanup = qScopeGuard([&] {
+            start.release();
+            if (native.joinable()) native.join();
+            env.drain();
+        });
+        start.release();
+        QVERIFY(QTest::qWaitFor([&] {
+            (void)env.traceSnapshot();
+            (void)env.queuedCount();
+            (void)env.activeIdle();
+            (void)env.quiescent();
+            return finished.load();
+        }, 3000));
+        native.join();
+        QCOMPARE(retired, 0);
+        QCOMPARE(outcomes, 0);
+        QCOMPARE(env.queuedCountIf([&](const auto& turn) {
+            (void)env.traceSnapshot(); // Inspection predicate is outside mutex.
+            return turn.id == original.id && turn.lane == Lane::Cleanup;
+        }), 1);
+        const auto dispatched = env.dispatchNext(Lane::Cleanup);
+        QCOMPARE(dispatched, std::make_optional(original.id));
+        QVERIFY(!env.activeIdle());
+        QCOMPARE(retired, 0);
+        QVERIFY(env.finishWork(original.id));
+        QCOMPARE(retired, 1);
+        QCOMPARE(outcomes, 0);
+        const auto outcome = env.deliverOutcome();
+        QCOMPARE(outcome, std::make_optional(original.id));
+        QVERIFY(env.stepMailbox(original.id));
+        QCOMPARE(outcomes, 1);
+        QVERIFY(env.quiescent());
+    }
+    void manualTransportSmallCallableDestructionMayReenter()
+    {
+        ManualExecutionEnvironment env;
+        struct Probe {
+            ManualExecutionEnvironment* environment;
+            bool armed{false}, queued_phase{false}, busy_during_queued_destruction{false};
+            int copies{0}, destroyed{0}, callbacks{0}, observed{0};
+            void reenter() {
+                (void)environment->publicationsIdle();
+                if (queued_phase && !environment->transportIdle()) busy_during_queued_destruction = true;
+                environment->post([this] { ++observed; });
+            }
+        } probe{&env};
+        const auto cleanup = qScopeGuard([&] {
+            probe.armed = false;
+            env.stop(); env.drain(); env.publishAll();
+        });
+        struct SmallCallable {
+            Probe* probe;
+            explicit SmallCallable(Probe* value) : probe(value) {}
+            SmallCallable(const SmallCallable& other) noexcept : probe(other.probe) {
+                if (probe->armed) { ++probe->copies; probe->reenter(); }
+            }
+            void operator()() const { ++probe->callbacks; }
+            ~SmallCallable() { if (probe->armed) { ++probe->destroyed; probe->reenter(); } }
+        };
+        env.restart(SmallCallable{&probe});
+        probe.armed = true; // Client copy/destructor hooks arm after registration.
+        env.restart([] {}); // Replacement retires the boxed callable outside lock.
+        QVERIFY(probe.destroyed > 0);
+        env.stop();
+        probe.armed = false;
+        env.restart(SmallCallable{&probe});
+        probe.armed = true;
+        const auto before_stop = probe.destroyed;
+        env.stop();
+        QVERIFY(probe.destroyed > before_stop);
+        env.publishAll();
+        QCOMPARE(probe.callbacks, 0);
+        QVERIFY(env.quiescent());
+        probe.armed = false;
+        env.post(SmallCallable{&probe});
+        probe.armed = true;
+        probe.queued_phase = true;
+        QVERIFY(env.publishNext()); // Extract/invoke/destroy queued small callable.
+        QCOMPARE(probe.callbacks, 1);
+        QVERIFY(probe.busy_during_queued_destruction);
+        probe.queued_phase = false;
+        env.publishAll();
+        QVERIFY(probe.observed > 0);
+        QVERIFY(env.quiescent());
+        env.restart({});
+        QVERIFY(env.transportIdle());
+        env.advance(std::chrono::milliseconds{250});
+        QCOMPARE(probe.callbacks, 1);
+        QVERIFY(env.quiescent());
+    }
+    void manualTransportNativeIngressKeepsDeliveryControlled()
+    {
+        ManualExecutionEnvironment env;
+        std::atomic<int> effects{0}, outcomes{0}, publications{0};
+        std::atomic_bool finished{false}, rejected{false};
+        QSemaphore start;
+        std::thread native{[&] {
+            start.acquire();
+            for (int index = 0; index < 8; ++index) {
+                const auto admitted = execution::Submit(*env.scheduler,
+                    [&] { ++effects; }, [&] { ++outcomes; });
+                if (!admitted) rejected = true;
+                env.post([&] { ++publications; });
+            }
+            finished = true;
+        }};
+        const auto cleanup = qScopeGuard([&] {
+            start.release();
+            if (native.joinable()) native.join();
+            env.drain(); env.publishAll();
+        });
+        start.release();
+        QVERIFY(QTest::qWaitFor([&] {
+            (void)env.trace();
+            (void)env.queuedTurnCount();
+            (void)env.publicationCount();
+            (void)env.transportIdle();
+            (void)env.quiescent();
+            return finished.load();
+        }, 3000));
+        native.join();
+        QVERIFY(!rejected);
+        QCOMPARE(effects.load(), 0);
+        QCOMPARE(outcomes.load(), 0);
+        QCOMPARE(publications.load(), 0);
+        QCOMPARE(env.publicationCount(), size_t{8});
+        QVERIFY(!env.quiescent());
+        env.drain();
+        QCOMPARE(effects.load(), 8);
+        QCOMPARE(outcomes.load(), 8);
+        QCOMPARE(publications.load(), 0);
+        QVERIFY(env.turnsIdle());
+        env.publishAll();
+        QCOMPARE(publications.load(), 8);
+        QVERIFY(env.quiescent());
+    }
+    void manualTransportRetiredTimerCaptureMayReenter()
+    {
+        ManualExecutionEnvironment env;
+        int destroyed{0}, published{0};
+        const auto cleanup = qScopeGuard([&] { env.stop(); env.drain(); env.publishAll(); });
+        auto capture = std::shared_ptr<int>{new int{0}, [&](int* value) {
+            delete value;
+            ++destroyed;
+            (void)env.trace();
+            env.post([&] { ++published; });
+        }};
+        env.restart([capture] {});
+        capture.reset();
+        env.stop(); // Last capture destructor must run outside transport mutex.
+        QCOMPARE(destroyed, 1);
+        QCOMPARE(published, 0);
+        QCOMPARE(env.publicationCount(), size_t{1});
+        env.publishAll();
+        QCOMPARE(published, 1);
+        QVERIFY(env.quiescent());
+        int expired{0};
+        env.restart([&] { ++expired; env.post([&] { ++published; }); });
+        env.advance(std::chrono::milliseconds{249});
+        QCOMPARE(expired, 0);
+        env.advance(std::chrono::milliseconds{1});
+        QCOMPARE(expired, 1);
+        QCOMPARE(published, 1);
+        env.publishAll();
+        QCOMPARE(published, 2);
+        QVERIFY(env.quiescent());
+    }
+    void coalescedRequestDuringRejectedAdmissionDoesNotRetryInline()
+    {
+        using namespace execution;
+        ManualRoutedExecution env;
+        struct AdmissionPort final : Scheduler {
+            std::shared_ptr<Scheduler> upstream;
+            std::function<void()> while_rejecting;
+            bool rejecting{true};
+            int attempts{0};
+            Admission submit(std::shared_ptr<Task> task, TaskSpec spec) override {
+                ++attempts;
+                if (rejecting) { while_rejecting(); return {{}, Rejection::Capacity}; }
+                return upstream->submit(std::move(task), spec);
+            }
+            Admission reserveCleanup(std::shared_ptr<Task> task, TaskSpec spec) override { return upstream->reserveCleanup(std::move(task), spec); }
+            bool activateCleanup(TaskId id) override { return upstream->activateCleanup(id); }
+            BorrowAdmission borrow(ResourceKey key) override { return upstream->borrow(key); }
+            ResourceKey allocateKey() override { return upstream->allocateKey(); }
+            size_t pending() const override { return upstream->pending(); }
+            void closeOrdinaryAdmission() override { upstream->closeOrdinaryAdmission(); }
+            bool cancelQueued(TaskId id) override { return upstream->cancelQueued(id); }
+        };
+        auto port = std::make_shared<AdmissionPort>(); port->upstream = env.scheduler;
+        int reads{0}, notices{0};
+        auto query = std::make_shared<SnapshotQuery<int>>(port, [&] { ++reads; return 42; }, [&] { ++notices; });
+        port->while_rejecting = [query] { query->request(); };
+        query->request();
+        QCOMPARE(port->attempts, 1); QCOMPARE(reads, 0); QCOMPARE(notices, 1);
+        const auto rejected = query->take(); QVERIFY(rejected); QVERIFY(rejected->error); QVERIFY(!rejected->snapshot);
+        QVERIFY(env.quiescent());
+        port->rejecting = false;
+        query->request(); QCOMPARE(port->attempts, 2); QCOMPARE(reads, 0);
+        env.drain(); QCOMPARE(reads, 1); QCOMPARE(notices, 2);
+        const auto retried = query->take(); QVERIFY(retried); QVERIFY(!retried->error); QVERIFY(retried->snapshot);
+        QCOMPARE(*retried->snapshot, 42);
+        query->close(); port->while_rejecting = {}; query.reset(); env.drain(); QVERIFY(env.quiescent());
+    }
+
+    void controlSnapshotUsesItsBoundedBudgetWhileOrdinaryObservationIsHeld()
+    {
+        using namespace execution;
+        auto limits = Limits::Bounded();
+        limits.ordinary = {1, 1024}; limits.observations = {1, 1024}; limits.control = {1, 1024};
+        ManualRoutedExecution env{limits};
+        int ordinary_reads{0}, control_reads{0};
+        std::deque<std::function<void()>> gui;
+        auto ordinary = std::make_shared<SnapshotQuery<int>>(env.scheduler,
+            [&] { ++ordinary_reads; return 7; }, [] {});
+        std::optional<SnapshotQuery<int>::Result> published;
+        std::shared_ptr<SnapshotQuery<int>> control;
+        control = std::make_shared<SnapshotQuery<int>>(env.scheduler,
+            [&] { ++control_reads; return 42; },
+            [&] { gui.emplace_back([&] { published = control->take(); }); }, Lane::Control);
+        ordinary->request(); control->request();
+        QCOMPARE(ordinary_reads, 0); QCOMPARE(control_reads, 0); QVERIFY(!published);
+        // The lifecycle query consumes the existing Control budget. It cannot
+        // admit a second packet merely because ordinary capacity is full.
+        QCOMPARE(Submit(*env.scheduler, [] {}, [] {}, {}, {Lane::Control, 1}).rejection, Rejection::Capacity);
+        QVERIFY(env.step(Lane::Control)); QCOMPARE(control_reads, 1); QCOMPARE(ordinary_reads, 0);
+        QVERIFY(!published); QVERIFY(gui.empty());
+        QVERIFY(env.step(Lane::Domain)); QVERIFY(!published); QCOMPARE(gui.size(), size_t{1});
+        auto publication = std::move(gui.front()); gui.pop_front(); publication();
+        QVERIFY(published); QVERIFY(published->snapshot); QVERIFY(!published->error); QCOMPARE(*published->snapshot, 42);
+        QCOMPARE(ordinary_reads, 0);
+        ordinary->close(); control->close(); env.drain();
+        QCOMPARE(ordinary_reads, 0); QCOMPARE(control_reads, 1); QVERIFY(env.quiescent());
+    }
+
+    void admittedActionCompletesDependentStagesAfterFullClose()
+    {
+        using namespace execution;
+        ManualRoutedExecution env;
+        auto scope = env.scheduler->openActionScope(); QVERIFY(scope);
+        int effects{0}; std::shared_ptr<int> observed;
+        const auto first = Submit(*scope, [scope, &effects, &observed] {
+            auto output = RetainSnapshot<int>(scope, [] { return std::make_unique<int>(0); });
+            if (!output) throw std::runtime_error{"Original result ownership rejected"};
+            const auto next = Submit(*scope, [output, &effects] { ++effects; *output = 42; return output; },
+                [&observed](auto result) { observed = std::move(result); });
+            if (!next) throw std::runtime_error{"Original Native stage rejected"};
+        }, [] {}, {}, {Lane::Domain, 64});
+        QVERIFY(first); env.scheduler->closeAdmission();
+        QVERIFY(!env.scheduler->openActionScope());
+        QCOMPARE(Submit(*env.scheduler, [] {}, [] {}).rejection, Rejection::Closed);
+        QVERIFY(env.step(Lane::Domain)); QCOMPARE(effects, 0);
+        QVERIFY(env.step(Lane::Core)); QCOMPARE(effects, 1); QVERIFY(!observed);
+        env.drain(); QVERIFY(observed); QCOMPARE(*observed, 42);
+        scope.reset(); env.drain(); QVERIFY(!env.quiescent()); // Original value owns its reserved cleanup.
+        observed.reset(); env.drain(); QVERIFY(env.quiescent());
+    }
+
+    void scopedCleanupCannotRunBeforeItsOriginalBorrow()
+    {
+        using namespace execution;
+        ManualRoutedExecution env;
+        auto scope = env.scheduler->openActionScope(); QVERIFY(scope);
+        env.scheduler->closeAdmission();
+        const auto key = scope->allocateKey(); int retired{0};
+        const auto cleanup = Submit(*scope, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 8, key}, true);
+        QVERIFY(cleanup); QVERIFY(!env.step(Lane::Cleanup));
+        auto held = scope->borrow(key); QVERIFY(held);
+        QVERIFY(scope->activateCleanup(cleanup.id));
+        scope.reset(); QVERIFY(!env.step(Lane::Cleanup));
+        held.lease.reset(); QVERIFY(env.step(Lane::Cleanup)); QCOMPARE(retired, 1);
+        env.drain(); QVERIFY(env.quiescent());
+    }
+
+    void actionScopesKeepSharedBudgetsAndOriginalResourceIdentity()
+    {
+        using namespace execution;
+        auto limits = Limits::Bounded(); limits.ordinary = {1, 8}; limits.action_scopes = {2, 32};
+        ManualRoutedExecution env{limits};
+        auto first = env.scheduler->openActionScope(16), second = env.scheduler->openActionScope(16);
+        QVERIFY(first && second); QVERIFY(!env.scheduler->openActionScope(0));
+        QVERIFY(!first->openActionScope());
+        int effects{0}; const auto original = Submit(*first, [&] { ++effects; }, [] {}, {}, {Lane::Core, 8}); QVERIFY(original);
+        QVERIFY(!second->cancelQueued(original.id));
+        QCOMPARE(Submit(*second, [] {}, [] {}).rejection, Rejection::Capacity);
+        QCOMPARE(Submit(*first, [] {}, [] {}, {}, {Lane::Control}).rejection, Rejection::Invalid);
+        const auto key = first->allocateKey();
+        const auto cleanup = Submit(*first, [] {}, [] {}, {}, {Lane::Cleanup, 8, key}, true); QVERIFY(cleanup);
+        QCOMPARE(second->borrow(key).rejection, Rejection::Invalid);
+        QVERIFY(!second->activateCleanup(cleanup.id));
+        auto held = first->borrow(key); QVERIFY(held); QVERIFY(first->activateCleanup(cleanup.id));
+        env.scheduler->closeOrdinaryAdmission();
+        env.drain(); QCOMPARE(effects, 1);
+        QVERIFY(Submit(*second, [&] { ++effects; }, [] {}, {}, {Lane::Core, 8}));
+        first->closeOrdinaryAdmission(); QCOMPARE(Submit(*first, [] {}, [] {}).rejection, Rejection::Closed);
+        held.lease.reset(); first.reset(); second.reset(); env.drain();
+        QCOMPARE(effects, 2); QVERIFY(env.quiescent());
+    }
+
+    void releasingScopeRetiresUnrequestedCleanupInBoundedBatches()
+    {
+        using namespace execution;
+        ManualRoutedExecution env;
+        auto scope = env.scheduler->openActionScope(); QVERIFY(scope);
+        int retired{0};
+        for (int index = 0; index < 257; ++index) {
+            QVERIFY(Submit(*scope, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 8, scope->allocateKey()}, true));
+        }
+        env.scheduler->closeAdmission(); QVERIFY(env.queuedIdle());
+        scope.reset(); QCOMPARE(env.queuedCount(), size_t{16}); QCOMPARE(retired, 0);
+        env.drain(); QCOMPARE(retired, 257); QVERIFY(env.quiescent());
+    }
+
+    void implicitScopedRetirementRejectsLaterWorkForItsResource()
+    {
+        using namespace execution;
+        ManualRoutedExecution env; auto scope = env.scheduler->openActionScope(); QVERIFY(scope);
+        const auto key = scope->allocateKey(); int retired{0}, touched_after_retirement{0};
+        QVERIFY(Submit(*scope, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 8, key}, true));
+        scope.reset(); QCOMPARE(env.queuedCount(), size_t{1});
+        QCOMPARE(Submit(*env.scheduler, [&] { ++touched_after_retirement; }, [] {}, {}, {Lane::Core, 8, key}).rejection, Rejection::Closed);
+        env.drain(); QCOMPARE(retired, 1); QCOMPARE(touched_after_retirement, 0); QVERIFY(env.quiescent());
+    }
+    void scopedCleanupIndexesRemainConsistentUnderRunnableBackpressure()
+    {
+        using namespace execution;
+        auto limits = Limits::Bounded(); limits.cleanup.tasks = 1;
+        ManualRoutedExecution env{limits}; int retired{0};
+        QVERIFY(Submit(*env.scheduler, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 8}));
+        auto scope = env.scheduler->openActionScope(); QVERIFY(scope);
+        for (int i = 0; i < 33; ++i) {
+            const auto reservation = Submit(*scope, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 8, scope->allocateKey()}, true); QVERIFY(reservation);
+            QVERIFY(scope->activateCleanup(reservation.id)); // Explicit promotion must remain consistent while runnable cleanup is saturated.
+        }
+        env.scheduler->closeAdmission(); scope.reset(); env.drain();
+        QCOMPARE(retired, 34); QVERIFY(env.quiescent());
+    }
+
+    void idleReservationsDoNotConsumeRunnableCleanupCapacity()
+    {
+        using namespace execution;
+        auto limits = Limits::Bounded(); limits.cleanup.tasks = 2;
+        ManualRoutedExecution env{limits};
+        std::vector<ResourceLease> held;
+        int retired{0}, ordinary{0};
+        for (int index = 0; index < 48; ++index) {
+            const auto key = env.scheduler->allocateKey();
+            const auto reservation = Submit(*env.scheduler, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 16, key}, true);
+            QVERIFY(reservation);
+            auto lease = env.scheduler->borrow(key); QVERIFY(lease);
+            held.push_back(std::move(*lease.lease));
+            QVERIFY(env.scheduler->activateCleanup(reservation.id));
+            QCOMPARE(env.scheduler->phase(reservation.id), std::make_optional(Phase::Reserved));
+        }
+        QVERIFY(Submit(*env.scheduler, [&] { ++ordinary; }, [] {}, {}, {Lane::Cleanup, 16}));
+        QVERIFY(Submit(*env.scheduler, [&] { ++ordinary; }, [] {}, {}, {Lane::Cleanup, 16}));
+        QCOMPARE(Submit(*env.scheduler, [] {}, [] {}, {}, {Lane::Cleanup, 16}).rejection, Rejection::Capacity);
+        env.drain(); QCOMPARE(ordinary, 2); QCOMPARE(retired, 0);
+        env.scheduler->closeAdmission();
+        held.clear();
+        QCOMPARE(retired, 0);
+        while (!env.quiescent()) {
+            const auto queued = env.queuedCountIf([](const auto& turn) { return turn.lane == Lane::Cleanup; });
+            QVERIFY(queued <= 2);
+            QVERIFY(env.step(Lane::Cleanup) || env.step(Lane::Domain));
+        }
+        QCOMPARE(retired, 48);
+    }
+    void reservationInventoryHasItsOwnBound()
+    {
+        using namespace execution;
+        auto limits = Limits::Bounded(); limits.cleanup.tasks = 1;
+        limits.cleanup_reservations = {3, 24};
+        ManualRoutedExecution env{limits};
+        int retired{0};
+        for (int index = 0; index < 3; ++index) {
+            const auto key = env.scheduler->allocateKey();
+            QVERIFY(Submit(*env.scheduler, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 8, key}, true));
+        }
+        const auto rejected = Submit(*env.scheduler, [] {}, [] {}, {}, {Lane::Cleanup, 8, env.scheduler->allocateKey()}, true);
+        QCOMPARE(rejected.rejection, Rejection::Capacity);
+        QCOMPARE(env.scheduler->pending(), size_t{3});
+        env.scheduler->closeAdmission();
+        QCOMPARE(env.queuedCount(), size_t{1});
+        env.drain(); QCOMPARE(retired, 3); QVERIFY(env.quiescent());
+    }
+    void closingLargeIdleInventoryDispatchesBoundedTurns()
+    {
+        using namespace execution;
+        ManualRoutedExecution env{Limits{}};
+        int retired{0};
+        for (int index = 0; index < 257; ++index) {
+            QVERIFY(Submit(*env.scheduler, [&] { ++retired; }, [] {}, {}, {Lane::Cleanup, 1, env.scheduler->allocateKey()}, true));
+        }
+        QVERIFY(env.queuedIdle());
+        env.scheduler->closeAdmission();
+        QCOMPARE(env.queuedCount(), size_t{16});
+        QCOMPARE(retired, 0);
+        env.drain(); QCOMPARE(retired, 257); QVERIFY(env.quiescent());
+    }
+
     void invalidRoutedConfigurationIsRejected_data()
     {
         QTest::addColumn<int>("invalid");
@@ -169,7 +651,7 @@ private Q_SLOTS:
         const auto reserved = Submit(*env.scheduler, [&] { ++cleanup_effects; }, [&] { ++cleanup_outcomes; }, {}, {Lane::Cleanup, 0, key}, true);
         QVERIFY(reserved);
         QCOMPARE(env.scheduler->phase(reserved.id), std::make_optional(Phase::Reserved));
-        QVERIFY(env.queued.empty());
+        QVERIFY(env.queuedIdle());
         QVERIFY(!BorrowAdmission{});
         QCOMPARE(env.scheduler->borrow({999, 1}).rejection, Rejection::Invalid);
         auto borrowed = env.scheduler->borrow(key);
@@ -292,7 +774,7 @@ private Q_SLOTS:
         QCOMPARE(effects, std::vector<int>({1, 2, 9, 3, 4}));
         env.drain();
         QVERIFY(env.quiescent());
-        env.reject_lane = Lane::Core;
+        env.rejectLane(Lane::Core);
         QCOMPARE(submit(11, WorkClass::Observation, 1).rejection, Rejection::Transport);
         QVERIFY(submit(12, WorkClass::Observation, 1));
         env.drain();
@@ -384,7 +866,7 @@ private Q_SLOTS:
         const auto a = Submit(*env.scheduler, [&] { ++effects; }, [&] { ++outcomes; }, failed);
         const auto b = Submit(*env.scheduler, [&] { ++effects; }, [&] { ++outcomes; }, failed);
         QVERIFY(a && b);
-        env.reject_lane = Lane::Core;
+        env.rejectLane(Lane::Core);
         QVERIFY(env.scheduler->cancelQueued(a.id));
         QVERIFY(!env.scheduler->cancelQueued(a.id));
         QVERIFY(!env.scheduler->cancelQueued({999}));
@@ -400,7 +882,7 @@ private Q_SLOTS:
         QCOMPARE(failures, std::vector<NotStarted::Cause>({NotStarted::Cause::Cancelled, NotStarted::Cause::Transport}));
         QCOMPARE(outcomes, 0);
         QVERIFY(env.quiescent());
-        env.reject_lane = Lane::Core;
+        env.rejectLane(Lane::Core);
         QCOMPARE(Submit(*env.scheduler, [] {}, [] {}).rejection, Rejection::Transport);
         QVERIFY(env.quiescent());
         bool invalid_transport{false};
@@ -520,7 +1002,7 @@ private Q_SLOTS:
         int effects{0}, results{0}, failures{0};
         std::vector<int> order;
         const auto cleanup = qScopeGuard([&] { env.drain(); });
-        env.reject_next = true;
+        env.rejectNext(true);
         const auto rejected = execution::Submit(*env.scheduler, [&] { ++effects; }, [&] { ++results; });
         QCOMPARE(rejected.rejection, execution::Rejection::Transport);
         QCOMPARE(env.scheduler->pending(), size_t{0});

@@ -13,8 +13,9 @@ ColumnLayout {
     property var coins: wallet ? wallet.coinsListModel : null
     property bool selectionMode: true
     property bool walletSelectionActive: false
-    property var markedIds: []
-    property string errorText: ""
+    readonly property int markedCount: coins ? coins.markedCount : 0
+    property string admissionError: ""
+    readonly property string errorText: admissionError.length > 0 ? admissionError : (coins ? (coins.lockError.length > 0 ? coins.lockError : coins.readError) : "")
     property string pendingLockedCoinId: ""
     property string contextCoinId: ""
     property bool contextCoinLocked: false
@@ -28,7 +29,7 @@ ColumnLayout {
     readonly property real changeAmount: Math.max(0, selectedAmount - target)
     readonly property int activeFilterCount: !coins ? 0 : (coins.filter !== "all" ? 1 : 0) + (coins.minAmount >= 0 || coins.maxAmount >= 0 ? 1 : 0)
     spacing: 16
-    onWalletChanged: { markedIds = []; walletSelectionActive = false; pendingLockedCoinId = ""; errorText = "" }
+    onWalletChanged: { if (coins) coins.clearMarks(); walletSelectionActive = false; pendingLockedCoinId = ""; admissionError = "" }
 
     BitcoinAmount { id: targetAmount; unit: ApplicationModels.optionsModel.displayUnit; satoshi: root.target }
     BitcoinAmount { id: selectedAmountText; unit: ApplicationModels.optionsModel.displayUnit; satoshi: root.selectedAmount }
@@ -45,19 +46,14 @@ ColumnLayout {
             pendingLockedCoinId = coinId
             lockedCoinAlert.open()
         } else if (selectionMode) coins.toggleCoinSelection(row)
-        else if (walletSelectionActive) {
-            const ids = markedIds.slice()
-            const i = ids.indexOf(coinId)
-            if (i < 0) ids.push(coinId); else ids.splice(i, 1)
-            markedIds = ids
-        }
+        else if (walletSelectionActive)
+            admissionError = coins.toggleMarkById(coinId) ? "" : qsTr("This coin could not be marked. Try again.")
     }
     function lockMarked(locked) {
-        errorText = coins.setCoinsLocked(markedIds, locked) ? "" : qsTr("Some coins could not be updated. Try again.")
-        markedIds = []
+        admissionError = coins.lockMarkedCoins(locked) ? "" : qsTr("Some coins could not be updated. Try again.")
     }
     function setCoinLocked(coinId, locked) {
-        errorText = coins.setCoinsLocked([coinId], locked) ? "" : qsTr("This coin could not be updated. Try again.")
+        admissionError = coins.setCoinsLocked([coinId], locked) ? "" : qsTr("This coin could not be updated. Try again.")
     }
     function openMenu(menu, button) {
         const p = button.mapToItem(Overlay.overlay, button.width, button.height + 6)
@@ -123,7 +119,8 @@ ColumnLayout {
             Accessible.checked: root.walletSelectionActive
             onClicked: {
                 root.walletSelectionActive = !root.walletSelectionActive
-                if (!root.walletSelectionActive) root.markedIds = []
+                if (!root.walletSelectionActive && root.coins)
+                    root.admissionError = root.coins.clearMarks() ? "" : qsTr("Coin marks could not be cleared. Try again.")
             }
         }
     }
@@ -192,12 +189,13 @@ ColumnLayout {
             required property var date
             required property bool locked
             required property bool selected
+            required property bool walletMarked
             required property bool groupFirst
             required property bool groupLast
             property bool isOnSurface: root.selectionMode
             property bool suppressNextRowClick: false
             objectName: "coinSelectionItem_" + index
-            readonly property bool marked: root.selectionMode ? selected : root.markedIds.indexOf(coinId) >= 0
+            readonly property bool marked: root.selectionMode ? selected : walletMarked
             width: list.width
             height: root.coins && root.coins.groupBy === "address"
                 ? (label.length > 0 ? 72 : 52)
@@ -351,9 +349,9 @@ ColumnLayout {
     RowLayout {
         visible: !root.selectionMode && root.walletSelectionActive
         Layout.fillWidth: true
-        CoreText { text: qsTr("%1 selected").arg(root.markedIds.length); Layout.fillWidth: true; horizontalAlignment: Text.AlignLeft; font: Theme.text.description.font }
-        NeutralButton { objectName: "coinsLockButton"; text: qsTr("Lock coins"); enabled: root.markedIds.length > 0; onClicked: root.lockMarked(true) }
-        NeutralButton { objectName: "coinsUnlockButton"; text: qsTr("Unlock coins"); enabled: root.markedIds.length > 0; onClicked: root.lockMarked(false) }
+        CoreText { text: qsTr("%1 selected").arg(root.markedCount); Layout.fillWidth: true; horizontalAlignment: Text.AlignLeft; font: Theme.text.description.font }
+        NeutralButton { objectName: "coinsLockButton"; text: qsTr("Lock coins"); enabled: root.markedCount > 0 && root.coins && !root.coins.marksPending && !root.coins.lockPending; onClicked: root.lockMarked(true) }
+        NeutralButton { objectName: "coinsUnlockButton"; text: qsTr("Unlock coins"); enabled: root.markedCount > 0 && root.coins && !root.coins.marksPending && !root.coins.lockPending; onClicked: root.lockMarked(false) }
     }
     CoreText { Layout.fillWidth: true; visible: root.errorText.length > 0; text: root.errorText; color: Theme.color.red; horizontalAlignment: Text.AlignLeft }
 
@@ -447,7 +445,7 @@ ColumnLayout {
             onTriggered: {
                 const coinId = root.pendingLockedCoinId
                 if (coinId.length && root.coins && !root.coins.toggleCoinSelectionById(coinId)) {
-                    root.errorText = qsTr("This coin is no longer available. Try again.")
+                    root.admissionError = qsTr("This coin is no longer available. Try again.")
                 }
             }
         }

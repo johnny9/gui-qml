@@ -494,6 +494,7 @@ PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc,
     result.assumed_chainstate_size = static_cast<int>(chain_params->AssumedChainStateSize());
     result.profile = BuildProfileSummary(preview_args, config_file_path_available);
     result.core_setting_statuses = QmlCoreSettings::BuildCoreSettingStatuses(preview_args, QmlCoreSettings::OnboardingCoreSettingNames());
+    result.core_setting_statuses_bytes=QmlCoreSettings::CaptureStatuses(result.core_setting_statuses).payload_bytes;
     result.values = QmlCoreSettings::LoadEffectiveValues(preview_args);
     result.ok = true;
     return result;

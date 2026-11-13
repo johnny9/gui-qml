@@ -58,6 +58,8 @@ TestCase {
 
     function init() {
         testSetup.failOnWarnings()
+        testWalletModel.available = true
+        testWalletModel.capabilitiesKnown = true
         optionsModel.displayUnit = BitcoinAmount.BTC
         testPaymentRequest.clear()
         testWalletModel.lastCommitAddressType = ""
@@ -65,8 +67,56 @@ TestCase {
         testWalletModel.lastRemovedRequestId = ""
         testWalletModel.removeReceiveRequestResult = true
         testWalletModel.ensureReceivingAddressResult = true
+        testWalletModel.ensureReceivingAddressNeedsUnlock = false
         testWalletModel.receiveRequestReconciliationPending = false
+        testWalletModel.receiveRequestReconciliationError = ""
         walletController.closePaymentRequestDetailRequests = 0
+    }
+
+    function test_receive_waits_for_actual_capability_publication() {
+        testWalletModel.capabilitiesKnown = false
+        const before = testWalletModel.ensureReceivingAddressCalls
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        wait(0)
+        compare(page.addressCapabilitiesReady, false)
+        compare(page.addressErrorText, "")
+        compare(testWalletModel.ensureReceivingAddressCalls, before)
+        testWalletModel.capabilitiesKnown = true
+        tryVerify(function() { return testWalletModel.ensureReceivingAddressCalls > before })
+        compare(page.addressErrorText, "")
+        verify(page.addressCapabilitiesReady)
+    }
+
+    function test_receiving_password_closes_when_opening_context_ends_data() {
+        return [{tag: "hidden", action: 0}, {tag: "changed-opening", action: 1}, {tag: "unloaded", action: 2}]
+    }
+
+    function test_receiving_password_closes_when_opening_context_ends(data) {
+        testWalletModel.ensureReceivingAddressNeedsUnlock = true
+        const page = createTemporaryObject(requestPaymentComponent, this)
+        verify(page !== null)
+        const prompt = findChild(page, "receivePassphrasePopup")
+        const field = findChild(prompt, "receivePassphraseField")
+        verify(prompt !== null && field !== null)
+        tryCompare(prompt, "opened", true)
+        field.text = "original-opening-password"
+        try {
+            if (data.action === 0) page.visible = false
+            else if (data.action === 1) page.wallet = testSecondWalletModel
+            else testWalletModel.available = false
+            tryCompare(prompt, "visible", false)
+            compare(field.text, "")
+            wait(0) // Settle the new view's own address-initialization intent.
+            const originalCalls = testWalletModel.ensureReceivingAddressCalls
+            const otherCalls = testSecondWalletModel.ensureReceivingAddressCalls
+            prompt.submitted("delayed-password")
+            compare(testWalletModel.ensureReceivingAddressCalls, originalCalls)
+            compare(testSecondWalletModel.ensureReceivingAddressCalls, otherCalls)
+        } finally {
+            testWalletModel.available = true
+            prompt.close()
+        }
     }
 
     function test_formatRelativeTime_empty() {
@@ -485,6 +535,30 @@ TestCase {
         }
     }
 
+    function test_old_QR_save_dialog_cannot_start_a_new_capture_data() {
+        return [{tag: "wallet"}, {tag: "generation"}, {tag: "hidden-return"}, {tag: "close-before-notify"}, {tag: "checking-before-notify"}]
+    }
+
+    function test_old_QR_save_dialog_cannot_start_a_new_capture(data) {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        const dialog = findChild(card, "requestPaymentSaveQRDialog")
+        card.openSaveQRDialog()
+        compare(dialog.visible, true)
+        if (data.tag === "wallet") card.wallet = testSecondWalletModel
+        if (data.tag === "generation") card.request.generation++
+        if (data.tag === "hidden-return") { card.visible = false; card.visible = true }
+        if (data.tag === "close-before-notify") testWalletModel.closeBeforeAvailabilityNotificationForTest()
+        else if (data.tag === "checking-before-notify") testWalletModel.checkBeforeReconciliationNotificationForTest()
+        else compare(dialog.visible, false)
+        // The platform may still deliver the old chooser's accept signal.
+        dialog.selectAndAccept("file:///tmp/request-qr-old-interest.png")
+        compare(grabber.captures, 0)
+        compare(card.actionErrorText, "The payment request changed before the QR code was saved.")
+    }
+
     function test_primary_action_returns_to_copy_after_update() {
         const page = createPage()
         const card = createRequest(page)
@@ -730,6 +804,38 @@ TestCase {
         compare(request.message, "")
     }
 
+    function test_pending_save_preserves_fields_until_its_controlled_outcome() {
+        const card = createRequest(createPage())
+        const input = editField(card, "requestPaymentMessageInput", "Unsaved controlled draft")
+        const operation = testWalletModel.pendingReceiveOperation(card.request.id)
+        verify(card.startOperation(operation, "edit"))
+        verify(card.pending)
+        verify(card.modified)
+        compare(input.text, "Unsaved controlled draft")
+        verify(!findChild(card, "requestPaymentUpdateButton").enabled)
+        operation.complete(false, false, "Persistence failed")
+        compare(card.pending, false)
+        compare(card.actionErrorText, "Persistence failed")
+        compare(input.text, "Unsaved controlled draft")
+        verify(card.modified)
+    }
+
+    function test_old_delete_outcome_cannot_close_a_reused_detail() {
+        const page = createPage()
+        const card = createRequest(page)
+        const oldId = card.request.id
+        const operation = testWalletModel.pendingReceiveOperation(oldId)
+        verify(card.startOperation(operation, "delete"))
+        // The detail QObject is reused, but a new draft generation is a new
+        // view interest. Completion still belongs to the original operation.
+        card.request.clear()
+        card.request.id = "another-request"
+        operation.complete(false, true, "")
+        compare(card.request.id, "another-request")
+        verify(page.requestModal.visible)
+        compare(testWalletModel.lastRemovedRequestId, "")
+    }
+
     function test_received_payment_freezes_fields_and_hides_sharing() {
         const card = createRequest(createPage())
         const message = editField(card, "requestPaymentMessageInput", "Uncommitted message")
@@ -758,6 +864,168 @@ TestCase {
         note.editingFinished()
         verify(card.saveFields())
         compare(card.request.noteSelf, "Received, thank you")
+    }
+
+    function test_payment_check_failure_keeps_draft_and_retries_data() {
+        return [{tag: "saved", saved: true}, {tag: "new-draft", saved: false}]
+    }
+
+    function test_payment_check_failure_keeps_draft_and_retries(data) {
+        const page = createPage()
+        const card = data.saved ? createRequest(page) : page.draftCard
+        const note = editField(card, "requestPaymentNoteSelfInput", "Keep this draft")
+        testWalletModel.receiveRequestReconciliationPending = true
+        testWalletModel.receiveRequestReconciliationError = "Payments could not be checked. Try again."
+        const retry = findChild(card, "requestPaymentRetryCheckButton")
+        verify(retry.visible)
+        verify(findChild(card, "requestPaymentError").text.includes("could not be checked"))
+        verify(!card.sharing)
+        verify(!findChild(card, data.saved ? "requestPaymentUpdateButton" : "requestPaymentGenerateButton").enabled)
+        const before = testWalletModel.receiveRequestReloadCalls
+        retry.clicked()
+        compare(testWalletModel.receiveRequestReloadCalls, before + 1)
+        compare(note.text, "Keep this draft")
+        testWalletModel.receiveRequestReconciliationError = ""
+        testWalletModel.receiveRequestReconciliationPending = false
+        verify(!retry.visible)
+        compare(note.text, "Keep this draft")
+    }
+
+    Component {
+        id: controlledQRGrabber
+        QtObject {
+            id: capture
+            property var completion: null
+            property int captures: 0
+            property int synchronousSaves: 0
+            function grabToImage(callback, size) {
+                completion = callback
+                captures++
+                return true
+            }
+            function release() {
+                const callback = completion
+                completion = null
+                callback({image: null, saveToFile: function(path) { capture.synchronousSaves++; return true }})
+            }
+        }
+    }
+
+    function test_native_unavailability_before_notification_blocks_copy_and_capture_data() {
+        return [{tag: "closed"}, {tag: "checking"}]
+    }
+
+    function test_native_unavailability_before_notification_blocks_copy_and_capture(data) {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        let copies = 0
+        card.clipboard = {setText: function(text) { copies++ }}
+        verify(card.sharing)
+        if (data.tag === "closed") testWalletModel.closeBeforeAvailabilityNotificationForTest()
+        else testWalletModel.checkBeforeReconciliationNotificationForTest()
+        // No notify signal: the presentation binding has not caught up.
+        verify(card.sharing)
+        card.copyRequest()
+        const started = card.captureQR(function(result) { fail("Closed wallet captured") })
+        compare(copies, 0)
+        compare(started, false)
+        compare(grabber.captures, 0)
+    }
+
+    function test_controlled_QR_capture_keeps_original_interest_data() {
+        return [{tag: "current"}, {tag: "wallet"}, {tag: "generation"},
+                {tag: "close-before-notify"}, {tag: "checking-before-notify"}, {tag: "paid"}, {tag: "hidden"},
+                {tag: "wallet-return"}, {tag: "hidden-return"}, {tag: "request"}, {tag: "revision"}]
+    }
+
+    function test_controlled_QR_capture_keeps_original_interest(data) {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        let deliveries = 0
+        verify(card.captureQR(function(result) { deliveries++ }))
+        compare(grabber.captures, 1)
+        compare(deliveries, 0)
+        if (data.tag === "wallet" || data.tag === "wallet-return") {
+            const original = card.wallet
+            card.wallet = testSecondWalletModel
+            if (data.tag === "wallet-return") card.wallet = original
+        }
+        if (data.tag === "request") {
+            testPaymentRequest.id = card.request.id
+            testPaymentRequest.address = card.request.address
+            card.request = testPaymentRequest
+        }
+        if (data.tag === "revision") card.request.addressType = "bech32m"
+        if (data.tag === "generation") {
+            const request = card.request
+            const id = request.id
+            const address = request.address
+            const amount = request.amount.satoshi
+            const label = request.label
+            const message = request.message
+            request.clear()
+            request.id = id
+            request.address = address
+            request.amount.satoshi = amount
+            request.label = label
+            request.message = message
+        }
+        if (data.tag === "close-before-notify") testWalletModel.closeBeforeAvailabilityNotificationForTest()
+        if (data.tag === "checking-before-notify") testWalletModel.checkBeforeReconciliationNotificationForTest()
+        if (data.tag === "paid") card.request.paymentReceived = true
+        if (data.tag === "hidden" || data.tag === "hidden-return") {
+            card.visible = false
+            if (data.tag === "hidden-return") card.visible = true
+        }
+        grabber.release()
+        compare(deliveries, data.tag === "current" ? 1 : 0)
+    }
+
+    function test_QR_export_waits_for_its_owned_background_outcome() {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        verify(card.saveQRToFile("file:///tmp/controlled-qr.png"))
+        compare(card.imageExport, null)
+        grabber.release()
+        compare(grabber.synchronousSaves, 0)
+        verify(card.imageExport !== null)
+        verify(card.pending)
+        compare(card.imageExport.path, "file:///tmp/controlled-qr.png")
+        card.imageExport.complete(false, "The file could not be written")
+        compare(card.pending, false)
+        compare(card.actionErrorText, "The file could not be written")
+    }
+
+    function test_QR_export_late_outcome_does_not_retarget_a_reused_card() {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        verify(card.saveQRToFile("file:///tmp/original-qr.png"))
+        grabber.release()
+        const original = card.imageExport
+        card.wallet = testSecondWalletModel
+        verify(original.retireCalls > 0)
+        card.actionErrorText = "New view"
+        original.complete(false, "Old write error")
+        compare(card.actionErrorText, "New view")
+        compare(original.path, "file:///tmp/original-qr.png")
+    }
+
+    function test_closed_wallet_cannot_share_a_retained_request() {
+        const page = createPage()
+        const card = createRequest(page)
+        verify(card.sharing)
+        testWalletModel.available = false
+        compare(card.sharing, false)
+        verify(!findChild(card, "requestPaymentCopyButton").enabled)
+        verify(!findChild(card, "requestPaymentQRImage").visible)
     }
 
     function test_saved_request_cannot_be_shared_while_payment_scan_is_pending() {

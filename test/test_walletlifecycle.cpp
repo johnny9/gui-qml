@@ -117,7 +117,7 @@ struct Fixture {
         const auto restore = qScopeGuard([&] { probe->lane = previous; });
         return env.step(lane);
     }
-    void drain() { while (!env.queued.empty()) step(env.queued.front().lane); }
+    void drain() { while (!env.queuedIdle()) step(env.nextLane().value()); }
     void notify(const std::string& name)
     {
         const auto previous = std::exchange(probe->lane, Lane::Core);
@@ -744,19 +744,88 @@ private Q_SLOTS:
         QCOMPARE(probe->destroyed.load(), 2);
         QVERIFY(probe->registration_off_gui && probe->metadata_off_gui && probe->disconnect_off_gui && probe->destruction_off_gui && probe->notification_off_gui);
     }
+    void capturedQStringContextKeepsOriginalUtf8AndRetiresNatively()
+    {
+        Fixture f;QVERIFY(f.owner->start());f.drain();
+        QString source=QStringLiteral("  ")+QString::fromUtf8("pending-₿-")+QString(40'000,QLatin1Char('x'))+QStringLiteral("  ");const auto native=source.trimmed().toStdString();
+        QVERIFY(f.owner->setNotificationContext(source,true,71));source.fill(QLatin1Char('z'));
+        f.notify(native);f.notify("independent");QVERIFY(f.owner->setNotificationContext({},false,72));f.drain();
+        auto handoff=f.owner->takeNotifications();QVERIFY(handoff);QCOMPARE(handoff->entries.size(),size_t{1});QCOMPARE(handoff->entries.front().name,std::string{"independent"});
+        QVERIFY(!handoff->entries.front().select_wallet);QCOMPARE(handoff->entries.front().selection_revision,uint64_t{71});
+        handoff.reset();f.drain();
+        {std::lock_guard lock{f.owner->m_context_inventory->mutex};QCOMPARE(f.owner->m_context_inventory->count,size_t{1});}
+        f.owner->retire();f.drain();
+        {std::lock_guard lock{f.owner->m_context_inventory->mutex};QCOMPARE(f.owner->m_context_inventory->count,size_t{0});QCOMPARE(f.owner->m_context_inventory->bytes,size_t{0});}
+    }
+    void whitespaceContextDoesNotHideTheUnnamedWallet()
+    {
+        Fixture f;QVERIFY(f.owner->start());f.drain();QVERIFY(f.owner->setNotificationContext(QStringLiteral("   "),true,83));f.notify("");f.drain();
+        auto handoff=f.owner->takeNotifications();QVERIFY(handoff);QCOMPARE(handoff->entries.size(),size_t{1});QVERIFY(handoff->entries.front().name.empty());QCOMPARE(handoff->entries.front().selection_revision,uint64_t{83});
+    }
+    void notificationContextCapacityFailureFencesStaleOrigin_data()
+    {
+        QTest::addColumn<int>("capacity");QTest::newRow("context-count")<<0;QTest::newRow("retained-byte-weight")<<1;QTest::newRow("oversized-original-literal")<<2;
+    }
+    void notificationContextCapacityFailureFencesStaleOrigin()
+    {
+        QFETCH(int,capacity);Fixture f;QVERIFY(f.owner->start());f.drain();
+        if(capacity==0){for(int index=0;index<128;++index)QVERIFY(f.owner->setNotificationContext(QString::number(index),true,index));QVERIFY(!f.owner->setNotificationContext("overflow",false,999));}
+        if(capacity==1){QVERIFY(f.owner->setNotificationContext(QString(300'000,QLatin1Char('x')),true,1));QVERIFY(!f.owner->setNotificationContext(QString(300'000,QLatin1Char('y')),false,999));}
+        if(capacity==2){QVERIFY(f.owner->setNotificationContext("old-origin",true,1));QVERIFY(!f.owner->setNotificationContext(QString(600'000,QLatin1Char('x')),false,999));}
+        f.notify("must-not-use-old-origin");f.drain();QVERIFY(!f.owner->takeNotifications());
+        QVERIFY(std::any_of(f.publications.begin(),f.publications.end(),[](const auto& update){return update.reason==walletlife::FailureReason::IngressCapacity;}));
+        {std::lock_guard lock{f.owner->m_context_inventory->mutex};QCOMPARE(f.owner->m_context_inventory->count,size_t{0});QCOMPARE(f.owner->m_context_inventory->bytes,size_t{0});}
+    }
+    void notificationContextCleanupRejectionDoesNotCaptureOriginal()
+    {
+        auto limits=execution::Limits::Bounded();limits.cleanup_reservations.tasks=1;Fixture f{limits};QVERIFY(f.owner->start());f.drain();
+        QVERIFY(!f.owner->setNotificationContext(QString(40'000,QLatin1Char('x')),true,1));
+        {std::lock_guard lock{f.owner->m_context_inventory->mutex};QCOMPARE(f.owner->m_context_inventory->count,size_t{0});}
+        f.drain();QVERIFY(!f.owner->takeNotifications());
+        QVERIFY(std::any_of(f.publications.begin(),f.publications.end(),[](const auto& update){return update.reason==walletlife::FailureReason::IngressCapacity;}));
+    }
+    void opaqueAdoptionContextKeepsOriginalIdentityAndNativeRetirement()
+    {
+        Fixture f;
+        QVERIFY(f.owner->start());
+        f.drain();
+        std::optional<Lane> destroyed;
+        auto origin = std::shared_ptr<void>(new uint64_t{91}, [&](void* value) {
+            destroyed = f.probe->lane;
+            delete static_cast<uint64_t*>(value);
+        });
+        const std::weak_ptr<void> original = origin;
+        QVERIFY(f.owner->setNotificationContext({}, false, 1, origin));
+        f.notify("original-context");
+        QVERIFY(f.owner->setNotificationContext({}, false, 2, {}));
+        origin.reset();
+        f.drain();
+        auto handoff = f.owner->takeNotifications();
+        QVERIFY(handoff);
+        QCOMPARE(handoff->entries.size(), size_t{1});
+        QVERIFY(handoff->entries.front().adoption_origin == original.lock());
+        QCOMPARE(handoff->entries.front().selection_revision, uint64_t{1});
+        QVERIFY(!original.expired());
+        handoff.reset();
+        f.drain();
+        QVERIFY(original.expired());
+        QVERIFY(destroyed == Lane::Core || destroyed == Lane::Cleanup);
+    }
+
     void notificationRetainsTheProducingCommandContext()
     {
         Fixture f;
         QVERIFY(f.owner->start()); f.drain();
-        f.owner->setNotificationContext("unfinished", true);
+        f.owner->setNotificationContext("unfinished", true, 41);
         f.notify("unfinished");
         f.notify("unrelated");
-        f.owner->setNotificationContext({}, false);
+        f.owner->setNotificationContext({}, false, 42);
         f.drain();
         auto handoff = f.owner->takeNotifications();
         QVERIFY(handoff); QCOMPARE(handoff->entries.size(), size_t{1});
         QCOMPARE(handoff->entries.front().name, std::string{"unrelated"});
         QVERIFY(!handoff->entries.front().select_wallet);
+        QCOMPARE(handoff->entries.front().selection_revision, uint64_t{41});
         QCOMPARE(f.probe->destroyed.size(), size_t{1});
         QCOMPARE(f.probe->destroyed.front().first, std::string{"unfinished"});
         QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Core});
@@ -765,6 +834,7 @@ private Q_SLOTS:
         handoff = f.owner->takeNotifications();
         QVERIFY(handoff); QCOMPARE(handoff->entries.size(), size_t{1});
         QVERIFY(handoff->entries.front().select_wallet);
+        QCOMPARE(handoff->entries.front().selection_revision, uint64_t{42});
     }
     void legalRetirementSchedules_data()
     {
@@ -784,7 +854,7 @@ private Q_SLOTS:
         Fixture f; f.catalog = {"DO_NOT_TRACE_private_wallet"};
         const auto record_trace = qScopeGuard([&] {
             QJsonArray trace;
-            for (const auto& event : f.env.trace) trace.append(QString::fromStdString(event));
+            for (const auto& event : f.env.traceSnapshot()) trace.append(QString::fromStdString(event));
             qInfo().noquote() << QJsonDocument{QJsonObject{{"stage", stage}, {"inline_callback", inline_callback}, {"events", trace}}}.toJson(QJsonDocument::Compact);
         });
         if (inline_callback) f.during_registration = [&] { f.callback(f.wallet("DO_NOT_TRACE_callback")); };
@@ -814,7 +884,7 @@ private Q_SLOTS:
         if (f.callback) f.notify("DO_NOT_TRACE_late");
         f.drain();
         QVERIFY(f.env.quiescent());
-        for (const auto& event : f.env.trace) QVERIFY(event.find("DO_NOT_TRACE") == std::string::npos);
+        for (const auto& event : f.env.traceSnapshot()) QVERIFY(event.find("DO_NOT_TRACE") == std::string::npos);
         for (const auto& entry : f.probe->destroyed) QVERIFY(entry.second == Lane::Core || entry.second == Lane::Cleanup);
     }
     void callbackDuringRegistrationRetainsBothInitialAndNotifiedWallets()
@@ -952,7 +1022,8 @@ private Q_SLOTS:
     }
     void handoffReservationFailureLeavesHandlesForBackgroundCleanup()
     {
-        auto limits = execution::Limits::Bounded(); limits.cleanup.tasks = 1;
+        // Handoffs reserve idle ownership; runnable Cleanup turns have a separate budget.
+        auto limits = execution::Limits::Bounded(); limits.cleanup_reservations.tasks = 1;
         Fixture f{limits}; f.catalog = {"owned"};
         QVERIFY(f.owner->start()); f.drain();
         QVERIFY(!f.owner->takeInitial());

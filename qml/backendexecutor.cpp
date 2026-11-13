@@ -342,13 +342,15 @@ void BackendExecutor::shutdown()
     qDebug() << __func__ << ": Stopping thread" << m_thread;
     m_gui_completions.clear();
     disconnect(m_worker, nullptr, this, nullptr);
+    const auto started = m_shutdown_started_for_testing;
     if (m_group) {
         for (const auto& [worker, thread] : m_group->workers) {
-            QMetaObject::invokeMethod(worker, [worker, thread, scheduler = m_scheduler] { worker->beginShutdown(thread, scheduler); }, Qt::QueuedConnection);
+            QMetaObject::invokeMethod(worker, [worker, thread, scheduler = m_scheduler, started] { worker->beginShutdown(thread, scheduler); if (started) started(); }, Qt::QueuedConnection);
         }
     } else {
-        QMetaObject::invokeMethod(m_worker, [worker = m_worker, gui_owned_thread = m_thread, scheduler = m_scheduler] {
+        QMetaObject::invokeMethod(m_worker, [worker = m_worker, gui_owned_thread = m_thread, scheduler = m_scheduler, started] {
             worker->beginShutdown(gui_owned_thread, scheduler);
+            if (started) started();
         }, Qt::QueuedConnection);
     }
 }

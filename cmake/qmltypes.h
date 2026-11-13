@@ -13,8 +13,10 @@
 #include <qml/components/blockclockdial.h>
 #include <qml/controls/linegraph.h>
 #include <qml/models/activityfilterproxymodel.h>
+#include <qml/models/activitydetailmodel.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/models/backuppolicyoperation.h>
+#include <qml/models/imageexportoperation.h>
 #include <qml/models/banlistmodel.h>
 #include <qml/models/bitcoinaddress.h>
 #include <qml/models/bitcoinurimodel.h>
@@ -23,19 +25,23 @@
 #include <qml/models/chainmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/debuglogmodel.h>
+#include <qml/models/flowdetailsmodel.h>
 #include <qml/models/desktoptrayiconcontroller.h>
 #include <qml/models/desktopwindowbehaviormodel.h>
 #include <qml/models/networkstatusmodel.h>
 #include <qml/models/networktraffictower.h>
 #include <qml/models/nodemodel.h>
+#include <qml/models/monospaceoutputmodel.h>
 #include <qml/models/onboardingoptionsmodel.h>
 #include <qml/models/options_model.h>
+#include <qml/models/uipreferences.h>
 #include <qml/models/paymentrequest.h>
 #include <qml/models/peerdetailsmodel.h>
 #include <qml/models/peerlistmodel.h>
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/psbtqmlmodel.h>
 #include <qml/models/receiverequesthistorymodel.h>
+#include <qml/models/receiverequestoperation.h>
 #include <qml/models/rpcconsolemodel.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
@@ -46,6 +52,7 @@
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/qmlfiledialog.h>
+#include <qml/nativelistmodel.h>
 #include <qml/urlopener.h>
 #include <qml/walletqmlcontroller.h>
 
@@ -108,6 +115,13 @@ struct BitcoinUriModelForeign {
     QML_SINGLETON
 };
 
+struct ImageExportOperationForeign {
+    Q_GADGET
+    QML_FOREIGN(ImageExportOperation)
+    QML_NAMED_ELEMENT(ImageExportOperation)
+    QML_UNCREATABLE("Owned by an image export command")
+};
+
 struct BackupFileOperationForeign {
     Q_GADGET
     QML_FOREIGN(BackupFileOperation)
@@ -125,6 +139,19 @@ struct BlockClockDialForeign {
     Q_GADGET
     QML_FOREIGN(BlockClockDial)
     QML_NAMED_ELEMENT(BlockClockDial)
+};
+
+struct AppPreferencesForeign {
+    Q_GADGET
+    QML_FOREIGN(AppPreferences)
+    QML_NAMED_ELEMENT(AppPreferences)
+};
+
+struct UiPreferencesStoreForeign {
+    Q_GADGET
+    QML_FOREIGN(UiPreferencesStore)
+    QML_NAMED_ELEMENT(UiPreferencesStore)
+    QML_UNCREATABLE("Owned by the application engine")
 };
 
 struct LineGraphForeign {
@@ -154,6 +181,32 @@ struct RpcConsoleModelForeign {
     QML_UNCREATABLE("Owned by the application")
 };
 
+struct MonospaceOutputModelForeign {
+    Q_GADGET
+    QML_FOREIGN(MonospaceOutputModel)
+    QML_NAMED_ELEMENT(MonospaceOutputModel)
+};
+
+struct NativeListModelForeign {
+    Q_GADGET
+    QML_FOREIGN(NativeListModel)
+    QML_ANONYMOUS
+};
+
+struct BitcoinUriParseOperationForeign {
+    Q_GADGET
+    QML_FOREIGN(BitcoinUriParseOperation)
+    QML_NAMED_ELEMENT(BitcoinUriParseOperation)
+    QML_UNCREATABLE("Owned by a payment URI request")
+};
+
+struct WalletProvisioningCheckForeign {
+    Q_GADGET
+    QML_FOREIGN(WalletProvisioningCheck)
+    QML_NAMED_ELEMENT(WalletProvisioningCheck)
+    QML_UNCREATABLE("Owned by the wallet controller")
+};
+
 struct BitcoinAmountForeign {
     Q_GADGET
     QML_FOREIGN(BitcoinAmount)
@@ -177,6 +230,13 @@ struct TransactionActivityModelForeign {
     QML_FOREIGN(TransactionActivityModel)
     QML_NAMED_ELEMENT(TransactionActivityModel)
     QML_UNCREATABLE("Owned by the application")
+};
+
+struct ActivityDetailModelForeign {
+    Q_GADGET
+    QML_FOREIGN(ActivityDetailModel)
+    QML_NAMED_ELEMENT(ActivityDetailModel)
+    QML_UNCREATABLE("Owned by an Activity view")
 };
 
 struct AddressListModelForeign {
@@ -246,6 +306,13 @@ struct ReceiveRequestHistoryModelForeign {
     QML_ANONYMOUS
 };
 
+struct ReceiveRequestOperationForeign {
+    Q_GADGET
+    QML_FOREIGN(ReceiveRequestOperation)
+    QML_NAMED_ELEMENT(ReceiveRequestOperation)
+    QML_UNCREATABLE("Owned by a receive request command")
+};
+
 struct SendRecipientsListModelForeign {
     Q_GADGET
     QML_FOREIGN(SendRecipientsListModel)
@@ -267,7 +334,8 @@ struct PsbtQmlModelForeign {
 struct NodeModelForeign {
     Q_GADGET
     QML_FOREIGN(NodeModel)
-    QML_ANONYMOUS
+    QML_NAMED_ELEMENT(NodeModel)
+    QML_UNCREATABLE("Provided by ApplicationModels")
 };
 
 struct ChainModelForeign {
@@ -316,6 +384,33 @@ struct OptionsQmlModelForeign {
     Q_GADGET
     QML_FOREIGN(OptionsQmlModel)
     QML_ANONYMOUS
+};
+
+struct CoreSettingsModelForeign {
+    Q_GADGET
+    QML_FOREIGN(CoreSettingsModel)
+    QML_NAMED_ELEMENT(CoreSettingsModel)
+    QML_UNCREATABLE("Owned by settings")
+};
+struct CoreProxyDraftForeign {
+    Q_GADGET
+    QML_FOREIGN(CoreProxyDraft)
+    QML_NAMED_ELEMENT(CoreProxyDraft)
+    QML_UNCREATABLE("Owned by a settings form")
+};
+
+struct OptionsTransactionLinksForeign {
+    Q_GADGET
+    QML_FOREIGN(OptionsTransactionLinks)
+    QML_NAMED_ELEMENT(OptionsTransactionLinks)
+    QML_UNCREATABLE("Owned by options")
+};
+
+struct FlowDetailsModelForeign {
+    Q_GADGET
+    QML_FOREIGN(FlowDetailsModel)
+    QML_NAMED_ELEMENT(FlowDetailsModel)
+    QML_UNCREATABLE("Owned by a transaction review")
 };
 
 struct WalletQmlControllerForeign {

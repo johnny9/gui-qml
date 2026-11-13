@@ -31,32 +31,69 @@ TestCase {
         property string signature: ""
         property string signingError: ""
         property bool signingNeedsUnlock: false
+        property bool signingBusy: false
+        readonly property bool signingSucceeded: signature.length > 0
+        property string signingAddress: ""
+        property string signingMessage: ""
+        property string verificationAddress: ""
+        property string verificationMessage: ""
+        property string verificationSignature: ""
+        readonly property bool signingAddressValid: signingAddress === "1ValidLegacyAddress"
+        readonly property bool verificationAddressValid: verificationAddress === "1ValidLegacyAddress"
+        readonly property bool addressValidationPending: false
+        property bool verificationBusy: false
+        property bool verificationValid: false
+        property string verificationText: ""
+        property int signRevision: 0
+        property int verifyRevision: 0
+        property int signingId: 0
+        property int verificationId: 0
+        signal signingStateChanged()
+        onSigningAddressChanged: { signRevision++; signature = "" }
+        onSigningMessageChanged: { signRevision++; signature = "" }
+        onVerificationAddressChanged: clearVerification()
+        onVerificationMessageChanged: clearVerification()
+        onVerificationSignatureChanged: clearVerification()
 
         function clear() {
-            mockSignVerifyModel.signature = ""
-            mockSignVerifyModel.signingError = ""
-            mockSignVerifyModel.signingNeedsUnlock = false
+            signature = ""; signingError = ""; signingNeedsUnlock = false
+            signRevision++
+            clearVerification()
+        }
+        function clearVerification() {
+            verifyRevision++
+            verificationValid = false; verificationText = ""
+        }
+        function requestSignMessage(address, message) {
+            if (signingBusy) return 0
+            signingBusy = true
+            const id = ++signingId
+            const revision = signRevision
+            Qt.callLater(function() {
+                signature = revision === signRevision && address === "1ValidLegacyAddress" && message.length > 0 ? "test-signature" : ""
+                signingBusy = false
+                signingStateChanged()
+            })
+            return id
+        }
+        function requestSignMessageWithPassphrase(address, message, passphrase) {
+            return requestSignMessage(address, message)
+        }
+        function requestVerifyMessage(address, message, candidateSignature) {
+            if (verificationBusy) return 0
+            verificationBusy = true
+            const id = ++verificationId
+            const revision = verifyRevision
+            Qt.callLater(function() {
+                if (revision === verifyRevision) {
+                    verificationValid = address === "1ValidLegacyAddress" && message === "Signed statement" && candidateSignature === "test-signature"
+                    verificationText = verificationValid ? "Message verified successfully." : "Message verification failed."
+                }
+                verificationBusy = false
+            })
+            return id
         }
 
-        function isLegacyP2PKHAddress(address) {
-            return address === "1ValidLegacyAddress"
-        }
-
-        function signMessage(address, message) {
-            if (!isLegacyP2PKHAddress(address) || message.length === 0) return false
-            mockSignVerifyModel.signature = "test-signature"
-            return true
-        }
-
-        function signMessageWithPassphrase(address, message, passphrase) {
-            return signMessage(address, message) && passphrase.length > 0
-        }
-
-        function verifyMessage(address, message, candidateSignature) {
-            return isLegacyP2PKHAddress(address)
-                && message === "Signed statement"
-                && candidateSignature === "test-signature"
-        }
     }
 
     Component {
@@ -276,8 +313,8 @@ TestCase {
         compare(verifyButton.background.color, Theme.color.orange)
         compare(verifyButton.opacity, 1.0)
         page.submitVerify()
-        compare(page.verifyResultSuccess, true)
-        compare(resultText.text, "Message verified successfully.")
+        tryCompare(page, "verifyResultSuccess", true)
+        tryCompare(resultText, "text", "Message verified successfully.")
         compare(resultBanner.radius, 15)
         compare(resultBanner.implicitHeight, 40)
         compare(resultIcon.width, 24)
@@ -299,7 +336,7 @@ TestCase {
 
         verifyMessage.text = "Changed statement"
         page.submitVerify()
-        compare(resultText.text, "Message verification failed.")
+        tryCompare(resultText, "text", "Message verification failed.")
         compare(resultBanner.tintColor, Theme.color.red)
         compare(resultBanner.backgroundColor, Qt.rgba(
             Theme.color.red.r,

@@ -15,7 +15,14 @@ ColumnLayout {
     property BitcoinAmount amount
     property string errorText: ""
     property bool showErrorMessage: true
-    readonly property string effectiveErrorText: errorText || (amount ? amount.inputError : "")
+    readonly property string effectiveErrorText: errorText || (amount && ownedPasteTicket === amount.inputOperationId
+        && ownedPasteRevision === amount.inputRevision && amount.inputOperationState === BitcoinAmount.InputRejected
+        ? amount.inputOperationError : amount ? amount.inputError : "")
+    property double ownedPasteTicket: 0
+    property double ownedPasteRevision: -1
+    property BitcoinAmount pasteModel: null
+    property bool readOnly: false
+    readonly property bool pastePending: pasteIntent.pending
     property string labelText: qsTr("Amount")
     property string accessibleName: labelText
     property alias inputObjectName: amountInput.objectName
@@ -31,40 +38,79 @@ ColumnLayout {
     signal inputTextChanged
     signal textEdited
     signal editingFinished(string value)
-    signal pasteRequested()
+    signal pasteRequested(var payload)
 
     function syncFromAmount(force) {
         if (root.amount && (force || !amountInput.activeFocus)) root.amount.resetInput()
     }
 
     function paymentUri(text) {
-        const trimmedText = String(text).trim()
-        return root.interceptPaste && trimmedText.toLowerCase().startsWith("bitcoin:")
-            ? trimmedText
-            : ""
+        if (!root.interceptPaste || text.length > 512) return ""
+        const trimmed = String(text).trim()
+        return trimmed.toLowerCase().startsWith("bitcoin:") ? trimmed : ""
     }
+    function shortProvenance(previous, current, clipboard) {
+        if (previous.length > 512 || current.length > 512 || clipboard.length > 512 || !clipboard.length
+                || previous === current || current.length < clipboard.length) return false
+        const unchanged = current.length - clipboard.length
+        if (unchanged > previous.length) return false
+        let prefix = 0
+        let suffix = 0
+        while (prefix < Math.min(previous.length, current.length) && previous[prefix] === current[prefix]) prefix++
+        while (suffix < Math.min(previous.length, current.length)
+                && previous[previous.length - suffix - 1] === current[current.length - suffix - 1]) suffix++
+        const low = Math.max(0, unchanged - suffix)
+        const high = Math.min(prefix, unchanged)
+        const found = current.indexOf(clipboard, low)
+        return low <= high && found >= 0 && found <= high
+    }
+    function pastedPaymentUri(previous, current) {
+        const clipboard = Clipboard.text()
+        const uri = paymentUri(clipboard)
+        return uri.length && shortProvenance(previous, current, clipboard) ? uri : ""
+    }
+    function capturePaste(text, primary) {
+        pasteModel = root.amount
+        const payload = pasteIntent.capture(text, primary, false, "", "", undefined)
+        if (payload && root.amount) payload.inputRevision = root.amount.inputRevision
+        return payload
+    }
+    function applyCapturedPaste(payload) { return pasteIntent.apply(payload) }
+    function cancelPaste(payload) { if (pasteIntent.intent === payload) pasteIntent.cancel() }
+    function paste() { pasteIntent.request(false) }
+    onAmountChanged: { pasteIntent.cancel(); ownedPasteTicket = 0; ownedPasteRevision = -1 }
 
-    function pastedPaymentUri(previousText, currentText) {
-        const clipboardText = Clipboard.text()
-        const uri = paymentUri(clipboardText)
-        if (uri.length === 0 || previousText === currentText) return ""
-
-        let offset = String(currentText).indexOf(clipboardText)
-        while (offset !== -1) {
-            const prefix = String(currentText).slice(0, offset)
-            const suffix = String(currentText).slice(offset + clipboardText.length)
-            if ((prefix.length === 0 || String(previousText).startsWith(prefix))
-                    && (suffix.length === 0 || String(previousText).endsWith(suffix))
-                    && prefix.length + suffix.length <= String(previousText).length) {
-                return uri
-            }
-            offset = String(currentText).indexOf(clipboardText, offset + 1)
+    CapturedPaste {
+        id: pasteIntent
+        textInput: amountInput
+        context: root.amount
+        active: root.visible && root.enabled && !root.readOnly && !!root.amount
+        effectPending: root.amount ? root.amount.inputPending : false
+        menuObjectName: root.inputObjectName + "ContextMenu"
+        onRequested: (payload) => {
+            root.pasteModel = root.amount
+            if (root.amount) payload.inputRevision = root.amount.inputRevision
+            if (root.interceptPaste) root.pasteRequested(payload)
+            else apply(payload)
         }
-        return ""
-    }
-
-    function paste() {
-        amountInput.paste()
+        onRestoreRequested: (payload) => amountInput.restoreFromModel()
+        onLiteralRequested: (payload) => {
+            if (!root.amount) return
+            payload.ticket = payload.edited
+                ? root.amount.requestEditInput(payload.current, payload.inputRevision, payload.cursor)
+                : root.amount.requestPaste(payload.text, payload.start, payload.end, payload.inputRevision)
+            root.ownedPasteTicket = payload.ticket
+            root.ownedPasteRevision = root.amount.inputRevision
+            amountInput.restoreFromModel()
+            amountInput.cursorPosition = root.amount.inputCursorPosition
+            root.inputTextChanged()
+            root.textEdited()
+        }
+        onCancelRequested: (payload) => {
+            const model = root.pasteModel
+            root.pasteModel = null
+            if (model && payload.model === model && payload.ticket) model.cancelInput(payload.ticket)
+        }
     }
 
     function amountInputPlaceholder(unit) {
@@ -101,21 +147,30 @@ ColumnLayout {
 
         TextField {
             id: amountInput
+            function restoreFromModel() {
+                text = Qt.binding(function() { return root.amount ? root.amount.inputText : "" })
+            }
             function finishAmountEditing() {
+                if (pasteIntent.pending) return
                 if (root.amount) root.amount.format()
                 root.editingFinished(text)
             }
 
             function handlePaymentUriInput() {
-                const previousText = root.amount ? root.amount.inputText : ""
-                const uri = root.pastedPaymentUri(previousText, text)
-                const looksLikeUri = root.interceptPaste && String(text).toLowerCase().indexOf("bitcoin:") !== -1
-                if (uri.length === 0 && !looksLikeUri) return false
-                if (root.amount) root.amount.restoreInput()
-                if (uri.length > 0) root.pasteRequested()
+                if (!root.interceptPaste || pasteIntent.literalActive) return false
+                const previous = root.amount ? root.amount.inputText : ""
+                const current = text
+                const cursor = cursorPosition
+                const clipboard = Clipboard.text()
+                const longEdit = previous.length > 512 || current.length > 512 || clipboard.length > 512
+                const uri = longEdit ? "" : root.paymentUri(clipboard)
+                const fromClipboard = !longEdit && uri.length > 0 && root.shortProvenance(previous, current, clipboard)
+                const typedUri = !longEdit && current.toLowerCase().indexOf("bitcoin:") >= 0
+                if (!longEdit && !fromClipboard && !typedUri) return false
+                restoreFromModel()
+                if (longEdit || fromClipboard) pasteIntent.nativeEdit(clipboard, previous, current, cursor)
                 return true
             }
-
             Accessible.name: root.accessibleName
             anchors.left: lbl.right
             anchors.right: unitToggle.left
@@ -132,13 +187,14 @@ ColumnLayout {
 
             Keys.onPressed: (event) => {
                 if (root.interceptPaste && event.matches(StandardKey.Paste)) {
-                    root.pasteRequested()
+                    pasteIntent.request(false)
                     event.accepted = true
                 }
             }
 
             text: root.amount ? root.amount.inputText : ""
             onTextEdited: {
+                pasteIntent.invalidate()
                 if (handlePaymentUriInput()) return
                 if (root.amount) root.amount.editInput(text)
                 root.inputTextChanged()
@@ -146,7 +202,19 @@ ColumnLayout {
             }
             onEditingFinished: finishAmountEditing()
             onActiveFocusChanged: if (!activeFocus) finishAmountEditing()
-            maximumLength: root.interceptPaste ? 2177 : 129
+            // Intercept long native commits before business validation; the model
+            // refuses the exact original input instead of parsing a cut prefix.
+            maximumLength: root.interceptPaste ? 2147483647 : 129
+            readOnly: root.readOnly || pasteIntent.pending || (root.amount ? root.amount.inputPending : false)
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.RightButton | Qt.MiddleButton
+                onPressed: (mouse) => pasteIntent.pointerPressed(mouse)
+            }
+            Connections {
+                target: root.amount
+                function onInputChanged() { pasteIntent.invalidate() }
+            }
 
         }
 

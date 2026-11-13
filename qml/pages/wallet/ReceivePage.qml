@@ -12,13 +12,19 @@ import "../../components"
 Page {
     id: root
     objectName: "requestPaymentPage"
-    property var wallet: null
+    property WalletQmlModel wallet: null
     property var request: wallet ? wallet.currentPaymentRequest : null
     property var clipboard: Clipboard
     property var presentedRequest: null
     property bool pendingNextAddress: false
     property string pendingAddressType: ""
     property string addressErrorText: ""
+    property ReceiveRequestOperation addressOperation: null
+    property WalletQmlModel addressOperationWallet: null
+    readonly property bool addressCapabilitiesReady: wallet !== null && wallet.available && wallet.capabilitiesKnown
+    onAddressCapabilitiesReadyChanged: if (addressCapabilitiesReady && visible) Qt.callLater(function() {
+        if (root && root.visible && root.addressCapabilitiesReady) root.prepareReceivingAddress()
+    })
     readonly property real pageSidePadding: width < 640 ? 16 : 40
     readonly property real headerContentWidth: Math.max(0, Math.min(660, width - pageSidePadding * 2))
     readonly property alias requestModal: requestModal
@@ -29,13 +35,39 @@ Page {
     padding: 0
 
     function ensureReceivingAddress(next, type) {
-        if (!wallet) return
+        if (!addressCapabilitiesReady) return
         pendingNextAddress = !!next
         pendingAddressType = type || ""
-        if (wallet.ensureReceivingAddress(pendingNextAddress, pendingAddressType)) root.addressErrorText = ""
-        else if (wallet.receivingAddress.needsUnlock) passphrasePopup.open()
-        //: Error shown in Receive when preparing an address for a payment request fails.
-        else root.addressErrorText = qsTr("A receiving address could not be generated. Please try again.")
+        watchAddressOperation(wallet.ensureReceivingAddress(pendingNextAddress, pendingAddressType))
+    }
+    function watchAddressOperation(command) {
+        if (!command) { addressErrorText = qsTr("A receiving address could not be generated. Please try again."); return }
+        addressOperationWallet = wallet
+        addressOperation = command
+        addressErrorText = ""
+        finishAddressOperation()
+    }
+    function finishAddressOperation() {
+        if (!addressOperation || addressOperation.pending || !wallet || addressOperationWallet !== wallet) return
+        if (addressOperation.addressReady) { addressErrorText = ""; passphrasePopup.close() }
+        else if (addressOperation.error === ReceiveRequestOperation.NeedsUnlock) {
+            addressErrorText = ""
+            if (visible) passphrasePopup.open()
+        } else if (addressOperation.error === ReceiveRequestOperation.IncorrectPassphrase && passphrasePopup.opened) {
+            passphrasePopup.errorText = addressOperation.errorText
+        } else {
+            passphrasePopup.close()
+            addressErrorText = addressOperation.errorText || qsTr("A receiving address could not be generated. Please try again.")
+        }
+    }
+    function retryAddress() {
+        if (addressOperation && addressOperation.error === ReceiveRequestOperation.ReservationPersistence)
+            watchAddressOperation(wallet.retryReceivingAddress(addressOperation))
+        else ensureReceivingAddress(pendingNextAddress, pendingAddressType)
+    }
+    Connections {
+        target: root.addressOperation
+        function onChanged() { root.finishAddressOperation() }
     }
 
     function prepareReceivingAddress() {
@@ -115,7 +147,7 @@ Page {
                             subtitleRole: "description"
                             objectNameRole: "objectName"
                             subtitleObjectNameRole: "subtitleObjectName"
-                            model: root.wallet ? root.wallet.availableReceiveAddressTypes().map(function(type) {
+                            model: root.wallet ? root.wallet.receiveAddressTypes.map(function(type) {
                                 return {
                                     id: type.id,
                                     label: type.label,
@@ -181,7 +213,7 @@ Page {
                     addressErrorText: root.addressErrorText
                     clipboard: root.clipboard
                     enabled: ApplicationModels.walletController.initialized
-                    onRetryAddressRequested: root.ensureReceivingAddress(root.pendingNextAddress, root.pendingAddressType)
+                    onRetryAddressRequested: root.retryAddress()
                     onCreated: function(requestId) {
                         root.presentedRequest = root.request
                         root.paymentRequestCreated()
@@ -211,6 +243,17 @@ Page {
     }
     WalletPassphrasePopup {
         id: passphrasePopup
+        property WalletQmlModel actionWallet: null
+        property ReceiveRequestOperation actionOperation: null
+        readonly property bool contextValid: root.visible && actionWallet !== null
+            && actionWallet === root.wallet && actionWallet.available
+            && actionOperation !== null && root.addressOperation !== null
+            && actionOperation.addressToken === root.addressOperation.addressToken
+            && actionOperation.viewRevision === actionWallet.receivingAddress.revision
+        onAboutToShow: { actionWallet = root.wallet; actionOperation = root.addressOperation }
+        onContextValidChanged: if (!contextValid) close()
+        onAboutToHide: clearPassphraseField()
+        busy: contextValid && root.addressOperation !== null && root.addressOperation.pending
         popupObjectName: "receivePassphrasePopup"
         passphraseFieldObjectName: "receivePassphraseField"
         errorTextObjectName: "receivePassphraseError"
@@ -225,11 +268,10 @@ Page {
         //: Button that unlocks the wallet and generates the address for a payment request.
         confirmText: qsTr("Unlock and create address")
         onSubmitted: function(passphrase) {
-            if (root.wallet.ensureReceivingAddressWithPassphrase(passphrase, root.pendingNextAddress, root.pendingAddressType)) {
-                root.addressErrorText = ""
-                close()
-            //: Error shown when an address cannot be generated after unlocking the wallet.
-            } else errorText = root.wallet.receivingAddress.unlockError || qsTr("The receiving address could not be created.")
+            if (!opened || !contextValid) { close(); return }
+            const continuation = actionWallet.resumeReceivingAddress(actionOperation, passphrase)
+            clearPassphraseField()
+            root.watchAddressOperation(continuation)
         }
     }
     Connections {
@@ -243,6 +285,7 @@ Page {
         }
     }
     onWalletChanged: {
+        root.addressOperation = null
         root.addressErrorText = ""
         passphrasePopup.close()
         requestModal.close()

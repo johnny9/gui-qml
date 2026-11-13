@@ -9,6 +9,7 @@ from pathlib import Path
 from qml_scenarios import run_scenarios
 from qml_smoke_lib import (
     stop_gui_checked,
+    wait_until,
     wallet_scenario,
 )
 from qml_wallet_test_lib import (
@@ -52,15 +53,36 @@ def node_smoke(harness, checkpoint):
     checkpoint("wallet shell started with saved geometry")
 
     open_proxy(gui)
+    gui.wait_for_property("proxySettingsPage", "proxyDraft.ready", True, timeout_ms=30000)
+    gui.wait_for_property("proxySettingsPage", "proxyDraft.pending", False, timeout_ms=30000)
+    assert gui.get_property("proxySettingsPage", "proxyDraft.error") in (None, "")
     for switch, field, value in (
         ("proxyEnableSwitch", "proxyAddressInput", "127.0.0.1:9050"),
         ("torEnableSwitch", "torAddressInput", "127.0.0.1:9150"),
     ):
+        gui.wait_for_property(switch, "enabled", True)
+        gui.wait_for_property(switch, "checked", False)
         gui.click(switch)
+        gui.wait_for_property(switch, "checked", True)
         gui.wait_for_property(field, "enabled", True)
         gui.set_text(field, value)
+        gui.wait_for_property("proxySettingsPage", "proxyDraft.pending", False, timeout_ms=30000)
     gui.wait_for_property("proxySettingsSaveButton", "enabled", True)
+    previous_apply = gui.get_property("connectionSettingsPage", "settingsModel.settingsOperationId")
     gui.click("proxySettingsSaveButton")
+    apply_ticket = gui.wait_for_property("connectionSettingsPage", "settingsModel.settingsOperationId",
+                                         lambda value: isinstance(value, int) and value > previous_apply, timeout_ms=30000)
+    def original_proxy_applied():
+        assert gui.get_property("connectionSettingsPage", "settingsModel.settingsOperationId") == apply_ticket
+        if gui.get_property("connectionSettingsPage", "settingsModel.settingsPending"):
+            assert gui.get_property("connectionSettingsPage", "settingsModel.settingsOperationId") == apply_ticket
+            return False
+        applied = gui.get_enum_property("connectionSettingsPage", "settingsModel.settingsOperationState")
+        assert applied["enum"] == "SettingsOperationState" and applied["key"] == "SettingsApplied", applied
+        assert gui.get_property("connectionSettingsPage", "settingsModel.settingsOperationId") == apply_ticket
+        assert gui.get_property("connectionSettingsPage", "settingsModel.settingsError") in (None, "")
+        return True
+    wait_until(original_proxy_applied, "the original proxy settings Apply receipt")
     gui.wait_for_page("proxySettingsRow")
     checkpoint("proxy settings saved")
 
@@ -83,7 +105,9 @@ def node_smoke(harness, checkpoint):
     gui.click("displayUnitSAT")
     gui.wait_for_property("displayUnitPicker", "currentValue", 3)
     gui.wait_for_property("displayUnitPickerMenu", "visible", False)
-    gui.settle()
+    # The language page belongs to the display section's own navigation stack.
+    gui.settle(stack_view_names=("mainPageStack", "settingsNavigationStack_display"))
+    gui.wait_for_property("displayLanguageRow", "enabled", True)
     gui.click("displayLanguageRow")
     gui.wait_for_page("settingsLanguagePage")
     gui.set_text("languageSearch", "español")

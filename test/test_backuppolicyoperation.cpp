@@ -129,8 +129,8 @@ private Q_SLOTS:
     {
         Fixture f; f.proposal.exists = false; BackupFileOperation operation{"/final.bak", f.services()};
         QVERIFY(operation.start()); f.environment.drain(); QCOMPARE(f.written, 1);
-        while (!f.environment.publications.empty()) {
-            auto publication = std::move(f.environment.publications.back()); f.environment.publications.pop_back(); publication();
+        while (auto publication = f.environment.takePublicationBack()) {
+            publication();
             QCOMPARE(operation.phase(), BackupFileOperation::Phase::Succeeded);
         }
         QCOMPARE(f.outcomes.size(), size_t{1});
@@ -150,7 +150,7 @@ private Q_SLOTS:
     }
     void admissionFailureDoesNotClaimWrite()
     {
-        Fixture f; f.environment.reject_next = true; BackupFileOperation operation{"/selected", f.services()};
+        Fixture f; f.environment.rejectNext(true); BackupFileOperation operation{"/selected", f.services()};
         QVERIFY(!operation.start()); QCOMPARE(operation.phase(), BackupFileOperation::Phase::Failed);
         QVERIFY(!operation.error().isEmpty()); f.drain(); QCOMPARE(f.written, 0);
     }
@@ -163,7 +163,7 @@ private Q_SLOTS:
     {
         QFETCH(bool, approve);
         Fixture f; BackupFileOperation operation{"/selected", f.services()}; QVERIFY(operation.start()); f.drain();
-        f.environment.reject_next = true; QVERIFY(!(approve ? operation.approve() : operation.refuse())); f.drain();
+        f.environment.rejectNext(true); QVERIFY(!(approve ? operation.approve() : operation.refuse())); f.drain();
         QVERIFY(operation.confirmationRequired()); QCOMPARE(f.written, 0);
         QVERIFY(approve ? operation.approve() : operation.refuse()); f.drain(); QCOMPARE(f.written, approve ? 1 : 0);
     }

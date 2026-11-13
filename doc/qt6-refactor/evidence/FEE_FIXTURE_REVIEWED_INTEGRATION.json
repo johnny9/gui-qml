@@ -1,0 +1,8 @@
+{
+  "source_base": "0ab7a017107eb8263a6b29be79a004fde945ced2799fc6fedc72718b1a59a6c8",
+  "integrated_sha256": "f3775146b48b7db87bf68f28261ec8b0e91ba8ba6ce1832fbec578e5fd705f13",
+  "primary_file": "/home/codex/workspaces/bitcoin-core-app/.validation/issue-remediation-pr1090-20261109/source/test/functional/interface_qml_wallet_sending.py",
+  "mode_preserved": "0o775",
+  "review": "Existing typed feeKnown and feeAmount.satoshi; graph amountKnown/amountSat exact consistency including null unknown. Original500000sat, forged rejection, mempool, export/authentication and independentCore oracles retained.",
+  "validation": "pending final corrected candidate; original34failedfixtures retained"
+}
