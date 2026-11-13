@@ -3,7 +3,8 @@
 These experiments start from `710ed3e` and use the same macOS host, pinned Core
 revision, Qt version, Release build, and headless settings documented in
 [integration parallelization](integration-parallelization.md). The changes tested
-here are experiments; the committed CI cap remains three jobs.
+here were initially experiments. The four-job cap and reduced watch-only
+funding have since been adopted after the coverage review below.
 
 ## Four concurrent jobs
 
@@ -83,3 +84,31 @@ The committed CI cap and test fixtures are unchanged by these experiments.
 Both changes are good candidates to adopt: raise the cap to four (bounded by
 CPU count), and reduce the unused watch-only rewards. Linux timing remains to be
 verified; no claims are made for other runners or higher job counts.
+
+
+## Adoption and coverage review
+
+Both changes are adopted. CI now uses `min(nproc, 4)` without changing test
+selection. The adopted watch-only change keeps two wallet rewards: one mature and one immature
+at height 101. The remaining 99 blocks pay an unspendable output. This preserves
+the original presence of immature funds while removing repeated setup transactions,
+not any
+case or behavior assertion. Its original watch-only creation, key restrictions,
+review click/focus behavior, PSBT export and unsigned-input checks, empty mempool,
+and refusal to sign/broadcast remain intact. It now additionally checks the exact
+50 BTC available balance, 50 BTC immature balance, and one spendable coin. The original case did not
+assert the size of the immature balance; retaining one immature reward also
+preserves that original setup condition. The earlier timing experiment used
+one wallet reward; the adopted two-reward variant is validated separately. Mining and maturity remain live;
+no case shares writable state. All 122 runtime cases were preserved and passed
+in the full prototype validation; the isolated signer comparison passed both
+cases in all six samples.
+
+
+The final two-reward variant passed all original 122 runtime cases at four jobs
+with no failures or skips in **68.017 seconds**. The signer group took 4.79 seconds
+within that concurrent run; this is a validation result, not a new isolated
+benchmark. Reports and the exact case inventory are in
+`results/adopted-coverage-final/`. The shard-selection and prepared-wallet
+setup-failure regressions passed. The workflow YAML and integration shell block
+were parsed, and the CPU cap was checked at 1, 2, 3, 4, and 8 reported CPUs.
