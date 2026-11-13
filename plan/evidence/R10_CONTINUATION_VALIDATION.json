@@ -1,0 +1,443 @@
+{
+  "scope": "R10 continuation: integrate the parallel-test branch and repair/qualify affected fixtures; R10 remains unaccepted.",
+  "code_head": "cb22132687ec765abe599628f5ed6587d63b44c9",
+  "fetched_completion_head": "fc54e7408398e89958a8eb04ccf12885b2fd3985",
+  "fetched_parallel_tests_head": "7693db73bee4842c94f8edd95aa864228944830a",
+  "bitcoin_core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "branch": "work/qt6-r10-completion-20261113",
+  "production_changes": false,
+  "core_changes": false,
+  "r10_accepted": false,
+  "r11_started": false,
+  "raw_artifacts": ".validation/qt6-r10-continue-20261113",
+  "checks": {
+    "asan-navigation-fix": {
+      "exit_code": 0,
+      "seconds": 27.421361632994376,
+      "head": "901f00ce8cdf1cb4ee3621d833370f90b8b5bb0d",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "source_unchanged": true
+    },
+    "asan-localized": {
+      "exit_code": 0,
+      "seconds": 63.92863991201739,
+      "head": "cb22132687ec765abe599628f5ed6587d63b44c9",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "source_unchanged": true
+    },
+    "wallet-off-build": {
+      "exit_code": 0,
+      "seconds": 561.6361066719983,
+      "head": "901f00ce8cdf1cb4ee3621d833370f90b8b5bb0d",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:5224408c074eb51ac1f74018c5f36315be458c20a10e38e9df1132d580ac516c",
+      "source_unchanged": true
+    },
+    "tidy-fixes": {
+      "exit_code": 0,
+      "seconds": 25.49637005000841,
+      "head": "cb22132687ec765abe599628f5ed6587d63b44c9",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:a4c62a2056bc0171ce1071ea18515507bc3183770b033516a548c6c080bf391b",
+      "source_unchanged": true
+    },
+    "asan-build": {
+      "exit_code": 0,
+      "seconds": 188.8491562800191,
+      "head": "901f00ce8cdf1cb4ee3621d833370f90b8b5bb0d",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "source_unchanged": true
+    },
+    "asan-final": {
+      "exit_code": 1,
+      "seconds": 0.40027271400322206,
+      "head": "cb22132687ec765abe599628f5ed6587d63b44c9",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "source_unchanged": true
+    },
+    "asan-tests": {
+      "exit_code": 1,
+      "seconds": 1138.9217705740011,
+      "head": "901f00ce8cdf1cb4ee3621d833370f90b8b5bb0d",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "source_unchanged": true
+    },
+    "asan-final-checked": {
+      "exit_code": 0,
+      "seconds": 481.43134596498567,
+      "head": "cb22132687ec765abe599628f5ed6587d63b44c9",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "source_unchanged": true
+    },
+    "asan-unit-diagnosis": {
+      "exit_code": 0,
+      "seconds": 14.702097692992538,
+      "head": "901f00ce8cdf1cb4ee3621d833370f90b8b5bb0d",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "source_unchanged": true
+    },
+    "tidy-build": {
+      "exit_code": 1,
+      "seconds": 678.193591563002,
+      "head": "901f00ce8cdf1cb4ee3621d833370f90b8b5bb0d",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:a4c62a2056bc0171ce1071ea18515507bc3183770b033516a548c6c080bf391b",
+      "source_unchanged": true
+    },
+    "tsan-navigation-fix": {
+      "exit_code": 0,
+      "seconds": 58.74792091100244,
+      "head": "901f00ce8cdf1cb4ee3621d833370f90b8b5bb0d",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:c23441c56c0623ec23822f859be28f6e7d87160fcccae3770eaa0b46086c3f32",
+      "source_unchanged": true
+    },
+    "wallet-off-final": {
+      "exit_code": 0,
+      "seconds": 28.68639981697197,
+      "head": "cb22132687ec765abe599628f5ed6587d63b44c9",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:5224408c074eb51ac1f74018c5f36315be458c20a10e38e9df1132d580ac516c",
+      "source_unchanged": true
+    },
+    "tsan-journeys": {
+      "exit_code": 1,
+      "seconds": 568.1168949840066,
+      "head": "901f00ce8cdf1cb4ee3621d833370f90b8b5bb0d",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "image": "sha256:c23441c56c0623ec23822f859be28f6e7d87160fcccae3770eaa0b46086c3f32",
+      "source_unchanged": true
+    },
+    "wallet-off-build/ctest.xml": {
+      "selectors": 3,
+      "failures": [],
+      "skips": []
+    },
+    "asan-tests/ctest-integration.xml": {
+      "selectors": 10,
+      "failures": [
+        "bitcoinqml_integration_wallet_sending_0",
+        "bitcoinqml_integration_wallet_sending_1"
+      ],
+      "skips": []
+    },
+    "asan-tests/ctest.xml": {
+      "selectors": 13,
+      "failures": [
+        "bitcoinqml_unit_tests"
+      ],
+      "skips": []
+    },
+    "asan-final-checked/ctest-integration.xml": {
+      "selectors": 10,
+      "failures": [],
+      "skips": []
+    },
+    "asan-final-checked/ctest.xml": {
+      "selectors": 3,
+      "failures": [],
+      "skips": []
+    },
+    "wallet-off-final/ctest.xml": {
+      "selectors": 3,
+      "failures": [],
+      "skips": []
+    },
+    "asan-tests/interface_qml_wallet_sending.stdout": {
+      "scenarios": [
+        [
+          "PASS",
+          "encrypted-multinode-send"
+        ],
+        [
+          "PASS",
+          "signed-foreign-psbt"
+        ],
+        [
+          "FAIL",
+          "legacy-fee-v0"
+        ],
+        [
+          "FAIL",
+          "legacy-fee-v2"
+        ],
+        [
+          "PASS",
+          "legacy-fee-unconfirmed-v0"
+        ],
+        [
+          "PASS",
+          "legacy-fee-unconfirmed-v2"
+        ],
+        [
+          "PASS",
+          "encrypted-replacement"
+        ]
+      ],
+      "fee_oracles": 20,
+      "fee_observations": 20
+    },
+    "asan-tests/interface_qml_console.stdout": {
+      "scenarios": [
+        [
+          "PASS",
+          "console-secrets-enabled"
+        ],
+        [
+          "PASS",
+          "console-secrets-disabled"
+        ]
+      ],
+      "fee_oracles": 0,
+      "fee_observations": 0
+    },
+    "asan-tests/interface_qml_node.stdout": {
+      "scenarios": [
+        [
+          "PASS",
+          "settings-and-history-restart"
+        ],
+        [
+          "PASS",
+          "wallet-shell-geometry"
+        ]
+      ],
+      "fee_oracles": 0,
+      "fee_observations": 0
+    },
+    "asan-final-checked/interface_qml_node.stdout": {
+      "scenarios": [
+        [
+          "PASS",
+          "settings-and-history-restart"
+        ],
+        [
+          "PASS",
+          "wallet-shell-geometry"
+        ]
+      ],
+      "fee_oracles": 0,
+      "fee_observations": 0
+    },
+    "tsan-journeys/interface_qml_wallet_sending.stdout": {
+      "scenarios": [
+        [
+          "PASS",
+          "encrypted-multinode-send"
+        ],
+        [
+          "PASS",
+          "signed-foreign-psbt"
+        ],
+        [
+          "PASS",
+          "legacy-fee-v0"
+        ],
+        [
+          "PASS",
+          "legacy-fee-v2"
+        ],
+        [
+          "PASS",
+          "legacy-fee-unconfirmed-v0"
+        ],
+        [
+          "PASS",
+          "legacy-fee-unconfirmed-v2"
+        ],
+        [
+          "PASS",
+          "encrypted-replacement"
+        ]
+      ],
+      "fee_oracles": 24,
+      "fee_observations": 24
+    },
+    "tsan-journeys/interface_qml_console.stdout": {
+      "scenarios": [
+        [
+          "PASS",
+          "console-secrets-enabled"
+        ],
+        [
+          "PASS",
+          "console-secrets-disabled"
+        ]
+      ],
+      "fee_oracles": 0,
+      "fee_observations": 0
+    },
+    "tsan-journeys/interface_qml_node.stdout": {
+      "scenarios": [
+        [
+          "FAIL",
+          "settings-and-history-restart"
+        ],
+        [
+          "PASS",
+          "wallet-shell-geometry"
+        ]
+      ],
+      "fee_oracles": 0,
+      "fee_observations": 0
+    },
+    "asan-tests/non-integration.stdout/body_counts": {
+      "observed_unique_rows": 3477,
+      "passed": 3458,
+      "failed": 5,
+      "skipped": 14
+    },
+    "asan-tests/integration.stdout/body_counts": {
+      "observed_unique_rows": 185,
+      "passed": 178,
+      "failed": 7,
+      "skipped": 0
+    },
+    "asan-final-checked/integration.stdout/body_counts": {
+      "observed_unique_rows": 185,
+      "passed": 185,
+      "failed": 0,
+      "skipped": 0
+    },
+    "asan-final-checked/unit-and-fixtures.stdout/body_counts": {
+      "observed_unique_rows": 2718,
+      "passed": 2706,
+      "failed": 0,
+      "skipped": 12
+    },
+    "wallet-off-final/command.log/body_counts": {
+      "observed_unique_rows": 36,
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0
+    },
+    "asan-navigation-fix/scenarios": {
+      "scenarios": [
+        [
+          "PASS",
+          "settings-and-history-restart"
+        ],
+        [
+          "PASS",
+          "wallet-shell-geometry"
+        ]
+      ],
+      "process_exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    "tsan-navigation-fix/scenarios": {
+      "scenarios": [
+        [
+          "PASS",
+          "settings-and-history-restart"
+        ],
+        [
+          "PASS",
+          "wallet-shell-geometry"
+        ]
+      ],
+      "process_exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    "clang_tidy": {
+      "translation_units": 214,
+      "failed": [
+        "/review/source/test/integration/fixture/test_process.cpp"
+      ]
+    },
+    "clang_tidy_corrected_units": {
+      "results": [
+        {
+          "file": "/review/source/test/integration/fixture/test_process.cpp",
+          "source_sha256": "4698cba1c27d7c4a5244f192a6843f5a8b31cbbb0729247ab2d6e122c0e4431d",
+          "command": [
+            "clang-tidy-23",
+            "-p",
+            "/task/tidy-fixes/checks",
+            "--config-file=/review/source/bitcoin/src/.clang-tidy",
+            "--load=/review/build/bitcoin-tidy/libbitcoin-tidy.so",
+            "--header-filter=^/review/source/(qml|test|cmake)/",
+            "/review/source/test/integration/fixture/test_process.cpp"
+          ],
+          "exit_code": 0
+        },
+        {
+          "file": "/review/source/test/integration/wallet_sending/test_send.cpp",
+          "source_sha256": "60e10aaf95f49f348e438406d235166324b870eee7f314be1584fecd1405f965",
+          "command": [
+            "clang-tidy-23",
+            "-p",
+            "/task/tidy-fixes/checks",
+            "--config-file=/review/source/bitcoin/src/.clang-tidy",
+            "--load=/review/build/bitcoin-tidy/libbitcoin-tidy.so",
+            "--header-filter=^/review/source/(qml|test|cmake)/",
+            "/review/source/test/integration/wallet_sending/test_send.cpp"
+          ],
+          "exit_code": 0
+        }
+      ],
+      "plugin_sha256": "d7c57e2f3e3e31bd1a663fdb42d54d8b9dc35e983cd1715084beb979d005865e",
+      "toolchain": "Ubuntu LLVM version 23.1.6\n  Optimized build.\n"
+    },
+    "navigation_fixture_sha256": "3a79a5c1d7c412702399c6a73223cef8d4bd10ff168f78373d2c0ef5a911b2c2"
+  },
+  "lint": {
+    "app_and_core_exit": 0,
+    "code_head": "cb22132687ec765abe599628f5ed6587d63b44c9",
+    "range": "fc54e740839..cb22132687ec765abe599628f5ed6587d63b44c9",
+    "driver": "ci/lint.py --no-build --image qmllint-core-update-linter:20261109",
+    "log": "lint-final.log"
+  },
+  "actionlint": {
+    "version": "1.7.12",
+    "exit_code": 0,
+    "log": "actionlint.log"
+  },
+  "tidy_accounting": "Pinned CI LLVM 23 and Bitcoin plugin: 214 initial translation units, 213 pass and one imported recursion failure. The changed copier and sending units both pass the affected rerun; other units are unchanged. No older LLVM substitution.",
+  "tsan_reuse": {
+    "candidate": "8ae9ce530f76e3522e932997f7120af705598246",
+    "compared_production_files": 666,
+    "binary_hashes": {
+      "bitcoin-core-app": "677faa59540d3aeff6e65bcdc67ff959bfb417b31d20a55429b6f221042d6f18",
+      "bitcoind": "5aca4fddafe4ef09b40c526b246a13af256acc6fdbf41e69d970d8990fd09ceb",
+      "bitcoin-cli": "3e6d27238e6474f9af5568b43f8e5af09c93f7c656fe85fcd673f9fc24adb991"
+    },
+    "proof_sha256": "fb91251828ca0e2ac70b18559700463a74868fbc70ac7e2852db06f7d357e526",
+    "limit": "Corrected Python journeys against the retained byte-identical production ELF; new C++ integration runner qualified separately under ASan."
+  },
+  "settings_navigation_correction": {
+    "before": "One failing dump has three SettingsView instances even in -disablewallet mode. Repeated hidden node Settings button clicks push additional pages; the prior completion report single-instance conclusion was wrong.",
+    "after": "Reuse the visible page, wait for mainPageStack.currentItem.busy, assert node depth 2, and observe actual section and nested-stack readiness. Original restart, geometry, proxy, language, reorg/history and RPC assertions remain.",
+    "asan_scenarios": 2,
+    "tsan_scenarios": 2,
+    "fixture_sha256": "3a79a5c1d7c412702399c6a73223cef8d4bd10ff168f78373d2c0ef5a911b2c2"
+  },
+  "initial_failures_retained": [
+    "App lint rejects the two imported Python check modes (644); corrected to 755.",
+    "Pinned tidy rejects recursive CopyDirectory; replaced with an explicit directory queue, preserving real file copies and symlink rejection.",
+    "Seven localized sending rows fail loading a nonexistent sender wallet because snapshot opt-in omitted the R10 selector. All seven pass after explicit opt-in.",
+    "Initial ASan unit run used root permission overrides and inherited HOME: five failures and two permission skips. Correct CI capability drops/fresh HOME yield a full unit pass and execute the permission cases; twelve fatal delegations remain paired with the passing fatal child selector.",
+    "One final-build launcher applied the 512 KiB runtime stack limit to Ninja, which crashed before compilation; retry applies it only after the successful build.",
+    "Old settings fixture fails under frontend TSan; the corrected fixture passes two scenarios under ASan and TSan."
+  ],
+  "explicit_open_items": [
+    "ASan GUI sending journey: confirmed legacy-fee-v0 and legacy-fee-v2 fail waiting for transactionReviewPopup.opened. GUI exits 0. Twenty of twenty-four fee oracles execute; the two unconfirmed matrices complete. The confirmed matrices are not qualified by their TSan/non-sanitized passes.",
+    "Qt 6.2 MainRouting teardown SIGSEGV: attribution remains unresolved; the older completion JSON wording calling it an unchanged native Qt defect is not established evidence.",
+    "Qt picker race remains documented/deferred by the existing user decision; retain the component and unresolved affected result.",
+    "Coverage, pinned static-depends/instrumented-dependency MSan and full platform/configuration gates remain as in the plan. Windows remains deferred by the recorded user decision.",
+    "Original dirty checkpoint checkout and its separate in-progress coin-selection/PSBT changes are preserved; they are not integrated or qualified by this continuation."
+  ]
+}

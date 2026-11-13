@@ -1,5 +1,7 @@
 # R10 implementation checkpoint — completion pass
 
+**Latest local continuation:** [parallel tests, fixture corrections and current results](R10_CONTINUATION_20261113.md). R10 remains unaccepted. This supersedes the settings single-instance analysis below and records two still-failing ASan PSBT journeys.
+
 Saved on 2026-11-13, with later immutable34 validation updates below, at the user's explicit request to commit the current state and
 push it to their fork. **R10 is not accepted. R11 has not started.** This request
 supersedes earlier no-commit/no-push instructions for this checkpoint only.

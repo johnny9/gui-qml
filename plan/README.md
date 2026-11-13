@@ -1,7 +1,8 @@
 # Qt 6 refactoring plan and notes
 
-R10 remains unfinished. Start with [CHECKPOINT.md](CHECKPOINT.md) for current
-implementation, validation and unresolved issues.
+R10 remains unfinished. Start with [CHECKPOINT.md](CHECKPOINT.md) and the latest
+[local continuation](R10_CONTINUATION_20261113.md) for implementation, validation
+and unresolved issues.
 
 - [Total refactoring plan](QT6_TOTAL_REFACTOR_PLAN.md)
 - [Handoff and resume instructions](QT6_REFACTOR_HANDOFF.md)

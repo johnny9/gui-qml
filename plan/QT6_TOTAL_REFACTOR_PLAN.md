@@ -1,5 +1,7 @@
 # Finding-driven Qt 6 total refactoring plan
 
+Latest local continuation: [parallel integration tests and R10 fixture qualification](R10_CONTINUATION_20261113.md), code candidate `cb22132687ec765abe599628f5ed6587d63b44c9`. All 185 integration rows pass under pinned sanitizers; two ASan PSBT process journeys remain failed. Settings navigation instance analysis is corrected. R10 remains unaccepted; R11 is unstarted. Older entries below retain their historical source identities.
+
 R10 checkpoint publication authorized by the user on2026-11-13: save current implementation and unresolved issues to fork johnny9/gui-qml, branch work/qt6-r10-checkpoint-20261113. Earlier no-primary-commit/no-push restrictions are superseded for this checkpoint only. R10 remains unaccepted and R11 unstarted. Repository report: plan/CHECKPOINT.md. Copied planning/register snapshots preserve provenance without closing shared evidence registers. Five test-only corrections after frozen34 await final-source requalification.
 
 
