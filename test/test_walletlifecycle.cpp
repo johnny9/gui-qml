@@ -218,6 +218,9 @@ private Q_SLOTS:
         QVERIFY(f.owner->start()); f.drain();
         if (failure == 2) f.owner->rejectNotificationContext();
         else f.notify("must-not-be-adopted");
+        // The producer has failed, while its queued Control outcome has not
+        // yet retired it. A new command must not capture a fresh origin.
+        QVERIFY(!f.owner->setNotificationContext("before-failure-delivery", true, 2));
         f.drain();
         QVERIFY(!f.owner->takeNotifications());
         QCOMPARE(f.count(Publication::Failed), 1); QCOMPARE(f.count(Publication::Retired), 1);
@@ -225,10 +228,20 @@ private Q_SLOTS:
         QVERIFY(!f.owner->setNotificationContext("late-origin", true, 3));
         QVERIFY(f.env.quiescent());
     }
+    void contextRetentionRacingRetirementReleasesItsInventory_data()
+    {
+        QTest::addColumn<bool>("failure");
+        QTest::newRow("retire-during-retention") << false;
+        QTest::newRow("fail-during-retention") << true;
+    }
     void contextRetentionRacingRetirementReleasesItsInventory()
     {
+        QFETCH(bool, failure);
         Fixture f; QVERIFY(f.owner->start()); f.drain();
-        f.boundary->after_borrow = [&] { f.owner->retire(); };
+        f.boundary->after_borrow = [&] {
+            if (failure) f.owner->rejectNotificationContext();
+            else f.owner->retire();
+        };
         QVERIFY(!f.owner->setNotificationContext("original-command", true, 9));
         f.drain();
         QCOMPARE(f.count(Publication::Retired), 1); QCOMPARE(f.count(Publication::Changed), 0);
