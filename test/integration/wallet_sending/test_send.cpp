@@ -613,7 +613,8 @@ QString SendPreparedWallet(const QString& selector)
     const auto function = selector.section(':', 0, 0);
     if (function == "customFeesRespectRelayMinimum") return "custom_fee";
     if (function == "coinSelectionCancelApplyAndLockReachTheWallet") return "integration";
-    for (const auto* name : {"coinSelectionDialogCommitsOrDiscardsInputsAndRepricesTheMaximum",
+    for (const auto* name : {"localizedTypedSendPreparesExactOutput",
+                             "coinSelectionDialogCommitsOrDiscardsInputsAndRepricesTheMaximum",
                              "maximumAndSweepReviewRespectOwnershipAndSelection",
                              "fixedManualSweepWarnsBeforeUnlockAndBeforeBroadcast",
                              "multipleRecipientsShareTheMaximumAndKeepTheirDraftOnCancel"}) {

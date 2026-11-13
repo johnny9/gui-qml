@@ -22,6 +22,7 @@
 #include <functional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -113,16 +114,21 @@ void AppendCapturedOutput(const QString& path, const std::vector<char>& buffer, 
 // Copy files, never hard-link them: every child must own its wallet and chain.
 void CopyDirectory(const QDir& source, const QString& destination)
 {
-    if (!source.exists() || !QDir{}.mkpath(destination)) {
-        throw std::runtime_error{"Cannot copy fixture directory: " + source.absolutePath().toStdString()};
-    }
-    for (const auto& entry : source.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden)) {
-        const auto target = QDir{destination}.filePath(entry.fileName());
-        if (entry.isSymLink()) throw std::runtime_error{"Unexpected symlink in prepared wallet"};
-        if (entry.isDir()) {
-            CopyDirectory(QDir{entry.absoluteFilePath()}, target);
-        } else if (!QFile::copy(entry.absoluteFilePath(), target)) {
-            throw std::runtime_error{"Cannot copy fixture file: " + target.toStdString()};
+    std::vector<std::pair<QDir, QString>> pending{{source, destination}};
+    while (!pending.empty()) {
+        auto [directory, target_directory] = std::move(pending.back());
+        pending.pop_back();
+        if (!directory.exists() || !QDir{}.mkpath(target_directory)) {
+            throw std::runtime_error{"Cannot copy fixture directory: " + directory.absolutePath().toStdString()};
+        }
+        for (const auto& entry : directory.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden)) {
+            const auto target = QDir{target_directory}.filePath(entry.fileName());
+            if (entry.isSymLink()) throw std::runtime_error{"Unexpected symlink in prepared wallet"};
+            if (entry.isDir()) {
+                pending.emplace_back(QDir{entry.absoluteFilePath()}, target);
+            } else if (!QFile::copy(entry.absoluteFilePath(), target)) {
+                throw std::runtime_error{"Cannot copy fixture file: " + target.toStdString()};
+            }
         }
     }
 }
