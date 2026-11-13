@@ -1134,6 +1134,7 @@ public:
 Q_SIGNALS:
     void marksChanged();
     void viewChanged();
+    void selectionSnapshotChanged();
     void selectedCoinsCountChanged();
     void coinCountChanged();
     void totalSelectedChanged();
@@ -1143,6 +1144,7 @@ Q_SIGNALS:
 private:
     void emitAggregateSignals()
     {
+        Q_EMIT selectionSnapshotChanged();
         Q_EMIT selectedCoinsCountChanged();
         Q_EMIT totalSelectedChanged();
         Q_EMIT overRequiredAmountChanged();
@@ -1600,6 +1602,7 @@ public:
     Q_INVOKABLE quint64 requestImportPsbtFromFile(const QString& path){return requestPsbtAction(PsbtKind::Import,path);}
     Q_INVOKABLE quint64 requestSaveCurrentTransactionAsPsbt(const QString& path){return requestPsbtAction(PsbtKind::Save,path);}
     Q_INVOKABLE quint64 requestBroadcastCurrentTransaction(){return requestPsbtAction(PsbtKind::Broadcast,{});}
+    Q_INVOKABLE void completePsbtWorkForTest(){if(m_psbt_operation)completePsbtPacket(m_psbt_operation);}
     Q_INVOKABLE void finishPsbtPublicationForTest(){if(m_psbt_operation&&m_psbt_operation->ready)publishPsbtPacket(m_psbt_operation);}
     Q_INVOKABLE void resetPsbtForTest(){
         m_hold_psbt_publication=false;m_psbt_operation.reset();m_saved_psbt_receipt.reset();m_submitted_psbt_receipt.reset();

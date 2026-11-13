@@ -274,7 +274,7 @@ PageStack {
 
     Connections {
         target: root.wallet ? root.wallet.coinsListModel : null
-        function onSelectedCoinsCountChanged() {
+        function onSelectionSnapshotChanged() {
             root.draftChanged()
             root.clearPrepareTransactionError()
             root.scheduleFeeEstimates()

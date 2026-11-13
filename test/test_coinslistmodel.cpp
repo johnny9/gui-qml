@@ -84,6 +84,30 @@ struct ManualCoins {
 class CoinsListModelTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void coinRefreshKeepsSelectionIdentity()
+    {
+        ManualCoins fixture{2};
+        QSignalSpy aggregates{fixture.model.get(), &CoinsListModel::selectedCoinsCountChanged};
+        QSignalSpy selection{fixture.model.get(), &CoinsListModel::selectionSnapshotChanged};
+        fixture.model->update();
+        fixture.finish();
+        QVERIFY(!aggregates.isEmpty());
+        QCOMPARE(selection.size(), 0);
+
+        fixture.model->toggleCoinSelection(0);
+        fixture.finish();
+        QCOMPARE(fixture.model->selectedCoinsCount(), 1);
+        QVERIFY(!selection.isEmpty());
+        aggregates.clear();
+        selection.clear();
+
+        fixture.model->update();
+        fixture.finish();
+        QVERIFY(!aggregates.isEmpty());
+        QCOMPARE(selection.size(), 0);
+        QCOMPARE(fixture.model->selectedCoinsCount(), 1);
+    }
+
     void cleanupAdmissionKeepsOriginalCoinOwner_data() {
         QTest::addColumn<int>("reservation"); QTest::addColumn<int>("outcome");
         for (int reservation : {1, 2, 3}) for (int outcome : {0, 1, 2})

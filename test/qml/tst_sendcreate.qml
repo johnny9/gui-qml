@@ -126,6 +126,41 @@ TestCase {
         tryCompare(testWalletModel, "discardCurrentTransactionCalls", discardCallsBefore + 1)
     }
 
+    function test_pending_psbt_import_keeps_its_intent_data() {
+        return [
+            {tag: "coin-refresh", change: "refresh", opens: true},
+            {tag: "coin-selection", change: "selection", opens: false},
+            {tag: "recipient-edit", change: "recipient", opens: false},
+            {tag: "hidden-page", change: "hidden", opens: false}
+        ]
+    }
+
+    function test_pending_psbt_import_keeps_its_intent(data) {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+                {width: testCase.width, height: testCase.height, visible: true})
+        verify(page !== null)
+        const popup = findChild(page, "transactionReviewPopup")
+        testWalletModel.holdPsbtPublicationForTest = true
+        page.requestPsbtImport("original-review.psbt")
+        verify(page.psbtImportTicket > 0)
+        testWalletModel.completePsbtWorkForTest()
+        compare(testWalletModel.psbtActionBusy, true)
+
+        // Hold the completed import while a separate GUI observation arrives.
+        if (data.change === "refresh") testCoinsListModel.selectedCoinsCountChanged()
+        else if (data.change === "selection") testCoinsListModel.toggleCoinSelection(0)
+        else if (data.change === "recipient") testSendRecipient.label = "changed intent"
+        else page.visible = false
+
+        testWalletModel.finishPsbtPublicationForTest()
+        compare(testWalletModel.psbtActionState, WalletQmlModel.PsbtImported)
+        compare(page.psbtImportTicket, 0)
+        if (data.opens) tryCompare(popup, "opened", true)
+        else compare(popup.visible, false)
+        popup.close()
+        tryCompare(popup, "visible", false)
+    }
+
     function test_successful_psbt_broadcast_pushes_send_complete() {
         const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
         verify(page !== null)
