@@ -1,0 +1,32 @@
+{
+  "change": "Test runs disable QML transition animations; production keeps them unless the test environment variable is set",
+  "motivation": "Qt 6.2 MainRouting teardown SIGSEGV: an icon color animation reloads an image with qmlEngine() == nullptr after the MainWindow context ends",
+  "mechanism": {
+    "switch": "BITCOIN_QML_TEST_NO_ANIMATIONS=1 (only consumed at AppMode construction; unset in production)",
+    "exposure": "AppMode.animationsEnabled (CONSTANT) -> Theme.animationsEnabled (writable, so individual cases can opt back in)",
+    "gates": "Every Behavior on ... and every Popup enter/exit Transition in qml/ is gated by Theme.animationsEnabled, combined with any pre-existing condition; CheckBox.animationsEnabled and Tooltip.motionEnabled default from the switch",
+    "test_wiring": "The QML, unit and integration test mains set the variable themselves before creating any engine, so direct invocations are also animation-free; CTest environments and both functional harnesses set it too. Cases that assert motion opt back in via Theme.animationsEnabled or the component property",
+    "production_default": "Animations enabled; no app behavior change when the variable is unset. Doc follows PR 1052's MotionPreference/motion-off precedent without adopting its full token system"
+  },
+  "attribution_probes_qt624": {
+    "baseline": "MainRouting::test_add_wallet_completion_returns_to_activity passed then process exited 139 after cleanupTestCase",
+    "icon_behavior_only_disabled": "5/5 runs exit 0 with a literal `enabled: false` on Icon.qml's Behavior on icon.color",
+    "env_switch": "5/5 runs exit 0 with the environment switch",
+    "full_qml_suite": "Two consecutive full runs: 861 passed, 0 failed, exit 0 each (previously aborted at MainRouting with SIGSEGV)"
+  },
+  "regressions_found_and_fixed_during_review": {
+    "Theme_import": "PaymentRequestModal.qml referenced Theme without importing ../controls; affected the receive integration group and Qt 6.10.2 qmltests. Added the import.",
+    "animation_assertions": "Two tests assert intermediate frames/animated visibility; they now opt in explicitly instead of silently losing coverage",
+    "qt64_wallet_controller_flake": "WalletQmlControllerTests::initializationIsSingleShotAcrossPendingSuccessFailureAndShutdown(ready) verified StrictMockNode counters at destruction before the default worker settled; it now QTRY-waits for the three counters, preserving the exact oracle. Full 6.4.2 suite then passed twice, 2877/2877, exit 0."
+  },
+  "validation": {
+    "full_qml_suites": "Qt 6.2.4 twice, Qt 6.4.2 once, Qt 6.10.2 once: 861 passed, 0 failed, exit 0 each with transitions gated and the mains defaulting animations off",
+    "units": "Qt 6.2.4, 6.4.2 (twice) and 6.10.2 from the build root: exit 0, 2877/2877 each",
+    "journeys": "15/15 on Qt 6.2.4 and 15/15 on Qt 6.10.2 with transitions gated",
+    "lint": "app and Core scopes exit 0",
+    "tidy": "see tidy-t-results.json",
+    "qml_lint": "244 files, 0 warnings/errors per qt62/qt65 resource profile, all five negative probes pass"
+  },
+  "limitations": "Qt 6.2 remains a deferred native-Qt attribution candidate; disabling animations removes the observed trigger rather than proving the upstream root cause. The fixture-delegate destruction-receipt teardown proposal remains unimplemented. Animation-dependent behavior is still exercised by the opting-in cases.",
+  "speed": "Animation removal buys reliability, not wall time: the full QML suite is dominated by component construction and stays near 290 s. Immediate property values remove teardown callbacks and animation-dependent waits."
+}

@@ -3,8 +3,8 @@
   "files": [
     {
       "path": "CHECKPOINT.md",
-      "sha256": "371e9b1989e84d738aa590e05324b4eb0b6899261886158419fdb1144c4d56c5",
-      "bytes": 14584
+      "sha256": "ed396f191181b508b5feee2eca1ac23a21831dd120434dab8e874589e5ed600f",
+      "bytes": 15695
     },
     {
       "path": "QT6_ARCHITECTURE_FOUNDATION.md",
@@ -102,14 +102,19 @@
       "bytes": 1254
     },
     {
+      "path": "evidence/QT62_ANIMATION_TEST_SWITCH.json",
+      "sha256": "ac8443d59df097c7833591464c5431bfd8cdc9d1a1d5809c85cbacd1db1063d1",
+      "bytes": 3643
+    },
+    {
       "path": "evidence/QT_PICKER_DEFERRED_USER_DECISION.json",
       "sha256": "fa292589329cca6efb943dcf09e294fdfe97d0ce4b449c57b2c7c221869b6b37",
       "bytes": 563
     },
     {
       "path": "evidence/R10_COMPLETION_VALIDATION.json",
-      "sha256": "fefbfc2bb5a4fcb6801e8a9497ca04ce06007457f3dfb5066070234ea5dd5dc3",
-      "bytes": 8266
+      "sha256": "c99415afa4cb3165e53c8113f945f75a28569433d050020ae0ccac27df4928ac",
+      "bytes": 10010
     },
     {
       "path": "evidence/R10_SCHEDULE_EXECUTED_V34.json",
@@ -137,9 +142,19 @@
       "bytes": 141197
     },
     {
+      "path": "evidence/qml62-run1.log",
+      "sha256": "e9b1a508b45b833cc67814fb1a8e249ad69cea07936fcbe50229c88b32dece7e",
+      "bytes": 100983
+    },
+    {
+      "path": "evidence/qml62-run2.log",
+      "sha256": "9beeee074a2882bf110a28d161787e3d7ca9f643759910552865aedfb422bf7d",
+      "bytes": 100998
+    },
+    {
       "path": "evidence/tidy-results.json",
-      "sha256": "36a663cc431e416921901cef8d671243cd4f4555d5c8389e1db188a769670813",
-      "bytes": 142631
+      "sha256": "6d91c0136254857fa495467900d7b1d3f8385df321d6866d62d8b1e2d0853289",
+      "bytes": 144169
     },
     {
       "path": "evidence/tracking-copy-provenance.json",

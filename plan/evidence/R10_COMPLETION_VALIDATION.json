@@ -21,8 +21,10 @@
     "console_executable_mode": "git mode 100755 retained; app lint filename/permission checks pass; interface_qml_console.py: console-secrets-enabled and console-secrets-disabled scenarios PASS on Qt 6.10.2"
   },
   "ctest": {
-    "qt_6_10_2": "19 selectors: 18 pass; bitcoinqml_unit_tests selector reports only the pinnedCoreRedactionPolicy build-location artifact described above. Serial full unit suite from the build root: exit 0, 2876 PASS rows, 0 failures. Integration groups 9/9 pass, qmltests 860 rows pass, bootstrap, fatal-exception, configured-datadir, fatal-shutdown, qmlwarning and cleanup/process checks pass.",
-    "qt_6_11_2": "19 selectors: 16 pass. Unit selector: same build-location artifact plus three timing-sensitive BlockClockModel rows under ctest -j8 load that pass in serial reruns. qmltests and qmlwarning selectors fail only on Qt 6.11's new qt.qml.propertyCache.append diagnostic for the pre-existing intentional `property bool enabled` declarations in BitcoinAddressInputField.qml and BitcoinAmountInputField.qml; MainRouting::test_add_wallet_completion_returns_to_activity is the affected row. No such diagnostic exists on the qualified Qt 6.2/6.4/6.10 lines; see QT611_PROPERTYCACHE_OBSERVATION.json."
+    "qt_6_10_2": "After the animation switch and review fixes: full qmltests 861/861, all integration groups, bootstrap, fatal, configured-datadir, cleanup and process selectors pass; serial full unit suite exit 0, 2877/2877. The only selector still reporting failure is bitcoinqml_unit_tests via the known build-location __FILE__/ctest-CWD artifact.",
+    "qt_6_11_2": "19 selectors: 16 pass. Unit selector: same build-location artifact plus three timing-sensitive BlockClockModel rows under ctest -j8 load that pass in serial reruns. qmltests and qmlwarning selectors fail only on Qt 6.11's new qt.qml.propertyCache.append diagnostic for the pre-existing intentional `property bool enabled` declarations in BitcoinAddressInputField.qml and BitcoinAmountInputField.qml; MainRouting::test_add_wallet_completion_returns_to_activity is the affected row. No such diagnostic exists on the qualified Qt 6.2/6.4/6.10 lines; see QT611_PROPERTYCACHE_OBSERVATION.json.",
+    "qt_6_2_4": "Full 19-selector run: 18 pass; only bitcoinqml_unit_tests reports the known build-location __FILE__/ctest-CWD artifact, and the identical binary passes from the build root (2877/2877). Full QML suite passed 861/861 twice with exit 0 where it previously aborted at MainRouting with SIGSEGV; all nine integration groups and 15/15 functional journeys pass.",
+    "qt_6_4_2": "Full 19-selector run: 18 pass; only bitcoinqml_unit_tests reports the known build-location artifact. Full unit suite from the build root: exit 0, 2877/2877 (one unrelated WalletQmlController(ready) data row failed once in the first full run and passed 3/3 in isolation plus in the repeat full run)."
   },
   "functional_journeys": {
     "interface_qml_node.py": "PASS 2/2 (Qt 6.10.2)",
@@ -39,7 +41,7 @@
   },
   "clang_tidy": {
     "toolchain": "local clang-tidy 22.1.8 with the bitcoin-tidy plugin rebuilt against LLVM 22 (pinned CI tidy is 23; version difference documented, not silently substituted)",
-    "result": "214/214 handwritten units and moc aggregates pass, exit 0; receipts in tidy-results.json (command lines and per-unit logs)",
+    "result": "215/215 units pass, exit 0 (receipts in tidy-results.json)",
     "notes": "Production source bytes are identical to frozen34, whose pinned clang-tidy 23 run passed 214/214 units. This run requalifies the saved revision including the five test-only corrections."
   },
   "coverage": {
@@ -53,11 +55,22 @@
     "conclusion": "The saved settle(stack_view_names=('mainPageStack', 'settingsNavigationStack_display')) barrier waits on the actual section stack whose push transition must complete before the language row click, and wait_for_page requires isVisible(). With one SettingsView in node mode the identity is unambiguous. The correction is validated empirically on Qt 6.10.2 and Qt 6.11.2 non-TSan runs; the original frontend-TSan journey remains the recorded failing profile and was not rerun on this host."
   },
   "explicitly_unresolved_or_deferred": [
-    "Qt 6.2 MainRouting teardown SIGSEGV: unchanged native Qt defect, documented and deferred per policy; no replacement component, no arbitrary waits, no animation disabling",
+    "Qt 6.2 MainRouting teardown SIGSEGV: trigger removed from test runs by the animation switch (two full suites 861/861 twice, exit 0); upstream root cause still unproved, so attribution remains open and no waiver is claimed",
     "Settings navigation visibility under frontend TSan: readiness correction validated on non-TSan Qt 6.10.2/6.11.2 runs; TSan profile not rerun on this host",
     "Qt picker race: user-directed document/defer; retained stock QFileDialog; affected TSan case remains unresolved",
     "Windows and native-platform gates: deferred by explicit user decision for this completion pass",
     "Qt 6.11.2 propertyCache diagnostic: newly observed toolkit behavior outside the required 6.2/6.4/6.10 matrix; production QML intentionally shadows `enabled` and is unchanged pending a reviewed decision",
     "Frontend TSan/MSan with instrumented dependencies (pinned static Qt recipe) remain explicit consumer/platform obligations; not rerun here"
-  ]
+  ],
+  "animation_test_switch": {
+    "change": "Test runs set BITCOIN_QML_TEST_NO_ANIMATIONS=1; AppMode.animationsEnabled feeds writable Theme.animationsEnabled; all 103 QML Behaviors gated; animation-asserting cases opt in",
+    "qt62_crash": "Baseline test passed then exit 139; disabling only Icon.qml's Behavior gave 5/5 exit 0; the switch gave 5/5 exit 0; two consecutive full Qt 6.2.4 QML suites 861/861 exit 0 each",
+    "regressions_fixed": [
+      "PaymentRequestModal.qml missing ../controls import",
+      "harness indentation in qml_test_harness.py and qml_wallet_test_lib.py",
+      "two animation-asserting tests now opt in",
+      "WalletQmlController ready-phase counter race on Qt 6.4.2 hardened with QTRY waits"
+    ],
+    "validation": "Qt 6.2.4: full QML suite twice 861/861, full ctest 18/19 (known artifact), unit 2877/2877, all nine integration groups, 15/15 journeys. Qt 6.4.2: full ctest 18/19 (known artifact), unit 2877/2877, 15/15 journeys. Qt 6.10.2: full QML suite 861/861, unit 2877/2877, 15/15 journeys. App/Core lint 0; tidy 215/215; QML lint 244 files 0 warnings per profile"
+  }
 }
