@@ -1,14 +1,55 @@
 {
+  "layout": "Top-level plan/; documentation-only relocation after checkpoint d699302088fe9491f0ef3b281ea8d60032072249",
   "files": [
     {
       "path": "CHECKPOINT.md",
-      "sha256": "fbd64ca394ba3f1e9029d343832aba3edd983cf8f31857132794b4211cf55587",
-      "bytes": 10034
+      "sha256": "dac08b76ab0022a93e1c3da0b7e81eb870e94dde01adc325426b06ca6750460a",
+      "bytes": 10543
+    },
+    {
+      "path": "QT6_ARCHITECTURE_FOUNDATION.md",
+      "sha256": "e4e375f2526b9b9070ef98e75f21770b9163e3d126315e464ea49ab21dd3994c",
+      "bytes": 22942
+    },
+    {
+      "path": "QT6_BASE_UPDATE.md",
+      "sha256": "dc9938eb9a4d747596fb51425c23a2c16a2fde85b665f0e96c0dbdba20bf1188",
+      "bytes": 4954
+    },
+    {
+      "path": "QT6_FSM_PROPOSAL_REVIEW.md",
+      "sha256": "d400b99a0020911d7b0b0ca66fe4ababecbc9dee18b928eb0af7ea2d4eea6ef4",
+      "bytes": 13367
+    },
+    {
+      "path": "QT6_R00_REQUIREMENTS.md",
+      "sha256": "3185e3bc1957f6cf2b0bba87f297c9c6b9601b1a7e6e818ca167c0e49f3a0da5",
+      "bytes": 20400
+    },
+    {
+      "path": "QT6_REFACTOR_HANDOFF.md",
+      "sha256": "0e075ea1a17588d36a6214d77dfc7a7df83f24abb2ebe8342a082591fa42c73b",
+      "bytes": 26033
+    },
+    {
+      "path": "QT6_TOTAL_REFACTOR_PLAN.md",
+      "sha256": "c15f09301e308bc5a84a18cd20c2d418bd4764e7521ffb8d15c16662a5762073",
+      "bytes": 62625
+    },
+    {
+      "path": "QT6_UPSTREAM_IMPROVEMENTS.md",
+      "sha256": "92a918bceeaac3e82a1c644539c94c0c15b603b8904832e2d9db506f3da40d47",
+      "bytes": 58641
+    },
+    {
+      "path": "QT6_WALLET_ADAPTER_PLAN.md",
+      "sha256": "1091e0892805aff64c39088340b20eb122e7a2dce3edb3c6339d27d0a062b60d",
+      "bytes": 18094
     },
     {
       "path": "README.md",
-      "sha256": "507ef07b9d4500db9eb0e9aec124088423c57350678c3d6029adf940f2e0fc58",
-      "bytes": 325
+      "sha256": "393d6c57970df81eeaaa5707091b43739014ae7c8e7693777a47fb59f77ef686",
+      "bytes": 1230
     },
     {
       "path": "evidence/BROAD_ASAN_V34_RESULT.md",
@@ -81,62 +122,22 @@
       "bytes": 1411
     },
     {
-      "path": "plan-snapshots/QT6_ARCHITECTURE_FOUNDATION.md",
-      "sha256": "e4e375f2526b9b9070ef98e75f21770b9163e3d126315e464ea49ab21dd3994c",
-      "bytes": 22942
-    },
-    {
-      "path": "plan-snapshots/QT6_BASE_UPDATE.md",
-      "sha256": "dc9938eb9a4d747596fb51425c23a2c16a2fde85b665f0e96c0dbdba20bf1188",
-      "bytes": 4954
-    },
-    {
-      "path": "plan-snapshots/QT6_FSM_PROPOSAL_REVIEW.md",
-      "sha256": "d400b99a0020911d7b0b0ca66fe4ababecbc9dee18b928eb0af7ea2d4eea6ef4",
-      "bytes": 13367
-    },
-    {
-      "path": "plan-snapshots/QT6_R00_REQUIREMENTS.md",
-      "sha256": "3185e3bc1957f6cf2b0bba87f297c9c6b9601b1a7e6e818ca167c0e49f3a0da5",
-      "bytes": 20400
-    },
-    {
-      "path": "plan-snapshots/QT6_REFACTOR_HANDOFF.md",
-      "sha256": "2f5fd613f7f2d0a1b6d637248a80b8255f166acbe45e49c7c9701fcb33319ba1",
-      "bytes": 26045
-    },
-    {
-      "path": "plan-snapshots/QT6_TOTAL_REFACTOR_PLAN.md",
-      "sha256": "abcf5439db18ed67efbb065d9fe3c409a0249bac36af739b13bf4c76e8e3c15f",
-      "bytes": 62637
-    },
-    {
-      "path": "plan-snapshots/QT6_UPSTREAM_IMPROVEMENTS.md",
-      "sha256": "92a918bceeaac3e82a1c644539c94c0c15b603b8904832e2d9db506f3da40d47",
-      "bytes": 58641
-    },
-    {
-      "path": "plan-snapshots/QT6_WALLET_ADAPTER_PLAN.md",
-      "sha256": "1091e0892805aff64c39088340b20eb122e7a2dce3edb3c6339d27d0a062b60d",
-      "bytes": 18094
-    },
-    {
-      "path": "tracking-snapshots/schedule-ownership.csv",
+      "path": "tracking/schedule-ownership.csv",
       "sha256": "4b124867dca06f05a03ca80710f14c10b475e71c94412756f0676a5866916ffe",
       "bytes": 10548
     },
     {
-      "path": "tracking-snapshots/scope-assignments.csv",
+      "path": "tracking/scope-assignments.csv",
       "sha256": "2175d7677527b186eca1aef2267fa1d907afe390f23645dbbbca546820541c81",
       "bytes": 366624
     },
     {
-      "path": "tracking-snapshots/steps.csv",
+      "path": "tracking/steps.csv",
       "sha256": "cd75706faee53ce55e5499278ef6c8fd66b46f216d59ea03a880882e791289de",
       "bytes": 25740
     },
     {
-      "path": "tracking-snapshots/worker-orders.md",
+      "path": "tracking/worker-orders.md",
       "sha256": "53c13702f180b1f9fcd8e232ba6a8452c6b76b651b52c05a1bceb1f2c34b70be",
       "bytes": 195340
     }

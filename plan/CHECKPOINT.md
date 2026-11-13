@@ -1,6 +1,6 @@
 # R10 implementation checkpoint — unfinished
 
-Saved on 2026-11-13 at the user's explicit request to commit the current state and
+Saved on 2026-11-13, with later immutable34 validation updates below, at the user's explicit request to commit the current state and
 push it to their fork. **R10 is not accepted. R11 has not started.** This request
 supersedes earlier no-commit/no-push instructions for this checkpoint only.
 
@@ -47,14 +47,15 @@ policy does not excuse incorrect application ownership, threading or API use.
 | Pinned clang-tidy 23 and Bitcoin plugin | 214/214 actual translation units pass; exit 0 |
 | Native Qt 6.2.4 / GCC 12 | Build passes all 263 steps; 15/17 CTest selectors pass, Unit/QML abort; all nine integration groups pass |
 | Native Qt 6.4.2 / GCC 13 | Build passes all 263 steps; 17/17 CTest selectors pass, all nine integration groups nonempty; 3651 bodies = 3639 passes and 12 expected fatal delegates |
-| Native Qt 6.10.2 / GCC 15 | Build passes all 263 steps; full 17-selector CTest running; QML reports SVG decoding errors and the runtime SVG plugin is absent, no final pass claimed |
+| Native Qt 6.10.2 / GCC 15 | Build263 and static gates pass; CTest9/17 pass,8 fail from SVG/runtime warning failures; runtime SVG plugin absent. 3651 bodies:3228PASS/411FAIL/12paired fatal delegates. Profile not qualified |
 | Shipped QML static checks | Qt 6.10 job checks 244 files per qt65/qt62 resource profile, zero warnings/errors, 1011 compatibility notes each; five negative probes pass |
 | Lint | Fails on the console functional script's executable mode; correction saved here, rerun pending |
-| Wallet-disabled / coverage | Queued behind the serialized immutable34 native checks; neither started at checkpoint. No coverage percentage claimed |
+| Wallet-disabled | Frozen34 ENABLE_WALLET=OFF/IPC=ON: build186steps, CTest13/13 pass;2068 bodies=2056PASS+12paired fatal delegates;3 nonempty node groups,22startup/shutdown cases and independent Core GUI/IPC checks pass. Clang23.1.3/Qt6.10.2 |
+| Coverage | Immutable34 coverage build running after wallet-disabled checks; no percentage or qualification claimed |
 | Windows | Live preflight only: no existing jobs, vacant candidate paths, clock synchronized; zero builds/tests. VM suspended again with managed save |
 
 Exact focused/broad summaries and schedule/source receipts are in [evidence](evidence/).
-Separate runs overlap; do not add these counts as unique tests. Qt 6.2 follows
+Separate runs overlap; do not add these counts as unique tests. The wallet-disabled GUI uses the in-process Core factory; an IPC-enabled build plus independent Core IPC tests does not establish an active GUI IPC listener. Qt 6.2 follows
 the existing Qt < 6.3 warning-policy compatibility branch. Qt 6.4 enforces the
 newer warning probes. No configuration is silently excluded.
 
@@ -94,8 +95,8 @@ newer warning probes. No configuration is silently excluded.
    inspection confirms its image lacks the runtime `imageformats/libqsvg.so`
    plugin despite the CMake QtSvg package being present. Retain this environment
    blocker and downstream warning failures; build/static passes do not establish
-   runtime success. Collect final native Qt 6.10 results, run the true
-   wallet-disabled configuration, report reachable
+   runtime success. The true wallet-disabled configuration now passes on
+   frozen34; retain its distinct Clang23.1.3 toolchain and source identity. Report reachable
    handwritten line/branch coverage and explicit gaps, qualify the saved source
    on Windows, and account for other required native-platform/toolchain
    limitations. No 100% coverage or Windows/platform pass exists.
@@ -118,8 +119,8 @@ completed, so those inner cases are not passing evidence.
 
 ## Resume and provenance
 
-[Plan snapshots](plan-snapshots/) preserve the workspace plan, architecture,
-requirements and upstream notes. [Tracking snapshots](tracking-snapshots/) are
+[Saved total plan](QT6_TOTAL_REFACTOR_PLAN.md) preserve the workspace plan, architecture,
+requirements and upstream notes. [Tracking snapshots](tracking/) are
 copies of the shared orders/scopes/schedules, with LF line endings and one final newline. CSV fields and rows are verified unchanged; original shared files are untouched. Historical `.validation/`
 links in these snapshots refer to the original workspace layout, not bundled
 files. These snapshots are not an acceptance-status export. This report and
