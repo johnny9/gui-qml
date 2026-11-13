@@ -19,13 +19,25 @@ from qml_wallet_test_lib import (
 
 
 def open_settings(gui, section):
-    if gui.get_property("appWindow", "desktopWalletMode"):
-        gui.click("desktopWalletSettingsTabButton")
-        gui.wait_for_property("desktopWalletSettingsTabButton", "checked", True)
-    else:
-        gui.click("nodeSettingsButton")
+    desktop = gui.get_property("appWindow", "desktopWalletMode")
+    # Reuse the current settings page. Clicking the hidden node button pushes
+    # another SettingsView and leaves duplicate sections in the navigation tree.
+    if not gui.object_exists("settingsView") or not gui.get_property("settingsView", "visible"):
+        if desktop:
+            gui.click("desktopWalletSettingsTabButton")
+            gui.wait_for_property("desktopWalletSettingsTabButton", "checked", True)
+        else:
+            gui.click("nodeSettingsButton")
+    gui.wait_for_page("settingsView")
+    if not desktop:
+        # The node stack is nested inside the outer mainPageStack.
+        gui.wait_for_property("mainPageStack", "currentItem.busy", False)
+        assert gui.get_property("mainPageStack", "currentItem.depth") == 2
+    gui.wait_for_property("settingsView", "optionsEditable", True)
     gui.click(f"settingsSidebar_{section}")
-    gui.settle()
+    gui.wait_for_property("settingsView", "selectedSectionId", section)
+    gui.wait_for_property("settingsView", "pageContainer.currentSectionId", section)
+    gui.settle(stack_view_names=("mainPageStack", f"settingsNavigationStack_{section}"))
 
 
 def open_proxy(gui):
