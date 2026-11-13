@@ -9,6 +9,7 @@ Control {
     id: root
     property real progress: 0
     Behavior on progress {
+        enabled: Theme.animationsEnabled
         NumberAnimation {
             easing.type: Easing.Bezier
             easing.bezierCurve: [0.5, 0.0, 0.2, 1, 1, 1]

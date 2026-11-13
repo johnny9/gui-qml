@@ -15,6 +15,7 @@ Switch {
         color: root.checked ? Theme.color.orange : Theme.color.neutral4
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }
@@ -27,11 +28,13 @@ Switch {
         height: 20
         color: Theme.color.white
         Behavior on x {
+            enabled: Theme.animationsEnabled
             SmoothedAnimation {
             }
         }
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }

@@ -1010,6 +1010,13 @@ void WalletQmlControllerTests::initializationIsSingleShotAcrossPendingSuccessFai
     controller.initialize();
     QCOMPARE(loader.handle_load_wallet_calls, 1); QCOMPARE(loader.get_wallets_calls, 1);
     QCOMPARE(controller.initialized(), phase != 2);
+    if (phase < 2) {
+        // The default worker performs these after the controller reports ready;
+        // wait for settlement before StrictMockNode's exit verification.
+        QTRY_COMPARE(node.calls.forceSetting.load(), 1);
+        QTRY_VERIFY(node.calls.getPersistentSetting.load() >= 1);
+        QTRY_COMPARE(node.calls.listExternalSigners.load(), 1);
+    }
 }
 
 void WalletQmlControllerTests::runtimeDisabledWalletDoesNotAcquireItsLoader()

@@ -366,6 +366,7 @@ PageStack {
             }
 
             enter: Transition {
+                enabled: Theme.animationsEnabled
                 NumberAnimation {
                     property: "verticalOffset"
                     from: transactionReviewPopup.height
@@ -375,6 +376,7 @@ PageStack {
                 }
             }
             exit: Transition {
+                enabled: Theme.animationsEnabled
                 NumberAnimation {
                     property: "verticalOffset"
                     from: 0

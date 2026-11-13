@@ -385,6 +385,8 @@ int RunChild(int argc, char* argv[], const RunnerOptions& options)
 
 int main(int argc, char* argv[])
 {
+    // Transition animations are irrelevant to assertions and make teardown flaky on Qt 6.2.
+    qputenv("BITCOIN_QML_TEST_NO_ANIMATIONS", "1");
     const auto options = ParseOptions(argc, argv);
     if (!options) return EXIT_FAILURE;
     if (options->list_modules) {

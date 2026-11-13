@@ -74,14 +74,17 @@ Item {
         renderingActive: root.presentationActive
 
         Behavior on backgroundColor {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 
         Behavior on timeTickColor {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 
         Behavior on confirmationColors {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }
@@ -104,6 +107,7 @@ Item {
         color: Theme.color.neutral9
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }
@@ -135,7 +139,7 @@ Item {
         color: Theme.color.neutral4
 
         Behavior on color {
-            enabled: !subText.estimating
+            enabled: Theme.animationsEnabled && (!subText.estimating)
             ColorAnimation { duration: 150 }
         }
 

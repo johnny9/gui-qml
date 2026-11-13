@@ -36,7 +36,7 @@ Control {
     background: Rectangle {
         color: root.alternate ? Theme.color.neutral2 : Theme.color.neutral1
 
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { enabled: Theme.animationsEnabled; ColorAnimation { duration: 150 } }
     }
 
     contentItem: RowLayout {

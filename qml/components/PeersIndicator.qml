@@ -34,7 +34,7 @@ Row {
             radius: width / 2
             color: Theme.color.neutral9
             opacity: (index === 0 && root.numOutboundPeers > 0) || (index + 1 <= root.size * root.numOutboundPeers / root.maxNumOutboundPeers) ? 0.95 : 0.45
-            Behavior on opacity { OpacityAnimator { duration: 150 } }
+            Behavior on opacity { enabled: Theme.animationsEnabled; OpacityAnimator { duration: 150 } }
             SequentialAnimation on opacity {
                 loops: Animation.Infinite
                 running: root.presentationActive && root.numOutboundPeers === 0 && peerIndicator.index === 0 && !root.paused
@@ -48,6 +48,7 @@ Row {
             }
 
             Behavior on color {
+                enabled: Theme.animationsEnabled
                 ColorAnimation { duration: 150 }
             }
         }

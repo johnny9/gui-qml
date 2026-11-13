@@ -50,10 +50,10 @@ Popup {
 
     Overlay.modal: Rectangle {
         color: Qt.rgba(0, 0, 0, 0.6)
-        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Behavior on opacity { enabled: Theme.animationsEnabled; NumberAnimation { duration: 180 } }
     }
-    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
-    exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150 } }
+    enter: Transition { enabled: Theme.animationsEnabled; NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
+    exit: Transition { enabled: Theme.animationsEnabled; NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150 } }
 
     contentItem: Loader {
         id: creationLoader

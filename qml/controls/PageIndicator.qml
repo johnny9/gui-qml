@@ -16,6 +16,7 @@ PageIndicator {
         color: Theme.color.neutral9
         opacity: index === root.currentIndex ? 0.95 : pressed ? 0.7 : 0.45
         Behavior on opacity {
+            enabled: Theme.animationsEnabled
             OpacityAnimator {
                 duration: 100
             }

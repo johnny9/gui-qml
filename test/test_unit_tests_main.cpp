@@ -29,6 +29,8 @@ void ConfiguredQtHandler(QtMsgType type, const QMessageLogContext& context, cons
 
 int main(int argc, char* argv[])
 {
+    // Transition animations are irrelevant to assertions and make teardown flaky on Qt 6.2.
+    qputenv("BITCOIN_QML_TEST_NO_ANIMATIONS", "1");
     if (qEnvironmentVariableIsSet("BITCOIN_QML_QTLOG_SINK_CASE")) {
         const bool overflow = qgetenv("BITCOIN_QML_QTLOG_SINK_CASE") == "overflow";
         qtlog::NativeSink sink{[overflow](const qtlog::Record& record) {

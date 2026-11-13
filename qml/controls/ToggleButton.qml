@@ -34,6 +34,7 @@ Button {
         color: root.textColor
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }
@@ -44,6 +45,7 @@ Button {
         radius: root.bgRadius
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }

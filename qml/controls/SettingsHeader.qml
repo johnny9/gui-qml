@@ -120,6 +120,7 @@ Pane {
             color: Theme.color.neutral9
 
             Behavior on color {
+                enabled: Theme.animationsEnabled
                 ColorAnimation { duration: 150 }
             }
         }

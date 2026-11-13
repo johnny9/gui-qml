@@ -29,6 +29,7 @@ Button {
     Accessible.role: Accessible.Button
 
     Behavior on scale {
+        enabled: Theme.animationsEnabled
         NumberAnimation {
             duration: 100
             easing.type: Easing.OutCubic
@@ -59,6 +60,7 @@ Button {
                 : root.backgroundColor
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 

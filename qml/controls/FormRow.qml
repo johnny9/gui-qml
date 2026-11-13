@@ -62,6 +62,7 @@ Control {
             color: root.dividerColor
 
             Behavior on color {
+                enabled: Theme.animationsEnabled
                 ColorAnimation { duration: 150 }
             }
         }

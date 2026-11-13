@@ -26,6 +26,7 @@ AbstractButton {
         border.width: 0
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 

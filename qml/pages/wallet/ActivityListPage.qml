@@ -289,6 +289,7 @@ Page {
                 width: Math.max(0, (activeFiltersButton.implicitWidth + filters.spacing) * reveal - filters.spacing)
                 height: activeFiltersButton.height
                 Behavior on reveal {
+                    enabled: Theme.animationsEnabled
                     NumberAnimation { duration: 200; easing.type: Easing.InOutCubic }
                 }
                 FilterButton {

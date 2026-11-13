@@ -23,6 +23,7 @@ Button {
         color: root.textColor
         horizontalAlignment: root.rightalign ? Text.AlignRight : Text.AlignHCenter
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }
@@ -31,6 +32,7 @@ Button {
         color: root.bgColor
         radius: 5
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 

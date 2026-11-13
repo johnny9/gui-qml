@@ -472,7 +472,7 @@ Pane {
                     code: root.sharing && root.request ? root.request.qrPayload : ""
                     backgroundColor: "white"
                     foregroundColor: "black"
-                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    Behavior on opacity { enabled: Theme.animationsEnabled; NumberAnimation { duration: 180 } }
                 }
                 MouseArea {
                     objectName: "requestPaymentQRContextArea"

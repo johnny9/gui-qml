@@ -94,6 +94,7 @@ NeutralButton {
                 rotation: root.opened ? 180 : 0
 
                 Behavior on rotation {
+                    enabled: Theme.animationsEnabled
                     NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
                 }
             }

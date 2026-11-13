@@ -31,6 +31,7 @@ Button {
             : "transparent"
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
         FocusBorder {
@@ -86,6 +87,7 @@ Button {
                         radius: 3
 
                         Behavior on color {
+                            enabled: Theme.animationsEnabled
                             ColorAnimation { duration: 150 }
                         }
                     }
@@ -99,6 +101,7 @@ Button {
                     text: qsTr("Recommended")
 
                     Behavior on color {
+                        enabled: Theme.animationsEnabled
                         ColorAnimation { duration: 150 }
                     }
                 }

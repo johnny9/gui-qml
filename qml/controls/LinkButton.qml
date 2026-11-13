@@ -48,5 +48,5 @@ AbstractButton {
     }
 
     opacity: down ? 0.7 : hovered ? 0.85 : 1
-    Behavior on opacity { NumberAnimation { duration: 100 } }
+    Behavior on opacity { enabled: Theme.animationsEnabled; NumberAnimation { duration: 100 } }
 }

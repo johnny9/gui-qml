@@ -22,6 +22,7 @@ Button {
     background: null
 
     Behavior on icon.color {
+        enabled: Theme.animationsEnabled
         ColorAnimation {
             duration: 150
         }

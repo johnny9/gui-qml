@@ -757,6 +757,9 @@ TestCase {
     }
 
     function test_filter_button_animates_and_reserves_space() {
+        // This case observes intermediate animation frames.
+        const animations = Theme.animationsEnabled
+        Theme.animationsEnabled = true
         const page = createPage()
         const proxy = findChild(page, "activityFilterProxyModel")
         const button = findChild(page, "activityTypeFilterButton")
@@ -776,6 +779,7 @@ TestCase {
         tryVerify(function() { return button.x < expandedX })
         tryCompare(badge, "visible", false)
         tryCompare(button, "x", initialX)
+        Theme.animationsEnabled = animations
     }
 
     function test_multiselect_types_and_counted_clear_menu() {

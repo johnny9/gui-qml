@@ -49,6 +49,7 @@ NeutralButton {
             hoverEnabled: false
 
             Behavior on color {
+                enabled: Theme.animationsEnabled
                 ColorAnimation { duration: 150 }
             }
         }

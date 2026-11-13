@@ -37,22 +37,27 @@ Item {
         valueList: root.valueList
 
         Behavior on backgroundColor {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 
         Behavior on borderColor {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 
         Behavior on gradientColor {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 
         Behavior on lineColor {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 
         Behavior on markerLineColor {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }

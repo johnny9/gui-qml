@@ -26,6 +26,7 @@ Popup {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
     enter: Transition {
+        enabled: Theme.animationsEnabled
         NumberAnimation {
             property: "opacity"
             from: 0
@@ -43,6 +44,7 @@ Popup {
     }
 
     exit: Transition {
+        enabled: Theme.animationsEnabled
         NumberAnimation {
             property: "opacity"
             from: 1

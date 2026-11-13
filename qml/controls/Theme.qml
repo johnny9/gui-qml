@@ -11,6 +11,9 @@ Control {
     readonly property ImageSet image: dark ? darkImageSet : lightImageSet
     readonly property TextSet text: TextSet {}
 
+    // Transition animations; tests start with them off (BITCOIN_QML_TEST_NO_ANIMATIONS).
+    property bool animationsEnabled: AppMode.animationsEnabled
+
     AppPreferences { id: settings }
 
     component ColorSet: QtObject {

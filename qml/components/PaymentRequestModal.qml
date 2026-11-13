@@ -5,6 +5,7 @@
 import QtQuick 2.15
 import org.bitcoincore.qt 1.0
 import QtQuick.Controls 2.15
+import "../controls"
 
 Popup {
     id: root
@@ -70,9 +71,10 @@ Popup {
 
     Overlay.modal: Rectangle {
         color: Qt.rgba(0, 0, 0, 0.6)
-        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Behavior on opacity { enabled: Theme.animationsEnabled; NumberAnimation { duration: 180 } }
     }
     enter: Transition {
+        enabled: Theme.animationsEnabled
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 }
             NumberAnimation {
@@ -84,7 +86,7 @@ Popup {
             }
         }
     }
-    exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150 } }
+    exit: Transition { enabled: Theme.animationsEnabled; NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150 } }
     contentItem: ScrollView {
         id: scroll
         clip: true

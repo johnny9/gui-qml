@@ -214,6 +214,7 @@ SettingsPage {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         enter: Transition {
+            enabled: Theme.animationsEnabled
             NumberAnimation {
                 property: "opacity"
                 from: 0
@@ -231,6 +232,7 @@ SettingsPage {
         }
 
         exit: Transition {
+            enabled: Theme.animationsEnabled
             NumberAnimation {
                 property: "opacity"
                 from: 1
