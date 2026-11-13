@@ -4676,6 +4676,11 @@ void WalletQmlModelTests::customFeeRateValid_data()
     QTest::newRow("fractional") << QStringLiteral("0.123") << true;
     QTest::newRow("whole") << QStringLiteral("2") << true;
     QTest::newRow("excess-precision") << QStringLiteral("0.1001") << false;
+    QTest::newRow("maximum-representable") << QStringLiteral("9223372036854775.807") << true;
+    QTest::newRow("scaled-whole-overflow") << QStringLiteral("9223372036854776") << false;
+    QTest::newRow("scaled-sum-overflow") << QStringLiteral("9223372036854775.808") << false;
+    QTest::newRow("whole-conversion-overflow") << QStringLiteral("9223372036854775808") << false;
+    QTest::newRow("bounded-transport") << QString(33, QLatin1Char{'9'}) << false;
 }
 
 void WalletQmlModelTests::customFeeRateValid()
