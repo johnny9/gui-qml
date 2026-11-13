@@ -162,7 +162,7 @@ Build and run the application and node integration tests:
 ```sh
 cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_APP_TESTS=ON -DWITH_CCACHE=ON
 cmake --build build --target bitcoinqml_integration -j12
-ctest --test-dir build --output-on-failure -L integration --parallel 3
+ctest --test-dir build --output-on-failure -L integration --parallel 4
 ```
 
 The integration target builds `bitcoinqml_integration_tests`, which CTest invokes
@@ -183,7 +183,7 @@ has two CTest entries; the other stages have one each. All ten entries can run
 independently or in parallel. Sending partitions alternate discovered cases,
 including data rows, using `--shard=0/2` and `--shard=1/2`. Running `--stage=6`
 without a shard still selects every sending case.
-The command above runs up to three groups concurrently; cases within each group
+The command above runs up to four groups concurrently; cases within each group
 remain serial. Use `--parallel 2` on a memory-constrained machine or
 `--parallel 1` for serial comparisons. Stage numbers describe feature coverage,
 not execution dependencies: no group requires another group to run first.

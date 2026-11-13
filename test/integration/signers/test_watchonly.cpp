@@ -5,6 +5,7 @@
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <qml/models/psbtqmlmodel.h>
+#include <rpc/util.h>
 
 #include <QRegularExpression>
 #include <QFile>
@@ -46,7 +47,13 @@ private Q_SLOTS:
         QCOMPARE(wallet->keySchemeKind(), WalletQmlModel::KeyScheme::WatchOnly);
         QVERIFY(!wallet->canManagePassphrase());
         QVERIFY(!qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("private_keys_enabled").get_bool());
-        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        // Keep one mature input and one immature reward without 99 unused rewards.
+        const auto mining_address = qmltest::NewAddress(m_app, wallet->name());
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[2,\"" + mining_address.toStdString() + "\"]"));
+        qmltest::Rpc(m_app, "generatetodescriptor", qmltest::Json("[99,\"raw(6a)\"]"));
+        QTRY_COMPARE(wallet->balanceSatoshi(), 50 * COIN);
+        QCOMPARE(AmountFromValue(qmltest::Rpc(m_app, "getbalances", {}, wallet->name()).find_value("mine").find_value("immature")), 50 * COIN);
+        QCOMPARE(qmltest::Rpc(m_app, "listunspent", {}, wallet->name()).size(), 1U);
         QVERIFY(qmltest::Click(m_app, "sendTabButton"));
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", qmltest::NewAddress(m_app, source->name())));
         QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "1"));

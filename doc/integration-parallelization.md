@@ -18,7 +18,7 @@ PSBT cases now use private copies of a prepared funded wallet; see the funding
 fixture research report for scope and validation.
 
 The source-build CI workflow runs non-integration tests with its existing serial
-scheduling, then integration tests with up to three jobs, capped at the CPU
+scheduling, then integration tests with up to four jobs, capped at the CPU
 count reported by `nproc`. The integration step runs even if non-integration
 tests fail, provided the build succeeded and the job was not cancelled. Reports
 remain separate and are uploaded on failure. The depends-build workflow already
@@ -27,7 +27,7 @@ uses parallel CTest execution and is unchanged.
 For a local run:
 
 ```sh
-ctest --test-dir build -L '^integration$' --parallel 3 --output-on-failure
+ctest --test-dir build -L '^integration$' --parallel 4 --output-on-failure
 ```
 
 Use two jobs on a memory-constrained machine, or one job for serial comparison.
@@ -80,7 +80,7 @@ increased it by 3.323 seconds (3.13%). The observed ranges overlap; these sample
 do not establish a useful improvement from increasing the cap. Sending finished
 last in every four- and six-job sample, while other groups experienced contention.
 
-Keep the CI cap at three. The earlier three-job median and this fresh control
+At this stage, the measurements supported keeping the cap at three. The earlier three-job median and this fresh control
 differ, reinforcing the need for contemporary controls instead of comparing
 higher job counts only against older timings. These results do not establish
 the best setting on other hardware or Linux runners.
@@ -165,6 +165,7 @@ After prepared-wallet fixtures, a fresh three-sample comparison found four jobs
 useful: median **80.070 s at three jobs versus 71.694 s at four (10.46% lower)**,
 with all 122 cases passing in every run. A separate watch-only funding prototype
 reduced its two-case group median from 10.493 s to 4.006 s while preserving its
-validation assertions. These are experimental results; the CI cap is still three.
+validation assertions. Both changes are now adopted: the CI cap is four, bounded
+by CPU count, and watch-only setup retains one mature and one immature wallet reward.
 See [the post-fixture experiments](post-fixture-experiments.md) for methodology,
 full-suite validation, limits, and the saved prototype.

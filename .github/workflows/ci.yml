@@ -103,7 +103,7 @@ jobs:
         run: |
           mkdir -p build/test-reports
           test_jobs="$(nproc)"
-          if (( test_jobs > 3 )); then test_jobs=3; fi
+          if (( test_jobs > 4 )); then test_jobs=4; fi
           ${{ matrix.test_wrapper }} ctest --test-dir build --output-on-failure -L '^integration$' \
             --parallel "${test_jobs}" --output-junit "${PWD}/build/test-reports/ctest-integration.xml"
 
