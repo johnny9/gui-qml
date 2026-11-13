@@ -66,18 +66,19 @@ foreach(group IN LISTS integration_groups)
   endforeach()
 endforeach()
 
-add_test(NAME bitcoinqml_shard_selection
-  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/test/functional/test_qml_integration_shards.py
-    $<TARGET_FILE:bitcoinqml_integration_tests>
-)
-set_tests_properties(bitcoinqml_shard_selection PROPERTIES TIMEOUT 60 LABELS unit)
+if(ENABLE_WALLET)
+  add_test(NAME bitcoinqml_shard_selection
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/test/functional/test_qml_integration_shards.py
+      $<TARGET_FILE:bitcoinqml_integration_tests>
+  )
+  set_tests_properties(bitcoinqml_shard_selection PROPERTIES TIMEOUT 60 LABELS unit)
 
-add_test(NAME bitcoinqml_prepared_wallet_setup
-  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/test/functional/test_qml_prepared_wallet.py
-    $<TARGET_FILE:bitcoinqml_integration_tests>
-)
-set_tests_properties(bitcoinqml_prepared_wallet_setup PROPERTIES TIMEOUT 60 LABELS unit)
-
+  add_test(NAME bitcoinqml_prepared_wallet_setup
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/test/functional/test_qml_prepared_wallet.py
+      $<TARGET_FILE:bitcoinqml_integration_tests>
+  )
+  set_tests_properties(bitcoinqml_prepared_wallet_setup PROPERTIES TIMEOUT 60 LABELS unit)
+endif()
 
 if(qt_lib_type STREQUAL "STATIC_LIBRARY")
   qt6_import_plugins(bitcoinqml_integration_tests INCLUDE Qt6::QMinimalIntegrationPlugin Qt6::QSvgPlugin Qt6::QSvgIconPlugin)

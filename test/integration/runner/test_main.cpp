@@ -2,9 +2,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <test/integration/fixture/test_application.h>
 #include <test/integration/fixture/test_process.h>
+#ifdef ENABLE_WALLET
 #include <test/integration/fixture/test_wallet.h>
+#endif
 #include <test/integration/runner/test_cases.h>
 
 #include <QCoreApplication>
@@ -418,8 +422,12 @@ int RunChild(int argc, char* argv[], const RunnerOptions& options)
     if (options.module->arguments) startup_arguments.append(options.module->arguments(options.selector));
     return app.runTests(argv[0], startup_arguments, [&](BitcoinQmlApplication& application) {
         if (options.prepare_wallet) {
+#ifdef ENABLE_WALLET
             auto* wallet = qmltest::CreateWallet(application, "funded");
             return wallet && qmltest::FundWallet(application, *wallet) ? EXIT_SUCCESS : EXIT_FAILURE;
+#else
+            return EXIT_FAILURE;
+#endif
         }
         const auto tests = options.module->create(application, *options.wallet_mode);
         return QTest::qExec(tests.get(), QStringList{QString::fromUtf8(argv[0]), options.selector, "-o", "qt-results.xml,xml"} + child_options);
