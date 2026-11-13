@@ -1,0 +1,63 @@
+{
+  "scope": "R10 completion requalification of the five saved test-only corrections on the saved application revision, plus configuration, lint and tidy gates",
+  "application_head": "0382fd9900 (work/qt6-r10-completion; identical application bytes to checkpoint d699302088 plus documentation-only plan/ relocation)",
+  "application_parent": "715fb5449366a9a267e6d111169f226b429947ef",
+  "bitcoin_core": "44901d8f64cb617714707bd025ecd83f108353c2 (pin unchanged; production source bytes match frozen34)",
+  "environment": {
+    "host": "Fedora 44, x86_64, 20 cores",
+    "compilers": "host GCC 16.2.1 and Clang 22.1.8 (system); frozen34 pinned Clang 23.1.3 not available on this host",
+    "qt_profiles": [
+      "Qt 6.10.2 (aqt gcc_64 local install) matching the frozen34 qualified Qt line, built with host Clang 22.1.8 via ci/configure.py native mode",
+      "Qt 6.11.2 (system) additional observation profile, built with host Clang 22.1.8"
+    ],
+    "capnp": "1.3.0 local RPM extraction (ENABLE_IPC=ON)",
+    "notes": "Build trees live outside the source filesystem; ninja records relative __FILE__ paths. ctest runs unit binaries from build/test, so RpcCommandExecutorTests::pinnedCoreRedactionPolicy cannot resolve ../bitcoin/src/qt/rpcconsole.cpp from that subdirectory. Running the identical binary from the build root passes. This is a build-location artifact, not a source or test regression; the qualified workspace builds shared a parent filesystem and never surfaced it."
+  },
+  "corrections_requalified": {
+    "walletrequests_opaque_thread_equality": "WalletRequestsTests: 51/51 PASS (Qt 6.10.2 and Qt 6.11.2 builds)",
+    "walletreservations_opaque_thread_equality": "WalletReservationTests: 27/27 PASS (Qt 6.10.2 and Qt 6.11.2 builds)",
+    "node_settings_apply_receipt_and_navigation": "interface_qml_node.py: settings-and-history-restart and wallet-shell-geometry scenarios PASS on Qt 6.10.2; settings-and-history-restart also passes on Qt 6.11.2",
+    "wallet_sending_typed_fee_fixtures": "interface_qml_wallet_sending.py: 7/7 scenarios PASS on Qt 6.10.2 including all four legacy-fee matrices (v0/v2 x confirmed/unconfirmed), each with all six ownership/metadata combinations, exact 500000-satoshi and unknown-fee oracles, graph amountKnown/amountSat consistency, send/broadcast blocking, mempool and independent-Core checks",
+    "console_executable_mode": "git mode 100755 retained; app lint filename/permission checks pass; interface_qml_console.py: console-secrets-enabled and console-secrets-disabled scenarios PASS on Qt 6.10.2"
+  },
+  "ctest": {
+    "qt_6_10_2": "19 selectors: 18 pass; bitcoinqml_unit_tests selector reports only the pinnedCoreRedactionPolicy build-location artifact described above. Serial full unit suite from the build root: exit 0, 2876 PASS rows, 0 failures. Integration groups 9/9 pass, qmltests 860 rows pass, bootstrap, fatal-exception, configured-datadir, fatal-shutdown, qmlwarning and cleanup/process checks pass.",
+    "qt_6_11_2": "19 selectors: 16 pass. Unit selector: same build-location artifact plus three timing-sensitive BlockClockModel rows under ctest -j8 load that pass in serial reruns. qmltests and qmlwarning selectors fail only on Qt 6.11's new qt.qml.propertyCache.append diagnostic for the pre-existing intentional `property bool enabled` declarations in BitcoinAddressInputField.qml and BitcoinAmountInputField.qml; MainRouting::test_add_wallet_completion_returns_to_activity is the affected row. No such diagnostic exists on the qualified Qt 6.2/6.4/6.10 lines; see QT611_PROPERTYCACHE_OBSERVATION.json."
+  },
+  "functional_journeys": {
+    "interface_qml_node.py": "PASS 2/2 (Qt 6.10.2)",
+    "interface_qml_wallet_sending.py": "PASS 7/7 (Qt 6.10.2; first run's encrypted-multinode-send failure was a missing BITCOIND environment path, not a code failure)",
+    "interface_qml_console.py": "PASS 2/2 (Qt 6.10.2)",
+    "instrumented_coverage_profile": "PASS 11/11 (node 2, sending 7, console 2) under the ENABLE_APP_COVERAGE binary",
+    "interface_qml_wallet.py": "PASS 3/3 (Qt 6.10.2)",
+    "interface_qml_wallet_activity.py": "PASS 1/1 (Qt 6.10.2; one earlier failure occurred only while the coverage build saturated all cores and passes in isolation and on rerun)",
+    "interface_qml_wallet_compat.py": "SKIP 2/2 (requires legacy v28 bitcoind and bitcoin-qt 31.0 not present on this host; environmental skip, not a failure)"
+  },
+  "lint": {
+    "app_scope": "exit 0 after documentation-only corrections to plan/ markdown links (see PLAN_DOCS_LINK_CORRECTIONS.json). The console script executable-mode failure that blocked the checkpoint lint is resolved and verified.",
+    "core_scope": "exit 0 against the pinned Core checkout after deepening the local shallow clone so Core's own history checks (commit range, subtrees) can run. Core files unchanged."
+  },
+  "clang_tidy": {
+    "toolchain": "local clang-tidy 22.1.8 with the bitcoin-tidy plugin rebuilt against LLVM 22 (pinned CI tidy is 23; version difference documented, not silently substituted)",
+    "result": "214/214 handwritten units and moc aggregates pass, exit 0; receipts in tidy-results.json (command lines and per-unit logs)",
+    "notes": "Production source bytes are identical to frozen34, whose pinned clang-tidy 23 run passed 214/214 units. This run requalifies the saved revision including the five test-only corrections."
+  },
+  "coverage": {
+    "result": "see APP_COVERAGE_REPORT.json",
+    "summary": "qml/ handwritten sources: 84.30% regions, 89.98% functions, 91.10% lines, 70.31% branches across unit, integration, qmltests, bootstrap and 11 GUI journeys under the instrumented binary; test/ sources: 97.74% lines. Explicit gaps listed; no 100% claimed",
+    "notes": "ENABLE_APP_COVERAGE=ON Clang 22.1.8 build; all 11 functional journeys pass under the instrumented GUI binary including the four corrected legacy-fee matrices"
+  },
+  "settings_navigation_identity_analysis": {
+    "instances": "SettingsView is instantiated from MainWindow.qml (node mode, pushed on nodeStack) and DesktopWallets.qml (desktop wallet mode, retained by settingsLoader after first use). In the failing interface_qml_node.py journey the GUI runs with -disablewallet, desktopWalletMode is false and DesktopWallets is never loaded, so exactly one SettingsView exists. Duplicate per-section PageStack instances named settingsNavigationStack_<section> exist inside one SettingsPageContainer (cached sections) and across the two mode instances in wallet journeys.",
+    "bridge_resolution": "TestBridge::findObjectByName prefers visible QQuickItems, then visible QObjects, then objects declared inside a visible item, before falling back to the first match, so a retained hidden wallet-mode settings instance cannot be observed in place of the active one.",
+    "conclusion": "The saved settle(stack_view_names=('mainPageStack', 'settingsNavigationStack_display')) barrier waits on the actual section stack whose push transition must complete before the language row click, and wait_for_page requires isVisible(). With one SettingsView in node mode the identity is unambiguous. The correction is validated empirically on Qt 6.10.2 and Qt 6.11.2 non-TSan runs; the original frontend-TSan journey remains the recorded failing profile and was not rerun on this host."
+  },
+  "explicitly_unresolved_or_deferred": [
+    "Qt 6.2 MainRouting teardown SIGSEGV: unchanged native Qt defect, documented and deferred per policy; no replacement component, no arbitrary waits, no animation disabling",
+    "Settings navigation visibility under frontend TSan: readiness correction validated on non-TSan Qt 6.10.2/6.11.2 runs; TSan profile not rerun on this host",
+    "Qt picker race: user-directed document/defer; retained stock QFileDialog; affected TSan case remains unresolved",
+    "Windows and native-platform gates: deferred by explicit user decision for this completion pass",
+    "Qt 6.11.2 propertyCache diagnostic: newly observed toolkit behavior outside the required 6.2/6.4/6.10 matrix; production QML intentionally shadows `enabled` and is unchanged pending a reviewed decision",
+    "Frontend TSan/MSan with instrumented dependencies (pinned static Qt recipe) remain explicit consumer/platform obligations; not rerun here"
+  ]
+}

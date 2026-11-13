@@ -1,0 +1,3212 @@
+[
+  {
+    "file": "/tmp/opencode/build-r10-qt610/bitcoinqml_autogen/mocs_compilation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/tmp/opencode/build-r10-qt610/bitcoinqml_autogen/mocs_compilation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/bitcoinqml_autogen_mocs_compilation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/amountparse.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/amountparse.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_amountparse.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/backendexecutor.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/backendexecutor.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_backendexecutor.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/bitcoin.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/bitcoin.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_bitcoin.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/bitcoinamount.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/bitcoinamount.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_bitcoinamount.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/bitcoinunits.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/bitcoinunits.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_bitcoinunits.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/components/blockclockdial.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/components/blockclockdial.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_components_blockclockdial.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/controls/linegraph.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/controls/linegraph.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_controls_linegraph.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/core_settings.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/core_settings.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_core_settings.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/datadir.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/datadir.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_datadir.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/execution.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/execution.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_execution.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/flowpresentation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/flowpresentation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_flowpresentation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/guiargs.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/guiargs.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_guiargs.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/imageprovider.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/imageprovider.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_imageprovider.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/initexecutor.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/initexecutor.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_initexecutor.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/legacy_settings_migration.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/legacy_settings_migration.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_legacy_settings_migration.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/activitydetailmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/activitydetailmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_activitydetailmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/activityfilterproxymodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/activityfilterproxymodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_activityfilterproxymodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/addresslistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/addresslistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_addresslistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/backuppolicy.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/backuppolicy.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_backuppolicy.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/backuppolicyio.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/backuppolicyio.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_backuppolicyio.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/backuppolicyoperation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/backuppolicyoperation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_backuppolicyoperation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/banlistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/banlistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_banlistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/bitcoinaddress.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/bitcoinaddress.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_bitcoinaddress.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/bitcoinuri.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/bitcoinuri.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_bitcoinuri.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/bitcoinurimodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/bitcoinurimodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_bitcoinurimodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/blockclockhistory.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/blockclockhistory.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_blockclockhistory.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/blockclockmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/blockclockmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_blockclockmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/bumptransactionmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/bumptransactionmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_bumptransactionmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/chainmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/chainmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_chainmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/coinslistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/coinslistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_coinslistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/core_settings_model.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/core_settings_model.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_core_settings_model.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/debuglogmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/debuglogmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_debuglogmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/desktoptrayiconcontroller.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/desktoptrayiconcontroller.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_desktoptrayiconcontroller.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/desktopwindowbehaviormodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/desktopwindowbehaviormodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_desktopwindowbehaviormodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/flowdetailsmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/flowdetailsmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_flowdetailsmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/imageexportoperation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/imageexportoperation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_imageexportoperation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/monospaceoutputmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/monospaceoutputmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_monospaceoutputmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/networkstatusmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/networkstatusmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_networkstatusmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/networktraffictower.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/networktraffictower.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_networktraffictower.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/nodemodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/nodemodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_nodemodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/onboardingoptionsmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/onboardingoptionsmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_onboardingoptionsmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/options_model.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/options_model.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_options_model.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/paymentrequest.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/paymentrequest.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_paymentrequest.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/peerdetailsmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/peerdetailsmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_peerdetailsmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/peerlistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/peerlistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_peerlistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/peerlistsortproxy.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/peerlistsortproxy.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_peerlistsortproxy.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/psbtfee.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/psbtfee.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_psbtfee.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/psbtfeeservices.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/psbtfeeservices.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_psbtfeeservices.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/psbtqmlmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/psbtqmlmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_psbtqmlmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/receiverequesthistorymodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/receiverequesthistorymodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_receiverequesthistorymodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/receiverequestoperation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/receiverequestoperation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_receiverequestoperation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/rpccommandexecutor.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/rpccommandexecutor.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_rpccommandexecutor.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/rpcconsolemodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/rpcconsolemodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_rpcconsolemodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/sendrecipient.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/sendrecipient.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_sendrecipient.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/sendrecipientslistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/sendrecipientslistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_sendrecipientslistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/signertransaction.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/signertransaction.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_signertransaction.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/signverifymessagemodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/signverifymessagemodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_signverifymessagemodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/startupdiagnosticsmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/startupdiagnosticsmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_startupdiagnosticsmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/syncprogresstracker.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/syncprogresstracker.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_syncprogresstracker.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/transaction.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/transaction.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_transaction.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/transactionactivity.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/transactionactivity.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_transactionactivity.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/transactionactivitymodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/transactionactivitymodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_transactionactivitymodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/transactionflow.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/transactionflow.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_transactionflow.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/uipreferences.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/uipreferences.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_uipreferences.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletbalancereader.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletbalancereader.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_walletbalancereader.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletlistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletlistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_walletlistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletqmlmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletqmlmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_walletqmlmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletqmlmodeltransaction.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletqmlmodeltransaction.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_walletqmlmodeltransaction.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletunlock.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/models/walletunlock.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_models_walletunlock.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/nativelistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/nativelistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_nativelistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/networkstyle.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/networkstyle.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_networkstyle.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/onboarding_settings.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/onboarding_settings.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_onboarding_settings.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/onboarding_storage.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/onboarding_storage.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_onboarding_storage.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/peerstatsutil.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/peerstatsutil.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_peerstatsutil.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/psbtwork.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/psbtwork.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_psbtwork.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/qmlfiledialog.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/qmlfiledialog.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_qmlfiledialog.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/qrimageprovider.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/qrimageprovider.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_qrimageprovider.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/qtlogsink.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/qtlogsink.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_qtlogsink.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/secretinput.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/secretinput.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_secretinput.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/shutdowncoordinator.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/shutdowncoordinator.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_shutdowncoordinator.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/test/testbridge.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/test/testbridge.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_test_testbridge.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/util.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/util.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_util.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletbalanceadapter.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletbalanceadapter.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletbalanceadapter.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletbump.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletbump.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletbump.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletlifecycle.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletlifecycle.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletlifecycle.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletlifecyclestate.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletlifecyclestate.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletlifecyclestate.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletmessage.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletmessage.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletmessage.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletopening.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletopening.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletopening.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletprepare.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletprepare.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletprepare.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletqmlcontroller.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletqmlcontroller.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletqmlcontroller.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletreceipts.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletreceipts.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletreceipts.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletrequestdata.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletrequestdata.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletrequestdata.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletrequests.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletrequests.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletrequests.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletreservations.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletreservations.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletreservations.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletreview.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletreview.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletreview.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletsecurity.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletsecurity.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletsecurity.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletsend.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/walletsend.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_walletsend.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/wallettransaction.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/qml/wallettransaction.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/qml_wallettransaction.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/main.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/main.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/main.cpp.log"
+  },
+  {
+    "file": "/tmp/opencode/build-r10-qt610/test/bitcoinqml_bootstrap_tests_autogen/mocs_compilation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/tmp/opencode/build-r10-qt610/test/bitcoinqml_bootstrap_tests_autogen/mocs_compilation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_bitcoinqml_bootstrap_tests_autogen_mocs_compilation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bootstrap.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bootstrap.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_bootstrap.cpp.log"
+  },
+  {
+    "file": "/tmp/opencode/build-r10-qt610/test/bitcoinqml_unit_tests_autogen/mocs_compilation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/tmp/opencode/build-r10-qt610/test/bitcoinqml_unit_tests_autogen/mocs_compilation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_bitcoinqml_unit_tests_autogen_mocs_compilation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_unit_tests_main.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_unit_tests_main.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_unit_tests_main.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_amountparse.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_amountparse.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_amountparse.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_appmode.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_appmode.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_appmode.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_backendexecutor.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_backendexecutor.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_backendexecutor.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_backuppolicy.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_backuppolicy.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_backuppolicy.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_backuppolicyoperation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_backuppolicyoperation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_backuppolicyoperation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_execution.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_execution.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_execution.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_guipresentation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_guipresentation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_guipresentation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_atomicsharedptr.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_atomicsharedptr.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_atomicsharedptr.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_persistenttrees.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_persistenttrees.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_persistenttrees.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_core_settings_model.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_core_settings_model.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_core_settings_model.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_uipreferences.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_uipreferences.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_uipreferences.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_flowpresentation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_flowpresentation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_flowpresentation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_flowdetailsmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_flowdetailsmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_flowdetailsmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_startupeffects.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_startupeffects.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_startupeffects.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qtlogsink.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qtlogsink.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_qtlogsink.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bitcoinaddress.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bitcoinaddress.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_bitcoinaddress.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_blockclockdial.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_blockclockdial.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_blockclockdial.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_blockclockhistory.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_blockclockhistory.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_blockclockhistory.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_blockclockmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_blockclockmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_blockclockmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bitcoinuri.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bitcoinuri.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_bitcoinuri.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bitcoinurimodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bitcoinurimodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_bitcoinurimodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qmlfiledialog.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qmlfiledialog.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_qmlfiledialog.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bitcoinamount.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bitcoinamount.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_bitcoinamount.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_debuglogmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_debuglogmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_debuglogmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_monospaceoutputmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_monospaceoutputmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_monospaceoutputmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_desktoptrayiconcontroller.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_desktoptrayiconcontroller.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_desktoptrayiconcontroller.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_desktopwindowbehaviormodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_desktopwindowbehaviormodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_desktopwindowbehaviormodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_peerlistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_peerlistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_peerlistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_peerstatsutil.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_peerstatsutil.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_peerstatsutil.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qmlbitcoinunits.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qmlbitcoinunits.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_qmlbitcoinunits.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_imageprovider.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_imageprovider.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_imageprovider.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qrimageprovider.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qrimageprovider.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_qrimageprovider.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_imageexportoperation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_imageexportoperation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_imageexportoperation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_nodemodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_nodemodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_nodemodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_startupdiagnosticsmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_startupdiagnosticsmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_startupdiagnosticsmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_secretinput.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_secretinput.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_secretinput.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_networkstyle.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_networkstyle.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_networkstyle.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_networkstatusmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_networkstatusmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_networkstatusmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_networktraffictower.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_networktraffictower.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_networktraffictower.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qmlinitexecutor_api.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qmlinitexecutor_api.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_qmlinitexecutor_api.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_shutdownproducers.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_shutdownproducers.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_shutdownproducers.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_guiargs.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_guiargs.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_guiargs.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_options_model.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_options_model.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_options_model.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_async_options.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_async_options.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_async_options.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_onboarding_storage.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_onboarding_storage.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_onboarding_storage.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_onboardingasync.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_onboardingasync.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_onboardingasync.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_banlistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_banlistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_banlistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_display_settings.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_display_settings.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_display_settings.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qtinfolog.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qtinfolog.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_qtinfolog.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qtmessagefilter.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_qtmessagefilter.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_qtmessagefilter.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_rpccommandexecutor.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_rpccommandexecutor.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_rpccommandexecutor.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_rpcconsolemodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_rpcconsolemodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_rpcconsolemodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_syncprogresstracker.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_syncprogresstracker.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_syncprogresstracker.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_testbridge.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_testbridge.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_testbridge.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_activityfilterproxymodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_activityfilterproxymodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_activityfilterproxymodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_addresslistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_addresslistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_addresslistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bumptransactionmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_bumptransactionmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_bumptransactionmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_signverifymessagemodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_signverifymessagemodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_signverifymessagemodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_signertransaction.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_signertransaction.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_signertransaction.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_coinslistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_coinslistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_coinslistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_psbtfee.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_psbtfee.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_psbtfee.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_psbtqmlmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_psbtqmlmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_psbtqmlmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_receiverequesthistorymodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_receiverequesthistorymodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_receiverequesthistorymodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_receiverequestoperation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_receiverequestoperation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_receiverequestoperation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_sendrecipientslistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_sendrecipientslistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_sendrecipientslistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_sendrecipient.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_sendrecipient.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_sendrecipient.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_transaction.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_transaction.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_transaction.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_transactionactivity.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_transactionactivity.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_transactionactivity.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_transactionactivitymodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_transactionactivitymodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_transactionactivitymodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_activitydetailmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_activitydetailmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_activitydetailmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletlistmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletlistmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletlistmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletqmlmodel.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletqmlmodel.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletqmlmodel.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletqmlmodeltransaction.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletqmlmodeltransaction.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletqmlmodeltransaction.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletqmlcontroller.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletqmlcontroller.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletqmlcontroller.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletlifecycle.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletlifecycle.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletlifecycle.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletopening.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletopening.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletopening.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletsecurity.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletsecurity.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletsecurity.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletsend.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletsend.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletsend.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletprepare.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletprepare.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletprepare.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_wallettransaction.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_wallettransaction.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_wallettransaction.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletreceipts.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletreceipts.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletreceipts.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletrequests.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletrequests.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletrequests.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletreservations.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletreservations.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletreservations.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletbalanceadapter.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletbalanceadapter.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletbalanceadapter.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletbalancereader.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/test_walletbalancereader.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_test_walletbalancereader.cpp.log"
+  },
+  {
+    "file": "/tmp/opencode/build-r10-qt610/test/bitcoinqml_qmltests_autogen/mocs_compilation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/tmp/opencode/build-r10-qt610/test/bitcoinqml_qmltests_autogen/mocs_compilation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_bitcoinqml_qmltests_autogen_mocs_compilation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/qml/qml_tests_main.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/qml/qml_tests_main.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_qml_qml_tests_main.cpp.log"
+  },
+  {
+    "file": "/tmp/opencode/build-r10-qt610/test/integration/bitcoinqml_test_application_autogen/mocs_compilation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/tmp/opencode/build-r10-qt610/test/integration/bitcoinqml_test_application_autogen/mocs_compilation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_bitcoinqml_test_application_autogen_mocs_compilation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/fixture/test_application.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/fixture/test_application.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_fixture_test_application.cpp.log"
+  },
+  {
+    "file": "/tmp/opencode/build-r10-qt610/test/integration/bitcoinqml_integration_tests_autogen/mocs_compilation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/tmp/opencode/build-r10-qt610/test/integration/bitcoinqml_integration_tests_autogen/mocs_compilation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_bitcoinqml_integration_tests_autogen_mocs_compilation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/runner/test_main.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/runner/test_main.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_runner_test_main.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/runner/test_cases.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/runner/test_cases.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_runner_test_cases.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/fixture/test_process.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/fixture/test_process.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_fixture_test_process.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/foundation/test_lifecycle.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/foundation/test_lifecycle.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_foundation_test_lifecycle.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_setup/test_navigation.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_setup/test_navigation.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_node_setup_test_navigation.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_setup/test_blockclock.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_setup/test_blockclock.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_node_setup_test_blockclock.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_setup/test_settings.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_setup/test_settings.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_node_setup_test_settings.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_tools/test_node.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_tools/test_node.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_node_tools_test_node.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_tools/test_debug_log.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_tools/test_debug_log.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_node_tools_test_debug_log.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_tools/test_console.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_tools/test_console.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_node_tools_test_console.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_tools/test_blocksonly.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/node_tools/test_blocksonly.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_node_tools_test_blocksonly.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_management/test_wallet.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_management/test_wallet.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_wallet_management_test_wallet.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_activity/test_activity.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_activity/test_activity.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_wallet_activity_test_activity.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_activity/test_receive.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_activity/test_receive.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_wallet_activity_test_receive.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_sending/test_send.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_sending/test_send.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_wallet_sending_test_send.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_sending/test_transactionpolicy.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_sending/test_transactionpolicy.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_wallet_sending_test_transactionpolicy.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_sending/test_bump.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/wallet_sending/test_bump.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_wallet_sending_test_bump.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/psbt/test_psbt.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/psbt/test_psbt.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_psbt_test_psbt.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/signers/test_watchonly.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/signers/test_watchonly.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_signers_test_watchonly.cpp.log"
+  },
+  {
+    "file": "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/payment_import/test_payment_import.cpp",
+    "exit": 0,
+    "exit_code": 0,
+    "command": [
+      "clang-tidy-23",
+      "-p",
+      "/tmp/opencode/tidy-results",
+      "--config-file=/home/johnny/github/bitcoin-core-app/gui-qml-r10/bitcoin/src/.clang-tidy",
+      "--load=/tmp/opencode/build-r10-tidy-plugin/libbitcoin-tidy.so",
+      "--header-filter=^/home/johnny/github/bitcoin\\-core\\-app/gui\\-qml\\-r10/(qml|test|cmake)/",
+      "/home/johnny/github/bitcoin-core-app/gui-qml-r10/test/integration/payment_import/test_payment_import.cpp"
+    ],
+    "log": "/tmp/opencode/tidy-results/test_integration_payment_import_test_payment_import.cpp.log"
+  }
+]

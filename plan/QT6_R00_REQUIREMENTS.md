@@ -1,10 +1,10 @@
 # Requirements added from R00 qualification
 
-Current base amendment: [base-pr1109-core44901-20261111](QT6_BASE_UPDATE.md) adopts PR #1109 head `000e49c81e60ccf6560ccdd1a93e811a5a44c475` and stock Core `44901d8f64cb617714707bd025ecd83f108353c2`, explicitly authorized by the user. R00–R08 are amended and qualified at application `e89249aa7b3074fa2a33bd02d2cccacf8e993aa6`; the [new-base gate](.validation/issue-remediation-pr1090-20261109/execution/base-update-pr1109-20261111/qualification.json) passed. Original evidence remains historical; R09 is still unaccepted. Current static depends qualification requires the new stock Qt6.8.4 recipe (historically6.8.3). Preserve the Core subtree unchanged at this new pin and retain the upstream-note/notify-and-wait policy.
+Current base amendment: [base-pr1109-core44901-20261111](QT6_BASE_UPDATE.md) adopts PR #1109 head `000e49c81e60ccf6560ccdd1a93e811a5a44c475` and stock Core `44901d8f64cb617714707bd025ecd83f108353c2`, explicitly authorized by the user. R00–R08 are amended and qualified at application `e89249aa7b3074fa2a33bd02d2cccacf8e993aa6`; the `new-base gate <.validation/issue-remediation-pr1090-20261109/execution/base-update-pr1109-20261111/qualification.json>` passed. Original evidence remains historical; R09 is still unaccepted. Current static depends qualification requires the new stock Qt6.8.4 recipe (historically6.8.3). Preserve the Core subtree unchanged at this new pin and retain the upstream-note/notify-and-wait policy.
 
 Plan amendment `r00-requirements-20261109`, requested after R00 execution. These are binding requirements of the [total refactoring plan](QT6_TOTAL_REFACTOR_PLAN.md), in addition to its architecture, finding, coverage and validation contracts.
 
-R00 tested application `02bbdb7711f8b85685e63aa18873e25968aeb848` and Core `dc282ff31d1cc97507530a541d9cec8a8f6a6ef4`. Its [report](.validation/issue-remediation-pr1090-20261109/execution/R00/REPORT.md), [qualification record](.validation/issue-remediation-pr1090-20261109/execution/R00/qualification.json) and [commands](.validation/issue-remediation-pr1090-20261109/execution/R00/COMMANDS.md) remain historical evidence. The original R00 execution finished with an unsatisfied gate; later accepted repair/base-amendment evidence is in the current notice above. That historical requirements update alone did not authorize application repair or R01; subsequent explicit user instructions authorized the executed program and this base amendment.
+R00 tested application `02bbdb7711f8b85685e63aa18873e25968aeb848` and Core `dc282ff31d1cc97507530a541d9cec8a8f6a6ef4`. Its `report <.validation/issue-remediation-pr1090-20261109/execution/R00/REPORT.md>`, `qualification record <.validation/issue-remediation-pr1090-20261109/execution/R00/qualification.json>` and `commands <.validation/issue-remediation-pr1090-20261109/execution/R00/COMMANDS.md>` remain historical evidence. The original R00 execution finished with an unsatisfied gate; later accepted repair/base-amendment evidence is in the current notice above. That historical requirements update alone did not authorize application repair or R01; subsequent explicit user instructions authorized the executed program and this base amendment.
 
 The following IDs supplement the existing 318 findings, 329 regression scopes, 43 work orders and O01–O36 schedules. They do not replace, renumber or close them. The coordinator assigns bounded repair work with these IDs, owned files, parent app/Core revisions and required checks. R01 still depends on accepted R00 qualification.
 
@@ -32,7 +32,7 @@ Resolve all applicable baseline app lint findings and rerun the pinned checks on
 - Functional-test cleanup helpers flagged by the pinned `rmtree` check.
 - The remaining applicable findings in the pinned Python lint bundle, including include style/guards, locale dependence and file permissions. Preserve every valid test assertion.
 
-The complete inputs are [app lint results](.validation/issue-remediation-pr1090-20261109/execution/R00/lint/app-results.json), [adapted C++ scope/results](.validation/issue-remediation-pr1090-20261109/execution/R00/lint/app-adapted-cpp.json) and their adjacent logs. Current-head Ruff passes; the older PR base has eleven Ruff errors. Do not manufacture a new repair for an already-passing check.
+The complete inputs are `app lint results <.validation/issue-remediation-pr1090-20261109/execution/R00/lint/app-results.json>`, `adapted C++ scope/results <.validation/issue-remediation-pr1090-20261109/execution/R00/lint/app-adapted-cpp.json>` and their adjacent logs. Current-head Ruff passes; the older PR base has eleven Ruff errors. Do not manufacture a new repair for an already-passing check.
 
 Supply durable app entry points/documentation for lint, configuration and clang-tidy, using `ci/lint.py`, `ci/configure.py`, `ci/clang_tidy.py` and `doc/ci-checks.md` or a documented repository-native equivalent. Reuse the pinned Core definitions, dependency/tool versions, Bitcoin plugin and suppression files. Record app and Core selections separately. Temporary R00 adapters are evidence of a baseline, not the final CI interface.
 
@@ -42,7 +42,7 @@ Configure QML static analysis as a separate app check with the required imports,
 
 ## R00-B02 — Complete app clang-tidy cleanup
 
-Resolve the **80 baseline diagnostics across all 17 failing translation units**, not only an affected-file sample. Use [tidy-findings.json](.validation/issue-remediation-pr1090-20261109/execution/R00/tidy-findings.json) for every exact diagnostic, source location and PR-base comparison.
+Resolve the **80 baseline diagnostics across all 17 failing translation units**, not only an affected-file sample. Use `tidy-findings.json <.validation/issue-remediation-pr1090-20261109/execution/R00/tidy-findings.json>` for every exact diagnostic, source location and PR-base comparison.
 
 | Translation unit | Diagnostics |
 | --- | ---: |
@@ -70,7 +70,7 @@ Preserve observable behavior and assertions during style repairs. A recursion re
 
 ## R00-B03 — Compile-time wallet-disabled support
 
-Make `-DENABLE_WALLET=OFF` effective throughout configuration, compilation, linking and runtime capability publication. R00's [probe](.validation/issue-remediation-pr1090-20261109/execution/R00/wallet-off-configuration.json) shows an OFF cache entry while the generated configuration still defines `ENABLE_WALLET 1`.
+Make `-DENABLE_WALLET=OFF` effective throughout configuration, compilation, linking and runtime capability publication. R00's `probe <.validation/issue-remediation-pr1090-20261109/execution/R00/wallet-off-configuration.json>` shows an OFF cache entry while the generated configuration still defines `ENABLE_WALLET 1`.
 
 Acceptance requires all of the following:
 
@@ -84,11 +84,11 @@ Do not equate the 31 runtime-disabled integration rows with a wallet-disabled co
 
 ## R00-B04 — Native coverage measurement
 
-Retain the [370-file source ledger](.validation/issue-remediation-pr1090-20261109/execution/R00/coverage-source-ledger.json) and expand it as files move or are introduced. The R00 native denominator is **17,764 emitted handwritten lines and 8,640 branch outcomes**. Unit coverage is 12,874 lines / 5,817 outcomes; combined coverage is 14,566 lines / 6,481 outcomes. These are baseline measurements, not the final reachable-unit-testable denominator or a full-coverage pass.
+Retain the `370-file source ledger <.validation/issue-remediation-pr1090-20261109/execution/R00/coverage-source-ledger.json>` and expand it as files move or are introduced. The R00 native denominator is **17,764 emitted handwritten lines and 8,640 branch outcomes**. Unit coverage is 12,874 lines / 5,817 outcomes; combined coverage is 14,566 lines / 6,481 outcomes. These are baseline measurements, not the final reachable-unit-testable denominator or a full-coverage pass.
 
 Keep the unit and combined layers separate. Verify profile/binary identities, merge per binary, and retain a stable union denominator that includes unexecuted emitted locations. R00 verified 220 profiles against five ELF build IDs. Do not accept mixed-binary hash mismatches, dropped profiles or changing denominators as improved coverage.
 
-Review the exact Qt-generated metadata exclusions and zero-hash mismatch audit in [the measured report](.validation/issue-remediation-pr1090-20261109/execution/R00/coverage-report/summary.json). Preserve symbols, source coordinates, macro text and reasons. Any handwritten mismatch remains a tooling blocker. Do not silently exclude compiler-generated-looking or unreachable-looking code.
+Review the exact Qt-generated metadata exclusions and zero-hash mismatch audit in `the measured report <.validation/issue-remediation-pr1090-20261109/execution/R00/coverage-report/summary.json>`. Preserve symbols, source coordinates, macro text and reasons. Any handwritten mismatch remains a tooling blocker. Do not silently exclude compiler-generated-looking or unreachable-looking code.
 
 Account explicitly for fatal `_Exit` paths that bypass profile flushing. Supply equivalent executable coverage evidence or a reliable measurement seam without changing fatal-exit semantics. The plan's 100% reachable, unit-testable handwritten line/branch and state/action targets remain unchanged; ordinary, component and integration execution is not a substitute for measured unit coverage.
 
@@ -102,7 +102,7 @@ Account for every ledger file through migration and R41/R42, including `qml/andr
 
 ## R00-B06 — Sanitizer completeness
 
-Make sanitizer propagation reproducible in the app build/CI interface. R00 found that the bootstrap and QML component executables did not inherit the sanitizer flags; its external [adapter](.validation/issue-remediation-pr1090-20261109/execution/R00/sanitizer.cmake) linked them to Core's existing `sanitize_interface`. Retain that complete scope in the production validation setup and prove it from the compilation database, not only a sanitized main executable. R00's accepted setup instruments all 140 app compilation entries.
+Make sanitizer propagation reproducible in the app build/CI interface. R00 found that the bootstrap and QML component executables did not inherit the sanitizer flags; its external `adapter <.validation/issue-remediation-pr1090-20261109/execution/R00/sanitizer.cmake>` linked them to Core's existing `sanitize_interface`. Retain that complete scope in the production validation setup and prove it from the compilation database, not only a sanitized main executable. R00's accepted setup instruments all 140 app compilation entries.
 
 Use the pinned compiler, optimization/warning policy, initialization/debug flags, runtime options and suppression files. Include ASan/LSan/UBSan/integer checks and the actual startup/shutdown suites with IPC compiled in. Keep raw GUI stderr and exact exits after shutdown in both runtime wallet modes. Retain an unrelated-leak negative check whenever adding a dependency suppression; no executable-wide suppression is permitted.
 
@@ -147,4 +147,4 @@ Keep R00's original report, raw evidence, input snapshots and frozen packet inta
 
 Before accepting R00 and assigning R01, close B01–B03 and the baseline-tooling/lifecycle obligations in B04/B06/B09, with passing applicable checks and reviewed applicability decisions. Assign every later-gate obligation to its consumer/platform/final-audit owner. R42 must close all remaining requirements along with all original scopes and schedules. Recording this amendment does not mark any requirement repaired, R00 accepted or R01 started.
 
-The additive [amendment packet](.validation/issue-remediation-pr1090-20261109/refactor-handoff/amendments/r00-requirements-20261109/packet-files.json) records the new input version and its relationship to the frozen packet. Affected future assignments must read this document and record both versions. Revalidate affected acceptance evidence when a requirement or supported scope changes.
+The additive `amendment packet <.validation/issue-remediation-pr1090-20261109/refactor-handoff/amendments/r00-requirements-20261109/packet-files.json>` records the new input version and its relationship to the frozen packet. Affected future assignments must read this document and record both versions. Revalidate affected acceptance evidence when a requirement or supported scope changes.

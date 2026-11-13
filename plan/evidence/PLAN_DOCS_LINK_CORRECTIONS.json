@@ -1,0 +1,11 @@
+{
+  "scope": "Documentation-only lint correction after moving the workspace plans into plan/",
+  "trigger": "Core's markdown link check (app adapter) reported 154 broken links in plan/ documents: 148 historical .validation/ workspace references and unbundled sibling documents, plus one stale relative path produced by the relocation itself",
+  "changes": [
+    "plan/tracking/worker-orders.md: ../../../QT6_TOTAL_REFACTOR_PLAN.md corrected to ../QT6_TOTAL_REFACTOR_PLAN.md (genuine relocation fix; remains a hyperlink)",
+    "Historical .validation/... hyperlinks and references to unbundled workspace documents converted to inline code spans of the form `label <path>`, preserving label and path text without a hyperlink (106 lines across ten files)",
+    "plan/README.md wording updated: historical .validation/ paths are inline code references to the original workspace layout, not bundled files or hyperlinks"
+  ],
+  "preserved": "No tracking CSV content, evidence JSON, application source, test source or Bitcoin Core bytes changed",
+  "lint_result": "ci/lint.py --scope app exit 0 (all checks including markdown links, executable modes, commit messages and layout gates)"
+}

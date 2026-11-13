@@ -1,55 +1,60 @@
 {
-  "layout": "Top-level plan/; documentation-only relocation after checkpoint d699302088fe9491f0ef3b281ea8d60032072249",
+  "layout": "Top-level plan/; documentation-only relocation after checkpoint d699302088, then completion-pass link corrections and evidence additions on work/qt6-r10-completion",
   "files": [
     {
       "path": "CHECKPOINT.md",
-      "sha256": "dac08b76ab0022a93e1c3da0b7e81eb870e94dde01adc325426b06ca6750460a",
-      "bytes": 10543
+      "sha256": "371e9b1989e84d738aa590e05324b4eb0b6899261886158419fdb1144c4d56c5",
+      "bytes": 14584
     },
     {
       "path": "QT6_ARCHITECTURE_FOUNDATION.md",
-      "sha256": "e4e375f2526b9b9070ef98e75f21770b9163e3d126315e464ea49ab21dd3994c",
-      "bytes": 22942
+      "sha256": "ea07d74250ee30f3c65111761da9566ee53585eb5da71f94971cf94b25a89411",
+      "bytes": 22953
     },
     {
       "path": "QT6_BASE_UPDATE.md",
-      "sha256": "dc9938eb9a4d747596fb51425c23a2c16a2fde85b665f0e96c0dbdba20bf1188",
-      "bytes": 4954
+      "sha256": "409fb29bd62fa0f0dbde85f31056c64a22aa29d60268bdc1a92f9ea99fdbbbcd",
+      "bytes": 4871
     },
     {
       "path": "QT6_FSM_PROPOSAL_REVIEW.md",
-      "sha256": "d400b99a0020911d7b0b0ca66fe4ababecbc9dee18b928eb0af7ea2d4eea6ef4",
-      "bytes": 13367
+      "sha256": "31d2ea758f15c494b4a625351bd2f5df36c1238ea03089da82526f1b4b701fd2",
+      "bytes": 13346
     },
     {
       "path": "QT6_R00_REQUIREMENTS.md",
-      "sha256": "3185e3bc1957f6cf2b0bba87f297c9c6b9601b1a7e6e818ca167c0e49f3a0da5",
-      "bytes": 20400
+      "sha256": "f47d38f223fa4ef8ff9180c65aeae52f20210d45d5635c7bb467ecb070eb3a0c",
+      "bytes": 20412
     },
     {
       "path": "QT6_REFACTOR_HANDOFF.md",
-      "sha256": "0e075ea1a17588d36a6214d77dfc7a7df83f24abb2ebe8342a082591fa42c73b",
-      "bytes": 26033
+      "sha256": "3957e212a436a6708fe867fd52014c4febbae4cad0dc3379eb7d5ec7c9776f4f",
+      "bytes": 26057
     },
     {
       "path": "QT6_TOTAL_REFACTOR_PLAN.md",
-      "sha256": "c15f09301e308bc5a84a18cd20c2d418bd4764e7521ffb8d15c16662a5762073",
-      "bytes": 62625
+      "sha256": "b73a2c96d60cf35f47ec1b6af7fc0a80e46e406090b57bd48360824924993cbe",
+      "bytes": 62665
     },
     {
       "path": "QT6_UPSTREAM_IMPROVEMENTS.md",
-      "sha256": "92a918bceeaac3e82a1c644539c94c0c15b603b8904832e2d9db506f3da40d47",
-      "bytes": 58641
+      "sha256": "982d6292ccaf1ab73452cf3afc0e5d24fdc7dceedd78a4c141a5b3581ea4d231",
+      "bytes": 58687
     },
     {
       "path": "QT6_WALLET_ADAPTER_PLAN.md",
-      "sha256": "1091e0892805aff64c39088340b20eb122e7a2dce3edb3c6339d27d0a062b60d",
-      "bytes": 18094
+      "sha256": "a266fc78d61bfc5250df46acce23c3f3ac1f1ffaaeac4d7c4a0b3aa1ffff0917",
+      "bytes": 18104
     },
     {
       "path": "README.md",
-      "sha256": "393d6c57970df81eeaaa5707091b43739014ae7c8e7693777a47fb59f77ef686",
-      "bytes": 1230
+      "sha256": "6e39440e61e06dcce83b5c7ca4594cdd24dfd995d9cd4d39f73b045f9467b729",
+      "bytes": 1284
+    },
+    {
+      "path": "evidence/APP_COVERAGE_REPORT.json",
+      "sha256": "5f087334bd95d79adcb9ed5f53865d47791ec7d091e4d185a988dfa13e7d5639",
+      "bytes": 1916
     },
     {
       "path": "evidence/BROAD_ASAN_V34_RESULT.md",
@@ -78,8 +83,8 @@
     },
     {
       "path": "evidence/FOCUSED_V34_RESULT.md",
-      "sha256": "36528af132d66f67d8b16debf35b623c1e9756f725ff3803c20b69bb2ff99e2c",
-      "bytes": 1618
+      "sha256": "e0a18525ef995915664141ab8f00403213669585af5b021b797bf87a1d4c6f69",
+      "bytes": 1619
     },
     {
       "path": "evidence/NATIVE_QT_DEFER_POLICY.json",
@@ -87,9 +92,24 @@
       "bytes": 531
     },
     {
+      "path": "evidence/PLAN_DOCS_LINK_CORRECTIONS.json",
+      "sha256": "07ae8137bf28ad16863f0a3591d5e74ef253eec847855d6787d96dda30108ab5",
+      "bytes": 1181
+    },
+    {
+      "path": "evidence/QT611_PROPERTYCACHE_OBSERVATION.json",
+      "sha256": "217e2317da20e1579466e72328f32db0610b1bb4056b9c2efdb12420f3c50fdf",
+      "bytes": 1254
+    },
+    {
       "path": "evidence/QT_PICKER_DEFERRED_USER_DECISION.json",
       "sha256": "fa292589329cca6efb943dcf09e294fdfe97d0ce4b449c57b2c7c221869b6b37",
       "bytes": 563
+    },
+    {
+      "path": "evidence/R10_COMPLETION_VALIDATION.json",
+      "sha256": "fefbfc2bb5a4fcb6801e8a9497ca04ce06007457f3dfb5066070234ea5dd5dc3",
+      "bytes": 8266
     },
     {
       "path": "evidence/R10_SCHEDULE_EXECUTED_V34.json",
@@ -117,6 +137,11 @@
       "bytes": 141197
     },
     {
+      "path": "evidence/tidy-results.json",
+      "sha256": "36a663cc431e416921901cef8d671243cd4f4555d5c8389e1db188a769670813",
+      "bytes": 142631
+    },
+    {
       "path": "evidence/tracking-copy-provenance.json",
       "sha256": "3f0a6530828b983d2b8b4b4303e604d0eca8106ca82e94009058440a78952b3f",
       "bytes": 1411
@@ -138,8 +163,8 @@
     },
     {
       "path": "tracking/worker-orders.md",
-      "sha256": "53c13702f180b1f9fcd8e232ba6a8452c6b76b651b52c05a1bceb1f2c34b70be",
-      "bytes": 195340
+      "sha256": "2d6fd96eec1b764d47b773ccbea28d90f1ba8e51d3dd7571bc359b6e68d06152",
+      "bytes": 195334
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Worker refactoring work orders
 
-Read the [execution and acceptance plan](../../../QT6_TOTAL_REFACTOR_PLAN.md) before starting. These are planned tasks; all test selectors must be discovered/implemented and recorded. Default execution follows numerical order. Dependencies are minimum prerequisites, not authorization to edit another worker’s files.
+Read the [execution and acceptance plan](../QT6_TOTAL_REFACTOR_PLAN.md) before starting. These are planned tasks; all test selectors must be discovered/implemented and recorded. Default execution follows numerical order. Dependencies are minimum prerequisites, not authorization to edit another worker’s files.
 
 ## R00 — Establish reproducible baseline and test inventory
 

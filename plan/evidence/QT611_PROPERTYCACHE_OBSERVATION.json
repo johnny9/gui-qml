@@ -1,0 +1,15 @@
+{
+  "observation": "Qt 6.11.2 emits qt.qml.propertyCache.append warnings for QML types that declare a property overriding a base-object member",
+  "affected_app_components": [
+    "qml/components/BitcoinAddressInputField.qml: property bool enabled: true",
+    "qml/components/BitcoinAmountInputField.qml: property bool enabled: true"
+  ],
+  "observed_in": [
+    "bitcoinqml_qmltests: MainRouting::test_add_wallet_completion_returns_to_activity fails the QML warning policy (860 other rows pass)",
+    "bitcoinqml_qmlwarning_tests selector fails",
+    "interface_qml_node.py wallet-shell-geometry: the unexpected-stderr process check reports the two warnings"
+  ],
+  "matrix_status": "Not present on the qualified Qt 6.2/6.4/6.10 lines of the frozen34 validation; Qt 6.11 is outside the required matrix and this is recorded as an environment observation, not a regression",
+  "production_change": "None. The intentional property shadowing is pre-existing frozen34 source; changing it would alter production bytes and require full requalification. Deferred for a reviewed decision together with the next Qt line adoption",
+  "qt_6_11_runs_that_pass_nonetheless": "interface_qml_node.py settings-and-history-restart; all unit classes; integration groups"
+}

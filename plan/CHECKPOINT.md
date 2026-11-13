@@ -1,8 +1,16 @@
-# R10 implementation checkpoint — unfinished
+# R10 implementation checkpoint — completion pass
 
 Saved on 2026-11-13, with later immutable34 validation updates below, at the user's explicit request to commit the current state and
 push it to their fork. **R10 is not accepted. R11 has not started.** This request
 supersedes earlier no-commit/no-push instructions for this checkpoint only.
+
+**Completion pass (2026-11-13, same day):** the five saved test-only corrections
+are requalified on the saved revision, lint passes both scopes, tidy and coverage
+run on this host's toolchain, and the settings-navigation identity question is
+analyzed and validated on non-TSan runs. Windows validation is deferred by
+explicit user decision. See [evidence](evidence/R10_COMPLETION_VALIDATION.json)
+and the updated unresolved list below. Application production bytes remain
+identical to frozen34.
 
 Application parent: `715fb5449366a9a267e6d111169f226b429947ef`.
 Last focused-qualified frozen candidate: `8ae9ce530f76e3522e932997f7120af705598246`
@@ -49,10 +57,30 @@ policy does not excuse incorrect application ownership, threading or API use.
 | Native Qt 6.4.2 / GCC 13 | Build passes all 263 steps; 17/17 CTest selectors pass, all nine integration groups nonempty; 3651 bodies = 3639 passes and 12 expected fatal delegates |
 | Native Qt 6.10.2 / GCC 15 | Build263 and static gates pass; CTest9/17 pass,8 fail from SVG/runtime warning failures; runtime SVG plugin absent. 3651 bodies:3228PASS/411FAIL/12paired fatal delegates. Profile not qualified |
 | Shipped QML static checks | Qt 6.10 job checks 244 files per qt65/qt62 resource profile, zero warnings/errors, 1011 compatibility notes each; five negative probes pass |
-| Lint | Fails on the console functional script's executable mode; correction saved here, rerun pending |
+| Lint | ~~Fails on the console functional script's executable mode; correction saved here, rerun pending~~ Completion pass: app and Core scopes exit 0; see below |
 | Wallet-disabled | Frozen34 ENABLE_WALLET=OFF/IPC=ON: build186steps, CTest13/13 pass;2068 bodies=2056PASS+12paired fatal delegates;3 nonempty node groups,22startup/shutdown cases and independent Core GUI/IPC checks pass. Clang23.1.3/Qt6.10.2 |
 | Coverage | Immutable34 coverage build running after wallet-disabled checks; no percentage or qualification claimed |
 | Windows | Live preflight only: no existing jobs, vacant candidate paths, clock synchronized; zero builds/tests. VM suspended again with managed save |
+
+## Completion-pass validation of the saved revision (2026-11-13)
+
+Host: Fedora 44, Clang 22.1.8 (frozen34's pinned Clang 23.1.3 unavailable), Qt
+6.10.2 (aqt local install, matching the frozen34 qualified Qt line) plus a Qt
+6.11.2 system observation profile. Cap'n Proto 1.3.0. Full receipts:
+[evidence](evidence/R10_COMPLETION_VALIDATION.json).
+
+| Check | Actual result |
+| --- | --- |
+| Five saved test-only corrections | All requalified: WalletRequests 51/51, WalletReservations 27/27, interface_qml_node.py 2/2, interface_qml_wallet_sending.py 7/7 (four legacy-fee matrices, six cases each, exact 500000-satoshi and unknown-fee oracles), console executable mode verified by lint plus 2/2 console journeys |
+| Qt 6.10.2 CTest | 18/19 selectors pass; the unit selector reports only a build-location artifact (relative `__FILE__` plus ctest's `build/test` CWD) that passes from the build root |
+| Qt 6.10.2 full unit suite | Serial run from build root: exit 0; 2876 PASS rows, 0 failures |
+| Qt 6.11.2 CTest (observation) | 16/19; deviations are Qt 6.11's new `qt.qml.propertyCache.append` diagnostic on two pre-existing intentional `enabled` property shadows and load-flaky BlockClock rows; no such diagnostic on 6.2/6.4/6.10 |
+| App lint | `ci/lint.py --scope app` exit 0 after documentation-only plan/ link corrections; the console executable-mode failure is resolved |
+| Core lint | `ci/lint.py --scope core` exit 0 against the pinned checkout (local clone deepened so Core history checks can run; Core files unchanged) |
+| Clang-tidy | Local clang-tidy 22.1.8 with the bitcoin-tidy plugin rebuilt against LLVM 22 (pinned 23 not on this host; difference documented, not substituted); result in evidence |
+| Coverage | ENABLE_APP_COVERAGE build; reachable handwritten line/branch report in evidence; no 100% claimed |
+| Settings navigation identity | Analyzed: one SettingsView exists in the failing node-mode journey; the bridge prefers visible instances; the readiness barrier settles the actual section stack. Validated on Qt 6.10.2 and 6.11.2 non-TSan runs |
+| Windows | Deferred by explicit user decision for this pass |
 
 Exact focused/broad summaries and schedule/source receipts are in [evidence](evidence/).
 Separate runs overlap; do not add these counts as unique tests. The wallet-disabled GUI uses the in-process Core factory; an IPC-enabled build plus independent Core IPC tests does not establish an active GUI IPC listener. Qt 6.2 follows
@@ -72,14 +100,19 @@ newer warning probes. No configuration is silently excluded.
    but identical root cause is unproved. A fixture teardown using actual delegate
    destruction receipts is proposed, **unimplemented and unvalidated**. Do not
    add arbitrary waits, disable animations or replace native components.
-2. **Settings navigation visibility remains unresolved.** The original TSan
-   journey failed at language visibility. One diagnostic using the corrected
-   Apply receipt reached language successfully, then failed at post-restart
-   proxy visibility. Duplicate nested settings stacks exist. The saved display
-   stack readiness correction is not proof that every navigation failure is
-   fixed. Investigate active-instance/stack identity while retaining geometry,
-   proxy, language, restart, reorg/history and RPC assertions.
-3. **Requalify five saved test-only corrections after frozen34.** Dead-QThread
+2. **Settings navigation visibility: corrected and analyzed; TSan profile
+   remains the recorded failure.** The original TSan journey failed at language
+   visibility. One diagnostic using the corrected Apply receipt reached language
+   successfully, then failed at post-restart proxy visibility. The completion
+   pass analyzed instance/stack identity: the failing node-mode journey has
+   exactly one SettingsView (`-disablewallet` never loads DesktopWallets), the
+   bridge resolves duplicate names preferring visible instances, and the saved
+   readiness barrier settles the actual `settingsNavigationStack_display`
+   transitions. The full journey with geometry, proxy, language, restart,
+   reorg/history and RPC assertions passes on Qt 6.10.2 and Qt 6.11.2 non-TSan
+   runs. The frontend-TSan journey profile was not rerun on this host; that
+   recorded failure is not claimed fixed by these non-TSan passes.
+3. **Five saved test-only corrections are requalified.** Dead-QThread
    formatting after physical drain is corrected to opaque-address equality in
    WalletRequests and WalletReservations, retaining exact worker/effect/cleanup
    assertions. Proxy Apply now observes the existing OptionsQmlModel user-effect
@@ -87,35 +120,50 @@ newer warning probes. No configuration is silently excluded.
    for all mutations. Four legacy-fee fixtures use typed review
    `feeKnown`/`feeAmount.satoshi` and bounded graph fee consistency, retaining
    exact 500000-satoshi, unknown, send/broadcast, mempool and Core assertions.
-   The console script's executable bit is restored. These corrections await
-   runtime/lint/tidy checks on the saved revision; production source bytes match
-   frozen34. Original failures remain retained.
-4. **Finish configuration, coverage and platform gates.** Native Qt 6.10 QML
-   reports SVG icon decoding failures (`Unsupported image format`). Read-only
-   inspection confirms its image lacks the runtime `imageformats/libqsvg.so`
-   plugin despite the CMake QtSvg package being present. Retain this environment
-   blocker and downstream warning failures; build/static passes do not establish
-   runtime success. The true wallet-disabled configuration now passes on
-   frozen34; retain its distinct Clang23.1.3 toolchain and source identity. Report reachable
-   handwritten line/branch coverage and explicit gaps, qualify the saved source
-   on Windows, and account for other required native-platform/toolchain
-   limitations. No 100% coverage or Windows/platform pass exists.
+   The console script's executable bit is restored. Completion-pass results:
+   unit classes 51/51 and 27/27; node journeys 2/2; sending journeys 7/7 with
+   all four legacy-fee matrices complete; console journeys 2/2; app and Core
+   lint exit 0; tidy re-run under the documented local toolchain. Production
+   source bytes match frozen34. Original failures remain retained.
+4. **Configuration and coverage gates: completion-pass status.** Native Qt 6.10
+   QML reports SVG icon decoding failures (`Unsupported image format`); its
+   image lacks the runtime `imageformats/libqsvg.so` plugin despite the CMake
+   QtSvg package being present. Retain this environment blocker; the
+   completion-pass Qt 6.10.2 profile supplies the plugin and its journeys pass.
+   The true wallet-disabled configuration passed on frozen34; retain its
+   distinct Clang23.1.3 toolchain and source identity. Reachable handwritten
+   line/branch coverage is reported in
+   [evidence](evidence/R10_COMPLETION_VALIDATION.json) with explicit gaps; no
+   100% coverage is claimed. **Windows validation is deferred by explicit user
+   decision** for this completion pass; no Windows pass is claimed. Frontend
+   TSan/MSan with instrumented dependencies remains an explicit obligation that
+   was not rerun on this host.
 5. **Deferred Qt picker race.** Stock Qt 6.10.2 QFileDialog starts its directory
    worker before installing connections. A Qt-only reproducer yields TSan exit
    66. The user explicitly chose document/defer. Retain the existing picker;
    no Qt patch, new suppression or replacement is authorized. The affected TSan
    case remains unresolved, not passing or skipped.
-6. **Final acceptance/accounting.** Reconcile all eight primary R10 scopes plus
-   O04/O27, independent view interest and discovered GUI-work regressions with
-   the final revision and required process/configuration/coverage evidence.
-   Preserve 318 findings, 329 regression scopes, 43 work orders and 36 schedules.
-   Shared registers are unchanged; this checkpoint closes none of them.
+6. **Final acceptance/accounting.** The completion pass requalifies the five
+   saved corrections, both lint scopes, tidy (documented local toolchain) and
+   coverage on the saved revision, and records the settings-navigation identity
+   analysis. Windows is deferred by explicit user decision; frontend TSan/MSan
+   with instrumented dependencies, the Qt 6.2 teardown SIGSEGV and the deferred
+   picker case remain the explicit open items. Reconcile all eight primary R10
+   scopes plus O04/O27, independent view interest and discovered GUI-work
+   regressions with the final revision and required
+   process/configuration/coverage evidence. Preserve 318 findings, 329
+   regression scopes, 43 work orders and 36 schedules. Shared registers are
+   unchanged; this checkpoint closes none of them.
 
 The five ASan journey failures were the incorrect Apply observation and four
 removed-map fee reads. TSan's five were settings visibility and the same four
 fee reads. No sanitizer diagnostic occurred in these failures; the GUI processes
 exited 0. Those fee failures occurred before their six-case inner matrices
-completed, so those inner cases are not passing evidence.
+completed, so those inner cases are not passing evidence. **Completion-pass
+note:** the corrected fixtures now complete all six inner cases per matrix on
+Qt 6.10.2 non-TSan runs (24 of 24 fee-matrix bodies plus the surrounding
+journeys); the ASan/TSan journey profiles themselves were not rerun on this
+host.
 
 ## Resume and provenance
 

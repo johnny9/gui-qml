@@ -14,8 +14,9 @@ implementation, validation and unresolved issues.
 - [Work orders and scope/schedule tracking](tracking/)
 - [Retained validation summaries and source identities](evidence/)
 
-These files were saved from the workspace plan. Historical `.validation/` links
-refer to retained local workspace artifacts. Original shared registers remain
+These files were saved from the workspace plan. Historical `.validation/`
+paths are inline code references to retained local workspace artifacts, not
+bundled files or hyperlinks. Original shared registers remain
 unchanged; published CSV copies normalize line endings only, with parsed records
 verified unchanged and provenance in `evidence/tracking-copy-provenance.json`.
 Moving these documents into `plan/` does not accept R10 or certify the pushed

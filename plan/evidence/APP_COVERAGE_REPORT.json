@@ -1,0 +1,28 @@
+{
+  "build": "ENABLE_APP_COVERAGE=ON, Clang 22.1.8, Qt 6.10.2, ci/configure.py native profile, no optimization level selected",
+  "inputs": {
+    "binaries": ["bitcoinqml_unit_tests (serial full suite, exit 0, 2876 PASS)", "bitcoinqml_integration_tests (9 ctest groups)", "bitcoinqml_qmltests (860 rows)", "bitcoinqml_bootstrap_tests", "bitcoin-core-app GUI process (11 functional journeys: node 2, sending 7, console 2, all PASS)"],
+    "profiles": "276 raw .profraw files merged with llvm-profdata -sparse"
+  },
+  "handwritten_app_sources_qml": {
+    "regions": "84.30% (32156/38144)",
+    "functions": "89.98% (4130/4590)",
+    "lines": "91.10% (33684/36973)",
+    "branches": "70.31% (18957/26962)"
+  },
+  "handwritten_test_sources_test": {
+    "lines": "97.74% (47654/48754)",
+    "branches": "49.28%",
+    "note": "Branch percentage is dominated by QtTest/Qt internals macros in test sources; no branch target is claimed for test code"
+  },
+  "explicit_gaps_lowest_line_coverage": [
+    "controls/linegraph.h: 0/8 lines in this run (no journey exercised the legacy graph control path)",
+    "models/walletunlock.cpp: 0/24 lines in this run (unlock flow covered by unit selections, not by these journey binaries)",
+    "urlopener.h: 30.77% lines (external URL opens are desktop-only)",
+    "qmlfiledialog.h: 37.50% lines (native Qt picker retained per deferred user decision; races documented elsewhere)",
+    "clipboard.h: 44.00% lines (platform clipboard interactions)",
+    "models/peerdetailsmodel.h, models/chainmodel.h, models/banlistmodel.h, walletsecurity.h: partial",
+    "test/testbridge.cpp: 52.17% lines (automation bridge exercised only through the journey command subset)"
+  ],
+  "claims": "Reachable coverage of this run's selections only; no 100% coverage, no branch target for app sources, and no qualification of untaken platform paths (tray icon, native dialogs, Windows/macOS) is claimed"
+}
