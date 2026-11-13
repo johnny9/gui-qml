@@ -1,5 +1,11 @@
 # R10 continuation: parallel integration tests
 
+**Later repair pass:** [PSBT journeys and coverage](R10_REPAIR_20261113.md) records
+the passing ASan fee matrices, Qt 6.2 routing repair, callback failure publication
+and custom-fee overflow correction. R10 remains unaccepted. The checkpoint below
+describes the earlier parallel-test integration and preserves its original
+failures and source scope.
+
 Working code candidate: `cb22132687ec765abe599628f5ed6587d63b44c9` on
 `work/qt6-r10-completion-20261113`, based on fetched completion head
 `fc54e7408398e89958a8eb04ccf12885b2fd3985`. The seven optimization commits

@@ -1,0 +1,767 @@
+{
+  "date": "2026-11-13",
+  "code_head": "088f32989f7ce848650e5927fa90592d86b3bb5a",
+  "validated_candidate": "30509d5cc333163c9815cf069035d4a86f985b7c",
+  "identical_code_tree": "242a4704daf2886d282160c0dd4b94baf645fafa",
+  "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "branch": "work/qt6-r10-completion-20261113",
+  "published": false,
+  "R10_accepted": false,
+  "R11_started": false,
+  "fixes": [
+    {
+      "commit": "37365dc541f",
+      "cause": "Aggregate coin refresh invalidated a pending PSBT import; observe actual selection identity instead."
+    },
+    {
+      "commit": "8c7ef9ad7e6",
+      "cause": "Rejected callback lease published Open before fencing; retire before publishing failure."
+    },
+    {
+      "commit": "cec98fb294f",
+      "cause": "Shared mock retained deferred wallet delegates beyond window context; observe physical destruction before deleting routing windows."
+    },
+    {
+      "commit": "088f32989f7",
+      "cause": "Custom fee scaling/addition could overflow CAmount; validate the representable bound before arithmetic."
+    }
+  ],
+  "validation": {
+    "psbt-fixed": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/psbt-fixed",
+      "head": "37365dc541ff2ff50a5352347864c1cbd22aa045",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 207.70763373500085
+    },
+    "opening-saturation-red": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/opening-saturation-red",
+      "head": "4d0c6047553f31d18c2595f115c45b99d0dcbfba",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "M test/test_walletopening.cpp",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "seconds": 16.011634171998594
+    },
+    "opening-contracts-complete": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/opening-contracts-complete",
+      "head": "4d0c6047553f31d18c2595f115c45b99d0dcbfba",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "M qml/walletopening.cpp\n M test/test_walletopening.cpp",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 17.002167271013604
+    },
+    "qt62-parent-red": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/qt62-parent-red",
+      "head": "4d0c6047553f31d18c2595f115c45b99d0dcbfba",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:2f4a8186ed94d18b9c54aa5c70cba2d5eeeede306d37844db390ae6b2ce75d21",
+      "exit_code": 139,
+      "source_unchanged": true,
+      "seconds": 20.673859654023545
+    },
+    "qt62-fixture-clean": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/qt62-fixture-clean",
+      "head": "4d0c6047553f31d18c2595f115c45b99d0dcbfba",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "M test/qml/qml_tests_main.cpp\n M test/qml/tst_mainrouting.qml",
+      "image": "sha256:2f4a8186ed94d18b9c54aa5c70cba2d5eeeede306d37844db390ae6b2ce75d21",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 9.919660041021416
+    },
+    "asan-r10-unit-moc-final": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/asan-r10-unit-moc-final",
+      "head": "d04c9ee487581aa6a9d1f397fd68b29bb23233b4",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 19.283152522024466
+    },
+    "lifecycle-boundaries-final": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/lifecycle-boundaries-final",
+      "head": "e938ed3a44bb2555cdef09587df9d662a7f699ad",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "M test/test_walletlifecycle.cpp",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 16.389993794000475
+    },
+    "asan-session-final": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/asan-session-final",
+      "head": "e938ed3a44bb2555cdef09587df9d662a7f699ad",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 239.48662032501306
+    },
+    "asan-fee-guard-journeys": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/asan-fee-guard-journeys",
+      "head": "30509d5cc333163c9815cf069035d4a86f985b7c",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 231.7702149959805
+    },
+    "asan-final-other-journeys": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/asan-final-other-journeys",
+      "head": "30509d5cc333163c9815cf069035d4a86f985b7c",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 25.106833240017295
+    },
+    "fee-boundary-red": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/fee-boundary-red",
+      "head": "e938ed3a44bb2555cdef09587df9d662a7f699ad",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "M test/test_walletlifecycle.cpp\n M test/test_walletqmlmodel.cpp",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "seconds": 67.29258116101846
+    },
+    "fee-boundaries-fixed": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/fee-boundaries-fixed",
+      "head": "e938ed3a44bb2555cdef09587df9d662a7f699ad",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "M qml/models/walletqmlmodel.cpp\n M test/test_walletlifecycle.cpp\n M test/test_walletqmlmodel.cpp",
+      "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 35.833941829012474
+    },
+    "tidy-session-final": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/tidy-session-final",
+      "head": "cec98fb294fb1fcb820861a1d6d65b0e9625b0c8",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:a4c62a2056bc0171ce1071ea18515507bc3183770b033516a548c6c080bf391b",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 52.56701191700995
+    },
+    "tidy-r10-checkpoint": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/tidy-r10-checkpoint",
+      "head": "d04c9ee487581aa6a9d1f397fd68b29bb23233b4",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:a4c62a2056bc0171ce1071ea18515507bc3183770b033516a548c6c080bf391b",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 30.19086208700901
+    },
+    "tidy-fee-guard": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/tidy-fee-guard",
+      "head": "30509d5cc333163c9815cf069035d4a86f985b7c",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:a4c62a2056bc0171ce1071ea18515507bc3183770b033516a548c6c080bf391b",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 112.6139514259994
+    },
+    "tsan-session-final": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/tsan-session-final",
+      "head": "cec98fb294fb1fcb820861a1d6d65b0e9625b0c8",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:c23441c56c0623ec23822f859be28f6e7d87160fcccae3770eaa0b46086c3f32",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 353.57557123398874
+    },
+    "tsan-r10-checkpoint": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/tsan-r10-checkpoint",
+      "head": "d04c9ee487581aa6a9d1f397fd68b29bb23233b4",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:c23441c56c0623ec23822f859be28f6e7d87160fcccae3770eaa0b46086c3f32",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 27.939659706986276
+    },
+    "tsan-fee-guard": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/tsan-fee-guard",
+      "head": "30509d5cc333163c9815cf069035d4a86f985b7c",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:c23441c56c0623ec23822f859be28f6e7d87160fcccae3770eaa0b46086c3f32",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 110.79236912599299
+    },
+    "qml-static-r10": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/qml-static-r10",
+      "head": "d04c9ee487581aa6a9d1f397fd68b29bb23233b4",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:201775fb61d38fbc7d2bcccca26451942db0a92aaca38f7d0321998129972e1c",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 15.359285387006821
+    },
+    "qt62-r10-checkpoint": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/qt62-r10-checkpoint",
+      "head": "d04c9ee487581aa6a9d1f397fd68b29bb23233b4",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:2f4a8186ed94d18b9c54aa5c70cba2d5eeeede306d37844db390ae6b2ce75d21",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 1566.7318315629964
+    },
+    "qt62-fee-guard-final": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/qt62-fee-guard-final",
+      "head": "30509d5cc333163c9815cf069035d4a86f985b7c",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:2f4a8186ed94d18b9c54aa5c70cba2d5eeeede306d37844db390ae6b2ce75d21",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 86.36962464998942
+    },
+    "coverage-fee-guard": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard",
+      "head": "30509d5cc333163c9815cf069035d4a86f985b7c",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:201775fb61d38fbc7d2bcccca26451942db0a92aaca38f7d0321998129972e1c",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "seconds": 218.51086682500318
+    },
+    "coverage-fee-guard-final": {
+      "path": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final",
+      "head": "30509d5cc333163c9815cf069035d4a86f985b7c",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "image": "sha256:201775fb61d38fbc7d2bcccca26451942db0a92aaca38f7d0321998129972e1c",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "seconds": 299.69728607701836
+    }
+  },
+  "process_exit_records": {
+    "asan-fee-guard-journeys": [
+      {
+        "path": "asan-fee-guard-journeys/sending-processes/4.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-fee-guard-journeys/sending-processes/5.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-fee-guard-journeys/sending-processes/0.json",
+        "exit_status": 0,
+        "gui_stderr_checked": false
+      },
+      {
+        "path": "asan-fee-guard-journeys/sending-processes/6.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-fee-guard-journeys/sending-processes/8.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-fee-guard-journeys/sending-processes/7.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-fee-guard-journeys/sending-processes/2.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-fee-guard-journeys/sending-processes/1.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-fee-guard-journeys/sending-processes/3.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      }
+    ],
+    "asan-final-other-journeys": [
+      {
+        "path": "asan-final-other-journeys/node-processes/0.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-final-other-journeys/node-processes/2.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-final-other-journeys/node-processes/1.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-final-other-journeys/console-processes/0.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-final-other-journeys/console-processes/1.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      },
+      {
+        "path": "asan-final-other-journeys/core-gui-processes/1794592041676875997.json",
+        "exit_status": 0,
+        "gui_stderr_checked": true
+      }
+    ]
+  },
+  "asan_sending": {
+    "journeys": 7,
+    "fee_oracles": 24,
+    "passed": true
+  },
+  "asan_unit": {
+    "passed": 133,
+    "failed": 0,
+    "skipped": 0
+  },
+  "tsan_unit": {
+    "passed": 193,
+    "failed": 0,
+    "skipped": 0
+  },
+  "qt62_qml": {
+    "passed": 755,
+    "failed": 0,
+    "skipped": 0
+  },
+  "coverage": {
+    "unit_selection": {
+      "passed": 2765,
+      "failed": 0,
+      "skipped": 12
+    },
+    "totals": {
+      "unit": {
+        "lines": {
+          "covered": 25813,
+          "total": 31207,
+          "percent": 82.715
+        },
+        "branches": {
+          "covered": 17676,
+          "total": 25780,
+          "percent": 68.565
+        }
+      },
+      "combined": {
+        "lines": {
+          "covered": 26064,
+          "total": 31207,
+          "percent": 83.52
+        },
+        "branches": {
+          "covered": 17828,
+          "total": 25780,
+          "percent": 69.154
+        }
+      }
+    },
+    "components": {
+      "qml/walletlifecycle.cpp": {
+        "lines": {
+          "covered": 309,
+          "total": 309,
+          "percent": 100.0
+        },
+        "branches": {
+          "covered": 185,
+          "total": 192,
+          "percent": 96.354
+        }
+      },
+      "qml/walletopening.cpp": {
+        "lines": {
+          "covered": 352,
+          "total": 352,
+          "percent": 100.0
+        },
+        "branches": {
+          "covered": 200,
+          "total": 200,
+          "percent": 100.0
+        }
+      },
+      "qml/walletopening.h": {
+        "lines": {
+          "covered": 50,
+          "total": 50,
+          "percent": 100.0
+        },
+        "branches": {
+          "covered": 48,
+          "total": 48,
+          "percent": 100.0
+        }
+      },
+      "qml/walletopeningstate.h": {
+        "lines": {
+          "covered": 22,
+          "total": 22,
+          "percent": 100.0
+        },
+        "branches": {
+          "covered": 14,
+          "total": 14,
+          "percent": 100.0
+        }
+      }
+    },
+    "gates": {
+      "measurement_head": "30509d5cc333163c9815cf069035d4a86f985b7c",
+      "scope_head": "30509d5cc333163c9815cf069035d4a86f985b7c",
+      "scope_definition": "Conservative changed-function scope: include complete emitted function ranges intersecting modified/added lines since accepted R09. Retain complete per-file legacy ledger separately. A source review must account for interfaces, unemitted code, moves and deletions. No reachability exclusion inferred.",
+      "required_line_percent": 100,
+      "required_branch_percent": 100,
+      "opening_session_component": {
+        "passed": true,
+        "nonempty": true,
+        "unresolved_sources": [],
+        "unit_line_gap_files": [],
+        "unit_branch_gap_files": [],
+        "totals": {
+          "selected_unit_lines": 424,
+          "covered_unit_lines": 424,
+          "selected_unit_branch_outcomes": 262,
+          "covered_unit_branch_outcomes": 262
+        }
+      },
+      "conservative_R10_coverage": {
+        "passed": false,
+        "nonempty": true,
+        "unresolved_sources": [
+          "qml/backendexecutor.h",
+          "qml/bitcoin_qml.qrc",
+          "qml/components/BannedPeersPopup.qml",
+          "qml/components/BitcoinAddressInputField.qml",
+          "qml/components/BitcoinAmountInputField.qml",
+          "qml/components/BlockClock.qml",
+          "qml/components/CoinsList.qml",
+          "qml/components/ExternalSignerReviewActions.qml",
+          "qml/components/InfoBanner.qml",
+          "qml/components/MonospaceOutputRow.qml",
+          "qml/components/MonospaceOutputView.qml",
+          "qml/components/NodeFatalErrorPopup.qml",
+          "qml/components/NodeInformationPopup.qml",
+          "qml/components/NodeRuntimeDialog.qml",
+          "qml/components/PaymentRequestCard.qml",
+          "qml/components/ProxySettings.qml",
+          "qml/components/SendRecipientCard.qml",
+          "qml/components/SendRecipientEditor.qml",
+          "qml/components/TransactionDetailsSection.qml",
+          "qml/components/TransactionEntriesList.qml",
+          "qml/components/TransactionFlow.qml",
+          "qml/components/TransactionFlowLayout.js",
+          "qml/components/TransactionFlowNode.qml",
+          "qml/components/WalletMigrationPopup.qml",
+          "qml/components/WalletPassphrasePopup.qml",
+          "qml/controls/CapturedPaste.qml",
+          "qml/controls/CopyButton.qml",
+          "qml/controls/LabeledTextArea.qml",
+          "qml/controls/QRImage.qml",
+          "qml/controls/Theme.qml",
+          "qml/controls/qmldir",
+          "qml/flowpresentation.h",
+          "qml/models/feereadstate.h",
+          "qml/models/peerlistsortproxy.h",
+          "qml/models/transactionflow.h",
+          "qml/models/walletbalancereader.h",
+          "qml/onboarding_settings.h",
+          "qml/pages/MainWindow.qml",
+          "qml/pages/initerrormessage.qml",
+          "qml/pages/node/CommandConsole.qml",
+          "qml/pages/node/NetworkTraffic.qml",
+          "qml/pages/node/PeerDetails.qml",
+          "qml/pages/node/Peers.qml",
+          "qml/pages/preinit.qml",
+          "qml/pages/settings/NetworkTrafficSettingsPage.qml",
+          "qml/pages/settings/ProxySettingsPage.qml",
+          "qml/pages/settings/SettingsProxy.qml",
+          "qml/pages/settings/WindowBehaviorSettingsPage.qml",
+          "qml/pages/wallet/ActivityList.qml",
+          "qml/pages/wallet/ActivityListPage.qml",
+          "qml/pages/wallet/AddressList.qml",
+          "qml/pages/wallet/CreateWalletFields.qml",
+          "qml/pages/wallet/CreateWalletForm.qml",
+          "qml/pages/wallet/DesktopWallets.qml",
+          "qml/pages/wallet/ExternalSignerWalletFields.qml",
+          "qml/pages/wallet/ExternalSignerWalletForm.qml",
+          "qml/pages/wallet/ReceivePage.qml",
+          "qml/pages/wallet/SendComplete.qml",
+          "qml/pages/wallet/SendCreate.qml",
+          "qml/pages/wallet/SendTransactionReview.qml",
+          "qml/pages/wallet/SignVerifyMessage.qml",
+          "qml/pages/wallet/SpeedUpOverlay.qml",
+          "qml/pages/wallet/TransactionDetail.qml",
+          "qml/pages/wallet/WalletCreationFlow.qml",
+          "qml/pages/wallet/WalletImportErrorPage.qml",
+          "qml/pages/wallet/WalletPasswordSettings.qml",
+          "qml/psbtwork.h",
+          "qml/qrimageprovider.h",
+          "qml/test/testbridge.cpp",
+          "qml/test/testbridge.h",
+          "qml/util.h",
+          "qml/walletbump.h",
+          "qml/walletlifecycle.h",
+          "qml/walletmessage.h",
+          "qml/walletprepare.h",
+          "qml/walletrequestdata.h",
+          "qml/walletreservationdata.h",
+          "qml/walletreview.h",
+          "qml/wallettransaction.h"
+        ],
+        "unit_line_gap_files": [
+          "qml/applicationmodels.h",
+          "qml/bitcoin.cpp",
+          "qml/bitcoinamount.cpp",
+          "qml/clipboard.h",
+          "qml/components/blockclockdial.cpp",
+          "qml/components/blockclockdial.h",
+          "qml/core_settings.cpp",
+          "qml/execution.cpp",
+          "qml/indexedsequence.h",
+          "qml/initexecutor.cpp",
+          "qml/models/activitydetailmodel.cpp",
+          "qml/models/activitydetailmodel.h",
+          "qml/models/activityfilterproxymodel.cpp",
+          "qml/models/activitysnapshot.h",
+          "qml/models/addresslistmodel.cpp",
+          "qml/models/banlistmodel.h",
+          "qml/models/bitcoinaddress.cpp",
+          "qml/models/blockclockmodel.cpp",
+          "qml/models/bumptransactionmodel.cpp",
+          "qml/models/bumptransactionmodel.h",
+          "qml/models/coinslistmodel.cpp",
+          "qml/models/coinslistmodel.h",
+          "qml/models/core_settings_model.cpp",
+          "qml/models/core_settings_model.h",
+          "qml/models/debuglogmodel.cpp",
+          "qml/models/desktopwindowbehaviormodel.cpp",
+          "qml/models/flowdetailsmodel.cpp",
+          "qml/models/flowdetailsmodel.h",
+          "qml/models/imageexportoperation.cpp",
+          "qml/models/imageexportoperation.h",
+          "qml/models/monospaceoutputmodel.cpp",
+          "qml/models/monospaceoutputmodel.h",
+          "qml/models/networktraffictower.cpp",
+          "qml/models/nodemodel.cpp",
+          "qml/models/nodemodel.h",
+          "qml/models/onboardingoptionsmodel.cpp",
+          "qml/models/onboardingoptionsmodel.h",
+          "qml/models/options_model.cpp",
+          "qml/models/options_model.h",
+          "qml/models/paymentrequest.cpp",
+          "qml/models/peerdetailsmodel.cpp",
+          "qml/models/peerdetailsmodel.h",
+          "qml/models/peerlistmodel.cpp",
+          "qml/models/peerlistsortproxy.cpp",
+          "qml/models/psbtqmlmodel.cpp",
+          "qml/models/psbtqmlmodel.h",
+          "qml/models/receiverequesthistorymodel.cpp",
+          "qml/models/receiverequestoperation.cpp",
+          "qml/models/receiverequestoperation.h",
+          "qml/models/rpcconsolemodel.cpp",
+          "qml/models/rpcconsolemodel.h",
+          "qml/models/sendrecipient.cpp",
+          "qml/models/sendrecipientslistmodel.cpp",
+          "qml/models/sendrecipientslistmodel.h",
+          "qml/models/signverifymessagemodel.cpp",
+          "qml/models/signverifymessagemodel.h",
+          "qml/models/startupdiagnosticsmodel.cpp",
+          "qml/models/transactionactivitymodel.cpp",
+          "qml/models/transactionactivitymodel.h",
+          "qml/models/uipreferences.cpp",
+          "qml/models/uipreferences.h",
+          "qml/models/walletlistmodel.cpp",
+          "qml/models/walletqmlmodel.cpp",
+          "qml/models/walletqmlmodel.h",
+          "qml/models/walletqmlmodeltransaction.cpp",
+          "qml/nativelistmodel.cpp",
+          "qml/nativelistmodel.h",
+          "qml/onboarding_settings.cpp",
+          "qml/ownedwork.h",
+          "qml/psbtwork.cpp",
+          "qml/qrimageprovider.cpp",
+          "qml/qtlogsink.cpp",
+          "qml/secretinput.cpp",
+          "qml/secretinput.h",
+          "qml/snapshotquery.h",
+          "qml/util.cpp",
+          "qml/walletbump.cpp",
+          "qml/walletmessage.cpp",
+          "qml/walletprepare.cpp",
+          "qml/walletqmlcontroller.cpp",
+          "qml/walletqmlcontroller.h",
+          "qml/walletreceipts.cpp",
+          "qml/walletrequestdata.cpp",
+          "qml/walletrequests.cpp",
+          "qml/walletrequests.h",
+          "qml/walletreservations.cpp",
+          "qml/walletsecurity.h",
+          "qml/walletsend.cpp",
+          "qml/wallettransaction.cpp"
+        ],
+        "unit_branch_gap_files": [
+          "qml/applicationmodels.h",
+          "qml/bitcoin.cpp",
+          "qml/bitcoinamount.cpp",
+          "qml/blockclockprojection.h",
+          "qml/clipboard.h",
+          "qml/components/blockclockdial.cpp",
+          "qml/core_settings.cpp",
+          "qml/core_settings.h",
+          "qml/execution.cpp",
+          "qml/flowpresentation.cpp",
+          "qml/guipresentation.h",
+          "qml/indexedsequence.h",
+          "qml/initexecutor.cpp",
+          "qml/models/activitydetailmodel.cpp",
+          "qml/models/activitydetailmodel.h",
+          "qml/models/activityfilterproxymodel.cpp",
+          "qml/models/activityfilterproxymodel.h",
+          "qml/models/activitysnapshot.h",
+          "qml/models/addresslistmodel.cpp",
+          "qml/models/banlistmodel.cpp",
+          "qml/models/bitcoinaddress.cpp",
+          "qml/models/bitcoinurimodel.cpp",
+          "qml/models/bitcoinurimodel.h",
+          "qml/models/blockclockhistory.cpp",
+          "qml/models/blockclockmodel.cpp",
+          "qml/models/blockclockmodel.h",
+          "qml/models/bumptransactionmodel.cpp",
+          "qml/models/coinslistmodel.cpp",
+          "qml/models/coinslistmodel.h",
+          "qml/models/core_settings_model.cpp",
+          "qml/models/core_settings_model.h",
+          "qml/models/debuglogmodel.cpp",
+          "qml/models/debuglogmodel.h",
+          "qml/models/desktopwindowbehaviormodel.cpp",
+          "qml/models/flowdetailsmodel.cpp",
+          "qml/models/flowdetailsmodel.h",
+          "qml/models/imageexportoperation.cpp",
+          "qml/models/imageexportoperation.h",
+          "qml/models/monospaceoutputmodel.cpp",
+          "qml/models/networktraffictower.cpp",
+          "qml/models/nodemodel.cpp",
+          "qml/models/nodemodel.h",
+          "qml/models/onboardingoptionsmodel.cpp",
+          "qml/models/onboardingoptionsmodel.h",
+          "qml/models/options_model.cpp",
+          "qml/models/paymentrequest.cpp",
+          "qml/models/peerdetailsmodel.cpp",
+          "qml/models/peerlistmodel.cpp",
+          "qml/models/peerlistsortproxy.cpp",
+          "qml/models/psbtqmlmodel.cpp",
+          "qml/models/psbtqmlmodel.h",
+          "qml/models/receiverequesthistorymodel.cpp",
+          "qml/models/receiverequestoperation.cpp",
+          "qml/models/receiverequestoperation.h",
+          "qml/models/rpcconsolemodel.cpp",
+          "qml/models/sendrecipient.cpp",
+          "qml/models/sendrecipient.h",
+          "qml/models/sendrecipientslistmodel.cpp",
+          "qml/models/sendrecipientslistmodel.h",
+          "qml/models/signverifymessagemodel.cpp",
+          "qml/models/startupdiagnosticsmodel.cpp",
+          "qml/models/transactionactivitymodel.cpp",
+          "qml/models/transactionactivitymodel.h",
+          "qml/models/transactionflow.cpp",
+          "qml/models/uipreferences.cpp",
+          "qml/models/uipreferences.h",
+          "qml/models/walletlistmodel.cpp",
+          "qml/models/walletqmlmodel.cpp",
+          "qml/models/walletqmlmodel.h",
+          "qml/models/walletqmlmodeltransaction.cpp",
+          "qml/nativelistmodel.cpp",
+          "qml/nativelistmodel.h",
+          "qml/onboarding_settings.cpp",
+          "qml/ownedwork.h",
+          "qml/psbtwork.cpp",
+          "qml/qrimageprovider.cpp",
+          "qml/qtlogsink.cpp",
+          "qml/retainedvalue.h",
+          "qml/secretinput.cpp",
+          "qml/secretinput.h",
+          "qml/senddraft.h",
+          "qml/shutdowncoordinator.cpp",
+          "qml/snapshotquery.h",
+          "qml/startupeffects.h",
+          "qml/util.cpp",
+          "qml/walletbump.cpp",
+          "qml/walletlifecycle.cpp",
+          "qml/walletmessage.cpp",
+          "qml/walletprepare.cpp",
+          "qml/walletqmlcontroller.cpp",
+          "qml/walletqmlcontroller.h",
+          "qml/walletreceipts.cpp",
+          "qml/walletreceipts.h",
+          "qml/walletrequestdata.cpp",
+          "qml/walletrequests.cpp",
+          "qml/walletrequests.h",
+          "qml/walletreservations.cpp",
+          "qml/walletsecurity.cpp",
+          "qml/walletsend.cpp",
+          "qml/wallettransaction.cpp"
+        ],
+        "totals": {
+          "selected_unit_lines": 22664,
+          "covered_unit_lines": 20093,
+          "selected_unit_branch_outcomes": 21996,
+          "covered_unit_branch_outcomes": 14871
+        }
+      },
+      "gate_controls_passed": true,
+      "limitation": "Changed-function inventory is conservative and needs source review for unemitted/interface/platform/QML sources. No automatic reachability waiver. Full per-file legacy ledger remains retained.",
+      "R10_accepted": false
+    },
+    "source_inventory": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/coverage-source-ledger.json",
+    "full_gap_ledger": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/coverage-gap-ledger.json",
+    "changed_function_scope": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/r10-changed-function-coverage.json",
+    "gap_counter_audit": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/coverage-report/gap-resumption-audit.json",
+    "tool_identity": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113/coverage-fee-guard-final/tool-identity.json"
+  },
+  "limitations": [
+    "Unit and combined denominators retain all emitted handwritten app files, including legacy areas; combined here means unit/bootstrap plus QML components, not process/integration coverage.",
+    "Conservative changed-function scope requires source review. No automatic unreachable-branch exclusion is applied.",
+    "QML/JS line and branch coverage remain unmeasured; component body counts are not substituted.",
+    "Seven remaining lifecycle branch outcomes have source-audit proposals; no exclusion has been applied.",
+    "Qt 6.2 retains its pre-existing setContextForObject warning policy; the full QML suite is not a zero-warning claim.",
+    "Qt picker and Windows deferrals remain explicit standing user decisions; MSan/static-depends/native platform obligations are not certified by Linux ASan.",
+    "Prior failed red, stale-resource/profile-reuse and setup attempts remain in their original artifact directories.",
+    "Shared finding registers and accepted program head have not been advanced."
+  ]
+}

@@ -1,6 +1,6 @@
 # R10 implementation checkpoint — completion pass
 
-**Latest local continuation:** [parallel tests, fixture corrections and current results](R10_CONTINUATION_20261113.md). R10 remains unaccepted. This supersedes the settings single-instance analysis below and records two still-failing ASan PSBT journeys.
+**Latest local repair pass:** [PSBT, lifecycle, fee-boundary and coverage results](R10_REPAIR_20261113.md). All seven ASan sending journeys and all 24 fee oracles pass. Opening/session coverage is 424/424 lines and 262/262 branch outcomes. R10 remains unaccepted: the broader coverage gate still fails and QML/JS line/branch measurement is outstanding. The report records localized production repairs; the entries below retain their original source qualifications.
 
 Saved on 2026-11-13, with later immutable34 validation updates below, at the user's explicit request to commit the current state and
 push it to their fork. **R10 is not accepted. R11 has not started.** This request
