@@ -157,3 +157,14 @@ the median from **108.441 s to 81.359 s (24.97%)**. All four measured runs passe
 the same 122 cases. Setup-specific cases retain their existing fixtures. See the
 [funding fixture report](funding-fixture-research.md#implemented-opt-in-fixture)
 for scope, measurement details, and artifacts.
+
+
+## Follow-up experiments
+
+After prepared-wallet fixtures, a fresh three-sample comparison found four jobs
+useful: median **80.070 s at three jobs versus 71.694 s at four (10.46% lower)**,
+with all 122 cases passing in every run. A separate watch-only funding prototype
+reduced its two-case group median from 10.493 s to 4.006 s while preserving its
+validation assertions. These are experimental results; the CI cap is still three.
+See [the post-fixture experiments](post-fixture-experiments.md) for methodology,
+full-suite validation, limits, and the saved prototype.
