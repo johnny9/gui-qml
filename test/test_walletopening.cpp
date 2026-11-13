@@ -76,6 +76,26 @@ class WalletOpeningTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void failedRefreshCannotAcknowledgeUnreconciledTransactions_data()
+    {
+        QTest::addColumn<bool>("later_transaction");
+        QTest::newRow("failed-notice-needs-rescan") << false;
+        QTest::newRow("new-notice-during-failed-refresh") << true;
+    }
+    void failedRefreshCannotAcknowledgeUnreconciledTransactions()
+    {
+        QFETCH(bool, later_transaction);
+        Fixture fixture; fixture.start();
+        fixture.wallet->transaction(Txid::FromUint256(uint256::ONE), CT_NEW);
+        if (later_transaction) fixture.wallet->transaction(Txid{}, CT_UPDATED);
+        fixture.wallet->fail_read = true; fixture.commands.drain();
+        fixture.session->acknowledgeTransactions();
+        QVERIFY(fixture.session->notificationsPending());
+        const auto failed = fixture.session->take(); QVERIFY(failed && failed->failed);
+        fixture.session->retire();
+        fixture.session->retryNotifications(); fixture.commands.drain();
+        QVERIFY(fixture.commands.quiescent());
+    }
     void callbackRacingShutdownCannotRefreshTheClosingOpening()
     {
         struct Boundary final : execution::Scheduler {
