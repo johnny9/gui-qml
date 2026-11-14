@@ -18,8 +18,10 @@
 #include <QQmlEngine>
 #include <QQuickImageProvider>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QStringList>
+#include <QTemporaryDir>
 #include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
@@ -4278,9 +4280,19 @@ class QmlTestsSetup : public QObject
 {
     Q_OBJECT
 
+private:
+    // File-level CTest processes must not share persistent QML Settings.
+    QTemporaryDir m_settings_dir;
+
 public Q_SLOTS:
     void applicationAvailable()
     {
+        if (!m_settings_dir.isValid()) qFatal("Cannot create QML test settings directory");
+        QCoreApplication::setOrganizationName(QStringLiteral("bitcoinqml-tests"));
+        QCoreApplication::setApplicationName(QStringLiteral("qmltests"));
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settings_dir.path());
+        QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, m_settings_dir.path());
         // Exercise the same customizable controls used by the application.
         qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
     }

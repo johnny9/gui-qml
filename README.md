@@ -142,8 +142,28 @@ Build and run the unit and QML component tests:
 ```sh
 cmake -B build -DBUILD_APP_TESTS=ON
 cmake --build build --target bitcoinqml_unit_tests bitcoinqml_bootstrap_tests bitcoinqml_qmltests -j$(nproc)
-ctest --test-dir build --output-on-failure -L 'unit|qml'
+ctest --test-dir build --output-on-failure -L 'unit|qml' --parallel 4
 ```
+
+For a faster QML editing loop on systems that support symbolic links:
+
+```sh
+cmake -B build -DBUILD_APP_TESTS=ON -DQML_TEST_DEV_MODE=ON
+cmake --build build --target bitcoinqml_qmltests --parallel 4
+ctest --test-dir build -L qml --parallel 4 --output-on-failure
+# Run just one component file:
+ctest --test-dir build -R '^bitcoinqml_qml_copybutton$' --output-on-failure
+```
+
+Development mode creates a live source mirror in `build/test/qml-dev`, preserving
+resource aliases and the selected Qt compatibility files. Edits to existing QML
+files and JavaScript take effect on the next test run without a build. Rebuild for
+C++ or embedded asset changes; rerun CMake after changing a resource manifest.
+The default (`QML_TEST_DEV_MODE=OFF`) still tests embedded resources, as CI does.
+Both modes register each QML test file separately with CTest and isolate persistent
+settings per process. Run `ctest --test-dir build -N -L qml` to list the files, or
+run `build/bin/bitcoinqml_qmltests -platform minimal` with
+`QT_QUICK_BACKEND=software QML_DISABLE_DISK_CACHE=1` to run them all in one process.
 
 Build and run the application and node integration tests:
 
