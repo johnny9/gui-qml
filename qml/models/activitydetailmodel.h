@@ -5,6 +5,7 @@
 #define BITCOIN_QML_MODELS_ACTIVITYDETAILMODEL_H
 
 #include <qml/models/activitysnapshot.h>
+#include <qml/models/activitystore.h>
 #include <qml/snapshotquery.h>
 #include <QAbstractItemModel>
 #include <QPointer>
@@ -70,7 +71,7 @@ Q_SIGNALS:
     void copyFinished(quint64 ticket, bool copied, const QString& error);
 private:
     struct Input;
-    struct Projection { quint64 generation{0};
+    struct Projection { quint64 generation{0}; quint64 transaction_revision{0};
         std::shared_ptr<const activityview::Hold> hold; };
     void refresh();
     void start();
@@ -94,7 +95,7 @@ private:
     std::shared_ptr<const activityview::Hold> m_hold;
     std::unique_ptr<ActivityValueListModel> m_inputs, m_outputs, m_actions, m_raw, m_document;
     QString m_txid, m_error, m_entry_error;
-    quint64 m_generation{0}, m_entry_generation{0}, m_ticket{0};
+    quint64 m_generation{0}, m_entry_generation{0}, m_ticket{0}, m_operation_native_revision{0};
     bool m_closed{false}, m_active_interest{false}, m_pending{false}, m_full{false}, m_again{false}, m_publishing{false}, m_refresh_queued{false};
 };
 #endif // BITCOIN_QML_MODELS_ACTIVITYDETAILMODEL_H

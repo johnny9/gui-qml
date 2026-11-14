@@ -342,6 +342,7 @@ Page {
                 id: listView
                 objectName: "activityListView"
                 anchors.fill: parent
+                anchors.topMargin: activityRefreshError.visible ? activityRefreshError.height + 8 : 0
                 clip: true
                 model: root.visible ? activityFilterProxy : null
                 reuseItems: true
@@ -438,6 +439,39 @@ Page {
                             if (isRequest) root.paymentRequestRequested(requestId)
                             else root.transactionRequested(txid)
                         }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: activityRefreshError
+                objectName: "activityRefreshError"
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: root.activitySideInset
+                anchors.rightMargin: root.activitySideInset
+                height: 56
+                radius: 6
+                color: Theme.color.neutral1
+                visible: !!root.wallet && activityFilterProxy.count > 0 && !!root.wallet.transactionActivityModel.loadError
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    spacing: 12
+                    CoreText {
+                        objectName: "activityRefreshErrorText"
+                        Layout.fillWidth: true
+                        text: root.wallet ? root.wallet.transactionActivityModel.loadError : ""
+                        font: Theme.text.description.font
+                        color: Theme.color.neutral7
+                        wrapMode: Text.Wrap
+                    }
+                    Button {
+                        objectName: "activityRefreshRetryButton"
+                        text: qsTr("Try again")
+                        onClicked: if (root.wallet) root.wallet.transactionActivityModel.reload()
                     }
                 }
             }

@@ -594,6 +594,27 @@ TestCase {
         tryCompare(findChild(page, "activityEmptyStateTitle"), "text", "No activity yet")
     }
 
+    function test_refresh_failure_with_rows_remains_visible_and_retryable() {
+        testTransactionActivityModel.setRows(rows())
+        const page = createPage()
+        const banner = findChild(page, "activityRefreshError")
+        const message = findChild(page, "activityRefreshErrorText")
+        const retry = findChild(page, "activityRefreshRetryButton")
+        verify(banner !== null)
+        verify(message !== null)
+        verify(retry !== null)
+        compare(banner.visible, false)
+
+        testTransactionActivityModel.loadError = "The latest wallet history could not be loaded."
+        tryCompare(banner, "visible", true)
+        compare(message.text, "The latest wallet history could not be loaded.")
+        verify(retry.visible)
+        compare(findChild(page, "activityEmptyState").visible, false)
+
+        testTransactionActivityModel.loadError = ""
+        tryCompare(banner, "visible", false)
+    }
+
     function test_amount_filter_and_empty_states() {
         const page = createPage()
         const proxy = findChild(page, "activityFilterProxyModel")

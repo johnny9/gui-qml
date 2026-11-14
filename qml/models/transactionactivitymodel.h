@@ -7,6 +7,7 @@
 
 #include <qml/models/transaction.h>
 #include <qml/models/activitysnapshot.h>
+#include <qml/models/activitystore.h>
 #include <qml/walletopening.h>
 #include <qml/models/transactionactivity.h>
 
@@ -54,6 +55,8 @@ class TransactionActivityModel : public QAbstractListModel, public activityview:
     Q_OBJECT
     Q_INTERFACES(activityview::Source)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
+    Q_PROPERTY(bool initialLoading READ initialLoading NOTIFY loadingChanged)
+    Q_PROPERTY(bool refreshing READ refreshing NOTIFY loadingChanged)
     Q_PROPERTY(QString loadError READ loadError NOTIFY loadingChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(int transactionCount READ transactionCount NOTIFY countChanged)
@@ -123,6 +126,8 @@ public:
     TransactionActivityModel(WalletQmlModel* wallet_model, Services services);
     ~TransactionActivityModel() override;
     bool loading() const { return m_loading; }
+    bool initialLoading() const { return m_loading && !m_published; }
+    bool refreshing() const { return m_loading && bool(m_published); }
     QString loadError() const { return m_load_error; }
     int rowCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -183,45 +188,16 @@ Q_SIGNALS:
 
 private:
     friend class ActivityDetailModel;
-    struct Record {
-        TransactionActivity activity;
-        QStringList labels;
-        int status{Transaction::Unconfirmed};
-        int depth{0};
-        int blocks_to_maturity{0};
-        int block_height{0};
-        bool status_known{false};
-        CTransactionRef transaction;
-        // Compact ownership flags let a detail preview use the cached
-        // transaction without another wallet read or address-book scan.
-        std::vector<bool> inputs_mine, outputs_mine, outputs_change;
-    };
+    using Record = activitystore::Record;
     using Row = QMap<int, QVariant>;
 
     void updateTransaction(const QString& txid, int change);
-    struct Work {
-        bool reload{false}, labels{false}, statuses{false}, poll{false}, details{false}, projection{false};
-        QSet<QString> transactions;
-        bool empty() const { return !reload && !labels && !statuses && !poll && !details && !projection && transactions.isEmpty(); }
-        void merge(const Work& other);
-    };
-    struct Snapshot {
-        QMap<QString, Record> records;
-        QSet<QString> retry;
-        std::optional<uint256> tip;
-        QString detail_txid, raw_transaction;
-        QVariantMap flow;
-        QMap<QString, QString> detail_labels;
-        bool history_loaded{false};
-        bool can_bump{false}, detail_missing{false}, rows_changed{false}, details_changed{false}, flow_resolved{false};
-    };
+    using Work = activitystore::Work;
+    using Snapshot = activitystore::Snapshot;
     struct DetailSource {
         std::shared_ptr<const Snapshot> core;
         std::shared_ptr<const walletrequests::Snapshot> requests;
     };
-    static bool updateStatus(interfaces::Wallet& wallet, Record& record);
-    static void updateLabels(interfaces::Wallet& wallet, Record& record);
-    static Snapshot readSnapshot(interfaces::Wallet& wallet, Snapshot snapshot, const Work& work, const std::atomic_bool& cancelled);
     void schedule();
     void startWork();
     void poll();
@@ -255,6 +231,7 @@ private:
     quint64 m_entry_ticket{0};
     QString m_entry_error;
     std::shared_ptr<const Snapshot> m_core_state;
+    activitystore::Revisions m_reader_revisions;
     std::shared_ptr<execution::ResourceLease> m_core_lease;
     quint64 m_projection_generation{0}, m_work_revision{0};
     std::shared_ptr<const activityview::Hold> m_published;

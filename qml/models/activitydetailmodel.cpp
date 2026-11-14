@@ -19,7 +19,7 @@
 #include <utility>
 
 struct ActivityDetailModel::Input {
-    std::shared_ptr<const TransactionActivityModel::Snapshot> core, result;
+    std::shared_ptr<const activitystore::Snapshot> core, result;
     std::shared_ptr<execution::ResourceLease> core_lease;
     std::shared_ptr<const activityview::Hold> previous;
     std::shared_ptr<const walletrequests::Snapshot> requests;
@@ -205,7 +205,8 @@ ActivityDetailModel::Projection ActivityDetailModel::prepare(const std::shared_p
     input->core_lease.reset();
     input->previous.reset();
     input->requests.reset();
-    return Projection{input->generation,std::shared_ptr<const activityview::Hold>{input,&input->hold}};
+    return Projection{input->generation, input->result->transaction_revision,
+        std::shared_ptr<const activityview::Hold>{input,&input->hold}};
 }
 void ActivityDetailModel::startPreview()
 {
@@ -220,7 +221,7 @@ void ActivityDetailModel::startPreview()
     const auto admitted=command->start([input] {
         const auto found=input->core->records.constFind(input->txid);
         if(found==input->core->records.cend())throw std::runtime_error("This transaction is no longer available in this wallet.");
-        TransactionActivityModel::Snapshot state;
+        activitystore::Snapshot state;
         state.history_loaded=true;
         state.detail_txid=input->txid;
         state.records.insert(input->txid,*found);
@@ -231,7 +232,8 @@ void ActivityDetailModel::startPreview()
         cached.txout_is_mine=found->outputs_mine;
         cached.txout_is_change=found->outputs_change;
         state.flow=BuildTransactionFlow(cached,{},true);
-        input->result=std::make_shared<const TransactionActivityModel::Snapshot>(std::move(state));
+        state.transaction_revision = input->core->transaction_revision;
+        input->result=std::make_shared<const activitystore::Snapshot>(std::move(state));
         return prepare(input);
     },{execution::Lane::Domain,512,{},execution::WorkClass::Observation});
     if(observer&&!admitted&&m_preview_operation==command)m_preview_operation.reset();
@@ -255,6 +257,7 @@ void ActivityDetailModel::start()
             m_error=m_source->m_load_error; }
         return;
     }
+    if (m_source->m_core_state->transaction_revision != m_opening->transactionRevision()) return;
     const QPointer<ActivityDetailModel> observer{this};
     const auto generation=m_generation;
     auto input=captureInput();
@@ -264,23 +267,27 @@ void ActivityDetailModel::start()
         m_error=tr("Transaction details could not be loaded right now. Try again after pending operations finish.");
         return;
     }
+    m_operation_native_revision = m_opening->transactionRevision();
+    if (input->core->transaction_revision != m_operation_native_revision) return;
     auto command = std::make_shared<execution::OwnedCommand<Projection>>(m_opening->scheduler(), [post=m_post,observer] {
         post([observer] { if (observer) observer->publish(); });
     });
     m_operation = command;
-    const auto admission = command->startWith([input,opening=m_opening](auto done,auto failed) {
+    const auto native_revision = input->core->transaction_revision;
+    const auto admission = command->startWith([input,opening=m_opening,native_revision](auto done,auto failed) {
         const auto failure = failed;
-        return opening->read([input](interfaces::Wallet& wallet) {
-            TransactionActivityModel::Snapshot state;
+        return opening->read([input, native_revision](interfaces::Wallet& wallet) {
+            activitystore::Snapshot state;
             state.history_loaded = true;
             state.detail_txid = input->txid;
             const auto selected = input->core->records.constFind(input->txid);
             if (selected != input->core->records.cend()) state.records.insert(input->txid,*selected);
-            TransactionActivityModel::Work work;
+            activitystore::Work work;
             work.details = true;
             const std::atomic_bool cancelled{false};
-            input->result = std::make_shared<const TransactionActivityModel::Snapshot>(
-            TransactionActivityModel::readSnapshot(wallet,std::move(state),work,cancelled));
+            work.revisions = input->core->revisions;
+            input->result = std::make_shared<const activitystore::Snapshot>(
+                activitystore::Reader::read(wallet, std::move(state), work, cancelled, native_revision));
             return true;
         },[input,done=std::move(done),failure](bool) {
             try {
@@ -324,6 +331,19 @@ void ActivityDetailModel::publish()
         if (observer && !m_closed) Q_EMIT transactionDetailsChanged();
         return;
     }
+    const auto current_native_revision = m_opening->transactionRevision();
+    const bool stale_native_result = result->value
+        ? result->value->transaction_revision != current_native_revision
+        : result->error && m_operation_native_revision != current_native_revision;
+    if (stale_native_result) {
+        m_pending = true;
+        m_full = false;
+        m_error.clear();
+        const QPointer<ActivityDetailModel> observer{this};
+        clearRows(false);
+        if (observer && !m_closed) Q_EMIT transactionDetailsChanged();
+        return;
+    }
     m_pending = false;
     m_preview_operation.reset();
     if (result->error) m_error = tr("Transaction details could not be loaded right now. Try again after pending operations finish.");
@@ -360,7 +380,7 @@ quint64 ActivityDetailModel::requestEntryDetails(const QString& side,int row)
         auto view=std::make_shared<activityview::Snapshot>();
         view->entry_document=std::make_shared<const QVariantList>(FlowEntryDocument(rows->at(row)));
         input->hold.snapshot=std::move(view);
-        return Projection{input->generation,std::shared_ptr<const activityview::Hold>{input,&input->hold}};
+        return Projection{input->generation, 0, std::shared_ptr<const activityview::Hold>{input,&input->hold}};
     },{execution::Lane::Domain,512,{},execution::WorkClass::Observation});
     if (!observer || !active() || !m_error.isEmpty() || m_entry_generation != generation || m_entry_operation != command) return 0;
     if(!admitted){m_entry_operation.reset();

@@ -19,7 +19,6 @@
 #include <qml/models/walletqmlmodel.h>
 
 #include <core_io.h>
-#include <key_io.h>
 
 #include <QDateTime>
 
@@ -134,7 +133,7 @@ struct TransactionActivityModel::Job {
     Work work;
     QString selected;
     int unit{0};
-    quint64 generation{0}, detail_generation{0}, projection_generation{0}, revision{0};
+    quint64 generation{0}, detail_generation{0}, projection_generation{0}, revision{0}, native_revision{0};
     ~Job() { owner.reset(); lease.reset(); }
 };
 struct TransactionActivityModel::Mailbox {
@@ -169,7 +168,9 @@ TransactionActivityModel::TransactionActivityModel(WalletQmlModel* wallet, Servi
     m_apply_timer.setSingleShot(true);
     connect(&m_apply_timer, &QTimer::timeout, this, &TransactionActivityModel::applyPatches);
     connect(wallet, &WalletQmlModel::transactionChanged, this, &TransactionActivityModel::updateTransaction);
-    connect(wallet, &WalletQmlModel::addressListChanged, this, [this] { ++m_generation; m_pending.labels = true; schedule(); });
+    connect(wallet, &WalletQmlModel::addressListChanged, this, [this] {
+        ++m_generation; ++m_reader_revisions.labels; m_pending.labels = true; schedule();
+    });
     auto* requests = wallet->receiveRequests();
     const auto rebuild = [this] { rebuildRows(); };
     connect(requests, &QAbstractItemModel::modelReset, this, rebuild);
@@ -214,28 +215,31 @@ void TransactionActivityModel::stop()
     closeAdmission(); m_loading = m_details_loading = false;
     Q_EMIT loadingChanged();
 }
-void TransactionActivityModel::Work::merge(const Work& other)
+void TransactionActivityModel::reload()
 {
-    reload |= other.reload; labels |= other.labels; statuses |= other.statuses;
-    poll |= other.poll; details |= other.details; projection |= other.projection;
-    transactions.unite(other.transactions);
-    if (transactions.size() > 256) { transactions.clear(); reload = true; }
+    ++m_generation; ++m_projection_generation; ++m_reader_revisions.history;
+    m_pending.reload = true; schedule();
 }
-void TransactionActivityModel::reload() { ++m_generation; ++m_projection_generation; m_pending.reload = true; schedule(); }
 void TransactionActivityModel::updateTransaction(const QString& txid, int change)
 {
     Q_UNUSED(change);
     if (m_stopped) return;
-    ++m_generation; m_pending.transactions.insert(txid);
+    ++m_generation; ++m_reader_revisions.transactions; m_pending.transactions.insert(txid);
     if (m_pending.transactions.size() > 256) { m_pending.transactions.clear(); m_pending.reload = true; }
     schedule();
 }
-void TransactionActivityModel::refreshStatuses() { if (!m_stopped) { m_pending.statuses = true; schedule(); } }
+void TransactionActivityModel::refreshStatuses()
+{
+    if (!m_stopped) { ++m_reader_revisions.status; m_pending.statuses = true; schedule(); }
+}
 void TransactionActivityModel::poll()
 {
     const QPointer<TransactionActivityModel> observer{this};
     receive();
     if (!observer || m_stopped) return;
+    // A timer tick requests another observation; it is not itself a change to
+    // Core state. Keep the captured status revision stable while a read is in
+    // flight so repeated ticks coalesce instead of continually invalidating it.
     m_pending.poll = true; schedule(); armPoll();
 }
 void TransactionActivityModel::armPoll()
@@ -254,6 +258,7 @@ void TransactionActivityModel::requestTransactionDetails(const QString& txid)
 {
     if (m_stopped || (!txid.isEmpty() && txid.size() != 64)) return;
     ++m_detail_generation;
+    ++m_reader_revisions.details;
     const QPointer<TransactionActivityModel> observer{this};
     if (m_detail_txid != txid) {
         m_preview.reset(); m_detail_hold.reset();
@@ -315,7 +320,7 @@ void TransactionActivityModel::startWork()
     auto job = std::make_shared<Job>();
     job->owner = owner; job->lease = std::make_shared<execution::ResourceLease>(std::move(*held.lease));
     job->opening = m_opening; job->mailbox = m_mailbox; job->cancelled = m_cancelled;
-    job->work = std::exchange(m_pending, {}); job->selected = m_detail_txid;
+    job->work = std::exchange(m_pending, {}); job->work.revisions = m_reader_revisions; job->selected = m_detail_txid;
     job->unit = m_display_unit; job->generation = m_generation; job->detail_generation = m_detail_generation;
     job->projection_generation = m_projection_generation; job->revision = ++m_work_revision;
     owner->input = m_core_state; owner->previous = m_published;
@@ -355,8 +360,10 @@ void TransactionActivityModel::planned(const std::shared_ptr<Job>& job)
     }
     const bool needs_read = job->work.reload || job->work.labels || job->work.statuses || job->work.poll || job->work.details || !job->work.transactions.isEmpty();
     if (!needs_read) { owner.result = std::make_shared<const Snapshot>(std::move(input)); project(job); return; }
+    job->native_revision = job->opening->transactionRevision();
     const auto admitted = job->opening->read([job, input = std::move(input)](interfaces::Wallet& wallet) mutable {
-        return std::make_shared<const Snapshot>(readSnapshot(wallet, std::move(input), job->work, *job->cancelled));
+        return std::make_shared<const Snapshot>(activitystore::Reader::read(wallet, std::move(input), job->work,
+                                                                            *job->cancelled, job->native_revision));
     }, [job](std::shared_ptr<const Snapshot> result) {
         job->owner->result = std::move(result); readCompleted(job);
     }, [job](std::exception_ptr) { job->owner->error = tr("Wallet activity could not be loaded. Try again."); job->mailbox->publish(job); });
@@ -504,8 +511,19 @@ void TransactionActivityModel::receive()
         if (!observer || m_stopped) return;
     }
     if (!ready || ready != m_active) return;
+    const quint64 native_revision = ready->owner->result ? ready->owner->result->transaction_revision : ready->native_revision;
+    const bool native_snapshot_changed = m_opening && native_revision != m_opening->transactionRevision();
+    if (ready->work.supersededBy(m_reader_revisions) || native_snapshot_changed) {
+        m_pending.merge(ready->work);
+        if (native_snapshot_changed) m_pending.reload = true;
+        m_active.reset(); m_work_pending = false;
+        m_loading = true;
+        schedule();
+        return;
+    }
     if (!ready->owner->error.isEmpty()) {
         if (ready->detail_generation != m_detail_generation || ready->projection_generation != m_projection_generation) {
+            m_pending.merge(ready->work);
             m_pending.projection = true; m_active.reset(); m_work_pending = false; schedule(); return;
         }
         const bool newer = !m_pending.empty();
@@ -661,172 +679,6 @@ QHash<int, QByteArray> TransactionActivityModel::roles()
         {HasPaymentRequestRole, "hasPaymentRequest"}, {SearchTextRole, "searchText"},
         {BlocksToMaturityRole, "blocksToMaturity"},
     };
-}
-
-
-namespace {
-QString AddressLabel(interfaces::Wallet& wallet, const QString& address)
-{
-    if (address.isEmpty()) return {};
-    const auto destination = DecodeDestination(address.toStdString());
-    if (!IsValidDestination(destination)) return {};
-    std::string label;
-    if (wallet.getAddress(destination, &label, nullptr)) return QString::fromStdString(label);
-    return {};
-}
-}
-
-void TransactionActivityModel::updateLabels(interfaces::Wallet& wallet, Record& record)
-{
-    record.labels.clear();
-    for (const auto& action : record.activity.actions) {
-        record.labels.append(AddressLabel(wallet, action.address));
-    }
-}
-
-bool TransactionActivityModel::updateStatus(interfaces::Wallet& wallet, Record& record)
-{
-    interfaces::WalletTxStatus status{};
-    int blocks{0};
-    int64_t block_time{0};
-    const uint256 txid{uint256::FromHex(record.activity.txid.toStdString()).value()};
-    if (!wallet.tryGetTxStatus(Txid::FromUint256(txid), status, blocks, block_time)) {
-        // A busy wallet is not a missing transaction. Waiting for its public
-        // detail read is safe here on the original opening's Native lane and
-        // avoids postponing a valid status until another polling deadline.
-        std::vector<std::string> messages, payment_requests;
-        bool in_mempool{false};
-        if (!wallet.getWalletTxDetails(Txid::FromUint256(txid),status,messages,payment_requests,in_mempool,blocks).tx) return false;
-    }
-
-    record.status_known = true;
-    record.depth = status.depth_in_main_chain;
-    record.blocks_to_maturity = status.blocks_to_maturity;
-    record.block_height = record.depth > 0 ? status.block_height : 0;
-    if (record.activity.type == Type::Mined) {
-        record.status = !status.is_in_main_chain ? Transaction::NotAccepted
-            : status.blocks_to_maturity > 0 ? Transaction::Immature : Transaction::Confirmed;
-    } else {
-        record.status = record.depth < 0 ? Transaction::Conflicted
-            : status.is_abandoned ? Transaction::Abandoned
-            : record.depth == 0 ? Transaction::Unconfirmed
-            : record.depth < 6 ? Transaction::Confirming : Transaction::Confirmed;
-    }
-    return true;
-}
-
-
-TransactionActivityModel::Snapshot TransactionActivityModel::readSnapshot(
-    interfaces::Wallet& wallet, Snapshot snapshot, const Work& work, const std::atomic_bool& cancelled)
-{
-    snapshot.rows_changed = snapshot.details_changed = false;
-    const auto read_record = [&](const interfaces::WalletTx& wtx) {
-        auto activity = TransactionActivity::fromWalletTx(wtx);
-        if (!activity) return;
-        Record record = snapshot.records.value(activity->txid);
-        record.activity = std::move(*activity);
-        record.transaction = wtx.tx;
-        record.inputs_mine = wtx.txin_is_mine;
-        record.outputs_mine = wtx.txout_is_mine;
-        record.outputs_change = wtx.txout_is_change;
-        updateLabels(wallet, record);
-        if (updateStatus(wallet, record)) snapshot.retry.remove(record.activity.txid);
-        else snapshot.retry.insert(record.activity.txid);
-        snapshot.records.insert(record.activity.txid, record);
-    };
-    if (work.reload) {
-        QSet<QString> present;
-        for (const auto& wtx : wallet.getWalletTxs()) {
-            if (cancelled.load()) return snapshot;
-            if (wtx.tx) present.insert(QString::fromStdString(wtx.tx->GetHash().ToString()));
-            read_record(wtx);
-        }
-        for (auto it = snapshot.records.begin(); it != snapshot.records.end();) {
-            if (!present.contains(it.key())) {
-                snapshot.retry.remove(it.key());
-                it = snapshot.records.erase(it);
-            } else ++it;
-        }
-        snapshot.history_loaded = true;
-    }
-    for (const auto& txid : work.transactions) {
-        if (cancelled.load()) return snapshot;
-        const auto hash = uint256::FromHex(txid.toStdString());
-        if (!hash) continue;
-        const auto tx = wallet.getWalletTx(Txid::FromUint256(*hash));
-        if (tx.tx) read_record(tx);
-        else { snapshot.records.remove(txid); snapshot.retry.remove(txid); }
-    }
-    if (work.labels) {
-        for (auto& record : snapshot.records) {
-            if (cancelled.load()) return snapshot;
-            updateLabels(wallet, record);
-        }
-    }
-    bool statuses = work.statuses;
-    if (work.poll) {
-        interfaces::WalletBalances balances{};
-        uint256 tip;
-        if (wallet.tryGetBalances(balances, tip) && (!snapshot.tip || *snapshot.tip != tip)) {
-            snapshot.tip = tip;
-            statuses = true;
-        }
-    }
-    const bool retry = work.poll && !snapshot.retry.isEmpty();
-    if (statuses || retry) {
-        for (auto& record : snapshot.records) {
-            if (cancelled.load()) return snapshot;
-            if (!statuses && !snapshot.retry.contains(record.activity.txid)) continue;
-            if (updateStatus(wallet, record)) snapshot.retry.remove(record.activity.txid);
-            else snapshot.retry.insert(record.activity.txid);
-        }
-    }
-    snapshot.rows_changed = work.reload || work.labels || statuses || retry || !work.transactions.isEmpty();
-    snapshot.details_changed = work.details || snapshot.rows_changed;
-    if (snapshot.detail_txid.isEmpty() || !snapshot.details_changed || cancelled.load()) return snapshot;
-
-    // A send-result link may arrive before its queued transaction notification.
-    const auto hash = uint256::FromHex(snapshot.detail_txid.toStdString());
-    if (hash && !snapshot.records.contains(snapshot.detail_txid)) {
-        read_record(wallet.getWalletTx(Txid::FromUint256(*hash)));
-        snapshot.rows_changed = true;
-    }
-    snapshot.detail_missing = !hash || !snapshot.records.contains(snapshot.detail_txid);
-    snapshot.can_bump = false;
-    if (snapshot.detail_missing) { snapshot.flow.clear(); return snapshot; }
-    if (!snapshot.flow_resolved || snapshot.flow.isEmpty() || work.reload || !work.transactions.isEmpty()) {
-        const auto wtx = wallet.getWalletTx(Txid::FromUint256(*hash));
-        if (!wtx.tx) { snapshot.detail_missing = true; snapshot.flow.clear(); return snapshot; }
-        std::map<Txid, CTransactionRef> parents;
-        std::vector<std::optional<CTxOut>> prevouts;
-        if (!wtx.tx->IsCoinBase()) {
-            for (const auto& input : wtx.tx->vin) {
-                if (cancelled.load()) return snapshot;
-                auto [it, inserted] = parents.try_emplace(input.prevout.hash);
-                if (inserted) it->second = wallet.getTx(input.prevout.hash);
-                prevouts.push_back(it->second && input.prevout.n < it->second->vout.size()
-                    ? std::optional{it->second->vout[input.prevout.n]} : std::nullopt);
-            }
-        }
-        snapshot.flow = BuildTransactionFlow(wtx, prevouts);
-        snapshot.flow_resolved = true;
-        snapshot.raw_transaction = QString::fromStdString(EncodeHexTx(*wtx.tx));
-        snapshot.detail_labels.clear();
-    }
-    if (work.labels) snapshot.detail_labels.clear();
-    for (const QString& side : {QStringLiteral("inputs"), QStringLiteral("outputs")}) {
-        for (const auto& value : snapshot.flow.value(side).toList()) {
-            if (cancelled.load()) return snapshot;
-            const auto address = value.toMap().value("address").toString();
-            if (!snapshot.detail_labels.contains(address)) snapshot.detail_labels.insert(address, AddressLabel(wallet, address));
-        }
-    }
-    const auto record_it = snapshot.records.constFind(snapshot.detail_txid);
-    const auto& record = record_it.value();
-    if (record.status_known && record.status == Transaction::Unconfirmed && record.activity.replaced_by_txid.isEmpty()) {
-        snapshot.can_bump = wallet.transactionCanBeBumped(Txid::FromUint256(*hash));
-    }
-    return snapshot;
 }
 
 

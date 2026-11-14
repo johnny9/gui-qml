@@ -129,6 +129,55 @@ private Q_SLOTS:
                                                        : QStringLiteral("Transactions may appear as your wallet catches up."));
     }
 
+    void activityReaderTracksCoinbaseMaturityAndReorgThroughPublicCoreRpc()
+    {
+        UniValue address_params{UniValue::VARR};
+        address_params.push_back("Activity status integration");
+        const QString address = QString::fromStdString(
+            qmltest::Rpc(m_app, "getnewaddress", address_params, m_wallet->name()).get_str());
+
+        UniValue mine_one{UniValue::VARR};
+        mine_one.push_back(1);
+        mine_one.push_back(address.toStdString());
+        const auto first_block = qmltest::Rpc(m_app, "generatetoaddress", mine_one)[0].get_str();
+        UniValue block_params{UniValue::VARR};
+        block_params.push_back(first_block);
+        const auto coinbase = QString::fromStdString(
+            qmltest::Rpc(m_app, "getblock", block_params).find_value("tx")[0].get_str());
+
+        const auto activity = m_wallet->transactionActivityModel();
+        const auto row_for_coinbase = [&] {
+            const int row = activity->activityRowForId(QStringLiteral("tx:") + coinbase);
+            return row < 0 ? QModelIndex{} : activity->index(row, 0);
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(row_for_coinbase().isValid(), 30'000);
+        QTRY_COMPARE_WITH_TIMEOUT(row_for_coinbase().data(TransactionActivityModel::StatusRole).toInt(),
+                                  int(Transaction::Immature), 30'000);
+        QVERIFY(row_for_coinbase().data(TransactionActivityModel::BlocksToMaturityRole).toInt() > 0);
+
+        UniValue mine_maturity{UniValue::VARR};
+        mine_maturity.push_back(100);
+        mine_maturity.push_back(address.toStdString());
+        qmltest::Rpc(m_app, "generatetoaddress", mine_maturity);
+        QTRY_COMPARE_WITH_TIMEOUT(row_for_coinbase().data(TransactionActivityModel::StatusRole).toInt(),
+                                  int(Transaction::Confirmed), 30'000);
+        QCOMPARE(row_for_coinbase().data(TransactionActivityModel::BlocksToMaturityRole).toInt(), 0);
+
+        UniValue invalidate_params{UniValue::VARR};
+        invalidate_params.push_back(first_block);
+        qmltest::Rpc(m_app, "invalidateblock", invalidate_params);
+        QTRY_COMPARE_WITH_TIMEOUT(row_for_coinbase().data(TransactionActivityModel::StatusRole).toInt(),
+                                  int(Transaction::NotAccepted), 30'000);
+        QVERIFY(row_for_coinbase().data(TransactionActivityModel::IsInactiveRole).toBool());
+
+        UniValue reconsider_params{UniValue::VARR};
+        reconsider_params.push_back(first_block);
+        qmltest::Rpc(m_app, "reconsiderblock", reconsider_params);
+        QTRY_COMPARE_WITH_TIMEOUT(row_for_coinbase().data(TransactionActivityModel::StatusRole).toInt(),
+                                  int(Transaction::Confirmed), 30'000);
+        QVERIFY(!row_for_coinbase().data(TransactionActivityModel::IsInactiveRole).toBool());
+    }
+
     void searchAndTypeFiltersExportOnlyMatchingLiveRows()
     {
         QVERIFY(createPendingRequestAndMiningReward());

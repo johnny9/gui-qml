@@ -94,6 +94,13 @@ struct ReadGate {
     void wait() { if (enabled.exchange(false)) { entered.release(); release.acquire(); } }
 };
 
+struct RepeatingReadGate {
+    QSemaphore entered, release;
+    std::atomic<int> calls{0};
+    std::atomic_bool called_on_gui{false};
+    void wait() { called_on_gui.store(QThread::currentThread() == qApp->thread()); ++calls; entered.release(); release.acquire(); }
+};
+
 class ActivityWallet : public StubWallet
 {
 public:
@@ -110,7 +117,9 @@ public:
     int bump_reads{0};
     std::atomic_bool blocking_read_on_gui{false};
     bool fail_history{false};
-    std::shared_ptr<ReadGate> history_gate, parent_gate, bump_gate;
+    std::atomic_bool fail_next_history{false};
+    std::shared_ptr<ReadGate> history_gate, try_status_gate, parent_gate, bump_gate;
+    std::shared_ptr<RepeatingReadGate> repeated_status_gate;
     void blockingRead() { if (QThread::currentThread() == qApp->thread()) blocking_read_on_gui = true; }
     bool external_signer{false};
     int address_writes{0};
@@ -118,6 +127,7 @@ public:
     std::atomic_bool busy{false};
     bool snapshot_on_worker{false};
     std::atomic<uint8_t> tip{1};
+    std::atomic<int> balance_reads{0};
     int status_reads{0};
     int label_reads{0};
     int snapshots{0};
@@ -147,7 +157,7 @@ public:
         std::set<interfaces::WalletTx> result;
         for (const auto& [id, tx] : transactions) result.insert(tx);
         if (history_gate) history_gate->wait();
-        if (fail_history) throw std::runtime_error("wallet read failed");
+        if (fail_history || fail_next_history.exchange(false)) throw std::runtime_error("wallet read failed");
         return result;
     }
     interfaces::WalletTx getWalletTx(const Txid& id) override
@@ -171,12 +181,15 @@ public:
         ++status_reads;
         if (busy || !statuses.contains(id)) return false;
         status = statuses.at(id);
+        if (repeated_status_gate) repeated_status_gate->wait();
+        if (try_status_gate) try_status_gate->wait();
         height = 100;
         time = 1'789'200'000;
         return true;
     }
     bool tryGetBalances(interfaces::WalletBalances& balances, uint256& hash) override
     {
+        ++balance_reads;
         if (busy) return false;
         hash = uint256{tip.load()};
         balances.balance = 10 * COIN;
@@ -300,12 +313,39 @@ struct Fixture {
     void request(const QmlRecentRequestEntry& value) { requests({value}, false); }
 };
 
+struct ManualPollClock {
+    std::chrono::milliseconds now{0};
+    std::optional<std::chrono::milliseconds> due;
+    std::function<void()> callback;
+
+    void schedule(std::chrono::milliseconds delay, std::function<void()> next)
+    {
+        due = now + delay;
+        callback = std::move(next);
+    }
+    void cancel()
+    {
+        due.reset();
+        callback = {};
+    }
+    bool advance(std::chrono::milliseconds duration)
+    {
+        now += duration;
+        if (!due || now < *due || !callback) return false;
+        auto expired = std::exchange(callback, {});
+        due.reset();
+        expired();
+        return true;
+    }
+};
+
 struct ManualActivityFixture {
     ManualExecutionEnvironment& environment;
     std::shared_ptr<ActivityWallet> state;
     std::unique_ptr<WalletQmlModel> wallet;
     std::unique_ptr<Model> activity;
     std::shared_ptr<BackendExecutor> backend;
+    ManualPollClock poll_clock;
     std::function<void()> poll;
     ManualActivityFixture(ManualExecutionEnvironment& env, std::shared_ptr<ActivityWallet> original)
         : environment(env), state(std::move(original)) {
@@ -315,7 +355,11 @@ struct ManualActivityFixture {
         backend = wallet->backendExecutor();
         if (!QTest::qWaitFor([&] { settle(); return wallet->capabilitiesKnown() && wallet->property("receiveRequestsLoaded").toBool() && !wallet->receiveRequestReconciliationPending(); }, 5000)) QTest::qFail("Manual activity opening did not settle", __FILE__, __LINE__);
         Model::Services services; services.post = post;
-        services.schedule_poll = [this](auto, auto callback) { poll = std::move(callback); }; services.cancel_poll = [this] { poll = {}; };
+        services.schedule_poll = [this](auto delay, auto callback) {
+            poll_clock.schedule(delay, callback);
+            poll = std::move(callback);
+        };
+        services.cancel_poll = [this] { poll_clock.cancel(); poll = {}; };
         activity = std::make_unique<Model>(wallet.get(), std::move(services));
     }
     void settle() {
@@ -353,17 +397,25 @@ class TransactionActivityModelTests : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void manualProjectionWaitsForOutcomeAndGuiDelivery();
+    void manualStatusSnapshotPublishesOnlyAtGuiBoundary();
+    void pollTicksDoNotSupersedeHeldStatusRead();
     void manualAcceptedRawCopyRetainsOriginalDocumentAfterFacadeLoss();
     void entryDocumentRetainsCompleteLongTextAndAllRequestMetadata();
     void fullActionModelRetainsRowsBeyondBoundedActivityPreview();
     void historyReadsLeaveTheEventLoopFreeAndDiscardStaleSnapshots();
     void detailReadsDiscardPreviousSelectionsAndHandleMissingTransactions();
+    void detailRefreshResumesAfterStoreCatchesUp();
     void largeDetailPreviewDoesNotWaitForInputReads();
     void bumpEligibilityIsOnlyReadForTheSelectedTransaction();
     void deletingWalletDoesNotWaitForActivityReads();
     void readFailuresCanBeRetried();
+    void failedRefreshRetainsRowsAndCanRetry();
     void failedInitialHistoryRetainsWorkAfterNotification_data();
     void failedInitialHistoryRetainsWorkAfterNotification();
+    void obsoleteRefreshFailureCannotHideCurrentRows();
+    void obsoleteStatusSnapshotIsRejectedBeforeProjection();
+    void activityStatusPrecedenceRemainsCharacterized();
+    void readerWorkRevisionsRejectOnlyRelevantSuccessors();
     void opensNewTransactionBeforeItsNotification();
     void confirmationUpdatesAreBatchedAndPreserveAmountCaches();
     void copiesRawTransactionAndPublicPaymentRequest();
@@ -378,6 +430,7 @@ private Q_SLOTS:
     void groupsPendingMonthsAndDaysAndCountsParents();
     void groupsTransactionsInPendingUntilFirstConfirmation();
     void totalsPendingWalletImpactWithoutRequests();
+    void pendingTotalTracksReplacementRoleChangesWithoutCountChanges();
     void movesReplacedBatchToHistoryAndKeepsReplacementPending();
     void associatesRequestsPerOutputAndUpdatesLive();
     void usesPrivateRequestNotesWithoutChangingStoredData();
@@ -406,6 +459,98 @@ void TransactionActivityModelTests::manualProjectionWaitsForOutcomeAndGuiDeliver
     model->stop(); stale_deadline(); env.drain(); env.publishAll();
     QCOMPARE(model->rowCount(), 0); QVERIFY(!model->loading());
 }
+
+void TransactionActivityModelTests::manualStatusSnapshotPublishesOnlyAtGuiBoundary()
+{
+    ManualExecutionEnvironment env;
+    auto original = std::make_shared<ActivityWallet>();
+    const auto tx = MakeTx({{50'000, false}}, {{49'000, true}});
+    original->put(tx, 2);
+    ManualActivityFixture fixture{env, original};
+    fixture.settle();
+    auto* model = fixture.activity.get();
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->index(0).data(Model::DepthRole).toInt(), 2);
+
+    original->statuses[tx.tx->GetHash()].depth_in_main_chain = 5;
+    model->refreshStatuses();
+    QCoreApplication::processEvents();
+    QVERIFY(model->loading());
+    env.drain();
+    // Native and Domain work completed, but no GUI publication occurred.
+    QCOMPARE(model->index(0).data(Model::DepthRole).toInt(), 2);
+    QVERIFY(model->loading());
+    env.publishAll();
+    QCoreApplication::processEvents();
+    QCOMPARE(model->index(0).data(Model::DepthRole).toInt(), 5);
+    QVERIFY(!model->loading());
+}
+
+void TransactionActivityModelTests::pollTicksDoNotSupersedeHeldStatusRead()
+{
+    ManualExecutionEnvironment env;
+    auto original = std::make_shared<ActivityWallet>();
+    const auto tx = MakeTx({{50'000, false}}, {{49'000, true}});
+    original->put(tx, 2);
+    ManualActivityFixture fixture{env, original};
+    fixture.settle();
+    auto* model = fixture.activity.get();
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->index(0).data(Model::DepthRole).toInt(), 2);
+    original->blocking_read_on_gui = false; // Scope the affinity oracle to this poll sequence, after opening settles.
+
+    const int balances_before = original->balance_reads.load();
+    auto gate = std::make_shared<RepeatingReadGate>();
+    original->repeated_status_gate = gate;
+    original->statuses[tx.tx->GetHash()].depth_in_main_chain = 5;
+    original->tip = 2;
+    const auto release = qScopeGuard([&] { gate->release.release(8); });
+
+    QVERIFY(fixture.poll_clock.due.has_value());
+    QVERIFY(fixture.poll_clock.advance(std::chrono::milliseconds{1000}));
+    QCoreApplication::processEvents();
+    auto planning_turn = env.takeTurnFront(); QVERIFY(planning_turn);
+    QCOMPARE(planning_turn->phase, execution::Phase::Queued);
+    QVERIFY(planning_turn->turn);
+    planning_turn->turn(); // Run Domain planning; the Core read is now the next held turn.
+    auto held_read = env.takeTurnFront(); QVERIFY(held_read);
+    QCOMPARE(held_read->phase, execution::Phase::Queued);
+    QVERIFY(held_read->turn);
+    QSemaphore read_finished;
+    std::thread core_read{[turn = std::move(held_read->turn), &read_finished]() mutable {
+        turn();
+        read_finished.release();
+    }};
+    const auto finish_core_read = qScopeGuard([&] {
+        gate->release.release(8);
+        if (core_read.joinable()) core_read.join();
+    });
+    QTRY_VERIFY(gate->entered.available() > 0);
+    QVERIFY(!gate->called_on_gui.load());
+    QCOMPARE(gate->calls.load(), 1);
+    QVERIFY(model->loading());
+    QCOMPARE(model->index(0).data(Model::DepthRole).toInt(), 2);
+
+    // Multiple timer intents during the same Native read coalesce. They must
+    // not invent new Core-data revisions that continually discard the read.
+    for (int tick = 0; tick < 3; ++tick) {
+        QVERIFY(fixture.poll_clock.due.has_value());
+        QVERIFY(fixture.poll_clock.advance(std::chrono::milliseconds{1000}));
+        QCoreApplication::processEvents();
+        QVERIFY(model->loading());
+        QCOMPARE(model->index(0).data(Model::DepthRole).toInt(), 2);
+    }
+
+    gate->release.release(8);
+    QVERIFY(QTest::qWaitFor([&] { return read_finished.available() > 0; }, 5000));
+    core_read.join();
+    QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !model->loading(); }, 5000));
+    QCOMPARE(gate->calls.load(), 1);
+    QCOMPARE(original->balance_reads.load(), balances_before + 2); // Held read plus one coalesced follow-up.
+    QCOMPARE(model->index(0).data(Model::DepthRole).toInt(), 5);
+    QVERIFY(!original->blocking_read_on_gui);
+}
+
 void TransactionActivityModelTests::manualAcceptedRawCopyRetainsOriginalDocumentAfterFacadeLoss()
 {
     ManualExecutionEnvironment env; auto original = std::make_shared<ActivityWallet>();
@@ -570,6 +715,43 @@ void TransactionActivityModelTests::detailReadsDiscardPreviousSelectionsAndHandl
     QVERIFY(!f.state->blocking_read_on_gui);
 }
 
+void TransactionActivityModelTests::detailRefreshResumesAfterStoreCatchesUp()
+{
+    Fixture f;
+    const auto tx = MakeTx({{50'000, true}}, {{49'000, false}});
+    f.state->put(tx, 2);
+    auto* source = f.model();
+
+    auto gate = std::make_shared<ReadGate>();
+    f.state->parent_gate = gate;
+    const auto release = qScopeGuard([&] { gate->release.release(); });
+    QObject view_owner;
+    std::unique_ptr<ActivityDetailModel> detail{source->createDetailView(&view_owner)};
+    detail->setActive(true);
+    detail->setTransactionId(Id(tx));
+    QTRY_VERIFY(gate->entered.available() > 0);
+    QVERIFY(detail->pending());
+
+    const auto old_revision = f.wallet->opening()->transactionRevision();
+    QSignalSpy transaction_changed{f.wallet.get(), &WalletQmlModel::transactionChanged};
+    f.state->put(tx, 5);
+    f.state->notify(tx, CT_UPDATED);
+    QVERIFY(f.wallet->opening()->transactionRevision() > old_revision);
+
+    // The old held detail read completes after the notification has advanced
+    // the opening. Its result must be discarded, then retried against the
+    // newly published activity snapshot.
+    gate->release.release();
+    QTRY_COMPARE(transaction_changed.count(), 1);
+    QVERIFY(QTest::qWaitFor([&] {
+        return detail->state() == ActivityDetailModel::Ready &&
+            detail->selectedTransactionDetails().value("depth").toInt() == 5;
+    }, 5000));
+    QCOMPARE(source->index(0).data(Model::DepthRole).toInt(), 5);
+    QVERIFY(detail->error().isEmpty());
+    QVERIFY(!f.state->blocking_read_on_gui);
+}
+
 void TransactionActivityModelTests::largeDetailPreviewDoesNotWaitForInputReads()
 {
     Fixture f;
@@ -718,6 +900,32 @@ void TransactionActivityModelTests::readFailuresCanBeRetried()
     QCOMPARE(model->rowCount(), 1);
 }
 
+void TransactionActivityModelTests::failedRefreshRetainsRowsAndCanRetry()
+{
+    Fixture f;
+    const auto tx = MakeTx({{50'000, false}}, {{49'000, true}});
+    f.state->put(tx);
+    auto* model = f.model();
+    const auto stable_id = model->index(0).data(Model::IdRole);
+    QVERIFY(!stable_id.toString().isEmpty());
+
+    f.state->fail_history = true;
+    model->reload();
+    Wait(model);
+    QVERIFY(!model->loadError().isEmpty());
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->index(0).data(Model::IdRole), stable_id);
+    QVERIFY(!model->initialLoading());
+    QVERIFY(!model->refreshing());
+
+    f.state->fail_history = false;
+    model->reload();
+    Wait(model);
+    QVERIFY(model->loadError().isEmpty());
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->index(0).data(Model::IdRole), stable_id);
+}
+
 void TransactionActivityModelTests::failedInitialHistoryRetainsWorkAfterNotification_data()
 {
     QTest::addColumn<bool>("retry_fails");
@@ -757,6 +965,128 @@ void TransactionActivityModelTests::failedInitialHistoryRetainsWorkAfterNotifica
     QVERIFY(Find(*model, Id(old_tx)).isValid());
     QVERIFY(Find(*model, Id(new_tx)).isValid());
     QVERIFY(!f.state->blocking_read_on_gui);
+}
+
+void TransactionActivityModelTests::obsoleteRefreshFailureCannotHideCurrentRows()
+{
+    Fixture f;
+    const auto old_tx = MakeTx({{50'000, false}}, {{49'000, true}});
+    const auto deleted_tx = MakeTx({{60'000, false}}, {{59'000, true}});
+    f.state->put(old_tx);
+    f.state->put(deleted_tx);
+    auto* model = f.model();
+    QCOMPARE(model->rowCount(), 2);
+
+    const auto gate = std::make_shared<ReadGate>();
+    f.state->history_gate = gate;
+    f.state->fail_next_history = true;
+    model->reload();
+    QTRY_VERIFY(gate->entered.available() > 0);
+
+    // The held read has already captured the old history set. A deletion
+    // notification supersedes that read while its final failure is pending.
+    f.state->transactions.erase(deleted_tx.tx->GetHash());
+    f.state->statuses.erase(deleted_tx.tx->GetHash());
+    Q_EMIT f.wallet->transactionChanged(Id(deleted_tx), CT_DELETED);
+    bool surfaced_error{false};
+    connect(model, &Model::loadingChanged, model, [&] { surfaced_error |= !model->loadError().isEmpty(); });
+    gate->release.release();
+
+    QTRY_VERIFY(!model->loading());
+    QCOMPARE(model->rowCount(), 1);
+    QVERIFY(Find(*model, Id(old_tx)).isValid());
+    QVERIFY(!Find(*model, Id(deleted_tx)).isValid());
+    QVERIFY(model->loadError().isEmpty());
+    QVERIFY(!surfaced_error);
+    QVERIFY(!f.state->blocking_read_on_gui);
+}
+
+void TransactionActivityModelTests::obsoleteStatusSnapshotIsRejectedBeforeProjection()
+{
+    Fixture f;
+    const auto tx = MakeTx({{50'000, false}}, {{49'000, true}});
+    f.state->put(tx, 6);
+    auto* model = f.model();
+    const auto row = Find(*model, Id(tx));
+    QVERIFY(row.isValid());
+    QCOMPARE(row.data(Model::DepthRole).toInt(), 6);
+
+    const auto gate = std::make_shared<ReadGate>();
+    f.state->try_status_gate = gate;
+    f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 2;
+    model->refreshStatuses();
+    QTRY_VERIFY(gate->entered.available() > 0);
+
+    // The old status value has been copied by the Native read. A successor
+    // update arrives before it can finish, so that obsolete value must never
+    // be projected between the old and current snapshot.
+    f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 6;
+    model->refreshStatuses();
+    QSignalSpy changes{model, &QAbstractItemModel::dataChanged};
+    gate->release.release();
+    QTRY_VERIFY(!model->loading());
+    QCOMPARE(row.data(Model::DepthRole).toInt(), 6);
+    QCOMPARE(changes.count(), 0);
+    QVERIFY(!f.state->blocking_read_on_gui);
+}
+
+void TransactionActivityModelTests::activityStatusPrecedenceRemainsCharacterized()
+{
+    TransactionActivity generated;
+    generated.type = TransactionActivity::Type::Mined;
+    interfaces::WalletTxStatus generated_status{};
+    generated_status.is_in_main_chain = false;
+    generated_status.blocks_to_maturity = 0;
+    QCOMPARE(activitystore::Reader::status(generated, generated_status), Transaction::NotAccepted);
+
+    // The legacy Transaction object intentionally has a different mature
+    // orphan predicate. Keep this as an explicit characterization until the
+    // UI/domain product decision chooses one shared meaning.
+    Transaction legacy_generated{uint256{1}, 1, Transaction::Generated, {}, 0, 0};
+    legacy_generated.updateStatus(generated_status, 0, 0);
+    QCOMPARE(legacy_generated.status, Transaction::Confirmed);
+
+    TransactionActivity ordinary;
+    ordinary.type = TransactionActivity::Type::Send;
+    interfaces::WalletTxStatus ordinary_status{};
+    ordinary_status.depth_in_main_chain = -1;
+    ordinary_status.is_abandoned = true;
+    QCOMPARE(activitystore::Reader::status(ordinary, ordinary_status), Transaction::Conflicted);
+    ordinary_status.depth_in_main_chain = 0;
+    QCOMPARE(activitystore::Reader::status(ordinary, ordinary_status), Transaction::Abandoned);
+    ordinary_status.depth_in_main_chain = 5;
+    ordinary_status.is_abandoned = false;
+    QCOMPARE(activitystore::Reader::status(ordinary, ordinary_status), Transaction::Confirming);
+}
+
+void TransactionActivityModelTests::readerWorkRevisionsRejectOnlyRelevantSuccessors()
+{
+    activitystore::Work transaction_read;
+    transaction_read.transactions.insert(QStringLiteral("tx-a"));
+    transaction_read.revisions = {3, 7, 11, 13, 17};
+
+    auto latest = transaction_read.revisions;
+    ++latest.details;
+    QVERIFY(!transaction_read.supersededBy(latest));
+    ++latest.labels;
+    QVERIFY(transaction_read.supersededBy(latest));
+
+    activitystore::Work history_read;
+    history_read.reload = true;
+    history_read.revisions = {3, 7, 11, 13, 17};
+    latest = history_read.revisions;
+    ++latest.transactions;
+    QVERIFY(history_read.supersededBy(latest));
+
+    activitystore::Work merged;
+    merged.transactions.insert(QStringLiteral("tx-a"));
+    merged.revisions = {3, 7, 11, 13, 17};
+    activitystore::Work newer;
+    newer.transactions.insert(QStringLiteral("tx-b"));
+    newer.revisions = {3, 8, 11, 13, 17};
+    merged.merge(newer);
+    QCOMPARE(merged.transactions.size(), 2);
+    QCOMPARE(merged.revisions.transactions, quint64{8});
 }
 
 void TransactionActivityModelTests::confirmationUpdatesAreBatchedAndPreserveAmountCaches()
@@ -1318,6 +1648,46 @@ void TransactionActivityModelTests::totalsPendingWalletImpactWithoutRequests()
     QCOMPARE(proxy.pendingBalanceSat(), 0);
 }
 
+void TransactionActivityModelTests::pendingTotalTracksReplacementRoleChangesWithoutCountChanges()
+{
+    Fixture f;
+    auto transaction = MakeTx({{120'000, true}}, {{60'000, false}, {59'000, true, true, 2}});
+    f.state->put(transaction, 0);
+    auto* source = f.model();
+    Proxy proxy;
+    proxy.setSourceModel(source);
+    WaitProxy(proxy);
+    QCOMPARE(proxy.rowCount(), 1);
+    const auto pending = proxy.pendingBalanceSat();
+    QVERIFY(pending < 0);
+
+    QSignalSpy changed(&proxy, &Proxy::pendingBalanceChanged);
+    const auto replacement_id = Id(MakeTx({{120'000, true}}, {{118'000, false}}));
+    transaction.replaced_by_txid = Txid::FromHex(replacement_id.toStdString());
+    f.state->put(transaction, 0);
+    QSignalSpy transaction_changed{f.wallet.get(), &WalletQmlModel::transactionChanged};
+    f.state->notify(transaction, CT_UPDATED);
+    QTRY_COMPARE(transaction_changed.count(), 1);
+    QTRY_VERIFY(!source->loading());
+    WaitProxy(proxy);
+    QCOMPARE(proxy.rowCount(), 1);
+    QVERIFY(Find(proxy, Id(transaction)).data(Model::IsInactiveRole).toBool());
+    QCOMPARE(proxy.pendingBalanceSat(), 0);
+    QVERIFY(!changed.empty());
+
+    changed.clear();
+    transaction_changed.clear();
+    transaction.replaced_by_txid = {};
+    f.state->put(transaction, 0);
+    f.state->notify(transaction, CT_UPDATED);
+    QTRY_COMPARE(transaction_changed.count(), 1);
+    QTRY_VERIFY(!source->loading());
+    WaitProxy(proxy);
+    QCOMPARE(proxy.rowCount(), 1);
+    QCOMPARE(proxy.pendingBalanceSat(), pending);
+    QVERIFY(!changed.empty());
+}
+
 void TransactionActivityModelTests::movesReplacedBatchToHistoryAndKeepsReplacementPending()
 {
     Fixture f;
@@ -1348,6 +1718,7 @@ void TransactionActivityModelTests::movesReplacedBatchToHistoryAndKeepsReplaceme
     QCOMPARE(Find(proxy, Id(original)).data(Proxy::SectionKeyRole).toString(), QString("2026-09"));
     WaitProxy(proxy);
     QCOMPARE(Find(proxy, Id(replacement)).data(Proxy::SectionKeyRole).toString(), QString("pending"));
+    QCOMPARE(proxy.pendingBalanceSat(), qint64{-102'000}); // The replaced parent contributes no second pending debit.
     WaitProxy(proxy);
     QCOMPARE(proxy.index(0, 0).data(Model::TxidRole).toString(), Id(replacement));
     WaitProxy(proxy);
@@ -1388,6 +1759,7 @@ void TransactionActivityModelTests::movesReplacedBatchToHistoryAndKeepsReplaceme
     Wait(source);
     WaitProxy(proxy);
     QCOMPARE(Find(proxy, Id(replacement)).data(Proxy::SectionKeyRole).toString(), QString("2026-09-15"));
+    QCOMPARE(proxy.pendingBalanceSat(), 0);
 
     // An original that confirms must not be zeroed by stale replacement metadata.
     f.state->statuses[original.tx->GetHash()].depth_in_main_chain = 6;
