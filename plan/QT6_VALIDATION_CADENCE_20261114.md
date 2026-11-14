@@ -46,3 +46,20 @@ lifetimes, and an assertion before an existing color animation completed. They
 were test bugs, not new targeting mechanisms or production fixes. The per-run
 validation wrappers were separate orchestration/evidence scripts using existing
 selectors; retain their historical artifacts, but do not repeat that pattern.
+
+## Implemented focused tooling improvements
+
+The user's follow-up authorizes clear improvements that speed implementation.
+Use `test/run_focused.py` with a versioned JSON selection manifest for shared
+unit/QML/integration execution and reporting; do not copy its logic into a new
+worker script. It discovers CTest metadata once and unit classes once, preserves
+registered resource paths/rendering/warning policies, checks actual bodies and
+keeps raw exits/reports. Discovery is not test execution. Unbuilt unrelated
+targets do not require a full build.
+
+The unit executable supplies cheap `--list-test-classes` and explicit
+`--test-class=NAME`; class typos and explicit empty selectors fail before test
+setup. `ci/clang_tidy.py --files PATH ...` replaces temporary driver rewrites
+while retaining app MOCs and pinned checks. See the [shared tooling guide](../doc/focused-testing.md).
+These changes affect test infrastructure only; they do not start R11, change
+Core, or close the remaining final R42 qualifications.

@@ -16,6 +16,12 @@ add_test(NAME bitcoinqml_process_checks
 add_test(NAME bitcoinqml_dev_resources
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_qml_dev_resources.py
 )
+add_test(NAME bitcoinqml_focused_runner
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_run_focused.py
+)
+add_test(NAME bitcoinqml_tidy_selection
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_clang_tidy_selection.py
+)
 
 add_test(NAME bitcoinqml_test_directory_checks
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_test_directories.py
@@ -165,6 +171,11 @@ target_link_libraries(bitcoinqml_unit_tests
 )
 
 add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests -platform minimal)
+add_test(NAME bitcoinqml_unit_targeting
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_unit_targeting.py
+    $<TARGET_FILE:bitcoinqml_unit_tests>
+)
+set_tests_properties(bitcoinqml_unit_targeting PROPERTIES TIMEOUT 120)
 
 add_test(NAME bitcoinqml_fatal_exception_tests
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/qml_test_fatal_exceptions.py
@@ -306,7 +317,8 @@ set_tests_properties(bitcoinqml_qmlwarning_tests PROPERTIES TIMEOUT 120 LABELS q
 
 set(gui_test_environment "QT_QPA_PLATFORM=minimal;QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1")
 set_tests_properties(bitcoinqml_unit_tests bitcoinqml_bootstrap_tests bitcoinqml_fatal_exception_tests bitcoinqml_test_directory_checks
-  bitcoinqml_process_checks bitcoinqml_dev_resources PROPERTIES LABELS unit)
+  bitcoinqml_process_checks bitcoinqml_dev_resources bitcoinqml_focused_runner bitcoinqml_tidy_selection
+  bitcoinqml_unit_targeting PROPERTIES LABELS unit)
 set_tests_properties(${qml_test_names} PROPERTIES LABELS qml TIMEOUT 120)
 set_tests_properties(bitcoinqml_unit_tests bitcoinqml_bootstrap_tests ${qml_test_names} PROPERTIES
   ENVIRONMENT "${gui_test_environment}")

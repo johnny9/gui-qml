@@ -175,6 +175,16 @@ Focused runs execute the same fixtures and assertions as full runs. Selectors
 do not require a new executable or a change-specific harness. Record the actual
 executed cases and results; discovery output is not a passing test run.
 
+For several selections, use the [shared focused runner](doc/focused-testing.md)
+with a JSON manifest:
+
+```sh
+python3 test/run_focused.py --build-dir build --manifest test/focused.example.json --output-dir .validation/focused-example
+```
+
+It discovers configured commands once, preserves QML resource/warning policies,
+records actual cases and process results, and rejects empty or mismatched runs.
+
 For a faster QML editing loop on systems that support symbolic links, use a
 separate development build:
 
