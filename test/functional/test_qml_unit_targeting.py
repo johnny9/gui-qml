@@ -34,7 +34,7 @@ def disable_core_files():
 
 
 class UnitTargetingTests(unittest.TestCase):
-    binary = None
+    binary: str = ""
     retained_output = None
 
     @classmethod

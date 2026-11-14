@@ -123,7 +123,9 @@ int main(int argc, char* argv[])
             return name == QString::fromUtf8(entry.name);
         });
         if (!registered) {
-            std::fprintf(stderr, "Unknown Qt test class: %s\n", name.toUtf8().constData());
+            std::fputs("Unknown Qt test class: ", stderr);
+            std::fputs(name.toUtf8().constData(), stderr);
+            std::fputs("\n", stderr);
             return 2;
         }
     }
