@@ -115,6 +115,36 @@ public interfaces still requires a note, notification and user input before
 dependent work continues. Core remains unchanged. Continue independent work.
 Native Qt component defects retain the standing document/defer policy.
 
+## Four concurrent workstreams and integration
+
+Keep four ready implementation steps active when the dependency graph permits.
+Each step has one owner for implementation, its consumers, regressions and
+focused validation. Keep owners on related work where that preserves context;
+when a prerequisite would leave an owner idle, take another ready independent
+step. Prepare later dependent contracts/oracles during validation, but their
+acceptance waits for the required prerequisite gates.
+
+Use one primary host per workstream to retain compatible warm builds and cache
+contents. The current allocation is wallet creation on Gameboy, Send draft on
+the Mac VM, Activity on Bazzite and security/storage locally. This is build
+affinity rather than a platform substitution: mandatory pinned Linux analysis
+and integration still run on Linux through short explicit leases. Do not run
+competing writers in one tree or manufacture duplicate broad builds.
+
+Integrate each whole step promptly after its focused gate passes. Keep the
+accepted source/test identities and retain private development/negative-control
+history in evidence; integrate a reviewable accepted change. Active branches
+update when they need a newly accepted interface or before their own integration.
+Run affected wiring checks on the combined result; reserve exhaustive combined
+qualification for R42. Avoid accumulating all steps for one final merge.
+
+Source-export dispatch uses the parent coordinator's trusted authorization for
+johnny on the three named machines. Owners prepare an exact bounded source
+archive, manifest, hashes and dispatch command; the coordinator transfers it,
+then the owner retains build/test responsibility. Credentials and unrelated
+private workspace data are excluded. Do not ask again for an already authorized
+build transfer or bypass an approval rejection through another route.
+
 ## Parallel host allocation
 
 These are starting caps from the established hosts, not guaranteed future
