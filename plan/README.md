@@ -5,6 +5,8 @@ every work order. Keep focused ordinary correctness, manual timing/real-thread
 checks, relevant integration and changed-scope lint/tidy during implementation.
 R42 owns exhaustive coverage proof, full suites and configuration/platform
 matrices, native Windows and sanitizers. Final qualification remains pending.
+The [R11–R40 gate and host allocation](R11_R40_VALIDATION.md) is the current
+consolidated execution contract for the next implementation steps.
 
 R10's [focused checkpoint](R10_FOCUSED_CHECKPOINT_20261114.md) is complete;
 final qualification remains pending R42. Start with [current progress](PROGRESS.md)

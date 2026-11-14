@@ -1,5 +1,9 @@
 # Sanitizer cadence decision
 
+Use [R11–R40 validation and host allocation](R11_R40_VALIDATION.md) as the
+consolidated implementation-step contract. The decisions below retain their
+provenance; full final qualification remains due at R42.
+
 The user asked on 2026-11-14: “Run sanitizers and repair after all rXX are done?”
 Routine sanitizer builds, runs and sanitizer-only repairs are deferred until the implementation work orders are complete. R42 owns final combined-series sanitizer qualification and repairs; final acceptance cannot close before those checks pass.
 

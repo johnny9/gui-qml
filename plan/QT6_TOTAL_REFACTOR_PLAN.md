@@ -211,6 +211,10 @@ Real-thread tests are separately required for physical thread affinity, callback
 
 ## Validation cadence
 
+The current [R11–R40 gate and build distribution plan](R11_R40_VALIDATION.md)
+consolidates the amendments below. Use its focused ordinary checkpoint for
+each implementation order; exhaustive qualification remains at R42.
+
 **General targeting clarification (user instruction, 2026-11-14):** use the
 existing unit class/function/data-row, QML file/case and integration selectors
 for focused checks. Do not build change-specific harnesses or copy hard-coded
@@ -225,7 +229,7 @@ and the documented commands in the repository README.
 
 **Sanitizer cadence amendment — user instruction, 2026-11-14:** defer routine sanitizer builds, runs and sanitizer-only repairs until implementation work orders are complete. R42 owns final combined-series sanitizer qualification and repairs. Continue focused ordinary tests, manual timing/real-thread checks, lint, clang-tidy, coverage and relevant ordinary integration. Record implementation/ordinary-check completion separately from sanitizer qualification pending R42; do not claim full final acceptance before the final checks and repairs pass. Preserve existing results and unresolved findings. This amendment overrides earlier per-step sanitizer timing in this plan and worker orders, preserving all final scopes, options, Core boundaries and existing platform/Qt deferrals. See [the recorded decision](QT6_VALIDATION_CADENCE_20261114.md).
 
-**Current R10 user override (2026-11-12): implement all remaining R10 work before the next validation.** Do not run further builds, tests, lint, clang-tidy, sanitizers, coverage collection or platform checks while completing that implementation. Reading source, editing implementation/tests and maintaining the plan/evidence are allowed. Preserve existing qualified evidence, but mark subsequent code unvalidated. Finish the complete remaining R10 implementation first, then perform its required acceptance validation. This overrides the earlier incremental focused-check cadence for current R10 only; it does not weaken any acceptance criterion or authorize Core changes/R11. Pause and notify if a required fix genuinely cannot be implemented through allowed public interfaces.
+**Historical R10-only override (2026-11-12): implement all remaining R10 work before the next validation.** This applied to the then-active R10 implementation, now complete; it does not govern R11–R40. Do not run further builds, tests, lint, clang-tidy, sanitizers, coverage collection or platform checks while completing that implementation. Reading source, editing implementation/tests and maintaining the plan/evidence are allowed. Preserve existing qualified evidence, but mark subsequent code unvalidated. Finish the complete remaining R10 implementation first, then perform its required acceptance validation. This overrides the earlier incremental focused-check cadence for current R10 only; it does not weaken any acceptance criterion or authorize Core changes/R11. Pause and notify if a required fix genuinely cannot be implemented through allowed public interfaces.
 
 **Distributed validation amendment (user instruction, 2026-11-14):** when running
 validation, distribute independent builds and checks in parallel across
@@ -245,8 +249,8 @@ nonempty selectors and body counts, raw diagnostics and actual exits locally.
 Split independent configurations or disjoint test files; do not count the same
 test repeatedly as additional coverage or merge profiles from different ELFs.
 Only matching pinned tools qualify the corresponding CI gate. Supplementary
-native-host results retain their distinct scope and limitations. The existing
-Windows skip and deferred native Qt issue policy remain unchanged.
+native-host results retain their distinct scope and limitations. Native Windows
+is deferred to final R42, not permanently waived; native Qt issue deferrals remain.
 
 **QML test performance amendment (user instruction, 2026-11-14):** incorporate
 the performance changes from `johnny9/gui-qml:codex/qml-test-performance`, reviewed
@@ -263,9 +267,9 @@ or IPC startup/shutdown requirements.
 
 The user-directed `validation-cadence amendment <.validation/issue-remediation-pr1090-20261109/execution/coordinator/validation-cadence-20261112/REQUIREMENT.md>` applies to every work order, including current R10: use focused checks during implementation and run broad validation only when the work is ready for acceptance.
 
-During implementation, build affected targets and run the nonempty regression selectors that exercise the changed behavior. Use manual executors/clocks, real threads and actual model/QML/Core integration where relevant. Apply lint, clang-tidy and sanitizer checks to the affected scope using the pinned definitions. Do not rerun the full application suites, every integration group, complete coverage collection or the whole configuration/platform matrix after each edit or for a backend component whose intended production consumer is still unwired.
+During implementation, build affected targets and run the nonempty regression selectors that exercise the changed behavior. Use manual executors/clocks, real threads and actual model/QML/Core integration where relevant. Apply lint and clang-tidy to the affected scope using the pinned definitions; routine sanitizers remain due at R42. Do not rerun the full application suites, every integration group, complete coverage collection or the whole configuration/platform matrix after each edit or for a backend component whose intended production consumer is still unwired.
 
-An acceptance checkpoint is ready when the intended production consumers are wired, required behavior is implemented, focused regressions pass and known implementation blockers are resolved. Freeze the exact revision/source snapshot, then run the broad checks required by the gates below. This cadence preserves the existing acceptance criteria, coverage target, toolchain, sanitizer/IPC and platform obligations.
+An implementation checkpoint is ready when the intended production consumers are wired, required behavior is implemented, focused regressions pass and known implementation blockers are resolved. Record the exact source and focused results, then advance with final qualification pending R42. Run the full combined-series checks at final R42 readiness. This cadence preserves the final acceptance criteria, coverage target, toolchain, sanitizer/IPC and platform obligations.
 
 Retain passing evidence for unchanged scopes with explicit source/toolchain identities. Repeat checks only when new changes, failures or unresolved concerns invalidate their coverage. Repair an acceptance failure and rerun its affected checks; repeat a broader scope when integration changes invalidate that broader result. Keep incomplete gates explicit and never count an empty selection as passing.
 
