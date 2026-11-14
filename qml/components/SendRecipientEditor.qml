@@ -113,7 +113,9 @@ ColumnLayout {
             ? qsTr("Use maximum from selected coins") : qsTr("Use maximum")
         actionEnabled: root.wallet && !root.sendingMaximum
         actionObjectName: "sendUseMaximumButton"
-        supportingText: !root.sendingMaximum ? "" : root.selectedCoins
+        supportingText: !root.sendingMaximum ? ""
+            : root.wallet.fees && !root.wallet.fees.estimatePending && root.wallet.fees.errorText.length > 0
+            ? qsTr("Previous amount; maximum could not be calculated.") : root.selectedCoins
             ? qsTr("Sending maximum from selected coins") : qsTr("Sending maximum available")
         onActionRequested: root.wallet.useMaximumFor(root.recipient)
         BitcoinAmountInputField {

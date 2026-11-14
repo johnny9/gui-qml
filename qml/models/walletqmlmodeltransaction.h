@@ -36,6 +36,8 @@ class WalletQmlModelTransaction : public QObject
     Q_PROPERTY(QVariantList reviewedRecipients READ reviewedRecipients NOTIFY reviewedRecipientsChanged)
     Q_PROPERTY(int reviewTargetBlocks READ reviewTargetBlocks CONSTANT)
     Q_PROPERTY(QString reviewFeeRate READ reviewFeeRate CONSTANT)
+    Q_PROPERTY(int reviewFeeSource READ reviewFeeSource CONSTANT)
+    Q_PROPERTY(bool reviewUsesFallback READ reviewUsesFallback CONSTANT)
 public:
     WalletQmlModelTransaction(std::shared_ptr<const walletreview::Snapshot> snapshot,
         std::shared_ptr<walletopening::Session> opening, std::function<void(std::function<void()>)> post,
@@ -60,6 +62,8 @@ public:
     bool isReviewedRecipient(const QString& address) const;
     int reviewTargetBlocks() const { return m_review_target_blocks; }
     QString reviewFeeRate() const { return m_review_fee_rate; }
+    int reviewFeeSource() const { return m_review_fee_source; }
+    bool reviewUsesFallback() const { return m_review_fee_source == static_cast<int>(feeestimate::Provenance::Fallback); }
     const QMap<QString, QString>& recipientLabels() const { return m_recipient_labels; }
     const QSet<QString>& reviewedAddresses() const { return m_reviewed_addresses; }
     std::shared_ptr<const void> retainedValues() const { return m_review_lifetime; }
@@ -121,6 +125,7 @@ private:
     void refreshRecipientPresentation();
     int m_review_target_blocks{0};
     QString m_review_fee_rate;
+    int m_review_fee_source{0};
     CAmount m_amount;
     CAmount m_fee{0};
     bool m_fee_known{false};

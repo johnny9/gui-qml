@@ -262,7 +262,7 @@ struct DrainWalletModel {
         // for both the public completion and physical worker drain.
         if (!QTest::qWaitFor([&] {
                 QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-                return backend->isDrained() && (!observer || !drained.empty());
+                return backend->isDrained() && (!observer || observer->shutdownComplete() || !drained.empty());
             }, 10000))
             QTest::qFail("Original wallet backend did not physically drain", __FILE__, __LINE__);
         if (observer) delete observer.data();
@@ -3675,6 +3675,11 @@ private Q_SLOTS:
         QCOMPARE(transport.coreSubmissions(), core_before + 1);
         QCOMPARE(transport.scheduler->phase(*decision), std::make_optional(execution::Phase::OutcomeReady));
         QVERIFY(captured.empty());
+        if (!reject_core) {
+            // R17 exposes Reading as a distinct phase before Native starts.
+            QCOMPARE(clock->publicationCount(), size_t{1}); clock->publishAll();
+            QVERIFY(model->feeEstimatePending()); QCOMPARE(model->estimatedFeeSatoshi(), qint64{-1});
+        }
         std::optional<execution::TaskId> effect;
         if (!reject_core) {
             effect = transport.dispatchNext(execution::Lane::Core);
@@ -3746,6 +3751,7 @@ private Q_SLOTS:
         env->advance(std::chrono::milliseconds{249}); QCOMPARE(reads, 0);
         env->advance(std::chrono::milliseconds{1}); QCOMPARE(reads, 0);
         const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1);
+        env->publishAll(); // Acknowledge Reading before holding its outcome.
         QCOMPARE(env->scheduler->phase(*original), std::make_optional(execution::Phase::OutcomeReady));
         QCOMPARE(model->estimatedFeeForTarget(6), QString{});
         QVERIFY(receipts->finishOutcome(*original));
@@ -3780,10 +3786,14 @@ private Q_SLOTS:
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
         model->scheduleFeeEstimates(); receipts->drain();
-        env->advance(std::chrono::milliseconds{250}); // Original immutable A is admitted.
+        env->advance(std::chrono::milliseconds{250});
+        // Explicitly admit immutable A on Domain before replacing the mailbox.
+        const auto decision = env->takeTurnFront(); QVERIFY(decision); decision->turn(); env->publishAll();
+        QVERIFY(captured.empty());
         model->sendRecipientList()->currentRecipient()->amount()->setSatoshi(60000);
         model->scheduleFeeEstimates(); // B changes before A's Native effect.
         const auto original = receipts->startRead(); QVERIFY(original);
+        env->publishAll(); // Acknowledge Reading before retaining the original outcome.
         QCOMPARE(captured, std::vector<CAmount>{50000});
         receipts->drain(); receipts->publishAll(); env->publishAll();
         QVERIFY(QTest::qWaitFor([&] {
@@ -3794,6 +3804,7 @@ private Q_SLOTS:
         QCOMPARE(model->estimatedFeeForTarget(6), QString{});
         env->advance(std::chrono::milliseconds{250});
         const auto replacement = receipts->startRead(); QVERIFY(replacement); QVERIFY(*replacement != *original);
+        env->publishAll(); // Keep the Native outcome's GUI receipt distinct from Reading.
         QCOMPARE(captured, std::vector<CAmount>({50000, 60000}));
         QVERIFY(receipts->finishOutcome(*replacement)); QCOMPARE(receipts->publicationCount(), size_t{1});
         QVERIFY(receipts->publish(*replacement));
@@ -3823,14 +3834,15 @@ private Q_SLOTS:
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
         model->scheduleFeeEstimates(); receipts->drain(); env->rejectNext();
-        env->advance(std::chrono::milliseconds{250}); QCOMPARE(reads, 0); QVERIFY(!model->feeEstimatePending());
+        env->advance(std::chrono::milliseconds{250}); QCOMPARE(reads, 0); env->publishAll(); QVERIFY(!model->feeEstimatePending());
         model->scheduleFeeEstimates(); receipts->drain(); env->advance(std::chrono::milliseconds{250});
-        const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1);
+        const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1); env->publishAll();
         QVERIFY(receipts->finishOutcome(*original)); QCOMPARE(receipts->publicationCount(), size_t{1});
         QVERIFY(receipts->publish(*original));
         QCOMPARE(model->estimatedFeeSatoshi(), error ? -1 : 500); QVERIFY(!model->feeEstimatePending());
         model->scheduleFeeEstimates(); receipts->drain(); env->advance(std::chrono::milliseconds{250});
-        model.reset(); // The already-admitted original effect survives observer loss.
+        const auto final_decision = env->takeTurnFront(); QVERIFY(final_decision); final_decision->turn();
+        model.reset(); // The already-admitted original Core effect survives observer loss.
         receipts->drain(); receipts->publishAll(); env->publishAll(); QCOMPARE(reads, 2);
         QVERIFY(model.get_deleter().manual->finish()); QVERIFY(env->quiescent());
         QCOMPARE(receipts->publicationCount(), size_t{0});
@@ -3870,6 +3882,7 @@ private Q_SLOTS:
         model->useMaximum();
         QVERIFY(QTest::qWaitFor([&] { receipts->drain(); env->publishAll(); QCoreApplication::processEvents(); return model->maximumRecipient() == recipient && model->sendRecipientList()->allValid(); }, 3000));
         env->advance(std::chrono::milliseconds{250}); const auto original = receipts->startRead(); QVERIFY(original);
+        env->publishAll(); // Acknowledge Reading; retain only the original outcome.
         QVERIFY(receipts->finishOutcome(*original)); const auto exact = recipient->amount()->satoshi();
         QCOMPARE(tokens, std::vector<quint64>{recipient->identity()});
         if (imported) recipient->applyParsedPaymentRequest({{"success", true}, {"address", VALID_MAINNET_ADDRESS}, {"hasAmount", true}, {"amountSats", exact}});
@@ -3879,6 +3892,7 @@ private Q_SLOTS:
         QCOMPARE(recipient->amount()->satoshi(), exact);
         QVERIFY(QTest::qWaitFor([&] { receipts->drain(); env->publishAll(); QCoreApplication::processEvents(); return !model->maximumRecipient() && model->sendRecipientList()->allValid(); }, 3000));
         env->advance(std::chrono::milliseconds{250}); const auto successor = receipts->startRead(); QVERIFY(successor);
+        env->publishAll(); // Acknowledge Reading; retain only the successor outcome.
         QCOMPARE(tokens.size(), size_t{2}); QCOMPARE(tokens.back(), quint64{0});
         QVERIFY(receipts->finishOutcome(*successor)); QVERIFY(receipts->publish(*successor));
         QCOMPARE(recipient->amount()->satoshi(), exact);
@@ -3987,6 +4001,7 @@ private Q_SLOTS:
         const auto disconnect_reentrant = qScopeGuard([reentrant_connection] { QObject::disconnect(reentrant_connection); });
         env->advance(std::chrono::milliseconds{250});
         const auto original = receipts->startRead(); QVERIFY(original);
+        env->publishAll(); // Acknowledge Reading before retaining the original outcome.
         QVERIFY(receipts->finishOutcome(*original)); QVERIFY(receipts->publish(*original));
         QCOMPARE(maximum_tokens, std::vector<quint64>{original_recipient->identity()});
         QCOMPARE(original_recipient->amount()->satoshi(), qint64{99000});
@@ -4020,6 +4035,7 @@ private Q_SLOTS:
             if (boundary == 0) { QCOMPARE(model->maximumRecipient(), original_recipient); QVERIFY(!model->feeEstimatePending()); }
         } else {
             const auto successor = receipts->startRead(); QVERIFY(successor); QVERIFY(*successor != *original);
+            env->publishAll(); // Acknowledge Reading before retaining the original outcome.
             QCOMPARE(maximum_tokens.size(), size_t{2});
             QCOMPARE(maximum_tokens.back(), boundary == 1 ? quint64{0} : boundary == 2 || boundary == 5 ? original_recipient->identity() : other->identity());
             QVERIFY(receipts->finishOutcome(*successor)); QVERIFY(receipts->publish(*successor));
@@ -4066,7 +4082,7 @@ private Q_SLOTS:
                 model->sendRecipientList()->allValid() && !model->sendRecipientList()->currentRecipient()->validationPending() && model->feeEstimatePending();
         }, 3000));
         env->advance(std::chrono::milliseconds{250});
-        const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1);
+        const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1); env->publishAll();
         QVERIFY(receipts->finishOutcome(*original)); QCOMPARE(receipts->publicationCount(), size_t{1});
         QCOMPARE(model->sendRecipientList()->currentRecipient()->cAmount(), CAmount{50000});
         QVERIFY(receipts->publish(*original));
@@ -4110,7 +4126,7 @@ private Q_SLOTS:
         connect(model.get(), &WalletQmlModel::feeEstimatePendingChanged, model.get(), [&] { ++notifications; });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
         model->scheduleFeeEstimates(); receipts->drain(); env->advance(std::chrono::milliseconds{250});
-        const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1);
+        const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1); env->publishAll();
         QVERIFY(receipts->finishOutcome(*original));
         QCOMPARE(receipts->publicationCount(), size_t{1}); QVERIFY(!env->scheduler->phase(*original));
         if (boundary == 0) {
@@ -4827,23 +4843,23 @@ void WalletQmlModelTests::customFeeRateUpdatesEstimatedTarget()
     QTRY_VERIFY(model->availableSendBalanceKnown());
 
     model->setCustomFeeRate("5.1");
-    QCOMPARE(model->feeTargetBlocks(), 4U);
+    QTRY_COMPARE(model->feeTargetBlocks(), 4U);
     model->setCustomFeeRate("3");
-    QCOMPARE(model->feeTargetBlocks(), 6U);
+    QTRY_COMPARE(model->feeTargetBlocks(), 6U);
     model->setCustomFeeRate("0.5");
-    QCOMPARE(model->feeTargetBlocks(), 25U);
+    QTRY_COMPARE(model->feeTargetBlocks(), 25U);
     model->setCustomFeeRate("0.1");
-    QCOMPARE(model->feeTargetBlocks(), 50U);
+    QTRY_COMPARE(model->feeTargetBlocks(), 50U);
     model->setCustomFeeRate("12");
-    QCOMPARE(model->feeTargetBlocks(), 2U);
+    QTRY_COMPARE(model->feeTargetBlocks(), 2U);
 
     model->setCustomFeeTarget(3);
-    QCOMPARE(model->feeTargetBlocks(), 3U);
+    QTRY_COMPARE(model->feeTargetBlocks(), 3U);
     QTRY_COMPARE(model->customFeeRate(), QStringLiteral("7.000"));
     QVERIFY(!model->customFeeTargetPending());
 
     model->setCustomFeeTarget(50);
-    QCOMPARE(model->feeTargetBlocks(), 50U);
+    QTRY_COMPARE(model->feeTargetBlocks(), 50U);
     QTRY_COMPARE(model->customFeeRate(), QStringLiteral("0.200"));
     QVERIFY(!model->customFeeTargetPending());
 
@@ -4853,7 +4869,7 @@ void WalletQmlModelTests::customFeeRateUpdatesEstimatedTarget()
     model->scheduleFeeEstimates();
     QTRY_VERIFY(fixed_reads->load() > 0 && model->availableSendBalanceKnown());
     model->setCustomFeeRate("2");
-    QCOMPARE(model->feeTargetBlocks(), 50U);
+    QTRY_COMPARE(model->feeTargetBlocks(), 50U);
 }
 
 void WalletQmlModelTests::estimatedFeeForTarget_returnsEmptyWhenUnavailable()
@@ -4925,6 +4941,8 @@ void WalletQmlModelTests::scheduleFeeEstimates_populatesFormattedEstimates()
 
 void WalletQmlModelTests::scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesUnavailable()
 {
+    // Retain the historical selector: the synthetic 3/2/1 fallback was issue080.
+    // Actual Core fallback is covered independently by coreApiFeePreviews.
     auto [wallet, model] = MakeWalletModel();
     SetValidRecipient(*model);
 
@@ -4932,7 +4950,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesU
 
     [[maybe_unused]] auto verify_wallet = wallet->VerifyOnExit();
     wallet->ExpectNoCalls(wallet->calls.getNewDestination);
-    wallet->ExpectAtLeast(wallet->calls.getRequiredFee, 3);
+    wallet->ExpectNoCalls(wallet->calls.getRequiredFee);
     wallet->create_transaction_fn = [&](const std::vector<wallet::CRecipient>& recipients,
                                         const wallet::CCoinControl& coin_control,
                                         bool sign,
@@ -4957,18 +4975,14 @@ void WalletQmlModelTests::scheduleFeeEstimates_fallsBackWhenNetworkFeeEstimatesU
 
     model->scheduleFeeEstimates();
 
-    QTRY_COMPARE_WITH_TIMEOUT(model->estimatedFeeForTarget(6), QStringLiteral("0.00000500 BTC"), FEE_ESTIMATE_TIMEOUT_MS);
-    QTRY_VERIFY_WITH_TIMEOUT(!model->feeEstimatePending(), FEE_ESTIMATE_TIMEOUT_MS);
-    QTRY_VERIFY_WITH_TIMEOUT(fallback_calls.Size() == 3, FEE_ESTIMATE_TIMEOUT_MS);
-    QCOMPARE(model->estimatedFeeForTarget(2), QStringLiteral("0.00000750 BTC"));
-    QCOMPARE(model->estimatedFeeForTarget(6), QStringLiteral("0.00000500 BTC"));
-    QCOMPARE(model->estimatedFeeForTarget(10), QStringLiteral("0.00000250 BTC"));
-    QCOMPARE(model->estimatedFee(), QStringLiteral("0.00000500 BTC"));
-    CompareFeeEstimateCalls(fallback_calls.Snapshot(), {
-                                                           {0, false, false, CAmount{3000}, 1},
-                                                           {0, false, false, CAmount{2000}, 1},
-                                                           {0, false, false, CAmount{1000}, 1},
-                                                       });
+    QTRY_VERIFY_WITH_TIMEOUT(!model->feeEstimatePending() && !model->fees()->errorText().isEmpty(), FEE_ESTIMATE_TIMEOUT_MS);
+    QCOMPARE(model->fees()->errorText(), QStringLiteral("fee estimation unavailable"));
+    QCOMPARE(fallback_calls.Size(), size_t{0});
+    QCOMPARE(model->estimatedFeeForTarget(2), QString{});
+    QCOMPARE(model->estimatedFeeForTarget(6), QString{});
+    QCOMPARE(model->estimatedFeeForTarget(10), QString{});
+    QCOMPARE(model->estimatedFeeSatoshi(), qint64{-1});
+    QVERIFY(!model->fees()->estimateFresh());
 }
 
 void WalletQmlModelTests::scheduleFeeEstimates_usesStaticRegtestFeeOverride()
@@ -4981,7 +4995,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesStaticRegtestFeeOverride()
 
     [[maybe_unused]] auto verify_wallet = wallet->VerifyOnExit();
     wallet->ExpectNoCalls(wallet->calls.getNewDestination);
-    wallet->ExpectNoCalls(wallet->calls.getRequiredFee);
+    wallet->ExpectAtLeast(wallet->calls.getRequiredFee, 3);
     wallet->create_transaction_fn = [&](const std::vector<wallet::CRecipient>& recipients,
                                         const wallet::CCoinControl& coin_control,
                                         bool sign,
@@ -5041,6 +5055,7 @@ void WalletQmlModelTests::customFeeRateValid()
     QFETCH(bool, valid);
     auto [wallet, model] = MakeWalletModel();
     model->setCustomFeeRate(rate);
+    QTRY_VERIFY(!model->fees()->policyPending());
     QCOMPARE(model->customFeeRateValid(), valid);
 }
 
@@ -5099,17 +5114,24 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
 
     model->setCustomFeeEnabled(true);
     model->setCustomFeeRate(rate);
+    QTRY_VERIFY(!model->fees()->policyPending());
     QCOMPARE(model->customFeeRateValid(), valid);
     model->scheduleFeeEstimates();
     QCOMPARE(calls->Size(), size_t{0});
     clock->advance(std::chrono::milliseconds{249});
     QCOMPARE(calls->Size(), size_t{0});
     clock->advance(std::chrono::milliseconds{1});
-    QTRY_COMPARE_WITH_TIMEOUT(calls->Size(), valid ? 4U : 3U, FEE_ESTIMATE_TIMEOUT_MS);
-    QTRY_VERIFY_WITH_TIMEOUT(!model->feeEstimatePending(), FEE_ESTIMATE_TIMEOUT_MS);
+    // The relay getter is deliberately real-threaded here. A later public
+    // policy publication can revise the request after this first deadline.
+    // Advance only that still-unread revision; the fully manual fee-clock
+    // regression separately proves the exact 249/250-ms dispatch boundary.
+    QVERIFY(QTest::qWaitFor([&] {
+        if (valid && calls->Size() == 0 && !model->fees()->policyPending()) clock->advance(std::chrono::milliseconds{250});
+        return calls->Size() == (valid ? 4U : 0U) && !model->feeEstimatePending() && !model->fees()->policyPending();
+    }, FEE_ESTIMATE_TIMEOUT_MS));
     QCOMPARE(!model->estimatedFee().isEmpty(), valid);
     QCOMPARE(AwaitPreparation(*model), valid);
-    QCOMPARE(calls->Size(), valid ? 5U : 3U);
+    QCOMPARE(calls->Size(), valid ? 5U : 0U);
     for (const auto& call : calls->Snapshot()) {
         if (call.fee_rate) QVERIFY(*call.fee_rate >= relay_minimum);
     }
@@ -8301,14 +8323,14 @@ void WalletQmlModelTests::coreApiFeePreviews_data()
         {"maximum-unconfirmed-truc", 8}, {"maximum-confirmed-truc", 9},
         {"maximum-absolute-fee-limit", 10}, {"maximum-feerate-limit", 11},
         {"maximum-custom-rate", 12}}};
-    for (const auto& [name, scenario] : maximum) QTest::newRow(name) << scenario << (scenario == 0 || scenario == 3 || scenario == 9 || scenario == 12);
+    for (const auto& [name, scenario] : maximum) QTest::newRow(name) << scenario << (scenario == 0 || scenario == 1 || scenario == 3 || scenario == 9 || scenario == 12);
     const std::array<std::pair<const char*, int>, 10> insufficient{{
         {"insufficient-valid-input", 100}, {"insufficient-zero-fallback", 101},
         {"insufficient-below-minimum", 102}, {"insufficient-fallback-disabled", 103},
         {"insufficient-fallback-allowed", 104}, {"insufficient-missing-input", 105},
         {"insufficient-bad-index", 106}, {"insufficient-foreign-input", 107},
         {"insufficient-spent-input", 108}, {"sufficient-input-no-error-estimate", 109}}};
-    for (const auto& [name, scenario] : insufficient) QTest::newRow(name) << scenario << (scenario == 100 || scenario == 104);
+    for (const auto& [name, scenario] : insufficient) QTest::newRow(name) << scenario << (scenario == 100 || scenario == 102 || scenario == 104);
 }
 
 void WalletQmlModelTests::coreApiFeePreviews()
@@ -8364,6 +8386,7 @@ void WalletQmlModelTests::coreApiFeePreviews()
     // Freeze the exact fixture policy before constructing/admitting the facade.
     const auto configure = [scenario, maximum](MockWallet& wallet) {
         wallet.get_minimum_fee_fn = [](const wallet::CCoinControl&) { return CAmount{1'000}; };
+        if (scenario == 1 || scenario == 102) wallet.get_required_fee_fn = [](unsigned int bytes) { return CFeeRate{2000}.GetFee(bytes); };
         // A minimum-fee fallback is independent app policy. These cases keep
         // that accessor unavailable to exercise the original backend failure.
         if (scenario == 101 || scenario == 103) wallet.get_required_fee_fn = [](unsigned int) { return CAmount{0}; };
@@ -8395,6 +8418,8 @@ void WalletQmlModelTests::coreApiFeePreviews()
     const auto amount = model->sendRecipientList()->currentRecipient()->cAmount();
     const auto input_count = model->estimatedInputCount();
     const bool pending = model->feeEstimatePending();
+    const auto cause = model->fees()->errorText();
+    const auto provenance = model->fees()->provenance();
     model.reset(); env->drain(); env->publishAll();
     QVERIFY(model.get_deleter().manual->finish());
     QVERIFY(env->quiescent());
@@ -8407,6 +8432,14 @@ void WalletQmlModelTests::coreApiFeePreviews()
         QVERIFY(fee > 0);
         QCOMPARE(input_count, 1);
         if (maximum) QCOMPARE(amount + fee, funding_amount);
+        if (scenario == 3) QCOMPARE(provenance, FeeSelectionModel::Fallback);
+        if (scenario == 12) QCOMPARE(provenance, FeeSelectionModel::Explicit);
+    } else if (scenario == 2) {
+        QVERIFY2(cause.contains("fallback", Qt::CaseInsensitive), qPrintable(cause));
+    } else if (scenario == 101 || scenario == 103) {
+        // This fixture's actual create port explicitly reports insufficient
+        // funds. The app must retain that fact rather than invent a fallback.
+        QCOMPARE(cause, QStringLiteral("Insufficient funds"));
     }
 }
 

@@ -6,6 +6,7 @@
 #define BITCOIN_QML_WALLETREVIEW_H
 
 #include <qml/models/psbtfee.h>
+#include <qml/models/feeestimatevalues.h>
 #include <QList>
 #include <QMap>
 #include <QSet>
@@ -28,6 +29,7 @@ struct Snapshot {
     QSet<QString> destinations;
     std::shared_ptr<const psbtfee::Analysis> proof;
     CAmount amount{0}, fee{0};
+    feeestimate::Provenance fee_source{feeestimate::Provenance::Unknown};
     int target_blocks{0}, display_unit{0};
     QString fee_rate;
     bool can_send{false}, sweeps{false};

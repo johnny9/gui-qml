@@ -6,6 +6,8 @@
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <rpc/util.h>
+#include <key_io.h>
+#include <wallet/wallet.h> // Public CRecipient value required by interfaces::Wallet.
 #include <qt/bitcoinunits.h>
 
 #include <QFile>
@@ -21,6 +23,7 @@
 #include <qml/models/options_model.h>
 
 #include <cmath>
+#include <future>
 #include <optional>
 
 class SendIntegrationTests : public QObject
@@ -83,6 +86,182 @@ public:
     explicit SendIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void feePreviewLimitationKeepsCoreReviewAuthoritative_data()
+    {
+        QTest::addColumn<QString>("address_type");
+        QTest::addColumn<qint64>("expected_preview"); QTest::addColumn<qint64>("expected_review");
+        QTest::addColumn<QString>("expected_display");
+        QTest::newRow("bech32-control") << QStringLiteral("bech32") << qint64{1410} << qint64{1410} << QStringLiteral("0.00001410 BTC");
+        QTest::newRow("taproot-preview-deferral") << QStringLiteral("bech32m") << qint64{1530} << qint64{1650} << QStringLiteral("0.00001650 BTC");
+    }
+    void feePreviewLimitationKeepsCoreReviewAuthoritative()
+    {
+        QFETCH(QString, address_type); QFETCH(qint64, expected_preview); QFETCH(qint64, expected_review); QFETCH(QString, expected_display);
+        auto* destination = qmltest::CreateWallet(m_app, "destination"); QVERIFY(destination);
+        const auto address = QString::fromStdString(qmltest::Rpc(m_app, "getnewaddress",
+            qmltest::Json("[\"\",\"" + address_type.toStdString() + "\"]"), destination->name()).get_str());
+        auto* wallet = qmltest::LoadFundedWallet(m_app, "sender"); QVERIFY(wallet);
+        QVERIFY(qmltest::Click(m_app, "sendTabButton"));
+        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", address));
+        QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "0.02"));
+        QVERIFY(qmltest::Click(m_app, "feeSelectionPickerButton"));
+        QVERIFY(qmltest::Click(m_app, "feeSelectionOption3"));
+        QTRY_VERIFY(!wallet->fees()->policyPending());
+        QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "10"));
+        QTRY_VERIFY(!wallet->sendRecipientList()->validationPending() && wallet->sendRecipientList()->allValid());
+        QTRY_VERIFY(!wallet->fees()->policyPending() && !wallet->feeEstimatePending() && wallet->customFeeRateValid() && wallet->estimatedFeeSatoshi() > 0);
+        const auto preview = wallet->estimatedFeeSatoshi(); QCOMPARE(preview, expected_preview);
+        QVERIFY(qmltest::Click(m_app, "sendReviewButton")); QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
+        QCOMPARE(wallet->preparationState(), WalletQmlModel::PreparationState::PreparationReady);
+        auto* prepared = wallet->currentTransaction(); QVERIFY(prepared);
+        const auto actual = prepared->feeAmount()->satoshi(); QCOMPARE(actual, expected_review);
+        QCOMPARE(prepared->reviewFeeRate(), QStringLiteral("10.000"));
+        const auto transaction = prepared->getWtx(); QVERIFY(transaction);
+        QTRY_COMPARE(qmltest::Find(m_app, "sendTransactionReviewFee")->property("value").toString(), expected_display);
+        // Independent public RPC prevouts/outputs authenticate the actual paid
+        // fee; the preview is deliberately not its authority.
+        const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + EncodeHexTx(*transaction) + "\"]"));
+        QCOMPARE(decoded.find_value("vin").size(), size_t{1});
+        CAmount inputs{0}, outputs{0};
+        for (const auto& input : decoded.find_value("vin").getValues()) {
+            const auto coin = qmltest::Rpc(m_app, "gettxout", qmltest::Json("[\"" + input.find_value("txid").get_str() + "\"," + input.find_value("vout").write() + "]"));
+            QVERIFY(!coin.isNull()); inputs += AmountFromValue(coin.find_value("value"));
+        }
+        for (const auto& output : decoded.find_value("vout").getValues()) outputs += AmountFromValue(output.find_value("value"));
+        QCOMPARE(actual, inputs - outputs);
+        qInfo() << "048 accepted preview limitation; authoritative displayed review" << address_type << preview << actual << expected_display;
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
+    void explicitPublicChangePolicyMatchesThePreview_data()
+    {
+        QTest::addColumn<QString>("address_type"); QTest::addColumn<qint64>("expected_fee");
+        QTest::newRow("bech32-control") << QStringLiteral("bech32") << qint64{1410};
+        QTest::newRow("taproot-recipient") << QStringLiteral("bech32m") << qint64{1530};
+        QTest::newRow("overrides-configured-legacy") << QStringLiteral("bech32") << qint64{1410};
+    }
+    void explicitPublicChangePolicyMatchesThePreview()
+    {
+        QFETCH(QString, address_type); QFETCH(qint64, expected_fee);
+        auto* destination = qmltest::CreateWallet(m_app, "destination"); QVERIFY(destination);
+        const auto address = qmltest::Rpc(m_app, "getnewaddress", qmltest::Json("[\"\",\"" + address_type.toStdString() + "\"]"), destination->name()).get_str();
+        auto* wallet = qmltest::LoadFundedWallet(m_app, "sender"); QVERIFY(wallet);
+        struct Facts { CAmount preview{0}, actual{0}; bool bech32_change{false}; OutputType chosen{OutputType::UNKNOWN}; QString error; };
+        auto promise = std::make_shared<std::promise<Facts>>(); auto future = promise->get_future();
+        const auto admission = wallet->opening()->read([address](interfaces::Wallet& native) {
+            Facts facts; facts.chosen = native.getDefaultAddressType();
+            if (facts.chosen != OutputType::BECH32) { facts.error = "The fixture requires a bech32 receiving default."; return facts; }
+            wallet::CCoinControl control; control.m_change_type = facts.chosen; control.m_feerate = CFeeRate{10000}; control.fOverrideFeeRate = true;
+            const std::vector<wallet::CRecipient> recipients{{DecodeDestination(address), 2'000'000, false}};
+            control.destChange = WitnessV0KeyHash{uint160{}};
+            const auto preview = native.createTransaction(recipients, control, false, std::nullopt);
+            if (!preview) { facts.error = QString::fromStdString(util::ErrorString(preview).original); return facts; }
+            control.destChange = CNoDestination{};
+            // Disposable test-only preparation may retain a real destination.
+            // Production has not adopted this explicit policy choice.
+            const auto actual = native.createTransaction(recipients, control, true, std::nullopt);
+            if (!actual) { facts.error = QString::fromStdString(util::ErrorString(actual).original); return facts; }
+            facts.preview = preview->fee; facts.actual = actual->fee;
+            if (actual->change_pos && actual->tx && *actual->change_pos < actual->tx->vout.size()) {
+                int version; std::vector<unsigned char> program;
+                facts.bech32_change = actual->tx->vout[*actual->change_pos].scriptPubKey.IsWitnessProgram(version, program) && version == 0 && program.size() == 20;
+            }
+            return facts;
+        }, [promise](Facts facts) { promise->set_value(std::move(facts)); }, [promise](std::exception_ptr error) { promise->set_exception(error); });
+        QVERIFY(admission); QTRY_VERIFY(future.wait_for(std::chrono::seconds{0}) == std::future_status::ready);
+        const auto result = future.get(); QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+        QCOMPARE(result.chosen, OutputType::BECH32); QVERIFY(result.bech32_change);
+        QCOMPARE(result.preview, expected_fee); QCOMPARE(result.actual, expected_fee);
+        qInfo() << "048 explicit public change policy" << address_type << result.preview << result.actual << result.bech32_change;
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
+    void presetFeesHonorRaisedCoreRequirements_data()
+    {
+        QTest::addColumn<int>("preset");
+        for (int preset{0}; preset < 3; ++preset) {
+            QTest::newRow(qPrintable(QStringLiteral("wallet-min-%1").arg(preset))) << preset;
+            QTest::newRow(qPrintable(QStringLiteral("relay-min-%1").arg(preset))) << preset;
+        }
+    }
+    void presetFeesHonorRaisedCoreRequirements()
+    {
+        QFETCH(int, preset); auto* wallet = qmltest::LoadFundedWallet(m_app, "sender"); QVERIFY(wallet);
+        const auto address = qmltest::NewAddress(m_app, wallet->name());
+        QVERIFY(qmltest::Click(m_app, "sendTabButton")); QVERIFY(qmltest::SetText(m_app, "sendAddressInput", address));
+        QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "0.01"));
+        QVERIFY(qmltest::Click(m_app, "feeSelectionPickerButton"));
+        QVERIFY(qmltest::Click(m_app, qPrintable(QStringLiteral("feeSelectionOption%1").arg(preset))));
+        QTRY_VERIFY(!wallet->fees()->policyPending() && !wallet->feeEstimatePending() && wallet->estimatedFeeSatoshi() > 0);
+        QCOMPARE(wallet->estimatedFeeRate(), QStringLiteral("2")); QVERIFY(!wallet->customFeeEnabled());
+        const auto ticket = wallet->requestPrepareTransaction(); QVERIFY(ticket); QTRY_VERIFY(!wallet->preparationBusy());
+        QCOMPARE(wallet->preparationState(), WalletQmlModel::PreparationState::PreparationReady);
+        auto* review = wallet->currentTransaction(); QVERIFY(review); QCOMPARE(review->reviewFeeRate(), QStringLiteral("2.000"));
+        const auto tx = review->getWtx(); QVERIFY(tx); const auto fee = review->feeAmount()->satoshi();
+        const auto rpc = qmltest::Rpc(m_app, "testmempoolaccept", qmltest::Json("[[\"" + EncodeHexTx(*tx) + "\"]]"));
+        QVERIFY2(rpc[0].find_value("allowed").get_bool(), rpc.write().c_str());
+        QCOMPARE(AmountFromValue(rpc[0].find_value("fees").find_value("base")), fee);
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
+    void reselectingCustomPreservesTheReviewedExplicitRate()
+    {
+        auto* wallet = qmltest::LoadFundedWallet(m_app, "sender"); QVERIFY(wallet);
+        const auto address = qmltest::NewAddress(m_app, wallet->name());
+        QVERIFY(qmltest::Click(m_app, "sendTabButton")); QVERIFY(qmltest::SetText(m_app, "sendAddressInput", address));
+        QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "0.01"));
+        QVERIFY(qmltest::Click(m_app, "feeSelectionPickerButton")); QVERIFY(qmltest::Click(m_app, "feeSelectionOption3"));
+        QTRY_VERIFY(!wallet->fees()->policyPending()); QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "17"));
+        QTRY_VERIFY(!wallet->fees()->policyPending() && !wallet->feeEstimatePending() && wallet->customFeeRateValid());
+        QVERIFY(qmltest::Click(m_app, "sendReviewButton")); QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
+        const auto first = wallet->currentTransaction()->feeAmount()->satoshi();
+        QCOMPARE(wallet->currentTransaction()->reviewFeeRate(), QStringLiteral("17.000"));
+        QVERIFY(qmltest::Click(m_app, "sendTransactionReviewCloseButton"));
+        QVERIFY(qmltest::Click(m_app, "feeSelectionPickerButton")); QVERIFY(qmltest::Click(m_app, "feeSelectionOption3"));
+        QCOMPARE(wallet->customFeeRate(), QStringLiteral("17"));
+        QTRY_VERIFY(!wallet->fees()->policyPending() && !wallet->feeEstimatePending());
+        QVERIFY(qmltest::Click(m_app, "sendReviewButton")); QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
+        QCOMPARE(wallet->currentTransaction()->reviewFeeRate(), QStringLiteral("17.000"));
+        QCOMPARE(wallet->currentTransaction()->feeAmount()->satoshi(), first);
+        const auto reviewed = wallet->currentTransaction();
+        wallet->fees()->choosePreset(2); QTRY_VERIFY(!wallet->fees()->policyPending());
+        QCOMPARE(reviewed->reviewFeeRate(), QStringLiteral("17.000")); QCOMPARE(reviewed->feeAmount()->satoshi(), first);
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
+    void oversizedMaximumPreservesCoreCauseAndRecoversWithFewerCoins()
+    {
+        auto* source = qmltest::LoadFundedWallet(m_app, "sender"); QVERIFY(source);
+        const auto mining = qmltest::NewAddress(m_app, source->name());
+        auto* wallet = qmltest::CreateWallet(m_app, "many-coins"); QVERIFY(wallet);
+        for (int batch{0}; batch < 16; ++batch) {
+            UniValue amounts{UniValue::VOBJ};
+            for (int coin{0}; coin < 100; ++coin) amounts.pushKV(qmltest::NewAddress(m_app, wallet->name()).toStdString(), UniValue{UniValue::VNUM, "0.001"});
+            UniValue params{UniValue::VOBJ}; params.pushKV("dummy", ""); params.pushKV("amounts", amounts); params.pushKV("fee_rate", 2);
+            qmltest::Rpc(m_app, "sendmany", params, source->name());
+            qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
+        }
+        const auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name()); QCOMPARE(coins.size(), size_t{1600});
+        QTRY_COMPARE(wallet->balanceSatoshi(), CAmount{160'000'000});
+        QVERIFY(qmltest::Click(m_app, "sendTabButton")); QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton"));
+        QTRY_COMPARE(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), CAmount{160'000'000});
+        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", mining));
+        QTRY_VERIFY(!wallet->feeEstimatePending() && !wallet->fees()->errorText().isEmpty());
+        QCOMPARE(wallet->fees()->errorText(), QStringLiteral("The inputs size exceeds the maximum weight. Please try sending a smaller amount or manually consolidating your wallet's UTXOs"));
+        QCOMPARE(qmltest::Find(m_app, "sendPrepareTransactionErrorText")->property("text").toString(), wallet->fees()->errorText());
+        QCOMPARE(qmltest::Find(m_app, "sendAmountStatusText")->property("text").toString(), QStringLiteral("Previous amount; maximum could not be calculated."));
+        QVERIFY(!qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
+        QString rpc_error;
+        try { qmltest::Rpc(m_app, "sendall", qmltest::Json("{\"recipients\":[\"" + mining.toStdString() + "\"],\"fee_rate\":2,\"options\":{\"add_to_wallet\":false}}"), wallet->name()); }
+        catch (const std::runtime_error& error) { rpc_error = QString::fromUtf8(error.what()); }
+        QVERIFY2(rpc_error.contains("Transaction too large"), qPrintable(rpc_error));
+        // A legal user-side consolidation/selection change is a new request;
+        // retaining the first failure must not prevent a viable 100-coin sweep.
+        UniValue locked{UniValue::VARR};
+        for (size_t i{100}; i < coins.size(); ++i) { UniValue coin{UniValue::VOBJ}; coin.pushKV("txid", coins[i].find_value("txid")); coin.pushKV("vout", coins[i].find_value("vout")); locked.push_back(coin); }
+        QVERIFY(qmltest::Rpc(m_app, "lockunspent", qmltest::Json("[false," + locked.write() + "]"), wallet->name()).get_bool());
+        wallet->fees()->refresh();
+        QTRY_VERIFY(!wallet->feeEstimatePending() && wallet->fees()->estimateFresh() && wallet->estimatedFeeSatoshi() > 0);
+        QCOMPARE(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi() + wallet->estimatedFeeSatoshi(), CAmount{10'000'000});
+        QVERIFY(wallet->fees()->errorText().isEmpty()); QTRY_VERIFY(qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
     void sendMonetaryBoundaryPreservesEveryEnteredDigit_data()
     {
         QTest::addColumn<int>("unit"); QTest::addColumn<QString>("text"); QTest::addColumn<int>("producer");
@@ -258,6 +437,7 @@ private Q_SLOTS:
         if (reject_low_rate) {
             QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "0.1"));
             QTRY_COMPARE(wallet->customFeeRate(), QStringLiteral("0.1"));
+            QTRY_VERIFY(!wallet->fees()->policyPending());
             QTRY_VERIFY(!wallet->customFeeRateValid());
             QTRY_VERIFY(!wallet->feeEstimatePending());
             QCOMPARE(wallet->estimatedFee(), QString{});
@@ -692,6 +872,11 @@ QString SendPreparedWallet(const QString& selector)
     if (function == "customFeesRespectRelayMinimum") return "custom_fee";
     if (function == "coinSelectionCancelApplyAndLockReachTheWallet") return "integration";
     for (const auto* name : {"localizedTypedSendPreparesExactOutput",
+                             "feePreviewLimitationKeepsCoreReviewAuthoritative",
+                             "explicitPublicChangePolicyMatchesThePreview",
+                             "presetFeesHonorRaisedCoreRequirements",
+                             "reselectingCustomPreservesTheReviewedExplicitRate",
+                             "oversizedMaximumPreservesCoreCauseAndRecoversWithFewerCoins",
                              "staleMaximumCannotReplaceAnOrdinaryAmountEdit",
                              "maximumHandoverClearsTheFormerRecipient",
                              "coinSelectionDialogCommitsOrDiscardsInputsAndRepricesTheMaximum",
@@ -707,6 +892,9 @@ QStringList SendTestArguments(const QString& selector)
 {
     QStringList arguments{"-mintxfee=0.00001000", "-minrelaytxfee=0.00000100"};
     if (selector.endsWith(":respect-relay-minimum")) arguments = {"-mintxfee=0.00000100", "-minrelaytxfee=0.00001000"};
+    if (selector.startsWith("presetFeesHonorRaisedCoreRequirements:wallet-min-")) arguments = {"-mintxfee=0.00002000", "-minrelaytxfee=0.00000100"};
+    if (selector.startsWith("presetFeesHonorRaisedCoreRequirements:relay-min-")) arguments = {"-mintxfee=0.00000100", "-minrelaytxfee=0.00002000"};
+    if (selector == "explicitPublicChangePolicyMatchesThePreview:overrides-configured-legacy") arguments.append("-changetype=legacy");
     // One cached change key is enough to exercise exhaustion and recovery.
     if (selector == "lockedHardenedDescriptorWalletRebuildsReviewAfterUnlock") arguments.append("-keypool=1");
     return arguments;

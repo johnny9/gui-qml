@@ -5,6 +5,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import org.bitcoincore.qt 1.0
 
 import "../controls"
 
@@ -12,8 +13,9 @@ ColumnLayout {
     id: root
     objectName: "feeSelectionControl"
 
-    property var walletModel: null
-    property int currentTarget: 2
+    property WalletQmlModel walletModel: null
+    readonly property FeeSelectionModel fees: walletModel ? walletModel.fees : null
+    property int currentTarget: fees ? fees.targetBlocks : 6
     property bool customSelected: walletModel ? walletModel.customFeeEnabled : false
     property int selectedIndex: customSelected
         ? feeModel.count - 1
@@ -32,7 +34,7 @@ ColumnLayout {
             ? root.walletModel.estimatedFeeForTarget(root.selectedTarget) : ""
     }
     property bool customFeeRateValid: walletModel ? walletModel.customFeeRateValid : false
-    readonly property int customFeeRateMaximumLength: 12
+    readonly property int customFeeRateMaximumLength: 33
 
     readonly property var _feePickerModel: {
         const revision = root.walletModel ? root.walletModel.feeEstimateRevision : 0
@@ -88,6 +90,7 @@ ColumnLayout {
             objectName: "feeSelectionCustomRateInput"
             Layout.fillWidth: true
             visible: root.customSelected
+            enabled: root.fees && !root.fees.customDefaultPending
             leftPadding: 0
             font: Theme.text.body.font
             color: Theme.color.neutral9
@@ -95,16 +98,9 @@ ColumnLayout {
             background: Item {}
             placeholderText: "0.000"
             selectByMouse: true
-            text: root.walletModel ? root.walletModel.customFeeRate : ""
+            text: root.fees ? root.fees.customRate.text : ""
             maximumLength: root.customFeeRateMaximumLength
-            validator: RegularExpressionValidator {
-                regularExpression: /^(|[0-9]+(\.[0-9]{0,3})?)$/
-            }
-            onTextChanged: {
-                if (root.walletModel && root.walletModel.customFeeRate !== text) {
-                    root.walletModel.customFeeRate = text
-                }
-            }
+            onTextEdited: if (root.fees) root.fees.customRate.edit(text)
         }
 
         DropdownButton {
@@ -150,7 +146,7 @@ ColumnLayout {
             color: Theme.color.neutral7
             text: {
                 const revision = root.walletModel ? root.walletModel.feeEstimateRevision : 0
-                return root.walletModel ? root.walletModel.estimatedFee : ""
+                return root.walletModel && root.fees && !root.fees.policyPending ? root.walletModel.estimatedFee : ""
             }
         }
     }
@@ -175,7 +171,8 @@ ColumnLayout {
                 currentValue: root.customSelected ? -1 : root.selectedTarget
                 onActivated: function(value) {
                     if (root.walletModel) {
-                        root.walletModel.customFeeEnabled = (value === -1)
+                        if (value === -1) root.walletModel.fees.chooseCustom()
+                        else root.walletModel.fees.choosePreset(value)
                     }
                     if (value !== -1) {
                         root.feeChanged(value)

@@ -117,6 +117,7 @@ if(ENABLE_WALLET)
     test_receiverequestoperation.cpp
     test_sendrecipientslistmodel.cpp
     test_sendrecipient.cpp
+    test_feeselection.cpp
     test_transaction.cpp
     test_transactionactivity.cpp
     test_transactionactivitymodel.cpp
@@ -228,6 +229,8 @@ endif()
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
   qmlcoverage.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/flowpresentation.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.h

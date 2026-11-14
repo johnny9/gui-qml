@@ -335,8 +335,9 @@ Page {
                 title: qsTr("Network fee")
                 ValueRow {
                     objectName: "sendTransactionReviewTargetBlocks"
+                    visible: root.transaction && root.transaction.reviewFeeSource === FeeSelectionModel.Estimated
                     Layout.fillWidth: true
-                    title: qsTr("Targeting blocks")
+                    title: qsTr("Requested target")
                     value: root.transaction ? (root.transaction.reviewTargetBlocks >= 50
                         ? qsTr("50+ blocks") : qsTr("%1 blocks").arg(root.transaction.reviewTargetBlocks)) : ""
                 }
@@ -348,6 +349,15 @@ Page {
                         ? qsTr("%1 sat/vB").arg(root.transaction.reviewFeeRate) : "—"
                     showDivider: false
                 }
+            }
+
+            CoreText {
+                objectName: "sendReviewFallbackFeeWarning"
+                Layout.fillWidth: true
+                visible: root.transaction && root.transaction.reviewUsesFallback
+                text: qsTr("The wallet fallback fee was used. A confirmation target is unavailable.")
+                wrapMode: Text.WordWrap
+                color: Theme.color.neutral7
             }
 
             FormSection {

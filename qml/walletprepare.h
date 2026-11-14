@@ -23,6 +23,7 @@ struct Request {
     std::shared_ptr<const std::set<COutPoint>> selected;
     std::optional<CAmount> available_balance;
     int remainder{-1};
+    bool automatic_fee{false};
     int target_blocks{0}, display_unit{0};
     QString fee_rate;
     std::optional<SecureString> passphrase;

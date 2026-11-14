@@ -22,6 +22,7 @@ namespace {
 struct PrepareWallet : StubWallet {
     bool encrypted{false}, locked{true}, fail_relock{false}, throw_create{false}, unknown_sweep{false};
     int creates{0}, unlocks{0}, locks{0}, internals{0};
+    FeeReason reason{FeeReason::FALLBACK};
     std::string expected_password{"secret"};std::atomic<QThread*> unlock_thread{nullptr};
     COutPoint input{Txid::FromUint256(uint256::ONE), 0};
     CScript own_script{CScript{} << OP_TRUE};
@@ -74,7 +75,7 @@ struct PrepareWallet : StubWallet {
         if (total + 100 > 50'000) return util::Error{Untranslated("Insufficient funds")};
         std::optional<unsigned int> change;
         if (total + 100 < 50'000) { change = tx.vout.size(); tx.vout.emplace_back(50'000 - total - 100, own_script); }
-        return wallet::CreatedTransactionResult{MakeTransactionRef(tx), CAmount{100}, change, FeeReason::FALLBACK};
+        return wallet::CreatedTransactionResult{MakeTransactionRef(tx), CAmount{100}, change, reason};
     }
 };
 walletprepare::Request Request()
@@ -91,6 +92,25 @@ class WalletPrepareTests : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void initTestCase() { SelectParams(ChainType::MAIN); }
+    void reviewFeeFactsComeFromOriginalNativeRequest_data()
+    {
+        QTest::addColumn<int>("reason"); QTest::addColumn<bool>("explicit_rate");
+        QTest::newRow("fallback-without-authoritative-rate") << int(FeeReason::FALLBACK) << false;
+        QTest::newRow("estimator-without-authoritative-rate") << int(FeeReason::FEE_RATE_ESTIMATOR) << false;
+        QTest::newRow("explicit-rate") << int(FeeReason::USER_SPECIFIED) << true;
+    }
+    void reviewFeeFactsComeFromOriginalNativeRequest()
+    {
+        QFETCH(int, reason); QFETCH(bool, explicit_rate); PrepareWallet wallet; wallet.reason = static_cast<FeeReason>(reason);
+        auto request = Request(); request.fee_rate = QStringLiteral("777");
+        if (explicit_rate) request.control.m_feerate = CFeeRate{2500};
+        const auto result = walletprepare::Execute(wallet, request); QCOMPARE(result.error, walletprepare::Error::None); QVERIFY(result.review);
+        QCOMPARE(result.review->fee, CAmount{100}); QCOMPARE(result.review->fee_source, feeestimate::ProvenanceFor(wallet.reason));
+        QCOMPARE(result.review->fee_rate, explicit_rate ? QStringLiteral("2.500") : QString{});
+        request.fee_rate = QStringLiteral("999"); request.target_blocks = 50; request.control.m_feerate = CFeeRate{17000};
+        QCOMPARE(result.review->fee, CAmount{100}); QCOMPARE(result.review->target_blocks, 6);
+        QCOMPARE(result.review->fee_rate, explicit_rate ? QStringLiteral("2.500") : QString{}); QCOMPARE(wallet.creates, 1); QCOMPARE(wallet.internals, 0);
+    }
     void acknowledgedBalanceRefusesBeforeUnlock_data()
     {
         QTest::addColumn<int>("scenario");

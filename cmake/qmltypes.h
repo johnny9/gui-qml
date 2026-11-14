@@ -44,6 +44,7 @@
 #include <qml/models/receiverequestoperation.h>
 #include <qml/models/rpcconsolemodel.h>
 #include <qml/models/sendrecipient.h>
+#include <qml/models/feeselectionmodel.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signverifymessagemodel.h>
 #include <qml/models/walletselectionmodel.h>
@@ -266,6 +267,19 @@ struct TransactionForeign {
     QML_FOREIGN(Transaction)
     QML_NAMED_ELEMENT(Transaction)
     QML_UNCREATABLE("Owned by the application")
+};
+
+struct FeeSelectionModelForeign {
+    Q_GADGET
+    QML_FOREIGN(FeeSelectionModel)
+    QML_NAMED_ELEMENT(FeeSelectionModel)
+    QML_UNCREATABLE("Owned by the Send draft")
+};
+struct FeeRateEntryForeign {
+    Q_GADGET
+    QML_FOREIGN(FeeRateEntry)
+    QML_NAMED_ELEMENT(FeeRateEntry)
+    QML_UNCREATABLE("Owned by fee selection")
 };
 
 struct SendRecipientForeign {

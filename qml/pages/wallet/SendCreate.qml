@@ -36,7 +36,8 @@ PageStack {
     readonly property string feeBalanceErrorText: wallet && wallet.sendAmountExhaustsBalance
         ? (selectedInputsActive ? selectedInputsBalanceErrorText : availableBalanceErrorText)
         : ""
-    readonly property string formErrorText: recipientValidationError.length > 0
+    readonly property string formErrorText: wallet && wallet.fees && !wallet.fees.estimatePending && wallet.fees.errorText.length > 0
+        ? wallet.fees.errorText : recipientValidationError.length > 0
         ? recipientValidationError
         : (feeBalanceErrorText.length > 0 ? feeBalanceErrorText : prepareTransactionErrorText)
 
@@ -441,7 +442,7 @@ PageStack {
                             reviewStack.push(sendCompletePage, {
                                 "txid": txid,
                                 "submissionState": submissionState,
-                                "targetBlocks": !transactionReviewPopup.importedReview && wallet && !wallet.customFeeEnabled
+                                "targetBlocks": !transactionReviewPopup.importedReview && wallet && wallet.currentTransaction.reviewFeeSource === FeeSelectionModel.Estimated
                                     ? wallet.currentTransaction.reviewTargetBlocks : 0
                             })
                         }
@@ -1206,8 +1207,8 @@ PageStack {
                                 objectName: "sendReviewButton"
                                 Layout.fillWidth: true
                                 text: qsTr("Review Transaction")
-                                enabled: !sendPage.uriActionPending && root.wallet && root.wallet.available && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending && !root.wallet.preparationBusy && !root.wallet.customFeeTargetPending && !root.wallet.coinSelectionPending
-                                    && !root.wallet.sendAmountExhaustsBalance && (!root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
+                                enabled: !sendPage.uriActionPending && root.wallet && root.wallet.available && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending && !root.wallet.preparationBusy && !root.wallet.fees.policyPending && !root.wallet.customFeeTargetPending && !root.wallet.coinSelectionPending
+                                    && !root.wallet.sendAmountExhaustsBalance && (!root.wallet.maximumRecipient || root.wallet.fees.errorText.length === 0) && (!root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                                 onClicked: root.confirmTransactionReview()
                             }
                         }

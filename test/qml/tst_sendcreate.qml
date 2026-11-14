@@ -42,8 +42,8 @@ TestCase {
         testWalletModel.sendTransactionResult = true
         testWalletModel.transactionNeedsUnlock = false
         testWalletModel.feeEstimatePending = false
-        testWalletModel.customFeeEnabled = false
-        testWalletModel.customFeeRate = ""
+        testWalletModel.resetFeePolicyForTest()
+        tryCompare(testWalletModel.fees, "policyPending", false)
         testWalletModel.targetBlocks = 6
         testWalletModel.prepareTransactionResult = true
         testWalletModel.sendAmountExhaustsBalance = false
@@ -71,6 +71,8 @@ TestCase {
         }]
         testWalletTransaction.reviewTargetBlocks = 6
         testWalletTransaction.reviewFeeRate = "2.5"
+        testWalletTransaction.reviewFeeSource = FeeSelectionModel.Estimated
+        testWalletTransaction.reviewUsesFallback = false
         optionsModel.displayUnit = BitcoinAmount.BTC
         testCoinsListModel.reset()
         Clipboard.currentText = ""
@@ -78,6 +80,84 @@ TestCase {
 
     function pasteShortcut() {
         keyClick(Qt.Key_V, Qt.ControlModifier)
+    }
+
+    function test_custom_entry_waits_only_for_a_derived_default() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        const field = findChild(page, "feeSelectionCustomRateInput")
+        testWalletModel.fees.chooseCustomTarget(50)
+        compare(testWalletModel.fees.customDefaultPending, true)
+        compare(field.enabled, false)
+        tryCompare(testWalletModel.fees, "customDefaultPending", false)
+        compare(field.enabled, true)
+        testWalletModel.fees.customRate.edit("17")
+        compare(testWalletModel.fees.policyPending, true)
+        compare(testWalletModel.fees.customDefaultPending, false)
+        compare(field.enabled, true)
+        tryCompare(testWalletModel.fees.customRate, "valid", true)
+        compare(field.text, "17")
+    }
+    function test_checked_custom_reselection_preserves_explicit_rate() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        const picker = findChild(page, "feeSelectionPicker")
+        picker.open(); picker.itemAtIndex(3).clicked()
+        tryCompare(testWalletModel.fees, "policyPending", false)
+        testWalletModel.fees.customRate.edit("17")
+        tryCompare(testWalletModel.fees.customRate, "valid", true)
+        picker.open(); picker.itemAtIndex(3).clicked()
+        compare(testWalletModel.fees.customRate.text, "17")
+        compare(findChild(page, "feeSelectionCustomRateInput").text, "17")
+        compare(testWalletModel.fees.policyPending, false)
+    }
+    function test_oversized_fee_paste_does_not_accept_a_valid_prefix() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        testWalletModel.fees.chooseCustom()
+        tryCompare(testWalletModel.fees, "policyPending", false)
+        const field = findChild(page, "feeSelectionCustomRateInput")
+        const previous = testSetup.nativeClipboardText()
+        try {
+            testSetup.setNativeClipboardText("1" + " ".repeat(40))
+            field.forceActiveFocus(); keyClick(Qt.Key_A, Qt.ControlModifier)
+            keyClick(Qt.Key_V, Qt.ControlModifier)
+            tryCompare(testWalletModel.fees, "policyPending", false)
+            compare(field.maximumLength, 33)
+            compare(testWalletModel.fees.customRate.text.length, 33)
+            compare(testWalletModel.fees.customRate.valid, false)
+            compare(findChild(page, "sendReviewButton").enabled, false)
+        } finally { testSetup.setNativeClipboardText(previous) }
+    }
+    function test_equal_fee_rates_preserve_actual_provenance_data() {
+        return [{tag: "fallback", source: FeeSelectionModel.Fallback, warning: true},
+                {tag: "estimator", source: FeeSelectionModel.Estimated, warning: false}]
+    }
+    function test_equal_fee_rates_preserve_actual_provenance(data) {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        testWalletModel.publishFeeResultForTest(data.source, "")
+        compare(findChild(page, "feeEstimateProvenanceText").visible, data.warning)
+        compare(testWalletModel.fees.hasEstimatorTarget, !data.warning)
+        compare(testWalletModel.fees.estimatedRate, "2.500")
+    }
+    function test_failed_maximum_exposes_original_cause_and_refresh() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        findChild(page, "sendUseMaximumButton").clicked()
+        testWalletModel.sendAmountExhaustsBalance = true
+        testWalletModel.publishFeeResultForTest(FeeSelectionModel.Unknown, "Transaction too large.")
+        compare(page.formErrorText, "Transaction too large.")
+        compare(findChild(page, "feeEstimateErrorText").text, "Transaction too large.")
+        compare(findChild(page, "feeRefreshButton").visible, true)
+        compare(findChild(page, "sendAmountStatusText").text, "Previous amount; maximum could not be calculated.")
+        compare(findChild(page, "sendReviewButton").enabled, false)
+    }
+    function test_review_provenance_is_immutable_presentation() {
+        testWalletTransaction.reviewFeeSource = FeeSelectionModel.Fallback
+        testWalletTransaction.reviewUsesFallback = true
+        const page = createTemporaryObject(reviewComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        compare(findChild(page, "sendReviewFallbackFeeWarning").visible, true)
+        compare(findChild(page, "sendTransactionReviewTargetBlocks").visible, false)
+        testWalletModel.fees.choosePreset(2)
+        tryCompare(testWalletModel.fees, "policyPending", false)
+        compare(findChild(page, "sendReviewFallbackFeeWarning").visible, true)
+        compare(testWalletTransaction.reviewFeeRate, "2.5")
     }
 
     function test_equal_amount_intent_uses_the_typed_fixed_mode() {
@@ -539,6 +619,8 @@ TestCase {
         page.visible = true
         testWalletModel.customFeeEnabled = true
         testWalletModel.customFeeRate = "4.2"
+        // This fixture represents an already prepared explicit-rate review.
+        testWalletTransaction.reviewFeeSource = FeeSelectionModel.Explicit
         page.openTransactionReview()
         const popup = findChild(page, "transactionReviewPopup")
         const reviewStack = findChild(popup, "sendTransactionReviewStack")
@@ -1151,9 +1233,9 @@ TestCase {
         testWalletModel.customFeeRate = "0.099"
         compare(review.enabled, false)
         testWalletModel.customFeeRate = "0.1"
-        compare(review.enabled, true)
+        tryCompare(review, "enabled", true)
         testWalletModel.customFeeRate = "2.5"
-        compare(review.enabled, true)
+        tryCompare(review, "enabled", true)
         selectFee(1)
         compare(testWalletModel.customFeeEnabled, false)
         compare(testWalletModel.targetBlocks, 6)

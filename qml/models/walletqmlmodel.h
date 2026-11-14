@@ -16,6 +16,9 @@
 #include <qml/walletreceipts.h>
 #include <qml/psbtwork.h>
 #include <qml/models/feereadservices.h>
+#include <qml/models/feeestimatevalues.h>
+#include <qml/models/feeestimatereader.h>
+#include <qml/models/feeselectionmodel.h>
 #include <qml/models/feereadstate.h>
 #include <qml/models/flowdetailsmodel.h>
 #include <qml/models/bumptransactionmodel.h>
@@ -66,31 +69,6 @@ namespace walletsigning { struct Result; }
 namespace walletprepare { struct Result; }
 
 class PsbtQmlModel;
-
-struct SendFeePreview {
-    CAmount fee{0};
-    int inputs{0};
-    CAmount rate_per_kvb{0};
-    std::optional<CAmount> maximum_amount;
-    bool sweeps_wallet{false};
-    bool operator==(const SendFeePreview&) const = default;
-};
-
-struct FeeReadInput {
-    struct Recipient { std::string address; CAmount amount; };
-    std::vector<Recipient> recipients;
-    wallet::CCoinControl coin_control;
-    std::shared_ptr<const CoinsListModel::Selection> selected;
-    int remainder_index{-1};
-    bool custom_fee_enabled{false};
-    QString custom_fee_rate;
-    std::shared_ptr<const senddraft::Snapshot> draft;
-    quint64 maximum_token{0};
-};
-struct FeeReadResult {
-    QHash<unsigned int, SendFeePreview> estimates;
-    std::optional<SendFeePreview> custom;
-};
 
 class WalletQmlModel : public QObject, public ReviewOwner
 {
@@ -186,6 +164,7 @@ private:
     Q_PROPERTY(SendRecipient* maximumRecipient READ maximumRecipient NOTIFY maximumRecipientChanged)
     Q_PROPERTY(QString estimatedFee READ estimatedFee NOTIFY estimatedFeeChanged)
     Q_PROPERTY(bool sendAmountExhaustsBalance READ sendAmountExhaustsBalance NOTIFY sendAmountExhaustsBalanceChanged)
+    Q_PROPERTY(FeeSelectionModel* fees READ fees CONSTANT)
     Q_PROPERTY(bool customFeeEnabled READ customFeeEnabled WRITE setCustomFeeEnabled NOTIFY customFeeEnabledChanged)
     Q_PROPERTY(QString customFeeRate READ customFeeRate WRITE setCustomFeeRate NOTIFY customFeeRateChanged)
     Q_PROPERTY(bool customFeeRateValid READ customFeeRateValid NOTIFY customFeeRateValidChanged)
@@ -328,12 +307,13 @@ public:
     Q_INVOKABLE void setCustomFeeTarget(unsigned int target);
     CFeeRate dustRelayFee() const;
     bool sendAmountExhaustsBalance() const;
-    bool customFeeEnabled() const { return m_custom_fee_enabled; }
-    QString customFeeRate() const { return m_custom_fee_rate; }
+    FeeSelectionModel* fees() const { return m_fees; }
+    bool customFeeEnabled() const { return m_fees && m_fees->mode() == FeeSelectionModel::Manual; }
+    QString customFeeRate() const { return m_fees ? m_fees->customRate()->text() : QString{}; }
     bool customFeeRateValid() const;
     double minimumCustomFeeRate() const;
-    bool customFeeTargetPending() const { return m_custom_target_pending; }
-    bool feeEstimatePending() const { return m_fee_estimate_pending; }
+    bool customFeeTargetPending() const { return m_fees && m_fees->policyPending(); }
+    bool feeEstimatePending() const { return m_fees && m_fees->estimatePending(); }
     int feeEstimateRevision() const { return m_fee_estimate_revision; }
     Q_INVOKABLE quint64 requestPrepareTransaction();
     Q_INVOKABLE quint64 approveExternalSignerTransaction();
@@ -512,10 +492,8 @@ private:
     void projectMaximumRecipient();
     void updateMaximumAmount();
     void requestFeeEstimatesNow();
-    void invalidateFeeRead(bool close = false);
-    void applyFeeEstimates(const QHash<unsigned int, SendFeePreview>& estimates,
-                           const std::optional<SendFeePreview>& custom_estimate,
-                           quint64 request_id);
+    void invalidateFeeRead(bool close = false, bool scheduled = false);
+    void publishFeeEstimates();
     std::optional<CAmount> selectedFeeEstimate() const;
     std::optional<SendFeePreview> selectedFeePreview() const;
     void clearFeeEstimates();
@@ -698,9 +676,6 @@ private:
     CAmount m_available_send_balance{0}, m_selected_send_balance{0};
     std::optional<CAmount> m_dust_relay_fee;
     std::optional<CAmount> m_minimum_relay_fee;
-    QHash<unsigned int, CAmount> m_custom_target_rates;
-    bool m_custom_target_pending{false};
-    unsigned int m_pending_custom_target{0};
     bool m_send_facts_known{false};
     void requestSendFacts();
     void publishSendFacts();
@@ -743,14 +718,15 @@ private:
     bool m_current_transaction_can_broadcast{false};
     QString m_current_transaction_review_message;
     FeeReadServices m_fee_read_services;
-    std::shared_ptr<FeeReadState> m_fee_read_state{std::make_shared<FeeReadState>()};
-    QHash<unsigned int, SendFeePreview> m_fee_estimates;
-    std::optional<SendFeePreview> m_custom_fee_estimate;
-    QString m_custom_fee_rate;
+    FeeSelectionModel* m_fees{nullptr};
+    std::shared_ptr<feeestimate::Reader> m_fee_reader;
+    std::optional<SendFeePreview> m_last_fee_projection;
     quint64 m_fee_estimate_request_id{0};
     int m_fee_estimate_revision{0};
-    bool m_custom_fee_enabled{false};
     bool m_fee_estimate_pending{false};
+    bool m_fee_drained{true};
+    std::string m_fee_observed_block;
+    quint64 m_fee_backend_revision{0};
     bool m_is_wallet_loaded{false};
     bool m_is_encrypted{false};
     bool m_is_locked{false};

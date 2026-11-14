@@ -9,6 +9,7 @@ import "../../qml/components"
 TestCase {
     name: "FeeSelection"
     when: windowShown
+    visible: true
     width: 900
     height: 700
 
@@ -34,8 +35,8 @@ TestCase {
         testWalletModel.setFeeEstimate(1, "0.00000750 BTC")
         testWalletModel.setFeeEstimate(2, "0.00000500 BTC")
         testWalletModel.setFeeEstimate(6, "0.00000250 BTC")
-        testWalletModel.customFeeEnabled = false
-        testWalletModel.customFeeRate = ""
+        testWalletModel.resetFeePolicyForTest()
+        tryCompare(testWalletModel.fees, "policyPending", false)
         testWalletModel.targetBlocks = 2
     }
 
@@ -183,7 +184,12 @@ TestCase {
         compare(control.selectedDuration, "")
         compare(testWalletModel.customFeeEnabled, true)
         tryCompare(presetEstimateLabel, "visible", false)
-        compare(customEstimateLabel.text, "")
+        // The real policy owner now derives the initial Custom rate from
+        // the observed fixture facts, then receives its fixed Native outcome.
+        tryCompare(testWalletModel.fees, "policyPending", false)
+        compare(testWalletModel.customFeeRate, "2.500")
+        compare(testWalletModel.customFeeRateValid, true)
+        tryCompare(customEstimateLabel, "text", "0.00000400 BTC")
     }
 
     function test_feeSelection_custom_rate_updates_fee_estimate_and_presets_restore_layout() {
@@ -208,14 +214,17 @@ TestCase {
         const customOption = picker.itemAtIndex(3)
         mouseClick(customOption, customOption.width / 2, customOption.height / 2)
 
-        customFeeRateInput.text = "2"
-        compare(testWalletModel.customFeeRate, "2")
-        compare(testWalletModel.customFeeRateValid, true)
+        tryCompare(customFeeRateInput, "enabled", true)
+        verify(testSetup.replaceText(customFeeRateInput, "2"))
+        tryCompare(testWalletModel, "customFeeRate", "2")
+        tryCompare(testWalletModel, "customFeeRateValid", true)
         tryCompare(customEstimateLabel, "text", "0.00000400 BTC")
 
-        customFeeRateInput.text = "12345678901234567890"
+        verify(testSetup.replaceText(customFeeRateInput, "9".repeat(40)))
         compare(customFeeRateInput.text.length, control.customFeeRateMaximumLength)
         compare(testWalletModel.customFeeRate, customFeeRateInput.text)
+        tryCompare(testWalletModel.fees, "policyPending", false)
+        compare(testWalletModel.customFeeRateValid, false)
 
         popup.open()
         tryVerify(function() {

@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/walletprepare.h>
+#include <chainparams.h>
+#include <qml/models/feeestimatevalues.h>
 #include <qml/wallettransaction.h>
 #include <qml/psbtwork.h>
 #include <key_io.h>
@@ -74,6 +76,7 @@ Result Execute(interfaces::Wallet& wallet, Request request)
             if (!wallet.unlock(*request.passphrase)) { relock = false; result.error = Error::IncorrectPassphrase; return finish(); }
         }
         request.passphrase.reset();
+        if (request.automatic_fee) feeestimate::ApplyAutomaticPolicy(wallet, request.control);
         const auto created = wallettransaction::Create(wallet, recipients, request.control, request.remainder, sign);
         if (!created || !created->tx) {
             result.error = Error::Core;
@@ -86,6 +89,7 @@ Result Execute(interfaces::Wallet& wallet, Request request)
         auto review = std::make_shared<walletreview::Snapshot>();
         review->transaction = created->tx;
         review->fee = created->fee;
+        review->fee_source = request.automatic_fee && Params().GetChainType() == ChainType::REGTEST ? feeestimate::Provenance::Static : feeestimate::ProvenanceFor(created->fee_reason);
         review->proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Prepared(*created->tx, created->fee));
         if (review->proof->state != psbtfee::State::Known || !MoneyRange(created->fee)) {
             result.error = Error::Invalid; return finish();
@@ -101,7 +105,11 @@ Result Execute(interfaces::Wallet& wallet, Request request)
         review->sweeps = *sweeps;
         review->target_blocks = request.target_blocks;
         review->display_unit = request.display_unit;
-        review->fee_rate = request.fee_rate;
+        // An earlier preview is not authority for the fee rate of this transaction.
+        // Explicit policy is known from this very Core request; the public
+        // result otherwise exposes the actual fee/reason but no nominal rate.
+        if (request.control.m_feerate) review->fee_rate = QString::number(request.control.m_feerate->GetFeePerK() / 1000)
+            + QLatin1Char{'.'} + QString::number(request.control.m_feerate->GetFeePerK() % 1000).rightJustified(3, QLatin1Char{'0'});
         std::vector<bool> used(created->tx->vout.size(), false);
         if (created->change_pos && *created->change_pos < used.size()) used[*created->change_pos] = true;
         for (int row = 0; row < request.recipients.size(); ++row) {

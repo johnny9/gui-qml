@@ -53,6 +53,7 @@
 #include <vector>
 
 #include <qml/backendexecutor.h>
+#include <qml/models/feeselectionmodel.h>
 #include <qml/bitcoinamount.h>
 #include <qml/components/blockclockdial.h>
 #include <qml/controls/linegraph.h>
@@ -1447,9 +1448,14 @@ Q_SIGNALS:void changed();
 private:QString m_error,m_matched_txid;
 };
 
+namespace {
+execution::SnapshotServices& MockFeeServices() { static execution::SnapshotServices value; return value; }
+std::vector<QPointer<FeeSelectionModel>>& MockFeeOwners() { static std::vector<QPointer<FeeSelectionModel>> value; return value; }
+}
 class MockWalletQmlModel : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(FeeSelectionModel* fees READ fees CONSTANT)
     Q_PROPERTY(bool recipientLabelsPending READ recipientLabelsPending NOTIFY recipientLabelsChanged)
     Q_PROPERTY(QString recipientLabelsError READ recipientLabelsError NOTIFY recipientLabelsChanged)
     Q_PROPERTY(QString recipientLabelsTransactionId READ recipientLabelsTransactionId NOTIFY recipientLabelsChanged)
@@ -1498,7 +1504,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool customFeeEnabled READ customFeeEnabled WRITE setCustomFeeEnabled NOTIFY customFeeEnabledChanged)
     Q_PROPERTY(QString customFeeRate READ customFeeRate WRITE setCustomFeeRate NOTIFY customFeeRateChanged)
     Q_PROPERTY(bool customFeeRateValid READ customFeeRateValid NOTIFY customFeeRateValidChanged)
-    Q_PROPERTY(double minimumCustomFeeRate MEMBER m_minimum_custom_fee_rate NOTIFY customFeeRateValidChanged)
+    Q_PROPERTY(double minimumCustomFeeRate READ minimumCustomFeeRate WRITE setMinimumCustomFeeRate NOTIFY customFeeRateValidChanged)
     Q_PROPERTY(bool feeEstimatePending MEMBER m_fee_estimate_pending NOTIFY feeEstimatePendingChanged)
     Q_PROPERTY(int feeEstimateRevision MEMBER m_fee_estimate_revision NOTIFY feeEstimateRevisionChanged)
     Q_PROPERTY(bool sendAmountExhaustsBalance READ sendAmountExhaustsBalance WRITE setSendAmountExhaustsBalance NOTIFY sendAmountExhaustsBalanceChanged)
@@ -1574,10 +1580,44 @@ public:
     Q_INVOKABLE void setRpcNamespace(const QString& value) { m_rpc_namespace = value; Q_EMIT nameChanged(); }
     Q_INVOKABLE void clearRpcNamespace() { m_rpc_namespace = {}; Q_EMIT nameChanged(); }
 
-    MockWalletQmlModel() { connect(this, &MockWalletQmlModel::currentTransactionChanged, this, [this] {
-        ++m_flow_revision;
-        m_flow_details.setSource(m_current_transaction_flow, m_current_transaction ? m_current_transaction->property("reviewedRecipients").toList() : QVariantList{}, m_current_transaction, m_flow_revision);
-    }); }
+    FeeSelectionModel* fees() const { return m_fees; }
+    explicit MockWalletQmlModel(QObject* parent = nullptr) : QObject(parent), m_fees(new FeeSelectionModel(this))
+    {
+        connect(this, &MockWalletQmlModel::currentTransactionChanged, this, [this] {
+            ++m_flow_revision;
+            m_flow_details.setSource(m_current_transaction_flow, m_current_transaction ? m_current_transaction->property("reviewedRecipients").toList() : QVariantList{}, m_current_transaction, m_flow_revision);
+        });
+        MockFeeOwners().emplace_back(m_fees);
+        m_fees->setServices(MockFeeServices());
+        m_fees->observe(100, {{2, 2500}, {3, 2500}, {4, 2500}, {6, 2500}, {10, 2500}, {25, 2500}, {50, 2500}});
+        connect(m_fees, &FeeSelectionModel::policyChanged, this, [this] {
+            const bool mode_changed = m_custom_fee_enabled != (m_fees->mode() == FeeSelectionModel::Manual);
+            const bool target_changed = m_target_blocks != m_fees->targetBlocks();
+            const bool rate_changed = m_custom_fee_rate != m_fees->customRate()->text();
+            m_custom_fee_enabled = m_fees->mode() == FeeSelectionModel::Manual;
+            m_target_blocks = m_fees->targetBlocks(); m_custom_fee_rate = m_fees->customRate()->text();
+            if (mode_changed) Q_EMIT customFeeEnabledChanged();
+            if (target_changed) Q_EMIT targetBlocksChanged();
+            if (rate_changed) Q_EMIT customFeeRateChanged();
+            Q_EMIT customFeeRateValidChanged();
+            if (m_fees->policyPending()) {
+                m_custom_fee_estimate.clear(); ++m_fee_estimate_revision;
+                Q_EMIT feeEstimateRevisionChanged(); return;
+            }
+            FeeReadResult result;
+            result.estimates.insert(2, SendFeePreview{750, 1, 2500, {}, false, feeestimate::Provenance::Estimated, 2});
+            result.estimates.insert(6, SendFeePreview{500, 1, 2500, {}, false, feeestimate::Provenance::Estimated, 6});
+            result.estimates.insert(10, SendFeePreview{250, 1, 2500, {}, false, feeestimate::Provenance::Estimated, 10});
+            // Preserve the existing fixture's fixed 400-sat Native outcome;
+            // the actual fee-selection domain owns validity and rate intent.
+            if (m_fees->ratePerKvB()) result.custom = SendFeePreview{400, 1, *m_fees->ratePerKvB(), {}, false, feeestimate::Provenance::Manual, 0};
+            m_custom_fee_estimate = m_fees->ratePerKvB() ? QStringLiteral("0.00000400 BTC") : QString{};
+            ++m_fee_estimate_revision;
+            m_fees->publishEstimate(feeestimate::Phase::Current, std::move(result), true);
+            Q_EMIT feeEstimateRevisionChanged();
+        });
+    }
+
     QObject* currentTransactionFlowDetails() { return &m_flow_details; }
     quint64 currentTransactionFlowRevision() const { return m_flow_revision; }
 
@@ -1975,20 +2015,21 @@ public:
         }
         Q_EMIT walletInfoChanged();
     }
-    Q_INVOKABLE void setCustomFeeTarget(int target) { setTargetBlocks(target); setCustomFeeEnabled(true); setCustomFeeRate("2.5"); }
-    int targetBlocks() const { return m_target_blocks; }
+    Q_INVOKABLE void setCustomFeeTarget(int target) { m_fees->chooseCustomTarget(target); }
+    int targetBlocks() const { return m_fees->targetBlocks(); }
     QString estimatedFee() const
     {
         return m_custom_fee_enabled ? m_custom_fee_estimate : estimatedFeeForTarget(m_target_blocks);
     }
-    bool customFeeEnabled() const { return m_custom_fee_enabled; }
-    QString customFeeRate() const { return m_custom_fee_rate; }
-    bool customFeeRateValid() const
-    {
-        static const QRegularExpression pattern{
-            QStringLiteral(R"(^[0-9]+(?:\.[0-9]{0,3})?$)")
-        };
-        return pattern.match(m_custom_fee_rate).hasMatch() && m_custom_fee_rate.toDouble() >= m_minimum_custom_fee_rate;
+    bool customFeeEnabled() const { return m_fees->mode() == FeeSelectionModel::Manual; }
+    QString customFeeRate() const { return m_fees->customRate()->text(); }
+    bool customFeeRateValid() const { return m_fees->ratePerKvB().has_value(); }
+    double minimumCustomFeeRate() const { return m_minimum_custom_fee_rate; }
+    void setMinimumCustomFeeRate(double minimum) {
+        if (minimum == m_minimum_custom_fee_rate) return;
+        m_minimum_custom_fee_rate = minimum;
+        m_fees->observe(static_cast<CAmount>(minimum * 1000), {{2, 2500}, {3, 2500}, {4, 2500}, {6, 2500}, {10, 2500}, {25, 2500}, {50, 2500}});
+        Q_EMIT customFeeRateValidChanged();
     }
     double m_minimum_custom_fee_rate{0.1};
     int prepareTransactionCalls() const { return m_prepare_transaction_calls; }
@@ -2068,37 +2109,11 @@ public:
         return true;
     }
     void setTargetBlocks(const int value)
-    {
-        if (m_target_blocks == value) return;
-        m_target_blocks = value;
-        ++m_fee_estimate_revision;
-        Q_EMIT targetBlocksChanged();
-        Q_EMIT feeEstimateRevisionChanged();
-        scheduleFeeEstimates();
-    }
+    { m_fees->captureTarget(static_cast<unsigned int>(value)); }
     void setCustomFeeEnabled(const bool value)
-    {
-        if (m_custom_fee_enabled == value) return;
-        m_custom_fee_enabled = value;
-        ++m_fee_estimate_revision;
-        Q_EMIT customFeeEnabledChanged();
-        Q_EMIT feeEstimateRevisionChanged();
-        scheduleFeeEstimates();
-    }
+    { m_fees->captureMode(value); }
     void setCustomFeeRate(const QString& value)
-    {
-        const bool was_valid = customFeeRateValid();
-        if (m_custom_fee_rate == value) return;
-        m_custom_fee_rate = value;
-        m_custom_fee_estimate = customFeeRateValid() ? QStringLiteral("0.00000400 BTC") : QString{};
-        ++m_fee_estimate_revision;
-        Q_EMIT customFeeRateChanged();
-        if (was_valid != customFeeRateValid()) {
-            Q_EMIT customFeeRateValidChanged();
-        }
-        Q_EMIT feeEstimateRevisionChanged();
-        scheduleFeeEstimates();
-    }
+    { m_fees->editRate(value); }
     void setSendAmountExhaustsBalance(const bool value)
     {
         if (m_send_amount_exhausts_balance == value) return;
@@ -2159,6 +2174,19 @@ public:
     {
         ++m_schedule_fee_estimates_calls;
         Q_EMIT scheduleFeeEstimatesCallsChanged();
+    }
+    Q_INVOKABLE void resetFeePolicyForTest()
+    {
+        m_fees->choosePreset(2); m_fees->chooseCustomTarget(6); m_fees->choosePreset(6);
+    }
+    Q_INVOKABLE void publishFeeResultForTest(int source, const QString& error)
+    {
+        FeeReadResult result;
+        if (error.isEmpty()) {
+            for (unsigned int target : {2U, 6U, 10U}) result.estimates.insert(target,
+                SendFeePreview{500, 1, 2500, {}, false, static_cast<feeestimate::Provenance>(source), source == int(feeestimate::Provenance::Estimated) ? int(target) : 0});
+        } else { result.error = feeestimate::Error::Backend; result.message = error; }
+        m_fees->publishEstimate(error.isEmpty() ? feeestimate::Phase::Current : feeestimate::Phase::Failed, std::move(result), error.isEmpty());
     }
     Q_INVOKABLE void setFeeEstimate(const int target, const QString& estimate)
     {
@@ -2391,6 +2419,7 @@ Q_SIGNALS:
     void receiveRequestReconciliationPendingChanged();
 
 private:
+    FeeSelectionModel* m_fees;
     MockPsbtDocument m_imported_psbt{this};
     PsbtActionState m_psbt_action_state{PsbtActionState::PsbtIdle};
     PsbtImportResult m_psbt_import_result{PsbtImportResult::PsbtUnsupported},m_next_psbt_import_result{PsbtImportResult::WalletCanSign};
@@ -2455,6 +2484,8 @@ class MockWalletQmlModelTransaction : public QObject
     Q_PROPERTY(QVariantList reviewedRecipients MEMBER m_reviewed_recipients NOTIFY reviewedRecipientsChanged)
     Q_PROPERTY(int reviewTargetBlocks MEMBER m_review_target_blocks NOTIFY reviewedRecipientsChanged)
     Q_PROPERTY(QString reviewFeeRate MEMBER m_review_fee_rate NOTIFY reviewedRecipientsChanged)
+    Q_PROPERTY(int reviewFeeSource MEMBER m_review_fee_source NOTIFY reviewedRecipientsChanged)
+    Q_PROPERTY(bool reviewUsesFallback MEMBER m_review_fallback NOTIFY reviewedRecipientsChanged)
     Q_PROPERTY(QObject* amountAmount READ amountAmount CONSTANT)
     Q_PROPERTY(QObject* feeAmount READ feeAmount CONSTANT)
     Q_PROPERTY(QObject* totalAmount READ totalAmount CONSTANT)
@@ -2476,6 +2507,8 @@ public:
     QVariantList m_reviewed_recipients;
     int m_review_target_blocks{6};
     QString m_review_fee_rate{QStringLiteral("2.5")};
+    int m_review_fee_source{1};
+    bool m_review_fallback{false};
     MockBitcoinAmount m_amount_amount;
     MockBitcoinAmount m_fee_amount;
     MockBitcoinAmount m_total_amount;
@@ -5900,6 +5933,7 @@ public Q_SLOTS:
         return text;
     }
     QString nativeClipboardText() const { return QGuiApplication::clipboard()->text(); }
+    void setNativeClipboardText(const QString& text) { QGuiApplication::clipboard()->setText(text); }
     QVariantMap prepareTransactionFlow(const QVariantMap& input) {
         auto flow = input; flow["presentation"] = PrepareTransactionFlowPresentation(flow); return flow;
     }
@@ -5939,6 +5973,9 @@ public Q_SLOTS:
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settings.path());
         QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, m_settings.path());
         m_qr_executor = std::make_unique<BackendExecutor>(execution::Limits::Bounded());
+        MockFeeServices() = {m_qr_executor->scheduler(), [this](std::function<void()> work) { QMetaObject::invokeMethod(this, std::move(work), Qt::QueuedConnection); }};
+        qmlRegisterUncreatableType<FeeSelectionModel>("org.bitcoincore.qt", 1, 0, "FeeSelectionModel", "Owned fee policy");
+        qmlRegisterUncreatableType<FeeRateEntry>("org.bitcoincore.qt", 1, 0, "FeeRateEntry", "Owned fee input");
         BlockClockDial::setDefaultServices({m_qr_executor->scheduler(),
             [this](std::function<void()> work) { QMetaObject::invokeMethod(this, std::move(work), Qt::QueuedConnection); }});
         BitcoinAddress::setDefaultServices({m_qr_executor->scheduler(),
@@ -6029,6 +6066,8 @@ public Q_SLOTS:
     {
         if (!endControlledPreferences()) m_had_warnings = true;
         for(const auto& store:m_preferences_stores)if(store)store->closeAdmission();
+        for (const auto& owner : MockFeeOwners()) if (owner) owner->close();
+        MockFeeServices() = {};
         BitcoinAddress::setDefaultServices({});
         QEventLoop loop;
         bool retired{false};
