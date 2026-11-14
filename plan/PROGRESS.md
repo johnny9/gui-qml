@@ -11,9 +11,12 @@ progress without changing shared finding or schedule registers.
 | R09 | User-accepted conditional app-side prerequisite; upstream limitations retained |
 | R10 | Implementation/focused ordinary checkpoint complete; final qualification pending R42 |
 | R11 | Implementation/focused checkpoint complete:274 behavioral bodies,5 IPC scenarios; final qualification pending R42 |
-| R16 | Independent Send draft implementation delegated in an isolated branch; prerequisites R07/R10 met, gate pending |
+| R16 | Focused checkpoint integrated:227 native,19 Core integration,17 Linux QML bodies across recorded snapshots; final qualification pending R42 |
+| R17 | Fee selection/versioned-reader implementation active from accepted R16 |
+| R14 | Security/storage in progress; original reservation-loss regression repaired privately,61 affected-class bodies pass |
 | R28 | Independent versioned readers/Activity implementation delegated in an isolated branch; prerequisites R08/R10 met, gate pending |
-| R12–R15, R17–R27, R29–R40 | Authorized next, according to stated prerequisites; implementation and focused gates pending |
+| R12 | Creation implementation at focused validation; integration pending |
+| R13, R15, R18–R27, R29–R40 | Authorized next, according to stated prerequisites; implementation and focused gates pending |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
@@ -23,3 +26,7 @@ The program remains 318 findings, 329 scopes, 43 orders and 36 schedules.
 
 The [R11 checkpoint](R11_FOCUSED_CHECKPOINT_20261114.md) records its exact tested
 inputs, scoped reuse, resolved failures and remaining upstream/platform limits.
+
+The [R16 draft checkpoint](R16_SEND_DRAFT.md) records its new typed draft/mode
+interface and focused validation; final platform/coverage/sanitizer status stays
+pending. Independent steps advance while accepted changes are integrated.
