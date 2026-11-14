@@ -20,7 +20,7 @@ PageStack {
     property string prepareTransactionErrorText: ""
     property bool manualCoinSelection: false
     readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
-    readonly property string recipientValidationError: wallet ? wallet.recipients.validationError : ""
+    readonly property string recipientValidationError: wallet ? wallet.recipients.budgetError || wallet.recipients.validationError : ""
     readonly property bool selectedInputsActive: wallet !== null
         && wallet.coinsListModel !== null
         && wallet.coinsListModel.selectedCoinsCount > 0
@@ -45,7 +45,7 @@ PageStack {
     property double psbtImportTicket: 0
     property WalletQmlModel psbtImportWallet: null
     property int psbtImportHiddenCount: -1
-    property int psbtImportDraftRevision: -1
+    property string psbtImportDraftRevision: ""
     function requestPsbtImport(path) {
         if (!root.wallet || root.wallet.psbtActionBusy) return
         psbtImportWallet = root.wallet
@@ -74,7 +74,7 @@ PageStack {
     property bool preparingReview: false
     property double preparationTicket: 0
     property WalletQmlModel preparationWallet: null
-    property int preparationDraftRevision: -1
+    property string preparationDraftRevision: ""
     property int preparationHiddenCount: -1
 
     function prepareTransactionForReview() {
@@ -132,13 +132,12 @@ PageStack {
         root.openWhileShown(sendPage.openPsbtFileImport)
     }
 
-    // Counts edits to the payment draft. A confirmation applies only to the
-    // draft it was shown for, so any edit closes it, including one from
-    // outside the form such as File > Open URI.
-    property int draftRevision: 0
+    // The draft owner stamps captured user intent. Validation echoes and
+    // automatic Maximum observations do not create another user revision.
+    readonly property string draftRevision: root.wallet ? root.wallet.recipients.revision : ""
+    onDraftRevisionChanged: if (sendPage && reviewSweepAlert) root.draftChanged()
 
     function draftChanged() {
-        root.draftRevision++
         if (!sendPage.m_applyingUri && !(sendPage.m_uriPasteOwner && (sendPage.m_uriPasteOwner.literalActive || sendPage.m_uriPasteOwner.mutating)))
             sendPage.cancelUriIntents()
         root.preparingReview = false
@@ -548,7 +547,7 @@ PageStack {
         property bool m_uriHadPasteOwner: false
         property var m_uriPayload: null
         property double m_uriRecipientRevision: -1
-        property int m_uriRevision: -1
+        property string m_uriRevision: ""
         property int m_uriHidden: -1
         property string m_uriText: ""
         property string m_uriSource: ""
@@ -557,7 +556,7 @@ PageStack {
         property bool m_uriApplying: false
         property WalletQmlModel m_clipboardWallet: null
         property SendRecipient m_clipboardRecipient: null
-        property int m_clipboardRevision: -1
+        property string m_clipboardRevision: ""
         property int m_clipboardHidden: -1
         property double m_clipboardCounter: -1
         property string m_clipboardText: ""
@@ -682,8 +681,8 @@ PageStack {
                 } else applyParsedPaymentRequest(result, m_uriSource, m_uriRecipient)
             } finally { m_uriApplying = false }
         }
-        function applyPastedPaymentRequest(result, text) {
-            applyParsedPaymentRequest(result, qsTr("clipboard"), m_uriRecipient)
+        function applyPastedPaymentRequest(result, text, replacePrivateNote) {
+            applyParsedPaymentRequest(result, qsTr("clipboard"), m_uriRecipient, replacePrivateNote)
             if (result.success) {
                 m_filledUri = result.sourceId
                 showClipboardUriBanner = false
@@ -744,7 +743,7 @@ PageStack {
         }
 
         // Apply a pre-parsed URI result to the current recipient form fields.
-        function applyParsedPaymentRequest(result, source, recipient) {
+        function applyParsedPaymentRequest(result, source, recipient, replacePrivateNote) {
             if (!result.success) {
                 paymentRequestStatus = result.error
                 paymentRequestIsError = true
@@ -756,8 +755,7 @@ PageStack {
             m_applyingUri = true
             try {
                 sendPage.expandedRecipient = wallet.recipients.currentIndex - 1
-                target.applyParsedPaymentRequest(result)
-                if (amountInput) amountInput.syncFromAmount(true)
+                target.applyParsedPaymentRequest(result, !!replacePrivateNote)
             } finally { m_applyingUri = false }
             if (!root.visible || !wallet.available || root.wallet !== wallet) return
             root.scheduleFeeEstimates()
@@ -807,7 +805,7 @@ PageStack {
                     sendPage.clearPendingPaymentUriPaste()
                     paymentUriOverwritePopup.close()
                     try {
-                        if (result) sendPage.applyPastedPaymentRequest(result, text)
+                        if (result) sendPage.applyPastedPaymentRequest(result, text, true)
                         sendPage.finishPasteOwner(false)
                     } finally { sendPage.m_uriApplying = false }
                 }
@@ -1111,7 +1109,7 @@ PageStack {
                                 objectName: "sendAddRecipientButton"
                                 Layout.fillWidth: true
                                 text: qsTr("+ Add another")
-                                enabled: root.wallet.recipients.count < 25
+                                enabled: root.wallet.recipients.canAddRecipient
                                 onClicked: { root.wallet.recipients.add(); sendPage.expandedRecipient = root.wallet.recipients.currentIndex - 1 }
                             }
                         }
@@ -1280,7 +1278,7 @@ PageStack {
         id: reviewSweepAlert
         objectName: "sendReviewSweepAlert"
         parent: Overlay.overlay
-        property int draftRevision: -1
+        property string draftRevision: ""
         //: Confirmation before reviewing a transaction that sends the wallet's entire available balance.
         title: qsTr("Use all available funds?")
         //: %1 is the total recipient amount with its unit, excluding the transaction fee.
@@ -1317,7 +1315,7 @@ PageStack {
         confirmText: qsTr("Unlock and continue")
         busyConfirmText: qsTr("Unlocking...")
         property WalletQmlModel actionWallet: null
-        property int actionDraftRevision: -1
+        property string actionDraftRevision: ""
         readonly property bool contextValid: root.visible && actionWallet !== null
             && actionWallet === root.wallet && actionWallet.available && actionDraftRevision === root.draftRevision
         onAboutToShow: { actionWallet = root.wallet; actionDraftRevision = root.draftRevision }

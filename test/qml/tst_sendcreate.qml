@@ -80,6 +80,46 @@ TestCase {
         keyClick(Qt.Key_V, Qt.ControlModifier)
     }
 
+    function test_equal_amount_intent_uses_the_typed_fixed_mode() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        testSendRecipient.amount.satoshi = 12345
+        findChild(page, "sendUseMaximumButton").clicked()
+        compare(testWalletModel.useMaximumCalls, 1)
+        compare(testSendRecipient.amountMode, SendRecipient.Maximum)
+        testSendRecipient.amount.editInput(testSendRecipient.amount.inputText)
+        compare(testSendRecipient.amountMode, SendRecipient.Fixed)
+        compare(testWalletModel.maximumRecipient, null)
+        compare(testSendRecipient.amount.satoshi, 12345)
+    }
+    function test_draft_revision_binds_to_the_owner_across_view_recreation() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        compare(typeof page.draftRevision, "string")
+        compare(page.draftRevision, testRecipientsModel.revision)
+        const before = page.draftRevision
+        testSendRecipient.amount.editInput(testSendRecipient.amount.inputText)
+        verify(page.draftRevision !== before)
+        compare(page.draftRevision, testRecipientsModel.revision)
+        const recreated = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        compare(recreated.draftRevision, page.draftRevision)
+    }
+    function test_recipient_budget_binds_the_add_command() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        for (let row = 1; row < 25; ++row) testRecipientsModel.add()
+        compare(testRecipientsModel.count, 25)
+        compare(testRecipientsModel.canAddRecipient, false)
+        compare(findChild(page, "sendAddRecipientButton").enabled, false)
+    }
+    function test_private_note_transport_refusal_restores_the_owned_text() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        testSendRecipient.editPrivateNote("owned private note")
+        const note = findChild(page, "sendNoteInput")
+        verify(note !== null)
+        note.forceActiveFocus()
+        note.text = "x".repeat(257)
+        tryCompare(note, "text", "owned private note")
+        compare(testSendRecipient.label, "owned private note")
+    }
+
     function test_available_balance_keeps_caption_static() {
         const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
         verify(page !== null)
@@ -1226,7 +1266,7 @@ TestCase {
         const prepareCalls = testWalletModel.prepareTransactionCalls
         findChild(page, "sendReviewButton").clicked()
         tryCompare(alert, "opened", true)
-        page.draftRevision++
+        testSendRecipient.amount.satoshi = testSendRecipient.amount.satoshi + 1
         findChild(alert.contentItem, "sendReviewSweepConfirmButton").clicked()
         compare(testWalletModel.prepareTransactionCalls, prepareCalls)
         compare(findChild(page, "transactionReviewPopup").opened, false)

@@ -16,6 +16,10 @@ class BitcoinAmountTests : public QObject {
     Q_OBJECT
 
 private Q_SLOTS:
+    void amountIntentPrecedesMutationAndPreservesReentrantOwnership_data();
+    void amountIntentPrecedesMutationAndPreservesReentrantOwnership();
+    void exactMonetaryBoundaryIsIndependentOfDisplayUnit_data();
+    void exactMonetaryBoundaryIsIndependentOfDisplayUnit();
     void sharedAdmissionGatesFenceAllEditorIntakes_data();
     void sharedAdmissionGatesFenceAllEditorIntakes();
     void reentrantOwnerCloseStopsFurtherPresentation();
@@ -44,6 +48,50 @@ private Q_SLOTS:
     void localizedDisplayWithUnit_usesLocaleAndKeepsCanonicalDisplay();
     void flipUnit_changesLabelAndDisplaySignal();
 };
+
+void BitcoinAmountTests::amountIntentPrecedesMutationAndPreservesReentrantOwnership_data()
+{
+    QTest::addColumn<int>("producer"); QTest::addColumn<int>("reentrant");
+    for (int producer{0}; producer < 3; ++producer) for (int reentrant{0}; reentrant < 3; ++reentrant)
+        QTest::newRow(qPrintable(QString::number(producer) + "-" + QString::number(reentrant))) << producer << reentrant;
+}
+void BitcoinAmountTests::amountIntentPrecedesMutationAndPreservesReentrantOwnership()
+{
+    QFETCH(int, producer); QFETCH(int, reentrant);
+    auto amount = std::make_unique<BitcoinAmount>(); amount->setUnit(BitcoinAmount::Unit::SAT); amount->setSatoshi(3);
+    bool observed{false}; CAmount before{-1};
+    connect(amount.get(), &BitcoinAmount::valueEdited, this, [&] {
+        if (observed) return;
+        observed = true; before = amount->satoshi();
+        if (reentrant == 0) amount.reset();
+        if (reentrant == 1) amount->closeAdmission();
+        if (reentrant == 2) amount->setSatoshi(7);
+    });
+    auto* original = amount.get();
+    if (producer == 0) original->setSatoshi(3); // Equal canonical value is still user intent.
+    if (producer == 1) original->editInput("3");
+    if (producer == 2) original->clear();
+    QVERIFY(observed); QCOMPARE(before, CAmount{3});
+    if (reentrant == 0) QVERIFY(!amount);
+    else QCOMPARE(amount->satoshi(), reentrant == 1 ? CAmount{3} : CAmount{7});
+}
+void BitcoinAmountTests::exactMonetaryBoundaryIsIndependentOfDisplayUnit_data()
+{
+    QTest::addColumn<int>("unit"); QTest::addColumn<QString>("text");
+    QTest::newRow("btc") << 0 << "21000000.00000000";
+    QTest::newRow("milli") << 1 << "21000000000.00000";
+    QTest::newRow("micro") << 2 << "21000000000000.00";
+    QTest::newRow("sat") << 3 << "2100000000000000";
+}
+void BitcoinAmountTests::exactMonetaryBoundaryIsIndependentOfDisplayUnit()
+{
+    QFETCH(int, unit); QFETCH(QString, text); BitcoinAmount amount;
+    amount.setUnit(static_cast<BitcoinAmount::Unit>(unit)); amount.editInput(text);
+    QCOMPARE(amount.inputState(), BitcoinAmount::InputState::Valid); QCOMPARE(amount.satoshi(), MAX_MONEY);
+    BitcoinAmount committed; QVERIFY(amount.commitTo(&committed)); QCOMPARE(committed.satoshi(), MAX_MONEY);
+    amount.editInput(text + "1"); QVERIFY(!amount.inputAcceptable()); QVERIFY(!amount.commitTo(&committed));
+    QCOMPARE(committed.satoshi(), MAX_MONEY);
+}
 
 void BitcoinAmountTests::sharedAdmissionGatesFenceAllEditorIntakes_data()
 {

@@ -83,6 +83,79 @@ public:
     explicit SendIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void sendMonetaryBoundaryPreservesEveryEnteredDigit_data()
+    {
+        QTest::addColumn<int>("unit"); QTest::addColumn<QString>("text"); QTest::addColumn<int>("producer");
+        const QStringList texts{"21000000.00000000", "21000000000.00000", "21000000000000.00", "2100000000000000"};
+        for (int unit{0}; unit < 4; ++unit) for (int producer{0}; producer < 3; ++producer)
+            QTest::newRow(qPrintable(QString::number(unit) + "-" + QString::number(producer))) << unit << texts[unit] << producer;
+    }
+    void sendMonetaryBoundaryPreservesEveryEnteredDigit()
+    {
+        QFETCH(int, unit); QFETCH(QString, text); QFETCH(int, producer);
+        auto* wallet = qmltest::CreateWallet(m_app, "boundary"); QVERIFY(wallet);
+        QVERIFY(qmltest::Click(m_app, "sendTabButton"));
+        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
+        auto* input = qmltest::WaitForVisible(m_app, "sendAmountInput"); QVERIFY(input);
+        auto* amount = wallet->sendRecipientList()->currentRecipient()->amount();
+        QTRY_COMPARE(int(amount->unit()), unit);
+        if (producer == 0) QVERIFY(qmltest::SetText(m_app, "sendAmountInput", text));
+        else {
+            QVERIFY(qmltest::Click(m_app, "sendAmountInput"));
+            QTest::keyClick(m_app.window(), Qt::Key_A, Qt::ControlModifier, 1);
+            QTest::keyClick(m_app.window(), Qt::Key_Backspace, Qt::NoModifier, 1);
+            if (producer == 1) { QGuiApplication::clipboard()->setText(text); QTest::keyClick(m_app.window(), Qt::Key_V, Qt::ControlModifier, 1); }
+            else for (const QChar key : text) QTest::keyClick(m_app.window(), static_cast<Qt::Key>(key.unicode()), Qt::NoModifier, 1);
+        }
+        QTRY_COMPARE(amount->inputState(), BitcoinAmount::InputState::Valid);
+        QCOMPARE(amount->satoshi(), MAX_MONEY);
+        QVERIFY(qmltest::Click(m_app, "sendAddressInput")); QCOMPARE(amount->satoshi(), MAX_MONEY);
+        QVERIFY(!qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
+    void staleMaximumCannotReplaceAnOrdinaryAmountEdit()
+    {
+        const auto setup = prepareSweep(false); QVERIFY(setup); auto* wallet = setup->wallet;
+        auto* recipient = wallet->sendRecipientList()->currentRecipient();
+        QVERIFY(recipient->address()->address().isEmpty());
+        QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton"));
+        QTRY_COMPARE(wallet->maximumRecipient(), recipient);
+        QTRY_VERIFY(recipient->amount()->satoshi() > 0);
+        const auto stale_maximum = recipient->amount()->satoshi();
+        const auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name()); QVERIFY(coins.size() > 0);
+        UniValue locked{UniValue::VARR}; UniValue input{UniValue::VOBJ};
+        input.pushKV("txid", coins[0].find_value("txid")); input.pushKV("vout", coins[0].find_value("vout")); locked.push_back(input);
+        QVERIFY(qmltest::Rpc(m_app, "lockunspent", qmltest::Json("[false," + locked.write() + "]"), wallet->name()).get_bool());
+        // No GUI delivery has occurred since the independent RPC lock.
+        QCOMPARE(recipient->amount()->satoshi(), stale_maximum);
+        QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "0.01234567"));
+        QTRY_COMPARE(wallet->maximumRecipient(), nullptr);
+        QTRY_COMPARE(recipient->amount()->satoshi(), CAmount{1234567});
+        wallet->scheduleFeeEstimates(); QTRY_VERIFY(!wallet->feeEstimatePending());
+        QCOMPARE(recipient->amount()->satoshi(), CAmount{1234567});
+        QVERIFY(!wallet->sendDraftSweepsWallet()); QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
+    void maximumHandoverClearsTheFormerRecipient_data()
+    {
+        QTest::addColumn<bool>("with_address"); QTest::newRow("gross-before-address") << false; QTest::newRow("net-after-address") << true;
+    }
+    void maximumHandoverClearsTheFormerRecipient()
+    {
+        QFETCH(bool, with_address); const auto setup = prepareSweep(false); QVERIFY(setup); auto* wallet = setup->wallet;
+        auto* first = wallet->sendRecipientList()->currentRecipient();
+        if (with_address) QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
+        QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton")); QTRY_COMPARE(wallet->maximumRecipient(), first);
+        QTRY_VERIFY(first->amount()->satoshi() > 0);
+        QVERIFY(qmltest::Click(m_app, "sendAddRecipientButton"));
+        auto* second = wallet->sendRecipientList()->currentRecipient(); QVERIFY(second != first);
+        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", qmltest::NewAddress(m_app, setup->destination_wallet->name())));
+        QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton")); QTRY_COMPARE(wallet->maximumRecipient(), second);
+        QTRY_VERIFY(!first->amount()->isSet()); QCOMPARE(first->amount()->satoshi(), CAmount{0});
+        QVERIFY(!wallet->sendRecipientList()->allValid());
+        QVERIFY(!qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
+
     void localizedTypedSendPreparesExactOutput_data()
     {
         QTest::addColumn<QString>("text"); QTest::addColumn<int>("unit"); QTest::addColumn<int>("producer");
@@ -132,6 +205,11 @@ private Q_SLOTS:
                 << "available sats" << setup->wallet->availableSendBalanceSatoshi() << "error" << setup->wallet->sendRecipientList()->validationError();
         QTRY_VERIFY_WITH_TIMEOUT(qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool(), 30'000);
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
+        QTRY_VERIFY(!setup->wallet->preparationBusy());
+        qInfo() << "Typed Send preparation" << int(setup->wallet->preparationState())
+                << setup->wallet->transactionError() << "draft revision"
+                << setup->wallet->sendRecipientList()->revision();
+        QCOMPARE(setup->wallet->preparationState(), WalletQmlModel::PreparationState::PreparationReady);
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
         auto* prepared = setup->wallet->currentTransaction(); QVERIFY(prepared && prepared->getWtx());
         const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + EncodeHexTx(*prepared->getWtx()) + "\"]"));
@@ -614,6 +692,8 @@ QString SendPreparedWallet(const QString& selector)
     if (function == "customFeesRespectRelayMinimum") return "custom_fee";
     if (function == "coinSelectionCancelApplyAndLockReachTheWallet") return "integration";
     for (const auto* name : {"localizedTypedSendPreparesExactOutput",
+                             "staleMaximumCannotReplaceAnOrdinaryAmountEdit",
+                             "maximumHandoverClearsTheFormerRecipient",
                              "coinSelectionDialogCommitsOrDiscardsInputsAndRepricesTheMaximum",
                              "maximumAndSweepReviewRespectOwnershipAndSelection",
                              "fixedManualSweepWarnsBeforeUnlockAndBeforeBroadcast",

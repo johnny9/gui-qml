@@ -253,12 +253,19 @@ struct DrainWalletModel {
             delete model;
             return;
         }
+        const auto backend = model->backendExecutor();
+        const QPointer<WalletQmlModel> observer{model};
         QSignalSpy drained{model, &WalletQmlModel::shutdownFinished};
         model->beginShutdown();
-        if (!model->backendExecutor()->isDrained() && drained.empty() && !drained.wait(10000))
+        // Qt does not deliver earlier DeferredDelete events through every
+        // nested signal-spy loop. Retire the actual GUI leases while waiting
+        // for both the public completion and physical worker drain.
+        if (!QTest::qWaitFor([&] {
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                return backend->isDrained() && (!observer || !drained.empty());
+            }, 10000))
             QTest::qFail("Original wallet backend did not physically drain", __FILE__, __LINE__);
-        // A failed wait is still a failure; it must never abandon the facade.
-        delete model;
+        if (observer) delete observer.data();
     }
 };
 
@@ -3541,10 +3548,19 @@ private Q_SLOTS:
     void feeTargetIndex_mapsStandardTargets();
     void customFeeRateUpdatesEstimatedTarget();
     void maximumKeepsAmountWhenValidAddressCannotBeEstimated() {
-        auto [wallet, model] = MakeWalletModel();
+        const COutPoint selected{Txid::FromUint256(uint256::ONE), 1};
+        auto [wallet, model] = MakeConfiguredWalletModel([selected](MockWallet& value) {
+            value.list_coins_fn = [selected] {
+                const auto destination = DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
+                interfaces::Wallet::CoinsList coins;
+                coins[destination].emplace_back(selected,
+                    interfaces::WalletTxOut{CTxOut{10 * COIN, GetScriptForDestination(destination)}, 0, 6, false});
+                return coins;
+            };
+        });
         SetValidRecipient(*model);
-        const COutPoint selected{Txid{}, 1};
         model->selectCoin(selected);
+        QTRY_VERIFY(!model->coinSelectionPending() && model->isSelectedCoin(selected));
         // With a valid address, preserve the existing amount if no sendall
         // estimate can be made. Gross prefilling is only for an empty address.
         model->useMaximum();
@@ -3835,6 +3851,96 @@ private Q_SLOTS:
         QCOMPARE(model->estimatedFeeForTarget(6), QString{});
         QVERIFY(clock->quiescent());
     }
+    void heldMaximumEstimateCannotOverwriteANewerFixedIntent_data()
+    {
+        QTest::addColumn<bool>("imported"); QTest::newRow("ordinary-equal") << false; QTest::newRow("imported-equal") << true;
+    }
+    void heldMaximumEstimateCannotOverwriteANewerFixedIntent()
+    {
+        QFETCH(bool, imported);
+        auto env = std::make_shared<ManualExecutionEnvironment>(); auto receipts = std::make_shared<ManualFeeReceipts>(env);
+        std::vector<quint64> tokens;
+        FeeReadServices services{env->scheduler, env, [&, receipts](const FeeReadInput& input) {
+            receipts->readStarted(); tokens.push_back(input.maximum_token);
+            FeeReadResult result; result.estimates.insert(6, SendFeePreview{500, 1, 1000, CAmount{99000}, false}); return result;
+        }, [receipts](auto publication) { receipts->post(std::move(publication)); }};
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services)); Q_UNUSED(wallet);
+        const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
+        SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env); auto* recipient = model->sendRecipientList()->currentRecipient();
+        model->useMaximum();
+        QVERIFY(QTest::qWaitFor([&] { receipts->drain(); env->publishAll(); QCoreApplication::processEvents(); return model->maximumRecipient() == recipient && model->sendRecipientList()->allValid(); }, 3000));
+        env->advance(std::chrono::milliseconds{250}); const auto original = receipts->startRead(); QVERIFY(original);
+        QVERIFY(receipts->finishOutcome(*original)); const auto exact = recipient->amount()->satoshi();
+        QCOMPARE(tokens, std::vector<quint64>{recipient->identity()});
+        if (imported) recipient->applyParsedPaymentRequest({{"success", true}, {"address", VALID_MAINNET_ADDRESS}, {"hasAmount", true}, {"amountSats", exact}});
+        else recipient->amount()->editInput(recipient->amount()->inputText());
+        QVERIFY(!model->sendRecipientList()->draftSnapshot());
+        QVERIFY(receipts->publish(*original)); // GUI receives the old successful estimate after the new input.
+        QCOMPARE(recipient->amount()->satoshi(), exact);
+        QVERIFY(QTest::qWaitFor([&] { receipts->drain(); env->publishAll(); QCoreApplication::processEvents(); return !model->maximumRecipient() && model->sendRecipientList()->allValid(); }, 3000));
+        env->advance(std::chrono::milliseconds{250}); const auto successor = receipts->startRead(); QVERIFY(successor);
+        QCOMPARE(tokens.size(), size_t{2}); QCOMPARE(tokens.back(), quint64{0});
+        QVERIFY(receipts->finishOutcome(*successor)); QVERIFY(receipts->publish(*successor));
+        QCOMPARE(recipient->amount()->satoshi(), exact);
+    }
+    void pendingAmountIntentCannotPrepareTheEarlierValidDraft()
+    {
+        auto env = std::make_shared<ManualExecutionEnvironment>(); auto receipts = std::make_shared<ManualFeeReceipts>(env);
+        auto effects = std::make_shared<std::atomic_int>(0);
+        FeeReadServices services; services.scheduler = env->scheduler; services.timer = env; services.post = [receipts](auto publication) { receipts->post(std::move(publication)); };
+        auto [wallet, model] = MakeConfiguredWalletModel([effects](MockWallet& value) {
+            value.create_transaction_fn = [effects](const auto&, const auto&, bool, int&, CAmount&) -> util::Result<CTransactionRef> { ++*effects; return util::Error{Untranslated("unexpected preparation")}; };
+        }, nullptr, nullptr, std::move(services)); Q_UNUSED(wallet);
+        const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
+        SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
+        const auto original = model->sendRecipientList()->draftSnapshot(); QVERIFY(original);
+        auto* recipient = model->sendRecipientList()->currentRecipient(); recipient->amount()->editInput("1.");
+        QVERIFY(!model->sendRecipientList()->draftSnapshot()); QVERIFY(model->requestPrepareTransaction() != 0);
+        QCOMPARE(effects->load(), 0); QVERIFY(!model->currentTransaction());
+        recipient->amount()->setSatoshi(2000); QVERIFY(model->requestPrepareTransaction() != 0);
+        QCOMPARE(effects->load(), 0);
+        QVERIFY(QTest::qWaitFor([&] { receipts->drain(); env->publishAll(); QCoreApplication::processEvents(); return model->sendRecipientList()->allValid(); }, 3000));
+        const auto latest = model->sendRecipientList()->draftSnapshot(); QVERIFY(latest);
+        QCOMPARE(latest->recipients.front().amount, CAmount{2000}); QCOMPARE(original->recipients.front().amount, CAmount{50000});
+        QCOMPARE(effects->load(), 0); QVERIFY(!model->currentTransaction());
+    }
+    void explicitSameAmountExitsMaximumAtEveryExistingEntryPoint_data()
+    {
+        QTest::addColumn<int>("producer");
+        QTest::newRow("ordinary-canonical-equal") << 0;
+        QTest::newRow("ordinary-typed-equal") << 1;
+        QTest::newRow("payment-request-import-equal") << 2;
+    }
+    void explicitSameAmountExitsMaximumAtEveryExistingEntryPoint()
+    {
+        QFETCH(int, producer); auto [wallet, model] = MakeWalletModel(); Q_UNUSED(wallet);
+        auto* recipient = model->sendRecipientList()->currentRecipient();
+        QTRY_VERIFY(model->capabilitiesKnown() && model->balanceKnown() && model->availableSendBalanceKnown());
+        QVERIFY(recipient->address()->address().isEmpty());
+        model->useMaximum(); QTRY_COMPARE(model->maximumRecipient(), recipient);
+        QTRY_COMPARE(recipient->amount()->satoshi(), CAmount{10 * COIN});
+        const auto exact = recipient->amount()->satoshi();
+        if (producer == 0) recipient->amount()->setSatoshi(exact);
+        if (producer == 1) recipient->amount()->editInput(recipient->amount()->inputText());
+        if (producer == 2) recipient->applyParsedPaymentRequest({{"success", true}, {"address", VALID_MAINNET_ADDRESS}, {"hasAmount", true}, {"amountSats", exact}});
+        QTRY_COMPARE(model->maximumRecipient(), nullptr);
+        QTRY_VERIFY(!recipient->validationPending());
+        QCOMPARE(recipient->amount()->satoshi(), exact);
+        QVERIFY(!model->sendDraftSweepsWallet());
+    }
+    void transferringMaximumDoesNotLeaveTheFormerSweepAsFixedMoney()
+    {
+        auto [wallet, model] = MakeWalletModel(); Q_UNUSED(wallet);
+        auto* first = model->sendRecipientList()->currentRecipient();
+        QTRY_VERIFY(model->capabilitiesKnown() && model->balanceKnown() && model->availableSendBalanceKnown());
+        model->useMaximum(); QTRY_COMPARE(model->maximumRecipient(), first);
+        QTRY_COMPARE(first->amount()->satoshi(), CAmount{10 * COIN});
+        model->sendRecipientList()->add(); auto* second = model->sendRecipientList()->currentRecipient();
+        second->address()->setAddress(VALID_MAINNET_P2SH_ADDRESS, 0);
+        model->useMaximum(); QTRY_COMPARE(model->maximumRecipient(), second);
+        QTRY_VERIFY(!first->amount()->isSet()); QCOMPARE(first->amount()->satoshi(), CAmount{0});
+        QVERIFY(!model->sendRecipientList()->allValid());
+    }
     void automaticMaximumValidationKeepsOriginalIntent_data() {
         QTest::addColumn<int>("boundary");
         QTest::newRow("matching-automatic-validation") << 0;
@@ -3888,7 +3994,17 @@ private Q_SLOTS:
         if (boundary == 5) QVERIFY(reentrant_edit);
         if (boundary == 1) original_recipient->amount()->setSatoshi(88000);
         if (boundary == 2) other->amount()->setSatoshi(20000);
-        if (boundary == 3) { model->sendRecipientList()->setCurrentIndex(1); model->useMaximum(); }
+        if (boundary == 3) {
+            model->sendRecipientList()->setCurrentIndex(1); model->useMaximum();
+            // R16 makes handover explicit: the former computed remainder is
+            // cleared. Supply a new Fixed amount before requiring a ready
+            // multi-recipient successor; preserve the original held deadline.
+            QVERIFY(QTest::qWaitFor([&] {
+                receipts->drain(); env->publishAll(); QCoreApplication::processEvents();
+                return model->maximumRecipient() == other && !original_recipient->amount()->isSet();
+            }, 3000));
+            original_recipient->amount()->setSatoshi(10000);
+        }
         if (boundary == 4) model->beginShutdown();
         if (boundary != 4) {
             QVERIFY(QTest::qWaitFor([&] {

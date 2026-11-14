@@ -21,9 +21,9 @@ QString Address(unsigned char seed = 4) { return QString::fromStdString(EncodeDe
 struct Fixture {
     ManualRoutedExecution commands;
     std::deque<std::function<void()>> publications;
-    std::unique_ptr<SendRecipientsListModel> recipients{std::make_unique<SendRecipientsListModel>()};
+    std::unique_ptr<SendRecipientsListModel> recipients;
     bool fail_post{false};
-    Fixture() {
+    explicit Fixture(senddraft::Limits limits = {}) : recipients(std::make_unique<SendRecipientsListModel>(nullptr, limits)) {
         recipients->setOpening({}, {commands.scheduler, [this](std::function<void()> turn) {
             if (fail_post) throw std::runtime_error{"GUI transport unavailable"};
             publications.push_back(std::move(turn));
@@ -48,6 +48,315 @@ class SendRecipientTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void sameCanonicalAmountIsAFixedIntent_data()
+    {
+        QTest::addColumn<int>("producer");
+        QTest::newRow("canonical-equal") << 0;
+        QTest::newRow("typed-equal") << 1;
+        QTest::newRow("imported-equal") << 2;
+        QTest::newRow("incomplete-edit") << 3;
+    }
+    void sameCanonicalAmountIsAFixedIntent()
+    {
+        QFETCH(int, producer); Fixture f;
+        auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000); f.finish();
+        recipient->chooseMaximum(); f.finish();
+        QCOMPARE(f.recipients->maximumRecipient(), recipient);
+        QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Maximum);
+        const auto prior = f.recipients->draftSnapshot(); QVERIFY(prior);
+        if (producer == 0) recipient->amount()->setSatoshi(100000);
+        if (producer == 1) recipient->amount()->editInput(recipient->amount()->inputText());
+        if (producer == 2) recipient->applyImportedPayment({Address(), "public", "message", {}, CAmount{100000}, false});
+        if (producer == 3) recipient->amount()->editInput("1.");
+        QVERIFY(!f.recipients->draftSnapshot()); QVERIFY(f.recipients->validationPending());
+        f.commands.drain(); // Domain consumption is independent of GUI publication.
+        QVERIFY(!f.recipients->draftSnapshot());
+        f.finish();
+        QCOMPARE(f.recipients->maximumRecipient(), nullptr);
+        QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Fixed);
+        QCOMPARE(recipient->amount()->satoshi(), CAmount{100000});
+        QVERIFY(prior->maximum == recipient->identity()); // Immutable captured intent.
+        QVERIFY(f.recipients->draftSnapshot());
+        QCOMPARE(f.recipients->allValid(), producer != 3);
+    }
+    void delayedImportedAddressNormalizationRetainsOnlyItsOwnedProvenance_data()
+    {
+        QTest::addColumn<bool>("supersede");
+        QTest::newRow("original-normalization") << false;
+        QTest::newRow("newer-address-before-publication") << true;
+    }
+    void delayedImportedAddressNormalizationRetainsOnlyItsOwnedProvenance()
+    {
+        QFETCH(bool, supersede);
+        Fixture f; auto* recipient = f.recipients->currentRecipient();
+        recipient->applyImportedPayment({QString(600, QLatin1Char{' '}) + Address(), "Alice", "Lunch", {}, CAmount{100000}, false});
+        QVERIFY(recipient->address()->normalizationPending());
+        f.commands.drain(); // The captured normalization exists, but GUI has not consumed it.
+        if (supersede) recipient->setAddress(Address(5));
+        f.finish();
+        QCOMPARE(recipient->address()->address(), Address(supersede ? 5 : 4));
+        QCOMPARE(recipient->hasPaymentRequest(), !supersede);
+        QCOMPARE(recipient->paymentRequestLabel(), supersede ? QString{} : QStringLiteral("Alice"));
+        QCOMPARE(recipient->message(), supersede ? QString{} : QStringLiteral("Lunch"));
+        QVERIFY(f.recipients->allValid());
+    }
+    void settledAddressFormattingCannotCreateAnUnownedPendingRevision()
+    {
+        Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000); f.finish();
+        const auto revision = f.recipients->revision();
+        const auto snapshot = f.recipients->draftSnapshot(); QVERIFY(snapshot);
+        recipient->address()->setAddress(recipient->address()->formattedAddress());
+        QCOMPARE(f.recipients->revision(), revision);
+        QVERIFY(!f.recipients->validationPending()); QVERIFY(f.recipients->allValid());
+        QCOMPARE(f.recipients->draftSnapshot(), snapshot);
+        recipient->address()->setAddress(recipient->address()->address());
+        QCOMPARE(f.recipients->revision(), revision); QVERIFY(f.recipients->allValid());
+    }
+    void coupledModePublicationCannotExposeAnEarlierReadySnapshot()
+    {
+        Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000); f.finish();
+        recipient->chooseMaximum(); f.finish(); bool observed{false};
+        connect(recipient, &SendRecipient::amountModeChanged, f.recipients.get(), [&] {
+            if (recipient->amountMode() != SendRecipient::AmountMode::Fixed) return;
+            observed = true; QVERIFY(f.recipients->validationPending());
+            QVERIFY(!f.recipients->draftSnapshot()); QVERIFY(!f.recipients->allValid());
+        });
+        recipient->amount()->setSatoshi(100000); f.finish(); QVERIFY(observed);
+        QVERIFY(!f.recipients->validationPending()); QVERIFY(f.recipients->allValid());
+        QCOMPARE(f.recipients->maximumRecipient(), nullptr); QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Fixed);
+    }
+    void heldMaximumPublicationCannotOverrideNewerFixedText()
+    {
+        Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000); f.finish();
+        recipient->chooseMaximum(); f.commands.drain(); QVERIFY(!f.publications.empty());
+        recipient->amount()->editInput("0.00100000");
+        while (f.publishOne()) {} // Old mode publication cannot install itself.
+        QVERIFY(!f.recipients->draftSnapshot());
+        f.finish(); QCOMPARE(recipient->amount()->inputText(), QStringLiteral("0.00100000"));
+        QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Fixed);
+        QCOMPARE(f.recipients->maximumRecipient(), nullptr);
+    }
+    void movingMaximumClearsOnlyTheFormerComputedAmount()
+    {
+        Fixture f; auto* first = f.recipients->currentRecipient(); f.fill(first, 4, 5000);
+        f.recipients->add(); auto* second = f.recipients->currentRecipient(); f.fill(second, 5, 3000); f.finish();
+        first->chooseMaximum(); f.finish();
+        second->chooseMaximum(); f.finish();
+        QCOMPARE(first->amountMode(), SendRecipient::AmountMode::Fixed);
+        QCOMPARE(first->amount()->satoshi(), CAmount{0}); QVERIFY(!first->amount()->isSet());
+        QCOMPARE(second->amountMode(), SendRecipient::AmountMode::Maximum);
+        QCOMPARE(second->amount()->satoshi(), CAmount{3000});
+        QCOMPARE(f.recipients->maximumRecipient(), second);
+        QVERIFY(!f.recipients->allValid()); QVERIFY(!f.recipients->validationError().isEmpty());
+    }
+    void explicitFixedEditBeforeHandoverPreservesItsAmount()
+    {
+        Fixture f; auto* first = f.recipients->currentRecipient(); f.fill(first, 4, 5000);
+        f.recipients->add(); auto* second = f.recipients->currentRecipient(); f.fill(second, 5, 3000); f.finish();
+        first->chooseMaximum(); f.finish();
+        first->amount()->setSatoshi(5000); second->chooseMaximum(); // No intermediate Domain or GUI delivery.
+        f.finish();
+        QCOMPARE(first->amount()->satoshi(), CAmount{5000}); QCOMPARE(first->amountMode(), SendRecipient::AmountMode::Fixed);
+        QCOMPARE(second->amountMode(), SendRecipient::AmountMode::Maximum); QVERIFY(f.recipients->allValid());
+    }
+    void reselectedMaximumOwnsFreshObservationsAfterUnpublishedHandover()
+    {
+        Fixture f; auto* first = f.recipients->currentRecipient(); f.fill(first, 4, 5000);
+        f.recipients->add(); auto* second = f.recipients->currentRecipient(); f.fill(second, 5, 3000); f.finish();
+        first->chooseMaximum(); f.finish();
+        second->chooseMaximum(); f.commands.drain();
+        first->chooseMaximum(); f.commands.drain(); f.finish();
+        QCOMPARE(f.recipients->maximumRecipient(), first);
+        QCOMPARE(first->amountMode(), SendRecipient::AmountMode::Maximum);
+        QCOMPARE(second->amountMode(), SendRecipient::AmountMode::Fixed);
+        QVERIFY(!second->amount()->isSet());
+        second->amount()->setSatoshi(1000); f.finish();
+        first->amount()->setProjectedSatoshi(7000); f.finish();
+        QCOMPARE(first->amount()->satoshi(), CAmount{7000});
+        const auto snapshot = f.recipients->draftSnapshot(); QVERIFY(snapshot);
+        QCOMPARE(snapshot->recipients[snapshot->positions.at(first->identity())].amount, CAmount{7000});
+        QCOMPARE(snapshot->maximum, first->identity()); QVERIFY(f.recipients->allValid());
+    }
+    void nonAmountEditDuringHandoverCannotReinstateComputedMoney()
+    {
+        Fixture f; auto* first = f.recipients->currentRecipient(); f.fill(first, 4, 5000);
+        f.recipients->add(); auto* second = f.recipients->currentRecipient(); f.fill(second, 5, 3000); f.finish();
+        first->chooseMaximum(); f.finish();
+        second->chooseMaximum(); f.commands.drain(); // Hold the coupled GUI handover.
+        QVERIFY(!f.publications.empty()); QCOMPARE(first->amount()->satoshi(), CAmount{5000});
+        QVERIFY(first->editPrivateNote("memo captured during handover"));
+        f.commands.drain(); f.finish();
+        QCOMPARE(first->amount()->satoshi(), CAmount{0}); QVERIFY(!first->amount()->isSet());
+        QCOMPARE(first->label(), QStringLiteral("memo captured during handover"));
+        QCOMPARE(first->amountMode(), SendRecipient::AmountMode::Fixed);
+        QCOMPARE(second->amountMode(), SendRecipient::AmountMode::Maximum);
+        QVERIFY(!f.recipients->allValid());
+        first->amount()->setSatoshi(5000); f.finish();
+        QCOMPARE(first->amount()->satoshi(), CAmount{5000}); QVERIFY(f.recipients->allValid());
+    }
+    void lateValidationCannotRestoreTheFormerRemainder()
+    {
+        Fixture f; auto* first = f.recipients->currentRecipient(); f.fill(first, 4, 5000);
+        f.recipients->add(); auto* second = f.recipients->currentRecipient(); f.fill(second, 5, 3000); f.finish();
+        first->chooseMaximum(); f.finish();
+        first->amount()->setProjectedSatoshi(6000); f.commands.drain(); // Old recipient validation GUI handoff held.
+        second->chooseMaximum(); f.commands.drain();
+        while (f.publishOne()) {} f.finish();
+        QCOMPARE(first->amount()->satoshi(), CAmount{0}); QVERIFY(!first->amount()->isSet());
+        QCOMPARE(second->amountMode(), SendRecipient::AmountMode::Maximum);
+        const auto draft = f.recipients->draftSnapshot(); QVERIFY(draft);
+        QCOMPARE(draft->recipients[draft->positions.at(first->identity())].amount, CAmount{0});
+    }
+    void importBatchPreservesPrivateNoteAndOwnsProvenance()
+    {
+        Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000);
+        recipient->editPrivateNote("private"); f.finish(); recipient->chooseMaximum(); f.finish();
+        const auto revision = f.recipients->revision().toULongLong();
+        recipient->applyImportedPayment({Address(), "Alice", "public message", "implicit note", CAmount{100000}, false});
+        QCOMPARE(f.recipients->revision().toULongLong(), revision + 1);
+        QVERIFY(!f.recipients->draftSnapshot()); f.finish();
+        QCOMPARE(recipient->label(), QStringLiteral("private")); QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Alice"));
+        QCOMPARE(recipient->message(), QStringLiteral("public message")); QVERIFY(recipient->hasPaymentRequest());
+        QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Fixed);
+        recipient->setAddress(Address(7)); f.commands.drain(); f.finish();
+        QVERIFY(!recipient->hasPaymentRequest()); QVERIFY(recipient->message().isEmpty()); QVERIFY(recipient->paymentRequestLabel().isEmpty());
+        QCOMPARE(recipient->label(), QStringLiteral("private"));
+        recipient->applyImportedPayment({Address(7), "Bob", "new message", "approved replacement", {}, true}); f.finish();
+        QCOMPARE(recipient->label(), QStringLiteral("approved replacement"));
+        recipient->clearImportedMetadata(); f.finish(); QVERIFY(!recipient->hasPaymentRequest());
+        QCOMPARE(recipient->label(), QStringLiteral("approved replacement"));
+    }
+    void importProjectionRetainsNewerPublicIntentAndOwnerLoss_data()
+    {
+        QTest::addColumn<int>("outcome");
+        QTest::newRow("close-draft") << 0; QTest::newRow("delete-draft") << 1;
+        QTest::newRow("newer-fixed-amount") << 2; QTest::newRow("newer-import") << 3; QTest::newRow("clear-draft") << 4;
+    }
+    void importProjectionRetainsNewerPublicIntentAndOwnerLoss()
+    {
+        QFETCH(int, outcome); Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000); f.finish();
+        bool handled{false};
+        connect(recipient->amount(), &BitcoinAmount::inputChanged, f.recipients.get(), [&] {
+            if (handled) return; handled = true;
+            if (outcome == 0) f.recipients->closeAdmission();
+            if (outcome == 1) f.recipients.reset();
+            if (outcome == 2) recipient->amount()->setSatoshi(9000);
+            if (outcome == 3) recipient->applyImportedPayment({Address(7), "newer", "newer message", {}, CAmount{7000}, false});
+            if (outcome == 4) recipient->clear();
+        });
+        recipient->applyImportedPayment({Address(6), "older", "older message", {}, CAmount{6000}, false});
+        QVERIFY(handled); f.finish();
+        if (outcome == 0) { QVERIFY(f.recipients); QCOMPARE(f.recipients->state(), SendRecipientsListModel::DraftState::Retired); }
+        else if (outcome == 1) QVERIFY(!f.recipients);
+        else if (outcome == 2) { QCOMPARE(recipient->amount()->satoshi(), CAmount{9000}); QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Fixed); }
+        else if (outcome == 3) { QCOMPARE(recipient->amount()->satoshi(), CAmount{7000}); QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("newer")); QCOMPARE(recipient->address()->address(), Address(7)); }
+        else { QVERIFY(!recipient->amount()->isSet()); QVERIFY(!recipient->hasPaymentRequest()); QVERIFY(recipient->address()->address().isEmpty()); }
+    }
+    void rejectedImportNeverPartiallyReplacesARecipient_data()
+    {
+        QTest::addColumn<int>("invalid"); QTest::newRow("public-label-budget") << 0;
+        QTest::newRow("message-budget") << 1; QTest::newRow("money-range") << 2;
+    }
+    void rejectedImportNeverPartiallyReplacesARecipient()
+    {
+        QFETCH(int, invalid); Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000);
+        recipient->editPrivateNote("private"); f.finish(); recipient->chooseMaximum(); f.finish();
+        senddraft::PaymentRequest request{Address(7), "new", "new message", "new note", CAmount{200000}, true};
+        if (invalid == 0) request.label = QString(int(senddraft::Limits::note) + 1, 'x');
+        if (invalid == 1) request.message = QString(int(senddraft::Limits::message) + 1, 'x');
+        if (invalid == 2) request.amount = MAX_MONEY + 1;
+        recipient->applyImportedPayment(request); f.finish();
+        QCOMPARE(recipient->address()->address(), Address()); QCOMPARE(recipient->amount()->satoshi(), CAmount{100000});
+        QCOMPARE(recipient->label(), QStringLiteral("private")); QVERIFY(!recipient->hasPaymentRequest());
+        QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Maximum);
+        QVERIFY(!recipient->inputBudgetError().isEmpty()); QVERIFY(!f.recipients->allValid());
+    }
+    void rowBudgetRefusesBeforeCreatingAnExtraProjection()
+    {
+        Fixture f; QSignalSpy inserted{f.recipients.get(), &QAbstractItemModel::rowsInserted};
+        QSignalSpy rejected{f.recipients.get(), &SendRecipientsListModel::commandRejected};
+        for (int row{1}; row < f.recipients->maximumRecipients() + 16; ++row) f.recipients->add();
+        QCOMPARE(f.recipients->count(), 25); QCOMPARE(inserted.size(), 24); QCOMPARE(rejected.size(), 16);
+        QVERIFY(!f.recipients->canAddRecipient()); QVERIFY(!f.recipients->budgetError().isEmpty()); f.finish();
+        const auto first_id = f.recipients->data(f.recipients->index(0), SendRecipientsListModel::RecipientIdRole).toString();
+        f.recipients->removeRecipient(first_id); f.finish(); QCOMPARE(f.recipients->count(), 24); QVERIFY(f.recipients->canAddRecipient());
+        QVERIFY(f.recipients->data(f.recipients->index(0), SendRecipientsListModel::RecipientIdRole).toString() != first_id);
+    }
+    void recipientChurnHasABoundedAdmissionWindow()
+    {
+        Fixture f; QSignalSpy rejected{f.recipients.get(), &SendRecipientsListModel::commandRejected};
+        for (size_t turn{0}; turn < senddraft::Limits::pending_recipients; ++turn) {
+            if (turn % 2 == 0) {
+                f.recipients->add(); QCOMPARE(f.recipients->count(), 2);
+                f.recipients->removeAt(1); QCOMPARE(f.recipients->count(), 1);
+            } else f.recipients->clear();
+        }
+        QVERIFY(!f.recipients->canAddRecipient());
+        auto* original = f.recipients->currentRecipient();
+        QVERIFY(original->editPrivateNote("retain across admission refusal"));
+        QSignalSpy inserted{f.recipients.get(), &QAbstractItemModel::rowsInserted};
+        QSignalSpy reset{f.recipients.get(), &QAbstractItemModel::modelReset};
+        f.recipients->add(); f.recipients->clear();
+        QCOMPARE(rejected.size(), 2); QCOMPARE(inserted.size(), 0); QCOMPARE(reset.size(), 0);
+        QCOMPARE(f.recipients->currentRecipient(), original);
+        QCOMPARE(original->label(), QStringLiteral("retain across admission refusal"));
+        QVERIFY(!f.recipients->budgetError().isEmpty());
+        f.finish(); QVERIFY(f.recipients->canAddRecipient());
+        f.recipients->add(); f.finish(); QCOMPARE(f.recipients->count(), 2);
+        QVERIFY(f.recipients->budgetError().isEmpty());
+    }
+    void modeBackpressureCannotLoseAnExplicitFixedEdit()
+    {
+        Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000); f.finish();
+        QSignalSpy rejected{f.recipients.get(), &SendRecipientsListModel::commandRejected};
+        for (size_t i{0}; i <= senddraft::Limits::pending_modes; ++i) recipient->chooseMaximum();
+        QCOMPARE(rejected.size(), 1);
+        recipient->amount()->setSatoshi(100000); // Fixed intent remains replaceable input, not a full mode mailbox.
+        f.finish(); QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Fixed); QCOMPARE(f.recipients->maximumRecipient(), nullptr);
+        QCOMPARE(recipient->amount()->satoshi(), CAmount{100000}); QVERIFY(f.recipients->allValid());
+    }
+    void privateNoteBudgetRejectsTheWholeInputAndRecovers()
+    {
+        Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000);
+        recipient->editPrivateNote("original"); f.finish();
+        recipient->editPrivateNote(QString(int(senddraft::Limits::note) + 1, 'x')); f.finish();
+        QCOMPARE(recipient->label(), QStringLiteral("original")); QVERIFY(!recipient->inputBudgetError().isEmpty()); QVERIFY(!f.recipients->allValid());
+        recipient->editPrivateNote("recovered"); f.finish(); QCOMPARE(recipient->label(), QStringLiteral("recovered"));
+        QVERIFY(recipient->inputBudgetError().isEmpty()); QVERIFY(f.recipients->allValid());
+    }
+    void draftStatesAndRetirementPreserveTheCapturedRevision()
+    {
+        Fixture f; QCOMPARE(f.recipients->state(), SendRecipientsListModel::DraftState::Empty);
+        const auto id = f.recipients->draftId(); auto* recipient = f.recipients->currentRecipient();
+        recipient->amount()->editInput("1."); f.finish(); QCOMPARE(f.recipients->state(), SendRecipientsListModel::DraftState::Editing);
+        f.fill(recipient, 4, 100000); f.finish(); QCOMPARE(f.recipients->state(), SendRecipientsListModel::DraftState::Ready);
+        const auto captured = f.recipients->draftSnapshot(); QVERIFY(captured); const auto revision = f.recipients->revision();
+        f.recipients->clear(); f.finish(); QCOMPARE(f.recipients->draftId(), id);
+        QCOMPARE(f.recipients->state(), SendRecipientsListModel::DraftState::Empty); QVERIFY(f.recipients->revision() != revision);
+        QCOMPARE(captured->recipients.front().amount, CAmount{100000});
+        f.recipients->currentRecipient()->chooseMaximum(); f.recipients->closeAdmission(); f.finish();
+        QCOMPARE(f.recipients->state(), SendRecipientsListModel::DraftState::Retired); QCOMPARE(f.recipients->count(), 0);
+        QCOMPARE(captured->recipients.front().amount, CAmount{100000});
+    }
+    void amountModeCannotTargetAForeignRecipient()
+    {
+        Fixture f, foreign; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000); f.finish();
+        const auto revision = f.recipients->revision();
+        QSignalSpy refused{f.recipients.get(), &SendRecipientsListModel::commandRejected};
+        f.recipients->chooseAmountMode(foreign.recipients->currentRecipient(), SendRecipient::AmountMode::Maximum);
+        QCOMPARE(refused.size(), 1); QCOMPARE(f.recipients->revision(), revision);
+        QCOMPARE(f.recipients->maximumRecipient(), nullptr); f.finish();
+        QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Fixed); QCOMPARE(recipient->amount()->satoshi(), CAmount{100000});
+    }
+    void formattingAndDisplayUnitNeverBecomeAmountIntent()
+    {
+        Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000); f.finish();
+        recipient->chooseMaximum(); f.finish();
+        for (const auto unit : {BitcoinAmount::Unit::BTC, BitcoinAmount::Unit::MilliBTC, BitcoinAmount::Unit::MicroBTC, BitcoinAmount::Unit::SAT}) {
+            recipient->amount()->setUnit(unit); recipient->amount()->format(); recipient->amount()->setProjectedSatoshi(100000); f.finish();
+            QCOMPARE(recipient->amountMode(), SendRecipient::AmountMode::Maximum); QCOMPARE(recipient->amount()->satoshi(), CAmount{100000});
+        }
+    }
     void validationAdmissionKeepsOriginalEditorIntent_data()
     {
         QTest::addColumn<int>("outcome");
@@ -158,7 +467,7 @@ private Q_SLOTS:
         f.recipients.reset(); f.finish(); QCOMPARE(f.commands.scheduler->pending(), size_t{0});
     }
     void quietCloseFencesAllEditorsThenRetiresBoundedBatchesWithoutFacade() {
-        Fixture f;
+        Fixture f{{128}};
         for (int i{0}; i < 96; ++i) f.recipients->add();
         f.finish();
         int destroyed{0};
@@ -274,7 +583,7 @@ private Q_SLOTS:
         QVERIFY(!snapshot->error.isEmpty());
     }
     void manyRecipientsHaveNoCleanupSlotCapAndNativePresentationYields() {
-        Fixture f; f.fill(f.recipients->currentRecipient(), 4, 1000);
+        Fixture f{{128}}; f.fill(f.recipients->currentRecipient(), 4, 1000);
         for (int i = 1; i < 65; ++i) { f.recipients->add(); f.fill(f.recipients->currentRecipient(), static_cast<unsigned char>(4 + i), 1000); }
         f.finish(); QVERIFY(f.recipients->allValid()); QCOMPARE(f.recipients->draftSnapshot()->recipients.size(), size_t{65});
         QPersistentModelIndex front{f.recipients->index(0)};
@@ -286,7 +595,7 @@ private Q_SLOTS:
         QVERIFY(f.recipients->allValid()); QCOMPARE(f.recipients->totalAmountSatoshi(), qint64{1000});
     }
     void supersedingUnitIntentCannotBeReplacedByAnOlderQueuedChunk() {
-        Fixture f;
+        Fixture f{{128}};
         for (int i = 1; i < 65; ++i) f.recipients->add();
         f.finish(); f.recipients->setCurrentIndex(0);
         f.recipients->currentRecipient()->amount()->setUnit(BitcoinAmount::Unit::SAT);

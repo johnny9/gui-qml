@@ -8,19 +8,24 @@
 #include <QPointer>
 #include <QScopeGuard>
 #include <array>
+#include <cassert>
 #include <limits>
 #include <mutex>
 #include <set>
 #include <stdexcept>
 #include <utility>
 
+namespace { std::atomic<quint64> NEXT_DRAFT{0}; }
 struct SendRecipientsListModel::Backend {
-    struct Delta { quint64 epoch; std::optional<SendRecipient::Snapshot> recipient; };
+    explicit Backend(senddraft::Limits limits) : draft(limits) {}
+    struct Delta { quint64 epoch, sequence; std::optional<SendRecipient::Snapshot> recipient; };
+    struct Mode { quint64 epoch, sequence, token, amount_intent_revision; senddraft::AmountMode mode; SendRecipient::Snapshot basis; senddraft::Draft::InputFence inputs; };
+    std::deque<Mode> modes;
     std::mutex mutex;
     std::map<quint64, Delta> pending;
-    quint64 requested_epoch{0}, requested_revision{0};
+    quint64 requested_epoch{0}, requested_revision{0}, requested_intent_revision{0};
     quint64 epoch{0};
-    std::map<quint64, SendRecipient::Snapshot> recipients;
+    senddraft::Draft draft;
 };
 struct SendRecipientsListModel::Retired {
     std::shared_ptr<QObject> owner;
@@ -31,7 +36,9 @@ struct SendRecipientsListModel::Retired {
     std::shared_ptr<const DraftSnapshot> snapshot;
     std::shared_ptr<execution::SnapshotQuery<std::shared_ptr<const DraftSnapshot>>> query;
 };
-SendRecipientsListModel::SendRecipientsListModel(QObject* parent) : QAbstractListModel(parent), m_wallet(qobject_cast<WalletQmlModel*>(parent))
+SendRecipientsListModel::SendRecipientsListModel(QObject* parent, senddraft::Limits limits)
+    : QAbstractListModel(parent), m_wallet(qobject_cast<WalletQmlModel*>(parent)),
+      m_limits{std::clamp(limits.recipients, 1, 256)}, m_identity(++NEXT_DRAFT)
 {
     m_recipient_owner = presentation::MakeGuiObject();
     m_retirement_post = presentation::QueuedPost();
@@ -67,7 +74,7 @@ void SendRecipientsListModel::setOpening(std::shared_ptr<walletopening::Session>
     auto retired = execution::RetainValues<Retired>(ports.scheduler, [] { return std::make_unique<Retired>(); });
     if (!current()) return;
     if (!retired) { m_error = tr("Recipient cleanup is unavailable."); Q_EMIT validationChanged(); return; }
-    auto backend = execution::RetainValues<Backend>(ports.scheduler, [] { return std::make_unique<Backend>(); });
+    auto backend = execution::RetainValues<Backend>(ports.scheduler, [limits = m_limits] { return std::make_unique<Backend>(limits); });
     if (!current()) return;
     if (!backend) { m_error = tr("Recipient services are unavailable."); Q_EMIT validationChanged(); return; }
     auto rows = execution::RetainValues<Rows>(ports.scheduler, [source, current] {
@@ -76,20 +83,36 @@ void SendRecipientsListModel::setOpening(std::shared_ptr<walletopening::Session>
     if (!current()) return;
     if (!rows) { m_error = tr("Recipient services are unavailable."); Q_EMIT validationChanged(); return; }
     m_retired = std::move(retired); m_backend = backend; m_recipients = std::move(rows);
+    backend->requested_intent_revision = m_intent_revision;
     m_query = std::make_shared<execution::SnapshotQuery<std::shared_ptr<const DraftSnapshot>>>(ports.scheduler,
         [backend, scheduler = ports.scheduler] {
-            std::map<quint64, Backend::Delta> deltas; quint64 epoch, revision;
-            { std::lock_guard lock{backend->mutex}; deltas.swap(backend->pending); epoch = backend->requested_epoch; revision = backend->requested_revision; }
-            if (backend->epoch != epoch) { backend->recipients.clear(); backend->epoch = epoch; }
-            for (auto& [token, delta] : deltas) {
-                if (delta.epoch != epoch) continue;
-                if (delta.recipient) backend->recipients.insert_or_assign(token, std::move(*delta.recipient));
-                else backend->recipients.erase(token);
+            std::map<quint64, Backend::Delta> deltas; std::deque<Backend::Mode> modes; quint64 epoch, revision, intent_revision;
+            { std::lock_guard lock{backend->mutex}; deltas.swap(backend->pending); modes.swap(backend->modes); epoch = backend->requested_epoch; revision = backend->requested_revision; intent_revision = backend->requested_intent_revision; }
+            if (backend->epoch != epoch) { backend->draft.clear(); backend->epoch = epoch; }
+            struct Change {
+                quint64 token;
+                std::optional<SendRecipient::Snapshot> recipient;
+                std::optional<senddraft::AmountMode> mode;
+                quint64 amount_intent_revision{0};
+                senddraft::Draft::InputFence inputs{};
+            };
+            std::map<quint64, Change> ordered;
+            for (auto& [token, delta] : deltas)
+                if (delta.epoch == epoch) ordered.emplace(delta.sequence, Change{token, std::move(delta.recipient), {}});
+            for (auto& mode : modes)
+                if (mode.epoch == epoch) ordered.emplace(mode.sequence, Change{mode.token, std::move(mode.basis), mode.mode, mode.amount_intent_revision, std::move(mode.inputs)});
+            for (auto& [sequence, change] : ordered) {
+                if (change.mode) {
+                    if (!backend->draft.recipients().contains(change.token) && change.recipient) backend->draft.update(std::move(*change.recipient));
+                    backend->draft.choose(change.token, *change.mode, change.amount_intent_revision, change.inputs);
+                }
+                else if (change.recipient) backend->draft.update(std::move(*change.recipient));
+                else backend->draft.remove(change.token);
             }
             auto snapshot = execution::RetainValues<DraftSnapshot>(scheduler, [&] {
-                auto value = std::make_unique<DraftSnapshot>(); value->revision = revision; value->all_valid = !backend->recipients.empty();
+                auto value = std::make_unique<DraftSnapshot>(); value->revision = revision; value->intent_revision = intent_revision; value->maximum = backend->draft.maximum(); value->all_valid = !backend->draft.recipients().empty();
                 std::set<CTxDestination> destinations;
-                for (const auto& [token, recipient] : backend->recipients) {
+                for (const auto& [token, recipient] : backend->draft.recipients()) {
                     if (value->amount_total_valid) {
                         if ((recipient.amount > 0 && value->total > std::numeric_limits<CAmount>::max() - recipient.amount) ||
                             (recipient.amount < 0 && value->total < std::numeric_limits<CAmount>::min() - recipient.amount)) value->amount_total_valid = false;
@@ -100,7 +123,7 @@ void SendRecipientsListModel::setOpening(std::shared_ptr<walletopening::Session>
                     if (recipient.address_valid && !destinations.insert(recipient.destination).second) value->duplicate_destinations = true;
                     if (!recipient.valid) {
                         ++value->invalid_count; value->all_valid = false;
-                        if (value->error.isEmpty()) value->error = !recipient.input_acceptable ? recipient.input_error : backend->recipients.size() > 1 ? tr("Complete every recipient before continuing.") : QString{};
+                        if (value->error.isEmpty()) value->error = !recipient.input_acceptable ? recipient.input_error : backend->draft.recipients().size() > 1 ? tr("Complete every recipient before continuing.") : QString{};
                     }
                 }
                 value->amount_total_valid = value->amount_total_valid && MoneyRange(value->total);
@@ -110,6 +133,11 @@ void SendRecipientsListModel::setOpening(std::shared_ptr<walletopening::Session>
                 }
                 if (!value->amount_total_valid) { value->all_valid = false; value->error = tr("Total amount is outside the valid monetary range."); }
                 if (value->recipients.empty()) value->error = tr("Enter at least one valid recipient to continue.");
+                const bool empty = std::all_of(value->recipients.begin(), value->recipients.end(), [](const auto& recipient) {
+                    return recipient.address.isEmpty() && !recipient.amount_set && recipient.input_acceptable && recipient.label.isEmpty() &&
+                        recipient.message.isEmpty() && !recipient.payment_request && recipient.mode == senddraft::AmountMode::Fixed;
+                });
+                value->state = empty ? senddraft::State::Empty : value->all_valid ? senddraft::State::Ready : senddraft::State::Editing;
                 value->total_text = value->amount_total_valid ? BitcoinAmount::satsToBtcString(value->total) : QStringLiteral("—"); return value;
             });
             if (!snapshot) throw std::runtime_error{"Recipient snapshot cleanup unavailable"};
@@ -148,7 +176,7 @@ void SendRecipientsListModel::closeAdmission()
 {
     if (m_closed) return;
     m_owner_closed->store(true); // Fences every child/editor before any GUI handoff.
-    m_closed = true; ++m_unit_generation; ++m_clear_generation;
+    m_closed = true; m_maximum_recipient.clear(); ++m_unit_generation; ++m_clear_generation;
     if (m_query) m_query->close();
     if (!m_changing_rows) retireValues();
 }
@@ -203,7 +231,7 @@ void SendRecipientsListModel::retryRecipients(int row)
 }
 std::shared_ptr<const SendRecipientsListModel::DraftSnapshot> SendRecipientsListModel::draftSnapshot() const
 {
-    return !m_closed && !m_failed && !validationPending() && m_snapshot && m_snapshot->revision == m_revision ? m_snapshot : nullptr;
+    return !m_closed && !m_failed && !validationPending() && m_snapshot && m_snapshot->revision == m_revision && m_snapshot->intent_revision == m_intent_revision ? m_snapshot : nullptr;
 }
 void SendRecipientsListModel::submitRecipient(SendRecipient* recipient)
 {
@@ -211,7 +239,7 @@ void SendRecipientsListModel::submitRecipient(SendRecipient* recipient)
     auto value = recipient->draft(); const auto revision = ++m_revision;
     const auto token = value.token;
     const auto recipient_revision = value.revision;
-    { std::lock_guard lock{m_backend->mutex}; m_backend->pending.insert_or_assign(token, Backend::Delta{m_epoch, std::move(value)});
+    { std::lock_guard lock{m_backend->mutex}; m_backend->pending.insert_or_assign(token, Backend::Delta{m_epoch, revision, std::move(value)});
       m_backend->requested_epoch = m_epoch; m_backend->requested_revision = revision; }
     const QPointer<SendRecipientsListModel> guard{this};
     const auto query = m_query;
@@ -225,22 +253,112 @@ void SendRecipientsListModel::removeDraft(quint64 token)
 {
     if (!m_query || m_closed) return;
     const auto revision = ++m_revision;
-    { std::lock_guard lock{m_backend->mutex}; m_backend->pending.insert_or_assign(token, Backend::Delta{m_epoch, {}});
+    { std::lock_guard lock{m_backend->mutex}; m_backend->pending.insert_or_assign(token, Backend::Delta{m_epoch, revision, {}});
       m_backend->requested_epoch = m_epoch; m_backend->requested_revision = revision; }
     m_pending = true; m_query->request();
+}
+SendRecipientsListModel::DraftState SendRecipientsListModel::state() const
+{
+    if (m_closed) return DraftState::Retired;
+    if (m_failed || !m_snapshot || validationPending() || m_snapshot->revision != m_revision) return DraftState::Editing;
+    switch (m_snapshot->state) {
+    case senddraft::State::Empty: return DraftState::Empty;
+    case senddraft::State::Editing: return DraftState::Editing;
+    case senddraft::State::Ready: return DraftState::Ready;
+    case senddraft::State::Retired: return DraftState::Retired;
+    }
+    assert(false);
+}
+void SendRecipientsListModel::submitIntent()
+{
+    if (m_closed) return;
+    ++m_intent_revision; m_pending = true;
+    if (m_backend) { std::lock_guard lock{m_backend->mutex}; m_backend->requested_intent_revision = m_intent_revision; }
+    const QPointer<SendRecipientsListModel> guard{this}; Q_EMIT intentSubmitted();
+    if (guard && !m_closed) Q_EMIT revisionChanged();
+}
+bool SendRecipientsListModel::clearCommandError()
+{
+    if (m_command_error.isEmpty()) return !m_closed;
+    const QPointer<SendRecipientsListModel> guard{this}; m_command_error.clear(); Q_EMIT budgetErrorChanged();
+    return guard && !m_closed;
+}
+void SendRecipientsListModel::rejectCommand(const QString& error)
+{
+    const QPointer<SendRecipientsListModel> guard{this};
+    if (m_command_error != error) { m_command_error = error; Q_EMIT budgetErrorChanged(); }
+    if (guard && !m_closed) Q_EMIT commandRejected(error);
+}
+void SendRecipientsListModel::chooseAmountMode(SendRecipient* recipient, SendRecipient::AmountMode mode)
+{
+    if (m_closed || !m_query) return;
+    if (recipientRow(recipient) < 0) { rejectCommand(tr("This recipient no longer belongs to the draft.")); return; }
+    if (mode == SendRecipient::AmountMode::Fixed) { recipient->chooseFixedAmount(); return; }
+    if (mode != SendRecipient::AmountMode::Maximum) { rejectCommand(tr("Unknown recipient amount mode.")); return; }
+    const auto token = recipient->identity(); const QPointer<SendRecipientsListModel> guard{this};
+    senddraft::Draft::InputFence inputs;
+    for (int row{0}; row < count(); ++row) {
+        const auto* editor = (*m_recipients)[row];
+        inputs.emplace(editor->identity(), senddraft::Draft::InputRevision{editor->validationRevision(), editor->amountIntentRevision()});
+    }
+    bool accepted{false};
+    {
+        std::lock_guard lock{m_backend->mutex};
+        if (m_backend->modes.size() < senddraft::Limits::pending_modes) {
+            const auto revision = ++m_revision;
+            m_backend->modes.push_back({m_epoch, revision, token, recipient->amountIntentRevision(), mode == SendRecipient::AmountMode::Maximum ? senddraft::AmountMode::Maximum : senddraft::AmountMode::Fixed, recipient->draft(), std::move(inputs)});
+            m_backend->requested_epoch = m_epoch; m_backend->requested_revision = revision; accepted = true;
+        }
+    }
+    if (!accepted) { rejectCommand(tr("Send is still processing amount mode changes. Try again after they finish.")); return; }
+    if (!clearCommandError()) return;
+    submitIntent(); if (!guard || m_closed) return;
+    { const auto query = m_query; query->request(); }
+}
+void SendRecipientsListModel::removeRecipient(const QString& recipient_id)
+{
+    if (m_closed) return;
+    for (int row{0}; row < count(); ++row)
+        if ((*m_recipients)[row]->recipientId() == recipient_id) { removeAt(row); return; }
+    rejectCommand(tr("This recipient no longer belongs to the draft."));
 }
 void SendRecipientsListModel::publishDraft()
 {
     if (m_closed || !m_query) return;
     const auto result = m_query->take(); if (!result) return;
     const auto snapshot = result->snapshot ? *result->snapshot : std::shared_ptr<const DraftSnapshot>{};
-    if (snapshot && snapshot->revision != m_revision) return;
+    if (snapshot && (snapshot->revision != m_revision || snapshot->intent_revision != m_intent_revision)) return;
     if (!m_pending && snapshot && m_snapshot && snapshot->revision == m_snapshot->revision) return;
-    m_pending = false;
-    if (!snapshot) { m_failed = true; m_error = tr("Recipient validation could not be completed."); Q_EMIT validationChanged(); return; }
+    if (!snapshot) { m_pending = false; m_failed = true; m_error = tr("Recipient validation could not be completed."); Q_EMIT validationChanged(); return; }
+    m_pending = true; // Coupled mode/value/facade publication remains guarded.
     m_failed = false; m_snapshot = snapshot; m_error = snapshot->error; m_totalAmount = snapshot->total; m_total_text = snapshot->total_text;
     const QPointer<SendRecipientsListModel> guard{this};
-    Q_EMIT totalAmountChanged(); if (guard) Q_EMIT validationChanged();
+    const auto revision = m_revision;
+    SendRecipient* maximum{nullptr};
+    for (int row{0}; row < count(); ++row) {
+        auto* recipient = (*m_recipients)[row];
+        const auto found = snapshot->positions.find(recipient->identity());
+        if (found == snapshot->positions.end()) continue;
+        const auto& value = snapshot->recipients[found->second];
+        recipient->projectAmountMode(value.mode);
+        if (!guard || m_closed || m_revision != revision) return;
+        if (value.mode == senddraft::AmountMode::Maximum) maximum = recipient;
+    }
+    if (m_maximum_recipient != maximum) {
+        m_maximum_recipient = maximum; Q_EMIT maximumRecipientChanged();
+        if (!guard || m_closed || m_revision != revision) return;
+    }
+    for (int row{0}; row < count(); ++row) {
+        auto* recipient = (*m_recipients)[row];
+        const auto found = snapshot->positions.find(recipient->identity());
+        if (found == snapshot->positions.end()) continue;
+        const auto& value = snapshot->recipients[found->second];
+        if (value.clear_amount && recipient->validationRevision() <= value.revision) recipient->amount()->clearProjected();
+        if (!guard || m_closed || m_revision != revision) return;
+    }
+    m_pending = false; m_pending_row_creations = 0;
+    Q_EMIT totalAmountChanged();
+    if (guard && !m_closed && m_revision == revision) Q_EMIT validationChanged();
 }
 int SendRecipientsListModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : count(); }
 QVariant SendRecipientsListModel::data(const QModelIndex& index, int role) const
@@ -248,6 +366,7 @@ QVariant SendRecipientsListModel::data(const QModelIndex& index, int role) const
     if (!index.isValid() || index.model() != this || index.column() != 0 || index.row() < 0 || index.row() >= count()) return {};
     const auto* recipient = (*m_recipients)[index.row()];
     switch (role) {
+    case RecipientIdRole: return recipient->recipientId();
     case RecipientRole: return QVariant::fromValue(const_cast<SendRecipient*>(recipient));
     case AddressRole: return recipient->address()->ellipsesAddress();
     case LabelRole: return recipient->label();
@@ -260,7 +379,7 @@ QVariant SendRecipientsListModel::data(const QModelIndex& index, int role) const
 }
 QHash<int, QByteArray> SendRecipientsListModel::roleNames() const
 {
-    return {{RecipientRole,"recipientObject"},{AddressRole,"address"},{LabelRole,"label"},{AmountRole,"amount"},
+    return {{RecipientIdRole,"recipientId"},{RecipientRole,"recipientObject"},{AddressRole,"address"},{LabelRole,"label"},{AmountRole,"amount"},
         {MessageRole,"message"},{FormattedAddressRole,"formattedAddress"},{AmountUnitLabelRole,"amountUnitLabel"}};
 }
 QList<SendRecipient*> SendRecipientsListModel::recipients() const
@@ -283,6 +402,8 @@ void SendRecipientsListModel::connectRecipientSignals(SendRecipient* recipient)
     connect(recipient->amount(), &BitcoinAmount::unitChanged, this, [this, recipient] {
         if (!m_syncing_units && !m_closed) synchronizeUnits(recipient->amount()->unit(), 0, ++m_unit_generation);
     });
+    connect(recipient, &SendRecipient::inputIntentSubmitted, this, &SendRecipientsListModel::submitIntent);
+    connect(recipient, &SendRecipient::amountModeRequested, this, [this, recipient](SendRecipient::AmountMode mode) { chooseAmountMode(recipient, mode); });
     connect(recipient, &SendRecipient::draftChanged, this, [this, recipient] { submitRecipient(recipient); });
 }
 void SendRecipientsListModel::synchronizeUnits(BitcoinAmount::Unit unit, int row, quint64 generation)
@@ -303,6 +424,11 @@ void SendRecipientsListModel::synchronizeUnits(BitcoinAmount::Unit unit, int row
 void SendRecipientsListModel::add()
 {
     if (m_closed || m_clearing || m_changing_rows) return;
+    if (count() >= maximumRecipients()) { rejectCommand(tr("Send supports at most %1 recipients.").arg(maximumRecipients())); return; }
+    if (m_pending_row_creations >= senddraft::Limits::pending_recipients) {
+        rejectCommand(tr("Send is still processing recipient changes. Try again after they finish.")); return;
+    }
+    if (!clearCommandError()) return;
     const QPointer<SendRecipientsListModel> guard{this};
     [[maybe_unused]] const auto owner = m_recipient_owner;
     const auto source = m_recipients;
@@ -324,10 +450,12 @@ void SendRecipientsListModel::add()
     const int row = count(); const auto rows = m_recipients;
     m_pending = true; ++m_revision; m_changing_rows = true;
     beginInsertRows({}, row, row); if (!guard) return;
-    rows->append(recipient); adopted = true; endInsertRows(); if (!guard) return;
+    rows->append(recipient); adopted = true; ++m_pending_row_creations; endInsertRows(); if (!guard) return;
     m_changing_rows = false; if (m_closed) { retireValues(); return; }
+    submitIntent(); if (!guard || m_closed) return;
     submitRecipient(recipient); if (!guard || m_closed) return;
     Q_EMIT countChanged(); if (!guard || m_closed) return;
+    if (!m_query) { Q_EMIT validationChanged(); if (!guard || m_closed) return; }
     setCurrentIndex(row);
 }
 void SendRecipientsListModel::setCurrentIndex(int row)
@@ -342,6 +470,7 @@ void SendRecipientsListModel::remove() { removeAt(m_current); }
 void SendRecipientsListModel::removeAt(int row)
 {
     if (m_closed || m_clearing || m_changing_rows || count() <= 1 || row < 0 || row >= count()) return;
+    if (!clearCommandError()) return;
     auto* previous = currentRecipient(); const QPointer<SendRecipientsListModel> guard{this};
     const auto rows = m_recipients; m_pending = true; ++m_revision; m_changing_rows = true;
     beginRemoveRows({}, row, row); if (!guard) return;
@@ -352,6 +481,7 @@ void SendRecipientsListModel::removeAt(int row)
     if (row < m_current || m_current >= count()) --m_current;
     endRemoveRows(); if (!guard) return;
     m_changing_rows = false; if (m_closed) { retireValues(); return; }
+    submitIntent(); if (!guard || m_closed) return;
     removeDraft(token);
     Q_EMIT currentIndexChanged(); if (!guard || m_closed) return;
     if (previous != currentRecipient()) { Q_EMIT currentRecipientChanged(); if (!guard || m_closed) return; }
@@ -368,6 +498,9 @@ void SendRecipientsListModel::retireRecipients(std::shared_ptr<Rows> rows)
 void SendRecipientsListModel::clear()
 {
     if (m_closed || m_changing_rows) return;
+    if (m_pending_row_creations >= senddraft::Limits::pending_recipients) {
+        rejectCommand(tr("Send is still processing recipient changes. Try again after they finish.")); return;
+    }
     const QPointer<SendRecipientsListModel> guard{this};
     const auto scheduler = m_services.scheduler;
     const auto opening = m_opening;
@@ -395,10 +528,11 @@ void SendRecipientsListModel::clear()
     beginResetModel(); if (!guard) return;
     if (!m_closed) {
         m_recipients = std::move(replacement); m_current = 0;
-        m_recipients->append(prepared.data()); adopted = true; retireRecipients(std::move(old));
+        m_recipients->append(prepared.data()); adopted = true; ++m_pending_row_creations; retireRecipients(std::move(old));
     }
     endResetModel(); if (!guard) return;
     m_changing_rows = false; if (m_closed) { retireValues(); return; }
+    submitIntent(); if (!guard || m_closed) return;
     submitRecipient(currentRecipient()); if (!guard || m_closed) return;
     Q_EMIT countChanged(); if (!guard || m_closed) return;
     Q_EMIT currentRecipientChanged(); if (!guard || m_closed) return;
@@ -412,6 +546,7 @@ void SendRecipientsListModel::clearToFront()
     if (m_closed || m_changing_rows) return;
     const QPointer<SendRecipientsListModel> guard{this};
     m_clearing = count() > 1;
+    if (m_clearing) { submitIntent(); if (!guard || m_closed) return; }
     if (m_current != 0) { m_current = 0; Q_EMIT currentRecipientChanged(); if (!guard) return; Q_EMIT currentIndexChanged(); if (!guard) return; }
     m_clearing = count() > 1; trimToFront(++m_clear_generation);
 }

@@ -915,6 +915,9 @@ void WalletQmlModel::initializeFeeEstimator()
     }
     if (m_send_recipients) {
         m_send_recipients->setOpening(m_opening, {m_fee_read_services.scheduler, m_fee_read_services.post});
+        connect(m_send_recipients, &SendRecipientsListModel::maximumRecipientChanged, this, &WalletQmlModel::projectMaximumRecipient);
+        connect(m_send_recipients, &SendRecipientsListModel::intentSubmitted, this, &WalletQmlModel::invalidatePreparation);
+        connect(m_send_recipients, &SendRecipientsListModel::intentSubmitted, this, &WalletQmlModel::clearFeeEstimates);
         connect(m_send_recipients, &SendRecipientsListModel::recipientDraftChanged, this, [this](quint64 token, quint64 revision) {
             if (m_automatic_maximum && (token != m_automatic_maximum->token || revision != m_automatic_maximum->revision))
                 invalidateAutomaticMaximum();
@@ -1162,27 +1165,28 @@ bool WalletQmlModel::sendDraftSweepsWallet() const
 
 void WalletQmlModel::useMaximum()
 {
-    if (!m_wallet || !m_send_recipients || !m_send_recipients->currentRecipient()) return;
-    setMaximumRecipient(m_send_recipients->currentRecipient());
-    scheduleFeeEstimates();
+    if (m_send_recipients) useMaximumFor(m_send_recipients->currentRecipient());
 }
-
+void WalletQmlModel::useMaximumFor(SendRecipient* recipient)
+{
+    if (!available() || !m_send_recipients) return;
+    m_send_recipients->chooseAmountMode(recipient, SendRecipient::AmountMode::Maximum);
+}
 void WalletQmlModel::setMaximumRecipient(SendRecipient* recipient)
 {
+    if (!m_send_recipients) return;
+    if (recipient) m_send_recipients->chooseAmountMode(recipient, SendRecipient::AmountMode::Maximum);
+    else if (m_maximum_recipient) m_maximum_recipient->chooseFixedAmount();
+}
+void WalletQmlModel::projectMaximumRecipient()
+{
+    auto* recipient = m_send_recipients->maximumRecipient();
     if (m_maximum_recipient == recipient) return;
-    QObject::disconnect(m_maximum_amount_connection);
     QObject::disconnect(m_maximum_recipient_destroyed_connection);
     m_maximum_recipient = recipient;
-    if (recipient) {
-        m_maximum_amount_connection = connect(recipient->amount(), &BitcoinAmount::amountChanged, this, [this] {
-            // Editing the prefilled amount switches back to a fixed-amount payment.
-            if (!m_updating_maximum) setMaximumRecipient(nullptr);
-        });
-        m_maximum_recipient_destroyed_connection = connect(recipient, &QObject::destroyed, this, [this] {
-            m_maximum_recipient.clear();
-            Q_EMIT maximumRecipientChanged();
-        });
-    }
+    if (recipient) m_maximum_recipient_destroyed_connection = connect(recipient, &QObject::destroyed, this, [this] {
+        m_maximum_recipient.clear(); Q_EMIT maximumRecipientChanged();
+    });
     Q_EMIT maximumRecipientChanged();
 }
 
@@ -2171,9 +2175,11 @@ void WalletQmlModel::publishSendFacts()
         Q_EMIT customFeeTargetPendingChanged();
         if (!observer || m_stopping) return;
     }
-    if (m_maximum_recipient && m_maximum_recipient->address()->address().isEmpty() && result->snapshot->gross_remainder) {
+    const auto draft = m_send_recipients ? m_send_recipients->draftSnapshot() : nullptr;
+    if (draft && m_maximum_recipient && draft->maximum == m_maximum_recipient->identity() &&
+        m_maximum_recipient->address()->address().isEmpty() && result->snapshot->gross_remainder) {
         QScopedValueRollback<bool> updating{m_updating_maximum, true};
-        m_maximum_recipient->amount()->setSatoshi(*result->snapshot->gross_remainder);
+        m_maximum_recipient->amount()->setProjectedSatoshi(*result->snapshot->gross_remainder);
     }
 }
 
@@ -2194,12 +2200,13 @@ void WalletQmlModel::publishAutomaticMaximum(CAmount amount)
 {
     if (!m_maximum_recipient || !m_send_recipients || m_stopping || !available()) return;
     const auto recipient = m_maximum_recipient;
-    if (recipient->amount()->satoshi() == amount) return;
+    const auto draft = m_send_recipients->draftSnapshot();
+    if (!draft || draft->maximum != recipient->identity() || recipient->amount()->satoshi() == amount) return;
     m_automatic_maximum = AutomaticMaximum{recipient, recipient->identity(), recipient->validationRevision() + 1,
         m_fee_estimate_request_id, amount, m_send_recipients->count(), automaticMaximumCapabilities()};
     const QPointer<WalletQmlModel> observer{this};
     const bool previous = std::exchange(m_updating_maximum, true);
-    recipient->amount()->setSatoshi(amount);
+    recipient->amount()->setProjectedSatoshi(amount);
     if (observer) m_updating_maximum = previous;
 }
 void WalletQmlModel::scheduleFeesForRecipientValidation()

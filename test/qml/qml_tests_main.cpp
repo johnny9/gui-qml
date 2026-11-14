@@ -714,6 +714,8 @@ public:
 class MockSendRecipient : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(AmountMode amountMode MEMBER m_amount_mode NOTIFY amountModeChanged)
+    Q_PROPERTY(QString inputBudgetError READ inputBudgetError CONSTANT)
     Q_PROPERTY(QObject* address READ address CONSTANT)
     Q_PROPERTY(QString addressError MEMBER m_address_error NOTIFY addressErrorChanged)
     Q_PROPERTY(QObject* amount READ amount CONSTANT)
@@ -728,6 +730,12 @@ class MockSendRecipient : public QObject
     Q_PROPERTY(bool validationPending MEMBER m_validation_pending NOTIFY isValidChanged)
 
 public:
+    enum AmountMode { Fixed, Maximum };
+    Q_ENUM(AmountMode)
+    AmountMode m_amount_mode{Fixed};
+    QString inputBudgetError() const { return {}; }
+    Q_INVOKABLE bool editPrivateNote(const QString& value) { if (value.size() > 256) return false; if (m_label != value) { m_label = value; Q_EMIT labelChanged(); } return true; }
+    void setAmountMode(AmountMode mode) { if (m_amount_mode != mode) { m_amount_mode = mode; Q_EMIT amountModeChanged(); } }
     MockSendRecipient()
     {
         m_address.setAddress(QStringLiteral("bcrt1qsendtoaddress"));
@@ -752,19 +760,20 @@ public:
     quint64 m_validation_revision{0};
     int appliedPaymentRequestCalls() const { return m_applied_payment_request_calls; }
     int m_applied_payment_request_calls{0};
-    Q_INVOKABLE void applyParsedPaymentRequest(const QVariantMap& parsed) {
+    Q_INVOKABLE void applyParsedPaymentRequest(const QVariantMap& parsed, bool replace_private_note = false) {
         ++m_applied_payment_request_calls;
         if (!parsed.value("success").toBool()) return;
         applyPaymentRequest(parsed.value("address").toString(), parsed.value("hasLabel").toBool() ? parsed.value("label").toString() : QString{}, parsed.value("hasMessage").toBool() ? parsed.value("uriMessage").toString() : QString{});
         if (parsed.value("hasAmount").toBool()) m_amount.setSatoshi(parsed.value("amountSats").toLongLong());
         const auto note = parsed.value("privateNote").toString();
-        if (!note.isEmpty()) { m_label = note; Q_EMIT labelChanged(); }
+        if (!note.isEmpty() && (m_label.isEmpty() || replace_private_note)) { m_label = note; Q_EMIT labelChanged(); }
     }
 
     QObject* address() { return &m_address; }
     QObject* amount() { return &m_amount; }
 
 Q_SIGNALS:
+    void amountModeChanged();
     void paymentRequestChanged();
     void addressErrorChanged();
     void amountErrorChanged();
@@ -775,6 +784,9 @@ Q_SIGNALS:
 class MockRecipientsModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(QString revision READ revision NOTIFY revisionChanged)
+    Q_PROPERTY(bool canAddRecipient READ canAddRecipient NOTIFY countChanged)
+    Q_PROPERTY(QString budgetError READ budgetError CONSTANT)
     Q_PROPERTY(bool validationPending READ validationPending CONSTANT)
     Q_PROPERTY(QObject* current READ current NOTIFY currentChanged)
     Q_PROPERTY(int currentIndex READ currentIndex WRITE setCurrentIndex NOTIFY currentIndexChanged)
@@ -784,6 +796,10 @@ class MockRecipientsModel : public QAbstractListModel
     Q_PROPERTY(QString validationError READ validationError WRITE setValidationError NOTIFY validationChanged)
 
 public:
+    QString revision() const { return QString::number(m_revision); }
+    void editRevision() { ++m_revision; Q_EMIT revisionChanged(); }
+    bool canAddRecipient() const { return count() < 25; }
+    QString budgetError() const { return {}; }
     bool validationPending() const { return false; }
     enum Roles {
         AddressRole = Qt::UserRole + 1,
@@ -836,7 +852,17 @@ public:
 
     void setCurrent(QObject* recipient)
     {
+        for (const auto& connection : m_revision_connections) disconnect(connection);
+        m_revision_connections.clear();
         m_current = recipient;
+        if (auto* editor = qobject_cast<MockSendRecipient*>(recipient)) {
+            m_revision_connections.push_back(connect(&editor->m_amount, &BitcoinAmount::valueEdited, this, &MockRecipientsModel::editRevision));
+            m_revision_connections.push_back(connect(&editor->m_address, &MockBitcoinAddress::addressChanged, this, &MockRecipientsModel::editRevision));
+            m_revision_connections.push_back(connect(editor, &MockSendRecipient::labelChanged, this, &MockRecipientsModel::editRevision));
+            m_revision_connections.push_back(connect(editor, &MockSendRecipient::paymentRequestChanged, this, &MockRecipientsModel::editRevision));
+            m_revision_connections.push_back(connect(editor, &MockSendRecipient::amountModeChanged, this, &MockRecipientsModel::editRevision));
+        }
+        editRevision();
         Q_EMIT currentChanged();
         Q_EMIT currentRecipientChanged();
     }
@@ -926,6 +952,7 @@ public:
     }
 
 Q_SIGNALS:
+    void revisionChanged();
     void currentChanged();
     void currentRecipientChanged();
     void currentIndexChanged();
@@ -935,6 +962,8 @@ Q_SIGNALS:
     void validationChanged();
 
 private:
+    quint64 m_revision{0};
+    std::vector<QMetaObject::Connection> m_revision_connections;
     QObject* m_current{nullptr};
     int m_current_index{1};
     qint64 m_total_amount_satoshi{0};
@@ -1908,6 +1937,7 @@ public:
     {
         if (!m_maximum_recipient) return;
         QObject::disconnect(m_maximum_amount_connection);
+        if (auto* recipient = qobject_cast<MockSendRecipient*>(m_maximum_recipient)) recipient->setAmountMode(MockSendRecipient::Fixed);
         m_maximum_recipient = nullptr;
         Q_EMIT maximumRecipientChanged();
     }
@@ -1917,13 +1947,17 @@ public:
     int m_use_maximum_calls{0};
     Q_INVOKABLE void useMaximum()
     {
-        ++m_use_maximum_calls;
         auto* recipients = qobject_cast<MockRecipientsModel*>(m_recipients);
-        auto* recipient = recipients ? qobject_cast<MockSendRecipient*>(recipients->current()) : nullptr;
+        useMaximumFor(recipients ? recipients->current() : nullptr);
+    }
+    Q_INVOKABLE void useMaximumFor(QObject* value)
+    {
+        ++m_use_maximum_calls;
+        auto* recipient = qobject_cast<MockSendRecipient*>(value);
         if (recipient && recipient != m_maximum_recipient) {
             clearMaximum();
-            m_maximum_recipient = recipient;
-            m_maximum_amount_connection = connect(&recipient->m_amount, &MockBitcoinAmount::amountChanged, this, [this] { clearMaximum(); });
+            m_maximum_recipient = recipient; recipient->setAmountMode(MockSendRecipient::Maximum);
+            m_maximum_amount_connection = connect(&recipient->m_amount, &BitcoinAmount::valueEdited, this, [this] { clearMaximum(); });
             Q_EMIT maximumRecipientChanged();
         }
         Q_EMIT walletInfoChanged();

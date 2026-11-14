@@ -65,6 +65,9 @@ public:
     void fromDisplay(const QString& new_amount);
     qint64 satoshi() const;
     void setSatoshi(qint64 new_amount);
+    // Owned observation, not a new user amount intent.
+    void setProjectedSatoshi(qint64 value) { assignCanonical(value, true, true); }
+    void clearProjected() { assignCanonical(0, false, true); }
 
     bool isSet() const { return m_isSet; }
 
@@ -101,6 +104,7 @@ public Q_SLOTS:
     void clear();
 
 Q_SIGNALS:
+    void valueEdited();
     void inputOperationChanged();
     void inputDirtyChanged();
     void inputChanged();

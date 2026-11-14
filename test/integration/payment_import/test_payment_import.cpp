@@ -37,6 +37,26 @@ private Q_SLOTS:
 
     void cleanup() { QGuiApplication::clipboard()->clear(); }
 
+    void equalImportedAmountReplacesMaximumIntentWithoutChangingTheRequest()
+    {
+        QVERIFY(qmltest::FundWallet(m_app, *m_wallet));
+        auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
+        QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton")); QTRY_COMPARE(m_wallet->maximumRecipient(), recipient);
+        QTRY_VERIFY(recipient->amount()->satoshi() > 0);
+        const auto requested = recipient->amount()->satoshi();
+        const QString uri = "bitcoin:" + m_address + "?amount=" + BitcoinAmount::satsToBtcString(requested) + "&label=Alice&message=Exact";
+        QVERIFY(qmltest::Click(m_app, "sendOptionsButton"));
+        QVERIFY(qmltest::Click(m_app, "sendOptionsOpenPaymentRequestButton"));
+        QVERIFY(qmltest::SetText(m_app, "sendUriImportInput", uri));
+        QVERIFY(qmltest::Click(m_app, "sendUriImportApplyButton"));
+        QTRY_VERIFY(recipient->hasPaymentRequest()); QTRY_COMPARE(m_wallet->maximumRecipient(), nullptr);
+        QCOMPARE(recipient->amount()->satoshi(), requested); QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Alice"));
+        QCOMPARE(recipient->message(), QStringLiteral("Exact"));
+        m_wallet->setCustomFeeRate("10"); m_wallet->scheduleFeeEstimates(); QTRY_VERIFY(!m_wallet->feeEstimatePending());
+        QCOMPARE(recipient->amount()->satoshi(), requested); QVERIFY(!m_wallet->sendDraftSweepsWallet());
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
+
     void clipboardPasteRequiresConfirmationBeforeOverwriting()
     {
         QVERIFY(qmltest::SetText(m_app, "sendNoteInput", "My private note"));

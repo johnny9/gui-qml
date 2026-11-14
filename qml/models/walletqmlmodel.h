@@ -321,6 +321,7 @@ public:
     bool availableSendBalanceKnown() const { return m_send_facts_known; }
     SendRecipient* maximumRecipient() const { return m_maximum_recipient.data(); }
     Q_INVOKABLE void useMaximum();
+    Q_INVOKABLE void useMaximumFor(SendRecipient* recipient);
     Q_INVOKABLE void setCustomFeeTarget(unsigned int target);
     CFeeRate dustRelayFee() const;
     bool sendAmountExhaustsBalance() const;
@@ -505,6 +506,7 @@ private:
     void publishBalance();
     void initializeFeeEstimator();
     void setMaximumRecipient(SendRecipient* recipient);
+    void projectMaximumRecipient();
     void updateMaximumAmount();
     void requestFeeEstimatesNow();
     void invalidateFeeRead(bool close = false);
@@ -631,7 +633,6 @@ private:
     WalletQmlModelTransaction* m_current_transaction{nullptr};
     wallet::CCoinControl m_coin_control;
     QPointer<SendRecipient> m_maximum_recipient;
-    QMetaObject::Connection m_maximum_amount_connection;
     QMetaObject::Connection m_maximum_recipient_destroyed_connection;
     bool m_updating_maximum{false};
     struct AutomaticMaximum {

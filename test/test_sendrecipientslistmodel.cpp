@@ -26,6 +26,12 @@ class SendRecipientsListModelTests : public QObject
     std::unique_ptr<BackendExecutor> m_executor;
     void bind(SendRecipientsListModel& model) { model.setOpening({}, {m_executor->scheduler(), {}}); }
 private Q_SLOTS:
+    void recipientBudgetIsEnforcedWithoutAQmlButton()
+    {
+        SendRecipientsListModel model;
+        for (int row{0}; row < 31; ++row) model.add();
+        QCOMPARE(model.count(), 25);
+    }
     void childCleanupAdmissionCannotRetargetListIntent_data()
     {
         QTest::addColumn<bool>("initializing"); QTest::addColumn<int>("outcome");
@@ -38,7 +44,7 @@ private Q_SLOTS:
         ManualRoutedExecution env;
         auto scheduler = std::make_shared<AdmissionHookScheduler>(env.scheduler);
         std::deque<std::function<void()>> posts;
-        auto model = std::make_unique<SendRecipientsListModel>();
+        auto model = std::make_unique<SendRecipientsListModel>(nullptr, senddraft::Limits{initializing ? 128 : 25});
         const auto settle = [&] {
             for (int turn{0}; turn < 1024 && (turn == 0 || !env.queuedIdle() || !posts.empty()); ++turn) {
                 env.drain(); while (!posts.empty()) { auto work = std::move(posts.front()); posts.pop_front(); work(); }
@@ -225,7 +231,9 @@ private Q_SLOTS:
         QCOMPARE(recipients.currentRecipient(), first);
         QCOMPARE(first->message(), QString("Lunch"));
         first->address()->setAddress("edited-address");
-        QVERIFY(!first->hasPaymentRequest());
+        // Provenance is retired by the Domain validation of the settled editor.
+        QTRY_VERIFY(!first->validationPending());
+        QTRY_VERIFY(!first->hasPaymentRequest());
         QVERIFY(first->message().isEmpty());
         QCOMPARE(first->label(), QString("Private note"));
         recipients.removeAt(0);

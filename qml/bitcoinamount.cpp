@@ -80,14 +80,17 @@ void BitcoinAmount::assignCanonical(qint64 value, bool is_set, bool reset_input)
 void BitcoinAmount::setSatoshi(qint64 value)
 {
     if (admissionClosed()) return;
-    // External canonical intent also retires an invalid or incomplete edit.
-    assignCanonical(value, true, true);
+    const QPointer<BitcoinAmount> observer{this};
+    const auto revision = m_input_revision; Q_EMIT valueEdited();
+    if (observer && !admissionClosed() && m_input_revision == revision) assignCanonical(value, true, true);
 }
 
 void BitcoinAmount::clear()
 {
     if (admissionClosed()) return;
-    assignCanonical(0, false, true);
+    const QPointer<BitcoinAmount> observer{this};
+    const auto revision = m_input_revision; Q_EMIT valueEdited();
+    if (observer && !admissionClosed() && m_input_revision == revision) assignCanonical(0, false, true);
 }
 
 BitcoinAmount::Unit BitcoinAmount::unit() const
@@ -213,8 +216,10 @@ QString BitcoinAmount::inputError() const
 void BitcoinAmount::fromDisplay(const QString& text)
 {
     if (admissionClosed()) return;
-    ++m_input_revision;
     const QPointer<BitcoinAmount> observer{this};
+    const auto revision = m_input_revision; Q_EMIT valueEdited();
+    if (!observer || admissionClosed() || m_input_revision != revision) return;
+    ++m_input_revision;
     const auto parsed = amountinput::Parse(text, UnitDecimals(m_unit), QLocale().decimalPoint().at(0));
     static_assert(static_cast<int>(InputState::Empty) == static_cast<int>(amountinput::State::Empty));
     static_assert(static_cast<int>(InputState::Incomplete) == static_cast<int>(amountinput::State::Incomplete));

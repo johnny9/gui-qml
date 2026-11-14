@@ -21,7 +21,11 @@ class SendRecipient : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(BitcoinAddress* address READ address CONSTANT)
-    Q_PROPERTY(QString label READ label WRITE setLabel NOTIFY labelChanged)
+    Q_PROPERTY(QString label READ label NOTIFY labelChanged)
+    Q_PROPERTY(QString recipientId READ recipientId CONSTANT)
+    Q_PROPERTY(AmountMode amountMode READ amountMode NOTIFY amountModeChanged)
+    Q_PROPERTY(QString inputBudgetError READ inputBudgetError NOTIFY isValidChanged)
+    Q_PROPERTY(int maximumNoteLength READ maximumNoteLength CONSTANT)
     Q_PROPERTY(QString message READ message WRITE setMessage NOTIFY messageChanged)
     Q_PROPERTY(QString paymentRequestLabel READ paymentRequestLabel NOTIFY paymentRequestChanged)
     Q_PROPERTY(bool hasPaymentRequest READ hasPaymentRequest NOTIFY paymentRequestChanged)
@@ -34,6 +38,18 @@ class SendRecipient : public QObject
     Q_PROPERTY(quint64 validationRevision READ validationRevision NOTIFY isValidChanged)
 
 public:
+    enum class AmountMode { Fixed, Maximum };
+    Q_ENUM(AmountMode)
+    AmountMode amountMode() const { return m_amount_mode; }
+    QString recipientId() const { return QString::number(m_identity); }
+    QString inputBudgetError() const { return m_budget_error; }
+    int maximumNoteLength() const { return int(senddraft::Limits::note); }
+    Q_INVOKABLE void chooseFixedAmount();
+    Q_INVOKABLE void chooseMaximum();
+    Q_INVOKABLE bool editPrivateNote(const QString& value);
+    Q_INVOKABLE void clearImportedMetadata();
+    void projectAmountMode(senddraft::AmountMode mode);
+    void applyImportedPayment(const senddraft::PaymentRequest& request);
     using Snapshot = senddraft::Recipient;
     explicit SendRecipient(WalletQmlModel* wallet, QObject* parent = nullptr);
     ~SendRecipient() override;
@@ -44,9 +60,10 @@ public:
     quint64 identity() const { return m_identity; }
     bool validationPending() const { return !admissionClosed() && (m_pending || m_address->normalizationPending()); }
     quint64 validationRevision() const { return m_revision; }
+    quint64 amountIntentRevision() const { return m_amount_intent_revision; }
     std::shared_ptr<const Snapshot> validationSnapshot() const { return !admissionClosed() && !validationPending() && m_validated && m_validated->revision == m_revision ? m_validated : nullptr; }
     Snapshot draft() const;
-    Q_INVOKABLE void applyParsedPaymentRequest(const QVariantMap& parsed);
+    Q_INVOKABLE void applyParsedPaymentRequest(const QVariantMap& parsed, bool replace_private_note = false);
 
     BitcoinAddress* address() const;
     void setAddress(const QString& address);
@@ -74,6 +91,9 @@ public:
     Q_INVOKABLE void clear();
 
 Q_SIGNALS:
+    void inputIntentSubmitted();
+    void amountModeRequested(AmountMode mode);
+    void amountModeChanged();
     void paymentRequestChanged();
     void addressChanged();
     void addressErrorChanged();
@@ -91,14 +111,19 @@ private:
     struct Input;
     Snapshot editorDraft() const;
     void requestValidation();
+    void captureAmountIntent();
     void publishValidation();
     void validateAddress();
     void validateAmount();
 
     const WalletQmlModel* m_wallet;
     const quint64 m_identity;
-    quint64 m_revision{0}, m_setup_revision{0};
-    bool m_pending{true}, m_closed{false};
+    quint64 m_revision{0}, m_setup_revision{0}, m_amount_intent_revision{0}, m_address_intent_revision{0}, m_import_sequence{0};
+    QString m_address_intent_value, m_address_intent_error;
+    quint64 m_request_normalization{0};
+    bool m_pending{true}, m_closed{false}, m_batching{false};
+    AmountMode m_amount_mode{AmountMode::Fixed};
+    QString m_budget_error;
     std::shared_ptr<walletopening::Session> m_opening;
     execution::SnapshotServices m_services;
     std::shared_ptr<Input> m_input;

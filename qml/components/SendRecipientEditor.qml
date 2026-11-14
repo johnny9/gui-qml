@@ -3,12 +3,13 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
+import org.bitcoincore.qt 1.0
 import "../controls"
 
 ColumnLayout {
     id: root
-    property var wallet
-    property var recipient
+    property WalletQmlModel wallet
+    property SendRecipient recipient
     property bool clipboardRequest: false
     property string clipboardText: ""
     property double clipboardRevision: -1
@@ -18,7 +19,7 @@ ColumnLayout {
     property alias noteField: noteField
     property alias amountField: amountField
     readonly property bool sendingMaximum: root.wallet && root.recipient
-        && root.wallet.maximumRecipient === root.recipient
+        && root.recipient.amountMode === SendRecipient.Maximum
     readonly property bool selectedCoins: root.wallet && root.wallet.coinsListModel.selectedCoinsCount > 0
     signal pasteRequested(string field, var payload)
     signal edited()
@@ -105,7 +106,7 @@ ColumnLayout {
         messageObjectName: "sendAmountStatusText"
         fieldSurface: true
         fieldFocused: amountField.field.activeFocus
-        errorText: root.recipient ? root.recipient.amountError : ""
+        errorText: root.recipient ? root.recipient.inputBudgetError || root.recipient.amountError : ""
         //: Send-form action that fills the amount with the selected coins' total minus fees.
         //: Without a selection, it selects all available coins first.
         actionText: root.selectedCoins
@@ -114,7 +115,7 @@ ColumnLayout {
         actionObjectName: "sendUseMaximumButton"
         supportingText: !root.sendingMaximum ? "" : root.selectedCoins
             ? qsTr("Sending maximum from selected coins") : qsTr("Sending maximum available")
-        onActionRequested: { root.wallet.useMaximum(); amountField.syncFromAmount(true) }
+        onActionRequested: root.wallet.useMaximumFor(root.recipient)
         BitcoinAmountInputField {
             id: amountField
             Layout.fillWidth: true
@@ -124,7 +125,7 @@ ColumnLayout {
             unitToggleObjectName: "sendAmountUnitToggle"
             unitLabelObjectName: "sendAmountUnitLabel"
             amount: root.recipient ? root.recipient.amount : null
-            errorText: root.recipient ? root.recipient.amountError : ""
+            errorText: root.recipient ? root.recipient.inputBudgetError || root.recipient.amountError : ""
             interceptPaste: true
             onInputTextChanged: root.edited()
             onEditingFinished: root.edited()
@@ -147,7 +148,8 @@ ColumnLayout {
         interceptPaste: true
         placeholderText: qsTr("Add a note for yourself")
         paymentUriRestoreText: root.recipient ? root.recipient.label : ""
-        onTextEdited: { if (root.recipient) root.recipient.label = text; root.edited() }
+        errorText: root.recipient ? root.recipient.inputBudgetError : ""
+        onTextEdited: { if (root.recipient && !root.recipient.editPrivateNote(text)) noteField.field.syncFromModel(); root.edited() }
         onPasteRequested: (payload) => root.pasteRequested("label", payload)
     }
 
