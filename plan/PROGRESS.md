@@ -12,7 +12,7 @@ progress without changing shared finding or schedule registers.
 | R10 | Implementation/focused ordinary checkpoint complete; final qualification pending R42 |
 | R11 | Implementation/focused checkpoint complete:274 behavioral bodies,5 IPC scenarios; final qualification pending R42 |
 | R16 | Focused checkpoint integrated:227 native,19 Core integration,17 Linux QML bodies across recorded snapshots; final qualification pending R42 |
-| R17 | Reader/policy extraction active; confirmed048 preview mismatch held for user decision under public Wallet boundary |
+| R17 | Reader/policy extraction active; 048 remains unresolved with user-accepted upstream deferral; final review-fee proof/checks pending |
 | R14 | Security/storage in progress; private security extraction and reservation repair pass 166 focused bodies; whole-step gate pending |
 | R28 | Focused checkpoint integrated: 51 native, 56 Activity QML and one public Core/RPC body across recorded inputs; final qualification pending R42 |
 | R18 | Coin-selection/lock-operation extraction active in parallel with integration |
@@ -34,5 +34,5 @@ pending. Independent steps advance while accepted changes are integrated.
 
 The [R28 integration record](R28_ACTIVITY_READER.md) retains exact inputs,
 original comparisons and the passing 151-body Send follow-up. The
-[R17 preview limitation](R17_PUBLIC_PREVIEW_LIMIT.md) records the pending user
-decision; independent steps continue.
+[R17 preview limitation](R17_PUBLIC_PREVIEW_LIMIT.md) records the accepted upstream
+deferral; independent steps continue.
