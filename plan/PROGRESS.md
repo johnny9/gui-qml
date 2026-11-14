@@ -12,11 +12,12 @@ progress without changing shared finding or schedule registers.
 | R10 | Implementation/focused ordinary checkpoint complete; final qualification pending R42 |
 | R11 | Implementation/focused checkpoint complete:274 behavioral bodies,5 IPC scenarios; final qualification pending R42 |
 | R16 | Focused checkpoint integrated:227 native,19 Core integration,17 Linux QML bodies across recorded snapshots; final qualification pending R42 |
-| R17 | Fee selection/versioned-reader implementation active from accepted R16 |
-| R14 | Security/storage in progress; original reservation-loss regression repaired privately,61 affected-class bodies pass |
-| R28 | Independent versioned readers/Activity implementation delegated in an isolated branch; prerequisites R08/R10 met, gate pending |
+| R17 | Reader/policy extraction active; confirmed048 preview mismatch held for user decision under public Wallet boundary |
+| R14 | Security/storage in progress; private security extraction and reservation repair pass 166 focused bodies; whole-step gate pending |
+| R28 | Focused checkpoint integrated: 51 native, 56 Activity QML and one public Core/RPC body across recorded inputs; final qualification pending R42 |
+| R18 | Coin-selection/lock-operation extraction active in parallel with integration |
 | R12 | Creation implementation at focused validation; integration pending |
-| R13, R15, R18–R27, R29–R40 | Authorized next, according to stated prerequisites; implementation and focused gates pending |
+| R13, R15, R19–R27, R29–R40 | Authorized next, according to stated prerequisites; implementation and focused gates pending |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
@@ -30,3 +31,8 @@ inputs, scoped reuse, resolved failures and remaining upstream/platform limits.
 The [R16 draft checkpoint](R16_SEND_DRAFT.md) records its new typed draft/mode
 interface and focused validation; final platform/coverage/sanitizer status stays
 pending. Independent steps advance while accepted changes are integrated.
+
+The [R28 integration record](R28_ACTIVITY_READER.md) retains exact inputs,
+original comparisons and the passing 151-body Send follow-up. The
+[R17 preview limitation](R17_PUBLIC_PREVIEW_LIMIT.md) records the pending user
+decision; independent steps continue.
