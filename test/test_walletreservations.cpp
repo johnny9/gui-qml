@@ -11,11 +11,16 @@
 
 #include <chainparams.h>
 #include <chainparamsbase.h>
+#include <key.h>
 #include <key_io.h>
+#include <script/solver.h>
 
 #include <QtTest/QtTest>
 #include <QScopeGuard>
 #include <QSemaphore>
+#include <array>
+#include <functional>
+#include <stdexcept>
 #include <string_view>
 
 namespace {
@@ -30,6 +35,7 @@ struct Wallet : StubWallet {
     int generated{0}, unlocked{0}, relocked{0}, reads{0}, writes{0};
     std::string expected_password{"correct"};
     bool locked{false}, encrypted{false}, fail_lock{false}, fail_unlock{false}, can_generate{true}, taproot{true};
+    bool throw_lock{false}, throw_generate{false}, fail_generate{false}, throw_history{false};
     std::set<interfaces::WalletTx> transactions;
     std::map<CTxDestination, std::string> book;
     bool canGetAddresses() override { return can_generate; }
@@ -42,10 +48,12 @@ struct Wallet : StubWallet {
         if (std::string_view{password.data(),password.size()} != std::string_view{expected_password}) return util::Unexpected{wallet::WalletError{wallet::WalletErrorCode::PassphraseIncorrect, Untranslated("incorrect")}};
         locked = false; return {};
     }
-    bool lock() override { ++relocked; if (fail_lock) return false; locked = true; return true; }
+    bool lock() override { ++relocked; if (throw_lock) throw std::runtime_error{"lock outcome unavailable"}; if (fail_lock) return false; locked = true; return true; }
     OutputType getDefaultAddressType() override { return OutputType::LEGACY; }
     util::Result<CTxDestination> getNewDestination(OutputType, const std::string& label) override {
         ++generated;
+        if (throw_generate) throw std::runtime_error{"generation outcome unavailable"};
+        if (fail_generate) return util::Error{Untranslated("keypool unavailable")};
         if (locked) return util::Error{Untranslated("locked keypool")};
         const auto destination = Destination(static_cast<unsigned char>(generated));
         book[destination] = label; return destination;
@@ -56,7 +64,7 @@ struct Wallet : StubWallet {
         if (purpose) *purpose = wallet::AddressPurpose::RECEIVE;
         return true;
     }
-    std::set<interfaces::WalletTx> getWalletTxs() override { ++reads; return transactions; }
+    std::set<interfaces::WalletTx> getWalletTxs() override { ++reads; if (throw_history) throw std::runtime_error{"history unavailable"}; return transactions; }
     bool setAddressReceiveRequest(const CTxDestination&, const std::string&, const std::string&) override { ++writes; return true; }
 };
 struct Storage {
@@ -64,14 +72,15 @@ struct Storage {
     std::set<QString> retired;
     int reads{0}, writes{0}, marks{0};
     bool fail_read{false}, fail_write{false}, fail_retire{false}, fail_clear{false};
+    bool throw_read{false}, throw_write{false};
     ReservationStorage port() {
         return {
             [this](interfaces::Wallet&, const QString& candidate) {
-                ++reads; const auto address = candidate.isEmpty() ? current : candidate;
+                ++reads; if (throw_read) throw std::runtime_error{"reservation read unavailable"}; const auto address = candidate.isEmpty() ? current : candidate;
                 return StoredAddress{address, retired.contains(address), !fail_read};
             },
             [this](interfaces::Wallet&, const QString& address) {
-                ++writes; if (fail_write) return false; current = address; return true;
+                ++writes; if (throw_write) throw std::runtime_error{"reservation write outcome unavailable"}; if (fail_write) return false; current = address; return true;
             },
             [this](interfaces::Wallet&, const QString& address) {
                 ++marks; if (fail_retire) return false; retired.insert(address); return true;
@@ -97,9 +106,10 @@ struct Fixture {
         std::make_shared<std::atomic_bool>(false), [] {})};
     std::shared_ptr<interfaces::Wallet> client{opening->start(wallet).borrower};
     std::shared_ptr<Store> store;
-    Fixture() {
+    explicit Fixture(std::function<void(ReservationStorage&)> configure = {}) {
         commands.drain();
-        const auto port = storage.port();
+        auto port = storage.port();
+        if (configure) configure(port);
         store = std::make_shared<Store>(opening, [] {}, Store::Watch{}, QDateTime::currentDateTimeUtc,
             [] { return true; }, port.clear, port);
         Command load; load.kind = Kind::Reload; settle(load);
@@ -167,6 +177,151 @@ private Q_SLOTS:
         QCOMPARE(f.storage.writes, 1);
         QVERIFY(!admitted.operation->result());
         f.commands.drain(); QVERIFY(admitted.operation->result()->address->persisted);
+    }
+    void reservationFailuresOwnTheirExactNativeEffects_data()
+    {
+        QTest::addColumn<int>("mode");
+        const std::array names{"invalid-type", "generation-unsupported", "taproot-unsupported", "read-failed",
+            "read-threw", "missing-read-port", "missing-write-port", "write-failed", "write-threw",
+            "generation-failed", "generation-threw", "paid-retirement-failed", "relock-threw", "history-threw"};
+        for(int mode=0;mode<int(names.size());++mode)QTest::newRow(names[mode])<<mode;
+    }
+    void reservationFailuresOwnTheirExactNativeEffects()
+    {
+        QFETCH(int,mode);
+        Fixture f{[mode](ReservationStorage& port){if(mode==5)port.read={};if(mode==6)port.write={};}};
+        auto command=Reserve();
+        if(mode==0)command.draft.address_type=QStringLiteral("unsupported-output-type");
+        if(mode==1)f.wallet->can_generate=false;
+        if(mode==2){command.draft.address_type=QStringLiteral("bech32m");f.wallet->taproot=false;}
+        f.storage.fail_read=mode==3;f.storage.throw_read=mode==4;
+        f.storage.fail_write=mode==7;f.storage.throw_write=mode==8;
+        f.wallet->fail_generate=mode==9;f.wallet->throw_generate=mode==10;
+        if(mode==11||mode==13){
+            f.storage.current=Address(50);f.wallet->book[Destination(50)]="old owner";
+            CMutableTransaction tx;tx.vout.emplace_back(100,GetScriptForDestination(Destination(50)));
+            interfaces::WalletTx payment{};payment.tx=MakeTransactionRef(tx);payment.txout_is_mine={true};
+            f.wallet->transactions.insert(payment);
+        }
+        f.storage.fail_retire=mode==11;f.wallet->throw_history=mode==13;
+        if(mode==12){f.wallet->encrypted=f.wallet->locked=true;f.wallet->throw_lock=true;command.secret=std::make_shared<SecureString>("correct");}
+        const auto secret=command.secret;
+        const auto operation=f.settle(command);QVERIFY(operation&&operation->result());
+        const Error expected[]={Error::Invalid,Error::Unsupported,Error::Unsupported,Error::ReservationPersistence,
+            Error::Uncertain,Error::Unsupported,Error::ReservationPersistence,Error::ReservationPersistence,
+            Error::Uncertain,Error::AddressCreation,Error::Uncertain,Error::ReservationPersistence,Error::Uncertain,Error::Uncertain};
+        QCOMPARE(operation->result()->error,expected[mode]);
+        const bool generated=mode==6||mode==7||mode==8||mode==9||mode==10||mode==12;
+        QCOMPARE(f.wallet->generated,generated?1:0);QCOMPARE(f.wallet->writes,0);
+        QCOMPARE(f.storage.reads,mode==0||mode==1||mode==2||mode==5?0:1);
+        QCOMPARE(f.storage.writes,mode==7||mode==8?1:0);QCOMPARE(f.storage.marks,mode==11?1:0);
+        const bool retained_address=mode==6||mode==7||mode==8||mode==12;
+        QCOMPARE(bool(operation->result()->address),retained_address);
+        if(retained_address){QCOMPARE(operation->result()->address->address,Address(1));QVERIFY(!operation->result()->address->persisted);}
+        if(mode==12){QCOMPARE(f.wallet->unlocked,1);QCOMPARE(f.wallet->relocked,1);QVERIFY(secret&&secret->empty());}
+        else{QCOMPARE(f.wallet->unlocked,0);QCOMPARE(f.wallet->relocked,0);}
+        if(expected[mode]==Error::Uncertain){
+            const auto generated_before=f.wallet->generated;
+            QCOMPARE(f.settle(Reserve(true))->result()->error,Error::Uncertain);
+            QCOMPARE(f.wallet->generated,generated_before);
+        }
+    }
+    void explicitSelectionKeepsTheExistingDestinationType_data()
+    {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("legacy")<<0;QTest::newRow("nested-witness")<<1;QTest::newRow("witness-key")<<2;
+        QTest::newRow("witness-script")<<3;QTest::newRow("taproot")<<4;
+    }
+    void explicitSelectionKeepsTheExistingDestinationType()
+    {
+        QFETCH(int,mode);
+        ECC_Context ecc;CKey key;key.MakeNewKey(true);const auto pubkey=key.GetPubKey();
+        CTxDestination destination=PKHash{pubkey};
+        if(mode==1)destination=ScriptHash{GetScriptForDestination(WitnessV0KeyHash{pubkey})};
+        if(mode==2)destination=WitnessV0KeyHash{pubkey};
+        if(mode==3)destination=WitnessV0ScriptHash{GetScriptForMultisig(1,{pubkey})};
+        if(mode==4)destination=WitnessV1Taproot{XOnlyPubKey{pubkey}};
+        const QString address=QString::fromStdString(EncodeDestination(destination));
+        Fixture f;f.wallet->book[destination]="original selection";f.wallet->can_generate=false;f.wallet->taproot=false;
+        Command select;select.kind=Kind::SelectAddress;select.draft.address=address;select.draft.address_type=QStringLiteral("legacy");
+        const auto operation=f.settle(select);QVERIFY(operation->result());QCOMPARE(operation->result()->error,Error::None);
+        QVERIFY(operation->result()->address);QCOMPARE(operation->result()->address->destination,destination);
+        QCOMPARE(operation->result()->address->address,address);QCOMPARE(operation->result()->address->label,QStringLiteral("original selection"));
+        const QString types[]={QStringLiteral("legacy"),QStringLiteral("p2sh-segwit"),QStringLiteral("bech32"),QStringLiteral("bech32"),QStringLiteral("bech32m")};
+        QCOMPARE(operation->result()->address->address_type,types[mode]);QVERIFY(operation->result()->address->persisted);
+        QCOMPARE(f.wallet->generated,0);QCOMPARE(f.storage.writes,1);QCOMPARE(f.storage.current,address);
+    }
+    void historicalUseRequiresPositiveOwnedAddressOutputs_data()
+    {
+        QTest::addColumn<int>("mode");
+        const std::array names{"paid", "unowned", "missing-ownership", "zero-value", "negative-value",
+            "non-address-script", "other-address", "matching-later-output"};
+        for(int mode=0;mode<int(names.size());++mode)QTest::newRow(names[mode])<<mode;
+    }
+    void historicalUseRequiresPositiveOwnedAddressOutputs()
+    {
+        QFETCH(int,mode);Fixture f;
+        f.storage.current=Address(50);f.wallet->book[Destination(50)]="original reservation";
+        CMutableTransaction tx;tx.nLockTime=100+mode;
+        const auto script=mode==5?CScript{}<<OP_TRUE:GetScriptForDestination(Destination(mode==6?51:50));
+        tx.vout.emplace_back(mode==3?0:mode==4?-1:100,script);
+        interfaces::WalletTx payment{};payment.txout_is_mine=mode==2?std::vector<bool>{}:std::vector<bool>{mode!=1};
+        if(mode==7){tx.vout[0].scriptPubKey=GetScriptForDestination(Destination(51));tx.vout.emplace_back(25,GetScriptForDestination(Destination(50)));payment.txout_is_mine={true,true};}
+        payment.tx=MakeTransactionRef(tx);const auto original_hash=payment.tx->GetHash();f.wallet->transactions.insert(payment);
+        const auto operation=f.settle(Reserve());QVERIFY(operation->result());QCOMPARE(operation->result()->error,Error::None);
+        const bool paid=mode==0||mode==7;
+        QCOMPARE(operation->result()->address->address,paid?Address(1):Address(50));
+        QCOMPARE(f.wallet->generated,paid?1:0);QCOMPARE(f.wallet->reads,1);QCOMPARE(f.storage.marks,paid?1:0);
+        QCOMPARE(f.storage.retired.contains(Address(50)),paid);QVERIFY(operation->result()->address->persisted);
+        QCOMPARE(f.wallet->transactions.begin()->tx->GetHash(),original_hash);
+    }
+    void largeHistoricalScanYieldsBeforeAllocation_data()
+    {
+        QTest::addColumn<int>("boundary");
+        QTest::newRow("continue")<<0;QTest::newRow("opening-closes")<<1;
+        QTest::newRow("continuation-rejected")<<2;QTest::newRow("newer-intent")<<3;
+    }
+    void largeHistoricalScanYieldsBeforeAllocation()
+    {
+        QFETCH(int,boundary);bool independent_domain{false};Fixture f;
+        f.storage.current=Address(50);f.wallet->book[Destination(50)]="original reservation";
+        CMutableTransaction tx;
+        for(int i=0;i<599;++i)tx.vout.emplace_back(1,GetScriptForDestination(Destination(51)));
+        tx.vout.emplace_back(100,GetScriptForDestination(Destination(50)));
+        interfaces::WalletTx payment{};payment.tx=MakeTransactionRef(tx);payment.txout_is_mine.assign(600,true);f.wallet->transactions.insert(payment);
+        const auto original=f.store->submit(Reserve());QVERIFY(original);
+        while(f.commands.step(Lane::Domain)){}
+        QVERIFY(f.commands.step(Lane::Core));QCOMPARE(f.wallet->reads,1);QCOMPARE(f.wallet->generated,0);
+        if(boundary==2)f.commands.rejectLane(Lane::Domain);
+        QVERIFY(f.commands.step(Lane::Domain));
+        std::shared_ptr<Operation> newer;
+        if(boundary==0){
+            QVERIFY(!f.commands.step(Lane::Core));
+            QVERIFY(f.opening->postDomain([&]{independent_domain=true;}));
+            QVERIFY(f.commands.step(Lane::Domain));QVERIFY(!independent_domain);QCOMPARE(f.wallet->generated,0);
+            QVERIFY(f.commands.step(Lane::Domain));QVERIFY(independent_domain);QCOMPARE(f.wallet->generated,0);
+        }else if(boundary==1)f.opening->closeAdmission();
+        else if(boundary==3){const auto admitted=f.store->submit(Reserve(true));QVERIFY(admitted);newer=admitted.operation;}
+        f.commands.drain();QVERIFY(original.operation->result());
+        const Error expected[]={Error::None,Error::Closed,Error::Rejected,Error::Changed};
+        QCOMPARE(original.operation->result()->error,expected[boundary]);
+        if(boundary==0){QCOMPARE(original.operation->result()->address->address,Address(1));QCOMPARE(f.storage.marks,1);}
+        if(boundary==1||boundary==2){QCOMPARE(f.wallet->generated,0);QCOMPARE(f.storage.writes,0);}
+        if(boundary==3){QVERIFY(newer&&newer->result());QCOMPARE(newer->result()->error,Error::None);QCOMPARE(newer->result()->address->address,Address(1));QVERIFY(!original.operation->result()->address);}
+        QCOMPARE(f.wallet->generated,boundary==0||boundary==3?1:0);
+    }
+    void failedHistoricalRetirementCannotAllocateAndExplicitRetryRecovers()
+    {
+        Fixture f;f.storage.current=Address(50);f.wallet->book[Destination(50)]="paid original";
+        CMutableTransaction tx;tx.vout.emplace_back(100,GetScriptForDestination(Destination(50)));
+        interfaces::WalletTx payment{};payment.tx=MakeTransactionRef(tx);payment.txout_is_mine={true};f.wallet->transactions.insert(payment);
+        f.storage.fail_retire=true;const auto failed=f.settle(Reserve());
+        QCOMPARE(failed->result()->error,Error::ReservationPersistence);QVERIFY(!failed->result()->address);
+        QCOMPARE(f.wallet->generated,0);QCOMPARE(f.storage.current,Address(50));QCOMPARE(f.storage.marks,1);
+        f.storage.fail_retire=false;const auto retry=f.settle(f.Resume(failed,nullptr));
+        QCOMPARE(retry->result()->error,Error::None);QCOMPARE(retry->result()->address->address,Address(1));
+        QVERIFY(retry->result()->address->persisted);QCOMPARE(f.wallet->generated,1);QCOMPARE(f.storage.marks,2);
+        QVERIFY(f.storage.retired.contains(Address(50)));
     }
     void unusedAddressIsRestoredWhileNextAllocates()
     {

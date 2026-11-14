@@ -70,10 +70,10 @@ std::shared_ptr<startupdiagnostics::Collection> startupdiagnostics::Create(const
 }
 StartupDiagnosticsModel::StartupDiagnosticsModel(execution::SnapshotServices services, QObject* parent)
     : QAbstractListModel(parent), m_services(std::move(services)), m_input(startupdiagnostics::Create(m_services.scheduler)) {
-    if (!m_services.post) m_services.post = presentation::QueuedPost();
+    m_services.post = presentation::ReliablePost(std::move(m_services.post));
     if (!m_input) m_error = tr("Startup diagnostic capacity is unavailable.");
 }
-StartupDiagnosticsModel::~StartupDiagnosticsModel() { closeAdmission(); }
+StartupDiagnosticsModel::~StartupDiagnosticsModel() { retire(false); }
 int StartupDiagnosticsModel::rowCount(const QModelIndex& parent) const { return parent.isValid() || !m_prepared ? 0 : m_prepared->rows.size(); }
 QVariant StartupDiagnosticsModel::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row() < 0 || index.row() >= rowCount() || role != Qt::UserRole + 1) return {};
@@ -104,7 +104,7 @@ bool StartupDiagnosticsModel::project(bool success, QString failure, QString war
     if (m_closed || m_busy || !m_input) return false;
     const auto scheduler = m_diagnostic_scope ? m_diagnostic_scope : m_services.scheduler;
     auto prepared = execution::RetainValues<Prepared>(scheduler, [] { return std::make_unique<Prepared>(); });
-    if (!prepared) { m_error = tr("Startup diagnostic capacity is unavailable."); Q_EMIT changed(); return false; }
+    if (!prepared) { m_error = tr("Startup diagnostic capacity is unavailable."); m_deferred_changed = true; flushChanges(); return false; }
     const QPointer<StartupDiagnosticsModel> observer{this};
     auto operation = std::make_shared<execution::OwnedCommand<std::shared_ptr<Prepared>>>(scheduler,
         [post = m_services.post, fallback = presentation::QueuedPost(), observer] {
@@ -156,12 +156,13 @@ bool StartupDiagnosticsModel::project(bool success, QString failure, QString war
         }
         else { m_busy = false; m_operation.reset(); m_error = tr("Startup diagnostics could not be queued. Retry to display the retained diagnostics."); }
     }
-    if (m_publishing) m_deferred_changed = true;
-    else Q_EMIT changed();
+    m_deferred_changed = true; flushChanges();
     return bool(admitted);
 }
 void StartupDiagnosticsModel::publish() {
-    if (m_closed || m_publishing || !m_operation || !m_busy) return;
+    if (m_closed || !m_operation || !m_busy) return;
+    if (m_publishing) { m_publication_pending = true; return; }
+    m_publication_pending = false;
     const auto operation = m_operation;
     const auto generation = m_generation;
     const auto result = operation->result(); if (!result) return;
@@ -174,16 +175,21 @@ void StartupDiagnosticsModel::publish() {
     }
     else {
         beginResetModel(); if (!observer) return;
-        if (current()) { m_prepared = *result->value; m_error = m_prepared->intake_error; }
+        if (current()) {
+            m_prepared = *result->value; m_error = m_prepared->intake_error;
+            m_rows_reset_pending = false;
+        } else if (m_rows_reset_pending) {
+            m_prepared.reset(); m_rows_reset_pending = false;
+        }
         endResetModel(); if (!observer) return;
     }
     m_publishing = false;
     if (!current()) {
-        if (std::exchange(m_deferred_changed, false)) Q_EMIT changed();
+        flushChanges();
         return;
     }
-    m_busy = false; m_operation.reset(); m_authoritative_input.reset(); m_deferred_changed = false;
-    Q_EMIT changed();
+    m_busy = false; m_operation.reset(); m_authoritative_input.reset(); m_deferred_changed = true;
+    flushChanges();
     if (observer && !m_closed && generation == m_generation && !m_operation) Q_EMIT finished();
 }
 bool StartupDiagnosticsModel::resetInput(std::shared_ptr<execution::Scheduler> original_diagnostic_scope) {
@@ -192,21 +198,57 @@ bool StartupDiagnosticsModel::resetInput(std::shared_ptr<execution::Scheduler> o
     // General model admission remains closed during fatal presentation.
     m_diagnostic_scope = std::move(original_diagnostic_scope);
     auto input = startupdiagnostics::Create(m_diagnostic_scope ? m_diagnostic_scope : m_services.scheduler);
-    const auto generation = ++m_generation;
+    ++m_generation;
     m_operation.reset(); m_busy = false; m_closed = false; m_error.clear(); m_intake_error.clear(); m_input = input; m_authoritative_input.reset();
+    m_publication_pending = false; m_rows_reset_pending = true; m_deferred_changed = true;
     if (!m_input) m_error = tr("Startup diagnostic capacity is unavailable.");
-    if (m_publishing) {
-        m_prepared.reset(); m_deferred_changed = true; return bool(input);
-    }
-    m_publishing = true;
-    beginResetModel(); if (!observer) return false;
-    if (generation == m_generation) m_prepared.reset();
-    endResetModel(); if (!observer) return false;
-    m_publishing = false; m_deferred_changed = false;
-    Q_EMIT changed(); return bool(input);
+    if (!m_publishing) resetRows();
+    return observer && bool(input);
 }
 void StartupDiagnosticsModel::retryPublication() { publish(); }
-void StartupDiagnosticsModel::closeAdmission() {
+void StartupDiagnosticsModel::closeAdmission() { retire(true); }
+void StartupDiagnosticsModel::retire(bool notify) {
     if (m_closed) return;
-    ++m_generation; m_closed = true; m_input.reset(); m_authoritative_input.reset(); m_operation.reset(); m_prepared.reset(); m_diagnostic_scope.reset();
+    ++m_generation;
+    m_closed = true; m_busy = false;
+    m_input.reset(); m_authoritative_input.reset(); m_operation.reset(); m_diagnostic_scope.reset();
+    m_publication_pending = false;
+    if (!notify) { m_prepared.reset(); return; }
+    m_rows_reset_pending = true; m_deferred_changed = true;
+    if (!m_publishing) resetRows();
+}
+void StartupDiagnosticsModel::resetRows() {
+    if (m_publishing || !m_rows_reset_pending) return;
+    const QPointer<StartupDiagnosticsModel> observer{this};
+    m_publishing = true;
+    beginResetModel(); if (!observer) return;
+    // Apply requests only after every about-to-reset listener has seen the old
+    // frame. Requests from modelReset listeners belong to a later transaction.
+    if (m_rows_reset_pending) { m_prepared.reset(); m_rows_reset_pending = false; }
+    endResetModel(); if (!observer) return;
+    m_publishing = false;
+    flushChanges();
+}
+void StartupDiagnosticsModel::schedulePresentation() {
+    if (m_presentation_scheduled) return;
+    m_presentation_scheduled = true;
+    const QPointer<StartupDiagnosticsModel> observer{this};
+    m_services.post([observer] { if (observer) observer->deliverPresentation(); });
+}
+void StartupDiagnosticsModel::deliverPresentation() {
+    m_presentation_scheduled = false;
+    // A nested GUI loop can deliver this turn inside a reset signal. The
+    // enclosing transaction schedules any still-pending request after it ends.
+    if (m_publishing) return;
+    if (!m_closed && m_busy && m_operation && m_operation->result()) {
+        publish(); // A current publication also consumes an older clear request.
+        return;
+    }
+    m_publication_pending = false;
+    resetRows();
+}
+void StartupDiagnosticsModel::flushChanges() {
+    if (m_publishing) return;
+    if (m_rows_reset_pending || m_publication_pending) schedulePresentation();
+    if (std::exchange(m_deferred_changed, false)) Q_EMIT changed();
 }

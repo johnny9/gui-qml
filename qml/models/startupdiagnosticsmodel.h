@@ -67,6 +67,11 @@ Q_SIGNALS:
     void changed();
     void finished();
 private:
+    void retire(bool notify);
+    void resetRows();
+    void schedulePresentation();
+    void deliverPresentation();
+    void flushChanges();
     struct Prepared { QString summary, intake_error; QStringList rows; bool warnings{false}; };
     void publish();
     execution::SnapshotServices m_services;
@@ -75,6 +80,7 @@ private:
     std::shared_ptr<const Prepared> m_prepared;
     std::shared_ptr<execution::OwnedCommand<std::shared_ptr<Prepared>>> m_operation;
     bool m_closed{false}, m_busy{false}, m_publishing{false}, m_deferred_changed{false};
+    bool m_rows_reset_pending{false}, m_publication_pending{false}, m_presentation_scheduled{false};
     quint64 m_generation{0};
     QString m_error, m_intake_error;
 };

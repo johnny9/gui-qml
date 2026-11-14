@@ -1,8 +1,16 @@
 # Qt 6 refactoring plan and notes
 
-R10 remains unfinished. Start with [CHECKPOINT.md](CHECKPOINT.md) and the latest
-[repair pass](R10_REPAIR_20261113.md) for implementation, validation
-and unresolved issues.
+The [approved validation cadence](QT6_VALIDATION_CADENCE_20261114.md) applies to
+every work order. Keep focused ordinary correctness, manual timing/real-thread
+checks, relevant integration and changed-scope lint/tidy during implementation.
+R42 owns exhaustive coverage proof, full suites and configuration/platform
+matrices, native Windows and sanitizers. Final qualification remains pending.
+
+R10's [focused checkpoint](R10_FOCUSED_CHECKPOINT_20261114.md) is complete;
+final qualification remains pending R42. Start with [current progress](PROGRESS.md)
+and that checkpoint for source identities, validation and unresolved issues.
+[CHECKPOINT.md](CHECKPOINT.md) and the [earlier repair pass](R10_REPAIR_20261113.md)
+retain their historical qualifications.
 
 - [Total refactoring plan](QT6_TOTAL_REFACTOR_PLAN.md)
 - [Handoff and resume instructions](QT6_REFACTOR_HANDOFF.md)
@@ -20,5 +28,6 @@ paths are inline code references to retained local workspace artifacts, not
 bundled files or hyperlinks. Original shared registers remain
 unchanged; published CSV copies normalize line endings only, with parsed records
 verified unchanged and provenance in `evidence/tracking-copy-provenance.json`.
-Moving these documents into `plan/` does not accept R10 or certify the pushed
-revision. No application or Bitcoin Core behavior changes in this relocation.
+Moving the historical documents into `plan/` did not certify the pushed revision.
+Later progress is recorded separately in `PROGRESS.md`. Shared registers remain
+unchanged; no final qualification is implied by document relocation.

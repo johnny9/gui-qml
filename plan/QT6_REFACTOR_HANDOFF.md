@@ -1,5 +1,14 @@
 # Refactoring handoff and prompts
 
+Current branch-local handoff: [R10's focused progress checkpoint](R10_FOCUSED_CHECKPOINT_20261114.md)
+is complete at tested app `c43fa40ee418655f0800fc92da29c482f836ed3d`, unchanged
+Core `44901d8f64cb617714707bd025ecd83f108353c2`. R11 implementation has not
+started. Follow [current progress](PROGRESS.md) and the [approved validation
+cadence](QT6_VALIDATION_CADENCE_20261114.md): focused ordinary checks at each
+step, final coverage/full suites/matrices/native Windows/sanitizers at R42.
+Preserve the public-interface/Core boundary, native Qt deferrals and all
+original scopes. Historical handoff entries below retain their tested revisions.
+
 R10 checkpoint publication authorized by the user on2026-11-13: save current implementation and unresolved issues to fork johnny9/gui-qml, branch work/qt6-r10-checkpoint-20261113. Earlier no-primary-commit/no-push restrictions are superseded for this checkpoint only. R10 remains unaccepted and R11 unstarted. Repository report: plan/CHECKPOINT.md. Copied planning/register snapshots preserve provenance without closing shared evidence registers. Five test-only corrections after frozen34 await final-source requalification.
 
 

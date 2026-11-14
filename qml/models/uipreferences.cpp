@@ -105,7 +105,7 @@ void UiPreferencesStore::load(){
     const auto ticket=++m_operation_id;++m_pending;const QPointer<UiPreferencesStore> observer{this};
     m_work->submitAsync<std::shared_ptr<const Result>>([action,state=m_native,output,key=m_key,bytes=m_identity_bytes](auto done,auto failed){
         return execution::Submit(*action,[state,output]{auto settings=Open(state->id);settings->sync();if(settings->status()!=QSettings::NoError)throw std::runtime_error("Unable to read UI preferences");state->values=Read(*settings);output->values=state->values;output->revision=++state->revision;output->loaded=true;return std::shared_ptr<const Result>{output};},done,failed,{execution::Lane::Core,bytes,key,execution::WorkClass::Action});
-    },[observer,ticket](auto result){if(observer&&!observer->m_closed)observer->publish(std::move(result),ticket);},[observer](std::exception_ptr){if(!observer||observer->m_closed)return;--observer->m_pending;observer->m_error=tr("Unable to read UI preferences.");observer->notifyViews();Q_EMIT observer->stateChanged();},action);
+    },[observer,ticket](auto result){if(observer&&!observer->m_closed)observer->publish(std::move(result),ticket);},[observer,ticket](std::exception_ptr){if(!observer||observer->m_closed)return;--observer->m_pending;if(ticket==observer->m_operation_id)observer->m_error=tr("Unable to read UI preferences.");observer->notifyViews();Q_EMIT observer->stateChanged();},action);
     if(observer&&!m_closed){notifyViews();Q_EMIT stateChanged();}
 }
 quint64 UiPreferencesStore::write(QStringList keys,Mutation mutation,size_t bytes){

@@ -4,10 +4,12 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Window 2.15
 import QtTest 1.2
 import org.bitcoincore.qt 1.0
 import "../../qml/pages"
 import "../../qml/pages/wallet"
+import "../../qml/controls" as Controls
 
 TestCase {
     function init() {
@@ -23,6 +25,45 @@ TestCase {
     property bool walletAvailable: true
     property bool preInitOnboardingRan: false
     property var windowUnderTest: null
+    property var mainGapSpies: []
+    property var geometryPreferences: null
+
+    Component { id: peerRefreshSpy; SignalSpy { signalName: "autoRefreshActiveChanged" } }
+    Component { id: walletCreatedSpy; SignalSpy { signalName: "walletCreateSucceeded" } }
+    Component { id: trayVisibilitySpy; SignalSpy { signalName: "windowVisibleChanged" } }
+    Component { id: windowXSpy; SignalSpy { signalName: "xChanged" } }
+    Component { id: preferencesComponent; AppPreferences {} }
+
+    function gapSpy(component, target) {
+        const spy = createTemporaryObject(component, testCase, {target: target})
+        verify(spy !== null)
+        mainGapSpies.push(spy)
+        return spy
+    }
+
+    function clickVisible(item) {
+        verify(item !== null)
+        verify(item.visible && item.enabled)
+        windowUnderTest.update()
+        verify(waitForRendering(item))
+        const point = item.mapToItem(windowUnderTest.contentItem, item.width / 2, item.height / 2)
+        const bounds = JSON.stringify({name: item.objectName, x: point.x, y: point.y,
+            contentWidth: windowUnderTest.contentItem.width, contentHeight: windowUnderTest.contentItem.height,
+            contentX: windowUnderTest.contentItem.x, contentY: windowUnderTest.contentItem.y,
+            itemWidth: item.width, itemHeight: item.height})
+        verify(point.x >= 0 && point.x < windowUnderTest.contentItem.width, bounds)
+        verify(point.y >= 0 && point.y < windowUnderTest.contentItem.height, bounds)
+        mouseClick(item, item.width / 2, item.height / 2)
+    }
+
+    function selectedSend(window) {
+        findChild(window, "desktopMenuActions").sendView.trigger()
+        const desktop = findChild(window, "desktopWalletsPage")
+        verify(desktop !== null && desktop.activeView !== null)
+        compare(desktop.activeView.wallet, walletController.selectedWallet)
+        compare(findChild(window, "sendTabButton").checked, true)
+        return desktop.activeView.sendPage
+    }
 
     SignalSpy {
         id: shutdownSpy
@@ -40,6 +81,9 @@ TestCase {
     }
 
     function cleanup() {
+        // The shared targets outlive temporary QtTest creation contexts.
+        for (let i = 0; i < mainGapSpies.length; ++i) mainGapSpies[i].target = null
+        mainGapSpies = []
         if (windowUnderTest) {
             // The shared mock outlives this window. Retire its delegates while
             // their creation context is alive, including deferred descendants.
@@ -66,13 +110,24 @@ TestCase {
             tryCompare(windowReceipt, "pending", 0)
             testSetup.releaseDestructionWatch(windowReceipt)
         }
+        if (geometryPreferences) {
+            const receipt = testSetup.watchDestruction(geometryPreferences)
+            geometryPreferences.destroy()
+            geometryPreferences = null
+            tryCompare(receipt, "pending", 0)
+            testSetup.releaseDestructionWatch(receipt)
+        }
+        verify(testSetup.endControlledPreferences())
+        desktopWindowBehaviorModel.showTrayIcon = false
+        desktopWindowBehaviorModel.minimizeToTray = false
+        testWalletModel.holdPsbtPublicationForTest = false
         nodeModel.fatalException = false
         nodeModel.setStartupErrorForTest("")
         desktopWindowBehaviorModel.minimizeOnClose = false
         shutdownSpy.clear()
     }
 
-    function createMain(wallet_enabled, preinit_onboarding_ran, no_wallets_found, wallet_dir_loaded, initialized) {
+    function createMain(wallet_enabled, preinit_onboarding_ran, no_wallets_found, wallet_dir_loaded, initialized, beforeConstruct) {
         cleanup()
         walletAvailable = wallet_enabled
         preInitOnboardingRan = preinit_onboarding_ran || false
@@ -84,6 +139,7 @@ TestCase {
         walletController.setOpenWallets(no_wallets_found ? [] : [testWalletModel])
         walletController.setSelectedWalletObject(testWalletModel)
         walletListModel.setWalletDirLoaded(wallet_dir_loaded === undefined ? true : wallet_dir_loaded)
+        if (beforeConstruct) beforeConstruct()
         windowUnderTest = createTemporaryObject(mainWindowComponent, testCase)
         verify(windowUnderTest !== null)
         wait(0)
@@ -283,7 +339,7 @@ TestCase {
         tryCompare(noteInput, "activeFocus", true)
         noteInput.cursorPosition = noteInput.text.length
         const originalText = noteInput.text
-        keyClick("x")
+        keyClick(Qt.Key_X)
         compare(noteInput.text, originalText + "x")
         const editedText = noteInput.text
         tryCompare(menuActions.undo, "enabled", true)
@@ -338,5 +394,340 @@ TestCase {
         verify(findChild(window, "desktopWalletsPage") !== null)
         verify(findChild(window, "walletBadge") !== null)
         verify(findChild(window, "createWalletWizard") === null)
+    }
+
+    function test_node_settings_tracks_selected_opening_data() {
+        return [{tag: "selected-wallet", loaded: true}, {tag: "no-wallet", loaded: false}]
+    }
+    function test_node_settings_tracks_selected_opening(data) {
+        const window = createMain(false)
+        walletController.setOpenWallets([testWalletModel, testSecondWalletModel])
+        walletController.setWalletLoaded(data.loaded)
+        walletController.setSelectedWalletObject(data.loaded ? testWalletModel : null)
+        const stack = findChild(window, "mainPageStack").currentItem
+        const originalNode = stack.currentItem
+        findChild(window, "desktopMenuActions").settings.trigger()
+        compare(stack.depth, 2)
+        const settings = stack.currentItem
+        compare(settings.objectName, "settingsView")
+        compare(settings.selectedSectionId, "display")
+        compare(settings.wallet, data.loaded ? testWalletModel : null)
+        compare(settings.activeWalletName, data.loaded ? testWalletModel.name : "")
+        if (data.loaded) {
+            verify(walletController.selectWallet(testSecondWalletModel))
+            compare(stack.currentItem, settings)
+            compare(settings.wallet, testSecondWalletModel)
+            compare(settings.activeWalletName, testSecondWalletModel.name)
+        }
+        clickVisible(findChild(settings, "settingsDoneButton"))
+        tryCompare(stack, "depth", 1)
+        compare(stack.currentItem, originalNode)
+        compare(shutdownSpy.count, 0)
+    }
+
+    function test_node_header_peers_back_owns_refresh() {
+        const window = createMain(false)
+        const stack = findChild(window, "mainPageStack").currentItem
+        const originalNode = stack.currentItem
+        const refresh = gapSpy(peerRefreshSpy, peerTableModel)
+        compare(peerTableModel.autoRefreshActive, false)
+        clickVisible(findChild(originalNode, "peersTabButton"))
+        tryCompare(stack, "depth", 2)
+        tryCompare(stack, "busy", false)
+        compare(peerTableModel.autoRefreshActive, true)
+        compare(refresh.count, 1)
+        clickVisible(findChild(stack.currentItem, "peersBackButton"))
+        tryCompare(stack, "depth", 1)
+        compare(stack.currentItem, originalNode)
+        compare(peerTableModel.autoRefreshActive, false)
+        compare(refresh.count, 2)
+        compare(shutdownSpy.count, 0)
+    }
+
+    function test_node_menu_replaces_peer_child_data() {
+        return [
+            {tag: "rpc-console", action: "consoleView", section: "rpc-console"},
+            {tag: "network-traffic", action: "networkTraffic", section: "network-traffic"},
+            {tag: "about", action: "about", section: "about"}
+        ]
+    }
+    function test_node_menu_replaces_peer_child(data) {
+        const window = createMain(false)
+        const stack = findChild(window, "mainPageStack").currentItem
+        const originalNode = stack.currentItem
+        const actions = findChild(window, "desktopMenuActions")
+        actions.peers.trigger()
+        compare(stack.depth, 2)
+        compare(peerTableModel.autoRefreshActive, true)
+        const refresh = gapSpy(peerRefreshSpy, peerTableModel)
+        actions[data.action].trigger()
+        compare(stack.depth, 2)
+        compare(stack.currentItem.objectName, "settingsView")
+        compare(stack.currentItem.selectedSectionId, data.section)
+        compare(peerTableModel.autoRefreshActive, false)
+        compare(refresh.count, 1)
+        actions.nodeView.trigger()
+        compare(stack.depth, 1)
+        compare(stack.currentItem, originalNode)
+        compare(refresh.count, 2)
+        compare(shutdownSpy.count, 0)
+    }
+
+    function test_edit_commands_use_current_visible_target() {
+        const window = createMain(true)
+        const page = selectedSend(window)
+        testRecipientsModel.clearToFront()
+        const note = findChild(page, "sendNoteInput")
+        verify(note !== null)
+        window.requestActivate()
+        tryCompare(window, "active", true)
+        note.forceActiveFocus()
+        tryCompare(note, "activeFocus", true)
+        note.cursorPosition = note.text.length
+        const original = note.text
+        keyClick("x")
+        const edited = original + "x"
+        compare(note.text, edited)
+        const actions = findChild(window, "desktopMenuActions")
+        note.selectAll()
+        tryCompare(actions.copy, "enabled", true)
+        actions.copy.trigger()
+        compare(testSetup.nativeClipboardText(), edited)
+        actions.undo.trigger()
+        compare(note.text, original)
+        actions.redo.trigger()
+        compare(note.text, edited)
+        actions.activityView.trigger()
+        findChild(window, "activityTabButton").forceActiveFocus()
+        tryCompare(actions.copy, "enabled", false)
+        // A queued native intent must resolve the focus target again.
+        window.invokeEditCommand("copy")
+        compare(testSetup.nativeClipboardText(), edited)
+        compare(note.text, edited)
+    }
+
+    function test_menu_psbt_completion_cannot_cross_selected_opening() {
+        const window = createMain(true)
+        testWalletModel.resetSendForTest()
+        testSecondWalletModel.resetSendForTest()
+        walletController.setOpenWallets([testWalletModel, testSecondWalletModel])
+        const desktop = findChild(window, "desktopWalletsPage")
+        verify(walletController.selectWallet(testWalletModel))
+        const originalView = desktop.activeView
+        const original = testWalletModel.psbtActionId
+        const replacement = testSecondWalletModel.psbtActionId
+        testWalletModel.holdPsbtPublicationForTest = true
+        testWalletModel.psbtImportResultForTest = WalletQmlModel.WalletCanSign
+        try {
+            findChild(window, "desktopMenuActions").loadPsbt.trigger()
+            compare(originalView.currentTab, WalletView.Send)
+            const picker = findChild(originalView.sendPage, "sendPsbtOpenDialog")
+            tryCompare(picker, "visible", true)
+            compare(picker.targetWallet, testWalletModel)
+            picker.selectAndAccept("file:///selected-opening.psbt")
+            compare(testWalletModel.psbtActionId, original + 1)
+            compare(testWalletModel.psbtActionBusy, true)
+            verify(walletController.selectWallet(testSecondWalletModel))
+            const replacementView = desktop.activeView
+            verify(replacementView !== originalView)
+            testWalletModel.completePsbtWorkForTest()
+            testWalletModel.finishPsbtPublicationForTest()
+            compare(desktop.activeView, replacementView)
+            compare(testSecondWalletModel.psbtActionId, replacement)
+            compare(findChild(originalView.sendPage, "transactionReviewPopup").visible, false)
+            compare(findChild(replacementView.sendPage, "transactionReviewPopup").visible, false)
+            verify(walletController.selectWallet(testWalletModel))
+            compare(findChild(originalView.sendPage, "transactionReviewPopup").visible, false)
+            compare(testWalletModel.psbtActionId, original + 1)
+        } finally {
+            testWalletModel.holdPsbtPublicationForTest = false
+        }
+    }
+
+    function test_cancel_creation_retains_send_context() {
+        const window = createMain(true)
+        const page = selectedSend(window)
+        const view = findChild(window, "desktopWalletsPage").activeView
+        const note = findChild(page, "sendNoteInput")
+        note.text = "Retained while choosing a wallet"
+        const creations = gapSpy(walletCreatedSpy, walletController)
+        findChild(window, "desktopMenuActions").createWallet.trigger()
+        const modal = findChild(window, "walletCreationModal")
+        tryCompare(modal, "opened", true)
+        const navigation = findChild(modal, "walletCreationNavigationBar")
+        verify(navigation !== null)
+        clickVisible(findChild(navigation, "onboardingCloseButton"))
+        tryCompare(modal, "visible", false)
+        compare(findChild(window, "mainPageStack").depth, 1)
+        compare(findChild(window, "desktopWalletsPage").activeView, view)
+        compare(view.sendPage, page)
+        compare(findChild(window, "sendTabButton").checked, true)
+        compare(note.text, "Retained while choosing a wallet")
+        compare(creations.count, 0)
+    }
+
+    function test_shutdown_retains_existing_presentation_data() {
+        return [
+            {tag: "menu-exit", wallet: true, intent: "menu"},
+            {tag: "native-close", wallet: true, intent: "close"},
+            {tag: "node-back-key", wallet: false, intent: "back"}
+        ]
+    }
+    function test_shutdown_retains_existing_presentation(data) {
+        const window = createMain(data.wallet)
+        const main = findChild(window, "mainPageStack")
+        const originalShell = main.currentItem
+        let retained = null
+        let note = null
+        if (data.wallet) {
+            const page = selectedSend(window)
+            retained = originalShell.activeView
+            note = findChild(page, "sendNoteInput")
+            note.text = "Retained until shutdown completes"
+        } else {
+            retained = originalShell.currentItem
+        }
+        const actions = findChild(window, "desktopMenuActions")
+        if (data.intent === "menu") actions.exit.trigger()
+        else if (data.intent === "close") window.close()
+        else {
+            window.requestActivate()
+            tryCompare(window, "active", true)
+            main.forceActiveFocus()
+            tryCompare(main, "activeFocus", true)
+            keyRelease(Qt.Key_Back)
+        }
+        compare(shutdownSpy.count, 1)
+        tryVerify(function() { return findChild(window, "shutdownPage") !== null })
+        compare(window.shutdownInProgress, true)
+        compare(main.visible, false)
+        compare(main.enabled, false)
+        compare(main.depth, 1)
+        compare(main.currentItem, originalShell)
+        compare(data.wallet ? originalShell.activeView : originalShell.currentItem, retained)
+        if (data.wallet) compare(note.text, "Retained until shutdown completes")
+        compare(actions.settings.enabled, false)
+        compare(actions.sendView.enabled, false)
+        compare(actions.createWallet.enabled, false)
+        actions.settings.trigger()
+        actions.sendView.trigger()
+        actions.createWallet.trigger()
+        compare(shutdownSpy.count, 1)
+        compare(main.currentItem, originalShell)
+        verify(findChild(window, "createWalletWizard") === null)
+    }
+
+    function test_native_close_minimizes_with_tray_policy() {
+        const window = createMain(true)
+        const page = selectedSend(window)
+        const note = findChild(page, "sendNoteInput")
+        note.text = "Retained while minimized"
+        const shell = findChild(window, "mainPageStack").currentItem
+        desktopWindowBehaviorModel.showTrayIcon = true
+        desktopWindowBehaviorModel.minimizeToTray = true
+        desktopWindowBehaviorModel.minimizeOnClose = true
+        compare(desktopTrayIconController.visible, true)
+        window.close()
+        tryCompare(window, "visibility", Window.Minimized)
+        tryCompare(desktopTrayIconController, "windowVisible", false)
+        compare(shutdownSpy.count, 0)
+        compare(window.shutdownInProgress, false)
+        compare(findChild(window, "mainPageStack").currentItem, shell)
+        compare(note.text, "Retained while minimized")
+    }
+
+    function test_window_move_publishes_complete_geometry_after_gui_delivery() {
+        if (Qt.platform.pluginName === "minimal") {
+            skip("The minimal QPA backend does not emit native position-change signals; this case requires xcb")
+            return
+        }
+        // Keep the singleton attached to its original store before overriding
+        // the engine context with a manually driven preferences transport.
+        verify(typeof Controls.Theme.dark === "boolean")
+        const window = createMain(false, false, false, true, true, function() {
+            verify(testSetup.beginControlledPreferences(testCase, false) !== null)
+            geometryPreferences = createTemporaryObject(preferencesComponent, testCase)
+            verify(geometryPreferences !== null)
+            verify(testSetup.settleControlledPreferences())
+            compare(geometryPreferences.ready, true)
+            verify(geometryPreferences.requestGeometry(40, 50, 800, 665) > 0)
+            verify(testSetup.settleControlledPreferences())
+        })
+        compare(window.visibility, Window.Windowed)
+        compare(window.x, 40)
+        compare(window.y, 50)
+        compare(window.width, 800)
+        compare(window.height, 665)
+        verify(testSetup.settleControlledPreferences())
+        const ticket = testSetup.controlledPreferenceOperationId()
+        verify(window.preferenceGeometryRestored)
+        compare(geometryPreferences.ready, true)
+        const moves = gapSpy(windowXSpy, window)
+        window.x = 57
+        tryCompare(moves, "count", 1)
+        tryVerify(function() { return testSetup.controlledPreferenceOperationId() > ticket })
+        compare(testSetup.controlledPreferenceOperationId(), ticket + 1)
+        window.y = 69
+        tryVerify(function() { return testSetup.controlledPreferenceOperationId() === ticket + 2 })
+        compare(geometryPreferences.windowX, 40)
+        compare(geometryPreferences.windowY, 50)
+        verify(testSetup.runControlledPreferenceWork())
+        compare(geometryPreferences.windowX, 40)
+        compare(geometryPreferences.windowY, 50)
+        verify(testSetup.settleControlledPreferences())
+        compare(geometryPreferences.windowX, 57)
+        compare(geometryPreferences.windowY, 69)
+        compare(geometryPreferences.windowWidth, 800)
+        compare(geometryPreferences.windowHeight, 665)
+        compare(geometryPreferences.error, "")
+    }
+
+    function test_resolved_onboarding_does_not_reopen_creation_after_last_close() {
+        const window = createMain(true, true, false, true, true)
+        tryCompare(window, "postOnboardingWalletRouteResolved", true)
+        const main = findChild(window, "mainPageStack")
+        const shell = main.currentItem
+        walletController.setOpenWallets([])
+        walletController.setWalletLoaded(false)
+        walletController.setNoWalletsFound(true)
+        compare(window.postOnboardingWalletRouteResolved, true)
+        compare(main.currentItem, shell)
+        compare(main.depth, 1)
+        compare(findChild(window, "blockClockTabButton").checked, true)
+        compare(findChild(window, "walletCreationModal").visible, false)
+        verify(findChild(window, "createWalletWizard") === null)
+        compare(shutdownSpy.count, 0)
+    }
+
+    function test_tray_intents_forward_to_owned_effect_data() {
+        return [{tag: "show", intent: "show"}, {tag: "hide", intent: "hide"}, {tag: "quit", intent: "quit"}]
+    }
+    function test_tray_intents_forward_to_owned_effect(data) {
+        const window = createMain(false)
+        const shell = findChild(window, "mainPageStack").currentItem
+        if (data.intent === "show") {
+            window.hide()
+            tryCompare(desktopTrayIconController, "windowVisible", false)
+            const visibility = gapSpy(trayVisibilitySpy, desktopTrayIconController)
+            desktopTrayIconController.showRequested()
+            compare(desktopTrayIconController.windowVisible, true)
+            compare(visibility.count, 1)
+            compare(shutdownSpy.count, 0)
+        } else if (data.intent === "hide") {
+            compare(desktopTrayIconController.windowVisible, true)
+            const visibility = gapSpy(trayVisibilitySpy, desktopTrayIconController)
+            desktopTrayIconController.hideRequested()
+            compare(desktopTrayIconController.windowVisible, false)
+            compare(visibility.count, 1)
+            compare(shutdownSpy.count, 0)
+        } else {
+            desktopTrayIconController.quitRequested()
+            compare(shutdownSpy.count, 1)
+            compare(window.shutdownInProgress, true)
+            tryVerify(function() { return findChild(window, "shutdownPage") !== null })
+        }
+        // The mock measures the native controller handoff/projection. It does
+        // not implement the platform window manager's hide/restore behavior.
+        compare(findChild(window, "mainPageStack").currentItem, shell)
     }
 }

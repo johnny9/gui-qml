@@ -72,6 +72,7 @@ private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
     void fractionWaitersAreBoundedAndWakeOutsideTheBudgetLock();
+    void fractionByteExhaustionWaitsWhileFrameCapacityRemains();
     void actualCapacityRetirementResumesLatestWorkerHistory_data();
     void actualCapacityRetirementResumesLatestWorkerHistory();
     void manualHistoryFencesHeldOldPeriodAndCoalescesNativeBursts();
@@ -123,6 +124,24 @@ void BlockClockModelTests::actualCapacityRetirementResumesLatestWorkerHistory_da
     QTest::newRow("close-before-retirement") << 1;
     QTest::newRow("period-before-retirement") << 2;
     QTest::newRow("availability-before-held-failure") << 3;
+}
+void BlockClockModelTests::fractionByteExhaustionWaitsWhileFrameCapacityRemains()
+{
+    auto budget = std::make_shared<blockclock::ProjectionBudget>(3, 8);
+    auto held = blockclock::ReserveFractions(budget, 8); QVERIFY(held);
+    int wakeups{0};
+    auto waiter = std::make_shared<blockclock::FractionWaiter>([&] {
+        std::lock_guard lock{budget->mutex};
+        QCOMPARE(budget->frames, size_t{0}); QCOMPARE(budget->bytes, size_t{0}); ++wakeups;
+    });
+    QCOMPARE(blockclock::WaitForFractions(budget, 1, waiter), blockclock::FractionWait::Registered);
+    QVERIFY(!blockclock::ReserveFractions(budget, 1)); QCOMPARE(wakeups, 0);
+    { std::lock_guard lock{budget->mutex}; QCOMPARE(budget->frames, size_t{1}); QCOMPARE(budget->bytes, size_t{8}); }
+    held.reset(); QCOMPARE(wakeups, 1);
+    QCOMPARE(blockclock::WaitForFractions(budget, 1, waiter), blockclock::FractionWait::Available);
+    auto next = blockclock::ReserveFractions(budget, 1); QVERIFY(next);
+    { std::lock_guard lock{budget->mutex}; QCOMPARE(budget->frames, size_t{1}); QCOMPARE(budget->bytes, size_t{1}); }
+    next.reset(); QCOMPARE(wakeups, 1);
 }
 void BlockClockModelTests::fractionWaitersAreBoundedAndWakeOutsideTheBudgetLock()
 {

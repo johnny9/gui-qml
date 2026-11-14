@@ -199,7 +199,7 @@ void Store::plan()
     // received while a previous Native effect was waiting for consumption.
     bool command_waiting;
     { std::lock_guard lock{m_mutex}; command_waiting = !m_queue.empty(); }
-    if (!m_paid_dirty.empty() && m_paid_action && !m_uncertain && (!command_waiting || !m_previous_paid_batch)) {
+    if (m_loaded && !m_paid_dirty.empty() && m_paid_action && !m_uncertain && (!command_waiting || !m_previous_paid_batch)) {
         m_previous_paid_batch = true;
         auto effect = std::make_shared<Effect>();
         effect->action = m_paid_action; effect->paid = true;
@@ -628,51 +628,65 @@ void Store::execute(std::shared_ptr<Effect> effect)
             self->noteNativePayment(address);
         }
         effect->result.reservation_released = effect->result.reservation_released || native.reservation_released;
-        if (native.label_saved) {
-            ++self->m_revision;
-            effect->result.label_saved = true;
-            self->m_labels[QString::fromStdString(EncodeDestination(effect->label->first))] = effect->label->second;
-        }
-        for (const auto index : native.saved) {
-            ++effect->result.records_saved;
-            // Paid facts were committed by observed()/loaded() before the
-            // write was planned. Confirmation changes persistence status, not
-            // row values/revision. Rebuilding every history between batches
-            // would turn bounded serialization into quadratic snapshot work.
-            if (effect->paid) continue;
-            auto record = effect->writes[index].record;
-            const int64_t id = record.entry.id;
-            if (effect->kind == Kind::Erase) {
-                ++self->m_revision;
-                if (const auto old = self->m_records.find(id); old != self->m_records.end()) {
-                    const auto address = old->second->display.address;
-                    if (const auto index = self->m_records_by_address.find(address); index != self->m_records_by_address.end()) {
-                        index->second.erase(id);
-                        if (index->second.empty()) self->m_records_by_address.erase(index);
-                    }
-                    self->m_records.erase(old);
-                }
-                self->m_paid_dirty.erase(id); effect->result.erased = true;
-            } else {
-                if (self->m_observed.contains(QString::fromStdString(record.entry.recipient.address)) && !record.entry.payment_received) {
-                    record.entry.payment_received = true; self->m_paid_dirty.insert(id);
-                    if (!self->m_paid_action) self->m_paid_action = effect->action;
-                }
-                record.revision = ++self->m_revision; self->m_highest_id = std::max(self->m_highest_id, id);
-                if (effect->consume_address) self->m_consumed_addresses.try_emplace(
-                    QString::fromStdString(record.entry.recipient.address), id);
-                const auto prepared = self->m_prepare_record(std::move(record));
-                self->m_records[id] = prepared;
-                self->m_records_by_address[prepared->display.address].insert(id);
-                if (effect->kind == Kind::Create || effect->kind == Kind::Edit) {
-                    effect->result.request_saved = true;
-                    effect->result.record = prepared;
-                }
-            }
-        }
+        // Native has already confirmed this entire batch. Projection failure
+        // cannot erase later saved rows or make the original action replayable.
+        effect->result.records_saved += native.saved.size();
+        if ((effect->kind == Kind::Create || effect->kind == Kind::Edit) && !native.saved.empty())
+            effect->result.request_saved = true;
+        if (native.label_saved) effect->result.label_saved = true;
         if (native.error != Error::None) effect->result.error = native.error;
         if (native.error == Error::Uncertain) {
             self->m_uncertain = true; self->m_paid_action.reset(); self->m_paid_dirty.clear();
+        }
+        try {
+            if (native.label_saved) {
+                ++self->m_revision;
+                self->m_labels[QString::fromStdString(EncodeDestination(effect->label->first))] = effect->label->second;
+            }
+            for (const auto index : native.saved) {
+                // Paid facts were committed by observed()/loaded() before the
+                // write was planned. Confirmation changes persistence status, not
+                // row values/revision. Rebuilding every history between batches
+                // would turn bounded serialization into quadratic snapshot work.
+                if (effect->paid) continue;
+                auto record = effect->writes[index].record;
+                const int64_t id = record.entry.id;
+                if (effect->kind == Kind::Erase) {
+                    ++self->m_revision;
+                    if (const auto old = self->m_records.find(id); old != self->m_records.end()) {
+                        const auto address = old->second->display.address;
+                        if (const auto index = self->m_records_by_address.find(address); index != self->m_records_by_address.end()) {
+                            index->second.erase(id);
+                            if (index->second.empty()) self->m_records_by_address.erase(index);
+                        }
+                        self->m_records.erase(old);
+                    }
+                    self->m_paid_dirty.erase(id); effect->result.erased = true;
+                } else {
+                    if (self->m_observed.contains(QString::fromStdString(record.entry.recipient.address)) && !record.entry.payment_received) {
+                        record.entry.payment_received = true; self->m_paid_dirty.insert(id);
+                        if (!self->m_paid_action) self->m_paid_action = effect->action;
+                    }
+                    record.revision = ++self->m_revision; self->m_highest_id = std::max(self->m_highest_id, id);
+                    if (effect->consume_address) self->m_consumed_addresses.try_emplace(
+                        QString::fromStdString(record.entry.recipient.address), id);
+                    const auto prepared = self->m_prepare_record(std::move(record));
+                    self->m_records[id] = prepared;
+                    self->m_records_by_address[prepared->display.address].insert(id);
+                    if (effect->kind == Kind::Create || effect->kind == Kind::Edit) {
+                        effect->result.record = prepared;
+                    }
+                }
+            }
+        } catch (...) {
+            // The persisted documents remain authoritative; this partial row
+            // cache must not derive another mutation until an explicit reload.
+            effect->result.error = native.error == Error::Uncertain ? Error::Uncertain : Error::Partial;
+            self->m_loaded = false; self->m_snapshot_ready.store(false);
+            self->m_preparation_failed_revision = self->m_revision.load();
+            self->m_preparation_error = effect->result.error;
+            self->m_paid_action.reset(); self->m_paid_dirty.clear();
+            self->finish(effect->operation, effect->result); return;
         }
         effect->offset = end;
         if (end < effect->writes.size() && native.error != Error::Uncertain && native.error != Error::Checking &&
@@ -877,6 +891,9 @@ void Store::stopObservation(Error error)
 
 void Store::flushPaid()
 {
+    if (!m_loaded && !m_loading) {
+        m_paid_dirty.clear(); m_paid_action.reset(); publish(m_persistence_error); return;
+    }
     if (m_uncertain) {
         m_paid_dirty.clear(); m_paid_action.reset(); publish(Error::Uncertain); return;
     }

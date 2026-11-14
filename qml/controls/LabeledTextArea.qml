@@ -38,7 +38,11 @@ LabeledField {
         if (!uri.length || previous === current) return ""
         const offset = current.indexOf(clipboard)
         if (offset < 0) return ""
-        return previous.startsWith(current.slice(0, offset)) && previous.endsWith(current.slice(offset + clipboard.length)) ? uri : ""
+        const prefix = current.slice(0, offset)
+        const suffix = current.slice(offset + clipboard.length)
+        // Qt 6.4 can represent an empty slice differently from an empty literal.
+        return (!prefix.length || previous.startsWith(prefix))
+            && (!suffix.length || previous.endsWith(suffix)) ? uri : ""
     }
     function capturePaste(text, primary) { return pasteIntent.capture(text, primary, false, "", "", undefined) }
     function applyCapturedPaste(payload) { return pasteIntent.apply(payload) }
@@ -95,8 +99,11 @@ LabeledField {
             if (!longEdit) {
                 const uri = root.paymentUri(clipboard)
                 const offset = current.indexOf(clipboard)
+                const prefix = current.slice(0, offset)
+                const suffix = current.slice(offset + clipboard.length)
                 if (!uri.length || previous === current || offset < 0
-                        || !previous.startsWith(current.slice(0, offset)) || !previous.endsWith(current.slice(offset + clipboard.length))) return false
+                        || (prefix.length && !previous.startsWith(prefix))
+                        || (suffix.length && !previous.endsWith(suffix))) return false
                 syncFromModel()
             }
             pasteIntent.nativeEdit(clipboard, previous, current, cursor)

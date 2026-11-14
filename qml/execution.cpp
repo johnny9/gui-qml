@@ -10,6 +10,16 @@
 #include <stdexcept>
 
 namespace execution {
+namespace {
+// Accepted ownership retains these handoffs. A throwing port has the same
+// terminal contract as a false return; callers keep their posted assertion and
+// unconditional termination fallback when assertions are disabled.
+template <typename Post>
+bool ReservedPost(Post&& post) noexcept
+{
+    try { return post(); } catch (...) { return false; }
+}
+}
 class TaskQueue::ScopedScheduler final : public Scheduler {
     const std::shared_ptr<TaskQueue> m_queue;
     const uint64_t m_scope;
@@ -53,16 +63,22 @@ void TaskQueue::releaseScope(uint64_t scope)
     const auto found = m_scopes.find(scope);
     assert(found != m_scopes.end());
     --m_scope_usage.tasks; m_scope_usage.payload_bytes -= found->second; m_scopes.erase(found);
-    if (m_scope_idle_cleanups.contains(scope)) m_released_cleanup_scopes.insert(scope);
+    const auto group = m_scope_idle_cleanups.find(scope);
+    if (group != m_scope_idle_cleanups.end() && !group->second.idle.empty()) {
+        m_released_cleanup_scopes.insert(std::move(group->second.released_ticket));
+    }
     pumpCleanups();
     // An idle original capability may be the final ledger entry. Without a
     // transport turn, workers that already observed it during shutdown would
     // never recheck quiescence. This wake owns no task, payload or effect.
     if (m_closed && m_tasks.empty() && m_total_borrowers == 0 && m_scopes.empty()) {
-        const bool posted = m_routed_dispatch
-            ? m_routed_dispatch(Lane::Control, Phase::OutcomeReady, {}, [] {})
-            : m_dispatch(Phase::OutcomeReady, {}, [] {});
+        const bool posted = ReservedPost([&] {
+            return m_routed_dispatch
+                ? m_routed_dispatch(Lane::Control, Phase::OutcomeReady, {}, [] {})
+                : m_dispatch(Phase::OutcomeReady, {}, [] {});
+        });
         assert(posted); // The original capability retained its drain transport.
+        if (!posted) std::terminate();
     }
     // Every remaining task, cleanup reservation and borrower has its own
     // ledger entry; cached values do not consume an action-capability slot.
@@ -110,6 +126,11 @@ void TaskQueue::erase(std::map<TaskId, Record>::iterator record)
         }
         m_cleanup_by_key.erase(key);
         unindexCleanup(record->first, record->second.scope);
+        if (record->second.scope) {
+            const auto group = m_scope_idle_cleanups.find(record->second.scope);
+            assert(group != m_scope_idle_cleanups.end() && group->second.reservations);
+            if (--group->second.reservations == 0) m_scope_idle_cleanups.erase(group);
+        }
     } else {
         auto& usage = m_usage[*budgetIndex(record->second.spec.lane)];
         --usage.tasks;
@@ -161,60 +182,120 @@ Admission TaskQueue::admit(std::shared_ptr<Task> task, TaskSpec spec, bool reser
         (m_observations.tasks >= m_limits.observations.tasks || spec.payload_bytes > m_limits.observations.payload_bytes - m_observations.payload_bytes)) {
         return {{}, Rejection::Capacity};
     }
+    if (m_next_id == std::numeric_limits<uint64_t>::max()) return {{}, Rejection::Capacity};
     const TaskId id{++m_next_id};
-    m_tasks.emplace(id, Record{reserve_cleanup ? Phase::Reserved : Phase::Queued, task, spec, false, reserve_cleanup});
-    m_tasks.at(id).scope = scope;
-    ++usage.tasks;
-    usage.payload_bytes += spec.payload_bytes;
-    if (spec.work_class == WorkClass::Observation) {
-        ++m_observations.tasks;
-        m_observations.payload_bytes += spec.payload_bytes;
-    }
+    bool record_staged{false}, work_created{false}, waiting_pushed{false};
+    bool cleanup_indexed{false}, group_created{false}, committed{false};
+    // Only this admission's provisional nodes are removed. In particular,
+    // rollback never calls erase(), which can pump other accepted ownership.
+    const auto rollback = [&]() noexcept {
+        if (waiting_pushed) {
+            const auto waiting = m_waiting.find(spec.key);
+            if (waiting != m_waiting.end()) {
+                std::erase(waiting->second, id);
+                if (waiting->second.empty() && !coreRunning(spec.key)) {
+                    std::erase(m_ready, spec.key);
+                    m_waiting.erase(waiting);
+                }
+            }
+        }
+        if (cleanup_indexed) m_cleanup_by_key.erase(spec.key);
+        if (group_created) m_scope_idle_cleanups.erase(scope);
+        if (work_created) {
+            const auto work = m_work_by_key.find(spec.key);
+            assert(work != m_work_by_key.end() && work->second == 0);
+            m_work_by_key.erase(work);
+        }
+        if (record_staged) m_tasks.erase(id);
+    };
+    struct Rollback {
+        const decltype(rollback)& run;
+        const bool& committed;
+        ~Rollback() { if (!committed) run(); }
+    } undo{rollback, committed};
+    auto& record = m_tasks.emplace(id, Record{reserve_cleanup ? Phase::Reserved : Phase::Queued, task, spec, false, reserve_cleanup}).first->second;
+    record_staged = true;
+    record.scope = scope;
     if (reserve_cleanup) {
         m_cleanup_by_key.emplace(spec.key, id);
-        maybeActivateCleanup(spec.key);
+        cleanup_indexed = true;
+        std::set<TaskId> tickets;
+        tickets.insert(id); record.idle_ticket = tickets.extract(id);
+        tickets.insert(id); record.ready_ticket = tickets.extract(id);
+        if (scope) {
+            const auto [group, inserted] = m_scope_idle_cleanups.try_emplace(scope);
+            group_created = inserted;
+            if (inserted) {
+                std::set<uint64_t> ticket;
+                ticket.insert(scope); group->second.released_ticket = ticket.extract(scope);
+            }
+        }
+        // Everything below is a nonallocating ownership commit. Each retained
+        // index node is transferred again on block/activation/final release.
+        ++usage.tasks; usage.payload_bytes += spec.payload_bytes;
+        if (scope) {
+            auto& group = m_scope_idle_cleanups.at(scope);
+            ++group.reservations;
+            if (!m_borrowers.contains(spec.key) && !m_work_by_key.contains(spec.key)) group.idle.insert(std::move(record.idle_ticket));
+        } else if (!m_borrowers.contains(spec.key) && !m_work_by_key.contains(spec.key)) {
+            m_idle_cleanups.insert(std::move(record.idle_ticket));
+        }
+        committed = true;
+        pumpCleanups();
         return {id, Rejection::None};
     }
-    m_tasks.at(id).resource_counted = true;
-    ++m_work_by_key[spec.key];
-    if (cleanup != m_cleanup_by_key.end()) {
-        unindexCleanup(cleanup->second, m_tasks.at(cleanup->second).scope);
-    }
+    const auto [work, inserted] = m_work_by_key.try_emplace(spec.key, 0);
+    work_created = inserted;
     if (m_routed_dispatch && spec.lane == Lane::Core) {
         auto& waiting = m_waiting[spec.key];
-        if (waiting.empty() && !m_running.contains(spec.key)) m_ready.push_back(spec.key);
-        waiting.push_back(id);
+        // Record the inserted ID before adding a new key's list ticket, so a
+        // failed ticket allocation can remove the now-empty waiting bucket.
+        try { waiting.push_back(id); } catch (...) {
+            if (waiting.empty() && !coreRunning(spec.key)) m_waiting.erase(spec.key);
+            throw;
+        }
+        waiting_pushed = true;
+        if (waiting.size() == 1 && !coreRunning(spec.key)) m_ready.push_back(spec.key);
         if (!pumpCore(id)) return {{}, Rejection::Transport};
-        return {id, Rejection::None};
+    } else {
+        // Constructing std::function can allocate. A rejected/throwing initial
+        // port sees no committed task, and its stray callback finds no record.
+        std::function<void()> turn = [self = shared_from_this(), id] { self->execute(id); };
+        const bool posted = m_routed_dispatch
+            ? m_routed_dispatch(spec.lane, Phase::Queued, id, std::move(turn))
+            : m_dispatch(Phase::Queued, id, std::move(turn));
+        if (!posted) return {{}, Rejection::Transport};
+        record.transport_pending = true;
     }
-    auto turn = [self = shared_from_this(), id] { self->execute(id); };
-    m_tasks.at(id).transport_pending = true;
-    const bool posted = m_routed_dispatch
-        ? m_routed_dispatch(spec.lane, Phase::Queued, id, std::move(turn))
-        : m_dispatch(Phase::Queued, id, std::move(turn));
-    if (!posted) {
-        erase(m_tasks.find(id));
-        return {{}, Rejection::Transport};
-    }
+    ++usage.tasks; usage.payload_bytes += spec.payload_bytes;
+    if (spec.work_class == WorkClass::Observation) { ++m_observations.tasks; m_observations.payload_bytes += spec.payload_bytes; }
+    ++work->second;
+    record.resource_counted = true;
+    if (cleanup != m_cleanup_by_key.end()) unindexCleanup(cleanup->second, m_tasks.at(cleanup->second).scope);
+    committed = true;
     return {id, Rejection::None};
 }
 
 void TaskQueue::activateCleanupLocked(TaskId id)
 {
     auto& record = m_tasks.at(id);
+    const bool posted = ReservedPost([&] {
+        std::function<void()> turn = [self = shared_from_this(), id] { self->execute(id); };
+        return m_routed_dispatch
+            ? m_routed_dispatch(Lane::Cleanup, Phase::Queued, id, std::move(turn))
+            : m_dispatch(Phase::Queued, id, std::move(turn));
+    });
+    // This transport was reserved before resources could be acquired, and is
+    // retained until its outcome is consumed. It cannot reject during drain.
+    assert(posted);
+    if (!posted) std::terminate();
+    unindexCleanup(id, record.scope);
     record.phase = Phase::Queued;
     record.cleanup_requested = true; // Physical retirement fences every later use of this resource key.
     record.transport_pending = true;
     record.cleanup_queued = true;
     ++m_usage[2].tasks;
     m_usage[2].payload_bytes += record.spec.payload_bytes;
-    auto turn = [self = shared_from_this(), id] { self->execute(id); };
-    const bool posted = m_routed_dispatch
-        ? m_routed_dispatch(Lane::Cleanup, Phase::Queued, id, std::move(turn))
-        : m_dispatch(Phase::Queued, id, std::move(turn));
-    // This transport was reserved before resources could be acquired, and is
-    // retained until its outcome is consumed. It cannot reject during drain.
-    assert(posted);
 }
 
 bool TaskQueue::activateCleanup(TaskId id) { return activateCleanupForScope(id, 0); }
@@ -236,17 +317,17 @@ void TaskQueue::maybeActivateCleanup(ResourceKey key)
     const auto cleanup = m_cleanup_by_key.find(key);
     if (cleanup != m_cleanup_by_key.end()) {
         const auto id = cleanup->second;
-        const auto& record = m_tasks.at(id);
+        auto& record = m_tasks.at(id);
+        unindexCleanup(id, record.scope);
         if (record.phase == Phase::Reserved && !m_borrowers.contains(key) && !m_work_by_key.contains(key)) {
             if (record.scope && !record.cleanup_requested) {
-                m_scope_idle_cleanups[record.scope].insert(id);
-                if (!m_scopes.contains(record.scope)) m_released_cleanup_scopes.insert(record.scope);
+                auto& group = m_scope_idle_cleanups.at(record.scope);
+                group.idle.insert(std::move(record.idle_ticket));
+                if (!m_scopes.contains(record.scope)) m_released_cleanup_scopes.insert(std::move(group.released_ticket));
             } else {
-                m_idle_cleanups.insert(id);
-                if (record.cleanup_requested) m_ready_cleanups.insert(id);
+                m_idle_cleanups.insert(std::move(record.idle_ticket));
+                if (record.cleanup_requested) m_ready_cleanups.insert(std::move(record.ready_ticket));
             }
-        } else {
-            unindexCleanup(id, record.scope);
         }
     }
     pumpCleanups();
@@ -254,11 +335,17 @@ void TaskQueue::maybeActivateCleanup(ResourceKey key)
 
 void TaskQueue::unindexCleanup(TaskId id, uint64_t scope)
 {
-    m_idle_cleanups.erase(id); m_ready_cleanups.erase(id);
+    auto& record = m_tasks.at(id);
+    if (const auto idle = m_idle_cleanups.find(id); idle != m_idle_cleanups.end()) record.idle_ticket = m_idle_cleanups.extract(idle);
+    if (const auto ready = m_ready_cleanups.find(id); ready != m_ready_cleanups.end()) record.ready_ticket = m_ready_cleanups.extract(ready);
     const auto group = m_scope_idle_cleanups.find(scope);
     if (group != m_scope_idle_cleanups.end()) {
-        group->second.erase(id);
-        if (group->second.empty()) { m_scope_idle_cleanups.erase(group); m_released_cleanup_scopes.erase(scope); }
+        if (const auto idle = group->second.idle.find(id); idle != group->second.idle.end()) record.idle_ticket = group->second.idle.extract(idle);
+        if (group->second.idle.empty()) {
+            if (const auto released = m_released_cleanup_scopes.find(scope); released != m_released_cleanup_scopes.end()) {
+                group->second.released_ticket = m_released_cleanup_scopes.extract(released);
+            }
+        }
     }
 }
 
@@ -269,10 +356,9 @@ void TaskQueue::pumpCleanups()
     for (size_t dispatched = 0; dispatched < 16; ++dispatched) {
         const auto& ready = m_cleanup_all_requested ? m_idle_cleanups : m_ready_cleanups;
         if ((ready.empty() && m_released_cleanup_scopes.empty()) || m_usage[2].tasks >= m_limits.cleanup.tasks) return;
-        const auto id = !ready.empty() ? *ready.begin() : *m_scope_idle_cleanups.at(*m_released_cleanup_scopes.begin()).begin();
+        const auto id = !ready.empty() ? *ready.begin() : *m_scope_idle_cleanups.at(*m_released_cleanup_scopes.begin()).idle.begin();
         const auto& record = m_tasks.at(id);
         if (record.spec.payload_bytes > m_limits.cleanup.payload_bytes - m_usage[2].payload_bytes) return;
-        unindexCleanup(id, record.scope);
         activateCleanupLocked(id);
     }
 }
@@ -315,17 +401,23 @@ ResourceKey TaskQueue::allocateKey()
     return {owner, 1};
 }
 
-void TaskQueue::releaseCore(ResourceKey key)
+bool TaskQueue::coreRunning(ResourceKey key) const noexcept
 {
-    m_running.erase(key);
+    return std::find(m_running.begin(), m_running.end(), key) != m_running.end();
+}
+
+void TaskQueue::releaseCore(ResourceKey key) noexcept
+{
+    const auto running = std::find(m_running.begin(), m_running.end(), key);
+    assert(running != m_running.end());
     const auto waiting = m_waiting.find(key);
-    if (!waiting->second.empty()) m_ready.push_back(key);
-    else m_waiting.erase(waiting);
+    assert(waiting != m_waiting.end());
+    if (!waiting->second.empty()) m_ready.splice(m_ready.end(), m_running, running);
+    else { m_running.erase(running); m_waiting.erase(waiting); }
 }
 
 bool TaskQueue::pumpCore(std::optional<TaskId> proposed)
 {
-    bool accepted{true};
     while (m_running.size() < m_core_slots && !m_ready.empty()) {
         const auto wanted = m_action_burst < m_limits.actions_before_observation ? WorkClass::Action : WorkClass::Observation;
         const auto preferred = std::find_if(m_ready.begin(), m_ready.end(), [&](ResourceKey key) {
@@ -333,26 +425,31 @@ bool TaskQueue::pumpCore(std::optional<TaskId> proposed)
         });
         const auto selected = preferred == m_ready.end() ? m_ready.begin() : preferred;
         const auto key = *selected;
-        m_ready.erase(selected);
         auto& waiting = m_waiting.at(key);
         const auto id = waiting.front();
+        bool posted{false};
+        try {
+            std::function<void()> turn = [self = shared_from_this(), id] { self->execute(id); };
+            posted = m_routed_dispatch(Lane::Core, Phase::Queued, id, std::move(turn));
+        } catch (...) {
+            // A proposed admission can still roll back. Older tasks already
+            // own their outcome and use the same notStarted path as rejection.
+            if (proposed == id) throw;
+        }
+        if (!posted && proposed == id) return false;
+        // This per-selection commit neither allocates nor restores whole
+        // inventories. Older successfully posted work remains independently owned.
+        m_running.splice(m_running.end(), m_ready, selected);
         waiting.pop_front();
         if (m_tasks.at(id).spec.work_class == WorkClass::Observation) m_action_burst = 0;
         else if (m_action_burst < m_limits.actions_before_observation) ++m_action_burst;
-        m_running.insert(key);
-        m_tasks.at(id).transport_pending = true;
-        if (!m_routed_dispatch(Lane::Core, Phase::Queued, id, [self = shared_from_this(), id] { self->execute(id); })) {
-            m_tasks.at(id).transport_pending = false;
+        m_tasks.at(id).transport_pending = posted;
+        if (!posted) {
             releaseCore(key);
-            if (proposed == id) {
-                erase(m_tasks.find(id));
-                accepted = false;
-            } else {
-                queueOutcome(id, NotStarted::Cause::Transport);
-            }
+            queueOutcome(id, NotStarted::Cause::Transport);
         }
     }
-    return accepted;
+    return true;
 }
 
 void TaskQueue::queueOutcome(TaskId id, std::optional<NotStarted::Cause> not_started)
@@ -362,22 +459,28 @@ void TaskQueue::queueOutcome(TaskId id, std::optional<NotStarted::Cause> not_sta
     if (not_started) {
         // An admitted task whose transport later rejects still owns its failure
         // and captures. Reserved cleanup disposes them before domain delivery.
-        const bool posted = m_routed_dispatch(Lane::Cleanup, Phase::OutcomeReady, id,
-            [self = shared_from_this(), id, task = record.task, cause = *not_started] {
-                task->notStarted(cause);
-                std::lock_guard lock{self->m_mutex};
-                self->queueOutcome(id);
-            });
+        const bool posted = ReservedPost([&] {
+            return m_routed_dispatch(Lane::Cleanup, Phase::OutcomeReady, id,
+                [self = shared_from_this(), id, task = record.task, cause = *not_started] {
+                    task->notStarted(cause);
+                    std::lock_guard lock{self->m_mutex};
+                    self->queueOutcome(id);
+                });
+        });
         assert(posted);
+        if (!posted) std::terminate();
         return;
     }
-    auto turn = [self = shared_from_this(), id] { self->deliver(id); };
-    const bool posted = m_routed_dispatch
-        ? m_routed_dispatch(Lane::Domain, Phase::OutcomeReady, id, std::move(turn))
-        : m_dispatch(Phase::OutcomeReady, id, std::move(turn));
+    const bool posted = ReservedPost([&] {
+        std::function<void()> turn = [self = shared_from_this(), id] { self->deliver(id); };
+        return m_routed_dispatch
+            ? m_routed_dispatch(Lane::Domain, Phase::OutcomeReady, id, std::move(turn))
+            : m_dispatch(Phase::OutcomeReady, id, std::move(turn));
+    });
     // Accepted outcomes retain their transport until consumption, also during
     // drain. A broken transport is a lifetime bug, never a silent lost result.
     assert(posted);
+    if (!posted) std::terminate();
 }
 
 void TaskQueue::execute(TaskId id)
@@ -468,7 +571,7 @@ bool TaskQueue::cancelQueuedForScope(TaskId id, uint64_t scope)
             const auto queued = std::find(waiting.begin(), waiting.end(), id);
             if (queued != waiting.end()) {
                 waiting.erase(queued);
-                if (waiting.empty() && !m_running.contains(key)) {
+                if (waiting.empty() && !coreRunning(key)) {
                     m_waiting.erase(key);
                     std::erase(m_ready, key);
                 }

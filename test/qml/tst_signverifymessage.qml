@@ -4,7 +4,9 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Window 2.15
 import QtTest 1.2
+import org.bitcoincore.qt 1.0
 
 import "../../qml/controls"
 import "../../qml/pages/wallet"
@@ -12,6 +14,8 @@ import "../../qml/pages/wallet"
 TestCase {
     function init() {
         testSetup.failOnWarnings()
+        previousClipboard = Clipboard.currentText
+        mockSignVerifyModel.resetForTest()
     }
 
     id: testCase
@@ -19,6 +23,32 @@ TestCase {
     when: windowShown
     width: 820
     height: 900
+    property var pages: []
+    property var controlledWindows: []
+    property string previousClipboard: ""
+    property var walletModelsToClear: []
+
+    function cleanup() {
+        for (let i = 0; i < pages.length; ++i) {
+            const receipt = testSetup.watchDestruction(pages[i])
+            pages[i].destroy()
+            tryCompare(receipt, "pending", 0)
+            testSetup.releaseDestructionWatch(receipt)
+        }
+        pages = []
+        for (let i = 0; i < controlledWindows.length; ++i) {
+            const receipt = testSetup.watchDestruction(controlledWindows[i])
+            controlledWindows[i].close()
+            controlledWindows[i].destroy()
+            tryCompare(receipt, "pending", 0)
+            testSetup.releaseDestructionWatch(receipt)
+        }
+        controlledWindows = []
+        for (let i = 0; i < walletModelsToClear.length; ++i) walletModelsToClear[i].clear()
+        walletModelsToClear = []
+        mockSignVerifyModel.resetForTest()
+        Clipboard.currentText = previousClipboard
+    }
 
     Item {
         id: host
@@ -49,49 +79,104 @@ TestCase {
         property int signingId: 0
         property int verificationId: 0
         signal signingStateChanged()
-        onSigningAddressChanged: { signRevision++; signature = "" }
-        onSigningMessageChanged: { signRevision++; signature = "" }
+        // Test-local presentation transport. Manual completion is opt-in;
+        // existing tests keep their original asynchronous completion behavior.
+        property bool manualCompletion: false
+        property int signCalls: 0
+        property int passphraseCalls: 0
+        property int verifyCalls: 0
+        property string lastSigningAddress: ""
+        property string lastSigningMessage: ""
+        property string lastPassphrase: ""
+        property var pendingSigning: null
+        property var pendingVerification: null
+        onSigningAddressChanged: clearSigningStatus()
+        onSigningMessageChanged: clearSigningStatus()
         onVerificationAddressChanged: clearVerification()
         onVerificationMessageChanged: clearVerification()
         onVerificationSignatureChanged: clearVerification()
 
-        function clear() {
-            signature = ""; signingError = ""; signingNeedsUnlock = false
+        function clearSigningStatus() {
             signRevision++
+            signature = ""; signingError = ""; signingNeedsUnlock = false
+        }
+        function clear() {
+            clearSigningStatus()
             clearVerification()
         }
         function clearVerification() {
             verifyRevision++
             verificationValid = false; verificationText = ""
         }
-        function requestSignMessage(address, message) {
+        function resetForTest() {
+            manualCompletion = false
+            pendingSigning = null; pendingVerification = null
+            signingBusy = false; verificationBusy = false
+            signingAddress = ""; signingMessage = ""
+            verificationAddress = ""; verificationMessage = ""; verificationSignature = ""
+            clear()
+            signCalls = 0; passphraseCalls = 0; verifyCalls = 0
+            lastSigningAddress = ""; lastSigningMessage = ""; lastPassphrase = ""
+        }
+        function queueSigning(address, message) {
             if (signingBusy) return 0
             signingBusy = true
             const id = ++signingId
-            const revision = signRevision
-            Qt.callLater(function() {
-                signature = revision === signRevision && address === "1ValidLegacyAddress" && message.length > 0 ? "test-signature" : ""
-                signingBusy = false
-                signingStateChanged()
+            pendingSigning = {id: id, revision: signRevision, address: address, message: message}
+            lastSigningAddress = address
+            lastSigningMessage = message
+            signingStateChanged()
+            if (!manualCompletion) Qt.callLater(function() {
+                if (pendingSigning && pendingSigning.id === id) completeSigningForTest("success", "")
             })
             return id
         }
+        function requestSignMessage(address, message) {
+            signCalls++
+            return queueSigning(address, message)
+        }
         function requestSignMessageWithPassphrase(address, message, passphrase) {
-            return requestSignMessage(address, message)
+            passphraseCalls++
+            lastPassphrase = passphrase
+            return queueSigning(address, message)
+        }
+        function completeSigningForTest(outcome, error) {
+            if (["success", "unlock", "error"].indexOf(outcome) < 0) throw new Error("Unknown signing fixture outcome")
+            const pending = pendingSigning
+            if (!pending) return false
+            pendingSigning = null
+            if (pending.id !== signingId) return false
+            if (pending.revision === signRevision) {
+                signature = outcome === "success" && pending.address === "1ValidLegacyAddress" && pending.message.length > 0 ? "test-signature" : ""
+                signingNeedsUnlock = outcome === "unlock"
+                signingError = error
+            }
+            signingBusy = false
+            signingStateChanged()
+            return true
         }
         function requestVerifyMessage(address, message, candidateSignature) {
+            verifyCalls++
             if (verificationBusy) return 0
             verificationBusy = true
             const id = ++verificationId
-            const revision = verifyRevision
-            Qt.callLater(function() {
-                if (revision === verifyRevision) {
-                    verificationValid = address === "1ValidLegacyAddress" && message === "Signed statement" && candidateSignature === "test-signature"
-                    verificationText = verificationValid ? "Message verified successfully." : "Message verification failed."
-                }
-                verificationBusy = false
+            pendingVerification = {id: id, revision: verifyRevision, address: address, message: message, signature: candidateSignature}
+            if (!manualCompletion) Qt.callLater(function() {
+                if (pendingVerification && pendingVerification.id === id) completeVerificationForTest()
             })
             return id
+        }
+        function completeVerificationForTest() {
+            const pending = pendingVerification
+            if (!pending) return false
+            pendingVerification = null
+            if (pending.id !== verificationId) return false
+            if (pending.revision === verifyRevision) {
+                verificationValid = pending.address === "1ValidLegacyAddress" && pending.message === "Signed statement" && pending.signature === "test-signature"
+                verificationText = verificationValid ? "Message verified successfully." : "Message verification failed."
+            }
+            verificationBusy = false
+            return true
         }
 
     }
@@ -107,10 +192,104 @@ TestCase {
         }
     }
 
-    function createPage(initialProperties) {
-        const page = createTemporaryObject(pageComponent, host, initialProperties || {})
+    Component {
+        id: walletBoundPageComponent
+        SignVerifyMessage { width: 820; height: 900 }
+    }
+
+    function createPage(initialProperties, component) {
+        const page = createTemporaryObject(component || pageComponent, host, initialProperties || {})
         verify(page !== null)
+        pages.push(page)
         return page
+    }
+
+    Component {
+        id: controlledWindowComponent
+        Window { width: 820; height: 900; visible: false }
+    }
+
+    function createControlledPage(initialProperties, component) {
+        const properties = {visible: false}
+        if (initialProperties) {
+            for (const key in initialProperties) properties[key] = initialProperties[key]
+        }
+        // Keep the original nonvisual fixture unchanged. New physical-input
+        // cases get a complete native viewport without resizing QtTest's one.
+        const page = createPage(properties, component)
+        const window = createTemporaryObject(controlledWindowComponent, testCase)
+        verify(window !== null)
+        controlledWindows.push(window)
+        page.parent = window.contentItem
+        page.visible = true
+        window.show()
+        verify(waitForRendering(page))
+        compare(page.visible, true)
+        return page
+    }
+
+    function clickVisible(page, objectName) {
+        const button = findChild(page, objectName)
+        verify(button !== null)
+        verify(button.visible && button.enabled)
+        const window = button.Window.window
+        verify(window !== null)
+        window.update()
+        verify(waitForRendering(button))
+        // Newly visible fields join nested layouts over several polish turns.
+        // Scroll the real control and require its center inside every clip.
+        tryVerify(function() {
+            for (let parent = button.parent; parent; parent = parent.parent) {
+                const flickable = parent as Flickable
+                if (!flickable) continue
+                const point = button.mapToItem(flickable.contentItem, button.width / 2, button.height / 2)
+                flickable.contentY = Math.max(0, Math.min(flickable.contentHeight - flickable.height, point.y - flickable.height / 2))
+                break
+            }
+            window.update()
+            if (button.width <= 0 || button.height <= 0) return false
+            for (let parent = button.parent; parent; parent = parent.parent) {
+                if (!parent.clip) continue
+                const center = button.mapToItem(parent, button.width / 2, button.height / 2)
+                if (center.x < 0 || center.x >= parent.width || center.y < 0 || center.y >= parent.height) return false
+            }
+            const center = button.mapToItem(window.contentItem, button.width / 2, button.height / 2)
+            return center.x >= 0 && center.x < window.contentItem.width && center.y >= 0 && center.y < window.contentItem.height
+        })
+        mouseClick(button, button.width / 2, button.height / 2)
+    }
+
+    function fillSigning(page) {
+        findChild(page, "signMessageAddressField").text = "1ValidLegacyAddress"
+        findChild(page, "signMessageMessageField").text = "Signed statement"
+        tryCompare(findChild(page, "signMessageButton"), "enabled", true)
+        compare(mockSignVerifyModel.signingAddress, "1ValidLegacyAddress")
+        compare(mockSignVerifyModel.signingMessage, "Signed statement")
+    }
+
+    function fillVerification(page, signature, expectEnabled) {
+        clickVisible(page, "verifyMessageTab")
+        compare(page.selectedMode, SignVerifyMessage.VerifyTab)
+        findChild(page, "verifyMessageAddressField").text = "1ValidLegacyAddress"
+        findChild(page, "verifyMessageMessageField").text = "Signed statement"
+        findChild(page, "verifyMessageSignatureField").text = signature
+        tryCompare(findChild(page, "verifyMessageButton"), "enabled", expectEnabled === undefined ? true : expectEnabled)
+    }
+
+    function openUnlockPrompt(page) {
+        fillSigning(page)
+        clickVisible(page, "signMessageButton")
+        compare(mockSignVerifyModel.signCalls, 1)
+        verify(mockSignVerifyModel.completeSigningForTest("unlock", "Wallet password required."))
+        const popup = findChild(page, "signMessagePassphrasePopup")
+        tryCompare(popup, "opened", true)
+        compare(popup.contextValid, true)
+        compare(popup.context.model, mockSignVerifyModel)
+        compare(popup.context.address, "1ValidLegacyAddress")
+        compare(popup.context.message, "Signed statement")
+        compare(findChild(page, "signMessageErrorText").visible, false)
+        compare(findChild(popup, "signMessagePassphraseErrorText").text, "Wallet password required.")
+        return popup
     }
 
     function test_reopeningClearsPreviousSigningState() {
@@ -346,5 +525,303 @@ TestCase {
         compare(resultBanner.iconColor, Theme.color.red)
         compare(resultBanner.textColor, Theme.color.red)
         tryCompare(resultText, "color", Theme.color.red)
+    }
+
+    function test_default_model_binding_follows_explicit_wallet_data() {
+        return [{tag: "wallet-replaced", initiallyBound: true},
+                {tag: "wallet-attached", initiallyBound: false}]
+    }
+    function test_default_model_binding_follows_explicit_wallet(data) {
+        const firstModel = testWalletModel.signVerifyMessageModel
+        const secondModel = testSecondWalletModel.signVerifyMessageModel
+        walletModelsToClear = [firstModel, secondModel]
+        firstModel.clear()
+        secondModel.clear()
+        const page = createControlledPage(data.initiallyBound ? {wallet: testWalletModel} : {}, walletBoundPageComponent)
+        compare(page.signVerifyModel, data.initiallyBound ? firstModel : null)
+        if (data.initiallyBound) {
+            const firstTicket = firstModel.signingId
+            findChild(page, "signMessageAddressField").text = "1ValidLegacyAddress"
+            findChild(page, "signMessageMessageField").text = "First wallet statement"
+            tryCompare(findChild(page, "signMessageButton"), "enabled", true)
+            clickVisible(page, "signMessageButton")
+            tryCompare(firstModel, "signature", "test-signature")
+            compare(firstModel.signingId, firstTicket + 1)
+            compare(page.signingComplete, true)
+            page.wallet = testSecondWalletModel
+            compare(page.signVerifyModel, secondModel)
+            compare(page.signingComplete, false)
+        } else {
+            compare(page.verifyResultText, "")
+            compare(findChild(page, "signMessageButton").enabled, false)
+            page.wallet = testSecondWalletModel
+            compare(page.signVerifyModel, secondModel)
+        }
+        const originalTicket = firstModel.signingId
+        const secondTicket = secondModel.signingId
+        findChild(page, "signMessageAddressField").text = "1ValidLegacyAddress"
+        findChild(page, "signMessageMessageField").text = "Second wallet statement"
+        tryCompare(findChild(page, "signMessageButton"), "enabled", true)
+        clickVisible(page, "signMessageButton")
+        tryCompare(secondModel, "signature", "test-signature")
+        compare(secondModel.signingId, secondTicket + 1)
+        compare(firstModel.signingId, originalTicket)
+        compare(secondModel.signingAddress, "1ValidLegacyAddress")
+        compare(secondModel.signingMessage, "Second wallet statement")
+        compare(page.signingComplete, true)
+    }
+
+    function test_missing_model_rejects_intents_and_clears_local_fields() {
+        const page = createControlledPage({signVerifyModel: null})
+        findChild(page, "signMessageAddressField").text = "1ValidLegacyAddress"
+        findChild(page, "signMessageMessageField").text = "Local signing draft"
+        compare(findChild(page, "signMessageButton").enabled, false)
+        page.submitSign()
+        page.submitSign("unused credential")
+        compare(mockSignVerifyModel.signCalls, 0)
+        compare(mockSignVerifyModel.passphraseCalls, 0)
+        clickVisible(page, "signMessageClearButton")
+        compare(findChild(page, "signMessageAddressField").text, "")
+        compare(findChild(page, "signMessageMessageField").text, "")
+        compare(page.signingComplete, false)
+        compare(findChild(page, "signMessageErrorText").text, "")
+        fillVerification(page, "test-signature", false)
+        compare(findChild(page, "verifyMessageButton").enabled, false)
+        page.submitVerify()
+        compare(mockSignVerifyModel.verifyCalls, 0)
+        clickVisible(page, "verifyMessageClearButton")
+        compare(findChild(page, "verifyMessageAddressField").text, "")
+        compare(findChild(page, "verifyMessageMessageField").text, "")
+        compare(findChild(page, "verifyMessageSignatureField").text, "")
+        compare(page.verifyResultText, "")
+        compare(page.verifyResultSuccess, false)
+        compare(findChild(page, "verifyMessageResultBanner").visible, false)
+    }
+
+    function test_held_signing_rejects_duplicate_intents() {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        fillSigning(page)
+        const ticket = mockSignVerifyModel.signingId
+        clickVisible(page, "signMessageButton")
+        compare(mockSignVerifyModel.signCalls, 1)
+        compare(mockSignVerifyModel.signingId, ticket + 1)
+        compare(mockSignVerifyModel.signingBusy, true)
+        compare(page.signingComplete, false)
+        compare(findChild(page, "signMessageButton").enabled, false)
+        page.submitSign()
+        page.submitSign("duplicate credential")
+        compare(mockSignVerifyModel.signCalls, 1)
+        compare(mockSignVerifyModel.passphraseCalls, 0)
+        compare(mockSignVerifyModel.signingId, ticket + 1)
+        verify(mockSignVerifyModel.completeSigningForTest("success", ""))
+        compare(page.signingComplete, true)
+        compare(findChild(page, "signMessageSignatureText").text, "test-signature")
+        compare(findChild(page, "signMessagePassphrasePopup").visible, false)
+    }
+
+    function test_explicit_passphrase_intent_uses_passphrase_api() {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        fillSigning(page)
+        page.submitSign("explicit credential")
+        compare(mockSignVerifyModel.signCalls, 0)
+        compare(mockSignVerifyModel.passphraseCalls, 1)
+        compare(mockSignVerifyModel.lastSigningAddress, "1ValidLegacyAddress")
+        compare(mockSignVerifyModel.lastSigningMessage, "Signed statement")
+        compare(mockSignVerifyModel.lastPassphrase, "explicit credential")
+        verify(mockSignVerifyModel.completeSigningForTest("success", ""))
+        compare(page.signingComplete, true)
+        compare(mockSignVerifyModel.signature, "test-signature")
+    }
+
+    function test_completed_signing_copy_actions_data() {
+        return [
+            {tag: "address", button: "signMessageCopyAddressButton", expected: "1ValidLegacyAddress"},
+            {tag: "message", button: "signMessageCopyMessageButton", expected: "Signed statement"},
+            {tag: "signature", button: "signMessageCopySignatureButton", expected: "test-signature"}
+        ]
+    }
+    function test_completed_signing_copy_actions(data) {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        fillSigning(page)
+        clickVisible(page, "signMessageButton")
+        verify(mockSignVerifyModel.completeSigningForTest("success", ""))
+        compare(page.signingComplete, true)
+        Clipboard.currentText = "Previous clipboard value"
+        const revision = Clipboard.revision
+        clickVisible(page, data.button)
+        compare(Clipboard.currentText, data.expected)
+        compare(Clipboard.revision, revision + 1)
+        compare(mockSignVerifyModel.signCalls, 1)
+        compare(mockSignVerifyModel.passphraseCalls, 0)
+        compare(mockSignVerifyModel.verifyCalls, 0)
+    }
+
+    function test_signing_clear_button_releases_completed_fields() {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        fillSigning(page)
+        clickVisible(page, "signMessageButton")
+        verify(mockSignVerifyModel.completeSigningForTest("success", ""))
+        compare(findChild(page, "signMessageAddressEntry").readOnly, true)
+        clickVisible(page, "signMessageClearButton")
+        compare(page.signingComplete, false)
+        compare(mockSignVerifyModel.signature, "")
+        compare(mockSignVerifyModel.signingAddress, "")
+        compare(mockSignVerifyModel.signingMessage, "")
+        compare(findChild(page, "signMessageAddressField").text, "")
+        compare(findChild(page, "signMessageMessageField").text, "")
+        compare(findChild(page, "signMessageAddressEntry").readOnly, false)
+        compare(findChild(page, "signMessageMessageEntry").readOnly, false)
+        compare(mockSignVerifyModel.signCalls, 1)
+        compare(mockSignVerifyModel.passphraseCalls, 0)
+    }
+
+    function test_verification_clear_button_retires_result_data() {
+        return [{tag: "success", signature: "test-signature", success: true},
+                {tag: "failure", signature: "wrong-signature", success: false}]
+    }
+    function test_verification_clear_button_retires_result(data) {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        fillVerification(page, data.signature)
+        clickVisible(page, "verifyMessageButton")
+        compare(mockSignVerifyModel.verifyCalls, 1)
+        verify(mockSignVerifyModel.completeVerificationForTest())
+        compare(page.verifyResultSuccess, data.success)
+        compare(page.verifyResultText, data.success ? "Message verified successfully." : "Message verification failed.")
+        compare(findChild(page, "verifyMessageResultBanner").visible, true)
+        clickVisible(page, "verifyMessageClearButton")
+        compare(findChild(page, "verifyMessageAddressField").text, "")
+        compare(findChild(page, "verifyMessageMessageField").text, "")
+        compare(findChild(page, "verifyMessageSignatureField").text, "")
+        compare(mockSignVerifyModel.verificationAddress, "")
+        compare(mockSignVerifyModel.verificationMessage, "")
+        compare(mockSignVerifyModel.verificationSignature, "")
+        compare(page.verifyResultText, "")
+        compare(page.verifyResultSuccess, false)
+        compare(findChild(page, "verifyMessageResultBanner").visible, false)
+        compare(findChild(page, "verifyMessageButton").enabled, false)
+        compare(mockSignVerifyModel.verifyCalls, 1)
+    }
+
+    function test_signing_error_is_visible_without_unlock_prompt() {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        fillSigning(page)
+        clickVisible(page, "signMessageButton")
+        verify(mockSignVerifyModel.completeSigningForTest("error", "Signing was refused by the wallet."))
+        compare(mockSignVerifyModel.signCalls, 1)
+        compare(page.signingComplete, false)
+        compare(findChild(page, "signMessageErrorText").visible, true)
+        compare(findChild(page, "signMessageErrorText").text, "Signing was refused by the wallet.")
+        compare(findChild(page, "signMessagePassphrasePopup").visible, false)
+        compare(findChild(page, "signMessageMessageField").text, "Signed statement")
+        compare(findChild(page, "signMessageAddressEntry").readOnly, false)
+        compare(findChild(page, "signMessageButton").enabled, true)
+    }
+
+    function test_passphrase_retry_owns_exact_signing_context_data() {
+        return [{tag: "success", outcome: "success", error: ""},
+                {tag: "password-rejected", outcome: "unlock", error: "Incorrect wallet password."}]
+    }
+    function test_passphrase_retry_owns_exact_signing_context(data) {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        const popup = openUnlockPrompt(page)
+        const field = findChild(popup, "signMessagePassphraseField")
+        field.text = "retry credential"
+        clickVisible(page, "signMessagePassphraseConfirmButton")
+        compare(mockSignVerifyModel.signCalls, 1)
+        compare(mockSignVerifyModel.passphraseCalls, 1)
+        compare(mockSignVerifyModel.lastSigningAddress, "1ValidLegacyAddress")
+        compare(mockSignVerifyModel.lastSigningMessage, "Signed statement")
+        compare(mockSignVerifyModel.lastPassphrase, "retry credential")
+        compare(field.text, "")
+        compare(popup.busy, true)
+        compare(findChild(popup, "signMessagePassphraseConfirmButton").enabled, false)
+        compare(findChild(popup, "signMessagePassphraseCancelButton").enabled, false)
+        popup.submitted("late duplicate")
+        compare(mockSignVerifyModel.passphraseCalls, 1)
+        verify(mockSignVerifyModel.completeSigningForTest(data.outcome, data.error))
+        compare(popup.busy, false)
+        if (data.outcome === "success") {
+            tryCompare(popup, "visible", false)
+            compare(page.signingComplete, true)
+            compare(mockSignVerifyModel.signature, "test-signature")
+            compare(popup.context, null)
+        } else {
+            tryCompare(popup, "opened", true)
+            compare(page.signingComplete, false)
+            compare(popup.contextValid, true)
+            compare(findChild(popup, "signMessagePassphraseErrorText").text, data.error)
+            field.text = "clear on cancel"
+            clickVisible(page, "signMessagePassphraseCancelButton")
+            tryCompare(popup, "visible", false)
+            compare(popup.context, null)
+        }
+        compare(field.text, "")
+        compare(mockSignVerifyModel.passphraseCalls, 1)
+    }
+
+    function test_passphrase_context_invalidation_rejects_stale_intent_data() {
+        return [{tag: "address-edited", change: "address"},
+                {tag: "message-edited", change: "message"},
+                {tag: "model-replaced", change: "model"},
+                {tag: "view-hidden", change: "hidden"}]
+    }
+    function test_passphrase_context_invalidation_rejects_stale_intent(data) {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        const popup = openUnlockPrompt(page)
+        const field = findChild(popup, "signMessagePassphraseField")
+        field.text = "must be wiped"
+        if (data.change === "address") findChild(page, "signMessageAddressField").text = "1ChangedLegacyAddress"
+        else if (data.change === "message") findChild(page, "signMessageMessageField").text = "Changed statement"
+        else if (data.change === "model") page.signVerifyModel = null
+        else page.visible = false
+        tryCompare(popup, "visible", false)
+        compare(popup.context, null)
+        compare(popup.contextValid, false)
+        compare(field.text, "")
+        popup.submitted("stale queued credential")
+        compare(mockSignVerifyModel.signCalls, 1)
+        compare(mockSignVerifyModel.passphraseCalls, 0)
+        compare(mockSignVerifyModel.signingBusy, false)
+        compare(mockSignVerifyModel.signature, "")
+        if (data.change === "hidden") {
+            // A later public outcome cannot reopen a prompt over another page.
+            mockSignVerifyModel.signingStateChanged()
+            compare(popup.visible, false)
+            page.visible = true
+            compare(popup.visible, false)
+        }
+    }
+
+    function test_held_verification_discards_edited_input_outcome() {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        fillVerification(page, "test-signature")
+        const ticket = mockSignVerifyModel.verificationId
+        clickVisible(page, "verifyMessageButton")
+        compare(mockSignVerifyModel.verifyCalls, 1)
+        compare(mockSignVerifyModel.verificationId, ticket + 1)
+        compare(mockSignVerifyModel.verificationBusy, true)
+        compare(findChild(page, "verifyMessageButton").enabled, false)
+        page.submitVerify()
+        compare(mockSignVerifyModel.verifyCalls, 1)
+        findChild(page, "verifyMessageSignatureField").text = "changed-signature"
+        verify(mockSignVerifyModel.completeVerificationForTest())
+        compare(mockSignVerifyModel.verificationBusy, false)
+        compare(page.verifyResultText, "")
+        compare(findChild(page, "verifyMessageResultBanner").visible, false)
+        clickVisible(page, "verifyMessageButton")
+        compare(mockSignVerifyModel.verifyCalls, 2)
+        compare(mockSignVerifyModel.verificationId, ticket + 2)
+        verify(mockSignVerifyModel.completeVerificationForTest())
+        compare(page.verifyResultSuccess, false)
+        compare(page.verifyResultText, "Message verification failed.")
     }
 }

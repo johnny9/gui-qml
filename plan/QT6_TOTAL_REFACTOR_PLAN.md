@@ -1,5 +1,12 @@
 # Finding-driven Qt 6 total refactoring plan
 
+Current branch-local progress: [R10 implementation/focused checkpoint](R10_FOCUSED_CHECKPOINT_20261114.md)
+is complete at tested snapshot `c43fa40ee418655f0800fc92da29c482f836ed3d`, with
+clean Core44901 unchanged. R11 is next. The user-approved cadence assigns final
+coverage, full suites/matrices, native Windows and sanitizer qualification to
+R42. [Progress](PROGRESS.md) distinguishes this implementation checkpoint from
+final qualification; historical statuses below keep their original provenance.
+
 Latest local continuation: [parallel integration tests and R10 fixture qualification](R10_CONTINUATION_20261113.md), code candidate `cb22132687ec765abe599628f5ed6587d63b44c9`. All 185 integration rows pass under pinned sanitizers; two ASan PSBT process journeys remain failed. Settings navigation instance analysis is corrected. R10 remains unaccepted; R11 is unstarted. Older entries below retain their historical source identities.
 
 R10 checkpoint publication authorized by the user on2026-11-13: save current implementation and unresolved issues to fork johnny9/gui-qml, branch work/qt6-r10-checkpoint-20261113. Earlier no-primary-commit/no-push restrictions are superseded for this checkpoint only. R10 remains unaccepted and R11 unstarted. Repository report: plan/CHECKPOINT.md. Copied planning/register snapshots preserve provenance without closing shared evidence registers. Five test-only corrections after frozen34 await final-source requalification.
@@ -204,7 +211,44 @@ Real-thread tests are separately required for physical thread affinity, callback
 
 ## Validation cadence
 
+**Expanded deferrals — explicitly approved 2026-11-14:** R42 owns exhaustive 100% reachable coverage qualification, full-suite reruns, detailed compiler/profile mapping audits and full Qt/platform/configuration matrices. Native Windows is deferred to that final stage, not permanently waived. Keep focused ordinary behavioral regressions, manual timing/real-thread checks, relevant integration, nonempty execution evidence and changed-scope lint/tidy at each implementation step. Use targeted checks for directly affected compile/configuration branches. Record per-step implementation/focused-check completion separately from final qualification pending R42. Preserve all raw coverage ledgers, scopes, failures and final requirements; do not chase coverage percentages or repeat unrelated suites before proceeding. This supersedes earlier per-step completeness/matrix gates below and in worker orders.
+
+**Sanitizer cadence amendment — user instruction, 2026-11-14:** defer routine sanitizer builds, runs and sanitizer-only repairs until implementation work orders are complete. R42 owns final combined-series sanitizer qualification and repairs. Continue focused ordinary tests, manual timing/real-thread checks, lint, clang-tidy, coverage and relevant ordinary integration. Record implementation/ordinary-check completion separately from sanitizer qualification pending R42; do not claim full final acceptance before the final checks and repairs pass. Preserve existing results and unresolved findings. This amendment overrides earlier per-step sanitizer timing in this plan and worker orders, preserving all final scopes, options, Core boundaries and existing platform/Qt deferrals. See [the recorded decision](QT6_VALIDATION_CADENCE_20261114.md).
+
 **Current R10 user override (2026-11-12): implement all remaining R10 work before the next validation.** Do not run further builds, tests, lint, clang-tidy, sanitizers, coverage collection or platform checks while completing that implementation. Reading source, editing implementation/tests and maintaining the plan/evidence are allowed. Preserve existing qualified evidence, but mark subsequent code unvalidated. Finish the complete remaining R10 implementation first, then perform its required acceptance validation. This overrides the earlier incremental focused-check cadence for current R10 only; it does not weaken any acceptance criterion or authorize Core changes/R11. Pause and notify if a required fix genuinely cannot be implemented through allowed public interfaces.
+
+**Distributed validation amendment (user instruction, 2026-11-14):** when running
+validation, distribute independent builds and checks in parallel across
+`gameboy.local`, `bazzite.local`, `johnnys-virtual-machine.local` and this host.
+Inventory each host's access, toolchains, available memory/disk and existing jobs
+first. Use task-owned work/build/cache directories, preserve unrelated sessions
+and size each job from actual host capacity. Use ccache with content-based compiler
+identity; retain or expand task-owned cache capacity where useful and disk permits.
+Do not move persistent builds into temporary RAM-backed storage. Authentication,
+name-resolution and missing-toolchain failures remain explicit blockers for the
+affected job; continue independent local/accessible-host work.
+
+Every distributed job must consume one immutable application snapshot and the
+exact pinned Core revision, with source/archive hashes checked after transfer.
+Retain host identity, configuration, pinned image/tool versions, commands,
+nonempty selectors and body counts, raw diagnostics and actual exits locally.
+Split independent configurations or disjoint test files; do not count the same
+test repeatedly as additional coverage or merge profiles from different ELFs.
+Only matching pinned tools qualify the corresponding CI gate. Supplementary
+native-host results retain their distinct scope and limitations. The existing
+Windows skip and deferred native Qt issue policy remain unchanged.
+
+**QML test performance amendment (user instruction, 2026-11-14):** incorporate
+the performance changes from `johnny9/gui-qml:codex/qml-test-performance`, reviewed
+at commit `992bf392156a8e707ec29901e5acd3d0fd235e48`. Preserve all original and added
+regression bodies, manual timing oracles, animations and warning policy. Use the
+new per-file CTest inventory for parallel execution and isolate persistent test
+settings per process. The optional live source mirror is an editing-loop mode;
+default embedded-resource mode remains required for acceptance and QML coverage
+qualification. Record resource manifests, mode and selected Qt compatibility
+aliases; verify that test discovery remains complete and nonempty. Faster
+execution does not waive sanitizer, real-thread, independent Core/RPC, coverage
+or IPC startup/shutdown requirements.
 
 
 The user-directed `validation-cadence amendment <.validation/issue-remediation-pr1090-20261109/execution/coordinator/validation-cadence-20261112/REQUIREMENT.md>` applies to every work order, including current R10: use focused checks during implementation and run broad validation only when the work is ready for acceptance.
@@ -221,9 +265,9 @@ R00 inspected actual checkout CI/CMake/test runner definitions and initialized t
 
 | Boundary | Gate |
 | --- | --- |
-| Implementation / local preparation | Build affected targets/configurations and run focused unit/component and affected integration/process selectors. Verify nonempty selections and the behavioral oracle. Apply required lint/tidy/sanitizer checks to the changed scope; retain exact source/toolchain identities and focused coverage evidence. Broad qualification waits for acceptance readiness. |
-| Asynchronous/lifetime implementation | Focused manual schedule regressions and real-thread affinity; relevant ASan/LSan/UBSan/integer and TSan checks. Use MSan where uninitialized-memory changes require it. Run affected lifecycle cases when that path changes; the full required IPC startup/shutdown qualification runs at acceptance readiness. |
-| Acceptance-ready work order / vertical slice / PR | Full valid unit/component suite and all applicable integration groups in wallet-enabled/disabled modes; required pinned lint/tidy/sanitizers, coverage accounting and assigned configuration/platform checks. Include GUI startup/shutdown with IPC enabled and inspect stderr/exit status. Use `interface_gui.py` where present; this pinned app's retained drivers are `interface_qml_startup.py` and `interface_qml_shutdown.py` (R00-B09). Retain functional coverage and affected dependency regressions; no unexplained regression or lost selector. |
+| Implementation / local preparation | Build affected targets/configurations and run focused unit/component and affected integration/process selectors. Verify nonempty selections and the behavioral oracle. Apply required lint/tidy checks (sanitizers pending R42) to the changed scope; retain exact source/toolchain identities and focused coverage evidence. Broad qualification waits for final R42 readiness. |
+| Asynchronous/lifetime implementation | Focused manual schedule regressions and real-thread affinity; ASan/LSan/UBSan/integer and TSan checks deferred to final R42 qualification. Use MSan where uninitialized-memory changes require it. Run affected lifecycle cases when that path changes; the full required IPC startup/shutdown qualification runs at acceptance readiness. |
+| Implementation work-order progress checkpoint | Focused ordinary unit/component regressions, manual timing/real-thread evidence, relevant integration and changed-scope lint/tidy. Preserve behavioral oracles, exact revisions and nonempty executed counts. Record exhaustive coverage, full suites/matrices and sanitizers as pending R42; do not claim complete final qualification. |
 | Multi-commit PR targeting staging | Follow checkout ancestor job, base merge, per-commit builds/CTest/functional steps; fold fixes into earliest failing commit and revalidate descendants. For qt6, final-head qualification is the required CI target, while this plan still aims for locally green commits. |
 | Final combined series | All valid existing tests and new regressions; full unit coverage accounting; all 329 scope dispositions and all 36 schedules; pinned CI lint/tidy/sanitizers; IPC lifecycle; supported Qt/wallet/build/platform matrix and compatibility/native journeys. |
 

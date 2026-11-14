@@ -17,6 +17,7 @@
 #include <qml/backendexecutor.h>
 #include <test/mocks/mocknode.h>
 #include <test/mocks/drainexecutors.h>
+#include <test/mocks/manualexecutionenvironment.h>
 #include <chainparams.h>
 #include <qml/core_settings.h>
 #include <qml/datadir.h>
@@ -35,6 +36,9 @@
 #include <util/string.h>
 
 #include <atomic>
+#include <array>
+#include <deque>
+#include <functional>
 #include <stdexcept>
 
 #ifndef BITCOINQML_NO_TEST_MAIN
@@ -72,6 +76,123 @@ bool ApplyOnboardingModelRequest(const OnboardingOptionsModel& model,ArgsManager
 {
     const auto request=model.applyRequest();
     return QmlOnboardingSettings::ApplyToArgs(args,request.data_dir,request.touched_settings,request.values,error);
+}
+
+struct ManualSnapshotGraph {
+    ManualRoutedExecution transport;
+    std::deque<std::function<void()>> posts;
+
+    execution::SnapshotServices services()
+    {
+        return {transport.scheduler, [this](auto callback) { posts.push_back(std::move(callback)); }};
+    }
+
+    bool deliverOnePost()
+    {
+        if (posts.empty()) return false;
+        auto callback = std::move(posts.front());
+        posts.pop_front();
+        callback();
+        return true;
+    }
+
+    bool step(execution::Lane lane) { return transport.step(lane); }
+
+    size_t queued(execution::Lane lane) const
+    {
+        return transport.queuedCountIf([lane](const auto& turn) { return turn.lane == lane; });
+    }
+
+    // Drain work and GUI publications while the model still owns its cleanup
+    // leases. Full quiescence is checked only after the model is destroyed.
+    bool drainLive()
+    {
+        for (size_t turn = 0; turn < 1024; ++turn) {
+            if (deliverOnePost()) continue;
+            if (const auto lane = transport.nextLane()) {
+                if (!transport.step(*lane)) return false;
+                continue;
+            }
+            return posts.empty() && transport.transportIdle();
+        }
+        return false;
+    }
+};
+
+class ThreadProbeScheduler final : public execution::Scheduler {
+    struct State {
+        std::array<std::atomic<QThread*>, 4> threads{};
+        std::array<std::atomic<size_t>, 4> executions{};
+    };
+    struct RecordedTask final : execution::Task {
+        std::shared_ptr<execution::Task> task;
+        std::shared_ptr<State> state;
+        execution::Lane lane;
+        RecordedTask(std::shared_ptr<execution::Task> task, std::shared_ptr<State> state, execution::Lane lane)
+            : task(std::move(task)), state(std::move(state)), lane(lane) {}
+        void execute() override
+        {
+            const auto index = static_cast<size_t>(lane);
+            state->threads[index] = QThread::currentThread();
+            ++state->executions[index];
+            task->execute();
+        }
+        void deliver() override { task->deliver(); }
+        void notStarted(execution::NotStarted::Cause cause) override { task->notStarted(cause); }
+    };
+
+    const std::shared_ptr<execution::Scheduler> m_inner;
+    const std::shared_ptr<State> m_state;
+    ThreadProbeScheduler(std::shared_ptr<execution::Scheduler> inner, std::shared_ptr<State> state)
+        : m_inner(std::move(inner)), m_state(std::move(state)) {}
+
+public:
+    explicit ThreadProbeScheduler(std::shared_ptr<execution::Scheduler> inner)
+        : m_inner(std::move(inner)), m_state(std::make_shared<State>()) {}
+    QThread* thread(execution::Lane lane) const { return m_state->threads[static_cast<size_t>(lane)].load(); }
+    size_t executions(execution::Lane lane) const { return m_state->executions[static_cast<size_t>(lane)].load(); }
+    std::shared_ptr<execution::Scheduler> openActionScope(size_t bytes = 256) override
+    {
+        auto scope = m_inner->openActionScope(bytes);
+        return scope ? std::shared_ptr<execution::Scheduler>{new ThreadProbeScheduler(std::move(scope), m_state)} : nullptr;
+    }
+    execution::Admission submit(std::shared_ptr<execution::Task> task, execution::TaskSpec spec = {}) override
+    {
+        return m_inner->submit(std::make_shared<RecordedTask>(std::move(task), m_state, spec.lane), spec);
+    }
+    execution::Admission reserveCleanup(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override
+    {
+        return m_inner->reserveCleanup(std::make_shared<RecordedTask>(std::move(task), m_state, spec.lane), spec);
+    }
+    bool activateCleanup(execution::TaskId id) override { return m_inner->activateCleanup(id); }
+    execution::BorrowAdmission borrow(execution::ResourceKey key) override { return m_inner->borrow(key); }
+    execution::ResourceKey allocateKey() override { return m_inner->allocateKey(); }
+    size_t pending() const override { return m_inner->pending(); }
+    void closeOrdinaryAdmission() override { m_inner->closeOrdinaryAdmission(); }
+    bool cancelQueued(execution::TaskId id) override { return m_inner->cancelQueued(id); }
+};
+
+bool DriveToStorageCheck(ManualSnapshotGraph& graph, OnboardingOptionsModel& model, const QString& path)
+{
+    for (size_t turn = 0; turn < 1024; ++turn) {
+        if (model.dataDir() == path && !model.validationPending() && model.storageCheckPending() &&
+            graph.queued(execution::Lane::Core) == 1 && graph.queued(execution::Lane::Domain) == 0 && graph.posts.empty()) {
+            return true;
+        }
+        if (graph.deliverOnePost()) continue;
+        // Finish preview/projection bookkeeping before releasing the disk
+        // effect. Core may already be ready while this Domain work remains.
+        if (graph.queued(execution::Lane::Domain)) {
+            if (!graph.step(execution::Lane::Domain)) return false;
+            continue;
+        }
+        if (const auto lane = graph.transport.nextLane()) {
+            if (!graph.transport.step(*lane)) return false;
+            continue;
+        }
+        return false;
+    }
+    return false;
 }
 }
 
@@ -123,6 +244,9 @@ private Q_SLOTS:
     void signerDirtyResetWhenReverted();
     void externalSignerPathValidationRejectsMissingPath();
     void externalSignerPathValidationAcceptsExecutablePath();
+    void signerValidationKeepsLatestManualIntent();
+    void signerValidationReportsManualTransportRefusal();
+    void signerValidationRunsOnCoreWorker();
     void connectionDirtyTracksRestartSettings();
     void natpmpAppliesLiveWithoutRestartDirty();
     void storageDirtyIgnoresDisabledPruneSize();
@@ -189,6 +313,8 @@ private Q_SLOTS:
     void onboardingPreviewAppliesParameterInteractions();
     void storageSpaceCheckAcceptsExistingDirectory();
     void storageSpaceCheckRejectsExistingFile();
+    void onboardingStorageCheckDoesNotPublishStalePath();
+    void onboardingStorageProjectionCoalescesPublicPruneChoice();
     void thirdPartyTransactionLinksParseValidUrls();
     void moneyFontChoicePersists();
     void displayUnitUsesQtCompatibleSettingsKey();
@@ -868,6 +994,167 @@ void OptionsModelTests::externalSignerPathValidationAcceptsExecutablePath()
     model.requestExternalSignerPathValidation(script_path);
     QTRY_VERIFY(!model.signerPathValidationPending());
     QVERIFY(model.externalSignerPathValidationError(script_path).isEmpty());
+}
+
+void OptionsModelTests::signerValidationKeepsLatestManualIntent()
+{
+    ManualSnapshotGraph graph;
+    MockNode node;
+    const auto drain_node_owner = DrainExecutorsBeforeNativeOwnerDestruction();
+    ArgsManager model_args;
+    QTemporaryDir model_settings_dir;
+    QVERIFY(model_settings_dir.isValid());
+    PrepareRuntimePersistence(node, model_args, model_settings_dir);
+
+    QTemporaryDir missing_paths;
+    {
+        OptionsQmlModel model(node, model_args, graph.services());
+        const auto shutdown = qScopeGuard([&] { model.beginShutdown(); graph.drainLive(); });
+        QVERIFY(graph.drainLive());
+        QVERIFY(graph.transport.transportIdle());
+        QVERIFY(graph.transport.scheduler->pending() > 0);
+        QVERIFY(model.settingsReady());
+        QVERIFY(!model.settingsPending());
+        QVERIFY(!model.signerPathValidationPending());
+
+        QVERIFY(missing_paths.isValid());
+        const QString first_path = missing_paths.filePath(QStringLiteral("first-missing-signer"));
+        const QString latest_path = missing_paths.filePath(QStringLiteral("latest-missing-signer"));
+        QVERIFY(!QFileInfo::exists(first_path));
+        QVERIFY(!QFileInfo::exists(latest_path));
+        QSignalSpy validation_changed{&model, &OptionsQmlModel::signerPathValidationChanged};
+
+        model.requestExternalSignerPathValidation(first_path);
+        QVERIFY(model.signerPathValidationPending());
+        QCOMPARE(validation_changed.size(), 1);
+        QCOMPARE(graph.queued(execution::Lane::Core), size_t{1});
+
+        model.requestExternalSignerPathValidation(latest_path);
+        QVERIFY(model.signerPathValidationPending());
+        QCOMPARE(validation_changed.size(), 2);
+        QCOMPARE(graph.queued(execution::Lane::Core), size_t{1});
+
+        QVERIFY(graph.step(execution::Lane::Core));
+        QVERIFY(model.signerPathValidationPending());
+        QVERIFY(graph.posts.empty());
+        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
+        // The original effect has finished; its owned outcome is still held
+        // on Domain, independently of the subsequent GUI publication.
+        QVERIFY(graph.step(execution::Lane::Domain));
+        QVERIFY(model.signerPathValidationPending());
+        QCOMPARE(graph.posts.size(), size_t{1});
+        QVERIFY(graph.deliverOnePost());
+        QVERIFY(model.signerPathValidationPending());
+        QVERIFY(model.signerPathError().isEmpty());
+        QCOMPARE(graph.posts.size(), size_t{1});
+
+        QVERIFY(graph.deliverOnePost());
+        QVERIFY(model.signerPathValidationPending());
+        QCOMPARE(graph.queued(execution::Lane::Core), size_t{1});
+        QVERIFY(graph.step(execution::Lane::Core));
+        QVERIFY(model.signerPathValidationPending());
+        QVERIFY(graph.posts.empty());
+        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
+        QVERIFY(graph.step(execution::Lane::Domain));
+        QVERIFY(model.signerPathValidationPending());
+        QCOMPARE(graph.posts.size(), size_t{1});
+        QVERIFY(graph.deliverOnePost());
+
+        QVERIFY(!model.signerPathValidationPending());
+        QCOMPARE(model.signerPathError(), QStringLiteral("The configured signer path does not exist."));
+        QCOMPARE(model.externalSignerPathValidationError(first_path), QString{});
+        QCOMPARE(model.externalSignerPathValidationError(latest_path), QStringLiteral("The configured signer path does not exist."));
+        QCOMPARE(validation_changed.size(), 3);
+        QVERIFY(graph.drainLive());
+        QVERIFY(graph.transport.transportIdle());
+        QVERIFY(graph.transport.scheduler->pending() > 0);
+        model.beginShutdown();
+        QVERIFY(graph.drainLive());
+    }
+    QVERIFY(graph.drainLive());
+    QVERIFY(graph.transport.quiescent());
+}
+
+void OptionsModelTests::signerValidationReportsManualTransportRefusal()
+{
+    ManualSnapshotGraph graph;
+    MockNode node;
+    const auto drain_node_owner = DrainExecutorsBeforeNativeOwnerDestruction();
+    ArgsManager model_args;
+    QTemporaryDir model_settings_dir;
+    QVERIFY(model_settings_dir.isValid());
+    PrepareRuntimePersistence(node, model_args, model_settings_dir);
+
+    {
+        OptionsQmlModel model(node, model_args, graph.services());
+        const auto shutdown = qScopeGuard([&] { model.beginShutdown(); graph.drainLive(); });
+        QVERIFY(graph.drainLive());
+        QVERIFY(graph.transport.transportIdle());
+        QVERIFY(graph.transport.scheduler->pending() > 0);
+        QVERIFY(model.settingsReady());
+        QVERIFY(!model.settingsPending());
+
+        const QString path = QStringLiteral("rejected-signer-observation");
+        QSignalSpy validation_changed{&model, &OptionsQmlModel::signerPathValidationChanged};
+        graph.transport.rejectLane(execution::Lane::Core);
+        model.requestExternalSignerPathValidation(path);
+        QVERIFY(model.signerPathValidationPending());
+        QCOMPARE(validation_changed.size(), 1);
+        QCOMPARE(graph.queued(execution::Lane::Core), size_t{0});
+        QCOMPARE(graph.posts.size(), size_t{1});
+
+        QVERIFY(graph.deliverOnePost());
+        QVERIFY(!model.signerPathValidationPending());
+        QCOMPARE(model.signerPathError(), QStringLiteral("Unable to validate the signer path."));
+        QCOMPARE(validation_changed.size(), 2);
+        QVERIFY(graph.drainLive());
+        QVERIFY(graph.transport.transportIdle());
+        QVERIFY(graph.transport.scheduler->pending() > 0);
+        model.beginShutdown();
+        QVERIFY(graph.drainLive());
+    }
+    QVERIFY(graph.drainLive());
+    QVERIFY(graph.transport.quiescent());
+}
+
+void OptionsModelTests::signerValidationRunsOnCoreWorker()
+{
+    MockNode node;
+    const auto drain_node_owner = DrainExecutorsBeforeNativeOwnerDestruction();
+    ArgsManager model_args;
+    QTemporaryDir model_settings_dir;
+    QVERIFY(model_settings_dir.isValid());
+    PrepareRuntimePersistence(node, model_args, model_settings_dir);
+
+    BackendExecutor executor;
+    const auto drain_executor = qScopeGuard([&] {
+        if (executor.isDrained()) return;
+        executor.shutdown();
+        if (!QTest::qWaitFor([&] { return executor.isDrained(); }, 5000)) {
+            QTest::qFail("The original options-model executor did not drain", __FILE__, __LINE__);
+        }
+    });
+    const auto recording = std::make_shared<ThreadProbeScheduler>(executor.scheduler());
+    OptionsQmlModel model(node, model_args, {recording, {}});
+    QVERIFY(QTest::qWaitFor([&] { return model.settingsReady() && !model.settingsPending(); }, 5000));
+
+    QTemporaryDir missing_paths;
+    QVERIFY(missing_paths.isValid());
+    const QString path = missing_paths.filePath(QStringLiteral("missing-signer"));
+    QVERIFY(!QFileInfo::exists(path));
+    const size_t core_executions_before = recording->executions(execution::Lane::Core);
+    model.requestExternalSignerPathValidation(path);
+    QVERIFY(QTest::qWaitFor([&] { return !model.signerPathValidationPending(); }, 5000));
+    QCOMPARE(model.signerPathError(), QStringLiteral("The configured signer path does not exist."));
+    QCOMPARE(recording->executions(execution::Lane::Core), core_executions_before + 1);
+    QVERIFY(recording->thread(execution::Lane::Core));
+    QVERIFY(recording->thread(execution::Lane::Core) != QThread::currentThread());
+
+    QSignalSpy shutdown_finished{&model, &OptionsQmlModel::shutdownFinished};
+    model.beginShutdown();
+    QTRY_COMPARE_WITH_TIMEOUT(shutdown_finished.size(), 1, 5000);
+    executor.shutdown();
+    QTRY_VERIFY(executor.isDrained());
 }
 
 void OptionsModelTests::connectionDirtyTracksRestartSettings()
@@ -2524,6 +2811,158 @@ void OptionsModelTests::storageSpaceCheckRejectsExistingFile()
     QVERIFY(result.path_exists);
     QVERIFY(!result.path_is_directory);
     QVERIFY(!result.message.isEmpty());
+}
+
+void OptionsModelTests::onboardingStorageCheckDoesNotPublishStalePath()
+{
+    ManualSnapshotGraph graph;
+    SavedGuiDataDirSettings saved_settings;
+    QTemporaryDir directories;
+    QVERIFY(directories.isValid());
+    const QString startup_path = QDir(directories.path()).filePath(QStringLiteral("startup"));
+    const QString latest_path = QDir(directories.path()).filePath(QStringLiteral("latest-existing"));
+    const QString stale_path = QDir(directories.path()).filePath(QStringLiteral("stale-new"));
+    QVERIFY(QDir().mkpath(startup_path));
+    QVERIFY(QDir().mkpath(latest_path));
+    QVERIFY(!QFileInfo::exists(stale_path));
+
+    {
+        OnboardingOptionsModel model{TestArgvWithDataDir(startup_path), /*can_listen_ipc=*/false, nullptr, graph.services()};
+        const auto shutdown = qScopeGuard([&] { model.beginShutdown(); graph.drainLive(); });
+        QVERIFY(graph.drainLive());
+        QVERIFY(graph.transport.transportIdle());
+        QVERIFY(graph.transport.scheduler->pending() > 0);
+        QVERIFY(!model.validationPending());
+        QVERIFY(!model.storageCheckPending());
+        QCOMPARE(model.dataDir(), startup_path);
+        QCOMPARE(model.storagePathMessage(), QStringLiteral("Directory already exists."));
+
+        QSignalSpy storage_changed{&model, &OnboardingOptionsModel::storageStatusChanged};
+        QVERIFY(model.selectCustomDataDir(stale_path));
+        QVERIFY(DriveToStorageCheck(graph, model, stale_path));
+        QVERIFY(!QFileInfo::exists(stale_path));
+        QVERIFY(model.storageCheckPending());
+        QCOMPARE(model.storagePathMessage(), QStringLiteral("Directory already exists."));
+
+        QVERIFY(model.selectCustomDataDir(latest_path));
+        QVERIFY(model.validationPending());
+        const int changes_before_stale_result = storage_changed.size();
+
+        // The first queued Core task is the stale-path disk result. Its outcome
+        // must not publish while the replacement path is being previewed.
+        QVERIFY(graph.step(execution::Lane::Core));
+        QVERIFY(graph.posts.empty());
+        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
+        QVERIFY(graph.step(execution::Lane::Domain));
+        QCOMPARE(graph.posts.size(), size_t{1});
+        QVERIFY(graph.deliverOnePost());
+        QVERIFY(model.validationPending());
+        QVERIFY(model.storageCheckPending());
+        QCOMPARE(model.storagePathMessage(), QStringLiteral("Directory already exists."));
+        QCOMPARE(storage_changed.size(), changes_before_stale_result);
+
+        QVERIFY(DriveToStorageCheck(graph, model, latest_path));
+        QVERIFY(graph.step(execution::Lane::Core));
+        QVERIFY(graph.posts.empty());
+        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
+        QVERIFY(graph.step(execution::Lane::Domain));
+        QCOMPARE(graph.posts.size(), size_t{1});
+        QVERIFY(graph.deliverOnePost());
+        QVERIFY(graph.drainLive());
+
+        QCOMPARE(model.dataDir(), latest_path);
+        QVERIFY(!model.validationPending());
+        QVERIFY(!model.storageCheckPending());
+        QCOMPARE(model.storagePathMessage(), QStringLiteral("Directory already exists."));
+        QVERIFY(model.storageErrorText().isEmpty());
+        QVERIFY(storage_changed.size() > changes_before_stale_result);
+        QVERIFY(graph.transport.transportIdle());
+        QVERIFY(graph.transport.scheduler->pending() > 0);
+        model.beginShutdown();
+        QVERIFY(graph.drainLive());
+    }
+    QVERIFY(graph.drainLive());
+    QVERIFY(graph.transport.quiescent());
+}
+
+void OptionsModelTests::onboardingStorageProjectionCoalescesPublicPruneChoice()
+{
+    ManualSnapshotGraph graph;
+    SavedGuiDataDirSettings saved_settings;
+    QTemporaryDir directories;
+    QVERIFY(directories.isValid());
+    const QString startup_path = QDir(directories.path()).filePath(QStringLiteral("startup"));
+    const QString selected_path = QDir(directories.path()).filePath(QStringLiteral("selected-new"));
+    QVERIFY(QDir().mkpath(startup_path));
+    QVERIFY(!QFileInfo::exists(selected_path));
+
+    {
+        OnboardingOptionsModel model{TestArgvWithDataDir(startup_path), /*can_listen_ipc=*/false, nullptr, graph.services()};
+        const auto shutdown = qScopeGuard([&] { model.beginShutdown(); graph.drainLive(); });
+        QVERIFY(graph.drainLive());
+        QVERIFY(graph.transport.transportIdle());
+        QVERIFY(graph.transport.scheduler->pending() > 0);
+        QVERIFY(!model.validationPending());
+        QVERIFY(!model.storageCheckPending());
+
+        QSignalSpy storage_changed{&model, &OnboardingOptionsModel::storageStatusChanged};
+        QSignalSpy can_finish_changed{&model, &OnboardingOptionsModel::canFinishChanged};
+        QVERIFY(model.selectCustomDataDir(selected_path));
+        QVERIFY(DriveToStorageCheck(graph, model, selected_path));
+        QVERIFY(graph.step(execution::Lane::Core));
+        QVERIFY(graph.posts.empty());
+        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
+        QVERIFY(graph.step(execution::Lane::Domain));
+        QCOMPARE(graph.posts.size(), size_t{1});
+        QVERIFY(graph.deliverOnePost());
+        // The disk read is complete, but its derived presentation is pending.
+        QVERIFY(model.storageCheckPending());
+        QVERIFY(graph.posts.empty());
+        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
+
+        // Run the old immutable projection but hold its presentation. A user prune
+        // choice arrives before that projection can update the public properties.
+        QVERIFY(graph.step(execution::Lane::Domain));
+        QVERIFY(graph.posts.empty());
+        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
+        QVERIFY(graph.step(execution::Lane::Domain));
+        QVERIFY(model.storageCheckPending());
+        QCOMPARE(graph.posts.size(), size_t{1});
+        auto old_projection = std::move(graph.posts.front());
+        graph.posts.pop_front();
+
+        const int statuses_before_user_choice = storage_changed.size();
+        const bool selected_prune_choice = !model.prune();
+        model.setPrune(selected_prune_choice);
+        QVERIFY(graph.drainLive());
+        QCOMPARE(model.prune(), selected_prune_choice);
+        QVERIFY(storage_changed.size() > statuses_before_user_choice);
+        const int statuses_before_old_publish = storage_changed.size();
+        const int finish_signals_before_old_publish = can_finish_changed.size();
+
+        old_projection();
+        QCOMPARE(model.prune(), selected_prune_choice);
+        QCOMPARE(storage_changed.size(), statuses_before_old_publish);
+        QCOMPARE(can_finish_changed.size(), finish_signals_before_old_publish);
+        QCOMPARE(graph.posts.size(), size_t{1});
+        QVERIFY(graph.drainLive());
+
+        QCOMPARE(model.prune(), selected_prune_choice);
+        QVERIFY(!model.storageCheckPending());
+        QVERIFY(model.storageErrorText().isEmpty());
+        const int expected_selected_storage_gb = selected_prune_choice && model.pruneSizeGB() <= model.assumedBlockchainSize()
+            ? model.prunedStorageRequiredGB()
+            : model.fullStorageRequiredGB();
+        QCOMPARE(model.selectedStorageRequiredGB(), expected_selected_storage_gb);
+        QCOMPARE(storage_changed.size(), statuses_before_old_publish + 1);
+        QCOMPARE(can_finish_changed.size(), finish_signals_before_old_publish + 1);
+        QVERIFY(graph.transport.transportIdle());
+        QVERIFY(graph.transport.scheduler->pending() > 0);
+        model.beginShutdown();
+        QVERIFY(graph.drainLive());
+    }
+    QVERIFY(graph.drainLive());
+    QVERIFY(graph.transport.quiescent());
 }
 
 void OptionsModelTests::thirdPartyTransactionLinksParseValidUrls()

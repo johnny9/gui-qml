@@ -1,5 +1,12 @@
 # R10 implementation checkpoint — completion pass
 
+**Current progress, 2026-11-14:** the [R10 focused checkpoint](R10_FOCUSED_CHECKPOINT_20261114.md)
+passes at tested snapshot `c43fa40ee418655f0800fc92da29c482f836ed3d` with Core
+`44901d8f64cb617714707bd025ecd83f108353c2`. Final coverage, full suites/matrices,
+native Windows and sanitizers remain pending R42 under the approved cadence.
+The entries below describe earlier checkpoints and do not override
+[current progress](PROGRESS.md). No new push is claimed.
+
 **Latest local repair pass:** [PSBT, lifecycle, fee-boundary and coverage results](R10_REPAIR_20261113.md). All seven ASan sending journeys and all 24 fee oracles pass. Opening/session coverage is 424/424 lines and 262/262 branch outcomes. R10 remains unaccepted: the broader coverage gate still fails and QML/JS line/branch measurement is outstanding. The report records localized production repairs; the entries below retain their original source qualifications.
 
 Saved on 2026-11-13, with later immutable34 validation updates below, at the user's explicit request to commit the current state and

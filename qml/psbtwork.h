@@ -30,7 +30,17 @@ struct BroadcastResult {
 // invoked only on Core; it never looks up a GUI facade or selected wallet.
 using Broadcast = std::function<BroadcastResult(CTransactionRef)>;
 Broadcast NodeBroadcast(interfaces::Node* node);
-struct Context { psbtfee::Lookup lookup; Broadcast broadcast; };
+QString SaveFile(const PartiallySignedTransaction& document, const QString& path);
+// Credential materialization is a Native effect. Keep its failure independent
+// of wallet unlock/signing and injectable without exhausting process memory.
+using Materialize = std::function<SecureString(const secretinput::Captured&)>;
+using Save = std::function<QString(const PartiallySignedTransaction&, const QString&)>;
+struct Context {
+    psbtfee::Lookup lookup;
+    Broadcast broadcast;
+    Materialize materialize{secretinput::Materialize};
+    Save save{SaveFile};
+};
 struct Snapshot {
     std::shared_ptr<const PartiallySignedTransaction> document;
     std::shared_ptr<const psbtfee::Analysis> proof;
@@ -60,10 +70,33 @@ struct Result {
 // Session Action/borrow throughout effects, outcomes and native result release.
 Result Execute(interfaces::Wallet* wallet, Request request, const Context& context);
 QString LocalFilePath(const QString& path);
+// Narrow Native I/O ports. LoadFile/SaveFile keep the default QFile/QSaveFile
+// instances on the worker stack and delegate their policy to these drivers.
+class FileReader
+{
+public:
+    virtual ~FileReader() = default;
+    virtual bool open() = 0;
+    virtual qint64 initialSize() = 0;
+    virtual QByteArray read(qint64 maximum) = 0;
+    virtual bool hasError() = 0;
+    virtual QString errorString() = 0;
+};
+QString ReadFile(FileReader& reader, PartiallySignedTransaction& document);
 QString LoadFile(const QString& path, PartiallySignedTransaction& document);
 QByteArray SerializeRaw(const PartiallySignedTransaction& document);
-QString SaveFile(const PartiallySignedTransaction& document, const QString& path);
 QString ErrorText(common::PSBTError error);
+class FileWriter
+{
+public:
+    virtual ~FileWriter() = default;
+    virtual bool open() = 0;
+    virtual qint64 write(const QByteArray& bytes) = 0;
+    virtual void cancel() = 0;
+    virtual bool commit() = 0;
+    virtual QString errorString() = 0;
+};
+QString WriteFile(FileWriter& writer, const PartiallySignedTransaction& document);
 std::optional<std::pair<int, int>> Multisig(const PartiallySignedTransaction& document, size_t input);
 struct DocumentResult { std::shared_ptr<const PartiallySignedTransaction> document; QString error; };
 DocumentResult ExportReview(interfaces::Wallet& wallet, std::shared_ptr<const PartiallySignedTransaction> document,

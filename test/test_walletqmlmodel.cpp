@@ -4066,6 +4066,8 @@ private Q_SLOTS:
     void availableReceiveAddressTypesHideUnavailableTaproot();
     void receiveAddressTypeDefaultPersistsPerWallet();
     void receivingAddressIsStableUntilRotatedOrPaid();
+    void receivingAddressResumeOwnsOriginalIntent_data();
+    void receivingAddressResumeOwnsOriginalIntent();
     void receivingAddressCreationAndRequestPersistenceAreSeparate_data();
     void receivingAddressCreationAndRequestPersistenceAreSeparate();
     void removeReceiveRequestRemovesPendingActivityRow();
@@ -4388,6 +4390,225 @@ void WalletQmlModelTests::receivingAddressIsStableUntilRotatedOrPaid()
     QCOMPARE(wallet->get_new_destination_calls, 4);
     QCOMPARE(wallet->set_address_receive_request_calls, 0);
     settings.remove("receiveAddressTypes/fake-wallet");
+}
+
+void WalletQmlModelTests::receivingAddressResumeOwnsOriginalIntent_data()
+{
+    QTest::addColumn<int>("scenario");
+    QTest::newRow("retry-then-resume") << 0;
+    QTest::newRow("wrong-passphrase-then-resume") << 1;
+    QTest::newRow("duplicate-resume") << 2;
+    QTest::newRow("superseded-intent") << 3;
+    QTest::newRow("edited-view") << 4;
+    QTest::newRow("foreign-opening") << 5;
+    QTest::newRow("create-question-is-not-resumable") << 6;
+    QTest::newRow("closed-opening") << 7;
+}
+
+void WalletQmlModelTests::receivingAddressResumeOwnsOriginalIntent()
+{
+    QFETCH(int, scenario);
+    QSettings settings;
+    settings.remove("receiveAddressTypes/fake-wallet");
+    const auto remove_reservation = qScopeGuard([&] { settings.remove("receiveAddressTypes/fake-wallet"); });
+    ManualExecutionEnvironment environment;
+    const auto make_locked_wallet = [] {
+        auto wallet = std::make_shared<FakePasswordWallet>();
+        wallet->encrypted = true;
+        wallet->locked = true;
+        wallet->get_new_destination_fn = [target = wallet.get()](OutputType, const std::string&) -> util::Result<CTxDestination> {
+            ++target->get_new_destination_calls;
+            if (target->locked) return util::Error{Untranslated("keypool empty")};
+            return DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
+        };
+        wallet->unlock_fn = [target = wallet.get()](const SecureString& passphrase) -> util::Expected<void, wallet::WalletError> {
+            ++target->unlock_calls;
+            target->unlock_passphrases.emplace_back(passphrase.begin(), passphrase.end());
+            if (passphrase != SecureString{"secret"}) {
+                return util::Unexpected{wallet::WalletError{wallet::WalletErrorCode::PassphraseIncorrect, Untranslated("")}};
+            }
+            target->locked = false;
+            return {};
+        };
+        return wallet;
+    };
+    auto wallet = make_locked_wallet();
+    ManualPsbtModel fixture{environment, wallet, [](const COutPoint&) -> std::optional<CTxOut> { return {}; }};
+    auto& model = fixture.model;
+
+    std::unique_ptr<ReceiveRequestOperation> initial{
+        scenario == 6 ? model->commitPaymentRequest() : model->ensureReceivingAddress()};
+    QVERIFY(initial);
+    QVERIFY(initial->pending());
+    QVERIFY(initial->addressIntent());
+    const auto original_token = initial->addressToken();
+    QVERIFY(!original_token.isEmpty());
+    const auto original_opening = model->opening()->identity();
+    QSignalSpy initial_changed{initial.get(), &ReceiveRequestOperation::changed};
+
+    // Run the actual public-wallet work on the manual executor while holding
+    // its GUI notification. The operation stays pending until this handoff.
+    environment.drain();
+    QCOMPARE(initial_changed.count(), 0);
+    QVERIFY(initial->pending());
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+    QVERIFY(!initial->pending());
+    QCOMPARE(initial_changed.count(), 1);
+    QCOMPARE(initial->error(), ReceiveRequestOperation::Error::NeedsUnlock);
+    QCOMPARE(wallet->get_new_destination_calls, 1);
+    QCOMPARE(wallet->unlock_calls, 0);
+    if (scenario == 6) {
+        QVERIFY(model->currentPaymentRequest()->needsUnlock());
+        QVERIFY(initial->addressIntent()->create);
+        QVERIFY(!model->resumeReceivingAddress(initial.get(), QStringLiteral("secret")));
+        QCOMPARE(wallet->get_new_destination_calls, 1);
+        fixture.close();
+        QVERIFY(environment.quiescent());
+        return;
+    }
+
+    QVERIFY(!initial->addressIntent()->create);
+    QCOMPARE(initial->addressIntent()->opening, original_opening);
+    QCOMPARE(initial->viewRevision(), model->receivingAddress()->revision());
+    QVERIFY(model->receivingAddress()->needsUnlock());
+
+    if (scenario == 0) {
+        std::unique_ptr<ReceiveRequestOperation> retry{model->retryReceivingAddress(initial.get())};
+        QVERIFY(retry);
+        QCOMPARE(retry->addressToken(), original_token);
+        QSignalSpy retry_changed{retry.get(), &ReceiveRequestOperation::changed};
+        environment.drain();
+        QCOMPARE(retry_changed.count(), 0);
+        QVERIFY(retry->pending());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(!retry->pending());
+        QCOMPARE(retry_changed.count(), 1);
+        QCOMPARE(retry->error(), ReceiveRequestOperation::Error::NeedsUnlock);
+        QCOMPARE(wallet->get_new_destination_calls, 2);
+        std::unique_ptr<ReceiveRequestOperation> resumed{model->resumeReceivingAddress(retry.get(), QStringLiteral("secret"))};
+        QVERIFY(resumed);
+        QCOMPARE(resumed->addressToken(), original_token);
+        QSignalSpy resumed_changed{resumed.get(), &ReceiveRequestOperation::changed};
+        environment.drain();
+        QCOMPARE(resumed_changed.count(), 0);
+        QVERIFY(resumed->pending());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(!resumed->pending());
+        QCOMPARE(resumed_changed.count(), 1);
+        QCOMPARE(resumed->error(), ReceiveRequestOperation::Error::None);
+        QVERIFY(resumed->addressReady());
+        QVERIFY(model->property("receivingAddressReady").toBool());
+        QVERIFY(!model->receivingAddress()->needsUnlock());
+        QVERIFY(!model->retryReceivingAddress(initial.get()));
+        QVERIFY(model->property("receivingAddressReady").toBool());
+        QCOMPARE(wallet->get_new_destination_calls, 3);
+        QCOMPARE(wallet->unlock_calls, 1);
+        QCOMPARE(wallet->lock_calls, 1);
+        QCOMPARE(model->opening()->identity(), original_opening);
+    } else if (scenario == 1) {
+        std::unique_ptr<ReceiveRequestOperation> wrong{model->resumeReceivingAddress(initial.get(), QStringLiteral("wrong"))};
+        QVERIFY(wrong);
+        QCOMPARE(wrong->addressToken(), original_token);
+        QSignalSpy wrong_changed{wrong.get(), &ReceiveRequestOperation::changed};
+        environment.drain();
+        QCOMPARE(wrong_changed.count(), 0);
+        QVERIFY(wrong->pending());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(!wrong->pending());
+        QCOMPARE(wrong_changed.count(), 1);
+        QCOMPARE(wrong->error(), ReceiveRequestOperation::Error::IncorrectPassphrase);
+        QVERIFY(model->receivingAddress()->needsUnlock());
+        QVERIFY(!model->receivingAddress()->unlockError().isEmpty());
+        QCOMPARE(wallet->get_new_destination_calls, 1);
+        QCOMPARE(wallet->unlock_calls, 1);
+        QCOMPARE(wallet->lock_calls, 0);
+
+        std::unique_ptr<ReceiveRequestOperation> resumed{model->resumeReceivingAddress(wrong.get(), QStringLiteral("secret"))};
+        QVERIFY(resumed);
+        QCOMPARE(resumed->addressToken(), original_token);
+        QSignalSpy resumed_changed{resumed.get(), &ReceiveRequestOperation::changed};
+        environment.drain();
+        QCOMPARE(resumed_changed.count(), 0);
+        QVERIFY(resumed->pending());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(!resumed->pending());
+        QCOMPARE(resumed_changed.count(), 1);
+        QCOMPARE(resumed->error(), ReceiveRequestOperation::Error::None);
+        QVERIFY(resumed->addressReady());
+        QVERIFY(!model->receivingAddress()->needsUnlock());
+        QVERIFY(model->receivingAddress()->unlockError().isEmpty());
+        QCOMPARE(wallet->get_new_destination_calls, 2);
+        QCOMPARE(wallet->unlock_calls, 2);
+        QCOMPARE(wallet->lock_calls, 1);
+    } else if (scenario == 2) {
+        std::unique_ptr<ReceiveRequestOperation> first{model->resumeReceivingAddress(initial.get(), QStringLiteral("secret"))};
+        std::unique_ptr<ReceiveRequestOperation> second{model->resumeReceivingAddress(initial.get(), QStringLiteral("secret"))};
+        QVERIFY(first);
+        QVERIFY(!second);
+        QVERIFY(!model->retryReceivingAddress(initial.get()));
+        QVERIFY(model->property("receivingAddressPending").toBool());
+        QCOMPARE(first->addressToken(), original_token);
+        QSignalSpy first_changed{first.get(), &ReceiveRequestOperation::changed};
+        environment.drain();
+        QCOMPARE(first_changed.count(), 0);
+        QVERIFY(first->pending());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(!first->pending());
+        QCOMPARE(first_changed.count(), 1);
+        QCOMPARE(first->error(), ReceiveRequestOperation::Error::None);
+        QVERIFY(first->addressReady());
+        QVERIFY(model->property("receivingAddressReady").toBool());
+        QVERIFY(!model->receivingAddress()->address().isEmpty());
+        QCOMPARE(wallet->get_new_destination_calls, 2);
+        QCOMPARE(wallet->unlock_calls, 1);
+        QCOMPARE(wallet->lock_calls, 1);
+    } else if (scenario == 3) {
+        std::unique_ptr<ReceiveRequestOperation> successor{model->ensureReceivingAddress(true)};
+        QVERIFY(successor);
+        QVERIFY(successor->addressToken() != original_token);
+        std::unique_ptr<ReceiveRequestOperation> stale{model->resumeReceivingAddress(initial.get(), QStringLiteral("secret"))};
+        QVERIFY(!stale);
+        QVERIFY(!model->retryReceivingAddress(initial.get()));
+        QVERIFY(model->property("receivingAddressPending").toBool());
+        QSignalSpy successor_changed{successor.get(), &ReceiveRequestOperation::changed};
+        environment.drain();
+        QCOMPARE(successor_changed.count(), 0);
+        QVERIFY(successor->pending());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(successor_changed.count(), 1);
+        QCOMPARE(successor->error(), ReceiveRequestOperation::Error::NeedsUnlock);
+        QCOMPARE(wallet->get_new_destination_calls, 2);
+        QCOMPARE(wallet->unlock_calls, 0);
+        QVERIFY(!model->property("receivingAddressReady").toBool());
+        QVERIFY(model->receivingAddress()->needsUnlock());
+    } else if (scenario == 4) {
+        model->receivingAddress()->setNoteSelf(QStringLiteral("edited after password prompt"));
+        QVERIFY(model->receivingAddress()->revision() != initial->viewRevision());
+        QVERIFY(!model->resumeReceivingAddress(initial.get(), QStringLiteral("secret")));
+        QVERIFY(!model->retryReceivingAddress(initial.get()));
+        QCOMPARE(wallet->get_new_destination_calls, 1);
+        QCOMPARE(wallet->unlock_calls, 0);
+    } else if (scenario == 5) {
+        auto other_wallet = make_locked_wallet();
+        ManualPsbtModel other_fixture{environment, other_wallet, [](const COutPoint&) -> std::optional<CTxOut> { return {}; }};
+        std::unique_ptr<ReceiveRequestOperation> foreign{other_fixture.model->ensureReceivingAddress()};
+        QVERIFY(foreign);
+        environment.drain();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(foreign->error(), ReceiveRequestOperation::Error::NeedsUnlock);
+        QVERIFY(!model->resumeReceivingAddress(foreign.get(), QStringLiteral("secret")));
+        QCOMPARE(wallet->get_new_destination_calls, 1);
+        QCOMPARE(other_wallet->get_new_destination_calls, 1);
+        other_fixture.close();
+    } else if (scenario == 7) {
+        model->closeAdmission();
+        QVERIFY(!model->resumeReceivingAddress(initial.get(), QStringLiteral("secret")));
+        QVERIFY(!model->retryReceivingAddress(initial.get()));
+        QCOMPARE(wallet->get_new_destination_calls, 1);
+        QCOMPARE(wallet->unlock_calls, 0);
+    }
+    fixture.close();
+    QVERIFY2(environment.quiescent(), environment.trace().c_str());
 }
 
 void WalletQmlModelTests::receivingAddressCreationAndRequestPersistenceAreSeparate_data()

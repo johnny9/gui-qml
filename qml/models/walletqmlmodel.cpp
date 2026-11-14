@@ -1616,7 +1616,8 @@ ReceiveRequestOperation* WalletQmlModel::ensureReceivingAddressWithPassphrase(co
 ReceiveRequestOperation* WalletQmlModel::resumeReceivingAddress(ReceiveRequestOperation* original, const QString& passphrase)
 {
     if (!available() || !m_opening || !original || !original->addressIntent() || original->addressIntent()->create ||
-        original->addressIntent()->opening != m_opening->identity() || original->viewRevision() != m_receiving_address->revision()) return nullptr;
+        original->addressIntent()->opening != m_opening->identity() || original->viewRevision() != m_receiving_address->revision() ||
+        original->addressIntent() != m_receiving_intent || m_receiving_address_pending) return nullptr;
     walletrequests::Command command; command.kind = walletrequests::Kind::ResumeAddress;
     command.resume = original->addressIntent();
     auto captured = secretinput::Capture(m_opening->scheduler(), passphrase);
@@ -1627,7 +1628,8 @@ ReceiveRequestOperation* WalletQmlModel::resumeReceivingAddress(ReceiveRequestOp
 ReceiveRequestOperation* WalletQmlModel::retryReceivingAddress(ReceiveRequestOperation* original)
 {
     if (!available() || !m_opening || !original || !original->addressIntent() || original->addressIntent()->create ||
-        original->addressIntent()->opening != m_opening->identity()) return nullptr;
+        original->addressIntent()->opening != m_opening->identity() || original->viewRevision() != m_receiving_address->revision() ||
+        original->addressIntent() != m_receiving_intent || m_receiving_address_pending) return nullptr;
     walletrequests::Command command; command.kind = walletrequests::Kind::ResumeAddress;
     command.resume = original->addressIntent();
     return submitRequest(std::move(command), m_receiving_address);

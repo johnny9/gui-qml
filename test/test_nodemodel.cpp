@@ -23,6 +23,7 @@
 #include <validation.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -275,6 +276,13 @@ private Q_SLOTS:
     void alertNotificationsRefreshWarningList();
     void headerTipNotificationsExposeHeaderSyncProgress();
     void startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings();
+    void manualStartupCallbacksKeepTheirPresentationPhase_data();
+    void manualStartupCallbacksKeepTheirPresentationPhase();
+    void manualStartupSummaryReportsAFullRuntimeQueue();
+    void manualStartupSummaryPreservesDiagnosticsWhenDialogTextBudgetIsFull();
+    void manualStartupSummaryRejectsReentrantShutdown();
+    void manualInitializationStopsAfterPublicReentrancy_data();
+    void manualInitializationStopsAfterPublicReentrancy();
     void runtimeMessageHandlerOpensAfterInitialization();
     void runtimeQuestionHandlerBlocksForAnswerAndReturnsResult();
     void runtimeStartupQuestionFailureLetsInitializeResultRequestShutdown();
@@ -1577,6 +1585,417 @@ void NodeModelTests::startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings()
     QTRY_COMPARE_WITH_TIMEOUT(warnings_spy.count(), 1, ASYNC_TIMEOUT_MS);
     QCOMPARE(model.warningList(), QStringList());
     QVERIFY(!model.hasWarnings());
+}
+
+void NodeModelTests::manualStartupCallbacksKeepTheirPresentationPhase_data()
+{
+    QTest::addColumn<unsigned int>("style");
+    QTest::addColumn<bool>("question");
+    QTest::addColumn<bool>("dialog_expected");
+    QTest::addColumn<bool>("shutdown_expected");
+    QTest::addColumn<bool>("warning_expected");
+    QTest::addColumn<bool>("error_expected");
+    QTest::newRow("nonmodal-warning") << unsigned(CClientUIInterface::ICON_WARNING) << false << false << false << true << false;
+    QTest::newRow("modal-warning") << unsigned(CClientUIInterface::ICON_WARNING | CClientUIInterface::MODAL) << false << false << false << true << false;
+    QTest::newRow("nonmodal-error") << unsigned(CClientUIInterface::ICON_ERROR) << false << false << false << false << true;
+    QTest::newRow("nonmodal-information") << unsigned(CClientUIInterface::ICON_INFORMATION) << false << false << false << false << false;
+    QTest::newRow("modal-information") << unsigned(CClientUIInterface::ICON_INFORMATION | CClientUIInterface::MODAL | CClientUIInterface::BTN_OK) << false << true << false << false << false;
+    QTest::newRow("modal-error") << unsigned(CClientUIInterface::ICON_ERROR | CClientUIInterface::MODAL | CClientUIInterface::BTN_OK) << false << true << true << false << false;
+    QTest::newRow("startup-question") << unsigned(CClientUIInterface::ICON_INFORMATION | CClientUIInterface::BTN_OK | CClientUIInterface::BTN_ABORT) << true << true << true << false << false;
+}
+
+void NodeModelTests::manualStartupCallbacksKeepTheirPresentationPhase()
+{
+    QFETCH(unsigned int, style);
+    QFETCH(bool, question);
+    QFETCH(bool, dialog_expected);
+    QFETCH(bool, shutdown_expected);
+    QFETCH(bool, warning_expected);
+    QFETCH(bool, error_expected);
+    MockNode node;
+    ConfigureNodeModelDefaults(node);
+    MempoolState mempool;
+    ConfigureMempoolGetters(node, mempool);
+    interfaces::Node::MessageBoxFn message_box;
+    interfaces::Node::QuestionFn ask;
+    node.handle_message_box_fn = [&](auto callback) { message_box = std::move(callback); return MakeNoopHandler(); };
+    node.handle_question_fn = [&](auto callback) { ask = std::move(callback); return MakeNoopHandler(); };
+    ManualExecutionEnvironment env;
+    QSemaphore queued;
+    auto loss = std::make_shared<std::atomic_bool>(false);
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); queued.release(); }};
+    services.diagnostic_loss = loss;
+    NodeModel model{node, false, std::move(services)};
+    std::thread native;
+    std::atomic_bool returned{false};
+    bool answer{true};
+    const auto cleanup = qScopeGuard([&] {
+        QObject::disconnect(&model, nullptr, this, nullptr);
+        model.beginShutdown();
+        if (native.joinable()) native.join();
+        env.drain(); env.publishAll();
+    });
+    env.drain(); env.publishAll();
+    QVERIFY(model.notificationsReady());
+    QVERIFY(message_box);
+    QVERIFY(ask);
+    while (queued.tryAcquire()) {}
+    QSignalSpy initialized{&model, &NodeModel::nodeInitialized};
+    QSignalSpy shutdown{&model, &NodeModel::requestedShutdown};
+    native = std::thread([&] {
+        const bilingual_str text{"Original startup message", "Translated startup message"};
+        if (question) answer = ask(text, "Noninteractive fallback", style);
+        else message_box(text, style);
+        returned = true;
+    });
+    QVERIFY(queued.tryAcquire(1, ASYNC_TIMEOUT_MS)); // The Native callback queued its owned request; GUI has not run it.
+    QVERIFY(!model.runtimeDialogVisible());
+    if (question || (style & CClientUIInterface::MODAL)) QVERIFY(!returned.load());
+    env.publishAll();
+    QCOMPARE(model.runtimeDialogVisible(), dialog_expected);
+    if (dialog_expected) {
+        QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated startup message"));
+        QCOMPARE(model.runtimeDialogQuestion(), question);
+        model.answerRuntimeDialog(question ? CClientUIInterface::BTN_ABORT : CClientUIInterface::BTN_OK);
+    }
+    native.join();
+    QVERIFY(returned.load());
+    if (question) QVERIFY(!answer);
+    QCOMPARE(initialized.size(), 0);
+    QCOMPARE(shutdown.size(), 0);
+    model.initializeResult(false, {});
+    if (!shutdown_expected) {
+        QVERIFY(model.startupDiagnosticsPending());
+        QCOMPARE(initialized.size(), 0);
+    }
+    env.drain(); env.publishAll();
+    QVERIFY(!model.startupDiagnosticsPending());
+    QCOMPARE(initialized.size(), 1);
+    QCOMPARE(shutdown.size(), shutdown_expected ? 1 : 0);
+    QCOMPARE(model.errorState(), !shutdown_expected);
+    QVERIFY(!model.runtimeDialogVisible());
+    QVERIFY(!loss->load());
+    if (shutdown_expected) QVERIFY(model.startupError().isEmpty());
+    else {
+        const auto expected = error_expected ? QStringLiteral("Translated startup message")
+            : warning_expected ? QStringLiteral("Startup warnings:\nTranslated startup message\n\nNode initialization failed.")
+            : QStringLiteral("Node initialization failed.");
+        QCOMPARE(model.startupError(), expected);
+    }
+}
+
+void NodeModelTests::manualStartupSummaryReportsAFullRuntimeQueue()
+{
+    MockNode node;
+    ConfigureNodeModelDefaults(node);
+    MempoolState mempool;
+    ConfigureMempoolGetters(node, mempool);
+    interfaces::Node::MessageBoxFn message_box;
+    node.handle_message_box_fn = [&](auto callback) { message_box = std::move(callback); return MakeNoopHandler(); };
+    ManualExecutionEnvironment env;
+    auto loss = std::make_shared<std::atomic_bool>(false);
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
+    services.diagnostic_loss = loss;
+    NodeModel model{node, false, std::move(services)};
+    const auto cleanup = qScopeGuard([&] {
+        QObject::disconnect(&model, nullptr, this, nullptr);
+        model.beginShutdown(); env.drain(); env.publishAll();
+    });
+    env.drain(); env.publishAll();
+    QVERIFY(model.notificationsReady());
+    QVERIFY(message_box);
+    QStringList errors;
+    connect(&model, &NodeModel::observationErrorChanged, this, [&] { errors.push_back(model.observationError()); });
+    model.addStartupWarnings({QStringLiteral("Original startup warning")});
+    QSignalSpy initialized{&model, &NodeModel::nodeInitialized};
+    model.initializeResult(true, {}, false, false);
+    QVERIFY(model.startupDiagnosticsPending());
+    // Initialization has changed the presentation phase, but its Native
+    // diagnostic projection is held while real callbacks fill the dialog queue.
+    std::thread native([&] {
+        for (int index = 0; index < 32; ++index) {
+            message_box(Untranslated(QStringLiteral("Runtime message %1").arg(index).toStdString()), CClientUIInterface::ICON_INFORMATION);
+        }
+    });
+    native.join();
+    env.publishAll();
+    QVERIFY(model.runtimeDialogVisible());
+    QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Runtime message 0"));
+    QCOMPARE(initialized.size(), 0);
+    env.drain(); env.publishAll();
+    QVERIFY(!model.startupDiagnosticsPending());
+    QCOMPARE(initialized.size(), 1);
+    QVERIFY(errors.contains(QStringLiteral("A node dialog could not be shown because the dialog queue is full.")));
+    QVERIFY(!errors.contains(QStringLiteral("Some node messages exceeded the dialog queue limit.")));
+    QVERIFY(model.startupDiagnostics()->rowCount() > 0);
+    for (int index = 0; index < 32; ++index) {
+        QVERIFY(model.runtimeDialogVisible());
+        QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Runtime message %1").arg(index));
+        model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+    }
+    QVERIFY(!model.runtimeDialogVisible());
+    QVERIFY(!loss->load());
+}
+
+void NodeModelTests::manualStartupSummaryPreservesDiagnosticsWhenDialogTextBudgetIsFull()
+{
+    MockNode node;
+    ConfigureNodeModelDefaults(node);
+    MempoolState mempool;
+    ConfigureMempoolGetters(node, mempool);
+    interfaces::Node::MessageBoxFn message_box;
+    node.handle_message_box_fn = [&](auto callback) { message_box = std::move(callback); return MakeNoopHandler(); };
+    ManualExecutionEnvironment env;
+    auto loss = std::make_shared<std::atomic_bool>(false);
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
+    services.diagnostic_loss = loss;
+    NodeModel model{node, false, std::move(services)};
+    const auto cleanup = qScopeGuard([&] {
+        QObject::disconnect(&model, nullptr, this, nullptr);
+        model.beginShutdown(); env.drain(); env.publishAll();
+    });
+    env.drain(); env.publishAll();
+    QVERIFY(model.notificationsReady());
+    QVERIFY(message_box);
+    model.addStartupWarnings({QStringLiteral("Original startup warning remains in its details")});
+    model.initializeResult(true, {}, false, false);
+    QVERIFY(model.startupDiagnosticsPending());
+    std::thread native([&] {
+        message_box(Untranslated(std::string(startupdiagnostics::TextBudget::MAX_CHARS, 'r')), CClientUIInterface::ICON_INFORMATION);
+    });
+    native.join();
+    env.publishAll();
+    QVERIFY(model.runtimeDialogVisible());
+    QVERIFY(model.runtimeDialogMessage().startsWith(QString(16384, QLatin1Char('r'))));
+    QVERIFY(model.runtimeDialogMessage().contains(QStringLiteral("additional message text omitted")));
+    QVERIFY(!loss->load()); // The full text was accepted on Native and remains retained by this request.
+    env.drain(); env.publishAll();
+    QVERIFY(!model.startupDiagnosticsPending());
+    QVERIFY(loss->load());
+    model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+    QVERIFY(model.runtimeDialogVisible());
+    QCOMPARE(model.runtimeDialogTitle(), QStringLiteral("Warning"));
+    QVERIFY(model.runtimeDialogMessage().contains(QStringLiteral("Original startup warning remains in its details")));
+    QVERIFY(model.runtimeDialogMessage().contains(QStringLiteral("complete message unavailable: diagnostic capacity exhausted")));
+    auto* details = model.startupDiagnostics();
+    QString full;
+    for (int row = 0; row < details->rowCount(); ++row) full += details->data(details->index(row, 0), Qt::UserRole + 1).toString();
+    QVERIFY(full.contains(QStringLiteral("Original startup warning remains in its details")));
+    model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+    QVERIFY(!model.runtimeDialogVisible());
+}
+
+void NodeModelTests::manualStartupSummaryRejectsReentrantShutdown()
+{
+    MockNode node;
+    ConfigureNodeModelDefaults(node);
+    MempoolState mempool;
+    ConfigureMempoolGetters(node, mempool);
+    ManualExecutionEnvironment env;
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
+    NodeModel model{node, false, std::move(services)};
+    const auto cleanup = qScopeGuard([&] {
+        QObject::disconnect(&model, nullptr, this, nullptr);
+        model.beginShutdown(); env.drain(); env.publishAll();
+    });
+    env.drain(); env.publishAll();
+    QVERIFY(model.notificationsReady());
+    model.addStartupWarnings({QStringLiteral("Original startup warning")});
+    bool interrupted{false};
+    QSignalSpy shutdown{&model, &NodeModel::requestedShutdown};
+    QSignalSpy dialogs{&model, &NodeModel::runtimeDialogChanged};
+    connect(&model, &NodeModel::networkActionReadyChanged, this, [&] {
+        if (interrupted || !model.networkActionReady()) return;
+        interrupted = true;
+        model.requestShutdown();
+    });
+    model.initializeResult(true, {}, false, false);
+    QCOMPARE(shutdown.size(), 0);
+    env.drain(); env.publishAll();
+    QVERIFY(interrupted);
+    QCOMPARE(shutdown.size(), 1);
+    QCOMPARE(dialogs.size(), 0);
+    QVERIFY(!model.runtimeDialogVisible());
+    QVERIFY(!model.networkActionReady());
+    QVERIFY(model.startupDiagnostics()->rowCount() > 0);
+}
+
+void NodeModelTests::manualInitializationStopsAfterPublicReentrancy_data()
+{
+    QTest::addColumn<int>("boundary");
+    QTest::addColumn<int>("invalidation");
+    const std::array<const char*, 29> boundaries{
+        "readiness", "startup-dialog", "initial-height", "initial-remaining-time", "initial-verification", "initial-block-sync", "initial-header-sync",
+        "initial-sync-complete", "chain-ready", "subscriptions-ready", "initialize-dispatch", "notification-overflow", "notification-tip-time",
+        "notification-pause", "notification-bans", "notification-information", "startup-error", "startup-fault", "startup-shutdown", "notification-dialog",
+        "subscription-network-ready", "notification-header", "notification-block-sync", "notification-verification", "notification-height",
+        "notification-remaining-time", "startup-warning-intake-failure", "startup-error-intake-failure", "shutdown-polling"};
+    const std::array<const char*, 5> invalidations{"request-shutdown", "stop-workers", "close-admission", "delete-observer", "continue"};
+    for (size_t boundary = 0; boundary < boundaries.size(); ++boundary) {
+        for (size_t invalidation = 0; invalidation < invalidations.size(); ++invalidation) {
+            const QByteArray name = QByteArray{boundaries[boundary]} + '-' + invalidations[invalidation];
+            QTest::newRow(name.constData()) << int(boundary) << int(invalidation);
+        }
+    }
+}
+
+void NodeModelTests::manualInitializationStopsAfterPublicReentrancy()
+{
+    QFETCH(int, boundary);
+    QFETCH(int, invalidation);
+    MockNode node;
+    ConfigureNodeModelDefaults(node);
+    MempoolState mempool;
+    ConfigureMempoolGetters(node, mempool);
+    interfaces::Node::MessageBoxFn message_box;
+    interfaces::Node::NotifyBlockTipFn block_tip;
+    interfaces::Node::NotifyHeaderTipFn header_tip;
+    interfaces::Node::NotifyNetworkActiveChangedFn network_active;
+    interfaces::Node::BannedListChangedFn banned;
+    node.handle_message_box_fn = [&](auto callback) { message_box = std::move(callback); return MakeNoopHandler(); };
+    node.handle_notify_block_tip_fn = [&](auto callback) { block_tip = std::move(callback); return MakeNoopHandler(); };
+    node.handle_notify_header_tip_fn = [&](auto callback) { header_tip = std::move(callback); return MakeNoopHandler(); };
+    node.handle_notify_network_active_changed_fn = [&](auto callback) { network_active = std::move(callback); return MakeNoopHandler(); };
+    node.handle_banned_list_changed_fn = [&](auto callback) { banned = std::move(callback); return MakeNoopHandler(); };
+    ManualExecutionEnvironment env;
+    int64_t milliseconds{0};
+    int scheduled{0};
+    std::vector<std::function<void()>> deadlines;
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
+    services.wall_seconds = [] { return int64_t{100'000}; };
+    services.monotonic_milliseconds = [&] { return milliseconds; };
+    services.schedule = [&](NodeModel::Poll, std::chrono::milliseconds, auto callback) { ++scheduled; deadlines.push_back(std::move(callback)); };
+    services.cancel = [](NodeModel::Poll) {};
+    auto model = std::make_unique<NodeModel>(node, false, std::move(services));
+    const QPointer<NodeModel> original{model.get()};
+    const auto cleanup = qScopeGuard([&] {
+        // Test callbacks below borrow stack oracles. Detach them before the
+        // early-declared cleanup guard can publish shutdown notifications.
+        if (model) QObject::disconnect(model.get(), nullptr, this, nullptr);
+        if (model) model->beginShutdown();
+        model.reset(); env.drain(); env.publishAll();
+    });
+    const bool subscription_boundary = boundary == 9 || boundary == 10 || boundary == 20;
+    if (!subscription_boundary) {
+        env.drain(); env.publishAll();
+        QVERIFY(model->notificationsReady());
+        QVERIFY(message_box && block_tip && header_tip && network_active && banned);
+    }
+    if (boundary == 3 || boundary == 25) {
+        model->setVerificationProgress(0.1);
+        milliseconds = 5000;
+        model->setVerificationProgress(0.2);
+        QVERIFY(model->remainingSyncTime() > 0);
+    }
+    model->setMempoolInfoPollingActive(true);
+    bool reached{false};
+    int scheduled_at_boundary{-1}, chain_ready{0}, late_chain_ready{0}, initialized{0};
+    bool synchronized_at_boundary{false};
+    connect(model.get(), &NodeModel::chainStateReady, this, [&] {
+        ++chain_ready;
+        if (reached && invalidation != 4) ++late_chain_ready;
+    });
+    connect(model.get(), &NodeModel::nodeInitialized, this, [&] { ++initialized; });
+    const auto invalidate = [&] {
+        if (reached) return;
+        reached = true;
+        scheduled_at_boundary = scheduled;
+        synchronized_at_boundary = model->initialSyncComplete();
+        if (invalidation == 0) model->requestShutdown();
+        else if (invalidation == 1) model->beginShutdown();
+        else if (invalidation == 2) model->closeAdmission();
+        else if (invalidation == 3) model.reset();
+    };
+    switch (boundary) {
+    case 0: case 20: connect(model.get(), &NodeModel::networkActionReadyChanged, this, invalidate); break;
+    case 1: case 19: connect(model.get(), &NodeModel::runtimeDialogChanged, this, invalidate); break;
+    case 2: case 24: connect(model.get(), &NodeModel::blockTipHeightChanged, this, invalidate); break;
+    case 3: case 25: connect(model.get(), &NodeModel::remainingSyncTimeChanged, this, invalidate); break;
+    case 4: case 23: connect(model.get(), &NodeModel::verificationProgressChanged, this, invalidate); break;
+    case 5: case 22: connect(model.get(), &NodeModel::blockSyncActiveChanged, this, invalidate); break;
+    case 6: case 21: connect(model.get(), &NodeModel::headerSyncChanged, this, invalidate); break;
+    case 7: connect(model.get(), &NodeModel::initialSyncCompleteChanged, this, invalidate); break;
+    case 8: connect(model.get(), &NodeModel::chainStateReady, this, invalidate); break;
+    case 9: connect(model.get(), &NodeModel::notificationsReadyChanged, this, invalidate); break;
+    case 10: connect(model.get(), &NodeModel::requestedInitialize, this, invalidate); break;
+    case 11: case 26: case 27: connect(model.get(), &NodeModel::observationErrorChanged, this, invalidate); break;
+    case 12: connect(model.get(), &NodeModel::blockTipTimeChanged, this, invalidate); break;
+    case 13: connect(model.get(), &NodeModel::pauseChanged, this, invalidate); break;
+    case 14: connect(model.get(), &NodeModel::bannedListChanged, this, invalidate); break;
+    case 15: connect(model.get(), &NodeModel::nodeInformationChanged, this, invalidate); break;
+    case 16: connect(model.get(), &NodeModel::startupErrorChanged, this, invalidate); break;
+    case 17: connect(model.get(), &NodeModel::errorStateChanged, this, invalidate); break;
+    case 18: connect(model.get(), &NodeModel::requestedShutdown, this, invalidate); break;
+    case 28: connect(model.get(), &NodeModel::mempoolInfoPollingActiveChanged, this, invalidate); break;
+    }
+    if (subscription_boundary) {
+        if (boundary == 10) model->startNodeInitializionThread();
+        env.drain(); env.publishAll();
+        QVERIFY(reached);
+    }
+    if (boundary == 28) {
+        model->beginShutdown();
+        QVERIFY(reached);
+    }
+    const bool failure = boundary == 16 || boundary == 17 || boundary == 18 || boundary == 26 || boundary == 27;
+    const interfaces::BlockAndHeaderTipInfo tip{10, 100'000, boundary == 6 ? 100 : 10, boundary == 6 ? 0 : 100'000, 1.0};
+    if (model && boundary != 28 && (!reached || invalidation == 4)) {
+        if (boundary == 26 || boundary == 27) {
+            model->addStartupWarnings({QString(startupdiagnostics::Collection::MAX_CHARS, QLatin1Char('s'))});
+            message_box(Untranslated("New startup message"), boundary == 26 ? CClientUIInterface::ICON_WARNING : CClientUIInterface::ICON_ERROR);
+            env.publishAll();
+        } else model->addStartupWarnings({QStringLiteral("Original startup warning")});
+        if (model && (!reached || invalidation == 4)) {
+            if (boundary == 18) message_box(Untranslated("Original modal startup error"), CClientUIInterface::ICON_ERROR | CClientUIInterface::MODAL);
+            model->initializeResult(!failure, tip, boundary == 5, false);
+        }
+        if (model && (!reached || invalidation == 4)) {
+            if (boundary == 11) for (int index = 0; index < 33; ++index) message_box(Untranslated("Queued runtime message"), CClientUIInterface::ICON_INFORMATION);
+            else if (boundary == 13) network_active(false);
+            else if (boundary == 14) banned();
+            else if (boundary == 19) message_box(Untranslated("Original runtime dialog"), CClientUIInterface::ICON_INFORMATION);
+            else if (boundary == 21) header_tip(SynchronizationState::INIT_DOWNLOAD, interfaces::BlockTip{100, 0, uint256{}}, false);
+            else if (boundary == 12 || boundary == 15 || boundary == 22 || boundary == 23 || boundary == 24 || boundary == 25) {
+                block_tip(SynchronizationState::INIT_DOWNLOAD, interfaces::BlockTip{10, 100'000, uint256{}}, 1.0);
+            }
+            // Deliver callbacks while the original Native diagnostic projection
+            // remains held. Readiness must respect the resulting invalidation.
+            env.publishAll();
+        }
+    }
+    env.drain(); env.publishAll();
+    env.drain(); env.publishAll(); // Consume work admitted before the public invalidation.
+    QVERIFY(reached);
+    QCOMPARE(late_chain_ready, 0);
+    if (invalidation == 4) {
+        QVERIFY(model);
+        QCOMPARE(chain_ready, failure || boundary == 28 ? 0 : 1);
+        QCOMPARE(initialized, boundary == 28 ? 0 : 1);
+        QCOMPARE(model->networkActionReady(), !failure && boundary != 28);
+    } else {
+        QCOMPARE(chain_ready, boundary == 8 ? 1 : 0);
+        QCOMPARE(initialized, boundary == 18 && invalidation == 0 ? 1 : 0);
+        QCOMPARE(scheduled, scheduled_at_boundary);
+        if (model) {
+            QVERIFY(!model->networkActionReady());
+            QCOMPARE(model->initialSyncComplete(), synchronized_at_boundary);
+        } else QVERIFY(!original);
+        const auto mempool_reads = node.calls.getMempoolSize.load();
+        const auto status_reads = node.calls.getHeaderTip.load();
+        // A regressing callback may append to the original deadline queue.
+        // Iterate an owned snapshot so that the assertion remains valid.
+        const std::vector<std::function<void()>> captured_deadlines{deadlines.begin(), deadlines.end()};
+        for (const auto& callback : captured_deadlines) callback();
+        env.drain(); env.publishAll();
+        QCOMPARE(node.calls.getMempoolSize.load(), mempool_reads);
+        QCOMPARE(node.calls.getHeaderTip.load(), status_reads);
+        QCOMPARE(scheduled, scheduled_at_boundary);
+    }
 }
 
 void NodeModelTests::runtimeMessageHandlerOpensAfterInitialization()

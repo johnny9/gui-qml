@@ -1,0 +1,281 @@
+{
+  "as_of_snapshot": "fc9a49caa33ce0471273d075b02fd1e3b40a368d",
+  "superseded_runtime_status": "See R10_FOCUSED_CHECKPOINT_20261114.json for final23passing68bodies. This audit retains earlier failed/pendingstates as historical evidence.",
+  "original_workspace_artifact": ".validation/qt6-r10-acceptance-20261114/evidence/R10_FOCUSED_CHECKPOINT_AUDIT.json",
+  "original_sha256": "7673db4adee51b888447fa45eb0482068e00e733714dc77f447d4feefc007747",
+  "audit": {
+    "schema_version": 1,
+    "artifact": "read-only R10 focused checkpoint mapping",
+    "generated_utc_date": "2026-11-14",
+    "purpose": "Map the eight original R10 scopes and schedules O04/O27 to existing selectors and provenance for the per-step progress gate. This is not a scope disposition or closure.",
+    "source_identities": {
+      "current_working_branch_head": "85834d8780f12abb6946c5c1fb46769941ddc8dc",
+      "current_core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "latest_product_candidate_with_current_fixture_batch": "80d4af9d875e98a22eda2db867ed97bd244f7452",
+      "latest_focused_run_source": "fc9a49caa33ce0471273d075b02fd1e3b40a368d",
+      "latest_focused_run_core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "latest_focused_run_artifact": ".validation/qt6-r10-acceptance-20261114/NATIVE_GAP_SNAPSHOT_67.json",
+      "latest_focused_run_result": {
+        "selected_native_bodies": 9,
+        "passed": 6,
+        "failed": 3,
+        "controller_rows": "4/4 pass",
+        "options_rows": "2/5 pass; 3 fixture-stage failures",
+        "options_failure_causes": [
+          "signerValidationKeepsLatestManualIntent asserts after Core effect posting while the owned Domain completion is still queued",
+          "onboardingStorageCheckDoesNotPublishStalePath and onboardingStorageProjectionCoalescesPublicPruneChoice assert storage-query predicates at the wrong stage; the current pending property intentionally includes queued projection work"
+        ],
+        "status": "failing fixture assumptions, not a demonstrated product regression; test-only repair is in progress and requires another focused run"
+      },
+      "current_source65_platform_evidence": {
+        "app": "80d4af9d875e98a22eda2db867ed97bd244f7452",
+        "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+        "artifact": ".validation/qt6-r10-acceptance-20261114/evidence/distributed-validation-20261114/macos-preparation/results/MAC_VALIDATION_SUMMARY.md",
+        "native_selection": "343 bodies: 334 pass, 9 fixture failures; ExecutionTests 84/84 pass",
+        "affected_qml": "208 bodies in embedded and dev modes: 207 pass, 1 FormControls animation-timing failure in each; candidate67 updates only the test wait, pending focused rerun",
+        "scope_limit": "native AppleClang/Qt 6.11.2 compatibility evidence only; not pinned Linux CI qualification"
+      },
+      "historical_evidence_is_not_current_acceptance": true
+    },
+    "validation_cadence": {
+      "per_step": "Focused ordinary behavior/timing/real-thread and relevant integration checks, plus changed-scope lint/tidy.",
+      "deferred_to_R42": [
+        "exhaustive reachable line/branch coverage and full suites",
+        "detailed compiler/profile mapping audit",
+        "full platform/configuration matrix, including native Windows",
+        "combined-series sanitizers and sanitizer-only repairs",
+        "full IPC-enabled startup/shutdown acceptance with strict stderr and exit inspection"
+      ],
+      "unresolved_dependency_result": "The stock Qt native file-picker race remains explicitly documented/deferred; its affected TSan result is unresolved, not a pass. No Qt patch or replacement chooser is authorized."
+    },
+    "original_scope_map": [
+      {
+        "scope": "draft-033-RC59",
+        "finding": 33,
+        "requirement": "Activity status refresh must make bounded progress under wallet-lock contention rather than repeated one-second try-lock polling and whole-state retries.",
+        "concrete_selectors": [
+          "TransactionActivityModelTests::contendedStatusFallbackUpdatesWithoutAdvancingTheManualClock",
+          "TransactionActivityModelTests::blockingPublicStatusFallbackKeepsGuiResponsiveAndUpdatesOnRelease",
+          "TransactionActivityModelTests::failedInitialHistoryRetainsWorkAfterNotification"
+        ],
+        "evidence": [
+          ".validation/qt6-r10-acceptance-20261114/source/test/test_transactionactivitymodel.cpp",
+          ".validation/qt6-r10-acceptance-20261114/source/plan/tracking/scope-assignments.csv",
+          ".validation/qt6-r10-acceptance-20261114/source/plan/evidence/R10_SCHEDULE_EXECUTED_V34.json"
+        ],
+        "qualified_identity": {
+          "app_candidate": "8ae9ce530f76e3522e932997f7120af705598246",
+          "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+          "profile_counts": "TransactionActivityModelTests 40/40 in each normal, ASan and TSan focused profile; part of 310 passing bodies/profile"
+        },
+        "status_note": "Supporting behavior is represented by concrete manual-clock, contention and GUI-responsiveness tests. This v34 result is historical; current scope acceptance and full workload/resource bound remain open."
+      },
+      {
+        "scope": "draft-034-RC59",
+        "finding": 34,
+        "requirement": "Bound/coalesce wallet state updates and avoid full rebuilds that block GUI progress.",
+        "concrete_selectors": [
+          "WalletQmlModelTests::reconciliationBatchesActivityRebuilds",
+          "WalletQmlModelTests::openingRequestRemainsResponsiveDuringLargeHistoryScan"
+        ],
+        "evidence": [
+          ".validation/qt6-r10-acceptance-20261114/source/test/test_walletqmlmodel.cpp",
+          ".validation/qt6-r10-acceptance-20261114/source/plan/tracking/scope-assignments.csv"
+        ],
+        "qualified_identity": {
+          "latest_product_source_with_these_fixtures": "80d4af9d875e98a22eda2db867ed97bd244f7452",
+          "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+          "latest_run_status": "The current 343-body Mac selection does not include these WalletQmlModel selectors."
+        },
+        "status_note": "The register identifies this as an unmerged-PR-only performance claim; debug/optimized timing ratios are incomparable. The selectors are relevant bounded-work controls, but a direct PR#990 regression measurement is not established here."
+      },
+      {
+        "scope": "draft-141-RC40",
+        "finding": 141,
+        "requirement": "Bind password/review continuation to the original action and opening; stale prompts/results must not resolve through the current selection.",
+        "concrete_selectors": [
+          "WalletQmlControllerTests::manualOldOpeningPromptAndOutcomeCannotResolveReopenedName",
+          "SendCreate::test_send_password_prompt_rejects_replaced_transaction",
+          "SendCreate::test_send_password_closes_when_opening_context_ends"
+        ],
+        "evidence": [
+          ".validation/issue-remediation-pr1090-20261109/execution/R10/session-implementation-20261111/REPORT_CURRENT_V5.md",
+          ".validation/issue-remediation-pr1090-20261109/execution/R10/session-implementation-20261111/password-contexts-green.json",
+          ".validation/qt6-r10-acceptance-20261114/source/test/test_walletqmlcontroller.cpp",
+          ".validation/qt6-r10-acceptance-20261114/source/test/qml/tst_sendcreate.qml"
+        ],
+        "qualified_identity": {
+          "app": "715fb5449366a9a267e6d111169f226b429947ef",
+          "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+          "focused_qml": "5 named password/opening-context selectors pass in password-contexts-green; original-parent red control exits 9 in red-original-prompts-v3.json"
+        },
+        "status_note": "The red control and focused QML pass demonstrate the prior prompt-context failure and repair on the recorded historical source. Current combined source and full cross-entry acceptance remain open."
+      },
+      {
+        "scope": "draft-143-RC40",
+        "finding": 143,
+        "requirement": "A password prompt must not survive wallet switching with its typed secret and submit against the newly selected wallet.",
+        "concrete_selectors": [
+          "WalletPasswordSettings::test_late_password_result_does_not_retarget",
+          "WalletViews::test_switching_wallet_hides_view_and_closes_its_popups",
+          "WalletQmlControllerTests::manualOldOpeningPromptAndOutcomeCannotResolveReopenedName"
+        ],
+        "evidence": [
+          ".validation/issue-remediation-pr1090-20261114/source/test/qml/tst_walletpasswordsettings.qml",
+          ".validation/issue-remediation-pr1090-20261114/source/test/qml/tst_walletviews.qml",
+          ".validation/issue-remediation-pr1090-20261114/source/plan/evidence/R10_SCHEDULE_EXECUTED_V34.json",
+          ".validation/issue-remediation-pr1090-20261109/execution/R10/session-implementation-20261111/VALIDATION_CURRENT_V5.json"
+        ],
+        "qualified_identity": {
+          "app": "715fb5449366a9a267e6d111169f226b429947ef",
+          "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+          "related_qml_suite": "654 substantive QML bodies passed in the historical session v5 normal run; later-current requalification not implied"
+        },
+        "status_note": "The public UI tests preserve prompt/context ownership; retain the requirement and distinguish this historical run from current combined-source acceptance."
+      },
+      {
+        "scope": "draft-144-RC40",
+        "finding": 144,
+        "requirement": "Closing the last wallet must invalidate its open password prompt and prevent any continuation on an empty or replacement model.",
+        "concrete_selectors": [
+          "SendCreate::test_prepare_password_closes_when_opening_context_ends",
+          "SendCreate::test_send_password_closes_when_opening_context_ends",
+          "WalletViews::test_switching_wallet_hides_view_and_closes_its_popups"
+        ],
+        "evidence": [
+          ".validation/issue-remediation-pr1090-20261114/source/test/qml/tst_sendcreate.qml",
+          ".validation/issue-remediation-pr1090-20261114/source/test/qml/tst_walletviews.qml",
+          ".validation/issue-remediation-pr1090-20261109/execution/R10/session-implementation-20261111/password-contexts-green.json"
+        ],
+        "qualified_identity": {
+          "app": "715fb5449366a9a267e6d111169f226b429947ef",
+          "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+          "specific_rows": "Included in the named five-selector focused QML command; historical source only"
+        },
+        "status_note": "Existing behavior is guarded by view/opening-context tests. Full current QML and real lifecycle qualification remains pending R42."
+      },
+      {
+        "scope": "draft-166-RC59",
+        "finding": 166,
+        "requirement": "A failing Activity status read needs explicit retry/backoff/admission behavior and bounded progress, not an unbounded one-second full rescan.",
+        "concrete_selectors": [
+          "TransactionActivityModelTests::preservesStatusWhenBusyAndRetries",
+          "TransactionActivityModelTests::readFailuresCanBeRetried",
+          "TransactionActivityModelTests::failedInitialHistoryRetainsWorkAfterNotification"
+        ],
+        "evidence": [
+          ".validation/qt6-r10-acceptance-20261114/source/test/test_transactionactivitymodel.cpp",
+          ".validation/qt6-r10-acceptance-20261114/source/plan/tracking/scope-assignments.csv",
+          ".validation/qt6-r10-acceptance-20261114/source/plan/evidence/R10_SCHEDULE_EXECUTED_V34.json"
+        ],
+        "qualified_identity": {
+          "app_candidate": "8ae9ce530f76e3522e932997f7120af705598246",
+          "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+          "profile_counts": "TransactionActivityModelTests 40/40 per normal, ASan and TSan profile; historical source"
+        },
+        "status_note": "Controlled retry and busy-state cases exist. The current exact source, sustained-failure bound and acceptance outcomes are not closed by this historical profile."
+      },
+      {
+        "scope": "draft-235-D235",
+        "finding": 235,
+        "requirement": "Historical claim that wallet models are destroyed before the Shutdown page is pushed.",
+        "concrete_selectors": [
+          "WalletQmlControllerTests::manualShutdownFencesInventoryBeforeBoundedRetirement",
+          "WalletQmlControllerTests::shutdownWaitsForNotificationRetirement",
+          "interface_qml_shutdown.py (process lifecycle selector family)"
+        ],
+        "evidence": [
+          ".validation/qt6-r10-acceptance-20261114/source/plan/tracking/scope-assignments.csv",
+          ".validation/qt6-r10-acceptance-20261114/source/plan/evidence/R10_SCHEDULE_EXECUTED_V34.json",
+          ".validation/issue-remediation-pr1090-20261109/execution/R10/session-implementation-20261111/VALIDATION_CURRENT_V5.json"
+        ],
+        "qualified_identity": {
+          "historical_app": "8ae9ce530f76e3522e932997f7120af705598246",
+          "historical_session_app": "715fb5449366a9a267e6d111169f226b429947ef",
+          "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+          "lifecycle": "Historical session profile passed 14 shutdown and 2 IPC lifecycles; current Mac source65 lifecycle checker rejects QPA/font warnings"
+        },
+        "status_note": "Current scope register marks this as no active standalone priority: historical ordering premise requires rechecking against the merged coordinator and is not an established current defect. Preserve existing controls; do not claim current IPC lifecycle acceptance."
+      },
+      {
+        "scope": "draft-236-D236",
+        "finding": 236,
+        "requirement": "Historical claim that in-flight wallet jobs are not awaited before appShutdown.",
+        "concrete_selectors": [
+          "WalletQmlControllerTests::manualShutdownFencesInventoryBeforeBoundedRetirement",
+          "WalletQmlControllerTests::manualShutdownSurvivesOwnerDestructionDuringFirstBatch",
+          "WalletQmlControllerTests::shutdownWaitsForNotificationRetirement",
+          "interface_qml_shutdown.py (process lifecycle selector family)"
+        ],
+        "evidence": [
+          ".validation/qt6-r10-acceptance-20261114/source/plan/tracking/scope-assignments.csv",
+          ".validation/qt6-r10-acceptance-20261114/source/plan/evidence/R10_SCHEDULE_EXECUTED_V34.json",
+          ".validation/issue-remediation-pr1090-20261109/execution/R10/session-implementation-20261111/VALIDATION_CURRENT_V5.json"
+        ],
+        "qualified_identity": {
+          "historical_app": "8ae9ce530f76e3522e932997f7120af705598246",
+          "historical_session_app": "715fb5449366a9a267e6d111169f226b429947ef",
+          "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+          "lifecycle": "Historical shutdown/IPC passes are not current source65/67 evidence"
+        },
+        "status_note": "Current scope register says the immediate-teardown premise was superseded by the walletsDrained coordinator; not an established current failure. Retain the drain controls and leave the full lifecycle gate to R42."
+      }
+    ],
+    "schedule_map": [
+      {
+        "schedule": "O04",
+        "requirement": "Exercise load-result/notification in either order, old prompt/result after close/reopen, same-name reopen, independent selection and retained work retirement.",
+        "representative_selectors": [
+          "WalletQmlControllerTests::manualMatchingLoadNotificationAndResult (5 result-first + 5 notification-first rows)",
+          "WalletQmlControllerTests::manualOldOpeningPromptAndOutcomeCannotResolveReopenedName",
+          "WalletQmlControllerTests::manualUnknownBindingNotificationCannotResurrectOrResolveReopenedName",
+          "WalletQmlControllerTests::manualObservedUnloadAllowsFreshSameNameLoad",
+          "TransactionDetail::test_same_opening_details_have_independent_view_interest"
+        ],
+        "evidence": ".validation/qt6-r10-acceptance-20261114/source/plan/evidence/R10_SCHEDULE_EXECUTED_V34.json",
+        "qualified_identity": "App 8ae9ce530f76e3522e932997f7120af705598246, Core 44901d8f64cb617714707bd025ecd83f108353c2; 310 native bodies passed in each of normal/ASan/TSan profiles, plus four QML rows per CHECKPOINT.md.",
+        "status_note": "Historical focused evidence only. Current source65/67 hot selection did not rerun this full schedule; no schedule or scope is closed."
+      },
+      {
+        "schedule": "O27",
+        "requirement": "Request close without premature admission fencing; admit another action; ensure old confirmation/prompt is invalidated by dismiss/unload/reopen; deliver stale answer without affecting the new opening.",
+        "representative_selectors": [
+          "WalletOpeningTests::closeQuestionDoesNotFenceNewActionsAndOldConsentCannotClose",
+          "WalletOpeningTests::currentConsentFencesAdmissionAndWaitsForBorrower",
+          "WalletOpeningTests::oldQuestionCannotCloseReopenedWalletWithSameName",
+          "WalletOpeningTests::externalUnloadSupersedesQuestionBeforeGuiDelivery",
+          "WalletQmlControllerTests::manualOldOpeningPromptAndOutcomeCannotResolveReopenedName"
+        ],
+        "evidence": ".validation/qt6-r10-acceptance-20261114/source/plan/evidence/R10_SCHEDULE_EXECUTED_V34.json",
+        "qualified_identity": "App 8ae9ce530f76e3522e932997f7120af705598246, Core 44901d8f64cb617714707bd025ecd83f108353c2; WalletOpeningTests 20/20 and WalletQmlControllerTests 168/168 in each of normal/ASan/TSan focused profiles.",
+        "status_note": "Historical focused schedule evidence; current combined source and complete lifecycle qualification remain pending."
+      }
+    ],
+    "preserved_nondefects_and_deferrals": [
+      {
+        "item": "draft-235-D235 and draft-236-D236",
+        "treatment": "Preserve existing shutdown/drain controls; current register describes the original issue premises as superseded/not established, not a new implementation defect."
+      },
+      {
+        "item": "draft-034-RC59 timing comparison",
+        "treatment": "Do not compare debug and optimized timing results or present the unmerged-PR claim as a current reproduced defect."
+      },
+      {
+        "item": "Stock Qt file picker race",
+        "treatment": "User-directed document/defer; affected TSan remains unresolved. Do not replace Qt component, patch Qt, suppress it, or call it passed."
+      }
+    ],
+    "register_policy": "This artifact is evidence mapping only. It does not alter steps.csv, scope-assignments.csv, schedule-ownership.csv, any shared register, or the R10 acceptance flag. The eight findings and O04/O27 remain unclosed.",
+    "references": [
+      ".validation/qt6-r10-acceptance-20261114/source/plan/tracking/worker-orders.md",
+      ".validation/qt6-r10-acceptance-20261114/source/plan/tracking/scope-assignments.csv",
+      ".validation/qt6-r10-acceptance-20261114/source/plan/tracking/schedule-ownership.csv",
+      ".validation/qt6-r10-acceptance-20261114/source/plan/QT6_VALIDATION_CADENCE_20261114.md",
+      ".validation/qt6-r10-acceptance-20261114/source/plan/R10_ACCEPTANCE_20261114.md",
+      ".validation/qt6-r10-acceptance-20261114/source/plan/evidence/R10_SCHEDULE_EXECUTED_V34.json",
+      ".validation/issue-remediation-pr1090-20261109/execution/R10/session-implementation-20261111/REPORT_CURRENT_V5.md",
+      ".validation/issue-remediation-pr1090-20261109/execution/R10/incremental-history-20261112/REPORT.md",
+      ".validation/issue-remediation-pr1090-20261109/execution/gui-threading-implementation-20261112/R10_SCHEDULE_EXECUTED_V34.json"
+    ]
+  }
+}

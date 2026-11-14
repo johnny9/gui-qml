@@ -4,6 +4,7 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Window 2.15
 import QtTest 1.2
 import org.bitcoincore.qt 1.0
 import "../../qml/controls/utils.js" as Utils
@@ -12,6 +13,7 @@ import "../../qml/components"
 import "../../qml/pages/wallet"
 
 TestCase {
+    id: testCase
     name: "RequestPayment"
     when: windowShown
     visible: true
@@ -22,6 +24,36 @@ TestCase {
         id: requestPaymentComponent
 
         ReceivePage { wallet: testWalletModel }
+    }
+
+    Component {
+        id: optionalContextCardComponent
+        PaymentRequestCard {
+            width: Math.min(560, testCase.Window.window.contentItem.width)
+            height: implicitHeight
+            showAmount: false
+            showMessage: false
+            showRecipientName: false
+        }
+    }
+
+    function clickContextAction(card, name) {
+        const button = findChild(card, name)
+        verify(button !== null && button.visible)
+        if (!card.wallet) compare(button.enabled, false)
+        const window = button.Window.window
+        window.update()
+        verify(waitForRendering(button))
+        tryVerify(function() {
+            for (let item = button.parent; item; item = item.parent) {
+                if (!item.clip) continue
+                const point = button.mapToItem(item, button.width / 2, button.height / 2)
+                if (point.x < 0 || point.x >= item.width || point.y < 0 || point.y >= item.height) return false
+            }
+            const point = button.mapToItem(window.contentItem, button.width / 2, button.height / 2)
+            return point.x >= 0 && point.x < window.contentItem.width && point.y >= 0 && point.y < window.contentItem.height
+        })
+        mouseClick(button, button.width / 2, button.height / 2)
     }
 
     Component {
@@ -418,6 +450,21 @@ TestCase {
         compare(testPaymentRequest.id, "")
     }
 
+    function test_generate_button_commits_the_current_request() {
+        const page = createPage()
+        let created = 0
+        page.paymentRequestCreated.connect(function() { created++ })
+        const button = findChild(page.draftCard, "requestPaymentGenerateButton")
+        verify(button.enabled)
+
+        button.clicked()
+        tryCompare(page.requestModal, "opened", true)
+        compare(created, 1)
+        verify(page.requestModal.card.saved)
+        compare(page.requestModal.card.request.id, "1")
+        compare(testWalletModel.lastCommitAddressType, page.requestModal.card.request.addressType)
+    }
+
     function test_next_address_and_type_selection_rotate_without_request() {
         const page = createPage()
         const first = testWalletModel.receivingAddress.address
@@ -493,6 +540,25 @@ TestCase {
         compare(page.requestModal.card.request.address, address)
     }
 
+    function test_clear_form_and_public_field_visibility_do_not_mutate_saved_request() {
+        const page = createPage()
+        editField(page.draftCard, "requestPaymentAmountInput", "0.001").editingFinished()
+        editField(page.draftCard, "requestPaymentYourNameInput", "Alice").editingFinished()
+        editField(page.draftCard, "requestPaymentMessageInput", "Lunch split").editingFinished()
+        const card = createRequest(page)
+        const request = card.request
+
+        card.clearForm()
+        card.showAmount = false
+        card.showMessage = false
+        card.showRecipientName = false
+
+        compare(request.amount.satoshi, 100000)
+        compare(request.label, "Alice")
+        compare(request.message, "Lunch split")
+        verify(card.saved)
+    }
+
     function test_qr_context_menus_close_when_address_is_no_longer_shareable() {
         const page = createPage()
         const card = createRequest(page)
@@ -504,6 +570,198 @@ TestCase {
         card.request.paymentReceived = true
         tryCompare(requestMenu, "visible", false)
         verify(!findChild(card, "requestPaymentQRContextArea").enabled)
+    }
+
+    function test_copy_qr_reports_clipboard_outcome_data() {
+        return [
+            {tag: "copied", accepted: true, error: ""},
+            {tag: "clipboard-rejected", accepted: false, error: "The QR code could not be copied. Please try again."},
+        ]
+    }
+
+    function test_copy_qr_reports_clipboard_outcome(data) {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        let copies = 0
+        let copiedImage
+        card.clipboard = {setImage: function(image) { copies++; copiedImage = image; return data.accepted }}
+
+        verify(card.copyQR())
+        compare(grabber.captures, 1)
+        compare(copies, 0)
+        grabber.release()
+        compare(copies, 1)
+        compare(copiedImage, null)
+        compare(card.actionErrorText, data.error)
+    }
+
+    function test_copy_qr_drops_late_capture_after_interest_changes_data() {
+        return [
+            {tag: "paid"},
+            {tag: "request-revision"},
+            {tag: "wallet"},
+        ]
+    }
+
+    function test_copy_qr_drops_late_capture_after_interest_changes(data) {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        let copies = 0
+        card.clipboard = {setImage: function() { copies++; return true }}
+
+        verify(card.copyQR())
+        compare(grabber.captures, 1)
+        if (data.tag === "paid") card.request.paymentReceived = true
+        else if (data.tag === "request-revision") card.request.addressType = "bech32m"
+        else card.wallet = testSecondWalletModel
+
+        grabber.release()
+        compare(copies, 0)
+        compare(card.actionErrorText, "")
+    }
+
+    function test_copy_request_button_copies_the_saved_uri() {
+        const card = createRequest(createPage())
+        let copies = 0
+        let copiedText = ""
+        card.clipboard = {setText: function(text) { copies++; copiedText = text }}
+        const button = findChild(card, "requestPaymentCopyButton")
+        verify(button.visible && button.enabled)
+
+        button.clicked()
+
+        compare(copies, 1)
+        compare(copiedText, card.request.qrPayload)
+        compare(card.actionErrorText, "")
+    }
+
+    function test_capture_qr_reports_image_not_ready_without_handoff() {
+        const card = createRequest(createPage())
+        const image = findChild(card, "requestPaymentQRImage")
+        tryCompare(image, "status", Image.Ready)
+        verify(card.sharing)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        image.code = ""
+        compare(image.status, Image.Null)
+
+        compare(card.captureQR(function() { fail("An unready QR image was captured") }), false)
+        compare(grabber.captures, 0)
+        compare(card.actionErrorText, "The QR code is not ready. Please try again.")
+    }
+
+    function test_pending_qr_export_blocks_a_second_capture() {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+
+        verify(card.saveQRToFile("file:///tmp/first-qr.png"))
+        grabber.release()
+        const operation = card.imageExport
+        verify(operation !== null && operation.pending)
+        compare(operation.path, "file:///tmp/first-qr.png")
+        verify(!card.saveQRToFile("file:///tmp/second-qr.png"))
+        compare(grabber.captures, 1)
+        compare(card.imageExport, operation)
+        compare(operation.path, "file:///tmp/first-qr.png")
+        operation.complete(false, "The file could not be written")
+        compare(card.pending, false)
+        compare(card.actionErrorText, "The file could not be written")
+    }
+
+    function test_save_dialog_reports_rejected_capture_while_export_is_pending() {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+
+        verify(card.saveQRToFile("file:///tmp/first-qr.png"))
+        grabber.release()
+        const operation = card.imageExport
+        verify(operation !== null && operation.pending)
+        const dialog = findChild(card, "requestPaymentSaveQRDialog")
+        card.openSaveQRDialog()
+        compare(dialog.visible, true)
+        dialog.selectAndAccept("file:///tmp/second-qr.png")
+
+        compare(grabber.captures, 1)
+        compare(card.imageExport, operation)
+        compare(operation.path, "file:///tmp/first-qr.png")
+        compare(card.actionErrorText, "The QR code could not be saved. Please try again.")
+        operation.complete(false, "The file could not be written")
+    }
+
+    function test_more_and_customize_buttons_toggle_open_menus_data() {
+        return [{tag: "customize"}, {tag: "more"}]
+    }
+
+    function test_more_and_customize_buttons_toggle_open_menus(data) {
+        let card
+        let button
+        let menu
+        if (data.tag === "customize") {
+            card = createPage().draftCard
+            button = findChild(card, "requestPaymentCustomizeButton")
+            menu = findChild(card, "requestPaymentFieldsMenu")
+        } else {
+            card = createRequest(createPage())
+            button = findChild(card, "paymentRequestMoreButton")
+            menu = findChild(card, "paymentRequestMoreMenu")
+        }
+        button.clicked()
+        tryCompare(menu, "opened", true)
+        button.clicked()
+        tryCompare(menu, "opened", false)
+    }
+
+    function test_more_menu_qr_actions_start_their_owned_handoffs_data() {
+        return [{tag: "copy"}, {tag: "save"}]
+    }
+
+    function test_more_menu_qr_actions_start_their_owned_handoffs(data) {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        let copies = 0
+        card.clipboard = {setImage: function() { copies++; return true }}
+        findChild(card, "paymentRequestMoreButton").clicked()
+        const menu = findChild(card, "paymentRequestMoreMenu")
+        tryCompare(menu, "opened", true)
+
+        if (data.tag === "copy") {
+            findChild(card, "requestPaymentCopyQRMenuButton").clicked()
+            compare(grabber.captures, 1)
+            grabber.release()
+            compare(copies, 1)
+            compare(card.actionErrorText, "")
+        } else {
+            findChild(card, "requestPaymentSaveQRMenuButton").clicked()
+            const dialog = findChild(card, "requestPaymentSaveQRDialog")
+            compare(dialog.visible, true)
+            compare(grabber.captures, 0)
+            dialog.close()
+        }
+        menu.close()
+    }
+
+    function test_draft_request_actions_have_no_external_effect() {
+        const card = createPage().draftCard
+        let textCopies = 0
+        card.clipboard = {setText: function() { textCopies++ }}
+        verify(!card.sharing)
+
+        card.copyRequest()
+        card.openSaveQRDialog()
+        verify(!card.deleteRequest())
+        compare(textCopies, 0)
+        verify(!findChild(card, "requestPaymentSaveQRDialog").visible)
+        compare(testWalletModel.lastRemovedRequestId, "")
     }
 
     // A QR save dialog exports only the request it was opened for.
@@ -648,6 +906,32 @@ TestCase {
         compare(optionsModel.displayUnit, BitcoinAmount.BTC)
         compare(card.request.amount.satoshi, amount)
         verify(!button.enabled)
+    }
+
+    function test_amount_unit_toggle_noops_for_invalid_or_received_request_data() {
+        return [
+            {tag: "invalid-draft", received: false},
+            {tag: "received-request", received: true},
+        ]
+    }
+
+    function test_amount_unit_toggle_noops_for_invalid_or_received_request(data) {
+        optionsModel.displayUnit = BitcoinAmount.SAT
+        const page = createPage()
+        let card
+        if (data.received) {
+            card = createRequest(page)
+            card.request.paymentReceived = true
+        } else {
+            card = page.draftCard
+            editField(card, "requestPaymentAmountInput", "1.5").editingFinished()
+            verify(card.amountErrorText.length > 0)
+        }
+        const originalUnit = optionsModel.displayUnit
+        card.toggleAmountUnit()
+        compare(optionsModel.displayUnit, originalUnit)
+        if (data.received) verify(card.paymentReceived)
+        else verify(card.amountErrorText.length > 0)
     }
 
     function test_update_can_remove_all_optional_details() {
@@ -810,6 +1094,7 @@ TestCase {
         const operation = testWalletModel.pendingReceiveOperation(card.request.id)
         verify(card.startOperation(operation, "edit"))
         verify(card.pending)
+        verify(!card.saveFields())
         verify(card.modified)
         compare(input.text, "Unsaved controlled draft")
         verify(!findChild(card, "requestPaymentUpdateButton").enabled)
@@ -1248,5 +1533,115 @@ TestCase {
         findChild(page, "requestPaymentHistoryButton").clicked()
         tryCompare(findChild(page, "receiveMoreMenu"), "opened", false)
         compare(requests, 1)
+    }
+
+    function test_missing_card_context_rejects_guarded_intents_data() {
+        return [{tag: "empty-context", wallet: false, request: false},
+                {tag: "waiting-for-request", wallet: true, request: false},
+                {tag: "retained-request-without-wallet", wallet: false, request: true}]
+    }
+    function test_missing_card_context_rejects_guarded_intents(data) {
+        // Project a legal saved request through the fixture's public setters;
+        // no wallet is asked to mutate it while its opening is unavailable.
+        if (data.request) {
+            testPaymentRequest.id = "retained-context"
+            testPaymentRequest.address = "bcrt1qretainedcontext"
+            testPaymentRequest.amount.satoshi = 12345
+            testPaymentRequest.label = "Saved label"
+            testPaymentRequest.message = "Saved public message"
+            testPaymentRequest.noteSelf = "Saved private note"
+        }
+        const request = data.request ? testPaymentRequest : null
+        const card = createTemporaryObject(optionalContextCardComponent, testCase.Window.window.contentItem,
+            {wallet: data.wallet ? testWalletModel : null, request: request})
+        verify(card !== null)
+        verify(waitForRendering(card))
+        compare(card.wallet, data.wallet ? testWalletModel : null)
+        compare(card.request, request)
+        compare(card.saved, data.request)
+        compare(card.sharing, false)
+        const before = {removed: testWalletModel.lastRemovedRequestId, committed: testWalletModel.lastCommitAddressType,
+            clipboard: Clipboard.currentText, clipboardRevision: Clipboard.revision}
+        let textCopies = 0
+        let imageCopies = 0
+        card.clipboard = {setText: function(text) { textCopies++ }, setImage: function(image) { imageCopies++; return true }}
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        const dialog = findChild(card, "requestPaymentSaveQRDialog")
+        const opens = dialog.openCalls
+        clickContextAction(card, data.request ? "requestPaymentCopyButton" : "requestPaymentGenerateButton")
+        // A late public intent must check its current owner/request again.
+        // An initialized wallet may still be awaiting its request projection.
+        card.createRequest()
+        card.copyRequest()
+        let captured = 0
+        compare(card.captureQR(function(result) { captured++ }), false)
+        compare(card.saveQRToFile("file:///missing-context.png"), false)
+        card.openSaveQRDialog()
+        compare(card.deleteRequest(), false)
+        card.clearForm()
+        compare(captured, 0)
+        compare(grabber.captures, 0)
+        compare(grabber.synchronousSaves, 0)
+        compare(textCopies, 0)
+        compare(imageCopies, 0)
+        compare(dialog.visible, false)
+        compare(dialog.openCalls, opens)
+        compare(card.operation, null)
+        compare(card.imageExport, null)
+        compare(testWalletModel.lastRemovedRequestId, before.removed)
+        compare(testWalletModel.lastCommitAddressType, before.committed)
+        compare(Clipboard.currentText, before.clipboard)
+        compare(Clipboard.revision, before.clipboardRevision)
+        if (data.request) {
+            compare(request.id, "retained-context")
+            compare(request.address, "bcrt1qretainedcontext")
+            compare(request.amount.satoshi, 12345)
+            compare(request.label, "Saved label")
+            compare(request.message, "Saved public message")
+            compare(request.noteSelf, "Saved private note")
+        } else compare(card.request, null)
+    }
+
+    function test_payment_arrival_retires_original_qr_export_target() {
+        const card = createRequest(createPage())
+        tryCompare(findChild(card, "requestPaymentQRImage"), "status", Image.Ready)
+        const request = card.request
+        const original = {id: request.id, address: request.address, amount: request.amount.satoshi,
+            label: request.label, message: request.message, note: request.noteSelf}
+        const grabber = createTemporaryObject(controlledQRGrabber, this)
+        card.qrGrabber = grabber
+        const target = card.saveQRTarget
+        verify(target.length > 0)
+        verify(card.saveQRToFile("file:///tmp/original-target-qr.png"))
+        compare(card.imageExport, null)
+        grabber.release()
+        const operation = card.imageExport
+        verify(operation !== null && operation.pending)
+        compare(card.imageExportTarget, target)
+        const retired = operation.retireCalls
+        const interest = card.sharingInterest
+        request.paymentReceived = true
+        compare(card.request, request)
+        compare(card.sharing, false)
+        compare(card.saveQRTarget, "")
+        compare(card.sharingInterest, interest)
+        compare(operation.retireCalls, retired + 1)
+        const currentError = card.actionErrorText
+        operation.complete(false, "Late export failure for old target")
+        compare(card.actionErrorText, currentError)
+        compare(card.imageExport, operation)
+        compare(operation.path, "file:///tmp/original-target-qr.png")
+        compare(operation.retireCalls, retired + 1)
+        compare(grabber.captures, 1)
+        compare(grabber.synchronousSaves, 0)
+        compare(request.paymentReceived, true)
+        compare(request.id, original.id)
+        compare(request.address, original.address)
+        compare(request.amount.satoshi, original.amount)
+        compare(request.label, original.label)
+        compare(request.message, original.message)
+        compare(request.noteSelf, original.note)
+        compare(findChild(card, "requestPaymentCopyButton").visible, false)
     }
 }

@@ -80,6 +80,36 @@ util::Result<PartiallySignedTransaction> DecodePsbtFromBytes(const QByteArray& b
     return DecodeRawPSBT(std::span<const std::byte>{raw.data(), raw.size()});
 }
 
+class QtFileReader final : public psbtwork::FileReader
+{
+public:
+    explicit QtFileReader(QFile& file) : m_file{file} {}
+
+    bool open() override { return m_file.open(QIODevice::ReadOnly); }
+    qint64 initialSize() override { return m_file.size(); }
+    QByteArray read(qint64 maximum) override { return m_file.read(maximum); }
+    bool hasError() override { return m_file.error() != QFile::NoError; }
+    QString errorString() override { return m_file.errorString(); }
+
+private:
+    QFile& m_file;
+};
+
+class QtFileWriter final : public psbtwork::FileWriter
+{
+public:
+    explicit QtFileWriter(QSaveFile& file) : m_file{file} {}
+
+    bool open() override { return m_file.open(QIODevice::WriteOnly); }
+    qint64 write(const QByteArray& bytes) override { return m_file.write(bytes); }
+    void cancel() override { m_file.cancelWriting(); }
+    bool commit() override { return m_file.commit(); }
+    QString errorString() override { return m_file.errorString(); }
+
+private:
+    QSaveFile& m_file;
+};
+
 } // namespace
 
 QString psbtwork::LocalFilePath(const QString& path)
@@ -91,19 +121,18 @@ QString psbtwork::LocalFilePath(const QString& path)
     return path;
 }
 
-QString psbtwork::LoadFile(const QString& path, PartiallySignedTransaction& psbt)
+QString psbtwork::ReadFile(psbtwork::FileReader& reader, PartiallySignedTransaction& psbt)
 {
-    QFile file(LocalFilePath(path));
-    if (!file.open(QIODevice::ReadOnly)) {
-        return Tr("Could not open PSBT file: %1").arg(file.errorString());
+    if (!reader.open()) {
+        return Tr("Could not open PSBT file: %1").arg(reader.errorString());
     }
-    if (file.size() > MAX_FILE_SIZE_PSBT) {
+    if (reader.initialSize() > MAX_FILE_SIZE_PSBT) {
         return Tr("PSBT file must be smaller than 100 MiB");
     }
 
-    const QByteArray bytes{file.read(MAX_FILE_SIZE_PSBT + 1)};
+    const QByteArray bytes{reader.read(static_cast<qint64>(MAX_FILE_SIZE_PSBT + 1))};
     if (bytes.size() > MAX_FILE_SIZE_PSBT) return Tr("PSBT file must be smaller than 100 MiB");
-    if (file.error() != QFile::NoError) return Tr("Could not read PSBT file: %1").arg(file.errorString());
+    if (reader.hasError()) return Tr("Could not read PSBT file: %1").arg(reader.errorString());
     const auto raw_result{DecodePsbtFromBytes(bytes)};
     if (raw_result) {
         psbt = *raw_result;
@@ -122,6 +151,13 @@ QString psbtwork::LoadFile(const QString& path, PartiallySignedTransaction& psbt
     return Tr("Could not decode PSBT: %1").arg(QString::fromStdString(decode_error.translated));
 }
 
+QString psbtwork::LoadFile(const QString& path, PartiallySignedTransaction& psbt)
+{
+    QFile file{LocalFilePath(path)};
+    QtFileReader reader{file};
+    return psbtwork::ReadFile(reader, psbt);
+}
+
 QByteArray psbtwork::SerializeRaw(const PartiallySignedTransaction& psbt)
 {
     DataStream stream{};
@@ -135,22 +171,28 @@ QString psbtwork::ErrorText(common::PSBTError error)
     return QString::fromStdString(common::PSBTErrorString(error).translated);
 }
 
-QString psbtwork::SaveFile(const PartiallySignedTransaction& psbt, const QString& path)
+QString psbtwork::WriteFile(psbtwork::FileWriter& writer, const PartiallySignedTransaction& psbt)
 {
-    QSaveFile file(LocalFilePath(path));
-    if (!file.open(QIODevice::WriteOnly)) {
-        return Tr("Could not save PSBT: %1").arg(file.errorString());
+    if (!writer.open()) {
+        return Tr("Could not save PSBT: %1").arg(writer.errorString());
     }
 
     const QByteArray raw{SerializeRaw(psbt)};
-    if (file.write(raw) != raw.size()) {
-        file.cancelWriting();
+    if (writer.write(raw) != raw.size()) {
+        writer.cancel();
         return Tr("Could not write the complete PSBT file.");
     }
-    if (!file.commit()) {
-        return Tr("Could not save PSBT: %1").arg(file.errorString());
+    if (!writer.commit()) {
+        return Tr("Could not save PSBT: %1").arg(writer.errorString());
     }
     return {};
+}
+
+QString psbtwork::SaveFile(const PartiallySignedTransaction& psbt, const QString& path)
+{
+    QSaveFile file{LocalFilePath(path)};
+    QtFileWriter writer{file};
+    return psbtwork::WriteFile(writer, psbt);
 }
 
 std::optional<std::pair<int, int>> psbtwork::Multisig(const PartiallySignedTransaction& psbt, std::size_t index)
@@ -243,12 +285,12 @@ std::shared_ptr<const Snapshot> Inspect(interfaces::Wallet* wallet, std::shared_
     const bool signer = wallet && (!wallet->privateKeysDisabled() || wallet->hasExternalSigner());
     if (snapshot->error.isEmpty()) snapshot->error = fill_error ? ErrorText(*fill_error)
         : !snapshot->proof->amount ? Tr("The transaction fee is missing or invalid.") : QString{};
-    const bool authorized = snapshot->error.isEmpty() && snapshot->proof->amount.has_value();
+    const bool authorized = !snapshot->metadata_failed && snapshot->proof->amount.has_value();
     snapshot->can_sign = authorized && !complete && signer && could_sign > 0;
     snapshot->can_broadcast = authorized && complete;
     snapshot->summary = Summary(candidate, *snapshot->proof, wallet);
-    if (!status.isEmpty()) snapshot->status = status;
-    else if (!snapshot->error.isEmpty()) snapshot->status = snapshot->error;
+    if (!authorized) snapshot->status = snapshot->error;
+    else if (!status.isEmpty()) snapshot->status = status;
     else if (complete) snapshot->status = Tr("Transaction is fully signed and ready for broadcast.");
     else if (!wallet) snapshot->status = Tr("No wallet is loaded. You can inspect, copy, or save this PSBT.");
     else if (!signer) snapshot->status = Tr("This wallet cannot sign transactions because private keys are disabled.");
@@ -303,7 +345,7 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
             }
         }
         if (request.kind == Kind::Save) {
-            result.error = SaveFile(*request.document, request.path);
+            result.error = context.save(*request.document, request.path);
             result.saved = result.error.isEmpty();
             result.code = result.saved ? Error::None : Error::Core;
             return finish();
@@ -316,7 +358,7 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
             // Capture is an immutable Native-cleaned QString owner. Conversion,
             // secure allocation and cleansing never run in the GUI wrapper.
             if(request.captured_passphrase){
-                request.passphrase=secretinput::Materialize(request.captured_passphrase);
+                request.passphrase=context.materialize(request.captured_passphrase);
                 request.captured_passphrase.reset();
             }
             if (!wallet || (wallet->privateKeysDisabled() && !wallet->hasExternalSigner())) {

@@ -29,6 +29,7 @@
 #include <qml/shutdowncoordinator.h>
 #include <qml/startupdialog.h>
 #include <qml/startupeffects.h>
+#include <qml/startuppolicy.h>
 #include <qml/qtlogsink.h>
 #include <qml/bitcoinamount.h>
 #include <qml/buildinfo.h>
@@ -190,20 +191,6 @@ AppMode SetupAppMode()
 
 void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipboard, UrlOpener& url_opener, BitcoinUriModel& bitcoin_uri_model);
 
-UiPreferencesStore* InstallUiPreferences(QQmlApplicationEngine& engine,
-    const execution::SnapshotServices& services, bool await_read)
-{
-    auto* store = new UiPreferencesStore{services, UiPreferencesNamespace::Capture(), &engine};
-    engine.rootContext()->setContextProperty("uiPreferencesStore", store);
-    QEventLoop phase;
-    QObject::connect(store, &UiPreferencesStore::stateChanged, &phase, &QEventLoop::quit);
-    store->start();
-    // Only pre-window lifecycle phases await their actual read. An error dialog
-    // can be called while its Native producer is awaiting the GUI handoff.
-    while (await_read && !store->ready() && store->error().isEmpty()) phase.exec();
-    return store;
-}
-
 bool InitErrorMessageBox(
     const QString& summary, const execution::SnapshotServices& services,
     std::shared_ptr<const startupdiagnostics::Collection> full_message,
@@ -220,24 +207,16 @@ bool InitErrorMessageBox(
     RegisterQmlTypes(error_app_mode, error_build_info, error_clipboard, error_url_opener, error_bitcoin_uri_model);
 
     // The source outlives QML root destruction and singleton callbacks.
-    std::unique_ptr<StartupDiagnosticsModel> owned_details;
+    startup::ErrorDetails details_owner;
     QQmlApplicationEngine engine;
     engine_created(engine);
-    InstallUiPreferences(engine, services, false);
-
-    auto* details = existing_details;
-    if (!details) {
-        owned_details = std::make_unique<StartupDiagnosticsModel>(services);
-        details = owned_details.get();
-        if (full_message) details->adopt(std::move(full_message));
-        if (!details->project(false, summary, {}, {}, /*normalize=*/false)) {
-            if (diagnostic_loss) *diagnostic_loss = true;
-            engine.rootContext()->setContextProperty("message", details->error());
-        }
-    }
+    startup::InstallPreferences(engine, services, UiPreferencesNamespace::Capture(), startup::PreferencesPhase::ErrorHandoff);
+    details_owner = startup::PrepareErrorDetails(services, summary, std::move(full_message), existing_details, diagnostic_loss);
+    auto* details = details_owner.model;
+    if (details_owner.replacement_message) engine.rootContext()->setContextProperty("message", *details_owner.replacement_message);
     if (engine.rootContext()->contextProperty("message").isNull()) engine.rootContext()->setContextProperty("message", summary);
     QObject::connect(details, &StartupDiagnosticsModel::finished, &engine, [details, diagnostic_loss] {
-        if (diagnostic_loss && !details->error().isEmpty()) *diagnostic_loss = true;
+        startup::RecordProjectionOutcome(*details, diagnostic_loss);
     });
     engine.rootContext()->setContextProperty("startupDiagnostics", details);
     engine.load(QUrl(QStringLiteral("qrc:///qml/pages/initerrormessage.qml")));
@@ -249,43 +228,18 @@ bool InitErrorMessageBox(
     return false;
 }
 
-bool RecordStartupWarning(const std::shared_ptr<startupdiagnostics::Collection>& warnings, const bilingual_str& message,
-                          const std::shared_ptr<std::atomic_bool>& diagnostic_loss)
-{
-    if (!warnings) { if (diagnostic_loss) *diagnostic_loss = true; return false; }
-    const bool gui = QThread::currentThread() == QCoreApplication::instance()->thread();
-    // Production Core startup runs on Native. An accidental GUI diagnostic
-    // cannot deep-copy an unbounded std::string into the executor.
-    const auto& text = message.translated;
-    QString warning = gui ? QString::fromUtf8(text.data(), std::min<size_t>(text.size(), 16384))
-                          : QString::fromStdString(text);
-    if (gui && text.size() > 16384) {
-        if (diagnostic_loss) *diagnostic_loss = true;
-        warning += QStringLiteral(" ") + QObject::tr("[complete warning rejected: Core startup work ran on GUI]");
-    }
-    const bool accepted = warnings->append(std::move(warning), true);
-    if (!accepted && diagnostic_loss) *diagnostic_loss = true;
-    return accepted;
-}
-
 ownership::AtomicSharedPtr<qtlog::Queue> g_qt_log_queue;
 ownership::AtomicSharedPtr<qtlog::FatalPolicy> g_qt_fatal_policy;
 
 bool WriteQtLog(const qtlog::Record& record)
 {
-    if (record.overflow || (record.stage == qtlog::Stage::Startup && record.type != QtDebugMsg)) {
-        const auto formatted = qtlog::FormatStderr(record);
-        const auto written = std::fwrite(formatted.constData(), 1, static_cast<size_t>(formatted.size()), stderr);
-        const auto flushed = std::fflush(stderr);
-        return written == static_cast<size_t>(formatted.size()) && flushed == 0;
-    }
-    const auto message = qtlog::Message(record);
-    if (record.type == QtDebugMsg || (record.type == QtWarningMsg && IsBenignQtFontWarning(message)))
-        LogDebug(BCLog::QT, "GUI: %s\n", message.toStdString());
-    else LogInfo("GUI: %s\n", message.toStdString());
-    // The public Core logger returns void and does not expose fwrite status.
-    // This acknowledgement proves Native handoff, not debug.log durability.
-    return true;
+    static const qtlog::Writer writer{{
+        [](const QByteArray& text) { return std::fwrite(text.constData(), 1, static_cast<size_t>(text.size()), stderr); },
+        [] { return std::fflush(stderr) == 0; },
+        [](const QString& message) { LogDebug(BCLog::QT, "GUI: %s\n", message.toStdString()); },
+        [](const QString& message) { LogInfo("GUI: %s\n", message.toStdString()); },
+        IsBenignQtFontWarning}};
+    return writer(record);
 }
 void ForwardQtLog(QtMsgType type, const QMessageLogContext& context, const QString& message, qtlog::Stage stage)
 {
@@ -450,13 +404,7 @@ struct PreInitOnboardingContext {
 
     void finishPreferences()
     {
-        if (!preferences) return;
-        if (window) window->contentItem()->setEnabled(false);
-        preferences->closeAdmission();
-        QEventLoop phase;
-        bool drained{false};
-        preferences->whenDrained([&] { drained = true; phase.quit(); });
-        while (!drained) phase.exec();
+        startup::FinishPreferences(preferences, window);
     }
 
     void close()
@@ -507,7 +455,7 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
 
     context.engine = std::make_unique<QQmlApplicationEngine>();
     engine_created(*context.engine);
-    context.preferences = InstallUiPreferences(*context.engine, services, true);
+    context.preferences = startup::InstallPreferences(*context.engine, services, UiPreferencesNamespace::Capture(), startup::PreferencesPhase::BeforeWindow);
     if (quit_handler.isQuitRequested()) return PreInitOnboardingStatus::CANCELED;
     context.engine->addImageProvider(QStringLiteral("images"), new ImageProvider{context.network_style.data()});
     context.engine->rootContext()->setContextProperty("optionsModel", context.onboarding_options_model.get());
@@ -633,31 +581,22 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         bool startup_canceled{false};
         btcsignals::scoped_connection gui_startup_message_handler{::uiInterface.ThreadSafeMessageBox.connect(
             [&](const bilingual_str& message, unsigned int style) {
+                const auto origin = QThread::currentThread() == app.thread()
+                    ? startup::DiagnosticOrigin::Gui : startup::DiagnosticOrigin::Native;
                 if (style & CClientUIInterface::ICON_WARNING) {
-                    RecordStartupWarning(startup_warnings, message, diagnostic_loss); return false;
+                    startup::RecordWarning(startup_warnings, message, origin, diagnostic_loss); return false;
                 }
-                const bool gui = QThread::currentThread() == app.thread();
-                auto full_message = startupdiagnostics::Create(startup_services.scheduler);
-                const auto& translated = message.translated;
-                const QString prepared = gui ? QString::fromUtf8(translated.data(), std::min<size_t>(translated.size(), 16384))
-                                             : QString::fromStdString(translated);
-                if (full_message && !full_message->append(prepared, false)) full_message.reset();
-                if (!full_message) *diagnostic_loss = true;
-                else full_message->seal();
-                if (gui && translated.size() > 16384) *diagnostic_loss = true;
-                if (!gui) qCritical().noquote() << QString::fromStdString(message.original);
-                else qCritical().noquote() << QString::fromUtf8(message.original.data(), std::min<size_t>(message.original.size(), 16384));
-                const QString summary = prepared.left(16384) + (gui && translated.size() > 16384
-                    ? QStringLiteral(" ") + QObject::tr("[complete error rejected: Core startup work ran on GUI]") : QString{}) + (!full_message
-                    ? QStringLiteral(" ") + QObject::tr("[complete error unavailable: diagnostic capacity exhausted]") : QString{});
+                const auto error = startup::PrepareError(message, origin, {
+                    [&] { return startupdiagnostics::Create(startup_services.scheduler); },
+                    [](const QString& text) { qCritical().noquote() << text; }}, diagnostic_loss);
                 bool result{false};
                 const auto handle_message = [&] {
-                    if (!startup_canceled && !quit_handler.isQuitRequested()) {
-                        result = InitErrorMessageBox(summary, startup_services, full_message, quit_handler,
+                    result = startup::DeliverError(startup_canceled, quit_handler.isQuitRequested(), [&] {
+                        return InitErrorMessageBox(error.summary, startup_services, error.details, quit_handler,
                             [this](QQmlApplicationEngine& engine) { qmlEngineCreated(engine); }, nullptr, diagnostic_loss);
-                    }
+                    });
                 };
-                if (gui) handle_message();
+                if (origin == startup::DiagnosticOrigin::Gui) handle_message();
                 else QMetaObject::invokeMethod(&app, handle_message, Qt::BlockingQueuedConnection);
                 return result;
             })};
@@ -782,43 +721,42 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         auto& chain = native_interfaces->chain;
         const auto qt_info = QmlUtil::CaptureQtInfo();
         const auto prepare_node = [&, qt_info] {
-            if (common::InitConfig(gArgs, [](const bilingual_str& message, const std::vector<std::string>& details) {
-                    return InitError(message, details);
-                })) {
-                return false;
-            }
-            const auto legacy_migration = QmlLegacySettings::MigrateCoreSettings(gArgs, QmlLegacySettings::MigrationMode::Persist);
-            if (!legacy_migration.error.isEmpty()) {
-                return InitError(Untranslated(legacy_migration.error.toStdString()));
-            }
-            if (legacy_migration.settings_changed) {
-                std::vector<std::string> settings_errors;
-                if (!gArgs.WriteSettingsFile(&settings_errors)) {
-                    return InitError(_("Settings file could not be written"), settings_errors);
-                }
-            }
-            // GUI programs should not print to the console unnecessarily.
-            gArgs.SoftSetBoolArg("-printtoconsole", false);
-            InitLogging(gArgs);
-            InitParameterInteraction(gArgs);
-            QmlUtil::LogQtInfo(qt_info);
-            node = init->makeNode();
-            chain = init->makeChain();
-            if (!node->baseInitialize()) return false;
-
-            // Use Qt's effective settings identity with the resolved network, before
-            // any window-behavior model reads it. This also works on the onboarding worker.
-            if (gArgs.IsArgSet("-resetguisettings")) {
-                const QSettings defaults;
-                QSettings settings{defaults.format(), defaults.scope(), defaults.organizationName(),
-                                   ChainQSettingsName(QString::fromStdString(gArgs.GetChainTypeString()).toUpper())};
-                settings.remove(QStringLiteral("fHideTrayIcon"));
-                settings.remove(QStringLiteral("fMinimizeToTray"));
-                settings.remove(QStringLiteral("fMinimizeOnClose"));
-                settings.sync();
-                if (settings.status() != QSettings::NoError) InitWarning(Untranslated(QObject::tr("Unable to save window settings after reset.").toStdString()));
-            }
-            return true;
+            const startup::PreparationPorts ports{
+                [] {
+                    return !common::InitConfig(gArgs, [](const bilingual_str& message, const std::vector<std::string>& details) {
+                        return InitError(message, details);
+                    });
+                },
+                [] {
+                    const auto migrated = QmlLegacySettings::MigrateCoreSettings(gArgs, QmlLegacySettings::MigrationMode::Persist);
+                    return startup::Migration{migrated.settings_changed, migrated.error};
+                },
+                [] {
+                    startup::SettingsWrite result;
+                    result.success = gArgs.WriteSettingsFile(&result.errors);
+                    return result;
+                },
+                [](const bilingual_str& message, const std::vector<std::string>& details) { InitError(message, details); },
+                [qt_info] {
+                    gArgs.SoftSetBoolArg("-printtoconsole", false);
+                    InitLogging(gArgs);
+                    InitParameterInteraction(gArgs);
+                    QmlUtil::LogQtInfo(qt_info);
+                },
+                [&] { node = init->makeNode(); },
+                [&] { chain = init->makeChain(); },
+                [&] { return node->baseInitialize(); },
+                [] { return gArgs.IsArgSet("-resetguisettings"); },
+                [] {
+                    const QSettings defaults;
+                    QSettings settings{defaults.format(), defaults.scope(), defaults.organizationName(),
+                        ChainQSettingsName(QString::fromStdString(gArgs.GetChainTypeString()).toUpper())};
+                    return startup::ResetWindowSettings({
+                        [&settings](const QString& key) { settings.remove(key); },
+                        [&settings] { settings.sync(); return settings.status() == QSettings::NoError; }});
+                },
+                [](const bilingual_str& warning) { InitWarning(warning); }};
+            return startup::PrepareNode(ports) == startup::PreparationOutcome::Ready;
         };
 
         bool prepared{false};
@@ -1016,8 +954,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         // The pre-init engine can have written the same persisted keys. Finish
         // those original writes before reading the final chain profile.
         pre_init_onboarding_context.finishPreferences();
-        auto* ui_preferences = InstallUiPreferences(*engine,
-            {node_model.queryScheduler(), presentation_post}, true);
+        auto* ui_preferences = startup::InstallPreferences(*engine,
+            {node_model.queryScheduler(), presentation_post}, UiPreferencesNamespace::Capture(), startup::PreferencesPhase::BeforeWindow);
         shutdown_coordinator.addAdmissionFence([ui_preferences] { ui_preferences->closeAdmission(); });
         shutdown_coordinator.addBeforeInterruptTask([ui_preferences](std::function<void()> done) {
             ui_preferences->whenDrained(std::move(done));

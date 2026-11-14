@@ -33,7 +33,7 @@
 #include <QDateTime>
 #include <QCoreApplication>
 #include <QMetaObject>
-#include <QScopedValueRollback>
+#include <QScopeGuard>
 #include <QThread>
 #include <QTimer>
 #include <QVariantMap>
@@ -310,6 +310,7 @@ NodeModel::~NodeModel()
 void NodeModel::closeAdmission()
 {
     m_admission_closed = true;
+    setNodeReady(false);
     if (m_startup_diagnostics) m_startup_diagnostics->closeAdmission();
     if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->closeAdmission();
     if (m_query_scheduler) m_query_scheduler->closeOrdinaryAdmission();
@@ -318,20 +319,23 @@ void NodeModel::closeAdmission()
 void NodeModel::beginShutdown()
 {
     if (m_workers_stopping) return;
+    const QPointer<NodeModel> observer{this};
+    m_workers_stopping = true;
+    m_query_scheduler->closeOrdinaryAdmission();
+    m_retirement_scheduler->closeOrdinaryAdmission();
     if (m_startup_diagnostics) m_startup_diagnostics->closeAdmission();
     if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->closeAdmission();
     m_initialization_result.reset();
     detachNotifications();
     clearRuntimeDialogs(false);
     setMempoolInfoPollingActive(false);
-    m_workers_stopping = true;
+    if (!observer) return;
     if (m_status_query) m_status_query->close();
     if (m_mempool_query) m_mempool_query->close();
     if (m_shutdown_query) m_shutdown_query->close();
-    m_query_scheduler->closeOrdinaryAdmission();
-    m_retirement_scheduler->closeOrdinaryAdmission();
     m_subscription_lease.reset();
     if (!m_destroying) Q_EMIT networkActionReadyChanged();
+    if (!observer) return;
     if (m_destroying) { m_node_ready = false; std::lock_guard lock{m_notifications->mutex}; m_notifications->ready = false; }
     else setNodeReady(false);
     stopShutdownPolling();
@@ -370,7 +374,9 @@ void NodeModel::detachNotifications()
 
 void NodeModel::publishNotifications()
 {
-    if (m_workers_stopping || m_shutdown_requested) return;
+    const QPointer<NodeModel> observer{this};
+    const auto current = [&] { return observer && !observer->m_workers_stopping && !observer->m_shutdown_requested && !observer->m_admission_closed; };
+    if (!current()) return;
     std::optional<Notifications::Block> block;
     std::optional<Notifications::Header> header;
     std::optional<int> peers;
@@ -392,18 +398,24 @@ void NodeModel::publishNotifications()
     }
     {
         // Decide sync completion only after both heights belong to this snapshot.
-        const QScopedValueRollback applying{m_applying_sync_snapshot, true};
+        const bool previous = std::exchange(m_applying_sync_snapshot, true);
+        const auto applying = qScopeGuard([observer, previous] { if (observer) observer->m_applying_sync_snapshot = previous; });
         if (header) {
             m_seen_header_tip = true;
             setHeaderSyncState(header->tip.block_height, header->tip.block_time, header->presync);
+            if (!current()) return;
         }
         if (block) {
             m_seen_block_tip = true;
             m_block_tip_time = block->tip.block_time;
             setBlockTipHeight(block->tip.block_height);
+            if (!current()) return;
             setVerificationProgress(block->progress);
+            if (!current()) return;
             setBlockSyncActive(block->state != SynchronizationState::POST_INIT);
+            if (!current()) return;
             Q_EMIT blockTipTimeChanged(m_block_tip_time);
+            if (!current()) return;
         }
     }
     {
@@ -417,11 +429,21 @@ void NodeModel::publishNotifications()
     if (subscribed) {
         m_subscriptions_ready = *subscribed;
         Q_EMIT notificationsReadyChanged();
+        if (!current()) return;
         Q_EMIT networkActionReadyChanged();
-        if (!*subscribed) { setStartupError(subscription_error); setErrorState(true); requestShutdown(); return; }
-        if (m_initialization_requested && !m_initialization_dispatched) { m_initialization_dispatched = true; Q_EMIT requestedInitialize(); }
+        if (!current()) return;
+        if (!*subscribed) {
+            setStartupError(subscription_error); if (!current()) return;
+            setErrorState(true); if (!current()) return;
+            requestShutdown(); return;
+        }
+        if (m_initialization_requested && !m_initialization_dispatched) {
+            m_initialization_dispatched = true; Q_EMIT requestedInitialize();
+            if (!current()) return;
+        }
     }
     if (runtime_overflow) { m_status_error = tr("Some node messages exceeded the dialog queue limit."); Q_EMIT observationErrorChanged(); }
+    if (!current()) return;
     for (const auto& request : dialogs) {
         bool answered;
         { std::lock_guard lock{request->mutex}; answered = request->answered; }
@@ -429,10 +451,12 @@ void NodeModel::publishNotifications()
         if (!m_runtime_dialogs_enabled && !request->question) {
             if (request->style & CClientUIInterface::ICON_WARNING) {
                 recordStartupWarningMessage(request->full_message ? *request->full_message : request->message);
+                if (!current()) return;
                 { std::lock_guard lock{request->mutex}; request->answered = true; request->answer = false; }
                 request->condition.notify_all(); continue;
             } else if (!(request->style & CClientUIInterface::MODAL)) {
                 if (request->style & CClientUIInterface::ICON_ERROR) recordStartupErrorMessage(request->full_message ? *request->full_message : request->message);
+                if (!current()) return;
                 continue;
             }
             if (!(request->style & CClientUIInterface::MODAL)) continue;
@@ -442,21 +466,25 @@ void NodeModel::publishNotifications()
             { std::lock_guard lock{request->mutex}; request->answered = true; request->answer = false; }
             request->condition.notify_all();
             m_status_error = tr("A node dialog could not be shown because the dialog queue is full.");
-            Q_EMIT observationErrorChanged(); continue;
+            Q_EMIT observationErrorChanged(); if (!current()) return; continue;
         }
         if (m_runtime_dialog_active) m_runtime_dialog_queue.push_back(request);
         else showRuntimeDialogRequest(request);
+        if (!current()) return;
     }
     updateSyncCompletion();
+    if (!current()) return;
     if (block || header || peers || warnings || network_active) refreshStatus();
     if (network_active) {
         m_network_known = true;
         if (m_pause != !*network_active) {
             m_pause = !*network_active;
             Q_EMIT pauseChanged(m_pause);
+            if (!current()) return;
         }
     }
     if (bans) Q_EMIT bannedListChanged();
+    if (!current()) return;
     if (block || header || peers || warnings || network_active) Q_EMIT nodeInformationChanged();
 }
 
@@ -544,9 +572,10 @@ void NodeModel::publishStatus()
 void NodeModel::setBlockTipHeight(int new_height)
 {
     if (new_height != m_block_tip_height) {
+        const QPointer<NodeModel> observer{this};
         m_block_tip_height = new_height;
         Q_EMIT blockTipHeightChanged();
-        updateSyncCompletion();
+        if (observer) observer->updateSyncCompletion();
     }
 }
 
@@ -582,9 +611,11 @@ void NodeModel::refreshMempoolInfo()
 
 void NodeModel::setMempoolInfoPollingActive(bool active)
 {
-    if (m_workers_stopping || m_mempool_info_polling_active == active) return;
+    if ((m_workers_stopping && active) || m_mempool_info_polling_active == active) return;
+    const QPointer<NodeModel> observer{this};
     m_mempool_info_polling_active = active;
     if (!m_destroying) Q_EMIT mempoolInfoPollingActiveChanged(active);
+    if (!observer) return;
     if (active && m_backend_queries_ready) { schedulePoll(Poll::Mempool); refreshMempoolInfo(); }
     else if (m_services.cancel) m_services.cancel(Poll::Mempool);
 }
@@ -686,7 +717,9 @@ void NodeModel::setRemainingSyncTime(double new_progress)
 void NodeModel::setVerificationProgress(double new_progress)
 {
     if (new_progress != m_verification_progress) {
+        const QPointer<NodeModel> observer{this};
         setRemainingSyncTime(new_progress);
+        if (!observer || m_workers_stopping || m_shutdown_requested || m_admission_closed) return;
 
         m_verification_progress = new_progress;
         Q_EMIT verificationProgressChanged();
@@ -708,13 +741,15 @@ void NodeModel::setBlockSyncActive(bool active)
         return;
     }
 
+    const QPointer<NodeModel> observer{this};
     m_block_sync_active = active;
     Q_EMIT blockSyncActiveChanged();
-    updateSyncCompletion();
+    if (observer) observer->updateSyncCompletion();
 }
 
 void NodeModel::setHeaderSyncState(int height, int64_t block_time, bool presync)
 {
+    const QPointer<NodeModel> observer{this};
     m_header_tip_height = height;
     m_header_tip_time = block_time;
 
@@ -730,12 +765,12 @@ void NodeModel::setHeaderSyncState(int height, int64_t block_time, bool presync)
         m_header_sync_progress = progress;
         Q_EMIT headerSyncChanged();
     }
-    updateSyncCompletion();
+    if (observer) observer->updateSyncCompletion();
 }
 
 void NodeModel::updateSyncCompletion()
 {
-    if (m_applying_sync_snapshot) return;
+    if (m_applying_sync_snapshot || m_workers_stopping || m_shutdown_requested || m_admission_closed) return;
     if (m_initial_sync_complete) {
         // Ignore ordinary header-first block announcements, but resume the
         // sync presentation after falling substantially behind (e.g. sleep).
@@ -892,17 +927,23 @@ void NodeModel::requestShutdown()
         return;
     }
     m_shutdown_requested = true;
+    setNodeReady(false);
     detachNotifications();
+    const QPointer<NodeModel> observer{this};
     Q_EMIT networkActionReadyChanged();
+    if (!observer) return;
     clearRuntimeDialogs(true);
+    if (!observer) return;
     stopShutdownPolling();
     Q_EMIT requestedShutdown();
 }
 
 void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info, bool initial_block_download, bool shutdown_requested)
 {
-    if (m_workers_stopping || m_fatal_exception || m_initialization_result) return;
+    if (m_workers_stopping || m_fatal_exception || m_admission_closed || m_initialization_result) return;
+    const QPointer<NodeModel> observer{this};
     publishNotifications();
+    if (!observer || m_workers_stopping || m_fatal_exception || m_admission_closed) return;
     if (m_startup_diagnostics_sealed || (success && (m_shutdown_requested || shutdown_requested)) ||
         (!success && m_startup_failure_dialog_shown)) {
         finishInitialization(success, tip_info, initial_block_download, shutdown_requested); return;
@@ -910,7 +951,6 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
     m_startup_diagnostics_sealed = true;
     m_initialization_result = InitializationResult{success, tip_info, initial_block_download, shutdown_requested};
     if (success) m_runtime_dialogs_enabled = true;
-    const QPointer<NodeModel> observer{this};
     const bool admitted = m_startup_diagnostics->project(success, tr("Node initialization failed."), tr("Startup warnings:"));
     if (observer && !admitted) finishStartupDiagnostics();
 }
@@ -935,9 +975,12 @@ void NodeModel::finishStartupDiagnostics()
 
 void NodeModel::finishInitialization(bool success, interfaces::BlockAndHeaderTipInfo tip_info, bool initial_block_download, bool shutdown_requested)
 {
-    if (m_workers_stopping || m_fatal_exception) return;
+    const QPointer<NodeModel> observer{this};
+    const auto current = [&] { return observer && !observer->m_workers_stopping && !observer->m_fatal_exception && !observer->m_admission_closed && !observer->m_shutdown_requested; };
+    if (m_workers_stopping || m_fatal_exception || m_admission_closed) return;
     // Consume startup notifications before changing their presentation phase.
     publishNotifications();
+    if (!observer || m_workers_stopping || m_fatal_exception || m_admission_closed) return;
     if (success && (m_shutdown_requested || shutdown_requested)) {
         requestShutdown();
         return;
@@ -946,43 +989,58 @@ void NodeModel::finishInitialization(bool success, interfaces::BlockAndHeaderTip
     if (!success) {
         if (m_startup_failure_dialog_shown) {
             requestShutdown();
-            Q_EMIT nodeInitialized();
+            if (observer && !m_workers_stopping && !m_admission_closed) Q_EMIT nodeInitialized();
             return;
         }
         setErrorState(true);
+        if (!current()) return;
         refreshStatus();
         setStartupError(m_startup_diagnostics->summary());
+        if (!current()) return;
         if (shutdown_requested) {
             requestShutdown();
+            if (!observer || m_workers_stopping || m_admission_closed) return;
         }
     } else {
         m_backend_queries_ready = true;
         Q_EMIT networkActionReadyChanged();
+        if (!current()) return;
         if (m_mempool_info_polling_active) {
             schedulePoll(Poll::Mempool);
+            if (!current()) return;
         }
         m_runtime_dialogs_enabled = true;
         showStartupWarnings();
+        if (!current()) return;
         {
-            const QScopedValueRollback applying{m_applying_sync_snapshot, true};
+            const bool previous = std::exchange(m_applying_sync_snapshot, true);
+            const auto applying = qScopeGuard([observer, previous] { if (observer) observer->m_applying_sync_snapshot = previous; });
             publishNotifications();
+            if (!current()) return;
             if (!m_seen_block_tip) {
                 m_block_tip_time = tip_info.block_time;
                 setBlockTipHeight(tip_info.block_height);
+                if (!current()) return;
                 setVerificationProgress(tip_info.verification_progress);
+                if (!current()) return;
                 setBlockSyncActive(initial_block_download);
+                if (!current()) return;
             }
             // LoadChainTip emits an INIT_DOWNLOAD notification even on a caught-up
             // restart. Core's IBD flag only latches false: preserve a newer POST_INIT
             // notification, but let this final startup result clear the init flag.
             if (!initial_block_download) setBlockSyncActive(false);
+            if (!current()) return;
             if (!m_seen_header_tip) setHeaderSyncState(tip_info.header_height, tip_info.header_time, /*presync=*/false);
+            if (!current()) return;
             setNodeReady(true);
         }
         updateSyncCompletion();
+        if (!current()) return;
         refreshStatus();
         refreshMempoolInfo();
         Q_EMIT chainStateReady();
+        if (!current()) return;
     }
     Q_EMIT nodeInitialized();
 }

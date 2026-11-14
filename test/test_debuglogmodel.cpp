@@ -121,6 +121,9 @@ private Q_SLOTS:
     void initialLoad_handlesBlankLinesAtBlockBoundaries();
     void initialLoad_discardsOversizedPartialAndResynchronizes();
     void initialLoad_skipsOversizedCompleteLine();
+    void largeTailKeepsCompleteRecordFraming_data();
+    void largeTailKeepsCompleteRecordFraming();
+    void largeTailStopsAtRetainedByteBudget();
     void deltaAfterEmptyLoad_preservesHasMoreSentinel();
     void liveRefresh_appendsWithoutResetAndPrunesHead();
     void liveRefresh_canFullyDisplaceCacheWithoutReset();
@@ -1049,6 +1052,116 @@ void DebugLogModelTests::initialLoad_skipsOversizedCompleteLine()
     QTRY_COMPARE(model.rowCount(), 2);
     QCOMPARE(ContentAt(model, 0), QStringLiteral("older"));
     QCOMPARE(ContentAt(model, 1), QStringLiteral("newer"));
+}
+
+void DebugLogModelTests::largeTailKeepsCompleteRecordFraming_data()
+{
+    QTest::addColumn<int>("shape");
+    QTest::newRow("unterminated-only") << 0;
+    QTest::newRow("oversized-only") << 1;
+    QTest::newRow("oversized-middle") << 2;
+    QTest::newRow("oversized-suffix") << 3;
+}
+
+void DebugLogModelTests::largeTailKeepsCompleteRecordFraming()
+{
+    QFETCH(int, shape);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = directory.filePath("debug.log");
+    const QByteArray oversized(3 * DebugLogModel::kMaxLogLineBytes, 'x');
+    QByteArray original;
+    if (shape == 0) original = "unfinished";
+    if (shape == 1) original = oversized;
+    if (shape == 2) original = Record("before") + oversized + '\n' + Record("after");
+    if (shape == 3) original = Record("before") + oversized;
+    QVERIFY(WriteBytes(path, original));
+    ManualExecutionEnvironment env;
+    DebugLogModel model{fs::PathFromString(path.toStdString()), true,
+        {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }}};
+    const auto drain = [&] {
+        for (int turn{0}; turn < 256; ++turn) {
+            env.drain();
+            env.publishAll();
+            QCoreApplication::processEvents();
+            if (!model.busy() && env.transportIdle()) return;
+        }
+        QTest::qFail("The original log read and GUI projection did not settle", __FILE__, __LINE__);
+    };
+    const auto cleanup = qScopeGuard([&] {
+        model.stop(); drain();
+        if (!env.quiescent()) QTest::qFail("The original tail owner did not drain", __FILE__, __LINE__);
+    });
+    model.setActive(true);
+    drain();
+    QVERIFY(model.logAvailable());
+    QVERIFY(!model.hasMoreLines());
+    QCOMPARE(model.rowCount(), shape < 2 ? 0 : shape == 2 ? 2 : 1);
+    if (shape >= 2) QCOMPARE(ContentAt(model, 0), QStringLiteral("before"));
+    if (shape == 2) QCOMPARE(ContentAt(model, 1), QStringLiteral("after"));
+
+    const QByteArray appended = shape == 2 ? Record("last") : QByteArray(QByteArray{"\n"} + Record("after"));
+    QVERIFY(WriteBytes(path, appended, QIODevice::WriteOnly | QIODevice::Append));
+    model.refresh();
+    drain();
+    QCOMPARE(model.rowCount(), shape == 1 ? 1 : shape == 2 ? 3 : 2);
+    QCOMPARE(ContentAt(model, model.rowCount() - 1), shape == 2 ? QStringLiteral("last") : QStringLiteral("after"));
+    if (shape == 0) QCOMPARE(ContentAt(model, 0), QStringLiteral("unfinished"));
+    if (shape >= 2) QCOMPARE(ContentAt(model, 0), QStringLiteral("before"));
+    QFile unchanged{path};
+    QVERIFY(unchanged.open(QIODevice::ReadOnly));
+    QCOMPARE(unchanged.readAll(), original + appended);
+}
+
+void DebugLogModelTests::largeTailStopsAtRetainedByteBudget()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = directory.filePath("debug.log");
+    QByteArray bytes;
+    QByteArray newest;
+    for (int record{0}; record < 8; ++record) {
+        newest = "record " + QByteArray::number(record) + ' ' + QByteArray(768 * 1024, 'x');
+        bytes += Record(newest);
+    }
+    QVERIFY(WriteBytes(path, bytes));
+    ManualExecutionEnvironment env;
+    DebugLogModel model{fs::PathFromString(path.toStdString()), true,
+        {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }}};
+    const auto drain = [&] {
+        for (int turn{0}; turn < DebugLogModel::kMaxLoadLimit; ++turn) {
+            env.drain();
+            env.publishAll();
+            QCoreApplication::processEvents();
+            if (!model.busy() && env.transportIdle()) return;
+        }
+        QTest::qFail("The byte-bounded tail did not physically settle", __FILE__, __LINE__);
+    };
+    const auto cleanup = qScopeGuard([&] {
+        model.stop(); drain();
+        if (!env.quiescent()) QTest::qFail("The byte-bounded tail owner did not drain", __FILE__, __LINE__);
+    });
+    // Keep the Load More command available: at the public hard row limit the
+    // model intentionally hides it, independently of retained-byte pressure.
+    model.setLoadLimit(DebugLogModel::kMaxLoadLimit - 1);
+    model.setActive(true);
+    drain();
+    QVERIFY(model.logAvailable());
+    QVERIFY(model.hasMoreLines());
+    QVERIFY(model.rowCount() > 0);
+    QString retained;
+    for (int row{0}; row < model.rowCount(); ++row) {
+        const auto text = ContentAt(model, row);
+        QVERIFY(text.size() <= 1024);
+        retained += text;
+    }
+    // The 8 MiB retained-record budget accounts for metadata as well as UTF-16.
+    QVERIFY(retained.size() <= 4 * 1024 * 1024);
+    QVERIFY(!retained.contains(QStringLiteral("record 0 ")));
+    QVERIFY(retained.endsWith(QString::fromUtf8(newest)));
+    QFile unchanged{path};
+    QVERIFY(unchanged.open(QIODevice::ReadOnly));
+    QCOMPARE(unchanged.readAll(), bytes);
 }
 
 void DebugLogModelTests::deltaAfterEmptyLoad_preservesHasMoreSentinel()

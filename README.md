@@ -142,7 +142,34 @@ Build and run the unit and QML component tests:
 ```sh
 cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_APP_TESTS=ON -DWITH_CCACHE=ON
 cmake --build build --target bitcoinqml_unit_tests bitcoinqml_bootstrap_tests bitcoinqml_qmltests -j12
-ctest --test-dir build --output-on-failure -L 'unit|qml'
+ctest --test-dir build --output-on-failure -L 'unit|qml' --parallel 4
+```
+
+For a faster QML editing loop on systems that support symbolic links, use a
+separate development build:
+
+```sh
+cmake -S . -B build-qml-dev -DBUILD_APP_TESTS=ON -DQML_TEST_DEV_MODE=ON -DWITH_CCACHE=ON
+cmake --build build-qml-dev --target bitcoinqml_qmltests --parallel 4
+ctest --test-dir build-qml-dev -L qml --parallel 4 --output-on-failure
+# Run just one component file:
+ctest --test-dir build-qml-dev -R '^bitcoinqml_qml_copybutton$' --output-on-failure
+```
+
+Development mode creates a live source mirror in `build-qml-dev/test/qml-dev`,
+preserving resource aliases and the selected Qt compatibility files. Edits to
+existing QML files and JavaScript take effect on the next test run without a
+build. Rebuild for C++ or embedded asset changes; rerun CMake after changing a
+resource manifest. The default (`QML_TEST_DEV_MODE=OFF`) tests embedded resources,
+as CI does. Qualification and QML coverage use embedded mode; the coverage
+collector rejects development mode.
+
+Both modes register each QML test file separately with CTest and isolate
+persistent settings per process. Run `ctest --test-dir build -N -L qml` to list
+the registered files and warning checks. The all-in-one executable remains:
+
+```sh
+QT_QUICK_BACKEND=software QML_DISABLE_DISK_CACHE=1 build/bin/bitcoinqml_qmltests -platform minimal
 ```
 
 On Qt 6.3 and newer, QML component tests fail on unexpected warnings. Each

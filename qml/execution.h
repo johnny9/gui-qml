@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <limits>
+#include <list>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -60,6 +61,10 @@ struct Limits {
     // remain bounded, independently of Core/Domain/Control queue admission.
     Budget cleanup_reservations{};
     Budget action_scopes{};
+    // Last-issued action identity; inject its boundary for deterministic tests.
+    uint64_t initial_scope_sequence{0};
+    // Last-issued task identity; admission must never wrap into a live record.
+    uint64_t initial_task_sequence{0};
     static Limits Bounded() { return {{128, 4 * 1024 * 1024}, {16, 64 * 1024}, {16, 64 * 1024},
         {112, 3 * 1024 * 1024}, 4, 65'536, 1, {65'536, 16 * 1024 * 1024}, {16, 64 * 1024}}; }
 };
@@ -219,6 +224,10 @@ private:
         bool resource_counted{false};
         bool cleanup_queued{false};
         uint64_t scope{0};
+        // Reservation admission allocates these ordered-index nodes once.
+        // Blocking, activation and final release only transfer ownership.
+        std::set<TaskId>::node_type idle_ticket{};
+        std::set<TaskId>::node_type ready_ticket{};
     };
     static std::optional<size_t> budgetIndex(Lane lane);
     void erase(std::map<TaskId, Record>::iterator record);
@@ -234,7 +243,8 @@ private:
     void releaseWorkKey(Record& record);
     void releaseBorrower(ResourceKey key);
     bool pumpCore(std::optional<TaskId> proposed = {});
-    void releaseCore(ResourceKey key);
+    void releaseCore(ResourceKey key) noexcept;
+    bool coreRunning(ResourceKey key) const noexcept;
     void queueOutcome(TaskId id, std::optional<NotStarted::Cause> not_started = {});
     const Dispatch m_dispatch;
     const RoutedDispatch m_routed_dispatch;
@@ -248,21 +258,27 @@ private:
     Usage m_cleanup_reservations;
     Usage m_scope_usage;
     std::map<uint64_t, size_t> m_scopes;
-    std::map<uint64_t, std::set<TaskId>> m_scope_idle_cleanups;
+    struct CleanupGroup {
+        std::set<TaskId> idle;
+        size_t reservations{0};
+        std::set<uint64_t>::node_type released_ticket{};
+    };
+    std::map<uint64_t, CleanupGroup> m_scope_idle_cleanups;
     std::set<uint64_t> m_released_cleanup_scopes;
-    uint64_t m_next_scope{0};
+    uint64_t m_next_scope{m_limits.initial_scope_sequence};
     std::map<ResourceKey, size_t> m_work_by_key;
     std::set<TaskId> m_idle_cleanups, m_ready_cleanups;
     bool m_cleanup_all_requested{false};
     std::map<ResourceKey, std::deque<TaskId>> m_waiting;
-    std::deque<ResourceKey> m_ready;
-    std::set<ResourceKey> m_running;
+    // One list node per admitted Core key moves between these inventories.
+    // Returning a running key after its effect never allocates.
+    std::list<ResourceKey> m_ready, m_running;
     std::map<ResourceKey, TaskId> m_cleanup_by_key;
     std::map<ResourceKey, size_t> m_borrowers;
     size_t m_total_borrowers{0};
     uint64_t m_next_owner{m_limits.first_resource_owner};
     size_t m_action_burst{0};
-    uint64_t m_next_id{0};
+    uint64_t m_next_id{m_limits.initial_task_sequence};
     bool m_ordinary_closed{false};
     bool m_closed{false};
 };

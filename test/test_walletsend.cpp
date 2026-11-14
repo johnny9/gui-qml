@@ -16,6 +16,7 @@
 #include <QSemaphore>
 #include <QScopeGuard>
 #include <QtTest/QtTest>
+#include <array>
 #include <string_view>
 
 namespace {
@@ -48,6 +49,8 @@ struct Wallet : StubWallet {
     CTransactionRef last_transaction;
     std::function<void()> after_unlock,before_commit;
     std::function<void(PartiallySignedTransaction&, bool&)> metadata;
+    std::optional<common::PSBTError> metadata_error;
+    std::vector<std::pair<bool, bool>> fill_options;
     int metadata_reads{0};
     std::vector<bool> metadata_derivations;
     std::string expected_password{"secret"};std::atomic<QThread*> unlock_thread{nullptr};
@@ -63,11 +66,12 @@ struct Wallet : StubWallet {
     }
     bool lock() override { ++locks; if (fail_lock) return false; locked = true; return true; }
     std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options, size_t*, PartiallySignedTransaction& psbt, bool& complete) override {
+        fill_options.emplace_back(options.sign, options.bip32_derivs);
         if (!options.sign && metadata) {
             ++metadata_reads;
             metadata_derivations.push_back(options.bip32_derivs);
             metadata(psbt, complete);
-            return {};
+            return metadata_error;
         }
         ++signs;
         if (report_sign_error || mutate_then_throw) {
@@ -108,6 +112,126 @@ class WalletSendTests : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void initTestCase() { SelectParams(ChainType::MAIN); }
+    void signingApprovalRejectsIncompleteAuthorityBeforeDeviceWork_data()
+    {
+        QTest::addColumn<int>("mode");
+        const std::array names{"missing-review", "missing-proof", "missing-fee", "fee-changed", "unsigned-terms-changed", "signer-missing", "missing-output-owner"};
+        for (size_t i{0}; i < names.size(); ++i) QTest::newRow(names[i]) << int(i);
+    }
+    void signingApprovalRejectsIncompleteAuthorityBeforeDeviceWork()
+    {
+        QFETCH(int, mode);
+        Fixture f; f.wallet->signer = mode != 5;
+        const auto send = PsbtRequest(); const auto original = psbtwork::SerializeRaw(*send.psbt);
+        walletsigning::Request request{send.reviewed, send.psbt, send.proof, send.approved_fee};
+        if (mode == 0) request.reviewed.reset();
+        if (mode == 1) request.proof.reset();
+        if (mode == 2) request.approved_fee.reset();
+        if (mode == 3) request.approved_fee = 999;
+        if (mode == 4) {
+            auto changed = *request.document;
+            changed.outputs[0].amount = 999;
+            request.document = std::make_shared<const PartiallySignedTransaction>(std::move(changed));
+        }
+        const auto result = mode == 6 ? walletsigning::ApproveInto(*f.wallet, request, {})
+            : walletsigning::Approve(*f.wallet, request, f.opening);
+        QCOMPARE(result.error, mode == 5 ? walletsigning::Error::SignerNotFound : mode == 6 ? walletsigning::Error::Failed : walletsigning::Error::InvalidFee);
+        QVERIFY(!result.document && !result.signed_transaction && !result.partial);
+        QCOMPARE(f.wallet->fill_options.size(), size_t{0});
+        QCOMPARE(f.wallet->commits, 0); QCOMPARE(f.wallet->unlocks, 0); QCOMPARE(f.wallet->locks, 0);
+        QCOMPARE(psbtwork::SerializeRaw(*send.psbt), original);
+    }
+    void approvalCannotStartDeviceWorkWithoutReservedOutput()
+    {
+        Fixture f; f.wallet->signer = true;
+        const auto send = PsbtRequest();
+        const walletsigning::Request request{send.reviewed, send.psbt, send.proof, send.approved_fee};
+        f.commands.scheduler->closeAdmission();
+        const auto result = walletsigning::Approve(*f.wallet, request, f.opening);
+        QCOMPARE(result.error, walletsigning::Error::Failed);
+        QVERIFY(!result.document && !result.signed_transaction && !result.lifetime);
+        QVERIFY(f.wallet->fill_options.empty()); QCOMPARE(f.wallet->commits, 0);
+    }
+    void approvalRetainsOnlyAuthenticatedMetadataAfterFailure_data()
+    {
+        QTest::addColumn<int>("mode");
+        const std::array names{"signer-not-found", "signer-failed", "metadata-error", "error-after-terms-changed", "error-after-fee-changed", "throw-after-authenticated-output", "throw-after-terms-changed", "throw-after-fee-changed"};
+        for (size_t i{0}; i < names.size(); ++i) QTest::newRow(names[i]) << int(i);
+    }
+    void approvalRetainsOnlyAuthenticatedMetadataAfterFailure()
+    {
+        QFETCH(int, mode);
+        Fixture f; f.wallet->signer = true;
+        const auto send = PsbtRequest(); const auto original = psbtwork::SerializeRaw(*send.psbt);
+        const walletsigning::Request request{send.reviewed, send.psbt, send.proof, send.approved_fee};
+        f.wallet->metadata_error = mode == 0 ? common::PSBTError::EXTERNAL_SIGNER_NOT_FOUND
+            : mode == 1 ? common::PSBTError::EXTERNAL_SIGNER_FAILED : common::PSBTError::INVALID_TX;
+        f.wallet->metadata = [mode](PartiallySignedTransaction& document, bool& complete) {
+            document.inputs[0].final_script_sig = CScript{} << OP_TRUE;
+            complete = true;
+            if (mode == 3 || mode == 6) document.outputs[0].amount = 999;
+            if (mode == 4 || mode == 7) {
+                auto previous = CMutableTransaction{*document.inputs[0].non_witness_utxo};
+                previous.vout[0].nValue = 1'999;
+                document.inputs[0].non_witness_utxo = MakeTransactionRef(std::move(previous));
+            }
+            if (mode >= 5) throw std::runtime_error("metadata effect returned no completion");
+        };
+        const auto result = walletsigning::Approve(*f.wallet, request, f.opening);
+        QCOMPARE(result.error, mode >= 5 ? walletsigning::Error::Uncertain : mode == 0 ? walletsigning::Error::SignerNotFound
+            : mode == 1 ? walletsigning::Error::SignerFailed : walletsigning::Error::Fill);
+        const bool retained = mode <= 2 || mode == 5;
+        QCOMPARE(bool(result.document), retained); QCOMPARE(result.partial, retained);
+        QVERIFY(!result.signed_transaction); QCOMPARE(f.wallet->commits, 0);
+        QCOMPARE(f.wallet->metadata_reads, 1); QCOMPARE(f.wallet->signs, 0);
+        QCOMPARE(f.wallet->fill_options.size(), size_t{1});
+        QCOMPARE(f.wallet->fill_options.front(), (std::pair{false, true}));
+        QCOMPARE(result.fill_error, mode >= 5 ? std::optional<common::PSBTError>{} : f.wallet->metadata_error);
+        QCOMPARE(psbtwork::SerializeRaw(*send.psbt), original);
+        if (retained) {
+            QCOMPARE(result.document->inputs[0].final_script_sig, CScript{} << OP_TRUE);
+            QCOMPARE(result.document->GetUnsignedTx()->GetHash(), send.reviewed->GetHash());
+            QVERIFY(psbtfee::MatchesReview(*result.document, *send.proof, send.approved_fee));
+            QVERIFY(result.lifetime);
+        }
+    }
+    void committedTransactionRemainsTruthfulWhenTheNotesStoreIsAbsent()
+    {
+        Fixture f;
+        auto operation = std::make_shared<walletsend::Operation>(f.opening, nullptr, [&f](auto) { ++f.notifications; });
+        auto request = SignedRequest(); const auto reviewed = request.reviewed->GetHash();
+        request.notes.insert("1BoatSLRHtKNngkdXEeobR76b53LETtpyT", "outgoing note");
+        QVERIFY(operation->start(std::move(request))); QCOMPARE(f.wallet->commits, 0);
+        f.commands.drain(); const auto result = operation->result(); QVERIFY(result);
+        QCOMPARE(result->error, Error::None); QVERIFY(result->committed);
+        QCOMPARE(result->committed->GetHash(), reviewed);
+        QCOMPARE(result->submission, walletsend::Submission::Mempool);
+        QVERIFY(result->notes_requested && !result->notes);
+        QCOMPARE(result->notes_rejection, execution::Rejection::Closed);
+        QCOMPARE(f.wallet->commits, 1); QCOMPARE(f.wallet->labels, 0); QCOMPARE(f.notifications, 1);
+    }
+    void invalidReviewOrForeignActionCannotReachEitherWallet_data()
+    {
+        QTest::addColumn<bool>("foreign");
+        QTest::newRow("missing-review") << false;
+        QTest::newRow("foreign-opening-capability") << true;
+    }
+    void invalidReviewOrForeignActionCannotReachEitherWallet()
+    {
+        QFETCH(bool, foreign);
+        Fixture f, other;
+        auto operation = f.operation(); auto request = SignedRequest();
+        if (!foreign) request.reviewed.reset();
+        const auto admitted = operation->start(std::move(request), foreign ? other.opening->startAction() : nullptr);
+        QCOMPARE(admitted.rejection, execution::Rejection::Invalid);
+        f.commands.drain(); other.commands.drain();
+        QVERIFY(!operation->result()); QCOMPARE(f.notifications, 0);
+        QCOMPARE(f.wallet->commits, 0); QCOMPARE(other.wallet->commits, 0);
+        QVERIFY(f.wallet->fill_options.empty() && other.wallet->fill_options.empty());
+        const auto valid = f.operation(); QVERIFY(valid->start(SignedRequest())); f.commands.drain();
+        QVERIFY(valid->result() && valid->result()->committed); QCOMPARE(f.wallet->commits, 1);
+        QCOMPARE(other.wallet->commits, 0);
+    }
     void assessedCompleteScriptsDoNotRequireSigning_data()
     {
         QTest::addColumn<bool>("nested");

@@ -65,6 +65,26 @@ QByteArray FormatStderr(const Record& record)
         record.has_function ? record.function.data() : nullptr, record.has_category ? record.category.data() : nullptr};
     return qFormatLogMessage(record.type, context, Message(record)).toUtf8() + '\n';
 }
+Writer::Writer(WriterPorts ports) : m_ports(std::move(ports))
+{
+    if (!m_ports.stderr_write || !m_ports.stderr_flush || !m_ports.core_debug
+        || !m_ports.core_info || !m_ports.benign_font_warning)
+        throw std::invalid_argument{"Missing Qt log writer port"};
+}
+bool Writer::operator()(const Record& record) const
+{
+    if (record.overflow || (record.stage == Stage::Startup && record.type != QtDebugMsg)) {
+        const auto formatted = FormatStderr(record);
+        const auto written = m_ports.stderr_write(formatted);
+        const auto flushed = m_ports.stderr_flush();
+        return written == static_cast<size_t>(formatted.size()) && flushed;
+    }
+    const auto message = Message(record);
+    if (record.type == QtDebugMsg || (record.type == QtWarningMsg && m_ports.benign_font_warning(message)))
+        m_ports.core_debug(message);
+    else m_ports.core_info(message);
+    return true;
+}
 int FinalExitStatus(int original_status, const Receipt& receipt)
 {
     return original_status != EXIT_SUCCESS ? original_status : receipt.failed || receipt.rejected ? EXIT_FAILURE : EXIT_SUCCESS;

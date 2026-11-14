@@ -13,6 +13,9 @@ set_tests_properties(bitcoinqml_cleanup_tests PROPERTIES LABELS unit)
 add_test(NAME bitcoinqml_process_checks
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_process_checks.py
 )
+add_test(NAME bitcoinqml_dev_resources
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_qml_dev_resources.py
+)
 
 add_test(NAME bitcoinqml_test_directory_checks
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_test_directories.py
@@ -45,6 +48,7 @@ add_executable(bitcoinqml_unit_tests
   test_flowpresentation.cpp
   test_flowdetailsmodel.cpp
   test_startupeffects.cpp
+  test_startuppolicy.cpp
   test_qtlogsink.cpp
   test_bitcoinaddress.cpp
   test_blockclockdial.cpp
@@ -102,6 +106,7 @@ if(ENABLE_WALLET)
     test_coinslistmodel.cpp
     test_psbtfee.cpp
     test_psbtqmlmodel.cpp
+    test_psbtwork.cpp
     test_receiverequesthistorymodel.cpp
     test_receiverequestoperation.cpp
     test_sendrecipientslistmodel.cpp
@@ -187,10 +192,30 @@ if(ENABLE_TEST_AUTOMATION AND UNIX)
   )
 endif()
 
-qt6_add_resources(QMLTESTS_QRC_CPP ${QML_QRC} qml/bitcoin_qmltests.qrc)
+option(QML_TEST_DEV_MODE "Load QML tests and components from a live source mirror" OFF)
+set(qml_test_manifests ${QML_QRC} ${CMAKE_CURRENT_SOURCE_DIR}/qml/bitcoin_qmltests.qrc)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${qml_test_manifests})
+set(qml_test_source_dir "qrc:/qml")
+set(qml_test_input_dir ":/test/qml")
+if(QML_TEST_DEV_MODE)
+  set(qml_test_mirror "${CMAKE_CURRENT_BINARY_DIR}/qml-dev")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/qml/prepare_dev_resources.py)
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qml/prepare_dev_resources.py
+      --output ${qml_test_mirror} ${qml_test_manifests}
+    COMMAND_ERROR_IS_FATAL ANY
+  )
+  set(qml_test_source_dir "${qml_test_mirror}/qml")
+  set(qml_test_input_dir "${qml_test_mirror}/test/qml")
+  qt6_add_resources(QMLTESTS_QRC_CPP ${qml_test_mirror}/assets.qrc)
+else()
+  qt6_add_resources(QMLTESTS_QRC_CPP ${qml_test_manifests})
+endif()
 
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
+  qmlcoverage.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/flowpresentation.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.h
@@ -211,9 +236,10 @@ add_executable(bitcoinqml_qmltests
 
 target_compile_definitions(bitcoinqml_qmltests
   PRIVATE
-    BITCOINQML_QML_SOURCE_DIR="qrc:/qml"
-    QUICK_TEST_SOURCE_DIR=":/test/qml"
+    BITCOINQML_QML_SOURCE_DIR="${qml_test_source_dir}"
+    QUICK_TEST_SOURCE_DIR="${qml_test_input_dir}"
     BITCOINQML_QML_TEST_MOCKS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/mocks/qml"
+    BITCOINQML_QML_TEST_DEV_MODE=$<BOOL:${QML_TEST_DEV_MODE}>
 )
 
 target_link_libraries(bitcoinqml_qmltests
@@ -237,34 +263,58 @@ target_include_directories(bitcoinqml_qmltests
 
 set(QML_TEST_RENDERING_PLATFORM "minimal" CACHE STRING "Platform used by the QML component and warning tests")
 set(qml_test_platform "${QML_TEST_RENDERING_PLATFORM}")
-add_test(NAME bitcoinqml_qmltests COMMAND bitcoinqml_qmltests -platform ${qml_test_platform})
+# Use the resource manifest as the authoritative list in both modes. Each file
+# gets its own process, so CTest can select and schedule tests independently.
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/qml/bitcoin_qmltests.qrc qml_test_entries
+  REGEX "<file>tst_.*[.]qml</file>")
+set(qml_test_names)
+foreach(entry IN LISTS qml_test_entries)
+  string(REGEX REPLACE ".*<file>([^<]+)</file>.*" "\\1" filename "${entry}")
+  string(REGEX REPLACE "^tst_|[.]qml$" "" test_name "${filename}")
+  set(test_name "bitcoinqml_qml_${test_name}")
+  if(test_name IN_LIST qml_test_names)
+    message(FATAL_ERROR "Duplicate QML component CTest name: ${test_name}")
+  endif()
+  add_test(NAME ${test_name} COMMAND bitcoinqml_qmltests -platform ${qml_test_platform}
+    -input "${qml_test_input_dir}/${filename}")
+  list(APPEND qml_test_names ${test_name})
+endforeach()
+if(NOT qml_test_names)
+  message(FATAL_ERROR "QML test manifest selected no component test files")
+endif()
+# Seed the longest suites so clean builds do not need timing history to schedule
+# them first. These are relative scheduling hints, not timeouts or assertions.
+set_tests_properties(bitcoinqml_qml_sendcreate bitcoinqml_qml_requestpayment PROPERTIES COST 20)
+set_tests_properties(bitcoinqml_qml_activitylist PROPERTIES COST 16)
+
 # Qt 6.2 has no QTest::failOnWarning(); leave this check disabled there too,
 # matching the component runner's version guard.
 if(Qt6_VERSION VERSION_GREATER_EQUAL 6.3)
   # console.warn() does not emit QQmlEngine::warnings. Also reject messages
   # printed outside a test function, before failOnWarning() is installed.
-  set_tests_properties(bitcoinqml_qmltests PROPERTIES
+  set_tests_properties(${qml_test_names} PROPERTIES
     FAIL_REGULAR_EXPRESSION "(QWARN|QCRITICAL)[^\r\n]*qml:|\\[(warning|critical)\\] qml:")
 endif()
 
 add_test(NAME bitcoinqml_qmlwarning_tests
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qml/test_warnings.py
     $<TARGET_FILE:bitcoinqml_qmltests> ${Qt6_VERSION} ${qml_test_platform} ${PROJECT_BINARY_DIR}
+    "${qml_test_input_dir}/warning_probe.qml"
 )
 set_tests_properties(bitcoinqml_qmlwarning_tests PROPERTIES TIMEOUT 120 LABELS qml
   ENVIRONMENT "QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1")
 
 set(gui_test_environment "QT_QPA_PLATFORM=minimal;QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1")
 set_tests_properties(bitcoinqml_unit_tests bitcoinqml_bootstrap_tests bitcoinqml_fatal_exception_tests bitcoinqml_test_directory_checks
-  bitcoinqml_process_checks PROPERTIES LABELS unit)
-set_tests_properties(bitcoinqml_qmltests PROPERTIES LABELS qml)
-set_tests_properties(bitcoinqml_unit_tests bitcoinqml_bootstrap_tests bitcoinqml_qmltests PROPERTIES
+  bitcoinqml_process_checks bitcoinqml_dev_resources PROPERTIES LABELS unit)
+set_tests_properties(${qml_test_names} PROPERTIES LABELS qml TIMEOUT 120)
+set_tests_properties(bitcoinqml_unit_tests bitcoinqml_bootstrap_tests ${qml_test_names} PROPERTIES
   ENVIRONMENT "${gui_test_environment}")
-set_property(TEST bitcoinqml_qmltests PROPERTY ENVIRONMENT
+set_property(TEST ${qml_test_names} PROPERTY ENVIRONMENT
   "QT_QPA_PLATFORM=${qml_test_platform};QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1")
 # Include severity and category so the console warning check can distinguish
 # console.warn() from console.log() during QML loading and teardown.
-set_property(TEST bitcoinqml_qmltests APPEND PROPERTY ENVIRONMENT
+set_property(TEST ${qml_test_names} APPEND PROPERTY ENVIRONMENT
   "QT_MESSAGE_PATTERN=[%{type}] %{category}: %{message}")
 
 get_target_property(qt_lib_type Qt6::Core TYPE)

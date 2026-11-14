@@ -1,0 +1,77 @@
+{
+  "status": "implementation_and_focused_ordinary_checkpoint_complete_final_qualification_pending_R42",
+  "tested": {
+    "app": "c43fa40ee418655f0800fc92da29c482f836ed3d",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "native68_Options_repair_bodies": 3,
+    "native68_Options_pass": 3,
+    "native68_O04_current_executor_bodies": 17,
+    "native68_O27_close_consent_bodies": 3,
+    "native68_consumer_pass": 20,
+    "native68_current_ELF_total_executed": 23,
+    "native67_prior_passes_source_qualified_carry": 6,
+    "QML66_color_pass_carried": 1,
+    "QML68_repeated_bodies": 0,
+    "exact_retained_binary_sha256": "5d71cb8e7cf6c1db247d9ad1ec254e0358babc9246134e02b20856d670a0c000",
+    "build_id": "3f9b1727a5f9a271f75a785265a4f255189ac6ca",
+    "all_current_process_exits": 0,
+    "failures": 0,
+    "skips": 0,
+    "new_sanitizer_runs": 0,
+    "full343_repeat": false,
+    "ccache_adapter_applied": false,
+    "ccache_reason": "Preserve hot one-file rebuild; approved bounded adapter retained for next needed broader build, no cache bootstrap",
+    "exhaustive_coverage_profile_macro_suite_platform_config_and_sanitizer_qualification": "Pending finalR42 by explicit user approval",
+    "prior_failures_preserved": {
+      "source65": "../gameboy-native-65/results/RESULT.json",
+      "source66_compile_failure": "../gameboy-hot-66/results/host-result.json",
+      "source67_3_failures": "../gameboy-hot-67/results/RESULT.json"
+    },
+    "evidence": {
+      "Options3": "results/RESULT.json",
+      "O04_O27_20": "results/consumers-o04-o27/RESULT.json",
+      "prior6_source_carry": "SOURCE_CARRY_67_TO_68.json",
+      "QML_source_and_production_carry": "results/input-and-carry.json",
+      "cache_decision": "CCACHE_REVIEW_AND_DEPLOYMENT_DECISION.json"
+    },
+    "no_source_or_Core_or_CI_changes": true
+  },
+  "application_parent": "85834d8780f12abb6946c5c1fb46769941ddc8dc",
+  "lint": {
+    "command": [
+      "python3",
+      "ci/lint.py",
+      "--no-build",
+      "--scope",
+      "app"
+    ],
+    "commit_range": "refs/remotes/qualification/source65..HEAD",
+    "snapshot": "c43fa40ee418655f0800fc92da29c482f836ed3d",
+    "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "image": "sha256:188a19502a4c30da45a70ca9d64eba188007d86c2ca67fc2f25fff207f7cdc78",
+    "exit": 0,
+    "seconds": 4.525687929999549,
+    "after": {
+      "branch": "validation/r10-native-gap-68",
+      "head": "c43fa40ee418655f0800fc92da29c482f836ed3d",
+      "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+      "status": "",
+      "Core_status": ""
+    }
+  },
+  "tidy": {
+    "source": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-acceptance-20261114/source-tidy-68",
+    "image": "sha256:a4c62a2056bc0171ce1071ea18515507bc3183770b033516a548c6c080bf391b",
+    "exit_code": 0,
+    "seconds": 15.094229156966321,
+    "selected_handwritten_units": [
+      "test/test_options_model.cpp"
+    ],
+    "driver_sha256": "0124f874dcd9c7614e7c34c78549757d952415dd5753755317354bf7289ac146"
+  },
+  "scope_audit": {
+    "path": "R10_SCOPE_PROVENANCE_20261114.json",
+    "qualification": "Historical mapping only; final23body result above supersedes its earlier pending3fixstatus"
+  },
+  "final_qualification": "Exhaustive coverage, full suites and IPC lifecycle, complete platform/build/wallet/Qt matrix including nativeWindows, and pinned sanitizers/repairs pendingR42. Native Qt picker affectedTSan remains explicitlyunresolved."
+}

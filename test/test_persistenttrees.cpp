@@ -59,6 +59,18 @@ struct NativeFixture {
 class PersistentTreeTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void malformedPublicActivitySnapshotRejectsMissingRank() {
+        using namespace activityview;
+        const SharedRow row = std::make_shared<const Row>(Row{{Qt::DisplayRole, 42}});
+        // Public snapshot metadata can be stale even when the retained row is
+        // valid. Missing ranks must not change or replace the original node.
+        const Tree root = std::make_shared<const Node>(Node{QStringLiteral("original"), row, {}, {}, 1, 2});
+        const auto* existing = At(root, 0);
+        QCOMPARE(existing, root.get()); QCOMPARE(existing->id, QStringLiteral("original"));
+        QCOMPARE(existing->row.get(), row.get()); QCOMPARE(existing->row->value(Qt::DisplayRole).toInt(), 42);
+        QVERIFY(At(root, 1) == nullptr);
+        QCOMPARE(At(root, 0), existing); QCOMPARE(root->row.get(), row.get());
+    }
     void indexedSequenceKeepsRanksAndIdentityThroughRotationsAndSuccessorRemoval() {
         IndexedSequence<int> rows;
         std::vector<int> expected;

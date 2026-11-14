@@ -31,6 +31,8 @@ TestCase {
     function init() {
         testSetup.failOnWarnings()
         BitcoinUri.releasePublications()
+        BitcoinUri.resetRequestControlsForTest()
+        walletController.setInitialized(true)
         walletController.setSelectedWallet("send-create-test-wallet")
         testWalletModel.sendDraftSweepsWallet = false
         testWalletModel.currentTransactionSweepsWallet = false
@@ -1521,6 +1523,1005 @@ TestCase {
             testWalletModel.available = true
             prompt.close()
         }
+    }
+
+    // Separate windows keep physical button clicks inside a complete viewport
+    // without resizing the window used by the existing component cases.
+    Component {
+        id: controlledSendWindowComponent
+        Window { width: 1000; height: 900; visible: false }
+    }
+    Component { id: transactionNavigationSpyComponent; SignalSpy { signalName: "viewTransactionInActivity" } }
+    Component { id: pasteCancellationSpyComponent; SignalSpy { signalName: "cancelRequested" } }
+
+    function createControlledSendPage() {
+        // QtTest destroys temporary objects in creation order. Register the
+        // page first so its bindings are torn down while its window is alive.
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: 1000, height: 900, visible: false})
+        verify(page !== null)
+        const window = createTemporaryObject(controlledSendWindowComponent, testCase)
+        verify(window !== null)
+        page.parent = window.contentItem
+        page.visible = true
+        window.show()
+        verify(waitForRendering(page))
+        return page
+    }
+    function controlledSendEditor(form) {
+        // The delegate forwards paste intents with its live editorItem. Use
+        // that same port, rather than the form's cached itemAt() convenience.
+        const card = findChild(form, "sendRecipientCard_0")
+        verify(card !== null)
+        const editor = card.editorItem
+        verify(editor !== null)
+        compare(editor.recipient, testSendRecipient)
+        return editor
+    }
+    function controlledPasteField(editor, name) {
+        if (name === "amount") return editor.amountField
+        if (name === "label") return editor.noteField
+        return editor.addressField
+    }
+    function clickControlledReview(page) {
+        const scroll = findChild(page, "sendFormScrollView")
+        const button = findChild(page, "sendReviewButton")
+        verify(scroll !== null && button !== null)
+        verify(button.enabled)
+        const flickable = scroll.contentItem
+        flickable.contentY = Math.max(0, flickable.contentHeight - flickable.height)
+        verify(waitForRendering(page))
+        const center = button.mapToItem(page, button.width / 2, button.height / 2)
+        verify(center.y >= 0 && center.y < page.height)
+        mouseClick(button)
+    }
+    function test_controlled_preparation_projects_one_owned_outcome_data() {
+        return [
+            {tag: "ready", result: true, unlock: false, selected: false, error: "", expected: "review"},
+            {tag: "unlock", result: false, unlock: true, selected: false, error: "", expected: "unlock"},
+            {tag: "explicit-failure", result: false, unlock: false, selected: false, error: "Original preparation failed.", expected: "Original preparation failed."},
+            {tag: "empty-failure-wallet", result: false, unlock: false, selected: false, error: "", expected: "Amount plus fee exceeds available balance. Some of your coins are locked."},
+            {tag: "empty-failure-selection", result: false, unlock: false, selected: true, error: "", expected: "Selected inputs do not cover the amount plus fee"}
+        ]
+    }
+    function test_controlled_preparation_projects_one_owned_outcome(data) {
+        if (data.selected) testCoinsListModel.toggleCoinSelection(0)
+        testWalletModel.prepareTransactionResult = data.result
+        testWalletModel.holdPreparationForTest = true
+        const page = createControlledSendPage()
+        const review = findChild(page, "transactionReviewPopup")
+        const prompt = findChild(page, "reviewPassphrasePopup")
+        const before = testWalletModel.prepareTransactionCalls
+        try {
+            clickControlledReview(page)
+            compare(testWalletModel.prepareTransactionCalls, before + 1)
+            compare(testWalletModel.preparationBusy, true)
+            compare(review.visible, false)
+            compare(prompt.visible, false)
+            // These are the mock's public result projections, delivered while
+            // its accepted command remains pending, before terminal publication.
+            testWalletModel.transactionError = data.error
+            testWalletModel.transactionNeedsUnlock = data.unlock
+            testWalletModel.finishPreparationForTest()
+            compare(testWalletModel.preparationBusy, false)
+            if (data.expected === "review") {
+                tryCompare(review, "opened", true)
+                compare(review.reviewWallet, testWalletModel)
+                compare(prompt.visible, false)
+            } else if (data.expected === "unlock") {
+                tryCompare(prompt, "opened", true)
+                compare(review.visible, false)
+            } else {
+                compare(page.prepareTransactionErrorText, data.expected)
+                compare(findChild(page, "sendPrepareTransactionErrorText").text, data.expected)
+                compare(review.visible, false)
+                compare(prompt.visible, false)
+            }
+            testWalletModel.preparationChanged()
+            compare(testWalletModel.prepareTransactionCalls, before + 1)
+        } finally {
+            testWalletModel.finishPreparationForTest()
+            testWalletModel.holdPreparationForTest = false
+            testWalletModel.transactionNeedsUnlock = false
+            review.close()
+            prompt.close()
+        }
+    }
+    function test_controlled_preparation_drops_late_interest_data() {
+        return [
+            {tag: "hidden", change: "hidden"},
+            {tag: "hidden-then-returned", change: "returned"},
+            {tag: "edited-draft", change: "draft"},
+            {tag: "replacement-opening", change: "opening"}
+        ]
+    }
+    function test_controlled_preparation_drops_late_interest(data) {
+        testWalletModel.holdPreparationForTest = true
+        const page = createControlledSendPage()
+        const review = findChild(page, "transactionReviewPopup")
+        const originalCalls = testWalletModel.prepareTransactionCalls
+        const replacementCalls = testSecondWalletModel.prepareTransactionCalls
+        try {
+            clickControlledReview(page)
+            compare(testWalletModel.prepareTransactionCalls, originalCalls + 1)
+            if (data.change === "hidden") page.visible = false
+            else if (data.change === "returned") { page.visible = false; page.visible = true }
+            else if (data.change === "draft") testSendRecipient.label = "replacement draft"
+            else page.wallet = testSecondWalletModel
+            testWalletModel.finishPreparationForTest()
+            compare(testWalletModel.preparationState, WalletQmlModel.PreparationReady)
+            compare(review.visible, false)
+            compare(page.prepareTransactionErrorText, "")
+            compare(testWalletModel.prepareTransactionCalls, originalCalls + 1)
+            compare(testSecondWalletModel.prepareTransactionCalls, replacementCalls)
+            if (data.change === "draft") compare(testSendRecipient.label, "replacement draft")
+        } finally {
+            testWalletModel.finishPreparationForTest()
+            testWalletModel.holdPreparationForTest = false
+            review.close()
+        }
+    }
+    function test_reentrant_preparation_keeps_two_view_interests_separate() {
+        const secondView = createControlledSendPage()
+        let allowSecondView = false
+        let secondRequested = false
+        function requestFromSecondView() {
+            if (!allowSecondView || secondRequested || testWalletModel.preparationState !== WalletQmlModel.PreparationReady) return
+            secondRequested = true
+            secondView.prepareTransactionForReview()
+        }
+        // Reenter through a second view while the first view has explicitly
+        // lost interest. The result must not depend on observer delivery order.
+        testWalletModel.preparationChanged.connect(requestFromSecondView)
+        const originalView = createControlledSendPage()
+        const originalReview = findChild(originalView, "transactionReviewPopup")
+        const secondReview = findChild(secondView, "transactionReviewPopup")
+        const before = testWalletModel.prepareTransactionCalls
+        testWalletModel.holdPreparationForTest = true
+        try {
+            clickControlledReview(originalView)
+            compare(testWalletModel.prepareTransactionCalls, before + 1)
+            originalView.visible = false
+            allowSecondView = true
+            testWalletModel.finishPreparationForTest()
+            compare(secondRequested, true)
+            compare(testWalletModel.prepareTransactionCalls, before + 2)
+            compare(testWalletModel.preparationBusy, true)
+            originalView.visible = true
+            compare(originalReview.visible, false)
+            compare(secondReview.visible, false)
+            testWalletModel.finishPreparationForTest()
+            tryCompare(secondReview, "opened", true)
+            compare(secondReview.reviewWallet, testWalletModel)
+            compare(originalReview.visible, false)
+            compare(originalView.prepareTransactionErrorText, "")
+            compare(testWalletModel.prepareTransactionCalls, before + 2)
+        } finally {
+            testWalletModel.preparationChanged.disconnect(requestFromSecondView)
+            testWalletModel.finishPreparationForTest()
+            testWalletModel.holdPreparationForTest = false
+            originalReview.close()
+            secondReview.close()
+        }
+    }
+    function test_preparation_refusal_preserves_pending_psbt_intent() {
+        const page = createControlledSendPage()
+        const review = findChild(page, "transactionReviewPopup")
+        testWalletModel.holdPsbtPublicationForTest = true
+        try {
+            page.requestPsbtImport("original-pending-review.psbt")
+            compare(testWalletModel.psbtActionBusy, true)
+            const originalImport = testWalletModel.psbtActionId
+            const prepareCalls = testWalletModel.prepareTransactionCalls
+            clickControlledReview(page)
+            compare(page.prepareTransactionErrorText, "Another wallet action is still running.")
+            compare(testWalletModel.prepareTransactionCalls, prepareCalls)
+            compare(testWalletModel.psbtActionId, originalImport)
+            compare(review.visible, false)
+            testWalletModel.completePsbtWorkForTest()
+            testWalletModel.finishPsbtPublicationForTest()
+            tryCompare(review, "opened", true)
+            compare(review.reviewWallet, testWalletModel)
+            compare(testWalletModel.prepareTransactionCalls, prepareCalls)
+        } finally {
+            testWalletModel.holdPsbtPublicationForTest = false
+            review.close()
+        }
+    }
+    function test_controlled_psbt_import_routes_public_result_data() {
+        return [
+            {tag: "signable", result: WalletQmlModel.WalletCanSign, popup: "transactionReviewPopup"},
+            {tag: "save-only", result: WalletQmlModel.WalletCannotSign, popup: "transactionReviewPopup"},
+            {tag: "review-pending", result: WalletQmlModel.ReviewPending, popup: "transactionReviewPopup"},
+            {tag: "already-known", result: WalletQmlModel.TransactionAlreadyKnown, popup: "knownPsbtTxPopup"},
+            {tag: "unsupported", result: WalletQmlModel.PsbtUnsupported, popup: "unsupportedPsbtPopup"}
+        ]
+    }
+    function test_controlled_psbt_import_routes_public_result(data) {
+        const page = createControlledSendPage()
+        const spy = createTemporaryObject(transactionNavigationSpyComponent, this, {target: page})
+        testWalletModel.psbtImportResultForTest = data.result
+        testWalletModel.holdPsbtPublicationForTest = true
+        testWalletModel.importedPsbt.setMatchedTxidForTest("1".repeat(64))
+        const prepareCalls = testWalletModel.prepareTransactionCalls
+        try {
+            page.requestPsbtImport("captured-public-result.psbt")
+            const ticket = testWalletModel.psbtActionId
+            testWalletModel.completePsbtWorkForTest()
+            compare(testWalletModel.psbtActionBusy, true)
+            compare(findChild(page, data.popup).visible, false)
+            testWalletModel.importedPsbt.setMatchedTxidForTest("2".repeat(64))
+            testWalletModel.finishPsbtPublicationForTest()
+            compare(testWalletModel.psbtActionId, ticket)
+            compare(testWalletModel.psbtImportResult, data.result)
+            const popup = findChild(page, data.popup)
+            tryCompare(popup, "opened", true)
+            compare(testWalletModel.prepareTransactionCalls, prepareCalls)
+            if (data.popup === "knownPsbtTxPopup") {
+                compare(popup.txid, "1".repeat(64))
+                mouseClick(findChild(popup.contentItem, "knownPsbtTxViewButton"))
+                compare(spy.count, 1)
+                compare(spy.signalArguments[0][0], "1".repeat(64))
+            } else if (data.popup === "unsupportedPsbtPopup") {
+                compare(popup.message, "This PSBT is not supported yet.")
+                mouseClick(findChild(popup.contentItem, "unsupportedPsbtPopupOkButton"))
+                compare(spy.count, 0)
+            } else {
+                compare(popup.reviewWallet, testWalletModel)
+                compare(popup.importedReview, true)
+                compare(spy.count, 0)
+                popup.close()
+            }
+            tryCompare(popup, "visible", false)
+        } finally {
+            testWalletModel.holdPsbtPublicationForTest = false
+            findChild(page, "transactionReviewPopup").close()
+            findChild(page, "knownPsbtTxPopup").close()
+            findChild(page, "unsupportedPsbtPopup").close()
+        }
+    }
+    function test_controlled_psbt_result_keeps_original_opening_data() {
+        return [{tag: "replaced", change: "opening"}, {tag: "closed", change: "unavailable"}, {tag: "hidden-returned", change: "returned"}]
+    }
+    function test_controlled_psbt_result_keeps_original_opening(data) {
+        const page = createControlledSendPage()
+        const otherTicket = testSecondWalletModel.psbtActionId
+        testWalletModel.holdPsbtPublicationForTest = true
+        try {
+            page.requestPsbtImport("old-opening-only.psbt")
+            const originalTicket = testWalletModel.psbtActionId
+            testWalletModel.completePsbtWorkForTest()
+            if (data.change === "opening") page.wallet = testSecondWalletModel
+            else if (data.change === "unavailable") testWalletModel.available = false
+            else { page.visible = false; page.visible = true }
+            testWalletModel.finishPsbtPublicationForTest()
+            compare(testWalletModel.psbtActionId, originalTicket)
+            compare(testSecondWalletModel.psbtActionId, otherTicket)
+            compare(findChild(page, "transactionReviewPopup").visible, false)
+            compare(findChild(page, "knownPsbtTxPopup").visible, false)
+            compare(findChild(page, "unsupportedPsbtPopup").visible, false)
+        } finally {
+            testWalletModel.resetPsbtForTest()
+            testWalletModel.available = true
+        }
+    }
+    function test_uri_service_admission_refusal_preserves_draft_data() {
+        return [{tag: "text", file: false}, {tag: "file", file: true}]
+    }
+    function test_uri_service_admission_refusal_preserves_draft(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const address = testSendRecipient.address.address
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        BitcoinUri.admitRequestsForTest = false
+        const calls = BitcoinUri.requestCallsForTest
+        try {
+            if (data.file) form.applyPaymentRequestFromFile("original-payment-request.txt")
+            else form.applyPaymentRequestFromText("bitcoin:bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4?amount=0.04", "clipboard")
+            compare(BitcoinUri.requestCallsForTest, calls + 1)
+            compare(form.uriActionPending, false)
+            compare(form.paymentRequestIsError, true)
+            compare(form.paymentRequestStatus, "Payment URI services are unavailable. Try again.")
+            compare(testSendRecipient.address.address, address)
+            compare(testSendRecipient.amount.satoshi, 0)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+        } finally { BitcoinUri.resetRequestControlsForTest() }
+    }
+    function test_uri_guard_cancels_original_paste_once_data() {
+        return [{tag: "hidden", hidden: true}, {tag: "unavailable", hidden: false}]
+    }
+    function test_uri_guard_cancels_original_paste_once(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const editor = controlledSendEditor(form)
+        const field = editor.addressField
+        const original = testSendRecipient.address.address
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        const payload = field.capturePaste("bitcoin:bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4?amount=0.03", false)
+        verify(payload !== null)
+        const cancelled = createTemporaryObject(pasteCancellationSpyComponent, this, {target: payload.origin})
+        if (data.hidden) page.visible = false
+        else testWalletModel.available = false
+        const calls = BitcoinUri.requestCallsForTest
+        try {
+            form.handleClipboardPaste("address", editor, payload)
+            compare(BitcoinUri.requestCallsForTest, calls)
+            compare(cancelled.count, 1)
+            compare(field.pastePending, false)
+            compare(testSendRecipient.address.address, original)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+        } finally { testWalletModel.available = true }
+    }
+    function test_uri_probe_failure_releases_original_editor_data() {
+        return [{tag: "address", field: "address"}, {tag: "amount", field: "amount"}, {tag: "note", field: "label"}]
+    }
+    function test_uri_probe_failure_releases_original_editor(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const editor = controlledSendEditor(form)
+        const field = controlledPasteField(editor, data.field)
+        verify(field !== null)
+        const original = testSendRecipient.address.address
+        const note = testSendRecipient.label
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        BitcoinUri.holdPublications = true
+        BitcoinUri.probeErrorForTest = "The captured request probe failed."
+        Clipboard.currentText = "bitcoin:bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4?amount=0.05&message=original"
+        try {
+            field.paste()
+            compare(field.pastePending, true)
+            compare(form.uriActionPending, true)
+            Clipboard.currentText = "unrelated replacement"
+            BitcoinUri.releasePublications()
+            compare(form.uriActionPending, false)
+            compare(field.pastePending, false)
+            compare(form.paymentRequestStatus, "The captured request probe failed.")
+            compare(form.paymentRequestIsError, true)
+            compare(testSendRecipient.address.address, original)
+            compare(testSendRecipient.amount.satoshi, 0)
+            compare(testSendRecipient.label, note)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+        } finally { BitcoinUri.resetRequestControlsForTest(); BitcoinUri.releasePublications() }
+    }
+    function test_optional_paste_payload_routes_the_original_editor_data() {
+        return [
+            {tag: "address", name: "address", text: "bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4"},
+            {tag: "amount", name: "amount", text: "0.02"},
+            {tag: "note", name: "label", text: "Owned literal note"}
+        ]
+    }
+    function test_optional_paste_payload_routes_the_original_editor(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const editor = controlledSendEditor(form)
+        const field = controlledPasteField(editor, data.name)
+        verify(field !== null)
+        field.field.selectAll()
+        BitcoinUri.holdPublications = true
+        Clipboard.currentText = data.text
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        try {
+            form.handleClipboardPaste(data.name, editor)
+            verify(field.pastePending)
+            Clipboard.currentText = "replacement must not win"
+            BitcoinUri.releasePublications()
+            tryCompare(field, "pastePending", false)
+            if (data.name === "address") tryCompare(testSendRecipient.address, "address", data.text)
+            else if (data.name === "amount") tryCompare(testSendRecipient.amount, "satoshi", 2000000)
+            else compare(testSendRecipient.label, data.text)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            compare(form.paymentRequestIsError, false)
+        } finally { BitcoinUri.releasePublications() }
+    }
+    function test_empty_clipboard_completes_paste_without_parser_data() {
+        return [{tag: "address", field: "address"}, {tag: "amount", field: "amount"}, {tag: "note", field: "label"}]
+    }
+    function test_empty_clipboard_completes_paste_without_parser(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const editor = controlledSendEditor(form)
+        const field = controlledPasteField(editor, data.field)
+        verify(field !== null)
+        Clipboard.currentText = ""
+        const before = BitcoinUri.requestCallsForTest
+        const address = testSendRecipient.address.address
+        const note = testSendRecipient.label
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        field.paste()
+        compare(field.pastePending, false)
+        compare(BitcoinUri.requestCallsForTest, before)
+        compare(testSendRecipient.address.address, address)
+        compare(testSendRecipient.label, note)
+        compare(testSendRecipient.amount.satoshi, 0)
+        compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+    }
+    function test_controlled_uri_projection_has_one_original_effect_data() {
+        return [
+            {tag: "message", text: "bitcoin:bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4?amount=0.07&message=Owned%20message", message: "Owned message", valid: true, file: false},
+            {tag: "no-message", text: "bitcoin:bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4?amount=0.07", message: "", valid: true, file: false},
+            {tag: "invalid-text", text: "ordinary text", message: "", valid: false, file: false},
+            {tag: "file-failure", text: "original-request-file.txt", message: "", valid: false, file: true}
+        ]
+    }
+    function test_controlled_uri_projection_has_one_original_effect(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const address = testSendRecipient.address.address
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        BitcoinUri.holdPublications = true
+        try {
+            if (data.file) form.applyPaymentRequestFromFile(data.text)
+            else form.applyPaymentRequestFromText(data.text, "original source")
+            compare(form.uriActionPending, true)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            compare(testSendRecipient.address.address, address)
+            BitcoinUri.releasePublications()
+            compare(form.uriActionPending, false)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.valid ? 1 : 0))
+            if (data.valid) {
+                compare(testSendRecipient.address.address, "bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4")
+                compare(testSendRecipient.amount.satoshi, 7000000)
+                compare(form.paymentRequestMessage, data.message)
+                compare(form.paymentRequestStatus, "Payment request imported from original source")
+                compare(form.paymentRequestIsError, false)
+            } else {
+                compare(testSendRecipient.address.address, address)
+                compare(testSendRecipient.amount.satoshi, 0)
+                compare(form.paymentRequestIsError, true)
+                compare(form.paymentRequestStatus, data.file ? "File parsing is unavailable in QML unit tests." : "Not a valid Bitcoin payment URI.")
+            }
+            BitcoinUri.releasePublications()
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.valid ? 1 : 0))
+        } finally { BitcoinUri.releasePublications() }
+    }
+    function test_reentrant_uri_projection_cannot_finish_in_replacement_view_data() {
+        return [{tag: "hidden", replace: false}, {tag: "different-opening", replace: true}]
+    }
+    function test_reentrant_uri_projection_cannot_finish_in_replacement_view(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const replacement = testSecondWalletModel.recipients.current
+        const otherAddress = replacement.address.address
+        const otherAmount = replacement.amount.satoshi
+        const otherNote = replacement.label
+        const originalApplications = testSendRecipient.appliedPaymentRequestCalls
+        const otherApplications = replacement.appliedPaymentRequestCalls
+        let changed = false
+        function loseInterest() {
+            if (changed) return
+            changed = true
+            if (data.replace) page.wallet = testSecondWalletModel
+            else page.visible = false
+        }
+        testSendRecipient.address.addressChanged.connect(loseInterest)
+        BitcoinUri.holdPublications = true
+        try {
+            form.applyPaymentRequestFromText("bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.09&message=original", "clipboard")
+            BitcoinUri.releasePublications()
+            compare(changed, true)
+            compare(testSendRecipient.appliedPaymentRequestCalls, originalApplications + 1)
+            compare(testSendRecipient.address.address, "bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9")
+            compare(replacement.appliedPaymentRequestCalls, otherApplications)
+            compare(replacement.address.address, otherAddress)
+            compare(replacement.amount.satoshi, otherAmount)
+            compare(replacement.label, otherNote)
+            compare(form.paymentRequestStatus, "")
+            compare(findChild(page, "sendPaymentUriOverwritePopup").visible, false)
+        } finally {
+            testSendRecipient.address.addressChanged.disconnect(loseInterest)
+            BitcoinUri.releasePublications()
+        }
+    }
+
+    property var sendGapSpies: []
+    function trackSendGapSpy(component, target) {
+        const spy = createTemporaryObject(component, testCase, {target: target})
+        verify(spy !== null)
+        sendGapSpies.push(spy)
+        return spy
+    }
+    function cleanup() {
+        // Persistent model signals can outlive QtTest's deferred temporary
+        // destruction. Detach while each SignalSpy's QML context is alive.
+        for (let i = 0; i < sendGapSpies.length; ++i) sendGapSpies[i].target = null
+        sendGapSpies = []
+    }
+    Component { id: sendPasteRequestSpy; SignalSpy { signalName: "pasteRequested" } }
+    Component { id: sendListClearedSpy; SignalSpy { signalName: "listCleared" } }
+    Component { id: sendSelectionSnapshotSpy; SignalSpy { signalName: "selectionSnapshotChanged" } }
+    function revealSendControl(page, control) {
+        verify(control !== null)
+        const scroll = findChild(page, "sendFormScrollView").contentItem
+        const y = control.mapToItem(page, 0, 0).y
+        scroll.contentY = Math.max(0, Math.min(scroll.contentHeight - scroll.height,
+                                             scroll.contentY + y - page.height / 2))
+        verify(waitForRendering(page))
+        const center = control.mapToItem(page, control.width / 2, control.height / 2)
+        verify(center.y >= 0 && center.y < page.height)
+    }
+    function revealNestedScrollControl(control) {
+        let ancestor = control.parent
+        for (let depth = 0; ancestor && depth < 32; ++depth) {
+            const flickable = ancestor as Flickable
+            if (flickable) {
+                const y = control.mapToItem(flickable.contentItem, 0, 0).y
+                flickable.contentY = Math.max(0, Math.min(flickable.contentHeight - flickable.height,
+                                                        y - flickable.height / 2))
+                verify(waitForRendering(control))
+                const center = control.mapToItem(flickable, control.width / 2, control.height / 2)
+                verify(center.x >= 0 && center.x < flickable.width)
+                verify(center.y >= 0 && center.y < flickable.height)
+                return
+            }
+            ancestor = ancestor.parent
+        }
+        fail("Expected a scrollable ancestor for the review control")
+    }
+    function test_native_psbt_picker_keeps_original_opening_data() {
+        return [{tag: "accepted", action: "accept"}, {tag: "replaced-opening", action: "replace"},
+                {tag: "cancelled", action: "cancel"}]
+    }
+    function test_native_psbt_picker_keeps_original_opening(data) {
+        const page = createControlledSendPage()
+        const picker = findChild(page, "sendPsbtOpenDialog")
+        const menu = findChild(page, "sendOptionsPopup")
+        const options = findChild(page, "sendOptionsButton")
+        const original = testWalletModel.psbtActionId
+        const replacement = testSecondWalletModel.psbtActionId
+        testWalletModel.holdPsbtPublicationForTest = true
+        try {
+            revealSendControl(page, options)
+            mouseClick(options)
+            tryCompare(menu, "opened", true)
+            mouseClick(findChild(menu, "sendImportPsbtFromFileButton"))
+            tryCompare(picker, "visible", true)
+            compare(picker.openCalls, 1)
+            compare(testWalletModel.psbtActionId, original)
+            if (data.action === "replace") page.wallet = testSecondWalletModel
+            if (data.action === "cancel") { picker.close(); picker.rejected() }
+            else picker.selectAndAccept("file:///original%20opening.psbt")
+            compare(picker.visible, false)
+            compare(testSecondWalletModel.psbtActionId, replacement)
+            compare(testWalletModel.psbtActionId, original + (data.action === "accept" ? 1 : 0))
+            if (data.action === "accept") {
+                compare(testWalletModel.psbtActionBusy, true)
+                compare(findChild(page, "transactionReviewPopup").visible, false)
+                testWalletModel.completePsbtWorkForTest()
+                testWalletModel.finishPsbtPublicationForTest()
+                const review = findChild(page, "transactionReviewPopup")
+                tryCompare(review, "opened", true)
+                compare(review.reviewWallet, testWalletModel)
+                compare(review.importedReview, true)
+            } else compare(findChild(page, "transactionReviewPopup").visible, false)
+        } finally {
+            picker.close()
+            testWalletModel.resetPsbtForTest()
+            const review = findChild(page, "transactionReviewPopup")
+            review.close()
+            tryCompare(review, "visible", false)
+        }
+    }
+    function test_password_preparation_submission_owns_one_outcome_data() {
+        return [{tag: "ready", result: "ready"}, {tag: "failed", result: "failed"},
+                {tag: "admission-refused", result: "refused"}]
+    }
+    function test_password_preparation_submission_owns_one_outcome(data) {
+        const page = createControlledSendPage()
+        const prompt = findChild(page, "reviewPassphrasePopup")
+        const review = findChild(page, "transactionReviewPopup")
+        const field = findChild(prompt, "reviewPassphraseField")
+        const confirm = findChild(prompt, "reviewPassphraseConfirmButton")
+        const calls = testWalletModel.prepareTransactionCalls
+        const otherCalls = testSecondWalletModel.prepareTransactionCalls
+        testWalletModel.holdPreparationForTest = true
+        testWalletModel.prepareTransactionResult = false
+        try {
+            clickControlledReview(page)
+            testWalletModel.transactionNeedsUnlock = true
+            testWalletModel.finishPreparationForTest()
+            tryCompare(prompt, "opened", true)
+            compare(testWalletModel.prepareTransactionCalls, calls + 1)
+            compare(review.visible, false)
+            const originalPreparation = testWalletModel.preparationId
+            let importTicket = 0
+            if (data.result === "refused") {
+                testWalletModel.holdPsbtPublicationForTest = true
+                page.requestPsbtImport("original-busy-import.psbt")
+                importTicket = testWalletModel.psbtActionId
+                compare(testWalletModel.psbtActionBusy, true)
+            }
+            testWalletModel.prepareTransactionResult = data.result === "ready"
+            field.text = "password-for-original-opening"
+            tryCompare(confirm, "enabled", true)
+            mouseClick(confirm)
+            compare(field.text, "")
+            compare(testSecondWalletModel.prepareTransactionCalls, otherCalls)
+            if (data.result === "refused") {
+                compare(testWalletModel.prepareTransactionCalls, calls + 1)
+                compare(testWalletModel.preparationId, originalPreparation)
+                compare(testWalletModel.psbtActionId, importTicket)
+                compare(testWalletModel.psbtActionBusy, true)
+                compare(prompt.busy, false)
+                compare(review.visible, false)
+            } else {
+                compare(testWalletModel.prepareTransactionCalls, calls + 2)
+                compare(testWalletModel.preparationId, originalPreparation + 1)
+                compare(testWalletModel.preparationBusy, true)
+                compare(prompt.busy, true)
+                compare(confirm.enabled, false)
+                mouseClick(confirm)
+                compare(testWalletModel.prepareTransactionCalls, calls + 2)
+                compare(review.visible, false)
+                testWalletModel.transactionNeedsUnlock = false
+                testWalletModel.transactionError = data.result === "failed" ? "Original password retry failed." : ""
+                testWalletModel.finishPreparationForTest()
+                if (data.result === "ready") {
+                    tryCompare(prompt, "visible", false)
+                    tryCompare(review, "opened", true)
+                    compare(review.reviewWallet, testWalletModel)
+                } else {
+                    compare(testWalletModel.preparationState, WalletQmlModel.PreparationFailed)
+                    compare(prompt.opened, true)
+                    compare(findChild(prompt, "reviewPassphraseErrorText").text, "Original password retry failed.")
+                    compare(review.visible, false)
+                }
+            }
+            compare(field.text, "")
+        } finally {
+            page.visible = false
+            testWalletModel.finishPreparationForTest()
+            testWalletModel.holdPreparationForTest = false
+            testWalletModel.transactionNeedsUnlock = false
+            testWalletModel.resetPsbtForTest()
+            prompt.close(); review.close()
+            tryCompare(prompt, "visible", false)
+            tryCompare(review, "visible", false)
+        }
+    }
+    function test_competing_send_intent_keeps_original_admission_data() {
+        return [{tag: "preparation-busy", kind: "preparation"}, {tag: "URI-pending", kind: "uri"},
+                {tag: "opening-unavailable", kind: "unavailable"}, {tag: "PSBT-busy", kind: "psbt"}]
+    }
+    function test_competing_send_intent_keeps_original_admission(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const review = findChild(page, "transactionReviewPopup")
+        const calls = testWalletModel.prepareTransactionCalls
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        const originalAddress = testSendRecipient.address.address
+        testWalletModel.holdPreparationForTest = true
+        try {
+            if (data.kind === "preparation") {
+                clickControlledReview(page)
+                const ticket = testWalletModel.preparationId
+                page.prepareTransactionForReview()
+                compare(testWalletModel.preparationId, ticket)
+                compare(testWalletModel.prepareTransactionCalls, calls + 1)
+                compare(page.prepareTransactionErrorText, "")
+                compare(review.visible, false)
+                testWalletModel.finishPreparationForTest()
+            } else if (data.kind === "psbt") {
+                testWalletModel.holdPsbtPublicationForTest = true
+                page.requestPsbtImport("accepted-original.psbt")
+                const ticket = testWalletModel.psbtActionId
+                testWalletModel.psbtImportResultForTest = WalletQmlModel.PsbtUnsupported
+                page.requestPsbtImport("competing-replacement.psbt")
+                compare(testWalletModel.psbtActionId, ticket)
+                compare(testWalletModel.prepareTransactionCalls, calls)
+                testWalletModel.completePsbtWorkForTest()
+                testWalletModel.finishPsbtPublicationForTest()
+                compare(testWalletModel.psbtImportResult, WalletQmlModel.WalletCanSign)
+                compare(findChild(page, "unsupportedPsbtPopup").visible, false)
+            } else {
+                if (data.kind === "uri") {
+                    BitcoinUri.holdPublications = true
+                    form.applyPaymentRequestFromText("bitcoin:bcrt1qsendtoaddress?amount=0.07", "original intent")
+                    compare(form.uriActionPending, true)
+                } else testWalletModel.available = false
+                page.confirmTransactionReview()
+                page.prepareTransactionForReview()
+                compare(testWalletModel.prepareTransactionCalls, calls)
+                compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+                compare(testSendRecipient.address.address, originalAddress)
+                compare(review.visible, false)
+                if (data.kind === "uri") {
+                    BitcoinUri.releasePublications()
+                    compare(testSendRecipient.appliedPaymentRequestCalls, applications + 1)
+                    compare(testSendRecipient.amount.satoshi, 7000000)
+                    compare(form.uriActionPending, false)
+                } else testWalletModel.available = true
+                page.prepareTransactionForReview()
+                compare(testWalletModel.prepareTransactionCalls, calls + 1)
+                testWalletModel.finishPreparationForTest()
+            }
+            tryCompare(review, "opened", true)
+            compare(review.reviewWallet, testWalletModel)
+            compare(testWalletModel.prepareTransactionCalls, calls + (data.kind === "psbt" ? 0 : 1))
+        } finally {
+            page.visible = false
+            BitcoinUri.releasePublications()
+            testWalletModel.available = true
+            testWalletModel.finishPreparationForTest()
+            testWalletModel.holdPreparationForTest = false
+            testWalletModel.resetPsbtForTest()
+            review.close()
+            tryCompare(review, "visible", false)
+        }
+    }
+    function test_native_amount_commit_preserves_original_provenance_data() {
+        const uri = "bitcoin:bcrt1qsendtoaddress?amount=0.07"
+        const numeric = "0.1" + " ".repeat(520) + "junk"
+        return [{tag: "matching-URI", clip: uri, current: uri, result: "apply"},
+                {tag: "different-native-URI", clip: uri, current: "0.9bitcoin:other" + "x".repeat(520), result: "restore"},
+                {tag: "long-numeric-rejected", clip: numeric, current: numeric, result: "reject"}]
+    }
+    function test_native_amount_commit_preserves_original_provenance(data) {
+        testSendRecipient.amount.clear()
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const editor = controlledSendEditor(form)
+        const field = editor.amountField
+        const spy = trackSendGapSpy(sendPasteRequestSpy, field)
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        const inputOperation = testSendRecipient.amount.inputOperationId
+        const address = testSendRecipient.address.address
+        const note = testSendRecipient.label
+        Clipboard.currentText = data.clip
+        BitcoinUri.holdPublications = true
+        try {
+            verify(testSetup.replaceText(field.field, data.current))
+            compare(spy.count, 1)
+            const payload = spy.signalArguments[0][0]
+            compare(payload.edited, true)
+            compare(payload.text, data.clip)
+            compare(payload.current, data.current)
+            compare(field.pastePending, true)
+            compare(testSendRecipient.amount.satoshi, 0)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            BitcoinUri.releasePublications()
+            compare(field.pastePending, false)
+            compare(form.uriActionPending, false)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.result === "apply" ? 1 : 0))
+            compare(testSendRecipient.address.address, address)
+            compare(testSendRecipient.label, note)
+            compare(Clipboard.currentText, data.clip)
+            if (data.result === "apply") compare(testSendRecipient.amount.satoshi, 7000000)
+            else {
+                compare(testSendRecipient.amount.satoshi, 0)
+                compare(testSendRecipient.amount.inputOperationId, inputOperation + (data.result === "reject" ? 1 : 0))
+                if (data.result === "reject") {
+                    compare(testSendRecipient.amount.inputOperationState, BitcoinAmount.InputRejected)
+                    verify(testSendRecipient.amount.inputOperationError.length > 0)
+                }
+            }
+            BitcoinUri.releasePublications()
+            compare(spy.count, 1)
+        } finally { BitcoinUri.releasePublications() }
+    }
+    function test_replacement_intent_cancels_owned_paste_once_data() {
+        return [{tag: "manual-import", literal: false}, {tag: "literal-note", literal: true}]
+    }
+    function test_replacement_intent_cancels_owned_paste_once(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const editor = controlledSendEditor(form)
+        const request = trackSendGapSpy(sendPasteRequestSpy, editor.addressField)
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        const originalAddress = testSendRecipient.address.address
+        Clipboard.currentText = "bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.07"
+        BitcoinUri.holdPublications = true
+        try {
+            editor.addressField.paste()
+            compare(request.count, 1)
+            const cancelled = trackSendGapSpy(pasteCancellationSpyComponent,
+                request.signalArguments[0][0].origin)
+            compare(editor.addressField.pastePending, true)
+            if (data.literal) {
+                Clipboard.currentText = "original literal replacement"
+                editor.noteField.paste()
+                compare(editor.noteField.pastePending, true)
+            } else form.applyPaymentRequestFromText("bitcoin:bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4?amount=0.09", "replacement intent")
+            compare(cancelled.count, 1)
+            compare(editor.addressField.pastePending, false)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            BitcoinUri.releasePublications()
+            compare(form.uriActionPending, false)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.literal ? 0 : 1))
+            compare(testSendRecipient.address.address, data.literal ? originalAddress : "bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4")
+            compare(testSendRecipient.label, data.literal ? "original literal replacement" : "")
+            compare(testSendRecipient.amount.satoshi, data.literal ? 0 : 9000000)
+            BitcoinUri.releasePublications()
+            compare(cancelled.count, 1)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.literal ? 0 : 1))
+        } finally { BitcoinUri.releasePublications() }
+    }
+    function test_overwrite_confirmation_rejects_unavailable_opening() {
+        testSendRecipient.label = "original private note"
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const editor = controlledSendEditor(form)
+        const popup = findChild(page, "sendPaymentUriOverwritePopup")
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        const prepareCalls = testWalletModel.prepareTransactionCalls
+        const address = testSendRecipient.address.address
+        Clipboard.currentText = "bitcoin:bcrt1qsendtoaddress?amount=0.07&message=replacement"
+        editor.addressField.paste()
+        tryCompare(popup, "opened", true)
+        try {
+            testWalletModel.available = false
+            mouseClick(findChild(popup.contentItem, "sendPaymentUriOverwriteConfirmButton"))
+            tryCompare(popup, "visible", false)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            compare(testSendRecipient.address.address, address)
+            compare(testSendRecipient.amount.satoshi, 0)
+            compare(testSendRecipient.label, "original private note")
+            compare(testWalletModel.prepareTransactionCalls, prepareCalls)
+            compare(form.uriActionPending, false)
+            compare(editor.addressField.pastePending, false)
+        } finally { testWalletModel.available = true; popup.close() }
+    }
+    function test_committed_completion_keeps_original_draft_ownership_data() {
+        return [{tag: "view-activity", replace: false}, {tag: "replacement-opening", replace: true}]
+    }
+    function test_committed_completion_keeps_original_draft_ownership(data) {
+        const page = createControlledSendPage()
+        const popup = findChild(page, "transactionReviewPopup")
+        const navigation = trackSendGapSpy(transactionNavigationSpyComponent, page)
+        const originalClear = trackSendGapSpy(sendListClearedSpy, testRecipientsModel)
+        const otherRecipients = testSecondWalletModel.recipients
+        otherRecipients.clearToFront()
+        otherRecipients.add()
+        const otherClear = trackSendGapSpy(sendListClearedSpy, otherRecipients)
+        const otherRecipient = otherRecipients.current
+        const otherAddress = otherRecipient.address.address
+        const otherAmount = otherRecipient.amount.satoshi
+        const otherNote = otherRecipient.label
+        const calls = testWalletModel.sendTransactionCalls
+        const otherCalls = testSecondWalletModel.sendTransactionCalls
+        page.manualCoinSelection = true
+        testCoinsListModel.toggleCoinSelection(0)
+        testWalletModel.holdSendForTest = true
+        try {
+            page.openTransactionReview()
+            tryCompare(popup, "opened", true)
+            const sendButton = findChild(popup.contentItem, "sendTransactionReviewSendButton")
+            verify(sendButton !== null && sendButton.visible && sendButton.enabled)
+            revealNestedScrollControl(sendButton)
+            mouseClick(sendButton)
+            compare(testWalletModel.sendBusy, true)
+            const stack = findChild(popup, "sendTransactionReviewStack")
+            compare(stack.depth, 1)
+            compare(navigation.count, 0)
+            compare(originalClear.count, 0)
+            testWalletModel.finishSendForTest()
+            tryCompare(stack, "depth", 2)
+            const complete = findChild(stack, "sendCompletePage")
+            compare(complete.txid, testWalletTransaction.txid)
+            if (data.replace) page.wallet = testSecondWalletModel
+            else {
+                const button = findChild(complete, "sendResultViewTransactionButton")
+                tryCompare(button.parent, "opacity", 1)
+                mouseClick(button)
+            }
+            tryCompare(popup, "visible", false)
+            compare(navigation.count, data.replace ? 0 : 1)
+            if (!data.replace) {
+                compare(navigation.signalArguments[0][0], testWalletTransaction.txid)
+                compare(testCoinsListModel.selectedCoinsCount, 0)
+                compare(page.manualCoinSelection, false)
+            }
+            compare(originalClear.count, data.replace ? 0 : 1)
+            compare(popup.sent, false)
+            compare(otherClear.count, 0)
+            compare(otherRecipients.count, 2)
+            compare(otherRecipient.address.address, otherAddress)
+            compare(otherRecipient.amount.satoshi, otherAmount)
+            compare(otherRecipient.label, otherNote)
+            compare(testWalletModel.sendTransactionCalls, calls + 1)
+            compare(testSecondWalletModel.sendTransactionCalls, otherCalls)
+        } finally {
+            testWalletModel.finishSendForTest()
+            testWalletModel.resetSendForTest()
+            popup.close()
+            tryCompare(popup, "visible", false)
+            otherRecipients.clearToFront()
+        }
+    }
+    function test_recipient_header_preserves_draft_when_expanded_and_collapsed() {
+        testRecipientsModel.add()
+        const page = createControlledSendPage()
+        const first = findChild(page, "sendRecipientCard_0")
+        const second = findChild(page, "sendRecipientCard_1")
+        const header = findChild(first, "sendEditRecipient_0")
+        const address = testSendRecipient.address.address
+        const amount = testSendRecipient.amount.satoshi
+        const note = testSendRecipient.label
+        compare(first.expanded, false)
+        compare(second.expanded, true)
+        compare(first.editorItem, null)
+        revealSendControl(page, header)
+        mouseClick(header)
+        compare(testRecipientsModel.currentIndex, 1)
+        compare(first.expanded, true)
+        compare(second.expanded, false)
+        verify(first.editorItem !== null)
+        compare(second.editorItem, null)
+        mouseClick(header)
+        compare(first.expanded, false)
+        compare(second.expanded, false)
+        compare(first.editorItem, null)
+        compare(testRecipientsModel.count, 2)
+        compare(testSendRecipient.address.address, address)
+        compare(testSendRecipient.amount.satoshi, amount)
+        compare(testSendRecipient.label, note)
+    }
+    function test_coin_picker_clears_only_a_real_selection_data() {
+        return [{tag: "no-inputs", selected: false}, {tag: "selected-input", selected: true}]
+    }
+    function test_coin_picker_clears_only_a_real_selection(data) {
+        const page = createControlledSendPage()
+        const picker = findChild(page, "sendCoinControlPicker")
+        const manual = findChild(picker, "sendCoinControlPickerOption_1")
+        const automatic = findChild(picker, "sendCoinControlPickerOption_0")
+        const address = testSendRecipient.address.address
+        const amount = testSendRecipient.amount.satoshi
+        revealSendControl(page, picker)
+        mouseClick(manual)
+        compare(page.manualCoinSelection, true)
+        compare(picker.currentIndex, 1)
+        if (data.selected) testCoinsListModel.toggleCoinSelection(0)
+        const selected = trackSendGapSpy(sendSelectionSnapshotSpy, testCoinsListModel)
+        const fees = testWalletModel.scheduleFeeEstimatesCalls
+        mouseClick(automatic)
+        compare(page.manualCoinSelection, false)
+        compare(picker.currentIndex, 0)
+        compare(testCoinsListModel.selectedCoinsCount, 0)
+        compare(selected.count, data.selected ? 1 : 0)
+        compare(testWalletModel.scheduleFeeEstimatesCalls, fees + (data.selected ? 2 : 0))
+        compare(testSendRecipient.address.address, address)
+        compare(testSendRecipient.amount.satoshi, amount)
+    }
+    function test_clipboard_probe_cannot_retarget_unavailable_opening_data() {
+        return [{tag: "late-original-result", changeClipboard: false},
+                {tag: "new-clipboard-while-unavailable", changeClipboard: true}]
+    }
+    function test_clipboard_probe_cannot_retarget_unavailable_opening(data) {
+        const originalUri = "bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.07"
+        const replacementUri = "bitcoin:bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4?amount=0.09"
+        Clipboard.currentText = originalUri
+        BitcoinUri.holdPublications = true
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const button = findChild(page, "clipboardUriPasteButton")
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        const address = testSendRecipient.address.address
+        try {
+            const requests = BitcoinUri.requestCallsForTest
+            verify(requests > 0)
+            testWalletModel.available = false
+            if (data.changeClipboard) {
+                Clipboard.currentText = replacementUri
+                compare(BitcoinUri.requestCallsForTest, requests)
+            }
+            BitcoinUri.releasePublications()
+            compare(button.visible, false)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            compare(testSendRecipient.address.address, address)
+            compare(testSendRecipient.amount.satoshi, 0)
+            testWalletModel.available = true
+            BitcoinUri.holdPublications = true
+            page.visible = false
+            page.visible = true
+            compare(BitcoinUri.requestCallsForTest, requests + 1)
+            BitcoinUri.releasePublications()
+            tryCompare(button, "visible", true)
+            revealSendControl(page, button)
+            mouseClick(button)
+            tryCompare(testSendRecipient.address, "address", data.changeClipboard ? "bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4" : "bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9")
+            compare(testSendRecipient.amount.satoshi, data.changeClipboard ? 9000000 : 7000000)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + 1)
+            compare(form.uriActionPending, false)
+        } finally { testWalletModel.available = true; BitcoinUri.releasePublications() }
     }
 
 }

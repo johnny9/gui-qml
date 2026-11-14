@@ -199,7 +199,8 @@ void Store::reserve(Queued queued)
 void Store::scanAddress(const std::shared_ptr<AddressWork>& work)
 {
     size_t budget{256};
-    while (budget-- && !work->paid && work->transaction != work->history.cend()) {
+    while (budget > 0 && !work->paid && work->transaction != work->history.cend()) {
+        --budget;
         const auto& tx = *work->transaction;
         if (!tx.tx || work->output == tx.tx->vout.size()) { ++work->transaction; work->output = 0; continue; }
         const size_t index = work->output++;

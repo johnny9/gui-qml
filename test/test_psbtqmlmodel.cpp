@@ -18,7 +18,9 @@
 #include <psbt.h>
 #include <script/script.h>
 
+#include <QClipboard>
 #include <QFile>
+#include <QGuiApplication>
 #include <QTemporaryDir>
 #include <QThread>
 
@@ -166,6 +168,352 @@ class PsbtQmlModelTests : public QObject
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void manualReadRetainsOriginalDocumentAndPresentation_data()
+    {
+        QTest::addColumn<int>("change");
+        const std::array names{"continue", "clear", "error", "close", "detach", "replace", "node-change", "destroy"};
+        for (int index = 0; index < int(names.size()); ++index) QTest::newRow(names[index]) << index;
+    }
+    void manualReadRetainsOriginalDocumentAndPresentation()
+    {
+        QFETCH(int, change);
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        MockNode node;
+        auto model = std::make_unique<PsbtQmlModel>(nullptr, nullptr);
+        model->setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto original = MakeCompletePsbt();
+        auto replacement = original;
+        replacement.outputs[0].amount = 1'250;
+        const auto original_path = directory.filePath("original.psbt");
+        const auto replacement_path = directory.filePath("replacement.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(original, original_path), QString{});
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(replacement, replacement_path), QString{});
+        const auto first = model->requestLoadFromFile(original_path);
+        QVERIFY(first);
+        const auto initial_generation = model->documentGeneration();
+        model->retryPublication(); // An outcome cannot publish before Core has run.
+        QVERIFY(!model->loaded());
+        QVERIFY(model->busy());
+        QVERIFY(transport.step(execution::Lane::Core));
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QCOMPARE(publications.size(), size_t{1});
+        QVERIFY(!model->loaded());
+        if (change == 1) model->clear();
+        else if (change == 2) model->setError(QStringLiteral("A newer import was rejected"));
+        else if (change == 3) model->closeAdmission();
+        else if (change == 4) model->detachWallet();
+        else if (change == 5) QVERIFY(model->requestLoadFromFile(replacement_path) > first);
+        else if (change == 6) model->setNode(&node);
+        else if (change == 7) model.reset();
+        while (!publications.empty()) {
+            auto publish = std::move(publications.front()); publications.pop_front(); publish();
+        }
+        if (change == 5) {
+            QVERIFY(!model->loaded());
+            transport.drain();
+            while (!publications.empty()) {
+                auto publish = std::move(publications.front()); publications.pop_front(); publish();
+            }
+            QVERIFY(model->loaded());
+            QCOMPARE(PsbtQmlModel::SerializePsbtRaw(*model->psbt()), PsbtQmlModel::SerializePsbtRaw(replacement));
+        } else if (change == 0) {
+            QVERIFY(model->loaded());
+            QCOMPARE(model->documentGeneration(), initial_generation);
+            QCOMPARE(PsbtQmlModel::SerializePsbtRaw(*model->psbt()), PsbtQmlModel::SerializePsbtRaw(original));
+        } else if (model) {
+            QVERIFY(!model->loaded());
+            QVERIFY(!model->canSign());
+            QVERIFY(!model->canBroadcast());
+            if (change == 2) QCOMPARE(model->error(), QStringLiteral("A newer import was rejected"));
+            if (change == 3 || change == 4) QCOMPARE(model->phase(), PsbtQmlModel::Phase::Closed);
+        }
+        model.reset();
+        transport.drain();
+        QVERIFY(transport.quiescent());
+    }
+    void manualSavedFileHasAnIndependentOutcome_data()
+    {
+        QTest::addColumn<int>("change");
+        const std::array names{"continue", "clear", "error", "close", "detach", "node-change", "destroy", "missing-parent"};
+        for (int index = 0; index < int(names.size()); ++index) QTest::newRow(names[index]) << index;
+    }
+    void manualSavedFileHasAnIndependentOutcome()
+    {
+        QFETCH(int, change);
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        auto model = std::make_unique<PsbtQmlModel>(nullptr, nullptr);
+        model->setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        const auto publish_all = [&] {
+            while (!publications.empty()) {
+                auto publish = std::move(publications.front()); publications.pop_front(); publish();
+            }
+        };
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto document = MakeCompletePsbt();
+        const auto source = directory.filePath("source.psbt");
+        const auto target = directory.filePath(change == 7 ? "missing/saved.psbt" : "saved.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(document, source), QString{});
+        QVERIFY(model->requestLoadFromFile(source));
+        transport.drain(); publish_all();
+        QVERIFY(model->loaded());
+        QVERIFY(!model->saved()); QCOMPARE(model->savedPath(), QString{});
+        const auto ticket = model->requestSaveToFile(target); QVERIFY(ticket);
+        QVERIFY(!QFile::exists(target));
+        QVERIFY(!model->requestSaveToFile(target));
+        QVERIFY(!model->requestLoadFromFile(source)); // A save owns its outcome.
+        QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(QFile::exists(target), change != 7);
+        QVERIFY(!model->saved()); // Domain receipt has not run.
+        MockNode node;
+        if (change == 1) model->clear();
+        else if (change == 2) model->setError(QStringLiteral("A newer document error"));
+        else if (change == 3) model->closeAdmission();
+        else if (change == 4) model->detachWallet();
+        else if (change == 5) model->setNode(&node);
+        else if (change == 6) model.reset();
+        transport.drain();
+        if (model) {
+            QCOMPARE(model->saved(), change != 7);
+            QCOMPARE(model->savedPath(), change == 7 ? QString{} : target);
+            QVERIFY(!model->submitted()); QCOMPARE(model->submittedTxid(), QString{});
+        }
+        publish_all();
+        if (model && change == 0) { QCOMPARE(model->phase(), PsbtQmlModel::Phase::Ready); QCOMPARE(model->status(), QStringLiteral("PSBT saved.")); }
+        if (model && change == 7) { QCOMPARE(model->phase(), PsbtQmlModel::Phase::Failed); QVERIFY(!model->error().isEmpty()); }
+        if (change != 7) {
+            const auto saved = DecodeRawPsbt(target); QVERIFY(saved);
+            QCOMPARE(PsbtQmlModel::SerializePsbtRaw(*saved), PsbtQmlModel::SerializePsbtRaw(document));
+        }
+        model.reset(); transport.drain();
+        QVERIFY(transport.quiescent());
+    }
+    void summaryWindowIsBoundedAndUsesCurrentSnapshot()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        PsbtQmlModel model{nullptr, nullptr};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        const auto publish_all = [&] { while (!publications.empty()) { auto callback = std::move(publications.front()); publications.pop_front(); callback(); } };
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("summary.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        model.requestSummaryWindow(-1, 4); model.requestSummaryWindow(1, 0);
+        QCOMPARE(model.summaryOffset(), 0); QCOMPARE(model.summaryCount(), 0);
+        QVERIFY(model.requestLoadFromFile(path)); transport.drain(); publish_all();
+        const auto complete = model.summary(); QVERIFY(!complete.empty());
+        model.requestSummaryWindow(1, 1);
+        QCOMPARE(model.summaryOffset(), 1); QCOMPARE(model.summary(), complete.mid(1, 1));
+        model.requestSummaryWindow(0, 1000); QCOMPARE(model.summary(), complete.mid(0, 128));
+        model.requestSummaryWindow(1000, 2); QVERIFY(model.summary().empty());
+        model.setMatchedTxid(QStringLiteral("matched-original")); QCOMPARE(model.matchedTxid(), QStringLiteral("matched-original"));
+        model.clear(); QVERIFY(model.summary().empty()); QCOMPARE(model.matchedTxid(), QString{});
+        QVERIFY(!model.document()); QVERIFY(!model.psbt());
+        model.refreshState(); model.retryPublication(); QVERIFY(!model.busy());
+        model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    }
+    void manualClipboardRequiresCurrentGuiInterest_data()
+    {
+        QTest::addColumn<int>("change");
+        const std::array names{"continue", "clear", "error", "close", "detach", "node-change", "destroy"};
+        for (int change = 0; change < int(names.size()); ++change) QTest::newRow(names[change]) << change;
+    }
+    void manualClipboardRequiresCurrentGuiInterest()
+    {
+        QFETCH(int, change);
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        MockNode node;
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto model = std::make_unique<PsbtQmlModel>(nullptr,nullptr);
+        const auto previous_clipboard = QGuiApplication::clipboard()->text();
+        const auto publish_all = [&] { while (!publications.empty()) { auto turn = std::move(publications.front()); publications.pop_front(); turn(); } };
+        const auto cleanup = qScopeGuard([&] {
+            model.reset(); transport.drain(); publish_all(); transport.drain();
+            QGuiApplication::clipboard()->setText(previous_clipboard);
+        });
+        model->setFeeServices({transport.scheduler,{},[&](auto turn) { publications.push_back(std::move(turn)); }});
+        const auto document = MakeCompletePsbt();
+        const auto path = directory.filePath("copy-original.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(document,path),QString{});
+        QVERIFY(model->requestLoadFromFile(path)); transport.drain(); publish_all(); transport.drain();
+        QVERIFY(model->loaded());
+        const auto sentinel = QStringLiteral("unchanged before the GUI handoff");
+        QGuiApplication::clipboard()->setText(sentinel);
+        const auto ticket = model->requestCopyToClipboard(); QVERIFY(ticket);
+        QVERIFY(!model->requestCopyToClipboard());
+        QCOMPARE(QGuiApplication::clipboard()->text(),sentinel);
+        QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(QGuiApplication::clipboard()->text(),sentinel);
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QCOMPARE(QGuiApplication::clipboard()->text(),sentinel);
+        QCOMPARE(publications.size(),size_t{1});
+        if (change == 1) model->clear();
+        else if (change == 2) model->setError(QStringLiteral("A newer error owns presentation"));
+        else if (change == 3) model->closeAdmission();
+        else if (change == 4) model->detachWallet();
+        else if (change == 5) model->setNode(&node);
+        else if (change == 6) model.reset();
+        publish_all(); transport.drain();
+        if (change == 0) {
+            const auto decoded = DecodeBase64PSBT(QGuiApplication::clipboard()->text().toStdString());
+            QVERIFY(decoded);
+            QCOMPARE(PsbtQmlModel::SerializePsbtRaw(*decoded),PsbtQmlModel::SerializePsbtRaw(document));
+            QCOMPARE(model->phase(),PsbtQmlModel::Phase::Ready);
+            QCOMPARE(model->status(),QStringLiteral("PSBT copied to clipboard."));
+        } else QCOMPARE(QGuiApplication::clipboard()->text(),sentinel);
+        if (change == 2) QCOMPARE(model->error(),QStringLiteral("A newer error owns presentation"));
+        model.reset(); transport.drain(); QVERIFY(transport.quiescent());
+    }
+
+    void manualClipboardNativeHandoffMayDestroyObserver()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto model = std::make_unique<PsbtQmlModel>(nullptr,nullptr);
+        int finished{0}; bool destroy_on_handoff{false};
+        QMetaObject::Connection clipboard_connection,finished_connection;
+        const auto previous_clipboard = QGuiApplication::clipboard()->text();
+        const auto publish_all = [&] { while (!publications.empty()) { auto turn = std::move(publications.front()); publications.pop_front(); turn(); } };
+        const auto cleanup = qScopeGuard([&] {
+            QObject::disconnect(clipboard_connection); QObject::disconnect(finished_connection);
+            model.reset(); transport.drain(); publish_all(); transport.drain();
+            QGuiApplication::clipboard()->setText(previous_clipboard);
+        });
+        model->setFeeServices({transport.scheduler,{},[&](auto turn) { publications.push_back(std::move(turn)); }});
+        const auto document = MakeCompletePsbt(); const auto path = directory.filePath("handoff.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(document,path),QString{});
+        QVERIFY(model->requestLoadFromFile(path)); transport.drain(); publish_all(); transport.drain();
+        QGuiApplication::clipboard()->setText(QStringLiteral("before native handoff"));
+        finished_connection = connect(model.get(),&PsbtQmlModel::finished,this,[&] { ++finished; });
+        clipboard_connection = connect(QGuiApplication::clipboard(),&QClipboard::dataChanged,this,[&] {
+            if (destroy_on_handoff) model.reset();
+        });
+        QVERIFY(model->requestCopyToClipboard());
+        transport.drain(); QVERIFY(model); QCOMPARE(finished,0);
+        destroy_on_handoff = true;
+        publish_all(); transport.drain();
+        QVERIFY(!model); QCOMPARE(finished,0);
+        const auto decoded = DecodeBase64PSBT(QGuiApplication::clipboard()->text().toStdString());
+        QVERIFY(decoded);
+        QCOMPARE(PsbtQmlModel::SerializePsbtRaw(*decoded),PsbtQmlModel::SerializePsbtRaw(document));
+        QVERIFY(transport.quiescent());
+    }
+
+    void manualAdmissionFailuresStartNoDocumentEffect_data()
+    {
+        QTest::addColumn<int>("mode");
+        const std::array names{"no-document", "closed-model", "core-rejected", "cleanup-rejected",
+            "insufficient-payload-budget", "wallet-without-opening", "closed-opening"};
+        for (int mode = 0; mode < int(names.size()); ++mode) QTest::newRow(names[mode]) << mode;
+    }
+    void manualAdmissionFailuresStartNoDocumentEffect()
+    {
+        QFETCH(int, mode);
+        auto limits = execution::Limits::Bounded();
+        if (mode == 4) limits.ordinary.payload_bytes = 4'095;
+        if (mode == 3) limits.cleanup_reservations.tasks = 0;
+        ManualRoutedExecution transport{limits};
+        std::deque<std::function<void()>> publications;
+        auto wallet = std::make_shared<PsbtTestWallet>();
+        std::shared_ptr<walletopening::Session> opening;
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto model = std::make_unique<PsbtQmlModel>(mode == 5 || mode == 6 ? wallet.get() : nullptr,nullptr);
+        const auto publish_all = [&] { while (!publications.empty()) { auto turn = std::move(publications.front()); publications.pop_front(); turn(); } };
+        const auto cleanup = qScopeGuard([&] {
+            model.reset(); if (opening) opening->retire(); transport.drain(); publish_all(); transport.drain();
+        });
+        const auto post = [&](auto turn) { publications.push_back(std::move(turn)); };
+        if (mode == 6) {
+            opening = std::make_shared<walletopening::Session>(transport.scheduler,transport.scheduler,
+                std::make_shared<std::atomic_bool>(false),[] {});
+            QVERIFY(opening->start(wallet)); transport.drain(); opening->take();
+            model->configureSession(opening,{transport.scheduler,{},post});
+            opening->closeAdmission();
+        } else model->setFeeServices({transport.scheduler,{},post});
+        const auto submissions_before = transport.coreSubmissions();
+        const auto document = MakeCompletePsbt(); const auto path = directory.filePath("not-read.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(document,path),QString{});
+        const auto generation = model->documentGeneration();
+        QVERIFY(!model->requestSaveToFile(directory.filePath("not-written.psbt")));
+        QVERIFY(!model->requestSign()); QVERIFY(!model->requestBroadcast());
+        QVERIFY(!model->requestCopyToClipboard()); QVERIFY(!model->requestSignWithPassphrase(QStringLiteral("unused")));
+        QCOMPARE(model->documentGeneration(),generation);
+        if (mode == 1) model->closeAdmission();
+        if (mode == 2) transport.rejectLane(execution::Lane::Core);
+        if (mode != 0) {
+            const auto ticket = model->requestLoadFromFile(path);
+            QCOMPARE(bool(ticket),mode != 1 && mode != 6);
+        }
+        QVERIFY(!model->busy()); QVERIFY(!model->loaded());
+        QVERIFY(!model->canSign()); QVERIFY(!model->canBroadcast());
+        QVERIFY(wallet->sign_args.empty()); QCOMPARE(wallet->private_accesses,0);
+        QVERIFY(!QFile::exists(directory.filePath("not-written.psbt")));
+        if (mode == 2 || mode == 4) QCOMPARE(model->error(),QStringLiteral("The PSBT action could not be queued."));
+        if (mode == 3) QCOMPARE(model->error(),QStringLiteral("PSBT result capacity is unavailable. Close an unused document and retry."));
+        if (mode == 5) QCOMPARE(model->error(),QStringLiteral("The wallet session is unavailable."));
+        if (mode == 1) QCOMPARE(model->phase(),PsbtQmlModel::Phase::Closed);
+        model.reset(); if (opening) opening->retire(); transport.drain(); publish_all(); transport.drain();
+        QCOMPARE(transport.coreSubmissions()-submissions_before,mode == 2 ? size_t{1} : size_t{0});
+        QVERIFY(transport.quiescent());
+    }
+
+    void manualLoadReadsPathOnItsOriginalCoreTurn()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto model = std::make_unique<PsbtQmlModel>(nullptr,nullptr);
+        const auto publish_all = [&] { while (!publications.empty()) { auto turn = std::move(publications.front()); publications.pop_front(); turn(); } };
+        const auto cleanup = qScopeGuard([&] { model.reset(); transport.drain(); publish_all(); transport.drain(); });
+        model->setFeeServices({transport.scheduler,{},[&](auto turn) { publications.push_back(std::move(turn)); }});
+        auto original = MakeCompletePsbt(); auto replaced = original; replaced.outputs[0].amount=1'200;
+        const auto path = directory.filePath("read-on-core.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(original,path),QString{});
+        QVERIFY(model->requestLoadFromFile(path));
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(replaced,path),QString{});
+        QVERIFY(!model->loaded());
+        QVERIFY(transport.step(execution::Lane::Core)); QVERIFY(!model->loaded());
+        QVERIFY(transport.step(execution::Lane::Domain)); QVERIFY(!model->loaded());
+        publish_all(); transport.drain();
+        QVERIFY(model->loaded());
+        QCOMPARE(PsbtQmlModel::SerializePsbtRaw(*model->psbt()),PsbtQmlModel::SerializePsbtRaw(replaced));
+        model.reset(); transport.drain(); QVERIFY(transport.quiescent());
+    }
+
+    void manualReadRetirementReportsNotStarted()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        auto wallet = std::make_shared<PsbtTestWallet>();
+        auto opening = std::make_shared<walletopening::Session>(transport.scheduler,transport.scheduler,
+            std::make_shared<std::atomic_bool>(false),[] {});
+        QVERIFY(opening->start(wallet)); transport.drain(); opening->take();
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto model = std::make_unique<PsbtQmlModel>(wallet.get(),nullptr);
+        const auto publish_all = [&] { while (!publications.empty()) { auto turn = std::move(publications.front()); publications.pop_front(); turn(); } };
+        const auto cleanup = qScopeGuard([&] {
+            model.reset(); opening->retire(); transport.drain(); publish_all(); transport.drain();
+        });
+        model->configureSession(opening,{transport.scheduler,{},[&](auto turn) { publications.push_back(std::move(turn)); }});
+        const auto ticket = model->requestLoadFromFile(directory.filePath("not-read-after-opening-retirement.psbt"));
+        QVERIFY(ticket); QVERIFY(model->busy());
+        opening->retire();
+        QVERIFY(transport.step(execution::Lane::Core));
+        QVERIFY(wallet->sign_args.empty()); QVERIFY(!model->loaded());
+        transport.drain();
+        QCOMPARE(model->phase(),PsbtQmlModel::Phase::Pending);
+        publish_all(); transport.drain();
+        QVERIFY(!model->busy()); QVERIFY(!model->loaded());
+        QCOMPARE(model->phase(),PsbtQmlModel::Phase::Failed);
+        QCOMPARE(model->error(),QStringLiteral("The PSBT action did not start."));
+        QCOMPARE(wallet->private_accesses,0);
+        model.reset(); opening->retire(); transport.drain(); publish_all(); transport.drain();
+        QVERIFY(transport.quiescent());
+    }
     void assessedScriptsKeepOriginalExportAndBroadcast_data()
     {
         QTest::addColumn<bool>("nested");

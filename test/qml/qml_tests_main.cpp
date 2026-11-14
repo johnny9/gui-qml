@@ -3,10 +3,13 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <QtQuickTest/quicktest.h>
+#include <test/qmlcoverage.h>
 #include <qml/models/monospaceoutputmodel.h>
 #include <qml/models/bitcoinaddress.h>
 #include <qml/flowpresentation.h>
 #include <qml/models/uipreferences.h>
+#include <test/mocks/manualexecutionenvironment.h>
+#include <QDir>
 
 #include <QAbstractListModel>
 #include <QCoreApplication>
@@ -29,6 +32,7 @@
 #include <QQuickImageProvider>
 #include <QQuickWindow>
 #include <QRegularExpression>
+#include <QResource>
 #include <QSettings>
 #include <QSet>
 #include <QSortFilterProxyModel>
@@ -285,6 +289,10 @@ public:
     explicit MockReceiveRequestOperation(QObject* parent = nullptr) : QObject(parent) {}
     bool m_pending{false}, m_saved{false}, m_loaded{false}, m_erased{false}, m_label_saved{false};
     QString m_id, m_error;
+    Q_INVOKABLE void publishSelection(bool address_ready, bool request_loaded, const QString& id, const QString& error) {
+        m_address_ready = address_ready; m_loaded = request_loaded; m_id = id; m_error = error; m_pending = false;
+        Q_EMIT changed();
+    }
     Q_INVOKABLE void complete(bool saved, bool erased, const QString& error) {
         m_pending = false; m_saved = saved; m_erased = erased; m_error = error; Q_EMIT changed();
     }
@@ -403,7 +411,9 @@ public:
         Q_EMIT showUsedChanged();
     }
 
-    Q_INVOKABLE void refresh() {}
+    Q_PROPERTY(int refreshCalls READ refreshCalls NOTIFY refreshCallsChanged)
+    int refreshCalls() const { return m_refresh_calls; }
+    Q_INVOKABLE void refresh() { ++m_refresh_calls; Q_EMIT refreshCallsChanged(); }
     Q_INVOKABLE MockReceiveRequestOperation* setAddressLabel(const QString& address, const QString& label)
     {
         if (!m_set_address_label_succeeds) return nullptr;
@@ -435,6 +445,7 @@ public:
     }
 
 Q_SIGNALS:
+    void refreshCallsChanged();
     void categoryChanged();
     void showUsedChanged();
     void countChanged();
@@ -456,6 +467,7 @@ private:
     }
 
     std::vector<Entry> m_rows;
+    int m_refresh_calls{0};
     Category m_category{SingleUse};
     bool m_show_used{false};
     bool m_set_address_label_succeeds{false};
@@ -658,10 +670,14 @@ public:
             },
         };
     }
+    Q_INVOKABLE void publishRequestForAddressForTest(const QString& address, const QString& id) { m_fixture_requests.insert(address,id); }
+    Q_INVOKABLE void resetRequestFixturesForTest() { m_fixture_requests.clear(); }
     Q_INVOKABLE QString firstRequestIdForAddress(const QString& address) const
     {
+        if (m_fixture_requests.contains(address)) return m_fixture_requests.value(address);
         return address == QStringLiteral("bcrt1qreceiveaddress") ? QStringLiteral("req-1") : QString{};
     }
+    QHash<QString,QString> m_fixture_requests;
 
 Q_SIGNALS:
     void countChanged();
@@ -708,6 +724,7 @@ class MockSendRecipient : public QObject
     Q_PROPERTY(QString label MEMBER m_label NOTIFY labelChanged)
     Q_PROPERTY(bool isValid MEMBER m_is_valid NOTIFY isValidChanged)
     Q_PROPERTY(quint64 validationRevision MEMBER m_validation_revision NOTIFY isValidChanged)
+    Q_PROPERTY(int appliedPaymentRequestCalls READ appliedPaymentRequestCalls NOTIFY paymentRequestChanged)
     Q_PROPERTY(bool validationPending MEMBER m_validation_pending NOTIFY isValidChanged)
 
 public:
@@ -733,7 +750,10 @@ public:
     bool m_is_valid{true};
     bool m_validation_pending{false};
     quint64 m_validation_revision{0};
+    int appliedPaymentRequestCalls() const { return m_applied_payment_request_calls; }
+    int m_applied_payment_request_calls{0};
     Q_INVOKABLE void applyParsedPaymentRequest(const QVariantMap& parsed) {
+        ++m_applied_payment_request_calls;
         if (!parsed.value("success").toBool()) return;
         applyPaymentRequest(parsed.value("address").toString(), parsed.value("hasLabel").toBool() ? parsed.value("label").toString() : QString{}, parsed.value("hasMessage").toBool() ? parsed.value("uriMessage").toString() : QString{});
         if (parsed.value("hasAmount").toBool()) m_amount.setSatoshi(parsed.value("amountSats").toLongLong());
@@ -931,15 +951,29 @@ class MockCoinsListModel : public QAbstractListModel
     Q_PROPERTY(bool lockPending READ lockPending CONSTANT)
     Q_PROPERTY(int markedCount READ markedCount NOTIFY marksChanged)
     Q_PROPERTY(bool marksPending READ marksPending CONSTANT)
+    Q_PROPERTY(qint64 availableMinAmount READ availableMinAmount CONSTANT)
+    Q_PROPERTY(qint64 availableMaxAmount READ availableMaxAmount CONSTANT)
+    Q_PROPERTY(qint64 minAmount MEMBER m_min_amount NOTIFY viewChanged)
+    Q_PROPERTY(qint64 maxAmount MEMBER m_max_amount NOTIFY viewChanged)
+    Q_PROPERTY(int lockCalls READ lockCalls NOTIFY viewChanged)
+    Q_PROPERTY(QStringList lastLockIds READ lastLockIds NOTIFY viewChanged)
+    Q_PROPERTY(int markCalls READ markCalls NOTIFY viewChanged)
+
 public:
+    qint64 availableMinAmount() const { return 100000; }
+    qint64 availableMaxAmount() const { return 300000; }
+    int lockCalls() const { return m_lock_calls; }
+    int markCalls() const { return m_mark_calls; }
+    QStringList lastLockIds() const { return m_last_lock_ids; }
+    Q_INVOKABLE void controlCoinActions(bool admit_marks, bool admit_locks) { m_admit_marks=admit_marks; m_admit_locks=admit_locks; m_lock_calls=0; m_mark_calls=0; m_last_lock_ids.clear(); }
     QString readError() const { return {}; }
     QString lockError() const { return {}; }
     bool lockPending() const { return false; }
     bool marksPending() const { return false; }
     int markedCount() const { return std::count_if(m_rows.begin(), m_rows.end(), [](const CoinRow& row) { return row.marked; }); }
     Q_PROPERTY(qint64 totalSelectedSatoshi READ totalSelectedSatoshi NOTIFY selectedCoinsCountChanged)
-    Q_PROPERTY(qint64 totalSatoshi READ totalSatoshi CONSTANT)
-    Q_PROPERTY(qint64 lockedSatoshi READ lockedSatoshi CONSTANT)
+    Q_PROPERTY(qint64 totalSatoshi READ totalSatoshi NOTIFY coinCountChanged)
+    Q_PROPERTY(qint64 lockedSatoshi READ lockedSatoshi NOTIFY viewChanged)
     Q_PROPERTY(int visibleCount READ coinCount NOTIFY coinCountChanged)
     Q_PROPERTY(QString searchText MEMBER m_search NOTIFY viewChanged)
     Q_PROPERTY(QString sortBy MEMBER m_sort NOTIFY viewChanged)
@@ -969,14 +1003,15 @@ public:
         bool selected;
         QString id;
         bool marked{false};
+        qint64 satoshi{0};
     };
 
     MockCoinsListModel()
     {
         m_rows = {
-            {QStringLiteral("bcrt1qcoin1"), QStringLiteral("0.00100000 BTC"), QStringLiteral("utxo-1"), false, false, QStringLiteral("coin-1")},
-            {QStringLiteral("bcrt1qcoin2"), QStringLiteral("0.00200000 BTC"), QStringLiteral("utxo-2"), false, false, QStringLiteral("coin-2")},
-            {QStringLiteral("bcrt1qcoin3"), QStringLiteral("0.00300000 BTC"), QStringLiteral(""), true, false, QStringLiteral("coin-3")},
+            {QStringLiteral("bcrt1qcoin1"), QStringLiteral("0.00100000 BTC"), QStringLiteral("utxo-1"), false, false, QStringLiteral("coin-1"), false, 100000},
+            {QStringLiteral("bcrt1qcoin2"), QStringLiteral("0.00200000 BTC"), QStringLiteral("utxo-2"), false, false, QStringLiteral("coin-2"), false, 200000},
+            {QStringLiteral("bcrt1qcoin3"), QStringLiteral("0.00300000 BTC"), QStringLiteral(""), true, false, QStringLiteral("coin-3"), false, 300000},
         };
     }
 
@@ -996,7 +1031,7 @@ public:
         case GroupRole: return QStringLiteral("November 2023");
         case GroupFirstRole: return index.row() == 0;
         case GroupLastRole: return index.row() == rowCount() - 1;
-        case SatoshiRole: return (index.row() + 1) * 100000;
+        case SatoshiRole: return row.satoshi;
         case AddressRole: return row.address;
         case AmountRole: return row.amount;
         case LabelRole: return row.label;
@@ -1026,15 +1061,25 @@ public:
         return std::count_if(m_rows.begin(), m_rows.end(), [](const CoinRow& row) { return row.selected; });
     }
 
-    qint64 totalSelectedSatoshi() const { qint64 sum = 0; for (size_t i=0;i<m_rows.size();++i) if(m_rows[i].selected) sum += (i+1)*100000; return sum; }
-    qint64 totalSatoshi() const { return 600000; }
-    qint64 lockedSatoshi() const { return 300000; }
+    qint64 totalSelectedSatoshi() const { qint64 sum = 0; for (size_t i=0;i<m_rows.size();++i) if(m_rows[i].selected) sum += m_rows[i].satoshi; return sum; }
+    qint64 totalSatoshi() const { qint64 sum=0; for(const auto& row:m_rows)sum+=row.satoshi; return sum; }
+    qint64 lockedSatoshi() const { qint64 sum=0; for(const auto& row:m_rows)if(row.locked)sum+=row.satoshi; return sum; }
     Q_INVOKABLE void beginSelection() { m_snapshot = m_rows; }
     Q_INVOKABLE void applySelection() { m_snapshot.clear(); }
     Q_INVOKABLE void cancelSelection() { if (m_snapshot.empty()) return; beginResetModel(); m_rows=m_snapshot; m_snapshot.clear(); endResetModel(); emitAggregateSignals(); }
-    Q_INVOKABLE bool setCoinsLocked(const QStringList&, bool) { return true; }
+    Q_INVOKABLE bool setCoinsLocked(const QStringList& ids, bool locked) {
+        ++m_lock_calls; m_last_lock_ids=ids;
+        if (!m_admit_locks) {Q_EMIT viewChanged();return false;}
+        for (const auto& id : ids) {
+            const auto coin=std::find_if(m_rows.begin(),m_rows.end(),[&](const auto& row){return row.id==id;});
+            if (coin==m_rows.end()) {Q_EMIT viewChanged();return false;}
+        }
+        for (int row=0;row<rowCount();++row) if (ids.contains(m_rows[row].id)) {m_rows[row].locked=locked;Q_EMIT dataChanged(index(row),index(row),{LockedRole});}
+        Q_EMIT viewChanged(); return true;
+    }
     Q_INVOKABLE bool toggleMarkById(const QString& id)
     {
+        ++m_mark_calls; if (!m_admit_marks) return false;
         for (int row = 0; row < rowCount(); ++row) {
             auto& coin = m_rows[row]; if (coin.id != id) continue;
             coin.marked = !coin.marked;
@@ -1050,7 +1095,8 @@ public:
     }
     Q_INVOKABLE bool lockMarkedCoins(bool locked)
     {
-        for (auto& coin : m_rows) if (coin.marked) coin.locked = locked;
+        QStringList ids; for (const auto& coin:m_rows) if (coin.marked) ids.push_back(coin.id);
+        if (!setCoinsLocked(ids,locked)) return false;
         clearMarks(); return true;
     }
     int coinCount() const { return rowCount(); }
@@ -1102,7 +1148,7 @@ public:
     {
         beginInsertRows(QModelIndex{}, 0, 0);
         m_rows.insert(m_rows.begin(), {QStringLiteral("bcrt1qnewcoin"), QStringLiteral("0.00400000 BTC"),
-                                      QStringLiteral("new-coin"), false, false, QStringLiteral("new-coin")});
+                                      QStringLiteral("new-coin"), false, false, QStringLiteral("new-coin"), false, 400000});
         endInsertRows();
         Q_EMIT coinCountChanged();
     }
@@ -1120,13 +1166,15 @@ public:
 
     Q_INVOKABLE void reset()
     {
+        controlCoinActions(true, true); m_min_amount = -1; m_max_amount = -1;
         beginResetModel();
         m_rows = {
-            {QStringLiteral("bcrt1qcoin1"), QStringLiteral("0.00100000 BTC"), QStringLiteral("utxo-1"), false, false, QStringLiteral("coin-1")},
-            {QStringLiteral("bcrt1qcoin2"), QStringLiteral("0.00200000 BTC"), QStringLiteral("utxo-2"), false, false, QStringLiteral("coin-2")},
-            {QStringLiteral("bcrt1qcoin3"), QStringLiteral("0.00300000 BTC"), QStringLiteral(""), true, false, QStringLiteral("coin-3")},
+            {QStringLiteral("bcrt1qcoin1"), QStringLiteral("0.00100000 BTC"), QStringLiteral("utxo-1"), false, false, QStringLiteral("coin-1"), false, 100000},
+            {QStringLiteral("bcrt1qcoin2"), QStringLiteral("0.00200000 BTC"), QStringLiteral("utxo-2"), false, false, QStringLiteral("coin-2"), false, 200000},
+            {QStringLiteral("bcrt1qcoin3"), QStringLiteral("0.00300000 BTC"), QStringLiteral(""), true, false, QStringLiteral("coin-3"), false, 300000},
         };
         endResetModel();
+        Q_EMIT coinCountChanged(); Q_EMIT viewChanged();
         emitAggregateSignals();
     }
 
@@ -1153,6 +1201,8 @@ private:
     }
 
     std::vector<CoinRow> m_rows{}, m_snapshot{};
+    qint64 m_min_amount{-1},m_max_amount{-1}; bool m_admit_marks{true},m_admit_locks{true};
+    int m_lock_calls{0},m_mark_calls{0}; QStringList m_last_lock_ids;
     QString m_search, m_sort{"date"}, m_filter{"all"}, m_group{"month"};
     bool m_descending{true};
 };
@@ -1349,13 +1399,16 @@ class MockPsbtDocument : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QString error READ error NOTIFY changed)
+    Q_PROPERTY(QString matchedTxid READ matchedTxid NOTIFY changed)
 public:
     explicit MockPsbtDocument(QObject* parent=nullptr):QObject(parent){}
     QString error()const{return m_error;}
+    QString matchedTxid()const{return m_matched_txid;}
+    Q_INVOKABLE void setMatchedTxidForTest(const QString& id){if(m_matched_txid==id)return;m_matched_txid=id;Q_EMIT changed();}
     void setError(QString error){if(m_error==error)return;m_error=std::move(error);Q_EMIT changed();}
-    Q_INVOKABLE void clear(){setError({});}
+    Q_INVOKABLE void clear(){setError({});setMatchedTxidForTest({});}
 Q_SIGNALS:void changed();
-private:QString m_error;
+private:QString m_error,m_matched_txid;
 };
 
 class MockWalletQmlModel : public QObject
@@ -1623,7 +1676,7 @@ public:
         if(!m_available||sendBusy()||preparationBusy()||(psbtActionBusy()&&!(kind==PsbtKind::Import&&m_psbt_operation&&m_psbt_operation->kind==PsbtKind::Import)))return 0;
         const QPointer<MockWalletQmlModel> observer{this};
         auto packet=std::make_shared<PsbtPacket>();packet->kind=kind;packet->ticket=++m_psbt_action_id;packet->review_revision=m_review_revision;
-        packet->review=m_current_transaction;packet->path=path;packet->txid=m_current_transaction?m_current_transaction->property("txid").toString():QString{};
+        packet->review=m_current_transaction;packet->path=path;packet->txid=kind==PsbtKind::Import&&!m_imported_psbt.matchedTxid().isEmpty()?m_imported_psbt.matchedTxid():m_current_transaction?m_current_transaction->property("txid").toString():QString{};
         packet->imported=kind==PsbtKind::Import?m_next_psbt_import_result:PsbtImportResult::PsbtUnsupported;packet->allowed=kind==PsbtKind::Import?!path.isEmpty():m_current_transaction&&(kind==PsbtKind::Save?!path.isEmpty():m_current_transaction_can_broadcast&&!m_transaction_fee_pending);
         m_psbt_operation=packet;m_psbt_action_state=PsbtActionState::PsbtPending;m_psbt_action_error.clear();m_psbt_import_result=PsbtImportResult::PsbtUnsupported;
         if(kind==PsbtKind::Save){m_saved_psbt_receipt=packet;m_last_saved_psbt_path=path;}
@@ -1646,6 +1699,7 @@ public:
         m_psbt_action_error=same?packet->error:QStringLiteral("The transaction review changed before publication.");
         m_psbt_import_result=packet->imported;const QPointer<MockWalletQmlModel> observer{this};
         m_imported_psbt.setError(m_psbt_action_error);if(!observer||!m_available||m_psbt_operation!=packet)return;
+        if(same&&packet->terminal==PsbtActionState::PsbtKnown){m_imported_psbt.setMatchedTxidForTest(packet->txid);if(!observer||!m_available||m_psbt_operation!=packet)return;}
         if(same&&packet->kind==PsbtKind::Import&&packet->terminal==PsbtActionState::PsbtImported){
             ++m_review_revision;m_current_transaction_is_imported_psbt=true;m_current_transaction_can_send=packet->imported==PsbtImportResult::WalletCanSign;
             m_transaction_fee_pending=packet->imported==PsbtImportResult::ReviewPending;m_current_transaction_can_broadcast=false;Q_EMIT currentTransactionChanged();
@@ -1718,6 +1772,48 @@ public:
     int m_receiving_sequence{0}, m_ensure_receiving_calls{0};
     bool m_capabilities_known{true};
     bool m_ensure_receiving_address_result{true};
+    Q_PROPERTY(int setReceiveAddressCalls READ setReceiveAddressCalls NOTIFY receiveSelectionFixtureChanged)
+    Q_PROPERTY(QString lastSelectedReceiveAddress READ lastSelectedReceiveAddress NOTIFY receiveSelectionFixtureChanged)
+    int setReceiveAddressCalls() const { return m_set_receive_address_calls; }
+    QString lastSelectedReceiveAddress() const { return m_selected_receive_address; }
+    Q_INVOKABLE void controlReceiveSelection(bool admitted) {
+        m_receive_selection_admitted = admitted; m_set_receive_address_calls = 0;
+        m_selected_receive_address.clear(); m_selection_operation = nullptr;
+        Q_EMIT receiveSelectionFixtureChanged();
+    }
+    Q_INVOKABLE MockReceiveRequestOperation* setCurrentPaymentRequestAddress(const QString& address) {
+        ++m_set_receive_address_calls; m_selected_receive_address = address;
+        Q_EMIT receiveSelectionFixtureChanged();
+        if (!m_available || !m_receive_selection_admitted || address.isEmpty()) return nullptr;
+        auto* operation = new MockReceiveRequestOperation(this);
+        operation->m_pending = true; operation->m_token = QString::number(++m_address_operation_sequence);
+        m_selection_operation = operation;
+        return operation;
+    }
+    Q_INVOKABLE MockReceiveRequestOperation* selectedReceiveOperation() const { return m_selection_operation; }
+    Q_INVOKABLE void publishSelectedReceiveAddress() {
+        if (!m_selection_operation) return;
+        auto* request = qobject_cast<MockPaymentRequest*>(m_current_payment_request);
+        if (!request) return;
+        request->m_address = m_selected_receive_address; Q_EMIT request->addressChanged();
+        m_receiving_address.m_address = m_selected_receive_address; Q_EMIT m_receiving_address.addressChanged();
+        m_receiving_ready = true; Q_EMIT receivingAddressStateChanged();
+    }
+    Q_INVOKABLE void publishSelectedReceiveRequest(const QString& id) {
+        auto* request = qobject_cast<MockPaymentRequest*>(m_current_payment_request);
+        if (!request) return;
+        request->m_id = id; Q_EMIT request->idChanged();
+        publishSelectedReceiveAddress();
+    }
+    Q_INVOKABLE void deliverReceiveSelection(bool address_ready, bool request_loaded, const QString& request_id, const QString& error) {
+        if (!m_selection_operation) return;
+        m_selection_operation->m_address_ready = address_ready;
+        m_selection_operation->m_loaded = request_loaded; m_selection_operation->m_id = request_id;
+        m_selection_operation->m_error = error; m_selection_operation->m_pending = false;
+        Q_EMIT m_selection_operation->changed();
+    }
+    bool m_receive_selection_admitted{true}; int m_set_receive_address_calls{0};
+    QString m_selected_receive_address; QPointer<MockReceiveRequestOperation> m_selection_operation;
     Q_INVOKABLE MockReceiveRequestOperation* ensureReceivingAddress(bool next = false, const QString& type = {})
     {
         ++m_ensure_receiving_calls;
@@ -2200,6 +2296,7 @@ public:
 Q_SIGNALS:
     void psbtActionChanged();
     void recipientLabelsChanged();
+    void receiveSelectionFixtureChanged();
     void receivingAddressStateChanged();
     void receiveRequestStorageChanged();
     void securityOperationChanged();
@@ -2849,6 +2946,23 @@ public:
     enum OperationState {Idle,Pending,Applied,Rejected,Stale,Failed,Closed};
     Q_ENUM(OperationState)
     explicit MockCoreSettingsModel(QObject* parent = nullptr) : QObject{parent} {}
+    Q_PROPERTY(bool holdProxyEffectsForTest MEMBER m_hold_proxy_effects)
+    Q_PROPERTY(bool refuseProxyAdmissionForTest MEMBER m_refuse_proxy_admission)
+    Q_PROPERTY(int proxyApplyStateForTest MEMBER m_proxy_apply_state)
+    Q_PROPERTY(int proxyApplyCallsForTest READ proxyApplyCallsForTest)
+    int proxyApplyCallsForTest() const { return m_proxy_apply_calls; }
+    Q_INVOKABLE bool deliverProxyEffectForTest() {
+        if (m_proxy_effects.empty()) return false;
+        auto turn = std::move(m_proxy_effects.front()); m_proxy_effects.pop_front(); turn(); return true;
+    }
+    void queueProxyEffect(std::function<void()> effect) {
+        ++m_proxy_apply_calls;
+        if (m_hold_proxy_effects) m_proxy_effects.push_back(std::move(effect));
+        else QTimer::singleShot(0, this, std::move(effect));
+    }
+    bool m_hold_proxy_effects{false}, m_refuse_proxy_admission{false};
+    int m_proxy_apply_state{Applied}, m_proxy_apply_calls{0};
+    std::deque<std::function<void()>> m_proxy_effects;
     Q_INVOKABLE MockCoreProxyDraft* createProxyDraft();
 
     Q_INVOKABLE QObject* entry(const QString& key)
@@ -2977,13 +3091,14 @@ public:
             m_tor=m_source->torEnabled();m_onion=m_source->torAddress().isEmpty()?m_source->defaultAddress():m_source->torAddress();evaluate();});
     }
     Q_INVOKABLE quint64 requestApply(){
-        if(!m_source||!canApply())return 0;const auto ticket=++m_operation;m_state=MockCoreSettingsModel::Pending;Q_EMIT changed();
+        if(!m_source||!canApply()||m_source->m_refuse_proxy_admission)return 0;const auto ticket=++m_operation;m_state=MockCoreSettingsModel::Pending;Q_EMIT changed();
         const auto source=m_source;const QPointer<MockCoreProxyDraft> observer{this};const bool proxy=m_proxy,tor=m_tor;const auto address=m_address,onion=m_onion;
-        QTimer::singleShot(0,source,[source,observer,proxy,tor,address,onion]{if(!source)return;
+        const int requested_state=source->m_proxy_apply_state;
+        source->queueProxyEffect([source,observer,proxy,tor,address,onion,requested_state]{if(!source)return;
             const bool valid=(!proxy||source->validateAddress(address).isEmpty())&&(!tor||source->validateAddress(onion).isEmpty());
-            if(valid){if(source->canEdit("proxy")){if(source->validateAddress(address).isEmpty())source->setProxyAddress(address);source->setProxyEnabled(proxy);}
+            if(valid && requested_state==MockCoreSettingsModel::Applied){if(source->canEdit("proxy")){if(source->validateAddress(address).isEmpty())source->setProxyAddress(address);source->setProxyEnabled(proxy);}
                 if(source->canEdit("onion")){if(source->validateAddress(onion).isEmpty())source->setTorAddress(onion);source->setTorEnabled(tor);}}
-            if(observer){observer->m_state=valid?MockCoreSettingsModel::Applied:MockCoreSettingsModel::Failed;observer->m_error=valid?QString{}:QStringLiteral("Invalid proxy location");Q_EMIT observer->changed();}
+            if(observer){observer->m_state=valid?requested_state:MockCoreSettingsModel::Failed;observer->m_error=observer->m_state==MockCoreSettingsModel::Applied?QString{}:valid?QStringLiteral("The original proxy draft could not be applied."):QStringLiteral("Invalid proxy location");Q_EMIT observer->changed();}
         });return ticket;
     }
 Q_SIGNALS:void changed();
@@ -5402,6 +5517,37 @@ private:
     QString m_last_url;
 };
 
+// Public projection fixture: same content role and observable model shape as
+// StartupDiagnosticsModel. Domain intake/reduction is tested with manual services.
+class MockStartupDiagnostics : public QAbstractListModel
+{
+    Q_OBJECT
+    Q_PROPERTY(int count READ rowCount NOTIFY projectionChanged)
+    Q_PROPERTY(bool busy READ busy NOTIFY projectionChanged)
+    Q_PROPERTY(QString summary READ summary NOTIFY projectionChanged)
+    Q_PROPERTY(bool present READ present NOTIFY projectionChanged)
+public:
+    explicit MockStartupDiagnostics(QObject* parent = nullptr) : QAbstractListModel(parent) {}
+    int rowCount(const QModelIndex& parent = {}) const override { return parent.isValid() ? 0 : int(m_rows.size()); }
+    QVariant data(const QModelIndex& index, int role) const override {
+        return index.isValid() && index.row() >= 0 && index.row() < m_rows.size() && role == Qt::UserRole + 1
+            ? QVariant{m_rows.at(index.row())} : QVariant{};
+    }
+    QHash<int, QByteArray> roleNames() const override { return {{Qt::UserRole + 1, "content"}}; }
+    bool busy() const { return m_busy; }
+    bool present() const { return m_present; }
+    QString summary() const { return m_summary; }
+    Q_INVOKABLE QString contentAt(int row) const { return row >= 0 && row < m_rows.size() ? m_rows.at(row) : QString{}; }
+    Q_INVOKABLE void project(const QString& summary, const QStringList& rows, bool present, bool pending) {
+        beginResetModel(); m_rows = rows; m_summary = summary; m_present = present; m_busy = pending; endResetModel();
+        Q_EMIT projectionChanged();
+    }
+Q_SIGNALS:
+    void projectionChanged();
+private:
+    QStringList m_rows; QString m_summary; bool m_present{false}, m_busy{false};
+};
+
 class MockApplicationModels : public QObject
 {
     Q_OBJECT
@@ -5422,15 +5568,18 @@ class MockApplicationModels : public QObject
     Q_PROPERTY(QObject* desktopTrayIconController READ desktopTrayIconController CONSTANT)
     Q_PROPERTY(MockOptionsModel* onboardingOptionsModel READ onboardingOptionsModel CONSTANT)
     Q_PROPERTY(bool testAutomationEnabled READ testAutomationEnabled CONSTANT)
-    Q_PROPERTY(QString startupError READ startupError CONSTANT)
-    Q_PROPERTY(QAbstractItemModel* startupErrorDetails READ startupErrorDetails CONSTANT)
-    Q_PROPERTY(bool startupErrorPending READ startupErrorPending CONSTANT)
+    Q_PROPERTY(QString startupError READ startupError NOTIFY startupErrorChanged)
+    Q_PROPERTY(QAbstractItemModel* startupErrorDetails READ startupErrorDetails NOTIFY startupErrorChanged)
+    Q_PROPERTY(bool startupErrorPending READ startupErrorPending NOTIFY startupErrorChanged)
 
 public:
-    QAbstractItemModel* startupErrorDetails() const { return nullptr; }
-    bool startupErrorPending() const { return false; }
+    MockStartupDiagnostics* diagnostics() const { return m_context->contextProperty(QStringLiteral("testStartupDiagnostics")).value<MockStartupDiagnostics*>(); }
+    QAbstractItemModel* startupErrorDetails() const { auto* source = diagnostics(); return source && source->present() ? source : nullptr; }
+    bool startupErrorPending() const { auto* source = diagnostics(); return source && source->busy(); }
 
-    explicit MockApplicationModels(QQmlEngine* engine) : QObject(engine), m_context(engine->rootContext()) {}
+    explicit MockApplicationModels(QQmlEngine* engine) : QObject(engine), m_context(engine->rootContext()) {
+        if (auto* source = diagnostics()) connect(source, &MockStartupDiagnostics::projectionChanged, this, &MockApplicationModels::startupErrorChanged);
+    }
 
     MockNodeModel* nodeModel() const { return m_context->contextProperty(QStringLiteral("nodeModel")).value<MockNodeModel*>(); }
     MockChainModel* chainModel() const { return m_context->contextProperty(QStringLiteral("chainModel")).value<MockChainModel*>(); }
@@ -5449,8 +5598,9 @@ public:
     QObject* desktopTrayIconController() const { return m_context->contextProperty(QStringLiteral("desktopTrayIconController")).value<QObject*>(); }
     MockOptionsModel* onboardingOptionsModel() const { return m_context->contextProperty(QStringLiteral("optionsModel")).value<MockOptionsModel*>(); }
     bool testAutomationEnabled() const { return m_context->contextProperty(QStringLiteral("testAutomationEnabled")).toBool(); }
-    QString startupError() const { return m_context->contextProperty(QStringLiteral("message")).toString(); }
-
+    QString startupError() const { auto* source = diagnostics(); return source && !source->summary().isEmpty() ? source->summary() : m_context->contextProperty(QStringLiteral("message")).toString(); }
+Q_SIGNALS:
+    void startupErrorChanged();
 private:
     QQmlContext* m_context;
 };
@@ -5556,6 +5706,7 @@ public Q_SLOTS:
 
     void applicationAvailable()
     {
+        if (!m_settings.isValid()) qFatal("Cannot create QML test settings directory");
         QCoreApplication::setOrganizationName(QStringLiteral("BitcoinCoreQmlTests"));
         QCoreApplication::setOrganizationDomain(QStringLiteral("bitcoincore.org"));
         QCoreApplication::setApplicationName(QStringLiteral("bitcoinqml_qmltests"));
@@ -5580,6 +5731,61 @@ public Q_SLOTS:
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
 
+    Q_INVOKABLE UiPreferencesStore* beginControlledPreferences(QObject* context, bool refuse_read) {
+        if (m_controlled_preferences || !context) return nullptr;
+        auto* engine = qmlEngine(context); if (!engine) return nullptr;
+        auto fixture = std::make_unique<ControlledPreferences>(); fixture->engine = engine;
+        fixture->original = engine->rootContext()->contextProperty(QStringLiteral("uiPreferencesStore")).value<UiPreferencesStore*>();
+        UiPreferencesNamespace identity; identity.file = fixture->directory.filePath(QStringLiteral("preferences.ini"));
+        auto* state = fixture.get();
+        fixture->store = new UiPreferencesStore{{fixture->transport.scheduler, [state](auto turn) { state->gui.push_back(std::move(turn)); }}, identity, engine};
+        engine->rootContext()->setContextProperty(QStringLiteral("uiPreferencesStore"), fixture->store.data());
+        if (refuse_read) fixture->transport.rejectLane(execution::Lane::Core);
+        m_controlled_preferences = std::move(fixture); m_controlled_preferences->store->start();
+        return m_controlled_preferences->store;
+    }
+    Q_INVOKABLE bool stepControlledPreferences(const QString& lane) {
+        if (!m_controlled_preferences) return false;
+        auto& fixture = *m_controlled_preferences;
+        if (lane == QStringLiteral("core")) return fixture.transport.step(execution::Lane::Core);
+        if (lane == QStringLiteral("domain")) return fixture.transport.step(execution::Lane::Domain);
+        if (lane != QStringLiteral("gui") || fixture.gui.empty()) return false;
+        auto turn = std::move(fixture.gui.front()); fixture.gui.pop_front(); turn(); return true;
+    }
+    Q_INVOKABLE bool runControlledPreferenceWork() {
+        if (!m_controlled_preferences) return false;
+        for (int turn = 0; turn < 4096; ++turn) {
+            if (m_controlled_preferences->transport.queuedIdle()) return true;
+            if (!m_controlled_preferences->transport.stepNext()) return false;
+        }
+        return false;
+    }
+    Q_INVOKABLE quint64 controlledPreferenceOperationId() const {
+        return m_controlled_preferences && m_controlled_preferences->store ? m_controlled_preferences->store->operationId() : 0;
+    }
+    Q_INVOKABLE bool settleControlledPreferences() {
+        if (!m_controlled_preferences) return false;
+        auto& fixture = *m_controlled_preferences;
+        for (int turn = 0; turn < 4096; ++turn) {
+            if (!fixture.transport.queuedIdle()) { if (!fixture.transport.stepNext()) return false; continue; }
+            if (!fixture.gui.empty()) { auto next = std::move(fixture.gui.front()); fixture.gui.pop_front(); next(); continue; }
+            // A live store deliberately retains scheduler resource leases.
+            // Settling work/publication is distinct from retiring the store.
+            return fixture.transport.transportIdle();
+        }
+        return false;
+    }
+    Q_INVOKABLE bool endControlledPreferences() {
+        if (!m_controlled_preferences) return true;
+        auto& fixture = *m_controlled_preferences;
+        if (fixture.store) fixture.store->closeAdmission();
+        const bool closed = settleControlledPreferences();
+        if (fixture.engine) fixture.engine->rootContext()->setContextProperty(QStringLiteral("uiPreferencesStore"), fixture.original.data());
+        delete fixture.store.data(); fixture.store = nullptr;
+        const bool retired = settleControlledPreferences(); const bool drained = fixture.transport.quiescent(); m_controlled_preferences.reset();
+        return closed && retired && drained;
+    }
+
     Q_INVOKABLE QVariant blockClockSnapshot(const QList<qreal>& fractions) const
     {
         auto frame = std::make_shared<blockclock::Projection>(); frame->fractions = fractions;
@@ -5596,6 +5802,7 @@ public Q_SLOTS:
 
     void cleanupTestCase()
     {
+        if (!endControlledPreferences()) m_had_warnings = true;
         for(const auto& store:m_preferences_stores)if(store)store->closeAdmission();
         BitcoinAddress::setDefaultServices({});
         QEventLoop loop;
@@ -5617,6 +5824,12 @@ public Q_SLOTS:
 
     void qmlEngineAvailable(QQmlEngine* engine)
     {
+        QString coverage_error;
+        if (!QmlCoverage::install(engine, &coverage_error)) {
+            m_had_warnings = true;
+            std::cerr << coverage_error.toStdString() << '\n';
+            return;
+        }
         // Match failOnWarnings(): Qt 6.2 skips the new component warning policy.
 #if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0)
         // Qt Test's per-function warning policy does not cover QML loading or
@@ -5628,6 +5841,7 @@ public Q_SLOTS:
             }
         });
 #endif
+        engine->rootContext()->setContextProperty(QStringLiteral("testStartupDiagnostics"), new MockStartupDiagnostics(engine));
         auto* preferences=new UiPreferencesStore{{m_qr_executor->scheduler(),[this](auto turn){QMetaObject::invokeMethod(this,std::move(turn),Qt::QueuedConnection);}},UiPreferencesNamespace::Capture(),engine};
         m_preferences_stores.emplace_back(preferences);
         engine->rootContext()->setContextProperty(QStringLiteral("uiPreferencesStore"),preferences);
@@ -5785,6 +5999,14 @@ public Q_SLOTS:
     }
 
 private:
+    struct ControlledPreferences {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> gui;
+        QTemporaryDir directory;
+        QPointer<QQmlEngine> engine;
+        QPointer<UiPreferencesStore> original, store;
+    };
+    std::unique_ptr<ControlledPreferences> m_controlled_preferences;
     std::vector<QPointer<UiPreferencesStore>> m_preferences_stores;
     mutable blockclock::Snapshot m_block_clock_fixture;
     std::unique_ptr<BackendExecutor> m_qr_executor;
@@ -5794,8 +6016,33 @@ private:
 
 int main(int argc, char* argv[])
 {
+#if defined(BITCOINQML_QML_TEST_DEV_MODE) && BITCOINQML_QML_TEST_DEV_MODE
+    if (QmlCoverage::requested()) {
+        std::cerr << "QML coverage requires QML_TEST_DEV_MODE=OFF (embedded resources)." << '\n';
+        return EXIT_FAILURE;
+    }
+#endif
+    QString coverage_error;
+    if (!QmlCoverage::prepare(&coverage_error)) {
+        std::cerr << coverage_error.toStdString() << '\n';
+        return EXIT_FAILURE;
+    }
+#if !defined(BITCOINQML_QML_TEST_DEV_MODE) || !BITCOINQML_QML_TEST_DEV_MODE
+    if (QmlCoverage::requested()) {
+        Q_CLEANUP_RESOURCE(bitcoin_qml);
+        Q_CLEANUP_RESOURCE(bitcoin_compat);
+        if (!QmlCoverage::registerResources(&coverage_error)) {
+            std::cerr << coverage_error.toStdString() << '\n';
+            return EXIT_FAILURE;
+        }
+    }
+#endif
     QmlTestsSetup setup;
     const int status = quick_test_main_with_setup(argc, argv, "bitcoinqml_qmltests", QUICK_TEST_SOURCE_DIR, &setup);
+    if (!QmlCoverage::finish(&coverage_error)) {
+        std::cerr << coverage_error.toStdString() << '\n';
+        return EXIT_FAILURE;
+    }
     if (status != 0) return status;
     return setup.hadWarnings() ? EXIT_FAILURE : EXIT_SUCCESS;
 }

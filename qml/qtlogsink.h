@@ -8,6 +8,7 @@
 #include <QVersionNumber>
 #include <QLoggingCategory>
 #include <array>
+#include <cstddef>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -45,6 +46,21 @@ struct Record {
 };
 QString Message(const Record& record);
 QByteArray FormatStderr(const Record& record);
+// Native output ports. Stdio acknowledgement includes both the exact write
+// length and flush result; Core's void ports acknowledge handoff only.
+struct WriterPorts {
+    std::function<size_t(const QByteArray&)> stderr_write;
+    std::function<bool()> stderr_flush;
+    std::function<void(const QString&)> core_debug, core_info;
+    std::function<bool(const QString&)> benign_font_warning;
+};
+class Writer final {
+public:
+    explicit Writer(WriterPorts ports);
+    bool operator()(const Record& record) const;
+private:
+    WriterPorts m_ports;
+};
 struct Receipt {
     // written counts successful write-port acknowledgements. Core's void
     // logging API only acknowledges handoff, not debug.log durability/status.

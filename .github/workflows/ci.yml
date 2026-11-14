@@ -250,7 +250,7 @@ jobs:
         if: env.BUILD_APP_TESTS == 'ON'
         run: |
           mkdir -p build/test-reports
-          ${{ matrix.test_wrapper }} ctest --test-dir build --output-on-failure -LE '^integration$' \
+          ${{ matrix.test_wrapper }} ctest --test-dir build --parallel 4 --output-on-failure -LE '^integration$' \
             --output-junit "${PWD}/build/test-reports/ctest.xml"
 
       - name: Run integration tests

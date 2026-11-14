@@ -9,6 +9,14 @@ QtObject {
     id: parser
     property int _sequence: 0
     property bool holdPublications: false
+    property bool admitRequestsForTest: true
+    property string probeErrorForTest: ""
+    property int requestCallsForTest: 0
+    function resetRequestControlsForTest() {
+        admitRequestsForTest = true
+        probeErrorForTest = ""
+        requestCallsForTest = 0
+    }
     property var _heldOperations: []
     function releasePublications() {
         holdPublications = false
@@ -19,7 +27,8 @@ QtObject {
     property Component _operationFactory: Component { BitcoinUriParseOperation {} }
 
     function _request(outcome, owner, replace) {
-        if (!owner) return null
+        ++requestCallsForTest
+        if (!owner || !admitRequestsForTest) return null
         if (replace && replace.requestOwner === owner) {
             replace.closeAdmission()
             replace.destroy()
@@ -37,7 +46,11 @@ QtObject {
         try { outcome = _parse(text) }
         catch (error) { outcome = {success: false, error: "Not a valid Bitcoin payment URI."} }
         outcome.isPaymentUri = /^bitcoin:/i.test(String(text || "").trim())
-        outcome.probeSucceeded = true
+        outcome.probeSucceeded = probeErrorForTest.length === 0
+        if (!outcome.probeSucceeded) {
+            outcome.success = false
+            outcome.error = probeErrorForTest
+        }
         // Fixture-only stable identity; production hashes on Domain.
         if (!_sourceIds[text]) _sourceIds[text] = "fixture-source-" + (++_sourceSequence)
         outcome.sourceId = _sourceIds[text]

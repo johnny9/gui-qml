@@ -19,6 +19,8 @@
 #include <QtTest/QtTest>
 
 #include <algorithm>
+#include <array>
+#include <optional>
 #include <stdexcept>
 
 namespace {
@@ -43,6 +45,8 @@ struct Wallet : StubWallet {
     std::vector<Txid> read_ids;
     int reads{0}, scans{0};
     bool fail{false};
+    std::optional<int> status_depth;
+    bool abandoned{false};
     TransactionChangedFn transaction_changed;
     std::unique_ptr<interfaces::Handler> handleTransactionChanged(TransactionChangedFn callback) override {
         transaction_changed = std::move(callback); return {};
@@ -60,6 +64,8 @@ struct Wallet : StubWallet {
         read_ids.push_back(id);
         if (fail) throw std::runtime_error("receipt read failure");
         status.depth_in_main_chain = confirmed.contains(id) ? 1 : 0;
+        if (status_depth) status.depth_in_main_chain = *status_depth;
+        status.is_abandoned = abandoned;
         mempool = !inactive.contains(id);
         const auto tx = transactions.find(id);
         return tx == transactions.end() ? interfaces::WalletTx{} : tx->second;
@@ -143,6 +149,113 @@ private Q_SLOTS:
         QTest::addColumn<bool>("permuted");
         QTest::newRow("ascending") << false;
         QTest::newRow("permuted") << true;
+    }
+    void transferredPaymentsKeepIndependentOwners_data()
+    {
+        QTest::addColumn<bool>("populated");
+        QTest::newRow("empty") << false; QTest::newRow("two-payments") << true;
+    }
+    void transferredPaymentsKeepIndependentOwners()
+    {
+        QFETCH(bool,populated);
+        const QString other{QStringLiteral("3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy")};
+        const QSet<QString> watched{ADDRESS,other};
+        const auto first=Txid::FromUint256(uint256{uint8_t{1}});
+        const auto second=Txid::FromUint256(uint256{uint8_t{2}});
+        Ledger current;
+        if(populated){current.apply({first,{{ADDRESS,100}},true,true},watched);current.apply({second,{{other,50}},true,false},watched);}
+        auto transferred=current.takePayments(); QVERIFY(transferred);
+        QVERIFY(current.emptyPayments()); QVERIFY(current.totals().empty());
+        QCOMPARE(current.observed().contains(ADDRESS),populated); QCOMPARE(current.observed().contains(other),populated);
+        QVERIFY(transferred->observed().empty());
+        if(populated){QCOMPARE(transferred->totals().at(ADDRESS),CAmount{100});QCOMPARE(transferred->totals().at(other),CAmount{50});}
+        else QVERIFY(transferred->emptyPayments());
+        current.apply({first,{{ADDRESS,40}},true,false},watched);
+        QCOMPARE(current.totals().at(ADDRESS),CAmount{40}); QVERIFY(current.unconfirmed().empty());
+        const auto original_ids=transferred->unconfirmed();
+        transferred->erase(first); transferred->erase(Txid::FromUint256(uint256{uint8_t{99}}));
+        QCOMPARE(current.totals().at(ADDRESS),CAmount{40});
+        QCOMPARE(original_ids.contains(first),populated);
+        QVERIFY(!transferred->unconfirmed().contains(first));
+        if(populated)QCOMPARE(transferred->totals().at(other),CAmount{50});
+        transferred.reset(); current.clearPayments();
+        QVERIFY(current.emptyPayments()); QVERIFY(current.observed().contains(ADDRESS));
+        QCOMPARE(current.observed().contains(other),populated);
+    }
+    void publicReceiptReadKeepsStatusAndOutputFactsSeparate_data()
+    {
+        QTest::addColumn<int>("mode");
+        const std::array names{"mempool", "confirmed", "conflicted", "abandoned", "not-in-mempool",
+            "replaced", "confirmed-after-replacement", "unowned", "missing-ownership", "zero-output",
+            "negative-output", "non-address-output", "same-address-outputs", "missing-transaction", "read-error"};
+        for(int mode=0;mode<int(names.size());++mode)QTest::newRow(names[mode])<<mode;
+    }
+    void publicReceiptReadKeepsStatusAndOutputFactsSeparate()
+    {
+        QFETCH(int,mode);
+        Wallet wallet;
+        auto record=Payment(100+mode,mode==9?0:mode==10?-1:100);
+        if(mode==7)record.txout_is_mine={false};
+        if(mode==8)record.txout_is_mine.clear();
+        if(mode==11){CMutableTransaction tx{*record.tx};tx.vout[0].scriptPubKey=CScript{}<<OP_TRUE;record.tx=MakeTransactionRef(tx);}
+        if(mode==12){CMutableTransaction tx{*record.tx};tx.vout.emplace_back(25,tx.vout[0].scriptPubKey);record.tx=MakeTransactionRef(tx);record.txout_is_mine={true,true};}
+        if(mode==5||mode==6)record.replaced_by_txid=Txid::FromUint256(uint256{uint8_t{77}});
+        const auto id=record.tx->GetHash();
+        if(mode!=13)wallet.transactions.emplace(id,record);
+        if(mode==1)wallet.status_depth=1;
+        if(mode==2)wallet.status_depth=-1;
+        if(mode==6)wallet.status_depth=2;
+        wallet.abandoned=mode==3;
+        if(mode==1||mode==4||mode==6)wallet.inactive.insert(id);
+        wallet.fail=mode==14;
+        if(mode==14){
+            bool threw{false};
+            try{Read(wallet,id);}catch(const std::runtime_error& error){threw=true;QCOMPARE(std::string{error.what()},std::string{"receipt read failure"});}
+            QVERIFY(threw);QCOMPARE(wallet.reads,1);return;
+        }
+        const auto receipt=Read(wallet,id);
+        QCOMPARE(receipt.id,id); QCOMPARE(wallet.reads,1); QCOMPARE(wallet.read_ids,(std::vector<Txid>{id}));
+        const bool has_output=mode<=6||mode==12;
+        QCOMPARE(receipt.outputs.contains(ADDRESS),has_output);
+        if(has_output)QCOMPARE(receipt.outputs.at(ADDRESS),mode==12?CAmount{125}:CAmount{100});
+        else QVERIFY(receipt.outputs.empty());
+        QCOMPARE(receipt.active,mode==0||mode==1||mode==6||mode==12);
+        QCOMPARE(receipt.unconfirmed,mode==0||mode==12);
+    }
+    void detachedBackendInterestDoesNotRetainOrRewriteItsSnapshot()
+    {
+        std::vector<std::shared_ptr<const Snapshot>> snapshots;
+        Fixture f;
+        f.add(1,100);f.reader->reload(ADDRESSES);const auto initial=f.settle();QVERIFY(initial&&initial->status==Status::Ready);
+        QVERIFY(f.reader->onSnapshot([&](auto snapshot){snapshots.push_back(std::move(snapshot));}));f.commands.drain();
+        QCOMPARE(snapshots.size(),size_t{1});QCOMPARE(snapshots[0]->totals.at(ADDRESS),CAmount{100});
+        const auto second=f.add(2,50);f.reader->changed({{second,CT_NEW}},ADDRESSES);const auto update=f.settle();QVERIFY(update&&update->status==Status::Ready);
+        QCOMPARE(snapshots.size(),size_t{2});QCOMPARE(snapshots[1]->totals.at(ADDRESS),CAmount{150});
+        QVERIFY(f.reader->onSnapshot({}));f.commands.drain();
+        const auto third=f.add(3,25);f.reader->changed({{third,CT_NEW}},ADDRESSES);const auto latest=f.settle();
+        QVERIFY(latest&&latest->status==Status::Ready);QCOMPARE(latest->snapshot->totals.at(ADDRESS),CAmount{175});
+        QCOMPARE(snapshots.size(),size_t{2});QCOMPARE(snapshots[0]->totals.at(ADDRESS),CAmount{100});
+        QCOMPARE(snapshots[1]->totals.at(ADDRESS),CAmount{150});
+        const auto reads=f.wallet->reads;
+        QVERIFY(f.reader->onSnapshot([&](auto snapshot){snapshots.push_back(std::move(snapshot));}));f.commands.drain();
+        QCOMPARE(snapshots.size(),size_t{3});QCOMPARE(snapshots[2]->totals.at(ADDRESS),CAmount{175});QCOMPARE(f.wallet->reads,reads);
+    }
+    void repeatedReadFailuresRespectTheManualBackoffCap()
+    {
+        Fixture f;const auto id=f.add(1,100);f.wallet->fail=true;
+        f.reader->changed({{id,CT_NEW}},ADDRESSES);const auto initial=f.settle();QVERIFY(initial&&initial->status==Status::Failed);
+        int expected_reads{1};
+        for(const int delay:{1,2,4,8,16,30,30}){
+            f.now+=std::chrono::seconds{delay}-std::chrono::milliseconds{1};f.reader->retry();f.commands.drain();
+            QCOMPARE(f.wallet->reads,expected_reads);QVERIFY(!f.reader->settled());
+            f.now+=std::chrono::milliseconds{1};f.reader->retry();const auto failed=f.settle();
+            QVERIFY(failed&&failed->status==Status::Failed);QCOMPARE(f.wallet->reads,++expected_reads);
+        }
+        f.wallet->fail=false;f.now+=std::chrono::seconds{30};f.reader->retry();const auto recovered=f.settle();
+        QVERIFY(recovered&&recovered->status==Status::Ready);QCOMPARE(recovered->snapshot->totals.at(ADDRESS),CAmount{100});
+        QCOMPARE(recovered->transactions.at(id),CT_NEW);
+        // Recovery reads the full current history and then the retained notice.
+        QCOMPARE(f.wallet->reads,expected_reads+2);QCOMPARE(f.wallet->scans,8);
     }
     void receiptIdSnapshotsKeepOriginalOrder()
     {

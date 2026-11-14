@@ -17,6 +17,7 @@
 #include <QSemaphore>
 #include <QtTest/QtTest>
 
+#include <array>
 #include <limits>
 #include <stdexcept>
 
@@ -46,8 +47,10 @@ struct Wallet : StubWallet {
     std::map<std::string, std::string> stored;
     std::set<interfaces::WalletTx> transactions;
     std::vector<std::string> effects;
+    std::vector<std::pair<std::string, std::string>> written_requests;
     std::string label{"private"};
-    int loads{0}, writes{0};
+    int loads{0}, writes{0}, history_reads{0};
+    bool throw_history{false};
     int fail_write{0}, throw_write{0};
     bool fail_label{false}, fail_all_writes{false}, address_exists{true};
     int label_writes{0}, fail_label_number{0}, throw_label_number{0};
@@ -57,7 +60,11 @@ struct Wallet : StubWallet {
     TransactionChangedFn transaction;
     std::string getWalletName() override { return "requests"; }
     std::unique_ptr<interfaces::Handler> handleTransactionChanged(TransactionChangedFn fn) override { transaction = std::move(fn); return {}; }
-    std::set<interfaces::WalletTx> getWalletTxs() override { return transactions; }
+    std::set<interfaces::WalletTx> getWalletTxs() override {
+        ++history_reads;
+        if (throw_history) throw std::runtime_error("request history unavailable");
+        return transactions;
+    }
     std::vector<std::string> getAddressReceiveRequests() override {
         ++loads; std::vector<std::string> result;
         result.reserve(stored.size());
@@ -83,6 +90,7 @@ struct Wallet : StubWallet {
         book[destination] = name; label = name; return true;
     }
     bool setAddressReceiveRequest(const CTxDestination&, const std::string& id, const std::string& blob) override {
+        written_requests.emplace_back(id, blob);
         effects.push_back(blob.empty() ? "erase:" + id : "write:" + id); ++writes;
         if (writes == throw_write) { stored[id] = blob; throw std::runtime_error("uncertain native write"); }
         if (fail_all_writes || writes == fail_write) return false;
@@ -141,6 +149,274 @@ class WalletRequestsTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void confirmedPersistenceOwnsItsOutcomeWhenRowPreparationFails_data()
+    {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("create") << 0;
+        QTest::newRow("edit") << 1;
+        QTest::newRow("label-batch") << 2;
+        QTest::newRow("label-multiple-batches") << 3;
+        QTest::newRow("label-known-write-failure") << 4;
+        QTest::newRow("label-uncertain-after-write") << 5;
+        QTest::newRow("create-after-opening-close") << 6;
+        QTest::newRow("create-non-standard-exception") << 7;
+    }
+    void confirmedPersistenceOwnsItsOutcomeWhenRowPreparationFails()
+    {
+        QFETCH(int, mode);
+        bool reject_preparation{false}; int completed{0}, rejected_projections{0};
+        const bool create = mode == 0 || mode == 6 || mode == 7;
+        const int64_t failed_id = mode == 1 ? 1 : 2;
+        Fixture f{Encode, DecodeOne, [&](Record row) {
+            if (reject_preparation && row.entry.id == failed_id) {
+                ++rejected_projections;
+                if (mode == 7) throw 42;
+                throw std::runtime_error("confirmed request projection unavailable");
+            }
+            return FreezeRecord(std::move(row));
+        }};
+        const int count = create || mode == 1 ? 1 : mode == 3 ? 70 : 3;
+        f.load(count);
+        auto command = Create();
+        if (mode == 1) command = f.edit(f.record(), "persisted-private");
+        if (!create && mode != 1) { command = Intent(Kind::Label); command.address = Address(); command.label = "persisted-private"; }
+        if (mode == 4) f.wallet->fail_write = 3;
+        if (mode == 5) f.wallet->throw_write = 3;
+        reject_preparation = true;
+        const auto admitted = f.store->submit(command, [&] { ++completed; }); QVERIFY(admitted);
+        if (mode == 6) {
+            while (f.commands.step(Lane::Domain)) {}
+            QVERIFY(f.commands.step(Lane::Core)); QCOMPARE(f.wallet->writes, 1);
+            f.opening->closeAdmission();
+        }
+        bool escaped{false};
+        try { f.commands.drain(); }
+        catch (...) { escaped = true; }
+        // Public persistence confirms every write in the completed Native batch,
+        // including rows after the one whose projection failed on Domain.
+        const int writes = create || mode == 1 ? 1 : mode == 3 ? 32 : 3;
+        const int saved = mode == 4 || mode == 5 ? 2 : writes;
+        QCOMPARE(f.wallet->writes, writes); QCOMPARE(rejected_projections, 1);
+        const auto persisted = Decode({f.wallet->stored.at(util::ToString(failed_id))});
+        QCOMPARE(persisted.entries.size(), size_t{1});
+        QCOMPARE(persisted.entries.front().recipient.noteSelf, create ? std::string{"private"} : std::string{"persisted-private"});
+        if (!create && mode != 1) for (int id{1}; id <= count; ++id) {
+            const auto row = Decode({f.wallet->stored.at(util::ToString(id))}).entries.front();
+            QCOMPARE(row.recipient.noteSelf, id <= (mode == 5 ? writes : saved) ? std::string{"persisted-private"} : std::string{"private"});
+        }
+        QVERIFY2(!escaped, "A Domain projection failure escaped after confirmed Native persistence");
+        QVERIFY(admitted.operation->result()); const auto result = *admitted.operation->result();
+        QCOMPARE(result.error, mode == 5 ? Error::Uncertain : Error::Partial);
+        QCOMPARE(result.records_saved, static_cast<size_t>(saved));
+        QCOMPARE(result.records_total, create || mode == 1 ? size_t{1} : static_cast<size_t>(count));
+        QCOMPARE(result.request_saved, create || mode == 1); QCOMPARE(result.label_saved, !create);
+        QVERIFY(!result.record); QCOMPARE(completed, 1); QVERIFY(!f.store->presentationCurrent());
+        const auto publication = f.store->take(); QVERIFY(publication && !publication->loaded);
+        if (mode == 6) {
+            QCOMPARE(f.store->submit(Create()).rejection, execution::Rejection::Closed);
+            QCOMPARE(admitted.operation->result()->id, int64_t{2});
+            return;
+        }
+        const auto refused = f.settle(Create()); QVERIFY(refused && refused->result());
+        QVERIFY(refused->result()->error != Error::None); QVERIFY(!refused->result()->request_saved);
+        QCOMPARE(f.wallet->writes, writes);
+        // Explicit reload is a read of the already saved values, never a replay
+        // of the failed operation or its remaining label batches.
+        reject_preparation = false;
+        QCOMPARE(f.settle(Intent(Kind::Reload))->result()->error, Error::None); f.observe();
+        QVERIFY(f.store->presentationCurrent()); QCOMPARE(f.wallet->writes, writes);
+        const auto recovered = f.record(failed_id);
+        QCOMPARE(recovered.entry.recipient.noteSelf, persisted.entries.front().recipient.noteSelf);
+        QCOMPARE(admitted.operation->result()->records_saved, static_cast<size_t>(saved));
+        QCOMPARE(completed, 1);
+    }
+    void receiptsCannotReplayAConfirmedRequestWhileItsProjectionNeedsReload()
+    {
+        bool reject_preparation{false};
+        Fixture f{Encode, DecodeOne, [&](Record row) {
+            if (reject_preparation && row.entry.id == 2)
+                throw std::runtime_error("confirmed request projection unavailable");
+            return FreezeRecord(std::move(row));
+        }};
+        f.load(); reject_preparation = true;
+        const auto original = f.store->submit(Create()); QVERIFY(original);
+        bool escaped{false};
+        try { f.commands.drain(); }
+        catch (const std::runtime_error&) { escaped = true; }
+        QCOMPARE(f.wallet->writes, 1);
+        QVERIFY2(!escaped, "A confirmed request lost its terminal outcome during projection");
+        QVERIFY(original.operation->result()); QCOMPARE(original.operation->result()->error, Error::Partial);
+        QVERIFY(original.operation->result()->request_saved);
+        QCOMPARE(original.operation->result()->records_saved, size_t{1});
+        reject_preparation = false;
+        // A new cumulative receipt changes the cached old row and its revision.
+        // It cannot restore completeness or derive Native writes from that cache.
+        f.observe({Address()}); QVERIFY(!f.store->presentationCurrent());
+        QCOMPARE(f.wallet->writes, 1); QCOMPARE(f.wallet->written_requests.size(), size_t{1});
+        const auto refused = f.settle(Create()); QVERIFY(refused && refused->result());
+        QVERIFY(refused->result()->error != Error::None); QVERIFY(!refused->result()->request_saved);
+        QCOMPARE(f.wallet->writes, 1);
+        const auto first_payload = Decode({f.wallet->written_requests.front().second}).entries.front();
+        QCOMPARE(first_payload.id, int64_t{2}); QVERIFY(!first_payload.payment_received);
+        QCOMPARE(f.settle(Intent(Kind::Reload))->result()->error, Error::None); f.observe({Address()});
+        QVERIFY(f.store->presentationCurrent());
+        // Reload discovers both real rows. Only their new paid flags need writes;
+        // the originally saved unpaid payload is never replayed.
+        QCOMPARE(f.wallet->writes, 3); QCOMPARE(f.wallet->written_requests.size(), size_t{3});
+        QCOMPARE(f.wallet->written_requests[1].first, std::string{"1"});
+        QCOMPARE(f.wallet->written_requests[2].first, std::string{"2"});
+        auto paid_payload = first_payload; paid_payload.payment_received = true;
+        QCOMPARE(f.wallet->written_requests[2].second, Encode(paid_payload));
+        for (size_t n{1}; n < f.wallet->written_requests.size(); ++n)
+            QVERIFY(Decode({f.wallet->written_requests[n].second}).entries.front().payment_received);
+        const auto recovered = f.store->take(); QVERIFY(recovered && recovered->loaded && recovered->snapshot);
+        QCOMPARE(recovered->snapshot->records.size(), size_t{2});
+        QVERIFY(recovered->snapshot->find(1) && recovered->snapshot->find(2));
+        QVERIFY(recovered->snapshot->find(1)->entry.payment_received);
+        QVERIFY(recovered->snapshot->find(2)->entry.payment_received);
+        QCOMPARE(original.operation->result()->error, Error::Partial);
+        QCOMPARE(original.operation->result()->records_saved, size_t{1});
+    }
+    void unusedAddressCheckRequiresPositiveOwnedMatchingOutputs_data()
+    {
+        QTest::addColumn<int>("mode");
+        const std::array names{"paid", "unowned", "missing-ownership", "zero-output", "negative-output", "non-address-output", "other-address", "matching-later-output", "empty-transaction"};
+        for (size_t i{0}; i < names.size(); ++i) QTest::newRow(names[i]) << int(i);
+    }
+    void unusedAddressCheckRequiresPositiveOwnedMatchingOutputs()
+    {
+        QFETCH(int, mode);
+        Fixture f; f.load();
+        const auto original = f.wallet->stored.at("1");
+        CMutableTransaction transaction;
+        const auto destination = DecodeDestination(Address().toStdString());
+        uint160 other_key; other_key.begin()[0] = 1;
+        const auto script = mode == 5 ? CScript{} << OP_TRUE
+            : GetScriptForDestination(mode == 6 ? CTxDestination{PKHash{other_key}} : destination);
+        transaction.vout.emplace_back(mode == 3 ? 0 : mode == 4 ? -1 : 100, script);
+        interfaces::WalletTx history{};
+        if (mode != 8) history.tx = MakeTransactionRef(transaction);
+        if (mode != 2) history.txout_is_mine = {mode != 1};
+        if (mode == 7) {
+            transaction.vout[0].scriptPubKey = GetScriptForDestination(PKHash{other_key});
+            transaction.vout.emplace_back(50, GetScriptForDestination(destination));
+            history.tx = MakeTransactionRef(transaction); history.txout_is_mine = {true, true};
+        }
+        f.wallet->transactions.insert(history);
+        auto create = Create(); create.require_unused = true;
+        const auto operation = f.settle(create); QVERIFY(operation && operation->result());
+        const auto result = *operation->result();
+        const bool paid = mode == 0 || mode == 7;
+        QCOMPARE(result.error, paid ? Error::Paid : Error::None);
+        QCOMPARE(result.request_saved, !paid);
+        QCOMPARE(f.wallet->history_reads, 1);
+        QCOMPARE(f.wallet->writes, paid ? 0 : 1);
+        QCOMPARE(f.wallet->stored.at("1"), original);
+        QCOMPARE(result.paid_address, paid ? Address() : QString{});
+        if (!paid) {
+            QVERIFY(result.record); QCOMPARE(result.id, int64_t{2});
+            const auto decoded = Decode({f.wallet->stored.at("2")});
+            QCOMPARE(decoded.entries.size(), size_t{1});
+            QCOMPARE(decoded.entries.front().recipient.amount, CAmount{100});
+            QCOMPARE(decoded.entries.front().recipient.noteSelf, std::string{"private"});
+        }
+    }
+    void nativeHistoryFailureFencesMutationUntilAnExplicitReload()
+    {
+        Fixture f; f.load(); const auto original = f.wallet->stored;
+        f.wallet->throw_history = true;
+        auto create = Create(); create.require_unused = true;
+        const auto failed = f.settle(create); QVERIFY(failed && failed->result());
+        QCOMPARE(failed->result()->error, Error::Uncertain);
+        QVERIFY(!failed->result()->request_saved); QCOMPARE(f.wallet->writes, 0);
+        QCOMPARE(f.wallet->history_reads, 1); QCOMPARE(f.wallet->stored, original);
+        f.wallet->throw_history = false;
+        QCOMPARE(f.settle(Create())->result()->error, Error::Uncertain);
+        QCOMPARE(f.wallet->writes, 0); QCOMPARE(f.wallet->history_reads, 1);
+        QCOMPARE(f.settle(Intent(Kind::Reload))->result()->error, Error::None); f.observe();
+        const auto retried = f.settle(create); QVERIFY(retried && retried->result());
+        QCOMPARE(retried->result()->error, Error::None); QVERIFY(retried->result()->request_saved);
+        QCOMPARE(f.wallet->history_reads, 2); QCOMPARE(f.wallet->writes, 1);
+        // The failed create attempted id 2; recovery must not reuse it.
+        QCOMPARE(retried->result()->id, int64_t{3});
+    }
+    void disappearedAddressBookEntryKeepsConfirmedRequestWrites_data()
+    {
+        QTest::addColumn<bool>("label_first");
+        QTest::newRow("label-before-history") << true;
+        QTest::newRow("history-before-label") << false;
+    }
+    void disappearedAddressBookEntryKeepsConfirmedRequestWrites()
+    {
+        QFETCH(bool, label_first);
+        Fixture f; f.load(); const auto original = f.wallet->stored.at("1");
+        f.wallet->address_exists = false;
+        auto command = Create(); command.draft.note = "new-private";
+        if (label_first) { command = Intent(Kind::Label); command.address = Address(); command.label = "new-private"; }
+        const auto operation = f.settle(command); QVERIFY(operation && operation->result());
+        const auto result = *operation->result();
+        QCOMPARE(result.error, Error::LabelPersistence); QVERIFY(!result.label_saved);
+        QCOMPARE(result.request_saved, !label_first);
+        QCOMPARE(result.records_saved, label_first ? size_t{0} : size_t{1});
+        QCOMPARE(f.wallet->label_writes, 0); QCOMPARE(f.wallet->writes, label_first ? 0 : 1);
+        QCOMPARE(f.wallet->stored.at("1"), original);
+        QCOMPARE(f.wallet->label, std::string{"private"});
+        if (!label_first) {
+            QVERIFY(result.record);
+            QCOMPARE(result.record->entry.recipient.noteSelf, std::string{"new-private"});
+            QCOMPARE(Decode({f.wallet->stored.at("2")}).entries.front().recipient.noteSelf, std::string{"new-private"});
+        }
+    }
+    void queuedRequestOwnsItsOutcomeWhenContinuationAdmissionChanges_data()
+    {
+        QTest::addColumn<int>("boundary");
+        QTest::newRow("continue") << 0;
+        QTest::newRow("reject-next-domain") << 1;
+        QTest::newRow("close-ordinary-admission") << 2;
+    }
+    void queuedRequestOwnsItsOutcomeWhenContinuationAdmissionChanges()
+    {
+        QFETCH(int, boundary);
+        int completed{0};
+        Fixture f; f.load(); const auto original = f.wallet->stored.at("1");
+        const auto first = f.store->submit(Create(), [&] {
+            ++completed;
+            if (boundary == 1) f.commands.rejectLane(Lane::Domain);
+            if (boundary == 2) f.commands.scheduler->closeOrdinaryAdmission();
+        });
+        const auto second = f.store->submit(Create(), [&] { ++completed; });
+        QVERIFY(first && second); QVERIFY(!first.operation->result() && !second.operation->result());
+        f.commands.drain();
+        QVERIFY(first.operation->result() && second.operation->result());
+        QCOMPARE(first.operation->result()->error, Error::None);
+        QVERIFY(first.operation->result()->request_saved);
+        QCOMPARE(second.operation->result()->error, boundary == 1 ? Error::Rejected : Error::None);
+        QCOMPARE(second.operation->result()->request_saved, boundary != 1);
+        QCOMPARE(f.wallet->writes, boundary == 1 ? 1 : 2);
+        QCOMPARE(f.wallet->stored.at("1"), original);
+        QCOMPARE(first.operation->result()->record->entry.id, int64_t{2});
+        QCOMPARE(Decode({f.wallet->stored.at("2")}).entries.front().id, int64_t{2});
+        if (boundary != 1) QCOMPARE(second.operation->result()->record->entry.id, int64_t{3});
+        QCOMPARE(completed, 2);
+    }
+    void oversizedInterestIsRejectedBeforeScheduling()
+    {
+        Fixture f; f.load();
+        const auto watches = f.watches; const auto trace = f.commands.traceSnapshot();
+        const auto admission = f.store->interest(17, QString(129, 'a'));
+        QCOMPARE(admission.rejection, execution::Rejection::Capacity);
+        QCOMPARE(f.commands.traceSnapshot(), trace); QCOMPARE(f.watches, watches);
+        QVERIFY(!f.watched.contains(QString(129, 'a')));
+    }
+    void interestQueuedBeforeCloseCannotPublishAfterClose()
+    {
+        Fixture f; f.load(); const auto watches = f.watches;
+        QVERIFY(f.store->interest(17, QStringLiteral("late-visible-address")));
+        f.store->close(); f.commands.drain();
+        QCOMPARE(f.watches, watches); QVERIFY(!f.watched.contains(QStringLiteral("late-visible-address")));
+        QCOMPARE(f.store->interest(18, Address()).rejection, execution::Rejection::Closed);
+        QCOMPARE(f.wallet->writes, 0);
+    }
     void sentNotesChangeOnlyTheBookAndPreserveRequestRows()
     {
         Fixture f; f.load(3); const auto original = f.store->take()->snapshot; const auto blobs = f.wallet->stored;

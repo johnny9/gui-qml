@@ -6,8 +6,14 @@
         <file>tst_transactiondetail.qml</file>
         <file>tst_activitylist.qml</file>
         <file>tst_address_components.qml</file>
+        <file>tst_bitcoinamountinputfield.qml</file>
         <file>tst_blockclock.qml</file>
         <file>tst_capturedpaste.qml</file>
+        <file>tst_r10_address_intents.qml</file>
+        <file>tst_r10_paste_boundaries.qml</file>
+        <file>tst_r10_coins.qml</file>
+        <file>tst_r10_windows.qml</file>
+        <file>tst_r10_legacy_surfaces.qml</file>
         <file>tst_contextmenubutton.qml</file>
         <file>tst_contextmenudivider.qml</file>
         <file>tst_contextmenupicker.qml</file>

@@ -29,8 +29,11 @@
 #include <QFileInfo>
 #include <QScopeGuard>
 #include <QSemaphore>
+#include <QSettings>
 #include <QTemporaryDir>
+#include <QUrl>
 #include <algorithm>
+#include <array>
 #include <set>
 #include <vector>
 #include <atomic>
@@ -598,6 +601,12 @@ private Q_SLOTS:
     void externalSignerCreationRequiresConfiguredPath();
     void externalSignerCreationRequiresExactlyOneSigner();
     void externalSignerSuggestionUsesSignerName();
+    void manualExternalSignerCreationRejectsUnavailableSnapshot_data();
+    void manualExternalSignerCreationRejectsUnavailableSnapshot();
+    void manualExternalSignerCreationOwnsOriginalOutcome_data();
+    void manualExternalSignerCreationOwnsOriginalOutcome();
+    void manualManagedWalletPathsResolveThroughPublicLoader_data();
+    void manualManagedWalletPathsResolveThroughPublicLoader();
     void signerDiscoveryKeepsNewerIntentAcrossHeldPublication();
     void signerDiscoveryRejectsPublicationAfterQuietClose();
     void initializedControllerSignalsMigrationForLegacyWallet();
@@ -635,6 +644,9 @@ private Q_SLOTS:
     void walletNameAvailabilityErrorRejectsEmptyAndWhitespace();
     void walletNameAvailabilityErrorRejectsExistingNameWithSurroundingWhitespace();
     void walletNameAvailabilityErrorReturnsEmptyForAvailableName();
+    void walletDisplayNameWriteOwnsOutcome_data();
+    void walletDisplayNameWriteOwnsOutcome();
+    void walletDisplayNameWriteReportsTransportRefusal();
     void openWalletLocationOpensWalletDirectory();
     void openWalletLocationReportsOpenFailure();
     void openWalletLocationReportsMissingWalletPath();
@@ -3050,6 +3062,279 @@ void WalletQmlControllerTests::externalSignerSuggestionUsesSignerName()
     QCOMPARE(controller.suggestedExternalSignerWalletName(), QString("Coldcard_Mk4"));
 }
 
+void WalletQmlControllerTests::manualExternalSignerCreationRejectsUnavailableSnapshot_data()
+{
+    QTest::addColumn<int>("snapshot");
+    QTest::addColumn<QString>("expected_error");
+    QTest::newRow("pending") << 0 << QStringLiteral("Wait for the external signer check to finish.");
+    QTest::newRow("missing-path") << 1 << QStringLiteral("Set an external signer path in Wallet settings first.");
+    QTest::newRow("no-device") << 2 << QStringLiteral("Connect an external signer and try again.");
+    QTest::newRow("multiple-devices") << 3 << QStringLiteral("More than one external signer was found. Connect only one device.");
+    QTest::newRow("invalid-command-output") << 4 << QStringLiteral("The signer command did not return valid output. Check that the path is correct.");
+    QTest::newRow("oversized-device-name") << 5 << QStringLiteral("The signer command did not return valid output. Check that the path is correct.");
+}
+
+void WalletQmlControllerTests::manualExternalSignerCreationRejectsUnavailableSnapshot()
+{
+    QFETCH(int, snapshot);
+    QFETCH(QString, expected_error);
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    node.ExpectAtLeast(node.calls.forceSetting, 1);
+    node.ExpectAtLeast(node.calls.listExternalSigners, 1);
+    node.get_persistent_setting_fn = [snapshot](const std::string& name) {
+        return name == "signer" && snapshot != 1 ? common::SettingsValue{std::string{"device-command"}} : common::SettingsValue{};
+    };
+    node.list_external_signers_fn = [snapshot]() -> std::vector<std::unique_ptr<interfaces::ExternalSigner>> {
+        if (snapshot == 2) return {};
+        if (snapshot == 3) return MakeSigners({"Device A", "Device B"});
+        if (snapshot == 4) throw std::runtime_error{"invalid signer output"};
+        if (snapshot == 5) {
+            std::vector<std::unique_ptr<interfaces::ExternalSigner>> signers;
+            signers.push_back(std::make_unique<FakeExternalSigner>(std::string(32'769, 'x')));
+            return signers;
+        }
+        return MakeSigners({"Device A"});
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized() && !controller.externalSignerPending(); }));
+    if (snapshot == 0) controller.refreshExternalSignerStatus();
+    QVERIFY(!controller.canCreateExternalSignerWallet());
+    QSignalSpy loaded{&controller, &WalletQmlController::walletLoadSucceeded};
+    QSignalSpy created{&controller, &WalletQmlController::walletCreateSucceeded};
+    const auto ticket = controller.walletOperationId();
+    QVERIFY(!controller.createExternalSignerWallet("device_wallet"));
+    QCOMPARE(controller.walletLoadError(), expected_error);
+    QCOMPARE(controller.walletOperationId(), ticket);
+    QCOMPARE(loader.create_wallet_calls, 0);
+    QCOMPARE(loaded.size(), 0);
+    QCOMPARE(created.size(), 0);
+    QVERIFY(graph.until([&] { return !controller.externalSignerPending(); }));
+    QCOMPARE(loader.create_wallet_calls, 0);
+    QVERIFY(!controller.isWalletOpen("device_wallet"));
+}
+
+void WalletQmlControllerTests::manualExternalSignerCreationOwnsOriginalOutcome_data()
+{
+    QTest::addColumn<int>("outcome");
+    QTest::addColumn<bool>("change_selection");
+    for (bool change_selection : {false, true}) {
+        for (int outcome = 0; outcome < 5; ++outcome) {
+            const QByteArray tag = QByteArray(change_selection ? "new-selection-" : "original-selection-") +
+                std::array<const char*, 5>{"created", "loader-error", "loader-throws", "empty-name", "existing-name"}[outcome];
+            QTest::newRow(tag.constData()) << outcome << change_selection;
+        }
+    }
+}
+
+void WalletQmlControllerTests::manualExternalSignerCreationOwnsOriginalOutcome()
+{
+    QFETCH(int, outcome);
+    QFETCH(bool, change_selection);
+    FakeWallet::State original_state, standby_state, created_state;
+    MockNode node;
+    FakeWalletLoader loader;
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    loader.wallet_dir = directory.path().toStdString();
+    if (outcome == 4) loader.wallet_dir_entries = {{"device_wallet", "sqlite"}};
+    ConfigureExpectedControllerInitialization(node, loader);
+    node.get_persistent_setting_fn = [](const std::string& name) {
+        return name == "signer" ? common::SettingsValue{std::string{"device-command"}} : common::SettingsValue{};
+    };
+    node.list_external_signers_fn = [] { return MakeSigners({"Device A"}); };
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("original", &original_state));
+        wallets.push_back(std::make_unique<FakeWallet>("standby", &standby_state));
+        return wallets;
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized() && !controller.externalSignerPending() && controller.walletForName("standby"); }));
+    QVERIFY(controller.canCreateExternalSignerWallet());
+    auto* original = controller.walletForName("original");
+    auto* standby = controller.walletForName("standby");
+    QCOMPARE(controller.selectedWallet(), original);
+    std::string created_name;
+    uint64_t creation_flags{0};
+    bool empty_passphrase{false}, created_on_core{false};
+    loader.create_wallet_fn = [&](const std::string& name, const SecureString& passphrase, uint64_t flags,
+                                  std::vector<bilingual_str>& warnings) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        created_name = name;
+        creation_flags = flags;
+        empty_passphrase = passphrase.empty();
+        created_on_core = graph.lane.load() == int(execution::Lane::Core);
+        if (outcome == 1) return util::Error{Untranslated("Device refused wallet creation")};
+        if (outcome == 2) throw std::runtime_error{"device outcome unknown"};
+        warnings.push_back(Untranslated("Keep the device recovery backup"));
+        auto wallet = std::make_unique<FakeWallet>(name, &created_state);
+        wallet->private_keys_disabled = true;
+        wallet->external_signer = true;
+        return std::unique_ptr<interfaces::Wallet>{std::move(wallet)};
+    };
+    QSignalSpy loaded{&controller, &WalletQmlController::walletLoadSucceeded};
+    QSignalSpy created{&controller, &WalletQmlController::walletCreateSucceeded};
+    QVERIFY(controller.createExternalSignerWallet(outcome == 3 ? QStringLiteral(" \t ") : QStringLiteral("  device_wallet  ")));
+    const auto ticket = controller.walletOperationId();
+    QVERIFY(ticket > 0);
+    QVERIFY(controller.walletLoadInProgress());
+    QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationPending);
+    QCOMPARE(loader.create_wallet_calls, 0);
+    QVERIFY(!controller.createExternalSignerWallet("duplicate"));
+    QCOMPARE(controller.walletOperationId(), ticket);
+    if (change_selection) QVERIFY(controller.selectWallet(standby));
+    graph.runNative();
+    QCOMPARE(loader.create_wallet_calls, outcome < 3 ? 1 : 0);
+    QCOMPARE(loaded.size(), 0);
+    QCOMPARE(created.size(), 0);
+    QCOMPARE(controller.selectedWallet(), change_selection ? standby : original);
+    QVERIFY(controller.walletLoadInProgress());
+    QVERIFY(graph.until([&] { return !controller.walletLoadInProgress() && controller.walletOperationState() != WalletQmlController::WalletOperationState::WalletOperationPending; }));
+    QCOMPARE(controller.walletOperationId(), ticket);
+    QCOMPARE(created.size(), 0);
+    QCOMPARE(created_state.private_accesses.load(), 0);
+    QCOMPARE(created_state.remove_calls.load(), 0);
+    if (outcome < 3) {
+        QCOMPARE(created_name, std::string{"device_wallet"});
+        QCOMPARE(creation_flags, uint64_t{wallet::WALLET_FLAG_DESCRIPTORS | wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS | wallet::WALLET_FLAG_EXTERNAL_SIGNER});
+        QVERIFY(empty_passphrase);
+        QVERIFY(created_on_core);
+    }
+    if (outcome == 0) {
+        auto* wallet = controller.walletForName("device_wallet");
+        QVERIFY(wallet);
+        QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
+        QCOMPARE(controller.walletOperationName(), QStringLiteral("device_wallet"));
+        QCOMPARE(loaded.size(), 1);
+        QCOMPARE(qvariant_cast<WalletQmlModel*>(loaded.front().front()), wallet);
+        QCOMPARE(controller.selectedWallet(), change_selection ? standby : wallet);
+        QCOMPARE(controller.walletLoadWarnings(), QStringLiteral("Keep the device recovery backup"));
+        QVERIFY(controller.walletLoadError().isEmpty());
+    } else {
+        QCOMPARE(loaded.size(), 0);
+        QCOMPARE(controller.walletOperationState(), outcome == 2 ? WalletQmlController::WalletOperationState::WalletOperationUncertain : WalletQmlController::WalletOperationState::WalletOperationFailed);
+        QCOMPARE(controller.selectedWallet(), change_selection ? standby : original);
+        QVERIFY(!controller.isWalletOpen("device_wallet"));
+        if (outcome == 1) QCOMPARE(controller.walletLoadError(), QStringLiteral("Device refused wallet creation"));
+        else if (outcome == 2) QCOMPARE(controller.walletLoadError(), QStringLiteral("Wallet creation outcome is uncertain. Check the wallet directory before retrying."));
+        else if (outcome == 3) QCOMPARE(controller.walletLoadError(), QStringLiteral("Enter a wallet name."));
+        else QCOMPARE(controller.walletLoadError(), QStringLiteral("A wallet with this name already exists"));
+    }
+}
+
+void WalletQmlControllerTests::manualManagedWalletPathsResolveThroughPublicLoader_data()
+{
+    QTest::addColumn<int>("path_kind");
+    QTest::addColumn<bool>("load_expected");
+    QTest::addColumn<bool>("migration_expected");
+    QTest::newRow("listed-name") << 0 << true << false;
+    QTest::newRow("nested-directory") << 1 << true << false;
+    QTest::newRow("nested-wallet-dat") << 2 << true << false;
+    QTest::newRow("wallet-directory-itself") << 3 << true << false;
+    QTest::newRow("top-level-wallet-dat") << 4 << true << false;
+    QTest::newRow("top-level-data-file") << 5 << true << false;
+    QTest::newRow("external-directory") << 6 << true << false;
+    QTest::newRow("external-wallet-dat") << 7 << false << false;
+    QTest::newRow("backup-file") << 8 << false << false;
+    QTest::newRow("missing-path") << 9 << false << false;
+    QTest::newRow("empty-path") << 10 << false << false;
+    QTest::newRow("listed-legacy") << 11 << false << true;
+    QTest::newRow("inferred-legacy") << 12 << false << true;
+    QTest::newRow("local-file-url") << 13 << true << false;
+    QTest::newRow("cleaned-listed-name") << 14 << true << false;
+}
+
+void WalletQmlControllerTests::manualManagedWalletPathsResolveThroughPublicLoader()
+{
+    QFETCH(int, path_kind);
+    QFETCH(bool, load_expected);
+    QFETCH(bool, migration_expected);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QDir root{directory.path()};
+    QVERIFY(root.mkpath("wallets/subdir/nested"));
+    QVERIFY(root.mkpath("wallets/subdir/legacy"));
+    QVERIFY(root.mkpath("outside"));
+    for (const auto* name : {"wallets/subdir/nested/wallet.dat", "wallets/wallet.dat", "wallets/oldfile.dat", "outside/wallet.dat", "wallets/backup.bak"}) {
+        QFile file{root.filePath(QLatin1String{name})};
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("wallet fixture"), qint64{14});
+    }
+    const QString wallet_dir = root.filePath(QStringLiteral("wallets"));
+    const QString nested_dir = root.filePath(QStringLiteral("wallets/subdir/nested"));
+    const QString legacy_dir = root.filePath(QStringLiteral("wallets/subdir/legacy"));
+    const QString nested_file = nested_dir + QStringLiteral("/wallet.dat");
+    const std::array<QString, 15> paths{
+        QStringLiteral("listed"), nested_dir, nested_file, wallet_dir, wallet_dir + QStringLiteral("/wallet.dat"),
+        wallet_dir + QStringLiteral("/oldfile.dat"), root.filePath(QStringLiteral("outside")), root.filePath(QStringLiteral("outside/wallet.dat")),
+        wallet_dir + QStringLiteral("/backup.bak"), wallet_dir + QStringLiteral("/absent"), QString{}, QStringLiteral("legacy"), legacy_dir,
+        QUrl::fromLocalFile(nested_file).toString(), QStringLiteral("subdir/../listed")};
+    const std::array<QString, 15> references{
+        QStringLiteral("listed"), QStringLiteral("subdir/nested"), QStringLiteral("subdir/nested"), wallet_dir, wallet_dir,
+        QStringLiteral("oldfile.dat"), root.filePath(QStringLiteral("outside")), QString{}, QString{}, QString{}, QString{}, QStringLiteral("legacy"),
+        QStringLiteral("subdir/legacy"), QStringLiteral("subdir/nested"), QStringLiteral("listed")};
+    MockNode node;
+    FakeWalletLoader loader;
+    FakeWallet::State state;
+    loader.wallet_dir = wallet_dir.toStdString();
+    loader.wallet_dir_entries = {{"listed", "sqlite"}, {"subdir/nested", "sqlite"}, {"legacy", "bdb"}, {"subdir/legacy", "bdb"}};
+    ConfigureExpectedControllerInitialization(node, loader);
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized() && !controller.externalSignerPending(); }));
+    std::string loaded_reference;
+    bool loaded_on_core{false};
+    int restores{0};
+    loader.load_wallet_fn = [&](const std::string& name, std::vector<bilingual_str>&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        loaded_reference = name;
+        loaded_on_core = graph.lane.load() == int(execution::Lane::Core);
+        return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>("resolved_wallet", &state)};
+    };
+    loader.restore_wallet_fn = [&]() -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        ++restores;
+        return util::Error{Untranslated("Opening must not restore a backup")};
+    };
+    QSignalSpy loaded{&controller, &WalletQmlController::walletLoadSucceeded};
+    QSignalSpy migration{&controller, &WalletQmlController::walletMigrationRequired};
+    controller.setSelectedWallet(paths[path_kind]);
+    QCOMPARE(loader.load_wallet_calls, 0);
+    QCOMPARE(loaded.size(), 0);
+    QVERIFY(controller.walletLoadInProgress());
+    graph.runNative();
+    QCOMPARE(loader.load_wallet_calls, load_expected ? 1 : 0);
+    QCOMPARE(restores, 0);
+    QCOMPARE(loaded.size(), 0);
+    QCOMPARE(migration.size(), 0);
+    QVERIFY(graph.until([&] { return !controller.walletLoadInProgress(); }));
+    QCOMPARE(state.private_accesses.load(), 0);
+    QCOMPARE(loaded.size(), load_expected ? 1 : 0);
+    QCOMPARE(migration.size(), migration_expected ? 1 : 0);
+    if (load_expected) {
+        QCOMPARE(loaded_reference, references[path_kind].toStdString());
+        QVERIFY(loaded_on_core);
+        QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
+        QCOMPARE(controller.walletOperationName(), QStringLiteral("resolved_wallet"));
+        QCOMPARE(controller.selectedWallet(), controller.walletForName("resolved_wallet"));
+        QCOMPARE(qvariant_cast<WalletQmlModel*>(loaded.front().front()), controller.selectedWallet());
+        QVERIFY(controller.walletLoadError().isEmpty());
+    } else if (migration_expected) {
+        QCOMPARE(migration.front().front().toString(), references[path_kind]);
+        QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationNeedsMigration);
+        QVERIFY(controller.walletLoadError().isEmpty());
+        QVERIFY(!controller.isWalletLoaded());
+    } else {
+        QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationFailed);
+        QCOMPARE(controller.walletLoadError(), path_kind == 10 ? QStringLiteral("Choose a wallet to open.") : QStringLiteral("The selected wallet is not available in the wallet directory."));
+        QVERIFY(!controller.isWalletLoaded());
+    }
+}
+
 void WalletQmlControllerTests::signerDiscoveryUsesDefaultNativeWorker()
 {
     StrictMockNode node;
@@ -4117,6 +4402,146 @@ void WalletQmlControllerTests::walletNameAvailabilityErrorReturnsEmptyForAvailab
 
     QCOMPARE(CheckedWalletName(controller, "brand_new_wallet"), QString{});
     QVERIFY(loader.directory_thread.load() != QThread::currentThread());
+}
+
+void WalletQmlControllerTests::walletDisplayNameWriteOwnsOutcome_data()
+{
+    QTest::addColumn<QString>("requested_alias");
+    QTest::addColumn<QString>("expected_alias");
+    QTest::newRow("trim-and-save") << QStringLiteral("  Savings  ") << QStringLiteral("Savings");
+    QTest::newRow("clear-empty") << QString{} << QStringLiteral("r10-display-name-manual-wallet");
+    QTest::newRow("clear-with-wallet-name")
+        << QStringLiteral("r10-display-name-manual-wallet") << QStringLiteral("r10-display-name-manual-wallet");
+}
+
+void WalletQmlControllerTests::walletDisplayNameWriteOwnsOutcome()
+{
+    QFETCH(QString, requested_alias);
+    QFETCH(QString, expected_alias);
+
+    const QString wallet_name{QStringLiteral("r10-display-name-manual-wallet")};
+    const QString key{QStringLiteral("walletDisplayNames/%1").arg(wallet_name)};
+    QSettings settings;
+    const bool had_previous_value = settings.contains(key);
+    const QVariant previous_value = settings.value(key);
+    const auto restore_settings = qScopeGuard([&] {
+        if (had_previous_value) settings.setValue(key, previous_value);
+        else settings.remove(key);
+        settings.sync();
+    });
+    settings.setValue(key, QStringLiteral("Prior alias"));
+    settings.sync();
+    QCOMPARE(settings.status(), QSettings::NoError);
+
+    MockNode node;
+    ManualControllerGraph graph{node};
+    // The controller constructor schedules its first alias observation.
+    // Drain that independent work before attributing effects or signals to
+    // the user's write request.
+    QVERIFY(graph.until([&] { return graph.native.transportIdle(); }));
+    QVERIFY(graph.native.transportIdle());
+    QVERIFY(graph.native.scheduler->pending() > 0);
+    auto& controller = *graph.controller;
+    QSignalSpy write_changed{&controller, &WalletQmlController::walletDisplayNameWriteChanged};
+    QSignalSpy names_changed{&controller, &WalletQmlController::walletDisplayNamesChanged};
+
+    QVERIFY(controller.setWalletDisplayName(QStringLiteral("  %1  ").arg(wallet_name), requested_alias));
+    QVERIFY(controller.walletDisplayNameWritePending());
+    QVERIFY(!controller.walletDisplayNameWriteSucceeded());
+    QVERIFY(controller.walletDisplayNameWriteError().isEmpty());
+    QCOMPARE(write_changed.size(), 1);
+    QVERIFY(!controller.setWalletDisplayName(wallet_name, QStringLiteral("duplicate")));
+    QCOMPARE(write_changed.size(), 1);
+
+    settings.sync();
+    QCOMPARE(settings.value(key).toString(), QStringLiteral("Prior alias"));
+
+    QVERIFY(graph.step(execution::Lane::Core));
+    QVERIFY(controller.walletDisplayNameWritePending());
+    QVERIFY(!controller.walletDisplayNameWriteSucceeded());
+    QVERIFY(controller.walletDisplayNameWriteError().isEmpty());
+    QCOMPARE(graph.native.queuedCountIf([](const auto& turn) { return turn.lane == execution::Lane::Domain; }), 1);
+    QVERIFY(graph.posts.empty());
+    settings.sync();
+    if (expected_alias == wallet_name) {
+        QVERIFY(!settings.contains(key));
+    } else {
+        QCOMPARE(settings.value(key).toString(), expected_alias);
+    }
+    QCOMPARE(write_changed.size(), 1);
+
+    // OwnedCommand commits the receipt on its Domain outcome turn. Core
+    // effect completion alone must not publish a successful receipt.
+    QVERIFY(graph.step(execution::Lane::Domain));
+    QVERIFY(controller.walletDisplayNameWritePending());
+    QVERIFY(controller.walletDisplayNameWriteSucceeded());
+    QVERIFY(controller.walletDisplayNameWriteError().isEmpty());
+    QCOMPARE(graph.posts.size(), size_t{1});
+
+    auto publish_write = std::move(graph.posts.front());
+    graph.posts.pop_front();
+    publish_write();
+    QVERIFY(!controller.walletDisplayNameWritePending());
+    QVERIFY(controller.walletDisplayNameWriteSucceeded());
+    QVERIFY(controller.walletDisplayNameWriteError().isEmpty());
+    QCOMPARE(write_changed.size(), 2);
+    QCOMPARE(names_changed.size(), 0);
+
+    QVERIFY(graph.step(execution::Lane::Core));
+    QVERIFY(graph.posts.empty());
+    QCOMPARE(names_changed.size(), 0);
+    QVERIFY(graph.step(execution::Lane::Domain));
+    QCOMPARE(graph.posts.size(), size_t{1});
+    auto publish_aliases = std::move(graph.posts.front());
+    graph.posts.pop_front();
+    publish_aliases();
+    QCOMPARE(names_changed.size(), 1);
+    QCOMPARE(controller.walletDisplayName(wallet_name), expected_alias);
+    QVERIFY(graph.posts.empty());
+    graph.shutdown();
+    graph.controller.reset();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(graph.native.quiescent());
+}
+
+void WalletQmlControllerTests::walletDisplayNameWriteReportsTransportRefusal()
+{
+    const QString wallet_name{QStringLiteral("r10-display-name-refused-wallet")};
+    const QString key{QStringLiteral("walletDisplayNames/%1").arg(wallet_name)};
+    QSettings settings;
+    const bool had_previous_value = settings.contains(key);
+    const QVariant previous_value = settings.value(key);
+    const auto restore_settings = qScopeGuard([&] {
+        if (had_previous_value) settings.setValue(key, previous_value);
+        else settings.remove(key);
+        settings.sync();
+    });
+    settings.setValue(key, QStringLiteral("Prior alias"));
+    settings.sync();
+
+    MockNode node;
+    ManualControllerGraph graph{node};
+    // Retire the constructor's initial alias read before rejecting the
+    // independent write admission.
+    QVERIFY(graph.until([&] { return graph.native.transportIdle(); }));
+    QVERIFY(graph.native.transportIdle());
+    QVERIFY(graph.native.scheduler->pending() > 0);
+    graph.native.rejectLane(execution::Lane::Core);
+    auto& controller = *graph.controller;
+    QSignalSpy write_changed{&controller, &WalletQmlController::walletDisplayNameWriteChanged};
+
+    QVERIFY(!controller.setWalletDisplayName(wallet_name, QStringLiteral("New alias")));
+    QVERIFY(!controller.walletDisplayNameWritePending());
+    QVERIFY(!controller.walletDisplayNameWriteSucceeded());
+    QCOMPARE(controller.walletDisplayNameWriteError(), QStringLiteral("Wallet display name write could not be queued."));
+    QCOMPARE(write_changed.size(), 1);
+    QVERIFY(graph.posts.empty());
+    settings.sync();
+    QCOMPARE(settings.value(key).toString(), QStringLiteral("Prior alias"));
+    graph.shutdown();
+    graph.controller.reset();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(graph.native.quiescent());
 }
 
 void WalletQmlControllerTests::openWalletLocationOpensWalletDirectory()
