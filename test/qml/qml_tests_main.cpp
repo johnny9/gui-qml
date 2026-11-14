@@ -1010,6 +1010,8 @@ public:
     Q_PROPERTY(QString groupBy MEMBER m_group NOTIFY viewChanged)
     Q_PROPERTY(bool sortDescending MEMBER m_descending NOTIFY viewChanged)
     Q_PROPERTY(int selectedCoinsCount READ selectedCoinsCount NOTIFY selectedCoinsCountChanged)
+    Q_PROPERTY(QString selectionToken READ selectionToken NOTIFY selectionSnapshotChanged)
+    Q_PROPERTY(bool selectionPending MEMBER m_selection_pending NOTIFY selectionSnapshotChanged)
     Q_PROPERTY(int coinCount READ coinCount NOTIFY coinCountChanged)
     Q_PROPERTY(QString totalSelected READ totalSelected NOTIFY totalSelectedChanged)
     Q_PROPERTY(bool overRequiredAmount READ overRequiredAmount NOTIFY overRequiredAmountChanged)
@@ -1128,6 +1130,7 @@ public:
         if (!setCoinsLocked(ids,locked)) return false;
         clearMarks(); return true;
     }
+    QString selectionToken() const { return QString::number(m_selection_revision); }
     int coinCount() const { return rowCount(); }
 
     QString totalSelected() const
@@ -1195,6 +1198,7 @@ public:
 
     Q_INVOKABLE void reset()
     {
+        m_selection_pending = false;
         controlCoinActions(true, true); m_min_amount = -1; m_max_amount = -1;
         beginResetModel();
         m_rows = {
@@ -1222,6 +1226,7 @@ Q_SIGNALS:
 private:
     void emitAggregateSignals()
     {
+        ++m_selection_revision;
         Q_EMIT selectionSnapshotChanged();
         Q_EMIT selectedCoinsCountChanged();
         Q_EMIT totalSelectedChanged();
@@ -1229,6 +1234,8 @@ private:
         Q_EMIT changeAmountChanged();
     }
 
+    quint64 m_selection_revision{0};
+    bool m_selection_pending{false};
     std::vector<CoinRow> m_rows{}, m_snapshot{};
     qint64 m_min_amount{-1},m_max_amount{-1}; bool m_admit_marks{true},m_admit_locks{true};
     int m_lock_calls{0},m_mark_calls{0}; QStringList m_last_lock_ids;

@@ -43,6 +43,7 @@ class CoinsListModel : public QAbstractListModel
     Q_PROPERTY(bool loading READ loading NOTIFY viewChanged)
     Q_PROPERTY(bool selectionPending READ selectionPending NOTIFY selectionSnapshotChanged)
     Q_PROPERTY(quint64 selectionRevision READ selectionRevision NOTIFY selectionSnapshotChanged)
+    Q_PROPERTY(QString selectionToken READ selectionToken NOTIFY selectionSnapshotChanged)
     Q_PROPERTY(int markedCount READ markedCount NOTIFY marksChanged)
     Q_PROPERTY(bool marksPending READ marksPending NOTIFY marksChanged)
 public:
@@ -63,6 +64,7 @@ public:
     bool loading() const { return m_loading || m_incomplete || bool(m_target); }
     bool selectionPending() const { return m_selection_commands != 0 || lockPending(); }
     quint64 selectionRevision() const { return m_selection_revision; }
+    QString selectionToken() const { return QString::number(m_selection_revision); }
     int markedCount() const { return m_marked_count; }
     bool marksPending() const { return !m_mark_operations.empty(); }
     std::shared_ptr<const Selection> selectionSnapshot() const { return m_selection; }

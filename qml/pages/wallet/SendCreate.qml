@@ -46,11 +46,13 @@ PageStack {
     property WalletQmlModel psbtImportWallet: null
     property int psbtImportHiddenCount: -1
     property string psbtImportDraftRevision: ""
+    property string psbtImportSelectionToken: ""
     function requestPsbtImport(path) {
         if (!root.wallet || root.wallet.psbtActionBusy) return
         psbtImportWallet = root.wallet
         psbtImportHiddenCount = root.hiddenCount
         psbtImportDraftRevision = root.draftRevision
+        psbtImportSelectionToken = root.wallet.coinsListModel.selectionToken
         psbtImportTicket = 0
         psbtImportTicket = root.wallet.requestImportPsbtFromFile(path)
         handlePsbtOutcome()
@@ -58,7 +60,9 @@ PageStack {
     function handlePsbtOutcome() {
         if (!psbtImportTicket || !root.wallet || psbtImportWallet !== root.wallet || root.wallet.psbtActionId !== psbtImportTicket || root.wallet.psbtActionBusy) return
         psbtImportTicket = 0
-        if (!root.visible || psbtImportHiddenCount !== root.hiddenCount || psbtImportDraftRevision !== root.draftRevision || root.wallet.psbtActionState === WalletQmlModel.PsbtStale) return
+        if (!root.visible || psbtImportHiddenCount !== root.hiddenCount || psbtImportDraftRevision !== root.draftRevision
+            || root.wallet.coinsListModel.selectionPending || psbtImportSelectionToken !== root.wallet.coinsListModel.selectionToken
+            || root.wallet.psbtActionState === WalletQmlModel.PsbtStale) return
         sendPage.handlePsbtImportResult(root.wallet.psbtImportResult)
     }
 

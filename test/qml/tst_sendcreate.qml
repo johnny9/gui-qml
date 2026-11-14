@@ -172,6 +172,7 @@ TestCase {
         return [
             {tag: "coin-refresh", change: "refresh", opens: true},
             {tag: "coin-selection", change: "selection", opens: false},
+            {tag: "coin-selection-pending", change: "selection-pending", opens: false},
             {tag: "recipient-edit", change: "recipient", opens: false},
             {tag: "hidden-page", change: "hidden", opens: false}
         ]
@@ -191,6 +192,7 @@ TestCase {
         // Hold the completed import while a separate GUI observation arrives.
         if (data.change === "refresh") testCoinsListModel.selectedCoinsCountChanged()
         else if (data.change === "selection") testCoinsListModel.toggleCoinSelection(0)
+        else if (data.change === "selection-pending") testCoinsListModel.selectionPending = true
         else if (data.change === "recipient") testSendRecipient.label = "changed intent"
         else page.visible = false
 
@@ -955,7 +957,12 @@ TestCase {
         verify(section !== null)
         compare(section.visible, false)
 
-        sendPage.applyPaymentRequestFromText("bitcoin:bcrt1qreplacement" + data.params, "clipboard")
+        sendPage.handlePaymentUriPaste("bitcoin:bcrt1qreplacement" + data.params, "address")
+        const overwrite = findChild(page, "sendPaymentUriOverwritePopup")
+        tryCompare(overwrite, "opened", true)
+        compare(testSendRecipient.label, "Existing note")
+        findChild(overwrite.contentItem, "sendPaymentUriOverwriteConfirmButton").clicked()
+        tryCompare(overwrite, "visible", false)
         tryCompare(sendPage, "uriActionPending", false)
         compare(testSendRecipient.hasPaymentRequest, true)
         compare(testSendRecipient.label, data.note)
