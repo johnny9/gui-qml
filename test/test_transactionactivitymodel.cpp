@@ -398,6 +398,8 @@ class TransactionActivityModelTests : public QObject
 private Q_SLOTS:
     void manualProjectionWaitsForOutcomeAndGuiDelivery();
     void manualStatusSnapshotPublishesOnlyAtGuiBoundary();
+    void oldGuiWakeupCannotResurrectDeletedRows();
+    void notificationDuringApplyingRetainsDeletionWork();
     void pollTicksDoNotSupersedeHeldStatusRead();
     void manualAcceptedRawCopyRetainsOriginalDocumentAfterFacadeLoss();
     void entryDocumentRetainsCompleteLongTextAndAllRequestMetadata();
@@ -458,6 +460,74 @@ void TransactionActivityModelTests::manualProjectionWaitsForOutcomeAndGuiDeliver
     QVERIFY(fixture.poll); const auto stale_deadline = fixture.poll;
     model->stop(); stale_deadline(); env.drain(); env.publishAll();
     QCOMPARE(model->rowCount(), 0); QVERIFY(!model->loading());
+}
+
+void TransactionActivityModelTests::oldGuiWakeupCannotResurrectDeletedRows()
+{
+    ManualExecutionEnvironment env;
+    auto original = std::make_shared<ActivityWallet>();
+    const auto kept = MakeTx({{50'000, false}}, {{49'000, true}});
+    const auto deleted = MakeTx({{60'000, false}}, {{59'000, true}});
+    const auto added = MakeTx({{70'000, false}}, {{69'000, true}});
+    original->put(kept, 2); original->put(deleted, 2);
+    ManualActivityFixture fixture{env, original}; fixture.settle();
+    auto* model = fixture.activity.get();
+    QPersistentModelIndex kept_row{Find(*model, Id(kept))}; QVERIFY(kept_row.isValid());
+    model->reload(); QCoreApplication::processEvents(); env.drain();
+    auto old_wakeup = env.takePublicationBack(); QVERIFY(old_wakeup);
+    original->transactions.erase(deleted.tx->GetHash()); original->statuses.erase(deleted.tx->GetHash());
+    original->put(added, 6);
+    original->statuses[kept.tx->GetHash()].depth_in_main_chain = 6;
+    Q_EMIT fixture.wallet->transactionChanged(Id(deleted), CT_DELETED);
+    Q_EMIT fixture.wallet->transactionChanged(Id(added), CT_NEW);
+    model->refreshStatuses();
+    old_wakeup(); fixture.settle();
+    QCOMPARE(model->rowCount(), 2);
+    QVERIFY(!Find(*model, Id(deleted)).isValid()); QVERIFY(Find(*model, Id(added)).isValid());
+    QVERIFY(kept_row.isValid()); QCOMPARE(kept_row.data(Model::TxidRole).toString(), Id(kept));
+    QCOMPARE(kept_row.data(Model::DepthRole).toInt(), 6);
+    QSignalSpy changed{model, &QAbstractItemModel::dataChanged};
+    QSignalSpy inserted{model, &QAbstractItemModel::rowsInserted};
+    QSignalSpy removed{model, &QAbstractItemModel::rowsRemoved};
+    // A delayed duplicate wakeup carries no old patch or authority. The
+    // mailbox/active-job match must leave the newer base and tombstone intact.
+    old_wakeup(); fixture.settle();
+    QCOMPARE(changed.count(), 0); QCOMPARE(inserted.count(), 0); QCOMPARE(removed.count(), 0);
+    QCOMPARE(model->rowCount(), 2); QVERIFY(!Find(*model, Id(deleted)).isValid());
+    const int reads = original->status_reads + original->label_reads + original->snapshots;
+    for (int row = 0; row < model->rowCount(); ++row) for (const auto role : model->roleNames().keys()) model->index(row).data(role);
+    QCOMPARE(original->status_reads + original->label_reads + original->snapshots, reads);
+}
+
+void TransactionActivityModelTests::notificationDuringApplyingRetainsDeletionWork()
+{
+    ManualExecutionEnvironment env;
+    auto original = std::make_shared<ActivityWallet>();
+    const auto kept = MakeTx({{50'000, false}}, {{49'000, true}});
+    const auto deleted = MakeTx({{60'000, false}}, {{59'000, true}});
+    const auto added = MakeTx({{70'000, false}}, {{69'000, true}});
+    original->put(kept); original->put(deleted);
+    ManualActivityFixture fixture{env, original}; fixture.settle();
+    auto* model = fixture.activity.get();
+    QPersistentModelIndex kept_row{Find(*model, Id(kept))};
+    bool injected{false}, falsely_current{false};
+    const auto insertion = connect(model, &QAbstractItemModel::rowsInserted, model, [&] {
+        if (injected) return;
+        injected = true;
+        original->transactions.erase(deleted.tx->GetHash()); original->statuses.erase(deleted.tx->GetHash());
+        Q_EMIT fixture.wallet->transactionChanged(Id(deleted), CT_DELETED);
+    });
+    const auto loading = connect(model, &Model::loadingChanged, model, [&] {
+        if (injected && !model->loading() && Find(*model, Id(deleted)).isValid()) falsely_current = true;
+    });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(insertion); QObject::disconnect(loading); });
+    original->put(added);
+    Q_EMIT fixture.wallet->transactionChanged(Id(added), CT_NEW);
+    fixture.settle();
+    QVERIFY(injected); QVERIFY(!falsely_current); QVERIFY(!model->loading());
+    QCOMPARE(model->rowCount(), 2); QVERIFY(!Find(*model, Id(deleted)).isValid());
+    QVERIFY(Find(*model, Id(added)).isValid()); QVERIFY(kept_row.isValid());
+    QCOMPARE(kept_row.data(Model::TxidRole).toString(), Id(kept));
 }
 
 void TransactionActivityModelTests::manualStatusSnapshotPublishesOnlyAtGuiBoundary()
@@ -989,7 +1059,8 @@ void TransactionActivityModelTests::obsoleteRefreshFailureCannotHideCurrentRows(
     f.state->statuses.erase(deleted_tx.tx->GetHash());
     Q_EMIT f.wallet->transactionChanged(Id(deleted_tx), CT_DELETED);
     bool surfaced_error{false};
-    connect(model, &Model::loadingChanged, model, [&] { surfaced_error |= !model->loadError().isEmpty(); });
+    const auto connection = connect(model, &Model::loadingChanged, model, [&] { surfaced_error |= !model->loadError().isEmpty(); });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(connection); });
     gate->release.release();
 
     QTRY_VERIFY(!model->loading());
