@@ -138,6 +138,16 @@ update when they need a newly accepted interface or before their own integration
 Run affected wiring checks on the combined result; reserve exhaustive combined
 qualification for R42. Avoid accumulating all steps for one final merge.
 
+Use a rolling handoff rather than a batch barrier: while the coordinator
+integrates accepted work, the three other owners begin the next ready steps.
+An owner advances only after completing its current focused gate and preserving
+the exact handoff; unfinished steps keep their owner. The four available agent
+slots mean one coordinator plus three workers during integration. Keep each
+worker's existing host affinity and reuse warm builds. Preparation can overlap
+an unfinished prerequisite, but dependent implementation and acceptance wait
+for the prerequisite or an explicitly isolated contract. R16 to R17 is the
+first such handoff; R12, R28 and R14 remain pending independently.
+
 Source-export dispatch uses the parent coordinator's trusted authorization for
 johnny on the three named machines. Owners prepare an exact bounded source
 archive, manifest, hashes and dispatch command; the coordinator transfers it,
