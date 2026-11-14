@@ -959,10 +959,12 @@ TestCase {
 
         sendPage.handlePaymentUriPaste("bitcoin:bcrt1qreplacement" + data.params, "address")
         const overwrite = findChild(page, "sendPaymentUriOverwritePopup")
-        tryCompare(overwrite, "opened", true)
-        compare(testSendRecipient.label, "Existing note")
-        findChild(overwrite.contentItem, "sendPaymentUriOverwriteConfirmButton").clicked()
-        tryCompare(overwrite, "visible", false)
+        tryCompare(overwrite, "opened", data.message.length > 0)
+        if (data.message.length > 0) {
+            compare(testSendRecipient.label, "Existing note")
+            findChild(overwrite.contentItem, "sendPaymentUriOverwriteConfirmButton").clicked()
+            tryCompare(overwrite, "visible", false)
+        }
         tryCompare(sendPage, "uriActionPending", false)
         compare(testSendRecipient.hasPaymentRequest, true)
         compare(testSendRecipient.label, data.note)
