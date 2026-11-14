@@ -122,6 +122,7 @@ if(ENABLE_WALLET)
     test_transactionactivitymodel.cpp
     test_activitydetailmodel.cpp
     test_walletlistmodel.cpp
+    test_walletselectionmodel.cpp
     test_walletqmlmodel.cpp
     test_walletqmlmodeltransaction.cpp
     test_walletqmlcontroller.cpp

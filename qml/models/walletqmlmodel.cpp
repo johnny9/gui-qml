@@ -1276,7 +1276,7 @@ QString WalletQmlModel::displayName() const
     if (!m_display_name.isEmpty()) {
         return m_display_name;
     }
-    return name();
+    return m_wallet && m_name.isEmpty() ? tr("Default wallet") : name();
 }
 
 void WalletQmlModel::setDisplayName(const QString& display_name)

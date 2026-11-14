@@ -101,9 +101,9 @@ Page {
 
     property bool showHeader: true
 
-    // Wallet context for wallet-scoped RPCs (e.g. getbalance). Empty string runs
-    // commands without a wallet endpoint. Set by the embedding page.
+    // The default wallet has an empty name. Endpoint kind is a separate fact.
     property string walletName: ""
+    property bool walletContext: false
 
     header: NavigationBar2 {
         visible: root.showHeader
@@ -440,7 +440,10 @@ Page {
         // Only clear the input if the command was accepted. submitCommand()
         // returns false when another command is still executing, so a refused
         // command stays in the field instead of silently vanishing.
-        if (ApplicationModels.rpcConsoleModel.submitCommand(cmd, root.walletName)) {
+        const accepted = root.walletContext
+            ? ApplicationModels.rpcConsoleModel.submitWalletCommand(cmd, root.walletName)
+            : ApplicationModels.rpcConsoleModel.submitNodeCommand(cmd)
+        if (accepted) {
             inputField.text = ""
             completionDismissed = true
         }

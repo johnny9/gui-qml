@@ -211,6 +211,7 @@ private Q_SLOTS:
     void submitRefusedWhileExecuting();
     void stopRunsIndependentlyWhileExecuting();
     void walletNameScopesRpcToWalletUri();
+    void explicitContextDistinguishesDefaultWalletFromNode();
     void outputRowsExposeCategoryAndRawTimestamp();
     void clearRemovesOutput();
     void outputTruncatedWhenResultTooLong();
@@ -514,6 +515,26 @@ void RpcConsoleModelTests::walletNameScopesRpcToWalletUri()
     model.submitCommand("getblockcount", "");
     QTRY_VERIFY(!model.executing());
     QCOMPARE(mock.lastUri(), QString());
+}
+
+void RpcConsoleModelTests::explicitContextDistinguishesDefaultWalletFromNode()
+{
+    UriCapturingNode mock;
+    RpcConsoleModel model{mock};
+
+    // An explicitly selected wallet with an empty Core name is the default
+    // wallet endpoint, not the node endpoint.
+    QVERIFY(model.submitWalletCommand("getwalletinfo", ""));
+    QTRY_VERIFY(!model.executing());
+    QCOMPARE(mock.lastUri(), QString("/wallet/"));
+
+    QVERIFY(model.submitNodeCommand("getblockcount"));
+    QTRY_VERIFY(!model.executing());
+    QCOMPARE(mock.lastUri(), QString());
+
+    QVERIFY(model.submitWalletCommand("getwalletinfo", "my wallet"));
+    QTRY_VERIFY(!model.executing());
+    QCOMPARE(mock.lastUri(), QString("/wallet/my%20wallet"));
 }
 
 void RpcConsoleModelTests::outputRowsExposeCategoryAndRawTimestamp()

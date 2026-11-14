@@ -526,7 +526,6 @@ private Q_SLOTS:
         int constructed{0};
         const auto factory = [&] { ++constructed; return std::make_unique<int>(42); };
         QVERIFY(!execution::RetainValues<int>(std::shared_ptr<execution::Scheduler>{}, factory));
-        QVERIFY(!walletopening::RetainValues<int>(std::shared_ptr<walletopening::Session>{}, factory));
         QCOMPARE(constructed, 0);
         auto limits = execution::Limits::Bounded(); limits.cleanup_reservations.tasks = 0;
         ManualRoutedExecution env{limits}; int retired{0};

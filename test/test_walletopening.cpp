@@ -4,6 +4,7 @@
 
 #include <qml/backendexecutor.h>
 #include <qml/models/walletqmlmodel.h>
+#include <qml/retainedvalue.h>
 #include <qml/walletopening.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/mocks/manualwalletdrain.h>
@@ -76,6 +77,13 @@ class WalletOpeningTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void unavailableRetainedValuePortDoesNotConstruct()
+    {
+        int constructed{0};
+        const auto factory = [&] { ++constructed; return std::make_unique<int>(42); };
+        QVERIFY(!walletopening::RetainValues<int>(std::shared_ptr<walletopening::Session>{}, factory));
+        QCOMPARE(constructed, 0);
+    }
     void failedRefreshCannotAcknowledgeUnreconciledTransactions_data()
     {
         QTest::addColumn<bool>("later_transaction");

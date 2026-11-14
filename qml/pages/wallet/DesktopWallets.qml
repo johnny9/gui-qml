@@ -21,7 +21,9 @@ Page {
     property string pendingMigrationPath: ""
     // The wallet shown in the window. Wallet pages never look this up
     // themselves; each WalletView gets its wallet when it is created.
-    readonly property var activeWallet: ApplicationModels.walletController.isWalletLoaded ? ApplicationModels.walletController.selectedWallet : null
+    readonly property var activeWallet: ApplicationModels.walletController.isWalletLoaded
+        && ApplicationModels.walletController.selectedWallet.available
+        ? ApplicationModels.walletController.selectedWallet : null
     property int walletViewGeneration: 0
     readonly property WalletView activeView: {
         walletViews.count
@@ -493,6 +495,7 @@ Page {
                         showDoneButton: false
                         walletSettingsProvided: root.activeView !== null
                         activeWalletName: root.activeWallet ? root.activeWallet.name : ""
+                        activeWalletAvailable: root.activeWallet !== null && root.activeWallet.available
                         onSelectWalletRequested: root.openWalletSelection()
                         onWalletSettingsResetRequested: {
                             if (root.activeView) root.activeView.settingsStack.resetToRoot()

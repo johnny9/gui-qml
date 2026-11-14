@@ -10,9 +10,16 @@ progress without changing shared finding or schedule registers.
 | R00–R08 | Previously accepted on the amended base; original evidence retained |
 | R09 | User-accepted conditional app-side prerequisite; upstream limitations retained |
 | R10 | Implementation/focused ordinary checkpoint complete; final qualification pending R42 |
-| R11–R41 | Later implementation orders remain pending; R11 is next |
+| R11 | Implementation/focused checkpoint complete:274 behavioral bodies,5 IPC scenarios; final qualification pending R42 |
+| R16 | Independent Send draft implementation delegated in an isolated branch; prerequisites R07/R10 met, gate pending |
+| R28 | Independent versioned readers/Activity implementation delegated in an isolated branch; prerequisites R08/R10 met, gate pending |
+| R12–R15, R17–R27, R29–R40 | Authorized next, according to stated prerequisites; implementation and focused gates pending |
+| R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
 The [R10 checkpoint](R10_FOCUSED_CHECKPOINT_20261114.md) records exact tested
 app/Core identities, nonempty counts, commands, artifacts and unresolved issues.
 The program remains 318 findings, 329 scopes, 43 orders and 36 schedules.
+
+The [R11 checkpoint](R11_FOCUSED_CHECKPOINT_20261114.md) records its exact tested
+inputs, scoped reuse, resolved failures and remaining upstream/platform limits.

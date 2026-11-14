@@ -332,8 +332,9 @@ private Q_SLOTS:
         QPointer<WalletQmlModel> original{wallet};
         controller->closeWallet("preference"); QTRY_VERIFY(original.isNull());
         controller->setSelectedWallet("preference");
-        auto* reopened = qmltest::WaitForWallet(m_app, "preference");
+        auto* reopened = qmltest::WaitForOpenWallet(m_app, "preference");
         QVERIFY(reopened); QTRY_VERIFY(reopened->capabilitiesKnown());
+        QVERIFY(controller->selectWallet(reopened));
         QCOMPARE(reopened->defaultReceiveAddressType(), QString{"legacy"});
     }
     void addressPreferenceWriteReportsDisabledSettings()

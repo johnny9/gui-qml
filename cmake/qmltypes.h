@@ -46,6 +46,7 @@
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signverifymessagemodel.h>
+#include <qml/models/walletselectionmodel.h>
 #include <qml/models/transaction.h>
 #include <qml/models/transactionactivitymodel.h>
 #include <qml/models/walletlistmodel.h>
@@ -292,6 +293,13 @@ struct WalletListModelForeign {
     QML_FOREIGN(WalletListModel)
     QML_NAMED_ELEMENT(WalletListModel)
     QML_UNCREATABLE("Owned by the application")
+};
+
+struct WalletSelectionModelForeign {
+    Q_GADGET
+    QML_FOREIGN(WalletSelectionModel)
+    QML_NAMED_ELEMENT(WalletSelectionModel)
+    QML_UNCREATABLE("Owned by a window")
 };
 
 struct CoinsListModelForeign {

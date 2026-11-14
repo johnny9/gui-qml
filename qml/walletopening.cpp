@@ -90,6 +90,12 @@ Session::Start Session::start(const std::shared_ptr<interfaces::Wallet>& wallet)
         }));
         handlers.push_back(value.handleCanGetAddressesChanged([weak] { if (const auto owner = weak.lock()) owner->ingress(0); }));
         handlers.push_back(value.handleUnload([weak] { if (const auto owner = weak.lock()) owner->ingress(3); }));
+        // Ingress may have seen the only unload before this Session existed.
+        // Its retained observation closes the subscription-installation gap.
+        if (self->m_native_events.unloaded && self->m_native_events.unloaded->load()) {
+            self->ingress(3);
+            throw execution::NotStarted{execution::NotStarted::Cause::Cancelled};
+        }
         return ReadMetadata(value, self->m_preferences);
     }, [self](Metadata metadata) { self->refreshed(std::move(metadata), {}); }, [self](std::exception_ptr) {
         { std::lock_guard lock{self->m_mutex}; self->m_refresh_pending = false; }

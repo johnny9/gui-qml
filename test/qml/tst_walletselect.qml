@@ -273,6 +273,39 @@ TestCase {
         tryCompare(popup, "opened", false)
     }
 
+    function test_load_completion_keeps_the_picker_and_selection() {
+        const popup = openWalletSelect()
+        const original = walletController.selectedWallet
+        walletController.walletLoadSucceeded(original)
+        compare(popup.opened, true)
+        compare(walletController.selectedWallet, original)
+    }
+
+    function test_default_wallet_is_distinct_from_an_unavailable_selection() {
+        const oldName = testWalletModel.name
+        const oldAvailable = testWalletModel.available
+        try {
+            testWalletModel.name = ""
+            testWalletModel.available = false
+            walletController.setSelectedWalletObject(testWalletModel)
+            const model = createTemporaryObject(typedWalletModel, this)
+            model.append({ name: "", displayName: "Default wallet", format: "sqlite",
+                loadState: 1, errorMessage: "", balance: "0", balanceSatoshi: 0,
+                balanceKnown: true, keySchemeKind: 0, walletSection: "open" })
+            const popup = createTemporaryObject(walletSelectComponent, this, { model: model })
+            popup.open()
+            tryCompare(popup, "opened", true)
+            const list = findChild(popup, "walletSelectList")
+            tryVerify(function() { return list.itemAtIndex(0) !== null })
+            compare(list.itemAtIndex(0).checked, false)
+            testWalletModel.available = true
+            compare(list.itemAtIndex(0).checked, true)
+        } finally {
+            testWalletModel.name = oldName
+            testWalletModel.available = oldAvailable
+        }
+    }
+
     Component {
         id: signalSpyComponent
         SignalSpy {}

@@ -43,7 +43,7 @@ private Q_SLOTS:
         UniValue create{UniValue::VOBJ};
         create.pushKV("wallet_name", "scripts-reviewer"); create.pushKV("disable_private_keys", true); create.pushKV("blank", true);
         qmltest::Rpc(m_app, "createwallet", create);
-        auto* reviewer = qmltest::WaitForWallet(m_app, "scripts-reviewer"); QVERIFY(reviewer);
+        auto* reviewer = qmltest::SelectOpenWalletForSetup(m_app, "scripts-reviewer"); QVERIFY(reviewer);
         const auto descriptors = qmltest::Call(m_app, [nested](interfaces::Node*) {
             std::array<unsigned char, 32> bytes{};
             bytes.back() = 1; CKey first; first.Set(bytes.begin(), bytes.end(), true);

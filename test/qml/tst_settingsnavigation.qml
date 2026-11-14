@@ -689,6 +689,35 @@ TestCase {
         compare(view.groupTitles.advanced, "Advanced")
     }
 
+    function test_rpc_context_distinguishes_an_unnamed_wallet() {
+        const oldName = testWalletModel.name
+        const oldAvailable = testWalletModel.available
+        try {
+            testWalletModel.name = ""
+            testWalletModel.available = true
+            const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem,
+                { wallet: testWalletModel })
+            view.selectSection("rpc-console")
+            const page = findChild(view, "rpcConsoleSettingsPage")
+            verify(page !== null)
+            const input = findChild(page, "consoleInput")
+            verify(input !== null)
+            compare(page.walletContext, true)
+            compare(page.walletName, "")
+            input.text = "getwalletinfo"
+            page.consoleItem.submitCommand()
+            compare(rpcConsoleModel.lastTarget, "wallet")
+            compare(rpcConsoleModel.lastWalletName, "")
+            view.wallet = null
+            compare(page.walletContext, false)
+            page.consoleItem.submitCommand()
+            compare(rpcConsoleModel.lastTarget, "node")
+        } finally {
+            testWalletModel.name = oldName
+            testWalletModel.available = oldAvailable
+        }
+    }
+
     function test_rpcConsoleUsesSettingsContainerAndTracksVisibility() {
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
         verify(view !== null)

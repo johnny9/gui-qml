@@ -6,7 +6,10 @@ instructions. It supersedes earlier per-step requirements to run exhaustive
 coverage, full matrices or sanitizers. Those requirements remain due at R42.
 The same focused cadence applies to R41 cleanup before final qualification.
 
-R10's implementation/focused checkpoint is complete. R11 has not started.
+R10's implementation/focused checkpoint is complete. R11 is in progress on
+`work/qt6-r11-r40-20261114`; subsequent orders advance after their prerequisites
+and focused gates pass. Evidence lives under workspace
+`.validation/qt6-r11-r40-20261114/`, with one directory per order.
 The Core pin remains `44901d8f64cb617714707bd025ecd83f108353c2`.
 All 318 findings, 329 regression scopes, 43 orders and 36 schedules remain tracked.
 Implementation progress and final qualification are separate statuses.
@@ -39,6 +42,33 @@ Implementation progress and final qualification are separate statuses.
 
 ## Gate for each implementation step
 
+Before extraction, check every assigned confirmed finding against its original
+failure oracle. A generic successful-ordering test does not establish coverage
+of a failed Core call, a detached consumer or premature admission. Reuse existing
+regressions where their trigger matches; preserve non-defect dispositions and
+do not promote unverified source candidates. Add a focused RED proof for a
+confirmed uncovered defect before implementing its fix.
+
+Give each shared production module one implementation owner. Delegate disjoint
+tests, consumers and validation concurrently. Batch the remaining known fixes
+into a coherent snapshot before its consolidated gate, instead of freezing and
+rebuilding after each small repair. Artifact packaging and auxiliary audits must
+not serialize source work or block independent behavioral checks.
+
+Delegate a complete owner/consumer/regression slice with its file boundary,
+acceptance oracle and shared test manifest agreed at assignment. Keep one final
+handoff per task; interrupt for genuine blockers or decisions rather than routine
+microtask approval. Advance independent orders whose stated prerequisites are
+already accepted in isolated branches, then integrate their changes through one
+owner. A pending unrelated earlier order does not create a new prerequisite.
+Freeze one coherent source per acceptance round and run disjoint validation lanes
+in parallel. Never place competing writers in the same module or build tree.
+A ready handoff must state whether the changed translation units actually compile.
+Use an available isolated focused compile or pinned analysis lane to catch basic
+compiler errors before the combined gate; a static diff check alone is not a
+compile claim. Preserve all known failures in that handoff rather than sending
+small partial fixes as separate integration requests.
+
 1. Map the step's issue IDs, entry points and required schedules to concrete
    executable selectors in a data manifest. Keep the original failure oracle,
    valid existing assertions and any recorded non-defect disposition. Reuse the
@@ -70,6 +100,10 @@ Implementation progress and final qualification are separate statuses.
    Discovery is not execution; empty or incomplete selections cannot be reported
    as passing. Reuse earlier passing evidence only with explicit source/tool
    identity and dependency review. Never merge profiles from different ELFs.
+   Start focused runtime checks when their affected targets build. Source/Core
+   identities, actual build commands/exits and binary hashes are sufficient
+   per-step provenance; auxiliary object inventories must not block independent
+   tests. Detailed compiler/profile/DWARF mapping audits remain at R42.
 6. Resolve introduced ordinary correctness failures before advancing. Record
    "implementation/focused checkpoint complete; final qualification pending
    R42" when this gate passes, then proceed to the next order. Do not repeat

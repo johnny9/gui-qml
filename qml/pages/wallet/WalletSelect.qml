@@ -93,9 +93,6 @@ Popup {
 
     Connections {
         target: ApplicationModels.walletController
-        function onWalletLoadSucceeded() {
-            root.close()
-        }
         function onWalletMigrationRequired() {
             root.close()
         }
@@ -193,7 +190,9 @@ Popup {
                 objectName: "walletSelectItem_" + name.replace(/[^A-Za-z0-9_]/g, "_")
                 width: listView.width
                 height: loadState === WalletListModel.Open ? 64 : 48
-                checked: loadState === WalletListModel.Open && ApplicationModels.walletController.selectedWallet.name === name
+                checked: loadState === WalletListModel.Open
+                    && ApplicationModels.walletController.selectedWallet.available
+                    && ApplicationModels.walletController.selectedWallet.name === name
                 enabled: !ApplicationModels.walletController.walletLoadInProgress
                 ButtonGroup.group: buttonGroup
                 leftPadding: 10
@@ -404,8 +403,9 @@ Popup {
                     if (ApplicationModels.walletController.isWalletOpen(name)) {
                         root.close()
                     }
-                    // Otherwise: stay open until walletLoadSucceeded or
-                    // walletMigrationRequired arrives via Connections above.
+                    // A completed load updates its row. The next explicit
+                    // click opens that wallet; completion cannot select it
+                    // behind a newer selection or another dialog.
                 }
             }
         }

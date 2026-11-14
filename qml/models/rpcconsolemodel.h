@@ -6,6 +6,7 @@
 #define BITCOIN_QML_MODELS_RPCCONSOLEMODEL_H
 
 #include <qml/backendexecutor.h>
+#include <qml/models/rpccommandexecutor.h>
 #include <qml/snapshotquery.h>
 
 #include <QAbstractListModel>
@@ -134,6 +135,8 @@ public:
     RpcOutputListModel* outputModel() { return &m_output_model; }
 
     Q_INVOKABLE bool submitCommand(const QString& command, const QString& wallet_name = {});
+    Q_INVOKABLE bool submitNodeCommand(const QString& command);
+    Q_INVOKABLE bool submitWalletCommand(const QString& command, const QString& wallet_name);
 
     /**
      * Navigate command history.
@@ -166,6 +169,7 @@ private:
     static Construction prepareConstruction(execution::SnapshotServices services, QObject* parent);
     RpcConsoleModel(interfaces::Node& node, Construction construction);
     void setExecuting(bool executing);
+    bool submitCommandForContext(const QString& command, const RpcCommandContext& context);
     void finishDrain();
     void appendPendingRows();
     void retireOutput(std::shared_ptr<const void> value);
@@ -186,7 +190,7 @@ private:
     QStringList m_history;
     int m_history_idx{-1};
     QString m_pending_text; // text being edited before browsing history
-    QString m_last_wallet_name; // last wallet context surfaced in the output
+    RpcCommandContext m_last_command_context; // last target surfaced in the output
 
     bool m_stopping{false};
     bool m_shutdown_started{false};

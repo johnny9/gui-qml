@@ -12,6 +12,7 @@
 #include <outputtype.h>
 #include <qml/walletqmlcontroller.h>
 #include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/models/walletselectionmodel.h>
 #include <scheduler.h>
 #include <script/descriptor.h>
 #include <test/mocks/mocknode.h>
@@ -35,6 +36,7 @@
 #include <algorithm>
 #include <array>
 #include <set>
+#include <map>
 #include <vector>
 #include <atomic>
 #include <mutex>
@@ -253,10 +255,12 @@ public:
             std::atomic<int> imports{0}, private_accesses{0};
             std::function<std::vector<wallet::ImportResult>(std::vector<wallet::ImportDescriptorRequest>&)> import_fn;
             std::mutex mutex;
-            interfaces::Wallet::UnloadFn unload_fn;
-            void setUnload(interfaces::Wallet::UnloadFn fn) { std::lock_guard lock(mutex); unload_fn = std::move(fn); }
-            bool hasUnload() { std::lock_guard lock(mutex); return bool(unload_fn); }
-            void notifyUnload() { interfaces::Wallet::UnloadFn fn; { std::lock_guard lock(mutex); fn = unload_fn; } if (fn) fn(); }
+            std::map<uint64_t, interfaces::Wallet::UnloadFn> unload_handlers;
+            uint64_t next_unload_handler{0};
+            uint64_t addUnload(interfaces::Wallet::UnloadFn fn) { std::lock_guard lock(mutex); const auto id = ++next_unload_handler; unload_handlers.emplace(id, std::move(fn)); return id; }
+            void removeUnload(uint64_t id) { std::lock_guard lock(mutex); unload_handlers.erase(id); }
+            bool hasUnload() { std::lock_guard lock(mutex); return !unload_handlers.empty(); }
+            void notifyUnload() { std::map<uint64_t, interfaces::Wallet::UnloadFn> handlers; { std::lock_guard lock(mutex); handlers = unload_handlers; } for (const auto& [id, fn] : handlers) { (void)id; fn(); } }
         };
         // The Native wallet and its cleanup handler can outlive the stack
         // observation facade during intentional reentrant controller deletion.
@@ -384,10 +388,8 @@ public:
     std::unique_ptr<interfaces::Handler> handleUnload(UnloadFn fn) override
     {
         if (m_state) {
-            m_state->setUnload(std::move(fn));
-            return interfaces::MakeCleanupHandler([state = m_state] {
-                state->setUnload({});
-            });
+            const auto id = m_state->addUnload(std::move(fn));
+            return interfaces::MakeCleanupHandler([state = m_state, id] { state->removeUnload(id); });
         }
         return MakeNoopHandler();
     }
@@ -572,9 +574,17 @@ private Q_SLOTS:
     void injectedControllerServicesRejectPartialGraphBeforeAdmission();
     void manualMatchingLoadNotificationAndResult_data();
     void manualMatchingLoadNotificationAndResult();
+    void manualExternalLoadAndAlreadyLoadedResult_data();
+    void manualExternalLoadAndAlreadyLoadedResult();
+    void manualFailedOpenRequiresCapturedOriginalOpening_data();
+    void manualFailedOpenRequiresCapturedOriginalOpening();
+    void manualFailedOpenAfterObservedUnloadBindsOnlyFreshOpening_data();
+    void manualFailedOpenAfterObservedUnloadBindsOnlyFreshOpening();
     void manualOldOpeningPromptAndOutcomeCannotResolveReopenedName();
     void manualUnknownBindingNotificationCannotResurrectOrResolveReopenedName_data();
     void manualUnknownBindingNotificationCannotResurrectOrResolveReopenedName();
+    void manualUnloadBeforeFirstGuiAdoptionKeepsViewAndControllerAlive_data();
+    void manualUnloadBeforeFirstGuiAdoptionKeepsViewAndControllerAlive();
     void manualObservedUnloadAllowsFreshSameNameLoad_data();
     void manualObservedUnloadAllowsFreshSameNameLoad();
     void manualInsertionCallbacksPreserveOriginalAdoption_data();
@@ -587,6 +597,19 @@ private Q_SLOTS:
     void manualInjectedShutdownOwnsAcceptedOutcomeAfterObserverLoss();
     void acceptedCreationDoesNotRetargetLaterSelection();
     void openWalletRowsPreserveIndependentViews();
+    void manualIndependentSelectionsKeepExactRegistryMembership();
+    void manualPendingSelectionCannotRetargetAnotherWindow_data();
+    void manualPendingSelectionCannotRetargetAnotherWindow();
+    void manualRegistryRemovalPreservesReentrantSelection();
+    void manualResultRetirementDoesNotResolveByName();
+    void manualRetainedResultBackendCleanupFencesReopen_data();
+    void manualRetainedResultBackendCleanupFencesReopen();
+    void manualPublicationOwnsResultBeforeReopeningCoreAdmission_data();
+    void manualPublicationOwnsResultBeforeReopeningCoreAdmission();
+    void manualTerminalPublicationRejectsReentrantCoreUntilProgressReleased_data();
+    void manualTerminalPublicationRejectsReentrantCoreUntilProgressReleased();
+    void manualDefaultWalletLoadAndLocation_data();
+    void manualDefaultWalletLoadAndLocation();
     void openWalletTreeRemovalPreservesRowsAndPersistentIdentities();
     void provisioningChecksOwnManualPhases_data();
     void provisioningChecksOwnManualPhases();
@@ -1052,6 +1075,10 @@ void WalletQmlControllerTests::successfulImportPublishesTheOwnedReturnedWallet()
     QSignalSpy imported{&controller, &WalletQmlController::walletImportSucceeded};
     controller.importWallet(backup.fileName());
     QTRY_COMPARE(imported.count(), 1);
+    QCOMPARE(controller.selectedWallet()->name(), QString{});
+    QCOMPARE(controller.walletOperationResultWallet(), qvariant_cast<WalletQmlModel*>(imported.front().front()));
+    QVERIFY(controller.canOpenResult());
+    QVERIFY(controller.selectWallet(controller.walletOperationResultWallet()));
     QCOMPARE(qvariant_cast<WalletQmlModel*>(imported.front().front()), controller.selectedWallet());
     QCOMPARE(controller.selectedWallet()->name(), QString{"imported"});
     QVERIFY(controller.isWalletOpen("imported")); QVERIFY(!controller.walletLoadInProgress());
@@ -1077,6 +1104,10 @@ void WalletQmlControllerTests::successfulMigrationPublishesTheOwnedReturnedWalle
     QTRY_COMPARE(migrated.count(), 1);
     QVERIFY(load_requested.load());
     QVERIFY(controller.isWalletOpen("migrated"));
+    QCOMPARE(controller.selectedWallet()->name(), QString{});
+    QVERIFY(controller.canOpenResult());
+    QCOMPARE(controller.walletOperationResultWallet()->name(), QString{"migrated"});
+    QVERIFY(controller.selectWallet(controller.walletOperationResultWallet()));
     QCOMPARE(controller.selectedWallet()->name(), QString{"migrated"});
     QVERIFY(!controller.walletMigrationInProgress()); QVERIFY(controller.walletMigrationError().isEmpty());
     QCOMPARE(loader.migrate_wallet_calls, 1);
@@ -1429,6 +1460,11 @@ void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement()
         const auto callback = loader.captured_load_wallet_fn;
         std::thread producer{[&state, callback] { callback(std::make_unique<FakeWallet>("notified-wallet", &state)); }};
         producer.join();
+    }
+    if (!initial && signal_index == 5) {
+        QTRY_VERIFY(controller && controller->walletForName("notified-wallet"));
+        QVERIFY(!interrupted);
+        controller->selectWallet(controller->walletForName("notified-wallet"));
     }
     QTRY_VERIFY(interrupted);
     if (initial && signal_index >= 6) QVERIFY(original_signer_observation_held);
@@ -2136,12 +2172,12 @@ void WalletQmlControllerTests::manualMatchingLoadNotificationAndResult()
     controller.setSelectedWallet("target", "sqlite");
     const auto ticket = controller.walletOperationId();
     auto command = controller.m_command; QVERIFY(command);
-    const auto selection = controller.m_selection_revision;
+    const auto selection = controller.m_selection->revision();
     if (later_selection == 1) QVERIFY(controller.selectWallet(original));
     if (later_selection == 2) QVERIFY(!controller.selectWallet(nullptr));
     if (later_selection == 3) QVERIFY(!controller.selectWallet(foreign->controller->selectedWallet()));
     if (later_selection == 4) QVERIFY(!controller.selectWallet(closing));
-    QCOMPARE(controller.m_selection_revision, selection + (later_selection == 1 ? 1 : 0));
+    QCOMPARE(controller.m_selection->revision(), selection + (later_selection == 1 ? 1 : 0));
     QCOMPARE(controller.walletOperationId(), ticket);
     QCOMPARE(loader.load_wallet_calls, 0);
     QVERIFY(graph.step(execution::Lane::Core));
@@ -2170,6 +2206,12 @@ void WalletQmlControllerTests::manualMatchingLoadNotificationAndResult()
     QCOMPARE(controller.walletOperationId(), ticket);
     QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
     QCOMPARE(controller.walletOperationName(), QStringLiteral("target"));
+    // The native result is retained, but only a later explicit action selects it.
+    QCOMPARE(controller.selectedWallet(), original);
+    QCOMPARE(controller.walletOperationResultWallet(), first);
+    QVERIFY(controller.canOpenResult());
+    QVERIFY(!controller.m_selection->pending());
+    if (later_selection != 1) QVERIFY(controller.selectWallet(controller.walletOperationResultWallet()));
     QCOMPARE(controller.selectedWallet(), later_selection == 1 ? original : first);
     command_notice(); notification_notice(); // Reliable transport retries cannot replay either publication.
     QCOMPARE(loaded.size(), 1); QCOMPARE(inserted.size(), 1);
@@ -2180,6 +2222,260 @@ void WalletQmlControllerTests::manualMatchingLoadNotificationAndResult()
     QCOMPARE(handles->destroyed.load(), 2);
     QVERIFY(handles->native.load());
     QCOMPARE(loaded_state.private_accesses.load(), 0);
+}
+
+void WalletQmlControllerTests::manualExternalLoadAndAlreadyLoadedResult_data()
+{
+    QTest::addColumn<bool>("notification_first");
+    QTest::addColumn<bool>("select_b");
+    QTest::addColumn<bool>("before_admission");
+    QTest::newRow("notification-first-original-selection") << true << false << false;
+    QTest::newRow("result-first-original-selection") << false << false << false;
+    QTest::newRow("notification-first-later-selection-b") << true << true << false;
+    QTest::newRow("result-first-later-selection-b") << false << true << false;
+    QTest::newRow("pre-admit-notification-first-original-selection") << true << false << true;
+    QTest::newRow("pre-admit-result-first-original-selection") << false << false << true;
+    QTest::newRow("pre-admit-notification-first-later-selection-b") << true << true << true;
+    QTest::newRow("pre-admit-result-first-later-selection-b") << false << true << true;
+}
+
+void WalletQmlControllerTests::manualExternalLoadAndAlreadyLoadedResult()
+{
+    QFETCH(bool, notification_first);
+    QFETCH(bool, select_b);
+    QFETCH(bool, before_admission);
+    FakeWallet::State original_state, standby_state, target_state;
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("original", &original_state));
+        wallets.push_back(std::make_unique<FakeWallet>("standby", &standby_state));
+        return wallets;
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized() && controller.walletForName("original") && controller.walletForName("standby"); }));
+    auto* original = controller.walletForName("original");
+    auto* standby = controller.walletForName("standby");
+    QVERIFY(original); QVERIFY(standby); QCOMPARE(controller.selectedWallet(), original);
+    loader.load_wallet_fn = [&](const std::string& name, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        if (name != "target") return util::Error{Untranslated("Unexpected wallet target")};
+        // Another producer loaded this exact wallet. Its notification and the
+        // failed GUI loader call are independent facts, both owned below.
+        if (!before_admission) loader.captured_load_wallet_fn(std::make_unique<FakeWallet>("target", &target_state));
+        return util::Error{Untranslated("Wallet already loaded")};
+    };
+    QSignalSpy errors{&controller, &WalletQmlController::walletLoadErrorNotice};
+    QSignalSpy inserted{controller.openWalletModel(), &QAbstractItemModel::rowsInserted};
+    QSignalSpy loaded{&controller, &WalletQmlController::walletLoadSucceeded};
+    std::function<void()> notification_notice;
+    if (before_admission) {
+        loader.captured_load_wallet_fn(std::make_unique<FakeWallet>("target", &target_state));
+        graph.runNative();
+        QCOMPARE(graph.posts.size(), size_t{1});
+        notification_notice = std::move(graph.posts.front()); graph.posts.pop_front();
+    }
+    controller.setSelectedWallet("target", "sqlite");
+    const auto operation = controller.walletOperationId();
+    auto command = controller.m_command; QVERIFY(command);
+    if (select_b) QVERIFY(controller.selectWallet(standby));
+    QVERIFY(graph.step(execution::Lane::Core));
+    QCOMPARE(loader.load_wallet_calls, 1);
+    QVERIFY(graph.step(execution::Lane::Domain));
+    QVERIFY(command->result());
+    QCOMPARE(graph.posts.size(), size_t{1});
+    auto command_notice = std::move(graph.posts.front()); graph.posts.pop_front();
+    if (!before_admission) {
+        graph.runNative();
+        QCOMPARE(graph.posts.size(), size_t{1});
+        notification_notice = std::move(graph.posts.front()); graph.posts.pop_front();
+    }
+    WalletQmlModel* notified{nullptr};
+    if (notification_first) {
+        notification_notice(); notified = controller.walletForName("target"); command_notice();
+    } else {
+        command_notice(); notification_notice(); notified = controller.walletForName("target");
+    }
+    // Both GUI receipts are consumed before asserting their combined outcome.
+    QVERIFY(notified);
+    const auto opening = notified->opening()->identity();
+    // Only GUI continuations run here; the Domain decision remains held.
+    for (int budget = 0; budget < 16 && !graph.posts.empty(); ++budget) {
+        auto next = std::move(graph.posts.front()); graph.posts.pop_front(); next();
+    }
+    QVERIFY(controller.walletLoadInProgress()); QCOMPARE(loaded.size(), 0);
+    QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationPending);
+    QVERIFY(graph.step(execution::Lane::Domain));
+    QVERIFY(controller.walletLoadInProgress()); QCOMPARE(loaded.size(), 0);
+    QVERIFY(graph.step(execution::Lane::Domain));
+    QVERIFY(controller.walletLoadInProgress()); QCOMPARE(loaded.size(), 0);
+    QVERIFY(graph.until([&] { return !controller.walletLoadInProgress() && notified->capabilitiesKnown(); }));
+    const auto actual = command->result();
+    QVERIFY(actual && actual->value); QVERIFY(!actual->error);
+    QCOMPARE(actual->value->error, QStringLiteral("Wallet already loaded"));
+    QVERIFY(!actual->value->has_wallet); QVERIFY(!actual->value->walletForAdoption()); QVERIFY(!actual->value->effect_succeeded);
+    QCOMPARE(controller.walletOperationId(), operation);
+    QCOMPARE(controller.walletForName("target"), notified);
+    QVERIFY(notified->opening()->identity() == opening);
+    QCOMPARE(controller.openWalletModel()->rowCount(), 3);
+    QCOMPARE(inserted.size(), 1);
+    QCOMPARE(controller.selectedWallet(), select_b ? standby : original);
+    QCOMPARE(loader.load_wallet_calls, 1);
+    QCOMPARE(target_state.private_accesses.load(), 0);
+    // Showing a load failure while the same target is independently available
+    // reproduces scope049, even though the actual Core load error is retained.
+    QCOMPARE(errors.size(), 0);
+    QVERIFY(controller.walletLoadError().isEmpty());
+    QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
+    QCOMPARE(controller.walletOperationAdoptionState(), WalletQmlController::WalletAdoptionState::AdoptionAvailable);
+    QCOMPARE(controller.walletOperationResultWallet(), notified); QVERIFY(controller.canOpenResult());
+    QCOMPARE(loaded.size(), 1); QCOMPARE(loaded.front().front().value<WalletQmlModel*>(), notified);
+    QCOMPARE(controller.walletLoadWarnings(), QStringLiteral("Wallet already loaded"));
+    { std::lock_guard lock{controller.m_command_receipt->mutex};
+      QCOMPARE(controller.m_command_receipt->state, WalletQmlController::WalletOperationState::WalletOperationFailed); }
+    QCOMPARE(loader.get_wallets_calls, 1); QCOMPARE(loader.handle_load_wallet_calls, 1);
+    command_notice(); notification_notice();
+    QVERIFY(graph.until([&] { return !controller.walletLoadInProgress(); }));
+    QCOMPARE(loaded.size(), 1); QCOMPARE(errors.size(), 0); QCOMPARE(inserted.size(), 1);
+    QCOMPARE(controller.selectedWallet(), select_b ? standby : original);
+}
+
+void WalletQmlControllerTests::manualFailedOpenRequiresCapturedOriginalOpening_data()
+{
+    QTest::addColumn<int>("scenario");
+    QTest::newRow("unrelated-notification") << 0;
+    QTest::newRow("notification-after-native-result") << 1;
+    QTest::newRow("captured-opening-closed") << 2;
+    QTest::newRow("resolution-admission-rejected") << 3;
+}
+
+void WalletQmlControllerTests::manualFailedOpenRequiresCapturedOriginalOpening()
+{
+    QFETCH(int, scenario);
+    FakeWallet::State original_state, target_state;
+    MockNode node; FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("original", &original_state));
+        return wallets;
+    };
+    ManualControllerGraph graph{node}; auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized() && controller.walletForName("original"); }));
+    auto* original = controller.walletForName("original");
+    loader.load_wallet_fn = [&](const auto&, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        if (scenario != 1) loader.captured_load_wallet_fn(std::make_unique<FakeWallet>(scenario == 0 ? "unrelated" : "target", &target_state));
+        return util::Error{Untranslated("Wallet already loaded")};
+    };
+    QSignalSpy errors{&controller, &WalletQmlController::walletLoadErrorNotice};
+    QSignalSpy loaded{&controller, &WalletQmlController::walletLoadSucceeded};
+    controller.setSelectedWallet("target", "sqlite");
+    const auto operation = controller.walletOperationId();
+    auto command = controller.m_command; QVERIFY(command);
+    QVERIFY(graph.step(execution::Lane::Core)); QVERIFY(graph.step(execution::Lane::Domain));
+    QCOMPARE(graph.posts.size(), size_t{1});
+    auto command_notice = std::move(graph.posts.front()); graph.posts.pop_front();
+    if (scenario == 1) loader.captured_load_wallet_fn(std::make_unique<FakeWallet>("target", &target_state));
+    graph.runNative(); QCOMPARE(graph.posts.size(), size_t{1});
+    auto notification_notice = std::move(graph.posts.front()); graph.posts.pop_front();
+    notification_notice();
+    if (scenario == 2) {
+        QVERIFY(controller.walletForName("target"));
+        controller.closeWallet("target");
+        QVERIFY(graph.until([&] { return !controller.isWalletOpen("target"); }));
+    }
+    if (scenario == 3) {
+        graph.runNative(); // Reject the resolution's initial admission, not an accepted handoff.
+        graph.native.rejectLane(execution::Lane::Domain);
+    }
+    command_notice();
+    QVERIFY(graph.until([&] { return !controller.walletLoadInProgress(); }));
+    const auto actual = command->result(); QVERIFY(actual && actual->value);
+    QCOMPARE(actual->value->error, QStringLiteral("Wallet already loaded"));
+    QVERIFY(!actual->value->has_wallet); QVERIFY(!actual->value->effect_succeeded);
+    QCOMPARE(controller.walletOperationId(), operation);
+    QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationFailed);
+    QCOMPARE(controller.walletOperationResultWallet(), nullptr); QVERIFY(!controller.canOpenResult());
+    QCOMPARE(loaded.size(), 0); QCOMPARE(errors.size(), 1);
+    QCOMPARE(controller.selectedWallet(), original);
+    if (scenario == 3) QVERIFY(controller.walletLoadError().contains(QStringLiteral("could not be reconciled")));
+    else QCOMPARE(controller.walletLoadError(), QStringLiteral("Wallet already loaded"));
+    QCOMPARE(loader.load_wallet_calls, 1); QCOMPARE(loader.get_wallets_calls, 1); QCOMPARE(loader.handle_load_wallet_calls, 1);
+    command_notice(); notification_notice();
+    QVERIFY(graph.until([&] { return !controller.walletLoadInProgress(); }));
+    QCOMPARE(loaded.size(), 0); QCOMPARE(errors.size(), 1); QCOMPARE(controller.selectedWallet(), original);
+}
+
+void WalletQmlControllerTests::manualFailedOpenAfterObservedUnloadBindsOnlyFreshOpening_data()
+{
+    QTest::addColumn<bool>("unload_gui_first");
+    QTest::newRow("old-unload-gui-before-fresh-notification") << true;
+    QTest::newRow("fresh-notification-before-old-unload-gui") << false;
+}
+
+void WalletQmlControllerTests::manualFailedOpenAfterObservedUnloadBindsOnlyFreshOpening()
+{
+    QFETCH(bool, unload_gui_first);
+    FakeWallet::State original_state, old_state, fresh_state;
+    MockNode node; FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("original", &original_state));
+        wallets.push_back(std::make_unique<FakeWallet>("target", &old_state));
+        return wallets;
+    };
+    loader.load_wallet_fn = [](const auto&, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        return util::Error{Untranslated("Wallet already loaded")};
+    };
+    ManualControllerGraph graph{node}; auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized() && controller.walletForName("target") && old_state.hasUnload(); }));
+    auto* original = controller.walletForName("original"); QVERIFY(original);
+    QPointer<WalletQmlModel> old{controller.walletForName("target")}; QVERIFY(old);
+    const auto old_identity = old->opening()->identity();
+    old_state.notifyUnload(); QVERIFY(!old->available());
+    QVERIFY(QTest::qWaitFor([&] {
+        graph.runNative(); QCoreApplication::processEvents(); return old && old->shutdownComplete();
+    }, 5000));
+    auto unload_posts = std::move(graph.posts); graph.posts.clear(); QVERIFY(!unload_posts.empty());
+    // The callback still carries the old GUI context, but Native unload and
+    // this fresh load both precede the NEW Open intent's admission.
+    loader.captured_load_wallet_fn(std::make_unique<FakeWallet>("target", &fresh_state));
+    graph.runNative(); QCOMPARE(graph.posts.size(), size_t{1});
+    auto notification_notice = std::move(graph.posts.front()); graph.posts.pop_front();
+    QSignalSpy errors{&controller, &WalletQmlController::walletLoadErrorNotice};
+    QSignalSpy loaded{&controller, &WalletQmlController::walletLoadSucceeded};
+    controller.setSelectedWallet("target", "sqlite");
+    auto command = controller.m_command; QVERIFY(command);
+    QVERIFY(graph.step(execution::Lane::Core)); QVERIFY(graph.step(execution::Lane::Domain));
+    QCOMPARE(graph.posts.size(), size_t{1});
+    auto command_notice = std::move(graph.posts.front()); graph.posts.pop_front();
+    const auto publish_unload = [&] {
+        while (!unload_posts.empty()) { auto turn = std::move(unload_posts.front()); unload_posts.pop_front(); turn(); }
+    };
+    if (unload_gui_first) publish_unload();
+    notification_notice();
+    if (!unload_gui_first) publish_unload();
+    auto* fresh = controller.walletForName("target"); QVERIFY(fresh);
+    QVERIFY(fresh->opening()->identity() != old_identity);
+    command_notice();
+    QVERIFY(graph.until([&] { return !controller.walletLoadInProgress() && fresh->capabilitiesKnown(); }));
+    QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
+    QCOMPARE(controller.walletOperationResultWallet(), fresh); QVERIFY(controller.canOpenResult());
+    QCOMPARE(controller.selectedWallet(), original); QCOMPARE(controller.openWalletModel()->rowCount(), 2);
+    QCOMPARE(errors.size(), 0); QCOMPARE(loaded.size(), 1);
+    QCOMPARE(loaded.front().front().value<WalletQmlModel*>(), fresh);
+    const auto actual = command->result(); QVERIFY(actual && actual->value);
+    QCOMPARE(actual->value->error, QStringLiteral("Wallet already loaded"));
+    QVERIFY(!actual->value->has_wallet); QVERIFY(!actual->value->effect_succeeded);
+    QCOMPARE(controller.walletLoadWarnings(), QStringLiteral("Wallet already loaded"));
+    QCOMPARE(loader.load_wallet_calls, 1); QCOMPARE(loader.get_wallets_calls, 1); QCOMPARE(loader.handle_load_wallet_calls, 1);
+    QCOMPARE(old_state.remove_calls.load(), 0); QCOMPARE(fresh_state.remove_calls.load(), 0);
 }
 
 void WalletQmlControllerTests::manualOldOpeningPromptAndOutcomeCannotResolveReopenedName()
@@ -2276,6 +2572,10 @@ void WalletQmlControllerTests::manualOldOpeningPromptAndOutcomeCannotResolveReop
     QVERIFY(reopened->opening()->identity() != original_identity);
     QCOMPARE(loader.load_wallet_calls, 2);
     QCOMPARE(loaded.size(), 1);
+    QCOMPARE(controller.selectedWallet(), survivor);
+    QCOMPARE(controller.walletOperationResultWallet(), reopened);
+    QVERIFY(controller.canOpenResult());
+    QVERIFY(controller.selectWallet(controller.walletOperationResultWallet()));
     QCOMPARE(controller.selectedWallet(), reopened);
     controller.requestCloseWallet(reopened);
     QVERIFY(graph.until([&] { return !reopened->closeQuestionToken().isEmpty(); }));
@@ -2308,8 +2608,8 @@ void WalletQmlControllerTests::manualUnknownBindingNotificationCannotResurrectOr
     QTest::addColumn<bool>("many_native_events");
     QTest::newRow("late-before-reopen-native-ahead") << false << true;
     QTest::newRow("late-after-reopen-native-ahead") << true << true;
-    QTest::newRow("late-before-reopen-origins-ahead") << false << false;
-    QTest::newRow("late-after-reopen-origins-ahead") << true << false;
+    QTest::newRow("late-before-reopen-many-origins") << false << false;
+    QTest::newRow("late-after-reopen-many-origins") << true << false;
 }
 
 void WalletQmlControllerTests::manualUnknownBindingNotificationCannotResurrectOrResolveReopenedName()
@@ -2336,10 +2636,16 @@ void WalletQmlControllerTests::manualUnknownBindingNotificationCannotResurrectOr
     QPointer<WalletQmlModel> old{controller.walletForName("original")};
     auto* survivor = controller.walletForName("survivor");
     const auto identity = old->opening()->identity();
-    // The two monotonic domains need not start at the same offset. Native
-    // freshness must not determine origin-lifetime retention, or vice versa.
-    if (many_native_events) controller.m_adoption_clock->value += 100000;
-    else controller.m_origin_sequence += 100000;
+    // Native freshness and GUI origin lifetime are separate monotonic domains.
+    // Drive their real interfaces rather than forging the registry's counter.
+    for (int event = 0; event < 128; ++event) {
+        if (many_native_events) QVERIFY(controller.m_registry->eventClock()->next());
+        else {
+            QVERIFY(controller.newAdoptionOrigin());
+            QVERIFY(graph.until([] { return true; }));
+        }
+    }
+    QVERIFY(graph.until([] { return true; }));
     // Initial facades have stable tokens, but this source has never adopted
     // the name through its notification map. Hold its real queued publication.
     loader.captured_load_wallet_fn(std::make_unique<FakeWallet>("original", &old_state));
@@ -2383,6 +2689,71 @@ void WalletQmlControllerTests::manualUnknownBindingNotificationCannotResurrectOr
     QCOMPARE(controller.openWalletModel()->rowCount(), 2);
     QCOMPARE(survivor_state.remove_calls.load(), 0);
     late = {};
+}
+
+void WalletQmlControllerTests::manualUnloadBeforeFirstGuiAdoptionKeepsViewAndControllerAlive_data()
+{
+    QTest::addColumn<bool>("after_scan");
+    QTest::newRow("unload-in-ingress-turn-before-native-scan") << false;
+    QTest::newRow("unload-after-native-scan-before-gui-handoff") << true;
+}
+void WalletQmlControllerTests::manualUnloadBeforeFirstGuiAdoptionKeepsViewAndControllerAlive()
+{
+    QFETCH(bool, after_scan);
+    FakeWallet::State survivor_state, target_state;
+    MockNode node; FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("survivor", &survivor_state)); return wallets;
+    };
+    ManualControllerGraph graph{node}; auto& controller = *graph.controller;
+    controller.initialize(); QVERIFY(graph.until([&] { return controller.initialized() && controller.selectedWallet()->capabilitiesKnown(); }));
+    auto* survivor = controller.selectedWallet(); QVERIFY(survivor->available());
+    QObject opening_view;
+    const QPointer<QObject> retained_view{&opening_view};
+    WalletSelectionModel view_selection{controller.m_empty_wallet, [&](auto* wallet) { return controller.rowForWallet(wallet) >= 0; }, &opening_view};
+    QVERIFY(view_selection.select(survivor));
+    const auto operation = controller.walletOperationId();
+    struct Probe { int destroyed{0}, unloads{0}; bool cleanup{true}, subscribed_before_unload{false}; };
+    const auto probe = std::make_shared<Probe>();
+    struct Handle final : FakeWallet {
+        std::shared_ptr<Probe> probe; std::atomic<int>& lane;
+        Handle(State* state, std::shared_ptr<Probe> value, std::atomic<int>& active) : FakeWallet("unloaded-before-view", state), probe(std::move(value)), lane(active) {}
+        ~Handle() override { ++probe->destroyed; probe->cleanup &= lane.load() == int(execution::Lane::Cleanup); }
+    };
+    QSignalSpy inserted{controller.openWalletModel(), &QAbstractItemModel::rowsInserted};
+    QSignalSpy loaded{&controller, &WalletQmlController::walletLoadSucceeded};
+    const auto unload = [&] {
+        probe->subscribed_before_unload = target_state.hasUnload();
+        ++probe->unloads; target_state.notifyUnload();
+    };
+    const auto delivery = execution::Submit(*graph.native.scheduler, [&] {
+        loader.captured_load_wallet_fn(std::make_unique<Handle>(&target_state, probe, graph.lane));
+        if (!after_scan) unload();
+    }, [] {}, {}, {execution::Lane::Core, 256, graph.native.scheduler->allocateKey()});
+    QVERIFY(delivery); graph.runNative();
+    QVERIFY(!graph.posts.empty()); // Native completed; first GUI publication is still held.
+    QVERIFY(!controller.walletForName("unloaded-before-view"));
+    QCOMPARE(inserted.size(), 0); QCOMPARE(probe->destroyed, 0);
+    if (after_scan) {
+        const auto removal = execution::Submit(*graph.native.scheduler, unload, [] {}, {},
+            {execution::Lane::Core, 256, graph.native.scheduler->allocateKey()});
+        QVERIFY(removal); graph.runNative();
+    }
+    QCOMPARE(probe->unloads, 1); QVERIFY(probe->subscribed_before_unload);
+    QVERIFY(retained_view); QVERIFY(graph.controller.get() == &controller);
+    QCOMPARE(controller.selectedWallet(), survivor); QCOMPARE(view_selection.selectedWallet(), survivor);
+    QVERIFY(graph.until([&] { return probe->destroyed == 1; }));
+    QVERIFY(probe->cleanup); QVERIFY(!target_state.hasUnload());
+    QCOMPARE(inserted.size(), 0); QCOMPARE(loaded.size(), 0);
+    QVERIFY(!controller.isWalletOpen("unloaded-before-view")); QVERIFY(!controller.walletForName("unloaded-before-view"));
+    QCOMPARE(controller.openWalletModel()->rowCount(), 1); QCOMPARE(controller.openWallets(), QList<QObject*>({survivor}));
+    QCOMPARE(controller.selectedWallet(), survivor); QCOMPARE(view_selection.selectedWallet(), survivor);
+    QCOMPARE(controller.walletOperationId(), operation); QVERIFY(!controller.walletOperationResultWallet());
+    QVERIFY(retained_view); QVERIFY(controller.initialized());
+    QCOMPARE(target_state.remove_calls.load(), 0); QCOMPARE(survivor_state.remove_calls.load(), 0);
+    QCOMPARE(loader.get_wallets_calls, 1); QCOMPARE(loader.handle_load_wallet_calls, 1);
 }
 
 void WalletQmlControllerTests::manualObservedUnloadAllowsFreshSameNameLoad_data()
@@ -2598,6 +2969,15 @@ void WalletQmlControllerTests::manualCloseEscrowRefusalKeepsActualSuccessWithout
     MockNode node;
     FakeWalletLoader loader;
     FakeWallet::State state, survivor_state;
+    struct Probe { int destroyed{0}; bool native{true}; };
+    const auto probe = std::make_shared<Probe>();
+    ManualControllerGraph* active_graph{nullptr};
+    struct ResultHandle final : FakeWallet {
+        std::shared_ptr<Probe> probe; std::atomic<int>& lane;
+        ResultHandle(State* original, std::shared_ptr<Probe> value, std::atomic<int>& context)
+            : FakeWallet("target", original), probe(std::move(value)), lane(context) {}
+        ~ResultHandle() override { ++probe->destroyed; probe->native &= lane.load() == int(execution::Lane::Cleanup); }
+    };
     ConfigureExpectedControllerInitialization(node, loader);
     loader.get_wallets_fn = [&] {
         std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
@@ -2606,13 +2986,14 @@ void WalletQmlControllerTests::manualCloseEscrowRefusalKeepsActualSuccessWithout
     };
     loader.load_wallet_fn = [&](const auto&, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
         loader.captured_load_wallet_fn(std::make_unique<FakeWallet>("target", &state));
-        return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>("target", &state)};
+        return std::unique_ptr<interfaces::Wallet>{std::make_unique<ResultHandle>(&state, probe, active_graph->lane)};
     };
     std::shared_ptr<ControllerBoundaryScheduler> boundary;
     ManualControllerGraph graph{node, execution::Limits::Bounded(), [&](auto target) {
         boundary = std::make_shared<ControllerBoundaryScheduler>(std::move(target));
         return boundary;
     }};
+    active_graph = &graph;
     auto& controller = *graph.controller;
     controller.initialize();
     QVERIFY(graph.until([&] { return controller.initialized(); }));
@@ -2646,6 +3027,9 @@ void WalletQmlControllerTests::manualCloseEscrowRefusalKeepsActualSuccessWithout
     boundary->reject_cleanup_above.reset();
     QVERIFY(graph.until([&] { return original.isNull(); }));
     QCOMPARE(state.remove_calls.load(), 1);
+    QCOMPARE(probe->destroyed, 1); QVERIFY(probe->native);
+    QVERIFY(controller.m_command && controller.m_command->result()->value->has_wallet);
+    QVERIFY(!controller.m_command->result()->value->wallet);
     QCOMPARE(survivor_state.remove_calls.load(), 0);
     delayed = {};
     notification = {};
@@ -2754,6 +3138,519 @@ void WalletQmlControllerTests::acceptedCreationDoesNotRetargetLaterSelection()
     auto* actual = created[0][0].value<WalletQmlModel*>(); QVERIFY(actual); QCOMPARE(actual->name(), QStringLiteral("created"));
     QVERIFY(controller.rowForWallet(actual) >= 0); QCOMPARE(created_state.private_accesses.load(), 0);
 }
+void WalletQmlControllerTests::manualIndependentSelectionsKeepExactRegistryMembership()
+{
+    FakeWallet::State alpha_state, beta_state, reopened_state;
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("alpha", &alpha_state));
+        wallets.push_back(std::make_unique<FakeWallet>("beta", &beta_state));
+        return wallets;
+    };
+    loader.load_wallet_fn = [&](const auto&, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>("alpha", &reopened_state)};
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized() && controller.walletForName("alpha")->capabilitiesKnown(); }));
+    QPointer<WalletQmlModel> alpha{controller.walletForName("alpha")};
+    auto* beta = controller.walletForName("beta"); QVERIFY(alpha); QVERIFY(beta);
+    const auto old_opening = alpha->opening()->identity();
+    auto held = alpha->opening()->borrow(); QVERIFY(held);
+    WalletSelectionModel second{controller.m_empty_wallet, [&](auto* wallet) { return controller.rowForWallet(wallet) >= 0; }};
+    QVERIFY(second.select(alpha));
+    QVERIFY(controller.selectWallet(beta));
+    QCOMPARE(second.selectedWallet(), alpha.data());
+    QCOMPARE(controller.selectedWallet(), beta);
+    QSignalSpy independent_changes{&second, &WalletSelectionModel::selectedWalletChanged};
+    controller.closeWallet("alpha");
+    QCOMPARE(second.selectedWallet(), controller.m_empty_wallet);
+    QCOMPARE(independent_changes.size(), 1);
+    QCOMPARE(controller.selectedWallet(), beta);
+    QCOMPARE(controller.rowForWallet(alpha), -1);
+    QVERIFY(!second.select(alpha));
+    QVERIFY(!controller.selectWallet(alpha));
+    held.reset();
+    QVERIFY(graph.until([&] { return alpha.isNull(); }));
+    controller.setSelectedWallet("alpha", "sqlite");
+    QVERIFY(graph.until([&] { return controller.walletForName("alpha") && !controller.walletLoadInProgress(); }));
+    auto* reopened = controller.walletForName("alpha");
+    QVERIFY(reopened->opening()->identity() != old_opening);
+    QCOMPARE(controller.selectedWallet(), beta);
+    QCOMPARE(second.selectedWallet(), controller.m_empty_wallet);
+    QVERIFY(second.select(reopened));
+    QCOMPARE(second.selectedWallet(), reopened);
+    QCOMPARE(controller.selectedWallet(), beta);
+    QCOMPARE(loader.load_wallet_calls, 1);
+    QCOMPARE(alpha_state.remove_calls.load(), 1);
+    QCOMPARE(reopened_state.remove_calls.load(), 0);
+}
+
+void WalletQmlControllerTests::manualPendingSelectionCannotRetargetAnotherWindow_data()
+{
+    QTest::addColumn<bool>("finish_before_newer_selection");
+    QTest::newRow("finish-A-before-select-B") << true;
+    QTest::newRow("select-B-before-finish-A") << false;
+}
+void WalletQmlControllerTests::manualPendingSelectionCannotRetargetAnotherWindow()
+{
+    QFETCH(bool, finish_before_newer_selection);
+    FakeWallet::State alpha_state, beta_state;
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("alpha", &alpha_state));
+        wallets.push_back(std::make_unique<FakeWallet>("beta", &beta_state));
+        return wallets;
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized(); }));
+    auto* alpha = controller.walletForName("alpha"); auto* beta = controller.walletForName("beta");
+    QVERIFY(alpha); QVERIFY(beta);
+    WalletSelectionModel second{controller.m_empty_wallet, [&](auto* wallet) { return controller.rowForWallet(wallet) >= 0; }};
+    QVERIFY(second.select(alpha));
+    QSignalSpy selected{&second, &WalletSelectionModel::selectedWalletChanged};
+    QSignalSpy pending{&second, &WalletSelectionModel::pendingChanged};
+    const auto original = second.beginSelection(QString{}); // Empty default-wallet target is a real pending ID.
+    QVERIFY(second.pending()); QCOMPARE(second.pendingTargetId(), QString{});
+    if (finish_before_newer_selection) second.finishSelection(original);
+    QVERIFY(second.select(beta));
+    if (!finish_before_newer_selection) second.finishSelection(original);
+    QVERIFY(!second.pending()); QCOMPARE(second.pendingTargetId(), QString{});
+    QCOMPARE(second.selectedWallet(), beta);
+    QCOMPARE(controller.selectedWallet(), alpha);
+    QCOMPARE(selected.size(), 1); QCOMPARE(pending.size(), 2);
+    const auto newer = second.beginSelection("beta");
+    second.finishSelection(original);
+    QVERIFY(second.pending()); QCOMPARE(second.pendingTargetId(), QStringLiteral("beta"));
+    second.finishSelection(newer);
+    QVERIFY(!second.pending()); QCOMPARE(second.selectedWallet(), beta);
+    QCOMPARE(loader.load_wallet_calls, 0);
+}
+
+void WalletQmlControllerTests::manualRegistryRemovalPreservesReentrantSelection()
+{
+    FakeWallet::State alpha_state, beta_state, gamma_state;
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("alpha", &alpha_state));
+        wallets.push_back(std::make_unique<FakeWallet>("beta", &beta_state));
+        wallets.push_back(std::make_unique<FakeWallet>("gamma", &gamma_state));
+        return wallets;
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized(); }));
+    QPointer<WalletQmlModel> alpha{controller.walletForName("alpha")};
+    auto* beta = controller.walletForName("beta"); auto* gamma = controller.walletForName("gamma");
+    QVERIFY(alpha); QVERIFY(beta); QVERIFY(gamma);
+    bool chose_gamma{false};
+    QSignalSpy selected{&controller, &WalletQmlController::selectedWalletChanged};
+    connect(&controller, &WalletQmlController::selectedWalletChanged, this, [&] {
+        if (controller.selectedWallet() != beta || chose_gamma) return;
+        QCOMPARE(controller.rowForWallet(alpha), -1);
+        QVERIFY(!controller.isWalletOpen("alpha"));
+        QVERIFY(!alpha->available());
+        QVERIFY(controller.m_registry->retirement()->values->retiring.contains(alpha));
+        chose_gamma = true;
+        QVERIFY(controller.selectWallet(gamma));
+    });
+    controller.closeWallet("alpha");
+    QVERIFY(chose_gamma);
+    QCOMPARE(selected.size(), 2);
+    QCOMPARE(controller.selectedWallet(), gamma);
+    QCOMPARE(controller.openWallets(), QList<QObject*>({beta, gamma}));
+    QVERIFY(graph.until([&] { return alpha.isNull(); }));
+    QCOMPARE(alpha_state.remove_calls.load(), 1);
+    QCOMPARE(beta_state.remove_calls.load(), 0); QCOMPARE(gamma_state.remove_calls.load(), 0);
+}
+
+void WalletQmlControllerTests::manualResultRetirementDoesNotResolveByName()
+{
+    FakeWallet::State original_state, reopened_state;
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.load_wallet_fn = [&](const auto&, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>("same", loader.load_wallet_calls == 1 ? &original_state : &reopened_state)};
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize(); QVERIFY(graph.until([&] { return controller.initialized(); }));
+    auto* empty = controller.selectedWallet();
+    controller.setSelectedWallet("same", "sqlite");
+    QVERIFY(graph.until([&] { return !controller.walletLoadInProgress() && controller.walletForName("same"); }));
+    QPointer<WalletQmlModel> result{controller.walletOperationResultWallet()}; QVERIFY(result);
+    const auto identity = result->opening()->identity();
+    QVERIFY(controller.canOpenResult()); QCOMPARE(controller.selectedWallet(), empty);
+    auto held = result->opening()->borrow(); QVERIFY(held);
+    controller.closeWallet("same");
+    QCOMPARE(controller.walletOperationResultWallet(), result.data());
+    QVERIFY(!controller.canOpenResult()); QVERIFY(!controller.selectWallet(result));
+    QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
+    held.reset(); QVERIFY(graph.until([&] { return result.isNull(); }));
+    QVERIFY(!controller.walletOperationResultWallet()); QVERIFY(!controller.canOpenResult());
+    controller.setSelectedWallet("same", "sqlite");
+    QVERIFY(graph.until([&] { return !controller.walletLoadInProgress() && controller.walletForName("same"); }));
+    auto* reopened = controller.walletOperationResultWallet(); QVERIFY(reopened);
+    QVERIFY(reopened->opening()->identity() != identity);
+    QCOMPARE(controller.selectedWallet(), empty);
+    QVERIFY(controller.canOpenResult()); QVERIFY(controller.selectWallet(reopened));
+    QCOMPARE(controller.selectedWallet(), reopened);
+    QCOMPARE(loader.load_wallet_calls, 2); QCOMPARE(original_state.remove_calls.load(), 1);
+    QCOMPARE(reopened_state.remove_calls.load(), 0);
+}
+
+void WalletQmlControllerTests::manualRetainedResultBackendCleanupFencesReopen_data()
+{
+    QTest::addColumn<bool>("with_warning");
+    QTest::addColumn<bool>("notification_first");
+    QTest::newRow("plain-result-first") << false << false;
+    QTest::newRow("plain-callback-first") << false << true;
+    QTest::newRow("warning-result-first") << true << false;
+    QTest::newRow("warning-callback-first") << true << true;
+}
+void WalletQmlControllerTests::manualRetainedResultBackendCleanupFencesReopen()
+{
+    QFETCH(bool, with_warning);
+    QFETCH(bool, notification_first);
+    FakeWallet::State standby_state, original_state, reopened_state;
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("standby", &standby_state));
+        return wallets;
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize();
+    QVERIFY(graph.until([&] { return controller.initialized(); }));
+    auto* standby = controller.selectedWallet();
+    struct Probe { int destroyed{0}; bool native{true}; };
+    const auto probe = std::make_shared<Probe>();
+    struct CommandHandle final : FakeWallet {
+        std::shared_ptr<Probe> probe; std::atomic<int>& lane;
+        CommandHandle(State* state, std::shared_ptr<Probe> value, std::atomic<int>& context)
+            : FakeWallet("target", state), probe(std::move(value)), lane(context) {}
+        ~CommandHandle() override { ++probe->destroyed; probe->native &= lane.load() == int(execution::Lane::Cleanup); }
+    };
+    const QString warning = with_warning ? QString(8192, QLatin1Char{'w'}) : QString{};
+    loader.load_wallet_fn = [&](const auto&, auto& warnings) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        if (loader.load_wallet_calls != 1) return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>("target", &reopened_state)};
+        if (with_warning) warnings.push_back(Untranslated(warning.toStdString()));
+        loader.captured_load_wallet_fn(std::make_unique<FakeWallet>("target", &original_state));
+        return std::unique_ptr<interfaces::Wallet>{std::make_unique<CommandHandle>(&original_state, probe, graph.lane)};
+    };
+    QSignalSpy loaded{&controller, &WalletQmlController::walletLoadSucceeded};
+    controller.setSelectedWallet("target", "sqlite");
+    const auto ticket = controller.walletOperationId();
+    auto held_backend = controller.m_command_backend; QVERIFY(held_backend);
+    const auto metadata = controller.m_command_owner; QVERIFY(metadata && *metadata);
+    const auto receipt = controller.m_command_receipt;
+    QVERIFY(graph.step(execution::Lane::Core));
+    QVERIFY(graph.step(execution::Lane::Domain));
+    QCOMPARE(graph.posts.size(), size_t{1});
+    auto command_notice = std::move(graph.posts.front()); graph.posts.pop_front();
+    graph.runNative();
+    QCOMPARE(graph.posts.size(), size_t{1});
+    auto notification_notice = std::move(graph.posts.front()); graph.posts.pop_front();
+    if (notification_first) notification_notice(); else command_notice();
+    QPointer<WalletQmlModel> original{controller.walletForName("target")}; QVERIFY(original);
+    if (notification_first) command_notice(); else notification_notice();
+    QVERIFY(graph.until([&] { return original->capabilitiesKnown(); }));
+    QCOMPARE(loaded.size(), 1); QCOMPARE(controller.selectedWallet(), standby);
+    QCOMPARE(controller.walletOperationResultWallet(), original.data());
+    QCOMPARE(controller.walletLoadWarnings(), warning);
+    QVERIFY((*metadata)->result()->value->has_wallet);
+    QVERIFY(!(*metadata)->result()->value->wallet);
+    QCOMPARE((*metadata)->result()->value->warnings, warning);
+    QCOMPARE(probe->destroyed, 0);
+    const auto identity = original->opening()->identity();
+    QCOMPARE(controller.m_registry->retirement()->values->adoptions.at(original)->pending_results.size(), size_t{1});
+
+    // The real close-prompt path preserves completed warning presentation.
+    controller.requestCloseWallet(original);
+    QVERIFY(graph.until([&] { return !original->closeQuestionToken().isEmpty(); }));
+    original->answerClose(original->closeQuestionToken(), true);
+    QVERIFY(graph.until([&] { return original->shutdownComplete(); }));
+    QVERIFY(original); QVERIFY(!original->available());
+    QVERIFY(!controller.isWalletOpen("target")); QVERIFY(!controller.canOpenResult());
+    QCOMPARE(original_state.remove_calls.load(), 1);
+    QCOMPARE(probe->destroyed, 0);
+    QCOMPARE(controller.walletLoadWarnings(), warning);
+    controller.setSelectedWallet("target", "sqlite");
+    QCOMPARE(loader.load_wallet_calls, 1);
+    QCOMPARE(controller.walletOperationId(), ticket);
+    QVERIFY(controller.walletLoadError().contains(QStringLiteral("still closing")));
+    QCOMPARE(controller.walletLoadWarnings(), warning);
+    QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
+
+    held_backend.reset(); // GUI drops only a lease, never the native adapter.
+    QCOMPARE(probe->destroyed, 0);
+    QVERIFY(graph.until([&] { return original.isNull(); }));
+    QCOMPARE(probe->destroyed, 1); QVERIFY(probe->native);
+    QCOMPARE(controller.walletLoadWarnings(), warning);
+    QCOMPARE((*metadata)->result()->value->warnings, warning);
+    QVERIFY((*metadata)->result()->value->has_wallet);
+    QVERIFY((*metadata)->result()->value->backend.expired());
+    { std::lock_guard lock{receipt->mutex}; QCOMPARE(receipt->state, WalletQmlController::WalletOperationState::WalletOperationSucceeded); QCOMPARE(receipt->name, QStringLiteral("target")); }
+    controller.setSelectedWallet("target", "sqlite");
+    QVERIFY(controller.walletOperationId() > ticket);
+    QCOMPARE(loader.load_wallet_calls, 1);
+    QVERIFY(graph.until([&] { return controller.walletForName("target") && !controller.walletLoadInProgress(); }));
+    QCOMPARE(loader.load_wallet_calls, 2);
+    auto* reopened = controller.walletForName("target");
+    QVERIFY(reopened->opening()->identity() != identity);
+    QCOMPARE(controller.selectedWallet(), standby);
+    QCOMPARE(controller.walletOperationResultWallet(), reopened);
+    QCOMPARE((*metadata)->result()->value->warnings, warning);
+    QVERIFY(controller.walletLoadWarnings().isEmpty());
+    QCOMPARE(reopened_state.remove_calls.load(), 0);
+}
+
+void WalletQmlControllerTests::manualPublicationOwnsResultBeforeReopeningCoreAdmission_data()
+{
+    QTest::addColumn<bool>("try_create");
+    QTest::newRow("load-A-reentrant-load-B") << false;
+    QTest::newRow("load-A-reentrant-create-B") << true;
+}
+void WalletQmlControllerTests::manualPublicationOwnsResultBeforeReopeningCoreAdmission()
+{
+    QFETCH(bool, try_create);
+    FakeWallet::State standby_state, selected_state, first_state, second_state;
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    QTemporaryDir directory; QVERIFY(directory.isValid()); loader.wallet_dir = directory.path().toStdString();
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("standby", &standby_state));
+        wallets.push_back(std::make_unique<FakeWallet>("selected-b", &selected_state));
+        return wallets;
+    };
+    int first_effects{0}, second_effects{0};
+    loader.load_wallet_fn = [&](const std::string& name, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        if (name == "target-a") { ++first_effects; return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>(name, &first_state)}; }
+        ++second_effects; return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>(name, &second_state)};
+    };
+    loader.create_wallet_fn = [&](const std::string& name, const auto&, uint64_t, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        ++second_effects; return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>(name, &second_state)};
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize(); QVERIFY(graph.until([&] { return controller.initialized(); }));
+    auto* presentation_b = controller.walletForName("selected-b"); QVERIFY(presentation_b);
+    controller.setSelectedWallet("target-a", "sqlite");
+    const auto original_id = controller.walletOperationId();
+    const auto actual_receipt = controller.m_command_receipt;
+    const auto actual_metadata = controller.m_command_owner;
+    QVERIFY(actual_metadata && *actual_metadata);
+    QVERIFY(controller.walletLoadInProgress()); QVERIFY(!controller.walletForName("target-a"));
+    QVERIFY(graph.step(execution::Lane::Core));
+    QCOMPARE(first_effects, 1); QCOMPARE(second_effects, 0);
+    QVERIFY(graph.step(execution::Lane::Domain));
+    QVERIFY((*actual_metadata)->result() && (*actual_metadata)->result()->value->has_wallet);
+    { std::lock_guard lock{actual_receipt->mutex}; QVERIFY(actual_receipt->ready); QCOMPARE(actual_receipt->state, WalletQmlController::WalletOperationState::WalletOperationSucceeded); }
+
+    bool saw_end{false}, premature_idle{false}, selected_b{false}, premature_core_admission{false}, premature_terminal{false};
+    int original_terminal_count{0};
+    connect(&controller, &WalletQmlController::walletLoadSucceeded, this, [&](WalletQmlModel* wallet) {
+        if (!wallet || wallet->name() != "target-a") return;
+        ++original_terminal_count;
+        premature_terminal |= controller.walletForName("target-a") != wallet || controller.walletOperationResultWallet() != wallet || !wallet->available();
+    });
+    connect(&controller, &WalletQmlController::walletLoadInProgressChanged, this, [&] {
+        if (saw_end || controller.walletLoadInProgress() || controller.walletOperationId() != original_id) return;
+        saw_end = true;
+        auto* first = controller.walletForName("target-a");
+        const bool coherent = first && first->available() && controller.walletOperationResultWallet() == first;
+        premature_idle = !coherent;
+        selected_b = controller.selectWallet(presentation_b); // Presentation intent stays legal.
+        if (!coherent) {
+            if (try_create) controller.createSingleSigWallet("created-b", {});
+            else controller.setSelectedWallet("second-load", "sqlite");
+            premature_core_admission = controller.walletOperationId() != original_id;
+        }
+    });
+    QVERIFY(graph.until([&] { return saw_end && !controller.walletLoadInProgress(); }));
+    QVERIFY(saw_end);
+    QVERIFY(selected_b); QCOMPARE(controller.selectedWallet(), presentation_b);
+    QCOMPARE(first_effects, 1);
+    // The settled A receipt is independent of a reentrant facade observation.
+    { std::lock_guard lock{actual_receipt->mutex}; QCOMPARE(actual_receipt->state, WalletQmlController::WalletOperationState::WalletOperationSucceeded); QCOMPARE(actual_receipt->name, QStringLiteral("target-a")); }
+    QVERIFY((*actual_metadata)->result()->value->has_wallet);
+    const auto evidence = QStringLiteral("idle-before-result=%1; premature-Core-admission=%2; A-effects=%3; B-effects=%4; A-terminal-count=%5; actual-ticket=%6; original-ticket=%7")
+        .arg(premature_idle).arg(premature_core_admission).arg(first_effects).arg(second_effects)
+        .arg(original_terminal_count).arg(controller.walletOperationId()).arg(original_id);
+    QVERIFY2(!premature_idle, qPrintable(evidence));
+    QVERIFY2(!premature_core_admission, "a second Core command was admitted inside the unowned A publication window");
+    QCOMPARE(second_effects, 0);
+    QCOMPARE(controller.walletOperationId(), original_id);
+    QCOMPARE(original_terminal_count, 1);
+    QVERIFY(!premature_terminal);
+    auto* first = controller.walletForName("target-a"); QVERIFY(first);
+    QCOMPARE(controller.walletOperationResultWallet(), first);
+    QCOMPARE(controller.selectedWallet(), presentation_b);
+}
+
+void WalletQmlControllerTests::manualTerminalPublicationRejectsReentrantCoreUntilProgressReleased_data()
+{
+    QTest::addColumn<bool>("try_create");
+    QTest::newRow("terminal-load-rejected-idle-load-admitted") << false;
+    QTest::newRow("terminal-create-rejected-idle-create-admitted") << true;
+}
+void WalletQmlControllerTests::manualTerminalPublicationRejectsReentrantCoreUntilProgressReleased()
+{
+    QFETCH(bool, try_create);
+    FakeWallet::State standby_state, selected_state, first_state, second_state;
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    QTemporaryDir directory; QVERIFY(directory.isValid()); loader.wallet_dir = directory.path().toStdString();
+    loader.get_wallets_fn = [&] {
+        std::vector<std::unique_ptr<interfaces::Wallet>> wallets;
+        wallets.push_back(std::make_unique<FakeWallet>("standby", &standby_state));
+        wallets.push_back(std::make_unique<FakeWallet>("selected-b", &selected_state));
+        return wallets;
+    };
+    int first_effects{0}, second_effects{0};
+    loader.load_wallet_fn = [&](const std::string& name, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        if (name == "target-a") { ++first_effects; return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>(name, &first_state)}; }
+        ++second_effects; return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>(name, &second_state)};
+    };
+    loader.create_wallet_fn = [&](const std::string& name, const auto&, uint64_t, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        ++second_effects; return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>(name, &second_state)};
+    };
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize(); QVERIFY(graph.until([&] { return controller.initialized(); }));
+    auto* presentation_b = controller.walletForName("selected-b"); QVERIFY(presentation_b);
+    controller.setSelectedWallet("target-a", "sqlite");
+    const auto original_id = controller.walletOperationId();
+    const auto receipt = controller.m_command_receipt;
+    const auto metadata = controller.m_command_owner;
+    QPointer<WalletQmlModel> original_result;
+    int original_terminal_count{0}, successor_terminal_count{0}, idle_count{0}, adoption_count{0};
+    bool admission_blocked{false}, idle_admitted{false}, selected_b{false};
+    const auto try_successor = [&] {
+        if (try_create) controller.createSingleSigWallet("created-b", {});
+        else controller.setSelectedWallet("second-load", "sqlite");
+    };
+    connect(&controller, &WalletQmlController::openWalletsChanged, &controller, [&] {
+        auto* first = controller.walletForName("target-a");
+        if (!first || original_terminal_count) return;
+        ++adoption_count;
+        // Row publication precedes result ownership: the public operation and
+        // Core admission must still be Pending at this original boundary.
+        QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationPending);
+        QVERIFY(controller.walletLoadInProgress());
+        QCOMPARE(controller.walletOperationId(), original_id);
+        try_successor();
+        QCOMPARE(controller.walletOperationId(), original_id);
+        QCOMPARE(second_effects, 0);
+    });
+    const auto completed = [&](WalletQmlModel* wallet) {
+        if (!wallet || wallet->name() != "target-a") { ++successor_terminal_count; return; }
+        ++original_terminal_count;
+        original_result = wallet;
+        QCOMPARE(controller.walletForName("target-a"), wallet);
+        QCOMPARE(controller.walletOperationResultWallet(), wallet);
+        QVERIFY(wallet->available()); QVERIFY(controller.canOpenResult());
+        QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
+        QVERIFY(controller.walletLoadInProgress());
+        selected_b = controller.selectWallet(presentation_b);
+        try_successor();
+        admission_blocked = controller.walletOperationId() == original_id;
+        QCOMPARE(second_effects, 0);
+        QCOMPARE(controller.selectedWallet(), presentation_b);
+    };
+    connect(&controller, &WalletQmlController::walletLoadSucceeded, &controller, completed);
+    connect(&controller, &WalletQmlController::walletCreateSucceeded, &controller, completed);
+    connect(&controller, &WalletQmlController::walletLoadInProgressChanged, &controller, [&] {
+        if (controller.walletLoadInProgress() || controller.walletOperationId() != original_id) return;
+        ++idle_count;
+        QCOMPARE(original_terminal_count, 1);
+        QCOMPARE(controller.walletOperationResultWallet(), original_result.data());
+        QCOMPARE(controller.walletForName("target-a"), original_result.data());
+        QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
+        QVERIFY(!controller.m_selection->pending());
+        try_successor();
+        idle_admitted = controller.walletOperationId() > original_id;
+    });
+    QVERIFY(graph.until([&] { return successor_terminal_count == 1 && !controller.walletLoadInProgress(); }));
+    QCOMPARE(first_effects, 1); QCOMPARE(second_effects, 1);
+    QCOMPARE(adoption_count, 1); QCOMPARE(original_terminal_count, 1); QCOMPARE(successor_terminal_count, 1); QCOMPARE(idle_count, 1);
+    QVERIFY(admission_blocked); QVERIFY(idle_admitted); QVERIFY(selected_b);
+    QVERIFY(original_result); QVERIFY(original_result->available());
+    QCOMPARE(controller.selectedWallet(), presentation_b);
+    QCOMPARE(controller.walletOperationResultWallet(), controller.walletForName(try_create ? QStringLiteral("created-b") : QStringLiteral("second-load")));
+    QVERIFY(controller.walletOperationResultWallet() != original_result);
+    QVERIFY(metadata && *metadata && (*metadata)->result() && (*metadata)->result()->value->has_wallet);
+    { std::lock_guard lock{receipt->mutex}; QVERIFY(receipt->ready); QCOMPARE(receipt->state, WalletQmlController::WalletOperationState::WalletOperationSucceeded); QCOMPARE(receipt->name, QStringLiteral("target-a")); }
+}
+
+void WalletQmlControllerTests::manualDefaultWalletLoadAndLocation_data()
+{
+    QTest::addColumn<bool>("explicit_format");
+    QTest::newRow("catalog-discovers-default-format") << false;
+    QTest::newRow("typed-default-format") << true;
+}
+void WalletQmlControllerTests::manualDefaultWalletLoadAndLocation()
+{
+    QFETCH(bool, explicit_format);
+    FakeWallet::State state;
+    MockNode node;
+    FakeWalletLoader loader;
+    QTemporaryDir directory; QVERIFY(directory.isValid());
+    loader.wallet_dir = directory.path().toStdString();
+    loader.wallet_dir_entries = {{"", "sqlite"}};
+    ConfigureExpectedControllerInitialization(node, loader);
+    ManualControllerGraph graph{node};
+    auto& controller = *graph.controller;
+    controller.initialize(); QVERIFY(graph.until([&] { return controller.initialized(); }));
+    bool effect_on_core{false}; std::string loaded_name{"not-executed"};
+    loader.load_wallet_fn = [&](const std::string& name, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
+        loaded_name = name; effect_on_core = graph.lane.load() == int(execution::Lane::Core);
+        return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>("", &state)};
+    };
+    QSignalSpy loaded{&controller, &WalletQmlController::walletLoadSucceeded};
+    controller.setSelectedWallet({}, explicit_format ? QStringLiteral("sqlite") : QString{});
+    QVERIFY(controller.m_selection->pending()); QCOMPARE(controller.m_selection->pendingTargetId(), QString{});
+    QCOMPARE(loader.load_wallet_calls, 0);
+    QVERIFY(graph.until([&] { return loaded.size() == 1 && !controller.walletLoadInProgress(); }));
+    QCOMPARE(loaded_name, std::string{}); QVERIFY(effect_on_core);
+    QCOMPARE(loader.load_wallet_calls, 1); QVERIFY(controller.isWalletOpen(QString{}));
+    auto* result = controller.walletOperationResultWallet(); QVERIFY(result); QCOMPARE(result->name(), QString{});
+    QCOMPARE(controller.selectedWallet(), controller.m_empty_wallet);
+    QVERIFY(!controller.m_selection->pending()); QVERIFY(controller.canOpenResult());
+    QVERIFY(controller.selectWallet(result));
+    QString opened; int native_handoffs{0};
+    controller.setOpenLocalPathFnForTesting([&](const QString& path) { opened = path; ++native_handoffs; return true; });
+    QVERIFY(controller.openWalletLocation(result));
+    QCOMPARE(native_handoffs, 0);
+    QVERIFY(graph.until([&] { return !controller.walletLocationPending(); }));
+    QCOMPARE(native_handoffs, 1); QCOMPARE(opened, directory.path());
+    QVERIFY(controller.walletLocationOpenError().isEmpty());
+    controller.closeWallet(QString{});
+    QVERIFY(!controller.isWalletOpen(QString{})); QVERIFY(!controller.canOpenResult());
+    QVERIFY(graph.until([&] { return state.remove_calls.load() == 1; }));
+    QCOMPARE(state.private_accesses.load(), 0);
+}
+
 void WalletQmlControllerTests::openWalletRowsPreserveIndependentViews()
 {
     FakeWallet::State alpha_state, beta_state;
@@ -3212,6 +4109,10 @@ void WalletQmlControllerTests::manualExternalSignerCreationOwnsOriginalOutcome()
         QCOMPARE(controller.walletOperationName(), QStringLiteral("device_wallet"));
         QCOMPARE(loaded.size(), 1);
         QCOMPARE(qvariant_cast<WalletQmlModel*>(loaded.front().front()), wallet);
+        QCOMPARE(controller.selectedWallet(), change_selection ? standby : original);
+        QCOMPARE(controller.walletOperationResultWallet(), wallet);
+        QVERIFY(controller.canOpenResult());
+        if (!change_selection) QVERIFY(controller.selectWallet(controller.walletOperationResultWallet()));
         QCOMPARE(controller.selectedWallet(), change_selection ? standby : wallet);
         QCOMPARE(controller.walletLoadWarnings(), QStringLiteral("Keep the device recovery backup"));
         QVERIFY(controller.walletLoadError().isEmpty());
@@ -3320,6 +4221,10 @@ void WalletQmlControllerTests::manualManagedWalletPathsResolveThroughPublicLoade
         QVERIFY(loaded_on_core);
         QCOMPARE(controller.walletOperationState(), WalletQmlController::WalletOperationState::WalletOperationSucceeded);
         QCOMPARE(controller.walletOperationName(), QStringLiteral("resolved_wallet"));
+        QCOMPARE(controller.selectedWallet()->name(), QString{});
+        QCOMPARE(controller.walletOperationResultWallet(), controller.walletForName("resolved_wallet"));
+        QVERIFY(controller.canOpenResult());
+        QVERIFY(controller.selectWallet(controller.walletOperationResultWallet()));
         QCOMPARE(controller.selectedWallet(), controller.walletForName("resolved_wallet"));
         QCOMPARE(qvariant_cast<WalletQmlModel*>(loaded.front().front()), controller.selectedWallet());
         QVERIFY(controller.walletLoadError().isEmpty());
@@ -3720,6 +4625,10 @@ void WalletQmlControllerTests::initializedControllerDoesNotCompleteCreateForUnre
     allow_create_return.release();
     QTRY_COMPARE_WITH_TIMEOUT(create_spy.count(), 1, 5000);
     QVERIFY(!controller.walletLoadInProgress());
+    QCOMPARE(controller.selectedWallet()->name(), QString{});
+    QVERIFY(controller.canOpenResult());
+    QCOMPARE(controller.walletOperationResultWallet()->name(), QString{"created_wallet"});
+    QVERIFY(controller.selectWallet(controller.walletOperationResultWallet()));
     QCOMPARE(controller.selectedWallet()->name(), QString{"created_wallet"});
 }
 
@@ -3763,6 +4672,10 @@ void WalletQmlControllerTests::initializedControllerDoesNotCompleteLoadForUnrela
     allow_load_return.release();
     QTRY_COMPARE_WITH_TIMEOUT(load_spy.count(), 1, 5000);
     QVERIFY(!controller.walletLoadInProgress());
+    QCOMPARE(controller.selectedWallet()->name(), QString{});
+    QVERIFY(controller.canOpenResult());
+    QCOMPARE(controller.walletOperationResultWallet()->name(), QString{"target_wallet"});
+    QVERIFY(controller.selectWallet(controller.walletOperationResultWallet()));
     QCOMPARE(controller.selectedWallet()->name(), QString{"target_wallet"});
 }
 

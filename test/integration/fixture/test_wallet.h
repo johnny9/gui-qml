@@ -42,12 +42,37 @@ inline WalletQmlModel* WaitForWallet(BitcoinQmlApplication& app, const QString& 
     return controller->selectedWallet();
 }
 
+// Wait for backend publication without assuming that load completion may
+// override a newer GUI selection. Test setup can select this exact facade
+// explicitly when later steps require it; behavior assertions should continue
+// to use WaitForWallet() so they verify the actual selected wallet.
+inline WalletQmlModel* WaitForOpenWallet(BitcoinQmlApplication& app, const QString& name)
+{
+    auto* controller = Model<WalletQmlController>(app, "walletController");
+    if (!controller || !QTest::qWaitFor([&] {
+            auto* wallet = controller->walletForName(name);
+            return wallet && wallet->available() && wallet->name() == name && wallet->capabilitiesKnown();
+        }, 30'000)) return nullptr;
+    return controller->walletForName(name);
+}
+
+// Fixture setup makes selection an explicit operation rather than inferring it
+// from the Core load result.
+inline WalletQmlModel* SelectOpenWalletForSetup(BitcoinQmlApplication& app, const QString& name)
+{
+    auto* controller = Model<WalletQmlController>(app, "walletController");
+    auto* wallet = WaitForOpenWallet(app, name);
+    if (!controller || !wallet || !controller->selectWallet(wallet) ||
+        !QTest::qWaitFor([&] { return controller->selectedWallet() == wallet; }, 30'000)) return nullptr;
+    return wallet;
+}
+
 inline WalletQmlModel* CreateWallet(BitcoinQmlApplication& app, const QString& name = "integration")
 {
     UniValue params{UniValue::VOBJ};
     params.pushKV("wallet_name", name.toStdString());
     Rpc(app, "createwallet", params);
-    return WaitForWallet(app, name);
+    return SelectOpenWalletForSetup(app, name);
 }
 
 // Only for cases explicitly opted into a prepared profile in their module.
@@ -56,7 +81,7 @@ inline WalletQmlModel* LoadFundedWallet(BitcoinQmlApplication& app, const QStrin
     UniValue params{UniValue::VARR};
     params.push_back(name.toStdString());
     Rpc(app, "loadwallet", params);
-    auto* wallet = WaitForWallet(app, name);
+    auto* wallet = SelectOpenWalletForSetup(app, name);
     if (!wallet || !QTest::qWaitFor([&] { return wallet->balanceSatoshi() == 50 * COIN; }, 30'000)) return nullptr;
     const auto coins = Rpc(app, "listunspent", {}, name);
     if (Rpc(app, "getblockcount").getInt<int>() != 101 || coins.size() != 1 ||
@@ -71,7 +96,7 @@ inline WalletQmlModel* CreateLockedHardenedWallet(BitcoinQmlApplication& app, co
     params.pushKV("wallet_name", name.toStdString());
     params.pushKV("blank", true);
     Rpc(app, "createwallet", params);
-    auto* wallet = WaitForWallet(app, name);
+    auto* wallet = SelectOpenWalletForSetup(app, name);
     if (!wallet || !wallet->encryptWallet(passphrase)) return nullptr;
     if (!QTest::qWaitFor([&] {
             return wallet->securityState() == WalletQmlModel::SecurityState::SecuritySucceeded && wallet->isLocked();

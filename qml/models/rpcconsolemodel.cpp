@@ -402,6 +402,26 @@ void RpcConsoleModel::retireOutput(std::shared_ptr<const void> value)
 
 bool RpcConsoleModel::submitCommand(const QString& command, const QString& wallet_name)
 {
+    // Preserve the original string-only API for existing callers. New UI code
+    // uses submitNodeCommand() or submitWalletCommand() so an unnamed wallet is
+    // distinct from the node target.
+    const auto context = wallet_name.isEmpty() ? RpcCommandContext::ForNode()
+                                               : RpcCommandContext::ForWallet(wallet_name);
+    return submitCommandForContext(command, context);
+}
+
+bool RpcConsoleModel::submitNodeCommand(const QString& command)
+{
+    return submitCommandForContext(command, RpcCommandContext::ForNode());
+}
+
+bool RpcConsoleModel::submitWalletCommand(const QString& command, const QString& wallet_name)
+{
+    return submitCommandForContext(command, RpcCommandContext::ForWallet(wallet_name));
+}
+
+bool RpcConsoleModel::submitCommandForContext(const QString& command, const RpcCommandContext& context)
+{
     if (m_stopping || command.isEmpty() || (command.size() <= 64 && command.trimmed().isEmpty())) return false;
     // Only bounded recognition of the independent stop intent occurs on GUI.
     const bool stop = command.size() <= 64 && command.trimmed() == QLatin1String("stop");
@@ -412,10 +432,10 @@ bool RpcConsoleModel::submitCommand(const QString& command, const QString& walle
     const auto mailbox = m_mailbox;
     const auto key_color = m_key_color.name();
     const auto node = &m_node;
-    const bool context_changed = m_last_wallet_name != wallet_name;
+    const bool context_changed = m_last_command_context != context;
     const auto pending = std::make_shared<RpcConsoleMailbox::Pending>(mailbox);
     const auto admission = execution::Submit(*m_services.scheduler,
-        [mailbox, pending, node, command, wallet_name, key_color, stop, context_changed] {
+        [mailbox, pending, node, command, context, key_color, stop, context_changed] {
             const auto time = QDateTime::currentDateTime().toString("hh:mm:ss");
             const auto publish = [&](int category, const QString& text, QString history = {}) {
                 const auto html = category == CMD_REPLY ? FormatJsonReply(text.toStdString(), key_color) : EscapeAndConvertWhitespace(text);
@@ -433,9 +453,17 @@ bool RpcConsoleModel::submitCommand(const QString& command, const QString& walle
                 // representation while the original RPC request stays intact.
                 auto history = QString::fromStdString(filtered).trimmed();
                 if (history.size() > 4096) history = history.left(4096) + QStringLiteral(" ") + tr("[history truncated]");
-                if (!stop && context_changed) publish(CMD_REQUEST, wallet_name.isEmpty()
-                    ? tr("Executing command without any wallet")
-                    : tr("Executing command using \"%1\" wallet").arg(wallet_name.left(1024)));
+                if (!stop && context_changed) {
+                    QString description;
+                    if (context.target == RpcCommandContext::Target::Node) {
+                        description = tr("Executing command without any wallet");
+                    } else if (context.wallet_name.isEmpty()) {
+                        description = tr("Executing command using the default wallet");
+                    } else {
+                        description = tr("Executing command using \"%1\" wallet").arg(context.wallet_name.left(1024));
+                    }
+                    publish(CMD_REQUEST, description);
+                }
                 publish(CMD_REQUEST, history, stop ? QString{} : history);
                 if (trimmed.compare(QLatin1String("help-console"), Qt::CaseInsensitive) == 0) {
                     publish(CMD_REPLY, tr("\n"
@@ -455,7 +483,7 @@ bool RpcConsoleModel::submitCommand(const QString& command, const QString& walle
                     return;
                 }
                 std::string result;
-                if (!RpcCommandExecutor::RPCExecuteCommandLine(*node, result, executable, nullptr, wallet_name)) {
+                if (!RpcCommandExecutor::RPCExecuteCommandLine(*node, result, executable, nullptr, context)) {
                     publish(CMD_ERROR, tr("Parse error: unbalanced ' or \""));
                 } else publish(CMD_REPLY, BoundedText(result));
             } catch (UniValue& error) {
@@ -467,10 +495,10 @@ bool RpcConsoleModel::submitCommand(const QString& command, const QString& walle
         }, [mailbox, pending, stop](std::exception_ptr) {
             const auto rows = SplitRows({}, CMD_ERROR, QObject::tr("The command did not complete."));
             mailbox->publish({rows, {}, {}, true, stop, {}, 0});
-        }, {stop ? execution::Lane::Control : execution::Lane::Core, size_t(command.size()) * sizeof(QChar) + size_t(wallet_name.size()) * sizeof(QChar), {}, execution::WorkClass::Action});
+        }, {stop ? execution::Lane::Control : execution::Lane::Core, size_t(command.size()) * sizeof(QChar) + size_t(context.wallet_name.size()) * sizeof(QChar), {}, execution::WorkClass::Action});
     if (!admission) return false;
     if (stop) m_stop_pending = true;
-    else { m_last_wallet_name = wallet_name; m_command_finished = false; setExecuting(true); }
+    else { m_last_command_context = context; m_command_finished = false; setExecuting(true); }
     return true;
 }
 
@@ -653,7 +681,7 @@ void RpcConsoleModel::closeAdmission()
     retireOutput(std::make_shared<const QStringList>(std::exchange(m_history, {})));
     retireOutput(std::make_shared<const QString>(std::exchange(m_pending_text, {})));
     retireOutput(std::make_shared<const QString>(std::exchange(m_completion_prefix, {})));
-    retireOutput(std::make_shared<const QString>(std::exchange(m_last_wallet_name, {})));
+    retireOutput(std::make_shared<const RpcCommandContext>(std::exchange(m_last_command_context, RpcCommandContext::ForNode())));
     // No large payload enters a queued GUI closure after this point.
     std::deque<RpcConsoleMailbox::Event> events;
     { std::lock_guard lock{m_mailbox->mutex}; events.swap(m_mailbox->events); }

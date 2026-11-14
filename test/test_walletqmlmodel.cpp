@@ -667,7 +667,8 @@ public:
         QFile file{QString::fromStdString(path)};
         return file.open(QIODevice::WriteOnly) && file.write("fake-wallet-backup") == 18;
     }
-    std::string getWalletName() override { return "fake-wallet"; }
+    std::string wallet_name{"fake-wallet"};
+    std::string getWalletName() override { return wallet_name; }
     bool getPubKey(const CScript&, const CKeyID&, CPubKey&) override { return false; }
     SigningResult signMessage(const std::string& message, const PKHash& pkhash, std::string& signature) override
     {
@@ -4115,6 +4116,7 @@ private Q_SLOTS:
     void bumpTransactionWithPassphraseUnlocksCommitsAndRelocks();
     void bumpTransactionWithWrongPassphraseDoesNotSign();
     void displayNameDefaultsToWalletName();
+    void unnamedWalletHasADistinguishableDisplayName();
     void detailPropertiesReflectWalletCapabilities();
     void encryptWalletUpdatesSecurityState();
     void changeWalletPassphraseForwardsPasswords();
@@ -4153,6 +4155,19 @@ void WalletQmlModelTests::displayNameDefaultsToWalletName()
     QCOMPARE(model->displayName(), QString("fake-wallet"));
     model->setDisplayName("Personal");
     QCOMPARE(model->displayName(), QString("Personal"));
+}
+
+void WalletQmlModelTests::unnamedWalletHasADistinguishableDisplayName()
+{
+    auto [wallet, model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) {
+        original.wallet_name.clear();
+    });
+    QCOMPARE(model->name(), QString{});
+    QCOMPARE(model->displayName(), QString{"Default wallet"});
+    model->setDisplayName("Personal");
+    QCOMPARE(model->displayName(), QString{"Personal"});
+    model->setDisplayName({});
+    QCOMPARE(model->displayName(), QString{"Default wallet"});
 }
 
 void WalletQmlModelTests::detailPropertiesReflectWalletCapabilities()

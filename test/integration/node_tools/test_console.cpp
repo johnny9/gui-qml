@@ -14,6 +14,10 @@
 
 #include <QSignalSpy>
 #include <QRegularExpression>
+#include <QDir>
+#include <QFile>
+
+#include <string>
 
 class ConsoleIntegrationTests : public QObject
 {
@@ -126,6 +130,81 @@ private Q_SLOTS:
         QTest::newRow("block-count") << "getblockcount" << "0";
         QTest::newRow("help") << "help getblockcount" << "Returns the height";
         QTest::newRow("unknown-command") << "thiscommanddoesnotexist" << "Method not found";
+    }
+
+    void defaultWalletRpcContextIsExplicitWithMultipleWallets()
+    {
+#ifndef ENABLE_WALLET
+        QSKIP("Wallet support is not compiled in");
+#else
+        if (m_mode != WalletMode::Enabled) QSKIP("This integration case requires wallet support");
+
+        auto* model = qmltest::Model<RpcConsoleModel>(m_app, "rpcConsoleModel");
+        QVERIFY(model);
+        QVERIFY(qmltest::Rpc(m_app, "listwallets").empty());
+
+        // Core's supported creation RPC requires a name. Reproduce its own
+        // unnamed-wallet startup fixture: create, unload, and move the database
+        // to the default wallet location before loading it through loadwallet.
+        const QString seed_name{QStringLiteral("rpc-default-wallet-seed")};
+        QVERIFY(qmltest::CreateWallet(m_app, seed_name));
+        UniValue unload_params{UniValue::VARR};
+        unload_params.push_back(seed_name.toStdString());
+        QVERIFY(qmltest::Rpc(m_app, "unloadwallet", unload_params).isObject());
+        QVERIFY(QTest::qWaitFor([&] { return qmltest::Rpc(m_app, "listwallets").empty(); }, 10'000));
+
+        const auto wallet_dir = qmltest::Call(m_app, [](interfaces::Node* node) {
+            return node->walletLoader().getWalletDir();
+        });
+        const QDir wallet_root{QString::fromStdString(wallet_dir)};
+        QVERIFY2(wallet_root.exists(), qPrintable(wallet_root.absolutePath()));
+        const QString seed_directory = wallet_root.filePath(seed_name);
+        const QString seed_file = QDir{seed_directory}.filePath(QStringLiteral("wallet.dat"));
+        const QString unnamed_file = wallet_root.filePath(QStringLiteral("wallet.dat"));
+        QVERIFY2(QFile::exists(seed_file), qPrintable(seed_file));
+        QVERIFY(!QFile::exists(unnamed_file));
+        QVERIFY2(QFile::rename(seed_file, unnamed_file), qPrintable(QStringLiteral("Cannot move wallet database to %1").arg(unnamed_file)));
+        QVERIFY(QDir{seed_directory}.removeRecursively());
+
+        UniValue load_params{UniValue::VARR};
+        load_params.push_back("");
+        const auto loaded = qmltest::Rpc(m_app, "loadwallet", load_params);
+        QCOMPARE(loaded.find_value("name").get_str(), std::string{});
+        QVERIFY(QTest::qWaitFor([&] { return qmltest::Rpc(m_app, "listwallets").size() == 1; }, 10'000));
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
+        QVERIFY(controller);
+        QVERIFY(QTest::qWaitFor([&] { return controller->walletForName(QString{}) != nullptr; }, 10'000));
+
+        QVERIFY(qmltest::CreateWallet(m_app, QStringLiteral("rpc-secondary-wallet")));
+        const auto wallets = qmltest::Rpc(m_app, "listwallets");
+        QCOMPARE(wallets.size(), 2U);
+        QVERIFY(wallets[0].get_str().empty() || wallets[1].get_str().empty());
+        QVERIFY(QTest::qWaitFor([&] { return controller->walletForName(QStringLiteral("rpc-secondary-wallet")) != nullptr; }, 10'000));
+
+        auto* unnamed_wallet = controller->walletForName(QString{});
+        QVERIFY(unnamed_wallet);
+        QVERIFY(unnamed_wallet->name().isEmpty());
+        QVERIFY(controller->selectWallet(unnamed_wallet));
+        QCOMPARE(controller->selectedWallet(), unnamed_wallet);
+
+        // Use the production QML submit path here: its selected-facade binding
+        // must keep wallet context true even though the wallet name is empty.
+        QVERIFY(submitCommand(QStringLiteral("getwalletinfo")));
+        QVERIFY(waitForOutput());
+        QVERIFY(hasLogicalExchange(RpcConsoleModel::CMD_REPLY, {}, QStringLiteral("Executing command using the default wallet")));
+        QVERIFY(searchMatches(QStringLiteral("\"walletname\": \"\""), 1));
+
+        // The node endpoint deliberately has no implicit wallet when two are
+        // loaded. This distinguishes explicit /wallet/ routing from a default
+        // wallet fallback and proves the empty name reached Core as a wallet.
+        model->clear();
+        QCOMPARE(model->outputModel()->rowCount(), 0);
+        QVERIFY(waitForOutput());
+        QVERIFY(model->submitNodeCommand(QStringLiteral("getwalletinfo")));
+        QVERIFY(waitForOutput());
+        QVERIFY(hasLogicalExchange(RpcConsoleModel::CMD_ERROR, {}, QStringLiteral("Executing command without any wallet")));
+        QVERIFY(searchMatches(QStringLiteral("Multiple wallets are loaded"), 1));
+#endif
     }
 
     void executesCommandsAndRecoversFromErrors()

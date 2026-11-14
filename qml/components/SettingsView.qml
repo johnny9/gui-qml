@@ -28,7 +28,8 @@ Page {
     // settings of `wallet`, or its empty state.
     property bool walletSettingsProvided: false
     readonly property Item walletSettingsHost: internal.walletSettingsHost
-    property string activeWalletName: ""
+    property string activeWalletName: wallet !== null ? wallet.name : ""
+    property bool activeWalletAvailable: wallet !== null && wallet.available
     // Without the desktop wallet shell (the node pages used on Android),
     // the wallet section shows its own settings stack for this wallet.
     property var wallet: null
@@ -353,6 +354,7 @@ Page {
 
         SettingsPages.SettingsRpcConsoleView {
             walletName: root.activeWalletName
+            walletContext: root.activeWalletAvailable
         }
     }
 

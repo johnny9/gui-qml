@@ -6,12 +6,27 @@
 #define BITCOIN_QML_MODELS_RPCCOMMANDEXECUTOR_H
 
 #include <string>
+#include <utility>
 
 #include <QString>
 
 namespace interfaces {
 class Node;
 }
+
+/** Explicit target for an RPC request. An empty wallet name identifies the
+ *  default wallet when target is Wallet; it does not mean a node request. */
+struct RpcCommandContext {
+    enum class Target { Node, Wallet };
+
+    Target target{Target::Node};
+    QString wallet_name;
+
+    static RpcCommandContext ForNode() { return {}; }
+    static RpcCommandContext ForWallet(QString name) { return {Target::Wallet, std::move(name)}; }
+
+    friend bool operator==(const RpcCommandContext&, const RpcCommandContext&) = default;
+};
 
 /**
  * Parses and executes RPC commands entered in the console.
@@ -46,6 +61,14 @@ public:
                                     std::string* pstrFilteredOut = nullptr,
                                     const QString& wallet_name = {});
 
+    /** Parse or execute with an explicit node or wallet target. */
+    static bool RPCParseCommandLine(interfaces::Node* node,
+                                    std::string& strResult,
+                                    const std::string& strCommand,
+                                    bool fExecute,
+                                    std::string* pstrFilteredOut,
+                                    const RpcCommandContext& context);
+
     /**
      * Execute a command line (convenience wrapper around RPCParseCommandLine).
      */
@@ -56,6 +79,16 @@ public:
                                       const QString& wallet_name = {})
     {
         return RPCParseCommandLine(&node, strResult, strCommand, true, pstrFilteredOut, wallet_name);
+    }
+
+    /** Execute with an explicit node or wallet target. */
+    static bool RPCExecuteCommandLine(interfaces::Node& node,
+                                      std::string& strResult,
+                                      const std::string& strCommand,
+                                      std::string* pstrFilteredOut,
+                                      const RpcCommandContext& context)
+    {
+        return RPCParseCommandLine(&node, strResult, strCommand, true, pstrFilteredOut, context);
     }
 };
 

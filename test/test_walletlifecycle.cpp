@@ -68,13 +68,17 @@ private:
 struct Probe {
     std::optional<Lane> lane;
     std::vector<std::pair<std::string, std::optional<Lane>>> names, destroyed;
-    std::vector<std::optional<Lane>> registrations, captures, disconnects;
+    std::vector<std::optional<Lane>> registrations, captures, disconnects, unload_subscriptions, unload_disconnects;
     std::function<void()> during_name;
 };
 
 class TrackedWallet final : public StubWallet
 {
 public:
+    std::unique_ptr<interfaces::Handler> handleUnload(UnloadFn) override {
+        m_probe->unload_subscriptions.push_back(m_probe->lane);
+        return interfaces::MakeCleanupHandler([probe = m_probe] { probe->unload_disconnects.push_back(probe->lane); });
+    }
     TrackedWallet(std::shared_ptr<Probe> probe, std::string name) : m_probe(std::move(probe)), m_name(std::move(name)) {}
     ~TrackedWallet() override { m_probe->destroyed.emplace_back(m_name, m_probe->lane); }
     std::string getWalletName() override { m_probe->names.emplace_back(m_name, m_probe->lane); if (m_probe->during_name) std::exchange(m_probe->during_name, {})(); return m_name; }
@@ -152,6 +156,7 @@ struct PhysicalProbe {
 class PhysicalWallet final : public StubWallet
 {
 public:
+    std::unique_ptr<interfaces::Handler> handleUnload(UnloadFn) override { return interfaces::MakeCleanupHandler([] {}); }
     PhysicalWallet(std::shared_ptr<PhysicalProbe> probe, std::string name) : m_probe(std::move(probe)), m_name(std::move(name)) {}
     ~PhysicalWallet() override
     {
@@ -277,6 +282,7 @@ private Q_SLOTS:
         };
         const auto probe = std::make_shared<Probe>();
         struct Wallet : StubWallet {
+            std::unique_ptr<interfaces::Handler> handleUnload(UnloadFn) override { return interfaces::MakeCleanupHandler([] {}); }
             std::shared_ptr<Probe> probe;
             bool reject;
             Wallet(std::shared_ptr<Probe> p, bool r) : probe(std::move(p)), reject(r) {}
@@ -589,6 +595,8 @@ private Q_SLOTS:
         QCOMPARE(f.count(Publication::Failed), 1);
         QCOMPARE(f.count(Publication::Retired), 1);
         QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Cleanup});
+        QCOMPARE(f.probe->unload_subscriptions, std::vector<std::optional<Lane>>{Lane::Core});
+        QCOMPARE(f.probe->unload_disconnects, std::vector<std::optional<Lane>>{Lane::Cleanup});
         QVERIFY(f.env.quiescent());
     }
     void schedulerClosureFencesProducerBeforeCleanupExecutes()
@@ -698,6 +706,8 @@ private Q_SLOTS:
         QCOMPARE(presented, size_t{96});
         QCOMPARE(f.probe->captures.size(), size_t{1});
         QCOMPARE(f.probe->destroyed.size(), size_t{96});
+        QCOMPARE(f.probe->unload_subscriptions.size(), size_t{96});
+        QCOMPARE(f.probe->unload_disconnects, std::vector<std::optional<Lane>>(96, Lane::Cleanup));
         f.owner->retire(); f.drain();
         QVERIFY(f.env.quiescent());
     }
@@ -1039,6 +1049,7 @@ private Q_SLOTS:
         QVERIFY(f.probe->destroyed.empty());
         QVERIFY(f.step(Lane::Cleanup));
         QCOMPARE(f.probe->destroyed.size(), size_t{2});
+        QCOMPARE(f.probe->unload_disconnects, std::vector<std::optional<Lane>>(2, Lane::Cleanup));
         QVERIFY(f.probe->disconnects.empty());
         QVERIFY(!f.step(Lane::Cleanup));
         QVERIFY(f.step(Lane::Domain));
@@ -1122,11 +1133,13 @@ private Q_SLOTS:
         QVERIFY(f.owner->start()); f.drain();
         QVERIFY(!f.owner->takeInitial());
         QVERIFY(f.probe->destroyed.empty());
+        QVERIFY(f.probe->unload_disconnects.empty());
         f.drain();
         QCOMPARE(f.count(Publication::Failed), 1);
         QCOMPARE(f.count(Publication::Retired), 1);
         QCOMPARE(f.probe->destroyed.size(), size_t{1});
         QCOMPARE(f.probe->destroyed.front().second, std::optional<Lane>{Lane::Cleanup});
+        QCOMPARE(f.probe->unload_disconnects, std::vector<std::optional<Lane>>{Lane::Cleanup});
         QVERIFY(f.env.quiescent());
     }
 };

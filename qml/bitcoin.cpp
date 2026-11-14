@@ -92,6 +92,7 @@
 #include <qml/models/paymentrequest.h>
 #include <qml/models/sendrecipient.h>
 #include <qml/models/walletlistmodel.h>
+#include <qml/models/walletselectionmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/walletqmlcontroller.h>
@@ -354,6 +355,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<ActivityDetailModel>("org.bitcoincore.qt", 1, 0, "ActivityDetailModel", "Owned by an Activity view");
     qmlRegisterUncreatableType<AddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "");
     qmlRegisterUncreatableType<WalletProvisioningCheck>("org.bitcoincore.qt", 1, 0, "WalletProvisioningCheck", "Owned by the wallet controller");
+    qmlRegisterUncreatableType<WalletSelectionModel>("org.bitcoincore.qt", 1, 0, "WalletSelectionModel", "Owned by a window");
     qmlRegisterType<PaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
     qmlRegisterUncreatableType<ReceiveRequestOperation>("org.bitcoincore.qt", 1, 0, "ReceiveRequestOperation", "Owned by a receive request command");
     qmlRegisterUncreatableType<Transaction>("org.bitcoincore.qt", 1, 0, "Transaction", "");
@@ -380,6 +382,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModelTransaction", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletListModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletSelectionModel", "Wallet support is not compiled");
 #endif
 
     registered = true;
@@ -989,9 +992,21 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         if (wallet_enabled) {
             wallet_list_model = std::make_unique<WalletListModel>(*node,
                 execution::SnapshotServices{wallet_controller->backgroundScheduler(), presentation_post});
+            wallet_list_model->setBackendAvailability(WalletListModel::BackendAvailability::Uninitialized);
             shutdown_coordinator.addAdmissionFence([&] { wallet_list_model->closeAdmission(); });
             QObject::connect(wallet_controller.get(), &WalletQmlController::walletLoadStateChanged,
                              wallet_list_model.get(), &WalletListModel::setWalletLoadState);
+            QObject::connect(wallet_controller.get(), &WalletQmlController::walletLoadStateChanged,
+                             wallet_list_model.get(), [controller = wallet_controller.get(), catalog = wallet_list_model.get()](const QString& id, WalletListModel::LoadState, const QString&) {
+                                 catalog->setOpenWallet(id, controller->walletForName(id));
+                             });
+            QObject::connect(wallet_controller.get(), &WalletQmlController::walletOperationChanged,
+                             wallet_list_model.get(), [controller = wallet_controller.get(), catalog = wallet_list_model.get()] {
+                                 const auto id = controller->walletOperationId();
+                                 const auto name = controller->walletOperationName();
+                                 const bool pending = controller->walletOperationState() == WalletQmlController::WalletOperationState::WalletOperationPending;
+                                 if (id) catalog->setOperationId(name, pending ? QString::number(id) : QString{});
+                             });
             QObject::connect(wallet_controller.get(), &WalletQmlController::walletInfoChanged,
                              wallet_list_model.get(), &WalletListModel::setWalletInfo);
             QObject::connect(wallet_controller.get(), &WalletQmlController::walletDisplayNamesChanged,
@@ -1009,6 +1024,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             QObject::connect(wallet_controller.get(), &WalletQmlController::initializedChanged,
                              wallet_list_model.get(), [controller = wallet_controller.get(), list_model = wallet_list_model.get()]() {
                                  if (controller->initialized()) {
+                                     list_model->setBackendAvailability(WalletListModel::BackendAvailability::Available);
                                      list_model->listWalletDir();
                                  }
                              });

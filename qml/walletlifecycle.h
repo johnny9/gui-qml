@@ -19,7 +19,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 class WalletLifecycleTests;
@@ -33,7 +35,11 @@ class LoadSubscription : public std::enable_shared_from_this<LoadSubscription>
     friend class ::WalletLifecycleTests;
     struct ReturnPacket;
 public:
-    struct Entry { std::string name; std::shared_ptr<interfaces::Wallet> wallet; bool select_wallet{true}; uint64_t selection_revision{0}; std::shared_ptr<void> adoption_origin{}; uint64_t ingress_sequence{0}; };
+    struct UnloadObservation {
+        std::shared_ptr<std::atomic<uint64_t>> unloaded{std::make_shared<std::atomic<uint64_t>>(0)};
+        std::unique_ptr<interfaces::Handler> handler;
+    };
+    struct Entry { std::string name; std::shared_ptr<interfaces::Wallet> wallet; bool select_wallet{true}; uint64_t selection_revision{0}; std::shared_ptr<void> adoption_origin{}; uint64_t ingress_sequence{0}; uint64_t notification_sequence{0}, settlement_sequence{0}; std::shared_ptr<UnloadObservation> unload_observation{}; };
     using Callback = std::function<void(std::unique_ptr<interfaces::Wallet>)>;
     using Register = std::function<std::unique_ptr<interfaces::Handler>(Callback)>;
     using Capture = std::function<std::vector<std::unique_ptr<interfaces::Wallet>>()>;
@@ -64,6 +70,11 @@ public:
     void acknowledgeChange();
     std::unique_ptr<Handoff> takeInitial();
     std::unique_ptr<Handoff> takeNotifications();
+    enum class Settlement { Pending, Settled, Unavailable };
+    // A local delivery boundary, never a backend or opening identity. A Core
+    // effect captures it after returning; later notifications cannot prolong it.
+    uint64_t notificationFence() const;
+    Settlement settlementThrough(uint64_t fence) const;
 
 private:
     static constexpr size_t PENDING_HANDLES{64};
@@ -78,7 +89,8 @@ private:
     bool cleanup();
     std::unique_ptr<Handoff> take(bool initial);
     void returnHandoff(std::vector<Entry> entries, std::shared_ptr<ReturnPacket> packet, execution::TaskId disposal);
-    static std::vector<Entry> captureEntries(std::vector<std::unique_ptr<interfaces::Wallet>> wallets);
+    std::vector<Entry> captureEntries(std::vector<std::unique_ptr<interfaces::Wallet>> wallets);
+    std::pair<std::shared_ptr<interfaces::Wallet>, std::shared_ptr<UnloadObservation>> observeUnload(std::unique_ptr<interfaces::Wallet> wallet);
 
     const std::shared_ptr<execution::Scheduler> m_scheduler;
     const Register m_registration;
@@ -89,7 +101,9 @@ private:
     State m_state; // Accessed only by Domain outcome consumers.
     std::atomic<FailureReason> m_failure{FailureReason::None};
     std::atomic_bool m_stopping{false}, m_scan_pending{false}, m_failed{false};
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
+    uint64_t m_notification_sequence{0};
+    std::set<uint64_t> m_unpublished;
     bool m_started{false}, m_initial_ready{false}, m_handoff_disposal_pending{false}, m_change_publication_pending{false};
     std::optional<execution::TaskId> m_cleanup_id;
     std::optional<execution::TaskId> m_scan_id;
@@ -109,7 +123,7 @@ private:
         ~NotificationContext();
         const std::string& nativeName()const;
     };
-    struct Pending { std::unique_ptr<interfaces::Wallet> wallet; std::shared_ptr<const NotificationContext> context; uint64_t ingress_sequence{0}; };
+    struct Pending { std::shared_ptr<interfaces::Wallet> wallet; std::shared_ptr<const NotificationContext> context; uint64_t ingress_sequence{0}, notification_sequence{0}; std::shared_ptr<UnloadObservation> unload_observation{}; };
     const std::shared_ptr<ContextInventory> m_context_inventory{std::make_shared<ContextInventory>()};
     std::shared_ptr<const NotificationContext> m_notification_context;
     std::unique_ptr<interfaces::Handler> m_handler;

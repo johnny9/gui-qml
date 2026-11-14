@@ -22,6 +22,7 @@ SettingsPage {
     contentBottomPadding: 20
 
     property string walletName: ""
+    property bool walletContext: false
     property bool warningVisible: true
     readonly property alias consoleItem: rpcConsole
 
@@ -179,6 +180,7 @@ SettingsPage {
         showHeader: false
         tabActive: root.visible
         walletName: root.walletName
+        walletContext: root.walletContext
         searchText: searchBar.text
     }
 

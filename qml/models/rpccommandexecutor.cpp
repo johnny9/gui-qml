@@ -51,6 +51,20 @@ bool RpcCommandExecutor::RPCParseCommandLine(interfaces::Node* node,
                                              std::string* const pstrFilteredOut,
                                              const QString& wallet_name)
 {
+    // Compatibility behavior for callers that still use the historical
+    // string-only API: an empty string means node context.
+    const auto context = wallet_name.isEmpty() ? RpcCommandContext::ForNode()
+                                               : RpcCommandContext::ForWallet(wallet_name);
+    return RPCParseCommandLine(node, strResult, strCommand, fExecute, pstrFilteredOut, context);
+}
+
+bool RpcCommandExecutor::RPCParseCommandLine(interfaces::Node* node,
+                                             std::string& strResult,
+                                             const std::string& strCommand,
+                                             const bool fExecute,
+                                             std::string* const pstrFilteredOut,
+                                             const RpcCommandContext& context)
+{
     std::vector<std::vector<std::string>> stack;
     stack.emplace_back();
 
@@ -199,8 +213,8 @@ bool RpcCommandExecutor::RPCParseCommandLine(interfaces::Node* node,
                             std::vector<std::string>(stack.back().begin() + 1, stack.back().end()));
                         std::string method = stack.back()[0];
                         std::string uri;
-                        if (!wallet_name.isEmpty()) {
-                            QByteArray encodedName = QUrl::toPercentEncoding(wallet_name);
+                        if (context.target == RpcCommandContext::Target::Wallet) {
+                            QByteArray encodedName = QUrl::toPercentEncoding(context.wallet_name);
                             uri = "/wallet/" + std::string(encodedName.constData(), encodedName.length());
                         }
                         assert(node);

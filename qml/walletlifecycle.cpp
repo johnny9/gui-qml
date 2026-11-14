@@ -5,8 +5,11 @@
 #include <qml/walletlifecycle.h>
 #include <qml/retainedsnapshot.h>
 
+#include <QScopeGuard>
+
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 
 namespace walletlife {
@@ -21,13 +24,49 @@ LoadSubscription::LoadSubscription(std::shared_ptr<execution::Scheduler> schedul
     m_pending.reserve(PENDING_HANDLES);
 }
 
+std::pair<std::shared_ptr<interfaces::Wallet>, std::shared_ptr<LoadSubscription::UnloadObservation>> LoadSubscription::observeUnload(std::unique_ptr<interfaces::Wallet> wallet)
+{
+    // Subscribe in the original Native ingress turn, before a GUI handoff can
+    // retain a wallet whose one public unload notification has already fired.
+    // The existing subscription/handoff/Session borrower already owns Native
+    // disposal of this exact handle. Fixed observation metadata needs no idle
+    // Cleanup task or additional borrower admission of its own.
+    auto observation = std::make_shared<UnloadObservation>();
+    observation->handler = wallet->handleUnload([unloaded = observation->unloaded, stamp = m_ingress_stamp] {
+        uint64_t sequence{1};
+        try { if (stamp) sequence = stamp(); } catch (...) { sequence = 0; }
+        uint64_t empty{0};
+        unloaded->compare_exchange_strong(empty, sequence ? sequence : std::numeric_limits<uint64_t>::max());
+    });
+    if (!observation->handler) throw std::runtime_error("Wallet unload notification producer unavailable");
+    struct ObservedHandle {
+        std::unique_ptr<interfaces::Wallet> wallet;
+        std::shared_ptr<UnloadObservation> observation;
+        ObservedHandle(std::unique_ptr<interfaces::Wallet> value, std::shared_ptr<UnloadObservation> observed)
+            : wallet(std::move(value)), observation(std::move(observed)) {}
+        ~ObservedHandle() {
+            // The existing Native handoff shadow/Session borrower owns this
+            // handle. Disconnect before its final backend reference, even if
+            // immutable unload metadata remains retained by the GUI.
+            if (observation->handler) observation->handler->disconnect();
+            observation->handler.reset(); // No Native resource can remain in GUI-retained metadata.
+            wallet.reset();
+        }
+    };
+    auto owner = std::make_shared<ObservedHandle>(std::move(wallet), observation);
+    auto* observed_wallet = owner->wallet.get();
+    return {std::shared_ptr<interfaces::Wallet>{std::move(owner), observed_wallet}, std::move(observation)};
+}
+
 std::vector<LoadSubscription::Entry> LoadSubscription::captureEntries(std::vector<std::unique_ptr<interfaces::Wallet>> wallets)
 {
     std::vector<Entry> entries;
     entries.reserve(wallets.size());
     for (auto& wallet : wallets) {
         if (!wallet) throw std::runtime_error("Invalid wallet snapshot");
-        entries.push_back({wallet->getWalletName(), std::move(wallet)});
+        auto [handle, observation] = observeUnload(std::move(wallet));
+        Entry entry; entry.name = handle->getWalletName(); entry.wallet = std::move(handle); entry.unload_observation = std::move(observation);
+        entries.push_back(std::move(entry));
     }
     return entries;
 }
@@ -73,7 +112,7 @@ execution::Admission LoadSubscription::start()
             self->m_handler = std::move(handler);
         }
         if (self->m_stopping) return;
-        auto entries = captureEntries(self->m_capture());
+        auto entries = self->captureEntries(self->m_capture());
         std::deque<Entry> initial{std::make_move_iterator(entries.begin()), std::make_move_iterator(entries.end())};
         std::lock_guard lock{self->m_mutex};
         self->m_initial.swap(initial);
@@ -124,6 +163,23 @@ void LoadSubscription::publishChanged()
 void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
 {
     if (m_stopping) return;
+    uint64_t delivery{0};
+    std::shared_ptr<const NotificationContext> context;
+    try {
+        std::lock_guard lock{m_mutex};
+        if (m_stopping || m_failed) return;
+        if (m_notification_sequence != std::numeric_limits<uint64_t>::max()) {
+            delivery = m_notification_sequence + 1;
+            m_unpublished.insert(delivery);
+            m_notification_sequence = delivery;
+            context = m_notification_context;
+        }
+    } catch (...) { requestFailure(FailureReason::IngressCapacity); return; }
+    if (!delivery) { requestFailure(FailureReason::IngressCapacity); return; }
+    bool queued{false};
+    const auto release_delivery = qScopeGuard([&] {
+        if (!queued) { std::lock_guard lock{m_mutex}; m_unpublished.erase(delivery); }
+    });
     uint64_t stamp{0};
     if (m_ingress_stamp) {
         try { stamp = m_ingress_stamp(); } catch (...) { requestFailure(FailureReason::Backend); return; }
@@ -142,12 +198,15 @@ void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
     }
     if (!incoming) { requestFailure(FailureReason::Backend); return; }
     bool overflow{false};
-    {
+    try {
+        auto [handle, observation] = observeUnload(std::move(incoming));
         std::lock_guard lock{m_mutex};
         if (m_stopping || m_failed) return;
-        if (m_pending.size() < PENDING_HANDLES) m_pending.push_back({std::move(incoming), m_notification_context, stamp});
+        if (m_pending.size() < PENDING_HANDLES) {
+            m_pending.push_back({std::move(handle), std::move(context), stamp, delivery, std::move(observation)}); queued = true;
+        }
         else overflow = true;
-    }
+    } catch (...) { requestFailure(FailureReason::IngressCapacity); return; }
     if (overflow) { requestFailure(FailureReason::IngressCapacity); return; }
     requestScan();
 }
@@ -208,8 +267,8 @@ void LoadSubscription::scan()
     for (auto& notification : pending) {
         auto name = notification.wallet->getWalletName();
         const auto& context=notification.context;
-        if(context&&!context->deferred_name.isEmpty()){const auto& deferred=context->nativeName();if(!deferred.empty()&&name==deferred)continue;}
-        entries.push_back({std::move(name),std::move(notification.wallet),context?context->select_wallet:true,context?context->selection_revision:0,context?context->adoption_origin:std::shared_ptr<void>{},notification.ingress_sequence});
+        if(context&&!context->deferred_name.isEmpty()){const auto& deferred=context->nativeName();if(!deferred.empty()&&name==deferred){std::lock_guard lock{m_mutex};m_unpublished.erase(notification.notification_sequence);continue;}}
+        entries.push_back({std::move(name),std::move(notification.wallet),context?context->select_wallet:true,context?context->selection_revision:0,context?context->adoption_origin:std::shared_ptr<void>{},notification.ingress_sequence,notification.notification_sequence,notification.notification_sequence,std::move(notification.unload_observation)});
     }
     std::vector<Entry> retired;
     retired.reserve(entries.size());
@@ -217,6 +276,15 @@ void LoadSubscription::scan()
         std::lock_guard lock{m_mutex};
         for (auto& entry : entries) {
             const auto slot = m_ready.try_emplace(entry.name).first;
+            if (slot->second.wallet) {
+                // Transfer the older observation's unsettled dependency to
+                // its replacement; a fenced result cannot overtake this slot.
+                const auto first = std::min(slot->second.settlement_sequence, entry.settlement_sequence);
+                const auto last = std::max(slot->second.settlement_sequence, entry.settlement_sequence);
+                m_unpublished.erase(last);
+                slot->second.settlement_sequence = first;
+                entry.settlement_sequence = first;
+            }
             if (slot->second.wallet && slot->second.ingress_sequence > entry.ingress_sequence) {
                 retired.push_back(std::move(entry));
                 continue;
@@ -296,6 +364,7 @@ bool LoadSubscription::cleanup()
     std::vector<Pending> pending;
     std::deque<Entry> initial;
     std::map<std::string, Entry> ready;
+    std::set<uint64_t> unpublished;
     std::shared_ptr<const NotificationContext> context;
     {
         std::lock_guard lock{m_mutex};
@@ -303,8 +372,21 @@ bool LoadSubscription::cleanup()
         pending.swap(m_pending);
         initial.swap(m_initial);
         ready.swap(m_ready);
+        unpublished.swap(m_unpublished);
     }
     return cleanup_failed;
+}
+
+uint64_t LoadSubscription::notificationFence() const
+{
+    std::lock_guard lock{m_mutex};
+    return m_notification_sequence;
+}
+LoadSubscription::Settlement LoadSubscription::settlementThrough(uint64_t fence) const
+{
+    std::lock_guard lock{m_mutex};
+    if (m_stopping || m_failed) return Settlement::Unavailable;
+    return !m_unpublished.empty() && *m_unpublished.begin() <= fence ? Settlement::Pending : Settlement::Settled;
 }
 
 struct LoadSubscription::ReturnPacket {
@@ -362,7 +444,9 @@ std::unique_ptr<LoadSubscription::Handoff> LoadSubscription::take(bool initial)
         } else {
             if (m_ready.empty()) break;
             auto node = m_ready.extract(m_ready.begin());
+            const auto delivery = node.mapped().settlement_sequence;
             result->entries.push_back(std::move(node.mapped()));
+            m_unpublished.erase(delivery);
         }
     }
     result->more = initial ? !m_initial.empty() : !m_ready.empty();

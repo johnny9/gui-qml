@@ -380,7 +380,7 @@ public:
     // notification's own thread, before the GUI hears about it.
     bool shutdownComplete() const { return m_shutdown_finished; }
     bool observationsAllowed() const { return !m_stopping && !m_admission_closed; }
-    bool available() const { return m_wallet && !m_admission_closed && !m_unload_requested->load(); }
+    bool available() const { return m_wallet && !m_admission_closed && !m_unload_requested->load() && (!m_opening_native_events.unloaded || !m_opening_native_events.unloaded->load()); }
     ApprovalState signerApprovalState() const;
     quint64 signerApprovalId() const { return m_approval_id; }
     QString signerApprovalError() const { return m_approval_error; }
