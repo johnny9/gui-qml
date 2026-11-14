@@ -4,6 +4,7 @@
 
 #include <QApplication>
 #include <QEventLoop>
+#include <QStringList>
 #include <QStyleFactory>
 
 #include <chainparams.h>
@@ -13,7 +14,10 @@
 #include <test/qt_test_registry.h>
 #include <util/translation.h>
 #include <cstdio>
+#include <algorithm>
 #include <atomic>
+#include <optional>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -75,6 +79,64 @@ int main(int argc, char* argv[])
         configured_fatal_policy = qtlog::CaptureFatalPolicy(); qInstallMessageHandler(ConfiguredQtHandler);
         qFatal("qtlog fatal: %s", qgetenv("BITCOIN_QML_QTLOG_FATAL_CASE").constData());
     }
+
+    // Runner options are removed before Qt consumes its unchanged function,
+    // data-row and logging arguments. --list-test-classes needs no application
+    // or test object. --test-class=NAME overrides a valid legacy environment
+    // selection; every supplied class is validated before either path runs.
+    const auto entries = qttestregistry::SortedEntries();
+    auto classes = qEnvironmentVariable("BITCOIN_QML_TEST_CLASSES").split(',', Qt::SkipEmptyParts);
+    std::optional<QString> requested_class;
+    bool list_classes{false};
+    int forwarded{1};
+    for (int index{1}; index < argc; ++index) {
+        const std::string_view argument{argv[index]};
+        if (argument == "--list-test-classes") {
+            list_classes = true;
+        } else if (argument.starts_with("--test-class=")) {
+            if (requested_class) {
+                std::fputs("Only one --test-class=NAME selector may be supplied.\n", stderr);
+                return 2;
+            }
+            const auto name = argument.substr(std::string_view{"--test-class="}.size());
+            if (name.empty()) {
+                std::fputs("--test-class=NAME requires a nonempty class name.\n", stderr);
+                return 2;
+            }
+            requested_class = QString::fromUtf8(name.data(), static_cast<qsizetype>(name.size()));
+        } else if (argument == "--test-class") {
+            std::fputs("Use --test-class=NAME to select one Qt test class.\n", stderr);
+            return 2;
+        } else {
+            argv[forwarded++] = argv[index];
+            // A QtTest output filename is opaque, even when it happens to
+            // have the spelling of a runner option.
+            if (argument == "-o" && index + 1 < argc) argv[forwarded++] = argv[++index];
+        }
+    }
+    argc = forwarded;
+    argv[argc] = nullptr;
+    auto supplied_classes = classes;
+    if (requested_class) supplied_classes.push_back(*requested_class);
+    for (const auto& name : supplied_classes) {
+        const bool registered = std::any_of(entries.begin(), entries.end(), [&](const auto& entry) {
+            return name == QString::fromUtf8(entry.name);
+        });
+        if (!registered) {
+            std::fprintf(stderr, "Unknown Qt test class: %s\n", name.toUtf8().constData());
+            return 2;
+        }
+    }
+    if (requested_class) classes = {*requested_class};
+    if (list_classes) {
+        if (entries.empty()) {
+            std::fputs("No Qt test classes are registered.\n", stderr);
+            return 2;
+        }
+        for (const auto& entry : entries) std::puts(entry.name);
+        return 0;
+    }
+
     QApplication app(argc, argv);
     // The default macOS style draws through Cocoa views, which the minimal
     // platform the tests run on does not provide, so any shown widget crashes.
@@ -83,10 +145,9 @@ int main(int argc, char* argv[])
     QCoreApplication::setApplicationName("bitcoinqml_unit_tests");
     SelectParams(ChainType::REGTEST);
 
-    const auto classes = qEnvironmentVariable("BITCOIN_QML_TEST_CLASSES").split(',', Qt::SkipEmptyParts);
     int status = 0;
     bool ran{false};
-    for (const auto& test : qttestregistry::SortedEntries()) {
+    for (const auto& test : entries) {
         if (!classes.isEmpty() && !classes.contains(QString::fromUtf8(test.name))) continue;
         ran = true;
         status |= test.run(argc, argv);

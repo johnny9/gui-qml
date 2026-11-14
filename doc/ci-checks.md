@@ -61,6 +61,20 @@ and app headers using `bitcoin/src/.clang-tidy`. Generated code and Core's own
 compilation units are excluded from this app pass. An empty selection fails.
 Per-file diagnostics and results are retained in `build-tidy/clang-tidy/`.
 
+For a focused iteration, select configured handwritten compilation units:
+
+```sh
+python3 ci/clang_tidy.py --build-dir build-tidy --jobs 2 --files test/test_unit_tests_main.cpp
+```
+
+Paths are relative to the app root or absolute. App MOC aggregates remain in the
+selection. Missing, unconfigured, Core, generated or header-only requests fail
+before analysis; an empty selection cannot pass. For header changes, include
+all affected compilation units or use the default complete selection. The
+compiler version, Bitcoin plugin, check configuration and diagnostic policy
+are the same in both modes. An existing matching plugin can be reused with
+`--plugin PATH`.
+
 ## Sanitizers
 
 ```sh

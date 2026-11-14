@@ -149,9 +149,11 @@ Use the existing executables and selectors for focused testing:
 
 ```sh
 # Select one unit class and one function; omit the function to run the class.
-BITCOIN_QML_TEST_CLASSES=OptionsModelTests build/bin/bitcoinqml_unit_tests -platform minimal signerValidationKeepsLatestManualIntent
+build/bin/bitcoinqml_unit_tests -platform minimal --test-class=OptionsModelTests signerValidationKeepsLatestManualIntent
+# List classes without constructing QApplication, Core state or test objects.
+build/bin/bitcoinqml_unit_tests --list-test-classes
 # Discover that class's functions and data rows with -functions or -datatags.
-BITCOIN_QML_TEST_CLASSES=OptionsModelTests build/bin/bitcoinqml_unit_tests -platform minimal -functions
+build/bin/bitcoinqml_unit_tests -platform minimal --test-class=OptionsModelTests -functions
 # Select a QML component file through CTest; reject an empty selection.
 ctest --test-dir build -R '^bitcoinqml_qml_formcontrols$' --no-tests=error --output-on-failure
 # Select one QML function directly in the default embedded-resource build.
@@ -163,6 +165,11 @@ passing function selectors so they are applied to the intended suite. QML
 functions use `TestCase::function`. Preserve the normal test rendering
 environment described below. Integration stage/module/wallet/function/data-row
 selectors are documented in the integration section below.
+
+`BITCOIN_QML_TEST_CLASSES` remains supported. Unknown class names are rejected,
+including an unknown name mixed with valid names. An explicit empty
+`--test-class=` is an error. The CLI selects one class; all supplied CLI and
+legacy environment class names are validated before any test runs.
 
 Focused runs execute the same fixtures and assertions as full runs. Selectors
 do not require a new executable or a change-specific harness. Record the actual
