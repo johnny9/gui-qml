@@ -211,6 +211,16 @@ Real-thread tests are separately required for physical thread affinity, callback
 
 ## Validation cadence
 
+**General targeting clarification (user instruction, 2026-11-14):** use the
+existing unit class/function/data-row, QML file/case and integration selectors
+for focused checks. Do not build change-specific harnesses or copy hard-coded
+selection/reporting runners for each change. Keep selectors as data and reuse
+shared execution/reporting tools; extend the existing runner once if a general
+capability is missing. Behavioral fixtures and shared manual executors still
+control setup, timing and cleanup, and their bugs must be repaired without
+bypassing assertions. See [the targeting rule](QT6_VALIDATION_CADENCE_20261114.md#general-targeting-and-fixture-repairs)
+and the documented commands in the repository README.
+
 **Expanded deferrals — explicitly approved 2026-11-14:** R42 owns exhaustive 100% reachable coverage qualification, full-suite reruns, detailed compiler/profile mapping audits and full Qt/platform/configuration matrices. Native Windows is deferred to that final stage, not permanently waived. Keep focused ordinary behavioral regressions, manual timing/real-thread checks, relevant integration, nonempty execution evidence and changed-scope lint/tidy at each implementation step. Use targeted checks for directly affected compile/configuration branches. Record per-step implementation/focused-check completion separately from final qualification pending R42. Preserve all raw coverage ledgers, scopes, failures and final requirements; do not chase coverage percentages or repeat unrelated suites before proceeding. This supersedes earlier per-step completeness/matrix gates below and in worker orders.
 
 **Sanitizer cadence amendment — user instruction, 2026-11-14:** defer routine sanitizer builds, runs and sanitizer-only repairs until implementation work orders are complete. R42 owns final combined-series sanitizer qualification and repairs. Continue focused ordinary tests, manual timing/real-thread checks, lint, clang-tidy, coverage and relevant ordinary integration. Record implementation/ordinary-check completion separately from sanitizer qualification pending R42; do not claim full final acceptance before the final checks and repairs pass. Preserve existing results and unresolved findings. This amendment overrides earlier per-step sanitizer timing in this plan and worker orders, preserving all final scopes, options, Core boundaries and existing platform/Qt deferrals. See [the recorded decision](QT6_VALIDATION_CADENCE_20261114.md).

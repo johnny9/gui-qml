@@ -145,6 +145,29 @@ cmake --build build --target bitcoinqml_unit_tests bitcoinqml_bootstrap_tests bi
 ctest --test-dir build --output-on-failure -L 'unit|qml' --parallel 4
 ```
 
+Use the existing executables and selectors for focused testing:
+
+```sh
+# Select one unit class and one function; omit the function to run the class.
+BITCOIN_QML_TEST_CLASSES=OptionsModelTests build/bin/bitcoinqml_unit_tests -platform minimal signerValidationKeepsLatestManualIntent
+# Discover that class's functions and data rows with -functions or -datatags.
+BITCOIN_QML_TEST_CLASSES=OptionsModelTests build/bin/bitcoinqml_unit_tests -platform minimal -functions
+# Select a QML component file through CTest; reject an empty selection.
+ctest --test-dir build -R '^bitcoinqml_qml_formcontrols$' --no-tests=error --output-on-failure
+# Select one QML function directly in the default embedded-resource build.
+QT_QUICK_BACKEND=software QML_DISABLE_DISK_CACHE=1 build/bin/bitcoinqml_qmltests -platform minimal -input :/test/qml/tst_formcontrols.qml FormControls::test_field_surface_error_outlives_focus_and_clears
+```
+
+Unit functions accept Qt Test's `function:data-row` syntax. Use one class when
+passing function selectors so they are applied to the intended suite. QML
+functions use `TestCase::function`. Preserve the normal test rendering
+environment described below. Integration stage/module/wallet/function/data-row
+selectors are documented in the integration section below.
+
+Focused runs execute the same fixtures and assertions as full runs. Selectors
+do not require a new executable or a change-specific harness. Record the actual
+executed cases and results; discovery output is not a passing test run.
+
 For a faster QML editing loop on systems that support symbolic links, use a
 separate development build:
 
@@ -153,7 +176,7 @@ cmake -S . -B build-qml-dev -DBUILD_APP_TESTS=ON -DQML_TEST_DEV_MODE=ON -DWITH_C
 cmake --build build-qml-dev --target bitcoinqml_qmltests --parallel 4
 ctest --test-dir build-qml-dev -L qml --parallel 4 --output-on-failure
 # Run just one component file:
-ctest --test-dir build-qml-dev -R '^bitcoinqml_qml_copybutton$' --output-on-failure
+ctest --test-dir build-qml-dev -R '^bitcoinqml_qml_copybutton$' --no-tests=error --output-on-failure
 ```
 
 Development mode creates a live source mirror in `build-qml-dev/test/qml-dev`,

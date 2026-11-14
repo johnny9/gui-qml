@@ -16,3 +16,33 @@ Retain focused ordinary behavior tests, manual timing/real-thread cases, relevan
 R10's valuable checks exposed stale/reentrant completion problems, fee/PSBT authority errors, admission/cleanup ownership failures and physical GUI interaction defects. Keep those issue-specific oracles and negative controls. Repeated whole matrices and exhaustive measurement-accounting work during changing implementation are deferred.
 
 Current Mac Qt6.11 enabled-property override warnings and minimal/offscreen font-plugin failures remain explicitly unresolved for final compatibility qualification. Do not suppress them or claim those configurations passed. Existing native Qt dependency deferrals and the Core notify/wait rule remain binding.
+
+## General targeting and fixture repairs
+
+The user clarified that focused testing should use general targeting rather
+than a new custom harness for each change. Unit tests already support class
+selection through `BITCOIN_QML_TEST_CLASSES` and Qt Test function/data-row
+arguments. QML supports per-file CTest entries and Quick Test case/function
+selectors. Integration supports stage/module/wallet/function/row selection.
+Use and document these existing entry points; do not create another test binary,
+fixture or hard-coded Python runner solely to select a subset.
+
+Keep selection manifests as data. Reuse common execution/reporting tooling; if
+a missing general capability is necessary, extend the existing runner once.
+Remote dispatch and evidence collection must also use reusable tooling rather
+than copied per-change scripts. Preserve actual exits, warnings, nonempty body
+counts and distinct pass/fail/skip results. Use CTest's `--no-tests=error` for
+focused CTest selections and verify actual executed cases for direct binaries.
+
+Behavioral fixtures remain necessary for mocks, initial state, controlled
+executor/clock boundaries and cleanup. Reuse the shared manual execution
+environment. A fixture repair must identify its faulty premise and preserve or
+replace the intended behavioral oracle explicitly; targeting must never bypass
+fixture setup, assertions or teardown.
+
+The final R10 fixture repairs corrected premature publication assertions,
+confusion between idle transport and retained cleanup ownership, native-owner
+lifetimes, and an assertion before an existing color animation completed. They
+were test bugs, not new targeting mechanisms or production fixes. The per-run
+validation wrappers were separate orchestration/evidence scripts using existing
+selectors; retain their historical artifacts, but do not repeat that pattern.
