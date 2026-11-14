@@ -12,12 +12,13 @@ progress without changing shared finding or schedule registers.
 | R10 | Implementation/focused ordinary checkpoint complete; final qualification pending R42 |
 | R11 | Implementation/focused checkpoint complete:274 behavioral bodies,5 IPC scenarios; final qualification pending R42 |
 | R16 | Focused checkpoint integrated:227 native,19 Core integration,17 Linux QML bodies across recorded snapshots; final qualification pending R42 |
-| R17 | Reader/policy extraction active; 048 remains unresolved with user-accepted upstream deferral; final review-fee proof/checks pending |
+| R17 | Focused conditional checkpoint integrated:177 worker ordinary bodies plus25 Mac; merged265-body gate passes. D048 remains unresolved, requires Core interface changes, with user-accepted deferral |
 | R14 | Security/storage in progress; private security extraction and reservation repair pass 166 focused bodies; whole-step gate pending |
 | R28 | Focused checkpoint integrated: 51 native, 56 Activity QML and one public Core/RPC body across recorded inputs; final qualification pending R42 |
 | R18 | Coin-selection/lock-operation extraction active in parallel with integration |
-| R12 | Creation implementation at focused validation; integration pending |
-| R13, R15, R19–R27, R29–R40 | Authorized next, according to stated prerequisites; implementation and focused gates pending |
+| R12 | Focused checkpoint integrated:327 distinct bodies across recorded worker snapshots; merged50-body gate, QML lint, pinned tidy and app lint pass |
+| R13, R15 | Restore/migration and signer discovery implementation active on independent owners/build lanes |
+| R19–R27, R29–R40 | Authorized next, according to stated prerequisites; implementation and focused gates pending |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
