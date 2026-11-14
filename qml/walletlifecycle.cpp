@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/walletlifecycle.h>
+#include <qml/walletpublication.h>
 #include <qml/retainedsnapshot.h>
 
 #include <QScopeGuard>
@@ -17,8 +18,8 @@ namespace {
 constexpr size_t TRANSPORT_BYTES{sizeof(void*)};
 }
 
-LoadSubscription::LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify, std::function<uint64_t()> ingress_stamp)
-    : m_scheduler(std::move(scheduler)), m_registration(std::move(registration)), m_capture(std::move(capture)), m_notify(std::move(notify)), m_ingress_stamp(std::move(ingress_stamp)), m_key(m_scheduler ? m_scheduler->allocateKey() : execution::ResourceKey{})
+LoadSubscription::LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify, std::function<uint64_t()> ingress_stamp, std::function<std::string(interfaces::Wallet&)> read_name)
+    : m_scheduler(std::move(scheduler)), m_registration(std::move(registration)), m_capture(std::move(capture)), m_notify(std::move(notify)), m_ingress_stamp(std::move(ingress_stamp)), m_read_name(read_name ? std::move(read_name) : [](interfaces::Wallet& wallet) { return wallet.getWalletName(); }), m_key(m_scheduler ? m_scheduler->allocateKey() : execution::ResourceKey{})
 {
     if (!m_scheduler || !m_registration || !m_capture || !m_notify) throw std::invalid_argument("Missing wallet lifecycle port");
     m_pending.reserve(PENDING_HANDLES);
@@ -65,7 +66,7 @@ std::vector<LoadSubscription::Entry> LoadSubscription::captureEntries(std::vecto
     for (auto& wallet : wallets) {
         if (!wallet) throw std::runtime_error("Invalid wallet snapshot");
         auto [handle, observation] = observeUnload(std::move(wallet));
-        Entry entry; entry.name = handle->getWalletName(); entry.wallet = std::move(handle); entry.unload_observation = std::move(observation);
+        Entry entry; entry.name = m_read_name(*handle); entry.wallet = std::move(handle); entry.unload_observation = std::move(observation);
         entries.push_back(std::move(entry));
     }
     return entries;
@@ -200,6 +201,7 @@ void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
     bool overflow{false};
     try {
         auto [handle, observation] = observeUnload(std::move(incoming));
+        if (context && context->creation_observation && !context->creation_observation->capture(handle, observation->unloaded, observation, stamp)) { requestFailure(FailureReason::IngressCapacity); return; }
         std::lock_guard lock{m_mutex};
         if (m_stopping || m_failed) return;
         if (m_pending.size() < PENDING_HANDLES) {
@@ -213,6 +215,7 @@ void LoadSubscription::ingress(std::unique_ptr<interfaces::Wallet> wallet)
 
 void LoadSubscription::requestFailure(FailureReason reason)
 {
+    { std::lock_guard lock{m_mutex}; if (m_notification_context && m_notification_context->creation_observation) m_notification_context->creation_observation->fail(); }
     auto previous = FailureReason::None;
     m_failure.compare_exchange_strong(previous, reason);
     if (m_failed.exchange(true)) return;
@@ -265,7 +268,7 @@ void LoadSubscription::scan()
     std::vector<Entry> entries;
     entries.reserve(pending.size());
     for (auto& notification : pending) {
-        auto name = notification.wallet->getWalletName();
+        auto name = m_read_name(*notification.wallet);
         const auto& context=notification.context;
         if(context&&!context->deferred_name.isEmpty()){const auto& deferred=context->nativeName();if(!deferred.empty()&&name==deferred){std::lock_guard lock{m_mutex};m_unpublished.erase(notification.notification_sequence);continue;}}
         entries.push_back({std::move(name),std::move(notification.wallet),context?context->select_wallet:true,context?context->selection_revision:0,context?context->adoption_origin:std::shared_ptr<void>{},notification.ingress_sequence,notification.notification_sequence,notification.notification_sequence,std::move(notification.unload_observation)});
@@ -311,7 +314,7 @@ const std::string& LoadSubscription::NotificationContext::nativeName()const
     if(!native_name)native_name.emplace(deferred_name.trimmed().toStdString());
     return *native_name;
 }
-bool LoadSubscription::setNotificationContext(QString deferred_name,bool action_pending,uint64_t selection_revision,std::shared_ptr<void> adoption_origin)
+bool LoadSubscription::setNotificationContext(QString deferred_name,bool action_pending,uint64_t selection_revision,std::shared_ptr<void> adoption_origin,std::shared_ptr<walletpublication::NativeObservation> creation_observation)
 {
     if(m_stopping||m_failed)return false;
     // Account retained UTF16 plus Native UTF8 conversion/cache peak using only
@@ -324,7 +327,7 @@ bool LoadSubscription::setNotificationContext(QString deferred_name,bool action_
     bool captured{false};std::shared_ptr<NotificationContext> context;
     try{context=execution::RetainSnapshot<NotificationContext>(m_scheduler,[&]{
         auto value=std::make_unique<NotificationContext>();value->inventory=m_context_inventory;value->bytes=bytes;captured=true;
-        value->deferred_name=std::move(deferred_name);value->select_wallet=!action_pending;value->selection_revision=selection_revision;value->adoption_origin=std::move(adoption_origin);return value;
+        value->deferred_name=std::move(deferred_name);value->select_wallet=!action_pending;value->selection_revision=selection_revision;value->adoption_origin=std::move(adoption_origin);value->creation_observation=std::move(creation_observation);return value;
     });}catch(...){if(!captured)m_context_inventory->release(bytes);requestFailure(FailureReason::IngressCapacity);return false;}
     if(!context){if(!captured)m_context_inventory->release(bytes);requestFailure(FailureReason::IngressCapacity);return false;}
     std::shared_ptr<const NotificationContext> published=std::move(context);

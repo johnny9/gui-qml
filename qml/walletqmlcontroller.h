@@ -8,6 +8,8 @@
 #include <qml/models/walletlistmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletselectionmodel.h>
+#include <qml/models/walletprovisioningcheck.h>
+#include <qml/models/walletcreationmodel.h>
 #include <qml/backendexecutor.h>
 #include <qml/secretinput.h>
 #include <qml/guipresentation.h>
@@ -33,57 +35,6 @@
 
 namespace walletlife { class LoadSubscription; struct Update; }
 
-class WalletProvisioningCheck : public QObject
-{
-    Q_OBJECT
-    Q_PROPERTY(QString name READ name WRITE setName NOTIFY inputChanged)
-    Q_PROPERTY(QString xpub READ xpub WRITE setXpub NOTIFY inputChanged)
-    Q_PROPERTY(QString path READ path WRITE setPath NOTIFY inputChanged)
-    Q_PROPERTY(bool pending READ pending NOTIFY changed)
-    Q_PROPERTY(bool ready READ ready NOTIFY changed)
-    Q_PROPERTY(QString nameError READ nameError NOTIFY changed)
-    Q_PROPERTY(bool xpubValid READ xpubValid NOTIFY changed)
-    Q_PROPERTY(bool pathExists READ pathExists NOTIFY changed)
-    Q_PROPERTY(QString normalizedPath READ normalizedPath NOTIFY changed)
-    Q_PROPERTY(QString error READ error NOTIFY changed)
-public:
-    WalletProvisioningCheck(interfaces::Node& node, execution::SnapshotServices services, QObject* parent = nullptr, std::shared_ptr<std::atomic_bool> names_ready = {}, std::shared_ptr<WalletNameRegistry> registry = {}, std::shared_ptr<std::atomic_bool> shutdown_gate = {});
-    ~WalletProvisioningCheck() override;
-    QString name() const { return m_name; }
-    QString xpub() const { return m_xpub; }
-    QString path() const { return m_path; }
-    void setName(const QString& value);
-    void setXpub(const QString& value);
-    void setPath(const QString& value);
-    bool pending() const { return m_pending; }
-    bool ready() const { return !m_closed && !m_pending && m_completed == m_revision && m_error.isEmpty(); }
-    QString nameError() const { return m_name_error; }
-    bool xpubValid() const { return ready() && m_xpub_valid; }
-    bool pathExists() const { return ready() && m_path_exists; }
-    QString normalizedPath() const { return ready() ? m_normalized_path : QString{}; }
-    QString error() const { return m_error; }
-    Q_INVOKABLE void refresh();
-    Q_INVOKABLE void closeAdmission();
-Q_SIGNALS:
-    void inputChanged();
-    void changed();
-private:
-    struct Input { std::mutex mutex; QString name, xpub, path; quint64 revision{0}; };
-    struct Result { QString name_error, normalized_path; bool xpub_valid{false}, path_exists{false}; quint64 revision{0}; };
-    void publish();
-    interfaces::Node& m_node;
-    std::shared_ptr<QObject> m_bridge;
-    std::shared_ptr<std::atomic_bool> m_names_ready;
-    std::shared_ptr<WalletNameRegistry> m_registry;
-    execution::SnapshotServices m_services;
-    std::shared_ptr<Input> m_input{std::make_shared<Input>()};
-    std::shared_ptr<execution::SnapshotQuery<Result>> m_query;
-    QString m_name, m_xpub, m_path, m_name_error, m_normalized_path, m_error;
-    quint64 m_revision{0}, m_completed{0};
-    bool m_pending{false}, m_xpub_valid{false}, m_path_exists{false};
-    walletopening::AdmissionFence m_closed;
-};
-
 class WalletImportErrorLines final : public QAbstractListModel
 {
 public:
@@ -102,6 +53,9 @@ private:
 class WalletQmlController : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(WalletCreationModel* creation READ creation CONSTANT)
+    Q_PROPERTY(WalletOperationModel* creationOperation READ creationOperation NOTIFY walletOperationChanged)
+    Q_PROPERTY(bool acceptingOperations READ acceptingOperations NOTIFY walletLoadInProgressChanged)
     Q_PROPERTY(WalletQmlModel* selectedWallet READ selectedWallet NOTIFY selectedWalletChanged)
     Q_PROPERTY(WalletSelectionModel* selection READ selection CONSTANT)
     Q_PROPERTY(WalletQmlModel* closeTarget READ closeTarget NOTIFY closeTargetChanged)
@@ -155,11 +109,15 @@ public:
     Q_ENUM(WalletAdoptionState)
     Q_PROPERTY(WalletAdoptionState walletOperationAdoptionState READ walletOperationAdoptionState NOTIFY walletOperationChanged)
     Q_PROPERTY(QString walletOperationAdoptionError READ walletOperationAdoptionError NOTIFY walletOperationChanged)
-    WalletAdoptionState walletOperationAdoptionState() const { return m_adoption_state; }
-    QString walletOperationAdoptionError() const { return m_adoption_error; }
+    WalletAdoptionState walletOperationAdoptionState() const;
+    QString walletOperationAdoptionError() const;
     WalletQmlModel* walletOperationResultWallet() const;
     bool canOpenResult() const;
-    quint64 walletOperationId() const { return m_command_id; }
+    quint64 walletOperationId() const { return m_creation ? m_creation->sequence() : m_command_id; }
+    WalletCreationModel* creation();
+    Q_INVOKABLE WalletCreationModel* newCreation();
+    WalletOperationModel* creationOperation() const { return m_creation; }
+    bool acceptingOperations() const { return !m_shutting_down && m_initialized && !walletLoadInProgress() && !m_admitting_command && !m_publishing_command; }
     WalletOperationState walletOperationState() const;
     QString walletOperationName() const;
     using OpenLocalPathFn = std::function<bool(const QString&)>;
@@ -227,9 +185,9 @@ public:
     void setWalletLoaded(bool loaded);
     bool noWalletsFound() const { return m_no_wallets_found; }
     void setNoWalletsFound(bool no_wallets_found);
-    bool walletLoadInProgress() const { return m_wallet_load_in_progress; }
-    QString walletLoadError() const { return m_import_error_unavailable ? m_import_error_projection_error : m_wallet_load_error; }
-    QString walletLoadWarnings() const { return m_wallet_load_warnings; }
+    bool walletLoadInProgress() const { return m_wallet_load_in_progress || m_creation_admission->creationPending(); }
+    QString walletLoadError() const { return m_creation ? m_creation->errorText() : m_import_error_unavailable ? m_import_error_projection_error : m_wallet_load_error; }
+    QString walletLoadWarnings() const { return m_creation ? m_creation->warningText() : m_wallet_load_warnings; }
     QString walletImportErrorTitle() const;
     QString walletImportErrorDescription() const;
     QString walletImportErrorHelpText() const;
@@ -240,12 +198,12 @@ public:
     bool walletImportErrorRetryAvailable() const { return (!m_import_error_unavailable && !m_import_error_projection_error.isEmpty()) || bool(m_import_error_retry_owner) || m_import_error_retry_fixed.has_value(); }
     Q_INVOKABLE bool retryWalletImportErrorPresentation();
     void setImportErrorServicesForTesting(execution::SnapshotServices services);
-    bool walletLoadHasError() const { return m_import_error_unavailable || !m_wallet_load_error.isEmpty(); }
-    bool walletCreateHasError() const { return !m_wallet_create_error.isEmpty(); }
-    QString walletLoadErrorDisplay() const { return m_import_error_unavailable ? m_import_error_projection_error : m_import_error_display; }
-    QString walletCreateError() const { return m_wallet_create_error; }
-    QString walletCreateErrorDisplay() const { return m_create_error_display; }
-    QAbstractItemModel* walletCreateErrorHelpModel() { return &m_create_error_lines; }
+    bool walletLoadHasError() const { return !walletLoadError().isEmpty(); }
+    bool walletCreateHasError() const { return !walletCreateError().isEmpty(); }
+    QString walletLoadErrorDisplay() const { return m_creation ? m_creation->error().message : m_import_error_unavailable ? m_import_error_projection_error : m_import_error_display; }
+    QString walletCreateError() const { return m_creation ? m_creation->errorText() : m_wallet_create_error; }
+    QString walletCreateErrorDisplay() const { return m_creation ? m_creation->error().message : m_create_error_display; }
+    QAbstractItemModel* walletCreateErrorHelpModel() { return m_creation ? m_creation->errorDetails() : &m_create_error_lines; }
     bool walletMigrationInProgress() const { return m_wallet_migration_in_progress; }
     QString walletMigrationError() const { return m_wallet_migration_error; }
     Q_INVOKABLE QAbstractItemModel* captureMigrationErrorDetails(quint64 operation, int slot);
@@ -365,7 +323,7 @@ private:
         QString error, warnings, name, key_scheme, reference;
         bool needs_migration{false}, needs_passphrase{false}, effect_succeeded{false}, incomplete{false};
     };
-    static void describeCommandWallet(CommandResult& result, const QString& fallback);
+    static void describeCommandWallet(CommandResult& result, const QString& fallback, const QString& directory = {});
     struct CommandReceipt {
         std::mutex mutex;
         bool ready{false};
@@ -443,16 +401,15 @@ private:
     bool adoptRetirement(WalletQmlModel* model, bool remove);
     void retireWallet(WalletQmlModel* wallet_model, bool remove);
     void checkShutdownFinished();
-    using WalletSetupFn = std::function<QString(interfaces::Wallet& wallet)>;
-    bool createWalletAsync(const QString& name,
-                           SecureString passphrase,
-                           uint64_t wallet_creation_flags,
-                           WalletLoadAction load_action,
-                           bool report_create_error,
-                           WalletSetupFn setup_wallet = {},
-                           std::function<QString()> preflight = {},
-                           secretinput::Captured captured_passphrase = {},
-                           size_t extra_payload_bytes = 0);
+    WalletCreationModel::Services creationServices();
+    void trackCreation(WalletOperationModel* operation);
+    WalletOperationModel* startCreation(WalletCreationModel::Kind kind, const QString& name, const QString& key, const QString& passphrase);
+    std::shared_ptr<walletcreation::Admission> m_creation_admission{std::make_shared<walletcreation::Admission>()};
+    QPointer<WalletCreationModel> m_default_creation;
+    QPointer<WalletOperationModel> m_creation;
+    const QChar* m_creation_error_data{nullptr};
+    const QChar* m_creation_warning_data{nullptr};
+    bool m_creation_busy{false};
     void startWalletImport(const QString& path);
     void startWalletLoad(const QString& path, const QString& wallet_format = QString());
     void startWalletMigration(const QString& path, SecureString passphrase, secretinput::Captured captured_passphrase = {});

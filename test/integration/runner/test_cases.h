@@ -50,6 +50,7 @@ QString SendPreparedWallet(const QString& selector);
 QString PsbtPreparedWallet(const QString& selector);
 QStringList SendTestArguments(const QString& selector);
 QStringList ReceiveTestArguments(const QString& selector);
+QStringList WalletTestArguments(const QString& selector);
 QStringList DebugLogTestArguments(const QString& selector);
 
 #endif // BITCOIN_QML_TEST_INTEGRATION_RUNNER_TEST_CASES_H

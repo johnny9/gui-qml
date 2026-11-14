@@ -689,6 +689,31 @@ TestCase {
         compare(view.groupTitles.advanced, "Advanced")
     }
 
+    function test_rpc_namespace_is_independent_of_canonical_presentation_identity() {
+        const oldName = testWalletModel.name
+        try {
+            testWalletModel.name = "savings"
+            testWalletModel.setRpcNamespace("savings/")
+            const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem, { wallet: testWalletModel })
+            view.selectSection("rpc-console")
+            const page = findChild(view, "rpcConsoleSettingsPage")
+            verify(page !== null)
+            compare(view.activeWalletName, "savings")
+            compare(page.walletName, "savings/")
+            compare(page.walletContext, true)
+            const input = findChild(page, "consoleInput")
+            verify(input !== null)
+            input.text = "getwalletinfo"
+            page.consoleItem.submitCommand()
+            compare(rpcConsoleModel.lastTarget, "wallet")
+            compare(rpcConsoleModel.lastWalletName, "savings/")
+            compare(testWalletModel.name, "savings")
+        } finally {
+            testWalletModel.clearRpcNamespace()
+            testWalletModel.name = oldName
+        }
+    }
+
     function test_rpc_context_distinguishes_an_unnamed_wallet() {
         const oldName = testWalletModel.name
         const oldAvailable = testWalletModel.available

@@ -6,6 +6,8 @@
 
 #include <qml/backendexecutor.h>
 #include <qml/guipresentation.h>
+#include <qml/walletnames.h>
+#include <qml/walletpublication.h>
 #include <qml/models/walletqmlmodel.h>
 
 #include <QAbstractListModel>
@@ -22,8 +24,6 @@
 #include <optional>
 #include <set>
 #include <utility>
-
-struct WalletNameRegistry { std::mutex mutex; std::set<QString> names; };
 
 class OpenWalletListModel final : public QAbstractListModel
 {
@@ -54,7 +54,7 @@ private:
  * exact opening/origin identities and the original bounded retirement escrow.
  * It never selects a wallet or infers a new opening from a name alone.
  */
-class WalletRegistry : public std::enable_shared_from_this<WalletRegistry>
+class WalletRegistry : public std::enable_shared_from_this<WalletRegistry>, public walletpublication::WalletCatalogPublisher
 {
 public:
     struct WalletInformation { QString name; int key_scheme; };
@@ -114,14 +114,7 @@ public:
     /** Acknowledges the reserved Native release of one command's backend cell.
      * Metadata may remain observable without extending that backend lifetime.
      */
-    struct ResultLifetime {
-        void whenReleased(std::function<void()> callback);
-        void release();
-    private:
-        std::mutex mutex;
-        bool released{false};
-        std::list<std::function<void()>> notifications;
-    };
+    using ResultLifetime = walletpublication::Release;
     struct OpeningAdoption {
         QPointer<WalletQmlModel> facade;
         walletopening::Opening identity;
@@ -181,7 +174,11 @@ public:
     WalletRegistry(std::shared_ptr<Host> host, Services services);
     OpenWalletListModel* openWalletModel() const { return m_open_wallet_model; }
     std::shared_ptr<WalletNameRegistry> nameRegistry() const { return m_names_registry; }
-    bool containsExact(WalletQmlModel* wallet) const;
+    bool containsExact(WalletQmlModel* wallet) const override;
+    std::shared_ptr<walletpublication::Ticket> reserveCreation(const QString& operation_id) override;
+    walletpublication::Result publishCreation(const std::shared_ptr<walletpublication::Ticket>& ticket,
+        std::shared_ptr<interfaces::Wallet> wallet, const QString& wallet_id, walletopening::NativeEvents observation) override;
+    void finishCreation(const std::shared_ptr<walletpublication::Ticket>& ticket) override;
     WalletQmlModel* walletForName(const QString& name) const;
     WalletQmlModel* firstAvailable(WalletQmlModel* except = nullptr) const;
     QList<QObject*> openWallets() const;

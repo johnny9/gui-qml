@@ -5,6 +5,8 @@
 #include <qml/walletcatalog.h>
 
 #include <qml/bitcoinunits.h>
+#include <qml/walletidentity.h>
+#include <QDir>
 #include <qml/retainedsnapshot.h>
 
 #include <QCoreApplication>
@@ -30,7 +32,7 @@ struct Catalog {
     std::map<QString, Information> information;
     std::map<QString, QString> operations;
     std::map<QString, quint64> facades;
-    QSet<QString> open;
+    QSet<QString> open, observed_external;
     std::optional<QString> loading, failed;
     QString row_error, read_error;
     Availability availability{Availability::Available};
@@ -52,7 +54,7 @@ struct Catalog {
             if (input.load == LoadState::Loading) { loading = input.name; failed.reset(); row_error.clear(); }
             else if (input.load == LoadState::LoadError) { loading.reset(); failed = input.name; row_error = input.error; }
             else {
-                if (input.load == LoadState::Open) open.insert(input.name); else open.remove(input.name);
+                if (input.load == LoadState::Open) { open.insert(input.name); if (QDir::isAbsolutePath(input.name)) observed_external.insert(input.name); } else open.remove(input.name);
                 if (loading == input.name) loading.reset();
                 if (failed == input.name) { failed.reset(); row_error.clear(); }
             }
@@ -69,16 +71,16 @@ struct Catalog {
         if (loaded) {
             QSet<QString> listed;
             for (const auto& [path, format] : directory) {
-                Row item; item.name = QString::fromStdString(path); item.format = QString::fromStdString(format); item.from_wallet_dir = true;
+                Row item; item.name = walletidentity::Canonical(QString::fromStdString(path)); item.format = QString::fromStdString(format); item.from_wallet_dir = true;
                 listed.insert(item.name); result->rows.push_back(std::move(item));
             }
-            for (const auto& name : open) if (!listed.contains(name)) { Row item; item.name = name; result->rows.push_back(std::move(item)); }
+            for (const auto& name : open | observed_external) if (!listed.contains(name)) { Row item; item.name = name; result->rows.push_back(std::move(item)); }
         }
         if (result->rows.size() > size_t(std::numeric_limits<int>::max())) throw std::length_error("Wallet catalog exceeds Qt row capacity");
         for (auto& item : result->rows) {
             // Aliases are presentation data. Never trim the canonical identity.
             if (const auto alias = aliases.find(item.name); alias != aliases.end()) item.display_name = alias->second;
-            if (item.display_name.isEmpty()) item.display_name = item.name.isEmpty() ? CatalogError("Default wallet") : item.name;
+            if (item.display_name.isEmpty()) item.display_name = walletidentity::Display(item.name);
             if (const auto found = information.find(item.name); found != information.end()) {
                 item.balance = found->second.balance; item.balance_known = found->second.known; item.key_scheme = found->second.scheme;
             }
@@ -124,10 +126,10 @@ std::map<QString, QString> ReadAliases(const Catalog& catalog)
     std::map<QString, QString> aliases;
     QSettings settings;
     const auto read = [&](const QString& name) {
-        aliases[name] = settings.value(QStringLiteral("walletDisplayNames/%1").arg(name)).toString().trimmed();
+        aliases[name] = walletidentity::ReadAlias(settings, name);
     };
     for (const auto& entry : catalog.directory) read(QString::fromStdString(entry.first));
-    for (const auto& name : catalog.open) read(name);
+    for (const auto& name : catalog.open | catalog.observed_external) read(name);
     if (settings.status() != QSettings::NoError) throw std::runtime_error("Wallet display names could not be read");
     return aliases;
 }

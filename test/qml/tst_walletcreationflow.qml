@@ -4,12 +4,15 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Window 2.15
 import QtTest 1.2
+import org.bitcoincore.qt 1.0
 import "../../qml/controls"
 import "../../qml/components"
 import "../../qml/pages/wallet"
 
 TestCase {
+    id: testCase
     name: "WalletCreationFlow"
     when: windowShown
     visible: true
@@ -45,6 +48,49 @@ TestCase {
         walletController.initialized = true
     }
 
+    property real savedWindowWidth: 0
+    property real savedWindowHeight: 0
+    function cleanup() {
+        if (savedWindowWidth > 0) {
+            testCase.Window.window.width = savedWindowWidth
+            testCase.Window.window.height = savedWindowHeight
+            savedWindowWidth = 0
+        }
+    }
+    function createInputFlow(temporary) {
+        const window = testCase.Window.window
+        verify(window !== null)
+        savedWindowWidth = window.width
+        savedWindowHeight = window.height
+        window.width = Math.max(window.width, 800)
+        window.height = Math.max(window.height, 720)
+        const flow = temporary === false ? flowComponent.createObject(this) : createTemporaryObject(flowComponent, this)
+        verify(flow !== null)
+        return flow
+    }
+    function clickVisible(item) {
+        verify(item !== null)
+        // StackView deliberately filters child pointer events during a
+        // transition, even once the incoming button is visible and enabled.
+        for (let ancestor = item.parent; ancestor; ancestor = ancestor.parent) {
+            if (ancestor.objectName === "walletCreationPageStack") tryCompare(ancestor, "busy", false)
+        }
+        tryVerify(function() {
+            if (!item.visible || !item.enabled || item.width <= 0 || item.height <= 0) return false
+            const point = item.mapToItem(testCase.Window.window.contentItem, item.width / 2, item.height / 2)
+            if (point.x < 0 || point.y < 0 || point.x >= testCase.Window.window.width || point.y >= testCase.Window.window.height) return false
+            for (let ancestor = item.parent; ancestor; ancestor = ancestor.parent) {
+                if (!ancestor.visible) return false
+                if (ancestor.clip) {
+                    const center = item.mapToItem(ancestor, item.width / 2, item.height / 2)
+                    if (center.x < 0 || center.y < 0 || center.x >= ancestor.width || center.y >= ancestor.height) return false
+                }
+            }
+            return true
+        }, 5000, "The physical click center must be visible through every ancestor clip")
+        mouseClick(item)
+    }
+
     function createFlow() {
         const flow = createTemporaryObject(flowComponent, this)
         verify(flow !== null)
@@ -63,6 +109,139 @@ TestCase {
             const position = item.mapToItem(viewport, 0, 0)
             return position.y >= 8 && position.y + item.height <= viewport.height - 8
         }, 1000, "Focused control and its focus outline must be visible")
+    }
+
+    function test_live_form_edit_cannot_end_the_accepted_creation_data() {
+        return [{tag: "software", watchOnly: false}, {tag: "watch-only", watchOnly: true}]
+    }
+    function test_live_form_edit_cannot_end_the_accepted_creation(data) {
+        walletController.holdCreation = true
+        const flow = createInputFlow()
+        findChild(flow, data.watchOnly ? "walletTypeViewOnly" : "walletTypeRegular").clicked()
+        tryCompare(flow.currentItem, "objectName", "createWalletFormPage")
+        const form = flow.currentItem
+        const name = findChild(form, "createWalletNameInput")
+        testSetup.replaceText(name, "Original submitted wallet")
+        if (data.watchOnly) testSetup.replaceText(findChild(form, "watchOnlyXpubInput"), validXpub)
+        else {
+            testSetup.replaceText(findChild(form, "createWalletPasswordInput"), "original password")
+            testSetup.replaceText(findChild(form, "createWalletPasswordRepeatInput"), "original password")
+            findChild(form, "createWalletPasswordConfirmToggle").clicked()
+        }
+        tryCompare(form, "canCreate", true)
+        clickVisible(findChild(form, "createWalletFormCreateButton"))
+        tryCompare(walletController, "creationCalls", 1)
+        compare(walletController.submittedCreationName, "Original submitted wallet")
+        verify(walletController.walletLoadInProgress)
+        const original = flow.operation
+        verify(original !== null)
+        testSetup.replaceText(name, "A later live draft")
+        verify(walletController.walletLoadInProgress)
+        compare(flow.operation, original)
+        compare(original.submittedName, "Original submitted wallet")
+        compare(form.canCreate, false)
+        tryCompare(walletController, "creationCalls", 1)
+        walletController.finishCreation()
+        tryCompare(flow.currentItem, "objectName", "walletCreationReadyPage")
+        compare(walletController.walletLoadInProgress, false)
+        compare(flow.operation, original)
+        compare(original.phase, WalletOperationModel.Succeeded)
+        tryCompare(walletController, "creationCalls", 1)
+    }
+    function test_transport_refusal_is_scoped_and_creates_nothing() {
+        walletController.refuseNextCreation = true
+        const flow = createInputFlow()
+        findChild(flow, "walletTypeRegular").clicked()
+        tryCompare(flow.currentItem, "objectName", "createWalletFormPage")
+        const form = flow.currentItem
+        testSetup.replaceText(findChild(form, "createWalletNameInput"), "Refused request")
+        testSetup.replaceText(findChild(form, "createWalletPasswordInput"), "original password")
+        testSetup.replaceText(findChild(form, "createWalletPasswordRepeatInput"), "original password")
+        findChild(form, "createWalletPasswordConfirmToggle").clicked()
+        tryCompare(form, "canCreate", true)
+        clickVisible(findChild(form, "createWalletFormCreateButton"))
+        tryVerify(function() { return flow.operation !== null })
+        compare(flow.operation.phase, WalletOperationModel.Rejected)
+        verify(findChild(form, "createWalletFormErrorText").text.indexOf("No wallet was created") !== -1)
+        compare(walletController.creationCalls, 0)
+        compare(walletController.walletLoadInProgress, false)
+        compare(findChild(flow, "walletCreationReadyPage"), null)
+    }
+
+    function test_created_artifact_failure_has_recovery_without_success_or_recreation() {
+        walletController.holdCreation = true
+        const flow = createInputFlow()
+        findChild(flow, "walletTypeRegular").clicked()
+        tryCompare(flow.currentItem, "objectName", "createWalletFormPage")
+        const form = flow.currentItem
+        testSetup.replaceText(findChild(form, "createWalletNameInput"), "Original artifact")
+        testSetup.replaceText(findChild(form, "createWalletPasswordInput"), "original password")
+        testSetup.replaceText(findChild(form, "createWalletPasswordRepeatInput"), "original password")
+        findChild(form, "createWalletPasswordConfirmToggle").clicked()
+        tryCompare(form, "canCreate", true)
+        clickVisible(findChild(form, "createWalletFormCreateButton"))
+        const original = flow.operation
+        testSetup.replaceText(findChild(form, "createWalletNameInput"), "Later draft")
+        walletController.finishCreation("Wallet storage was created, but setup failed", true)
+        tryCompare(flow.currentItem, "objectName", "walletCreationOutcomePage")
+        compare(flow.operation, original)
+        compare(original.phase, WalletOperationModel.Partial)
+        compare(findChild(flow.currentItem, "walletCreationRecoveryPaths").text, "wallets/Original artifact")
+        compare(findChild(flow, "walletCreationReadyPage"), null)
+        compare(original.canOpenResult, false)
+        compare(original.resultWallet, null)
+        tryCompare(walletController, "creationCalls", 1)
+        compare(walletController.walletLoadInProgress, false)
+        let cancelled = false
+        flow.finished.connect(function(openActivity, wallet) { cancelled = !openActivity && wallet === null })
+        clickVisible(findChild(flow.currentItem, "walletCreationOutcomeDoneButton"))
+        compare(cancelled, true)
+        tryCompare(walletController, "creationCalls", 1)
+    }
+
+    function test_creation_warning_is_visible_without_changing_success() {
+        const warning = "Ordinary fallbackfee warning for this result"
+        walletController.creationWarnings = warning
+        const flow = createFlow()
+        const ready = createEncryptedWallet(flow)
+        compare(flow.operation.phase, WalletOperationModel.Succeeded)
+        const shown = findChild(ready, "walletCreationWarnings")
+        verify(shown !== null)
+        compare(shown.text, warning)
+        compare(shown.visible, true)
+        walletController.walletLoadWarnings = "Another operation's warning"
+        walletController.walletLoadWarningsChanged()
+        compare(shown.text, warning)
+        compare(flow.operation.error.message, "")
+    }
+    function test_detaching_the_creation_view_keeps_the_operation_result() {
+        walletController.holdCreation = true
+        let flow = createInputFlow(false)
+        try {
+        verify(flow !== null)
+        findChild(flow, "walletTypeRegular").clicked()
+        tryCompare(flow.currentItem, "objectName", "createWalletFormPage")
+        const form = flow.currentItem
+        testSetup.replaceText(findChild(form, "createWalletNameInput"), "Detached creation")
+        testSetup.replaceText(findChild(form, "createWalletPasswordInput"), "original password")
+        testSetup.replaceText(findChild(form, "createWalletPasswordRepeatInput"), "original password")
+        findChild(form, "createWalletPasswordConfirmToggle").clicked()
+        tryCompare(form, "canCreate", true)
+        clickVisible(findChild(form, "createWalletFormCreateButton"))
+        const original = flow.operation
+        verify(original !== null)
+        flow.destroy()
+        testSetup.processDeferredDeletes()
+        flow = null
+        verify(walletController.walletLoadInProgress)
+        walletController.finishCreation()
+        tryCompare(original, "phase", WalletOperationModel.Succeeded)
+        compare(original.submittedName, "Detached creation")
+        tryCompare(walletController, "creationCalls", 1)
+        compare(original.resultWallet, testWalletModel)
+        } finally {
+            if (flow) flow.destroy()
+        }
     }
 
     function test_operation_errors_use_bounded_summaries_and_virtual_full_details() {
@@ -146,10 +325,10 @@ TestCase {
         const initialHeight = xpubEntry.height
         xpub.text = "line\nline\nline\nline\nline\nline"
         tryVerify(function() { return xpubEntry.height > initialHeight })
-        name.text = "Watch wallet"
-        xpub.text = "invalid"
+        testSetup.replaceText(name, "Watch wallet")
+        testSetup.replaceText(xpub, "invalid")
         compare(form.canCreate, false)
-        xpub.text = validXpub
+        testSetup.replaceText(xpub, validXpub)
         tryCompare(form, "canCreate", true)
 
         tryCompare(form, "canCreate", true)
@@ -219,7 +398,7 @@ TestCase {
             "You cannot change this later.")
         compare(encrypt.text, "Encrypt this wallet with a strong password.")
         compare(acknowledgement.loadedTrailingItem.checked, false)
-        findChild(form, "createWalletNameInput").text = "Regular wallet"
+        testSetup.replaceText(findChild(form, "createWalletNameInput"), "Regular wallet")
         password.text = "correct horse battery staple"
         confirm.text = "different"
         compare(form.canCreate, false)
@@ -259,7 +438,7 @@ TestCase {
         findChild(flow, "walletTypeRegular").clicked()
         tryVerify(function() { return findChild(flow, "createWalletFormPage") !== null })
         const form = findChild(flow, "createWalletFormPage")
-        findChild(form, "createWalletNameInput").text = "Encrypted wallet"
+        testSetup.replaceText(findChild(form, "createWalletNameInput"), "Encrypted wallet")
         findChild(form, "createWalletPasswordInput").text = "correct horse battery staple"
         findChild(form, "createWalletPasswordRepeatInput").text = "correct horse battery staple"
         compare(form.canCreate, false)
@@ -317,7 +496,7 @@ TestCase {
         findChild(flow, "walletTypeRegular").clicked()
         tryVerify(function() { return findChild(flow, "createWalletFormPage") !== null })
         const form = findChild(flow, "createWalletFormPage")
-        findChild(form, "createWalletNameInput").text = "Created wallet"
+        testSetup.replaceText(findChild(form, "createWalletNameInput"), "Created wallet")
         findChild(form, "createWalletPasswordInput").text = "correct horse battery staple"
         findChild(form, "createWalletPasswordRepeatInput").text = "correct horse battery staple"
         findChild(form, "createWalletPasswordConfirmToggle").clicked()

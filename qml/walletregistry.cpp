@@ -789,23 +789,6 @@ void WalletRegistry::forgetForm(QObject* form)
     if (m_retirement->values) m_retirement->values->forms.erase(form);
 }
 
-void WalletRegistry::ResultLifetime::whenReleased(std::function<void()> callback)
-{
-    {
-        std::lock_guard lock{mutex};
-        if (!released) {
-            notifications.push_back(std::move(callback));
-            return;
-        }
-    }
-    callback();
-}
-void WalletRegistry::ResultLifetime::release()
-{
-    std::list<std::function<void()>> callbacks;
-    { std::lock_guard lock{mutex}; if (std::exchange(released, true)) return; callbacks.swap(notifications); }
-    for (auto& callback : callbacks) callback(); // Each callback only enqueues GUI.
-}
 void WalletRegistry::retainResult(WalletQmlModel* wallet, const std::shared_ptr<ResultLifetime>& lifetime)
 {
     const auto state = m_retirement;
@@ -826,4 +809,58 @@ void WalletRegistry::retainResult(WalletQmlModel* wallet, const std::shared_ptr<
             if (ready) ready();
         });
     });
+}
+
+namespace {
+struct RegistryCreationTicket final : walletpublication::Ticket {
+    RegistryCreationTicket(QString id, std::shared_ptr<walletpublication::Release> release, std::shared_ptr<walletpublication::NativeObservation> observed,
+        std::weak_ptr<WalletRegistry> registry, std::shared_ptr<WalletRegistry::AdoptionOrigin> value)
+        : Ticket(std::move(id), std::move(release), std::move(observed)), owner(std::move(registry)), origin(std::move(value)) {}
+    std::weak_ptr<WalletRegistry> owner;
+    std::shared_ptr<WalletRegistry::AdoptionOrigin> origin;
+};
+}
+std::shared_ptr<walletpublication::Ticket> WalletRegistry::reserveCreation(const QString& operation_id)
+{
+    const auto lifetime = shared_from_this();
+    if (!m_host->owner || m_host->stopping() || m_adoption_depth || !m_retirement->retained) return {};
+    auto origin = newOrigin();
+    if (!origin || !m_host->owner || m_host->stopping()) return {};
+    auto observation = retain<walletpublication::NativeObservation>(m_services.scheduler, 4096, [clock = m_adoption_clock] { return std::make_unique<walletpublication::NativeObservation>(clock); });
+    if (!observation) return {};
+    auto release = std::make_shared<ResultLifetime>(); origin->result_lifetime = release;
+    auto ticket = std::make_shared<RegistryCreationTicket>(operation_id, std::move(release), std::move(observation), weak_from_this(), origin);
+    m_command_origin = std::move(origin);
+    m_host->contextChanged();
+    return ticket;
+}
+walletpublication::Result WalletRegistry::publishCreation(const std::shared_ptr<walletpublication::Ticket>& opaque,
+    std::shared_ptr<interfaces::Wallet> wallet, const QString& wallet_id, walletopening::NativeEvents observation)
+{
+    const auto lifetime = shared_from_this();
+    const auto ticket = std::dynamic_pointer_cast<RegistryCreationTicket>(opaque);
+    if (!ticket || ticket->owner.lock().get() != this || !m_host->owner || m_host->stopping() || m_adoption_depth) return {};
+    if (ticket->observation->failed() || (m_command_origin && m_command_origin != ticket->origin)) return {};
+    m_command_origin = ticket->origin;
+    const auto previous = exchangePublishingOrigin(ticket->origin);
+    const auto restore = qScopeGuard([lifetime, previous] { lifetime->exchangePublishingOrigin(previous); });
+    auto* exact = adoptWallet(std::move(wallet), wallet_id, ticket->origin, 0, std::move(observation));
+    if (exact && exact->available() && containsExact(exact)) return {exact, walletpublication::Availability::Available, {}};
+    const auto binding = ticket->origin->bindings.find(wallet_id);
+    if (binding != ticket->origin->bindings.end() && binding->second->opening->closed) {
+        return {binding->second->opening->facade, walletpublication::Availability::Closed,
+            QCoreApplication::translate("WalletCreationModel", "The wallet was created, then its original opening closed.")};
+    }
+    return {{}, walletpublication::Availability::Unavailable,
+        QCoreApplication::translate("WalletCreationModel", "Wallet storage was created, but its view could not be published.")};
+}
+void WalletRegistry::finishCreation(const std::shared_ptr<walletpublication::Ticket>& opaque)
+{
+    const auto lifetime = shared_from_this();
+    const auto ticket = std::dynamic_pointer_cast<RegistryCreationTicket>(opaque);
+    if (!ticket || ticket->owner.lock().get() != this || !m_host->owner || m_host->stopping()) return;
+    if (m_command_origin != ticket->origin) return;
+    m_command_origin.reset();
+    m_notification_origin = newOrigin();
+    if (m_host->owner && !m_host->stopping()) m_host->contextChanged();
 }

@@ -138,6 +138,7 @@ private:
     Q_PROPERTY(QString recipientLabelsTransactionId READ recipientLabelsTransactionId NOTIFY recipientLabelsChanged)
     Q_PROPERTY(bool available READ available NOTIFY availableChanged)
     Q_PROPERTY(QString name READ name NOTIFY nameChanged)
+    Q_PROPERTY(QString rpcName READ rpcName NOTIFY openingMetadataChanged)
     Q_PROPERTY(QString displayName READ displayName NOTIFY displayNameChanged)
     Q_PROPERTY(QString balance READ balance NOTIFY balanceChanged)
     Q_PROPERTY(qint64 balanceSatoshi READ displayedBalanceSatoshi NOTIFY balanceChanged)
@@ -251,6 +252,7 @@ public:
         walletopening::FeePolicy fee_policy{};
         std::shared_ptr<std::atomic_bool> shutdown_gate{};
         walletopening::NativeEvents native_events{};
+        bool canonical_identity{false};
     };
     WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
                    FeeReadServices fee_services, psbtfee::Services proof_services, backup::Services backup_services,
@@ -260,6 +262,7 @@ public:
     ~WalletQmlModel();
 
     QString name() const;
+    QString rpcName() const { return m_rpc_name; }
     QString displayName() const;
     void setDisplayName(const QString& display_name);
     QString balance() const;
@@ -592,7 +595,8 @@ private:
     std::optional<walletopening::Question> m_close_question;
     const QString m_opening_token{QUuid::createUuid().toString(QUuid::WithoutBraces)};
     bool m_close_confirmed{false}, m_available_published{false};
-    QString m_name;
+    QString m_name, m_rpc_name;
+    bool m_canonical_identity{false};
     bool m_can_get_addresses{false}, m_taproot{false}, m_receive_preference_pending{false};
     QString m_receive_preference, m_receive_preference_error;
     bool m_metadata_known{false}, m_private_keys_disabled{false}, m_external_signer{false}, m_opening_drained{true};

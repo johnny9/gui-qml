@@ -93,6 +93,7 @@
 #include <qml/models/sendrecipient.h>
 #include <qml/models/walletlistmodel.h>
 #include <qml/models/walletselectionmodel.h>
+#include <qml/models/walletcreationmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/walletqmlcontroller.h>
@@ -354,6 +355,10 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<TransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Owned by WalletQmlModel");
     qmlRegisterUncreatableType<ActivityDetailModel>("org.bitcoincore.qt", 1, 0, "ActivityDetailModel", "Owned by an Activity view");
     qmlRegisterUncreatableType<AddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "");
+    qmlRegisterUncreatableType<WalletCreationModel>("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Owned by a creation form");
+    qmlRegisterUncreatableType<WalletCreationText>("org.bitcoincore.qt", 1, 0, "WalletCreationText", "Owned by a creation form");
+    qmlRegisterUncreatableType<WalletOperationModel>("org.bitcoincore.qt", 1, 0, "WalletOperationModel", "Owned by an immutable wallet operation");
+    qRegisterMetaType<WalletOperationError>(); qRegisterMetaType<WalletOperationResult>(); qRegisterMetaType<WalletCreationReceipt>();
     qmlRegisterUncreatableType<WalletProvisioningCheck>("org.bitcoincore.qt", 1, 0, "WalletProvisioningCheck", "Owned by the wallet controller");
     qmlRegisterUncreatableType<WalletSelectionModel>("org.bitcoincore.qt", 1, 0, "WalletSelectionModel", "Owned by a window");
     qmlRegisterType<PaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
@@ -383,6 +388,9 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModelTransaction", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletListModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletSelectionModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletCreationText", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletOperationModel", "Wallet support is not compiled");
 #endif
 
     registered = true;
@@ -1006,6 +1014,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                                  const auto name = controller->walletOperationName();
                                  const bool pending = controller->walletOperationState() == WalletQmlController::WalletOperationState::WalletOperationPending;
                                  if (id) catalog->setOperationId(name, pending ? QString::number(id) : QString{});
+                                 const auto* operation = controller->creationOperation();
+                                 if (operation && operation->terminal() && operation->result().effect != WalletOperationResult::NoEffect) catalog->listWalletDir();
                              });
             QObject::connect(wallet_controller.get(), &WalletQmlController::walletInfoChanged,
                              wallet_list_model.get(), &WalletListModel::setWalletInfo);

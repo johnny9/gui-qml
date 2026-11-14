@@ -232,9 +232,8 @@ TestCase {
         findChild(wizard, "walletTypeViewOnly").clicked()
         tryVerify(function() { return findChild(wizard, "createWalletFormPage") !== null })
         const form = findChild(wizard, "createWalletFormPage")
-        findChild(form, "createWalletNameInput").text = "Watch wallet"
-        findChild(form, "watchOnlyXpubInput").text =
-            "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8"
+        testSetup.replaceText(findChild(form, "createWalletNameInput"), "Watch wallet")
+        testSetup.replaceText(findChild(form, "watchOnlyXpubInput"), "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8")
         const createButton = findChild(form, "createWalletFormCreateButton")
         tryCompare(createButton, "enabled", true)
         createButton.clicked()
@@ -263,9 +262,8 @@ TestCase {
         findChild(wizard, "walletTypeViewOnly").clicked()
         tryVerify(function() { return findChild(wizard, "createWalletFormPage") !== null })
         const form = findChild(wizard, "createWalletFormPage")
-        findChild(form, "createWalletNameInput").text = "Onboarding watch wallet"
-        findChild(form, "watchOnlyXpubInput").text =
-            "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8"
+        testSetup.replaceText(findChild(form, "createWalletNameInput"), "Onboarding watch wallet")
+        testSetup.replaceText(findChild(form, "watchOnlyXpubInput"), "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8")
         const createButton = findChild(form, "createWalletFormCreateButton")
         tryCompare(createButton, "enabled", true)
         createButton.clicked()

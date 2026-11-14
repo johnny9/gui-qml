@@ -164,6 +164,7 @@
         <file>controls/utils.js</file>
         <file>controls/ValueInput.qml</file>
         <file>controls/ValueRow.qml</file>
+        <file>controls/WalletOperationWarnings.qml</file>
         <file>controls/WalletCreationTypeRow.qml</file>
         <file>pages/initerrormessage.qml</file>
         <file>pages/MainWindow.qml</file>
@@ -219,6 +220,7 @@
         <file>pages/wallet/CreateWalletForm.qml</file>
         <file>pages/wallet/WalletCreationTypePage.qml</file>
         <file>pages/wallet/WalletCreationReadyPage.qml</file>
+        <file>pages/wallet/WalletCreationOutcomePage.qml</file>
         <file>pages/wallet/WalletCreationFlow.qml</file>
         <file>pages/wallet/ExternalSignerWalletForm.qml</file>
         <file>pages/wallet/WalletCreationExternalReadyPage.qml</file>

@@ -29,6 +29,8 @@ Page {
     property bool walletSettingsProvided: false
     readonly property Item walletSettingsHost: internal.walletSettingsHost
     property string activeWalletName: wallet !== null ? wallet.name : ""
+    property string activeWalletRpcName: wallet !== null ? wallet.rpcName : activeWalletName
+    property bool activeWalletRpcReady: wallet !== null ? wallet.capabilitiesKnown : activeWalletAvailable
     property bool activeWalletAvailable: wallet !== null && wallet.available
     // Without the desktop wallet shell (the node pages used on Android),
     // the wallet section shows its own settings stack for this wallet.
@@ -353,8 +355,8 @@ Page {
         id: rpcConsolePage
 
         SettingsPages.SettingsRpcConsoleView {
-            walletName: root.activeWalletName
-            walletContext: root.activeWalletAvailable
+            walletName: root.activeWalletRpcName
+            walletContext: root.activeWalletAvailable && root.activeWalletRpcReady
         }
     }
 

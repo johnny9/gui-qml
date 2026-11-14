@@ -16,6 +16,11 @@ ColumnLayout {
     required property bool xpubChecked
     required property bool validXpub
     signal nameEdited()
+    signal nameIntent(string value)
+    signal keyIntent(string value)
+    signal encryptionIntent(bool value)
+    property WalletOperationModel operation: null
+    property string submissionError: ""
     signal submitRequested()
     property bool showOperationErrorDetails: false
     property alias walletName: nameEntry.text
@@ -52,8 +57,7 @@ ColumnLayout {
         fieldBackgroundColor: Theme.color.neutral2
         onTextEdited: {
             fields.nameEdited()
-            ApplicationModels.walletController.clearWalletCreateStatus()
-            ApplicationModels.walletController.clearWalletLoadStatus()
+            fields.nameIntent(nameEntry.text)
         }
     }
 
@@ -80,6 +84,7 @@ ColumnLayout {
         text: qsTr("Encrypt this wallet with a strong password.")
         checked: true
         onCheckedChanged: {
+            fields.encryptionIntent(checked)
             if (!checked && acknowledgement.loadedTrailingItem)
                 (acknowledgement.loadedTrailingItem as OptionSwitch).checked = false
             if (checked && unencryptedAcknowledgement.loadedTrailingItem)
@@ -109,7 +114,7 @@ ColumnLayout {
         labelSpacing: 6
         messageSpacing: 8
         fieldBackgroundColor: Theme.color.neutral2
-        onTextEdited: ApplicationModels.walletController.clearWalletCreateStatus()
+
     }
     PasswordTextField {
         id: confirmEntry
@@ -125,7 +130,7 @@ ColumnLayout {
         fieldBackgroundColor: Theme.color.neutral2
         errorText: text.length > 0 && passwordEntry.text !== text
             ? qsTr("Passwords don't match") : ""
-        onTextEdited: ApplicationModels.walletController.clearWalletCreateStatus()
+
     }
 
     ListRow {
@@ -167,7 +172,7 @@ ColumnLayout {
         fieldBackgroundColor: Theme.color.neutral2
         errorText: text.trim().length > 0 && fields.xpubChecked && !fields.validXpub
             ? qsTr("Enter a valid extended public key (xpub)") : ""
-        onTextEdited: ApplicationModels.walletController.clearWalletLoadStatus()
+        onTextEdited: fields.keyIntent(xpubEntry.text)
     }
 
     CoreText {
@@ -175,11 +180,18 @@ ColumnLayout {
         visible: text.length > 0
         Layout.fillWidth: true
         text: fields.nameError.length > 0 ? fields.nameError
+            : fields.submissionError.length > 0 ? fields.submissionError : fields.operation ? fields.operation.error.message
             : fields.watchOnly ? ApplicationModels.walletController.walletLoadErrorDisplay : ApplicationModels.walletController.walletCreateErrorDisplay
         color: Theme.color.red
         font: Theme.text.caption.font
         wrapMode: Text.WordWrap
         horizontalAlignment: Text.AlignLeft
+    }
+
+    WalletOperationWarnings {
+        Layout.fillWidth: true
+        operation: fields.operation
+        summaryObjectName: "createWalletFormWarningText"
     }
 
     TextButton {
@@ -195,7 +207,8 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: visible ? 120 : 0
         visible: fields.showOperationErrorDetails && fields.nameError.length === 0 && count > 0
-        model: fields.watchOnly ? ApplicationModels.walletController.walletImportErrorHelpModel : ApplicationModels.walletController.walletCreateErrorHelpModel
+        model: fields.operation ? fields.operation.errorDetails
+            : fields.watchOnly ? ApplicationModels.walletController.walletImportErrorHelpModel : ApplicationModels.walletController.walletCreateErrorHelpModel
         clip: true
         reuseItems: true
         cacheBuffer: 0

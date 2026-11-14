@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/walletqmlmodel.h>
+#include <qml/walletidentity.h>
 #include <qml/walletsend.h>
 #include <qml/wallettransaction.h>
 #include <stdexcept>
@@ -397,6 +398,7 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
     , m_opening_native_events(std::move(wallet.native_events))
     , m_fee_policy(std::move(wallet.fee_policy))
     , m_name(std::move(wallet.captured_name))
+    , m_canonical_identity(wallet.canonical_identity)
     , m_balance_scheduler(std::move(wallet.observations))
     , m_wallet(std::move(wallet.wallet))
     , m_node(node)
@@ -652,9 +654,10 @@ void WalletQmlModel::publishOpening()
     if (update->metadata && available()) {
         auto metadata = std::move(*update->metadata);
         const QString name = QString::fromStdString(metadata.name);
-        const bool name_changed = m_name != name;
+        const bool name_changed = !m_canonical_identity && m_name != name;
         const bool security_changed = m_is_encrypted != metadata.encrypted || m_is_locked != metadata.locked;
-        m_name = name;
+        if (!m_canonical_identity) m_name = name;
+        m_rpc_name = name;
         m_metadata_known = true;
         m_private_keys_disabled = metadata.private_keys_disabled;
         m_external_signer = metadata.external_signer;
@@ -1280,7 +1283,7 @@ QString WalletQmlModel::displayName() const
     if (!m_display_name.isEmpty()) {
         return m_display_name;
     }
-    return m_wallet && m_name.isEmpty() ? tr("Default wallet") : name();
+    return m_wallet ? walletidentity::Display(m_name) : name();
 }
 
 void WalletQmlModel::setDisplayName(const QString& display_name)

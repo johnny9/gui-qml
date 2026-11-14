@@ -1460,6 +1460,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(qint64 availableSendBalanceSatoshi READ availableSendBalanceSatoshi NOTIFY balanceChanged)
     Q_PROPERTY(QObject* maximumRecipient READ maximumRecipient NOTIFY maximumRecipientChanged)
     Q_PROPERTY(QString name MEMBER m_name NOTIFY nameChanged)
+    Q_PROPERTY(QString rpcName READ rpcName NOTIFY nameChanged)
     Q_PROPERTY(QString displayName MEMBER m_name NOTIFY nameChanged)
     Q_PROPERTY(bool available MEMBER m_available NOTIFY availableChanged)
     Q_PROPERTY(bool capabilitiesKnown MEMBER m_capabilities_known NOTIFY walletInfoChanged)
@@ -1568,6 +1569,11 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool receivingAddressPending MEMBER m_receiving_pending NOTIFY receivingAddressStateChanged)
     Q_PROPERTY(bool ensureReceivingAddressNeedsUnlock MEMBER m_ensure_needs_unlock)
 public:
+    QString m_rpc_namespace;
+    QString rpcName() const { return m_rpc_namespace.isNull() ? m_name : m_rpc_namespace; }
+    Q_INVOKABLE void setRpcNamespace(const QString& value) { m_rpc_namespace = value; Q_EMIT nameChanged(); }
+    Q_INVOKABLE void clearRpcNamespace() { m_rpc_namespace = {}; Q_EMIT nameChanged(); }
+
     MockWalletQmlModel() { connect(this, &MockWalletQmlModel::currentTransactionChanged, this, [this] {
         ++m_flow_revision;
         m_flow_details.setSource(m_current_transaction_flow, m_current_transaction ? m_current_transaction->property("reviewedRecipients").toList() : QVariantList{}, m_current_transaction, m_flow_revision);
@@ -2567,9 +2573,153 @@ private:
     QString m_text;
 };
 
+class MockWalletCreationText : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString text READ text NOTIFY changed)
+    Q_PROPERTY(QString error READ error NOTIFY changed)
+public:
+    explicit MockWalletCreationText(QObject* parent) : QObject(parent) {}
+    QString text() const { return m_text; }
+    QString error() const { return m_error; }
+    Q_INVOKABLE void edit(const QString& value) { if (m_text == value) return; m_text = value; Q_EMIT edited(); Q_EMIT changed(); }
+    void setError(const QString& value) { if (m_error == value) return; m_error = value; Q_EMIT changed(); }
+Q_SIGNALS:
+    void changed();
+    void edited();
+private:
+    QString m_text, m_error;
+};
+class MockWalletOperationModel : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString operationId MEMBER m_id CONSTANT)
+    Q_PROPERTY(QString submittedName MEMBER m_name CONSTANT)
+    Q_PROPERTY(quint64 editorRevision MEMBER m_revision CONSTANT)
+    Q_PROPERTY(Kind creationKind MEMBER m_kind CONSTANT)
+    Q_PROPERTY(Phase phase READ phase NOTIFY changed)
+    Q_PROPERTY(bool busy READ busy NOTIFY changed)
+    Q_PROPERTY(bool terminal READ terminal NOTIFY changed)
+    Q_PROPERTY(bool acceptedForDelivery MEMBER m_accepted CONSTANT)
+    Q_PROPERTY(bool outcomeKnown READ terminal NOTIFY changed)
+    Q_PROPERTY(bool encrypted MEMBER m_encrypted CONSTANT)
+    Q_PROPERTY(QString keyScheme READ keyScheme NOTIFY changed)
+    Q_PROPERTY(MockWalletQmlModel* resultWallet READ resultWallet NOTIFY changed)
+    Q_PROPERTY(bool canOpenResult READ canOpenResult NOTIFY changed)
+    Q_PROPERTY(bool canReconcile READ canReconcile CONSTANT)
+    Q_PROPERTY(QVariantMap error READ error NOTIFY changed)
+    Q_PROPERTY(QVariantMap result READ result NOTIFY changed)
+    Q_PROPERTY(QAbstractItemModel* errorDetails READ errorDetails CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* warningDetails READ warningDetails CONSTANT)
+public:
+    enum Kind { Software, WatchOnly, ExternalSigner }; Q_ENUM(Kind)
+    enum Phase { Requested, Validating, Creating, SettingUp, Publishing, Succeeded, Failed, Partial, Uncertain, Rejected, Cancelled }; Q_ENUM(Phase)
+    MockWalletOperationModel(QString id, QString name, quint64 revision, Kind kind, bool encrypted, bool accepted, QObject* parent)
+        : QObject(parent), m_id(std::move(id)), m_name(std::move(name)), m_revision(revision), m_kind(kind), m_accepted(accepted), m_encrypted(encrypted), m_phase(accepted ? Creating : Rejected) { if (!accepted) m_error = QStringLiteral("Transport refused. No wallet was created."); }
+    Phase phase() const { return m_phase; }
+    bool busy() const { return m_phase <= Publishing; }
+    bool terminal() const { return !busy(); }
+    QString keyScheme() const { return m_kind == WatchOnly ? QStringLiteral("Watch-only") : m_kind == ExternalSigner ? QStringLiteral("External signer") : QStringLiteral("Software wallet"); }
+    MockWalletQmlModel* resultWallet() const { return m_wallet; }
+    bool canReconcile() const { return false; }
+    Q_INVOKABLE void reconcile() {}
+    bool canOpenResult() const { return m_phase == Succeeded && m_wallet && m_wallet->m_available; }
+    QVariantMap error() const { return {{QStringLiteral("message"), m_error.left(1024)}, {QStringLiteral("code"), m_error.isEmpty() ? QString{} : QStringLiteral("FixtureFailure")}, {QStringLiteral("field"), QString{}}, {QStringLiteral("recovery"), m_recovery}}; }
+    QVariantMap result() const { return {{QStringLiteral("resultId"), m_id + QStringLiteral(":result")}, {QStringLiteral("warnings"), m_warnings.isEmpty() ? QStringList{} : QStringList{m_warnings.left(1024)}}, {QStringLiteral("warningsTruncated"), m_warnings.size() > 1024}, {QStringLiteral("recoveryPaths"), m_recovery_paths}}; }
+    QAbstractItemModel* errorDetails() { return &m_errors; }
+    QAbstractItemModel* warningDetails() { return &m_warning_lines; }
+    void complete(MockWalletQmlModel* wallet, const QString& warnings, const QString& error, bool created_artifact) {
+        if (!busy()) return;
+        m_wallet = created_artifact ? nullptr : wallet; m_warnings = warnings; m_error = error; m_errors.setText(error); m_warning_lines.setText(warnings);
+        m_recovery_paths = created_artifact ? QStringList{QStringLiteral("wallets/") + m_name} : QStringList{};
+        m_recovery = created_artifact ? QStringLiteral("Keep the created wallet file; do not repeat creation.") : QString{};
+        m_phase = created_artifact ? Partial : error.isEmpty() && wallet ? Succeeded : Failed;
+        Q_EMIT changed(); Q_EMIT finished();
+    }
+Q_SIGNALS:
+    void changed();
+    void finished();
+private:
+    QString m_id, m_name;
+    quint64 m_revision;
+    Kind m_kind;
+    bool m_accepted, m_encrypted;
+    Phase m_phase;
+    QPointer<MockWalletQmlModel> m_wallet;
+    QString m_error, m_warnings, m_recovery;
+    QStringList m_recovery_paths;
+    MockWalletErrorLines m_errors{this}, m_warning_lines{this};
+};
+class MockWalletCreationModel : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(MockWalletCreationText* name READ name CONSTANT)
+    Q_PROPERTY(MockWalletCreationText* extendedPublicKey READ extendedPublicKey CONSTANT)
+    Q_PROPERTY(QVariantMap error READ error NOTIFY changed)
+    Q_PROPERTY(Kind kind READ kind NOTIFY changed)
+    Q_PROPERTY(bool encryptRequested READ encryptRequested NOTIFY changed)
+    Q_PROPERTY(bool pendingValidation READ pendingValidation NOTIFY changed)
+    Q_PROPERTY(bool canCreate READ canCreate NOTIFY changed)
+    Q_PROPERTY(MockWalletOperationModel* operation READ operation NOTIFY changed)
+public:
+    enum Kind { Software, WatchOnly, ExternalSigner }; Q_ENUM(Kind)
+    using Submit = std::function<MockWalletOperationModel*(const QString&, const QString&, Kind, bool, quint64)>;
+    MockWalletCreationModel(Submit submit, std::function<bool()> available, QObject* parent) : QObject(parent), m_submit(std::move(submit)), m_available(std::move(available)) {
+        connect(&m_name, &MockWalletCreationText::edited, this, &MockWalletCreationModel::refresh);
+        connect(&m_key, &MockWalletCreationText::edited, this, &MockWalletCreationModel::refresh);
+        refresh();
+    }
+    MockWalletCreationText* name() { return &m_name; }
+    MockWalletCreationText* extendedPublicKey() { return &m_key; }
+    Kind kind() const { return m_kind; }
+    QVariantMap error() const { return {{QStringLiteral("message"), m_error.value(QStringLiteral("message")).toString()}, {QStringLiteral("code"), m_error.value(QStringLiteral("code")).toString()}}; }
+    bool encryptRequested() const { return m_encrypt; }
+    bool pendingValidation() const { return m_pending; }
+    bool canCreate() const { return !m_closed && !m_pending && m_available() && m_name.error().isEmpty() && (m_kind != WatchOnly || (!m_key.text().isEmpty() && m_key.error().isEmpty())); }
+    MockWalletOperationModel* operation() const { return m_operation; }
+    Q_INVOKABLE void chooseKind(Kind kind) { m_kind = kind; refresh(); }
+    Q_INVOKABLE void chooseSigner(const QString&) {}
+    Q_INVOKABLE void setEncryptRequested(bool value) { m_encrypt = value; ++m_revision; Q_EMIT changed(); }
+    Q_INVOKABLE void discard() { m_closed = true; ++m_revision; ++m_validation_revision; Q_EMIT changed(); }
+    Q_INVOKABLE MockWalletOperationModel* create(const QString&, const QString&) {
+        if (m_closed) return nullptr;
+        auto* submitted = m_submit(m_name.text(), m_key.text(), m_kind, m_encrypt, m_revision);
+        if (submitted->phase() == MockWalletOperationModel::Rejected) m_error = submitted->error();
+        else { m_operation = submitted; m_error.clear(); }
+        Q_EMIT changed(); return submitted;
+    }
+Q_SIGNALS:
+    void changed();
+private:
+    void refresh() {
+        const auto revision = ++m_validation_revision; ++m_revision; m_pending = true; Q_EMIT changed();
+        QTimer::singleShot(0, this, [this, revision] {
+            if (m_closed || revision != m_validation_revision) return;
+            const auto name = m_name.text();
+            m_name.setError(name.isEmpty() ? QStringLiteral("Enter a wallet name.") : name != name.trimmed() || name.endsWith('/') || name.startsWith('/') ? QStringLiteral("Use a canonical relative wallet name.") : QString{});
+            const auto key = m_key.text().trimmed();
+            m_key.setError(!key.isEmpty() && key.size() >= 100 && (key.startsWith("xpub") || key.startsWith("tpub")) ? QString{} : QStringLiteral("Invalid extended public key."));
+            m_pending = false; Q_EMIT changed();
+        });
+    }
+    QVariantMap m_error;
+    Submit m_submit;
+    std::function<bool()> m_available;
+    MockWalletCreationText m_name{this}, m_key{this};
+    QPointer<MockWalletOperationModel> m_operation;
+    Kind m_kind{Software};
+    bool m_encrypt{true}, m_pending{false}, m_closed{false};
+    quint64 m_revision{0}, m_validation_revision{0};
+};
+
 class MockWalletController : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(bool holdCreation MEMBER m_hold_creation)
+    Q_PROPERTY(bool refuseNextCreation MEMBER m_refuse_creation)
+    Q_PROPERTY(int creationCalls MEMBER m_creation_calls NOTIFY walletLoadInProgressChanged)
+    Q_PROPERTY(QString submittedCreationName MEMBER m_creation_name NOTIFY walletLoadInProgressChanged)
+    Q_PROPERTY(QString creationWarnings MEMBER m_creation_warnings)
     Q_PROPERTY(bool initialized MEMBER m_initialized NOTIFY initializedChanged)
     Q_PROPERTY(bool isWalletLoaded MEMBER m_is_wallet_loaded NOTIFY isWalletLoadedChanged)
     Q_PROPERTY(bool noWalletsFound MEMBER m_no_wallets_found NOTIFY noWalletsFoundChanged)
@@ -2613,6 +2763,11 @@ class MockWalletController : public QObject
     Q_PROPERTY(int openWalletLocationCalls READ openWalletLocationCalls NOTIFY openWalletLocationCallsChanged)
 
 public:
+    bool m_hold_creation{false}, m_refuse_creation{false};
+    int m_creation_calls{0};
+    quint64 m_creation_sequence{0};
+    QString m_creation_name, m_creation_warnings;
+    QPointer<MockWalletOperationModel> m_pending_creation;
     explicit MockWalletController(QObject* parent = nullptr) : QObject(parent) {
         connect(this, &MockWalletController::walletLoadErrorChanged, this, [this] { m_error_lines.setText(m_wallet_load_error); });
         connect(this, &MockWalletController::walletCreateErrorChanged, this, [this] { m_create_error_lines.setText(m_wallet_create_error); });
@@ -2633,6 +2788,24 @@ public:
     bool walletImportErrorRetryAvailable() const { return false; }
     Q_INVOKABLE bool retryWalletImportErrorPresentation() { return false; }
     Q_INVOKABLE QAbstractItemModel* captureMigrationErrorDetails(quint64, int slot) { auto* lines = slot == 0 ? &m_migration_required_details : &m_migration_passphrase_details; lines->setText(m_wallet_migration_error); return lines; }
+    Q_INVOKABLE MockWalletCreationModel* newCreation() {
+        return new MockWalletCreationModel([this](const QString& name, const QString&, MockWalletCreationModel::Kind kind, bool encrypt, quint64 revision) {
+            const bool accepted = (!m_pending_creation || !m_pending_creation->busy()) && !std::exchange(m_refuse_creation, false);
+            auto* operation = new MockWalletOperationModel(QString::number(++m_creation_sequence), name, revision,
+                static_cast<MockWalletOperationModel::Kind>(kind), kind == MockWalletCreationModel::Software && encrypt, accepted, this);
+            if (!accepted) return operation;
+            m_pending_creation = operation; m_creation_name = name; ++m_creation_calls;
+            m_wallet_load_in_progress = true; Q_EMIT walletLoadInProgressChanged();
+            if (!m_hold_creation) QTimer::singleShot(0, operation, [this, operation] { if (m_pending_creation == operation) finishCreation(); });
+            return operation;
+        }, [this] { return m_initialized && (!m_pending_creation || !m_pending_creation->busy()); }, this);
+    }
+    Q_INVOKABLE void finishCreation(const QString& error = QString(), bool created_artifact = false) {
+        if (!m_pending_creation || !m_pending_creation->busy()) return;
+        auto* operation = m_pending_creation.data();
+        operation->complete(qobject_cast<MockWalletQmlModel*>(reportedWallet()), m_creation_warnings, error, created_artifact);
+        m_wallet_load_in_progress = false; Q_EMIT walletLoadInProgressChanged();
+    }
     Q_INVOKABLE MockWalletProvisioningCheck* createProvisioningCheck() { return new MockWalletProvisioningCheck(this); }
     bool m_initialized{true};
     bool m_is_wallet_loaded{true};
@@ -2816,6 +2989,7 @@ public:
     }
     Q_INVOKABLE void reset()
     {
+        m_pending_creation.clear(); m_hold_creation = false; m_refuse_creation = false; m_creation_calls = 0; m_creation_name.clear(); m_creation_warnings.clear();
         QObject::disconnect(m_close_connection);
         if (m_close_target) m_close_target->setProperty("closeQuestionToken", QString{});
         m_close_target = nullptr;
@@ -5997,6 +6171,9 @@ public Q_SLOTS:
         qmlRegisterUncreatableType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Test stub type");
         qmlRegisterUncreatableType<MockBackupFileOperation>("org.bitcoincore.qt", 1, 0, "BackupFileOperation", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Test stub type");
+        qmlRegisterUncreatableType<MockWalletCreationModel>("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Test creation editor");
+        qmlRegisterUncreatableType<MockWalletCreationText>("org.bitcoincore.qt", 1, 0, "WalletCreationText", "Test creation input");
+        qmlRegisterUncreatableType<MockWalletOperationModel>("org.bitcoincore.qt", 1, 0, "WalletOperationModel", "Test immutable operation");
         qmlRegisterUncreatableType<MockWalletProvisioningCheck>("org.bitcoincore.qt", 1, 0, "WalletProvisioningCheck", "Test stub type");
         qmlRegisterUncreatableType<MockWalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletQmlModelTransaction>(

@@ -47,6 +47,7 @@
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signverifymessagemodel.h>
 #include <qml/models/walletselectionmodel.h>
+#include <qml/models/walletcreationmodel.h>
 #include <qml/models/transaction.h>
 #include <qml/models/transactionactivitymodel.h>
 #include <qml/models/walletlistmodel.h>
@@ -200,6 +201,13 @@ struct BitcoinUriParseOperationForeign {
     QML_NAMED_ELEMENT(BitcoinUriParseOperation)
     QML_UNCREATABLE("Owned by a payment URI request")
 };
+
+struct WalletCreationModelForeign { Q_GADGET QML_FOREIGN(WalletCreationModel) QML_NAMED_ELEMENT(WalletCreationModel) QML_UNCREATABLE("Owned by a creation form") };
+struct WalletCreationTextForeign { Q_GADGET QML_FOREIGN(WalletCreationText) QML_NAMED_ELEMENT(WalletCreationText) QML_UNCREATABLE("Owned by a creation form") };
+struct WalletOperationModelForeign { Q_GADGET QML_FOREIGN(WalletOperationModel) QML_NAMED_ELEMENT(WalletOperationModel) QML_UNCREATABLE("Owned by an immutable operation") };
+struct WalletOperationErrorForeign { Q_GADGET QML_FOREIGN(WalletOperationError) QML_ANONYMOUS };
+struct WalletOperationResultForeign { Q_GADGET QML_FOREIGN(WalletOperationResult) QML_ANONYMOUS };
+struct WalletCreationReceiptForeign { Q_GADGET QML_FOREIGN(WalletCreationReceipt) QML_ANONYMOUS };
 
 struct WalletProvisioningCheckForeign {
     Q_GADGET

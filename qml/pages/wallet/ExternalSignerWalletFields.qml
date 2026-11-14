@@ -13,6 +13,9 @@ ColumnLayout {
     required property string nameError
     required property bool creatingWallet
     signal nameEdited()
+    signal nameIntent(string value)
+    property WalletOperationModel operation: null
+    property string submissionError: ""
     property alias walletName: nameEntry.text
     property bool showOperationErrorDetails: false
     spacing: 20
@@ -37,10 +40,10 @@ ColumnLayout {
         supportingText: qsTr("You cannot change this later.")
         fieldSurface: true
         fieldBackgroundColor: Theme.color.neutral2
-        enabled: !fields.creatingWallet
+        enabled: true
         onTextEdited: {
             fields.nameEdited()
-            ApplicationModels.walletController.clearWalletLoadStatus()
+            fields.nameIntent(nameEntry.text)
         }
     }
 
@@ -48,11 +51,17 @@ ColumnLayout {
         objectName: "externalWalletNameError"
         Layout.fillWidth: true
         visible: text.length > 0
-        text: fields.nameError.length > 0 ? fields.nameError : ApplicationModels.walletController.walletLoadErrorDisplay
+        text: fields.nameError.length > 0 ? fields.nameError : fields.submissionError.length > 0 ? fields.submissionError : fields.operation ? fields.operation.error.message : ApplicationModels.walletController.walletLoadErrorDisplay
         color: Theme.color.red
         font: Theme.text.caption.font
         wrap: true
         horizontalAlignment: Text.AlignLeft
+    }
+
+    WalletOperationWarnings {
+        Layout.fillWidth: true
+        operation: fields.operation
+        summaryObjectName: "externalWalletWarningText"
     }
 
     TextButton {
@@ -68,7 +77,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: visible ? 120 : 0
         visible: fields.showOperationErrorDetails && fields.nameError.length === 0 && count > 0
-        model: ApplicationModels.walletController.walletImportErrorHelpModel
+        model: fields.operation ? fields.operation.errorDetails : ApplicationModels.walletController.walletImportErrorHelpModel
         clip: true
         reuseItems: true
         cacheBuffer: 0

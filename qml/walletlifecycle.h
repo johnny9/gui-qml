@@ -25,6 +25,7 @@
 #include <vector>
 
 class WalletLifecycleTests;
+namespace walletpublication { class NativeObservation; }
 
 namespace walletlife {
 /** One existing catalog subscription, not the full wallet/session model. */
@@ -61,10 +62,10 @@ public:
         std::optional<execution::ResourceLease> m_lease;
     };
 
-    LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify, std::function<uint64_t()> ingress_stamp = {});
+    LoadSubscription(std::shared_ptr<execution::Scheduler> scheduler, Register registration, Capture capture, Notify notify, std::function<uint64_t()> ingress_stamp = {}, std::function<std::string(interfaces::Wallet&)> read_name = {});
     execution::Admission start();
     void retire();
-    bool setNotificationContext(QString deferred_name, bool action_pending, uint64_t selection_revision = 0, std::shared_ptr<void> adoption_origin = {});
+    bool setNotificationContext(QString deferred_name, bool action_pending, uint64_t selection_revision = 0, std::shared_ptr<void> adoption_origin = {}, std::shared_ptr<walletpublication::NativeObservation> creation_observation = {});
     // GUI adapter could not retain an original notification context.
     void rejectNotificationContext();
     void acknowledgeChange();
@@ -97,6 +98,7 @@ private:
     const Capture m_capture;
     const Notify m_notify;
     const std::function<uint64_t()> m_ingress_stamp;
+    const std::function<std::string(interfaces::Wallet&)> m_read_name;
     const execution::ResourceKey m_key;
     State m_state; // Accessed only by Domain outcome consumers.
     std::atomic<FailureReason> m_failure{FailureReason::None};
@@ -118,6 +120,7 @@ private:
     struct NotificationContext {
         QString deferred_name;bool select_wallet{true};uint64_t selection_revision{0};
         std::shared_ptr<void> adoption_origin;
+        std::shared_ptr<walletpublication::NativeObservation> creation_observation;
         std::shared_ptr<ContextInventory> inventory;size_t bytes{0};
         mutable std::optional<std::string> native_name;
         ~NotificationContext();

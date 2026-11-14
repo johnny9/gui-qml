@@ -495,6 +495,8 @@ Page {
                         showDoneButton: false
                         walletSettingsProvided: root.activeView !== null
                         activeWalletName: root.activeWallet ? root.activeWallet.name : ""
+                        activeWalletRpcName: root.activeWallet ? root.activeWallet.rpcName : ""
+                        activeWalletRpcReady: root.activeWallet !== null && root.activeWallet.capabilitiesKnown
                         activeWalletAvailable: root.activeWallet !== null && root.activeWallet.available
                         onSelectWalletRequested: root.openWalletSelection()
                         onWalletSettingsResetRequested: {
