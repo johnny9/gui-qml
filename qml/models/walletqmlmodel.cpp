@@ -3374,13 +3374,18 @@ std::shared_ptr<FileExportRequest> WalletQmlModel::preparePsbtFileExport(
             const auto session = weak.lock();
             const auto action = action_slot->get();
             if (!session || !action) return execution::Admission{{}, execution::Rejection::Closed};
-            return session->perform(action, [work = std::move(work)](interfaces::Wallet&) { work(); return true; }, [](bool) {});
+            return session->submitActionWork(action, std::move(work));
         };
-    } else {
-        const auto scheduler = services.scheduler;
-        services.submit = [scheduler](std::function<void()> work) {
-            return scheduler ? execution::Submit(*scheduler, std::move(work), [] {})
-                : execution::Admission{{}, execution::Rejection::Closed};
+        services.reserve_prompt_retirement = [weak = std::weak_ptr<walletopening::Session>{opening}, action_slot](std::function<void()> work) {
+            const auto session = weak.lock();
+            const auto action = action_slot->get();
+            if (!session || !action) return execution::Admission{{}, execution::Rejection::Closed};
+            return session->reserveActionCleanup(action, std::move(work));
+        };
+        services.activate_prompt_retirement = [weak = std::weak_ptr<walletopening::Session>{opening}, action_slot](execution::TaskId id) {
+            const auto session = weak.lock();
+            const auto action = action_slot->get();
+            return session && action && session->activateActionCleanup(action, id);
         };
     }
     const auto previous_outcome = std::move(services.outcome);

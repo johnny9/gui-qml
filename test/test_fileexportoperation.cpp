@@ -226,9 +226,13 @@ private Q_SLOTS:
         QVERIFY(!operation.pending());
         QVERIFY(operation.errorText().contains(QStringLiteral("scheduled"), Qt::CaseInsensitive));
         QVERIFY(!state->destroyed);
+        // The request's PSBT release and the operation's pre-admitted prompt
+        // receipt are separate Cleanup turns.
         QCOMPARE(fixture.execution.queuedCountIf([](const auto& turn) {
             return turn.lane == execution::Lane::Cleanup && turn.phase == execution::Phase::Queued;
-        }), 1);
+        }), 2);
+        QVERIFY(fixture.execution.step(execution::Lane::Cleanup));
+        QVERIFY(!state->destroyed);
         QVERIFY(fixture.execution.step(execution::Lane::Cleanup));
         QVERIFY(state->destroyed);
         fixture.execution.drain();
@@ -389,7 +393,7 @@ private Q_SLOTS:
         // terminal outcome and must retire before any overwrite is admitted.
         if (delete_projection) operation.reset();
         else operation->retire();
-        QVERIFY(fixture.execution.step(execution::Lane::Core));
+        QVERIFY(fixture.execution.step(execution::Lane::Cleanup));
 
         QCOMPARE(outcomes.load(), 1);
         QCOMPARE(terminal_phase.load(), static_cast<int>(backup::Phase::Retired));
@@ -545,6 +549,69 @@ private Q_SLOTS:
         QCOMPARE(terminal_phase.load(), static_cast<int>(backup::Phase::Succeeded));
         fixture.deliverGui();
         QCOMPARE(operation.phase(), BackupFileOperation::Phase::Succeeded);
+        QVERIFY(fixture.execution.quiescent());
+    }
+
+    void overwritePromptRetirementSurvivesRejectedCoreAdmission()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString path = directory.filePath(QStringLiteral("existing.psbt"));
+        const QByteArray original{"preserve the unresolved overwrite target"};
+        {
+            QFile file{path};
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(original), qint64(original.size()));
+        }
+        Fixture fixture;
+        auto services = fixture.services();
+        const auto scheduler = services.scheduler;
+        const auto action_key = scheduler->allocateKey();
+        services.submit = [scheduler, action_key](std::function<void()> work) {
+            return execution::Submit(*scheduler, std::move(work), [] {}, {},
+                {execution::Lane::Core, 256, action_key, execution::WorkClass::Action});
+        };
+        services.reserve_prompt_retirement = [scheduler, action_key](std::function<void()> work) {
+            return execution::Submit(*scheduler, std::move(work), [] {}, {},
+                {execution::Lane::Cleanup, 256, action_key, execution::WorkClass::Action}, true);
+        };
+        services.activate_prompt_retirement = [scheduler](execution::TaskId id) {
+            return scheduler->activateCleanup(id);
+        };
+        std::atomic_int outcomes{0};
+        std::atomic_int terminal_phase{-1};
+        services.outcome = [&](backup::Snapshot snapshot) {
+            ++outcomes;
+            terminal_phase = static_cast<int>(snapshot.phase);
+        };
+        auto operation = std::make_unique<FileExportOperationModel>(path,
+            std::make_shared<const PartiallySignedTransaction>(psbtfeefixture::Legacy(2, false)), std::move(services));
+        auto request = operation->requestForAcceptedContinuation();
+        QVERIFY(request);
+        QVERIFY(operation->start());
+        fixture.execution.drain();
+        fixture.deliverGui();
+        QVERIFY(operation->confirmationRequired());
+
+        // The operation's action scope remains live, but a dependent Core
+        // submission can still be rejected for queue capacity/transport.
+        // Retirement must own a previously reserved continuation instead.
+        fixture.execution.rejectCoreNumber(2);
+        operation->retire();
+        fixture.execution.drain();
+        const auto outcomes_after_close_admission = outcomes.load();
+        if (outcomes_after_close_admission != 1) {
+            // Keep the pre-fix red run bounded and fully cleaned up.
+            operation->retire();
+            fixture.execution.drain();
+        }
+        fixture.deliverGui();
+        QCOMPARE(outcomes_after_close_admission, 1);
+        QCOMPARE(terminal_phase.load(), static_cast<int>(backup::Phase::Retired));
+        QCOMPARE(ReadFile(path), original);
+        operation.reset();
+        request.reset();
+        fixture.execution.drain();
         QVERIFY(fixture.execution.quiescent());
     }
 };

@@ -26,8 +26,13 @@ struct Services {
     // Consumed on the backend lane, even if the GUI observer has disappeared.
     std::function<void(Snapshot)> outcome;
     // Optional original-opening admission; the production adapter uses the
-    // shared Session action lane and checks Native unload independently of GUI.
+    // original Action scope. File-only work does not borrow Wallet on Core.
     std::function<execution::Admission(std::function<void()>)> submit;
+    // Reserve and activate a Native terminal receipt before the operation
+    // starts. This receipt retires an unanswered overwrite prompt even when
+    // ordinary Core queue admission is full.
+    std::function<execution::Admission(std::function<void()>)> reserve_prompt_retirement;
+    std::function<bool(execution::TaskId)> activate_prompt_retirement;
     std::function<bool()> available;
     // Releases request-owned reservations when an unstarted continuation is
     // abandoned before any file effect is admitted.

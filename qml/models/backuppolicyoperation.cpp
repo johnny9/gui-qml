@@ -7,6 +7,7 @@
 #include <QPointer>
 
 #include <atomic>
+#include <exception>
 #include <utility>
 
 namespace backup {
@@ -19,13 +20,32 @@ struct OperationState {
     std::atomic_bool started{false};
     std::atomic_bool admitted{false};
     std::atomic_bool retire_if_confirmation_requested{false};
+    std::atomic<uint64_t> prompt_retirement_task{0};
+    std::atomic_bool prompt_retirement_activated{false};
     std::function<void(Snapshot)> publish;
+
+    void activatePromptRetirement() noexcept
+    {
+        const auto task = prompt_retirement_task.load();
+        if (!task || prompt_retirement_activated.exchange(true)) return;
+        bool activated{false};
+        try {
+            activated = services.activate_prompt_retirement
+                ? services.activate_prompt_retirement(execution::TaskId{task})
+                : services.scheduler && services.scheduler->activateCleanup(execution::TaskId{task});
+        } catch (...) { }
+        // This continuation was admitted before Start. Its bounded transport
+        // is retained through close, so activation cannot be a best-effort
+        // queue submission.
+        if (!activated) std::terminate();
+    }
 
     Decision advance(Event event, const Proposal& proposal = {}, WriteResult result = {})
     {
         auto decision = Advance(current, event, proposal, result);
         if (!decision.accepted) return decision;
         current = decision.snapshot;
+        if (!Pending(current.phase)) activatePromptRetirement();
         // GUI transport cannot own the outcome or interrupt an admitted write.
         try { publish(current); } catch (...) { }
         if (!Pending(current.phase) && services.outcome) services.outcome(current);
@@ -104,6 +124,29 @@ bool backup::Operation::start()
         failBeforeStart(Error::Transport);
         return false;
     }
+    if (bool(services.reserve_prompt_retirement) != bool(services.activate_prompt_retirement) ||
+        (services.submit && !services.reserve_prompt_retirement)) {
+        failBeforeStart(Error::Transport);
+        return false;
+    }
+    const auto retirement = [state] {
+        if (state->current.phase == Phase::AwaitingConfirmation) state->advance(Event::Retire);
+    };
+    execution::Admission reservation;
+    try {
+        reservation = services.reserve_prompt_retirement
+            ? services.reserve_prompt_retirement(retirement)
+            : execution::Submit(*services.scheduler, retirement, [] {}, {},
+                {execution::Lane::Cleanup, 256, {}, execution::WorkClass::Action}, true);
+    } catch (...) {
+        failBeforeStart(Error::Transport);
+        return false;
+    }
+    if (!reservation) {
+        failBeforeStart(Error::Transport);
+        return false;
+    }
+    state->prompt_retirement_task.store(reservation.id.value);
     return submit(Event::Start);
 }
 
@@ -149,14 +192,7 @@ void backup::Operation::retireIfAwaitingConfirmation()
     const auto state = m_state;
     if (!state || !state->admitted.load() || !state->services.scheduler) return;
     state->retire_if_confirmation_requested.store(true);
-    const auto retire_prompt = [state] {
-        if (state->current.phase == Phase::AwaitingConfirmation) state->advance(Event::Retire);
-    };
-    if (state->services.submit) {
-        state->services.submit(retire_prompt);
-    } else {
-        execution::Submit(*state->services.scheduler, retire_prompt, [] {});
-    }
+    state->activatePromptRetirement();
 }
 
 void backup::Operation::failBeforeStart(Error error)
@@ -166,6 +202,7 @@ void backup::Operation::failBeforeStart(Error error)
     auto decision = Advance(state->current, Event::Fault, {}, {error});
     if (!decision.accepted) return;
     state->current = decision.snapshot;
+    state->activatePromptRetirement();
     // A rejected start has no admitted domain operation and therefore no
     // terminal domain receipt. Publish the local failure projection and let
     // the request release its pre-reserved values through Cleanup.
