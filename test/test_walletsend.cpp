@@ -558,7 +558,7 @@ private Q_SLOTS:
     {
         QTest::addColumn<bool>("nested");
         QTest::addColumn<int>("boundary");
-        for (bool nested : {false, true}) for (int boundary = 0; boundary < 4; ++boundary)
+        for (bool nested : {false, true}) for (int boundary = 0; boundary < 6; ++boundary)
             QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(nested ? "nested" : "witness").arg(boundary))) << nested << boundary;
     }
     void assessedCompleteScriptsDoNotRequireSigning()
@@ -579,29 +579,28 @@ private Q_SLOTS:
         Fixture f;
         f.wallet->no_keys = true;
         f.wallet->encrypted = true;
-        f.wallet->metadata = [original, boundary](PartiallySignedTransaction& document, bool& complete) {
-            document.inputs[0].witness_script = original.witness;
-            document.inputs[0].redeem_script = original.redeem;
-            if (boundary == 2) document.outputs[0].amount = 1'499;
-            complete = FinalizePSBT(document);
-            // Finalization restores the authenticated witness UTXO. Inject the
-            // hostile returned claim afterward so the action receives it.
-            if (boundary == 3) document.inputs[0].witness_utxo = CTxOut{1'999, original.document.inputs[0].non_witness_utxo->vout[0].scriptPubKey};
+        f.wallet->metadata = [](PartiallySignedTransaction&, bool&) {
+            throw std::runtime_error("The reviewed assessment must not be reconstructed");
         };
+        auto assessment = expected_document;
+        if (boundary == 2) assessment.outputs[0].amount = 1'499;
+        if (boundary == 3) assessment.inputs[0].witness_utxo.nValue = 1'999;
+        if (boundary == 5) assessment = original.document;
         walletsend::Request request;
-        request.reviewed = MakeTransactionRef(*original.document.GetUnsignedTx());
+        request.reviewed = MakeTransactionRef(expected);
         request.psbt = std::make_shared<const PartiallySignedTransaction>(original.document);
         request.proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(original.document));
         request.approved_fee = 500;
         request.assessed_complete = true;
+        if (boundary != 4) request.assessment = std::make_shared<const PartiallySignedTransaction>(std::move(assessment));
         auto operation = f.operation();
         QVERIFY(operation->start(std::move(request)));
         if (boundary == 1) f.opening->retire();
         QCOMPARE(f.wallet->metadata_reads, 0);
         QVERIFY(f.commands.step(Lane::Domain));
         QVERIFY(f.commands.step(Lane::Core));
-        QCOMPARE(f.wallet->metadata_reads, 1);
-        QCOMPARE(f.wallet->metadata_derivations, std::vector<bool>{false});
+        QCOMPARE(f.wallet->metadata_reads, 0);
+        QVERIFY(f.wallet->metadata_derivations.empty());
         QCOMPARE(f.wallet->signs, 0);
         QCOMPARE(f.wallet->unlocks, 0);
         QCOMPARE(f.wallet->locks, 0);
@@ -614,7 +613,7 @@ private Q_SLOTS:
         QVERIFY(f.commands.step(Lane::Domain));
         auto result = operation->result();
         QVERIFY(result);
-        QCOMPARE(result->error, boundary < 2 ? Error::None : boundary == 2 ? Error::ChangedTransaction : Error::InvalidFee);
+        QCOMPARE(result->error, boundary < 2 ? Error::None : boundary == 2 || boundary == 4 ? Error::ChangedTransaction : boundary == 3 ? Error::InvalidFee : Error::Incomplete);
         if (boundary < 2) {
             QVERIFY(result->committed);
             QCOMPARE(result->committed->GetWitnessHash(), MakeTransactionRef(expected)->GetWitnessHash());

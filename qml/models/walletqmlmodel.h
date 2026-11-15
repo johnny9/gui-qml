@@ -348,6 +348,7 @@ public:
     quint64 sendOperationId() const { return m_send_request_id; }
     std::shared_ptr<walletsend::Operation> sendOperation() const { return m_send_operation; }
     Q_INVOKABLE quint64 requestBroadcastCurrentTransaction();
+    Q_INVOKABLE quint64 requestRecheckCurrentTransaction();
     Q_INVOKABLE QVariantList availableReceiveAddressTypes() const;
     Q_INVOKABLE QString defaultReceiveAddressType() const;
     Q_INVOKABLE QString estimatedFeeForTarget(unsigned int target_blocks) const;
@@ -584,7 +585,7 @@ private:
     void setTransactionStatus(const QString& error, bool needs_unlock = false);
     void setSettingsError(const QString& error);
     QString persistedReceiveAddressTypeKey() const;
-    enum class PsbtActionKind { Import, Save, Broadcast };
+    enum class PsbtActionKind { Import, Recheck, Save, Broadcast };
     struct PsbtReceipt { std::mutex mutex; QString path, txid; bool saved{false}, submitted{false}; };
     struct PsbtActionValue {
         std::shared_ptr<const void> lifetime;
@@ -595,6 +596,8 @@ private:
     };
     using PsbtAction = execution::OwnedCommand<PsbtActionValue>;
     quint64 startPsbtAction(PsbtActionKind kind, const QString& path = {});
+    std::shared_ptr<FileExportRequest> preparePsbtFileExport(quint64 action_id, const QString& path,
+                                                             const std::shared_ptr<PsbtReceipt>& receipt);
     void startPsbtFileExport(quint64 action_id, const QString& path,
                              std::shared_ptr<const PartiallySignedTransaction> document,
                              const std::shared_ptr<PsbtReceipt>& receipt);
@@ -606,6 +609,7 @@ private:
     PsbtActionKind m_psbt_action_kind{PsbtActionKind::Import};
     PsbtImportResult m_psbt_import_result{PsbtImportResult::PsbtUnsupported};
     quint64 m_psbt_action_id{0};
+    quint64 m_psbt_file_export_action_id{0};
     quint64 m_psbt_view_epoch{0}, m_psbt_action_view_epoch{0};
     std::weak_ptr<const PartiallySignedTransaction> m_psbt_action_document;
     bool m_psbt_action_had_document{false};
@@ -699,6 +703,7 @@ private:
     bool m_custom_psbt_lookup{false};
     std::shared_ptr<const psbtfee::RequestIdentity> m_psbt_fee_request;
     std::shared_ptr<const psbtfee::Analysis> m_psbt_fee_proof;
+    bool m_psbt_requires_recheck{false};
     bool m_psbt_fee_pending{false};
     bool m_psbt_key_can_send{false};
     bool m_psbt_can_commit_complete{false};

@@ -29,8 +29,32 @@ struct Services {
     // shared Session action lane and checks Native unload independently of GUI.
     std::function<execution::Admission(std::function<void()>)> submit;
     std::function<bool()> available;
+    // Releases request-owned reservations when an unstarted continuation is
+    // abandoned before any file effect is admitted.
+    std::function<void()> abandon;
 };
 struct OperationState;
+
+/** Thread-safe command handle for the shared backup/export state machine.
+ * The QObject wrapper below owns presentation only; continuations may retain
+ * this handle and admit the original request without a GUI callback.
+ */
+class Operation final
+{
+public:
+    using Publish = std::function<void(Snapshot)>;
+    Operation(QString raw, Services services, Publish publish);
+    bool start();
+    bool approve();
+    bool refuse();
+    void retire();
+    void failBeforeStart(Error error);
+    void abandonBeforeStart();
+
+private:
+    bool submit(Event event);
+    std::shared_ptr<OperationState> m_state;
+};
 } // namespace backup
 
 /** One immutable request identity; projections never own wallet or file handles. */
@@ -60,15 +84,16 @@ public:
     Q_INVOKABLE bool approve();
     Q_INVOKABLE bool refuse();
     void retire();
+    void detachRetirement() { m_retire_on_destroy = false; }
+    std::shared_ptr<backup::Operation> backend() const { return m_backend; }
 Q_SIGNALS:
     void changed();
 private:
-    bool submit(backup::Event event);
     void apply(backup::Snapshot projection);
-    std::shared_ptr<backup::OperationState> m_backend;
+    std::shared_ptr<backup::Operation> m_backend;
     backup::Snapshot m_projection;
     bool m_started{false};
-    bool m_admitted{false};
+    bool m_retire_on_destroy{true};
 };
 
 #endif // BITCOIN_QML_MODELS_BACKUPPOLICYOPERATION_H

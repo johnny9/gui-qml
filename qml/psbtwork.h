@@ -48,10 +48,14 @@ struct Context {
     Broadcast broadcast;
     Materialize materialize{secretinput::Materialize};
     Save save{SaveFile};
+    psbtpolicy::Read policy{};
 };
 struct Request {
     Kind kind{Kind::Inspect};
     std::shared_ptr<const PartiallySignedTransaction> document;
+    // Exact immutable revision which supplied the published capabilities.
+    // Export continues to use document; submission never repeats inspection.
+    std::shared_ptr<const PartiallySignedTransaction> assessment;
     std::shared_ptr<const psbtfee::Analysis> proof;
     std::optional<CAmount> approved_fee;
     QString path, status;

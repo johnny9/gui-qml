@@ -29,6 +29,7 @@ TestCase {
     }
 
     function init() {
+        testWalletTransaction.setNodePolicyStatusForTest("")
         testSetup.failOnWarnings()
         BitcoinUri.releasePublications()
         BitcoinUri.resetRequestControlsForTest()
@@ -180,6 +181,25 @@ TestCase {
         testWalletModel.setCurrentTransactionNeedsRevalidationForTest(false)
         tryCompare(sendButton, "visible", true)
         tryCompare(sendButton, "enabled", true)
+    }
+
+    function test_imported_review_explains_policy_and_rechecks_without_sending() {
+        testWalletModel.currentTransactionIsImportedPsbt = true
+        testWalletModel.currentTransactionCanSend = false
+        testWalletModel.currentTransactionCanBroadcast = false
+        testWalletTransaction.setNodePolicyStatusForTest("An input is already spent. Recheck before submitting.")
+        const calls = testWalletModel.recheckTransactionCalls()
+        const review = createTemporaryObject(reviewComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        const explanation = findChild(review, "sendReviewNodePolicy")
+        const recheck = findChild(review, "sendReviewRecheck")
+        verify(explanation.visible)
+        compare(explanation.text, "An input is already spent. Recheck before submitting.")
+        verify(recheck.visible)
+        verify(recheck.enabled)
+        recheck.clicked()
+        compare(testWalletModel.recheckTransactionCalls(), calls + 1)
+        compare(testWalletModel.sendTransactionCalls, 0)
+        compare(testWalletModel.broadcastCurrentTransactionCalls, 0)
     }
 
     function test_local_sign_only_is_a_separate_non_send_command() {

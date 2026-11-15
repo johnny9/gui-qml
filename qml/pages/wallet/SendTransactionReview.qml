@@ -527,6 +527,23 @@ Page {
             }
 
             CoreText {
+                objectName: "sendReviewNodePolicy"
+                visible: root.importedPsbt && text.length > 0
+                Layout.fillWidth: true
+                text: root.transaction ? root.transaction.nodePolicyStatus : ""
+                font: Theme.text.description.font
+                wrap: true
+            }
+
+            NeutralButton {
+                objectName: "sendReviewRecheck"
+                visible: root.importedPsbt
+                enabled: root.wallet !== null && root.wallet.available && root.transaction !== null && !root.sendBusy
+                text: qsTr("Recheck transaction")
+                onClicked: root.wallet.requestRecheckCurrentTransaction()
+            }
+
+            CoreText {
                 visible: text.length > 0
                 Layout.fillWidth: true
                 text: root.wallet ? root.wallet.transactionError : ""

@@ -22,6 +22,7 @@ struct Recipient {
 };
 struct Snapshot {
     CTransactionRef transaction;
+    std::shared_ptr<const PartiallySignedTransaction> assessment;
     QList<Recipient> recipients;
     QMap<QString, QString> notes;
     QVariantList presentation;
@@ -29,6 +30,8 @@ struct Snapshot {
     QSet<QString> destinations;
     std::shared_ptr<const psbtfee::Analysis> proof;
     CAmount amount{0}, fee{0};
+    QString node_policy_status;
+    bool node_policy_blocked{false};
     feeestimate::Provenance fee_source{feeestimate::Provenance::Unknown};
     int target_blocks{0}, display_unit{0};
     QString fee_rate;
