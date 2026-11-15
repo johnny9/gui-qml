@@ -122,12 +122,20 @@ private Q_SLOTS:
 
     void emptyWalletShowsSourceEmptyState()
     {
-        QTRY_VERIFY(!m_wallet->transactionActivityModel()->loading());
+        auto* source = m_wallet->transactionActivityModel();
+        // Source publication and filtering own separate asynchronous outcomes.
+        // An idle pre-first-read view is not an observed empty source.
+        QTRY_VERIFY(source->preparedSnapshot() && !source->loading() && !m_filter->busy());
+        QVERIFY2(source->loadError().isEmpty(), qPrintable(source->loadError()));
+        QVERIFY2(m_filter->error().isEmpty(), qPrintable(m_filter->error()));
+        QCOMPARE(source->count(), 0);
         QCOMPARE(m_filter->rowCount(), 0);
         QVERIFY(qmltest::WaitForVisible(m_app, "activityEmptyState"));
         const auto title = qmltest::Find(m_app, "activityEmptyStateTitle")->property("text").toString();
         const auto description = qmltest::Find(m_app, "activityEmptyStateDescription")->property("text").toString();
-        QVERIFY(title == "No activity yet" || title == QString::fromUtf8("Syncing wallet activity…"));
+        QVERIFY2(title == "No activity yet" || title == QString::fromUtf8("Syncing wallet activity…"),
+            qPrintable(QStringLiteral("Actual empty-state title: %1; sourceLoading=%2 proxyBusy=%3 sourceError=%4 proxyError=%5")
+                .arg(title).arg(source->loading()).arg(m_filter->busy()).arg(source->loadError(), m_filter->error())));
         QCOMPARE(description, title == "No activity yet" ? QStringLiteral("Your transactions and payment requests will appear here.")
                                                        : QStringLiteral("Transactions may appear as your wallet catches up."));
     }

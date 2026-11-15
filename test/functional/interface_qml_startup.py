@@ -485,6 +485,7 @@ def close_connection_settings(gui):
 
 def set_switch(gui, object_name, desired):
     if gui.get_property(object_name, "checked") != desired:
+        gui.wait_for_property(object_name, "enabled", True)
         gui.click(object_name)
         gui.wait_for_property(object_name, "checked", desired, timeout_ms=2000)
 
@@ -523,12 +524,19 @@ def run_window_behavior_reset(hide_tray_icon):
                 gui.click("settingsSidebar_window-behavior")
                 gui.wait_for_page("windowBehaviorSettingsPage", timeout_ms=5000)
 
+                # Page visibility does not imply that its asynchronous preference
+                # read has published. A disabled click owns no user command.
+                gui.wait_for_property("windowBehaviorSettingsPage", "windowBehaviorModel.settingsReady", True)
+                gui.wait_for_property("windowBehaviorSettingsPage", "windowBehaviorModel.persistencePending", False)
+                assert gui.get_property("windowBehaviorSettingsPage", "windowBehaviorModel.persistenceError") in (None, "")
                 # Write through the GUI so Qt chooses the platform's effective
                 # organization and the redirected -test-settings-dir store.
                 if phase == "save":
                     set_switch(gui, "showTrayIconSwitch", not hide_tray_icon)
                     set_switch(gui, "minimizeToTraySwitch", not hide_tray_icon)
                     set_switch(gui, "minimizeOnCloseSwitch", True)
+                    gui.wait_for_property("windowBehaviorSettingsPage", "windowBehaviorModel.persistencePending", False)
+                    assert gui.get_property("windowBehaviorSettingsPage", "windowBehaviorModel.persistenceError") in (None, "")
                 expected = {
                     "showTrayIconSwitch": phase == "reset" or not hide_tray_icon,
                     "minimizeToTraySwitch": phase != "reset" and not hide_tray_icon,
