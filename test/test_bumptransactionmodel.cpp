@@ -116,11 +116,11 @@ private Q_SLOTS:
         };
         auto wallet = std::make_shared<OutcomeWallet>(); ConfigureBumpableWallet(*wallet);
         wallet->sign_bump_transaction_fn = [](CMutableTransaction& tx) { for (auto& in : tx.vin) in.scriptSig = CScript{} << OP_0; return true; };
-        wallet->commit_bump_transaction_fn = [wallet, mode](const Txid&, CMutableTransaction&& tx, std::vector<bilingual_str>&, Txid&) {
+        wallet->commit_bump_transaction_fn = [native = wallet.get(), mode](const Txid&, CMutableTransaction&& tx, std::vector<bilingual_str>&, Txid&) {
             if (mode != 1) {
                 if (mode == 3) ++tx.vout.front().nValue;
                 if (mode == 4) tx.vin.front().scriptWitness.stack.push_back({1});
-                wallet->recorded = MakeTransactionRef(std::move(tx));
+                native->recorded = MakeTransactionRef(std::move(tx));
             }
             if (mode == 2) throw std::runtime_error("commit returned no receipt");
             return false;
@@ -156,7 +156,6 @@ private Q_SLOTS:
         QCOMPARE(wallet->calls.createBumpTransaction.load(), 1);
         QCOMPARE(wallet->calls.signBumpTransaction.load(), 1);
         QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);
-        wallet->commit_bump_transaction_fn = {}; // Do not retain the fixture through its injected callback.
     }
     void admittedOutcomeObservationSurvivesQuietClose() {
         auto wallet = MakeBumpableWallet();

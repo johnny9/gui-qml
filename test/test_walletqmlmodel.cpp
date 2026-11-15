@@ -4893,6 +4893,7 @@ private Q_SLOTS:
     void sendTransactionWithPrivateKeysDisabledDoesNotCommit();
     void bumpTransactionOnLockedWalletRequiresPassword();
     void bumpFeePresentationTracksUnitWithoutRepreparing();
+    void replacementOutcomeQueryDoesNotBlockGuiOrRepeatTheMutation();
     void bumpTransactionWithPassphraseUnlocksCommitsAndRelocks();
     void bumpTransactionWithWrongPassphraseDoesNotSign();
     void displayNameDefaultsToWalletName();
@@ -8739,6 +8740,52 @@ void WalletQmlModelTests::importPsbtFromFile_returnsTransactionAlreadyKnownWhenT
     QVERIFY(model->currentTransaction() == nullptr);
     QCOMPARE(model->sendRecipientList()->count(), 1);
     QVERIFY(model->sendRecipientList()->currentRecipient()->address()->address().isEmpty());
+}
+
+void WalletQmlModelTests::replacementOutcomeQueryDoesNotBlockGuiOrRepeatTheMutation()
+{
+    auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = std::make_shared<Txid>();
+    QVERIFY(ConfigurePasswordWalletOnNative(*model, [original](FakePasswordWallet& native) {
+        *original = native.addBumpableTestTransaction();
+        native.commit_bump_result = false;
+    }));
+    auto* bump = model->bumpModel();
+    const auto id = QString::fromStdString(original->GetHex());
+    QVERIFY(AwaitBumpPreparation(*bump, id, 1));
+    const auto prepared = bump->preparationOperation()->result(); QVERIFY(prepared && prepared->value && prepared->value->review);
+    const auto expected = prepared->value->review->transaction.GetHash();
+    QVERIFY(!AwaitBumpCommit(*bump, QStringLiteral("secret")));
+    QCOMPARE(bump->state(), BumpTransactionModel::Uncertain);
+    const auto entered = std::make_shared<std::atomic_bool>(false);
+    const auto thread = std::make_shared<std::atomic<QThread*>>(nullptr);
+    const auto gate = std::make_shared<QSemaphore>();
+    const auto release = qScopeGuard([gate] { gate->release(); });
+    QVERIFY(ConfigurePasswordWalletOnNative(*model, [expected, entered, thread, gate](FakePasswordWallet& native) {
+        native.transaction_details_fn = [expected, entered, thread, gate](const Txid& txid, interfaces::WalletTxStatus& status, bool& mempool) {
+            if (txid == expected) {
+                thread->store(QThread::currentThread());
+                entered->store(true);
+                gate->acquire();
+            }
+            status = {}; mempool = false;
+            return interfaces::WalletTx{};
+        };
+    }));
+    QVERIFY(bump->requestRecheckFeeBumpOutcome());
+    QTRY_VERIFY(entered->load());
+    QVERIFY(thread->load() != QCoreApplication::instance()->thread());
+    const auto pulse = std::make_shared<std::atomic_bool>(false);
+    QTimer::singleShot(0, this, [pulse] { pulse->store(true); });
+    QTRY_VERIFY(pulse->load());
+    QVERIFY(bump->busy());
+    QVERIFY(!bump->requestConfirmFeeBump());
+    gate->release();
+    QTRY_VERIFY(!bump->busy());
+    QCOMPARE(bump->state(), BumpTransactionModel::Uncertain);
+    QCOMPARE(wallet->create_bump_calls, 1);
+    QCOMPARE(wallet->sign_bump_calls, 1);
+    QCOMPARE(wallet->commit_bump_calls, 1);
 }
 
 void WalletQmlModelTests::bumpFeePresentationTracksUnitWithoutRepreparing()
