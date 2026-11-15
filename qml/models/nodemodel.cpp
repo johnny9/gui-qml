@@ -82,7 +82,7 @@ struct NodeModel::Notifications : std::enable_shared_from_this<Notifications> {
     std::shared_ptr<startupdiagnostics::TextBudget> text_budget;
     std::function<void(std::function<void()>)> post;
     bool delivery_pending{false};
-    bool ready{false};
+    bool ready{false}, runtime_enabled{false};
     std::optional<bool> subscribed;
     QString subscription_error;
     int64_t header_spacing{600};
@@ -93,7 +93,7 @@ struct NodeModel::Notifications : std::enable_shared_from_this<Notifications> {
         const bool gui=QThread::currentThread()==QCoreApplication::instance()->thread();
         if(gui&&question)return false;
         bool runtime;
-        {std::lock_guard lock{mutex};if(!receiver)return false;runtime=ready;}
+        {std::lock_guard lock{mutex};if(!receiver)return false;runtime=runtime_enabled;}
         auto details=startupdiagnostics::RetainText(scheduler,text_budget,message);
         QString summary=message.left(16'384);
         if(message.size()>16'384)summary+=QStringLiteral(" ")+QObject::tr("[additional message text omitted]");
@@ -283,7 +283,7 @@ NodeModel::NodeModel(interfaces::Node& node, bool backend_ready, Services servic
     network_ports.generation=[state=m_notifications]{std::lock_guard lock{state->mutex};return state->network_generation;};
     m_network_model=new NetworkModel(std::move(network_ports),this);
     connect(m_network_model,&NetworkModel::changed,this,&NodeModel::publishNetworkAction);
-    connect(this,&NodeModel::networkActionReadyChanged,this,&NodeModel::updateNetworkAvailability);
+    connect(this,&NodeModel::networkBackendAvailabilityChanged,this,&NodeModel::updateNetworkAvailability);
     initializeMempoolInfoPolling();
     initializeSubscriptions();
     if (m_snapshots) connect(m_snapshots.get(), &BackendExecutor::drained, this, &NodeModel::finishDrain);
@@ -300,8 +300,10 @@ NodeModel::~NodeModel()
 void NodeModel::closeAdmission()
 {
     const QPointer<NodeModel> observer{this};
-    m_admission_closed = true;
-    updateNetworkAvailability();if(!observer)return;
+    if(std::exchange(m_admission_closed,true))return;
+    if(m_status_query)m_status_query->close();
+    if(m_mempool_query)m_mempool_query->close();
+    Q_EMIT networkBackendAvailabilityChanged();if(!observer)return;
     setNodeReady(false);if(!observer)return;
     if (m_startup_diagnostics) m_startup_diagnostics->closeAdmission();
     if(!observer)return;
@@ -336,7 +338,7 @@ void NodeModel::beginShutdown()
     if (m_mempool_query) m_mempool_query->close();
     if (m_shutdown_query) m_shutdown_query->close();
     m_subscription_lease.reset();
-    if (!m_destroying) Q_EMIT networkActionReadyChanged();
+    if (!m_destroying) Q_EMIT networkBackendAvailabilityChanged();
     if (!observer) return;
     if (m_destroying) { m_node_ready = false; std::lock_guard lock{m_notifications->mutex}; m_notifications->ready = false; }
     else setNodeReady(false);
@@ -426,7 +428,7 @@ void NodeModel::publishNotifications()
         m_subscriptions_ready = *subscribed;
         Q_EMIT notificationsReadyChanged();
         if (!current()) return;
-        Q_EMIT networkActionReadyChanged();
+        Q_EMIT networkBackendAvailabilityChanged();
         if (!current()) return;
         if (!*subscribed) {
             setStartupError(subscription_error); if (!current()) return;
@@ -451,6 +453,7 @@ void NodeModel::publishNotifications()
     if (!current()) return;
     if (block || header || peers || warnings || network_active) refreshStatus();
     if (network_active && m_network_model) {
+        m_network_model->observe(*network_active, network_generation);
         // This bounded legacy property projects the actual captured Core fact.
         // Domain still owns intent reconciliation. A delayed Domain frame may
         // not overwrite a newer native notification during readiness handoff.
@@ -463,7 +466,6 @@ void NodeModel::publishNotifications()
                 if (!current()) return;
             }
         }
-        m_network_model->observe(*network_active, network_generation);
     }
     if (bans) Q_EMIT bannedListChanged();
     if (!current()) return;
@@ -885,11 +887,13 @@ void NodeModel::requestShutdown()
     }
     const QPointer<NodeModel> observer{this};
     m_shutdown_requested = true;
+    if(m_status_query)m_status_query->close();
+    if(m_mempool_query)m_mempool_query->close();
     m_ready_initialization.reset();
     setNodeReady(false);
     if (!observer) return;
     detachNotifications();
-    Q_EMIT networkActionReadyChanged();
+    Q_EMIT networkBackendAvailabilityChanged();
     if (!observer) return;
     clearRuntimeDialogs(true);
     if (!observer) return;
@@ -910,7 +914,10 @@ void NodeModel::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo
     }
     m_startup_diagnostics_sealed = true;
     m_initialization_result = InitializationResult{success, tip_info, initial_block_download, shutdown_requested};
-    if (success) m_runtime_dialogs_enabled = true;
+    if (success) {
+        m_runtime_dialogs_enabled = true;
+        std::lock_guard lock{m_notifications->mutex};m_notifications->runtime_enabled=true;
+    }
     const bool admitted = m_startup_diagnostics->project(success, tr("Node initialization failed."), tr("Startup warnings:"));
     if (observer && !admitted) finishStartupDiagnostics();
 }
@@ -964,13 +971,14 @@ void NodeModel::finishInitialization(bool success, interfaces::BlockAndHeaderTip
         }
     } else {
         m_backend_queries_ready = true;
-        Q_EMIT networkActionReadyChanged();
+        Q_EMIT networkBackendAvailabilityChanged();
         if (!current()) return;
         if (m_mempool_info_polling_active) {
             schedulePoll(Poll::Mempool);
             if (!current()) return;
         }
         m_runtime_dialogs_enabled = true;
+        {std::lock_guard lock{m_notifications->mutex};m_notifications->runtime_enabled=true;}
         m_ready_initialization = InitializationResult{success, tip_info, initial_block_download, shutdown_requested};
         const bool warning_pending = showStartupWarnings();
         if (!current()) return;
@@ -1283,6 +1291,7 @@ void NodeModel::publishRuntimePrompt()
         completeStartupWarning(active->request->answer==m_startup_warning_answer);
         return;
     }
+    if(!m_runtime_prompt&&!active){completeStartupWarning(false);return;}
     clearRuntimeDialogs(false);if(!observer||m_shutdown_requested||m_workers_stopping)return;
     if(active){
         const auto& request=*active->request;

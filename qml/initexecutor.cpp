@@ -117,7 +117,9 @@ void QmlInitExecutor::closeAdmission(){m_admission_closed->store(true);publishAd
 void QmlInitExecutor::initialize(){if(m_initialize_requested||!admissionOpen())return;m_initialize_requested=true;if(!m_driver||!m_driver->initialize())diagnosticTransportFailed();}
 void QmlInitExecutor::interrupt()
 {
-    if(m_interrupt_requested||m_runaway_exception)return;
+    // Direct shutdown already owns its interruption and final receipt. A late
+    // GUI control request cannot turn an already drained node into a failure.
+    if(m_interrupt_requested||m_shutdown_requested||m_runaway_exception)return;
     m_interrupt_requested=true;
     const QPointer<QmlInitExecutor> observer{this};closeAdmission();if(!observer)return;
     if(!m_driver||!m_driver->interrupt())diagnosticTransportFailed();

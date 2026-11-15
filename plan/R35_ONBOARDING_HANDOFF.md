@@ -5,7 +5,7 @@ Final implementation: `ffd8da03f4bb255f607d587ed3ea1bd80f30bf1e`; pinned Core
 R35 delivery was `e12365c86cb0b1c5e8bf1381bbcf6dd263b05be2`; its raw receipts
 remain historical evidence. The inherited proposed-directory wallet boundary
 hold is resolved by the qualified public-process adapter, with no private
-exception or Core modification. Coordinator integration remains separate.
+exception or Core modification. Coordinator composition is now focused-accepted at `eec5c0292fb1331d7fac1b4bee39cf57579d4295`:95 actual bodies,14 pinned static entries, app/QML lint and3 actual GUI processes pass. The stale8-row manifest expectation was corrected with an affected9-row rerun; its initial nonpass is retained. [Exact receipt](evidence/R35_COMPOSED.json).
 
 Current focused checks are recorded in `R35/PUBLIC_HELPER_ACCEPTANCE_15.json`
 and `plan/R35_PUBLIC_BOUNDARY_CHECKPOINT.json`. Source13 passed10 changed CPP

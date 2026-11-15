@@ -6,6 +6,7 @@
 
 #include <QPointer>
 
+#include <algorithm>
 #include <limits>
 #include <utility>
 
@@ -38,7 +39,11 @@ bool NetworkModel::requestActive(bool active)
     if (m_closed || m_request_id == std::numeric_limits<uint64_t>::max()) return false;
     ++m_request_id;
     m_ingress_pending = true; m_outcome = Pending; m_error = networkcommand::Error::None;
-    const bool accepted = ready() && m_service->request({m_request_id, active, m_projection.generation, m_availability});
+    // A captured public notification may precede its Domain/GUI projection.
+    // The explicit successor owns that latest observed frontier, not an older
+    // displayed frame. Domain still validates it against actual observations.
+    const auto base=std::max(m_observation_ingress,m_projection.generation);
+    const bool accepted = ready() && m_service->request({m_request_id, active, base, m_availability});
     if (!accepted) {
         m_ingress_pending = false; m_outcome = Rejected;
         m_error = ready() ? networkcommand::Error::Admission : networkcommand::Error::Unavailable;
@@ -48,7 +53,9 @@ bool NetworkModel::requestActive(bool active)
 }
 void NetworkModel::observe(bool active, uint64_t generation)
 {
-    if (!m_closed) m_service->observe({active, generation});
+    if (m_closed) return;
+    m_observation_ingress=std::max(m_observation_ingress,generation);
+    m_service->observe({active, generation});
 }
 void NetworkModel::setAvailable(bool available)
 {

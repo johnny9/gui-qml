@@ -143,5 +143,6 @@
     "R32": "be2a3869be89f9c3767ce1d3e90b5b5be0a49aa2:194 current+205 explicit earlier carries; composed799:159"
   },
   "counts_policy": "Component and composition counts overlap and must not be added as unique tests or represented as one final-head full suite. No canonical finding/scope register overwritten.",
-  "remaining": "R09 conditional device/Core atomicity limits, R17 preview, R20 receipt, R30 capability deferrals remain. R42 exhaustive coverage/full suites/configuration/platform/native Windows/sanitizers pending. Existing two WalletOpening failures and whole-Core-PSBT timeout retained separately. No Core/Qt changes or push."
+  "remaining": "R09 conditional device/Core atomicity limits, R17 preview, R20 receipt, R30 capability deferrals remain. R42 exhaustive coverage/full suites/configuration/platform/native Windows/sanitizers pending. Existing two WalletOpening failures and whole-Core-PSBT timeout retained separately. No Core/Qt changes or push.",
+  "binary_hash_inventory_limitation": "Optional inventory requested bin/bitcoinqml_integration instead of configured bin/bitcoinqml_integration_tests; test runner used correct binary and build/XML/input evidence retained. Extra driver stderr and missing hash documented; no hash backfilled from later source."
 }

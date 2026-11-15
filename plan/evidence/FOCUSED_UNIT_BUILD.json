@@ -1,0 +1,71 @@
+{
+  "status": "General focused unit-build capability qualified",
+  "tested_code": "310a7c16ba703b5323ff183296322d058a769cb5",
+  "delivery_code": "99f41c24b12a1e82fa85f9f7d63b9e2a7edbd878",
+  "delivery_delta": "Executable mode only; source bytes unchanged",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "infrastructure_unit_tests": {
+    "runner": 22,
+    "CMake_selector": 4,
+    "passed": 26,
+    "evidence": "host-01"
+  },
+  "actual_unit_execution": {
+    "focused": 19,
+    "restored_control": 1,
+    "distinct_identities": 19,
+    "skipped": 0,
+    "complete_binary_execution": "Only the1 restored control was executed;111-class discovery is not a full-suite pass"
+  },
+  "scope_proof": {
+    "unchanged_Core_commands": 425,
+    "unit_sources_before": 115,
+    "unit_sources_after": 7,
+    "reduction": 108,
+    "focused_unit_sources": [
+      "/review/build/test/bitcoinqml_unit_tests_autogen/mocs_compilation.cpp",
+      "/review/source/bitcoin/src/util/chaintype.cpp",
+      "/review/source/qml/models/bitcoinuri.cpp",
+      "/review/source/test/test_guiargs.cpp",
+      "/review/source/test/test_profileinspectionowner.cpp",
+      "/review/source/test/test_startupprofile.cpp",
+      "/review/source/test/test_unit_tests_main.cpp"
+    ],
+    "ignored_semantic_flags": false
+  },
+  "discovery": {
+    "before": 111,
+    "focused": 3,
+    "restored": 111,
+    "restored_exact_class_set": true,
+    "shared_provider": "StartupProfileTests retained as the existing early child-entry provider"
+  },
+  "negative_controls": {
+    "unknown_class_configure_exit": 1,
+    "omitted_class_binary_exit": 2,
+    "stale_scope": {
+      "expected_runner_exit": 1,
+      "actual_runner_exit": 1,
+      "actual_discovered_classes": 111,
+      "executed_bodies": 0,
+      "scope": "Intentional stale-metadata negative probe, never counted as a passing behavioral selection"
+    },
+    "counts_policy": "Intentional negative controls executed zero ordinary bodies and are not reported as behavioral test passes"
+  },
+  "pinned_static": {
+    "passed": 8,
+    "scope": "Existing unit main +7 fresh app MOC aggregates",
+    "tool": "Clang-tidy23/Core449 checks/Bitcoin plugin"
+  },
+  "app_lint": {
+    "exit": 0,
+    "seconds": 2.1947263829642907,
+    "app": "99f41c24b12a1e82fa85f9f7d63b9e2a7edbd878",
+    "post_branch": "",
+    "post_status": "",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2"
+  },
+  "retained_failure": "lint-01 found new script shebang/mode mismatch; corrected chmod755 only; lint-02 passes",
+  "QML_process_sanitizer_platform_scope": "No product/QML behavior change; exact earlier R35 QML/process evidence remains separate. R42 exhaustive/full-suite/platform/sanitizer obligations unchanged.",
+  "artifacts": "native-01/{focused,restored,tidy,FLAGS_AND_SCOPE_PROOF.json,restore.exit};stale-scope-02;lint-02"
+}

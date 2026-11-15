@@ -64,6 +64,7 @@ class NodeModel : public QObject
     Q_PROPERTY(QString observationError READ observationError NOTIFY observationErrorChanged)
     Q_PROPERTY(NetworkModel* networkModel READ networkModel CONSTANT)
     Q_PROPERTY(nodelifecycle::Phase lifecyclePhase READ lifecyclePhase NOTIFY lifecyclePhaseChanged)
+    Q_PROPERTY(bool networkBackendAvailable READ networkBackendAvailable NOTIFY networkBackendAvailabilityChanged)
     Q_PROPERTY(bool networkActionReady READ networkActionReady NOTIFY networkActionReadyChanged)
     Q_PROPERTY(bool networkActionPending READ networkActionPending NOTIFY networkActionPendingChanged)
     Q_PROPERTY(bool peerActionPending READ peerActionPending NOTIFY peerActionChanged)
@@ -121,8 +122,8 @@ public:
     NetworkModel* networkModel() const { return m_network_model; }
     nodelifecycle::Phase lifecyclePhase() const { return m_lifecycle_phase; }
     void setLifecyclePhase(nodelifecycle::Phase phase);
-    // Compatibility capability: backend/subscription availability. The typed
-    // command owner additionally requires a current observation before effects.
+    bool networkBackendAvailable() const { return m_backend_queries_ready && m_subscriptions_ready && !m_admission_closed && !m_shutdown_requested && !m_workers_stopping; }
+    // Command readiness additionally requires an actual current observation.
     bool networkActionReady() const { return networkBackendAvailable() && m_network_model && m_network_model->ready(); }
     bool peerActionPending() const { return bool(m_peer_command); }
     enum class PeerActionOutcome { Succeeded, Rejected, PartiallyApplied, Uncertain };
@@ -212,6 +213,7 @@ Q_SIGNALS:
     void notificationsReadyChanged();
     void nodeInformationChanged();
     void networkActionReadyChanged();
+    void networkBackendAvailabilityChanged();
     void lifecyclePhaseChanged();
     void networkActionPendingChanged();
     void networkActionErrorChanged();
@@ -277,7 +279,6 @@ private:
     NetworkModel* m_network_model{nullptr};
     bool m_network_available{false};
     nodelifecycle::Phase m_lifecycle_phase{nodelifecycle::Phase::Constructed};
-    bool networkBackendAvailable() const { return m_backend_queries_ready && m_subscriptions_ready && !m_admission_closed && !m_shutdown_requested && !m_workers_stopping; }
     void updateNetworkAvailability();
     void publishNetworkAction();
     bool m_network_known{false}, m_network_ready_snapshot{false};
