@@ -117,5 +117,6 @@
   "other_parent_failures": "Invalid signer1fail/1control; timing/abandonment4fail; unit1fail; obsolete password2fail; cross-wallet context1fail; retained numbered artifacts",
   "scope_map": "source/plan/R25_SCOPE_MAP.json",
   "upstream_note": "plan/QT6_UPSTREAM_IMPROVEMENTS.md#r25-replacement-signing-and-commit-observations",
-  "limitations": "Separate public observations are not atomic with independent RPC. Unknown commit remains Uncertain; no new write replay. R09/R20 approved Core receipt/device limitations retained. R42 exhaustive coverage/platform/full matrix/native Windows/sanitizers pending. No Core/Qt changes."
+  "limitations": "Separate public observations are not atomic with independent RPC. Unknown commit remains Uncertain; no new write replay. R09/R20 approved Core receipt/device limitations retained. R42 exhaustive coverage/platform/full matrix/native Windows/sanitizers pending. No Core/Qt changes.",
+  "binary_hash_inventory_limitation": "Optional inventory requested bin/bitcoinqml_integration instead of configured bin/bitcoinqml_integration_tests; test runner used correct binary and build/XML/input evidence retained. Extra driver stderr and missing hash documented; no hash backfilled from later source."
 }

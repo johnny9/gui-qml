@@ -19,6 +19,9 @@ add_test(NAME bitcoinqml_dev_resources
 add_test(NAME bitcoinqml_focused_runner
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_run_focused.py
 )
+add_test(NAME bitcoinqml_focused_unit_build
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_focused_unit_build.py
+)
 add_test(NAME bitcoinqml_tidy_selection
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_clang_tidy_selection.py
 )
@@ -64,6 +67,7 @@ add_executable(bitcoinqml_unit_tests
   test_flowdetailsmodel.cpp
   test_startupeffects.cpp
   test_startuppolicy.cpp
+  test_startupprofile.cpp
   test_qtlogsink.cpp
   test_bitcoinaddress.cpp
   test_blockclockdial.cpp
@@ -97,6 +101,9 @@ add_executable(bitcoinqml_unit_tests
   test_async_options.cpp
   test_onboarding_storage.cpp
   test_onboardingasync.cpp
+  test_onboardingflow.cpp
+  test_profileinspection.cpp
+  test_profileinspectionprocess.cpp
   test_banlistmodel.cpp
   test_display_settings.cpp
   test_qtinfolog.cpp
@@ -115,6 +122,7 @@ endif()
 if(ENABLE_WALLET)
   target_sources(bitcoinqml_unit_tests PRIVATE
     test_activityexportoperation.cpp
+    test_profileinspectionowner.cpp
     test_activityfilterproxymodel.cpp
     test_addresslistmodel.cpp
     test_bumptransactionmodel.cpp
@@ -159,6 +167,12 @@ if(ENABLE_WALLET)
   )
 endif()
 
+include(${PROJECT_SOURCE_DIR}/cmake/FocusedUnitTests.cmake)
+# The executable's early child-process entry point uses this existing provider.
+configure_focused_unit_build(bitcoinqml_unit_tests
+  ${CMAKE_CURRENT_BINARY_DIR}/unit-build-selection.json
+  SUPPORT_SOURCES test_startupprofile.cpp)
+
 target_compile_definitions(bitcoinqml_unit_tests
   PRIVATE
     BITCOINQML_NO_TEST_MAIN
@@ -191,6 +205,9 @@ target_link_libraries(bitcoinqml_unit_tests
 )
 
 add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests -platform minimal)
+if(APP_UNIT_TEST_CLASSES)
+  set_tests_properties(bitcoinqml_unit_tests PROPERTIES LABELS "unit;focused-build")
+endif()
 add_test(NAME bitcoinqml_unit_targeting
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_unit_targeting.py
     $<TARGET_FILE:bitcoinqml_unit_tests>
@@ -409,3 +426,8 @@ if(qt_lib_type STREQUAL "STATIC_LIBRARY")
 endif()
 
 add_subdirectory(integration)
+
+if(TARGET bitcoin-core-profile-inspector)
+  add_dependencies(bitcoinqml_unit_tests bitcoin-core-profile-inspector)
+  add_dependencies(bitcoinqml_integration_tests bitcoin-core-profile-inspector)
+endif()

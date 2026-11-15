@@ -180,6 +180,26 @@ private Q_SLOTS:
         int views{0}; const auto result = startup::DeliverError(canceled, quitting, [&] { ++views; return answer; });
         QCOMPARE(views, canceled || quitting ? 0 : 1); QCOMPARE(result, !canceled && !quitting && answer);
     }
+
+    void migrationCleanupFollowsOnlyItsSuccessfulReplacement_data() {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("replacement-rejected")<<0;QTest::newRow("cleanup-rejected")<<1;
+        QTest::newRow("cleanup-throws")<<2;QTest::newRow("replacement-and-cleanup-complete")<<3;
+    }
+    void migrationCleanupFollowsOnlyItsSuccessfulReplacement() {
+        QFETCH(int,mode);PreparationFixture fixture;fixture.changed=true;fixture.written=mode!=0;
+        auto ports=fixture.ports();const auto migrate=ports.migrate;
+        ports.migrate=[&]{auto result=migrate();result.complete=[&]{fixture.call(QStringLiteral("cleanup"));if(mode==2)throw std::runtime_error("cleanup boundary");return startup::SettingsWrite{mode==3,{"original cleanup failure"}};};return result;};
+        QString exception;auto outcome=startup::PreparationOutcome::Ready;
+        try{outcome=startup::PrepareNode(ports);}catch(const std::runtime_error& error){exception=QString::fromUtf8(error.what());}
+        QCOMPARE(fixture.trace.count(QStringLiteral("write")),1);
+        QCOMPARE(fixture.trace.count(QStringLiteral("cleanup")),mode==0?0:1);
+        QCOMPARE(fixture.trace.count(QStringLiteral("node")),mode==3?1:0);
+        if(mode==0)QCOMPARE(outcome,startup::PreparationOutcome::SettingsWriteFailed);
+        if(mode==1){QCOMPARE(outcome,startup::PreparationOutcome::MigrationFailed);QCOMPARE(fixture.errors.front().second,std::vector<std::string>{"original cleanup failure"});}
+        if(mode==2)QCOMPARE(exception,QStringLiteral("cleanup boundary"));
+        if(mode==3){QCOMPARE(outcome,startup::PreparationOutcome::Ready);QVERIFY(fixture.trace.indexOf(QStringLiteral("write"))<fixture.trace.indexOf(QStringLiteral("cleanup")));QVERIFY(fixture.trace.indexOf(QStringLiteral("cleanup"))<fixture.trace.indexOf(QStringLiteral("node")));}
+    }
     void nodePreparationHasExactFailFastOutcomes_data() {
         QTest::addColumn<int>("mode"); QTest::addColumn<int>("outcome"); QTest::addColumn<QStringList>("trace");
         using O = startup::PreparationOutcome;

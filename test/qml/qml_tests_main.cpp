@@ -4417,6 +4417,24 @@ public:
     Q_PROPERTY(bool setupCommitPending READ setupCommitPending NOTIFY setupCommitChanged)
     Q_PROPERTY(bool setupCommitted READ setupCommitted NOTIFY setupCommitChanged)
     Q_PROPERTY(QString setupCommitError READ setupCommitError NOTIFY setupCommitChanged)
+    Q_PROPERTY(bool setupPartial READ setupPartial NOTIFY setupCommitChanged)
+    Q_PROPERTY(bool setupUncertain READ setupUncertain NOTIFY setupCommitChanged)
+    bool m_setup_partial{false},m_setup_uncertain{false};
+    int m_setup_queries{0},m_setup_completions{0},m_setup_rechecks{0};
+    bool setupPartial()const{return m_setup_partial;}
+    bool setupUncertain()const{return m_setup_uncertain;}
+    Q_INVOKABLE void querySetupOutcome(){if(!m_setup_uncertain||m_setup_pending)return;++m_setup_queries;m_setup_pending=true;Q_EMIT setupCommitChanged();}
+    Q_INVOKABLE void completeSavedSetup(){if(!m_setup_partial||m_setup_uncertain||m_setup_pending)return;++m_setup_completions;m_setup_pending=true;Q_EMIT setupCommitChanged();}
+    Q_INVOKABLE void retrySetupChecks(){++m_setup_rechecks;}
+    Q_INVOKABLE int setupQueriesForTest()const{return m_setup_queries;}
+    Q_INVOKABLE int setupCompletionsForTest()const{return m_setup_completions;}
+    Q_INVOKABLE int setupRechecksForTest()const{return m_setup_rechecks;}
+    Q_INVOKABLE void projectSetupForTest(const QString& phase){
+        m_setup_pending=phase==QStringLiteral("pending");m_setup_committed=phase==QStringLiteral("completed");
+        m_setup_partial=phase==QStringLiteral("partial");m_setup_uncertain=phase==QStringLiteral("uncertain");
+        m_setup_error=phase==QStringLiteral("failed")?QStringLiteral("Setup was not written."):m_setup_partial?QStringLiteral("Profile written; legacy cleanup incomplete."):m_setup_uncertain?QStringLiteral("Original outcome unknown."):QString{};
+        Q_EMIT setupCommitChanged();if(m_setup_committed)Q_EMIT settingsCommitted();
+    }
     Q_PROPERTY(QString unpruneConsentToken READ unpruneConsentToken CONSTANT)
     bool m_setup_pending{false},m_setup_committed{false};
     QString m_setup_error;
@@ -4426,7 +4444,7 @@ public:
     QString unpruneConsentToken()const{return QStringLiteral("mock-consent");}
     Q_INVOKABLE void confirmUnpruning(const QString&){}
     Q_INVOKABLE void commitSettings(){if(!canFinish()||m_setup_pending||m_setup_committed)return;m_setup_pending=true;Q_EMIT setupCommitChanged();QTimer::singleShot(0,this,[this]{m_setup_pending=false;m_setup_committed=true;Q_EMIT setupCommitChanged();Q_EMIT settingsCommitted();});}
-    Q_INVOKABLE void resetSettingsEditorsForTest(){for(const auto& editor:MockSettingsOwners())if(editor)editor->close();m_settings_store.reset();m_setup_pending=m_setup_committed=false;m_setup_error={};Q_EMIT setupCommitChanged();}
+    Q_INVOKABLE void resetSettingsEditorsForTest(){for(const auto& editor:MockSettingsOwners())if(editor)editor->close();m_settings_store.reset();m_setup_pending=m_setup_committed=m_setup_partial=m_setup_uncertain=false;m_setup_queries=m_setup_completions=m_setup_rechecks=0;m_setup_error={};Q_EMIT setupCommitChanged();}
     Q_INVOKABLE int settingsWritesForTest()const{if(!m_settings_store)return 0;std::lock_guard lock{m_settings_store->mutex};return m_settings_store->writes;}
     Q_INVOKABLE void rejectSettingsForTest(const QString& error){if(!m_settings_store)m_settings_store=std::make_shared<MockSettingsStore>();std::lock_guard lock{m_settings_store->mutex};m_settings_store->rejected=error;}
     Q_INVOKABLE SettingsEditorModel* createSettingsEditor(){

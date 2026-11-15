@@ -6,11 +6,15 @@
 #define BITCOIN_QML_ONBOARDING_SETTINGS_H
 
 #include <qml/core_settings.h>
+#include <qml/settingsnamespace.h>
+#include <qml/profileinspection.h>
 
 #include <QSet>
 #include <QString>
 #include <QVariantMap>
 
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -37,7 +41,23 @@ struct ApplyRequest {
     QSet<QString> touched_settings;
     QmlCoreSettings::Values values;
     bool accept_redownload{false};
+    std::optional<UiPreferencesNamespace> settings_namespace{};
 };
+
+struct ProfileRecovery;
+struct ProfileResult {
+    bool completed{false};
+    bool replacement_written{false};
+    bool directory_saved{false};
+    bool cleanup_completed{false};
+    bool uncertain{false};
+    QString error;
+    // Native-only exact original attempt; no QObject or GUI projection.
+    std::shared_ptr<ProfileRecovery> recovery;
+};
+ProfileResult PersistProfile(ArgsManager& args, const ApplyRequest& request);
+ProfileResult QueryProfile(ArgsManager& args, const ProfileResult& original);
+ProfileResult CompleteProfile(ArgsManager& args, const ProfileResult& original);
 
 struct ProfileSummary {
     bool existing_profile{false};
@@ -69,13 +89,15 @@ struct OnboardingStartupStatus {
 };
 
 bool PrepareArgs(ArgsManager& args, const std::vector<std::string>& argv, bool can_listen_ipc, std::string& error);
-OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc);
-PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir);
-PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir);
+OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc, const UiPreferencesNamespace* identity = nullptr);
+PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir, const ApplyRequest* intent = nullptr,
+    const profileinspection::Port& inspect = {}, const profileinspection::Cancellation& cancelled = {});
+PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir,
+    const profileinspection::Port& inspect = {}, const profileinspection::Cancellation& cancelled = {});
 bool SetQmlOnboarded(ArgsManager& args,bool completed,QString* error=nullptr);
 bool MarkQmlOnboarded(ArgsManager& args, QString* error = nullptr);
-bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error = nullptr, bool accept_redownload = false, bool mark_completed = true);
-bool ApplyToArgs(ArgsManager& args, const QString& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error = nullptr, bool accept_redownload = false, bool mark_completed = true);
+bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error = nullptr, bool accept_redownload = false, bool mark_completed = true, ProfileResult* receipt = nullptr, const UiPreferencesNamespace* identity = nullptr);
+bool ApplyToArgs(ArgsManager& args, const QString& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error = nullptr, bool accept_redownload = false, bool mark_completed = true, ProfileResult* receipt = nullptr, const UiPreferencesNamespace* identity = nullptr);
 
 } // namespace QmlOnboardingSettings
 

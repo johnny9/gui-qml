@@ -70,6 +70,36 @@ class ManifestTests(unittest.TestCase):
                 }]})
 
 
+class UnitBuildScopeTests(unittest.TestCase):
+    def test_old_build_does_not_claim_complete_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertEqual(run_focused.unit_build_scope(Path(temporary)), {"mode": "unrecorded"})
+
+    def test_focused_scope_preserves_requested_and_support_classes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "test").mkdir()
+            path = root / "test/unit-build-selection.json"
+            path.write_text(json.dumps({"mode": "focused", "requested_classes": ["SelectedTests"],
+                                        "compiled_classes": ["SelectedTests", "SharedProbeTests"]}))
+            result = run_focused.unit_build_scope(root)
+            self.assertEqual(result["mode"], "focused")
+            self.assertEqual(result["compiled_classes"], ["SelectedTests", "SharedProbeTests"])
+            self.assertEqual(len(result["sha256"]), 64)
+
+    def test_empty_unavailable_and_malformed_scope_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "test").mkdir()
+            path = root / "test/unit-build-selection.json"
+            for value in ({"mode": "focused", "requested_classes": [], "compiled_classes": []},
+                          {"mode": "focused", "requested_classes": ["AbsentTests"], "compiled_classes": ["OtherTests"]},
+                          {"mode": "focused", "requested_classes": [3]}, {"mode": "invented"}):
+                with self.subTest(value=value), self.assertRaises(run_focused.RunnerError):
+                    path.write_text(json.dumps(value))
+                    run_focused.unit_build_scope(root)
+
+
 class CommandAndMetadataTests(unittest.TestCase):
     def test_command_composition_keeps_suite_arguments_and_owns_reports(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
