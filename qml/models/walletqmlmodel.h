@@ -185,7 +185,6 @@ private:
     Q_PROPERTY(bool feeEstimatePending READ feeEstimatePending NOTIFY feeEstimatePendingChanged)
     Q_PROPERTY(int feeEstimateRevision READ feeEstimateRevision NOTIFY feeEstimateRevisionChanged)
     Q_PROPERTY(BumpTransactionModel* bumpModel READ bumpModel CONSTANT)
-    Q_PROPERTY(bool isWalletLoaded READ isWalletLoaded NOTIFY walletIsLoadedChanged)
     Q_PROPERTY(int displayUnit READ displayUnit WRITE setDisplayUnit NOTIFY displayUnitChanged)
     Q_PROPERTY(bool isEncrypted READ isEncrypted NOTIFY securityStateChanged)
     Q_PROPERTY(bool isLocked READ isLocked NOTIFY securityStateChanged)
@@ -431,8 +430,6 @@ public:
     void setCustomFeeEnabled(bool enabled);
     void setCustomFeeRate(const QString& fee_rate);
 
-    bool isWalletLoaded() const { return m_is_wallet_loaded; }
-    void setWalletLoaded(bool loaded);
     int displayUnit() const { return m_display_unit; }
     void setDisplayUnit(int unit);
     bool isEncrypted() const { return m_security->isEncrypted(); }
@@ -492,7 +489,6 @@ Q_SIGNALS:
     void feeEstimatePendingChanged();
     void feeEstimateRevisionChanged();
     void maximumRecipientChanged();
-    void walletIsLoadedChanged();
     void receiveRequestReconciliationPendingChanged();
     void receiveRequestStorageChanged();
     void receivingAddressStateChanged();
@@ -803,7 +799,6 @@ private:
     bool m_fee_drained{true};
     std::string m_fee_observed_block;
     quint64 m_fee_backend_revision{0};
-    bool m_is_wallet_loaded{false};
     QString m_transaction_error;
     quint64 m_transaction_status_revision{0};
     bool m_transaction_needs_unlock{false};

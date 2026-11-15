@@ -30,6 +30,7 @@
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signertransaction.h>
 #include <qml/models/walletqmlmodel.h>
+#include <qml/walletqmlcontroller.h>
 #include <qml/walletidentity.h>
 #include <qml/walletsettings.h>
 #include <qml/bitcoinunits.h>
@@ -62,6 +63,7 @@
 #include <QElapsedTimer>
 #include <QLocale>
 #include <QScopeGuard>
+#include <QMetaProperty>
 #include <QQmlEngine>
 #include <QSemaphore>
 #include <QSettings>
@@ -1125,6 +1127,19 @@ private:
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void loadedStateBelongsToTheControllerSchema()
+    {
+        const auto& wallet = WalletQmlModel::staticMetaObject;
+        QCOMPARE(wallet.indexOfProperty("isWalletLoaded"), -1);
+        QCOMPARE(wallet.indexOfSignal("walletIsLoadedChanged()"), -1);
+        const auto& controller = WalletQmlController::staticMetaObject;
+        const auto index = controller.indexOfProperty("isWalletLoaded");
+        QVERIFY(index >= 0);
+        const auto property = controller.property(index);
+        QCOMPARE(property.metaType().id(), QMetaType::Bool);
+        QVERIFY(property.isReadable()); QVERIFY(property.hasNotifySignal());
+        QCOMPARE(property.notifySignal().methodSignature(), QByteArray{"isWalletLoadedChanged()"});
+    }
     void init()
     {
         // These independent cases reuse one synthetic wallet identity. Keep
