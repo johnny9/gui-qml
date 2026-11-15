@@ -263,7 +263,7 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
         if (error) {
             const auto returned = document.GetUnsignedTx();
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
-                psbtfee::MatchesReview(document, *request.proof, request.approved_fee)) {
+                psbtfee::MatchesReview(document, authenticated, request.approved_fee)) {
                 result.document = std::make_shared<const PartiallySignedTransaction>(document);
                 result.partial = true;
             }
@@ -304,7 +304,7 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
         try {
             const auto returned = document.GetUnsignedTx();
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
-                psbtfee::MatchesReview(document, *request.proof, request.approved_fee)) {
+                psbtfee::MatchesReview(document, authenticated, request.approved_fee)) {
                 result.document = std::make_shared<const PartiallySignedTransaction>(document);
                 result.partial = true;
             }

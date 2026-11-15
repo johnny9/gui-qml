@@ -253,6 +253,60 @@ private Q_SLOTS:
         if (candidate == 0) QCOMPARE(operation->result()->committed->GetHash(), MakeTransactionRef(reviewed)->GetHash());
         QVERIFY(wallet->fill_options.empty()); QCOMPARE(wallet->unlocks, 0);
     }
+    void preparedSignerErrorCannotReplaceAuthenticatedInputKeys_data()
+    {
+        QTest::addColumn<int>("returned");
+        QTest::newRow("valid-partial-output-after-error") << 0;
+        QTest::newRow("forged-input-keys-after-error") << 1;
+        QTest::newRow("forged-input-keys-after-unknown-outcome") << 2;
+    }
+    void preparedSignerErrorCannotReplaceAuthenticatedInputKeys()
+    {
+        QFETCH(int, returned);
+        ECC_Context ecc;
+        const auto original = psbtfeefixture::Legacy(2, false);
+        struct PartialWallet : Wallet {
+            PartiallySignedTransaction original;
+            int returned;
+            int device_calls{0};
+            PartialWallet(PartiallySignedTransaction source, int value) : original(std::move(source)), returned(value) { signer = true; }
+            CTransactionRef getTx(const Txid& id) override {
+                const auto source = original.inputs.front().non_witness_utxo;
+                return source->GetHash() == id ? source : CTransactionRef{};
+            }
+            std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>& inputs) override {
+                std::vector<interfaces::WalletTxOut> result;
+                for (const auto& input : inputs) {
+                    interfaces::WalletTxOut coin{}; coin.txout = original.inputs.front().non_witness_utxo->vout[input.n];
+                    result.push_back(std::move(coin));
+                }
+                return result;
+            }
+            std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options, size_t*, PartiallySignedTransaction& document, bool& complete) override {
+                complete = false;
+                if (!options.sign) return {};
+                ++device_calls; document = original;
+                if (returned) {
+                    auto& input = document.inputs.front();
+                    input.witness_utxo = input.non_witness_utxo->vout[input.GetOutPoint().n];
+                    input.witness_utxo.scriptPubKey = CScript{} << OP_TRUE;
+                    input.non_witness_utxo.reset();
+                }
+                if (returned == 2) throw std::runtime_error("device returned no outcome");
+                return common::PSBTError::EXTERNAL_SIGNER_FAILED;
+            }
+        } signer{original, returned};
+        auto unsigned_document = original;
+        for (auto& input : unsigned_document.inputs) input.final_script_sig.clear();
+        const auto tx = MakeTransactionRef(*original.GetUnsignedTx());
+        walletsigning::Request request{tx, std::make_shared<const PartiallySignedTransaction>(unsigned_document),
+            std::make_shared<const psbtfee::Analysis>(psbtfee::Prepared(*tx, psbtfeefixture::ACTUAL_FEE)), psbtfeefixture::ACTUAL_FEE};
+        const auto result = walletsigning::Approve(signer, request);
+        QCOMPARE(result.error, returned == 2 ? walletsigning::Error::Uncertain : walletsigning::Error::SignerFailed);
+        QCOMPARE(bool(result.document), returned == 0); QCOMPARE(result.partial, returned == 0);
+        QVERIFY(!result.signed_transaction); QCOMPARE(signer.device_calls, 1); QCOMPARE(signer.commits, 0);
+        if (result.document) QVERIFY(psbtfee::MatchesReview(*result.document, psbtfee::Analyze(original), psbtfeefixture::ACTUAL_FEE));
+    }
     void unverifiedPreparedInputsCannotReachTheSigner_data()
     {
         QTest::addColumn<int>("failure");
