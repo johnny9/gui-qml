@@ -334,8 +334,9 @@ The [PSBT checkpoint](R23_PSBT_ELIGIBILITY_CHECKPOINT.md) records the typed
 Node/Chain observations. Public `Node::executeRpc("testmempoolaccept", ...)`
 also supplies a current read-only consensus/policy verdict for the finalized
 transaction, including conflicts/replacement/relative locks. The Native adapter
-follow-up is authorized and pending; this capability does not require Core
-changes. Keep existing reviewed fee limits and actual submission ownership.
+is implemented, focused-qualified at7a2ee232 and integrated at51c40864; this
+capability does not require Core changes. Keep existing reviewed fee limits
+and actual submission ownership.
 A future typed observation would simplify RPC adaptation, but cannot reserve
 later admission against independent changes. It is an optional improvement.
 
