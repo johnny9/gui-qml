@@ -7,11 +7,18 @@
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/qt_test_registry.h>
 
+#include <chainparamsbase.h>
+#include <common/args.h>
+#include <init.h>
+
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSettings>
+#include <QFile>
+#include <QDir>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QtTest/QtTest>
@@ -67,6 +74,57 @@ class StartupPolicyTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void readonlyProfileResolutionPreservesTargets_data() {
+        QTest::addColumn<bool>("existing_settings");
+        QTest::newRow("absent-network-directory") << false;
+        QTest::newRow("existing-malformed-settings-remain-untouched") << true;
+    }
+    void readonlyProfileResolutionPreservesTargets() {
+        QFETCH(bool, existing_settings);
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        QFile configuration{directory.filePath("bitcoin.conf")};
+        QVERIFY(configuration.open(QIODevice::WriteOnly));
+        QCOMPARE(configuration.write("regtest=1\n"), qint64{10}); configuration.close();
+        const auto network=directory.filePath("regtest");
+        const auto settings_path=network+"/settings.json";
+        const QByteArray sentinel{"not-json: original settings must remain unchanged"};
+        if(existing_settings){
+            QVERIFY(QDir{}.mkpath(network)); QFile settings{settings_path};
+            QVERIFY(settings.open(QIODevice::WriteOnly)); QCOMPARE(settings.write(sentinel),qint64{sentinel.size()});settings.close();
+        }
+        ArgsManager args; SetupServerArgs(args,false);
+        const auto option=QStringLiteral("-datadir=%1").arg(directory.path()).toStdString();
+        const char* argv[]{"profile-test",option.c_str()}; std::string error;
+        QVERIFY2(args.ParseParameters(2,argv,error),error.c_str());
+        const auto original_chain=gArgs.GetChainType();
+        const auto restore=qScopeGuard([original_chain]{SelectBaseParams(original_chain);});
+        ManualRoutedExecution runner;
+        std::optional<startup::ProfileIdentity> result;
+        QVERIFY(execution::Submit(*runner.scheduler,[&]{return startup::ReadProfileIdentity(args);},
+            [&](auto value){result=std::move(value);}));
+        runner.drain(); QVERIFY(result); QCOMPARE(result->network,QString{"regtest"});
+        QCOMPARE(result->directory,QDir::cleanPath(network));
+        QVERIFY(!QFile::exists(directory.filePath("wallets")));
+        QVERIFY(!QFile::exists(network+"/wallets"));
+        QCOMPARE(QFile::exists(network),existing_settings);
+        if(existing_settings){QFile settings{settings_path};QVERIFY(settings.open(QIODevice::ReadOnly));QCOMPARE(settings.readAll(),sentinel);}
+        else QVERIFY(!QFile::exists(settings_path));
+        QVERIFY(runner.quiescent());
+    }
+    void capturedProfileFencePrecedesMigration_data() {
+        QTest::addColumn<bool>("matches");
+        QTest::newRow("same-profile") << true;
+        QTest::newRow("changed-profile") << false;
+    }
+    void capturedProfileFencePrecedesMigration() {
+        QFETCH(bool,matches); PreparationFixture fixture; auto ports=fixture.ports();
+        ports.profile_matches=[&]{fixture.call("identity");return matches;};
+        const auto result=startup::PrepareNode(ports);
+        QCOMPARE(result,matches?startup::PreparationOutcome::Ready:startup::PreparationOutcome::ConfigurationFailed);
+        QCOMPARE(fixture.trace.mid(0,2),QStringList({"configure","identity"}));
+        if(!matches){QCOMPARE(fixture.trace,QStringList({"configure","identity","error"}));QCOMPARE(fixture.errors.size(),size_t{1});}
+        else {QVERIFY(fixture.trace.contains("migrate"));QVERIFY(fixture.trace.contains("base"));QVERIFY(fixture.errors.empty());}
+    }
     void warningIntakePreservesFullNativeOrBoundedGuiText_data() {
         QTest::addColumn<int>("mode");
         QTest::newRow("native-short") << 0; QTest::newRow("gui-short") << 1;

@@ -3,6 +3,10 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/startuppolicy.h>
 
+#include <chainparamsbase.h>
+#include <common/args.h>
+#include <util/fs.h>
+
 #include <QEventLoop>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -112,6 +116,10 @@ PreparationOutcome PrepareNode(const PreparationPorts& ports)
         || !ports.reset_requested || !ports.reset_window_settings || !ports.warning)
         throw std::invalid_argument{"Missing node preparation port"};
     if (!ports.configure()) return PreparationOutcome::ConfigurationFailed;
+    if (ports.profile_matches && !ports.profile_matches()) {
+        ports.error(Untranslated("The effective startup profile changed after desktop request admission. Restart with the intended data directory and network."), {});
+        return PreparationOutcome::ConfigurationFailed;
+    }
     const auto migration = ports.migrate();
     if (!migration.error.isEmpty()) {
         ports.error(Untranslated(migration.error.toStdString()), {});
@@ -138,6 +146,25 @@ PreparationOutcome PrepareNode(const PreparationPorts& ports)
     if (ports.reset_requested() && !ports.reset_window_settings())
         ports.warning(Untranslated(QObject::tr("Unable to save window settings after reset.").toStdString()));
     return PreparationOutcome::Ready;
+}
+ProfileIdentity CurrentProfileIdentity(const ArgsManager& args)
+{
+    // Resolve an existing symlink prefix without creating a missing network
+    // directory. All filesystem work stays in the caller's Native effect.
+    return {QString::fromStdString(fs::PathToString(fs::weakly_canonical(args.GetDataDirNet()))),
+        QString::fromStdString(args.GetChainTypeString())};
+}
+ProfileIdentity ReadProfileIdentity(ArgsManager& args)
+{
+    if (!CheckDataDirOption(args)) throw std::runtime_error{"The selected data directory does not exist."};
+    std::string error;
+    if (!args.ReadConfigFiles(error, true)) throw std::runtime_error{error};
+    // Only the public base-chain/path identity is needed here. Full node
+    // chain-parameter construction remains in Primary-only InitConfig; it
+    // must not read unrelated global arguments for an independent resolver.
+    // Malformed rw settings remain for that original configure/error policy.
+    SelectBaseParams(args.GetChainType());
+    return CurrentProfileIdentity(args);
 }
 bool ResetWindowSettings(const WindowSettingsPorts& ports)
 {

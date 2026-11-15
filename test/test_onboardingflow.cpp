@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/onboardingflow.h>
+#include <qml/startuppreparation.h>
 #include <qml/models/onboardingoptionsmodel.h>
 #include <qml/guiargs.h>
 #include <common/args.h>
@@ -15,7 +16,10 @@
 #include <test/mocks/manualexecutionenvironment.h>
 #include <QtTest/QtTest>
 
+#include <atomic>
 #include <deque>
+#include <memory>
+#include <utility>
 #include <stdexcept>
 
 namespace {
@@ -38,6 +42,92 @@ void Ready(onboarding::Flow& flow,uint64_t revision=1)
     flow.edit(revision);
     flow.checked({revision,true,true,true,{}});
 }
+// Two real TaskQueue graphs: the producer cannot mutate the consumer's Domain
+// directly, and the consumer's pre-reserved receiver survives ordinary close.
+struct AsyncStartup {
+    ManualRoutedExecution execution;
+    std::shared_ptr<execution::Scheduler> transport_scope{execution.scheduler->openActionScope()};
+    execution::ResourceKey key{execution.scheduler->allocateKey()};
+    std::shared_ptr<startup::preparation::Coordinator> owner;
+    std::deque<startup::preparation::CompleteTransport> pending;
+    startup::preparation::CompleteResult retained_completion;
+    bool retired{false}, duplicate_completion{false}, retain_completion{false};
+    bool saved_complete{false}, saved_written{false}, saved_directory{false}, saved_cleanup{false};
+    int starts{0}, reads{0}, transports{0}, preparations{0}, closes{0}, retire_effects{0}, terminal_receipts{0};
+    uint64_t delivered_inspection{0};
+    startup::preparation::Profile profile{QStringLiteral("/original/profile"),QStringLiteral("regtest")};
+    QString observed_directory;
+    AsyncStartup() {
+        startup::preparation::Ports ports;
+        ports.read_profile=[this]{++reads;return profile;};
+        ports.start_transport=[this](auto identity,auto done){
+            ++transports;observed_directory=identity.directory;
+            if(!(identity==profile))return execution::Admission{{},execution::Rejection::Invalid};
+            return execution::Submit(*transport_scope,[]{},[this,done=std::move(done)]{pending.push_back(done);},{},
+                {execution::Lane::Core,128,key,execution::WorkClass::Action});
+        };
+        ports.prepare_native=[this](auto identity){++preparations;return identity==profile
+            ?startup::PreparationOutcome::Ready:startup::PreparationOutcome::ConfigurationFailed;};
+        ports.retire_transport=[this](auto done){return execution::Submit(*transport_scope,[this]{++retire_effects;retired=true;},
+            std::move(done),{},{execution::Lane::Core,128,key,execution::WorkClass::Action});};
+        ports.transport_retired=[this]{return retired;};
+        owner=std::make_shared<startup::preparation::Coordinator>(execution::SnapshotServices{execution.scheduler,{}},std::move(ports));
+    }
+    onboarding::AsyncPreparation port() {
+        const auto original=owner;
+        return {[this,original](startup::preparation::Context context,startup::preparation::CompleteResult done){
+            ++starts;
+            saved_complete=context.saved_profile&&context.saved_profile->completed;
+            saved_written=context.saved_profile&&context.saved_profile->replacement_written;
+            saved_directory=context.saved_profile&&context.saved_profile->directory_saved;
+            saved_cleanup=context.saved_profile&&context.saved_profile->cleanup_completed;
+            if(retain_completion)retained_completion=done;
+            return original->start(std::move(context),[this,done=std::move(done)](auto actual){
+                ++terminal_receipts;
+                if(actual->transport&&!actual->transport->receipts.empty())delivered_inspection=actual->transport->receipts.front().inspection;
+                done(actual);if(duplicate_completion)done(actual);
+            });
+        },[this,original]{++closes;original->close();}};
+    }
+    void deliver(desktopintent::transport::StartStatus status) {
+        QVERIFY(!pending.empty());auto done=std::move(pending.front());pending.pop_front();
+        desktopintent::transport::StartResult receipt{status,{},{{91,45,desktopintent::Disposition::Accepted}}};
+        QVERIFY(execution::Submit(*transport_scope,[done=std::move(done),receipt=std::move(receipt)]()mutable{done(std::move(receipt));},[]{},{},
+            {execution::Lane::Domain,256,key,execution::WorkClass::Action}));
+    }
+    void release() {retained_completion={};owner.reset();transport_scope.reset();execution.drain();}
+};
+struct AsyncConsumer {
+    ManualRoutedExecution execution;
+    AsyncStartup startup;
+    std::unique_ptr<onboarding::Coordinator> owner;
+    QList<onboarding::Projection> frames,gui_frames;
+    std::deque<std::function<void()>> gui;
+    int writes{0},finished_frames{0},drained{0};
+    bool original_write{false};
+    explicit AsyncConsumer(execution::Limits limits=execution::Limits::Bounded()):execution(limits) {
+        owner=std::make_unique<onboarding::Coordinator>(execution::SnapshotServices{execution.scheduler,{}},
+            [this](auto frame){if(frame.preparation_finished)++finished_frames;frames.push_back(frame);gui.push_back([this,frame]{gui_frames.push_back(frame);});},
+            [this]{++drained;});
+    }
+    onboarding::Ports savePort() {onboarding::Ports ports;ports.write=[this](const auto& request){++writes;original_write=request.data_dir.path==QStringLiteral("/original/profile")&&!request.values.listen;return Saved();};return ports;}
+    void ready() {QVERIFY(owner->check({1,true,true,true,{}},[]{return QString{};}));execution.drain();QCOMPARE(frames.back().phase,onboarding::Phase::Ready);}
+    void finish(bool separate_save=false) {
+        if(separate_save){QVERIFY(owner->finish(1,Request(),savePort()));execution.drain();QVERIFY(owner->prepareAsync(startup.port()));}
+        else QVERIFY(owner->finishAndPrepareAsync(1,Request(),savePort(),startup.port()));
+        execution.drain();
+    }
+    void settle() {for(int turn=0;turn<32;++turn){startup.execution.drain();execution.drain();}}
+    void publish() {while(!gui.empty()){auto turn=std::move(gui.front());gui.pop_front();turn();}}
+    void cleanup() {
+        if(owner)owner->close();execution.drain();
+        if(startup.owner)startup.owner->close();startup.execution.drain();
+        while(!startup.pending.empty()){startup.deliver(desktopintent::transport::StartStatus::Unknown);settle();}
+        startup.retained_completion={};settle();owner.reset();execution.drain();
+        startup.release();settle();publish();
+    }
+    ~AsyncConsumer(){cleanup();}
+};
 struct ManualOnboarding {
     QTemporaryDir directory;
     ArgsManager args;
@@ -296,6 +386,150 @@ private Q_SLOTS:
         QSignalSpy shutdown{&model,&OnboardingOptionsModel::shutdownFinished};model.beginShutdown();
         for(int i=0;i<100;++i){if(transport.stepNext())continue;if(gui.empty())break;auto turn=std::move(gui.front());gui.pop_front();turn();}
         QCOMPARE(shutdown.size(),1);QVERIFY(transport.quiescent());
+    }
+
+    void asyncActualCoordinatorPreservesOneSaveAndTypedDisposition_data() {
+        QTest::addColumn<int>("status");QTest::addColumn<bool>("separate_save");
+        using S=desktopintent::transport::StartStatus;
+        QTest::newRow("primary-combined")<<int(S::Primary)<<false;
+        QTest::newRow("primary-already-saved")<<int(S::Primary)<<true;
+        QTest::newRow("forwarded-combined")<<int(S::Forwarded)<<false;
+        QTest::newRow("forwarded-already-saved")<<int(S::Forwarded)<<true;
+        QTest::newRow("unknown-combined")<<int(S::Unknown)<<false;
+        QTest::newRow("unknown-already-saved")<<int(S::Unknown)<<true;
+    }
+    void asyncActualCoordinatorPreservesOneSaveAndTypedDisposition() {
+        QFETCH(int,status);QFETCH(bool,separate_save);using S=desktopintent::transport::StartStatus;using D=startup::preparation::Disposition;
+        AsyncConsumer f;f.ready();f.startup.duplicate_completion=true;f.finish(separate_save);
+        QCOMPARE(f.writes,1);QVERIFY(f.original_write);QCOMPARE(f.startup.starts,1);
+        QVERIFY(f.startup.saved_complete&&f.startup.saved_written&&f.startup.saved_directory&&f.startup.saved_cleanup);
+        QCOMPARE(f.frames.back().phase,onboarding::Phase::PreparingNode);QVERIFY(f.frames.back().pending);
+        f.startup.execution.drain();QCOMPARE(f.startup.transports,1);QCOMPARE(f.startup.preparations,0);
+        f.startup.deliver(static_cast<S>(status));
+        while(f.startup.execution.step(execution::Lane::Domain)){}
+        QCOMPARE(f.finished_frames,0);QCOMPARE(f.startup.retire_effects,0);
+        f.startup.execution.drain();
+        QCOMPARE(f.frames.back().phase,onboarding::Phase::PreparingNode);QCOMPARE(f.finished_frames,0);
+        QVERIFY(f.execution.step(execution::Lane::Cleanup));
+        QCOMPARE(f.finished_frames,0);
+        f.execution.drain();
+        const auto expected=status==int(S::Primary)?D::Ready:status==int(S::Forwarded)?D::Forwarded:D::Uncertain;
+        QVERIFY(f.frames.back().preparation_disposition);QCOMPARE(*f.frames.back().preparation_disposition,expected);
+        QCOMPARE(f.frames.back().phase,status==int(S::Primary)?onboarding::Phase::Completed:status==int(S::Forwarded)?onboarding::Phase::Forwarded:onboarding::Phase::Reconciling);
+        QCOMPARE(f.frames.back().preparation_complete,status==int(S::Primary));
+        QVERIFY(f.frames.back().profile_complete&&f.frames.back().profile_written);
+        QCOMPARE(f.startup.preparations,status==int(S::Primary)?1:0);QCOMPARE(f.startup.retire_effects,status==int(S::Primary)?0:1);
+        QCOMPARE(f.startup.delivered_inspection,uint64_t{45});QCOMPARE(f.startup.terminal_receipts,1);QCOMPARE(f.finished_frames,1);QCOMPARE(f.writes,1);
+        QVERIFY(f.gui_frames.empty());f.publish();QCOMPARE(f.gui_frames.back().phase,f.frames.back().phase);
+        f.cleanup();QVERIFY(f.execution.quiescent());QVERIFY(f.startup.execution.quiescent());
+    }
+    void asyncReceiverSurvivesOriginalOrdinaryCloseAndHeldGui() {
+        AsyncConsumer f;f.ready();f.finish();f.startup.execution.drain();
+        f.execution.scheduler->closeOrdinaryAdmission();f.startup.deliver(desktopintent::transport::StartStatus::Forwarded);f.startup.execution.drain();
+        QCOMPARE(f.startup.retire_effects,1);QCOMPARE(f.finished_frames,0);QVERIFY(f.gui_frames.empty());
+        QVERIFY(f.execution.step(execution::Lane::Cleanup));QCOMPARE(f.finished_frames,0);
+        f.execution.drain();QCOMPARE(f.finished_frames,1);QCOMPARE(f.frames.back().phase,onboarding::Phase::Forwarded);
+        QVERIFY(f.frames.back().profile_complete);QVERIFY(!f.frames.back().preparation_complete);QCOMPARE(f.writes,1);
+        f.publish();QCOMPARE(f.gui_frames.back().phase,onboarding::Phase::Forwarded);
+        f.cleanup();QVERIFY(f.execution.quiescent());QVERIFY(f.startup.execution.quiescent());
+    }
+    void asyncCompletionReservationRejectsBeforeExternalStart() {
+        auto limits=execution::Limits::Bounded();limits.cleanup_reservations.tasks=1;
+        AsyncConsumer f{limits};f.ready();f.finish();f.settle();
+        QCOMPARE(f.writes,1);QCOMPARE(f.startup.starts,0);QCOMPARE(f.startup.reads,0);QCOMPARE(f.startup.transports,0);QCOMPARE(f.startup.preparations,0);
+        QCOMPARE(f.frames.back().phase,onboarding::Phase::Failed);QVERIFY(f.frames.back().profile_complete);
+        QVERIFY(f.frames.back().preparation_finished);QVERIFY(!f.frames.back().preparation_complete);
+        QVERIFY(f.frames.back().error.contains(QStringLiteral("reserved")));
+        f.cleanup();QVERIFY(f.execution.quiescent());QVERIFY(f.startup.execution.quiescent());
+    }
+    void asyncFacadeLossStillConsumesOriginalProducerReceipt() {
+        AsyncConsumer f;f.ready();f.finish();f.startup.execution.drain();
+        f.owner.reset();f.execution.drain();f.startup.execution.drain();
+        f.startup.deliver(desktopintent::transport::StartStatus::Forwarded);f.settle();
+        QCOMPARE(f.writes,1);QCOMPARE(f.startup.starts,1);QCOMPARE(f.startup.preparations,0);
+        QVERIFY(f.frames.back().preparation_finished);QVERIFY(f.frames.back().profile_complete);
+        QVERIFY(f.frames.back().preparation_disposition);QCOMPARE(*f.frames.back().preparation_disposition,startup::preparation::Disposition::Forwarded);
+        QCOMPARE(f.frames.back().phase,onboarding::Phase::Closed);QCOMPARE(f.drained,1);
+        f.cleanup();QVERIFY(f.execution.quiescent());QVERIFY(f.startup.execution.quiescent());
+    }
+    void asyncRetainedDuplicateCompletionMustReleaseConsumedCapabilities() {
+        AsyncConsumer f;f.ready();f.startup.retain_completion=true;f.finish();f.startup.execution.drain();
+        f.startup.deliver(desktopintent::transport::StartStatus::Forwarded);f.settle();
+        QCOMPARE(f.frames.back().phase,onboarding::Phase::Forwarded);QCOMPARE(f.writes,1);QCOMPARE(f.finished_frames,1);
+        // A foreign Domain producer may retain a duplicate of its completed
+        // callback. It must not retain the original receiver/action forever.
+        QVERIFY(f.startup.retained_completion);
+        f.owner->close();f.owner.reset();f.execution.drain();
+        f.startup.owner.reset();f.startup.transport_scope.reset();f.settle();
+        const auto release=qScopeGuard([&]{f.startup.retained_completion={};f.settle();});
+        QVERIFY(f.execution.quiescent());QVERIFY(f.startup.execution.quiescent());
+    }
+    void realAsyncConsumerUsesIndependentWorkersWithoutNestedNativeWaits() {
+        auto drain=DrainExecutorsBeforeNativeOwnerDestruction();
+        struct Trace {
+            std::atomic<int> phase{int(onboarding::Phase::Drafting)},outcome{-1},writes{0},reads{0},preparations{0},transport_callbacks{0};
+            std::atomic_bool off_gui{true},saved_seen{false},profile_complete{false},flow_drained{false},endpoint_retired{false};
+            std::atomic<const QThread*> write_thread{nullptr},read_thread{nullptr},prepare_thread{nullptr},flow_domain{nullptr},startup_domain{nullptr};
+        };
+        const auto trace=std::make_shared<Trace>();const auto* gui=QThread::currentThread();
+        BackendExecutor stable{execution::Limits::Bounded()},transient{execution::Limits::Bounded()};
+        auto endpoint_scope=stable.scheduler()->openActionScope();QVERIFY(endpoint_scope);
+        const auto key=stable.scheduler()->allocateKey();
+        startup::preparation::Ports ports;
+        ports.read_profile=[trace,gui]{if(QThread::currentThread()==gui)trace->off_gui=false;trace->read_thread=QThread::currentThread();++trace->reads;return startup::preparation::Profile{QStringLiteral("/original/profile"),QStringLiteral("regtest")};};
+        ports.start_transport=[trace,gui,scope=endpoint_scope,key](auto profile,auto done){
+            if(QThread::currentThread()==gui)trace->off_gui=false;trace->startup_domain=QThread::currentThread();
+            if(profile.directory!=QStringLiteral("/original/profile"))return execution::Admission{{},execution::Rejection::Invalid};
+            return execution::Submit(*scope,[]{},[trace,gui,done=std::move(done)]{
+                if(QThread::currentThread()==gui)trace->off_gui=false;++trace->transport_callbacks;
+                done({desktopintent::transport::StartStatus::Primary,{},{{91,45,desktopintent::Disposition::Accepted}}});
+            },{},{execution::Lane::Core,128,key,execution::WorkClass::Action});
+        };
+        ports.prepare_native=[trace,gui](auto){if(QThread::currentThread()==gui)trace->off_gui=false;trace->prepare_thread=QThread::currentThread();++trace->preparations;return startup::PreparationOutcome::Ready;};
+        ports.retire_transport=[trace,scope=endpoint_scope,key](auto done){return execution::Submit(*scope,[trace]{trace->endpoint_retired=true;},std::move(done),{},
+            {execution::Lane::Core,128,key,execution::WorkClass::Action});};
+        ports.transport_retired=[trace]{return trace->endpoint_retired.load();};
+        auto preparation=std::make_shared<startup::preparation::Coordinator>(execution::SnapshotServices{stable.scheduler(),{}},std::move(ports));
+        auto owner=std::make_unique<onboarding::Coordinator>(execution::SnapshotServices{transient.scheduler(),{}},[trace,gui](const auto& projection){
+            if(QThread::currentThread()==gui)trace->off_gui=false;trace->flow_domain=QThread::currentThread();trace->phase=int(projection.phase);
+            trace->profile_complete=projection.profile_complete;if(projection.preparation_disposition)trace->outcome=int(*projection.preparation_disposition);
+        },[trace]{trace->flow_drained=true;});
+        const auto cleanup=qScopeGuard([&]{if(owner)owner->close();owner.reset();if(preparation)preparation->close();preparation.reset();endpoint_scope.reset();transient.shutdown();stable.shutdown();});
+        QVERIFY(owner->check({1,true,true,true,{}},[]{return QString{};}));
+        QTRY_COMPARE(trace->phase.load(),int(onboarding::Phase::Ready));
+        onboarding::Ports save;save.write=[trace,gui](const auto& request){if(QThread::currentThread()==gui)trace->off_gui=false;trace->write_thread=QThread::currentThread();++trace->writes;return request.data_dir.path==QStringLiteral("/original/profile")?Saved():QmlOnboardingSettings::ProfileResult{};};
+        onboarding::AsyncPreparation async{
+            [preparation,trace](auto context,auto done){trace->saved_seen=context.saved_profile&&context.saved_profile->completed;return preparation->start(std::move(context),std::move(done));},
+            [preparation]{preparation->close();}};
+        QVERIFY(owner->finishAndPrepareAsync(1,Request(),std::move(save),std::move(async)));
+        QTRY_COMPARE(trace->outcome.load(),int(startup::preparation::Disposition::Ready));
+        QCOMPARE(trace->phase.load(),int(onboarding::Phase::Completed));QVERIFY(trace->profile_complete.load());QVERIFY(trace->saved_seen.load());
+        QCOMPARE(trace->writes.load(),1);QCOMPARE(trace->reads.load(),1);QCOMPARE(trace->preparations.load(),1);QCOMPARE(trace->transport_callbacks.load(),1);QVERIFY(trace->off_gui.load());
+        QVERIFY(trace->write_thread.load()!=trace->read_thread.load());QVERIFY(trace->write_thread.load()!=trace->prepare_thread.load());
+        QVERIFY(trace->flow_domain.load()!=trace->startup_domain.load());
+        owner->close();owner.reset();transient.shutdown();QTRY_VERIFY(trace->flow_drained.load());QTRY_VERIFY(transient.isDrained());
+        QVERIFY(!trace->endpoint_retired.load());
+        preparation->close();QTRY_VERIFY(trace->endpoint_retired.load());preparation.reset();endpoint_scope.reset();stable.shutdown();QTRY_VERIFY(stable.isDrained());
+    }
+    void modelAsyncForwardedIsTypedAndNeverLegacyReady() {
+        ManualOnboarding f;QVERIFY(f.settle());QVERIFY(f.model->canFinish());
+        int writes{0};onboarding::Ports ports;ports.write=[&](const auto&){++writes;return Saved();};f.model->setProfilePorts(ports);
+        f.model->commitSettings();QVERIFY(f.settle());QVERIFY(f.model->setupCommitted());QCOMPARE(writes,1);
+        AsyncStartup startup;startup.profile.directory=f.directory.path();qRegisterMetaType<OnboardingOptionsModel::PreparationState>();QSignalSpy typed{f.model.get(),&OnboardingOptionsModel::nodePreparationFinished};QSignalSpy legacy{f.model.get(),&OnboardingOptionsModel::nodePrepared};
+        const auto cleanup=qScopeGuard([&]{f.model.reset();f.execution.drain();if(startup.owner)startup.owner->close();startup.execution.drain();while(!startup.pending.empty()){startup.deliver(desktopintent::transport::StartStatus::Unknown);startup.execution.drain();f.execution.drain();}startup.retained_completion={};startup.release();QVERIFY(f.settle());startup.execution.drain();});
+        f.model->prepareNodeAsync(f.args,startup.port());f.execution.drain();startup.execution.drain();
+        QCOMPARE(startup.starts,1);QVERIFY(startup.saved_complete);QCOMPARE(writes,1);QCOMPARE(startup.observed_directory,f.directory.path());
+        startup.deliver(desktopintent::transport::StartStatus::Forwarded);
+        while(startup.execution.step(execution::Lane::Domain)){}
+        QCOMPARE(startup.retire_effects,0);QCOMPARE(typed.size(),0);QCOMPARE(legacy.size(),0);
+        startup.execution.drain();f.execution.drain();
+        QCOMPARE(f.model->preparationState(),OnboardingOptionsModel::PreparationForwarded);
+        QVERIFY(f.model->setupCommitted());QCOMPARE(typed.size(),0);QCOMPARE(legacy.size(),0);
+        for(int turn=0;turn<32;++turn){QVERIFY(f.settle());startup.execution.drain();}
+        QCOMPARE(typed.size(),1);QCOMPARE(legacy.size(),1);
+        QCOMPARE(typed.front().at(0).value<OnboardingOptionsModel::PreparationState>(),OnboardingOptionsModel::PreparationForwarded);
+        QVERIFY(!legacy.front().at(0).toBool());QVERIFY(f.model->setupCommitted());
+        QCOMPARE(writes,1);QCOMPARE(startup.preparations,0);QCOMPARE(startup.retire_effects,1);
     }
 
 };

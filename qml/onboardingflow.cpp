@@ -6,12 +6,15 @@
 #include <qml/retainedsnapshot.h>
 
 #include <limits>
+#include <cassert>
+#include <exception>
+#include <mutex>
 #include <utility>
 
 namespace onboarding {
 void Flow::edit(uint64_t revision)
 {
-    if (revision <= m_revision || pending() || m_closing || m_result.replacement_written || m_result.uncertain
+    if (revision <= m_revision || pending() || m_closing || m_preparation_admitted || m_result.replacement_written || m_result.uncertain
         || m_phase == Phase::Completed || m_phase == Phase::PreparingNode) return;
     m_revision = revision;
     m_phase = Phase::Checking;
@@ -87,12 +90,20 @@ bool Flow::beginPreparation()
 }
 void Flow::prepared(bool success, bool unknown, QString error)
 {
+    prepared(unknown ? startup::preparation::Disposition::Uncertain
+        : success ? startup::preparation::Disposition::Ready : startup::preparation::Disposition::Failed, std::move(error));
+}
+void Flow::prepared(startup::preparation::Disposition disposition, QString error)
+{
     if (!m_preparation_admitted || !m_pending) return;
     m_pending = false;
+    const bool unknown = disposition == startup::preparation::Disposition::Uncertain;
     m_preparation_unknown = unknown;
     m_error = error.left(16384);
     if (m_closing) m_phase = unknown ? Phase::Closing : Phase::Closed;
-    else m_phase = unknown ? Phase::Reconciling : success ? Phase::Completed : Phase::Failed;
+    else m_phase = unknown ? Phase::Reconciling
+        : disposition == startup::preparation::Disposition::Ready ? Phase::Completed
+        : disposition == startup::preparation::Disposition::Forwarded ? Phase::Forwarded : Phase::Failed;
     // Preparation is never replayed: factories/base initialization may already
     // have executed even on a known failure. Recovery is an explicit restart.
 }
@@ -108,6 +119,22 @@ void Flow::queryUnavailable(QString error)
 }
 
 struct Coordinator::State {
+    struct PreparationReply {
+        using Value = std::shared_ptr<const startup::preparation::Result>;
+        using Complete = std::function<void(Value, std::exception_ptr)>;
+        std::mutex mutex;
+        Complete complete;
+        Complete take() {
+            std::lock_guard lock{mutex};
+            return std::exchange(complete, {});
+        }
+        void accept(Value value) {
+            if (auto callback = take()) callback(std::move(value), {});
+        }
+        void reject(std::exception_ptr error) {
+            if (auto callback = take()) callback({}, std::move(error));
+        }
+    };
     struct Completion {
         std::function<void()> callback;
         ~Completion(){if(callback)callback();}
@@ -128,10 +155,19 @@ struct Coordinator::State {
     bool checking{false}, retired{false};
     bool preparation_complete{false}, preparation_finished{false};
     std::function<std::pair<bool,QString>(const QmlOnboardingSettings::ApplyRequest&,bool)> after_write;
+    std::optional<AsyncPreparation> after_write_async;
+    AsyncPreparation active_preparation;
+    std::shared_ptr<const startup::preparation::Result> preparation_result;
+    std::optional<startup::preparation::Disposition> preparation_disposition;
+    void requestPreparationClose(const AsyncPreparation& preparation) {
+        try { if(preparation.close) preparation.close(); }
+        catch(...) { flow.queryUnavailable(QStringLiteral("The startup cancellation handoff is unavailable. The original result remains owned; no preparation was repeated.")); }
+    }
     void notify() {
         publish({flow.phase(), flow.revision(), flow.attempt() ? flow.attempt()->id : 0,
             flow.pending(), flow.result().replacement_written, flow.result().completed, preparation_complete,
-            preparation_finished,flow.preparationUnknown(),flow.result().uncertain,flow.error()});
+            preparation_finished,flow.preparationUnknown(),flow.result().uncertain,flow.error(),
+            preparation_disposition});
     }
     execution::Admission post(std::shared_ptr<execution::Scheduler> action, std::function<void(State&)> command) {
         if (!action) return {{}, execution::Rejection::Closed};
@@ -197,6 +233,16 @@ struct Coordinator::State {
                 auto effect=std::exchange(self->after_write,{});
                 if(self->flow.phase()==Phase::PreparingNode) self->prepare(std::move(effect),action);
                 else self->preparation_finished=true;
+            }
+            if (self->after_write_async) {
+                auto preparation=std::exchange(self->after_write_async,{});
+                if(self->flow.phase()==Phase::PreparingNode) self->prepareAsync(std::move(*preparation),action);
+                else {
+                    self->preparation_finished=true;
+                    self->preparation_disposition=self->flow.result().uncertain
+                        ? startup::preparation::Disposition::Uncertain : startup::preparation::Disposition::Failed;
+                    self->requestPreparationClose(*preparation);
+                }
             }
             self->notify();
         };
@@ -274,7 +320,87 @@ struct Coordinator::State {
         }
         notify();
     }
-    void retire() { retired=true;next_check.reset();flow.close();scope.store({});notify(); }
+    void prepareAsync(AsyncPreparation preparation, const std::shared_ptr<execution::Scheduler>& action) {
+        if (!flow.beginPreparation()) {
+            preparation_finished=true;
+            preparation_disposition=flow.result().uncertain
+                ? startup::preparation::Disposition::Uncertain : startup::preparation::Disposition::Failed;
+            flow.queryUnavailable(QStringLiteral("Node preparation did not start. The saved profile is retained; restart to continue."));
+            requestPreparationClose(preparation);
+            notify();return;
+        }
+        const auto self=owner.lock();
+        const auto ticket=std::make_shared<execution::TaskId>();
+        auto result=std::make_shared<execution::OwnedCommand<std::shared_ptr<const startup::preparation::Result>>>(action,
+            [action,ticket] {
+                const bool posted=ticket->value != 0 && action->activateCleanup(*ticket);
+                assert(posted);
+                if(!posted) std::terminate();
+            });
+        // The cross-scheduler completion is reserved before the external
+        // effect. Cleanup executes a bounded no-op; its delivery runs on this
+        // original Domain even after ordinary admission/facade retirement.
+        const auto receiver=execution::Submit(*action, [] {}, [self,result,action] {
+            (void)action;
+            const auto actual=result->result();
+            QString error;
+            self->preparation_disposition=startup::preparation::Disposition::Uncertain;
+            if (actual && actual->value && *actual->value) {
+                self->preparation_result=*actual->value;
+                self->preparation_disposition=self->preparation_result->disposition;
+                error=self->preparation_result->error;
+            } else {
+                error=QStringLiteral("The original node preparation outcome is unavailable. No preparation was repeated.");
+                try { if(actual&&actual->error)std::rethrow_exception(actual->error); }
+                catch(const execution::NotStarted&){
+                    self->preparation_disposition=startup::preparation::Disposition::Failed;
+                    error=QStringLiteral("Node preparation was not admitted. The saved profile is retained; restart to continue.");
+                } catch(...) {}
+            }
+            self->preparation_complete=self->preparation_disposition==startup::preparation::Disposition::Ready;
+            self->preparation_finished=true;
+            self->flow.prepared(*self->preparation_disposition,std::move(error));
+            self->active_preparation={};
+            self->notify();
+        }, {}, {execution::Lane::Cleanup, 1024, execution.scheduler->allocateKey(), execution::WorkClass::Action}, true);
+        if (!receiver) {
+            preparation_finished=true;
+            preparation_disposition=startup::preparation::Disposition::Failed;
+            flow.prepared(false,false,QStringLiteral("Node preparation completion could not be reserved. The saved profile is retained."));
+            requestPreparationClose(preparation);
+            notify();return;
+        }
+        *ticket=receiver.id;
+        active_preparation=std::move(preparation);
+        const auto admitted=result->startWith([self](auto done,auto failed) {
+            const auto reply=std::make_shared<PreparationReply>();
+            reply->complete=[done,failed](auto value,std::exception_ptr error) {
+                if(error) failed(std::move(error));
+                else done(std::move(value));
+            };
+            try {
+                const auto admission=self->active_preparation.start
+                    ? self->active_preparation.start({self->flow.result()},[reply](auto value){reply->accept(std::move(value));})
+                    : execution::Admission{{},execution::Rejection::Invalid};
+                if (!admission) {
+                    self->requestPreparationClose(self->active_preparation);
+                    reply->reject(std::make_exception_ptr(execution::NotStarted{execution::NotStarted::Cause::Transport}));
+                }
+                return admission;
+            } catch (...) {
+                const auto error=std::current_exception();
+                self->requestPreparationClose(self->active_preparation);
+                reply->reject(error);return execution::Admission{};
+            }
+        });
+        (void)admitted;
+        notify();
+    }
+    void retire() {
+        retired=true;next_check.reset();flow.close();
+        requestPreparationClose(active_preparation);
+        scope.store({});notify();
+    }
 };
 Coordinator::Coordinator(execution::SnapshotServices services, Publish publish, std::function<void()> drained):m_services(std::move(services))
 {
@@ -322,6 +448,20 @@ bool Coordinator::prepare(std::function<std::pair<bool,QString>(const QmlOnboard
 {
     const auto state=m_state.lock();const auto action=m_services.scheduler->openActionScope();
     return state && action && state->post(action,[effect=std::move(effect),action](State& state) mutable { state.prepare(std::move(effect),action); });
+}
+bool Coordinator::finishAndPrepareAsync(uint64_t revision,QmlOnboardingSettings::ApplyRequest request,Ports ports,AsyncPreparation preparation)
+{
+    const auto state=m_state.lock();const auto action=m_services.scheduler->openActionScope();
+    return state&&action&&state->post(action,[revision,request=std::move(request),ports=std::move(ports),preparation=std::move(preparation),action](State& state)mutable{
+        state.after_write_async=std::move(preparation);
+        state.finish(revision,std::move(request),std::move(ports),action);
+        if(!state.flow.pending()&&state.after_write_async){auto pending=std::exchange(state.after_write_async,{});state.requestPreparationClose(*pending);state.preparation_disposition=startup::preparation::Disposition::Failed;state.preparation_finished=true;state.notify();}
+    });
+}
+bool Coordinator::prepareAsync(AsyncPreparation preparation)
+{
+    const auto state=m_state.lock();const auto action=m_services.scheduler->openActionScope();
+    return state&&action&&state->post(action,[preparation=std::move(preparation),action](State& state)mutable{state.prepareAsync(std::move(preparation),action);});
 }
 void Coordinator::close()
 {
