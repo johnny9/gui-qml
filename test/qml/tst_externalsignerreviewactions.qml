@@ -24,6 +24,7 @@ TestCase {
             property int approveCalls: 0
             property int signerApprovalState: WalletQmlModel.ApprovalInitial
             property string signerApprovalError: ""
+            property bool signerApprovalSignerNotFound: false
             property string currentTransactionReviewMessage: ""
 
             signal externalSignerApprovalSucceeded()
@@ -32,12 +33,14 @@ TestCase {
             onExternalSignerApprovalSucceeded: signerApprovalState = WalletQmlModel.ApprovalSigned
             onExternalSignerApprovalPartiallySucceeded: signerApprovalState = WalletQmlModel.ApprovalPartiallySigned
             onExternalSignerApprovalFailed: (message, signerNotFound) => {
+                signerApprovalSignerNotFound = signerNotFound
                 signerApprovalError = message
                 signerApprovalState = WalletQmlModel.ApprovalFailed
             }
 
             function approveExternalSignerTransaction() {
                 if (signerApprovalState === WalletQmlModel.ApprovalWaiting) return
+                signerApprovalSignerNotFound = false
                 signerApprovalState = WalletQmlModel.ApprovalWaiting
                 approveCalls += 1
             }
@@ -166,7 +169,7 @@ TestCase {
 
         compare(review.reviewState, "error")
         compare(review.statusText, "External signer not found.")
-        compare(review.buttonText, "Retry external signer")
+        compare(review.buttonText, "Retry after connecting signer")
         verify(button.enabled)
 
         review.beginApproval()

@@ -407,8 +407,23 @@ private:
     std::shared_ptr<State::Data> m_state;
 };
 
+void ConfigureSignerRpc(MockNode& node)
+{
+    node.is_setting_ignored_fn = [](const std::string&) { return false; };
+    node.execute_rpc_fn = [&node](const std::string& method, const UniValue& params, const std::string& uri) {
+        if (method != "enumeratesigners" || !params.empty() || !uri.empty()) throw std::runtime_error("Unexpected signer RPC");
+        // Adapt the existing device fixture to the actual public RPC boundary.
+        // This does not call the production name-only Node signer API.
+        const auto devices = node.list_external_signers_fn ? node.list_external_signers_fn() : MakeSigners({});
+        UniValue rows{UniValue::VARR}; int index{0};
+        for (const auto& device : devices) { UniValue row{UniValue::VOBJ}; row.pushKV("fingerprint", QStringLiteral("%1").arg(++index, 8, 16, QLatin1Char('0')).toStdString()); row.pushKV("name", device->getName()); rows.push_back(std::move(row)); }
+        UniValue result{UniValue::VOBJ}; result.pushKV("signers", std::move(rows)); return result;
+    };
+}
+
 void ConfigureExpectedControllerInitialization(MockNode& node, FakeWalletLoader& loader)
 {
+    ConfigureSignerRpc(node);
     node.wallet_loader_fn = [&loader]() -> interfaces::WalletLoader& { return loader; };
     node.get_persistent_setting_fn = [](const std::string&) { return common::SettingsValue{}; };
     node.force_setting_fn = [](const std::string&, const common::SettingsValue&) {};
@@ -416,8 +431,8 @@ void ConfigureExpectedControllerInitialization(MockNode& node, FakeWalletLoader&
     node.ExpectAtLeast(node.calls.walletLoader, 2);
     node.ExpectAtLeast(node.calls.getPersistentSetting, 1);
     node.get_dust_relay_fee_fn = [] { return CFeeRate{3000}; };
-    node.ExpectExactly(node.calls.forceSetting, 1);
-    node.ExpectExactly(node.calls.listExternalSigners, 1);
+    node.ExpectExactly(node.calls.forceSetting, 0);
+    node.ExpectExactly(node.calls.listExternalSigners, 0);
 }
 
 class ControllerBoundaryScheduler final : public execution::Scheduler {
@@ -790,7 +805,7 @@ void WalletQmlControllerTests::creationEditorOwnsTheOriginalSubmission()
     QFETCH(int, kind); QFETCH(bool, discard_editor);
     FakeWallet::State standby_state, result_state; MockNode node; FakeWalletLoader loader;
     ConfigureExpectedControllerInitialization(node, loader);
-    node.get_persistent_setting_fn = [](const std::string& key) { return key == "signer" ? common::SettingsValue{std::string{"device-command"}} : common::SettingsValue{}; };
+    node.get_persistent_setting_fn = [](const std::string& key) { return key == "signer" ? common::SettingsValue{QCoreApplication::applicationFilePath().toStdString()} : common::SettingsValue{}; };
     node.list_external_signers_fn = [] { return MakeSigners({"Device A"}); };
     loader.get_wallets_fn = [&] { std::vector<std::unique_ptr<interfaces::Wallet>> wallets; wallets.push_back(std::make_unique<FakeWallet>("standby", &standby_state)); return wallets; };
     ManualControllerGraph graph{node}; auto& controller = *graph.controller;
@@ -4154,29 +4169,32 @@ void WalletQmlControllerTests::createWatchOnlyUsesPublicDescriptorImport()
 void WalletQmlControllerTests::externalSignerCreationRequiresConfiguredPath()
 {
     MockNode node;
+    ConfigureSignerRpc(node);
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     node.get_persistent_setting_fn = [](const std::string&) { return common::SettingsValue{}; };
     node.list_external_signers_fn = [] { return MakeSigners({"Ledger Nano X"}); };
-    node.ExpectExactly(node.calls.listExternalSigners, 1);
+    node.ExpectExactly(node.calls.listExternalSigners, 0);
 
     DrainingWalletController controller(node);
     controller.refreshExternalSignerStatus();
     QTRY_VERIFY(!controller.externalSignerPending());
 
     QVERIFY(!controller.canCreateExternalSignerWallet());
-    QCOMPARE(controller.externalSignerName(), QString("Ledger Nano X"));
-    QCOMPARE(controller.suggestedExternalSignerWalletName(), QString("Ledger_Nano_X"));
+    QCOMPARE(controller.externalSignerName(), QString{});
+    QCOMPARE(controller.suggestedExternalSignerWalletName(), QString("external_signer"));
+    QCOMPARE(node.calls.executeRpc.load(), 0);
 }
 
 void WalletQmlControllerTests::externalSignerCreationRequiresExactlyOneSigner()
 {
     MockNode node;
+    ConfigureSignerRpc(node);
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     node.get_persistent_setting_fn = [](const std::string& name) {
-        return name == "signer" ? common::SettingsValue{std::string{"/usr/bin/hwi"}} : common::SettingsValue{};
+        return name == "signer" ? common::SettingsValue{QCoreApplication::applicationFilePath().toStdString()} : common::SettingsValue{};
     };
     node.list_external_signers_fn = [] { return MakeSigners({"Signer A", "Signer B"}); };
-    node.ExpectExactly(node.calls.listExternalSigners, 1);
+    node.ExpectExactly(node.calls.listExternalSigners, 0);
 
     DrainingWalletController controller(node);
     controller.refreshExternalSignerStatus();
@@ -4190,12 +4208,13 @@ void WalletQmlControllerTests::externalSignerCreationRequiresExactlyOneSigner()
 void WalletQmlControllerTests::externalSignerSuggestionUsesSignerName()
 {
     MockNode node;
+    ConfigureSignerRpc(node);
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     node.get_persistent_setting_fn = [](const std::string& name) {
-        return name == "signer" ? common::SettingsValue{std::string{"/usr/bin/hwi"}} : common::SettingsValue{};
+        return name == "signer" ? common::SettingsValue{QCoreApplication::applicationFilePath().toStdString()} : common::SettingsValue{};
     };
     node.list_external_signers_fn = [] { return MakeSigners({"Coldcard Mk4"}); };
-    node.ExpectExactly(node.calls.listExternalSigners, 1);
+    node.ExpectExactly(node.calls.listExternalSigners, 0);
 
     DrainingWalletController controller(node);
     controller.refreshExternalSignerStatus();
@@ -4212,10 +4231,10 @@ void WalletQmlControllerTests::manualExternalSignerCreationRejectsUnavailableSna
     QTest::addColumn<QString>("expected_error");
     QTest::newRow("pending") << 0 << QStringLiteral("Wait for the external signer check to finish.");
     QTest::newRow("missing-path") << 1 << QStringLiteral("Set an external signer path in Wallet settings first.");
-    QTest::newRow("no-device") << 2 << QStringLiteral("Connect an external signer and try again.");
+    QTest::newRow("no-device") << 2 << QStringLiteral("No external signer is currently detected.");
     QTest::newRow("multiple-devices") << 3 << QStringLiteral("More than one external signer was found. Connect only one device.");
-    QTest::newRow("invalid-command-output") << 4 << QStringLiteral("The signer command did not return valid output. Check that the path is correct.");
-    QTest::newRow("oversized-device-name") << 5 << QStringLiteral("The signer command did not return valid output. Check that the path is correct.");
+    QTest::newRow("invalid-command-output") << 4 << QStringLiteral("invalid signer output");
+    QTest::newRow("oversized-device-name") << 5 << QStringLiteral("The signer response has invalid identity or name fields.");
 }
 
 void WalletQmlControllerTests::manualExternalSignerCreationRejectsUnavailableSnapshot()
@@ -4225,10 +4244,10 @@ void WalletQmlControllerTests::manualExternalSignerCreationRejectsUnavailableSna
     MockNode node;
     FakeWalletLoader loader;
     ConfigureExpectedControllerInitialization(node, loader);
-    node.ExpectAtLeast(node.calls.forceSetting, 1);
-    node.ExpectAtLeast(node.calls.listExternalSigners, 1);
+    node.ExpectExactly(node.calls.forceSetting, 0);
+    node.ExpectExactly(node.calls.listExternalSigners, 0);
     node.get_persistent_setting_fn = [snapshot](const std::string& name) {
-        return name == "signer" && snapshot != 1 ? common::SettingsValue{std::string{"device-command"}} : common::SettingsValue{};
+        return name == "signer" && snapshot != 1 ? common::SettingsValue{QCoreApplication::applicationFilePath().toStdString()} : common::SettingsValue{};
     };
     node.list_external_signers_fn = [snapshot]() -> std::vector<std::unique_ptr<interfaces::ExternalSigner>> {
         if (snapshot == 2) return {};
@@ -4287,7 +4306,7 @@ void WalletQmlControllerTests::manualExternalSignerCreationOwnsOriginalOutcome()
     if (outcome == 4) loader.wallet_dir_entries = {{"device_wallet", "sqlite"}};
     ConfigureExpectedControllerInitialization(node, loader);
     node.get_persistent_setting_fn = [](const std::string& name) {
-        return name == "signer" ? common::SettingsValue{std::string{"device-command"}} : common::SettingsValue{};
+        return name == "signer" ? common::SettingsValue{QCoreApplication::applicationFilePath().toStdString()} : common::SettingsValue{};
     };
     node.list_external_signers_fn = [] { return MakeSigners({"Device A"}); };
     loader.get_wallets_fn = [&] {
@@ -4490,6 +4509,7 @@ void WalletQmlControllerTests::manualManagedWalletPathsResolveThroughPublicLoade
 void WalletQmlControllerTests::signerDiscoveryUsesDefaultNativeWorker()
 {
     StrictMockNode node;
+    ConfigureSignerRpc(node);
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     const auto gui = QThread::currentThread();
     std::atomic_bool setting_native{false}, force_native{false}, discovery_native{false};
@@ -4497,7 +4517,7 @@ void WalletQmlControllerTests::signerDiscoveryUsesDefaultNativeWorker()
     node.get_persistent_setting_fn = [&](const std::string& name) {
         setting_native = QThread::currentThread() != gui;
         if (name != "signer") ++unexpected_settings;
-        return common::SettingsValue{std::string{"native-signer-command"}};
+        return common::SettingsValue{QCoreApplication::applicationFilePath().toStdString()};
     };
     node.force_setting_fn = [&](const std::string&, const common::SettingsValue&) {
         force_native = QThread::currentThread() != gui;
@@ -4506,14 +4526,16 @@ void WalletQmlControllerTests::signerDiscoveryUsesDefaultNativeWorker()
         discovery_native = QThread::currentThread() != gui;
         return MakeSigners({"Native signer"});
     };
-    node.ExpectExactly(node.calls.getPersistentSetting, 1);
-    node.ExpectExactly(node.calls.forceSetting, 1);
-    node.ExpectExactly(node.calls.listExternalSigners, 1);
+    // One independent metadata read plus discovery's before/after fence.
+    node.ExpectExactly(node.calls.getPersistentSetting, 3);
+    node.ExpectExactly(node.calls.forceSetting, 0);
+    node.ExpectExactly(node.calls.listExternalSigners, 0);
     DrainingWalletController controller{node};
     controller.refreshExternalSignerStatus();
     QTRY_VERIFY(!controller.externalSignerPending());
     QVERIFY(setting_native.load());
-    QVERIFY(force_native.load());
+    QVERIFY(!force_native.load());
+    QCOMPARE(node.calls.executeRpc.load(), 1);
     QVERIFY(discovery_native.load());
     QCOMPARE(unexpected_settings.load(), 0);
     QVERIFY(controller.canCreateExternalSignerWallet());
@@ -4526,7 +4548,8 @@ void WalletQmlControllerTests::signerDiscoveryKeepsNewerIntentAcrossHeldPublicat
     ManualRoutedExecution env;
     std::deque<std::function<void()>> gui;
     MockNode node;
-    node.get_persistent_setting_fn = [](const std::string&) { return common::SettingsValue{std::string{"/usr/bin/hwi"}}; };
+    ConfigureSignerRpc(node);
+    node.get_persistent_setting_fn = [](const std::string&) { return common::SettingsValue{QCoreApplication::applicationFilePath().toStdString()}; };
     int reads{0};
     node.list_external_signers_fn = [&] { return MakeSigners({++reads == 1 ? "First" : "Latest"}); };
     DrainingWalletController controller(node);
@@ -4536,18 +4559,22 @@ void WalletQmlControllerTests::signerDiscoveryKeepsNewerIntentAcrossHeldPublicat
     QVERIFY(controller.externalSignerPending());
     QVERIFY(!controller.canCreateExternalSignerWallet());
     QCOMPARE(reads, 0);
+    QVERIFY(env.step(execution::Lane::Domain));
+    QCOMPARE(gui.size(), size_t{1});
+    publish(); // Acknowledge the new explicit Reading phase.
+    QVERIFY(controller.externalSignerPending());
     QVERIFY(env.step(execution::Lane::Core));
     QCOMPARE(reads, 1);
     QVERIFY(gui.empty());
     controller.refreshExternalSignerStatus();
-    QVERIFY(env.step(execution::Lane::Domain));
+    while (env.step(execution::Lane::Domain)) {}
     QCOMPARE(gui.size(), size_t{1});
     publish();
     QVERIFY(controller.externalSignerPending());
     QVERIFY(controller.externalSignerName().isEmpty());
     QVERIFY(env.step(execution::Lane::Core));
     QCOMPARE(reads, 2);
-    QVERIFY(env.step(execution::Lane::Domain));
+    while (env.step(execution::Lane::Domain)) {}
     QCOMPARE(gui.size(), size_t{1});
     publish();
     QVERIFY(!controller.externalSignerPending());
@@ -4561,16 +4588,19 @@ void WalletQmlControllerTests::signerDiscoveryRejectsPublicationAfterQuietClose(
     ManualRoutedExecution env;
     std::deque<std::function<void()>> gui;
     MockNode node;
+    ConfigureSignerRpc(node);
+    node.get_persistent_setting_fn = [](const std::string&) { return common::SettingsValue{QCoreApplication::applicationFilePath().toStdString()}; };
     node.list_external_signers_fn = [] { return MakeSigners({"Late"}); };
     DrainingWalletController controller(node);
     controller.setExternalSignerServices({env.scheduler, [&](std::function<void()> callback) { gui.push_back(std::move(callback)); }});
     controller.refreshExternalSignerStatus();
-    QVERIFY(env.step(execution::Lane::Core));
     QVERIFY(env.step(execution::Lane::Domain));
+    QVERIFY(env.step(execution::Lane::Core));
+    while (env.step(execution::Lane::Domain)) {}
     QCOMPARE(gui.size(), size_t{1});
     controller.closeAdmission();
     QSignalSpy changed{&controller, &WalletQmlController::externalSignerStatusChanged};
-    gui.front()(); gui.pop_front();
+    while (!gui.empty()) { gui.front()(); gui.pop_front(); }
     QCOMPARE(changed.count(), 0);
     QVERIFY(controller.externalSignerName().isEmpty());
     QVERIFY(!controller.canCreateExternalSignerWallet());

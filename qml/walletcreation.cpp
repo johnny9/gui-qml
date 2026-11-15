@@ -65,6 +65,7 @@ void Admission::presentationConsumed(quint64 id) { m_presentation.compare_exchan
 Facts ReadFacts(interfaces::Node& node, const Request& request, const std::shared_ptr<WalletNameRegistry>& names)
 {
     Facts facts; facts.wallet_directory = QString::fromStdString(node.walletLoader().getWalletDir());
+    facts.signer_current = !request.signer.version || (request.signer.admitted_version != 0 && request.signer.version->load() == request.signer.admitted_version);
     QSettings settings;
     for (const auto& [name, format] : node.walletLoader().listWalletDir()) {
         (void)format;
@@ -104,12 +105,13 @@ Decision Validate(const Request& request, const Facts& facts)
     }
     if (request.kind == Kind::ExternalSigner) {
         const auto& signer = request.signer; QString error;
-        if (signer.pending) error = Text("Wait for the external signer check to finish.");
+        if (!facts.signer_current) error = Text("The signer configuration changed. Check the connected signer again.");
+        else if (signer.pending) error = Text("Wait for the external signer check to finish.");
         else if (!signer.configured) error = Text("Set an external signer path in Wallet settings first.");
         else if (!signer.error.isEmpty()) error = signer.error;
         else if (signer.count == 0) error = Text("Connect an external signer and try again.");
         else if (signer.count != 1) error = Text("More than one external signer was found. Connect only one device.");
-        else if (!request.signer_id.isEmpty() && request.signer_id != signer.name) error = Text("The selected signer changed. Choose the connected signer again.");
+        else if (!request.signer_id.isEmpty() && request.signer_id != (signer.id.isEmpty() ? signer.name : signer.id)) error = Text("The selected signer changed. Choose the connected signer again.");
         if (!error.isEmpty()) { result.error = Error("SignerUnavailable", error, "selectedSignerId"); return result; }
     }
     result.wallet_directory = facts.wallet_directory;
@@ -124,6 +126,9 @@ NativeResult Create(interfaces::Node& node, const Request& request, const Decisi
 {
     NativeResult result; result.name = decision.name; result.recovery_path = decision.recovery_path; SecureString passphrase;
     try {
+        if (request.kind == Kind::ExternalSigner && request.signer.version && (request.signer.admitted_version == 0 || request.signer.version->load() != request.signer.admitted_version)) {
+            result.error = Text("The signer configuration changed. No wallet was created."); return result;
+        }
         if (request.kind == Kind::Software && request.encrypt) passphrase = secretinput::Materialize(request.passphrase);
         std::vector<bilingual_str> warnings;
         result.effect_started = true;

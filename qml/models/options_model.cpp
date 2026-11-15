@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/options_model.h>
+#include <qml/signerdiscovery.h>
+#include <qml/models/signerdiscoverymodel.h>
 
 #include <common/args.h>
 #include <common/settings.h>
@@ -57,44 +59,6 @@ QString NormalizeCommandPath(const QString& path)
 
     const QUrl url(trimmed);
     return url.isLocalFile() ? url.toLocalFile() : trimmed;
-}
-
-QString FirstCommandToken(const QString& command)
-{
-    static const QRegularExpression TOKEN_RE(QStringLiteral(R"re(^\s*(?:"([^"]+)"|'([^']+)'|(\S+)))re"));
-    const auto match = TOKEN_RE.match(command);
-    if (!match.hasMatch()) {
-        return {};
-    }
-    for (int i = 1; i <= 3; ++i) {
-        const QString captured = match.captured(i);
-        if (!captured.isEmpty()) {
-            return captured;
-        }
-    }
-    return {};
-}
-
-QString ExpandUserPath(const QString& path)
-{
-    if (path == QStringLiteral("~")) {
-        return QDir::homePath();
-    }
-    if (path.startsWith(QStringLiteral("~/"))) {
-        return QDir::homePath() + path.mid(1);
-    }
-    return path;
-}
-
-bool TokenLooksLikePath(const QString& token)
-{
-    return token.startsWith(QStringLiteral("/")) ||
-           token.startsWith(QStringLiteral("./")) ||
-           token.startsWith(QStringLiteral("../")) ||
-           token.startsWith(QStringLiteral("~/")) ||
-           token.contains(QLatin1Char('/')) ||
-           token.contains(QLatin1Char('\\')) ||
-           QDir::isAbsolutePath(token);
 }
 
 constexpr const char* MONEY_FONT_EMBEDDED{"embedded"};
@@ -341,7 +305,7 @@ OptionsQmlModel::~OptionsQmlModel()
 }
 void OptionsQmlModel::closeAdmission()
 {
-    m_stopping=true; m_pending=false; m_validation_pending=false;m_signer_validation_pending=false; ++m_signer_validation_revision;
+    m_stopping=true; m_pending=false; m_forwarded_signer_pending=false; m_validation_pending=false;m_signer_validation_pending=false; ++m_signer_validation_revision;
     m_work->close();m_links.reset();m_core_settings.closeAdmission();
 }
 void OptionsQmlModel::beginShutdown()
@@ -389,7 +353,8 @@ void OptionsQmlModel::applySnapshot(Snapshot snapshot,bool core_adopted,bool not
     const bool mempool_changed = m_max_mempool_size_mb != snapshot.mempool;
     const bool threads_changed = m_script_threads != snapshot.threads;
     const bool limits_changed=m_min_script_threads!=snapshot.min_threads;
-    const bool signer_changed = m_external_signer_path != snapshot.signer;
+    const auto signer_path = m_signer_model && m_signer_model->configurationKnown() ? m_signer_model->effectivePath() : snapshot.signer;
+    const bool signer_changed = m_external_signer_path != signer_path;
     const bool data_dir_changed = m_dataDir != snapshot.data_dir;
     const bool default_data_dir_changed = m_default_data_dir != snapshot.default_data_dir;
     const bool custom_data_dir_changed = m_custom_datadir_string != snapshot.custom_data_dir;
@@ -404,7 +369,7 @@ void OptionsQmlModel::applySnapshot(Snapshot snapshot,bool core_adopted,bool not
     m_dbcache_size_mib = snapshot.dbcache;
     m_max_mempool_size_mb = snapshot.mempool;
     m_script_threads = snapshot.threads;m_min_script_threads=snapshot.min_threads;
-    m_external_signer_path = std::move(snapshot.signer);
+    m_external_signer_path = signer_path;
     m_dataDir = std::move(snapshot.data_dir);
     m_default_data_dir = std::move(snapshot.default_data_dir);
     m_default_data_directory=std::move(snapshot.default_data_directory);
@@ -741,14 +706,7 @@ QString OptionsQmlModel::defaultProxyAddress() const
 namespace {
 QString SignerPathError(const QString& normalized_path)
 {
-    if (normalized_path.isEmpty()) return {};
-    const QString token = FirstCommandToken(normalized_path);
-    if (token.isEmpty() || !TokenLooksLikePath(token)) return {};
-    const QFileInfo info(ExpandUserPath(token));
-    if (!info.exists()) return OptionsQmlModel::tr("The configured signer path does not exist.");
-    if (!info.isFile()) return OptionsQmlModel::tr("The configured signer path is not a file.");
-    if (!info.isExecutable()) return OptionsQmlModel::tr("The configured signer path is not executable.");
-    return {};
+    return signerdiscovery::PathError(normalized_path);
 }
 
 QString SaveGuiSetting(const QString& key, const QVariant& value)
@@ -768,8 +726,16 @@ QString SaveGuiSetting(const QString& key, const QVariant& value)
 
 void OptionsQmlModel::setExternalSignerPath(const QString& path)
 {
+    if (m_stopping) return;
     if (!canEditCoreSetting(QStringLiteral("signer"))) return;
     if(path.size()>32768){setError(tr("The signer path is too long."));return;}
+    if (m_signer_model) {
+        const QPointer<OptionsQmlModel> observer{this}; const auto model = m_signer_model;
+        model->editPath(path); if (!observer || m_stopping || !model) return;
+        m_forwarded_signer_command = true;
+        model->apply();
+        return;
+    }
     const QString& normalized_path = path;
     if (normalized_path == m_external_signer_path) return;
     const auto before = dirtySnapshot();
@@ -790,6 +756,33 @@ void OptionsQmlModel::setExternalSignerPath(const QString& path)
     if(!observer||m_stopping)return;
     Q_EMIT externalSignerPathChanged(m_external_signer_path);
     if(observer&&!m_stopping)emitDirtySignals(before);
+}
+
+void OptionsQmlModel::setSignerDiscoveryModel(SignerDiscoveryModel* model)
+{
+    if (m_stopping || !model || m_signer_model) return;
+    m_signer_model = model;
+    const QPointer<SignerDiscoveryModel> original{model};
+    const auto project = [this, original] {
+        if (m_stopping || !original) return;
+        const QPointer<OptionsQmlModel> observer{this}; const auto before = dirtySnapshot();
+        const bool pending_changed = m_forwarded_signer_pending != original->saving();
+        m_forwarded_signer_pending = original->saving();
+        if (original->configurationKnown() && m_external_signer_path != original->effectivePath()) {
+            m_external_signer_path = original->effectivePath();
+            Q_EMIT externalSignerPathChanged(m_external_signer_path);
+            if (!observer || m_stopping || !original) return;
+        }
+        if (m_forwarded_signer_command && !m_forwarded_signer_pending) {
+            m_forwarded_signer_command = false; setError(original->editError().message);
+            if (!observer || m_stopping) return;
+        }
+        if (pending_changed) { Q_EMIT settingsPendingChanged(); if (!observer || m_stopping) return; }
+        emitDirtySignals(before);
+    };
+    connect(model, &SignerDiscoveryModel::changed, this, project);
+    connect(model, &SignerDiscoveryModel::editedChanged, this, project);
+    project();
 }
 
 QString OptionsQmlModel::externalSignerPathValidationError(const QString& path) const

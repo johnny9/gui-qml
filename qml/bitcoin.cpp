@@ -355,6 +355,9 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<TransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Owned by WalletQmlModel");
     qmlRegisterUncreatableType<ActivityDetailModel>("org.bitcoincore.qt", 1, 0, "ActivityDetailModel", "Owned by an Activity view");
     qmlRegisterUncreatableType<AddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "");
+    qmlRegisterUncreatableType<SignerDiscoveryModel>("org.bitcoincore.qt", 1, 0, "SignerDiscoveryModel", "Owned by application signer discovery");
+    qmlRegisterUncreatableMetaObject(SignerDiscoveryError::staticMetaObject, "org.bitcoincore.qt", 1, 0, "SignerDiscoveryError", "Error value");
+    qRegisterMetaType<SignerDiscoveryError>();
     qmlRegisterUncreatableType<WalletCreationModel>("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Owned by a creation form");
     qmlRegisterUncreatableType<WalletCreationText>("org.bitcoincore.qt", 1, 0, "WalletCreationText", "Owned by a creation form");
     qmlRegisterUncreatableType<WalletOperationModel>("org.bitcoincore.qt", 1, 0, "WalletOperationModel", "Owned by an immutable wallet operation");
@@ -396,6 +399,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModelTransaction", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletListModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletSelectionModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "SignerDiscoveryModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletCreationText", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletOperationModel", "Wallet support is not compiled");
@@ -836,6 +840,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         if (wallet_enabled) {
             wallet_controller = std::make_unique<WalletQmlController>(*node, walletopening::ChainPreferences(*chain),
                 walletopening::FeePolicy{[chain = chain.get()] { return chain->relayMinFee().GetFeePerK(); }});
+            wallet_controller->setSignerDiscoveryPorts(signerdiscovery::PublicPorts(*node, gArgs));
             QObject::connect(
                 &init_executor, &QmlInitExecutor::initializeResult, wallet_controller.get(),
                 [wallet_controller = wallet_controller.get(), &shutdown_requested](bool success, interfaces::BlockAndHeaderTipInfo, bool, bool backend_shutdown_requested) {
@@ -1056,6 +1061,11 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         shutdown_coordinator.addBeforeInterruptParticipant(&options_model, &OptionsQmlModel::shutdownFinished,
                                             [&] { options_model.beginShutdown(); });
 #ifdef ENABLE_WALLET
+        if (wallet_controller) {
+            QObject::connect(wallet_controller.get(), &WalletQmlController::externalSignerStatusChanged, &options_model,
+                [&options_model, controller = wallet_controller.get()] { options_model.setSignerDiscoveryModel(controller->signers()); });
+            options_model.setSignerDiscoveryModel(wallet_controller->signers());
+        }
         if (wallet_list_model) {
             wallet_list_model->setDisplayUnit(options_model.displayUnit());
             QObject::connect(&options_model, &OptionsQmlModel::displayUnitChanged,

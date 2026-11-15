@@ -47,6 +47,7 @@
 #include <qml/models/feeselectionmodel.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signverifymessagemodel.h>
+#include <qml/models/signerdiscoverymodel.h>
 #include <qml/models/walletselectionmodel.h>
 #include <qml/models/walletcreationmodel.h>
 #include <qml/models/transaction.h>
@@ -204,6 +205,8 @@ struct BitcoinUriParseOperationForeign {
 };
 
 struct WalletCreationModelForeign { Q_GADGET QML_FOREIGN(WalletCreationModel) QML_NAMED_ELEMENT(WalletCreationModel) QML_UNCREATABLE("Owned by a creation form") };
+struct SignerDiscoveryModelForeign { Q_GADGET QML_FOREIGN(SignerDiscoveryModel) QML_NAMED_ELEMENT(SignerDiscoveryModel) QML_UNCREATABLE("Owned by signer discovery") };
+struct SignerDiscoveryErrorForeign { Q_GADGET QML_FOREIGN(SignerDiscoveryError) QML_NAMED_ELEMENT(SignerDiscoveryError) QML_UNCREATABLE("Error value") };
 struct WalletCreationTextForeign { Q_GADGET QML_FOREIGN(WalletCreationText) QML_NAMED_ELEMENT(WalletCreationText) QML_UNCREATABLE("Owned by a creation form") };
 struct WalletOperationModelForeign { Q_GADGET QML_FOREIGN(WalletOperationModel) QML_NAMED_ELEMENT(WalletOperationModel) QML_UNCREATABLE("Owned by an immutable operation") };
 struct WalletOperationErrorForeign { Q_GADGET QML_FOREIGN(WalletOperationError) QML_ANONYMOUS };

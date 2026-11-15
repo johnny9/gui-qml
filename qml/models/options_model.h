@@ -23,6 +23,7 @@
 #include <qml/models/settings_keys.h>
 
 #include <atomic>
+
 #include <QAbstractListModel>
 #include <QObject>
 #include <QPointer>
@@ -38,6 +39,7 @@ namespace interfaces {
 class Node;
 }
 
+class SignerDiscoveryModel;
 class OptionsQmlModel;
 struct OptionsLinksState;
 class OptionsTransactionLinks : public QAbstractListModel
@@ -137,7 +139,8 @@ public:
     SettingsOperationState settingsOperationState() const {return SettingsOperationState(m_operation_state->load());}
     quint64 settingsOperationId() const {return m_command_revision;}
     bool settingsReady() const { return m_ready; }
-    bool settingsPending() const { return m_pending||m_core_settings.pending(); }
+    bool settingsPending() const { return m_pending||m_core_settings.pending()||m_forwarded_signer_pending; }
+    void setSignerDiscoveryModel(SignerDiscoveryModel* model);
     QString settingsError() const { return m_error.isEmpty()?m_core_settings.error():m_error; }
     bool validationPending() const { return m_validation_pending; }
     bool signerPathValidationPending() const { return m_signer_validation_pending; }
@@ -348,6 +351,8 @@ private:
     QString m_custom_datadir_display;
     QString m_dataDir;
     QString m_external_signer_path;
+    QPointer<SignerDiscoveryModel> m_signer_model;
+    bool m_forwarded_signer_pending{false}, m_forwarded_signer_command{false};
     QmlCoreSettings::Values m_initial_core_values;
     int m_initial_dbcache_size_mib{DEFAULT_KERNEL_CACHE / 1_MiB};
     int m_initial_max_mempool_size_mb{DEFAULT_MAX_MEMPOOL_SIZE_MB};

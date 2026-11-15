@@ -267,64 +267,117 @@ TestCase {
         compare(optionsModel.coreSettings.entry("proxy").address, "10.0.0.1:9050")
     }
 
+    function finishSignerDiscovery() {
+        tryVerify(function() { walletController.advanceSignerForTest(); return !walletController.signers.pending })
+    }
+
     function test_signerPendingDoesNotShowStaleConnectedDevice() {
-        optionsModel.externalSignerPath = "old-hwi"
-        walletController.canCreateExternalSignerWallet = true
-        walletController.externalSignerName = "Old device"
+        const executable = walletController.signerExecutableForTest()
+        walletController.setSignerFixtureForTest(executable, "00000001", "Old device", "")
+        finishSignerDiscovery()
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
         view.selectSection("external-signer")
         const page = view.pageContainer.currentItem
         const input = findChild(page, "externalSignerPathInput")
         const indicator = findChild(page, "externalSignerStatusIndicator")
         const check = findChild(page, "externalSignerCheckDeviceButton")
+        finishSignerDiscovery()
         verify(page.signerConnected)
-        const initialScans = walletController.externalSignerRefreshCalls
-        optionsModel.holdSignerPathValidationForTest = true
-        input.text = "new-hwi"
-        verify(optionsModel.signerPathValidationPending)
+        const initialScans = walletController.signerEnumerationCalls
+        input.text = executable + " --new-configuration"
+        input.textEdited()
+        // Uncommitted text does not replace the effective configuration/device.
+        compare(walletController.signers.effectivePath, executable)
+        verify(page.signerConnected)
+        compare(walletController.signerEnumerationCalls, initialScans)
+        compare(check.text, "Save and check")
+        check.clicked()
+        verify(walletController.signers.saving)
         compare(page.signerConnected, false)
-        compare(page.signerStatusText, "Checking signer path…")
         tryCompare(indicator, "color", Theme.color.neutral7)
-        compare(check.enabled, false)
-        input.editingFinished()
-        input.editingFinished()
-        compare(optionsModel.externalSignerPath, "old-hwi")
-        compare(walletController.externalSignerRefreshCalls, initialScans)
-        // Validation completes, then saving the new command completes.
-        optionsModel.settingsPending = true
-        optionsModel.finishSignerPathValidationForTest("")
-        compare(optionsModel.externalSignerPath, "new-hwi")
-        compare(page.signerConnected, false)
-        compare(walletController.externalSignerRefreshCalls, initialScans)
-        optionsModel.settingsPending = false
-        compare(walletController.externalSignerRefreshCalls, initialScans + 1)
-        compare(page.checkAfterSave, false)
+        finishSignerDiscovery()
+        compare(walletController.signerConfigurationWrites, 1)
+        compare(walletController.signerEnumerationCalls, initialScans + 1)
+        compare(walletController.signers.effectivePath, executable + " --new-configuration")
+        verify(page.signerConnected)
+        compare(check.text, "Check device")
     }
 
     function test_invalidSignerValidationAndFailedSaveDoNotRescan() {
-        optionsModel.externalSignerPath = "old-hwi"
-        walletController.canCreateExternalSignerWallet = true
+        const executable = walletController.signerExecutableForTest()
+        walletController.setSignerFixtureForTest(executable, "00000001", "Old device", "")
+        finishSignerDiscovery()
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
         view.selectSection("external-signer")
         const page = view.pageContainer.currentItem
         const input = findChild(page, "externalSignerPathInput")
-        const initialScans = walletController.externalSignerRefreshCalls
-        optionsModel.holdSignerPathValidationForTest = true
-        input.text = "/missing/hwi"
-        input.editingFinished()
-        optionsModel.finishSignerPathValidationForTest("Signer does not exist.")
+        const check = findChild(page, "externalSignerCheckDeviceButton")
+        finishSignerDiscovery()
+        const initialScans = walletController.signerEnumerationCalls
+        input.text = "/missing/r15/hwi"; input.textEdited(); check.clicked()
+        finishSignerDiscovery()
+        compare(walletController.signers.editError.code, SignerDiscoveryError.InvalidPath)
+        verify(findChild(page, "externalSignerEditErrorText").text.indexOf("does not exist") >= 0)
+        compare(walletController.signers.effectivePath, executable)
+        compare(walletController.signerEnumerationCalls, initialScans)
+        input.text = executable + " --different"; input.textEdited()
+        walletController.setSignerSaveErrorForTest("Save failed.")
+        check.clicked(); finishSignerDiscovery()
+        compare(findChild(page, "externalSignerEditErrorText").text, "Save failed.")
+        compare(walletController.signers.effectivePath, executable)
+        compare(walletController.signerEnumerationCalls, initialScans)
+    }
+
+    function test_commandLineSignerRemainsUsableAndCanRefresh() {
+        const executable = walletController.signerExecutableForTest()
+        walletController.setSignerFixtureForTest(executable, "00000001", "CLI device", "", true)
+        finishSignerDiscovery()
+        const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
+        view.selectSection("external-signer"); finishSignerDiscovery()
+        const page = view.pageContainer.currentItem
+        verify(findChild(page, "externalSignerPathInput").readOnly)
+        verify(page.signerConnected)
+        const check = findChild(page, "externalSignerCheckDeviceButton")
+        verify(check.enabled)
+        const scans = walletController.signerEnumerationCalls
+        check.clicked(); finishSignerDiscovery()
+        compare(walletController.signerEnumerationCalls, scans + 1)
+        compare(walletController.signerConfigurationWrites, 0)
+        verify(page.signerStatusText.indexOf("CLI device") >= 0)
+    }
+
+    function test_cachedSignerSectionRefreshesOnReturn() {
+        const executable = walletController.signerExecutableForTest()
+        walletController.setSignerFixtureForTest(executable, "00000001", "Device", "")
+        finishSignerDiscovery()
+        const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
+        view.selectSection("external-signer"); finishSignerDiscovery()
+        const page = view.pageContainer.currentItem
+        verify(page.signerConnected)
+        const scans = walletController.signerEnumerationCalls
+        view.selectSection("display")
+        walletController.setSignerFixtureForTest(executable, "", "", "", false, false)
+        compare(walletController.signerEnumerationCalls, scans)
+        view.selectSection("external-signer")
         compare(page.signerConnected, false)
-        compare(page.signerStatusText, "Signer does not exist.")
-        compare(optionsModel.externalSignerPath, "old-hwi")
-        compare(walletController.externalSignerRefreshCalls, initialScans)
-        input.text = "new-hwi"
-        input.editingFinished()
-        optionsModel.settingsPending = true
-        optionsModel.finishSignerPathValidationForTest("")
-        optionsModel.settingsError = "Save failed."
-        optionsModel.settingsPending = false
-        compare(walletController.externalSignerRefreshCalls, initialScans)
-        compare(page.checkAfterSave, false)
+        finishSignerDiscovery()
+        compare(walletController.signerEnumerationCalls, scans + 1)
+        compare(page.signerConnected, false)
+        verify(page.signerStatusText.indexOf("No external signer") >= 0)
+    }
+
+    function test_lockedDeviceReasonIsVisibleAndRecoveryDoesNotRequireReentry() {
+        const executable = walletController.signerExecutableForTest()
+        walletController.setSignerFixtureForTest(executable, "00000001", "Device", "Unlock using promptpin and sendpin.")
+        const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
+        view.selectSection("external-signer"); finishSignerDiscovery()
+        const page = view.pageContainer.currentItem
+        compare(page.signerConnected, false)
+        compare(page.signerStatusText, "Unlock using promptpin and sendpin.")
+        walletController.setSignerFixtureForTest(executable, "00000001", "Device", "", false, false)
+        findChild(page, "externalSignerCheckDeviceButton").clicked(); finishSignerDiscovery()
+        verify(page.signerConnected)
+        compare(page.signerStatusText, "Detected external signer: Device")
     }
 
     function test_sidebarFiltersGroupsAndEmitsStableSectionId() {

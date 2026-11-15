@@ -201,6 +201,7 @@ private:
     Q_PROPERTY(ApprovalState signerApprovalState READ signerApprovalState NOTIFY signerApprovalChanged)
     Q_PROPERTY(quint64 signerApprovalId READ signerApprovalId NOTIFY signerApprovalChanged)
     Q_PROPERTY(QString signerApprovalError READ signerApprovalError NOTIFY signerApprovalChanged)
+    Q_PROPERTY(bool signerApprovalSignerNotFound READ signerApprovalSignerNotFound NOTIFY signerApprovalChanged)
     Q_PROPERTY(bool sendBusy READ sendBusy NOTIFY sendOperationChanged)
     Q_PROPERTY(QString sendResultTxid READ sendResultTxid NOTIFY sendOperationChanged)
     Q_PROPERTY(SendSubmission sendSubmission READ sendSubmission NOTIFY sendOperationChanged)
@@ -374,6 +375,7 @@ public:
     ApprovalState signerApprovalState() const;
     quint64 signerApprovalId() const { return m_approval_id; }
     QString signerApprovalError() const { return m_approval_error; }
+    bool signerApprovalSignerNotFound() const { return m_approval_signer_not_found; }
     void closeAdmission();
     void registerReview(WalletQmlModelTransaction* review) override;
     void setReviewRetirementPostForTesting(std::function<void(std::function<void()>)> post);
@@ -648,6 +650,7 @@ private:
     quint64 m_approval_id{0};
     ApprovalState m_approval_state{ApprovalState::ApprovalInitial};
     QString m_approval_error;
+    bool m_approval_signer_not_found{false};
     std::shared_ptr<execution::OwnedCommand<walletsigning::Result>> m_approval;
     std::shared_ptr<execution::OwnedCommand<walletprepare::Result>> m_preparation;
     PreparationState m_preparation_state{PreparationState::PreparationIdle};

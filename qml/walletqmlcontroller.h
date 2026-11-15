@@ -5,6 +5,7 @@
 #ifndef BITCOIN_QML_WALLETQMLCONTROLLER_H
 #define BITCOIN_QML_WALLETQMLCONTROLLER_H
 
+#include <qml/models/signerdiscoverymodel.h>
 #include <qml/models/walletlistmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletselectionmodel.h>
@@ -85,6 +86,7 @@ class WalletQmlController : public QObject
     Q_PROPERTY(QString walletMigrationError READ walletMigrationError NOTIFY walletMigrationErrorChanged)
     Q_PROPERTY(QString lastImportedWalletName READ lastImportedWalletName NOTIFY lastImportedWalletInfoChanged)
     Q_PROPERTY(QString lastImportedWalletKeyScheme READ lastImportedWalletKeyScheme NOTIFY lastImportedWalletInfoChanged)
+    Q_PROPERTY(SignerDiscoveryModel* signers READ signers NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(bool canCreateExternalSignerWallet READ canCreateExternalSignerWallet NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(bool externalSignerPending READ externalSignerPending NOTIFY externalSignerStatusChanged)
     Q_PROPERTY(QString externalSignerName READ externalSignerName NOTIFY externalSignerStatusChanged)
@@ -164,6 +166,8 @@ public:
     Q_INVOKABLE void requestOpenWalletSettings(WalletQmlModel* wallet);
     Q_INVOKABLE void refreshExternalSignerStatus();
     void setExternalSignerServices(execution::SnapshotServices services);
+    void setSignerDiscoveryPorts(signerdiscovery::Ports ports);
+    SignerDiscoveryModel* signers() const { return m_signers; }
     Q_INVOKABLE void requestOpenReceive(WalletQmlModel* wallet);
     Q_INVOKABLE void requestClosePaymentRequestDetail(WalletQmlModel* wallet);
 
@@ -212,11 +216,11 @@ public:
     Q_INVOKABLE QAbstractItemModel* captureMigrationErrorDetails(quint64 operation, int slot);
     QString lastImportedWalletName() const { return m_last_imported_wallet_name; }
     QString lastImportedWalletKeyScheme() const { return m_last_imported_wallet_key_scheme; }
-    bool canCreateExternalSignerWallet() const { return !m_shutting_down && !m_external_signer_pending && m_external_signer_path_configured && m_external_signer_count == 1 && m_external_signer_error.isEmpty(); }
-    bool externalSignerPending() const { return m_external_signer_pending; }
-    QString externalSignerName() const { return m_external_signer_name; }
-    QString externalSignerError() const { return m_external_signer_error; }
-    QString suggestedExternalSignerWalletName() const { return m_suggested_external_signer_wallet_name; }
+    bool canCreateExternalSignerWallet() const { return !m_shutting_down && m_signers && !m_signers->pending() && m_signers->fresh() && !m_signers->uniqueSignerId().isEmpty() && m_signers->error().code == SignerDiscoveryError::None; }
+    bool externalSignerPending() const { return m_signers && m_signers->pending(); }
+    QString externalSignerName() const { return m_signers ? m_signers->uniqueSignerName() : QString{}; }
+    QString externalSignerError() const { return m_signers ? m_signers->error().message : QString{}; }
+    QString suggestedExternalSignerWalletName() const { return m_signers ? m_signers->suggestedWalletName() : QStringLiteral("external_signer"); }
     QString walletLocationOpenError() const { return m_wallet_location_open_error; }
     bool walletLocationPending() const { return m_location_pending; }
     QString walletDisplayNameReadError() const { return m_names_read_error; }
@@ -427,7 +431,7 @@ private:
     quint64 setWalletMigrationError(const QString& error);
     void setLastImportedWalletInfo(const QString& wallet_name, const QString& key_scheme);
     void clearLastImportedWalletInfo();
-    void setExternalSignerStatus(bool path_configured, int signer_count, const QString& signer_name, const QString& error, const QString& suggested_name);
+    void maybeFinishShutdown();
     void publishWalletInfo(WalletQmlModel* wallet_model);
     void subscribeWalletInfo(WalletQmlModel* wallet_model);
     void initializeWalletInfo(WalletQmlModel* wallet_model);
@@ -478,22 +482,10 @@ private:
     WalletImportErrorLines m_migration_required_details{this}, m_migration_passphrase_details{this};
     QString m_last_imported_wallet_name;
     QString m_last_imported_wallet_key_scheme;
-    struct SignerStatus {
-        quint64 revision{0};
-        bool configured{false};
-        int count{0};
-        QString name, error, suggested;
-    };
-    std::shared_ptr<execution::SnapshotQuery<SignerStatus>> m_signer_query;
+    SignerDiscoveryModel* m_signers{nullptr};
     execution::SnapshotServices m_signer_services;
-    std::shared_ptr<std::atomic<quint64>> m_signer_revision{std::make_shared<std::atomic<quint64>>(0)};
-    bool m_external_signer_pending{false};
-    void publishExternalSignerStatus();
-    bool m_external_signer_path_configured{false};
-    int m_external_signer_count{0};
-    QString m_external_signer_name;
-    QString m_external_signer_error;
-    QString m_suggested_external_signer_wallet_name;
+    signerdiscovery::Ports m_signer_ports;
+    bool m_registry_drained{false};
     QString m_wallet_location_open_error;
     OpenLocalPathFn m_open_local_path_fn;
 

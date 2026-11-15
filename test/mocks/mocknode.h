@@ -87,6 +87,7 @@ public:
     std::function<void()> start_shutdown_fn;
     std::function<bool()> shutdown_requested_fn;
     std::function<common::SettingsValue(const std::string&)> get_persistent_setting_fn;
+    std::function<bool(const std::string&)> is_setting_ignored_fn;
     std::function<void(const std::string&, const common::SettingsValue&)> update_rw_setting_fn;
     std::function<void(const std::string&, const common::SettingsValue&)> force_setting_fn;
     std::function<void(bool)> map_port_fn;
@@ -130,6 +131,7 @@ public:
         CallCounter startShutdown{"startShutdown"};
         CallCounter shutdownRequested{"shutdownRequested"};
         CallCounter getPersistentSetting{"getPersistentSetting"};
+        CallCounter isSettingIgnored{"isSettingIgnored"};
         CallCounter updateRwSetting{"updateRwSetting"};
         CallCounter forceSetting{"forceSetting"};
         CallCounter mapPort{"mapPort"};
@@ -176,6 +178,7 @@ public:
     void appShutdown() override { InvokeVoid(calls.appShutdown, app_shutdown_fn); }
     void startShutdown() override { InvokeVoid(calls.startShutdown, start_shutdown_fn); }
     bool shutdownRequested() override { return Invoke(calls.shutdownRequested, shutdown_requested_fn, false); }
+    bool isSettingIgnored(const std::string& name) override { return Invoke(calls.isSettingIgnored, is_setting_ignored_fn, false, name); }
     common::SettingsValue getPersistentSetting(const std::string& name) override { return Invoke(calls.getPersistentSetting, get_persistent_setting_fn, common::SettingsValue{}, name); }
     void updateRwSetting(const std::string& name, const common::SettingsValue& value) override
     {

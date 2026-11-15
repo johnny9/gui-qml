@@ -815,12 +815,12 @@ void OptionsModelTests::externalSignerPathWritesSigner()
     QTRY_VERIFY(model.settingsReady());
     QTRY_VERIFY(!model.settingsPending());
 
-    model.setExternalSignerPath("hwi");
+    model.setExternalSignerPath(QCoreApplication::applicationFilePath());
     QTRY_VERIFY(!model.settingsPending());
-    QCOMPARE(model.externalSignerPath(), QString("hwi"));
+    QCOMPARE(model.externalSignerPath(), QCoreApplication::applicationFilePath());
     const auto signer_write = ReadRwSetting(model_args, "signer");
     QVERIFY(signer_write.isStr());
-    QCOMPARE(signer_write.get_str(), std::string{"hwi"});
+    QCOMPARE(signer_write.get_str(), QCoreApplication::applicationFilePath().toStdString());
     QVERIFY(QFile::exists(model_settings_dir.filePath(QStringLiteral("runtime-settings.json"))));
 }
 
@@ -861,7 +861,7 @@ void OptionsModelTests::walletSettingsDirtyTracksExternalSignerPath()
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(!model.walletSettingsDirty());
 
-    model.setExternalSignerPath("hwi");
+    model.setExternalSignerPath(QCoreApplication::applicationFilePath());
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(model.walletSettingsDirty());
 
@@ -900,12 +900,12 @@ void OptionsModelTests::signerPathWritesSetting()
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(model.externalSignerPath().isEmpty());
 
-    model.setExternalSignerPath("ledger-signer");
+    model.setExternalSignerPath(QCoreApplication::applicationFilePath());
     QTRY_VERIFY(!model.settingsPending());
-    QCOMPARE(model.externalSignerPath(), QString("ledger-signer"));
+    QCOMPARE(model.externalSignerPath(), QCoreApplication::applicationFilePath());
     const auto signer_write = ReadRwSetting(model_args, "signer");
     QVERIFY(signer_write.isStr());
-    QCOMPARE(signer_write.get_str(), std::string{"ledger-signer"});
+    QCOMPARE(signer_write.get_str(), QCoreApplication::applicationFilePath().toStdString());
     QVERIFY(QFile::exists(model_settings_dir.filePath(QStringLiteral("runtime-settings.json"))));
 }
 
@@ -923,7 +923,7 @@ void OptionsModelTests::signerDirtySetAtRuntime()
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(!model.walletSettingsDirty());
 
-    model.setExternalSignerPath("ledger-signer");
+    model.setExternalSignerPath(QCoreApplication::applicationFilePath());
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(model.walletSettingsDirty());
 }
@@ -942,7 +942,7 @@ void OptionsModelTests::signerDirtyResetWhenReverted()
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(!model.walletSettingsDirty());
 
-    model.setExternalSignerPath("ledger-signer");
+    model.setExternalSignerPath(QCoreApplication::applicationFilePath());
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(model.walletSettingsDirty());
 

@@ -1,0 +1,34 @@
+{
+  "stage": "R15",
+  "focused_gate": "pass",
+  "parent_app": "11a1a7f0529c6e92866ac60eb3b8c7a1a6df8cab",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "tested_source": "source-05 / SNAPSHOT_05.json",
+  "Linux": {
+    "native": 92,
+    "integration": 12,
+    "qml": 31
+  },
+  "Linux_total": 135,
+  "Mac_supplemental_QML": 31,
+  "app_lint": "lint-02 exit0; exact pinned Core449 Dockerfile image62d13cd74ba6300675289ead5d23185d0ace69c51d3fdfa8e2164ecfc9414f29",
+  "qml_lint": "local-04 two variants246files each, exit0",
+  "tidy": "local-02 18changedC++ +7MOCs pass; local-03 2+7pass; local-04 3+7pass",
+  "parent_regression_bodies": 6,
+  "parent_expected_failures": 5,
+  "parent_controls_passed": 1,
+  "device_identity": "Protocol fingerprint is a key-origin hint, not physical-device/cryptographic identity; fixed actual descriptors and operation identity remain authoritative.",
+  "upstream_limitations": [
+    "Core synchronous subprocess has no physical cancellation/output-budget handle; lifetime remains owned."
+  ],
+  "deferred": [
+    "Actual signing/review handoff swaps: R24",
+    "Exhaustive coverage/full suites/sanitizers/Qt-platform-config matrices including Windows and walletOFF: R42"
+  ],
+  "evidence_root": ".validation/qt6-r11-r40-20261114/R15",
+  "tested_code_and_tests_match_working_branch": true,
+  "documentation_only_changes_after_source05": [
+    "plan/R15_SIGNER_DISCOVERY.md",
+    "plan/R15_UPSTREAM_NOTES.md"
+  ]
+}

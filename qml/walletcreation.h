@@ -101,7 +101,9 @@ private:
 struct SignerSnapshot {
     bool pending{false}, configured{false};
     int count{0};
-    QString name, error;
+    QString name, error, id, configuration_id;
+    std::shared_ptr<const std::atomic<quint64>> version;
+    quint64 admitted_version{0};
 };
 struct Request {
     quint64 id{0}, editor_revision{0};
@@ -116,6 +118,7 @@ struct Facts {
     QString wallet_directory;
     std::vector<std::pair<QString, QString>> existing;
     bool credentials_match{true}, credentials_present{false};
+    bool signer_current{true};
 };
 struct Decision {
     QString name, wallet_directory, recovery_path;

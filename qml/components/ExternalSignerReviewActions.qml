@@ -52,6 +52,7 @@ Item {
         if (reviewState === "partiallySigned") return qsTr("More signatures required")
         if (reviewState === "waiting") return qsTr("Waiting for approval...")
         if (reviewState === "busy") return qsTr("External signer busy")
+        if (reviewState === "error" && root.wallet && root.wallet.signerApprovalSignerNotFound) return qsTr("Retry after connecting signer")
         if ((reviewState === "error" || reviewState === "uncertain")) return qsTr("Retry external signer")
         return qsTr("Approve on external signer")
     }

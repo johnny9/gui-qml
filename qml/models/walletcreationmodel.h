@@ -65,7 +65,7 @@ public:
     WalletCreationText* name() { return &m_name; }
     WalletCreationText* extendedPublicKey() { return &m_key; }
     Kind kind() const { return m_kind; }
-    QString selectedSignerId() const { return m_signer; }
+    QString selectedSignerId() const;
     bool encryptRequested() const { return m_encrypt; }
     bool pendingValidation() const { return m_check.pending(); }
     bool canCreate() const;

@@ -50,7 +50,6 @@ OnboardingView {
         if (editor) {
             editor.chooseKind(WalletCreationModel.ExternalSigner)
             editor.name.edit(defaultWalletName)
-            editor.chooseSigner(ApplicationModels.walletController.externalSignerName)
         }
         ApplicationModels.walletController.refreshExternalSignerStatus()
     }

@@ -65,6 +65,13 @@ ColumnLayout {
     }
 
     TextButton {
+        objectName: "externalSignerRefreshButton"
+        text: ApplicationModels.signers && ApplicationModels.signers.pending ? qsTr("Checking device…") : qsTr("Check device")
+        enabled: !fields.creatingWallet && ApplicationModels.signers && ApplicationModels.signers.canRefresh
+        onClicked: ApplicationModels.signers.refresh()
+    }
+
+    TextButton {
         objectName: "walletOperationErrorDetailsButton"
         visible: fields.nameError.length === 0 && operationErrorDetails.count > 0
         text: fields.showOperationErrorDetails ? qsTr("Hide error details") : qsTr("Show error details")

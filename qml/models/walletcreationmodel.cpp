@@ -36,6 +36,12 @@ WalletOperationError WalletCreationModel::factoryError() const
 {
     return factoryPhase() == FactoryRejected ? WalletOperationError{QStringLiteral("Unavailable"), tr("Wallet creation is unavailable."), {}, {}} : WalletOperationError{};
 }
+QString WalletCreationModel::selectedSignerId() const
+{
+    if (!m_signer.isEmpty() || m_kind != ExternalSigner || !m_services.signer) return m_signer;
+    const auto snapshot = m_services.signer();
+    return snapshot.id.isEmpty() ? snapshot.name : snapshot.id;
+}
 bool WalletCreationModel::canCreate() const
 {
     const auto admission = m_services.operation.native.admission;
@@ -43,7 +49,7 @@ bool WalletCreationModel::canCreate() const
     if (m_kind == WatchOnly && (!m_check.xpubValid() || !m_key.error().isEmpty())) return false;
     if (m_kind == ExternalSigner) {
         const auto signer = m_services.signer ? m_services.signer() : walletcreation::SignerSnapshot{};
-        if (signer.pending || !signer.configured || signer.count != 1 || !signer.error.isEmpty() || (!m_signer.isEmpty() && m_signer != signer.name)) return false;
+        if (signer.pending || !signer.configured || signer.count != 1 || !signer.error.isEmpty() || (!m_signer.isEmpty() && m_signer != (signer.id.isEmpty() ? signer.name : signer.id))) return false;
     }
     return true;
 }
@@ -72,7 +78,7 @@ WalletOperationModel* WalletCreationModel::create(const QString& passphrase, con
     walletcreation::Request request;
     if (m_closed) request.transport_error = {QStringLiteral("FactoryClosed"), tr("This creation editor has closed."), {}, {}};
     request.editor_revision = m_revision; request.kind = static_cast<walletcreation::Kind>(m_kind);
-    request.submitted_name = m_name.text(); request.extended_public_key = m_key.text(); request.signer_id = m_signer;
+    request.submitted_name = m_name.text(); request.extended_public_key = m_key.text(); request.signer_id = selectedSignerId();
     request.encrypt = m_encrypt; request.legacy_normalize = m_legacy_normalize;
     request.signer = m_services.signer ? m_services.signer() : walletcreation::SignerSnapshot{};
     if (m_name.transportRejected() || m_key.transportRejected() || request.submitted_name.size() > 32768 || request.extended_public_key.size() > 4096 || request.signer_id.size() > 4096) request.transport_error = {QStringLiteral("TransportBudget"), tr("Wallet input exceeds the transport budget. No wallet was created."), {}, {}};

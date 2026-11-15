@@ -48,8 +48,10 @@ class ApplicationModels : public QObject
     Q_PROPERTY(RpcConsoleModel* rpcConsoleModel READ rpcConsoleModel CONSTANT)
 #ifdef ENABLE_WALLET
     Q_PROPERTY(WalletQmlController* walletController READ walletController CONSTANT)
+    Q_PROPERTY(SignerDiscoveryModel* signers READ signers NOTIFY signersChanged)
 #else
     Q_PROPERTY(QObject* walletController READ walletController CONSTANT)
+    Q_PROPERTY(QObject* signers READ signers CONSTANT)
 #endif
 #ifdef ENABLE_WALLET
     Q_PROPERTY(WalletListModel* walletListModel READ walletListModel CONSTANT)
@@ -67,6 +69,9 @@ class ApplicationModels : public QObject
 public:
     explicit ApplicationModels(QQmlEngine* engine) : QObject(engine), m_context(engine->rootContext()) {
         if (auto* source = startupSource()) connect(source, &StartupDiagnosticsModel::changed, this, &ApplicationModels::startupErrorChanged);
+#ifdef ENABLE_WALLET
+        if (auto* controller = walletController()) connect(controller, &WalletQmlController::externalSignerStatusChanged, this, &ApplicationModels::signersChanged);
+#endif
     }
 
     NodeModel* nodeModel() const { return m_context ? m_context->contextProperty(QStringLiteral("nodeModel")).value<NodeModel*>() : nullptr; }
@@ -81,9 +86,11 @@ public:
     DebugLogModel* debugLogModel() const { return m_context ? m_context->contextProperty(QStringLiteral("debugLogModel")).value<DebugLogModel*>() : nullptr; }
     RpcConsoleModel* rpcConsoleModel() const { return m_context ? m_context->contextProperty(QStringLiteral("rpcConsoleModel")).value<RpcConsoleModel*>() : nullptr; }
 #ifdef ENABLE_WALLET
+    SignerDiscoveryModel* signers() const { const auto* controller = walletController(); return controller ? controller->signers() : nullptr; }
     WalletQmlController* walletController() const { return m_context ? m_context->contextProperty(QStringLiteral("walletController")).value<WalletQmlController*>() : nullptr; }
 #else
     QObject* walletController() const { return nullptr; }
+    QObject* signers() const { return nullptr; }
 #endif
 #ifdef ENABLE_WALLET
     WalletListModel* walletListModel() const { return m_context ? m_context->contextProperty(QStringLiteral("walletListModel")).value<WalletListModel*>() : nullptr; }
@@ -104,6 +111,7 @@ public:
     bool startupErrorPending() const { const auto* source = startupSource(); return source && source->busy(); }
 Q_SIGNALS:
     void startupErrorChanged();
+    void signersChanged();
 
 private:
     StartupDiagnosticsModel* startupSource() const {

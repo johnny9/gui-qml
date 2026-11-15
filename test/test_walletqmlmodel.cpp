@@ -3413,6 +3413,36 @@ private Q_SLOTS:
         QCOMPARE(reads, backend_mutation ? 1 : 0); QVERIFY(!has_review); QCOMPARE(commits, 0);
         QCOMPARE(error, QString("The transaction fee is missing or invalid."));
     }
+    void signerMissingCapabilityIsRetainedForRecreatedViews_data()
+    {
+        QTest::addColumn<bool>("missing_first");
+        QTest::newRow("missing-then-backend-failure") << true;
+        QTest::newRow("backend-failure-then-missing") << false;
+    }
+    void signerMissingCapabilityIsRetainedForRecreatedViews()
+    {
+        QFETCH(bool, missing_first);
+        auto [wallet, model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) { original.private_keys_disabled = true; original.external_signer = true; });
+        const auto missing = std::make_shared<std::atomic_bool>(missing_first);
+        wallet->txin_is_mine_fn = [](const CTxIn&) { return true; };
+        wallet->fill_psbt_fn = [wallet, missing](const common::PSBTFillOptions& options, size_t* count, PartiallySignedTransaction&, bool& complete) -> std::optional<common::PSBTError> {
+            wallet->fill_psbt_sign_args.push_back(options.sign); if (count) *count = 1; complete = false;
+            return options.sign ? std::optional{missing->load() ? common::PSBTError::EXTERNAL_SIGNER_NOT_FOUND : common::PSBTError::EXTERNAL_SIGNER_FAILED} : std::nullopt;
+        };
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        QCOMPARE(AwaitPsbtImport(*model, WritePsbt(MakeReviewPsbt(), directory, "signer-cause.psbt")), WalletQmlModel::PsbtImportResult::WalletCanSign);
+        const auto reviewed = model->currentTransaction()->getWtx();
+        QSignalSpy failed{model.get(), &WalletQmlModel::externalSignerApprovalFailed};
+        QVERIFY(AwaitSignerApprovalOutcome(*model));
+        QCOMPARE(model->signerApprovalState(), WalletQmlModel::ApprovalState::ApprovalFailed);
+        QCOMPARE(model->signerApprovalSignerNotFound(), missing_first); QCOMPARE(failed.size(), 1); QCOMPARE(failed[0][1].toBool(), missing_first);
+        QCOMPARE(model->currentTransaction()->getWtx(), reviewed); QCOMPARE(wallet->commit_calls, 0);
+        missing->store(!missing_first); QVERIFY(AwaitSignerApprovalOutcome(*model));
+        QCOMPARE(model->signerApprovalSignerNotFound(), !missing_first); QCOMPARE(failed.size(), 2); QCOMPARE(failed[1][1].toBool(), !missing_first);
+        QCOMPARE(std::count(wallet->fill_psbt_sign_args.begin(), wallet->fill_psbt_sign_args.end(), true), 2);
+        QCOMPARE(model->currentTransaction()->getWtx(), reviewed); QCOMPARE(wallet->commit_calls, 0);
+    }
+
     void reviewedFeeGuardsProtectedActions_data()
     {
         QTest::addColumn<int>("action"); QTest::addColumn<bool>("unknown");

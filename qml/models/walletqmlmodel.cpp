@@ -648,7 +648,7 @@ void WalletQmlModel::initializeBackend()
             m_approval_transaction == m_current_transaction->getWtx()) return;
         if (m_approval_state == ApprovalState::ApprovalInitial) return;
         m_approval_state = ApprovalState::ApprovalInitial;
-        m_approval_error.clear();
+        m_approval_error.clear(); m_approval_signer_not_found = false;
         Q_EMIT signerApprovalChanged();
     });
     m_backend_executor->setObjectName(QStringLiteral("wallet"));
@@ -2473,6 +2473,7 @@ quint64 WalletQmlModel::approveExternalSignerTransaction()
         const bool same = owns_view();
         observer->m_approval_state = same ? ApprovalState::ApprovalFailed : ApprovalState::ApprovalInitial;
         observer->m_approval_error = same ? error : QString{};
+        observer->m_approval_signer_not_found = false;
         Q_EMIT observer->signerApprovalChanged();
     };
     if (!fee_known) {
@@ -2487,7 +2488,7 @@ quint64 WalletQmlModel::approveExternalSignerTransaction()
     auto previous_transaction = std::move(m_approval_transaction);
     (void)previous_transaction;
     m_approval_state = ApprovalState::ApprovalWaiting;
-    m_approval_error.clear();
+    m_approval_error.clear(); m_approval_signer_not_found = false;
     m_approval_review = review;
     m_approval_transaction = request.reviewed;
     const auto action = opening->startAction();
@@ -2533,11 +2534,12 @@ void WalletQmlModel::publishApproval()
     if (m_approval_review != m_current_transaction || !m_current_transaction ||
         m_approval_transaction != m_current_transaction->getWtx()) {
         m_approval.reset();
-        m_approval_state = ApprovalState::ApprovalInitial; m_approval_error.clear();
+        m_approval_state = ApprovalState::ApprovalInitial; m_approval_error.clear(); m_approval_signer_not_found = false;
         Q_EMIT signerApprovalChanged(); return;
     }
     const auto value = result->value.value_or(walletsigning::Result{.error = walletsigning::Error::Uncertain});
-    m_approval_error.clear();
+    m_approval_error.clear(); m_approval_signer_not_found = false;
+    m_approval_signer_not_found = value.error == walletsigning::Error::SignerNotFound;
     switch (value.error) {
     case walletsigning::Error::None: break;
     case walletsigning::Error::InvalidFee: m_approval_error = tr("The transaction fee changed after review."); break;

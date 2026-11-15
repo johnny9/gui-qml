@@ -89,6 +89,20 @@ private Q_SLOTS:
         QCoreApplication::setApplicationName(m_application);
     }
 
+    void signerSetterRejectsMissingExecutableBeforePersistence()
+    {
+        Fixture fixture; OptionsQmlModel model{fixture.node, fixture.args};
+        QTRY_VERIFY(model.settingsReady() && !model.settingsPending());
+        const auto previous = model.externalSignerPath();
+        const auto forced = fixture.node.calls.forceSetting.load();
+        model.setExternalSignerPath("this-signer-executable-does-not-exist-r15");
+        QTRY_VERIFY(!model.settingsPending());
+        QVERIFY2(!model.settingsError().isEmpty(), "A direct model command must reject a missing executable.");
+        QCOMPARE(model.externalSignerPath(), previous);
+        QVERIFY(fixture.args.GetPersistentSetting("signer").isNull());
+        QCOMPARE(fixture.node.calls.forceSetting.load(), forced);
+    }
+
     void blockedInitialReadLeavesGuiAndGettersResponsive()
     {
         Fixture fixture;
@@ -288,14 +302,14 @@ private Q_SLOTS:
         QVERIFY(SettleManualOptions(transport,gui));QVERIFY(!model.settingsPending());QVERIFY(!model.settingsError().isEmpty());
         model.requestExternalSignerPathValidation("/missing/original");
         QVERIFY(transport.step(execution::Lane::Core));QVERIFY(transport.step(execution::Lane::Domain));
-        model.requestExternalSignerPathValidation("hwi");QVERIFY(publish());QVERIFY(model.signerPathValidationPending());
+        model.requestExternalSignerPathValidation(QCoreApplication::applicationFilePath());QVERIFY(publish());QVERIFY(model.signerPathValidationPending());
         QVERIFY(!transport.step(execution::Lane::Core)); // Follow-up cannot recurse in the old outcome callback.
         QVERIFY(publish());
         QVERIFY(transport.step(execution::Lane::Core));QVERIFY(transport.step(execution::Lane::Domain));QVERIFY(publish());
         QVERIFY(!model.signerPathValidationPending());QVERIFY(model.signerPathError().isEmpty());
         model.requestExternalSignerPathValidation("/missing/quiet-original");
         QVERIFY(transport.step(execution::Lane::Core));QVERIFY(transport.step(execution::Lane::Domain));
-        model.requestExternalSignerPathValidation("hwi");QVERIFY(publish());
+        model.requestExternalSignerPathValidation(QCoreApplication::applicationFilePath());QVERIFY(publish());
         QVERIFY(!transport.step(execution::Lane::Core));
         model.closeAdmission();
         QSignalSpy quiet{&model,&OptionsQmlModel::signerPathValidationChanged};

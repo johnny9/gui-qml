@@ -109,6 +109,7 @@ if(ENABLE_WALLET)
     test_bumptransactionmodel.cpp
     test_signverifymessagemodel.cpp
     test_signertransaction.cpp
+    test_signerdiscovery.cpp
     test_coinslistmodel.cpp
     test_psbtfee.cpp
     test_psbtqmlmodel.cpp
@@ -232,6 +233,9 @@ add_executable(bitcoinqml_qmltests
   qmlcoverage.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/signerdiscovery.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/signerconfiguration.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/signerdiscoverymodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/flowpresentation.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.h

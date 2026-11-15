@@ -254,19 +254,7 @@ QString InferRestoreWalletName(const QString& normalized_path)
 }
 
 
-QString SuggestedExternalSignerWalletName(const QString& signer_name)
-{
-    QString suggested = signer_name.trimmed();
-    suggested.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_]")), QStringLiteral("_"));
-    suggested.remove(QRegularExpression(QStringLiteral("^_+")));
-    while (suggested.contains(QStringLiteral("__"))) {
-        suggested.replace(QStringLiteral("__"), QStringLiteral("_"));
-    }
-    if (suggested.isEmpty()) {
-        suggested = QStringLiteral("external_signer");
-    }
-    return suggested.left(20);
-}
+
 
 } // namespace
 
@@ -656,7 +644,7 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, execution::Limi
         case WalletRegistry::Notice::AdoptionAvailable: m_adoption_state = WalletAdoptionState::AdoptionAvailable; break;
         case WalletRegistry::Notice::PublicationsReleased: flushDeferredPublications(); break;
         case WalletRegistry::Notice::NativeDrained: m_controller_drained = true; m_notifications_drained = true; break;
-        case WalletRegistry::Notice::Retired: m_shutdown_complete = true; Q_EMIT walletsDrained(); break;
+        case WalletRegistry::Notice::Retired: m_registry_drained = true; maybeFinishShutdown(); break;
         case WalletRegistry::Notice::LoadedChanged: Q_EMIT isWalletLoadedChanged(); break;
         }
     };
@@ -1024,8 +1012,7 @@ void WalletQmlController::closeAdmission()
     m_names_query.reset(); m_names.reset();
     m_names_write.reset(); m_names_write_pending = false;
     m_location_operation.reset(); m_location_pending = false;
-    if (m_signer_query) m_signer_query->close();
-    m_external_signer_pending = false;
+    if (m_signers) m_signers->closeAdmission();
     if (m_empty_wallet) m_empty_wallet->closeAdmission(); // One fixed sentinel, independent of inventory size.
 }
 void WalletQmlController::setRetirementPostForTesting(std::function<void(std::function<void()>)> post)
@@ -1108,8 +1095,10 @@ WalletCreationModel::Services WalletQmlController::creationServices()
     services.operation.publisher = m_registry; services.operation.projection_parent = this;
     const QPointer<WalletQmlController> controller{this};
     services.signer = [controller] {
-        return controller ? walletcreation::SignerSnapshot{controller->m_external_signer_pending, controller->m_external_signer_path_configured,
-            controller->m_external_signer_count, controller->m_external_signer_name, controller->m_external_signer_error} : walletcreation::SignerSnapshot{};
+        if (!controller || !controller->m_signers) return walletcreation::SignerSnapshot{};
+        const auto* signers = controller->m_signers;
+        return walletcreation::SignerSnapshot{signers->pending(), !signers->effectivePath().isEmpty(), signers->deviceCount(),
+            signers->uniqueSignerName(), signers->error().message, signers->uniqueSignerId(), signers->effectiveConfigurationId(), signers->versionGate(), signers->admissionVersion()};
     };
     return services;
 }
@@ -1202,11 +1191,9 @@ bool WalletQmlController::createExternalSignerWallet(const QString& name)
 {
     if (!m_initialized) { setWalletLoadError(walletDiscoveryError()); return false; }
     if (!canCreateExternalSignerWallet()) {
-        const auto message = m_external_signer_pending ? tr("Wait for the external signer check to finish.")
-            : !m_external_signer_path_configured ? tr("Set an external signer path in Wallet settings first.")
-            : !m_external_signer_error.isEmpty() ? m_external_signer_error
-            : m_external_signer_count == 0 ? tr("Connect an external signer and try again.")
-            : tr("More than one external signer was found. Connect only one device and try again.");
+        const auto message = externalSignerPending() ? tr("Wait for the external signer check to finish.")
+            : !externalSignerError().isEmpty() ? externalSignerError()
+            : tr("Connect an external signer and try again.");
         setWalletLoadError(message); return false;
     }
     auto* operation = startCreation(WalletCreationModel::ExternalSigner, name, {}, {});
@@ -1283,60 +1270,38 @@ void WalletQmlController::requestOpenWalletSettings(WalletQmlModel* wallet)
 
 void WalletQmlController::setExternalSignerServices(execution::SnapshotServices services)
 {
-    Q_ASSERT(!m_signer_query);
+    Q_ASSERT(!m_signers);
     m_signer_services = std::move(services);
+}
+void WalletQmlController::setSignerDiscoveryPorts(signerdiscovery::Ports ports)
+{
+    Q_ASSERT(!m_signers);
+    m_signer_ports = std::move(ports);
+}
+void WalletQmlController::maybeFinishShutdown()
+{
+    if (m_shutdown_complete || !m_registry_drained || (m_signers && !m_signers->drained())) return;
+    m_shutdown_complete = true;
+    Q_EMIT walletsDrained();
 }
 
 void WalletQmlController::refreshExternalSignerStatus()
 {
     if (m_shutting_down) return;
-    ++*m_signer_revision;
-    if (!m_signer_query) {
-        const QPointer<WalletQmlController> observer{this};
-        if (!m_signer_services.scheduler) m_signer_services.scheduler = backgroundScheduler();
-        if (!m_signer_services.post) m_signer_services.post = m_services.post;
-        m_signer_query = std::make_shared<execution::SnapshotQuery<SignerStatus>>(m_signer_services.scheduler,
-            [node = &m_node, revision = m_signer_revision] {
-                SignerStatus result; result.revision = revision->load();
-                try {
-                    const auto path = QString::fromStdString(SettingToString(node->getPersistentSetting("signer")).value_or("")).trimmed();
-                    result.configured = !path.isEmpty();
-                    if (result.configured) node->forceSetting("signer", path.toStdString());
-                    else node->forceSetting("signer", common::SettingsValue{});
-                    const auto signers = node->listExternalSigners();
-                    result.count = static_cast<int>(signers.size());
-                    if (result.count == 1) {
-                        const auto name = signers.front()->getName();
-                        if (name.size() > 32'768) throw std::length_error{"Signer name exceeds presentation budget"};
-                        result.name = QString::fromStdString(name);
-                    }
-                    else if (result.count > 1) result.error = tr("More than one external signer was found. Connect only one device.");
-                } catch (...) { result.error = tr("The signer command did not return valid output. Check that the path is correct."); }
-                result.suggested = SuggestedExternalSignerWalletName(result.name);
-                return result;
-            }, [post = m_signer_services.post, observer] {
-                post([observer] { if (observer) observer->publishExternalSignerStatus(); });
-            });
+    if (!m_signers) {
+        SignerDiscoveryModel::Services services;
+        services.discovery = m_signer_services; // Default owns a separate bounded process lane.
+        services.configuration = {backgroundScheduler(), m_services.post};
+        services.retire = m_services.post;
+        services.ports = m_signer_ports.configuration ? m_signer_ports : signerdiscovery::PersistentPorts(m_node);
+        m_signers = new SignerDiscoveryModel(std::move(services), this);
+        connect(m_signers, &SignerDiscoveryModel::changed, this, [this] { if (!m_shutting_down) Q_EMIT externalSignerStatusChanged(); });
+        connect(m_signers, &SignerDiscoveryModel::shutdownFinished, this, &WalletQmlController::maybeFinishShutdown);
     }
-    m_external_signer_pending = true;
-    m_signer_query->request();
-    Q_EMIT externalSignerStatusChanged();
+    m_signers->refresh();
 }
 
-void WalletQmlController::publishExternalSignerStatus()
-{
-    if (m_shutting_down || !m_signer_query) return;
-    const auto result = m_signer_query->take();
-    if (!result) return;
-    if (result->snapshot && result->snapshot->revision != m_signer_revision->load()) return;
-    m_external_signer_pending = false;
-    const auto status = result->snapshot ? *result->snapshot : SignerStatus{};
-    const QPointer<WalletQmlController> observer{this};
-    setExternalSignerStatus(status.configured, status.count, status.name,
-        result->snapshot ? status.error : tr("The external signer check could not be queued."),
-        result->snapshot ? status.suggested : QStringLiteral("external_signer"));
-    if (observer) Q_EMIT externalSignerStatusChanged();
-}
+
 
 void WalletQmlController::requestOpenReceive(WalletQmlModel* wallet)
 {
@@ -2020,23 +1985,7 @@ void WalletQmlController::clearLastImportedWalletInfo()
     setLastImportedWalletInfo(QString(), QString());
 }
 
-void WalletQmlController::setExternalSignerStatus(bool path_configured, int signer_count, const QString& signer_name, const QString& error, const QString& suggested_name)
-{
-    if (m_external_signer_path_configured == path_configured &&
-        m_external_signer_count == signer_count &&
-        m_external_signer_name == signer_name &&
-        m_external_signer_error == error &&
-        m_suggested_external_signer_wallet_name == suggested_name) {
-        return;
-    }
 
-    m_external_signer_path_configured = path_configured;
-    m_external_signer_count = signer_count;
-    m_external_signer_name = signer_name;
-    m_external_signer_error = error;
-    m_suggested_external_signer_wallet_name = suggested_name;
-    Q_EMIT externalSignerStatusChanged();
-}
 
 void WalletQmlController::setWalletLocationOpenError(const QString& error)
 {

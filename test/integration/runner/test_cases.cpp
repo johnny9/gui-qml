@@ -32,7 +32,7 @@ std::span<const IntegrationTestModule> IntegrationTestModules()
         {"send", {WalletMode::Enabled}, CreateSendTests, 6, SendTestArguments, SendPreparedWallet},
         {"fee-bump", {WalletMode::Enabled}, CreateFeeBumpTests, 6, [](const QString&) { return QStringList{"-fallbackfee=0.00010000"}; }},
         {"psbt", {WalletMode::Enabled}, CreatePsbtTests, 7, [](const QString&) { return QStringList{"-fallbackfee=0.00010000"}; }, PsbtPreparedWallet},
-        {"watchonly", {WalletMode::Enabled}, CreateWatchOnlyTests, 8},
+        {"watchonly", {WalletMode::Enabled}, CreateWatchOnlyTests, 8, WatchOnlyTestArguments},
         {"payment-import", {WalletMode::Enabled}, CreatePaymentImportTests, 9},
 #endif
     };
