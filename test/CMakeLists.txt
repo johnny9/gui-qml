@@ -96,6 +96,7 @@ add_executable(bitcoinqml_unit_tests
   test_qmlinitexecutor_api.cpp
   test_shutdownproducers.cpp
   test_guiargs.cpp
+  test_desktopintent.cpp
   test_options_model.cpp
   test_async_options.cpp
   test_onboarding_storage.cpp
