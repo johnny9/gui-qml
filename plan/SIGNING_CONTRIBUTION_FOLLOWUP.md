@@ -9,3 +9,8 @@ The implementation is staged and unvalidated until a linked focused receipt is a
 The pending gate includes the18 regression controls, supported-valid and imported-data baselines, manual Native/effect/Domain/GUI/export/close ownership, actual model consumers, relevant Core/HWI/IPC processes, repository app/QML lint and pinned23 tidy. R42 exhaustive coverage/platform/configuration matrices/native Windows/sanitizers remain pending separately. Core449 stays unchanged.
 
 The mandatory [upstream note](QT6_UPSTREAM_IMPROVEMENTS.md#r24-verified-partial-signing-outcomes--app-verification-and-quarantine) covers all these adapters and their retirement conditions.
+
+
+Focused qualification is satisfied at `55a054a367662d5af505d23458e9cd316799de2b`: [receipt](evidence/SIGNING_CONTRIBUTION_FOLLOWUP.json). All374 selected ordinary bodies pass, including18 contribution controls, real local-model export/review preservation and manual standalone effect/receipt/GUI/export/clear/drain ownership. All17 pinned static entries pass (10CPP+7freshMOC), repository app lint and259 QML files per compatibility variant pass, and4 actual HWI/IPC scenarios pass with stderr/exit inspection. Normal GUI exit0 and actual fatal Core exit1 remain distinct.
+
+The initial whole Core PSBT module selection exceeded180seconds and left incomplete XML. It is explicitly not a passing module. Its raw completed rows are retained; the exact import/sign/save/broadcast/known selector passes separately with1 actual body. No configuration or test oracle was weakened. Full suites/final matrices remain R42 obligations. The C lane is released with exact input/ELF provenance in task-local `CONTRIBUTION_LEASE_RELEASE.json`. Coordinator composition is required before restoring whole-order acceptance.
