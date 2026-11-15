@@ -460,6 +460,11 @@ private Q_SLOTS:
         } else QVERIFY(!model.currentTransaction());
         QVERIFY(operation->canExport() || boundary == 2 || boundary == 4 || boundary == 5);
         operation->cancel(); for (int turn{0}; turn < 10; ++turn) pump();
+        if (boundary != 3) {
+            QCOMPARE(operation->state(), PaymentImportOperation::State::Closed);
+            QCOMPARE(operation->outcome(), PaymentImportOperation::Outcome::ReviewOpenedOutcome);
+            QVERIFY(!operation->resultToken().isEmpty()); // Cancellation retires presentation, never erases the created child's outcome.
+        }
     }
     void actualDraftReceiptSurvivesSourceDismissalAndQuietTargetClose() {
         ManualRoutedExecution commands, sources; std::deque<std::function<void()>> target_gui, source_gui;
