@@ -32,6 +32,47 @@ public:
     explicit PsbtIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void externalUnloadCannotTransferAnImportedReviewToAReopenedWallet()
+    {
+        QPointer<WalletQmlModel> original{qmltest::CreateWallet(m_app, "original-review")}; QVERIFY(original);
+        QVERIFY(qmltest::FundWallet(m_app, *original));
+        const auto address = qmltest::NewAddress(m_app, original->name());
+        const auto funded = qmltest::Rpc(m_app, "walletcreatefundedpsbt",
+            qmltest::Json("[[],[{\"" + address.toStdString() + "\":0.005}]]"), original->name());
+        const auto signed_psbt = qmltest::Rpc(m_app, "walletprocesspsbt",
+            qmltest::Json("[\"" + funded.find_value("psbt").get_str() + "\"]"), original->name());
+        QVERIFY(signed_psbt.find_value("complete").get_bool());
+        const auto bytes = QByteArray::fromBase64(QByteArray::fromStdString(signed_psbt.find_value("psbt").get_str()));
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("original.psbt");
+        QFile file{path}; QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(bytes), bytes.size()); file.close();
+        QCOMPARE(AwaitPsbtImport(*original, path), WalletQmlModel::PsbtImportResult::WalletCanSign);
+        QVERIFY(original->currentTransactionCanBroadcast());
+        const auto original_opening = original->opening()->identity();
+        auto* standby = qmltest::CreateWallet(m_app, "standby-review"); QVERIFY(standby);
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        QCOMPARE(controller->selectedWallet(), standby);
+        QVERIFY(!standby->currentTransaction());
+        UniValue request{UniValue::VARR}; request.push_back("original-review");
+        qmltest::Rpc(m_app, "unloadwallet", request);
+        QTRY_VERIFY_WITH_TIMEOUT(original.isNull(), 30'000);
+        QCOMPARE(controller->selectedWallet(), standby);
+        QVERIFY(!standby->currentTransactionCanSend()); QVERIFY(!standby->currentTransactionCanBroadcast());
+        QVERIFY(!standby->currentTransaction());
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
+        qmltest::Rpc(m_app, "loadwallet", request);
+        auto* reopened = qmltest::SelectOpenWalletForSetup(m_app, "original-review"); QVERIFY(reopened);
+        QVERIFY(reopened->opening()->identity() != original_opening);
+        QVERIFY(!reopened->currentTransaction());
+        QVERIFY(!reopened->currentTransactionCanSend()); QVERIFY(!reopened->currentTransactionCanBroadcast());
+        // Only a fresh explicit import arms the new opening. No old callback,
+        // wallet name lookup, or review result can supply this authorization.
+        QCOMPARE(AwaitPsbtImport(*reopened, path), WalletQmlModel::PsbtImportResult::WalletCanSign);
+        QVERIFY(reopened->currentTransactionCanBroadcast());
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
+    }
+
     void decodedReviewFailurePreservesTheCurrentOperation_data()
     {
         QTest::addColumn<int>("failure");
