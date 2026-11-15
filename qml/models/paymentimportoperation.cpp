@@ -73,11 +73,16 @@ bool PaymentImportOperation::requestFile(const QUrl& file)
     Q_EMIT self->changed();
     return bool(admitted) && self && !self->m_closed && self->m_owner == owner;
 }
-void PaymentImportOperation::cancel()
+void PaymentImportOperation::closeAdmission()
 {
     if (std::exchange(m_closed, true)) return;
     if (const auto owner = std::exchange(m_owner, {})) owner->close();
     m_snapshot.inspection.reset(); m_snapshot.child_result.reset();
+}
+void PaymentImportOperation::cancel()
+{
+    if (m_closed) return;
+    closeAdmission();
     Q_EMIT changed();
 }
 

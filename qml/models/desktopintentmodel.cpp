@@ -39,6 +39,7 @@ bool DesktopIntentModel::hasInspection() const
 }
 QString DesktopIntentModel::error() const
 {
+    if (m_closed) return {};
     if (!m_owner) return tr("Desktop request services are unavailable.");
     if (!m_wallet_enabled && m_snapshot.pending) return tr("Wallet support is unavailable. The request remains unapplied.");
     switch (m_snapshot.error) {
@@ -70,9 +71,9 @@ void DesktopIntentModel::closeAdmission()
 {
     if (std::exchange(m_closed, true)) return;
     m_closed_gate->store(true);
-    if (m_owner) m_owner->stop();
+    if (const auto owner = std::exchange(m_owner, {})) owner->stop();
 #ifdef ENABLE_WALLET
-    if (m_inspection) m_inspection->cancel();
+    if (m_inspection) m_inspection->closeAdmission();
 #endif
 }
 void DesktopIntentModel::inspectNext() { if (canInspect() && m_owner) m_owner->review(m_sink); }

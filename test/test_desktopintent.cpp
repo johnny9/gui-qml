@@ -61,7 +61,11 @@ private Q_SLOTS:
         QVERIFY(model.owner()->admit({Input(1)}, {})); model.setReady(true); drain();
         model.inspectNext(); drain(); QVERIFY(model.inspection());
         const QPointer<PaymentImportOperation> inspection{model.inspection()};
-        model.closeAdmission(); factory.closeAdmission(); drain();
+        QSignalSpy changed{&model, &DesktopIntentModel::changed};
+        QSignalSpy inspection_changed{inspection.data(), &PaymentImportOperation::changed};
+        model.closeAdmission();
+        QCOMPARE(changed.count(), 0); QCOMPARE(inspection_changed.count(), 0);
+        factory.closeAdmission(); drain();
         QVERIFY(inspection); // The cached presentation deliberately remains alive.
         QCOMPARE(commands.scheduler->pending(), size_t{0});
     }
@@ -105,9 +109,10 @@ private Q_SLOTS:
         QObject recipient_view;
         auto* operation = model.takeInspection(&recipient_view); QVERIFY(operation); QCOMPARE(operation->requestId(), original);
         QVERIFY(!model.inspection());
+        const auto original_owner = model.owner();
         model.closeAdmission(); factory.closeAdmission(); delete operation; drain();
         std::optional<desktopintent::Receipt> receipt;
-        QVERIFY(model.owner()->lookup(QStringLiteral("1"), [&](auto value) { receipt = value; })); drain();
+        QVERIFY(original_owner->lookup(QStringLiteral("1"), [&](auto value) { receipt = value; })); drain();
         QVERIFY(receipt); QCOMPARE(receipt->inspection, static_cast<uint64_t>(original));
     }
 #endif
