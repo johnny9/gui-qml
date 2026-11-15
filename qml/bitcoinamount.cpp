@@ -62,7 +62,8 @@ void BitcoinAmount::assignCanonical(qint64 value, bool is_set, bool reset_input)
     if (admissionClosed()) return;
     const QPointer<BitcoinAmount> observer{this};
     const bool changed = m_satoshi != value || m_isSet != is_set;
-    const bool label_changes = (m_unit == Unit::SAT) && ((qAbs(m_satoshi) == 1) != (qAbs(value) == 1));
+    const bool label_changes = (m_unit == Unit::SAT)
+        && ((m_satoshi == 1 || m_satoshi == -1) != (value == 1 || value == -1));
     m_satoshi = value;
     m_isSet = is_set;
     if (reset_input) resetInput();
@@ -131,18 +132,7 @@ void BitcoinAmount::flipUnit()
 
 QString BitcoinAmount::satsToBtcString(qint64 sat)
 {
-    const bool negative = sat < 0;
-    qint64 absSat = negative ? -sat : sat;
-
-    const qint64 wholePart = absSat / COIN;
-    const qint64 fracInt = absSat % COIN;
-    QString fracPart = QString("%1").arg(fracInt, 8, 10, QLatin1Char('0'));
-
-    QString result = QString::number(wholePart) + '.' + fracPart;
-    if (negative) {
-        result.prepend('-');
-    }
-    return result;
+    return QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::BTC, sat, false, QmlBitcoinUnits::SeparatorStyle::NEVER);
 }
 
 QString BitcoinAmount::toDisplay() const

@@ -8,6 +8,7 @@
 #include <QScopeGuard>
 #include <QPointer>
 #include <memory>
+#include <limits>
 
 #include <qml/bitcoinamount.h>
 #include <qml/amountparse.h>
@@ -20,6 +21,8 @@ private Q_SLOTS:
     void amountIntentPrecedesMutationAndPreservesReentrantOwnership();
     void exactMonetaryBoundaryIsIndependentOfDisplayUnit_data();
     void exactMonetaryBoundaryIsIndependentOfDisplayUnit();
+    void signedPublicPresentation_data();
+    void signedPublicPresentation();
     void sharedAdmissionGatesFenceAllEditorIntakes_data();
     void sharedAdmissionGatesFenceAllEditorIntakes();
     void reentrantOwnerCloseStopsFurtherPresentation();
@@ -91,6 +94,53 @@ void BitcoinAmountTests::exactMonetaryBoundaryIsIndependentOfDisplayUnit()
     BitcoinAmount committed; QVERIFY(amount.commitTo(&committed)); QCOMPARE(committed.satoshi(), MAX_MONEY);
     amount.editInput(text + "1"); QVERIFY(!amount.inputAcceptable()); QVERIFY(!amount.commitTo(&committed));
     QCOMPARE(committed.satoshi(), MAX_MONEY);
+}
+
+void BitcoinAmountTests::signedPublicPresentation_data()
+{
+    QTest::addColumn<int>("unit");
+    QTest::addColumn<qint64>("value");
+    QTest::addColumn<QString>("display");
+    const auto minimum = std::numeric_limits<qint64>::min();
+    const auto maximum = std::numeric_limits<qint64>::max();
+    QTest::newRow("btc-minimum") << 0 << minimum << QStringLiteral("-92233720368.54775808");
+    QTest::newRow("btc-maximum") << 0 << maximum << QStringLiteral("92233720368.54775807");
+    QTest::newRow("milli-minimum") << 1 << minimum << QStringLiteral("-92233720368547.75808");
+    QTest::newRow("milli-maximum") << 1 << maximum << QStringLiteral("92233720368547.75807");
+    QTest::newRow("micro-minimum") << 2 << minimum << QStringLiteral("-92233720368547758.08");
+    QTest::newRow("micro-maximum") << 2 << maximum << QStringLiteral("92233720368547758.07");
+    QTest::newRow("sat-minimum") << 3 << minimum << QStringLiteral("-9223372036854775808");
+    QTest::newRow("sat-maximum") << 3 << maximum << QStringLiteral("9223372036854775807");
+}
+
+void BitcoinAmountTests::signedPublicPresentation()
+{
+    QFETCH(int, unit); QFETCH(qint64, value); QFETCH(QString, display);
+    const QLocale previous;
+    const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
+    QLocale::setDefault(QLocale::c());
+    BitcoinAmount amount, target;
+    amount.setUnit(static_cast<BitcoinAmount::Unit>(unit));
+    amount.setSatoshi(value);
+    QCOMPARE(amount.satoshi(), value);
+    QCOMPARE(amount.toDisplay(), display);
+    QCOMPARE(amount.inputText(), display);
+    QVERIFY(amount.isSet());
+    amount.flipUnit();
+    amount.setUnit(static_cast<BitcoinAmount::Unit>(unit));
+    QCOMPARE(amount.satoshi(), value);
+    QCOMPARE(amount.toDisplay(), display);
+
+    // Exact signed presentation never grants an out-of-range amount authority
+    // to commit into another editor, including after re-entering its text.
+    target.setSatoshi(123);
+    QVERIFY(!amount.commitTo(&target));
+    QCOMPARE(target.satoshi(), qint64{123});
+    amount.editInput(display);
+    QCOMPARE(amount.inputState(), BitcoinAmount::InputState::Invalid);
+    QCOMPARE(amount.satoshi(), value);
+    QVERIFY(!amount.commitTo(&target));
+    QCOMPARE(target.satoshi(), qint64{123});
 }
 
 void BitcoinAmountTests::sharedAdmissionGatesFenceAllEditorIntakes_data()
@@ -407,11 +457,14 @@ void BitcoinAmountTests::satsToBtcString_basic()
     QCOMPARE(BitcoinAmount::satsToBtcString(COIN), QString("1.00000000"));
     QCOMPARE(BitcoinAmount::satsToBtcString(21 * COIN), QString("21.00000000"));
     QCOMPARE(BitcoinAmount::satsToBtcString(100000123), QString("1.00000123"));
+    QCOMPARE(BitcoinAmount::satsToBtcString(std::numeric_limits<qint64>::max()), QString("92233720368.54775807"));
 }
 
 void BitcoinAmountTests::satsToBtcString_negative()
 {
     QCOMPARE(BitcoinAmount::satsToBtcString(-1), QString("-0.00000001"));
+    QCOMPARE(BitcoinAmount::satsToBtcString(std::numeric_limits<qint64>::min()), QString("-92233720368.54775808"));
+    QCOMPARE(BitcoinAmount::satsToBtcString(std::numeric_limits<qint64>::min() + 1), QString("-92233720368.54775807"));
 }
 
 void BitcoinAmountTests::btcToSats_roundtrip()
@@ -474,6 +527,18 @@ void BitcoinAmountTests::display_flow_sat()
     amt.setUnit(BitcoinAmount::Unit::SAT);
     amt.setSatoshi(123);
     QCOMPARE(amt.toDisplay(), QString("123"));
+    QSignalSpy labels{&amt, &BitcoinAmount::unitChanged};
+    amt.setSatoshi(1);
+    QCOMPARE(labels.count(), 1);
+    QCOMPARE(amt.unitLabel(), QStringLiteral("sat"));
+    amt.setSatoshi(std::numeric_limits<qint64>::min());
+    QCOMPARE(labels.count(), 2);
+    QCOMPARE(amt.unitLabel(), QStringLiteral("sats"));
+    amt.setSatoshi(std::numeric_limits<qint64>::max());
+    QCOMPARE(labels.count(), 2);
+    amt.setSatoshi(-1);
+    QCOMPARE(labels.count(), 3);
+    QCOMPARE(amt.unitLabel(), QStringLiteral("sat"));
 }
 
 void BitcoinAmountTests::displayWithUnit_formatsAmountAndUnit()
