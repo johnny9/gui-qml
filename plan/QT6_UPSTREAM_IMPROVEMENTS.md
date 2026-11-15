@@ -342,6 +342,18 @@ and actual submission ownership.
 A future typed observation would simplify RPC adaptation, but cannot reserve
 later admission against independent changes. It is an optional improvement.
 
+## R36 public network observation and conditional mutation
+
+The [network observation adapter](R36_NETWORK_OBSERVATION_ADAPTER.md) records
+the original command owner, callback generations, Native reads and exact limits.
+The public Node interface has no canonical state revision or atomic conditional
+setter. App state fences stale app work and retains actual outcomes, while an
+independent RPC can still mutate networking between the last app fence and the
+setter. A versioned state/conditional setter with a structured effect receipt
+would let Core own that comparison. This is a documented upstream improvement;
+the application uses the existing public interface and makes no global atomicity
+claim. The linked note specifies regression evidence and retirement conditions.
+
 ## R35 proposed wallet-directory inspection — public helper workaround
 
 The [boundary audit](R35_WALLET_DIRECTORY_BOUNDARY.md) identifies the preexisting
