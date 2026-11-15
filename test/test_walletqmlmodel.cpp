@@ -3400,7 +3400,7 @@ private Q_SLOTS:
         fixture.close(); receipts->drain(); receipts->publishAll(); env->publishAll(); QVERIFY(env->quiescent());
     }
 
-    void authenticatedFeeKeepsChangeOutsideReviewedPayment()
+    void authenticatedImportedFeeKeepsOwnedOutputsVisible()
     {
         ManualExecutionEnvironment environment;
         auto document = psbtfeefixture::Legacy(2, false, true);
@@ -3428,13 +3428,16 @@ private Q_SLOTS:
         QCOMPARE(model->psbtActionId(), ticket);
         QCOMPARE(model->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtImported);
         QVERIFY(model->currentTransactionCanSend()); QVERIFY(model->currentTransactionCanBroadcast());
-        QCOMPARE(model->currentTransaction()->reviewedRecipients().size(), qsizetype{1});
-        QCOMPARE(model->currentTransaction()->amountAmount()->satoshi(), qint64{1'300'000});
+        // Public ownership is not authoritative change intent for an imported
+        // document. Keep the owned self-transfer visible in the approved sum.
+        QCOMPARE(model->currentTransaction()->reviewedRecipients().size(), qsizetype{2});
+        QCOMPARE(model->currentTransaction()->amountAmount()->satoshi(), qint64{1'500'000});
         QCOMPARE(model->currentTransaction()->getTransactionFee(), CAmount{500'000});
-        QCOMPARE(model->currentTransaction()->totalAmount()->satoshi(), qint64{1'800'000});
+        QCOMPARE(model->currentTransaction()->totalAmount()->satoshi(), qint64{2'000'000});
         const auto outputs = model->currentTransactionFlow().value("outputs").toList();
         QCOMPARE(outputs.size(), qsizetype{2});
-        QVERIFY(!outputs[0].toMap().value("isChange").toBool()); QVERIFY(outputs[1].toMap().value("isChange").toBool());
+        QVERIFY(!outputs[0].toMap().value("isChange").toBool()); QVERIFY(!outputs[1].toMap().value("isChange").toBool());
+        QCOMPARE(outputs[1].toMap().value("ownership").toString(), QStringLiteral("wallet"));
         fixture.close(); QVERIFY(environment.quiescent());
     }
 
