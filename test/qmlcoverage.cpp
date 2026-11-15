@@ -231,7 +231,7 @@ bool prepare(QString* error)
     QSet<QString> coordinate_ids;
     QMap<QString, qint64> source_lengths;
     const QRegularExpression hash_pattern(QStringLiteral("^[0-9a-f]{64}$"));
-    for (const auto& entry : s.manifest.value("sources").toArray()) {
+    for (const auto entry : s.manifest.value("sources").toArray()) {
         const auto source = entry.toObject();
         const auto path = source.value("path").toString();
         const auto length = source.value("length_utf16").toInteger(-1);
@@ -286,7 +286,7 @@ bool registerResources(QString* error)
     if (!s.prepared || s.registered || s.closed) return fail(error, "Invalid coverage resource lifecycle");
     if (!QResource::registerResource(s.rcc)) return fail(error, "Coverage RCC registration failed");
     QSet<QString> paths;
-    for (const auto& value : s.manifest.value("aliases").toArray()) {
+    for (const auto value : s.manifest.value("aliases").toArray()) {
         const auto alias = value.toObject();
         const auto path = alias.value("path").toString();
         if (!path.startsWith(":/") || paths.contains(path)) return fail(error, "Invalid or duplicate coverage resource alias");
