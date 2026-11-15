@@ -175,7 +175,8 @@ private Q_SLOTS:
         QPointer<ReceiveAuthorizationPrompt> old{reservation->prompt()}; QVERIFY(!old->errorText().isEmpty());
         old->cancel(); f.ports.drain(); QCOMPARE(reservation->phase(), ReceiveReservationModel::Cancelled); QVERIFY(reservation->error().message.isEmpty());
         QVERIFY(!f.receive->ensureAddress()); f.ports.drain(); QCOMPARE(f.ports.generations, 0); QCOMPARE(f.ports.authorizations, 0);
-        if (old) old->answer("stale answer"); f.ports.drain(); QCOMPARE(f.ports.authorizations, 0);
+        if (old) old->answer("stale answer");
+        f.ports.drain(); QCOMPARE(f.ports.authorizations, 0);
         reservation->retry(); f.ports.drain(); QVERIFY(reservation->available()); QVERIFY(reservation->error().message.isEmpty()); QCOMPARE(f.ports.generations, 1);
     }
     void metadataReconciliationDoesNotRetireAnOriginalPasswordQuestion()

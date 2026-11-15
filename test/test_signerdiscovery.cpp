@@ -217,7 +217,8 @@ private Q_SLOTS:
             if (method != "enumeratesigners" || !params.empty() || !uri.empty()) throw std::runtime_error("Unexpected RPC request");
             UniValue response;
             if (kind == 1) { if (!response.read(R"({"code":-1,"message":"Unlock using promptpin then sendpin."})")) throw std::runtime_error("Invalid test JSON"); throw response; }
-            if (!response.read(kind == 2 ? R"({"signers":[{"fingerprint":"bad","name":"Model"}]})" : kind == 3 ? R"({"signers":[{"fingerprint":"00000001","name":"A"},{"fingerprint":"00000001","name":"B"}]})" : kind == 4 ? R"({"other":[]})" : R"({"signers":[{"fingerprint":"AbCd0123","name":"Model"}]})")) throw std::runtime_error("Invalid test JSON"); return response;
+            if (!response.read(kind == 2 ? R"({"signers":[{"fingerprint":"bad","name":"Model"}]})" : kind == 3 ? R"({"signers":[{"fingerprint":"00000001","name":"A"},{"fingerprint":"00000001","name":"B"}]})" : kind == 4 ? R"({"other":[]})" : R"({"signers":[{"fingerprint":"AbCd0123","name":"Model"}]})")) throw std::runtime_error("Invalid test JSON");
+            return response;
         };
         const auto result = signerdiscovery::Discover(signerdiscovery::PersistentPorts(node));
         QCOMPARE(node.calls.executeRpc.load(), 1); QCOMPARE(node.calls.forceSetting.load(), 0);

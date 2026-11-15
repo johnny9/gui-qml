@@ -358,7 +358,8 @@ private Q_SLOTS:
         startup::WindowSettingsPorts ports{[&](const QString& key) { trace << key; }, [&] {
             trace << "sync"; if (mode == 2) throw std::runtime_error{"original sync error"}; return mode == 0;
         }};
-        if (mode == 3) ports.remove = {}; if (mode == 4) ports.sync = {};
+        if (mode == 3) ports.remove = {};
+        if (mode == 4) ports.sync = {};
         bool result{false}; QString error;
         try { result = startup::ResetWindowSettings(ports); }
         catch (const std::exception& exception) { error = QString::fromUtf8(exception.what()); }

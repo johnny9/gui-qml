@@ -215,8 +215,10 @@ private Q_SLOTS:
         QFETCH(int, kind); ManualRoutedExecution executor;
         auto reader = std::make_shared<feeestimate::Reader>(executor.scheduler, [kind](const FeeReadInput&) {
             auto result = Estimate(); auto& preview = result.estimates[6];
-            if (kind == 0) preview.fee = -1; if (kind == 1) preview.fee = MAX_MONEY + 1;
-            if (kind == 2) preview.rate_per_kvb = -1; if (kind == 3) preview.inputs = -1;
+            if (kind == 0) preview.fee = -1;
+            if (kind == 1) preview.fee = MAX_MONEY + 1;
+            if (kind == 2) preview.rate_per_kvb = -1;
+            if (kind == 3) preview.inputs = -1;
             return result;
         }, [] {});
         QVERIFY(reader->request(1, Input(1))); executor.drain(); const auto result = reader->take(); QVERIFY(result);

@@ -186,7 +186,8 @@ private Q_SLOTS:
         auto secondary = Service::Create(secondary_executor.scheduler(), secondary_owner, limits);
         auto release = std::make_shared<std::promise<void>>(); const auto gate = release->get_future().share(); bool released{false};
         const auto cleanup = qScopeGuard([&] {
-            if (!released) release->set_value(); primary->stop(); secondary->stop(); original.drain(); primary_owner.reset(); secondary_owner.reset(); original.drain();
+            if (!released) release->set_value();
+            primary->stop(); secondary->stop(); original.drain(); primary_owner.reset(); secondary_owner.reset(); original.drain();
             Shutdown(primary_executor); Shutdown(secondary_executor); original.drain();
         });
         QTemporaryDir directory; QVERIFY(directory.isValid());

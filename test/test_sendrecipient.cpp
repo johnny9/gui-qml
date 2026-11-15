@@ -237,7 +237,8 @@ private Q_SLOTS:
         QFETCH(int, outcome); Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 100000); f.finish();
         bool handled{false};
         connect(recipient->amount(), &BitcoinAmount::inputChanged, f.recipients.get(), [&] {
-            if (handled) return; handled = true;
+            if (handled) return;
+            handled = true;
             if (outcome == 0) f.recipients->closeAdmission();
             if (outcome == 1) f.recipients.reset();
             if (outcome == 2) recipient->amount()->setSatoshi(9000);

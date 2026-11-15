@@ -74,7 +74,9 @@ struct Fixture {
     }
     void stop()
     {
-        if (commands) commands->closeAdmission(); if (proxy) proxy->closeAdmission(); if (source) source->closeAdmission();
+        if (commands) commands->closeAdmission();
+        if (proxy) proxy->closeAdmission();
+        if (source) source->closeAdmission();
         proxy.reset(); source.reset(); commands.reset(); settle();
     }
 };
@@ -288,8 +290,10 @@ private Q_SLOTS:
         std::unique_ptr<PeerDetailsModel> detail; std::unique_ptr<PeerCommandOperation> operation;
         const auto finish_original = qScopeGuard([&] {
             release.release(); operation.reset(); detail.reset();
-            if (source) source->closeAdmission(); source.reset();
-            if (commands) commands->closeAdmission(); commands.reset();
+            if (source) source->closeAdmission();
+            source.reset();
+            if (commands) commands->closeAdmission();
+            commands.reset();
             backend.shutdown(); QVERIFY2(QTest::qWaitFor([&] { return backend.isDrained(); },5000), "Original native work must drain before fixture destruction");
         });
         node.get_nodes_stats_fn = [&](auto& result) {

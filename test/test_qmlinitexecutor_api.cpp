@@ -169,7 +169,8 @@ private Q_SLOTS:
         node.ExpectExactly(node.calls.appShutdown,1);[[maybe_unused]] const auto verify=node.VerifyOnExit();
         const auto drain_retired=qScopeGuard([]{DrainRetiredExecutors();});
         auto executor=std::make_unique<QmlInitExecutor>(node,QmlInitExecutor::SubscriptionFactory{},std::shared_ptr<std::atomic_bool>{},QmlInitExecutor::StartupOutcomePort{},[&](int value){
-            if(QThread::currentThread()==gui)native_only=false;recorded=value;captured.release();
+            if(QThread::currentThread()==gui)native_only=false;
+            recorded=value;captured.release();
         });
         QSignalSpy initialized{executor.get(),&QmlInitExecutor::initializeResult},shutdown{executor.get(),&QmlInitExecutor::shutdownResult};
         executor->initialize();QTRY_COMPARE(initialized.count(),1);executor->shutdown();

@@ -158,8 +158,10 @@ private Q_SLOTS:
     }
     void missingWriterPortCannotProduceAnAcknowledgement() {
         QFETCH(int, port); WriterProbe probe; auto ports = probe.ports();
-        if (port == 0) ports.stderr_write = {}; if (port == 1) ports.stderr_flush = {};
-        if (port == 2) ports.core_debug = {}; if (port == 3) ports.core_info = {};
+        if (port == 0) ports.stderr_write = {};
+        if (port == 1) ports.stderr_flush = {};
+        if (port == 2) ports.core_debug = {};
+        if (port == 3) ports.core_info = {};
         if (port == 4) ports.benign_font_warning = {};
         QString error;
         try { qtlog::Writer writer{std::move(ports)}; }

@@ -120,8 +120,10 @@ struct AsyncConsumer {
     void settle() {for(int turn=0;turn<32;++turn){startup.execution.drain();execution.drain();}}
     void publish() {while(!gui.empty()){auto turn=std::move(gui.front());gui.pop_front();turn();}}
     void cleanup() {
-        if(owner)owner->close();execution.drain();
-        if(startup.owner)startup.owner->close();startup.execution.drain();
+        if(owner)owner->close();
+        execution.drain();
+        if(startup.owner)startup.owner->close();
+        startup.execution.drain();
         while(!startup.pending.empty()){startup.deliver(desktopintent::transport::StartStatus::Unknown);settle();}
         startup.retained_completion={};settle();owner.reset();execution.drain();
         startup.release();settle();publish();
@@ -520,10 +522,12 @@ private Q_SLOTS:
         startup::preparation::Ports ports;
         ports.read_profile=[trace,gui]{if(QThread::currentThread()==gui)trace->off_gui=false;trace->read_thread=QThread::currentThread();++trace->reads;return startup::preparation::Profile{QStringLiteral("/original/profile"),QStringLiteral("regtest")};};
         ports.start_transport=[trace,gui,scope=endpoint_scope,key](auto profile,auto done){
-            if(QThread::currentThread()==gui)trace->off_gui=false;trace->startup_domain=QThread::currentThread();
+            if(QThread::currentThread()==gui)trace->off_gui=false;
+            trace->startup_domain=QThread::currentThread();
             if(profile.directory!=QStringLiteral("/original/profile"))return execution::Admission{{},execution::Rejection::Invalid};
             return execution::Submit(*scope,[]{},[trace,gui,done=std::move(done)]{
-                if(QThread::currentThread()==gui)trace->off_gui=false;++trace->transport_callbacks;
+                if(QThread::currentThread()==gui)trace->off_gui=false;
+                ++trace->transport_callbacks;
                 done({desktopintent::transport::StartStatus::Primary,{},{{91,45,desktopintent::Disposition::Accepted}}});
             },{},{execution::Lane::Core,128,key,execution::WorkClass::Action});
         };
@@ -534,7 +538,8 @@ private Q_SLOTS:
         auto preparation=std::make_shared<startup::preparation::Coordinator>(execution::SnapshotServices{stable.scheduler(),{}},std::move(ports));
         ports = {}; // Drop caller-held moved-from std::function scope aliases.
         auto owner=std::make_unique<onboarding::Coordinator>(execution::SnapshotServices{transient.scheduler(),{}},[trace,gui](const auto& projection){
-            if(QThread::currentThread()==gui)trace->off_gui=false;trace->flow_domain=QThread::currentThread();trace->phase=int(projection.phase);
+            if(QThread::currentThread()==gui)trace->off_gui=false;
+            trace->flow_domain=QThread::currentThread();trace->phase=int(projection.phase);
             trace->profile_complete=projection.profile_complete;if(projection.preparation_disposition)trace->outcome=int(*projection.preparation_disposition);
         },[trace]{trace->flow_drained=true;});
         const auto cleanup=qScopeGuard([&]{if(owner)owner->close();owner.reset();if(preparation)preparation->close();preparation.reset();endpoint_scope.reset();transient.shutdown();stable.shutdown();});

@@ -13,7 +13,8 @@ Snapshot Original() {
 }
 settingsedit::Session Editor(Snapshot snapshot=Original()) {
     settingsedit::Reducer::Mask mask;mask.set();settingsedit::Session result{{"editor","settings"},mask};
-    if(!result.observe(std::move(snapshot)))qFatal("Original settings fixture rejected");return result;
+    if(!result.observe(std::move(snapshot)))qFatal("Original settings fixture rejected");
+    return result;
 }
 Result Saved(const settingsedit::Save& save) {
     Result result;result.outcome=Outcome::Applied;result.write_completed=true;result.persisted=true;result.runtime_confirmed=true;

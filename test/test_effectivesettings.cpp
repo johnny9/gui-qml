@@ -100,7 +100,8 @@ private Q_SLOTS:
         QFETCH(int,scenario);Profile profile;const auto base=Read(profile.args);auto batch=Submit(base,{{Key::Listen,int64_t{1}}});
         if(scenario==1)batch=Submit(base,{{Key::Listen,false},{Key::Listen,true}});
         if(scenario==2)batch=Submit(base,{{Key::Signer,QString(32769,'x')}});
-        if(scenario==3)batch.edits.clear();const auto bytes=profile.bytes();
+        if(scenario==3)batch.edits.clear();
+        const auto bytes=profile.bytes();
         const auto result=Commit(profile.node,profile.args,base,batch);QCOMPARE(result.outcome,Outcome::Rejected);QVERIFY(!result.persisted);QCOMPARE(profile.bytes(),bytes);QCOMPARE(profile.node.calls.mapPort.load(),0);QCOMPARE(profile.node.calls.forceSetting.load(),0);
     }
     void commandLineValueIsReadOnly() {
