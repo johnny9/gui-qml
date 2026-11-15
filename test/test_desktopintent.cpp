@@ -297,7 +297,7 @@ private Q_SLOTS:
     }
     void presentationReleaseSurvivesOrdinaryDomainRejection()
     {
-        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 1;
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 8;
         ManualRoutedExecution commands{limits};
         std::deque<std::function<void()>> gui;
         const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
@@ -314,7 +314,8 @@ private Q_SLOTS:
         QVERIFY(model.inspection()); QCOMPARE(model.inspection()->requestId(), quint64{1});
         QCOMPARE(model.pendingCount(), 1);
         QObject original_recipient;
-        QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 0, {}}));
+        for (size_t i = 0; i < limits.ordinary.tasks; ++i)
+            QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 0, {}}));
         auto* original = model.takeInspection(&original_recipient);
         QVERIFY(original); QCOMPARE(original->requestId(), quint64{1});
         drain();

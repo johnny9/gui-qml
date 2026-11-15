@@ -60,6 +60,7 @@ public:
 private:
     struct State;
     struct ReplyCell;
+    struct StopCell;
     enum class ReplyKind { Inspect, Query };
     Owner(Services services, std::shared_ptr<execution::Scheduler> scope,
           std::shared_ptr<State> state, Notify notify);
@@ -68,6 +69,8 @@ private:
     void received(uint64_t reply, ReplyKind kind, Ticket ticket, InspectionReceipt receipt);
     bool reservePresentation(Ticket ticket);
     void presentationReleased(Ticket ticket);
+    bool reserveStop();
+    void stopped();
     void query();
     void deliver(std::shared_ptr<const Sink> sink);
     void pump();
@@ -84,6 +87,7 @@ private:
     std::atomic_bool m_forwarding_closed{false};
     std::mutex m_presentation_mutex;
     std::optional<std::pair<Ticket, execution::TaskId>> m_presentation_release;
+    std::shared_ptr<StopCell> m_stop;
 };
 } // namespace desktopintent
 #endif // BITCOIN_QML_DESKTOPINTENTOWNER_H
