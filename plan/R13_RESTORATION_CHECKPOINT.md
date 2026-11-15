@@ -3,7 +3,12 @@
 Worker `e9a668128ac677a29732f1a02d1f38ad3a955239`, based on accepted R12
 `3824ba47c2f5f9244e107f20a103683a45e2e79f`, passes its focused gate with
 unchanged Core `44901d8f64cb617714707bd025ecd83f108353c2`. Integration commit
-`2df977a789f` applies that exact R13 range; combined validation is pending.
+`2df977a789f` applies that exact R13 range. The combined focused gate at
+`ce039570ebe3a40f347a000372a5d0a15f60b21c` passes:339 bodies (including
+all172 R13 QtTest bodies),23 pinned Clang23/Bitcoin-plugin entries,247 QML
+files per compatibility variant, app lint, and five IPC/lifecycle scenarios.
+The two worker compatibility scenarios remain explicitly carried from their
+recorded inputs; no combined compatibility rerun is claimed.
 
 Restore and migration have background-owned operations with immutable original
 source, target, credential prompt and result. They retain actual warnings,

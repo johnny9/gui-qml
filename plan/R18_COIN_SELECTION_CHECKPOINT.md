@@ -2,8 +2,12 @@
 
 Application implementation is integrated at `9c99b71c8c777a977fce21f5b0cfff4534a6d3dd`,
 with Core unchanged at `44901d8f64cb617714707bd025ecd83f108353c2`.
-Combined R13/R18 acceptance validation is pending; the figures below describe
-recorded focused inputs, not a final-head or exhaustive qualification.
+The combined focused gate at `ce039570ebe3a40f347a000372a5d0a15f60b21c`
+passes339 bodies,23 pinned Clang23/Bitcoin-plugin entries, QML lint, app lint
+and five ordinary IPC/lifecycle scenarios. All84 focused R18 bodies pass on
+that same source, including the final translation change. The receipt is
+`.validation/qt6-r11-r40-20261114/integration-11/ACCEPTANCE.json`.
+Final exhaustive qualification remains pending R42.
 
 The background owner distinguishes catalog, explicit Automatic/Manual policy,
 committed selection, temporary edits and lock marks. Empty, missing, externally
@@ -17,7 +21,7 @@ resurrect a newly locked input. Failed items retain their marks.
 Root followup evidence is under
 `.validation/qt6-r11-r40-20261114/R18/followup/`. There are 84 distinct passing
 focused bodies across the explicitly retained inputs through `8a5f6d1d281`;
-the last translation-only change at `ed8abc66104` still needs the combined gate.
+the last translation-only change at `ed8abc66104` is verified by the combined gate.
 The 78-, 83- and 5-body reports overlap and must not be added together.
 A general SetText fixture repair waits for enabled/focused controls before
 editing: the earlier wallet-switch failure occurred before a valid fee input,
@@ -50,5 +54,5 @@ O14 has composed production-model manual-executor schedules plus separate
 physical UI/Core counterparts. The selection picker deliberately disables lock
 context actions; tests must not force an unreachable bulk-lock UI. O35 is owned
 by R39, and cross-consumer 266 belongs to R21. These owners remain explicit.
-Pinned app lint/tidy and merged runtime/lifecycle qualification are pending.
+Pinned app lint/tidy and merged runtime/lifecycle qualification now pass.
 Exhaustive coverage, sanitizer and platform/configuration suites remain R42.

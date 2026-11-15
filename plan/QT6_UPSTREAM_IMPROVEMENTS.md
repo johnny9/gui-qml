@@ -303,3 +303,18 @@ No app workaround is adopted. Moving QWidget work off GUI is invalid; serializin
 Same R10 app/Core revisions. The pinned ASan/integer profile reports invalid-shift-base in Qt6.4's inline qHashCombine for QPair<qint64,int>, called by DebugLogModel::Reduce's stable overlap index. `Qt-only evidence <.validation/issue-remediation-pr1090-20261109/execution/gui-threading-implementation-20261112/asan-qhash-dependency-v31/summary.json>` reproduces exit1 using a SIZE_MAX seed and the exact profile; scalar control exits0. No suppression, sanitizer setting or global hash seed changes are used.
 
 The isolated unvalidated draft replaces this Domain-local index with an ordered std::map keyed by the exact physical offset/chunk pair. insert_or_assign preserves the prior last-occurrence lookup rule and display overlap identity. A manual-executor regression preserves persistent indexes across identical multi-chunk records and checks exact remove/insert ranges, data, no reset and physical retirement. Full DebugLogModelTests and actual debug-log integration must be qualified on the next candidate. Upstream Qt should express intended unsigned hash wraparound compatibly with integer instrumentation and retain pair/hash semantic tests. The app index can remain ordered independently of any upstream resolution; no Core capability change is needed.
+
+
+## R18 lock persistence and R24 signer handoff
+
+[R18 notes](R18_UPSTREAM_NOTES.md) retain an independently reproduced Core
+persistence-upgrade defect. The app refuses an already-locked upgrade and
+requires explicit unlock, without editing Core or claiming atomic protection
+against arbitrary concurrent RPC changes. A public typed/conditional lock API
+and correct Core persistence bookkeeping would remove this workaround.
+
+[R24 requirements](R24_SIGNER_HANDOFF_REQUIREMENTS.md) preserve the original
+keys, descriptors, document and reviewed transaction across device replacement.
+Core's existing PSBT signature verification helpers can supply a cryptographic
+check without wallet internals or Core changes. Finalization/transaction-term
+comparison and a fingerprint hint alone must not substitute for that check.
