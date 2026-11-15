@@ -330,8 +330,13 @@ void Store::allocateAddress(const std::shared_ptr<AddressWork>& work, bool reuse
     }, [self, work, reuse](Generated generated) {
         self->m_opening->refreshMetadata();
         if (!generated.destination || !IsValidDestination(*generated.destination)) { self->addressReady(work, {}, generated.error == Error::None ? Error::AddressCreation : generated.error); return; }
+        auto address_type = QString::fromStdString(FormatOutputType(work->type));
+        if (reuse) {
+            const auto actual = DestinationType(*generated.destination);
+            address_type = actual ? QString::fromStdString(FormatOutputType(*actual)) : QString{};
+        }
         ReservedAddress address{*generated.destination, QString::fromStdString(EncodeDestination(*generated.destination)),
-            QString::fromStdString(FormatOutputType(work->type)),
+            std::move(address_type),
             reuse ? QString::fromStdString(work->label) : QString{}, work->intent->create};
         if (generated.error != Error::None || work->intent->create) { self->addressReady(work, std::move(address), generated.error); return; }
         const auto admitted = self->m_opening->perform(work->queued.action, [self, address](interfaces::Wallet& wallet) {

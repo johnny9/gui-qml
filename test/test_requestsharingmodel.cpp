@@ -8,6 +8,8 @@
 #include <QtTest/QtTest>
 #include <QSemaphore>
 #include <QThread>
+#include <QQmlEngine>
+#include <QQmlContext>
 
 namespace {
 using execution::Lane;
@@ -33,6 +35,43 @@ struct Fixture {
 class RequestSharingModelTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void externallyRetainedOperationOutlivesItsSharingProjection_data()
+    {
+        QTest::addColumn<bool>("delivered");
+        QTest::newRow("closed-before-gui-delivery") << false;
+        QTest::newRow("closed-after-confirmed-delivery") << true;
+    }
+    void externallyRetainedOperationOutlivesItsSharingProjection()
+    {
+        QFETCH(bool, delivered); ReceiveEditorPorts ports; QQmlEngine engine;
+        auto context = std::make_unique<RequestSharingModel>(17, ports.sharing()); context->setActive(true); ports.drain();
+        QQmlEngine::setObjectOwnership(context.get(), QQmlEngine::CppOwnership);
+        QQmlEngine::setContextForObject(context.get(), engine.rootContext());
+        engine.globalObject().setProperty(QStringLiteral("sharing"), engine.newQObject(context.get()));
+        QVERIFY(!engine.evaluate(QStringLiteral("var original = sharing.copyUri();")).isError());
+        ports.execution.drain(); if (delivered) ports.publish();
+        const auto identity = engine.evaluate(QStringLiteral("original.operationId")).toString(); QVERIFY(!identity.isEmpty());
+        context.reset(); engine.collectGarbage(); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); ports.publish();
+        QCOMPARE(engine.evaluate(QStringLiteral("original.operationId")).toString(), identity);
+        QVERIFY(engine.evaluate(QStringLiteral("original.result.present && original.result.outcomeKnown")).toBool());
+        QCOMPARE(engine.evaluate(QStringLiteral("original.result.performed")).toBool(), delivered);
+        QCOMPARE(ports.clipboard, delivered ? 1 : 0); QVERIFY(ports.execution.quiescent());
+        engine.evaluate(QStringLiteral("original = null; sharing = null")); engine.collectGarbage();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); ports.drain();
+    }
+    void currentCopyOutcomeSurvivesAnIgnoredQmlReturnAndGarbageCollection()
+    {
+        ReceiveEditorPorts ports; RequestSharingModel context{17, ports.sharing()}; context.setActive(true); ports.drain();
+        QQmlEngine engine; QQmlEngine::setObjectOwnership(&context, QQmlEngine::CppOwnership);
+        QQmlEngine::setContextForObject(&context, engine.rootContext());
+        engine.globalObject().setProperty(QStringLiteral("sharing"), engine.newQObject(&context));
+        QVERIFY(!engine.evaluate(QStringLiteral("sharing.copyUri(); undefined")).isError());
+        engine.collectGarbage(); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        ports.drain(); QCOMPARE(ports.clipboard, 1); QVERIFY(context.lastOperation());
+        QVERIFY(context.lastOperation()->result().performed);
+        context.setActive(false); engine.collectGarbage(); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(context.lastOperation()); QVERIFY(context.lastOperation()->result().performed); context.retire(); ports.drain();
+    }
     void qrCopyRendersAndDeliversTheExactOriginalOwnedPayload()
     {
         ReceiveEditorPorts ports; auto services = ports.sharing(); QStringList rendered;
@@ -49,6 +88,7 @@ private Q_SLOTS:
         Fixture f; QVERIFY(f.context->canCopyUri());
         auto operation = std::unique_ptr<ShareOperationModel>{f.context->copyUri()}; f.ports.execution.drain();
         QCOMPARE(f.ports.clipboard, 0); QVERIFY(f.ports.execution.quiescent());
+        QCOMPARE(operation->phase(), ShareOperationModel::Authorizing); QVERIFY(!operation->result().admitted);
         f.ports.publish(); QCOMPARE(f.ports.clipboard, 1); QCOMPARE(operation->phase(), ShareOperationModel::Completed);
         QVERIFY(operation->result().admitted); QVERIFY(operation->result().performed);
         QCOMPARE(f.ports.clipboard_text, QStringLiteral("bitcoin:bcrt1q-original?amount=0.000001&message=original%20message"));
@@ -99,7 +139,7 @@ private Q_SLOTS:
         RequestSharingModel context{17, ports.sharing(), editor.sharingInputGuard(), nullptr, editor.sharingInputEpoch()};
         context.setActive(true); ports.drain();
         auto original = std::unique_ptr<ShareOperationModel>{context.copyUri()}; ports.execution.drain();
-        QCOMPARE(original->phase(), ShareOperationModel::Delivering); QVERIFY(!ports.gui.empty());
+        QCOMPARE(original->phase(), ShareOperationModel::Authorizing); QVERIFY(!ports.gui.empty());
         // Hold only the final native GUI handoff; let independent presentation
         // notifications and the explicit edit/discard complete normally.
         auto handoff = std::move(ports.gui.back()); ports.gui.pop_back();

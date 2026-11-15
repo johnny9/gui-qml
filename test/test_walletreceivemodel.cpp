@@ -177,7 +177,11 @@ private Q_SLOTS:
         deletion->closePrompt()->answer(TextEditClosePrompt::Save); f.ports.domain(); QCOMPARE(f.ports.writes, 0);
         QPointer<PaymentRequestEditorModel> newer;
         connect(f.receive.get(), &WalletReceiveModel::requestOpened, this, [&](auto* editor) { newer = editor; });
-        QVERIFY(f.receive->openRequest("19")); f.ports.domain(); QVERIFY(newer);
+        QVERIFY(f.receive->openRequest("19"));
+        // Hold the original Core delete while the independent source/facade
+        // reads and their GUI projections complete their controlled turns.
+        for (size_t turn{0}; !newer && turn < 32; ++turn) f.ports.domain();
+        QVERIFY(newer); QCOMPARE(f.ports.writes, 0); QVERIFY(!deletion->saveResult().present);
         f.ports.drain(); QVERIFY(deletion->saveResult().erased); QVERIFY(!f.ports.records.contains(17));
         QVERIFY(newer->available()); QCOMPARE(newer->requestId(), QStringLiteral("19")); QVERIFY(f.ports.records.contains(19));
     }
@@ -192,6 +196,10 @@ private Q_SLOTS:
         auto* second = f.receive->sharing(saved, &second_view); QVERIFY(second && second != first);
         first->setActive(true); second->setActive(true); f.ports.drain();
         first->setActive(false); QVERIFY(!first->canCopyUri()); QVERIFY(second->canCopyUri());
+        first->retire(); auto* reopened = f.receive->sharing(saved, &first_view);
+        QVERIFY(reopened && reopened != first); QCOMPARE(reopened->phase(), RequestSharingModel::Inactive);
+        reopened->setActive(true); first->setActive(true); f.ports.drain();
+        QCOMPARE(first->phase(), RequestSharingModel::Closed); QVERIFY(reopened->canCopyUri()); QVERIFY(second->canCopyUri());
     }
 };
 BITCOINQML_REGISTER_QT_TEST(WalletReceiveModelTests)

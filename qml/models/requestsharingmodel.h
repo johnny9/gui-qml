@@ -6,6 +6,7 @@
 
 #include <qml/requestsharing.h>
 #include <qml/models/requestimageexportoperation.h>
+#include <QJSValue>
 
 #include <QImage>
 #include <QObject>
@@ -14,6 +15,8 @@
 
 #include <atomic>
 #include <mutex>
+
+class QQmlEngine;
 
 class ShareResult {
     Q_GADGET
@@ -119,6 +122,8 @@ private:
     const std::shared_ptr<requestshare::View> m_view;
     std::shared_ptr<const Cache> m_cache;
     QPointer<ShareOperationModel> m_last;
+    QPointer<QQmlEngine> m_gui_engine;
+    QJSValue m_last_script;
     uint64_t m_refresh{0};
     bool m_refresh_pending{false}, m_refresh_again{false};
 };

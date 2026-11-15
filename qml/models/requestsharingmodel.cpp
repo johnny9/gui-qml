@@ -61,7 +61,7 @@ struct ShareOperationModel::Work : std::enable_shared_from_this<Work> {
         {
             std::lock_guard lock{cell->mutex};
             cell->grant = grant;
-            cell->phase = requestshare::Phase::Delivering;
+            cell->phase = requestshare::Phase::Authorizing;
             cell->result.requestId = QString::number(source.request_id);
             cell->result.payloadRevision = QString::number(source.record_revision);
         }
@@ -81,6 +81,8 @@ struct ShareOperationModel::Work : std::enable_shared_from_this<Work> {
                     result->cancelled.load() ? requestshare::Error::Cancelled : requestshare::Error::Changed);
                 return;
             }
+            { std::lock_guard lock{result->mutex}; result->phase = requestshare::Phase::Delivering; result->result.admitted = true; }
+            result->notify();
             try {
                 const auto outcome = effect(action, payload, image);
                 result->finish(outcome, outcome == requestshare::Delivery::Accepted ? requestshare::Error::None
@@ -172,6 +174,7 @@ struct RequestSharingModel::Cache {
 RequestSharingModel::RequestSharingModel(int64_t id, requestshare::Services services, std::shared_ptr<std::atomic_bool> input, QObject* parent, std::shared_ptr<SourceEpoch> input_epoch)
     : QObject(parent), m_request_id(id), m_services(std::move(services)), m_view(std::make_shared<requestshare::View>())
 {
+    if (parent) m_gui_engine = qmlEngine(parent);
     m_services.execution.post = presentation::ReliablePost(std::move(m_services.execution.post));
     m_view->input = std::move(input);
     m_view->input_epoch = std::move(input_epoch);
@@ -258,8 +261,14 @@ ShareOperationModel* RequestSharingModel::copy(requestshare::Kind kind)
     const auto operation = new ShareOperationModel(kind, m_request_id, m_services, m_view, std::move(expected));
     QQmlEngine::setObjectOwnership(operation, QQmlEngine::JavaScriptOwnership);
     m_last = operation;
+    // Retain one current script projection even when a QML action ignores its
+    // return value. No QObject parent ties an externally retained operation to
+    // this view's lifetime; replacing/retiring the cache releases only our ref.
+    if (auto* engine = m_gui_engine ? m_gui_engine.data() : qmlEngine(this)) m_last_script = engine->newQObject(operation);
+    else m_last_script = {};
+    const QPointer<ShareOperationModel> original{operation};
     Q_EMIT changed();
-    return operation;
+    return original;
 }
 ShareOperationModel* RequestSharingModel::copyUri() { return copy(requestshare::Kind::Uri); }
 ShareOperationModel* RequestSharingModel::copyQr() { return copy(requestshare::Kind::Qr); }
@@ -274,6 +283,6 @@ RequestImageExportOperation* RequestSharingModel::beginQrExport()
 void RequestSharingModel::retire()
 {
     if (phase() == Closed) return;
-    m_view->close(); m_cache.reset();
+    m_view->close(); m_cache.reset(); m_last_script = {};
     Q_EMIT changed();
 }

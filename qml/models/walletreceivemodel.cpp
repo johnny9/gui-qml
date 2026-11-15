@@ -182,7 +182,8 @@ void WalletReceiveModel::applyReplacement()
     const QPointer<WalletReceiveModel> guard{this};
     Q_EMIT changed(); if (!guard) return;
     if (target.kind == Target::Address) m_reservation.select(target.address);
-    else m_reservation.ensure(target.kind == Target::Template, target.type, !target.type.isEmpty(), false);
+    else m_reservation.ensure(target.kind == Target::Template, target.type,
+        target.kind == Target::Fresh || !target.type.isEmpty(), false);
     if (guard) Q_EMIT receiveReady();
 }
 void WalletReceiveModel::cancelReplacement()
@@ -298,7 +299,8 @@ RequestSharingModel* WalletReceiveModel::sharing(PaymentRequestEditorModel* edit
     m_sharing.removeIf([](const auto& context) { return context.isNull(); });
     m_sharing_views.removeIf([](const auto& value) { return value.context.isNull(); });
     if (view) for (auto& old : m_sharing_views) if (old.view == view) {
-        if (old.editor == editor && old.id == (editor ? editor->requestId() : QString{})) return old.context;
+        if (old.editor == editor && old.id == (editor ? editor->requestId() : QString{}) &&
+            old.context && old.context->phase() != RequestSharingModel::Closed) return old.context;
         if (old.context) { old.context->retire(); old.context->setParent(nullptr); }
         old.view = nullptr;
     }

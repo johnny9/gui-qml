@@ -231,11 +231,14 @@ TestCase {
         const view = makeView(true)
         view.control.settle()
         clickVisible(view, "savedRequestCopyUriButton")
+        const original = view.card.sharing.lastOperation
+        verify(original !== null)
         view.control.backend()
         view.visible = false
         view.control.publish()
         compare(view.control.clipboardWrites, 0)
-        verify(!view.card.sharing.lastOperation.result.performed)
+        verify(original.result.present)
+        verify(!original.result.performed)
     }
     function test_paid_saved_public_fields_freeze_but_private_note_saves() {
         const view = makeView(true)

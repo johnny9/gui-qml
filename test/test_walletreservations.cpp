@@ -24,8 +24,11 @@
 #include <QTemporaryDir>
 #include <array>
 #include <functional>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 using namespace walletrequests;
@@ -42,6 +45,8 @@ struct Wallet : StubWallet {
     bool throw_lock{false}, throw_generate{false}, fail_generate{false}, throw_history{false};
     std::set<interfaces::WalletTx> transactions;
     std::map<CTxDestination, std::string> book;
+    std::optional<CTxDestination> next_destination;
+    std::vector<OutputType> generated_types;
     bool canGetAddresses() override { return can_generate; }
     bool taprootEnabled() override { return taproot; }
     bool isCrypted() override { return encrypted; }
@@ -54,12 +59,13 @@ struct Wallet : StubWallet {
     }
     bool lock() override { ++relocked; if (throw_lock) throw std::runtime_error{"lock outcome unavailable"}; if (fail_lock) return false; locked = true; return true; }
     OutputType getDefaultAddressType() override { return OutputType::LEGACY; }
-    util::Result<CTxDestination> getNewDestination(OutputType, const std::string& label) override {
+    util::Result<CTxDestination> getNewDestination(OutputType type, const std::string& label) override {
         ++generated;
+        generated_types.push_back(type);
         if (throw_generate) throw std::runtime_error{"generation outcome unavailable"};
         if (fail_generate) return util::Error{Untranslated("keypool unavailable")};
         if (locked) return util::Error{Untranslated("locked keypool")};
-        const auto destination = Destination(static_cast<unsigned char>(generated));
+        const auto destination = std::exchange(next_destination, {}).value_or(Destination(static_cast<unsigned char>(generated)));
         book[destination] = label; return destination;
     }
     bool getAddress(const CTxDestination& destination, std::string* label, wallet::AddressPurpose* purpose) override {
@@ -140,6 +146,26 @@ class WalletReservationTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void cachedTypeAndExplicitDefaultAffinityAreSeparateFacts_data()
+    {
+        QTest::addColumn<bool>("explicit_default");
+        QTest::newRow("ordinary-observation-preserves-actual-cached-type") << false;
+        QTest::newRow("new-draft-honors-the-current-default-type") << true;
+    }
+    void cachedTypeAndExplicitDefaultAffinityAreSeparateFacts()
+    {
+        QFETCH(bool, explicit_default); Fixture f;
+        const auto first = f.settle(Reserve()); QVERIFY(first->result()->address); const auto original = first->result()->address->address;
+        uint160 key; key.begin()[0] = 77; const CTxDestination witness{WitnessV0KeyHash{key}};
+        if (explicit_default) f.wallet->next_destination = witness;
+        auto next = Reserve(); next.draft.address_type = "bech32"; next.explicit_type = explicit_default;
+        const auto result = f.settle(next)->result(); QVERIFY(result); QCOMPARE(result->error, Error::None); QVERIFY(result->address);
+        QCOMPARE(f.wallet->generated, explicit_default ? 2 : 1);
+        QCOMPARE(f.wallet->generated_types.back(), explicit_default ? OutputType::BECH32 : OutputType::LEGACY);
+        QCOMPARE(result->address->address_type, explicit_default ? QStringLiteral("bech32") : QStringLiteral("legacy"));
+        QCOMPARE(result->address->address, explicit_default ? QString::fromStdString(EncodeDestination(witness)) : original);
+        QVERIFY(result->address->persisted); QCOMPARE(f.storage.writes, 2); QCOMPARE(f.wallet->writes, 0);
+    }
     void inspectionRetainsTheNewAddressLabelWithoutAnEagerHistoryReload()
     {
         Fixture f; const auto reserved = f.settle(Reserve()); QVERIFY(reserved->result()->address);
