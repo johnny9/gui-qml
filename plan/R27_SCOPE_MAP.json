@@ -1,0 +1,62 @@
+{
+  "app": "f2753e76c38f2bf6b1c6851d9cedecca81ea1b5c",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "scope": "Component evidence; root owns canonical closure and R40 composition",
+  "scopes": [
+    {
+      "scope": "draft-247-D247",
+      "disposition": "Candidate resolved as supported local draft work while locked, without signing/submission authority",
+      "selectors": [
+        "PaymentImportIntegrationTests::lockedWalletImportsOnlyLocalDraftValues",
+        "SendCreate::test_locked_wallet_allows_local_draft_import_without_unlocking"
+      ],
+      "evidence": "evidence/R27_FOCUSED.json"
+    },
+    {
+      "scope": "draft-248-D248",
+      "disposition": "Silent accepted-prefix handling replaced by explicit atomic rejection; old source inspected, no unexecuted RED claimed",
+      "selectors": [
+        "PaymentImportTests::multipleDroppedUrlsAreRejectedBeforeOpeningAnyPrefix",
+        "PaymentImportIntegrationTests::droppedTextAndUrlsReachTheProductionDropArea:multiple-urls"
+      ],
+      "evidence": "evidence/R27_FOCUSED.json"
+    },
+    {
+      "scope": "draft-297-D297",
+      "disposition": "All public metadata participates; baseline4 executed3 failures and1 same-request control",
+      "selectors": [
+        "BitcoinUriModelTests::probeMatchesAllPublicMetadataWithoutPrivateNoteOrFormatting",
+        "PaymentImportTests::publicSemanticIdentityAndMatchingIncludeMessageButNeverPrivateNote",
+        "PaymentImportIntegrationTests::clipboardOfferComparesPublicMessageIndependentlyOfPrivateNote"
+      ],
+      "evidence": "evidence/R27_FOCUSED.json"
+    },
+    {
+      "scope": "draft-004-RC20",
+      "disposition": "Original Source/editor lifecycle and exact native handoff ACK; close/reentry survives",
+      "selectors": [
+        "PaymentImportTests::sourceWaitsForExactOriginalNativeHandoffBeforeAnyApply",
+        "SendCreate::test_replacement_intent_cancels_owned_paste_once",
+        "SendCreate::test_validation_echo_preserves_original_import_intent"
+      ],
+      "evidence": "evidence/R27_FOCUSED.json"
+    },
+    {
+      "scope": "draft-246-RC20",
+      "disposition": "Chooser captures original Source before selection, without completion-time wallet lookup",
+      "selectors": [
+        "PaymentImportTests::capturedFileSourceCannotBeReusedOrRevived",
+        "SendCreate::test_native_psbt_picker_keeps_original_opening",
+        "MainRouting::test_menu_psbt_completion_cannot_cross_selected_opening",
+        "PaymentImportIntegrationTests::typedPsbtFileCreatesOriginalReviewWithoutSigningOrSubmission"
+      ],
+      "evidence": "evidence/R27_FOCUSED.json"
+    }
+  ],
+  "cross_repairs": [
+    "R26 GUI Source interest must survive validation-only echoes",
+    "R21/R22 PSBT completion must supply explicit wallet-record outcome; baseline reproduced",
+    "Existing QML send fixture counter reset; baseline reproduced"
+  ],
+  "followup": "RootR40 delivery/creation receipt composition; R42 exhaustive qualification"
+}

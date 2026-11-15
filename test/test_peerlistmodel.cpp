@@ -13,6 +13,7 @@
 #include <qml/peerstatsutil.h>
 #include <QPersistentModelIndex>
 #include <QThread>
+#include <QScopeGuard>
 #include <util/translation.h>
 #include <netbase.h>
 
@@ -69,7 +70,84 @@ private Q_SLOTS:
     void manualFilterStaleAndQuietClose();
     void realThreadReadsNeverRunOnGui();
     void neutralPresentationObserversPreserveBoundedDeliveryAndLifetime();
+    void displayedPeerIdSearchPreservesOrdinaryText_data();
+    void displayedPeerIdSearchPreservesOrdinaryText();
+    void copiedDetailsRejectReplacementConnection_data();
+    void copiedDetailsRejectReplacementConnection();
 };
+
+void PeerListModelTests::displayedPeerIdSearchPreservesOrdinaryText_data()
+{
+    QTest::addColumn<QString>("query"); QTest::addColumn<qint64>("expected_id"); QTest::addColumn<int>("count");
+    QTest::newRow("displayed-id") << QStringLiteral("#72") << qint64{72} << 1;
+    QTest::newRow("numeric-control") << QStringLiteral("72") << qint64{72} << 1;
+    QTest::newRow("displayed-trim") << QStringLiteral("  #72  ") << qint64{72} << 1;
+    QTest::newRow("displayed-leading-zero") << QStringLiteral("#0072") << qint64{72} << 1;
+    QTest::newRow("other-peer") << QStringLiteral("#71") << qint64{71} << 1;
+    QTest::newRow("ordinary-hash-tag") << QStringLiteral("#peer") << qint64{9} << 1;
+    QTest::newRow("no-partial-id-token") << QStringLiteral("#7") << qint64{-1} << 0;
+    QTest::newRow("not-a-display-id") << QStringLiteral("#72suffix") << qint64{-1} << 0;
+    QTest::newRow("overflow-does-not-wrap") << QStringLiteral("#9223372036854775808") << qint64{-1} << 0;
+    QTest::newRow("negative-is-not-an-id") << QStringLiteral("#-1") << qint64{-1} << 0;
+}
+void PeerListModelTests::displayedPeerIdSearchPreservesOrdinaryText()
+{
+    QFETCH(QString, query); QFETCH(qint64, expected_id); QFETCH(int, count);
+    ManualRoutedExecution transport; std::deque<std::function<void()>> gui;
+    auto stats = MakeStats({MakeNodeStats(72,"10.0.0.72:8333",false,ConnectionType::MANUAL,NET_IPV4),
+        MakeNodeStats(71,"10.0.0.71:8333",true,ConnectionType::INBOUND,NET_IPV4),
+        MakeNodeStats(9,"10.0.0.9:8333",false,ConnectionType::MANUAL,NET_IPV4)});
+    std::get<0>(stats[2]).cleanSubVer = "/ordinary #peer text/";
+    MockNode node; node.get_nodes_stats_fn = [&](auto& out) { out = stats; return true; };
+    std::unique_ptr<PeerListModel> model; std::unique_ptr<PeerListSortProxy> proxy;
+    const auto cleanup = qScopeGuard([&] { proxy.reset(); model.reset(); transport.drain(); while (!gui.empty()) { auto callback = std::move(gui.front()); gui.pop_front(); callback(); } transport.drain(); });
+    model = std::make_unique<PeerListModel>(node,nullptr,true,execution::SnapshotServices{transport.scheduler,[&](auto callback) { gui.push_back(std::move(callback)); }});
+    proxy = std::make_unique<PeerListSortProxy>(nullptr); proxy->setSourceModel(model.get());
+    const auto settle = [&] {
+        for (int turn = 0; turn < 20; ++turn) {
+            transport.drain(); while (!gui.empty()) { auto callback = std::move(gui.front()); gui.pop_front(); callback(); }
+            if (transport.transportIdle()) return true;
+        } return false;
+    };
+    QVERIFY(settle()); QCOMPARE(proxy->rowCount(),3); QCOMPARE(node.calls.getNodesStats.load(),1);
+    proxy->setSearchText(query); QVERIFY(settle()); QCOMPARE(proxy->rowCount(),count);
+    if (count) QCOMPARE(proxy->data(proxy->index(0),PeerListModel::NetNodeId).toLongLong(),expected_id);
+    QCOMPARE(node.calls.getNodesStats.load(),1); // Search is a Domain projection over the original public read.
+}
+void PeerListModelTests::copiedDetailsRejectReplacementConnection_data()
+{
+    QTest::addColumn<int>("change");
+    QTest::newRow("reused-id-new-connection-time") << 0; QTest::newRow("reused-id-new-endpoint") << 1;
+    QTest::newRow("reused-id-new-session") << 2; QTest::newRow("missing-peer-control") << 3;
+}
+void PeerListModelTests::copiedDetailsRejectReplacementConnection()
+{
+    QFETCH(int,change); ManualRoutedExecution transport; std::deque<std::function<void()>> gui;
+    auto stats = MakeStats({MakeNodeStats(72,"10.0.0.72:8333",false,ConnectionType::MANUAL,NET_IPV4)});
+    std::get<0>(stats.front()).m_session_id = "original";
+    MockNode node; node.get_nodes_stats_fn = [&](auto& out) { out = stats; return true; };
+    std::unique_ptr<PeerListModel> model;
+    const auto cleanup = qScopeGuard([&] { model.reset(); transport.drain(); while (!gui.empty()) { auto callback = std::move(gui.front()); gui.pop_front(); callback(); } transport.drain(); });
+    model = std::make_unique<PeerListModel>(node,nullptr,true,execution::SnapshotServices{transport.scheduler,[&](auto callback) { gui.push_back(std::move(callback)); }});
+    const auto settle = [&] { transport.drain(); while (!gui.empty()) { auto callback = std::move(gui.front()); gui.pop_front(); callback(); } };
+    settle(); QCOMPARE(model->rowCount(),1);
+    auto original = model->data(model->index(0),PeerListModel::StatsRole).value<PeerStatsHandle>(); QVERIFY(original);
+    PeerDetailsModel details{original,model.get()}; QSignalSpy disconnected{&details,&PeerDetailsModel::disconnected};
+    const auto old_address = details.address(); const auto old_user_agent = details.userAgent();
+    if (change == 3) stats.clear();
+    else {
+        auto& replacement = std::get<0>(stats.front()); replacement.m_addr_name = "replacement.example:8333"; replacement.cleanSubVer = "/replacement/";
+        if (change == 0) replacement.m_connected += std::chrono::seconds{1};
+        else if (change == 1) replacement.addr = CAddress{LookupNumeric("10.0.0.73:8333"),NODE_NONE};
+        else replacement.m_session_id = "replacement";
+    }
+    model->refresh(); settle(); QCOMPARE(disconnected.size(),1);
+    QCOMPARE(details.nodeId(),qint64{72}); QCOMPARE(details.address(),old_address); QCOMPARE(details.userAgent(),old_user_agent);
+    QCOMPARE(original->nodeStats.cleanSubVer,std::string{"/Satoshi:28.0.0/"}); // Owned StatsRole control, never a borrowed freed element.
+    const auto reads = node.calls.getNodesStats.load(); original.reset();
+    for (int repeat = 0; repeat < 100; ++repeat) { QCOMPARE(details.address(),old_address); QCOMPARE(details.userAgent(),old_user_agent); }
+    QCOMPARE(node.calls.getNodesStats.load(),reads);
+}
 
 void PeerListModelTests::neutralPresentationObserversPreserveBoundedDeliveryAndLifetime()
 {

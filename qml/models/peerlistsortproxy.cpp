@@ -55,7 +55,7 @@ QString TransportKey(TransportProtocolType transport)
 } // namespace
 
 
-struct PeerListSortProxy::DetailCache { QHash<qint64, QPointer<PeerDetailsModel>> models; };
+struct PeerListSortProxy::DetailCache { QHash<QString, QPointer<PeerDetailsModel>> models; };
 struct PeerListSortProxy::Input {
     std::mutex mutex;
     NativeVersionHandle source;
@@ -67,8 +67,12 @@ PeerListSortProxy::PeerListSortProxy(QObject* parent) : NativeListModel({}, pare
     connect(this, &QAbstractItemModel::rowsInserted, this, &PeerListSortProxy::countChanged);
     connect(this, &QAbstractItemModel::rowsRemoved, this, &PeerListSortProxy::countChanged);
 }
-PeerListSortProxy::~PeerListSortProxy() { closeAdmission(); }
-void PeerListSortProxy::closeAdmission() { m_details.reset(); m_input.reset(); NativeListModel::closeAdmission(); }
+PeerListSortProxy::~PeerListSortProxy() { m_destroying = true; closeAdmission(); }
+void PeerListSortProxy::closeAdmission() {
+    if (stopping()) return;
+    m_details.reset(); m_input.reset(); NativeListModel::closeAdmission();
+    if (!m_destroying) Q_EMIT admissionClosed();
+}
 void PeerListSortProxy::setSourceModel(QAbstractItemModel* source) {
     if (sourceModel() == source || stopping()) return;
     if (sourceModel()) {
@@ -89,6 +93,13 @@ void PeerListSortProxy::setSourceModel(QAbstractItemModel* source) {
         NativeVersionHandle version; int role; bool ascending; QString search; QStringList directions, connections, networks, transports;
         { std::lock_guard lock{input->mutex}; version=input->source; role=input->role; ascending=input->ascending; search=input->search.trimmed();
           directions=input->directions; connections=input->connections; networks=input->networks; transports=input->transports; }
+        QString displayed_id;
+        if (search.startsWith(QLatin1Char('#'))) {
+            const auto digits = search.mid(1);
+            const bool numeric = !digits.isEmpty() && std::all_of(digits.begin(), digits.end(), [](QChar ch) { return ch >= QLatin1Char('0') && ch <= QLatin1Char('9'); });
+            bool valid{false}; const auto id = numeric ? digits.toLongLong(&valid) : -1;
+            if (valid && id >= 0) displayed_id = QString::number(id);
+        }
         auto rows = NativeListModel::Rows(version);
         std::erase_if(rows, [&](const auto& row) {
             const auto& stats = static_cast<const PeerRecord*>(row->payload.get())->raw.nodeStats;
@@ -97,6 +108,7 @@ void PeerListSortProxy::setSourceModel(QAbstractItemModel* source) {
             if (!networks.isEmpty() && !networks.contains(NetworkKey(stats.m_network))) return true;
             if (!transports.isEmpty() && !transports.contains(TransportKey(stats.m_transport_type))) return true;
             if (search.isEmpty()) return false;
+            if (!displayed_id.isEmpty()) return row->values.value(PeerListModel::NodeIdText).toString() != displayed_id;
             for (int role : {PeerListModel::NetNodeId, PeerListModel::Address, PeerListModel::Direction, PeerListModel::ConnectionType,
                             PeerListModel::Network, PeerListModel::Transport, PeerListModel::Subversion, PeerListModel::Sent, PeerListModel::Received}) {
                 if (row->values.value(role).toString().contains(search, Qt::CaseInsensitive)) return false;
@@ -145,9 +157,12 @@ int PeerListSortProxy::RoleNameToRole(const QString& name) const { const auto ke
 QVariant PeerListSortProxy::data(const QModelIndex& value,int role) const { return role==PeerListModel::StatsRole ? QVariant::fromValue(peerDetailsAt(value.row())) : NativeListModel::data(value,role); }
 PeerDetailsModel* PeerListSortProxy::peerDetailsAt(int position) const {
     const auto row=rowHandle(index(position)); auto* source=qobject_cast<PeerListModel*>(sourceModel()); if (!row || !source || !m_details) return nullptr;
-    const auto id=row->values.value(PeerListModel::NetNodeId).toLongLong(); if (auto existing=m_details->models.value(id)) return existing;
+    const auto* original=static_cast<const PeerRecord*>(row->payload.get());
     const auto source_row=source->rowForKey(row->key); if (!source_row) return nullptr;
     const auto* record=static_cast<const PeerRecord*>(source_row->payload.get());
+    if (!SamePeerConnection(original->connection,record->connection)) return nullptr;
+    const auto id=record->connection.key;
+    if (auto existing=m_details->models.value(id); existing && existing->connected()) return existing;
     auto* details=new PeerDetailsModel(PeerStatsHandle{source_row,&record->raw},source); m_details->models.insert(id,details);
     connect(details,&PeerDetailsModel::disconnected,this,[this,id,details] { if(m_details && m_details->models.value(id)==details)m_details->models.remove(id); details->deleteLater(); });
     connect(details,&QObject::destroyed,this,[this,id,details] { if(m_details && m_details->models.value(id)==details)m_details->models.remove(id); });

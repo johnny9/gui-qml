@@ -342,6 +342,18 @@ and actual submission ownership.
 A future typed observation would simplify RPC adaptation, but cannot reserve
 later admission against independent changes. It is an optional improvement.
 
+## R36 public network observation and conditional mutation
+
+The [network observation adapter](R36_NETWORK_OBSERVATION_ADAPTER.md) records
+the original command owner, callback generations, Native reads and exact limits.
+The public Node interface has no canonical state revision or atomic conditional
+setter. App state fences stale app work and retains actual outcomes, while an
+independent RPC can still mutate networking between the last app fence and the
+setter. A versioned state/conditional setter with a structured effect receipt
+would let Core own that comparison. This is a documented upstream improvement;
+the application uses the existing public interface and makes no global atomicity
+claim. The linked note specifies regression evidence and retirement conditions.
+
 ## R35 proposed wallet-directory inspection — public helper workaround
 
 The [boundary audit](R35_WALLET_DIRECTORY_BOUNDARY.md) identifies the preexisting
@@ -483,3 +495,8 @@ opening/review/view guards. This API improvement is optional for M26: no Core
 edit is required for independent source inspection or atomic local draft
 replacement. Later signing/submission retains its separate protected checks.
 The [focused R26 receipt](evidence/R26_FOCUSED.json) qualifies the Source/target/explicit consumer component; R27 and R42 remain separate.
+
+
+## R27 native import consumers and broadcast record observation
+
+R27 adds no Wallet-internals exception. The existing public review adapter and optional typed immutable snapshot improvement remain in [R27 notes](R27_UPSTREAM_NOTES.md), with guarantees, limits, evidence and retirement. Node broadcast admission carries unknown wallet record until a separate original-transaction observation or future public receipt establishes it. This reuses the R20/R30 distinction and does not block correct completion presentation. Core/Qt stay unchanged; Qt-only picker internals stay documented/deferred.

@@ -1,0 +1,302 @@
+{
+  "state": "R39 whole focused gate satisfied after accepted R36 composition; ready for root integration",
+  "tested_app": "f6eee6c4459118459357448a565b781151872e84",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "R36_base": "d48129bbf9908899b0bc2d28dee6fd988ecea045",
+  "worker_R39": "14345c2860eb66e51f86cb6bcfb4a28c7e9b7ade",
+  "actual_prior": "R38/run-01/source6894b87b275e27fa50c0be5ba4f614acd22f8017",
+  "current": {
+    "native": 100,
+    "qml": 68,
+    "QtTest": 168,
+    "functional_scenarios": 2,
+    "GUI_processes_inspected": 3,
+    "existing_multi_node_journeys": 9,
+    "skips": 0,
+    "empty_selections": 0
+  },
+  "findings": {
+    "draft098": {
+      "disposition": "Source-refuted/HOLD; not promoted to a reproduced UAF/RCE or newly fixed original defect",
+      "evidence": "Accepted615 already uses alias-owned StatsRole/cached presentation. Legal current connection/value/drain controls harden M28 without manufacturing UB."
+    },
+    "draft302": {
+      "disposition": "Original publicGUI failure reproduced and fixed on actual finalGUI",
+      "parent": "dbbc99fdc74550170c6948786471a69f83b45320",
+      "artifacts": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/red-parent-02/artifacts",
+      "trigger": "Numeric/unmatched projections complete; physical#1 querytimesoutactualcount0expected1. Same actualCore connection, identical optional#keystroke fixture. Parent01stagedunrun/superseded."
+    }
+  },
+  "exits": {
+    "build": 0,
+    "native": 0,
+    "qml": 0,
+    "functional": 0,
+    "bootstrap-autogen": 0,
+    "qml-lint": 0,
+    "tidy": 0
+  },
+  "host": {
+    "app": "f6eee6c4459118459357448a565b781151872e84",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "exit": 0,
+    "seconds": 251.22153218701715,
+    "scope": "R36/R39 composed ordinary peer/network readiness correctness; only optional app instrumentation disabled. Exact Core commands preserved; no coverage/matrix/sanitizer claim",
+    "sanitizers_and_coverage_export": false,
+    "full_matrix": false,
+    "source_clean_after": true
+  },
+  "unit_build": {
+    "mode": "focused",
+    "requested_classes": [
+      "PeerCommandTests",
+      "PeerListModelTests",
+      "NodeModelTests",
+      "NetworkCommandTests"
+    ],
+    "compiled_classes": [
+      "NetworkCommandTests",
+      "NodeModelTests",
+      "PeerCommandTests",
+      "PeerListModelTests",
+      "StartupProfileTests"
+    ]
+  },
+  "static": {
+    "tidy": [
+      {
+        "file": "/review/build/bitcoinqml_autogen/mocs_compilation.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/build/bitcoinqml_autogen/mocs_compilation.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/bitcoinqml_autogen_mocs_compilation.cpp.log"
+      },
+      {
+        "file": "/review/source/qml/bitcoin.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/source/qml/bitcoin.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/qml_bitcoin.cpp.log"
+      },
+      {
+        "file": "/review/source/qml/models/nodemodel.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/source/qml/models/nodemodel.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/qml_models_nodemodel.cpp.log"
+      },
+      {
+        "file": "/review/build/bitcoinqml_tooling_autogen/mocs_compilation.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/build/bitcoinqml_tooling_autogen/mocs_compilation.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/bitcoinqml_tooling_autogen_mocs_compilation.cpp.log"
+      },
+      {
+        "file": "/review/build/test/bitcoinqml_bootstrap_tests_autogen/mocs_compilation.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/build/test/bitcoinqml_bootstrap_tests_autogen/mocs_compilation.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/test_bitcoinqml_bootstrap_tests_autogen_mocs_compilation.cpp.log"
+      },
+      {
+        "file": "/review/build/test/bitcoinqml_unit_tests_autogen/mocs_compilation.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/build/test/bitcoinqml_unit_tests_autogen/mocs_compilation.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/test_bitcoinqml_unit_tests_autogen_mocs_compilation.cpp.log"
+      },
+      {
+        "file": "/review/source/test/test_nodemodel.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/source/test/test_nodemodel.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/test_test_nodemodel.cpp.log"
+      },
+      {
+        "file": "/review/build/test/bitcoinqml_qmltests_autogen/mocs_compilation.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/build/test/bitcoinqml_qmltests_autogen/mocs_compilation.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/test_bitcoinqml_qmltests_autogen_mocs_compilation.cpp.log"
+      },
+      {
+        "file": "/review/source/test/qml/qml_tests_main.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/source/test/qml/qml_tests_main.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/test_qml_qml_tests_main.cpp.log"
+      },
+      {
+        "file": "/review/build/test/integration/bitcoinqml_test_application_autogen/mocs_compilation.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/build/test/integration/bitcoinqml_test_application_autogen/mocs_compilation.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/test_integration_bitcoinqml_test_application_autogen_mocs_compilation.cpp.log"
+      },
+      {
+        "file": "/review/build/test/integration/bitcoinqml_integration_tests_autogen/mocs_compilation.cpp",
+        "exit": 0,
+        "exit_code": 0,
+        "command": [
+          "clang-tidy-23",
+          "-p",
+          "/r39/artifacts/tidy",
+          "--config-file=/review/source/bitcoin/src/.clang-tidy",
+          "--load=/r39/tools/bitcoin-tidy.so",
+          "--header-filter=^/review/source/(qml|test|cmake)/",
+          "/review/build/test/integration/bitcoinqml_integration_tests_autogen/mocs_compilation.cpp"
+        ],
+        "log": "/r39/artifacts/tidy/test_integration_bitcoinqml_integration_tests_autogen_mocs_compilation.cpp.log"
+      }
+    ],
+    "qml_lint": "Full resource variants and probes PASS, raw qml-lint stdout/stderr retained",
+    "app_lint": "Exact f6eee composition-lint-01 PASS; final documentation child requires a separate lint receipt"
+  },
+  "compiler": {
+    "Core_target_commands_identical": true,
+    "Core_target_count": 370,
+    "Core_target_command_sha256": "6aaa119cbc9c488af101a2adbfe6edaaed7e71e3a39ec67609e4bcf3937ff5e0",
+    "app_flag_changes": [],
+    "new_app_objects": [
+      "CMakeFiles/bitcoinqml.dir/qml/models/networkmodel.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/models/paymentimportoperation.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/models/peercommandmodel.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/models/peercommandoperation.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/models/peerselectionmodel.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/models/runtimepromptmodel.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/networkcommand.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/nodelifecycle.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/nodelifecycleworker.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/paymentimport.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/paymentimportreview.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/peercommands.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/runtimeprompt.cpp.o",
+      "CMakeFiles/bitcoinqml.dir/qml/runtimepromptworker.cpp.o",
+      "test/CMakeFiles/bitcoinqml_unit_tests.dir/test_networkcommand.cpp.o",
+      "test/CMakeFiles/bitcoinqml_unit_tests.dir/test_peercommands.cpp.o",
+      "test/CMakeFiles/bitcoinqml_unit_tests.dir/test_peerlistmodel.cpp.o"
+    ],
+    "removed_app_objects": [
+      "test/CMakeFiles/bitcoinqml_unit_tests.dir/test_debuglogmodel.cpp.o",
+      "test/CMakeFiles/bitcoinqml_unit_tests.dir/test_rpccommandexecutor.cpp.o",
+      "test/CMakeFiles/bitcoinqml_unit_tests.dir/test_rpcconsolemodel.cpp.o"
+    ],
+    "Core_source_compiled_in_app_targets": [],
+    "note": "Core-source utility TUs compiled by app targets follow their app target flags. Every actual Core target command is unchanged. The continuous wrapper remains unchanged and adds nothing when optional coverage is OFF. No cache option is ignored."
+  },
+  "cache": {
+    "actual": "Cacheable calls:  81 / 81 (100.0%)\n  Hits:            9 / 81 (11.11%)\n    Direct:        9 /  9 (100.0%)\n    Preprocessed:  0 /  9 ( 0.00%)\n  Misses:         72 / 81 (88.89%)\nLocal storage:\n  Hits:            9 / 81 (11.11%)\n  Misses:         72 / 81 (88.89%)\n",
+    "capacity": "32GiB",
+    "compiler_check": "content",
+    "no_flag_ignoring": true
+  },
+  "commands": {
+    "docker-command.json": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/gameboy/composed-01/artifacts/docker-command.json",
+    "configure-command.json": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/gameboy/composed-01/artifacts/configure-command.json",
+    "tidy-command.json": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/gameboy/composed-01/artifacts/tidy-command.json",
+    "qml-lint-command.json": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/gameboy/composed-01/artifacts/qml-lint-command.json"
+  },
+  "readiness_seam": {
+    "selector": "NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation",
+    "rows": [
+      "ordinary-admission-closed",
+      "workers-retiring"
+    ],
+    "schedule": [
+      "Install public subscriptions under manual transport while backend unavailable",
+      "Initialize; capture backend availability signal before NetworkModel initial queued observation executes; assert known=false/getNetworkActive0 and peercanStarttrue",
+      "Admit original disconnect7 with no Core effect yet; closeAdmission or beginShutdown synchronously; disconnect8 refused",
+      "Drain native work while GUI held: exactly one effect on7, GUI pending retained",
+      "Release GUI: successful original immutable result remains, no post-close signal or successor mutation"
+    ]
+  },
+  "old_results_not_added": "Worker127 and previous failures retained as history, not added to current168",
+  "limits": [
+    "Separate stats validation/mutation is not an atomic connection API. Pinned monotonic IDs and backend drain bound guarantee; upstream note retained",
+    "Ban bool is not a new durable-write receipt; partial/unknown actual outcome retained. Recovery observes without mutation retry",
+    "Explicit external rawC++StatsRole loans retain their lifetime; new details/copies hold bounded Qt values without Native cleanup lease",
+    "Coverage/fullmatrices/sanitizers explicitly R42; no pass claimed"
+  ],
+  "upstream": "plan/R39_PEER_OPERATIONS.md"
+}

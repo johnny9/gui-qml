@@ -380,6 +380,8 @@ private Q_SLOTS:
     void banPeerDisconnectsAddressAfterSuccessfulBan();
     void networkActionReadyFollowsInitializationAndShutdown_data();
     void networkActionReadyFollowsInitializationAndShutdown();
+    void peerAdmissionDoesNotWaitForNetworkObservation_data();
+    void peerAdmissionDoesNotWaitForNetworkObservation();
     void requestShutdownEmitsOnlyOnce();
     void initializationFailureRequestsShutdownWhenCoreWasInterrupted();
     void initializationFailureWithoutCoreInterruptOnlySetsErrorState();
@@ -984,6 +986,87 @@ void NodeModelTests::networkActionReadyFollowsInitializationAndShutdown()
     QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QVERIFY(!model.networkActionReady());
     QCOMPARE(ready.count(), notifications);
+}
+
+void NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation_data()
+{
+    QTest::addColumn<bool>("shutdown");
+    QTest::newRow("ordinary-admission-closed") << false;
+    QTest::newRow("workers-retiring") << true;
+}
+
+void NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation()
+{
+    QFETCH(bool, shutdown);
+    MockNode node;
+    ConfigureNodeModelDefaults(node);
+    MempoolState mempool;
+    ConfigureMempoolGetters(node, mempool);
+    int effects{0};
+    node.disconnect_by_id_fn = [&](NodeId id) { ++effects; return id == 7; };
+    ManualExecutionEnvironment env;
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
+    services.schedule = [](auto, auto, auto) {};
+    services.cancel = [](auto) {};
+    NodeModel model{node, false, std::move(services)};
+    QObject receiver;
+    const auto cleanup = qScopeGuard([&] {
+        QObject::disconnect(&model, nullptr, &receiver, nullptr);
+        model.beginShutdown(); env.drain(); env.publishAll(); env.drain(); env.publishAll();
+    });
+    env.drain(); env.publishAll();
+    QVERIFY(model.notificationsReady());
+    QVERIFY(!model.networkBackendAvailable());
+    QVERIFY(!model.peerCommands()->canStart());
+    quint64 original{0};
+    bool captured{false};
+    QSignalSpy terminal{&model, &NodeModel::peerActionFinished};
+    connect(&model, &NodeModel::networkBackendAvailabilityChanged, &receiver, [&] {
+        if (captured || !model.networkBackendAvailable()) return;
+        captured = true;
+        // NetworkModel has only queued its initial observation. Peer commands
+        // require the live public backend, not Pause/Resume's known-state read.
+        QCOMPARE(node.calls.getNetworkActive.load(), 0);
+        QVERIFY(!model.networkModel()->known());
+        QVERIFY(!model.networkActionReady());
+        QVERIFY(model.peerCommands()->canStart());
+        original = model.requestDisconnectPeer(7);
+        QVERIFY(original);
+        QVERIFY(model.peerActionPending());
+        QCOMPARE(effects, 0);
+        if (shutdown) model.beginShutdown();
+        else model.closeAdmission();
+        QVERIFY(!model.networkBackendAvailable());
+        QVERIFY(!model.peerCommands()->canStart());
+        QCOMPARE(model.requestDisconnectPeer(8), quint64{0});
+        QCOMPARE(effects, 0);
+    });
+    model.initializeResult(true, {}, false, false);
+    env.drain(); env.publishAll();
+    QVERIFY(captured);
+    QVERIFY(original);
+    QCOMPARE(effects, 0);
+    QVERIFY(model.peerActionPending());
+    env.drain(); // The original action capability survives the parent fence.
+    QCOMPARE(effects, 1);
+    QCOMPARE(node.calls.disconnectById.load(), 1);
+    QVERIFY(model.peerActionPending()); // Its GUI receipt is still held.
+    QCOMPARE(terminal.count(), 0);
+    env.publishAll();
+    QVERIFY(!model.peerActionPending());
+    const auto result = model.peerCommands()->lastResult();
+    QVERIFY(result.present);
+    QVERIFY(result.outcomeKnown);
+    QVERIFY(result.mutationAttempted);
+    QVERIFY(result.disconnectConfirmed);
+    QCOMPARE(result.nodeIdText, QStringLiteral("7"));
+    QCOMPARE(result.outcome, PeerCommandOperation::Outcome::Succeeded);
+    QVERIFY(!model.peerCommands()->canStart());
+    QCOMPARE(model.requestDisconnectPeer(8), quint64{0});
+    env.drain(); env.publishAll();
+    QCOMPARE(effects, 1);
+    QCOMPARE(terminal.count(), 0); // Closed views stay quiet; actual result remains.
 }
 
 void NodeModelTests::requestShutdownEmitsOnlyOnce()
