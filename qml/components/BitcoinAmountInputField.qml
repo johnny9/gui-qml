@@ -167,7 +167,9 @@ ColumnLayout {
                 const typedUri = !longEdit && current.toLowerCase().indexOf("bitcoin:") >= 0
                 if (!longEdit && !fromClipboard && !typedUri) return false
                 restoreFromModel()
-                if (longEdit || fromClipboard) pasteIntent.nativeEdit(clipboard, previous, current, cursor)
+                // This bounded routing check never authorizes an import or
+                // decides provenance. Native classifies the captured edit.
+                pasteIntent.nativeEdit(clipboard, previous, current, cursor)
                 return true
             }
             Accessible.name: root.accessibleName

@@ -98,7 +98,7 @@ private Q_SLOTS:
         QVERIFY(result.value("isPaymentUri").toBool()); QVERIFY(result.value("conflicts").toBool());
         QCOMPARE(result.value("privateNote").toString(), QStringLiteral("Private note - Invoice"));
         const auto identity = result.value("sourceId").toString(); QCOMPARE(identity.size(), qsizetype{64});
-        auto* same = f.model->requestProbe(input, {{"address", Address()}, {"amount", qint64{12'345'678}}, {"requestLabel", "Invoice"}, {"note", "Private note - Invoice"}}, f.owner.get());
+        auto* same = f.model->requestProbe(input, {{"address", Address()}, {"amount", qint64{12'345'678}}, {"requestLabel", "Invoice"}, {"requestMessage", "Private note"}, {"note", "Private note - Invoice"}}, f.owner.get());
         f.finish(); QCOMPARE(same->result().value("sourceId").toString(), identity);
         QVERIFY(same->result().value("matchesExistingRequest").toBool()); QVERIFY(!same->result().value("conflicts").toBool());
     }
@@ -107,6 +107,21 @@ private Q_SLOTS:
         QTest::newRow("fixed-same-amount") << false << true;
         QTest::newRow("maximum-same-numeric-amount") << true << true;
         QTest::newRow("maximum-without-amount") << true << false;
+    }
+    void probeMatchesAllPublicMetadataWithoutPrivateNoteOrFormatting_data() {
+        QTest::addColumn<QString>("uri"); QTest::addColumn<QString>("current_message"); QTest::addColumn<QString>("current_label");
+        QTest::addColumn<bool>("matches");
+        QTest::newRow("same-reordered-request") << "bitcoin:" + Address() + "?message=Original&label=Invoice&amount=0.12345678" << "Original" << "Invoice" << true;
+        QTest::newRow("message-changed") << Uri() + "&message=Changed" << "Original" << "Invoice" << false;
+        QTest::newRow("message-omitted-clears-old") << Uri() << "Original" << "Invoice" << false;
+        QTest::newRow("label-omitted-clears-old") << "bitcoin:" + Address() + "?amount=0.12345678&message=Original" << "Original" << "Invoice" << false;
+    }
+    void probeMatchesAllPublicMetadataWithoutPrivateNoteOrFormatting() {
+        QFETCH(QString, uri); QFETCH(QString, current_message); QFETCH(QString, current_label); QFETCH(bool, matches);
+        Fixture f; auto* operation = f.model->requestProbe(uri,
+            {{"address", Address()}, {"amount", qint64{12'345'678}}, {"requestLabel", current_label}, {"requestMessage", current_message},
+             {"note", "Private bookkeeping is independent"}}, f.owner.get());
+        QVERIFY(operation); f.finish(); QCOMPARE(operation->result().value("matchesExistingRequest").toBool(), matches);
     }
     void probeTreatsMaximumAsAnAmountIntent() {
         QFETCH(bool, maximum); QFETCH(bool, explicit_amount);

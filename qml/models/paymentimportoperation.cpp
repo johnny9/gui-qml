@@ -51,6 +51,28 @@ void PaymentImportOperation::openReview() { command([](auto& owner) { return own
 void PaymentImportOperation::replace(quint64 prompt) { command([prompt](auto& owner) { return owner.replace(prompt); }); }
 void PaymentImportOperation::keepDraft(quint64 prompt) { command([prompt](auto& owner) { return owner.keepDraft(prompt); }); }
 void PaymentImportOperation::reconcile() { command([](auto& owner) { return owner.reconcile(); }); }
+void PaymentImportOperation::completeNativeHandoff(const QString& token)
+{
+    if (token.isEmpty() || token != nativeHandoffToken()) return;
+    command([source = m_snapshot.source](auto& owner) { return owner.nativeHandoff(source); });
+}
+bool PaymentImportOperation::requestFile(const QUrl& file)
+{
+    if (m_closed || !m_owner || m_input_started) return false;
+    const QPointer<PaymentImportOperation> self{this}; const auto owner = m_owner;
+    m_input_started = true;
+    paymentimport::Input input; input.kind = paymentimport::Input::Kind::File; input.url = file;
+    const auto admitted = owner->inspect(std::move(input));
+    if (!self || self->m_closed || self->m_owner != owner) return false;
+    if (!admitted) {
+        self->m_input_started = false; self->m_transport_error = tr("The import source could not be queued. Try again.");
+    } else {
+        self->m_snapshot.phase = paymentimport::Phase::Reading; self->m_snapshot.pending = true;
+        self->m_transport_error.clear();
+    }
+    Q_EMIT self->changed();
+    return bool(admitted) && self && !self->m_closed && self->m_owner == owner;
+}
 void PaymentImportOperation::cancel()
 {
     if (std::exchange(m_closed, true)) return;

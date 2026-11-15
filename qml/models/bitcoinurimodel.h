@@ -58,6 +58,8 @@ class BitcoinUriModel : public QObject
 public:
     enum class Rejection { Capacity };
     Q_ENUM(Rejection)
+    enum class InputField { AddressField, AmountField, PrivateNoteField };
+    Q_ENUM(InputField)
     static constexpr size_t MAX_OPERATIONS{128};
     explicit BitcoinUriModel(QObject* parent = nullptr);
     ~BitcoinUriModel() override;
@@ -69,11 +71,17 @@ public:
 #ifdef ENABLE_WALLET
     Q_INVOKABLE PaymentImportOperation* requestImportText(const QString& text, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
     Q_INVOKABLE PaymentImportOperation* requestImportFile(const QString& path, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
+    Q_INVOKABLE PaymentImportOperation* captureImport(WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
+    Q_INVOKABLE PaymentImportOperation* requestImportDrop(int urlCount, const QUrl& firstUrl, const QString& text, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
+    Q_INVOKABLE PaymentImportOperation* requestImportPaste(const QString& text, InputField field, bool edited, const QString& previous, const QString& current, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
     PaymentImportOperation* requestImport(paymentimport::Input input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner);
 #endif
 Q_SIGNALS:
     void requestRejected(BitcoinUriModel::Rejection reason);
 private:
+#ifdef ENABLE_WALLET
+    PaymentImportOperation* createImport(std::optional<paymentimport::Input> input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner);
+#endif
     BitcoinUriParseOperation* start(const QString& input, bool file, QObject* owner, BitcoinUriParseOperation* replace, const QVariantMap& context = {});
     execution::SnapshotServices m_services;
     const std::shared_ptr<BitcoinUriOperations> m_operations;
