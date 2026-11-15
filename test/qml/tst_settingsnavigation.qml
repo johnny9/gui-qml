@@ -38,6 +38,8 @@ TestCase {
         visible: true
     }
 
+    Component { id: displayAmount; BitcoinAmount { unit: optionsModel.displayUnit } }
+
     Component {
         id: containerComponent
 
@@ -164,6 +166,43 @@ TestCase {
     function readyEditor(view) { tryCompare(view.settingsEditor, "fresh", true) }
     function editSetting(view, key, value) { const input = findChild(view, key + "SettingInput"); verify(input !== null); input.text = value; input.textEdited(); tryCompare(view.settingsEditor.entry(key), "text", value); tryCompare(view.settingsEditor, "inputPending", false) }
     function saveSettings(view) { tryCompare(view.settingsEditor, "canSave", true); const before = view.settingsEditor.saveResult.operationId; findChild(view, "settingsSaveBatchButton").clicked(); tryVerify(() => view.settingsEditor.saveResult.persisted && view.settingsEditor.saveResult.operationId !== before); tryCompare(view.settingsEditor, "busy", false) }
+
+    function test_displayUnitCommandKeepsCanonicalAmount_data() {
+        return [{tag: "BTC", unit: 0}, {tag: "mBTC", unit: 1}, {tag: "bits", unit: 2}, {tag: "sat", unit: 3}]
+    }
+    function test_displayUnitCommandKeepsCanonicalAmount(data) {
+        const amount = createTemporaryObject(displayAmount, host)
+        verify(amount !== null)
+        amount.satoshi = 123456789
+        const view = createTemporaryObject(settingsViewComponent, host)
+        verify(view !== null)
+        const picker = findChild(view, "displayUnitPicker")
+        verify(picker !== null)
+        picker.activated(data.unit)
+        compare(picker.currentValue, data.unit)
+        compare(amount.unit, data.unit)
+        compare(amount.satoshi, 123456789)
+        optionsModel.displayUnit = 3 - data.unit
+        compare(picker.currentValue, 3 - data.unit)
+        compare(amount.satoshi, 123456789)
+    }
+    function test_developerCacheUsesTheSharedTypedBatch() {
+        const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
+        verify(view !== null)
+        view.selectSection("about"); readyEditor(view)
+        const row = findChild(view, "aboutDeveloperRow")
+        verify(row !== null); row.clicked()
+        tryVerify(() => findChild(view, "settingsDeveloper") !== null)
+        const input = findChild(view, "developerDbcacheField")
+        verify(input !== null)
+        input.text = "1636"; input.textEdited()
+        tryCompare(view.settingsEditor.entry("dbcache"), "text", "1636")
+        tryCompare(view.settingsEditor, "inputPending", false)
+        compare(optionsModel.settingsWritesForTest(), 0)
+        saveSettings(view)
+        compare(view.settingsEditor.entry("dbcache").nextStartText, "1636")
+        compare(optionsModel.settingsWritesForTest(), 1)
+    }
 
     function test_pendingSettingsAndSaveErrorRemainVisible() {
         const view = createTemporaryObject(settingsViewComponent, host)

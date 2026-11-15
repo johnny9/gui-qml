@@ -12,12 +12,14 @@ SettingsPage {
     id: root
     objectName: "settingsDeveloper"
     property bool onboarding: false
+    property SettingsEditorModel editor: null
 
     title: qsTr("Developer settings")
     showBackButton: true
     backButtonObjectName: "settingsDeveloperBack"
 
     DeveloperOptions {
+        editor: root.editor
         Layout.fillWidth: true
         isOnSurface: root.onboarding
         showRestartNotice: !root.onboarding && ApplicationModels.optionsModel.developerSettingsDirty

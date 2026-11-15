@@ -84,6 +84,7 @@
         <file>components/WalletOperationDialog.qml</file>
         <file>components/WalletPassphrasePopup.qml</file>
         <file>components/WalletBackupConfirmation.qml</file>
+        <file>components/PsbtExportConfirmation.qml</file>
         <file>controls/AddWalletButton.qml</file>
         <file>controls/AppFolderDialog.qml</file>
         <file>controls/CaretRightIcon.qml</file>

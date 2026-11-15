@@ -502,7 +502,7 @@ common::SettingsValue DefaultCoreSettingValue(const QString& name)
     if (name == QStringLiteral("natpmp")) return DEFAULT_NATPMP;
     if (name == QStringLiteral("server")) return false;
     if (name == QStringLiteral("prune")) return 0;
-    if (name == QStringLiteral("dbcache")) return DEFAULT_KERNEL_CACHE / 1_MiB;
+    if (name == QStringLiteral("dbcache")) return node::GetDefaultDBCache() / 1_MiB;
     if (name == QStringLiteral("par")) return DEFAULT_SCRIPTCHECK_THREADS;
     if (name == QStringLiteral("maxmempool")) return DEFAULT_MAX_MEMPOOL_SIZE_MB;
     return {};

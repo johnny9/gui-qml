@@ -16,6 +16,7 @@ SettingsPage {
     title: onboardingModal ? qsTr("About Bitcoin Core") : qsTr("About")
     showBackButton: false
     property bool onboardingModal: false
+    property SettingsEditorModel editor: null
 
     PageHeading {
         Layout.fillWidth: true
@@ -94,6 +95,7 @@ SettingsPage {
         id: developerPage
 
         SettingsDeveloper {
+            editor: root.editor
             onboarding: root.onboardingModal
             onBack: root.StackView.view.pop()
         }

@@ -3560,6 +3560,7 @@ private Q_SLOTS:
         QCOMPARE(model->psbtActionId(), ticket); QCOMPARE(model->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtImported);
         QCOMPARE(model->currentTransaction()->getTransactionFee(), psbtfeefixture::ACTUAL_FEE);
         QCOMPARE(model->currentTransactionCanSend(), owned && (complete || signable == 2));
+        QCOMPARE(model->currentTransactionCanSignOnly(), owned && !complete && signable == 2);
         QCOMPARE(model->currentTransactionCanBroadcast(), complete);
         fixture.close(); QVERIFY(environment.quiescent());
     }

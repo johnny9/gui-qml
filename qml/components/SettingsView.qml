@@ -414,6 +414,6 @@ Page {
 
     Component {
         id: aboutPage
-        SettingsPages.AboutSettingsPage {}
+        SettingsPages.AboutSettingsPage { editor: root.settingsEditor }
     }
 }

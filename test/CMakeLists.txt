@@ -47,6 +47,7 @@ add_executable(bitcoinqml_unit_tests
   test_backendexecutor.cpp
   test_backuppolicy.cpp
   test_backuppolicyoperation.cpp
+  test_fileexportoperation.cpp
   test_execution.cpp
   test_guipresentation.cpp
   test_atomicsharedptr.cpp

@@ -12,11 +12,12 @@
 
 namespace walletsend {
 enum class Submission { Unknown, Mempool, Confirmed, NotInMempool, Conflicted, Abandoned };
+enum class Intent { Submit, SignOnly };
 enum class Notice { SweepConsentRequired, CredentialsRequired, Finished, Notes };
-enum class Stage { Idle, AwaitingSweepConsent, AwaitingCredentials, Submitting, Finished };
+enum class Stage { Idle, AwaitingSweepConsent, AwaitingCredentials, SigningOnly, Submitting, Finished };
 enum class Record { Unknown, AbsentAtObservation, Recorded };
 enum class Relay { Unknown };
-enum class Error { None, Rejected, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled, NeedsSignerApproval, InvalidSignature };
+enum class Error { None, Rejected, InvalidStructure, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled, NeedsSignerApproval, InvalidSignature };
 /** Explicit review withdrawal may win before the irreversible commit boundary.
  * Observer destruction does not withdraw an already admitted action. */
 class CommitConsent {
@@ -29,6 +30,7 @@ private:
     std::atomic<State> m_state{Awaiting};
 };
 struct Request {
+    Intent intent{Intent::Submit};
     // Opaque facade command and exact reviewed-candidate identity. User
     // continuations must present both values; they cannot retarget a later
     // review or a replacement opening.
@@ -50,6 +52,11 @@ struct Result {
     Error error{Error::None};
     CTransactionRef committed{};
     CTransactionRef candidate{};
+    // SignOnly returns the captured document even when the wallet can add only
+    // a subset of signatures. It never returns a committed transaction.
+    std::shared_ptr<const PartiallySignedTransaction> document;
+    size_t signed_inputs{0};
+    bool partial{false};
     Record record{Record::Unknown};
     Submission submission{Submission::Unknown};
     Relay relay{Relay::Unknown};
@@ -92,6 +99,7 @@ private:
     Request m_request;
     std::shared_ptr<const walletopening::Session::Action> m_action;
     std::shared_ptr<CTransactionRef> m_native_result;
+    std::shared_ptr<PartiallySignedTransaction> m_native_document_result;
     std::optional<Result> m_result;
 };
 } // namespace walletsend
