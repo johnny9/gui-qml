@@ -514,32 +514,33 @@ TestCase {
         const originalView = desktop.activeView
         const original = testWalletModel.psbtActionId
         const replacement = testSecondWalletModel.psbtActionId
-        testWalletModel.holdPsbtPublicationForTest = true
-        testWalletModel.psbtImportResultForTest = WalletQmlModel.WalletCanSign
+        BitcoinUri.holdPublications = true
         try {
             findChild(window, "desktopMenuActions").loadPsbt.trigger()
             compare(originalView.currentTab, WalletView.Send)
             const picker = findChild(originalView.sendPage, "sendPsbtOpenDialog")
             tryCompare(picker, "visible", true)
-            compare(picker.contextObject, testWalletModel)
+            const source = picker.contextObject
+            verify(source !== null)
+            compare(source.originalWallet, testWalletModel)
+            compare(source.state, PaymentImportOperation.Empty)
             picker.selectAndAccept("file:///selected-opening.psbt")
-            compare(testWalletModel.psbtActionId, original + 1)
-            compare(testWalletModel.psbtActionBusy, true)
+            compare(source.selectedPath, "file:///selected-opening.psbt")
+            verify(source.pending)
+            compare(testWalletModel.psbtActionId, original)
             verify(walletController.selectWallet(testSecondWalletModel))
             const replacementView = desktop.activeView
             verify(replacementView !== originalView)
-            testWalletModel.completePsbtWorkForTest()
-            testWalletModel.finishPsbtPublicationForTest()
+            BitcoinUri.releasePublications()
+            compare(source.state, PaymentImportOperation.Closed)
             compare(desktop.activeView, replacementView)
             compare(testSecondWalletModel.psbtActionId, replacement)
             compare(findChild(originalView.sendPage, "transactionReviewPopup").visible, false)
             compare(findChild(replacementView.sendPage, "transactionReviewPopup").visible, false)
             verify(walletController.selectWallet(testWalletModel))
             compare(findChild(originalView.sendPage, "transactionReviewPopup").visible, false)
-            compare(testWalletModel.psbtActionId, original + 1)
-        } finally {
-            testWalletModel.holdPsbtPublicationForTest = false
-        }
+            compare(testWalletModel.psbtActionId, original)
+        } finally { BitcoinUri.releasePublications() }
     }
 
     function test_cancel_creation_retains_send_context() {

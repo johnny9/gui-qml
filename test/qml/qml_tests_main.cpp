@@ -2153,7 +2153,7 @@ public:
     Q_INVOKABLE void resetPsbtForTest(){
         m_hold_psbt_publication=false;m_psbt_operation.reset();m_saved_psbt_receipt.reset();m_submitted_psbt_receipt.reset();
         m_psbt_action_state=PsbtActionState::PsbtIdle;m_psbt_import_result=PsbtImportResult::PsbtUnsupported;m_next_psbt_import_result=PsbtImportResult::WalletCanSign;
-        m_psbt_action_error.clear();m_imported_psbt.clear();Q_EMIT psbtActionChanged();
+        m_psbt_action_error.clear();m_imported_review_token.clear();m_imported_psbt.clear();Q_EMIT psbtActionChanged();
     }
     static void completePsbtPacket(const std::shared_ptr<PsbtPacket>& packet){
         if(packet->ready)return;packet->ready=true;
