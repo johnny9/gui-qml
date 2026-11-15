@@ -206,6 +206,10 @@ private Q_SLOTS:
 
         // Use the production QML submit path here: its selected-facade binding
         // must keep wallet context true even though the wallet name is empty.
+        auto* targeted_console = qmltest::Find(m_app, "rpcConsole"); QVERIFY(targeted_console);
+        QTRY_VERIFY(targeted_console->property("walletContext").toBool());
+        QTRY_VERIFY(targeted_console->property("targetAvailable").toBool());
+        QCOMPARE(targeted_console->property("walletName").toString(), unnamed_wallet->rpcName());
         QVERIFY(submitCommand(QStringLiteral("getwalletinfo")));
         QVERIFY(waitForOutput());
         QTRY_VERIFY(hasLogicalExchange(RpcConsoleModel::CMD_REPLY, {}, QStringLiteral("Executing command using the default wallet")));
@@ -288,6 +292,12 @@ private Q_SLOTS:
         }
 #endif
         auto* model = qmltest::Model<RpcConsoleModel>(m_app, "rpcConsoleModel"); QVERIFY(model);
+        auto* targeted_console = qmltest::Find(m_app, "rpcConsole"); QVERIFY(targeted_console);
+        QTRY_COMPARE(targeted_console->property("walletContext").toBool(), wallet_enabled);
+        QTRY_VERIFY(targeted_console->property("targetAvailable").toBool());
+#ifdef ENABLE_WALLET
+        if (wallet_enabled) QCOMPARE(targeted_console->property("walletName").toString(), wallet->rpcName());
+#endif
         const QString command = arguments.isEmpty() ? method : method + " " + arguments;
         QVERIFY(submitCommand(command));
         QVERIFY(waitForOutput());
@@ -400,6 +410,8 @@ private Q_SLOTS:
         QTest::keyClick(m_app.window(), Qt::Key_Return, Qt::NoModifier, 1);
         QCOMPARE(input->property("text").toString(), QStringLiteral("getblock"));
         QCOMPARE(model->commandId(), id); QVERIFY(model->executing());
+        auto* autocomplete = qmltest::Find(m_app, "consoleAutocompletePopup"); QVERIFY(autocomplete);
+        QTRY_VERIFY(autocomplete->property("opened").toBool());
         const auto generation = model->outputGeneration();
         m_app.window()->requestActivate();
         QVERIFY(QTest::qWaitForWindowActive(m_app.window()));

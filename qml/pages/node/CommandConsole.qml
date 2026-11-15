@@ -73,9 +73,10 @@ Page {
         Qt.callLater(function() { if (root.visible) root.focusInput() })
     }
 
+    readonly property string clearOutputShortcut: Qt.platform.os === "osx" ? "Meta+L" : "Ctrl+L"
     Shortcut {
-        enabled: root.visible
-        sequence: Qt.platform.os === "osx" ? "Meta+L" : "Ctrl+L"
+        enabled: root.visible && !autocompletePopup.visible
+        sequence: root.clearOutputShortcut
         onActivated: ApplicationModels.rpcConsoleModel.clear()
     }
 
@@ -201,6 +202,15 @@ Page {
         // input losing focus (see the TapHandler and inputField.onActiveFocusChanged).
         closePolicy: Popup.CloseOnEscape
         onClosed: if (root.filteredCommands.length > 0) root.completionDismissed = true
+
+        // Qt's CloseOnEscape popup blocks WindowShortcuts outside its content,
+        // even with focus:false. Keep this one intent inside the active menu;
+        // the mutually exclusive outer shortcut owns the ordinary view case.
+        Shortcut {
+            enabled: root.visible && autocompletePopup.visible
+            sequence: root.clearOutputShortcut
+            onActivated: ApplicationModels.rpcConsoleModel.clear()
+        }
 
         ListView {
             id: autocompleteList

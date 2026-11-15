@@ -6882,7 +6882,8 @@ class MockRpcConsoleModel : public QObject
     Q_PROPERTY(QString lastTarget READ lastTarget NOTIFY commandSubmitted)
     Q_PROPERTY(QString lastWalletName READ lastWalletName NOTIFY commandSubmitted)
     Q_PROPERTY(QString completionPrefix MEMBER m_completion_prefix)
-    Q_PROPERTY(QStringList completionSuggestions READ completionSuggestions CONSTANT)
+    Q_PROPERTY(QStringList completionSuggestions READ completionSuggestions NOTIFY completionChanged)
+    Q_PROPERTY(int clearCount READ clearCount NOTIFY outputCleared)
     Q_PROPERTY(bool completionBusy READ completionBusy CONSTANT)
     Q_PROPERTY(QString completionError READ completionError CONSTANT)
     Q_PROPERTY(bool executing READ executing CONSTANT)
@@ -6899,7 +6900,9 @@ public:
     QString lastWalletName() const { return m_last_wallet_name; }
     bool executing() const { return false; }
     QStringList availableCommands() const { return {}; }
-    QStringList completionSuggestions() const { return {}; }
+    QStringList completionSuggestions() const { return m_suggestions; }
+    int clearCount() const { return m_clear_count; }
+    Q_INVOKABLE void setCompletionSuggestionsForTest(const QStringList& suggestions) { m_suggestions = suggestions; Q_EMIT completionChanged(); }
     bool completionBusy() const { return false; }
     QString completionError() const { return {}; }
     QObject* outputModel() { return &m_output; }
@@ -6913,13 +6916,16 @@ public:
     Q_INVOKABLE bool submitWalletCommand(const QString&, const QString& name) { ++m_command_count; m_last_target = QStringLiteral("wallet"); m_last_wallet_name = name; Q_EMIT commandSubmitted(); return false; }
     Q_INVOKABLE QString browseHistory(int, const QString& current) { return current; }
     Q_INVOKABLE void resetHistoryNavigation() {}
-    Q_INVOKABLE void clear() {}
+    Q_INVOKABLE void clear() { ++m_clear_count; Q_EMIT outputCleared(); }
 
 Q_SIGNALS:
     void commandSubmitted();
+    void completionChanged();
+    void outputCleared();
 
 private:
-    int m_command_count{0};
+    int m_command_count{0}, m_clear_count{0};
+    QStringList m_suggestions;
     QString m_last_target, m_last_wallet_name;
     MockRpcOutputModel m_output;
     QString m_completion_prefix;

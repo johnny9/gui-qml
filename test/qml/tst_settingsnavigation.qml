@@ -11,6 +11,7 @@ import org.bitcoincore.qt 1.0
 import "../../qml/components"
 import "../../qml/controls"
 import "../../qml/pages/wallet" as WalletPages
+import "../../qml/pages/node" as NodePages
 
 TestCase {
     id: testCase
@@ -39,6 +40,7 @@ TestCase {
     }
 
     Component { id: displayAmount; BitcoinAmount { unit: optionsModel.displayUnit } }
+    Component { id: shortcutConsole; NodePages.CommandConsole { width: 700; height: 600; tabActive: true } }
 
     Component {
         id: containerComponent
@@ -122,6 +124,7 @@ TestCase {
 
     function init() {
         testSetup.failOnWarnings()
+        rpcConsoleModel.setCompletionSuggestionsForTest([])
         firstCreated = 0
         firstDestroyed = 0
         pushedCreated = 0
@@ -877,6 +880,87 @@ TestCase {
             compare(rpcConsoleModel.lastTarget, "wallet")
         } finally {
             testWalletModel.available = oldAvailable
+        }
+    }
+
+    function test_desktop_rpc_endpoint_kind_is_explicit_data() {
+        return [
+            { tag: "named", label: "Friendly wallet", rpc: "original/", available: true },
+            { tag: "default", label: "", rpc: "", available: true },
+            { tag: "unavailable", label: "Original wallet", rpc: "original/", available: false }
+        ]
+    }
+
+    function test_desktop_rpc_endpoint_kind_is_explicit(data) {
+        // DesktopWallets supplies scalar endpoint facts while its wallet
+        // settings stack is hosted separately. No name can encode endpoint kind.
+        const view = createTemporaryObject(settingsViewComponent, host, {
+            activeWalletName: data.label, activeWalletRpcName: data.rpc,
+            activeWalletRpcContext: true, activeWalletRpcReady: true,
+            activeWalletAvailable: data.available
+        })
+        compare(view.wallet, null)
+        view.selectSection("rpc-console")
+        const page = findChild(view, "rpcConsoleSettingsPage")
+        verify(page !== null)
+        compare(page.walletContext, true)
+        compare(page.walletName, data.rpc)
+        compare(page.targetAvailable, data.available)
+        const input = findChild(page, "consoleInput")
+        const before = rpcConsoleModel.commandCount
+        input.text = "getwalletinfo"
+        page.consoleItem.submitCommand()
+        compare(rpcConsoleModel.commandCount, before + (data.available ? 1 : 0))
+        if (data.available) {
+            compare(rpcConsoleModel.lastTarget, "wallet")
+            compare(rpcConsoleModel.lastWalletName, data.rpc)
+        } else {
+            compare(input.text, "getwalletinfo")
+            input.text = "stop"
+            page.consoleItem.submitCommand()
+            compare(rpcConsoleModel.commandCount, before + 1)
+            compare(rpcConsoleModel.lastTarget, "node")
+            compare(page.walletContext, true)
+            compare(page.walletName, data.rpc)
+        }
+    }
+
+    function test_clear_shortcut_preserves_draft_with_native_autocomplete_data() {
+        return [ { tag: "ordinary", popup: false }, { tag: "autocomplete", popup: true } ]
+    }
+
+    function test_clear_shortcut_preserves_draft_with_native_autocomplete(data) {
+        const console = createTemporaryObject(shortcutConsole, host)
+        verify(console !== null)
+        const input = findChild(console, "consoleInput")
+        const popup = findChild(console, "consoleAutocompletePopup")
+        verify(input !== null); verify(popup !== null)
+        const window = testCase.Window.window
+        window.requestActivate()
+        tryCompare(window, "active", true)
+        verify(testSetup.replaceText(input, "getblock"))
+        tryCompare(input, "activeFocus", true)
+        const beforeCommands = rpcConsoleModel.commandCount
+        const beforeClear = rpcConsoleModel.clearCount
+        const modifier = Qt.platform.os === "osx" ? Qt.MetaModifier : Qt.ControlModifier
+        try {
+            rpcConsoleModel.setCompletionSuggestionsForTest(data.popup ? ["getblockcount", "getblockhash"] : [])
+            tryCompare(popup, "opened", data.popup)
+            keyClick(Qt.Key_L, modifier)
+            tryCompare(rpcConsoleModel, "clearCount", beforeClear + 1)
+            compare(rpcConsoleModel.commandCount, beforeCommands)
+            compare(input.text, "getblock")
+            if (data.popup) {
+                keyClick(Qt.Key_Escape)
+                tryCompare(popup, "visible", false)
+                keyClick(Qt.Key_L, modifier)
+                tryCompare(rpcConsoleModel, "clearCount", beforeClear + 2)
+                compare(rpcConsoleModel.commandCount, beforeCommands)
+                compare(input.text, "getblock")
+            }
+        } finally {
+            rpcConsoleModel.setCompletionSuggestionsForTest([])
+            popup.close()
         }
     }
 

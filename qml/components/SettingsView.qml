@@ -63,6 +63,7 @@ Page {
     property bool walletSettingsProvided: false
     readonly property Item walletSettingsHost: internal.walletSettingsHost
     property string activeWalletName: wallet !== null ? wallet.name : ""
+    property bool activeWalletRpcContext: wallet !== null
     property string activeWalletRpcName: wallet !== null ? wallet.rpcName : activeWalletName
     property bool activeWalletRpcReady: wallet !== null ? wallet.capabilitiesKnown : activeWalletAvailable
     property bool activeWalletAvailable: wallet !== null && wallet.available
@@ -402,8 +403,8 @@ Page {
 
         SettingsPages.SettingsRpcConsoleView {
             walletName: root.activeWalletRpcName
-            walletContext: root.wallet !== null
-            targetAvailable: root.wallet === null || (root.activeWalletAvailable && root.activeWalletRpcReady)
+            walletContext: root.activeWalletRpcContext
+            targetAvailable: !root.activeWalletRpcContext || (root.activeWalletAvailable && root.activeWalletRpcReady)
         }
     }
 
