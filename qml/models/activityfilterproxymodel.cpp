@@ -429,11 +429,13 @@ void ActivityFilterProxyModel::apply()
     m_applied_settings = job->settings; m_error.clear(); m_job.reset();
     // Drop transient persistent roots on Native after the last GUI patch. If
     // ordinary work is closed, the already-reserved owner retirement remains
-    // the fallback; no last large vector is cleared on GUI.
+    // the fallback; no last large vector is cleared on GUI. Retain the job's
+    // cleanup lease until this task finishes: a source switch may drop the
+    // committed GUI hold while transient disposal is still queued or running.
     if (auto* provider = qobject_cast<activityview::Source*>(sourceModel()); provider && provider->opening()) {
-        provider->opening()->retireValues([owner = job->owner] { owner->patches.clear(); });
+        provider->opening()->retireValues([job] { job->owner->patches.clear(); });
     } else {
-        execution::Submit(*job->scheduler, [owner = job->owner] { owner->patches.clear(); }, [] {}, {},
+        execution::Submit(*job->scheduler, [job] { job->owner->patches.clear(); }, [] {}, {},
             {execution::Lane::Domain, 256, {}, execution::WorkClass::Observation});
     }
     Q_EMIT countChanged(); if (!observer || m_closed) return;
