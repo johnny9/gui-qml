@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <exception>
 #include <limits>
 #include <map>
@@ -187,7 +188,8 @@ StartResult Forward(const QString& endpoint, std::vector<Input> inputs, const Li
 struct Discovery {
     StartResult result;
     QString endpoint;
-    Discovery(StartResult value, QString target = {}) : result(std::move(value)), endpoint(std::move(target)) {}
+    bool missing{false};
+    Discovery(StartResult value, QString target = {}, bool absent = false) : result(std::move(value)), endpoint(std::move(target)), missing(absent) {}
 };
 } // namespace
 
@@ -196,6 +198,7 @@ struct Service::Flags {
     std::mutex mutex;
     execution::TaskId retired_task;
     std::function<void()> completed_stop;
+    bool probed{false}, probe_pending{false}, probe_terminal{false}; // Protected by mutex.
 };
 struct Service::State {
     struct Native;
@@ -353,15 +356,20 @@ struct Service::State::Native final : QObject {
         delete this;
         lifetime.reset(); // Only now may the original Native event loop drain.
     }
-    Discovery initialize(const QString& directory, const QString& network) {
+    Discovery initialize(const QString& directory, const QString& network, bool existing_only = false) {
         const auto canonical = NormalizeProfile(directory);
         if (canonical.isEmpty()) return Rejected(QStringLiteral("Could not resolve the payment-request data directory."));
         QString private_directory;
 #ifndef Q_OS_WIN
         private_directory = QDir{QStringLiteral("/tmp")}.filePath(QStringLiteral("qml-intent-%1").arg(getuid()));
-        const auto encoded = QFile::encodeName(private_directory); (void)mkdir(encoded.constData(), 0700);
+        const auto encoded = QFile::encodeName(private_directory);
+        if (!existing_only) (void)mkdir(encoded.constData(), 0700);
         struct stat info{};
-        if (lstat(encoded.constData(), &info) || !S_ISDIR(info.st_mode) || info.st_uid != getuid() || (info.st_mode & 0077))
+        if (lstat(encoded.constData(), &info)) {
+            if (existing_only && errno == ENOENT) return {StartResult{}, {}, true};
+            return Rejected(QStringLiteral("The private payment-delivery directory is unavailable or unsafe."));
+        }
+        if (!S_ISDIR(info.st_mode) || info.st_uid != getuid() || (info.st_mode & 0077))
             return Rejected(QStringLiteral("The private payment-delivery directory is unavailable or unsafe."));
         private_directory = QFileInfo{private_directory}.canonicalFilePath();
 #else
@@ -375,6 +383,36 @@ struct Service::State::Native final : QObject {
 #else
         const QString endpoint = QStringLiteral("qml-intent-") + QString::fromLatin1(digest);
 #endif
+        if (existing_only) {
+            // Discovery grants no listener/lock authority and mutates no local
+            // queue. A known absent peer leaves normal final-profile startup
+            // available; only a connected same-user peer permits forwarding.
+#ifndef Q_OS_WIN
+            const auto path = QFile::encodeName(endpoint); struct stat peer{};
+            if (lstat(path.constData(), &peer)) {
+                if (errno == ENOENT) return {StartResult{}, {}, true};
+                return Rejected(QStringLiteral("The payment-delivery endpoint could not be inspected."));
+            }
+            if (!S_ISSOCK(peer.st_mode) || peer.st_uid != getuid())
+                return Rejected(QStringLiteral("The running GUI's payment-delivery endpoint is unsafe."));
+#endif
+            if (state->flags->admission_closed) return Rejected(QStringLiteral("Payment delivery is closing."));
+            if (NormalizeProfile(directory) != canonical) return Rejected(QStringLiteral("The payment-request data directory changed during lookup."));
+            const auto began = state->limits.now();
+            const auto remaining = Remaining(state->limits, began, state->limits.startup, static_cast<int>(state->limits.connect.count()));
+            if (!remaining) return Rejected(QStringLiteral("The payment-delivery lookup expired."));
+            QLocalSocket probe; probe.connectToServer(endpoint);
+            const bool connected = probe.waitForConnected(remaining);
+            if (!connected) {
+                if (probe.error() == QLocalSocket::ServerNotFoundError || probe.error() == QLocalSocket::ConnectionRefusedError)
+                    return {StartResult{}, {}, true};
+                return Rejected(QStringLiteral("The existing payment-delivery endpoint could not be contacted."));
+            }
+            if (state->flags->admission_closed || !Remaining(state->limits, began, state->limits.startup, 1))
+                return Rejected(QStringLiteral("The payment-delivery lookup expired or is closing."));
+            if (!SameUser(probe)) return Rejected(QStringLiteral("The running GUI's payment-delivery endpoint is unsafe."));
+            return {StartResult{}, endpoint};
+        }
         instance_lock = std::make_unique<QLockFile>(QDir{private_directory}.filePath(QString::fromLatin1(digest) + QStringLiteral(".lock")));
         instance_lock->setStaleLockTime(0);
         if (instance_lock->tryLock(0)) {
@@ -430,36 +468,79 @@ std::shared_ptr<Service> Service::Create(std::shared_ptr<execution::Scheduler> s
 }
 execution::Admission Service::start(QString directory, QString network, std::vector<Input> inputs, std::function<void(StartResult)> completed)
 {
+    return begin(std::move(directory), std::move(network), std::move(inputs), false, std::move(completed), {});
+}
+execution::Admission Service::probeExisting(QString directory, QString network, const std::vector<Input>& inputs, std::function<void(ProbeResult)> completed)
+{
+    if (inputs.size() > Queue::MAX_PENDING) return {{}, execution::Rejection::Invalid};
+    const auto callback = std::move(completed);
+    const auto transfer = [callback](StartResult result) {
+        ProbeStatus status{ProbeStatus::Rejected};
+        switch (result.status) {
+        case StartStatus::Forwarded: status = ProbeStatus::Forwarded; break;
+        case StartStatus::Rejected: break;
+        case StartStatus::Unknown: status = ProbeStatus::Unknown; break;
+        case StartStatus::Primary: result = Rejected(QStringLiteral("An existing-instance lookup cannot become primary.")); break;
+        }
+        if (callback) callback({status, std::move(result)});
+    };
+    const auto missing = [callback] { if (callback) callback({ProbeStatus::Missing, {}}); };
+    return begin(std::move(directory), std::move(network), inputs, true, transfer, missing);
+}
+execution::Admission Service::begin(QString directory, QString network, std::vector<Input> inputs, bool existing_only,
+                                    std::function<void(StartResult)> completed, std::function<void()> missing)
+{
     const auto state = m_state.load();
-    if (!state || m_flags->admission_closed || m_flags->started.exchange(true)) return {{}, execution::Rejection::Closed};
+    if (!state) return {{}, execution::Rejection::Closed};
+    { std::lock_guard lock{m_flags->mutex};
+      if (m_flags->admission_closed || m_flags->started || m_flags->probe_pending || m_flags->probe_terminal || (existing_only && m_flags->probed))
+          return {{}, execution::Rejection::Closed};
+      if (existing_only) { m_flags->probed = true; m_flags->probe_pending = true; }
+      else m_flags->started = true;
+    }
+    const auto reject = [flags = m_flags, existing_only](execution::Rejection reason) {
+        if (existing_only) { std::lock_guard lock{flags->mutex}; flags->probe_pending = false; flags->probe_terminal = true; }
+        return execution::Admission{{}, reason};
+    };
     if (directory.size() > 4096 || QString::fromUtf8(directory.toUtf8()) != directory || network.isEmpty() || network.size() > 128 || directory.contains(QChar{u'\0'}) || network.contains(QChar{u'\0'}) || network.contains(QChar{u'\n'}) || inputs.size() > Queue::MAX_PENDING)
-        return {{}, execution::Rejection::Invalid};
+        return reject(execution::Rejection::Invalid);
     size_t bytes{1024};
     for (const auto& input : inputs) {
-        if (input.producer_key.size() > Queue::MAX_KEY_CHARS || input.value.size() > Queue::MAX_INPUT_CHARS) return {{}, execution::Rejection::Capacity};
+        if (input.producer_key.size() > Queue::MAX_KEY_CHARS || input.value.size() > Queue::MAX_INPUT_CHARS) return reject(execution::Rejection::Capacity);
         bytes += static_cast<size_t>(input.producer_key.size() + input.value.size()) * sizeof(QChar);
     }
-    auto held = state->scope->borrow(state->key); if (!held) return {{}, held.rejection};
+    auto held = state->scope->borrow(state->key); if (!held) return reject(held.rejection);
     auto lifetime = std::make_shared<execution::ResourceLease>(std::move(*held.lease));
     std::shared_ptr<Owner> owner;
     { std::lock_guard lock{state->mutex}; owner = state->owner; }
     const auto payload = execution::RetainValues<std::vector<Input>>(state->scope, [&] { return std::make_unique<std::vector<Input>>(std::move(inputs)); });
-    if (!payload) return {{}, execution::Rejection::Capacity};
-    const auto finish = [done = std::move(completed), claimed = std::make_shared<std::atomic_bool>(false)](StartResult result) {
-        if (!claimed->exchange(true) && done) done(std::move(result));
+    if (!payload) return reject(execution::Rejection::Capacity);
+    const auto claimed = std::make_shared<std::atomic_bool>(false);
+    const auto finish = [done = std::move(completed), claimed, flags = m_flags, existing_only](StartResult result) {
+        if (claimed->exchange(true)) return;
+        if (existing_only) { std::lock_guard lock{flags->mutex}; flags->probe_pending = false; flags->probe_terminal = true; }
+        if (done) done(std::move(result));
     };
-    return execution::Submit(*state->scope, [state, directory = std::move(directory), network = std::move(network), payload, lifetime] {
+    const auto submitted = execution::Submit(*state->scope, [state, directory = std::move(directory), network = std::move(network), payload, lifetime, existing_only] {
         if (state->flags->admission_closed || (QCoreApplication::instance() && QThread::currentThread() == QCoreApplication::instance()->thread()))
             return Discovery{Rejected(QStringLiteral("Payment delivery could not start on its background worker."))};
         auto native = std::make_unique<State::Native>(state);
-        auto discovery = native->initialize(directory, network);
+        auto discovery = native->initialize(directory, network, existing_only);
         if (discovery.result.status == StartStatus::Primary) {
             std::lock_guard lock{state->mutex};
             if (!state->flags->stopping) state->native = native.release();
             else discovery.result = Rejected(QStringLiteral("Payment delivery is closing."));
         }
         return discovery;
-    }, [state, owner, payload, finish, lifetime](Discovery discovery) {
+    }, [state, owner, payload, finish, lifetime, claimed, missing = std::move(missing)](Discovery discovery) {
+        if (discovery.missing) {
+            if (state->flags->admission_closed) { finish(Rejected(QStringLiteral("Payment delivery is closing."))); return; }
+            if (!claimed->exchange(true)) {
+                { std::lock_guard lock{state->flags->mutex}; state->flags->probe_pending = false; }
+                if (missing) missing();
+            }
+            return;
+        }
         if (!discovery.endpoint.isEmpty()) {
             if (state->flags->admission_closed) { finish(Rejected(QStringLiteral("Payment delivery is closing."))); return; }
             try {
@@ -502,6 +583,7 @@ execution::Admission Service::start(QString directory, QString network, std::vec
         } catch (...) { finish(Unknown()); }
     }, [finish](std::exception_ptr) { finish(Rejected(QStringLiteral("Payment delivery could not start."))); },
         {execution::Lane::Core, bytes, state->key});
+    return submitted ? submitted : reject(submitted.rejection);
 }
 void Service::closeAdmission() { m_flags->admission_closed = true; }
 execution::Admission Service::stop(std::function<void()> completed)
