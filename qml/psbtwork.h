@@ -47,6 +47,9 @@ struct InspectionFacts {
 };
 struct Snapshot {
     std::shared_ptr<const PartiallySignedTransaction> document;
+    // Metadata/finalization belongs to analysis of this exact document. Copy
+    // and export retain document; analysis never replaces the imported bytes.
+    std::shared_ptr<const PartiallySignedTransaction> assessment;
     std::shared_ptr<const psbtfee::Analysis> proof;
     QString status, error;
     QStringList summary;

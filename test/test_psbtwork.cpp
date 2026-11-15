@@ -1167,8 +1167,9 @@ private Q_SLOTS:
         QVERIFY(PSBTInputSignedAndVerified(document, 0, &*signed_data));
         opcodetype opcode;
         std::vector<unsigned char> signature;
-        auto cursor = document.inputs[0].final_script_sig.cbegin();
-        QVERIFY(document.inputs[0].final_script_sig.GetOp(cursor, opcode, signature));
+        const auto& script = document.inputs[0].final_script_sig;
+        auto cursor = script.begin();
+        QVERIFY(script.GetOp(cursor, opcode, signature));
         QVERIFY(!signature.empty());
         QCOMPARE(int(signature.back()), sighash); // Actual signature byte, not PSBT metadata.
         auto changed = document;
@@ -1206,7 +1207,7 @@ private Q_SLOTS:
         QTest::addColumn<bool>("compatible");
         for (const auto kind : {psbtwork::Kind::Inspect, psbtwork::Kind::Sign, psbtwork::Kind::Broadcast}) {
             for (const bool compatible : {false, true}) {
-                const auto name = QByteArray::number(int(kind)) + (compatible ? "-compatible-keys" : "-incompatible-keys");
+                const QByteArray name = QByteArray::number(int(kind)) + (compatible ? "-compatible-keys" : "-incompatible-keys");
                 QTest::newRow(name.constData()) << int(kind) << compatible;
             }
         }

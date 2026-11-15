@@ -253,11 +253,12 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
     m_active = operation; m_active_generation = generation; m_active_kind = request.kind;
     psbtwork::Context context{m_services.lookup ? m_services.lookup : psbtfee::NodeLookup(m_node), psbtwork::NodeBroadcast(m_node)};
     auto input = std::make_shared<psbtwork::Request>(std::move(request));
-    const auto consume = [owner = m_document_owner, ticket, kind = input->kind](auto done) {
+    const auto consume = [owner = m_document_owner, ticket, kind = input->kind](auto done, auto failed) {
         // Opening/Submit deliver Native outcomes on Domain. Analysis ownership
         // is resolved there before OwnedCommand posts its GUI notification.
-        return [owner, ticket, kind, done = std::move(done)](psbtwork::Result result) mutable {
-            done(owner->consume(ticket, kind, std::move(result)));
+        return [owner, ticket, kind, done = std::move(done), failed = std::move(failed)](psbtwork::Result result) mutable {
+            try { done(owner->consume(ticket, kind, std::move(result))); }
+            catch (...) { failed(std::current_exception()); }
         };
     };
     execution::Admission admission;
@@ -265,19 +266,22 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
         const bool observation = input->kind == psbtwork::Kind::Load || input->kind == psbtwork::Kind::Inspect;
         const auto action = observation ? nullptr : m_opening->startAction();
         if (observation) admission = operation->startWith([opening = m_opening, input, context,capture_bytes,consume](auto done, auto failed) {
+            auto analyzed = consume(std::move(done), failed);
             return opening->read([input, context](interfaces::Wallet& wallet) {
                 return psbtwork::Execute(&wallet, std::move(*input), context);
-            }, consume(std::move(done)), std::move(failed),execution::WorkClass::Observation,capture_bytes);
+            }, std::move(analyzed), std::move(failed),execution::WorkClass::Observation,capture_bytes);
         });
         else if (action) admission = operation->startWith([opening = m_opening, action, input, context,capture_bytes,consume](auto done, auto failed) {
+            auto analyzed = consume(std::move(done), failed);
             return opening->perform(action, [input, context](interfaces::Wallet& wallet) {
                 return psbtwork::Execute(&wallet, std::move(*input), context);
-            }, consume(std::move(done)), std::move(failed),capture_bytes);
+            }, std::move(analyzed), std::move(failed),capture_bytes);
         });
         else admission = {{}, execution::Rejection::Closed};
     } else admission = operation->startWith([scheduler = m_services.scheduler, input, context, capture_bytes, consume](auto done, auto failed) {
+        auto analyzed = consume(std::move(done), failed);
         return execution::Submit(*scheduler, [input, context] { return psbtwork::Execute(nullptr, std::move(*input), context); },
-            consume(std::move(done)), std::move(failed), {execution::Lane::Core, capture_bytes});
+            std::move(analyzed), std::move(failed), {execution::Lane::Core, capture_bytes});
     });
     if (!admission) {
         m_active.reset(); m_active_lease.reset();

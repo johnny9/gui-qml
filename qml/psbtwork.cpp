@@ -4,6 +4,7 @@
 
 #include <qml/psbtwork.h>
 #include <qml/psbtdocument.h>
+#include <qml/psbtsignatures.h>
 #include <qml/models/signertransaction.h>
 #include <qml/models/transactionflow.h>
 #include <qml/flowpresentation.h>
@@ -287,8 +288,9 @@ std::shared_ptr<const Snapshot> Inspect(interfaces::Wallet* wallet, std::shared_
     if (snapshot->error.isEmpty()) snapshot->error = fill_error ? ErrorText(*fill_error)
         : !snapshot->proof->amount ? Tr("The transaction fee is missing or invalid.") : QString{};
     snapshot->summary = Summary(candidate, *snapshot->proof, wallet);
+    snapshot->assessment = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
     psbtdocument::Qualify(*snapshot);
-    if (assessment) *assessment = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
+    if (assessment) *assessment = snapshot->assessment;
     return snapshot;
 }
 }
@@ -376,6 +378,11 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
                 result.code = Error::Fee; result.error = Tr("The transaction fee changed after review."); return finish();
             }
             complete = FinalizePSBT(candidate);
+            if (!psbtsignatures::VerifyFinalizedInputs(candidate, complete)) {
+                result.code = Error::Invalid;
+                result.error = Tr("The signer returned invalid signatures for the reviewed transaction.");
+                return finish();
+            }
             request.document = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
             // Retain legitimate partial signatures even when the signer reports
             // an error or a later presentation read fails. Never adopt changed
@@ -417,6 +424,9 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
                 result.code = Error::Changed; result.error = Tr("The transaction fee or reviewed transaction changed after review."); return finish();
             }
             const auto transaction = MakeTransactionRef(std::move(tx));
+            if (!psbtsignatures::VerifyFinalizedInputs(candidate, true)) {
+                result.code = Error::Invalid; result.error = Tr("The PSBT contains invalid signatures."); return finish();
+            }
             result.txid = QString::fromStdString(transaction->GetHash().ToString());
             const auto submitted = context.broadcast(transaction);
             result.submitted = submitted.accepted;

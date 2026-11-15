@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/psbtdocument.h>
+#include <qml/psbtsignatures.h>
 
 #include <QCoreApplication>
 
@@ -19,8 +20,16 @@ void psbtdocument::Qualify(psbtwork::Snapshot& snapshot)
     const bool structure = transaction && !transaction->vin.empty() && !transaction->vout.empty()
         && snapshot.document->inputs.size() == transaction->vin.size()
         && snapshot.document->outputs.size() == transaction->vout.size();
-    const bool authorized = structure && !snapshot.metadata_failed && snapshot.proof
-        && psbtfee::MatchesReview(*snapshot.document, *snapshot.proof, snapshot.proof->amount);
+    const auto& assessed = snapshot.assessment ? snapshot.assessment : snapshot.document;
+    const bool amounts_verified = structure && snapshot.proof
+        && psbtfee::MatchesReview(*snapshot.document, *snapshot.proof, snapshot.proof->amount)
+        && assessed && psbtfee::MatchesReview(*assessed, *snapshot.proof, snapshot.proof->amount);
+    if (amounts_verified && !psbtsignatures::VerifyFinalizedInputs(*assessed, snapshot.complete)) {
+        snapshot.complete = false;
+        snapshot.metadata_failed = true;
+        snapshot.error = Tr("The PSBT contains invalid signatures.");
+    } else if (!amounts_verified) snapshot.complete = false;
+    const bool authorized = amounts_verified && !snapshot.metadata_failed;
     snapshot.can_sign = authorized && !snapshot.complete && snapshot.facts.signer_available && snapshot.could_sign > 0;
     snapshot.can_broadcast = authorized && snapshot.complete;
     if (!authorized) {
