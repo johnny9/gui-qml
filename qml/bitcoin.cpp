@@ -356,6 +356,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qRegisterMetaType<PeerCommandResult>();
     qmlRegisterUncreatableMetaObject(PeerCommandResult::staticMetaObject, "org.bitcoincore.qt", 1, 0, "PeerCommandResult", "Retained peer result");
     qmlRegisterUncreatableType<NodeModel>("org.bitcoincore.qt", 1, 0, "NodeModel", "Provided by ApplicationModels");
+    qmlRegisterUncreatableType<DesktopIntentModel>("org.bitcoincore.qt", 1, 0, "DesktopIntentModel", "Owned by the application");
     qmlRegisterUncreatableType<NetworkModel>("org.bitcoincore.qt",1,0,"NetworkModel","Owned by node");
     qmlRegisterUncreatableType<RuntimePromptModel>("org.bitcoincore.qt",1,0,"RuntimePromptModel","Owned by original node prompt");
     qmlRegisterUncreatableMetaObject(nodelifecycle::staticMetaObject,"org.bitcoincore.qt",1,0,"NodeLifecycle","Lifecycle phase");

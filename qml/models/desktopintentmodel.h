@@ -23,6 +23,10 @@ class DesktopIntentModel final : public QObject {
     Q_PROPERTY(bool canDismiss READ canDismiss NOTIFY changed)
     Q_PROPERTY(bool canReconcile READ canReconcile NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
+    Q_PROPERTY(bool hasInspection READ hasInspection NOTIFY inspectionChanged)
+    Q_PROPERTY(bool inspectionPending READ inspectionPending NOTIFY inspectionChanged)
+    Q_PROPERTY(bool canContinue READ canContinue NOTIFY inspectionChanged)
+    Q_PROPERTY(QString inspectionText READ inspectionText NOTIFY inspectionChanged)
 #ifdef ENABLE_WALLET
     Q_PROPERTY(PaymentImportOperation* inspection READ inspection NOTIFY inspectionChanged)
 #endif
@@ -38,14 +42,20 @@ public:
     bool canDismiss() const { return !m_closed && m_snapshot.pending && !m_snapshot.active; }
     bool canReconcile() const { return m_snapshot.phase == desktopintent::Phase::ReconcilingDelivery; }
     QString error() const;
+    bool hasInspection() const;
+    bool inspectionPending() const;
+    bool canContinue() const;
+    QString inspectionText() const;
+    void installFileOpenHandler();
+    void setWalletEnabled(bool enabled);
     void setReady(bool ready);
     void closeAdmission();
 #ifdef ENABLE_WALLET
     void setFactory(BitcoinUriModel* factory);
     PaymentImportOperation* inspection() const { return m_inspection; }
     Q_INVOKABLE PaymentImportOperation* takeInspection(QObject* receiver);
-    Q_INVOKABLE void closeInspection();
 #endif
+    Q_INVOKABLE void closeInspection();
     Q_INVOKABLE void inspectNext();
     Q_INVOKABLE void dismiss();
     Q_INVOKABLE void reconcile();
@@ -53,16 +63,19 @@ Q_SIGNALS:
     void changed();
     void inspectionChanged();
     void requestAttention();
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 private:
-    bool hasInspection() const;
     void project(desktopintent::Snapshot snapshot);
     const execution::SnapshotServices m_services;
-    const bool m_wallet_enabled;
+    bool m_wallet_enabled;
     const std::shared_ptr<std::atomic_bool> m_closed_gate{std::make_shared<std::atomic_bool>(false)};
     std::shared_ptr<desktopintent::Owner> m_owner;
     std::shared_ptr<const desktopintent::Sink> m_sink;
     desktopintent::Snapshot m_snapshot;
     uint64_t m_readiness{0};
+    uint64_t m_file_sequence{0};
+    QString m_ingress_error;
     bool m_ready{false}, m_closed{false};
 #ifdef ENABLE_WALLET
     QPointer<PaymentImportOperation> m_inspection;

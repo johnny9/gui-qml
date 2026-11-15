@@ -137,6 +137,14 @@ Page {
         if (root.activeView) root.showWalletTab(WalletView.Send)
     }
 
+    function continueDesktopImport(mailbox) {
+        const original = root.activeView
+        if (!original || !original.wallet || !original.wallet.available) return false
+        root.showWalletTab(WalletView.Send)
+        if (root.activeView !== original || !original.active) return false
+        return original.sendPage.acceptDesktopImport(mailbox)
+    }
+
     function openReceive() {
         if (root.activeView) root.showWalletTab(WalletView.Receive)
     }

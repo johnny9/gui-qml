@@ -70,7 +70,16 @@ QtObject {
         if (_requested) use()
         changed()
     }
-    function chooseTarget(wallet, recipient) { if (!_closed) { originalWallet = wallet; originalRecipient = recipient; originalRevision = wallet ? wallet.recipients.revision : "" } }
+    function chooseTarget(wallet, recipient) {
+        if (_closed) return
+        originalWallet = wallet
+        originalRecipient = recipient
+        originalRevision = wallet ? wallet.recipients.revision : ""
+        if (_ready && !pending) {
+            canApply = _candidate.success && !_candidate.psbt && !!wallet && wallet.available
+            canReview = !!_candidate.psbt && !!wallet && wallet.available
+        }
+    }
     function use() { _requested = true; if (_ready && !nativeHandoffToken) { if (canApply) apply(); else if (canReview) openReview() } }
     function completeNativeHandoff(token) {
         if (_closed || !token || token !== nativeHandoffToken) return

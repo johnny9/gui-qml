@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/desktopintent.h>
+#include <QDir>
+#include <QUrl>
 
 #include <algorithm>
 #include <limits>
@@ -20,6 +22,11 @@ Error Queue::admitOne(const Input& input, Receipt& receipt)
     if (m_stopping) return Error::Closed;
     if (input.producer_key.isEmpty() || input.producer_key.size() > MAX_KEY_CHARS ||
         input.value.isEmpty() || input.value.size() > MAX_INPUT_CHARS) return Error::Invalid;
+    if (input.origin == Origin::FileOpen && input.kind == Kind::File) {
+        const QUrl url{input.value, QUrl::StrictMode};
+        const auto path = url.isLocalFile() && url.host().isEmpty() ? url.toLocalFile() : input.value;
+        if (!QDir::isAbsolutePath(path)) return Error::Invalid;
+    }
     for (const auto& record : m_records) {
         if (record.input.producer_key != input.producer_key) continue;
         if (record.input.kind != input.kind || record.input.value != input.value) return Error::Invalid;

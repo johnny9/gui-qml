@@ -11,6 +11,7 @@
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/qt_test_registry.h>
 #include <QtTest/QtTest>
+#include <QFileOpenEvent>
 
 namespace {
 desktopintent::Input Input(int id, QString value = QStringLiteral("bitcoin:request"))
@@ -21,6 +22,34 @@ desktopintent::Input Input(int id, QString value = QStringLiteral("bitcoin:reque
 class DesktopIntentTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void actualQtFileOpenQueuesBeforeReadinessAndFencesLateEvents()
+    {
+        ManualRoutedExecution commands;
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        DesktopIntentModel model{{commands.scheduler, post}, false};
+        model.installFileOpenHandler();
+        QFileOpenEvent link{QUrl{QStringLiteral("bitcoin:request?amount=1")}};
+        QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &link));
+        QCOMPARE(model.pendingCount(), 0); // The event handler does not decide/admit on GUI.
+        drain(); QCOMPARE(model.pendingCount(), 1); QVERIFY(!model.canInspect());
+        QVERIFY(!model.error().isEmpty()); // Compiled/runtime wallet absence is explicit.
+        QFileOpenEvent relative{QStringLiteral("relative-to-a-later-directory.psbt")};
+        QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &relative));
+        drain(); QCOMPARE(model.pendingCount(), 1); // Never reinterpret an OS path against a later working directory.
+        model.closeAdmission();
+        QFileOpenEvent late{QUrl{QStringLiteral("bitcoin:late")}};
+        QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &late));
+        drain(); QCOMPARE(model.pendingCount(), 0);
+        QVERIFY(model.state() == DesktopIntentModel::State::Stopped);
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
     void actualArgumentsKeepCoreOptionsBeforeRequestsOnly()
     {
         QByteArray executable{"bitcoin-core-app"}, option{"-regtest"}, uri{"bitcoin:request"}, injected{"-platform"};

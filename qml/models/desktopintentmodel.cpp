@@ -9,6 +9,9 @@
 #include <qml/paymentimportcreation.h>
 #endif
 #include <QTimer>
+#include <QCoreApplication>
+#include <QFileOpenEvent>
+#include <QStringList>
 #include <limits>
 #include <map>
 #include <mutex>
@@ -28,7 +31,11 @@ DesktopIntentModel::DesktopIntentModel(execution::SnapshotServices services, boo
         post([observer, snapshot = std::move(snapshot)]() mutable { if (observer) observer->project(std::move(snapshot)); });
     });
 }
-DesktopIntentModel::~DesktopIntentModel() { closeAdmission(); }
+DesktopIntentModel::~DesktopIntentModel()
+{
+    if (QCoreApplication::instance()) QCoreApplication::instance()->removeEventFilter(this);
+    closeAdmission();
+}
 bool DesktopIntentModel::hasInspection() const
 {
 #ifdef ENABLE_WALLET
@@ -37,17 +44,94 @@ bool DesktopIntentModel::hasInspection() const
     return false;
 #endif
 }
+bool DesktopIntentModel::inspectionPending() const
+{
+#ifdef ENABLE_WALLET
+    return m_inspection && m_inspection->pending();
+#else
+    return false;
+#endif
+}
+bool DesktopIntentModel::canContinue() const
+{
+#ifdef ENABLE_WALLET
+    return !m_closed && m_inspection && !m_inspection->pending() && m_inspection->state() == PaymentImportOperation::State::Inspecting;
+#else
+    return false;
+#endif
+}
+QString DesktopIntentModel::inspectionText() const
+{
+#ifdef ENABLE_WALLET
+    if (m_inspection) {
+        if (!m_inspection->error().isEmpty()) return m_inspection->error();
+        if (m_inspection->pending()) return tr("Inspecting the desktop request…");
+        if (m_inspection->sourceKind() == PaymentImportOperation::SourceKind::PaymentSource) {
+            QStringList fields{m_inspection->address()};
+            if (!m_inspection->publicLabel().isEmpty()) fields.push_back(m_inspection->publicLabel());
+            if (m_inspection->hasAmount()) fields.push_back(tr("Amount: %1 satoshis").arg(QString::number(m_inspection->amount())));
+            if (!m_inspection->message().isEmpty()) fields.push_back(m_inspection->message());
+            return fields.join(QLatin1Char('\n'));
+        }
+        if (m_inspection->sourceKind() == PaymentImportOperation::SourceKind::PsbtSource) return tr("A transaction is ready for inspection in a wallet.");
+    }
+#endif
+    return {};
+}
+void DesktopIntentModel::installFileOpenHandler()
+{
+    if (!m_closed && QCoreApplication::instance()) QCoreApplication::instance()->installEventFilter(this);
+}
+bool DesktopIntentModel::eventFilter(QObject*, QEvent* event)
+{
+    if (event->type() != QEvent::FileOpen) return false;
+    if (m_closed || !m_owner || m_file_sequence == std::numeric_limits<uint64_t>::max()) return true;
+    const auto& open = *static_cast<QFileOpenEvent*>(event);
+    // Copy the native event payload only. Path validation and all file reads
+    // belong to the Source worker; no QFileInfo/QDir/filesystem calls here.
+    desktopintent::Input input;
+    input.producer_key = QStringLiteral("file-open:") + QString::number(QCoreApplication::applicationPid()) + QLatin1Char(':') + QString::number(++m_file_sequence);
+    input.origin = desktopintent::Origin::FileOpen;
+    input.value = open.file();
+    input.kind = desktopintent::Kind::File;
+    if (input.value.isEmpty()) {
+        input.value = open.url().toString(QUrl::FullyEncoded);
+        if (input.value.startsWith(QLatin1String{"bitcoin:"}, Qt::CaseInsensitive)) input.kind = desktopintent::Kind::Text;
+    }
+    const QPointer<DesktopIntentModel> self{this}; const auto post = m_services.post;
+    const auto admitted = m_owner->admit({std::move(input)}, [self, post](auto receipt) {
+        post([self, accepted = static_cast<bool>(receipt)] {
+            if (!self || self->m_closed) return;
+            self->m_ingress_error = accepted ? QString{} : tr("The desktop request could not be queued. The request queue may be full.");
+            Q_EMIT self->changed();
+        });
+    });
+    if (!admitted && self && !self->m_closed) {
+        self->m_ingress_error = tr("The desktop request could not be queued. Try opening it again.");
+        Q_EMIT self->changed();
+    }
+    return true;
+}
+void DesktopIntentModel::setWalletEnabled(bool enabled)
+{
+    if (m_closed || m_wallet_enabled == enabled) return;
+    m_wallet_enabled = enabled;
+    const QPointer<DesktopIntentModel> self{this};
+    setReady(m_ready);
+    if (self) Q_EMIT self->changed();
+}
 QString DesktopIntentModel::error() const
 {
     if (m_closed) return {};
     if (!m_owner) return tr("Desktop request services are unavailable.");
+    if (!m_ingress_error.isEmpty()) return m_ingress_error;
     if (!m_wallet_enabled && m_snapshot.pending) return tr("Wallet support is unavailable. The request remains unapplied.");
     switch (m_snapshot.error) {
     case desktopintent::Error::None: return {};
     case desktopintent::Error::Invalid: return tr("The desktop request is invalid.");
     case desktopintent::Error::Capacity: return tr("The desktop request queue is full.");
     case desktopintent::Error::Closed: return tr("The application is stopping.");
-    case desktopintent::Error::UnknownDelivery: return tr("The inspection handoff is unresolved. Check its original receipt before continuing.");
+    case desktopintent::Error::UnknownDelivery: return tr("The request status is uncertain. Check its status before continuing.");
     case desktopintent::Error::TargetUnavailable: return tr("The inspection receiver is unavailable. The request remains queued.");
     }
     return {};
@@ -138,6 +222,7 @@ void DesktopIntentModel::setFactory(BitcoinUriModel* factory)
                 } catch (...) { creation->receipt->notAccepted(); }
                 if (self && creation->operation && !closed->load()) {
                     self->m_inspection = creation->operation;
+                    QObject::connect(creation->operation, &PaymentImportOperation::changed, self, &DesktopIntentModel::inspectionChanged);
                     Q_EMIT self->inspectionChanged();
                     if (self) Q_EMIT self->changed();
                 }
@@ -170,6 +255,7 @@ PaymentImportOperation* DesktopIntentModel::takeInspection(QObject* receiver)
     const QPointer<DesktopIntentModel> self{this};
     const QPointer<PaymentImportOperation> operation{m_inspection};
     m_inspection = nullptr;
+    QObject::disconnect(operation, nullptr, this, nullptr);
     operation->setParent(receiver);
     if (self) { Q_EMIT self->inspectionChanged(); if (self) Q_EMIT self->changed(); }
     return operation;
@@ -179,7 +265,10 @@ void DesktopIntentModel::closeInspection()
     const QPointer<DesktopIntentModel> self{this};
     const QPointer<PaymentImportOperation> operation{m_inspection};
     m_inspection = nullptr;
+    if (operation) QObject::disconnect(operation, nullptr, this, nullptr);
     if (operation) { operation->cancel(); if (operation) operation->deleteLater(); }
     if (self) { Q_EMIT self->inspectionChanged(); if (self) Q_EMIT self->changed(); }
 }
+#else
+void DesktopIntentModel::closeInspection() {}
 #endif

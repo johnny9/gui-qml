@@ -93,6 +93,13 @@ struct ApplicationModelsForeign {
     QML_SINGLETON
 };
 
+struct DesktopIntentModelForeign {
+    Q_GADGET
+    QML_FOREIGN(DesktopIntentModel)
+    QML_NAMED_ELEMENT(DesktopIntentModel)
+    QML_UNCREATABLE("Owned by the application")
+};
+
 struct RpcOutputListModelForeign {
     Q_GADGET
     QML_FOREIGN(RpcOutputListModel)
