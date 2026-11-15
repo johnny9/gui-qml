@@ -93,7 +93,7 @@ private Q_SLOTS:
         const auto transaction = qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + original.toStdString() + "\"]"), wallet->name());
         QVERIFY(transaction.find_value("confirmations").getInt<int>() >= 1);
         QVERIFY(!AwaitBumpCommit(*bump));
-        QCOMPARE(bump->state(), BumpTransactionModel::Failed);
+        QCOMPARE(bump->state(), BumpTransactionModel::NeedsRevalidation);
         QVERIFY(bump->newTxid().isEmpty());
         const auto result = bump->commitResult(); QVERIFY(result); QVERIFY(!result->committed);
         QCOMPARE(result->error, walletbump::Error::Ineligible);

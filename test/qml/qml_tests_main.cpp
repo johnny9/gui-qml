@@ -5328,9 +5328,10 @@ class MockBumpTransactionModel : public QObject
     Q_PROPERTY(QString errorText MEMBER m_error_text NOTIFY resultChanged)
     Q_PROPERTY(QString unlockErrorText MEMBER m_unlock_error_text NOTIFY resultChanged)
     Q_PROPERTY(bool needsUnlock MEMBER m_needs_unlock NOTIFY needsUnlockChanged)
+    Q_PROPERTY(int preparationCount READ preparationCount NOTIFY stateChanged)
 
 public:
-    enum State { Idle, Preparing, NeedsConfirmation, Committing, Succeeded, Failed, Discarding, Uncertain, Closed };
+    enum State { Idle, Preparing, NeedsConfirmation, Committing, Succeeded, Failed, Discarding, Uncertain, Closed, NeedsRevalidation };
     Q_ENUM(State)
 
     enum WalletRecordState { WalletRecordUnknown, WalletRecordAbsentAtObservation, WalletRecordRecorded };
@@ -5346,6 +5347,9 @@ public:
     int state() const { return m_state; }
     bool busy() const { return m_preparing || m_committing; }
     bool requireUnlock() const { return m_require_unlock; }
+    int preparationCount() const { return m_preparation_count; }
+
+    Q_INVOKABLE void revalidateOnNextConfirm() { m_revalidate_next_confirm = true; }
 
     void setState(int state)
     {
@@ -5366,6 +5370,7 @@ public:
         Q_UNUSED(targetBlocks);
         if (busy()) return 0;
         const auto attempt = ++m_attempt_id, revision = ++m_revision;
+        ++m_preparation_count;
         m_preparing = true;
         m_old_txid = txid;
         m_new_txid.clear(); m_error_text.clear(); m_unlock_error_text.clear(); m_needs_unlock = false;
@@ -5397,6 +5402,9 @@ public:
             if (m_require_unlock) {
                 m_needs_unlock = true;
                 setState(NeedsConfirmation);
+            } else if (std::exchange(m_revalidate_next_confirm, false)) {
+                m_error_text = QStringLiteral("The reviewed replacement no longer meets current node policy. Prepare it again before confirming.");
+                setState(NeedsRevalidation);
             } else {
                 m_new_txid = QStringLiteral("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
                 m_wallet_record_state = BumpTransactionModel::WalletRecordRecorded;
@@ -5433,6 +5441,8 @@ public:
         m_unlock_error_text.clear();
         m_needs_unlock = false;
         m_require_unlock = false;
+        m_revalidate_next_confirm = false;
+        m_preparation_count = 0;
         Q_EMIT stateChanged();
         Q_EMIT resultChanged();
         Q_EMIT needsUnlockChanged();
@@ -5459,6 +5469,8 @@ private:
     QString m_unlock_error_text;
     bool m_needs_unlock{false};
     bool m_require_unlock{false};
+    bool m_revalidate_next_confirm{false};
+    int m_preparation_count{0};
 };
 
 // Configurable presentation fixture. Transaction interpretation and filtering

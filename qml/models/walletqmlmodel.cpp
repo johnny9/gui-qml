@@ -15,6 +15,7 @@
 #include <qml/psbtwork.h>
 #include <qml/models/signertransaction.h>
 #include <qml/models/psbtfee.h>
+#include <qml/psbtpolicy.h>
 #include <qml/backendexecutor.h>
 #include <qml/walletbalanceadapter.h>
 
@@ -435,7 +436,8 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
     initializePsbtFeeReader();
     initializeBalanceReader();
     m_sign_verify_message_model->setOpening(m_opening, {m_opening->scheduler(), m_fee_read_services.post});
-    m_bump_transaction_model->setOpening(m_opening, {m_opening->scheduler(), m_fee_read_services.post});
+    m_bump_transaction_model->setOpening(m_opening, {m_opening->scheduler(), m_fee_read_services.post},
+        {psbtpolicy::ReadNode(m_node, nullptr)});
     m_imported_psbt_model->configureSession(m_opening, m_psbt_fee_services);
 }
 
@@ -2379,6 +2381,8 @@ WalletQmlModel::PreparationState WalletQmlModel::preparationState() const
     case transactionattempt::Phase::NeedsUnlock: return PreparationState::PreparationNeedsUnlock;
     case transactionattempt::Phase::Reviewing: return PreparationState::PreparationReady;
     case transactionattempt::Phase::NeedsRevalidation: return PreparationState::PreparationStale;
+    case transactionattempt::Phase::Submitting: return PreparationState::PreparationPending;
+    case transactionattempt::Phase::Settled: return PreparationState::PreparationReady;
     case transactionattempt::Phase::Failed: return PreparationState::PreparationFailed;
     case transactionattempt::Phase::Closed: return PreparationState::PreparationClosed;
     case transactionattempt::Phase::Uncertain: return PreparationState::PreparationUncertain;

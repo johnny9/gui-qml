@@ -27,10 +27,14 @@ enum class Phase {
     NeedsUnlock,
     Reviewing,
     NeedsRevalidation,
+    Submitting,
+    Settled,
     Failed,
     Closed,
     Uncertain,
 };
+
+enum class Kind { Payment, Replacement };
 
 struct Ticket {
     std::uint64_t id{0};
@@ -51,6 +55,7 @@ enum class Transition { Accepted, Stale, Ignored };
 // Immutable value returned by the serialized attempt owner for GUI
 // projection. The owner mutates its Preparation only on the Domain lane.
 struct Snapshot {
+    Kind kind{Kind::Payment};
     std::uint64_t sequence{0};
     std::uint64_t id{0};
     std::uint64_t intent_revision{0};
@@ -60,6 +65,7 @@ struct Snapshot {
     ReviewId candidate_review{0};
     ReviewId current_review{0};
     bool candidate_current{false};
+    QString original_txid;
 };
 
 enum class AdmissionError {
@@ -84,6 +90,14 @@ struct StartInput {
     bool has_selected_coins{false};
     bool custom_fee_enabled{false};
     bool custom_fee_rate_valid{false};
+    Kind kind{Kind::Payment};
+};
+
+struct ReplacementStart {
+    std::uint64_t id{0};
+    std::uint64_t intent_revision{0};
+    CurrentFacts facts{};
+    QString original_txid;
 };
 
 struct Result {
@@ -110,6 +124,7 @@ public:
     Transition fail(const Ticket& ticket, CurrentFacts facts, Phase outcome);
     Transition reject(const Ticket& ticket, Phase outcome);
     Transition discard(const Ticket& ticket, Phase outcome);
+    Transition advance(const Ticket& ticket, CurrentFacts facts, Phase expected, Phase outcome);
     void close();
 
     Phase phase() const { return m_phase; }
@@ -143,6 +158,7 @@ public:
 
     explicit Owner(std::shared_ptr<execution::Scheduler> scheduler);
     execution::Admission begin(StartInput input, Completion done);
+    execution::Admission beginReplacement(ReplacementStart input, Completion done);
     execution::Admission intentChanged(std::uint64_t revision, Completion done);
     execution::Admission reviewReplaced(ReviewId current_review, Completion done);
     execution::Admission assess(Ticket ticket, CurrentFacts facts, Completion done);
@@ -155,12 +171,15 @@ public:
     execution::Admission fail(Ticket ticket, CurrentFacts facts, Phase outcome, Completion done);
     execution::Admission reject(Ticket ticket, Phase outcome, Completion done);
     execution::Admission discard(Ticket ticket, Phase outcome, Completion done);
+    execution::Admission advance(Ticket ticket, CurrentFacts facts, Phase expected, Phase outcome, Completion done);
     execution::Admission close(Completion done = {});
 
 private:
     struct State {
         Preparation preparation;
         CurrentFacts facts;
+        Kind kind{Kind::Payment};
+        QString original_txid;
         std::uint64_t sequence{0};
     };
     using Mutation = std::function<Result(State&)>;

@@ -7,23 +7,29 @@
 
 #include <interfaces/wallet.h>
 #include <qml/secretinput.h>
+#include <qml/psbtpolicy.h>
 #include <primitives/transaction.h>
 #include <support/allocators/secure.h>
 #include <QString>
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace walletopening { class Session; }
 
 namespace walletbump {
 struct Prepared {
     Txid original;
+    std::vector<COutPoint> original_inputs;
     CMutableTransaction transaction;
+    std::vector<COutPoint> approved_inputs;
+    std::vector<COutPoint> added_inputs;
     CAmount old_fee{0}, new_fee{0};
+    unsigned int target_blocks{0};
     QString old_fee_text, new_fee_text, increase_text, old_txid;
 };
-enum class Error { None, Invalid, InvalidId, Ineligible, Create, NeedsUnlock, IncorrectPassphrase, Sign, Changed, RelockFailed, Commit, Uncertain };
+enum class Error { None, Invalid, InvalidId, Ineligible, Create, NeedsUnlock, IncorrectPassphrase, Sign, Changed, Policy, RelockFailed, Commit, Uncertain };
 enum class Record { Unknown, AbsentAtObservation, Recorded };
 enum class Submission { Unknown, Mempool, Confirmed, NotInMempool, Conflicted, Abandoned };
 enum class Relay { Unknown };
@@ -37,10 +43,15 @@ struct Commit {
     Relay relay{Relay::Unknown};
     Txid original, txid;
 };
+struct Services {
+    // Advisory exact-candidate admission observation. Unknown does not replace
+    // the authoritative wallet commit check.
+    psbtpolicy::Read admission;
+};
 Preparation Prepare(interfaces::Wallet& wallet, const QString& txid, unsigned int target,
                     const std::shared_ptr<walletopening::Session>& opening);
 Commit Execute(interfaces::Wallet& wallet, const Prepared& review, std::optional<SecureString> passphrase,
-               secretinput::Captured captured = {});
+               secretinput::Captured captured = {}, const Services& services = {});
 } // namespace walletbump
 
 #endif // BITCOIN_QML_WALLETBUMP_H

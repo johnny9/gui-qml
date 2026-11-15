@@ -8,6 +8,7 @@
 #include <qml/walletbump.h>
 #include <qml/walletopening.h>
 #include <qml/snapshotquery.h>
+#include <qml/transactionattempt.h>
 #include <QObject>
 #include <QString>
 
@@ -15,7 +16,7 @@ class BumpTransactionModel : public QObject
 {
     Q_OBJECT
 public:
-    enum State { Idle, Preparing, NeedsConfirmation, Committing, Succeeded, Failed, Discarding, Uncertain, Closed };
+    enum State { Idle, Preparing, NeedsConfirmation, Committing, Succeeded, Failed, Discarding, Uncertain, NeedsRevalidation, Closed };
     Q_ENUM(State)
     enum ActionType { SpeedUp };
     Q_ENUM(ActionType)
@@ -44,7 +45,8 @@ public:
     Q_PROPERTY(bool needsUnlock READ needsUnlock NOTIFY needsUnlockChanged)
 
     explicit BumpTransactionModel(interfaces::Wallet* wallet, QObject* parent = nullptr);
-    void setOpening(std::shared_ptr<walletopening::Session> opening, execution::SnapshotServices services);
+    void setOpening(std::shared_ptr<walletopening::Session> opening, execution::SnapshotServices services,
+                    walletbump::Services bump_services = {});
     void closeAdmission();
     void retryPublications();
     void detachWallet() { closeAdmission(); m_wallet = nullptr; }
@@ -86,11 +88,18 @@ private:
     quint64 confirm(std::optional<SecureString> passphrase, secretinput::Captured captured = {});
     void publishPreparation(quint64 attempt, quint64 revision);
     void publishCommit(quint64 attempt, quint64 commit);
+    void applyAttempt(transactionattempt::Snapshot snapshot, quint64 attempt, quint64 revision, bool preparation);
+    transactionattempt::CurrentFacts attemptFacts() const;
+    static State ProjectState(transactionattempt::Phase phase);
     bool publish();
     void clearPresentation();
     interfaces::Wallet* m_wallet{nullptr}; // GUI association only, never transported.
     std::shared_ptr<walletopening::Session> m_opening;
     execution::SnapshotServices m_services;
+    walletbump::Services m_bump_services;
+    std::shared_ptr<transactionattempt::Owner> m_attempt_owner;
+    transactionattempt::Snapshot m_attempt_snapshot;
+    transactionattempt::Ticket m_attempt_ticket{};
     std::shared_ptr<const walletbump::Prepared> m_review;
     std::shared_ptr<execution::OwnedCommand<walletbump::Preparation>> m_prepare_operation;
     std::shared_ptr<execution::OwnedCommand<walletbump::Commit>> m_commit_operation;

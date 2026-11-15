@@ -484,6 +484,16 @@ private:
     std::map<Txid, interfaces::WalletTx> m_transaction_details;
 
 public:
+    Txid addBumpableTestTransaction()
+    {
+        CMutableTransaction original{*signerfixture::Review().GetUnsignedTx()};
+        original.vout.front().nValue += 100;
+        const auto transaction = MakeTransactionRef(std::move(original));
+        const auto txid = transaction->GetHash();
+        known_transactions.emplace(txid, transaction);
+        return txid;
+    }
+
     void setWalletTxsFn(std::function<std::set<interfaces::WalletTx>()> fn)
     {
         std::lock_guard lock{m_transaction_mutex};
@@ -560,6 +570,10 @@ public:
     std::function<bool(const std::string&)> write_note_fn;
     std::atomic<QThread*> note_thread{nullptr};
     std::atomic<QThread*> commit_thread{nullptr};
+    std::atomic<QThread*> bump_check_thread{nullptr};
+    std::atomic<QThread*> bump_prepare_thread{nullptr};
+    std::atomic<QThread*> bump_sign_thread{nullptr};
+    std::atomic<QThread*> bump_commit_thread{nullptr};
     std::atomic_bool commit_on_gui{false};
     std::atomic_bool note_on_gui{false};
     int create_bump_calls{0};
@@ -785,7 +799,10 @@ public:
         const auto callback = commit_fn;
         if (callback) callback();
     }
-    bool transactionCanBeBumped(const Txid&) override { return can_bump_transaction; }
+    bool transactionCanBeBumped(const Txid&) override {
+        bump_check_thread = QThread::currentThread();
+        return can_bump_transaction;
+    }
     bool createBumpTransaction(const Txid& txid,
                                const wallet::CCoinControl&,
                                std::vector<bilingual_str>&,
@@ -793,19 +810,25 @@ public:
                                CAmount& new_fee,
                                CMutableTransaction& mtx) override
     {
+        bump_prepare_thread = QThread::currentThread();
         ++create_bump_calls;
         old_fee = 100;
         new_fee = 200;
-        mtx.vin.emplace_back(COutPoint{txid, 0});
+        const auto original = getTx(txid);
+        if (!original) return false;
+        mtx = CMutableTransaction{*original};
+        if (!mtx.vout.empty() && mtx.vout.front().nValue > 1) --mtx.vout.front().nValue;
         return true;
     }
     bool signBumpTransaction(CMutableTransaction&) override
     {
+        bump_sign_thread = QThread::currentThread();
         ++sign_bump_calls;
         return sign_bump_result;
     }
     bool commitBumpTransaction(const Txid&, CMutableTransaction&&, std::vector<bilingual_str>&, Txid& bumped_txid) override
     {
+        bump_commit_thread = QThread::currentThread();
         ++commit_bump_calls;
         bumped_txid = Txid::FromUint256(uint256::ONE);
         return commit_bump_result;
@@ -8720,9 +8743,10 @@ void WalletQmlModelTests::importPsbtFromFile_returnsTransactionAlreadyKnownWhenT
 void WalletQmlModelTests::bumpTransactionOnLockedWalletRequiresPassword()
 {
     auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = wallet->addBumpableTestTransaction();
     auto* bump_model = model->bumpModel();
 
-    AwaitBumpPreparation(*bump_model, QString::fromStdString(Txid::FromUint256(uint256::ONE).GetHex()), 1);
+    AwaitBumpPreparation(*bump_model, QString::fromStdString(original.GetHex()), 1);
     QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
 
     QVERIFY(!AwaitBumpCommit(*bump_model));
@@ -8737,9 +8761,10 @@ void WalletQmlModelTests::bumpTransactionOnLockedWalletRequiresPassword()
 void WalletQmlModelTests::bumpTransactionWithPassphraseUnlocksCommitsAndRelocks()
 {
     auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = wallet->addBumpableTestTransaction();
     auto* bump_model = model->bumpModel();
 
-    AwaitBumpPreparation(*bump_model, QString::fromStdString(Txid::FromUint256(uint256::ONE).GetHex()), 1);
+    AwaitBumpPreparation(*bump_model, QString::fromStdString(original.GetHex()), 1);
     QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
 
     QVERIFY(AwaitBumpCommit(*bump_model, QStringLiteral("secret")));
@@ -8753,11 +8778,17 @@ void WalletQmlModelTests::bumpTransactionWithPassphraseUnlocksCommitsAndRelocks(
     QCOMPARE(wallet->sign_bump_calls, 1);
     QCOMPARE(wallet->commit_bump_calls, 1);
     QVERIFY(wallet->locked);
+    const auto* const gui_thread = QCoreApplication::instance()->thread();
+    QVERIFY(wallet->bump_check_thread.load() != gui_thread);
+    QVERIFY(wallet->bump_prepare_thread.load() != gui_thread);
+    QVERIFY(wallet->bump_sign_thread.load() != gui_thread);
+    QVERIFY(wallet->bump_commit_thread.load() != gui_thread);
 }
 
 void WalletQmlModelTests::bumpTransactionWithWrongPassphraseDoesNotSign()
 {
     auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = wallet->addBumpableTestTransaction();
     wallet->unlock_fn = [wallet](const SecureString& passphrase) {
         ++wallet->unlock_calls;
         wallet->unlock_passphrases.emplace_back(passphrase.begin(), passphrase.end());
@@ -8765,7 +8796,7 @@ void WalletQmlModelTests::bumpTransactionWithWrongPassphraseDoesNotSign()
     };
     auto* bump_model = model->bumpModel();
 
-    AwaitBumpPreparation(*bump_model, QString::fromStdString(Txid::FromUint256(uint256::ONE).GetHex()), 1);
+    AwaitBumpPreparation(*bump_model, QString::fromStdString(original.GetHex()), 1);
     QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
 
     QVERIFY(!AwaitBumpCommit(*bump_model, QStringLiteral("wrong")));

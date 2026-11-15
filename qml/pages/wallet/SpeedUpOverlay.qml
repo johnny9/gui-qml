@@ -25,6 +25,8 @@ Popup {
     property int walletSubmissionState: BumpTransactionModel.WalletSubmissionUnknown
     property bool readyToConfirm: root.ownsAttempt && root.bumpModel
         && root.bumpModel.state === BumpTransactionModel.NeedsConfirmation
+    readonly property bool readyToPrepareAgain: root.ownsAttempt && root.bumpModel
+        && root.bumpModel.state === BumpTransactionModel.NeedsRevalidation
 
     signal done()
     signal viewNewTransaction(string newTxid)
@@ -153,7 +155,9 @@ Popup {
 
         CoreText {
             objectName: "speedUpErrorText"
-            visible: root.bumpModel && root.bumpModel.state === BumpTransactionModel.Failed
+            visible: root.bumpModel && (root.bumpModel.state === BumpTransactionModel.Failed
+                || root.bumpModel.state === BumpTransactionModel.NeedsRevalidation
+                || root.bumpModel.state === BumpTransactionModel.Uncertain)
             text: root.bumpModel ? root.bumpModel.errorText : ""
             font.pixelSize: 15
             color: Theme.color.red
@@ -178,12 +182,17 @@ Popup {
 
             ContinueButton {
                 objectName: "updateTransactionButton"
-                text: qsTr("Update transaction")
+                text: root.readyToPrepareAgain ? qsTr("Prepare again") : qsTr("Update transaction")
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
-                enabled: root.readyToConfirm
+                enabled: root.readyToConfirm || root.readyToPrepareAgain
                 onClicked: {
                     if (!root.bumpModel) {
+                        return
+                    }
+                    if (root.readyToPrepareAgain) {
+                        const nextAttempt = root.bumpModel.requestPrepareFeeBump(root.txid, 1)
+                        if (nextAttempt) root.ownedAttemptId = nextAttempt
                         return
                     }
                     if (root.ownsAttempt) root.bumpModel.requestConfirmFeeBump()

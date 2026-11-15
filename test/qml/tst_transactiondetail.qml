@@ -242,6 +242,29 @@ TestCase {
         mouseClick(findChild(overlay.contentItem, "speedUpCloseButton"))
         tryCompare(overlay, "visible", false)
     }
+    function test_fee_bump_revalidation_requires_explicit_reprepare() {
+        testBumpModel.revalidateOnNextConfirm()
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "readyToConfirm", true)
+        const originalAttempt = overlay.ownedAttemptId
+        mouseClick(findChild(overlay.contentItem, "updateTransactionButton"))
+        tryCompare(testBumpModel, "state", BumpTransactionModel.NeedsRevalidation)
+        const error = findChild(overlay.contentItem, "speedUpErrorText")
+        tryCompare(error, "visible", true)
+        verify(error.text.indexOf("Prepare it again") >= 0)
+        verify(!overlay.readyToConfirm)
+        const prepareAgain = findChild(overlay.contentItem, "updateTransactionButton")
+        compare(prepareAgain.text, "Prepare again")
+        verify(prepareAgain.enabled)
+        mouseClick(prepareAgain)
+        tryCompare(overlay, "readyToConfirm", true)
+        compare(testBumpModel.preparationCount, 2)
+        verify(overlay.ownedAttemptId !== originalAttempt)
+        mouseClick(findChild(overlay.contentItem, "speedUpCloseButton"))
+        tryCompare(overlay, "visible", false)
+    }
     function test_fee_bump_success_opens_modal_completion() {
         const page = createDetail()
         findChild(page, "speedUpBanner").primaryClicked()
