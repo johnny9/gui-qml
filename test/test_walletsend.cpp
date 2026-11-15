@@ -54,7 +54,7 @@ struct Wallet : StubWallet {
     std::vector<std::pair<bool, bool>> fill_options;
     int metadata_reads{0};
     std::vector<bool> metadata_derivations;
-    std::string expected_password{"secret"};std::atomic<QThread*> unlock_thread{nullptr};
+    std::string expected_password{"secret"};std::atomic<QThread*> unlock_thread{nullptr}, sign_thread{nullptr};
     int depth{0}; bool in_mempool{true}, abandoned{false}, missing{false}, mismatch{false}, throw_status{false};
     bool isCrypted() override { return encrypted; }
     bool isLocked() override { return locked; }
@@ -66,7 +66,9 @@ struct Wallet : StubWallet {
         locked = false;if(after_unlock)after_unlock();return {};
     }
     bool lock() override { ++locks; if (fail_lock) return false; locked = true; return true; }
-    std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options, size_t*, PartiallySignedTransaction& psbt, bool& complete) override {
+    std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options, size_t* signed_inputs, PartiallySignedTransaction& psbt, bool& complete) override {
+        sign_thread = QThread::currentThread();
+        if (signed_inputs) *signed_inputs = partial_sign ? 0 : 1;
         fill_options.emplace_back(options.sign, options.bip32_derivs);
         if (!options.sign && metadata) {
             ++metadata_reads;
@@ -871,6 +873,174 @@ private Q_SLOTS:
         QVERIFY(operation->start(SignedRequest())); f.commands.drain();
         QVERIFY(operation->result()->committed); QCOMPARE(operation->result()->error, Error::None); QCOMPARE(f.wallet->commits, 1);
         QVERIFY(operation->result()->publication_failed);
+    }
+    void localSignOnlyPreservesTheCapturedDocumentAndNeverCommits_data()
+    {
+        QTest::addColumn<bool>("partial");
+        QTest::newRow("complete") << false;
+        QTest::newRow("existing-partial-signatures") << true;
+    }
+    void localSignOnlyPreservesTheCapturedDocumentAndNeverCommits()
+    {
+        QFETCH(bool, partial);
+        ECC_Context ecc;
+        Fixture f;
+        walletsend::Request request;
+        if (partial) {
+            const auto fixture = psbtfeefixture::SignedWithoutScripts(false);
+            const auto proof = psbtfee::Analyze(fixture.document);
+            QVERIFY(proof.amount);
+            request.reviewed = MakeTransactionRef(*fixture.document.GetUnsignedTx());
+            request.psbt = std::make_shared<const PartiallySignedTransaction>(fixture.document);
+            request.proof = std::make_shared<const psbtfee::Analysis>(proof);
+            request.approved_fee = proof.amount;
+            f.wallet->partial_sign = true;
+        } else {
+            request = PsbtRequest();
+            request.psbt = std::make_shared<const PartiallySignedTransaction>(*request.psbt);
+        }
+        request.intent = walletsend::Intent::SignOnly;
+        request.attempt_id = 88;
+        request.review_id = 34;
+        const auto original = request.psbt;
+        const auto original_proof = request.proof;
+        const auto approved_fee = request.approved_fee;
+        const auto reviewed_hash = request.reviewed->GetHash();
+        const auto operation = f.operation();
+        QVERIFY(operation->start(std::move(request)));
+        QCOMPARE(operation->stage(), walletsend::Stage::Idle);
+        QCOMPARE(f.wallet->signs, 0);
+        QCOMPARE(f.wallet->commits, 0);
+
+        QVERIFY(f.commands.step(Lane::Domain));
+        QCOMPARE(operation->stage(), walletsend::Stage::SigningOnly);
+        QCOMPARE(f.wallet->signs, 0);
+        QVERIFY(f.commands.step(Lane::Core));
+        QCOMPARE(f.wallet->signs, 1);
+        QCOMPARE(f.wallet->commits, 0);
+        QVERIFY(!operation->result());
+        QCOMPARE(f.commands.queuedCountIf([](const auto& turn) { return turn.lane == Lane::Domain; }), 2);
+        QVERIFY(f.commands.step(Lane::Domain)); // Consume the planning command's empty outcome.
+        QVERIFY(!operation->result());
+        const auto native_outcome = f.commands.deliverOutcome();
+        QVERIFY(native_outcome);
+        QVERIFY(f.commands.stepMailbox(*native_outcome));
+
+        const auto result = operation->result();
+        QVERIFY(result);
+        QCOMPARE(result->error, Error::None);
+        QVERIFY(result->document);
+        QVERIFY(!result->committed);
+        QVERIFY(!result->candidate || result->candidate->GetHash() == reviewed_hash);
+        QCOMPARE(result->partial, partial);
+        QCOMPARE(result->signed_inputs, partial ? size_t{0} : size_t{1});
+        QCOMPARE(result->submission, walletsend::Submission::Unknown);
+        QCOMPARE(result->record, walletsend::Record::Unknown);
+        QCOMPARE(result->document->GetUnsignedTx()->GetHash(), reviewed_hash);
+        QVERIFY(psbtfee::MatchesReview(*result->document, *original_proof, approved_fee));
+        if (partial) {
+            QCOMPARE(result->document->inputs[0].partial_sigs, original->inputs[0].partial_sigs);
+        }
+        QCOMPARE(f.wallet->commits, 0);
+        QCOMPARE(operation->stage(), walletsend::Stage::Finished);
+    }
+    void localSignOnlyPassphraseContinuationKeepsIntentAndOriginalReview()
+    {
+        Fixture f;
+        f.wallet->encrypted = true;
+        auto request = PsbtRequest();
+        request.intent = walletsend::Intent::SignOnly;
+        request.attempt_id = 89;
+        request.review_id = 35;
+        const auto reviewed_hash = request.reviewed->GetHash();
+        auto operation = f.operation();
+        QVERIFY(operation->start(std::move(request)));
+        f.commands.drain();
+        QCOMPARE(operation->stage(), walletsend::Stage::AwaitingCredentials);
+        QCOMPARE(operation->promptError(), Error::NeedsUnlock);
+        QCOMPARE(f.wallet->signs, 0);
+        QCOMPARE(f.wallet->commits, 0);
+        auto captured = secretinput::Capture(f.commands.scheduler, QStringLiteral("secret"));
+        QVERIFY(captured);
+        QVERIFY(operation->providePassphrase(89, 35, std::move(captured.input)));
+        f.commands.drain();
+        const auto result = operation->result();
+        QVERIFY(result);
+        QCOMPARE(result->error, Error::None);
+        QVERIFY(result->document);
+        QCOMPARE(result->document->GetUnsignedTx()->GetHash(), reviewed_hash);
+        QVERIFY(!result->committed);
+        QCOMPARE(f.wallet->unlocks, 1);
+        QCOMPARE(f.wallet->locks, 1);
+        QVERIFY(f.wallet->locked);
+        QCOMPARE(f.wallet->commits, 0);
+        QCOMPARE(operation->stage(), walletsend::Stage::Finished);
+    }
+    void duplicateInputsAreRejectedBeforeWalletSigningOrCommit_data()
+    {
+        QTest::addColumn<int>("intent");
+        QTest::newRow("submit") << int(walletsend::Intent::Submit);
+        QTest::newRow("sign-only") << int(walletsend::Intent::SignOnly);
+    }
+    void duplicateInputsAreRejectedBeforeWalletSigningOrCommit()
+    {
+        QFETCH(int, intent);
+        Fixture f;
+        auto request = PsbtRequest();
+        const auto proof = request.proof;
+        const auto approved_fee = request.approved_fee;
+        CMutableTransaction duplicate{*request.reviewed};
+        duplicate.vin.push_back(duplicate.vin.front());
+        PartiallySignedTransaction document{duplicate, 2};
+        document.inputs[0] = request.psbt->inputs[0];
+        document.inputs[1] = request.psbt->inputs[0];
+        request.reviewed = MakeTransactionRef(duplicate);
+        request.psbt = std::make_shared<const PartiallySignedTransaction>(std::move(document));
+        request.proof = proof;
+        request.approved_fee = approved_fee;
+        request.intent = walletsend::Intent(intent);
+        auto operation = f.operation();
+        QVERIFY(operation->start(std::move(request)));
+        f.commands.drain();
+        const auto result = operation->result();
+        QVERIFY(result);
+        QCOMPARE(result->error, Error::InvalidStructure);
+        QVERIFY(!result->document);
+        QVERIFY(!result->committed);
+        QCOMPARE(f.wallet->signs, 0);
+        QCOMPARE(f.wallet->metadata_reads, 0);
+        QCOMPARE(f.wallet->commits, 0);
+    }
+    void realWorkerSignsCapturedPsbtOffGuiAndNeverCommits()
+    {
+        struct State { QSemaphore finished; std::atomic<QThread*> outcome{nullptr}; };
+        auto state = std::make_shared<State>();
+        BackendExecutor commands{execution::Limits::Bounded()}, retirement;
+        auto opening = std::make_shared<walletopening::Session>(commands.scheduler(), retirement.scheduler(), std::make_shared<std::atomic_bool>(false), [] {});
+        auto wallet = std::make_shared<Wallet>();
+        auto registered = opening->start(wallet);
+        QVERIFY(registered.borrower);
+        auto request = PsbtRequest();
+        request.intent = walletsend::Intent::SignOnly;
+        auto operation = std::make_shared<walletsend::Operation>(opening, nullptr, [state](auto notice) {
+            if (notice == walletsend::Notice::Finished) { state->outcome = QThread::currentThread(); state->finished.release(); }
+        });
+        QVERIFY(operation->start(std::move(request)));
+        registered.borrower.reset();
+        QVERIFY(state->finished.tryAcquire(1, 5000));
+        QCOMPARE(wallet->signs, 1);
+        QVERIFY(wallet->sign_thread.load());
+        QVERIFY(wallet->sign_thread.load() != QCoreApplication::instance()->thread());
+        QVERIFY(state->outcome.load() != QCoreApplication::instance()->thread());
+        QVERIFY(operation->result());
+        QVERIFY(operation->result()->document);
+        QVERIFY(!operation->result()->committed);
+        QCOMPARE(wallet->commits, 0);
+        opening->retire(); wallet.reset(); commands.shutdown();
+        operation.reset(); opening.reset();
+        QTRY_VERIFY(commands.isDrained());
+        retirement.shutdown();
+        QTRY_VERIFY(retirement.isDrained());
     }
     void sameOperationCannotCommitTwice()
     {

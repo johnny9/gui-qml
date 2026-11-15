@@ -48,6 +48,7 @@ TestCase {
         testWalletModel.prepareTransactionResult = true
         testWalletModel.sendAmountExhaustsBalance = false
         testWalletModel.currentTransactionCanSend = true
+        testWalletModel.currentTransactionCanSignOnly = false
         testWalletModel.currentTransactionNeedsRevalidation = false
         testWalletModel.transactionFeePending = false
         testWalletModel.currentTransactionCanBroadcast = false
@@ -179,6 +180,35 @@ TestCase {
         testWalletModel.setCurrentTransactionNeedsRevalidationForTest(false)
         tryCompare(sendButton, "visible", true)
         tryCompare(sendButton, "enabled", true)
+    }
+
+    function test_local_sign_only_is_a_separate_non_send_command() {
+        testWalletModel.currentTransactionCanSignOnly = true
+        const review = createTemporaryObject(reviewComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        const signButton = findChild(review, "sendTransactionReviewSignOnlyButton")
+        verify(signButton !== null)
+        compare(signButton.visible, true)
+        compare(signButton.enabled, true)
+        compare(testWalletModel.sendTransactionCalls, 0)
+
+        signButton.clicked()
+
+        compare(testWalletModel.signOnlyTransactionCalls, 1)
+        compare(testWalletModel.sendTransactionCalls, 0)
+        compare(testWalletModel.sendState, WalletQmlModel.SendSignedOnly)
+    }
+
+    function test_locked_sign_only_prompt_says_transaction_will_not_be_sent() {
+        testWalletModel.currentTransactionCanSignOnly = true
+        testWalletModel.transactionNeedsUnlock = true
+        const review = createTemporaryObject(reviewComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        findChild(review, "sendTransactionReviewSignOnlyButton").clicked()
+
+        const popup = findChild(review, "sendTransactionPassphrasePopup")
+        tryCompare(popup, "opened", true)
+        compare(popup.descriptionText, "Enter your wallet password to sign this PSBT. The transaction will not be sent.")
+        compare(popup.confirmText, "Unlock and sign")
+        compare(testWalletModel.sendTransactionCalls, 0)
     }
 
     function test_equal_amount_intent_uses_the_typed_fixed_mode() {
@@ -675,6 +705,33 @@ TestCase {
         compare(testWalletModel.lastSavedPsbtPath, "file:///tmp/review-test.psbt")
         compare(popup.opened, true)
         popup.close()
+    }
+
+    function test_psbt_save_error_remains_visible_in_review() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
+        verify(page !== null)
+        page.width = testCase.width
+        page.height = testCase.height
+        page.visible = true
+        page.openTransactionReview()
+        const popup = findChild(page, "transactionReviewPopup")
+        tryCompare(popup, "opened", true)
+        const review = popup.contentItem
+        const path = findChild(review, "sendTransactionReviewSavePsbtPathField")
+        const saveButton = findChild(review, "sendTransactionReviewSaveButton")
+        const error = findChild(review, "sendTransactionReviewSaveError")
+        const toast = findChild(review, "sendTransactionReviewSaveToast")
+        verify(path !== null)
+        verify(saveButton !== null)
+        verify(error !== null)
+        verify(toast !== null)
+        path.text = "file:///tmp/review-failed.psbt"
+        testWalletModel.failNextPsbtSaveForTest = true
+        saveButton.clicked()
+        tryCompare(error, "visible", true)
+        compare(error.text, "The original PSBT action could not be completed.")
+        compare(toast.visible, false)
+        compare(popup.opened, true)
     }
 
     function test_send_continue_button_tracks_recipient_validity() {

@@ -99,6 +99,7 @@
 #include <qml/models/walletoperationpresentationmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/models/fileexportoperation.h>
 #include <qml/walletqmlcontroller.h>
 #endif
 
@@ -335,6 +336,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     });
     qmlRegisterUncreatableType<ImageExportOperation>("org.bitcoincore.qt", 1, 0, "ImageExportOperation", "Owned by an image export request");
     qmlRegisterUncreatableType<BackupFileOperation>("org.bitcoincore.qt", 1, 0, "BackupFileOperation", "Owned by a backup request");
+    qmlRegisterUncreatableType<FileExportOperationModel>("org.bitcoincore.qt", 1, 0, "FileExportOperationModel", "Owned by a file export request");
     qmlRegisterType<QmlFileDialog>("org.bitcoincore.qt", 1, 0, "AppFileDialog");
     qmlRegisterType<BlockClockDial>("org.bitcoincore.qt", 1, 0, "BlockClockDial");
     qmlRegisterType<AppPreferences>("org.bitcoincore.qt", 1, 0, "AppPreferences");
@@ -413,6 +415,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModelTransaction", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletListModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "FileExportOperationModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletSelectionModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "SignerDiscoveryModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Wallet support is not compiled");

@@ -14,6 +14,7 @@
 #include <QTemporaryDir>
 #include <QUrl>
 
+#include <algorithm>
 #include <utility>
 
 namespace {
@@ -59,38 +60,55 @@ backup::FileVersion backup::ReadVersion(QIODevice& device)
     return {{bytes.constData(), static_cast<size_t>(bytes.size())}, Error::None};
 }
 
-backup::Proposal backup::Inspect(const std::string& raw, const std::string& wallet_name)
+namespace {
+backup::Proposal InspectTarget(const std::string& raw, const std::string& suggested_name,
+                               const QString& suffix, bool allow_dat)
 {
-    if (raw.empty() || raw.size() > 32'768 || raw.find('\0') != std::string::npos) return {{}, {}, false, false, Error::InvalidPath};
+    if (raw.empty() || raw.size() > 32'768 || raw.find('\0') != std::string::npos) return {{}, {}, false, false, backup::Error::InvalidPath};
     QString path = QString::fromUtf8(raw.data(), static_cast<qsizetype>(raw.size()));
-    if (path.trimmed().isEmpty()) return {{}, {}, false, false, Error::InvalidPath};
+    if (path.trimmed().isEmpty()) return {{}, {}, false, false, backup::Error::InvalidPath};
     if (path.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive)) {
         const QUrl url{path, QUrl::TolerantMode};
-        if (!url.isValid() || !QDir::isAbsolutePath(url.toLocalFile())) return {{}, {}, false, false, Error::InvalidPath};
+        if (!url.isValid() || !QDir::isAbsolutePath(url.toLocalFile())) return {{}, {}, false, false, backup::Error::InvalidPath};
         path = url.toLocalFile();
     } else if (path.contains(QStringLiteral("://"))) {
-        return {{}, {}, false, false, Error::InvalidPath};
+        return {{}, {}, false, false, backup::Error::InvalidPath};
     }
-    if (path.contains(QChar{0})) return {{}, {}, false, false, Error::InvalidPath};
+    if (path.contains(QChar{0})) return {{}, {}, false, false, backup::Error::InvalidPath};
     path = QDir::cleanPath(QFileInfo{path}.absoluteFilePath());
     const QString initial{path};
     const QFileInfo selected{path};
     const bool directory = selected.isDir();
     if (directory) {
-        QString name = QString::fromUtf8(wallet_name.data(), static_cast<qsizetype>(wallet_name.size()));
+        QString name = QString::fromUtf8(suggested_name.data(), static_cast<qsizetype>(suggested_name.size()));
         name.replace('/', '_');
         name.replace('\\', '_');
         if (name.isEmpty()) name = QStringLiteral("wallet");
-        path = QDir{path}.filePath(name + QStringLiteral(".bak"));
-    } else if (!path.endsWith(QStringLiteral(".bak"), Qt::CaseInsensitive)
-               && !path.endsWith(QStringLiteral(".dat"), Qt::CaseInsensitive)) {
-        path += QStringLiteral(".bak");
+        path = QDir{path}.filePath(name + suffix);
+    } else if (!path.endsWith(suffix, Qt::CaseInsensitive)
+               && !(allow_dat && path.endsWith(QStringLiteral(".dat"), Qt::CaseInsensitive))) {
+        path += suffix;
     }
     auto result = ReadTarget(path);
     // A rewritten file name must itself be approved even when it is new.
     // Directory automation retains its documented wallet-name suggestion.
     result.renamed = !directory && path != initial;
     return result;
+}
+} // namespace
+
+backup::Proposal backup::Inspect(const std::string& raw, const std::string& wallet_name)
+{
+    return InspectTarget(raw, wallet_name, QStringLiteral(".bak"), true);
+}
+
+backup::Proposal backup::Inspect(const std::string& raw, const std::string& suggested_name, const std::string& suffix)
+{
+    if (suffix.size() < 2 || suffix.size() > 16 || suffix.front() != '.' ||
+        !std::all_of(suffix.begin() + 1, suffix.end(), [](unsigned char value) {
+            return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9');
+        })) return {{}, {}, false, false, Error::InvalidPath};
+    return InspectTarget(raw, suggested_name, QString::fromLatin1(suffix.data(), static_cast<qsizetype>(suffix.size())), false);
 }
 
 backup::WriteResult backup::Write(const Proposal& approved, bool destination_approved, const Producer& producer,
