@@ -64,15 +64,38 @@ ApplicationWindow {
         && !appWindow.modalNavigationBlocked
         && !appWindow.shutdownInProgress && !ApplicationModels.nodeModel.fatalException
 
-    function routeToShell(method, argument) {
+    enum NavigationRoute { RouteCloseWallet, RouteBackup, RouteImportUri, RouteSignMessage,
+        RouteVerifyMessage, RouteImportPsbt, RouteNode, RouteActivity, RouteSend,
+        RouteReceive, RouteConsole, RouteNetworkTraffic, RoutePeers }
+
+    function routeToShell(route: int) {
         if (!appWindow.menuNavigationEnabled) return
-        const shell = main.depth === 1 ? main.currentItem : null
-        if (shell && typeof shell[method] === "function") {
-            if (argument === undefined) {
-                shell[method]()
-            } else {
-                shell[method](argument)
+        const desktop = appWindow.desktopShell
+        if (desktop !== null) {
+            switch (route) {
+            case MainWindow.RouteCloseWallet: desktop.requestCloseWallet(); break
+            case MainWindow.RouteBackup: desktop.startWalletBackup(); break
+            case MainWindow.RouteImportUri: desktop.openUriImporter(); break
+            case MainWindow.RouteSignMessage: desktop.openSignVerifyMessage(SignVerifyMessage.SignTab); break
+            case MainWindow.RouteVerifyMessage: desktop.openSignVerifyMessage(SignVerifyMessage.VerifyTab); break
+            case MainWindow.RouteImportPsbt: desktop.openPsbtImporter(); break
+            case MainWindow.RouteNode: desktop.openNode(); break
+            case MainWindow.RouteActivity: desktop.openActivity(); break
+            case MainWindow.RouteSend: desktop.openSend(); break
+            case MainWindow.RouteReceive: desktop.openReceive(); break
+            case MainWindow.RouteConsole: desktop.openConsole(); break
+            case MainWindow.RouteNetworkTraffic: desktop.openNetworkTraffic(); break
+            case MainWindow.RoutePeers: desktop.openPeers(); break
             }
+            return
+        }
+        const node = appWindow.nodeShell
+        if (node === null) return
+        switch (route) {
+        case MainWindow.RouteNode: node.openNode(); break
+        case MainWindow.RouteConsole: node.openConsole(); break
+        case MainWindow.RouteNetworkTraffic: node.openNetworkTraffic(); break
+        case MainWindow.RoutePeers: node.openPeers(); break
         }
     }
 
@@ -103,8 +126,10 @@ ApplicationWindow {
         target[method]()
     }
 
-    function openSettings(section) {
-        appWindow.routeToShell("openSettings", section)
+    function openSettings(section: string) {
+        if (!appWindow.menuNavigationEnabled) return
+        if (appWindow.desktopShell !== null) appWindow.desktopShell.openSettings(section)
+        else if (appWindow.nodeShell !== null) appWindow.nodeShell.openSettings(section)
     }
 
     function openWalletCreation() {
@@ -116,7 +141,7 @@ ApplicationWindow {
 
     // This consumes the exact retained operation result. Popup exit animation
     // is presentation only and cannot turn its completion into a fresh route.
-    function presentCreatedWallet(wallet) {
+    function presentCreatedWallet(wallet: WalletQmlModel) {
         if (appWindow.shutdownInProgress || ApplicationModels.nodeModel.fatalException) return
         const shell = main.depth === 1 ? main.currentItem as DesktopWallets : null
         if (shell !== null) shell.openWallet(wallet)
@@ -134,7 +159,7 @@ ApplicationWindow {
         }
         appWindow.postOnboardingWalletRouteResolved = true
         if (ApplicationModels.walletController.noWalletsFound) {
-            appWindow.routeToShell("openNode")
+            appWindow.routeToShell(MainWindow.RouteNode)
             onboardingWalletPresentation.restart()
         }
     }
@@ -240,12 +265,12 @@ ApplicationWindow {
         isMacOs: Qt.platform.os === "osx"
 
         onCreateWalletRequested: appWindow.openWalletCreation()
-        onCloseWalletRequested: appWindow.routeToShell("requestCloseWallet")
-        onBackupWalletRequested: appWindow.routeToShell("startWalletBackup")
-        onOpenUriRequested: appWindow.routeToShell("openUriImporter")
-        onSignMessageRequested: appWindow.routeToShell("openSignVerifyMessage", SignVerifyMessage.SignTab)
-        onVerifyMessageRequested: appWindow.routeToShell("openSignVerifyMessage", SignVerifyMessage.VerifyTab)
-        onLoadPsbtRequested: appWindow.routeToShell("openPsbtImporter")
+        onCloseWalletRequested: appWindow.routeToShell(MainWindow.RouteCloseWallet)
+        onBackupWalletRequested: appWindow.routeToShell(MainWindow.RouteBackup)
+        onOpenUriRequested: appWindow.routeToShell(MainWindow.RouteImportUri)
+        onSignMessageRequested: appWindow.routeToShell(MainWindow.RouteSignMessage)
+        onVerifyMessageRequested: appWindow.routeToShell(MainWindow.RouteVerifyMessage)
+        onLoadPsbtRequested: appWindow.routeToShell(MainWindow.RouteImportPsbt)
         onExitRequested: ApplicationModels.nodeModel.requestShutdown()
         onSettingsRequested: appWindow.openSettings("display")
         onUndoRequested: appWindow.invokeEditCommand("undo")
@@ -263,14 +288,14 @@ ApplicationWindow {
             }
         }
         onMainWindowRequested: ApplicationModels.desktopTrayIconController.showMainWindow()
-        onNodeRequested: appWindow.routeToShell("openNode")
-        onActivityRequested: appWindow.routeToShell("openActivity")
-        onSendRequested: appWindow.routeToShell("openSend")
-        onReceiveRequested: appWindow.routeToShell("openReceive")
+        onNodeRequested: appWindow.routeToShell(MainWindow.RouteNode)
+        onActivityRequested: appWindow.routeToShell(MainWindow.RouteActivity)
+        onSendRequested: appWindow.routeToShell(MainWindow.RouteSend)
+        onReceiveRequested: appWindow.routeToShell(MainWindow.RouteReceive)
         onInformationRequested: menuInformationPopup.open()
-        onConsoleRequested: appWindow.routeToShell("openConsole")
-        onNetworkTrafficRequested: appWindow.routeToShell("openNetworkTraffic")
-        onPeersRequested: appWindow.routeToShell("openPeers")
+        onConsoleRequested: appWindow.routeToShell(MainWindow.RouteConsole)
+        onNetworkTrafficRequested: appWindow.routeToShell(MainWindow.RouteNetworkTraffic)
+        onPeersRequested: appWindow.routeToShell(MainWindow.RoutePeers)
         onRpcDocumentationRequested: Qt.openUrlExternally("https://bitcoincore.org/en/doc/")
         onAboutRequested: appWindow.openSettings("about")
     }
@@ -502,7 +527,7 @@ ApplicationWindow {
             id: node
             NodeRunner {
                 onSettingsClicked: appWindow.openSettings("")
-                onPeersClicked: appWindow.routeToShell("openPeers")
+                onPeersClicked: appWindow.routeToShell(MainWindow.RoutePeers)
             }
         }
         Component {
