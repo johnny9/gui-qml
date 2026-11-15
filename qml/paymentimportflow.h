@@ -64,17 +64,19 @@ public:
     const std::optional<Receipt>& result() const { return m_result; }
     bool pending() const { return m_read_pending || bool(m_child); }
     bool canApply() const {
-        return m_phase == Phase::Inspecting && m_kind == Kind::Payment && usableTarget()
+        return !m_child && m_phase == Phase::Inspecting && m_kind == Kind::Payment && usableTarget()
             && m_target->draft && m_target->recipient;
     }
     bool canReview() const {
-        return m_phase == Phase::Inspecting && m_kind == Kind::Psbt && usableTarget();
+        return !m_child && m_phase == Phase::Inspecting && m_kind == Kind::Psbt && usableTarget();
     }
     bool canExport() const {
-        return m_kind == Kind::Psbt && (m_phase == Phase::Inspecting || m_phase == Phase::ReviewOpened);
+        return m_kind == Kind::Psbt && (m_phase == Phase::Inspecting || m_phase == Phase::ReviewOpened ||
+            m_phase == Phase::Failed);
     }
     bool canReconcile() const {
-        return m_child && !m_query_pending && (m_phase == Phase::Reconciling || m_phase == Phase::Closing);
+        return m_child && !m_query_pending && (m_phase == Phase::Reconciling || m_phase == Phase::Closing ||
+            (m_result && m_result->outcome != Outcome::Unknown));
     }
 
     std::optional<uint64_t> inspect() {
@@ -141,8 +143,12 @@ public:
         return canReview() ? beginChild(ChildKind::CreateReview) : std::nullopt;
     }
     bool acknowledgmentLost(const Child& child) {
+        if (m_child && *m_child == child && m_result && m_result->outcome != Outcome::Unknown) {
+            m_error = Error::Query;
+            return true;
+        }
         if (!m_child || *m_child != child || (m_phase != Phase::Applying &&
-            m_phase != Phase::CreatingReview && m_phase != Phase::Closing)) return false;
+            m_phase != Phase::CreatingReview && m_phase != Phase::Closing && m_phase != Phase::Reconciling)) return false;
         m_query_pending = false;
         if (!m_closing) m_phase = Phase::Reconciling;
         return true;
@@ -159,6 +165,8 @@ public:
     }
     bool finished(Receipt receipt, std::optional<Target> revised_target = {}) {
         if (!m_child || receipt.child != *m_child) return false;
+        // A late callback/query cannot rewrite an already established effect.
+        if (m_result && m_result->outcome != Outcome::Unknown) return false;
         if ((receipt.outcome == Outcome::Applied && receipt.child.kind != ChildKind::Apply) ||
             (receipt.outcome == Outcome::ReviewOpened && receipt.child.kind != ChildKind::CreateReview)) return false;
         if ((receipt.outcome == Outcome::Applied || receipt.outcome == Outcome::ReviewOpened) && !receipt.result) return false;
@@ -169,7 +177,7 @@ public:
             return true;
         }
         const auto original = *m_child;
-        m_child.reset(); m_result = std::move(receipt); m_error = Error::None;
+        m_result = std::move(receipt); m_error = Error::None;
         if (m_closing) { settleClose(); return true; }
         switch (m_result->outcome) {
         case Outcome::Applied: m_phase = Phase::Applied; break;
@@ -185,6 +193,12 @@ public:
             break;
         case Outcome::Unknown: break;
         }
+        return true;
+    }
+    bool acknowledged(const Child& child) {
+        if (!m_child || *m_child != child || !m_result || m_result->outcome == Outcome::Unknown) return false;
+        m_child.reset(); m_error = Error::None;
+        settleClose();
         return true;
     }
     void close() {
@@ -206,6 +220,7 @@ private:
         m_prompt = Prompt{*token, m_source, *m_target, reason}; m_phase = Phase::AwaitingReplacement;
     }
     std::optional<Child> beginChild(ChildKind kind, bool replace_existing = false) {
+        if (m_child) return {};
         const auto token = next(); if (!token || !m_target) return {};
         m_child = Child{*token, m_source, kind, *m_target, replace_existing}; m_prompt.reset(); m_result.reset();
         m_phase = kind == ChildKind::Apply ? Phase::Applying : Phase::CreatingReview;
