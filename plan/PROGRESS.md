@@ -12,6 +12,9 @@ and stderr checks. See [R40 acceptance](R40_FOCUSED_ACCEPTANCE.md).
 R41 cleanup satisfies its focused gate: 211 distinct native/QML/public-Core
 bodies, pinned 32-entry C++/MOC analysis, app lint and full QML lint pass.
 See [R41 acceptance](R41_FOCUSED_ACCEPTANCE.md). R42 final qualification is active.
+The [R42 checkpoint](R42_ACTIVE_CHECKPOINT.md) records the combined repair
+source, executed checks and remaining qualification gaps. The latest user
+instruction skips Windows validation for this run; the VM is suspended.
 
 The [approved cadence](QT6_VALIDATION_CADENCE_20261114.md) separates implementation
 progress from final qualification. The copied CSV registers in `tracking/`
@@ -54,7 +57,7 @@ progress without changing shared finding or schedule registers.
 | R38 | Focused accepted/integrated:102 current Native/QML/public-Core bodies and2actualGUI scenarios pass at56812;188 distinct composition identities use86 explicit earlier-source carries. Worker296 overlaps and is not added. All17 primary scopes mapped; original pressure/header failures and pinned static/app/QML scope retained. See R38_FOCUSED_ACCEPTANCE.md. R42 remains open |
 | R40 | Focused accepted/integrated:52 final owner/transport/QML bodies and7 behavioral process cases pass; shared67 bodies/pinned11/QMLlint pass. Reset lifecycle rerun checks both actual GUI exits0/stderr. Native19 and caller70 component gates, earlier preparation/Source carries and Mac31 remain explicitly source-qualified. D245 parent visible-delivery failure established. Final qualification R42 |
 | R41 | Focused accepted at90abf2fdd92:211 bodies,32 pinned C++/MOC entries, app/QML lint; parent failures and selector corrections retained |
-| R42 | Active: final coverage, full default suites/matrices, native Windows and sanitizers; no final acceptance claimed |
+| R42 | Active: combined repairs at e2c0c8cd1dac; full suites/matrices, coverage and sanitizers remain; Windows skipped by latest user instruction; no final acceptance claimed |
 
 The [R10 checkpoint](R10_FOCUSED_CHECKPOINT_20261114.md) records exact tested
 app/Core identities, nonempty counts, commands, artifacts and unresolved issues.

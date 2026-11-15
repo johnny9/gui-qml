@@ -5,6 +5,9 @@ every work order. Keep focused ordinary correctness, manual timing/real-thread
 checks, relevant integration and changed-scope lint/tidy during implementation.
 R42 owns exhaustive coverage proof, full suites and configuration/platform
 matrices, native Windows and sanitizers. Final qualification remains pending.
+The latest [R42 checkpoint](R42_ACTIVE_CHECKPOINT.md) records the user's Windows
+skip, current repairs and incomplete final gates; it supersedes that Windows
+requirement for this run.
 The [R11–R40 gate and host allocation](R11_R40_VALIDATION.md) is the current
 consolidated execution contract for the next implementation steps.
 

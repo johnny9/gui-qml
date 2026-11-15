@@ -39,3 +39,8 @@ The R42 finding/schedule overlay must preserve all 318 findings, 329 scopes and
 execution artifacts. Canonical shared planning registers and unrelated working
 changes remain untouched. Coverage gaps, valid failures and unavailable matrix
 lanes are qualification gaps, never implicit passes.
+
+The latest user instruction skips Windows validation for this R42 run. Existing
+Windows evidence is retained and the VM is suspended; no runtime pass is
+inferred. See the [active R42 checkpoint](R42_ACTIVE_CHECKPOINT.md) for the
+combined repair source and remaining Linux/macOS/coverage/sanitizer gates.
