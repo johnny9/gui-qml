@@ -2347,6 +2347,12 @@ transactionattempt::CurrentFacts WalletQmlModel::preparationFacts() const
 bool WalletQmlModel::setCurrentTransaction(WalletQmlModelTransaction* transaction, bool from_preparation)
 {
     if (m_current_transaction == transaction) return false;
+    if (m_send_review && m_send_review != transaction && m_send_consent) m_send_consent->withdraw();
+    if (m_send_review && m_send_review != transaction && m_send_operation &&
+        (m_send_operation->stage() == walletsend::Stage::AwaitingSweepConsent ||
+         m_send_operation->stage() == walletsend::Stage::AwaitingCredentials)) {
+        cancelSendTransaction(m_send_request_id);
+    }
     const auto previous_phase = m_preparation_projection.phase;
     const bool previous_candidate_current = m_preparation_projection.candidate_current;
     const bool preparation_state_exists = bool(m_preparation_projection.candidate) || previous_phase != transactionattempt::Phase::Idle;
@@ -2935,9 +2941,32 @@ quint64 WalletQmlModel::requestSendTransactionWithPassphrase(const QString& pass
 
 quint64 WalletQmlModel::requestSendTransactionInternal(std::optional<QString> passphrase)
 {
+    if (passphrase && m_send_operation && m_send_state == SendState::SendNeedsUnlock &&
+        m_send_review && m_send_review == m_current_transaction) {
+        auto captured = secretinput::Capture(m_opening ? m_opening->scheduler() : nullptr, *passphrase);
+        if (!captured) {
+            setTransactionStatus(tr("The password input could not be queued. The transaction was not sent."), true);
+            Q_EMIT sendOperationChanged();
+            return m_send_request_id;
+        }
+        const auto admission = m_send_operation->providePassphrase(m_send_request_id, m_send_review_id, std::move(captured.input));
+        if (!admission) {
+            setTransactionStatus(tr("The password continuation could not be queued. The transaction was not sent."), true);
+            Q_EMIT sendOperationChanged();
+            return m_send_request_id;
+        }
+        m_send_state = SendState::SendPending;
+        clearTransactionStatus();
+        Q_EMIT sendOperationChanged();
+        return m_send_request_id;
+    }
     if (psbtActionBusy() || m_approval || preparationBusy()) return 0;
     if ((m_send_state == SendState::SendCommitted || m_send_state == SendState::SendUncertain) && m_send_review && m_send_review == m_current_transaction) return 0;
     if (sendBusy() || m_sending_commit->exchange(true)) return 0;
+    if (m_send_request_id == std::numeric_limits<quint64>::max()) {
+        m_sending_commit->store(false);
+        return 0;
+    }
     const auto request_id = ++m_send_request_id;
     const auto gate = m_sending_commit;
     auto rejected = qScopeGuard([gate] { gate->store(false); });
@@ -2978,7 +3007,16 @@ quint64 WalletQmlModel::requestSendTransactionInternal(std::optional<QString> pa
     auto notes = captureSentRecipientLabels(action);
     if (notes.ticket && !notes.valid) { m_send_state = SendState::SendFailed; setTransactionStatus(tr("Outgoing notes could not be queued. Try again.")); if (self && observationsAllowed() && request_id == m_send_request_id) Q_EMIT sendOperationChanged(); return request_id; }
     walletsend::Request request;
+    request.attempt_id = request_id;
+    if (m_current_review_identity == std::numeric_limits<quint64>::max()) {
+        m_send_state = SendState::SendFailed;
+        setTransactionStatus(tr("The transaction review identity is exhausted. Prepare it again before sending."));
+        if (self) Q_EMIT sendOperationChanged();
+        return request_id;
+    }
+    request.review_id = m_current_review_identity;
     request.reviewed = m_current_transaction->getWtx(); request.psbt = m_current_psbt;
+    request.sweeps_wallet = currentTransactionSweepsWallet();
     request.assessed_complete = m_current_transaction_can_broadcast;
     request.proof = m_psbt_fee_proof; request.approved_fee = m_current_transaction->reviewedFee();
     if (passphrase) {
@@ -3001,10 +3039,13 @@ quint64 WalletQmlModel::requestSendTransactionInternal(std::optional<QString> pa
         post([observer, ticket, notice] {
             if (!observer || observer->m_stopping) return;
             if (notice == walletsend::Notice::Finished && observer->m_send_ticket == ticket) observer->publishSendOperation();
+            else if ((notice == walletsend::Notice::SweepConsentRequired || notice == walletsend::Notice::CredentialsRequired) && observer->m_send_ticket == ticket) observer->publishSendPrompt();
             else if (notice == walletsend::Notice::Notes && observer->m_sent_labels_ticket == ticket) observer->publishSentRecipientLabels();
         });
     };
-    m_send_review = m_current_transaction; m_send_result_txid.clear(); m_send_submission = SendSubmission::SubmissionUnknown; m_send_ticket = ticket;
+    m_send_review = m_current_transaction; m_send_review_id = request.review_id;
+    m_send_result_txid.clear(); m_send_submission = SendSubmission::SubmissionUnknown;
+    m_send_record = SendRecord::SendRecordUnknown; m_send_ticket = ticket;
     m_send_operation = std::make_shared<walletsend::Operation>(m_opening, m_request_store, std::move(notify));
     m_send_state = SendState::SendPending;
     const auto admission = m_send_operation->start(std::move(request), action);
@@ -3012,6 +3053,58 @@ quint64 WalletQmlModel::requestSendTransactionInternal(std::optional<QString> pa
     else { m_send_state = SendState::SendFailed; setTransactionStatus(tr("The send could not be queued.")); }
     if (self && observationsAllowed() && request_id == m_send_request_id) Q_EMIT sendOperationChanged();
     return request_id;
+}
+
+quint64 WalletQmlModel::confirmSendTransaction(quint64 request_id)
+{
+    if (!request_id || request_id != m_send_request_id || m_send_state != SendState::SendNeedsConfirmation ||
+        !m_send_operation || !m_send_review || m_send_review != m_current_transaction ||
+        m_send_review_id != m_current_review_identity) return 0;
+    const auto admission = m_send_operation->confirmSweep(request_id, m_send_review_id);
+    if (!admission) return 0;
+    m_send_state = SendState::SendPending;
+    clearTransactionStatus();
+    Q_EMIT sendOperationChanged();
+    return request_id;
+}
+
+quint64 WalletQmlModel::cancelSendTransaction(quint64 request_id)
+{
+    if (!request_id || request_id != m_send_request_id || !m_send_operation) return 0;
+    const auto stage = m_send_operation->stage();
+    if (stage != walletsend::Stage::AwaitingSweepConsent && stage != walletsend::Stage::AwaitingCredentials) return 0;
+    const auto admission = m_send_operation->cancelPrompt(request_id, m_send_review_id);
+    if (!admission) return 0;
+    m_send_state = SendState::SendPending;
+    Q_EMIT sendOperationChanged();
+    return request_id;
+}
+
+void WalletQmlModel::publishSendPrompt()
+{
+    if (!observationsAllowed() || m_admission_closed || !m_send_operation) return;
+    if (!m_send_review || m_send_review != m_current_transaction || m_send_review_id != m_current_review_identity) {
+        cancelSendTransaction(m_send_request_id);
+        return;
+    }
+    switch (m_send_operation->stage()) {
+    case walletsend::Stage::AwaitingSweepConsent:
+        m_send_state = SendState::SendNeedsConfirmation;
+        clearTransactionStatus();
+        break;
+    case walletsend::Stage::AwaitingCredentials:
+        m_send_state = SendState::SendNeedsUnlock;
+        setTransactionStatus(m_send_operation->promptError() == walletsend::Error::IncorrectPassphrase
+            ? tr("The wallet password is incorrect.") : tr("Enter your wallet password to send this transaction."), true);
+        break;
+    case walletsend::Stage::Submitting:
+        m_send_state = SendState::SendPending;
+        break;
+    case walletsend::Stage::Idle:
+    case walletsend::Stage::Finished:
+        return;
+    }
+    Q_EMIT sendOperationChanged();
 }
 
 void WalletQmlModel::publishSendOperation()
@@ -3025,12 +3118,21 @@ void WalletQmlModel::publishSendOperation()
         if (result->notes && result->notes == m_sent_labels_operation) publishSentRecipientLabels();
         return;
     }
+    if (result->committed) {
+        switch (result->record) {
+        case walletsend::Record::Unknown: m_send_record = SendRecord::SendRecordUnknown; break;
+        case walletsend::Record::AbsentAtObservation: m_send_record = SendRecord::SendRecordAbsentAtObservation; break;
+        case walletsend::Record::Recorded: m_send_record = SendRecord::SendRecordRecorded; break;
+        }
+    }
     if (result->committed && result->notes_requested) {
         m_sent_labels_ticket = m_send_ticket;
         m_sent_labels_operation = result->notes;
         m_sent_labels_txid = QString::fromStdString(result->committed->GetHash().GetHex());
         m_sent_labels_pending = bool(result->notes);
         m_sent_labels_error = result->notes ? QString{}
+            : m_send_record != SendRecord::SendRecordRecorded
+                ? tr("The wallet transaction record could not be confirmed, so its outgoing notes were not saved.")
             : result->notes_rejection == execution::Rejection::Transport
                 ? tr("The transaction was committed, but its outgoing note results could not be confirmed.")
                 : tr("The transaction was committed, but its outgoing notes could not be queued.");
@@ -3079,7 +3181,7 @@ void WalletQmlModel::publishSendOperation()
         case Error::InvalidSignature: message = tr("The returned signatures could not be verified for the reviewed transaction. Check the signing device and try again."); break;
         case Error::Signer: message = result->signer_error ? PsbtQmlModel::PsbtErrorText(*result->signer_error) : tr("Signing failed."); break;
         case Error::Uncertain: message = tr("The transaction result could not be confirmed. Check wallet activity before retrying."); break;
-        case Error::Cancelled: message = tr("The transaction review was discarded before sending."); break;
+        case Error::Cancelled: message = tr("The transaction confirmation was cancelled."); break;
         case Error::Rejected: message = tr("The send could not be queued."); break;
         case Error::None: message = tr("The transaction was not committed."); break;
         }

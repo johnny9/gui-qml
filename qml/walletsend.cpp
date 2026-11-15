@@ -80,22 +80,27 @@ bool VerifiedExternalTransaction(interfaces::Wallet& wallet, const CTransaction&
         return VerifiedSignatures(document);
     } catch (...) { return false; }
 }
-Submission ObserveSubmission(interfaces::Wallet& wallet, const CTransaction& transaction)
+struct Observation {
+    Record record{Record::Unknown};
+    Submission submission{Submission::Unknown};
+};
+Observation ObserveSubmission(interfaces::Wallet& wallet, const CTransaction& transaction)
 {
     try {
         interfaces::WalletTxStatus status{}; bool in_mempool{false}; int num_blocks{0};
         std::vector<std::string> messages, payment_requests;
         const auto record = wallet.getWalletTxDetails(transaction.GetHash(), status, messages, payment_requests, in_mempool, num_blocks);
-        if (!record.tx || record.tx->GetHash() != transaction.GetHash()) return Submission::Unknown;
-        if (status.depth_in_main_chain > 0) return Submission::Confirmed;
-        if (status.depth_in_main_chain < 0) return Submission::Conflicted;
-        if (status.is_abandoned) return Submission::Abandoned;
-        return in_mempool ? Submission::Mempool : Submission::NotInMempool;
-    } catch (...) { return Submission::Unknown; }
+        if (!record.tx || record.tx->GetHash() != transaction.GetHash()) return {Record::AbsentAtObservation, Submission::Unknown};
+        if (status.depth_in_main_chain > 0) return {Record::Recorded, Submission::Confirmed};
+        if (status.depth_in_main_chain < 0) return {Record::Recorded, Submission::Conflicted};
+        if (status.is_abandoned) return {Record::Recorded, Submission::Abandoned};
+        return {Record::Recorded, in_mempool ? Submission::Mempool : Submission::NotInMempool};
+    } catch (...) { return {}; }
 }
 Result Execute(interfaces::Wallet& wallet, Request request)
 {
     Result result;
+    result.candidate = request.reviewed;
     bool relock{false};
     auto restore = [&] {
         if (!std::exchange(relock, false)) return;
@@ -166,6 +171,7 @@ Result Execute(interfaces::Wallet& wallet, Request request)
         }
         request.passphrase.reset();
         if (result.relock_failed) { result.error = Error::Uncertain; return result; }
+        if (request.sweeps_wallet && !request.full_wallet_consent) { result.error = Error::Cancelled; return result; }
         // Core retains the supplied shared_ptr in wallet history. Its owner
         // must not be an app cleanup lease: that would make session retirement
         // wait for a transaction whose destruction waits for wallet retirement.
@@ -174,9 +180,11 @@ Result Execute(interfaces::Wallet& wallet, Request request)
         if (request.consent && !request.consent->claim()) { result.error = Error::Cancelled; return result; }
         wallet.commitTransaction(transaction, {});
         result.committed = std::move(transaction);
-        // Submission is a subsequent observation, never proof of peer receipt.
-        // A failed read must not erase the already confirmed commit outcome.
-        result.submission = ObserveSubmission(wallet, *result.committed);
+        // The public commit API has no result value. Preserve the exact effect
+        // candidate, then report only what a subsequent wallet read proves.
+        const auto observed = ObserveSubmission(wallet, *result.committed);
+        result.record = observed.record;
+        result.submission = observed.submission;
     } catch (const secretinput::Failure&) { restore(); result.error = Error::Rejected; }
     catch (...) { restore(); result.error = Error::Uncertain; }
     return result;
@@ -194,42 +202,232 @@ execution::Admission Operation::start(Request request, std::shared_ptr<const wal
     if (!action) { complete(Result{.error = Error::Rejected}); return {{}, execution::Rejection::Closed}; }
     auto native_result = walletopening::RetainValues<CTransactionRef>(m_opening, [] { return std::make_unique<CTransactionRef>(); });
     if (!native_result) { complete(Result{.error = Error::Rejected}); return {{}, execution::Rejection::Capacity}; }
+    {
+        std::lock_guard lock{m_mutex};
+        m_request = std::move(request);
+        m_attempt_id = m_request.attempt_id;
+        m_review_id = m_request.review_id;
+        m_action = std::move(action);
+        m_native_result = std::move(native_result);
+    }
     const auto self = shared_from_this();
-    // Qt's implicitly shared map is captured without walking the GUI's data.
-    // Notes are validated by their own bounded Domain command after commit.
-    const auto notes = request.notes;
-    const size_t bytes = sizeof(Request) + (request.passphrase ? request.passphrase->capacity() : 0)
-        + secretinput::Bytes(request.captured_passphrase);
-    const auto admitted = m_opening->perform(action, [request = std::move(request), native_result](interfaces::Wallet& wallet) mutable {
-        auto result = Execute(wallet, std::move(request));
-        if (result.committed) {
-            *native_result = result.committed;
-            result.committed = CTransactionRef{native_result, native_result->get()};
-        }
-        return result;
-    }, [self, action, notes](Result result) {
-        result.notes_requested = !notes.isEmpty();
-        if (result.committed && result.notes_requested) {
-            if (self->m_notes) {
-                try {
-                    auto accepted = self->m_notes->submitSentLabels(action, result.committed->GetHash(), notes,
-                        [notify = self->m_notify, weak = std::weak_ptr<Operation>{self}] {
-                            try { notify(Notice::Notes); }
-                            catch (...) { if (const auto owner = weak.lock()) owner->publicationFailed(); }
-                        });
-                    result.notes = std::move(accepted.operation); result.notes_rejection = accepted.rejection;
-                } catch (...) { result.notes_rejection = execution::Rejection::Transport; }
-            } else result.notes_rejection = execution::Rejection::Closed;
-        }
-        self->complete(std::move(result));
-    }, [self](std::exception_ptr error) {
-        try { std::rethrow_exception(error); }
-        catch (const execution::NotStarted&) { self->complete(Result{.error = Error::Rejected}); }
-        catch (...) { self->complete(Result{.error = Error::Uncertain}); }
-    }, bytes);
-    if (!admitted) complete(Result{.error = Error::Rejected});
-    return admitted;
+    return plan([self] { self->beginOnDomain(); }, sizeof(Request));
 }
+
+execution::Admission Operation::plan(std::function<void()> work, size_t bytes)
+{
+    std::shared_ptr<const walletopening::Session::Action> action;
+    { std::lock_guard lock{m_mutex}; action = m_action; }
+    if (!action) return {{}, execution::Rejection::Closed};
+    return m_opening->planAction(action, std::move(work), bytes);
+}
+
+void Operation::beginOnDomain()
+{
+    Notice notice{Notice::SweepConsentRequired};
+    bool wait_for_sweep{false}, cancelled{false};
+    {
+        std::lock_guard lock{m_mutex};
+        if (m_stage != Stage::Idle || m_result) return;
+        cancelled = m_request.consent && m_request.consent->withdrawn();
+        if (cancelled) {
+            // Completion happens after releasing the operation lock.
+        } else if (m_request.sweeps_wallet && !m_request.full_wallet_consent) {
+            m_stage = Stage::AwaitingSweepConsent;
+            wait_for_sweep = true;
+        } else {
+            m_stage = Stage::Submitting;
+        }
+    }
+    if (cancelled) { complete(Result{.error = Error::Cancelled}); return; }
+    if (wait_for_sweep) {
+        try { m_notify(notice); } catch (...) { publicationFailed(); }
+        return;
+    }
+    dispatchNative();
+}
+
+void Operation::dispatchNative(secretinput::Captured passphrase)
+{
+    Request request;
+    std::shared_ptr<const walletopening::Session::Action> action;
+    std::shared_ptr<CTransactionRef> native_result;
+    {
+        std::lock_guard lock{m_mutex};
+        if (m_stage != Stage::Submitting || m_result) return;
+        // Preserve the reviewed values across a NeedsUnlock outcome. Only the
+        // one-use credential is moved into this Native invocation.
+        request.attempt_id = m_request.attempt_id;
+        request.review_id = m_request.review_id;
+        request.reviewed = m_request.reviewed;
+        request.psbt = m_request.psbt;
+        request.assessed_complete = m_request.assessed_complete;
+        request.proof = m_request.proof;
+        request.approved_fee = m_request.approved_fee;
+        request.passphrase = std::move(m_request.passphrase);
+        request.captured_passphrase = passphrase ? std::move(passphrase) : std::move(m_request.captured_passphrase);
+        request.consent = m_request.consent;
+        request.sweeps_wallet = m_request.sweeps_wallet;
+        request.full_wallet_consent = m_request.full_wallet_consent;
+        request.notes = m_request.notes;
+        action = m_action;
+        native_result = m_native_result;
+    }
+    const auto self = shared_from_this();
+    const size_t bytes = sizeof(Request) + (request.passphrase ? request.passphrase->capacity() : 0)
+        + secretinput::Bytes(request.captured_passphrase) + request.notes.size() * 128;
+    const auto admitted = m_opening->perform(action,
+        [request = std::move(request), native_result](interfaces::Wallet& wallet) mutable {
+            auto result = Execute(wallet, std::move(request));
+            if (result.committed) {
+                *native_result = result.committed;
+                result.committed = CTransactionRef{native_result, native_result->get()};
+            }
+            return result;
+        }, [self](Result result) { self->nativeCompleted(std::move(result)); },
+        [self](std::exception_ptr error) {
+            try { std::rethrow_exception(error); }
+            catch (const execution::NotStarted&) { self->nativeCompleted(Result{.error = Error::Rejected}); }
+            catch (...) { self->nativeCompleted(Result{.error = Error::Uncertain}); }
+        }, bytes);
+    if (!admitted) nativeCompleted(Result{.error = Error::Rejected});
+}
+
+void Operation::nativeCompleted(Result result)
+{
+    if (!result.candidate) {
+        std::lock_guard lock{m_mutex};
+        result.candidate = m_request.reviewed;
+    }
+    if (result.error == Error::NeedsUnlock || result.error == Error::IncorrectPassphrase) {
+        {
+            std::lock_guard lock{m_mutex};
+            if (m_result || m_stage != Stage::Submitting) return;
+            m_prompt_error = result.error;
+            m_stage = Stage::AwaitingCredentials;
+        }
+        try { m_notify(Notice::CredentialsRequired); } catch (...) { publicationFailed(); }
+        return;
+    }
+    std::shared_ptr<const walletopening::Session::Action> action;
+    QMap<QString, QString> notes;
+    {
+        std::lock_guard lock{m_mutex};
+        action = m_action;
+        notes = m_request.notes;
+    }
+    result.notes_requested = !notes.isEmpty();
+    if (result.committed && result.notes_requested) {
+        if (result.record != Record::Recorded) {
+            result.notes_rejection = execution::Rejection::Transport;
+        } else if (m_notes) {
+            try {
+                auto accepted = m_notes->submitSentLabels(action, result.committed->GetHash(), notes,
+                    [notify = m_notify, weak = std::weak_ptr<Operation>{shared_from_this()}] {
+                        try { notify(Notice::Notes); }
+                        catch (...) { if (const auto owner = weak.lock()) owner->publicationFailed(); }
+                    });
+                result.notes = std::move(accepted.operation); result.notes_rejection = accepted.rejection;
+            } catch (...) { result.notes_rejection = execution::Rejection::Transport; }
+        } else result.notes_rejection = execution::Rejection::Closed;
+    }
+    complete(std::move(result));
+}
+
+execution::Admission Operation::confirmSweep(uint64_t attempt_id, uint64_t review_id)
+{
+    std::shared_ptr<const walletopening::Session::Action> action;
+    {
+        std::lock_guard lock{m_mutex};
+        if (attempt_id == 0 || review_id == 0 || attempt_id != m_attempt_id || review_id != m_review_id ||
+            m_stage != Stage::AwaitingSweepConsent || m_result || m_continuation_pending) return {{}, execution::Rejection::Invalid};
+        m_continuation_pending = true;
+        action = m_action;
+    }
+    const auto self = shared_from_this();
+    const auto admission = m_opening->planAction(action, [self, attempt_id, review_id] {
+        bool accepted{false}, cancelled{false};
+        {
+            std::lock_guard lock{self->m_mutex};
+            if (self->m_stage != Stage::AwaitingSweepConsent || self->m_result ||
+                self->m_attempt_id != attempt_id || self->m_review_id != review_id) { self->m_continuation_pending = false; return; }
+            self->m_continuation_pending = false;
+            cancelled = self->m_request.consent && self->m_request.consent->withdrawn();
+            if (!cancelled) {
+                self->m_request.full_wallet_consent = true;
+                self->m_stage = Stage::Submitting;
+                accepted = true;
+            }
+        }
+        if (cancelled) self->complete(Result{.error = Error::Cancelled});
+        else if (accepted) self->dispatchNative();
+    }, 256);
+    if (!admission) { std::lock_guard lock{m_mutex}; m_continuation_pending = false; }
+    return admission;
+}
+
+execution::Admission Operation::providePassphrase(uint64_t attempt_id, uint64_t review_id, secretinput::Captured passphrase)
+{
+    std::shared_ptr<const walletopening::Session::Action> action;
+    {
+        std::lock_guard lock{m_mutex};
+        if (!passphrase || attempt_id == 0 || review_id == 0 || attempt_id != m_attempt_id || review_id != m_review_id ||
+            m_stage != Stage::AwaitingCredentials || m_result || m_continuation_pending) return {{}, execution::Rejection::Invalid};
+        m_continuation_pending = true;
+        action = m_action;
+    }
+    const auto self = shared_from_this();
+    const auto bytes = secretinput::Bytes(passphrase) + 128;
+    const auto admission = m_opening->planAction(action, [self, attempt_id, review_id, passphrase = std::move(passphrase)]() mutable {
+        bool accepted{false}, cancelled{false};
+        {
+            std::lock_guard lock{self->m_mutex};
+            if (self->m_stage != Stage::AwaitingCredentials || self->m_result ||
+                self->m_attempt_id != attempt_id || self->m_review_id != review_id) { self->m_continuation_pending = false; return; }
+            self->m_continuation_pending = false;
+            cancelled = self->m_request.consent && self->m_request.consent->withdrawn();
+            if (!cancelled) {
+                self->m_prompt_error = Error::None;
+                self->m_stage = Stage::Submitting;
+                accepted = true;
+            }
+        }
+        if (cancelled) self->complete(Result{.error = Error::Cancelled});
+        else if (accepted) self->dispatchNative(std::move(passphrase));
+    }, bytes);
+    if (!admission) { std::lock_guard lock{m_mutex}; m_continuation_pending = false; }
+    return admission;
+}
+
+execution::Admission Operation::cancelPrompt(uint64_t attempt_id, uint64_t review_id)
+{
+    std::shared_ptr<const walletopening::Session::Action> action;
+    {
+        std::lock_guard lock{m_mutex};
+        if (attempt_id == 0 || review_id == 0 || attempt_id != m_attempt_id || review_id != m_review_id ||
+            (m_stage != Stage::AwaitingSweepConsent && m_stage != Stage::AwaitingCredentials) || m_result || m_continuation_pending)
+            return {{}, execution::Rejection::Invalid};
+        m_continuation_pending = true;
+        action = m_action;
+    }
+    const auto self = shared_from_this();
+    const auto admission = m_opening->planAction(action, [self, attempt_id, review_id] {
+        {
+            std::lock_guard lock{self->m_mutex};
+            if (self->m_result || self->m_attempt_id != attempt_id || self->m_review_id != review_id ||
+                (self->m_stage != Stage::AwaitingSweepConsent && self->m_stage != Stage::AwaitingCredentials)) { self->m_continuation_pending = false; return; }
+            self->m_continuation_pending = false;
+            if (self->m_request.consent) self->m_request.consent->withdraw();
+            self->m_stage = Stage::Finished;
+        }
+        self->complete(Result{.error = Error::Cancelled});
+    }, 256);
+    if (!admission) { std::lock_guard lock{m_mutex}; m_continuation_pending = false; }
+    return admission;
+}
+
+Stage Operation::stage() const { std::lock_guard lock{m_mutex}; return m_stage; }
+Error Operation::promptError() const { std::lock_guard lock{m_mutex}; return m_prompt_error; }
 
 std::optional<Result> Operation::result() const
 {
@@ -237,7 +435,20 @@ std::optional<Result> Operation::result() const
 }
 void Operation::complete(Result result)
 {
-    { std::lock_guard lock{m_mutex}; if (m_result) return; result.publication_failed |= m_publication_failed; m_result = std::move(result); }
+    Request discarded;
+    std::shared_ptr<const walletopening::Session::Action> retired_action;
+    std::shared_ptr<CTransactionRef> retired_native_result;
+    {
+        std::lock_guard lock{m_mutex};
+        if (m_result) return;
+        if (!result.candidate) result.candidate = m_request.reviewed;
+        m_stage = Stage::Finished;
+        result.publication_failed |= m_publication_failed;
+        m_result = std::move(result);
+        discarded = std::move(m_request);
+        retired_action = std::move(m_action);
+        retired_native_result = std::move(m_native_result);
+    }
     try { m_notify(Notice::Finished); }
     catch (...) { publicationFailed(); }
 }

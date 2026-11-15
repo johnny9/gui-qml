@@ -1675,8 +1675,63 @@ private Q_SLOTS:
             WalletQmlModel::SendSubmission::SubmissionUnknown, WalletQmlModel::SendSubmission::SubmissionUnknown, WalletQmlModel::SendSubmission::SubmissionUnknown};
         QCOMPARE(model->sendSubmission(), expected[scenario]); QCOMPARE(model->sendResultTxid(), QString::fromStdString(transaction->GetHash().GetHex()));
         QCOMPARE(wallet->commit_calls, 1); QVERIFY(observed->load()); QVERIFY(observed->load() != QThread::currentThread());
-        QTRY_VERIFY(!model->recipientLabelsPending()); QCOMPARE(wallet->last_set_address_book_label, std::string{"retained note"});
+        QTRY_VERIFY(!model->recipientLabelsPending());
+        QCOMPARE(wallet->last_set_address_book_label, scenario < 5 ? std::string{"retained note"} : std::string{});
         QVERIFY(model->transactionError().isEmpty());
+    }
+    void fullWalletSendRequiresOneMatchingBackendConfirmation_data()
+    {
+        QTest::addColumn<bool>("cancel");
+        QTest::newRow("confirm-original") << false;
+        QTest::newRow("cancel-original") << true;
+    }
+    void fullWalletSendRequiresOneMatchingBackendConfirmation()
+    {
+        QFETCH(bool, cancel);
+        auto [wallet, model] = MakePasswordWalletModel();
+        SetPasswordRecipient(*model, 1'000);
+        model->useMaximum();
+        QTRY_VERIFY(model->sendDraftSweepsWallet());
+        QVERIFY(AwaitPreparation(*model, "secret"));
+        QVERIFY(model->currentTransactionSweepsWallet());
+        const auto reviewed = model->currentTransaction()->txid();
+        const auto reviewed_transaction = model->currentTransaction()->getWtx();
+        wallet->transaction_details_fn = [reviewed_transaction](const Txid& id, interfaces::WalletTxStatus& status, bool& mempool) {
+            interfaces::WalletTx record{};
+            if (id == reviewed_transaction->GetHash()) {
+                record.tx = reviewed_transaction;
+                status = {};
+                mempool = true;
+            }
+            return record;
+        };
+        const auto ticket = model->requestSendTransaction();
+        QVERIFY(ticket);
+        QTRY_COMPARE(model->sendState(), WalletQmlModel::SendState::SendNeedsConfirmation);
+        QCOMPARE(model->sendOperationId(), ticket);
+        QVERIFY(model->sendBusy());
+        const auto operation = model->sendOperation();
+        QVERIFY(operation);
+        QCOMPARE(operation->stage(), walletsend::Stage::AwaitingSweepConsent);
+        QCOMPARE(wallet->commit_calls, 0);
+        QVERIFY(!operation->result());
+        if (cancel) {
+            QCOMPARE(model->cancelSendTransaction(ticket), ticket);
+            QTRY_COMPARE(model->sendState(), WalletQmlModel::SendState::SendFailed);
+            QCOMPARE(wallet->commit_calls, 0);
+            QCOMPARE(operation->result()->error, walletsend::Error::Cancelled);
+            QCOMPARE(model->confirmSendTransaction(ticket), quint64{0});
+        } else {
+            QCOMPARE(model->confirmSendTransaction(ticket), ticket);
+            QCOMPARE(model->confirmSendTransaction(ticket), quint64{0});
+            QTRY_COMPARE(model->sendState(), WalletQmlModel::SendState::SendCommitted);
+            QCOMPARE(wallet->commit_calls, 1);
+            QVERIFY(operation->result()->candidate);
+            QCOMPARE(operation->result()->committed->GetHash(), operation->result()->candidate->GetHash());
+            QCOMPARE(model->sendResultTxid(), QString::fromStdString(operation->result()->committed->GetHash().GetHex()));
+            QCOMPARE(model->sendRecordState(), WalletQmlModel::SendRecord::SendRecordRecorded);
+        }
+        QVERIFY(!model->sendBusy());
     }
     void oldNoteCompletionCannotPublishANewerSendOutcome()
     {

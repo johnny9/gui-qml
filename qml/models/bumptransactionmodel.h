@@ -19,6 +19,13 @@ public:
     Q_ENUM(State)
     enum ActionType { SpeedUp };
     Q_ENUM(ActionType)
+    enum WalletRecordState { WalletRecordUnknown, WalletRecordAbsentAtObservation, WalletRecordRecorded };
+    Q_ENUM(WalletRecordState)
+    enum WalletSubmissionState { WalletSubmissionUnknown, WalletSubmissionMempool, WalletSubmissionConfirmed,
+                                 WalletSubmissionNotInMempool, WalletSubmissionConflicted, WalletSubmissionAbandoned };
+    Q_ENUM(WalletSubmissionState)
+    enum RelayState { RelayUnknown };
+    Q_ENUM(RelayState)
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY stateChanged)
     Q_PROPERTY(quint64 attemptId READ attemptId NOTIFY stateChanged)
@@ -29,6 +36,9 @@ public:
     Q_PROPERTY(QString feeIncrease READ feeIncrease NOTIFY resultChanged)
     Q_PROPERTY(QString oldTxid READ oldTxid NOTIFY resultChanged)
     Q_PROPERTY(QString newTxid READ newTxid NOTIFY resultChanged)
+    Q_PROPERTY(WalletRecordState walletRecordState READ walletRecordState NOTIFY resultChanged)
+    Q_PROPERTY(WalletSubmissionState walletSubmissionState READ walletSubmissionState NOTIFY resultChanged)
+    Q_PROPERTY(RelayState relayState READ relayState NOTIFY resultChanged)
     Q_PROPERTY(QString errorText READ errorText NOTIFY resultChanged)
     Q_PROPERTY(QString unlockErrorText READ unlockErrorText NOTIFY resultChanged)
     Q_PROPERTY(bool needsUnlock READ needsUnlock NOTIFY needsUnlockChanged)
@@ -48,6 +58,9 @@ public:
     QString feeIncrease() const { return m_increase; }
     QString oldTxid() const { return m_old_txid; }
     QString newTxid() const { return m_new_txid; }
+    WalletRecordState walletRecordState() const;
+    WalletSubmissionState walletSubmissionState() const;
+    RelayState relayState() const;
     QString errorText() const { return m_error; }
     QString unlockErrorText() const { return m_unlock_error; }
     bool needsUnlock() const { return m_needs_unlock; }

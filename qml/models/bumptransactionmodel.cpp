@@ -81,7 +81,7 @@ quint64 BumpTransactionModel::requestPrepareFeeBump(const QString& txid, unsigne
             std::move(done), std::move(failed));
     })) { m_error = tr("The fee-bump preparation could not be queued."); m_state = Failed; publish(); return 0; }
     m_attempt_id = attempt; m_view_revision = revision; m_preparation_revision = revision;
-    m_prepare_operation = std::move(operation); m_review.reset();
+    m_prepare_operation = std::move(operation); m_commit_operation.reset(); m_review.reset();
     clearPresentation(); m_preparing = true; m_state = Preparing;
     publish(); return attempt;
 }
@@ -157,6 +157,32 @@ std::optional<walletbump::Commit> BumpTransactionModel::commitResult() const
     const auto result = m_commit_operation->result();
     return result ? result->value : std::nullopt;
 }
+BumpTransactionModel::WalletRecordState BumpTransactionModel::walletRecordState() const
+{
+    const auto result = commitResult();
+    if (!result) return WalletRecordUnknown;
+    switch (result->record) {
+    case walletbump::Record::Unknown: return WalletRecordUnknown;
+    case walletbump::Record::AbsentAtObservation: return WalletRecordAbsentAtObservation;
+    case walletbump::Record::Recorded: return WalletRecordRecorded;
+    }
+    return WalletRecordUnknown;
+}
+BumpTransactionModel::WalletSubmissionState BumpTransactionModel::walletSubmissionState() const
+{
+    const auto result = commitResult();
+    if (!result) return WalletSubmissionUnknown;
+    switch (result->submission) {
+    case walletbump::Submission::Unknown: return WalletSubmissionUnknown;
+    case walletbump::Submission::Mempool: return WalletSubmissionMempool;
+    case walletbump::Submission::Confirmed: return WalletSubmissionConfirmed;
+    case walletbump::Submission::NotInMempool: return WalletSubmissionNotInMempool;
+    case walletbump::Submission::Conflicted: return WalletSubmissionConflicted;
+    case walletbump::Submission::Abandoned: return WalletSubmissionAbandoned;
+    }
+    return WalletSubmissionUnknown;
+}
+BumpTransactionModel::RelayState BumpTransactionModel::relayState() const { return RelayUnknown; }
 void BumpTransactionModel::reset()
 {
     if (m_closed) return;

@@ -5,6 +5,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import org.bitcoincore.qt 1.0
 
 import "../../controls"
 
@@ -13,6 +14,8 @@ Popup {
     objectName: "speedUpCompletePopup"
 
     property string txid: ""
+    property int walletRecordState: BumpTransactionModel.WalletRecordUnknown
+    property int walletSubmissionState: BumpTransactionModel.WalletSubmissionUnknown
     signal done()
     signal viewNewTransaction(string txid)
 
@@ -61,7 +64,7 @@ Popup {
         CoreText {
             Layout.fillWidth: true
             Layout.topMargin: 28
-            text: qsTr("Transaction updated")
+            text: qsTr("Replacement transaction update result")
             font: Theme.text.headline.font
             lineHeight: Theme.text.headline.lineHeight
             lineHeightMode: Text.FixedHeight
@@ -69,9 +72,24 @@ Popup {
         }
 
         CoreText {
+            objectName: "speedUpOutcomeText"
             Layout.fillWidth: true
             Layout.topMargin: 10
-            text: qsTr("Your replacement transaction was broadcast. Confirmation depends on its fee rate.")
+            text: root.walletSubmissionState === BumpTransactionModel.WalletSubmissionMempool
+                ? qsTr("The replacement transaction is in the wallet's mempool. The wallet does not report peer relay.")
+                : root.walletSubmissionState === BumpTransactionModel.WalletSubmissionConfirmed
+                    ? qsTr("The replacement transaction is confirmed. The wallet does not report peer relay.")
+                : root.walletSubmissionState === BumpTransactionModel.WalletSubmissionNotInMempool
+                    ? qsTr("The replacement is recorded by the wallet but is not currently in its mempool. Peer relay is unknown.")
+                : root.walletSubmissionState === BumpTransactionModel.WalletSubmissionConflicted
+                    ? qsTr("The wallet reports that the replacement transaction is conflicted.")
+                : root.walletSubmissionState === BumpTransactionModel.WalletSubmissionAbandoned
+                    ? qsTr("The wallet reports that the replacement transaction is abandoned.")
+                : root.walletRecordState === BumpTransactionModel.WalletRecordRecorded
+                    ? qsTr("The replacement transaction is saved to the wallet. Its mempool status could not be confirmed, and peer relay is unknown. Check Activity for updates.")
+                : root.walletRecordState === BumpTransactionModel.WalletRecordAbsentAtObservation
+                    ? qsTr("The wallet did not report a matching replacement transaction when checked. Submission and peer relay are unknown. Check Activity before retrying.")
+                    : qsTr("The wallet returned from the fee-bump operation, but its transaction record and submission status could not be confirmed. Peer relay is unknown. Check Activity before retrying.")
             color: Theme.color.neutral7
             font: Theme.text.description.font
             lineHeight: Theme.text.description.lineHeight
