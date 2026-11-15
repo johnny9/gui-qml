@@ -57,11 +57,12 @@ QtObject {
         outcome.privateNote = outcome.hasMessage && outcome.uriMessage.length > 0
             ? outcome.uriMessage + (outcome.hasLabel && outcome.label.length > 0 ? " - " + outcome.label : "") : ""
         const field = context.sourceField || ""
-        outcome.conflicts = outcome.success && (
-            (field !== "address" && !!context.address && context.address !== outcome.address)
+        const replacesMaximum = !!context.maximum && outcome.hasAmount
+        outcome.conflicts = outcome.success && (replacesMaximum
+            || (field !== "address" && !!context.address && context.address !== outcome.address)
             || (field !== "amount" && outcome.hasAmount && !!context.amount && context.amount !== outcome.amountSats)
             || (field !== "label" && !!context.note && !!outcome.privateNote && context.note !== outcome.privateNote))
-        outcome.matchesExistingRequest = outcome.success && context.address === outcome.address
+        outcome.matchesExistingRequest = outcome.success && !replacesMaximum && context.address === outcome.address
             && (!outcome.hasAmount || context.amount === outcome.amountSats)
             && (!outcome.hasLabel || context.requestLabel === outcome.label)
         outcome.pasteProvenance = true
