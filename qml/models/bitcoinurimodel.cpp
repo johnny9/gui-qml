@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/bitcoinurimodel.h>
+
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <qml/models/bitcoinuri.h>
 #ifdef ENABLE_WALLET
 #include <qml/models/walletqmlmodel.h>

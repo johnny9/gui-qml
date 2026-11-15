@@ -836,7 +836,7 @@ PageStack {
             }
 
             AlertAction {
-                text: qsTr("Paste")
+                text: sendPage.m_importOperation ? qsTr("Replace") : qsTr("Paste")
                 buttonObjectName: "sendPaymentUriOverwriteConfirmButton"
                 closesPopup: false
                 onTriggered: {

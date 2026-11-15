@@ -32,6 +32,8 @@ TestCase {
         const operation = form.m_importOperation
         if (operation && operation.promptToken) {
             compare(operation.state, PaymentImportOperation.AwaitingReplacement)
+            const popup = findChild(form, "sendPaymentUriOverwritePopup")
+            if (popup) popup.close()
             operation.replace(operation.promptToken)
         }
     }
@@ -1206,6 +1208,8 @@ TestCase {
 
         // Importing another request without public details hides the section.
         sendPage.applyPaymentRequestFromText("bitcoin:bcrt1qreplacement?amount=0.01", "clipboard")
+        tryVerify(function() { return sendPage.m_importOperation && !sendPage.m_importOperation.pending })
+        confirmExplicitImport(sendPage)
         tryCompare(sendPage, "uriActionPending", false)
         compare(section.visible, false)
         compare(testSendRecipient.label, "My edited note")
@@ -2301,7 +2305,11 @@ TestCase {
             compare(replacement.amount.satoshi, otherAmount)
             compare(replacement.label, otherNote)
             compare(form.paymentRequestStatus, "")
-            compare(findChild(page, "sendPaymentUriOverwritePopup").visible, false)
+            compare(form.m_importOperation, null)
+            compare(form.uriActionPending, false)
+            const popup = findChild(page, "sendPaymentUriOverwritePopup")
+            compare(popup.opened, false)
+            tryCompare(popup, "visible", false)
         } finally {
             testSendRecipient.address.addressChanged.disconnect(loseInterest)
             BitcoinUri.releasePublications()

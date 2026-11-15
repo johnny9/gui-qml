@@ -5,6 +5,8 @@
 #ifndef BITCOIN_CMAKE_QMLTYPES_H
 #define BITCOIN_CMAKE_QMLTYPES_H
 
+
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <qml/appmode.h>
 #include <qml/applicationmodels.h>
 #include <qml/bitcoinamount.h>

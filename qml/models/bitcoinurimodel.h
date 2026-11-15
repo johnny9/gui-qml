@@ -6,7 +6,7 @@
 #define BITCOIN_QML_MODELS_BITCOINURIMODEL_H
 
 #include <qml/snapshotquery.h>
-#include <bitcoin-build-config.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #ifdef ENABLE_WALLET
 #include <qml/models/paymentimportoperation.h>
 #endif

@@ -13,6 +13,7 @@
 #include <QMimeData>
 #include <QTemporaryDir>
 #include <QUrl>
+#include <algorithm>
 
 class PaymentImportIntegrationTests : public QObject
 {
@@ -85,6 +86,13 @@ private Q_SLOTS:
         QTRY_VERIFY(m_wallet->currentTransaction()); QVERIFY(m_wallet->currentTransactionIsImportedPsbt());
         QVERIFY(m_wallet->importedReviewOwner() > 0); QVERIFY(m_wallet->importedReviewChild() > 0);
         QVERIFY(m_wallet->currentTransaction()->feeKnown());
+        const auto document = m_wallet->currentTransaction()->assessedPsbt(); QVERIFY(document);
+        QVERIFY(qmltest::Call(m_app, [document](interfaces::Node*) {
+            return std::all_of(document->inputs.begin(), document->inputs.end(), [](const auto& input) {
+                return input.partial_sigs.empty() && input.tap_key_sig.empty() && input.tap_script_sigs.empty() &&
+                    input.final_script_sig.empty() && input.final_script_witness.IsNull();
+            });
+        }));
         const auto view = m_wallet->currentTransaction();
         auto* review_popup = qmltest::Find(m_app, "transactionReviewPopup"); QVERIFY(review_popup);
         QTRY_VERIFY(review_popup->property("opened").toBool());
