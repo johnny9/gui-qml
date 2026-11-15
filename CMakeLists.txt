@@ -283,6 +283,27 @@ target_link_libraries(bitcoin-core-app
 )
 qt6_import_plugins(bitcoin-core-app INCLUDE Qt6::QSvgPlugin Qt6::QSvgIconPlugin)
 
+if(ENABLE_WALLET)
+  # A fresh headless process supplies public wallet-directory recognition for
+  # inactive profiles without changing the running GUI/node's global settings.
+  add_executable(bitcoin-core-profile-inspector
+    tools/profile-inspector/main.cpp
+    qml/profileinspection.cpp
+    bitcoin/src/init/bitcoin-qt.cpp
+  )
+  set_target_properties(bitcoin-core-profile-inspector PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+  target_include_directories(bitcoin-core-profile-inspector PRIVATE
+    ${PROJECT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/bitcoin/src
+    ${PROJECT_BINARY_DIR}/bitcoin/src
+  )
+  target_compile_definitions(bitcoin-core-profile-inspector PRIVATE QT_NO_KEYWORDS QT_USE_QSTRINGBUILDER)
+  target_link_libraries(bitcoin-core-profile-inspector PRIVATE
+    core_interface bitcoin_wallet bitcoin_node univalue Qt6::Core
+  )
+  add_dependencies(bitcoin-core-app bitcoin-core-profile-inspector)
+endif()
+
 if(ENABLE_QML_LINT)
   include(cmake/QmlLint.cmake)
 endif()

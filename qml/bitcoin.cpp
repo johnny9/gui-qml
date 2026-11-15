@@ -484,20 +484,19 @@ struct PreInitOnboardingContext {
     }
 };
 
-bool ShouldShowPreInitOnboarding(const std::vector<std::string>& argv, bool can_listen_ipc, const execution::SnapshotServices& services)
-{
-    const auto status = startup::Run(services, [argv, can_listen_ipc] { return QmlOnboardingSettings::ResolveOnboardingStartupStatus(argv, can_listen_ipc); });
-    return !status.ok || status.should_show_onboarding;
-}
-
 PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, const std::vector<std::string>& argv, bool can_listen_ipc, QmlQuitHandler& quit_handler,
     const execution::SnapshotServices& services,
     const std::function<void(QQmlApplicationEngine&)>& engine_created,
     const std::function<void(QQmlApplicationEngine&)>& window_created)
 {
-    const bool show_onboarding = ShouldShowPreInitOnboarding(argv, can_listen_ipc, services);
+    const auto status = startup::Run(services, [argv, can_listen_ipc] { return QmlOnboardingSettings::ResolveOnboardingStartupStatus(argv, can_listen_ipc); });
     if (quit_handler.isQuitRequested()) return PreInitOnboardingStatus::CANCELED;
-    if (!show_onboarding) {
+    if (!status.ok) {
+        const auto error = status.error.toStdString();
+        startup::Run(services, [error] { return InitError(Untranslated(error)); });
+        return PreInitOnboardingStatus::FAILED;
+    }
+    if (!status.should_show_onboarding) {
         startup::Run(services, [] { QmlDataDir::ApplyGuiDataDirSetting(gArgs); return true; });
         return quit_handler.isQuitRequested() ? PreInitOnboardingStatus::CANCELED : PreInitOnboardingStatus::NOT_SHOWN;
     }
@@ -733,20 +732,17 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         ApplyTestSettingsDir();
 #endif
 
-        setupChainQSettings(&app, QString::fromStdString(gArgs.GetChainTypeString()).toUpper());
-        if (gArgs.GetBoolArg("-resetguisettings", false)) {
-            QString reset_error;
-            reset_error = startup::Run(startup_services, [] {
-                QString error;
-                if (!QmlDataDir::ResetGuiSettings(gArgs, &error) && error.isEmpty()) error = QObject::tr("Unable to reset settings.");
-                return error;
-            });
-            if (quit_handler.isQuitRequested()) return EXIT_SUCCESS;
-            if (!reset_error.isEmpty()) {
-                startup::Run(startup_services, [reset_error] { return InitError(Untranslated(reset_error.toStdString())); });
-                return EXIT_FAILURE;
-            }
+        const auto early_chain = startup::Run(startup_services, [] {
+            try { return std::pair{QString::fromStdString(gArgs.GetChainTypeString()).toUpper(), QString{}}; }
+            catch (const std::exception& e) { return std::pair{QString{}, QString::fromUtf8(e.what())}; }
+        });
+        if (!early_chain.second.isEmpty()) {
+            startup::Run(startup_services, [&] { return InitError(Untranslated(early_chain.second.toStdString())); });
+            return EXIT_FAILURE;
         }
+        setupChainQSettings(&app, early_chain.first);
+        // A reset is one captured onboarding mutation after final profile/path
+        // resolution. Do not empty settings or overwrite its backup at startup.
 
         LoadFontResource(":/fonts/bitcoincoresans/regular");
         LoadFontResource(":/fonts/bitcoincoresans/semibold");
@@ -795,13 +791,19 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         const auto prepare_node = [&, qt_info] {
             const startup::PreparationPorts ports{
                 [] {
-                    return !common::InitConfig(gArgs, [](const bilingual_str& message, const std::vector<std::string>& details) {
+                    const auto configured = common::InitConfig(gArgs, [](const bilingual_str& message, const std::vector<std::string>& details) {
                         return InitError(message, details);
                     });
+                    if (configured) InitError(configured->message, configured->details);
+                    return !configured;
                 },
                 [] {
                     const auto migrated = QmlLegacySettings::MigrateCoreSettings(gArgs, QmlLegacySettings::MigrationMode::Persist);
-                    return startup::Migration{migrated.settings_changed, migrated.error};
+                    return startup::Migration{migrated.settings_changed, migrated.error, [migrated] {
+                        QString error;
+                        const bool completed = QmlLegacySettings::CompleteCoreSettingsMigration(gArgs, migrated, &error);
+                        return startup::SettingsWrite{completed, error.isEmpty() ? std::vector<std::string>{} : std::vector<std::string>{error.toStdString()}};
+                    }};
                 },
                 [] {
                     startup::SettingsWrite result;

@@ -1,0 +1,128 @@
+{
+  "status": "focused_progress_gate_passed_ready_for_coordinator_integration",
+  "implementation_head": "ffd8da03f4bb255f607d587ed3ea1bd80f30bf1e",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "Core_changes": false,
+  "strict_wallet_boundary": "Inherited wallet/db.h/ListDatabases dependency removed. New app-owned read-only process uses only public Init/Node/WalletLoader and public network startup glue; no private fallback or Core exception.",
+  "purpose": "Classify existing wallet data in an inactive proposed profile before onboarding storage/continuation guidance, without mutating parent settings or loading wallets.",
+  "new_helper_native": {
+    "Linux_head15": 27,
+    "Mac_head15": 27,
+    "source13_exact_unchanged_native_carry": 70,
+    "Linux_current_helper_distinct_including_carry": 97,
+    "Mac_helper_distinct_including52protocol_process_carry": 79,
+    "head15_zero_skips": true,
+    "head15_stderr": "Only existing background-worker drain debug messages; actual stderr inspected."
+  },
+  "linux_retained_case_identities": {
+    "prior_focused_R35": 149,
+    "all_distinct_across_retained_and_helper": 226,
+    "not_a_single_current_ELF_full_run": true,
+    "receipts": [
+      {
+        "id": "prior-source09-slice",
+        "report": "bazzite-09/artifacts/green/results/report.json",
+        "report_sha256": "c68c13d8dee107b88c9be6f0f2263714a32be0d1a0872e3bf82f6f78ed345bbe",
+        "distinct_bodies": 105,
+        "selections": [
+          "revisioned-onboarding-domain-manual-and-real-workers",
+          "actual-startup-errors-and-recovery-identity",
+          "actual-Core-and-Qt-profile-write-readback-recovery",
+          "legacy-conversion-replacement-and-preview-controls",
+          "path-reset-preparation-prior-public-controls",
+          "existing-reader-and-native-preparation-ownership"
+        ]
+      },
+      {
+        "id": "prior-source07-unchanged43",
+        "report": "bazzite-07/artifacts/green/results/report.json",
+        "report_sha256": "fd6f4c156a48e7f153707741ded9965120d131913b8c59f467773f86f184457f",
+        "distinct_bodies": 43,
+        "selections": [
+          "original-native-desktop-profile-and-observation",
+          "shared-scalar-namespace-real-native-controls",
+          "startup-native-cleanup-fail-fast-and-quiescence"
+        ]
+      },
+      {
+        "id": "prior-source11-configured-error1",
+        "report": "bazzite-11/artifacts/green/results/report.json",
+        "report_sha256": "2aaee213be6d2fe28677a38e2c8d74d74174078281e4cc9417e67ec0b1c75002",
+        "distinct_bodies": 1,
+        "selections": [
+          "original-configured-unavailable-profile"
+        ]
+      },
+      {
+        "id": "source13-unchanged-helper-and-preview70",
+        "report": "bazzite-13/artifacts/green/results/report.json",
+        "report_sha256": "af11352cedcd18b829ff4ed6c572503ab8c350dae85c18ed1130aed4c0d24fa9",
+        "distinct_bodies": 70,
+        "selections": [
+          "existing-preview-native-read-contracts",
+          "native-original-child-ownership",
+          "public-directory-request-protocol"
+        ]
+      },
+      {
+        "id": "source15-current-model27",
+        "report": "bazzite-15/artifacts/green/results/report.json",
+        "report_sha256": "9593d061c779363963cd71eabd56c50a29456a9182581bf73e2a8228e93003d5",
+        "distinct_bodies": 27,
+        "selections": [
+          "manual-and-real-original-profile-ownership",
+          "existing-onboarding-path-and-preparation-consumers"
+        ]
+      }
+    ]
+  },
+  "exact_parent_reentrancy": {
+    "app": "fcf842e0976862f1310fe0639c2a43e4e74373e3",
+    "production_parent14_unchanged": true,
+    "executed": 2,
+    "failed_as_expected": 2,
+    "infrastructure_failures": 0,
+    "artifact": "bazzite-15/artifacts/red/results/report.json"
+  },
+  "actual_Core_and_GUI": {
+    "source13_helper_protocol_scenario": "6Corecontrols:validnamed,wrongnetwork,emptyidentity,junkSQLite,customsignet51,defaultsignetmismatch; childexit0/emptystderr/targetsunchanged",
+    "source15_GUI_scenarios": [
+      "root-wallet-discovery",
+      "explicit-walletdir-discovery"
+    ],
+    "source15_process_exit": 0,
+    "source15_outer_stderr_bytes": 0,
+    "prior09_three_lifecycle_scenarios": "retained historical results; not rerun wholesale15"
+  },
+  "static": {
+    "source13": {
+      "CPP": 10,
+      "fresh_MOC": 7,
+      "passed": 17
+    },
+    "source15": {
+      "CPP": 2,
+      "fresh_MOC": 7,
+      "passed": 9
+    },
+    "current_scope_carry": "8unchangedCPPfrom13 +2currentCPP/7currentMOCfrom15, no full17rerun claim",
+    "Core_check_definitions_plugin_and_Clang23_preserved": true,
+    "QML_lint": "source13 bothvariants pass; all productionQML/public-header/registration sources unchanged15",
+    "app_lint": "helper-lint-15/RESULT.json exactFFD pass3.27s; delivery-doc-only head gets own lint"
+  },
+  "upstream_note": "plan/R35_PUBLIC_DIRECTORY_ADAPTER_UPSTREAM.md",
+  "limitations": [
+    "Public Core list lacks complete recursive diagnostics and row/memory limits; observation is not an atomic filesystem snapshot.",
+    "Logical timeout/cancellation retains original Native ownership until physical child reaping; no universal OS kill bound.",
+    "Helper must ship beside app; missing/failed helper is visible failure, never private fallback or empty success.",
+    "066 remains deferred;263 retains candidate provenance, not a blanket historical-defect promotion.",
+    "No current full interface_gui/sanitizer/coverage/platform/config matrix pass claimed; R42 pending."
+  ],
+  "integration_acceptance": false,
+  "coordinator_composition": {
+    "app": "eec5c0292fb1331d7fac1b4bee39cf57579d4295",
+    "status": "focusedaccepted",
+    "actual_bodies": 95,
+    "evidence": "evidence/R35_COMPOSED.json"
+  }
+}

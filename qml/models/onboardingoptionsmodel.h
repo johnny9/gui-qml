@@ -10,6 +10,7 @@
 #include <qml/ownedwork.h>
 #include <qml/models/core_settings_model.h>
 #include <qml/onboarding_settings.h>
+#include <qml/onboardingflow.h>
 #include <qml/onboarding_storage.h>
 
 #include <QObject>
@@ -82,7 +83,8 @@ class OnboardingOptionsModel : public QObject
     Q_PROPERTY(bool storageEnoughForCustom READ storageEnoughForCustom NOTIFY storageStatusChanged)
 
 public:
-    explicit OnboardingOptionsModel(std::vector<std::string> argv, bool can_listen_ipc, QObject* parent = nullptr, execution::SnapshotServices services = {});
+    explicit OnboardingOptionsModel(std::vector<std::string> argv, bool can_listen_ipc, QObject* parent = nullptr, execution::SnapshotServices services = {},
+        profileinspection::Port inspect = {});
     ~OnboardingOptionsModel() override;
 
     enum PreparationState {PreparationIdle,PreparationPending,PreparationSucceeded,PreparationFailed,PreparationUncertain};
@@ -93,12 +95,26 @@ public:
     enum SetupCommit {SetupIdle,SetupPending,SetupCommitted,SetupFailed,SetupUncertain};Q_ENUM(SetupCommit)
     using CommitPort=std::function<std::pair<bool,QString>(const QmlOnboardingSettings::ApplyRequest&)>;
     void configureSettingsCommit(ArgsManager& args);
-    void setSettingsCommitPort(CommitPort port){m_commit_port=std::move(port);}
+    void setSettingsCommitPort(CommitPort port);
+    void setProfilePorts(onboarding::Ports ports) { m_profile_ports = std::move(ports); }
+    Q_INVOKABLE void querySetupOutcome();
+    Q_INVOKABLE void retrySetupChecks() { notifyCanFinish(); }
+    Q_INVOKABLE void completeSavedSetup();
+    enum FlowPhase {Drafting,Checking,Ready,Persisting,PreparingNode,Completed,Failed,Closing,Closed,Reconciling};
+    Q_ENUM(FlowPhase)
+    Q_PROPERTY(FlowPhase flowPhase READ flowPhase NOTIFY setupCommitChanged)
+    Q_PROPERTY(bool setupPartial READ setupPartial NOTIFY setupCommitChanged)
+    Q_PROPERTY(bool setupUncertain READ setupUncertain NOTIFY setupCommitChanged)
+    Q_PROPERTY(QString setupAttemptId READ setupAttemptId NOTIFY setupCommitChanged)
+    FlowPhase flowPhase() const { return static_cast<FlowPhase>(m_flow_projection.phase); }
+    bool setupPartial() const { return m_flow_projection.profile_written && !m_flow_projection.profile_complete; }
+    bool setupUncertain() const { return m_flow_projection.phase == onboarding::Phase::Reconciling || m_flow_projection.profile_unknown; }
+    QString setupAttemptId() const { return QString::number(m_flow_projection.attempt); }
     Q_INVOKABLE void commitSettings();
     QString unpruneConsentToken()const;
     Q_INVOKABLE void confirmUnpruning(const QString& token);
-    bool setupCommitPending()const{return m_setup_commit->load()==SetupPending;}
-    bool setupCommitted()const{return m_setup_commit->load()==SetupCommitted;}
+    bool setupCommitPending()const{return m_flow_command_pending||m_setup_commit->load()==SetupPending;}
+    bool setupCommitted()const{return m_flow_projection.profile_complete;}
     QString setupCommitError()const{return m_setup_error;}
     std::shared_ptr<const std::atomic<int>> setupCommitReceipt()const{return m_setup_commit;}
     // Keep args and the preparation callback's dependencies alive until nodePrepared.
@@ -143,7 +159,7 @@ public:
     QObject* coreSettings() { return &m_core_settings; }
     QVariantMap coreSettingStatuses() const { return m_core_settings.statuses(); }
     QString previewError() const { return m_preview_error; }
-    bool canFinish() const { return !m_preparing && !setupCommitPending() && !setupCommitted() && m_setup_commit->load()!=SetupUncertain && !m_stopping && !m_core_settings.pending() && m_core_settings.pruneTargetError().isEmpty() && !m_preview_pending && m_preview_error.isEmpty() && !m_storage_check_pending && !m_storage_projection_pending && m_storage_error_text.isEmpty() && m_storage_info.enough_for_selected; }
+    bool canFinish() const { return m_flow_ready && !m_flow_command_pending && checksAvailable(); }
     bool dirtyState() const { return false; }
     int assumedBlockchainSize() const { return m_assumed_blockchain_size; }
     int assumedChainstateSize() const { return m_assumed_chainstate_size; }
@@ -199,6 +215,10 @@ Q_SIGNALS:
     void storageStatusChanged();
 
 private:
+    bool checksAvailable() const;
+    void notifyCanFinish();
+    void finishDrain();
+    void publishFlow(onboarding::Projection value);
     void finishNodePreparation(bool success, const QString& error);
     void setDataDir(const QString& path);
     void refreshPreview();
@@ -218,13 +238,26 @@ private:
     void startStorageProjection();
     void publishShutdown();
     void setPreviewError(const QString& error);
+    void invalidateInspection();
 
+    struct FlowMailbox;
+    std::shared_ptr<FlowMailbox> m_flow_mailbox;
+    std::unique_ptr<onboarding::Coordinator> m_flow;
+    onboarding::Ports m_profile_ports;
+    onboarding::Projection m_flow_projection;
+    quint64 m_flow_revision{0};
+    bool m_flow_ready{false}, m_flow_command_pending{false}, m_flow_drained{false}, m_readers_drained{false};
+    bool m_backend_drained{false}, m_preparation_ledger_drained{false}, m_preparation_success{false}, m_terminal_scheduled{false};
+    QString m_preparation_error;
+    UiPreferencesNamespace m_settings_namespace;
     CommitPort m_commit_port;
     std::shared_ptr<std::atomic<int>> m_setup_commit{std::make_shared<std::atomic<int>>(SetupIdle)};
     QString m_setup_error;
     QString m_unprune_consent;
     std::unique_ptr<BackendExecutor> m_executor;
     execution::SnapshotServices m_services;
+    const profileinspection::Port m_inspect;
+    profileinspection::Cancellation m_inspection_cancel{std::make_shared<std::atomic_bool>(false)};
     std::unique_ptr<execution::OwnedWork> m_work,m_preparation_work;
     QString m_default_data_dir;
     QUrl m_default_data_directory;
@@ -239,6 +272,7 @@ private:
     bool m_stopping{false};
     bool m_shutdown_requested{false};
     bool m_preview_pending{true};
+    bool m_path_pending{false};
     bool m_preview_in_flight{false};
     uint64_t m_preview_request_id{0};
     std::shared_ptr<const std::vector<std::string>> m_argv;

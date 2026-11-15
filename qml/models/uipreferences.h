@@ -4,6 +4,7 @@
 #ifndef BITCOIN_QML_MODELS_UIPREFERENCES_H
 #define BITCOIN_QML_MODELS_UIPREFERENCES_H
 #include <qml/ownedwork.h>
+#include <qml/settingsnamespace.h>
 #include <qml/preferenceswatch.h>
 #include <QObject>
 #include <QPointer>
@@ -14,15 +15,6 @@
 #include <atomic>
 #include <map>
 class AppPreferences;
-/** Scalar identity captured before engine creation. Each engine keeps its own
- * store; pre-init onboarding and final chain namespaces must never share one. */
-struct UiPreferencesNamespace {
-    QString organization, application;
-    QSettings::Format format{QSettings::NativeFormat};
-    QSettings::Scope scope{QSettings::UserScope};
-    QString file; // Optional explicit INI path for independent integration tests.
-    static UiPreferencesNamespace Capture();
-};
 struct UiPreferencesValues {
     bool dark{true};double blockclocksize{5.0/12.0};
     double windowX{0},windowY{0},windowWidth{0},windowHeight{0};
