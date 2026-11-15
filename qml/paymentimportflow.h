@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QML_PAYMENTIMPORTFLOW_H
 #define BITCOIN_QML_PAYMENTIMPORTFLOW_H
 
+#include <qml/walletopeningstate.h>
+
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -22,7 +24,8 @@ enum class PromptReason { ConflictingIntent, ChangedRevision };
 /** Facts supplied by the original target actor, independently of source reads.
  * A revision identifies intent, including same-value amount-mode changes. */
 struct Target {
-    uint64_t opening{0}, draft{0}, revision{0}, recipient{0};
+    walletopening::Opening opening;
+    uint64_t draft{0}, revision{0}, recipient{0};
     bool available{false}, compatible{false}, conflicts{false};
     bool operator==(const Target&) const = default;
 };
@@ -113,7 +116,7 @@ public:
         if (m_phase == Phase::AwaitingReplacement) m_phase = Phase::Inspecting;
         return true;
     }
-    bool targetUnavailable(uint64_t opening) {
+    bool targetUnavailable(const walletopening::Opening& opening) {
         if (!m_target || m_target->opening != opening) return false;
         m_target->available = false; m_prompt.reset();
         if (m_phase == Phase::AwaitingReplacement) m_phase = Phase::Inspecting;

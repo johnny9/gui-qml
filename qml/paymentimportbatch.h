@@ -6,6 +6,7 @@
 #define BITCOIN_QML_PAYMENTIMPORTBATCH_H
 
 #include <qml/senddraft.h>
+#include <key_io.h>
 
 #include <cstdint>
 #include <optional>
@@ -39,7 +40,8 @@ inline BatchResult PreparePaymentBatch(const senddraft::Recipient& current, cons
     const auto& request = batch.payment;
     if (request.address.isEmpty() || request.address.size() > 1024 ||
         request.label.size() > senddraft::Limits::note || request.message.size() > senddraft::Limits::message ||
-        request.private_note.size() > senddraft::Limits::note || (request.amount && !MoneyRange(*request.amount)))
+        request.private_note.size() > senddraft::Limits::note || (request.amount && !MoneyRange(*request.amount)) ||
+        !IsValidDestination(DecodeDestination(request.address.toStdString())))
         return {BatchStatus::Invalid, {}, false, false};
     const bool maximum_replaced = request.amount && current.mode == senddraft::AmountMode::Maximum;
     const bool conflicts = maximum_replaced ||
