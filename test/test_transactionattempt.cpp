@@ -231,6 +231,39 @@ private Q_SLOTS:
         QVERIFY(transport.quiescent());
     }
 
+    void rejectedRequestCannotReplaceTheOriginalAttemptMetadata_data()
+    {
+        QTest::addColumn<bool>("ordinary");
+        QTest::newRow("replacement-replay") << false;
+        QTest::newRow("ordinary-request-replay") << true;
+    }
+    void rejectedRequestCannotReplaceTheOriginalAttemptMetadata()
+    {
+        QFETCH(bool, ordinary);
+        ManualRoutedExecution transport;
+        transactionattempt::Owner owner{transport.scheduler};
+        const auto opening = NewOpening();
+        const QString original{64, QLatin1Char{'a'}};
+        transactionattempt::ReplacementStart input{7, 3, {opening, 0, true}, original};
+        transactionattempt::Result started, rejected;
+        QVERIFY(owner.beginReplacement(input, [&](auto value) { started = std::move(value); }));
+        transport.drain();
+        if (ordinary) {
+            transactionattempt::StartInput replay;
+            replay.id = 7; replay.intent_revision = 3; replay.facts = input.facts;
+            QVERIFY(owner.begin(replay, [&](auto value) { rejected = std::move(value); }));
+        } else {
+            input.original_txid = QString(64, QLatin1Char{'b'});
+            QVERIFY(owner.beginReplacement(input, [&](auto value) { rejected = std::move(value); }));
+        }
+        transport.drain();
+        QVERIFY(rejected.transition == transactionattempt::Transition::Ignored);
+        QCOMPARE(rejected.snapshot.ticket, started.snapshot.ticket);
+        QCOMPARE(rejected.snapshot.phase, started.snapshot.phase);
+        QCOMPARE(rejected.snapshot.kind, transactionattempt::Kind::Replacement);
+        QCOMPARE(rejected.snapshot.original_txid, original);
+        QVERIFY(transport.quiescent());
+    }
     void replacementOwnerRetainsOriginalAndApprovedCandidateAcrossTransitions()
     {
         ManualRoutedExecution transport;
