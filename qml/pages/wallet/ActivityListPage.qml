@@ -345,7 +345,7 @@ Page {
                 anchors.topMargin: activityRefreshError.visible ? activityRefreshError.height + 8 : 0
                 clip: true
                 model: root.visible ? activityFilterProxy : null
-                reuseItems: true
+                reuseItems: false
                 boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
                 section.property: root.visible ? "sectionLabel" : ""

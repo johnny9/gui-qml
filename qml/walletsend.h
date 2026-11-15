@@ -129,6 +129,40 @@ Result Approve(interfaces::Wallet& wallet, const Request& request, std::shared_p
 // Production reserves this output before admitting the device action, so
 // accepted work does not need new allocation admission after shutdown closes.
 Result ApproveInto(interfaces::Wallet& wallet, const Request& request, std::shared_ptr<Result> output);
+
+enum class ApprovalPhase { Idle, Preparing, WaitingDevice, Verifying, Complete, Partial, Failed, Cancelling, Closed, Uncertain };
+struct ApprovalSnapshot {
+    uint64_t sequence{0}, attempt_id{0}, attempt_review{0}, attempt_view{0};
+    uint64_t current_review{0}, current_view{0};
+    ApprovalPhase phase{ApprovalPhase::Idle};
+    Error error{Error::None};
+    bool signer_not_found{false}, in_flight{false}, publishable{false};
+    std::shared_ptr<const Result> result;
+};
+
+/** Domain-lane owner for one opening's external-signer approval lifecycle.
+ * Inputs are immutable captured review values; only snapshots are delivered
+ * to the GUI, and a stale/closed result cannot install into a later review.
+ */
+class ApprovalOwner final : public std::enable_shared_from_this<ApprovalOwner>
+{
+public:
+    using Notify = std::function<void(ApprovalSnapshot)>; // enqueue-only GUI transport
+    ApprovalOwner(std::shared_ptr<walletopening::Session> opening, Notify notify);
+    execution::Admission reviewChanged(uint64_t review_id, uint64_t view_revision);
+    execution::Admission request(uint64_t attempt_id, uint64_t review_id, uint64_t view_revision,
+                                 std::shared_ptr<Request> retained_request);
+    execution::Admission close();
+
+private:
+    struct State;
+    static ApprovalSnapshot project(const State& state);
+    static void publish(const std::shared_ptr<State>& state, const Notify& notify);
+    const std::shared_ptr<walletopening::Session> m_opening;
+    const Notify m_notify;
+    const std::shared_ptr<State> m_state;
+    std::atomic_bool m_close_requested{false};
+};
 } // namespace walletsigning
 
 #endif // BITCOIN_QML_WALLETSEND_H

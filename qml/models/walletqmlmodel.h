@@ -69,7 +69,7 @@ class Node;
 } // namespace interfaces
 
 namespace walletsend { class Operation; class CommitConsent; }
-namespace walletsigning { struct Result; }
+namespace walletsigning { class ApprovalOwner; struct ApprovalSnapshot; }
 namespace walletprepare { struct Request; struct Result; }
 
 class PsbtQmlModel;
@@ -391,9 +391,10 @@ public:
     bool observationsAllowed() const { return !m_stopping && !m_admission_closed; }
     bool available() const { return m_wallet && !m_admission_closed && !m_unload_requested->load() && (!m_opening_native_events.unloaded || !m_opening_native_events.unloaded->load()); }
     ApprovalState signerApprovalState() const;
+    bool signerApprovalBusy() const;
     quint64 signerApprovalId() const { return m_approval_id; }
-    QString signerApprovalError() const { return m_approval_error; }
-    bool signerApprovalSignerNotFound() const { return m_approval_signer_not_found; }
+    QString signerApprovalError() const;
+    bool signerApprovalSignerNotFound() const;
     void closeAdmission();
     void registerReview(WalletQmlModelTransaction* review) override;
     void setReviewRetirementPostForTesting(std::function<void(std::function<void()>)> post);
@@ -712,7 +713,11 @@ private:
     ApprovalState m_approval_state{ApprovalState::ApprovalInitial};
     QString m_approval_error;
     bool m_approval_signer_not_found{false};
-    std::shared_ptr<execution::OwnedCommand<walletsigning::Result>> m_approval;
+    bool m_approval_local_pending{false};
+    bool m_approval_command_admitted{false};
+    std::shared_ptr<walletsigning::ApprovalOwner> m_signer_approval_operation;
+    std::shared_ptr<const walletsigning::ApprovalSnapshot> m_approval_projection;
+    quint64 m_approval_attempt_review{0}, m_approval_attempt_view{0};
     std::shared_ptr<execution::OwnedCommand<walletprepare::Result>> m_preparation;
     std::shared_ptr<transactionattempt::Owner> m_transaction_attempt;
     transactionattempt::Snapshot m_preparation_projection;
@@ -720,9 +725,7 @@ private:
     quint64 m_next_preparation_id{0};
     quint64 m_gui_preparation_intent_revision{0};
     quint64 m_current_review_identity{0};
-    QPointer<WalletQmlModelTransaction> m_approval_review;
-    CTransactionRef m_approval_transaction;
-    void publishApproval();
+    void publishApproval(walletsigning::ApprovalSnapshot snapshot);
     struct SendFacts {
         CAmount available{0}, selected{0}, dust{0}, minimum_relay{0};
         QHash<unsigned int, CAmount> target_rates;

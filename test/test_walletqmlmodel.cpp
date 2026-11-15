@@ -3049,6 +3049,9 @@ private Q_SLOTS:
         const auto disarm = qScopeGuard([gate] { gate->disarm(); });
         const auto ticket = original->approveExternalSignerTransaction();
         QVERIFY(ticket);
+        if (effect) {
+            for (int turn = 0; trigger->calls.load() == 0 && turn < 16; ++turn) QVERIFY(environment.step());
+        }
         QCOMPARE(trigger->calls.load(), size_t{1});
         QCOMPARE(device_calls->load(), 0);
         if (action == 1) QVERIFY(!original);
@@ -3123,7 +3126,10 @@ private Q_SLOTS:
         QSignalSpy failed{&model, &WalletQmlModel::externalSignerApprovalFailed};
         QVERIFY(model.approveExternalSignerTransaction());
         QCOMPARE(model.approveExternalSignerTransaction(), quint64{0});
-        if (boundary == 1) { QVERIFY(environment.step()); QCOMPARE(device_calls, 1); }
+        if (boundary == 1) {
+            for (int turn = 0; device_calls == 0 && turn < 16; ++turn) QVERIFY(environment.step());
+            QCOMPARE(device_calls, 1); // Stop at the actual signer effect, before its Domain receipt or GUI publication.
+        }
         if (boundary == 2) { environment.drain(); QCOMPARE(device_calls, 1); }
         QCOMPARE(model.signerApprovalState(), WalletQmlModel::ApprovalState::ApprovalWaiting);
         QCOMPARE(succeeded.size(), 0); QCOMPARE(failed.size(), 0);
