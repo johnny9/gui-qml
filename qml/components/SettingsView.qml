@@ -402,7 +402,8 @@ Page {
 
         SettingsPages.SettingsRpcConsoleView {
             walletName: root.activeWalletRpcName
-            walletContext: root.activeWalletAvailable && root.activeWalletRpcReady
+            walletContext: root.wallet !== null
+            targetAvailable: root.wallet === null || (root.activeWalletAvailable && root.activeWalletRpcReady)
         }
     }
 

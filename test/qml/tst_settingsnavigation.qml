@@ -849,6 +849,35 @@ TestCase {
         }
     }
 
+    function test_unavailable_rpc_wallet_never_becomes_a_node_request() {
+        const oldAvailable = testWalletModel.available
+        try {
+            testWalletModel.available = true
+            const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem,
+                { wallet: testWalletModel })
+            view.selectSection("rpc-console")
+            const page = findChild(view, "rpcConsoleSettingsPage")
+            verify(page !== null)
+            const input = findChild(page, "consoleInput")
+            verify(input !== null)
+            input.text = "getwalletinfo"
+            const before = rpcConsoleModel.commandCount
+            testWalletModel.available = false
+            compare(page.walletContext, true)
+            compare(page.targetAvailable, false)
+            page.consoleItem.submitCommand()
+            compare(rpcConsoleModel.commandCount, before)
+            compare(input.text, "getwalletinfo")
+            testWalletModel.available = true
+            compare(page.targetAvailable, true)
+            page.consoleItem.submitCommand()
+            compare(rpcConsoleModel.commandCount, before + 1)
+            compare(rpcConsoleModel.lastTarget, "wallet")
+        } finally {
+            testWalletModel.available = oldAvailable
+        }
+    }
+
     function test_rpcConsoleUsesSettingsContainerAndTracksVisibility() {
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
         verify(view !== null)

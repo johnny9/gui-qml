@@ -44,6 +44,10 @@ public:
         ContentRole,
         CategoryRole,
         ContinuationRole,
+        CommandIdRole,
+        GenerationRole,
+        WalletContextRole,
+        WalletNameRole,
     };
 
     static constexpr int kMaxRows = 5000;
@@ -54,6 +58,9 @@ public:
         QString contentHtml;
         int category;
         bool continuation{false};
+        quint64 command_id{0};
+        quint64 generation{0};
+        RpcCommandContext context{};
     };
     using Batch = QList<Row>;
 
@@ -75,6 +82,18 @@ private:
     Batch m_rows;
     qsizetype m_characters{0};
 };
+
+/** The factual result belongs to the accepted command, independently of the
+ * observing view or its current output generation. No original input is stored. */
+struct RpcCommandResult {
+    enum class Outcome { Succeeded, KnownError, NotStarted, Uncertain };
+    quint64 command_id{0};
+    quint64 generation{0};
+    RpcCommandContext context;
+    Outcome outcome{Outcome::NotStarted};
+    bool attempted{false};
+};
+using RpcCommandReceipt = execution::OwnedCommand<RpcCommandResult>;
 
 /**
  * Model for the RPC command console page.
@@ -104,6 +123,8 @@ class RpcConsoleModel : public QObject
     Q_PROPERTY(QString completionError READ completionError NOTIFY completionChanged)
     Q_PROPERTY(bool completionBusy READ completionBusy NOTIFY completionChanged)
     Q_PROPERTY(bool executing READ executing NOTIFY executingChanged)
+    Q_PROPERTY(quint64 commandId READ commandId NOTIFY executingChanged)
+    Q_PROPERTY(quint64 outputGeneration READ outputGeneration NOTIFY outputCleared)
     Q_PROPERTY(QStringList availableCommands READ availableCommands NOTIFY availableCommandsChanged)
     Q_PROPERTY(RpcOutputListModel* outputModel READ outputModel CONSTANT)
     Q_PROPERTY(QColor requestColor MEMBER m_request_color)
@@ -131,12 +152,18 @@ public:
     QString completionError() const { return m_completion_error; }
     bool completionBusy() const { return m_completion_busy; }
     bool executing() const { return m_executing; }
+    quint64 commandId() const { return m_command_id; }
+    quint64 outputGeneration() const { return m_output_generation; }
+    std::shared_ptr<const RpcCommandReceipt> commandReceipt() const { return m_command; }
+    static constexpr qsizetype kMaxInputCharacters = 65'536;
     QStringList availableCommands() const { return m_available_commands; }
     RpcOutputListModel* outputModel() { return &m_output_model; }
 
     Q_INVOKABLE bool submitCommand(const QString& command, const QString& wallet_name = {});
     Q_INVOKABLE bool submitNodeCommand(const QString& command);
     Q_INVOKABLE bool submitWalletCommand(const QString& command, const QString& wallet_name);
+    Q_INVOKABLE bool submitInput(const QString& command, bool wallet_context,
+                                const QString& wallet_name, bool target_available);
 
     /**
      * Navigate command history.
@@ -160,6 +187,7 @@ Q_SIGNALS:
     void executingChanged();
     void completionChanged();
     void availableCommandsChanged();
+    void outputCleared();
 
 private Q_SLOTS:
     void onResultReady();
@@ -190,7 +218,10 @@ private:
     QStringList m_history;
     int m_history_idx{-1};
     QString m_pending_text; // text being edited before browsing history
-    RpcCommandContext m_last_command_context; // last target surfaced in the output
+    std::optional<RpcCommandContext> m_last_command_context{RpcCommandContext::ForNode()};
+    RpcCommandContext m_command_context;
+    quint64 m_next_command_id{0}, m_command_id{0}, m_command_generation{0}, m_output_generation{1};
+    std::shared_ptr<RpcCommandReceipt> m_command, m_stop_command;
 
     bool m_stopping{false};
     bool m_shutdown_started{false};

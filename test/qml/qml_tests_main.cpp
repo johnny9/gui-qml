@@ -6408,6 +6408,7 @@ public:
 class MockRpcConsoleModel : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(int commandCount READ commandCount NOTIFY commandSubmitted)
     Q_PROPERTY(QString lastTarget READ lastTarget NOTIFY commandSubmitted)
     Q_PROPERTY(QString lastWalletName READ lastWalletName NOTIFY commandSubmitted)
     Q_PROPERTY(QString completionPrefix MEMBER m_completion_prefix)
@@ -6423,6 +6424,7 @@ class MockRpcConsoleModel : public QObject
     Q_PROPERTY(QColor keyColor MEMBER m_key_color)
 
 public:
+    int commandCount() const { return m_command_count; }
     QString lastTarget() const { return m_last_target; }
     QString lastWalletName() const { return m_last_wallet_name; }
     bool executing() const { return false; }
@@ -6432,8 +6434,13 @@ public:
     QString completionError() const { return {}; }
     QObject* outputModel() { return &m_output; }
     Q_INVOKABLE bool submitCommand(const QString&, const QString&) { return false; }
-    Q_INVOKABLE bool submitNodeCommand(const QString&) { m_last_target = QStringLiteral("node"); m_last_wallet_name.clear(); Q_EMIT commandSubmitted(); return false; }
-    Q_INVOKABLE bool submitWalletCommand(const QString&, const QString& name) { m_last_target = QStringLiteral("wallet"); m_last_wallet_name = name; Q_EMIT commandSubmitted(); return false; }
+    Q_INVOKABLE bool submitInput(const QString& command, bool wallet, const QString& name, bool available) {
+        if (command.trimmed() == QLatin1String("stop")) return submitNodeCommand(command);
+        if (!available) return false;
+        return wallet ? submitWalletCommand(command, name) : submitNodeCommand(command);
+    }
+    Q_INVOKABLE bool submitNodeCommand(const QString&) { ++m_command_count; m_last_target = QStringLiteral("node"); m_last_wallet_name.clear(); Q_EMIT commandSubmitted(); return false; }
+    Q_INVOKABLE bool submitWalletCommand(const QString&, const QString& name) { ++m_command_count; m_last_target = QStringLiteral("wallet"); m_last_wallet_name = name; Q_EMIT commandSubmitted(); return false; }
     Q_INVOKABLE QString browseHistory(int, const QString& current) { return current; }
     Q_INVOKABLE void resetHistoryNavigation() {}
     Q_INVOKABLE void clear() {}
@@ -6442,6 +6449,7 @@ Q_SIGNALS:
     void commandSubmitted();
 
 private:
+    int m_command_count{0};
     QString m_last_target, m_last_wallet_name;
     MockRpcOutputModel m_output;
     QString m_completion_prefix;

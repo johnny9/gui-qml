@@ -15,6 +15,13 @@
 #include <utility>
 #include <vector>
 
+#ifdef WIN32
+#include <io.h>
+#include <qt_windows.h>
+#else
+#include <sys/stat.h>
+#endif
+
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QFile>
@@ -40,6 +47,30 @@ namespace {
 constexpr qint64 TAIL_READ_BLOCK_SIZE{64 * 1024};
 constexpr qint64 FILE_ANCHOR_SIZE{256};
 constexpr qint64 MAX_DELTA_BYTES{8 * 1024 * 1024};
+
+// Identity is read from the opened file, so a concurrent path replacement
+// cannot combine one file's offsets with another file's identity.
+std::optional<std::array<uint64_t, 4>> FileIdentity(QFile& file)
+{
+#ifdef WIN32
+    const auto handle = reinterpret_cast<HANDLE>(_get_osfhandle(file.handle()));
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (handle == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(handle, &info)) return {};
+    return std::array<uint64_t, 4>{info.dwVolumeSerialNumber,
+        (uint64_t{info.nFileIndexHigh} << 32) | info.nFileIndexLow,
+        info.ftLastWriteTime.dwHighDateTime, info.ftLastWriteTime.dwLowDateTime};
+#else
+    struct stat info{};
+    if (fstat(file.handle(), &info) != 0) return {};
+#ifdef __APPLE__
+    const auto modified = info.st_mtimespec;
+#else
+    const auto modified = info.st_mtim;
+#endif
+    return std::array<uint64_t, 4>{static_cast<uint64_t>(info.st_dev), static_cast<uint64_t>(info.st_ino),
+        static_cast<uint64_t>(modified.tv_sec), static_cast<uint64_t>(modified.tv_nsec)};
+#endif
+}
 
 QByteArray ReadAnchor(QFile& file, qint64 file_size)
 {
@@ -75,6 +106,7 @@ bool IsLogCategory(const QString& value)
 } // namespace
 
 struct DebugLogModel::State {
+    std::optional<std::array<uint64_t, 4>> file_identity;
     QList<LogLine> all, display;
     qint64 file_size{-1};
     QByteArray partial, anchor;
@@ -87,7 +119,7 @@ struct DebugLogModel::Update {
     QString error, watch_file, watch_parent;
     int newly_completed{0}, loaded_limit{0};
     int old_start{0}, new_start{0}, common{0};
-    quint64 generation{0};
+    quint64 generation{0}, activation_generation{0};
 };
 struct DebugLogModel::DrainState {
     std::atomic_bool retired{false};
@@ -292,10 +324,11 @@ void DebugLogModel::setActive(bool active)
 void DebugLogModel::setFilter(const QString& filter)
 {
     if (m_stopping) return;
-    if (m_filter == filter) return;
+    const auto bounded = filter.left(256);
+    if (m_filter == bounded) return;
     const QPointer<DebugLogModel> observer{this};
     const auto interest = ++m_interest_revision;
-    m_filter = filter;
+    m_filter = bounded;
     Q_EMIT filterChanged();
     if (!observer || m_stopping || m_interest_revision != interest) return;
     // Cached rows remain observable while inactive, so keep the display
@@ -337,6 +370,7 @@ void DebugLogModel::requestUpdate(bool read_file, bool full_load, bool force_res
         m_force_reset_pending |= force_reset;
         return;
     }
+    force_reset |= std::exchange(m_force_reset_pending, false);
     bool backpressure{false}, cleanup_failed{false}, cleanup_pending{false};
     {
         std::lock_guard lock{m_mailbox->mutex};
@@ -366,6 +400,7 @@ void DebugLogModel::requestUpdate(bool read_file, bool full_load, bool force_res
     const auto filter = m_filter.left(256);
     const auto warnings = m_warnings_and_errors_only;
     const auto generation = ++m_work_generation;
+    const auto activation = m_activation_generation;
     const QPointer<DebugLogModel> observer{this};
     const auto owns = [observer, mailbox, generation] {
         return observer && !observer->m_stopping && observer->m_mailbox == mailbox && observer->m_work_generation == generation;
@@ -375,19 +410,24 @@ void DebugLogModel::requestUpdate(bool read_file, bool full_load, bool force_res
     if (!owns()) return;
     const auto pending = std::make_shared<Mailbox::Pending>(mailbox);
     const auto admission = execution::Submit(*services.scheduler,
-        [state, mailbox, pending, path, limit, filter, warnings, generation, read_file, full_load, force_reset] {
+        [state, mailbox, pending, path, limit, filter, warnings, generation, activation, read_file, full_load, force_reset] {
             ReadResult read;
             if (read_file) read = ReadAndFilter(path, limit, full_load, state->file_size,
-                state->partial, state->oversized, state->anchor, mailbox->cancelled);
-            return Reduce(*state, std::move(read), read_file, limit, filter, warnings,
-                          force_reset, QString::fromStdString(path.utf8string()), generation);
+                state->partial, state->oversized, state->anchor, state->file_identity, mailbox->cancelled);
+            if (read_file && !read.file_opened && read.error_message.isEmpty() && !mailbox->cancelled.load())
+                read.error_message = QObject::tr("Could not finish reading the debug log. Refresh to try again.");
+            auto update = Reduce(*state, std::move(read), read_file, limit, filter, warnings,
+                                 force_reset, QString::fromStdString(path.utf8string()), generation);
+            update->activation_generation = activation;
+            return update;
         }, [mailbox, pending](std::shared_ptr<Update> update) {
             { std::lock_guard lock{mailbox->mutex}; if (!mailbox->closed) mailbox->update = std::move(update); }
             mailbox->notify();
-        }, [mailbox, state, pending](std::exception_ptr) {
+        }, [mailbox, state, pending, generation, activation, read_file](std::exception_ptr) {
             auto failed = std::make_shared<Update>();
             failed->display = std::make_shared<const QList<LogLine>>(state->display);
-            failed->did_read = true; failed->error = QObject::tr("Could not read debug log.");
+            failed->generation = generation; failed->activation_generation = activation;
+            failed->did_read = read_file; failed->error = QObject::tr("Could not read debug log.");
             { std::lock_guard lock{mailbox->mutex}; if (!mailbox->closed) mailbox->update = std::move(failed); }
             mailbox->notify();
         }, {execution::Lane::Core, 1024, {}, execution::WorkClass::Observation});
@@ -548,6 +588,7 @@ DebugLogModel::ReadResult DebugLogModel::ReadAndFilter(const fs::path& log_path,
                                                       const QByteArray& previous_partial,
                                                       bool previous_discarding_oversized_line,
                                                       const QByteArray& previous_anchor,
+                                                      const std::optional<std::array<uint64_t, 4>>& previous_identity,
                                                       const std::atomic_bool& cancelled)
 {
     if (cancelled.load(std::memory_order_relaxed)) return {};
@@ -565,13 +606,17 @@ DebugLogModel::ReadResult DebugLogModel::ReadAndFilter(const fs::path& log_path,
         return result;
     }
     result.file_opened = true;
+    result.file_identity = FileIdentity(file);
 
     // Validate bytes at the old end-of-file before trusting the saved offset.
-    // This detects truncation and the common rotate-and-recreate case without
-    // relying on platform-specific inode APIs. On failure, rebuild from a
-    // bounded tail snapshot.
+    // Identity detects replacement even when the suffix is unchanged. The
+    // anchor additionally detects truncation/rewrite of the same open file.
     const qint64 snapshot_size = file.size();
-    bool continuity_valid = snapshot_size >= previous_file_size
+    bool continuity_valid = result.file_identity && previous_identity
+        && (*result.file_identity)[0] == (*previous_identity)[0]
+        && (*result.file_identity)[1] == (*previous_identity)[1]
+        && (snapshot_size != previous_file_size || result.file_identity == previous_identity)
+        && snapshot_size >= previous_file_size
         && previous_partial.size() <= previous_file_size;
     if (continuity_valid && previous_file_size > 0) {
         continuity_valid = !previous_anchor.isEmpty()
@@ -666,6 +711,7 @@ DebugLogModel::ReadResult DebugLogModel::ReadTail(const fs::path& log_path,
     }
 
     result.file_opened = true;
+    result.file_identity = FileIdentity(file);
     result.full_snapshot = true;
     result.snapshot_limit = std::min(load_limit, kMaxLoadLimit);
     result.file_size = file.size();
@@ -676,11 +722,18 @@ DebugLogModel::ReadResult DebugLogModel::ReadTail(const fs::path& log_path,
     // entries, but the viewer can observe an in-progress or interrupted write.
     qint64 complete_end{-1};
     qint64 cursor = result.file_size;
+    qint64 scanned{0};
     while (cursor > 0) {
         if (cancelled.load(std::memory_order_relaxed)) return {};
+        if (scanned >= MAX_DELTA_BYTES) {
+            result.memory_limited = result.has_more_lines = true;
+            result.discarding_oversized_line = true;
+            return result;
+        }
         const qint64 start = std::max(qint64{0}, cursor - TAIL_READ_BLOCK_SIZE);
         if (!file.seek(start)) return {};
         const QByteArray chunk = file.read(cursor - start);
+        scanned += cursor - start;
         if (chunk.size() != cursor - start) return {};
         const qsizetype last_newline = chunk.lastIndexOf('\n');
         if (last_newline >= 0) {
@@ -717,9 +770,11 @@ DebugLogModel::ReadResult DebugLogModel::ReadTail(const fs::path& log_path,
     // remaining prefix until the preceding newline restores framing.
     while (cursor > 0 && newest_first.size() < target) {
         if (cancelled.load(std::memory_order_relaxed)) return {};
+        if (scanned >= MAX_DELTA_BYTES) { byte_limited = true; break; }
         const qint64 start = std::max(qint64{0}, cursor - TAIL_READ_BLOCK_SIZE);
         if (!file.seek(start)) return {};
         const QByteArray chunk = file.read(cursor - start);
+        scanned += cursor - start;
         if (chunk.size() != cursor - start) return {};
 
         QByteArray data;
@@ -845,6 +900,7 @@ std::shared_ptr<DebugLogModel::Update> DebugLogModel::Reduce(State& state, ReadR
     result->watch_file = info.isFile() ? path : QString{};
     result->watch_parent = info.absolutePath();
     if (did_read && read.file_opened) {
+        state.file_identity = read.file_identity;
         state.file_size = read.file_size; state.partial = std::move(read.trailing_partial);
         state.oversized = read.discarding_oversized_line; state.anchor = std::move(read.file_anchor);
         if (read.full_snapshot) {
@@ -986,6 +1042,22 @@ void DebugLogModel::receiveUpdate()
             m_projection_pending = false;
             requestUpdate(read && m_active, full, std::exchange(m_force_reset_pending, false));
         }
+        return;
+    }
+    if (update->did_read && update->activation_generation != m_activation_generation) {
+        // Accepted reads still finish and retire. A different activation owns
+        // its own visible read; unrelated commands are never cancelled.
+        m_read_in_flight = false;
+        const bool read = m_active;
+        const bool full = std::exchange(m_pending_full_load, false) || m_loaded_limit < m_load_limit;
+        const bool projection = std::exchange(m_projection_pending, false);
+        // Native reduction has advanced, but the GUI never adopted its old
+        // overlap. The successor must publish a complete coherent projection.
+        m_force_reset_pending = true;
+        m_refresh_pending = false;
+        Q_EMIT busyChanged();
+        if (!owns()) return;
+        if (read || projection) requestUpdate(read, full, true);
         return;
     }
     m_update = update; m_apply_stage = m_apply_position = 0;

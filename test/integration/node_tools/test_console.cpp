@@ -16,6 +16,7 @@
 #include <QRegularExpression>
 #include <QDir>
 #include <QFile>
+#include <QScopeGuard>
 
 #include <string>
 
@@ -50,7 +51,7 @@ class ConsoleIntegrationTests : public QObject
 
     // Physical rows are bounded lines/chunks. A timestamp starts each original
     // logical message. The first wallet query additionally has one exact
-    // context banner; Clear preserves that context for later exchanges.
+    // context banner; Clear starts a fresh presentation context.
     // No events are processed during the individual role reads: no model
     // mutation can interleave this synchronous, bounded traversal.
     bool hasLogicalExchange(int reply_category, const QString& forbidden = {}, const QString& expected_context = {}) const
@@ -61,7 +62,18 @@ class ConsoleIntegrationTests : public QObject
         QPointer<RpcOutputListModel> source{model->outputModel()};
         const int rows = source->rowCount();
         if (view->sourceModel() != source || rows <= 0 || rows > RpcOutputListModel::kMaxRows) return false;
-        const int context_messages = expected_context.isEmpty() ? 0 : 1;
+        const auto receipt = model->commandReceipt();
+        if (!receipt) return false;
+        const auto result = receipt->result();
+        if (!result || !result->value || result->value->command_id != model->commandId()) return false;
+        const auto& context = result->value->context;
+        const auto banner = context.target == RpcCommandContext::Target::Node
+            ? QStringLiteral("Executing command without any wallet")
+            : context.wallet_name.isEmpty() ? QStringLiteral("Executing command using the default wallet")
+            : QStringLiteral("Executing command using \"%1\" wallet").arg(context.wallet_name);
+        const bool has_banner = source->data(source->index(0, 0), RpcOutputListModel::ContentRole).toString() == banner.toHtmlEscaped();
+        if (!expected_context.isEmpty() && (!has_banner || expected_context != banner)) return false;
+        const int context_messages = has_banner ? 1 : 0;
         const int expected_starts = 2 + context_messages;
         QString first_timestamp;
         int starts{0};
@@ -74,6 +86,10 @@ class ConsoleIntegrationTests : public QObject
                 const auto value = source->data(source->index(row, 0), role);
                 return original() ? value : QVariant{};
             };
+            if (read(RpcOutputListModel::CommandIdRole).toULongLong() != result->value->command_id ||
+                read(RpcOutputListModel::GenerationRole).toULongLong() != result->value->generation ||
+                read(RpcOutputListModel::WalletContextRole).toBool() != (context.target == RpcCommandContext::Target::Wallet) ||
+                read(RpcOutputListModel::WalletNameRole).toString() != context.wallet_name) return false;
             const auto timestamp = read(RpcOutputListModel::TimestampRole);
             const auto content = read(RpcOutputListModel::ContentRole);
             const auto category = read(RpcOutputListModel::CategoryRole);
@@ -93,7 +109,7 @@ class ConsoleIntegrationTests : public QObject
         if (context_messages) {
             if (!view || view->rowCount() <= 0) return false;
             const auto first = view->index(0, 0);
-            if (view->data(first, MonospaceOutputModel::PlainContentRole).toString() != expected_context ||
+            if (view->data(first, MonospaceOutputModel::PlainContentRole).toString() != banner ||
                 view->data(first, MonospaceOutputModel::LeftRole).toString() != first_timestamp ||
                 view->data(first, MonospaceOutputModel::CategoryRole).toInt() != RpcConsoleModel::CMD_REQUEST) return false;
         }
@@ -313,6 +329,90 @@ private Q_SLOTS:
                 << "request safe" << request_safe << "recall after Clear safe" << recall_safe;
         QVERIFY(request_safe); QVERIFY(recall_safe);
         QCOMPARE(recalled, sensitive ? method + QString::fromUtf8("(…)") : command);
+    }
+
+    void enterUsesTypedInputUnlessKeyboardSelected_data()
+    {
+        QTest::addColumn<bool>("selected");
+        QTest::newRow("hover-only") << false;
+        QTest::newRow("keyboard-selection") << true;
+    }
+
+    void enterUsesTypedInputUnlessKeyboardSelected()
+    {
+        QFETCH(bool, selected);
+        auto* model = qmltest::Model<RpcConsoleModel>(m_app, "rpcConsoleModel"); QVERIFY(model);
+        auto* input = qmltest::Find(m_app, "consoleInput"); QVERIFY(input);
+        auto* console = qmltest::Find(m_app, "rpcConsole"); QVERIFY(console);
+        model->clear();
+        QVERIFY(qmltest::SetText(m_app, "consoleInput", QStringLiteral("getbloc")));
+        QVERIFY(QMetaObject::invokeMethod(input, "forceActiveFocus"));
+        QTRY_VERIFY(!model->completionBusy());
+        QVERIFY(model->completionSuggestions().contains(QStringLiteral("getblockcount")));
+        const auto hover_index = model->completionSuggestions().indexOf(QStringLiteral("getblockcount"));
+        const auto hover_name = QStringLiteral("consoleAutocomplete_%1").arg(hover_index);
+        QVERIFY(qmltest::WaitForVisible(m_app, qPrintable(hover_name)));
+        auto* suggestion = qobject_cast<QQuickItem*>(qmltest::Find(m_app, qPrintable(hover_name))); QVERIFY(suggestion);
+        QTest::mouseMove(m_app.window(), suggestion->mapToScene(QPointF{suggestion->width() / 2, suggestion->height() / 2}).toPoint());
+        QTRY_VERIFY(suggestion->property("hovered").toBool());
+        QCOMPARE(input->property("text").toString(), QStringLiteral("getbloc"));
+        QString expected{QStringLiteral("getbloc")};
+        if (selected) {
+            QTest::keyClick(m_app.window(), Qt::Key_Down, Qt::NoModifier, 1);
+            expected = model->completionSuggestions().at(0);
+        }
+        const auto before = model->commandId();
+        QTest::keyClick(m_app.window(), Qt::Key_Return, Qt::NoModifier, 1);
+        QVERIFY(waitForOutput()); QCOMPARE(model->commandId(), before + 1);
+        bool saw_request{false}; auto* output = model->outputModel();
+        for (int row = 0; row < output->rowCount(); ++row) {
+            if (output->data(output->index(row, 0), RpcOutputListModel::CategoryRole).toInt() == RpcConsoleModel::CMD_REQUEST &&
+                output->data(output->index(row, 0), RpcOutputListModel::ContentRole).toString() == expected) saw_request = true;
+        }
+        QVERIFY(saw_request); QCOMPARE(input->property("text").toString(), QString{});
+        QTest::keyClick(m_app.window(), Qt::Key_Return, Qt::NoModifier, 1);
+        QCOMPARE(model->commandId(), before + 1); // An empty second Enter cannot execute again.
+    }
+
+    void busyEnterKeepsDraftAndClearKeepsActualOutcome()
+    {
+        auto* model = qmltest::Model<RpcConsoleModel>(m_app, "rpcConsoleModel"); QVERIFY(model);
+        auto* input = qmltest::Find(m_app, "consoleInput"); QVERIFY(input);
+        const auto tip = qmltest::Call(m_app, &interfaces::Node::executeRpc, "getbestblockhash", UniValue{UniValue::VARR}, "").get_str();
+        model->clear();
+        QVERIFY(model->submitNodeCommand(QString::fromStdString("waitfornewblock 0 " + tip)));
+        const auto receipt = model->commandReceipt(); const auto id = model->commandId();
+        bool completed{false};
+        const auto finish = [&] {
+            if (completed) return;
+            completed = true;
+            UniValue params{UniValue::VARR}; params.push_back(1); params.push_back("raw(51)");
+            qmltest::Call(m_app, &interfaces::Node::executeRpc, "generatetodescriptor", params, "");
+        };
+        const auto cleanup = qScopeGuard([&] { finish(); QVERIFY(QTest::qWaitFor([&] { return !model->executing(); }, 5000)); });
+        QTRY_VERIFY(qmltest::RpcCommandRunning(m_app, "waitfornewblock"));
+        QVERIFY(qmltest::SetText(m_app, "consoleInput", QStringLiteral("getblock")));
+        QVERIFY(QMetaObject::invokeMethod(input, "forceActiveFocus"));
+        QTRY_VERIFY(!model->completionBusy()); QVERIFY(model->completionSuggestions().size() > 1);
+        QTest::keyClick(m_app.window(), Qt::Key_Down, Qt::NoModifier, 1);
+        QTest::keyClick(m_app.window(), Qt::Key_Down, Qt::NoModifier, 1);
+        QTest::keyClick(m_app.window(), Qt::Key_Return, Qt::NoModifier, 1);
+        QCOMPARE(input->property("text").toString(), QStringLiteral("getblock"));
+        QCOMPARE(model->commandId(), id); QVERIFY(model->executing());
+        const auto generation = model->outputGeneration();
+        QTest::keyClick(m_app.window(), Qt::Key_L,
+#ifdef Q_OS_MACOS
+                        Qt::MetaModifier,
+#else
+                        Qt::ControlModifier,
+#endif
+                        1);
+        QCOMPARE(model->outputGeneration(), generation + 1); QCOMPARE(model->outputModel()->rowCount(), 0);
+        QVERIFY(model->executing()); finish(); QVERIFY(waitForOutput());
+        QCOMPARE(model->outputModel()->rowCount(), 0); QCOMPARE(input->property("text").toString(), QStringLiteral("getblock"));
+        const auto result = receipt->result(); QVERIFY(result); QVERIFY(result->value); QVERIFY(result->value->attempted);
+        QCOMPARE(result->value->command_id, id); QCOMPARE(result->value->generation, generation);
+        QCOMPARE(result->value->outcome, RpcCommandResult::Outcome::Succeeded);
     }
 
     void consoleLayoutAndOutputStayAlignedAcrossFontSizes()
