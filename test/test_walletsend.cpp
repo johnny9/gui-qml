@@ -253,6 +253,62 @@ private Q_SLOTS:
         if (candidate == 0) QCOMPARE(operation->result()->committed->GetHash(), MakeTransactionRef(reviewed)->GetHash());
         QVERIFY(wallet->fill_options.empty()); QCOMPARE(wallet->unlocks, 0);
     }
+    void signerErrorCannotRetainInvalidFinalizedSignatures_data()
+    {
+        QTest::addColumn<int>("replacement");
+        QTest::addColumn<bool>("throws");
+        for (bool throws : {false, true}) for (int replacement : {0, 1, 2}) {
+            const auto name = QStringLiteral("%1-%2").arg(throws ? "unknown" : "error")
+                .arg(replacement == 0 ? "compatible-keys" : replacement == 1 ? "incompatible-keys" : "invalid-script");
+            QTest::newRow(qPrintable(name)) << replacement << throws;
+        }
+    }
+    void signerErrorCannotRetainInvalidFinalizedSignatures()
+    {
+        QFETCH(int, replacement);
+        QFETCH(bool, throws);
+        ECC_Context ecc;
+        struct ErrorSigner : Wallet {
+            PartiallySignedTransaction returned;
+            bool throws;
+            ErrorSigner(PartiallySignedTransaction response, bool uncertain)
+                : returned(std::move(response)), throws(uncertain) { signer = true; }
+            std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options, size_t*, PartiallySignedTransaction& document, bool& complete) override
+            {
+                complete = false;
+                if (!options.sign) return {};
+                ++signs;
+                document = returned;
+                if (throws) throw std::runtime_error("signer returned bytes without a confirmed outcome");
+                return common::PSBTError::EXTERNAL_SIGNER_FAILED;
+            }
+        } signer{psbtfeefixture::Legacy(2, false), throws};
+        const auto original = signer.returned;
+        if (replacement == 1) {
+            const auto incompatible = psbtfeefixture::Legacy(2, false);
+            for (size_t i = 0; i < signer.returned.inputs.size(); ++i)
+                signer.returned.inputs[i].final_script_sig = incompatible.inputs[i].final_script_sig;
+        } else if (replacement == 2) {
+            for (auto& input : signer.returned.inputs) input.final_script_sig = CScript{} << OP_TRUE;
+        }
+        const auto txdata = PrecomputePSBTData(signer.returned); QVERIFY(txdata);
+        for (size_t i = 0; i < signer.returned.inputs.size(); ++i)
+            QCOMPARE(PSBTInputSignedAndVerified(signer.returned, static_cast<unsigned int>(i), &*txdata), replacement == 0);
+        auto unsigned_document = original;
+        for (auto& input : unsigned_document.inputs) input.final_script_sig.clear();
+        const auto captured = psbtwork::SerializeRaw(unsigned_document);
+        const walletsigning::Request request{MakeTransactionRef(*original.GetUnsignedTx()),
+            std::make_shared<const PartiallySignedTransaction>(unsigned_document),
+            std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(original)), psbtfeefixture::ACTUAL_FEE};
+        const auto result = walletsigning::Approve(signer, request);
+        QCOMPARE(result.error, throws ? walletsigning::Error::Uncertain : walletsigning::Error::SignerFailed);
+        QCOMPARE(bool(result.document), replacement == 0);
+        QCOMPARE(result.partial, replacement == 0);
+        QVERIFY(!result.signed_transaction);
+        QCOMPARE(signer.signs, 1); QCOMPARE(signer.commits, 0);
+        QCOMPARE(psbtwork::SerializeRaw(*request.document), captured);
+        if (result.document) QCOMPARE(psbtwork::SerializeRaw(*result.document), psbtwork::SerializeRaw(original));
+    }
     void preparedSignerErrorCannotReplaceAuthenticatedInputKeys_data()
     {
         QTest::addColumn<int>("returned");
