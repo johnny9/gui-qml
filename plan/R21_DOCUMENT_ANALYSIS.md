@@ -87,6 +87,10 @@ Artifacts are under `.validation/qt6-r11-r40-20261114/R21/` in the workspace:
   incompatible-key Inspect/Sign/Broadcast cases fail as intended. The compatible
   cases use actual Core signatures. Four signature-commitment controls pass on
   this parent. No skips; this reproduces the remaining standalone guard gap.
+- Source03 `b080e44e64f`: the build rejected the new helper's `struct` forward
+  declaration because the pinned Core type is a `class`. Zero bodies executed;
+  the declaration is corrected in the next candidate. No application failure
+  or passing test is attributed to this compile error.
 
 Final app lint, pinned Clang23/Bitcoin-plugin tidy including fresh MOCs, affected
 ordinary behavior/Core/UI checks and a precise final scope report are still

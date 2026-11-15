@@ -5,7 +5,7 @@
 #ifndef BITCOIN_QML_PSBTSIGNATURES_H
 #define BITCOIN_QML_PSBTSIGNATURES_H
 
-struct PartiallySignedTransaction;
+class PartiallySignedTransaction;
 namespace psbtsignatures {
 // Verify against supplied prevouts. Callers establish their authenticity before
 // treating these signatures as authority for an immutable transaction review.
