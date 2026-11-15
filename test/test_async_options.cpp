@@ -506,7 +506,7 @@ private Q_SLOTS:
         QTRY_VERIFY(!model.settingsPending());
         QVERIFY(!model.settingsError().isEmpty());
         QVERIFY(model.externalSignerPath().isEmpty());
-        const QString signer_path = fixture.directory.filePath(QStringLiteral("fake-signer"));
+        const QString signer_path = fixture.directory.filePath(QStringLiteral("fake-signer.exe"));
         QFile signer{signer_path};
         QVERIFY(signer.open(QIODevice::WriteOnly));
         QCOMPARE(signer.write("#!/bin/sh\nexit 0\n"), qint64{17});
