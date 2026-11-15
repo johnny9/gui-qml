@@ -1298,7 +1298,7 @@ void TransactionActivityModelTests::copiesRawTransactionAndPublicPaymentRequest(
     QCOMPARE(uri, ReceiveRequestHistoryModel::BuildBitcoinUri(Address(tx), 10'000, "Public label", "Public message"));
     QVERIFY(!uri.contains("Private"));
     QGuiApplication::clipboard()->setText(QStringLiteral("before public request copy"));
-    auto* copied = sharing->copyUri(); QVERIFY(copied); QTRY_VERIFY(!copied->busy()); QVERIFY(copied->result().performed);
+    auto copied = std::unique_ptr<ShareOperationModel>{sharing->copyUri()}; QVERIFY(copied); QTRY_VERIFY(!copied->busy()); QVERIFY(copied->result().performed);
     QCOMPARE(QGuiApplication::clipboard()->text(), uri);
     sharing->retire();
     QVERIFY(model->paymentRequestUri("missing").isEmpty());
