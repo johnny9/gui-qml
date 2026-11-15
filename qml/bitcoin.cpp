@@ -886,6 +886,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         if (wallet_enabled) {
             wallet_controller = std::make_unique<WalletQmlController>(*node, walletopening::ChainPreferences(*chain),
                 walletopening::FeePolicy{[chain = chain.get()] { return chain->relayMinFee().GetFeePerK(); }});
+            wallet_controller->setPsbtPolicyRead(psbtpolicy::ReadNode(node.get(), chain.get()));
             wallet_controller->setSignerDiscoveryPorts(signerdiscovery::PublicPorts(*node, gArgs));
             QObject::connect(
                 &init_executor, &QmlInitExecutor::initializeResult, wallet_controller.get(),

@@ -972,10 +972,12 @@ void WalletQmlModel::applyPsbtFeeProof(const std::shared_ptr<const psbtfee::Requ
         previous = m_current_transaction;
         attempt_changed = setCurrentTransaction(authenticated);
     }
-    m_current_transaction_can_send = known && (m_psbt_key_can_send || (result.complete && m_psbt_can_commit_complete));
-    m_current_transaction_can_broadcast = known && result.complete;
+    const bool node_blocked = m_current_transaction->nodePolicyBlocked();
+    m_current_transaction_can_send = known && !node_blocked && (m_psbt_key_can_send || (result.complete && m_psbt_can_commit_complete));
+    m_current_transaction_can_broadcast = known && result.complete && !node_blocked;
     m_current_transaction_review_message = !known
         ? tr("The transaction fee is missing or invalid. Add valid input information before broadcasting.")
+        : node_blocked ? m_current_transaction->nodePolicyStatus()
         : m_current_transaction_can_send || m_current_transaction_can_broadcast ? QString{}
         : tr("This wallet does not have the keys to sign this transaction.");
     if (publish) Q_EMIT currentTransactionChanged();
@@ -2851,7 +2853,7 @@ void WalletQmlModel::publishApproval()
     case walletsigning::Error::UnverifiedInputs: m_approval_error = tr("The transaction inputs could not be verified. Refresh the wallet before trying again."); break;
     case walletsigning::Error::InvalidSignature: m_approval_error = tr("The returned signatures could not be verified for the reviewed transaction. Check the signing device and try again."); break;
     }
-    if (value.document) m_current_psbt = value.document;
+    if (value.document) { m_current_psbt = value.document; m_current_transaction->setAssessedPsbt(value.document); }
     const QPointer<WalletQmlModel> observer{this};
     if (!m_approval_error.isEmpty()) {
         m_approval.reset();
@@ -3029,6 +3031,8 @@ quint64 WalletQmlModel::requestSendTransactionInternal(std::optional<QString> pa
     }
     request.review_id = m_current_review_identity;
     request.reviewed = m_current_transaction->getWtx(); request.psbt = m_current_psbt;
+    request.assessment = m_current_transaction->assessedPsbt();
+    request.policy = m_psbt_fee_services.policy;
     request.sweeps_wallet = intent == walletsend::Intent::Submit && currentTransactionSweepsWallet();
     request.assessed_complete = m_current_transaction_can_broadcast;
     request.proof = m_psbt_fee_proof; request.approved_fee = m_current_transaction->reviewedFee();
@@ -3143,7 +3147,9 @@ void WalletQmlModel::publishSendOperation()
         // captured document, while allowing broadcast only after a clean,
         // verified complete result.
         m_current_psbt = result->document;
+        m_current_transaction->setAssessedPsbt(result->document);
         if (result->error == walletsend::Error::None && !result->relock_failed) {
+            if (result->signed_transaction) { m_current_transaction->setWtx(result->signed_transaction); if (!self) return; }
             m_current_transaction_can_broadcast = m_node && !result->partial;
             m_send_state = result->partial ? SendState::SendPartiallySigned : SendState::SendSignedOnly;
             setTransactionStatus(result->partial
@@ -3227,6 +3233,7 @@ void WalletQmlModel::publishSendOperation()
         case Error::Uncertain: message = tr("The transaction result could not be confirmed. Check wallet activity before retrying."); break;
         case Error::Cancelled: message = tr("The transaction confirmation was cancelled."); break;
         case Error::Rejected: message = tr("The send could not be queued."); break;
+        case Error::NodePolicy: message = result->policy_error; break;
         case Error::None: message = tr("The transaction was not committed."); break;
         }
         if (result->relock_failed) { m_send_state = SendState::SendUncertain; message = tr("The wallet could not be relocked. Check wallet status before retrying."); }
@@ -3248,6 +3255,10 @@ void WalletQmlModel::publishSendOperation()
 quint64 WalletQmlModel::requestImportPsbtFromFile(const QString& path) { return startPsbtAction(PsbtActionKind::Import, path); }
 quint64 WalletQmlModel::requestSaveCurrentTransactionAsPsbt(const QString& path) { return startPsbtAction(PsbtActionKind::Save, path); }
 quint64 WalletQmlModel::requestBroadcastCurrentTransaction() { return startPsbtAction(PsbtActionKind::Broadcast); }
+quint64 WalletQmlModel::requestRecheckCurrentTransaction()
+{
+    return currentTransactionIsImportedPsbt() ? startPsbtAction(PsbtActionKind::Recheck) : 0;
+}
 QString WalletQmlModel::psbtSavedPath() const
 {
     if (!m_psbt_receipt) return {};
@@ -3328,12 +3339,14 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     const auto path = QString{requested_path};
     const auto document = m_current_psbt;
     const auto proof = m_psbt_fee_proof;
+    const auto assessment = review ? review->assessedPsbt() : nullptr;
     const auto reviewed = review ? review->getWtx() : CTransactionRef{};
     const auto fee = review ? review->reviewedFee() : std::optional<CAmount>{};
     const bool fee_known = review && review->feeKnown();
     const bool fill = !document || (m_current_transaction_source != CurrentTransactionSource::ImportedPsbt && m_current_transaction_can_send);
     const int unit = m_display_unit;
-    const psbtwork::Context context{m_psbt_fee_services.lookup, psbtwork::NodeBroadcast(m_node)};
+    psbtwork::Context context{m_psbt_fee_services.lookup, psbtwork::NodeBroadcast(m_node)};
+    context.policy = m_psbt_fee_services.policy;
     const bool missing_review = kind != PsbtActionKind::Import && !reviewed;
     const bool unavailable_broadcast = kind == PsbtActionKind::Broadcast && (!m_node || !document || !m_current_transaction_can_broadcast);
     // Keep previous owned packets alive locally until after all new handoffs;
@@ -3346,7 +3359,7 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     m_psbt_action_kind = kind; m_psbt_action_state = PsbtActionState::PsbtPending;
     m_psbt_action_error.clear(); m_psbt_import_result = PsbtImportResult::PsbtUnsupported;
     m_psbt_action_path = path;
-    if (kind == PsbtActionKind::Import) ++m_psbt_view_epoch;
+    if (kind == PsbtActionKind::Import || kind == PsbtActionKind::Recheck) ++m_psbt_view_epoch;
     const auto view = m_psbt_view_epoch;
     m_psbt_action_view_epoch = view;
     m_psbt_action_review = review; m_psbt_action_had_review = had_review;
@@ -3428,9 +3441,12 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     if (!owns_pending()) { rejected({}); return id; }
     if (!output) { rejected(tr("PSBT outcome capacity is unavailable.")); return id; }
     m_psbt_action = operation; m_psbt_action_lease.emplace(std::move(*hold.lease));
-    auto effect = [kind, path, document, proof, reviewed, fee, fill, unit, context, transaction_owner](interfaces::Wallet* wallet) {
+    auto effect = [kind, path, document, assessment, proof, reviewed, fee, fill, unit, context, transaction_owner](interfaces::Wallet* wallet) {
         PsbtActionValue value;
-        if (kind == PsbtActionKind::Import) {
+        if (kind == PsbtActionKind::Recheck) {
+            if (wallet) value.imported = psbtwork::PrepareReview(*wallet, document, context, unit);
+            else value.error = QStringLiteral("No wallet is loaded.");
+        } else if (kind == PsbtActionKind::Import) {
             CMutableTransaction empty; PartiallySignedTransaction imported{empty, 2};
             value.error = psbtwork::LoadFile(path, imported);
             if (value.error.isEmpty()) {
@@ -3444,7 +3460,7 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
             if (value.error.isEmpty()) value.export_document = exported.document;
         } else {
             psbtwork::Request request; request.kind = psbtwork::Kind::Broadcast;
-            request.document = document; request.proof = proof; request.approved_fee = fee;
+            request.document = document; request.assessment = assessment; request.proof = proof; request.approved_fee = fee;
             value.effect = psbtwork::Execute(wallet, std::move(request), context);
             if (value.effect.transaction) {
                 *transaction_owner = value.effect.transaction;
@@ -3467,9 +3483,10 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     };
     execution::Admission admission;
     if (opening) {
-        const auto action = kind == PsbtActionKind::Import ? nullptr : opening->startAction();
+        const bool observation = kind == PsbtActionKind::Import || kind == PsbtActionKind::Recheck;
+        const auto action = observation ? nullptr : opening->startAction();
         if (!owns_pending()) { rejected({}); return id; }
-        if (kind == PsbtActionKind::Import) admission = operation->startWith([opening, work, capture_bytes](auto done, auto failed) {
+        if (observation) admission = operation->startWith([opening, work, capture_bytes](auto done, auto failed) {
             return opening->read([work](interfaces::Wallet& wallet) { return work(&wallet); }, std::move(done), std::move(failed), execution::WorkClass::Observation, capture_bytes);
         });
         else if (action) admission = operation->startWith([opening, action, work, capture_bytes](auto done, auto failed) {
@@ -3568,11 +3585,15 @@ void WalletQmlModel::publishPsbtAction()
             if (same && m_psbt_action_kind == PsbtActionKind::Broadcast) m_current_transaction_can_broadcast = false;
         } else if (!same) m_psbt_action_state = PsbtActionState::PsbtStale;
         else if (!m_psbt_action_error.isEmpty()) m_psbt_action_state = PsbtActionState::PsbtFailed;
-        else if (m_psbt_action_kind == PsbtActionKind::Import) {
+        else if (m_psbt_action_kind == PsbtActionKind::Import || m_psbt_action_kind == PsbtActionKind::Recheck) {
             const auto& imported = value.imported;
             if (imported.disposition == psbtwork::ImportResult::Disposition::Known) {
                 m_psbt_import_result = PsbtImportResult::TransactionAlreadyKnown;
                 m_psbt_action_state = PsbtActionState::PsbtKnown;
+                if (m_psbt_action_kind == PsbtActionKind::Recheck) {
+                    m_current_transaction_can_send = false; m_current_transaction_can_broadcast = false;
+                    m_current_transaction_source = CurrentTransactionSource::None;
+                }
                 m_imported_psbt_model->setMatchedTxid(imported.txid);
                 if (!observer) return;
             } else if (imported.review) {
@@ -3601,7 +3622,8 @@ void WalletQmlModel::publishPsbtAction()
                 m_current_transaction_can_send = imported.review->can_send;
                 m_current_transaction_can_broadcast = imported.key_can_broadcast && imported.review->proof->amount.has_value();
                 m_current_transaction_review_message = imported.message;
-                m_psbt_import_result = imported.review->can_send ? PsbtImportResult::WalletCanSign : PsbtImportResult::WalletCannotSign;
+                m_psbt_import_result = imported.review->node_policy_blocked ? PsbtImportResult::ReviewPending
+                    : imported.review->can_send ? PsbtImportResult::WalletCanSign : PsbtImportResult::WalletCannotSign;
                 m_psbt_action_state = PsbtActionState::PsbtImported;
                 const QPointer<WalletQmlModelTransaction> imported_review{transaction};
                 const auto owns_import = [&] {

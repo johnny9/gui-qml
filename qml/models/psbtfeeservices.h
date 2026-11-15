@@ -7,6 +7,7 @@
 
 #include <qml/execution.h>
 #include <qml/models/psbtfee.h>
+#include <qml/psbtpolicy.h>
 
 #include <functional>
 #include <memory>
@@ -19,6 +20,7 @@ struct Services {
     std::shared_ptr<execution::Scheduler> scheduler;
     Lookup lookup;
     std::function<void(std::function<void()>)> post;
+    psbtpolicy::Read policy;
 };
 struct Resolution {
     std::shared_ptr<const Analysis> proof;

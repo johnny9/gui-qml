@@ -8,6 +8,7 @@
 #include <qml/models/psbtfee.h>
 #include <qml/walletrequests.h>
 #include <qml/secretinput.h>
+#include <qml/psbtpolicy.h>
 #include <atomic>
 
 namespace walletsend {
@@ -17,7 +18,7 @@ enum class Notice { SweepConsentRequired, CredentialsRequired, Finished, Notes }
 enum class Stage { Idle, AwaitingSweepConsent, AwaitingCredentials, SigningOnly, Submitting, Finished };
 enum class Record { Unknown, AbsentAtObservation, Recorded };
 enum class Relay { Unknown };
-enum class Error { None, Rejected, InvalidStructure, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled, NeedsSignerApproval, InvalidSignature };
+enum class Error { None, Rejected, InvalidStructure, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled, NeedsSignerApproval, InvalidSignature, NodePolicy };
 /** Explicit review withdrawal may win before the irreversible commit boundary.
  * Observer destruction does not withdraw an already admitted action. */
 class CommitConsent {
@@ -37,14 +38,16 @@ struct Request {
     uint64_t attempt_id{0}, review_id{0};
     CTransactionRef reviewed;
     std::shared_ptr<const PartiallySignedTransaction> psbt;
-    // Original review proved completion using public read-only wallet metadata.
-    // This permits metadata recovery, never new signatures or wallet unlock.
+    std::shared_ptr<const PartiallySignedTransaction> assessment;
+    // Completion belongs to the captured assessment, never a fresh metadata
+    // read or the export document's potentially incomplete script fields.
     bool assessed_complete{false};
     std::shared_ptr<const psbtfee::Analysis> proof;
     std::optional<CAmount> approved_fee;
     std::optional<SecureString> passphrase;
     secretinput::Captured captured_passphrase;
     std::shared_ptr<CommitConsent> consent;
+    psbtpolicy::Read policy;
     bool sweeps_wallet{false}, full_wallet_consent{false};
     QMap<QString, QString> notes;
 };
@@ -52,6 +55,7 @@ struct Result {
     Error error{Error::None};
     CTransactionRef committed{};
     CTransactionRef candidate{};
+    CTransactionRef signed_transaction{};
     // SignOnly returns the captured document even when the wallet can add only
     // a subset of signatures. It never returns a committed transaction.
     std::shared_ptr<const PartiallySignedTransaction> document;
@@ -62,6 +66,7 @@ struct Result {
     Relay relay{Relay::Unknown};
     std::optional<common::PSBTError> signer_error{};
     bool relock_failed{false}, notes_requested{false}, publication_failed{false};
+    QString policy_error;
     std::shared_ptr<walletrequests::Operation> notes{};
     execution::Rejection notes_rejection{execution::Rejection::None};
 };

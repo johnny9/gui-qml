@@ -1901,6 +1901,9 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool receivingAddressPending MEMBER m_receiving_pending NOTIFY receivingAddressStateChanged)
     Q_PROPERTY(bool ensureReceivingAddressNeedsUnlock MEMBER m_ensure_needs_unlock)
 public:
+    Q_INVOKABLE quint64 requestRecheckCurrentTransaction() { ++m_recheck_calls; return quint64(m_recheck_calls); }
+    Q_INVOKABLE int recheckTransactionCalls() const { return m_recheck_calls; }
+    int m_recheck_calls{0};
     QString backupFileName() const { auto value = m_name.isEmpty() ? QStringLiteral("wallet") : m_name; value.replace(QLatin1Char{'/'}, QLatin1Char{'_'}); value.replace(QLatin1Char{'\\'}, QLatin1Char{'_'}); return value + QStringLiteral(".bak"); }
 
     QString m_rpc_namespace;
@@ -2869,6 +2872,7 @@ private:
 class MockWalletQmlModelTransaction : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(QString nodePolicyStatus MEMBER m_node_policy_status CONSTANT)
     Q_PROPERTY(QString address MEMBER m_address CONSTANT)
     Q_PROPERTY(QString label MEMBER m_label CONSTANT)
     Q_PROPERTY(QString amount MEMBER m_amount CONSTANT)
@@ -2885,6 +2889,8 @@ class MockWalletQmlModelTransaction : public QObject
     Q_PROPERTY(QObject* totalAmount READ totalAmount CONSTANT)
 
 public:
+    QString m_node_policy_status;
+    Q_INVOKABLE void setNodePolicyStatusForTest(const QString& value) { m_node_policy_status = value; }
     MockWalletQmlModelTransaction()
     {
         m_amount_amount.setDisplay(QStringLiteral("0.01000000"));

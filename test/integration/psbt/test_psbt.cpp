@@ -278,6 +278,25 @@ private Q_SLOTS:
         QCOMPARE(pool.size(), scenario == 3 ? 1U : 0U);
         if (scenario == 3) QCOMPARE(pool[0].get_str(), competing);
         QCOMPARE(qmltest::Call(m_app, [document = model->psbt()](interfaces::Node*) { return psbtwork::SerializeRaw(*document); }), imported);
+        if (scenario == 1) {
+            QCOMPARE(AwaitPsbtImport(*wallet, path), WalletQmlModel::PsbtImportResult::ReviewPending);
+            QVERIFY(wallet->currentTransactionIsImportedPsbt());
+            QVERIFY(!wallet->currentTransactionCanBroadcast());
+            QVERIFY(!wallet->currentTransactionCanSend());
+            const auto original = wallet->currentTransaction()->getWtx()->GetWitnessHash();
+            qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[100,\"" + mining.toStdString() + "\"]"));
+            QVERIFY(AwaitPsbtAction(*wallet, wallet->requestRecheckCurrentTransaction()));
+            QVERIFY(wallet->currentTransactionCanBroadcast());
+            QCOMPARE(wallet->currentTransaction()->getWtx()->GetWitnessHash(), original);
+            QVERIFY(AwaitPsbtBroadcast(*wallet));
+            QVERIFY(!wallet->currentTransactionIsImportedPsbt());
+            QVERIFY(!wallet->currentTransactionCanBroadcast()); QVERIFY(!wallet->currentTransactionCanSend());
+            QVERIFY(!wallet->requestBroadcastCurrentTransaction());
+            const auto submitted = qmltest::Rpc(m_app, "getrawmempool");
+            QCOMPARE(submitted.size(), 1U);
+            QCOMPARE(submitted[0].get_str(), wallet->currentTransaction()->txid().toStdString());
+            QCOMPARE(AwaitPsbtImport(*wallet, path), WalletQmlModel::PsbtImportResult::TransactionAlreadyKnown);
+        }
     }
     void watchOnlySignedScriptsSurviveOriginalExport_data()
     {

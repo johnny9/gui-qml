@@ -780,8 +780,8 @@ private Q_SLOTS:
         QCOMPARE(node.calls.broadcastTransaction.load(), 1);
         QVERIFY(submitted);
         QCOMPARE(submitted->GetWitnessHash(), MakeTransactionRef(expected)->GetWitnessHash());
-        QCOMPARE(wallet->sign_args, (std::vector<bool>{false, false}));
-        QCOMPARE(wallet->derivation_args, (std::vector<bool>{false, false}));
+        QCOMPARE(wallet->sign_args, (std::vector<bool>{false}));
+        QCOMPARE(wallet->derivation_args, (std::vector<bool>{false}));
         QCOMPARE(wallet->unlock_calls, 0); QCOMPARE(wallet->lock_calls, 0); QVERIFY(wallet->locked);
         QVERIFY(!model->submitted());
         QVERIFY(transport.step(execution::Lane::Domain));
@@ -1285,7 +1285,9 @@ void PsbtQmlModelTests::savePreservesPsbtMetadata()
 void PsbtQmlModelTests::broadcastsCompletePsbt()
 {
     MockNode node;
-    node.broadcast_transaction_fn = [](CTransactionRef, CAmount, CFeeRate, std::string&) {
+    CAmount maximum_fee{-1}; CFeeRate maximum_rate;
+    node.broadcast_transaction_fn = [&](CTransactionRef, CAmount fee, CFeeRate rate, std::string&) {
+        maximum_fee = fee; maximum_rate = rate;
         return node::TransactionError::OK;
     };
 
@@ -1304,6 +1306,8 @@ void PsbtQmlModelTests::broadcastsCompletePsbt()
     QVERIFY(!model.submittedTxid().isEmpty());
     QVERIFY(model.status().startsWith(QStringLiteral("Transaction accepted by the local node.")));
     QCOMPARE(node.calls.broadcastTransaction.load(), 1);
+    QCOMPARE(maximum_fee, node::DEFAULT_MAX_RAW_TX_FEE_RATE.GetFeePerK());
+    QCOMPARE(maximum_rate, node::DEFAULT_MAX_RAW_TX_FEE_RATE);
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

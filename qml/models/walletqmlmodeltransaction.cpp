@@ -57,6 +57,7 @@ WalletQmlModelTransaction::WalletQmlModelTransaction(std::shared_ptr<const walle
       m_requested_display_unit(m_review_lifetime->display_unit)
 {
     const auto& snapshot = *m_review_lifetime;
+    if (snapshot.assessment) m_assessed_psbt = std::shared_ptr<const PartiallySignedTransaction>{m_review_lifetime, snapshot.assessment.get()};
     const auto unit = static_cast<BitcoinAmount::Unit>(static_cast<int>(QmlBitcoinUnits::fromDisplayUnit(snapshot.display_unit)));
     // Every transaction copy, including flow/request identity captures, must
     // retain native cleanup rather than merely the underlying raw tx ref.
@@ -96,6 +97,7 @@ WalletQmlModelTransaction::WalletQmlModelTransaction(const WalletQmlModelTransac
       m_display_unit(reviewed.m_display_unit),
       m_requested_display_unit(reviewed.m_requested_display_unit)
 {
+    m_assessed_psbt = reviewed.m_assessed_psbt;
     const auto unit = reviewed.m_amount_amount->unit();
     m_amount_amount->setUnit(unit);
     m_amount_amount->setSatoshi(m_amount);

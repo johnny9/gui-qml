@@ -6,6 +6,7 @@
 #define BITCOIN_QML_PSBTWORKTYPES_H
 
 #include <qml/models/psbtfee.h>
+#include <qml/psbtpolicy.h>
 #include <QBitArray>
 #include <QString>
 #include <QStringList>
@@ -56,6 +57,8 @@ struct Snapshot {
     int unsigned_inputs{0}, could_sign{0};
     InspectionFacts facts;
     SignatureState signature_state{SignatureState::Unverified};
+    psbtpolicy::Facts node_facts;
+    psbtpolicy::State node_state{psbtpolicy::State::Unknown};
 };
 struct Result {
     Error code{Error::None};

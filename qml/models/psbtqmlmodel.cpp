@@ -314,23 +314,32 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
     if (m_wallet_expected && !m_opening) {
         m_phase = Phase::Failed; m_error = tr("The wallet session is unavailable."); Q_EMIT changed(); return ticket;
     }
+    const QPointer<PsbtQmlModel> observer{this};
     ensureServices();
+    if (!observer || m_closed) return ticket;
     if (!m_document_owner) {
         m_phase = Phase::Failed; m_error = tr("PSBT result capacity is unavailable. Close an unused document and retry."); Q_EMIT changed(); return ticket;
     }
-    if (m_snapshot) {
-        request.document = m_snapshot->document;
-        request.proof = m_snapshot->proof;
-        request.approved_fee = m_snapshot->proof ? m_snapshot->proof->amount : std::nullopt;
-    }
     const auto generation = m_generation;
-    const auto text_bytes=execution::Utf16PayloadBytes({size_t(request.path.size()),size_t(request.status.size())});
-    const auto secret_bytes=secretinput::Bytes(request.captured_passphrase);
+    // Reserve Native destruction before capturing document/assessment aliases.
+    // Even a rejected admission or a reentrant close must release them off GUI.
+    auto input = execution::RetainValues<psbtwork::Request>(m_services.scheduler,
+        [] { return std::make_unique<psbtwork::Request>(); });
+    if (!observer || m_closed || generation != m_generation) return ticket;
+    if (!input) { m_phase = Phase::Failed; m_error = tr("PSBT input capacity is unavailable."); Q_EMIT changed(); return ticket; }
+    *input = std::move(request);
+    if (m_snapshot) {
+        input->document = m_snapshot->document;
+        input->assessment = m_snapshot->assessment;
+        input->proof = m_snapshot->proof;
+        input->approved_fee = m_snapshot->proof ? m_snapshot->proof->amount : std::nullopt;
+    }
+    const auto text_bytes=execution::Utf16PayloadBytes({size_t(input->path.size()),size_t(input->status.size())});
+    const auto secret_bytes=secretinput::Bytes(input->captured_passphrase);
     if(text_bytes>std::numeric_limits<size_t>::max()-4096||secret_bytes>std::numeric_limits<size_t>::max()-4096-text_bytes){
         m_phase=Phase::Failed;m_error=tr("The PSBT action input cannot fit the transport budget.");Q_EMIT changed();return ticket;
     }
     const auto capture_bytes=4096+text_bytes+secret_bytes;
-    const QPointer<PsbtQmlModel> observer{this};
     auto receipt = std::make_shared<Receipt>();
     auto operation_ref = std::make_shared<std::weak_ptr<Operation>>();
     auto operation = std::make_shared<Operation>(m_services.scheduler, [post = m_services.post, observer, ticket, generation, receipt, operation_ref] {
@@ -347,9 +356,9 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
     });
     *operation_ref = operation;
     m_receipt = receipt;
-    if (request.kind == psbtwork::Kind::Broadcast) m_submission_receipt = receipt;
-    if (request.kind == psbtwork::Kind::Save) m_save_receipt = receipt;
-    const bool structural = request.kind == psbtwork::Kind::Load || request.kind == psbtwork::Kind::Inspect || request.kind == psbtwork::Kind::Sign;
+    if (input->kind == psbtwork::Kind::Broadcast) m_submission_receipt = receipt;
+    if (input->kind == psbtwork::Kind::Save) m_save_receipt = receipt;
+    const bool structural = input->kind == psbtwork::Kind::Load || input->kind == psbtwork::Kind::Inspect || input->kind == psbtwork::Kind::Sign;
     if (structural) {
         // Reserve native value release before any structural result can reach
         // GUI. Rejection retains no PSBT and is reported as a real failure.
@@ -363,9 +372,9 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
         if (!held) { m_phase = Phase::Failed; m_error = tr("PSBT result capacity is unavailable."); Q_EMIT changed(); return ticket; }
         m_active_lease.emplace(std::move(*held.lease));
     }
-    m_active = operation; m_active_generation = generation; m_active_kind = request.kind;
+    m_active = operation; m_active_generation = generation; m_active_kind = input->kind;
     psbtwork::Context context{m_services.lookup ? m_services.lookup : psbtfee::NodeLookup(m_node), psbtwork::NodeBroadcast(m_node)};
-    auto input = std::make_shared<psbtwork::Request>(std::move(request));
+    context.policy = m_services.policy;
     const auto consume = [owner = m_document_owner, ticket, kind = input->kind](auto done, auto failed) {
         // Opening/Submit deliver Native outcomes on Domain. Analysis ownership
         // is resolved there before OwnedCommand posts its GUI notification.

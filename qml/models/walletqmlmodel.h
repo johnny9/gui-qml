@@ -345,6 +345,7 @@ public:
     quint64 sendOperationId() const { return m_send_request_id; }
     std::shared_ptr<walletsend::Operation> sendOperation() const { return m_send_operation; }
     Q_INVOKABLE quint64 requestBroadcastCurrentTransaction();
+    Q_INVOKABLE quint64 requestRecheckCurrentTransaction();
     Q_INVOKABLE QVariantList availableReceiveAddressTypes() const;
     Q_INVOKABLE QString defaultReceiveAddressType() const;
     Q_INVOKABLE QString estimatedFeeForTarget(unsigned int target_blocks) const;
@@ -581,7 +582,7 @@ private:
     void setTransactionStatus(const QString& error, bool needs_unlock = false);
     void setSettingsError(const QString& error);
     QString persistedReceiveAddressTypeKey() const;
-    enum class PsbtActionKind { Import, Save, Broadcast };
+    enum class PsbtActionKind { Import, Recheck, Save, Broadcast };
     struct PsbtReceipt { std::mutex mutex; QString path, txid; bool saved{false}, submitted{false}; };
     struct PsbtActionValue {
         std::shared_ptr<const void> lifetime;

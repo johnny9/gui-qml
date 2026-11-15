@@ -141,24 +141,18 @@ Result Execute(interfaces::Wallet& wallet, Request request)
             }
             const auto authenticated = AuthenticatedInputs(wallet, *request.psbt, *request.proof);
             if (!authenticated) { result.error = Error::InvalidFee; return result; }
-            PartiallySignedTransaction psbt{*request.psbt}; psbtfee::FillMissing(psbt, *authenticated);
+            if (request.assessed_complete && !request.assessment) { result.error = Error::ChangedTransaction; return result; }
+            if (request.assessed_complete) {
+                const auto terms = request.assessment->GetUnsignedTx();
+                if (!terms || !SameTransaction(*request.reviewed, *terms)) { result.error = Error::ChangedTransaction; return result; }
+                if (!psbtfee::MatchesReview(*request.assessment, *authenticated, request.approved_fee)) { result.error = Error::InvalidFee; return result; }
+            }
+            PartiallySignedTransaction psbt{request.assessed_complete ? *request.assessment : *request.psbt};
+            psbtfee::FillMissing(psbt, *authenticated);
             CMutableTransaction extracted;
             auto finalized = psbt;
             bool extracted_complete = FinalizeAndExtractPSBT(finalized, extracted);
-            if (!extracted_complete && request.assessed_complete) {
-                // The read-only assessment may have obtained redeem/witness
-                // scripts from the public wallet. Export retains the original
-                // document; recover that metadata only in this Native action.
-                bool complete{false};
-                result.signer_error = wallet.fillPSBT({.sign = false, .bip32_derivs = false}, nullptr, psbt, complete);
-                if (result.signer_error) { result.error = Error::Signer; return result; }
-                const auto returned = psbt.GetUnsignedTx();
-                if (!returned || !SameTransaction(*request.reviewed, *returned)) { result.error = Error::ChangedTransaction; return result; }
-                if (!psbtfee::MatchesReview(psbt, *authenticated, request.approved_fee)) { result.error = Error::InvalidFee; return result; }
-                finalized = psbt;
-                extracted_complete = FinalizeAndExtractPSBT(finalized, extracted);
-                if (!extracted_complete) { result.error = Error::Incomplete; return result; }
-            }
+            if (request.assessed_complete && !extracted_complete) { result.error = Error::Incomplete; return result; }
             if (!extracted_complete) {
                 if (wallet.privateKeysDisabled() && !wallet.hasExternalSigner()) { result.error = Error::CannotSign; return result; }
                 if (!wallet.privateKeysDisabled() && wallet.isCrypted() && wallet.isLocked()) {
@@ -177,6 +171,7 @@ Result Execute(interfaces::Wallet& wallet, Request request)
                 restore();
             }
             if (!SameTransaction(*request.reviewed, extracted)) { result.error = Error::ChangedTransaction; return result; }
+            if (request.assessed_complete && request.reviewed->GetWitnessHash() != MakeTransactionRef(extracted)->GetWitnessHash()) { result.error = Error::ChangedTransaction; return result; }
             if (!psbtfee::MatchesReview(psbt, *authenticated, request.approved_fee)) { result.error = Error::InvalidFee; return result; }
             if (!VerifiedSignatures(psbt)) { result.error = Error::InvalidSignature; return result; }
             transaction = MakeTransactionRef(std::move(extracted));
@@ -192,6 +187,12 @@ Result Execute(interfaces::Wallet& wallet, Request request)
         request.passphrase.reset();
         if (result.relock_failed) { result.error = Error::Uncertain; return result; }
         if (request.sweeps_wallet && !request.full_wallet_consent) { result.error = Error::Cancelled; return result; }
+        if (request.policy && request.approved_fee) {
+            const auto decision = psbtpolicy::Evaluate(request.policy(transaction, *request.approved_fee));
+            if (decision.state == psbtpolicy::State::Blocked) {
+                result.error = Error::NodePolicy; result.policy_error = decision.explanation; return result;
+            }
+        }
         // Core retains the supplied shared_ptr in wallet history. Its owner
         // must not be an app cleanup lease: that would make session retirement
         // wait for a transaction whose destruction waits for wallet retirement.
@@ -281,6 +282,12 @@ Result ExecuteSignOnly(interfaces::Wallet& wallet, Request request,
         complete = FinalizePSBT(document);
         if (!psbtsignatures::VerifyFinalizedInputs(document, complete)) {
             restore(); result.error = Error::InvalidSignature; return result;
+        }
+        if (complete) {
+            auto analyzed = document;
+            CMutableTransaction extracted;
+            if (!FinalizeAndExtractPSBT(analyzed, extracted)) { restore(); result.error = Error::Incomplete; return result; }
+            result.signed_transaction = MakeTransactionRef(std::move(extracted));
         }
         *document_owner = std::move(document);
         result.document = std::shared_ptr<const PartiallySignedTransaction>{document_owner, document_owner.get()};
@@ -380,12 +387,14 @@ void Operation::dispatchNative(secretinput::Captured passphrase)
         request.intent = m_request.intent;
         request.reviewed = m_request.reviewed;
         request.psbt = m_request.psbt;
+        request.assessment = m_request.assessment;
         request.assessed_complete = m_request.assessed_complete;
         request.proof = m_request.proof;
         request.approved_fee = m_request.approved_fee;
         request.passphrase = std::move(m_request.passphrase);
         request.captured_passphrase = passphrase ? std::move(passphrase) : std::move(m_request.captured_passphrase);
         request.consent = m_request.consent;
+        request.policy = m_request.policy;
         request.sweeps_wallet = m_request.sweeps_wallet;
         request.full_wallet_consent = m_request.full_wallet_consent;
         request.notes = m_request.notes;
@@ -404,6 +413,9 @@ void Operation::dispatchNative(secretinput::Captured passphrase)
             if (result.committed) {
                 *native_result = result.committed;
                 result.committed = CTransactionRef{native_result, native_result->get()};
+            } else if (result.signed_transaction) {
+                *native_result = result.signed_transaction;
+                result.signed_transaction = CTransactionRef{native_result, native_result->get()};
             }
             return result;
         }, [self](Result result) { self->nativeCompleted(std::move(result)); },
