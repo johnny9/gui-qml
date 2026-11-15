@@ -25,11 +25,12 @@ progress without changing shared finding or schedule registers.
 | R20 | Focused conditional checkpoint integrated at644abba:139worker distinct bodies; merged387-body/31-static gate, app/QML lint and2IPC process scenarios pass. Receipt reason precision is user-deferred upstream; no disabled/rejected/relay inference. R42 pending |
 | R21 | Focused checkpoint integrated atffe3637d:270 R21 bodies plus122 R29 composition bodies pass (392 distinct combined);16 pinned static entries,app/QML lint pass. Scope095 held; R24 lifecycle and R42 remain open |
 | R24 | Compatibility guard and error-return repair integrated: prior157 bodies plus later focused33-body/10-static/actualCoreHWI gates pass at recorded inputs. Six new held-device schedules pass again in merged246. Whole R24 Domain/lifetime/partial/timeout gate remains open |
-| R22 | Reopened during R23 integration: earlier198worker/merged387 focused bodies passed, but expanded original save timing cases expose GUI-dependent export admission and retirement. Signing/export worker owns a background continuation repair; no acceptance claim until original quiet/delete oracles pass |
+| R22 | Background Save continuation, withdrawal and reentrant-deletion guards repaired and integrated at9c71709. All21 unchanged original timing cases plus23 save/preparation cases pass on candidate82a4; combined R22/R23/R30 composition pending |
 | R30 | Owned receive/editor/reservation/sharing implementation integrated at07095da3:317 current worker bodies pass, with explicit earlier-source carries, exact original025 parent failure and independent QR decoding. Merged composition and reopened R22 prerequisite remain pending; capability007 stays user-deferred upstream |
 | R34 | Focused checkpoint integrated at644abba:119worker Qt bodies plus3X11 geometry scenarios; merged387-body/31-static gate and2IPC scenarios pass. Five scopes reconciled, known Qt/upstream limits retained; R42 pending |
-| R35 | Whole M18 implementation active in isolated source;2parent source-retention failures and1preview control recorded; no acceptance claim |
-| R23, R25–R27, R31–R32, R36–R40 | Authorized according to actual prerequisites; remaining implementation/gates pending |
+| R35 | Focused behavior/static green at deliverye12365c8:149 distinct Linux bodies,8 Mac QML,additional Native variant and3 process scenarios. Root discovered unchanged private proposed-directory inspector; affected acceptance/integration held pending user decision |
+| R23 | Focused candidate82a4 qualifies609 distinct ordinary identities across explicit sources,66 pinned static entries,app/QML lint and2 actual IPC scenarios; integrated at9c71709, merged composition pending |
+| R25–R27, R31–R32, R36–R40 | Authorized according to actual prerequisites; remaining implementation/gates pending; R26 initial Domain decisions unvalidated, R31 and R36 independent implementation active |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
