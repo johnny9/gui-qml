@@ -508,7 +508,7 @@ Page {
                 NeutralButton {
                     objectName: "sendTransactionReviewExportUnverifiedSignerButton"
                     visible: root.wallet && root.wallet.signerUnverifiedResultToken.length > 0
-                    enabled: !!root.transaction && !root.sending && !root.sendBusy && !root.wallet.psbtActionBusy
+                    enabled: root.wallet && !!root.transaction && !root.sending && !root.sendBusy && !root.wallet.psbtActionBusy
                     buttonSize: NeutralButton.Large
                     width: parent.width
                     height: 46
