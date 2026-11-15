@@ -509,6 +509,13 @@ private Q_SLOTS:
             complete = false;
             if (outcome == 2) throw std::runtime_error("device failed after returning a partial signature");
         };
+        if (outcome == 0) {
+            f.wallet->metadata = [original](PartiallySignedTransaction& document, bool& complete) {
+                document = original;
+                complete = false;
+            };
+            f.wallet->completed_document = std::make_shared<const PartiallySignedTransaction>(returned);
+        }
         if (outcome == 1) f.wallet->metadata_error = common::PSBTError::EXTERNAL_SIGNER_FAILED;
         const walletsigning::Request request{MakeTransactionRef(*original.GetUnsignedTx()),
             std::make_shared<const PartiallySignedTransaction>(original),
