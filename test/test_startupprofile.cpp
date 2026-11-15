@@ -89,7 +89,8 @@ int RunStartupProfileProbe(const QString& mode)
     std::vector<QByteArray> encoded;std::vector<char*> argv;
     encoded.reserve(static_cast<size_t>(arguments.size()));argv.reserve(static_cast<size_t>(arguments.size())+1);
     for(const auto& argument:arguments)encoded.push_back(argument.toUtf8());
-    for(auto& argument:encoded)argv.push_back(argument.data());argv.push_back(nullptr);
+    for(auto& argument:encoded)argv.push_back(argument.data());
+    argv.push_back(nullptr);
     StartupProbe application{expected};
     const int result=application.run(static_cast<int>(encoded.size()),argv.data());
     if(!original_config_path.isEmpty()){

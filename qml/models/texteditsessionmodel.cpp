@@ -177,25 +177,25 @@ struct TextEditSessionModel::State : std::enable_shared_from_this<State> {
         const auto done = [self, accepted, action](Write value) {
             // Retain the original intent through its independently owned outcome.
             (void)action;
-            self->finish(accepted, std::move(value), false);
+            self->finish(accepted, value, false);
         };
         try {
             if (writer && writer(accepted, done, action)) return;
             Write rejected; rejected.outcome = persistentedit::Outcome::Rejected;
             rejected.error = {TextEditError::Refused, tr("The save could not be scheduled.")};
-            finish(accepted, std::move(rejected), false);
+            finish(accepted, rejected, false);
         } catch (...) {
             Write uncertain; uncertain.outcome = persistentedit::Outcome::Unknown;
             uncertain.error = {TextEditError::Unknown, tr("The save outcome is not yet confirmed. It will not be repeated.")};
-            finish(accepted, std::move(uncertain), false);
+            finish(accepted, uncertain, false);
         }
     }
-    void finish(const Reducer::Attempt& attempt, Write value, bool reconcile)
+    void finish(const Reducer::Attempt& attempt, const Write& value, bool reconcile)
     {
         if (mailbox->retired.load() && editor.phase() != persistentedit::Phase::Closed && editor.phase() != persistentedit::Phase::Retiring) retire();
         Reducer::Receipt receipt{attempt, value.outcome, {}, {value.value}, {}};
         receipt.persisted[0] = value.persisted;
-        if (value.current && value.current->error.code == TextEditError::None && observation != UINT64_MAX)
+        if (!reconcile && value.current && value.current->error.code == TextEditError::None && observation != UINT64_MAX)
             receipt.observed = Reducer::Observation{{value.current->value}, ++observation, attempt.token};
         if (!(reconcile ? editor.reconciled(receipt) : editor.finished(receipt))) return;
         validation_valid = evaluate();
@@ -217,9 +217,11 @@ struct TextEditSessionModel::State : std::enable_shared_from_this<State> {
         const auto attempt = *editor.active();
         const auto self = shared_from_this();
         bool admitted{false};
-        try { admitted = ports.query && bool(ports.query(attempt, [self, attempt](Write value) {
-            value.current.reset(); // A retained receipt is not a new current-value read.
-            self->finish(attempt, std::move(value), true);
+        try { admitted = ports.query && bool(ports.query(attempt, [self, attempt](const Write& value) {
+            // Query retains the original receipt, not a new current-value read.
+            // finish() copies only its authoritative fields while this owned
+            // callback argument lives; historical readback is never observed.
+            self->finish(attempt, value, true);
         })); } catch (...) {}
         if (!admitted && editor.phase() == persistentedit::Phase::Uncertain) {
             error = {TextEditError::Unknown, tr("The original save outcome remains unknown. It will not be repeated.")}; publish();

@@ -2176,7 +2176,8 @@ public:
         Q_EMIT sendOperationChanged();
     }
     Q_INVOKABLE quint64 requestSendTransaction() {
-        if (sendBusy() || psbtActionBusy()) return 0; ++m_send_operation_id; m_send_review = m_current_transaction;
+        if (sendBusy() || psbtActionBusy()) return 0;
+        ++m_send_operation_id; m_send_review = m_current_transaction;
         if (m_current_transaction_sweeps_wallet) m_send_state = SendNeedsConfirmation;
         else { sendTransaction(); m_send_state = SendPending; if (!m_hold_send) QTimer::singleShot(0, this, [this] { finishSendForTest(); }); }
         Q_EMIT sendOperationChanged();
@@ -2262,7 +2263,8 @@ public:
         m_psbt_action_error.clear();m_imported_review_token.clear();m_imported_psbt.clear();Q_EMIT psbtActionChanged();
     }
     static void completePsbtPacket(const std::shared_ptr<PsbtPacket>& packet){
-        if(packet->ready)return;packet->ready=true;
+        if(packet->ready)return;
+        packet->ready=true;
         if(!packet->allowed){packet->terminal=PsbtActionState::PsbtFailed;packet->error=QStringLiteral("The original PSBT action could not be completed.");return;}
         if(packet->kind==PsbtKind::Save){packet->saved=true;packet->terminal=PsbtActionState::PsbtSaved;}
         else if(packet->kind==PsbtKind::Broadcast){packet->submitted=true;packet->terminal=PsbtActionState::PsbtSubmitted;}
@@ -2289,7 +2291,8 @@ public:
             QTimer::singleShot(0,QCoreApplication::instance(),[packet,observer]{if(observer&&!observer->m_hold_psbt_publication)observer->publishPsbtPacket(packet);});
         });
         if(kind==PsbtKind::Save){Q_EMIT lastSavedPsbtPathChanged();if(!observer)return packet->ticket;}
-        if(m_available&&m_psbt_operation==packet)Q_EMIT psbtActionChanged();return packet->ticket;
+        if(m_available&&m_psbt_operation==packet)Q_EMIT psbtActionChanged();
+        return packet->ticket;
     }
     void publishPsbtPacket(const std::shared_ptr<PsbtPacket>& packet){
         if(m_psbt_operation!=packet||!packet->ready)return;
@@ -4097,13 +4100,15 @@ public:
     void setTorEnabled(bool value){if(value==m_tor)return;m_tor=value;evaluate();}
     void setTorAddress(const QString& value){if(value==m_onion)return;m_onion=value;evaluate();}
     Q_INVOKABLE void reset(){
-        if(!m_source)return;const auto revision=++m_revision;m_pending=true;m_ready=false;Q_EMIT changed();
+        if(!m_source)return;
+        const auto revision=++m_revision;m_pending=true;m_ready=false;Q_EMIT changed();
         QTimer::singleShot(0,this,[this,revision]{if(!m_source||revision!=m_revision)return;
             m_ready=true;m_proxy=m_source->proxyEnabled();m_address=m_source->proxyAddress().isEmpty()?m_source->defaultAddress():m_source->proxyAddress();
             m_tor=m_source->torEnabled();m_onion=m_source->torAddress().isEmpty()?m_source->defaultAddress():m_source->torAddress();evaluate();});
     }
     Q_INVOKABLE quint64 requestApply(){
-        if(!m_source||!canApply()||m_source->m_refuse_proxy_admission)return 0;const auto ticket=++m_operation;m_state=MockCoreSettingsModel::Pending;Q_EMIT changed();
+        if(!m_source||!canApply()||m_source->m_refuse_proxy_admission)return 0;
+        const auto ticket=++m_operation;m_state=MockCoreSettingsModel::Pending;Q_EMIT changed();
         const auto source=m_source;const QPointer<MockCoreProxyDraft> observer{this};const bool proxy=m_proxy,tor=m_tor;const auto address=m_address,onion=m_onion;
         const int requested_state=source->m_proxy_apply_state;
         source->queueProxyEffect([source,observer,proxy,tor,address,onion,requested_state]{if(!source)return;
@@ -4116,7 +4121,8 @@ public:
 Q_SIGNALS:void changed();
 private:
     void evaluate(){
-        if(!m_source)return;const auto revision=++m_revision;m_pending=true;Q_EMIT changed();
+        if(!m_source)return;
+        const auto revision=++m_revision;m_pending=true;Q_EMIT changed();
         QTimer::singleShot(0,this,[this,revision]{if(!m_source||revision!=m_revision)return;
             m_proxy_error=m_source->validateAddress(m_address);m_tor_error=m_source->validateAddress(m_onion);
             m_valid=(!m_proxy||m_proxy_error.isEmpty())&&(!m_tor||m_tor_error.isEmpty());
@@ -4846,9 +4852,11 @@ public:
     Q_INVOKABLE bool presented(){return true;}
     Q_INVOKABLE bool answer(unsigned int button){
         if(!button||(button&(button-1))||(button&buttons)!=button)return false;
-        if(complete)complete();return true;
+        if(complete)complete();
+        return true;
     }
-    Q_INVOKABLE bool unavailable(){if(complete)complete();return true;}
+    Q_INVOKABLE bool unavailable(){if(complete)complete();
+        return true;}
 };
 
 class MockNodeModel : public QObject
@@ -6449,7 +6457,8 @@ public:
     QString exportError() const { return {}; }
     QString exportedPath() const { return m_export_path; }
     Q_INVOKABLE quint64 requestExportCsv(const QString& path) {
-        if (m_export_busy || path.isEmpty()) return 0; m_export_busy = true; m_export_path.clear(); const auto ticket = ++m_ticket; Q_EMIT exportChanged();
+        if (m_export_busy || path.isEmpty()) return 0;
+        m_export_busy = true; m_export_path.clear(); const auto ticket = ++m_ticket; Q_EMIT exportChanged();
         QTimer::singleShot(0, this, [this, path, ticket] { m_export_busy = false; m_export_path = path; Q_EMIT exportChanged(); Q_EMIT exportFinished(ticket, true, path, {}); }); return ticket;
     }
     Q_INVOKABLE quint64 captureRowContext(int row) { if (row < 0 || row >= rowCount()) return 0; m_context_txid = namedData(mapToSource(index(row, 0)), "txid").toString(); return ++m_context; }

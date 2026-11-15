@@ -186,7 +186,7 @@ private Q_SLOTS:
     }
     void qrRendererRejectsTheOriginal4250CharacterPayloadAndRecovers()
     {
-        const auto long_payload = QStringLiteral("bitcoin:bcrt1q-original?message=") + QString(4250, QLatin1Char('x'));
+        const QString long_payload = QStringLiteral("bitcoin:bcrt1q-original?message=") + QString(4250, QLatin1Char('x'));
         QVERIFY(requestshare::RenderQr(long_payload).isNull());
         const auto short_image = requestshare::RenderQr(QStringLiteral("bitcoin:bcrt1q-original?amount=0.000001"));
         QVERIFY(!short_image.isNull()); QVERIFY(short_image.width() > 1); QCOMPARE(short_image.width(), short_image.height());

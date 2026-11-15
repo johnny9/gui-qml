@@ -157,6 +157,33 @@ private Q_SLOTS:
         f.editor->reconcile(); f.drain(); QCOMPARE(f.queries, 1); QCOMPARE(f.writes, 1);
         QVERIFY(f.editor->saveResult().persisted); QVERIFY(f.editor->saveResult().outcomeKnown); QVERIFY(!f.editor->dirty());
     }
+    void receiptQueryNeverReusesHistoricalReadback_data()
+    {
+        QTest::addColumn<bool>("retained_readback");
+        QTest::newRow("with-original-readback") << true;
+        QTest::newRow("without-original-readback") << false;
+    }
+    void receiptQueryNeverReusesHistoricalReadback()
+    {
+        QFETCH(bool, retained_readback);
+        Fixture f; f.drain(); f.unknown = true;
+        f.editor->text()->edit("saved"); f.editor->save(); f.drain();
+        QCOMPARE(f.editor->phase(), Model::Uncertain);
+        const auto operation = f.editor->saveResult().operationId;
+        QCOMPARE(f.writes, 1);
+        if (!retained_readback) f.actual.current.reset();
+        // Independent current storage changed after the original saved effect.
+        // Its historical receipt must keep "saved" while a new read sees this.
+        f.persisted = "external";
+        f.editor->reconcile(); f.drain();
+        QCOMPARE(f.queries, 1); QCOMPARE(f.writes, 1);
+        QCOMPARE(f.editor->saveResult().operationId, operation);
+        QVERIFY(f.editor->saveResult().outcomeKnown);
+        QVERIFY(f.editor->saveResult().persisted);
+        QCOMPARE(f.editor->saveResult().value, QString{"saved"});
+        QCOMPARE(f.editor->text()->text(), QString{"external"});
+        QCOMPARE(f.editor->phase(), Model::Editing); QVERIFY(!f.editor->dirty());
+    }
     void closePromptHasExactConsentAndThreeOutcomes_data()
     {
         QTest::addColumn<int>("choice");

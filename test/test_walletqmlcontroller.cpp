@@ -786,11 +786,13 @@ void WalletQmlControllerTests::migrationCredentialRetryKeepsTheOriginalCopy()
     ManualControllerGraph graph{node}; auto& controller = *graph.controller; controller.initialize(); QVERIFY(graph.until([&] { return controller.initialized(); }));
     const QPointer<WalletQmlModel> selected_before{controller.selectedWallet()};
     loader.restore_detailed_fn = [&](const auto&, const auto& name, auto&, bool load) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
-        if (load) throw std::runtime_error{"Unsafe combined restore"}; const auto target = wallets.filePath(QString::fromStdString(name)); if (!QDir{}.mkpath(target) || !QFile::copy(backup, QDir(target).filePath("wallet.dat"))) throw std::runtime_error{"Copy failed"}; loader.wallet_dir_entries.emplace_back(name, "bdb"); return std::unique_ptr<interfaces::Wallet>{};
+        if (load) throw std::runtime_error{"Unsafe combined restore"};
+        const auto target = wallets.filePath(QString::fromStdString(name)); if (!QDir{}.mkpath(target) || !QFile::copy(backup, QDir(target).filePath("wallet.dat"))) throw std::runtime_error{"Copy failed"}; loader.wallet_dir_entries.emplace_back(name, "bdb"); return std::unique_ptr<interfaces::Wallet>{};
     };
     std::vector<std::string> secrets;
     loader.migrate_wallet_fn = [&](const auto& name, const SecureString& secret, bool load) -> util::Result<interfaces::WalletMigrationResult> {
-        if (load) throw std::runtime_error{"Unsafe combined migration"}; secrets.emplace_back(secret.begin(), secret.end());
+        if (load) throw std::runtime_error{"Unsafe combined migration"};
+        secrets.emplace_back(secret.begin(), secret.end());
         if (secrets.size() == 1) return util::Error{Untranslated(probe_missing ? "Error: The wallet passphrase was not provided" : "Error: The wallet passphrase entered was incorrect.")};
         interfaces::WalletMigrationResult result; result.wallet = std::make_unique<FakeWallet>(name, nullptr); result.backup_path = fs::PathFromString(wallets.filePath("recovery.legacy.bak").toStdString()); return result;
     };
@@ -1016,7 +1018,8 @@ void WalletQmlControllerTests::migrationKeepsAuxiliaryRetirementIndependent()
     ManualControllerGraph graph{node}; auto& controller = *graph.controller; controller.initialize(); QVERIFY(graph.until([&] { return controller.initialized(); }));
     const QPointer<WalletQmlModel> selected_before{controller.selectedWallet()};
     loader.migrate_wallet_fn = [&](const auto&, const auto&, bool load) -> util::Result<interfaces::WalletMigrationResult> {
-        if (load) throw std::runtime_error{"Combined migration is unsafe"}; interfaces::WalletMigrationResult result; result.wallet = std::make_unique<PrimaryWallet>(&primary, primary_destroyed); result.watchonly_wallet_name = "legacy_watchonly"; result.backup_path = fs::PathFromString("original.legacy.bak"); return result;
+        if (load) throw std::runtime_error{"Combined migration is unsafe"};
+        interfaces::WalletMigrationResult result; result.wallet = std::make_unique<PrimaryWallet>(&primary, primary_destroyed); result.watchonly_wallet_name = "legacy_watchonly"; result.backup_path = fs::PathFromString("original.legacy.bak"); return result;
     };
     loader.load_wallet_fn = [&](const auto& name, auto&) -> util::Result<std::unique_ptr<interfaces::Wallet>> { return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>(name, &auxiliary)}; };
     controller.migrateWallet("legacy", ""); auto* operation = controller.creationOperation(); QVERIFY(operation); QVERIFY(graph.until([&] { return operation->terminal(); })); QCOMPARE(operation->phase(), WalletOperationModel::Succeeded);
@@ -1141,7 +1144,10 @@ void WalletQmlControllerTests::creationEditorOwnsTheOriginalSubmission()
     QVERIFY(graph.until([&] { return operation->terminal() && !controller.walletLoadInProgress(); }));
     QCOMPARE(loader.create_wallet_calls, 1); QCOMPARE(native_name, std::string{"original-wallet"}); QVERIFY(native_lane);
     QCOMPARE(native_password, kind == 0 ? QString::fromUtf8("original-pässwörd-₿").toUtf8().toStdString() : std::string{});
-    const auto expected = wallet::WALLET_FLAG_DESCRIPTORS | (kind >= 2 ? wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS : 0) | (kind == 2 ? wallet::WALLET_FLAG_BLANK_WALLET : 0) | (kind == 3 ? wallet::WALLET_FLAG_EXTERNAL_SIGNER : 0);
+    uint64_t expected{wallet::WALLET_FLAG_DESCRIPTORS};
+    if (kind >= 2) expected |= wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS;
+    if (kind == 2) expected |= wallet::WALLET_FLAG_BLANK_WALLET;
+    if (kind == 3) expected |= wallet::WALLET_FLAG_EXTERNAL_SIGNER;
     QCOMPARE(native_flags, uint64_t{expected}); QCOMPARE(operation->phase(), WalletOperationModel::Succeeded); QCOMPARE(terminal.size(), 1);
     QCOMPARE(operation->result().warnings, QStringList{QStringLiteral("Keep this operation's backup")});
     QCOMPARE(operation->resultWallet(), controller.walletForName("original-wallet")); QVERIFY(operation->canOpenResult());

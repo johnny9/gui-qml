@@ -904,7 +904,7 @@ private Q_SLOTS:
         for (const auto& input : available.getValues())
             if (chosen.isNull() || input.find_value("confirmations").getInt<int>() < chosen.find_value("confirmations").getInt<int>()) chosen = input;
         QCOMPARE(chosen.find_value("confirmations").getInt<int>(), 101);
-        const auto id = QString::fromStdString(chosen.find_value("txid").get_str()) + QLatin1Char(':') + QString::number(chosen.find_value("vout").getInt<int>());
+        const QString id = QString::fromStdString(chosen.find_value("txid").get_str()) + QLatin1Char(':') + QString::number(chosen.find_value("vout").getInt<int>());
         auto* coins = wallet->coinsListModel(); QVERIFY(coins); coins->update();
         QTRY_VERIFY(!coins->loading());
         QVERIFY(coins->setManualInputSelection(true));
@@ -976,7 +976,7 @@ private Q_SLOTS:
         const auto unspent = qmltest::Rpc(m_app, "listunspent", {}, wallet->name()); QVERIFY(unspent.size() >= 1);
         UniValue input{UniValue::VOBJ}; input.pushKV("txid", unspent[0].find_value("txid")); input.pushKV("vout", unspent[0].find_value("vout"));
         UniValue inputs{UniValue::VARR}; inputs.push_back(input);
-        const auto id = QString::fromStdString(unspent[0].find_value("txid").get_str()) + QLatin1Char(':') + QString::number(unspent[0].find_value("vout").getInt<int>());
+        const QString id = QString::fromStdString(unspent[0].find_value("txid").get_str()) + QLatin1Char(':') + QString::number(unspent[0].find_value("vout").getInt<int>());
         qmltest::Rpc(m_app, "lockunspent", qmltest::Json("[false," + inputs.write() + ",false]"), wallet->name());
         auto* coins = wallet->coinsListModel(); QVERIFY(coins); coins->update(); QTRY_VERIFY(!coins->loading());
         QVERIFY(coins->setCoinsLocked({id}, true)); QTRY_VERIFY(!coins->lockPending());

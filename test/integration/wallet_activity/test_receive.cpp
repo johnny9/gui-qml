@@ -1244,7 +1244,7 @@ private Q_SLOTS:
         QVERIFY(wallet->loadPaymentRequestDetail(id));
         auto* detail = wallet->detailPaymentRequest();
         QVERIFY(qmltest::Click(m_app, "activityTabButton"));
-        const auto row_name = QStringLiteral("activityRequest_") + id;
+        const QString row_name = QStringLiteral("activityRequest_") + id;
         auto* row = qmltest::WaitForVisible(m_app, row_name.toUtf8().constData()); QVERIFY(row);
         QVERIFY(qmltest::Click(row)); QVERIFY(qmltest::WaitForVisible(m_app, "paymentRequestModal"));
         // The original public UI oracle spans the pre-extraction card and the

@@ -299,7 +299,7 @@ private Q_SLOTS:
         QCOMPARE(fixture.wallet->read_calls.load(), reads + 1);
 
         const COutPoint original{Txid{}, 0};
-        const auto id = QString::fromStdString(original.hash.GetHex()) + QStringLiteral(":0");
+        const QString id = QString::fromStdString(original.hash.GetHex()) + QStringLiteral(":0");
         coins.beginSelection();
         QVERIFY(coins.toggleCoinSelectionById(id));
         coins.applySelection();
@@ -456,7 +456,9 @@ private Q_SLOTS:
         QVERIFY(!coins.data(coins.index(0), CoinsListModel::LockedRole).toBool());
         QVERIFY(coins.lockMarkedCoins(true)); const auto owner = coins.lockOperation(); fixture.finish();
         QVERIFY(owner && owner->result() && owner->result()->value);
-        const auto& result = *owner->result()->value;
+        const auto original_receipt = owner->result();
+        QVERIFY(original_receipt && original_receipt->value);
+        const auto& result = *original_receipt->value;
         QVERIFY(result.failed); QVERIFY(result.already_locked); QVERIFY(!result.uncertain);
         QCOMPARE(result.changed, size_t{0}); QCOMPARE(result.items.size(), size_t{1});
         QCOMPARE(result.items[0].state, CoinsListModel::LockItemOutcome::State::AlreadyLocked);
@@ -553,7 +555,9 @@ private Q_SLOTS:
         coins.cancelSelection();
         fixture.finish();
         QVERIFY(operation->result()); QVERIFY(operation->result()->value);
-        const auto& result = *operation->result()->value;
+        const auto original_receipt = operation->result();
+        QVERIFY(original_receipt && original_receipt->value);
+        const auto& result = *original_receipt->value;
         QVERIFY(result.failed); QVERIFY(!result.uncertain);
         QCOMPARE(result.requested, size_t{3}); QCOMPARE(result.changed, size_t{1});
         QCOMPARE(result.items.size(), size_t{3});
@@ -670,7 +674,9 @@ private Q_SLOTS:
         const auto owner = coins.lockOperation(); QVERIFY(owner);
         fixture.finish();
         QVERIFY(owner->result()); QVERIFY(owner->result()->value);
-        const auto& outcome = *owner->result()->value;
+        const auto original_receipt = owner->result();
+        QVERIFY(original_receipt && original_receipt->value);
+        const auto& outcome = *original_receipt->value;
         QVERIFY(outcome.failed); QVERIFY(!outcome.uncertain);
         QCOMPARE(outcome.requested, size_t{3});
         QCOMPARE(outcome.changed, size_t{2});
@@ -699,7 +705,9 @@ private Q_SLOTS:
         const auto owner = coins.lockOperation(); QVERIFY(owner);
         fixture.finish();
         QVERIFY(owner->result()); QVERIFY(owner->result()->value);
-        const auto& outcome = *owner->result()->value;
+        const auto original_receipt = owner->result();
+        QVERIFY(original_receipt && original_receipt->value);
+        const auto& outcome = *original_receipt->value;
         QVERIFY(outcome.uncertain);
         QCOMPARE(outcome.items.size(), size_t{1});
         QCOMPARE(outcome.items.front().state, CoinsListModel::LockItemOutcome::State::Unknown);
