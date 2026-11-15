@@ -301,8 +301,8 @@ public:
     PaymentRequest* detailPaymentRequest() const { return m_detail_payment_request; }
     ReceiveRequestHistoryModel* receiveRequests() const { return m_receive_requests; }
     bool receiveRequestReconciliationPending() const;
-    QString receiveRequestReconciliationError() const { return m_receive_reconciliation_error; }
-    bool receiveRequestReconciliationApplying() const { return m_receive_reconciliation_applying; }
+    QString receiveRequestReconciliationError() const { return m_receipt_projection ? m_receipt_projection->errorText() : QString{}; }
+    bool receiveRequestReconciliationApplying() const { return m_receipt_projection && m_receipt_projection->applying(); }
     WalletQmlModelTransaction* currentTransaction() const { return m_current_transaction; }
     QVariantMap currentTransactionFlow() const;
     QVariantMap currentTransactionFlowPreview() const;
@@ -665,11 +665,7 @@ private:
     QString m_request_storage_error;
     bool m_receiving_address_ready{false}, m_receiving_address_pending{false};
     std::shared_ptr<const walletrequests::AddressIntent> m_receiving_intent;
-    std::shared_ptr<const walletreceipts::Snapshot> m_receipt_snapshot;
-    QTimer m_receive_payment_poll_timer;
-    bool m_receive_reconciliation_pending{false}, m_receive_reconciliation_applying{false};
-    bool m_receipt_projection_again{false}, m_receipt_needs_poll{false};
-    QString m_receive_reconciliation_error;
+    ReceiptReconciliationModel* m_receipt_projection{nullptr};
     void publishReceipts();
     WalletQmlModelTransaction* m_current_transaction{nullptr};
     wallet::CCoinControl m_coin_control;

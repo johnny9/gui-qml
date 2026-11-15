@@ -8,6 +8,7 @@ from pathlib import Path
 from qml_scenarios import run_scenarios
 from qml_smoke_lib import (
     create_request,
+    create_wallet,
     open_receive,
     open_wallet_settings,
     request_qr_payload,
@@ -122,7 +123,77 @@ def receive_smoke(harness, checkpoint):
     gui.wait_for_property("requestPaymentNoteRow", "value", "Private lunch note")
     checkpoint("receipt reopened from Activity after restart")
 
+def typed_receipt_restart(harness, checkpoint):
+    """Keep current credit and durable address-use distinct across real restart."""
+    harness.start_gui()
+    create_wallet(harness, "receipt-restart", "receipt password")
+    gui = harness.driver
+    gui.click("receiveTabButton")
+    gui.wait_for_property("receiveAmountInput", "visible", True, timeout_ms=30000)
+    gui.set_text("receiveAmountInput", "1.0")
+    gui.invoke("receiveAmountInput", "editingFinished")
+    gui.set_text("receiveMessageInput", "Original public invoice")
+    gui.set_text("receivePrivateNoteInput", "Original private receipt note")
+    gui.wait_for_property("receiveSaveRequestButton", "enabled", True)
+    gui.click("receiveSaveRequestButton")
+    gui.wait_for_property("paymentRequestModal", "opened", True, timeout_ms=30000)
+    request_id = gui.get_property("paymentRequestModal", "openedEditor.requestId")
+    address = gui.get_property("paymentRequestModal", "openedEditor.address")
+    assert request_id and address
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    assert gui.get_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi") == 0
+    checkpoint("original typed request is awaiting a current receipt")
+
+    block = rpc_call(harness.gui_rpc_port, "generatetoaddress", [1, address])[0]
+    rpc_call(harness.gui_rpc_port, "syncwithvalidationinterfacequeue")
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi", 5_000_000_000, timeout_ms=30000)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.historicallyUsed", True)
+    gui.wait_for_property("savedRequestReceiptStatus", "text", "Payment received")
+    gui.wait_for_property("savedRequestCopyUriButton", "enabled", False)
+    rpc_call(harness.gui_rpc_port, "invalidateblock", [block])
+    rpc_call(harness.gui_rpc_port, "syncwithvalidationinterfacequeue")
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi", 0, timeout_ms=30000)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    gui.wait_for_property("savedRequestReceiptStatus", "text", "Awaiting payment")
+    gui.wait_for_property("savedRequestHistoricalUseNotice", "visible", True)
+    gui.wait_for_property("savedRequestCopyUriButton", "enabled", False)
+    checkpoint("reorg removes current credit without rearming the used address")
+
+    # Stop with the original view still open; no dialog dismissal or GUI
+    # destruction is required for native shutdown and persisted receipt facts.
+    stop_gui_checked(harness)
+    harness.start_gui()
+    gui = harness.driver
+    open_wallet_selector(gui)
+    gui.click("walletSelectItem_receipt-restart")
+    gui.wait_for_property("walletBadge", "text", "receipt-restart", timeout_ms=30000)
+    gui.click("activityTabButton")
+    gui.wait_for_property(f"activityRequest_{request_id}", "visible", True, timeout_ms=30000)
+    gui.click(f"activityRequest_{request_id}")
+    gui.wait_for_property("paymentRequestModal", "opened", True, timeout_ms=30000)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    assert gui.get_property("paymentRequestModal", "openedEditor.requestId") == request_id
+    assert gui.get_property("paymentRequestModal", "openedEditor.address") == address
+    assert gui.get_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi") == 0
+    assert gui.get_property("paymentRequestModal", "openedEditor.historicallyUsed") is True
+    assert gui.get_property("paymentRequestModal", "openedEditor.privateNote.text") == "Original private receipt note"
+    gui.wait_for_property("savedRequestReceiptStatus", "text", "Awaiting payment")
+    gui.wait_for_property("savedRequestCopyUriButton", "enabled", False)
+    checkpoint("exact original request and historical use survived process restart")
+
+    rpc_call(harness.gui_rpc_port, "reconsiderblock", [block])
+    rpc_call(harness.gui_rpc_port, "syncwithvalidationinterfacequeue")
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi", 5_000_000_000, timeout_ms=30000)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    gui.wait_for_property("savedRequestReceiptStatus", "text", "Payment received")
+    assert gui.get_property("paymentRequestModal", "openedEditor.requestId") == request_id
+    gui.wait_for_property("savedRequestCopyUriButton", "enabled", False)
+    checkpoint("reconsidered receipt updates the retained original view")
+
+
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('Wallet Activity and native export process journey', [
         wallet_scenario("request-receipt-restart-and-dialog", 5, receive_smoke),
+        wallet_scenario("typed-current-receipt-reorg-restart", 5, typed_receipt_restart),
     ]))

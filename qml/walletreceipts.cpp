@@ -575,7 +575,7 @@ void Reader::complete(std::vector<Receipt> receipts, std::map<Txid, ChangeType> 
     // the intermediate ledger may contain both. Keep the last reconciled
     // presentation instead of exposing that temporary double count.
     std::shared_ptr<const Snapshot> snapshot;
-    if (!rechecking) snapshot = std::make_shared<Snapshot>(Snapshot{m_opening->identity(), m_ledger.totals(), m_ledger.observed(), native_revision});
+    if (!rechecking) snapshot = std::make_shared<Snapshot>(Snapshot{m_opening->identity(), m_ledger.totals(), m_ledger.observed(), native_revision, addresses});
     std::shared_ptr<const Snapshot> previous;
     bool pending;
     {

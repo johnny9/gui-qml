@@ -430,6 +430,7 @@ void PaymentRequestEditorModel::publish()
     // original snapshot and terminal receipt have finished bounded publication.
     const bool has_result = update->result_sequence > m_seen_result;
     if (has_result) m_seen_result = update->result_sequence;
+    m_receipts.setSource(requestId(), address(), historicallyUsed(), available()); if (!guard) return;
     m_publishing = false;
     m_sharing_input->store(available() && !dirty() && !busy() && valid() && update->source.id > 0 && !update->source.used);
     if (has_result) { const auto actual = update->result; Q_EMIT persisted(actual); if (!guard) return; }
@@ -624,6 +625,7 @@ void PaymentRequestEditorModel::retire()
     { const auto state = m_state.lock(); if (state) state->post([](State& owner) { owner.retire(); }); }
     m_owner.reset();
     const QPointer<PaymentRequestEditorModel> guard{this};
+    m_receipts.setSource(requestId(), address(), historicallyUsed(), false); if (!guard) return;
     m_label.setAvailable(false); if (!guard) return;
     m_message.setAvailable(false); if (!guard) return;
     m_note.setAvailable(false); if (!guard) return;

@@ -3,6 +3,9 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/walletreceipts.h>
+#include <qml/backendexecutor.h>
+#include <qml/retainedvalue.h>
+#include <qml/models/receiptreconciliationmodel.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/mocks/mockwallet.h>
 #include <test/qt_test_registry.h>
@@ -13,6 +16,9 @@
 
 #include <QDir>
 #include <QFile>
+#include <QScopeGuard>
+#include <QSemaphore>
+#include <QThread>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -110,6 +116,18 @@ struct Fixture {
         wallet->transactions[id] = std::move(tx); return id;
     }
     std::optional<Publication> settle() { commands.drain(); return reader->take(); }
+    ReceiptReconciliationModel::Ports projectionPorts() {
+        ReceiptReconciliationModel::Ports ports;
+        ports.opening = opening->identity();
+        ports.take = [this] { return reader->take(); };
+        ports.retire = [this](auto snapshot) { reader->retire(std::move(snapshot)); };
+        ports.current = [this] { return reader->settled(); };
+        ports.nativeRevision = [this] { return opening->transactionRevision(); };
+        ports.poll = [this] { reader->poll(); };
+        ports.retry = [this] { reader->retry(); };
+        ports.acknowledge = [this] { opening->acknowledgeTransactions(); };
+        return ports;
+    }
 };
 }
 
@@ -118,6 +136,216 @@ class WalletReceiptsTests : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void initTestCase() { SelectParams(ChainType::MAIN); }
+    void currentCreditProjectionKeepsPositiveUnderpaymentSeparateFromHistoricalUse()
+    {
+        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        QCOMPARE(request.receiptState(), RequestReceiptModel::Unknown); QVERIFY(!request.fresh());
+        f.add(1, 546); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
+        QVERIFY(request.fresh()); QCOMPARE(request.receivedAmountSatoshi(), qint64{546});
+        QCOMPARE(request.receiptState(), RequestReceiptModel::Received); QVERIFY(request.historicallyUsed());
+        QCOMPARE(request.requestId(), QStringLiteral("17")); QCOMPARE(f.wallet->scans, 1);
+        // The projection reports actual credit, not whether a 1 BTC invoice
+        // is fulfilled; positive underpayment intentionally remains observed.
+        QCOMPARE(model.amount(ADDRESS), CAmount{546});
+    }
+    void cancelledPaymentReturnsToAwaitingWithoutErasingHistoricalUse()
+    {
+        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        const auto id = f.add(1, 1000); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
+        QVERIFY(request.fresh()); QCOMPARE(request.receivedAmountSatoshi(), qint64{1000});
+        f.wallet->inactive.insert(id); model.poll(); f.commands.drain(); model.consume();
+        QVERIFY(request.fresh()); QCOMPARE(request.receivedAmountSatoshi(), qint64{0});
+        QCOMPARE(request.receiptState(), RequestReceiptModel::Awaiting); QVERIFY(request.historicallyUsed());
+        QCOMPARE(request.requestId(), QStringLiteral("17")); QCOMPARE(f.wallet->scans, 1);
+    }
+    void changedNoticeReconcilesActualLiveStateEvenWhenLastNoticeSaysDeleted()
+    {
+        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        const auto id = f.add(1, 1000); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
+        f.reader->changed({{id, CT_UPDATED}}, ADDRESSES);
+        f.reader->changed({{id, CT_DELETED}}, ADDRESSES);
+        f.commands.drain(); model.consume();
+        QVERIFY(request.fresh()); QCOMPARE(request.receivedAmountSatoshi(), qint64{1000});
+        QCOMPARE(request.receiptState(), RequestReceiptModel::Received); QCOMPARE(f.wallet->scans, 1);
+    }
+    void pendingObservationPreservesCreditWithoutClaimingCurrentReadiness()
+    {
+        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        const auto id = f.add(1, 100); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
+        f.reader->changed({{id, CT_UPDATED}}, ADDRESSES); model.invalidate();
+        QVERIFY(model.pending()); QVERIFY(!request.fresh()); QCOMPARE(request.receiptState(), RequestReceiptModel::Unknown);
+        QCOMPARE(request.receivedAmountSatoshi(), qint64{100}); QVERIFY(request.historicallyUsed());
+        f.commands.drain(); model.consume(); QVERIFY(request.fresh());
+        QCOMPARE(request.receivedAmountSatoshi(), qint64{100});
+    }
+    void failedReceiptReadRetainsTheLastCreditAndRecoversWithManualClock()
+    {
+        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        f.add(1, 100); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
+        f.wallet->fail = true; model.poll(); f.commands.drain(); model.consume();
+        QCOMPARE(model.phase(), ReceiptReconciliationModel::Failed); QVERIFY(!request.fresh());
+        QCOMPARE(request.receivedAmountSatoshi(), qint64{100}); QVERIFY(!request.errorText().isEmpty());
+        const auto failed_reads = f.wallet->reads;
+        request.retry(); f.commands.drain(); model.consume(); QCOMPARE(f.wallet->reads, failed_reads);
+        f.now += std::chrono::seconds{1}; f.wallet->fail = false;
+        request.retry(); f.commands.drain(); model.consume();
+        QVERIFY(request.fresh()); QVERIFY(request.errorText().isEmpty());
+        QCOMPARE(request.receivedAmountSatoshi(), qint64{100}); QCOMPARE(f.wallet->scans, 2);
+    }
+    void requestProjectionReplacementNeverCarriesThePriorAddressCredit()
+    {
+        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        f.add(1, 100); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
+        const auto reads = f.wallet->reads;
+        request.setSource("29", "another-original-address", false, true);
+        QCOMPARE(request.requestId(), QStringLiteral("29")); QCOMPARE(request.address(), QStringLiteral("another-original-address"));
+        QCOMPARE(request.receivedAmountSatoshi(), qint64{0}); QVERIFY(!request.historicallyUsed());
+        QCOMPARE(f.wallet->reads, reads); // No action-level wallet rescan or snapshot copy.
+        request.setSource("17", ADDRESS, true, true);
+        QCOMPARE(request.receivedAmountSatoshi(), qint64{100}); QVERIFY(request.historicallyUsed());
+    }
+    void retiredProjectionCannotPollOrRetryTheOriginalOpening()
+    {
+        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, true, true);
+        f.add(1, 100); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
+        const auto reads = f.wallet->reads; model.close();
+        QCOMPARE(request.phase(), ReceiptReconciliationModel::Closed); QVERIFY(!request.fresh());
+        QVERIFY(request.historicallyUsed()); QCOMPARE(request.receiptState(), RequestReceiptModel::Unknown);
+        model.poll(); request.retry(); model.consume(); f.commands.drain(); QCOMPARE(f.wallet->reads, reads);
+    }
+    void projectionCloseDuringChangedStopsOriginalTransactionPublication()
+    {
+        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()};
+        QSignalSpy transactions{&model, &ReceiptReconciliationModel::transactionChanged};
+        const auto id = f.add(1, 100); f.reader->changed({{id, CT_NEW}}, ADDRESSES); f.commands.drain();
+        connect(&model, &ReceiptReconciliationModel::changed, &model, [&] { model.close(); });
+        model.consume(); QCOMPARE(model.phase(), ReceiptReconciliationModel::Closed);
+        QCOMPARE(transactions.count(), 0); QVERIFY(!model.applying()); f.commands.drain();
+    }
+    void destroyedReceiptOwnerLeavesTheOriginalRequestExplicitlyStale()
+    {
+        Fixture f; RequestReceiptModel request;
+        auto model = std::make_unique<ReceiptReconciliationModel>(f.projectionPorts());
+        request.setReader(model.get()); request.setSource("17", ADDRESS, true, true);
+        f.add(1, 100); f.reader->reload(ADDRESSES); f.commands.drain(); model->consume();
+        QVERIFY(request.fresh()); model.reset(); QVERIFY(!request.fresh());
+        QCOMPARE(request.receiptState(), RequestReceiptModel::Unknown); QVERIFY(request.historicallyUsed());
+        QCOMPARE(request.requestId(), QStringLiteral("17")); f.commands.drain();
+    }
+    void realWorkersReconcileAndDrainIndependentlyOfAClosedReceiptView()
+    {
+        struct State {
+            QSemaphore entered, release;
+            std::atomic_bool hold{false};
+            std::atomic_int metadata{0}, notices{0};
+            std::atomic<QThread*> read{nullptr}, outcome{nullptr}, destroyed{nullptr};
+        };
+        struct Native final : Wallet {
+            explicit Native(std::shared_ptr<State> state) : state(std::move(state)) {}
+            ~Native() override { state->destroyed = QThread::currentThread(); }
+            interfaces::WalletTx getWalletTxDetails(const Txid& id, interfaces::WalletTxStatus& status,
+                std::vector<std::string>& order, std::vector<std::string>& forms, bool& mempool, int& blocks) override {
+                state->read = QThread::currentThread();
+                if (state->hold.exchange(false)) { state->entered.release(); state->release.acquire(); }
+                return Wallet::getWalletTxDetails(id, status, order, forms, mempool, blocks);
+            }
+            const std::shared_ptr<State> state;
+        };
+        const auto state = std::make_shared<State>();
+        BackendExecutor commands, retirement;
+        const auto unblock = qScopeGuard([state] { state->release.release(); });
+        auto native = std::make_shared<Native>(state);
+        auto payment = Payment(1, 1000); const auto id = payment.tx->GetHash(); native->transactions.emplace(id, std::move(payment));
+        auto opening = std::make_shared<walletopening::Session>(commands.scheduler(), retirement.scheduler(),
+            std::make_shared<std::atomic_bool>(false), [state] { ++state->metadata; });
+        auto client = opening->start(native).borrower;
+        QTRY_VERIFY(state->metadata.load() > 0);
+        auto reader = std::make_shared<Reader>(opening, [state] { ++state->notices; });
+        auto disposal = execution::RetainValues<std::shared_ptr<Reader>>(retirement.scheduler(), [&] {
+            return std::make_unique<std::shared_ptr<Reader>>(reader);
+        }); QVERIFY(disposal);
+        QVERIFY(reader->onSnapshot([state](auto) { state->outcome = QThread::currentThread(); }));
+        const std::weak_ptr<Reader> weak = reader;
+        ReceiptReconciliationModel::Ports ports;
+        ports.opening = opening->identity();
+        ports.take = [weak] { const auto live = weak.lock(); return live ? live->take() : std::optional<Publication>{}; };
+        ports.current = [weak] { const auto live = weak.lock(); return live && live->settled(); };
+        ports.nativeRevision = [weak_opening = std::weak_ptr<walletopening::Session>{opening}] {
+            const auto live = weak_opening.lock(); return live ? live->transactionRevision() : uint64_t{0};
+        };
+        ports.retire = [weak](auto value) { if (const auto live = weak.lock()) live->retire(std::move(value)); };
+        ports.poll = [weak] { if (const auto live = weak.lock()) live->poll(); };
+        ReceiptReconciliationModel model{std::move(ports)}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        reader->reload(ADDRESSES); QTRY_VERIFY(reader->settled());
+        QVERIFY(!request.fresh()); QCOMPARE(request.receivedAmountSatoshi(), qint64{0});
+        model.consume(); QVERIFY(request.fresh()); QCOMPARE(request.receivedAmountSatoshi(), qint64{1000});
+        QVERIFY(state->read.load() != qApp->thread()); QVERIFY(state->outcome.load() && state->outcome.load() != qApp->thread());
+        state->hold = true; model.poll();
+        const bool entered = state->entered.tryAcquire(1, 5000); if (!entered) state->release.release(); QVERIFY(entered);
+        bool heartbeat{false}; QMetaObject::invokeMethod(qApp, [&] { heartbeat = true; }, Qt::QueuedConnection);
+        QTRY_VERIFY(heartbeat); QVERIFY(!request.fresh()); QCOMPARE(request.receivedAmountSatoshi(), qint64{1000});
+        model.close(); reader->close(); opening->retire(); client.reset(); native.reset();
+        reader.reset(); disposal.reset(); state->release.release();
+        commands.shutdown(); retirement.shutdown(); QTRY_VERIFY(commands.isDrained() && retirement.isDrained());
+        QCOMPARE(request.receiptState(), RequestReceiptModel::Unknown); QVERIFY(request.historicallyUsed());
+        QVERIFY(state->destroyed.load() && state->destroyed.load() != qApp->thread());
+    }
+    void largeReceiptProjectionRetiresItsSharedInventoryWithoutAnotherCoreRead()
+    {
+        Fixture f;
+        auto ports = f.projectionPorts();
+        auto source = std::make_shared<Snapshot>(); source->opening = f.opening->identity(); source->addresses = ADDRESSES;
+        for (int index{0}; index < 10'000; ++index) source->totals.emplace(QString::number(index), index);
+        source->totals.emplace(ADDRESS, 546);
+        std::optional<Publication> pending{Publication{source, {}, Status::Ready, false, false, 0}};
+        const std::weak_ptr<const Snapshot> original = source; source.reset();
+        ports.take = [&] { return std::exchange(pending, {}); };
+        ports.current = [] { return true; };
+        ReceiptReconciliationModel model{std::move(ports)}; model.consume();
+        QVERIFY(model.fresh()); QCOMPARE(model.amount(ADDRESS), CAmount{546});
+        for (int index{0}; index < 100; ++index) {
+            RequestReceiptModel request; request.setReader(&model); request.setSource(QString::number(index + 1), ADDRESS, false, true);
+            QCOMPARE(request.receivedAmountSatoshi(), qint64{546}); QVERIFY(request.fresh());
+        }
+        QCOMPARE(f.wallet->reads, 0); QCOMPARE(f.wallet->scans, 0); QVERIFY(!original.expired());
+        model.close(); QVERIFY(!original.expired());
+        while (f.commands.step(Lane::Domain)) {}
+        QVERIFY(original.expired()); QCOMPARE(f.wallet->reads, 0); QCOMPARE(f.wallet->scans, 0);
+    }
+    void foreignOpeningReceiptIsRetiredWithoutPublishingIntoTheOriginalRequest()
+    {
+        Fixture f; auto ports = f.projectionPorts();
+        auto source = std::make_shared<Snapshot>(); source->opening = std::make_shared<const walletopening::Identity>();
+        source->addresses = ADDRESSES; source->totals.emplace(ADDRESS, 999);
+        std::optional<Publication> pending{Publication{source, {}, Status::Ready, false, false, 0}};
+        const std::weak_ptr<const Snapshot> foreign = source; source.reset();
+        ports.take = [&] { return std::exchange(pending, {}); };
+        ports.current = [] { return true; };
+        ReceiptReconciliationModel model{std::move(ports)}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        QSignalSpy notices{&model, &ReceiptReconciliationModel::changed}; model.consume();
+        QCOMPARE(notices.count(), 0); QCOMPARE(request.receivedAmountSatoshi(), qint64{0}); QVERIFY(!request.fresh());
+        while (f.commands.step(Lane::Domain)) {}
+        QVERIFY(foreign.expired()); QCOMPARE(f.wallet->reads, 0); QCOMPARE(f.wallet->scans, 0);
+    }
+    void committedReceiptNotificationEndsTheLegacyPublicationGuard()
+    {
+        Fixture f; bool applying_on_values{false}, applying_on_commit{true}; int committed{0};
+        ReceiptReconciliationModel model{f.projectionPorts()};
+        connect(&model, &ReceiptReconciliationModel::changed, &model, [&] { applying_on_values = model.applying(); model.consume(); });
+        connect(&model, &ReceiptReconciliationModel::committed, &model, [&] { applying_on_commit = model.applying(); ++committed; });
+        f.add(1, 546); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
+        QVERIFY(applying_on_values); QVERIFY(!applying_on_commit); QCOMPARE(committed, 1);
+        QVERIFY(model.fresh()); QVERIFY(!model.pending()); QCOMPARE(model.amount(ADDRESS), CAmount{546});
+    }
     void idlePresentationRetirementNeedsNoReceiptRead()
     {
         Fixture f;
