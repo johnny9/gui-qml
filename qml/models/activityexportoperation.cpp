@@ -6,6 +6,7 @@
 #include <qml/retainedvalue.h>
 
 #include <QUuid>
+#include <QPointer>
 
 #include <mutex>
 #include <utility>
@@ -61,7 +62,8 @@ ActivityExportOperation::ActivityExportOperation(activityexport::Request request
         if (outcome) outcome({id, revision, QString::fromUtf8(state.target.path.data(), static_cast<qsizetype>(state.target.path.size())), unit,
             state.phase, state.error, true, state.phase == backup::Phase::Succeeded, state.error >= backup::Error::None && state.error <= backup::Error::Transport && state.error != backup::Error::Unknown});
     };
-    services.abandon = [source] { source->clear(); };
+    m_abandon = [source] { source->clear(); };
+    services.abandon = m_abandon;
     m_policy = new BackupFileOperation(path, std::move(services), this);
     connect(m_policy, &BackupFileOperation::changed, this, &ActivityExportOperation::changed);
 }
@@ -111,7 +113,25 @@ ActivityExportResult ActivityExportOperation::result() const
 {
     return {m_id, m_revision, finalPath(), error(), m_unit, resultPresent(), saved(), cancelled(), outcomeKnown()};
 }
-bool ActivityExportOperation::start() { return m_policy && m_policy->start(); }
-bool ActivityExportOperation::approve() { return m_policy && m_policy->approve(); }
-bool ActivityExportOperation::refuse() { return m_policy && m_policy->refuse(); }
-void ActivityExportOperation::retire() { if (m_policy) m_policy->retire(); }
+bool ActivityExportOperation::start()
+{
+    if (m_retired || std::exchange(m_started, true) || !m_policy) return false;
+    const QPointer<ActivityExportOperation> guard{this};
+    const bool admitted = m_policy->start();
+    if (guard && m_retired) retire(); // A reentrant close may precede start's admission acknowledgement.
+    return admitted;
+}
+bool ActivityExportOperation::approve() { return !m_retired && m_policy && m_policy->approve(); }
+bool ActivityExportOperation::refuse() { return !m_retired && m_policy && m_policy->refuse(); }
+void ActivityExportOperation::retire()
+{
+    m_retired = true;
+    if (!m_policy) return;
+    const auto backend = m_policy->backend();
+    const auto abandon = m_abandon;
+    if (!m_started) { backend->abandonBeforeStart(); if (abandon) abandon(); return; }
+    backend->retire();
+    // An admitted write keeps the source until its actual Native outcome.
+    // Retired-before-write is an atomic backend fact, never a GUI phase guess.
+    if (backend->retiredBeforeWrite() && abandon) abandon();
+}

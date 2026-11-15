@@ -48,6 +48,7 @@ public:
     bool approve();
     bool refuse();
     void retire();
+    bool retiredBeforeWrite() const; // Native admission proof; no later file write can start.
     void failBeforeStart(Error error);
     void abandonBeforeStart();
 

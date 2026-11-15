@@ -79,5 +79,7 @@ private:
     const int m_unit;
     BackupFileOperation* m_policy{nullptr};
     QString m_error;
+    std::function<void()> m_abandon;
+    bool m_started{false}, m_retired{false};
 };
 #endif // BITCOIN_QML_MODELS_ACTIVITYEXPORTOPERATION_H

@@ -100,6 +100,13 @@ private Q_SLOTS:
         QCOMPARE(operation->phase(), BackupFileOperation::Phase::Declined); QVERIFY(operation->cancelled()); QCOMPARE(f.installed, 0); QCOMPARE(Read(path), QByteArray{"old"});
         operation = std::make_unique<ActivityExportOperation>(activityexport::Request{directory.filePath("unstarted.csv"), Source(), 0}, f.files(), f.execution(), ActivityFilterProxyModel::WriteCsv);
         QVERIFY(operation->start()); operation.reset(); f.commands.drain(); f.publish(); QCOMPARE(f.installed, 0); QVERIFY(!QFile::exists(directory.filePath("unstarted.csv")));
+        Fixture closing;
+        auto source = Source(); const std::weak_ptr<const activityview::Snapshot> frame{source->snapshot};
+        ActivityExportOperation retained{{path, source, 0}, closing.files(), closing.execution(), ActivityFilterProxyModel::WriteCsv};
+        source.reset(); QVERIFY(retained.start()); closing.commands.drain(); closing.publish(); QVERIFY(retained.confirmationRequired());
+        closing.commands.scheduler->closeOrdinaryAdmission(); retained.retire(); QVERIFY(!frame.expired());
+        closing.commands.drain(); closing.publish(); QVERIFY(frame.expired()); QCOMPARE(closing.commands.scheduler->pending(), size_t{0});
+        QVERIFY(!retained.approve()); QCOMPARE(closing.installed, 0); QCOMPARE(Read(path), QByteArray{"old"});
     }
     void failedProducerPreservesTheOriginalDestination()
     {

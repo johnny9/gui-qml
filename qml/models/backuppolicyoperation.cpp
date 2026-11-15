@@ -144,6 +144,12 @@ void backup::Operation::retire()
     else execution::Submit(*state->services.scheduler, work, [] {}, {}, {execution::Lane::Core, 256, state->serial, execution::WorkClass::Action});
 }
 
+bool backup::Operation::retiredBeforeWrite() const
+{
+    const auto state = m_state;
+    return state && state->admission.load() == OperationState::Admission::Retired;
+}
+
 void backup::Operation::failBeforeStart(Error error)
 {
     const auto state = m_state;
