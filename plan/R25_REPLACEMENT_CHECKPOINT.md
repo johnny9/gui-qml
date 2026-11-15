@@ -1,7 +1,7 @@
 # R25 replacement attempt checkpoint
 
-Implementation remains isolated pending final static/process and composed-source
-gates. Core44901 is unchanged. The [scope map](R25_SCOPE_MAP.json) accounts for
+Implementation has passed its final isolated focused gate; composed-source
+acceptance remains pending. Core44901 is unchanged. The [scope map](R25_SCOPE_MAP.json) accounts for
 all19 assigned scopes; inventory allegations are not fabricated runtime bugs.
 
 M04 captures the original opening, original transaction, exact candidate and
@@ -30,10 +30,7 @@ model assertion remains and passes after cleanup moved to hide admission.
 Process setup now selects the RPC-loaded sender through the actual picker;
 loading itself is not selection. No mutation oracle or deadline was weakened.
 
-Intermediate gates span64 replacement-model,11 shared Domain,5 wallet-consumer,
-40 QML and5 actual Core identities, with exact sources/carries in their reports.
-They are not one final-head run or exhaustive coverage. Final acceptance remains
-pending. [Upstream notes](QT6_UPSTREAM_IMPROVEMENTS.md#r25-replacement-signing-and-commit-observations)
+Final source `4d84fe7c3e5056702bf4636a800e84d0fcc49e64` passes127 actual bodies:64 replacement-model,13 shared Domain,5 wallet-consumer,40 QML and5 independent Core/RPC. All15 current pinned static entries pass, plus2 explicit byte-identical CPP carries; app lint passes. The HWI replacement, encrypted replacement and IPC bridge processes pass with child exit/stderr checks. QMLlint is an explicit unchanged-input carry fromdb986. The metadata replay counterexample has2 actual parent failures and passes behind the admission guards. This is focused ordinary qualification; composed acceptance remains pending. See [exact evidence](evidence/R25_FOCUSED.json). [Upstream notes](QT6_UPSTREAM_IMPROVEMENTS.md#r25-replacement-signing-and-commit-observations)
 record each interface adapter, actual guarantee, uncertainty and retirement
 condition. Conditional R09/R20 limits and R42 exhaustive coverage/platform/full
 matrix/native Windows/sanitizer obligations remain.
