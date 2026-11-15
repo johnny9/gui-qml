@@ -484,6 +484,43 @@ private Q_SLOTS:
         const std::array names{"signer-not-found", "signer-failed", "metadata-error", "error-after-terms-changed", "error-after-fee-changed", "throw-after-authenticated-output", "throw-after-terms-changed", "throw-after-fee-changed"};
         for (size_t i{0}; i < names.size(); ++i) QTest::newRow(names[i]) << int(i);
     }
+    void approvalCannotInstallInvalidUnfinalizedContributions_data()
+    {
+        QTest::addColumn<int>("outcome");
+        QTest::newRow("normal-return") << 0;
+        QTest::newRow("error-return") << 1;
+        QTest::newRow("exception-return") << 2;
+    }
+    void approvalCannotInstallInvalidUnfinalizedContributions()
+    {
+        QFETCH(int, outcome);
+        ECC_Context ecc;
+        const auto fixture = psbtfeefixture::SignedWithoutScripts(false);
+        auto original = fixture.document;
+        original.inputs[0].witness_script = fixture.witness;
+        original.inputs[0].partial_sigs.clear();
+        auto returned = original;
+        returned.inputs[0].partial_sigs.insert(*fixture.document.inputs[0].partial_sigs.begin());
+        returned.inputs[0].partial_sigs.begin()->second.second[5] ^= 1;
+        Fixture f;
+        f.wallet->signer = true;
+        f.wallet->metadata = [returned, outcome](PartiallySignedTransaction& document, bool& complete) {
+            document = returned;
+            complete = false;
+            if (outcome == 2) throw std::runtime_error("device failed after returning a partial signature");
+        };
+        if (outcome == 1) f.wallet->metadata_error = common::PSBTError::EXTERNAL_SIGNER_FAILED;
+        const walletsigning::Request request{MakeTransactionRef(*original.GetUnsignedTx()),
+            std::make_shared<const PartiallySignedTransaction>(original),
+            std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(original)), 500};
+        const auto result = walletsigning::Approve(*f.wallet, request, f.opening);
+        QVERIFY(!result.signed_transaction);
+        QCOMPARE(f.wallet->commits, 0);
+        // No failed or uncertain device response may install a corrupted
+        // unfinished signature into the original recoverable review.
+        QVERIFY(!result.document || result.document->inputs[0].partial_sigs.empty());
+        QVERIFY(!result.partial);
+    }
     void approvalRetainsOnlyAuthenticatedMetadataAfterFailure()
     {
         QFETCH(int, mode);
