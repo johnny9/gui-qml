@@ -288,12 +288,11 @@ std::shared_ptr<const paymentimport::TargetPort> SendRecipientsListModel::import
           if (found != routes->calls.end() && found->second.child == child) { scope = found->second.scope; outcome = found->second.outcome; } }
         if (!scope) return execution::Admission{{}, execution::Rejection::Invalid};
         return execution::Submit(*scope, [backend, child, key, outcome] {
-            if (outcome && *outcome) return **outcome;
             paymentimport::ChildReply reply{paymentimport::Receipt{child, paymentimport::Outcome::Unknown, 0, 0}, {}, {}, {}};
             if (const auto receipt = backend->imports.query(key)) {
                 reply.receipt = receipt->receipt;
                 reply.applied = std::make_shared<const paymentimport::ApplyReceipt>(*receipt);
-            }
+            } else if (outcome && *outcome) return **outcome;
             return reply;
         }, std::move(done), std::move(failed), {execution::Lane::Domain, 512});
     };
@@ -378,7 +377,14 @@ std::shared_ptr<const paymentimport::TargetPort> SendRecipientsListModel::import
                     query->request();
                 } else { edit_gate->store(false); notify(); }
                 return reply;
-            }, std::move(done), std::move(failed), {execution::Lane::Domain, 2048});
+            }, std::move(done), [backend, outcome, child, key, settled, edit_gate, notify, failed](std::exception_ptr error) {
+                // A retained committed receipt wins over a failed projection.
+                // Otherwise this Domain turn establishes no local edit occurred.
+                if (!backend->imports.query(key)) *outcome = paymentimport::ChildReply{
+                    paymentimport::Receipt{child, paymentimport::Outcome::Rejected, 0, child.target.revision}, {}, {}, {}};
+                settled->store(true); edit_gate->store(false); notify();
+                if (failed) failed(error);
+            }, {execution::Lane::Domain, 2048});
         if (!admission) { edit_gate->store(false); scope->activateCleanup(cleanup.id); notify(); }
         return admission;
     };

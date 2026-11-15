@@ -177,9 +177,17 @@ void BitcoinUriModel::closeAdmission()
 }
 #ifdef ENABLE_WALLET
 PaymentImportOperation* BitcoinUriModel::requestImportText(const QString& text, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
-{ return requestImport({paymentimport::Input::Kind::Text, text}, wallet ? wallet->importTarget(recipient) : nullptr, owner); }
+{
+    const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
+    const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
+    return self && original_owner ? self->requestImport({paymentimport::Input::Kind::Text, text}, target, original_owner) : nullptr;
+}
 PaymentImportOperation* BitcoinUriModel::requestImportFile(const QString& path, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
-{ return requestImport({paymentimport::Input::Kind::File, path}, wallet ? wallet->importTarget(recipient) : nullptr, owner); }
+{
+    const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
+    const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
+    return self && original_owner ? self->requestImport({paymentimport::Input::Kind::File, path}, target, original_owner) : nullptr;
+}
 PaymentImportOperation* BitcoinUriModel::requestImport(paymentimport::Input input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner)
 {
     if (m_closed || !owner || !m_services.scheduler || input.value.size() > 1024 * 1024 ||
@@ -195,18 +203,22 @@ PaymentImportOperation* BitcoinUriModel::requestImport(paymentimport::Input inpu
     services.wake = [post, timer = registry->timer](auto delay, auto callback) {
         post([timer, delay, callback = std::move(callback)] { QTimer::singleShot(delay, timer.get(), callback); });
     };
-    auto actor = paymentimport::Owner::Create(operation->requestId(), std::move(services),
+    const auto admission = m_admission;
+    const auto identity = operation->requestId();
+    auto actor = paymentimport::Owner::Create(identity, std::move(services),
         [post, observer](auto snapshot) { post([observer, snapshot = std::move(snapshot)]() mutable { if (observer) observer->project(std::move(snapshot)); }); },
         [weak = std::weak_ptr<BitcoinUriOperations>{registry}](uint64_t id) {
             if (const auto retained = weak.lock()) { std::lock_guard lock{retained->import_mutex}; retained->imports.erase(id); }
         });
-    if (!actor) { delete operation; return nullptr; }
+    if (!actor || !observer || admission->load()) { if (actor) actor->close(); if (observer) delete observer.data(); return nullptr; }
     operation->m_owner = actor;
     operation->m_snapshot.phase = paymentimport::Phase::Reading; operation->m_snapshot.pending = true;
     operation->m_export_services.scheduler = m_services.scheduler; operation->m_export_services.post = post;
     { std::lock_guard lock{registry->import_mutex}; registry->imports.emplace(operation->requestId(), actor); }
-    if (!actor->inspect(std::move(input)) || !actor->chooseTarget(std::move(target))) { actor->close(); delete operation; return nullptr; }
-    return operation;
+    if (!actor->inspect(std::move(input)) || !actor->chooseTarget(std::move(target)) || !observer || admission->load()) {
+        actor->close(); if (observer) delete observer.data(); return nullptr;
+    }
+    return observer;
 }
 #endif
 BitcoinUriParseOperation* BitcoinUriModel::requestParse(const QString& text, QObject* owner, BitcoinUriParseOperation* replace)

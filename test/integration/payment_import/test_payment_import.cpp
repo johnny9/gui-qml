@@ -49,6 +49,10 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "sendOptionsOpenPaymentRequestButton"));
         QVERIFY(qmltest::SetText(m_app, "sendUriImportInput", uri));
         QVERIFY(qmltest::Click(m_app, "sendUriImportApplyButton"));
+        auto* replacement = qmltest::Find(m_app, "sendPaymentUriOverwritePopup"); QVERIFY(replacement);
+        QTRY_VERIFY(replacement->property("opened").toBool());
+        QCOMPARE(m_wallet->maximumRecipient(), recipient); QCOMPARE(recipient->amount()->satoshi(), requested);
+        QVERIFY(qmltest::Click(m_app, "sendPaymentUriOverwriteConfirmButton"));
         QTRY_VERIFY(recipient->hasPaymentRequest()); QTRY_COMPARE(m_wallet->maximumRecipient(), nullptr);
         QCOMPARE(recipient->amount()->satoshi(), requested); QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Alice"));
         QCOMPARE(recipient->message(), QStringLiteral("Exact"));
@@ -104,6 +108,9 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "sendOptionsOpenPaymentRequestButton"));
         QVERIFY(qmltest::SetText(m_app, "sendUriImportInput", "bitcoin:" + m_address + "?amount=0.02&label=manual"));
         QVERIFY(qmltest::Click(m_app, "sendUriImportApplyButton"));
+        auto* replacement = qmltest::Find(m_app, "sendPaymentUriOverwritePopup"); QVERIFY(replacement);
+        QTRY_VERIFY(replacement->property("opened").toBool()); QCOMPARE(recipient->amount()->satoshi(), 10'000);
+        QVERIFY(qmltest::Click(m_app, "sendPaymentUriOverwriteConfirmButton"));
         QTRY_COMPARE(recipient->amount()->satoshi(), 2'000'000);
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("manual"));
     }

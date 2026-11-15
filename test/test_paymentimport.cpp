@@ -176,6 +176,79 @@ private Q_SLOTS:
         QVERIFY(queried); QCOMPARE(queried->receipt.outcome, paymentimport::Outcome::ReviewOpened); QCOMPARE(creates, 1);
         QVERIFY(port->acknowledge({42, 1}, child)); commands.drain();
     }
+    void rejectedApplyAdmissionIsKnownNoEffect() {
+        Fixture f; f.inspect(); f.target.rejectLane(execution::Lane::Domain); f.owner->apply(); f.drain();
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::Failed); QVERIFY(!f.snapshot.pending);
+        QCOMPARE(f.writes, 0); QCOMPARE(f.queries, 0); QVERIFY(!f.snapshot.error.isEmpty());
+    }
+    void closeWhileNativeReadIsHeldCannotResurrectTargetObservation() {
+        Fixture f; f.owner->inspect({paymentimport::Input::Kind::Text, Uri()});
+        QVERIFY(f.source.step(execution::Lane::Domain));
+        f.owner->chooseTarget(f.port); f.owner->close();
+        while (f.source.step(execution::Lane::Domain)) {}
+        QCOMPARE(f.reads, 0); QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closing); QCOMPARE(f.retired, 0);
+        f.drain(); QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closed); QCOMPARE(f.retired, 1);
+        QCOMPARE(f.writes, 0); QVERIFY(!f.snapshot.can_apply);
+    }
+    void replacedTargetCannotReceiveOldObservation() {
+        Fixture f; f.owner->inspect({paymentimport::Input::Kind::Text, Uri()}); f.owner->chooseTarget(f.port); f.source.drain();
+        f.owner->chooseTarget({}); f.source.drain(); f.target.drain(); f.source.drain();
+        QVERIFY(!f.snapshot.target); QVERIFY(!f.snapshot.can_apply); QCOMPARE(f.writes, 0);
+    }
+    void reviewCloseRevokesOnlyUnusedPresentationAndRetainsLogicalOutcome() {
+        ManualRoutedExecution commands; auto base = std::make_shared<paymentimport::TargetPort>();
+        base->opening = Target().opening; base->draft = 2; base->recipient = 3;
+        int creates{0}, installs{0}; std::function<void()> gui;
+        paymentimport::ReviewServices services; services.scheduler = commands.scheduler; services.view = 7; services.current = [] { return true; };
+        services.prepare = [&](auto, auto done, auto failed) {
+            return execution::Submit(*commands.scheduler, [&, done] {
+                ++creates; psbtwork::ImportResult value; value.review = std::make_shared<const walletreview::Snapshot>(); done(value);
+            }, [] {}, std::move(failed), {execution::Lane::Core, 512});
+        };
+        services.present = [&](auto, auto allowed) { gui = [&, allowed] { if (allowed->load()) ++installs; }; };
+        const auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
+        const paymentimport::Child child{1, 1, paymentimport::ChildKind::CreateReview, Target(), false};
+        QVERIFY(port->dispatch({42, 1}, child, std::make_shared<const paymentimport::Inspection>(Psbt()), [](auto) {}, {}));
+        commands.drain(); QCOMPARE(creates, 1); QVERIFY(gui);
+        port->retire({42, 1}, child); gui(); QCOMPARE(installs, 0);
+        std::optional<paymentimport::ChildReply> result;
+        QVERIFY(port->query({42, 1}, child, [&](auto reply) { result = reply; }, {})); commands.drain();
+        QVERIFY(result); QCOMPARE(result->receipt.outcome, paymentimport::Outcome::ReviewOpened); QCOMPARE(creates, 1);
+        QVERIFY(port->acknowledge({42, 1}, child)); commands.drain();
+    }
+    void reviewFactoryRetainsKnownFailuresForLostAcknowledgment() {
+        ManualRoutedExecution commands; auto base = std::make_shared<paymentimport::TargetPort>();
+        base->opening = Target().opening; base->draft = 2; base->recipient = 3; int creates{0};
+        paymentimport::ReviewServices services; services.scheduler = commands.scheduler; services.view = 7; services.current = [] { return true; };
+        services.prepare = [&](auto, auto done, auto failed) {
+            return execution::Submit(*commands.scheduler, [&] { ++creates; throw std::runtime_error{"read failure"}; },
+                [] {}, std::move(failed), {execution::Lane::Core, 512});
+        };
+        const auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
+        const paymentimport::Child child{1, 1, paymentimport::ChildKind::CreateReview, Target(), false};
+        QVERIFY(port->dispatch({42, 1}, child, std::make_shared<const paymentimport::Inspection>(Psbt()), [](auto) {}, {})); commands.drain();
+        std::optional<paymentimport::ChildReply> result;
+        QVERIFY(port->query({42, 1}, child, [&](auto reply) { result = reply; }, {})); commands.drain();
+        QVERIFY(result); QCOMPARE(result->receipt.outcome, paymentimport::Outcome::Rejected); QCOMPARE(creates, 1);
+        QVERIFY(!result->review->message.isEmpty()); QVERIFY(port->acknowledge({42, 1}, child)); commands.drain();
+    }
+    void originalExportRequiresMatchingSourceToken() {
+        ManualRoutedExecution commands; std::deque<std::function<void()>> gui;
+        BitcoinUriModel model; QObject owner;
+        model.setServices({commands.scheduler, [&](auto post) { gui.push_back(std::move(post)); }});
+        const auto bytes = psbtwork::SerializeRaw(*Document());
+        auto* operation = model.requestImport({paymentimport::Input::Kind::Text, QString::fromLatin1(bytes.toBase64())}, {}, &owner); QVERIFY(operation);
+        commands.drain(); while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+        QVERIFY(operation->canExport()); QVERIFY(!operation->exportToken().isEmpty());
+        QTemporaryDir dir; QVERIFY(dir.isValid());
+        QVERIFY(!operation->requestSaveOriginal(operation->exportToken() + "wrong", dir.filePath("wrong")));
+        QVERIFY(operation->requestSaveOriginal(operation->exportToken(), dir.filePath("original.psbt")));
+        for (int turn{0}; turn < 20; ++turn) { commands.drain(); while (!gui.empty()) { auto post = std::move(gui.front()); gui.pop_front(); post(); } }
+        QVERIFY(operation->fileExportOperation()->saved());
+        QFile saved{dir.filePath("original.psbt")}; QVERIFY(saved.open(QIODevice::ReadOnly)); QCOMPARE(saved.readAll(), bytes);
+        operation->cancel(); QVERIFY(!operation->requestSaveOriginal(operation->exportToken(), dir.filePath("closed")));
+        model.closeAdmission(); commands.drain();
+    }
     void typedFacadePublishesBoundedSourceWithoutTargetOrGuiParsing() {
         ManualRoutedExecution commands; std::deque<std::function<void()>> gui;
         BitcoinUriModel model; QObject owner;

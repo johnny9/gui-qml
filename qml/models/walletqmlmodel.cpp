@@ -2973,7 +2973,7 @@ void WalletQmlModel::publishApproval(walletsigning::ApprovalSnapshot snapshot)
     }
     // Unknown returned bytes remain owned by the approval result. They cannot
     // replace the authenticated review, even when a failed call yielded bytes.
-    if (value.document && !value.quarantined_document) { m_current_psbt = value.document; m_current_transaction->setAssessedPsbt(value.document); }
+    if (value.document && !value.quarantined_document) { invalidateImportReview(); m_current_psbt = value.document; m_current_transaction->setAssessedPsbt(value.document); }
     if (value.quarantined_document) {
         m_current_transaction_can_send = false;
         m_current_transaction_can_broadcast = false;
@@ -3266,6 +3266,7 @@ void WalletQmlModel::publishSendOperation()
         // when the wallet reported a terminal signing error. Preserve that
         // captured document, while allowing broadcast only after a clean,
         // verified complete result.
+        invalidateImportReview();
         m_current_psbt = result->document;
         m_current_transaction->setAssessedPsbt(result->document);
         if (result->error == walletsend::Error::None && !result->relock_failed) {
@@ -3408,7 +3409,8 @@ std::shared_ptr<const paymentimport::TargetPort> WalletQmlModel::importTarget(Se
         // can be lost. Only the existing public Wallet review API is used.
         return opening->read([source, context, unit, done](interfaces::Wallet& wallet) {
             done(psbtwork::PrepareReview(wallet, source->psbt->document, context, unit));
-        }, [] {}, std::move(failed), execution::WorkClass::Observation, 2048);
+            return true;
+        }, [](bool) {}, std::move(failed), execution::WorkClass::Observation, 2048);
     };
     services.present = [post, observer, opening, current, view, review_identity, original_review](auto imported, auto presentation_allowed) {
         post([observer, opening, current, view, review_identity, original_review, imported, presentation_allowed] {
@@ -3418,7 +3420,16 @@ std::shared_ptr<const paymentimport::TargetPort> WalletQmlModel::importTarget(Se
             // These aliases keep every Core value's final release on its Native
             // lease, including after the original import owner acknowledges.
             const auto review = std::shared_ptr<const walletreview::Snapshot>{imported, imported->review.get()};
-            auto* transaction = new WalletQmlModelTransaction(review, opening, observer->m_fee_read_services.post, observer);
+            WalletQmlModelTransaction* transaction{nullptr};
+            try { transaction = new WalletQmlModelTransaction(review, opening, observer->m_fee_read_services.post, observer); }
+            catch (const std::exception&) {
+                if (observer && current->load()) {
+                    observer->m_psbt_action_state = PsbtActionState::PsbtFailed;
+                    observer->m_psbt_action_error = tr("Transaction review capacity is unavailable.");
+                    Q_EMIT observer->psbtActionChanged();
+                }
+                return;
+            }
             if (!observer || !current->load() || !presentation_allowed->load() || !observer->observationsAllowed()) { transaction->deleteLater(); return; }
             auto* previous = observer->m_current_transaction;
             observer->setCurrentTransaction(transaction);

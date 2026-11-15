@@ -323,6 +323,7 @@ void Owner::finish(Reply reply, ReplyKind kind, uint64_t source, uint64_t target
             if (kind == ReplyKind::Dispatch && not_started) {
                 state.flow.finished({*child, Outcome::Rejected, 0, child->target.revision});
                 state.flow.acknowledged(*child);
+                state.error = QStringLiteral("The import action could not be admitted.");
             } else {
                 state.flow.acknowledgmentLost(*child);
                 if (kind == ReplyKind::Query) state.flow.queryUnavailable(*child);
