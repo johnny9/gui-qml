@@ -17,6 +17,7 @@
 #include <util/strencodings.h>
 
 #include <QFile>
+#include <QPointer>
 #include <QTemporaryDir>
 #include <algorithm>
 #include <array>
@@ -30,6 +31,80 @@ public:
     explicit PsbtIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void decodedReviewFailurePreservesTheCurrentOperation_data()
+    {
+        QTest::addColumn<int>("failure");
+        QTest::addColumn<QString>("reason");
+        QTest::newRow("nonstandard-output") << 0 << QStringLiteral("standard address outputs");
+        QTest::newRow("invalid-finalized-signature") << 1 << QStringLiteral("invalid signatures");
+        QTest::newRow("recipient-cardinality") << 2 << QStringLiteral("more recipients");
+    }
+    void decodedReviewFailurePreservesTheCurrentOperation()
+    {
+        QFETCH(int, failure); QFETCH(QString, reason);
+        auto* wallet = qmltest::CreateWallet(m_app, "review-tuple"); QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        const auto address = qmltest::NewAddress(m_app, wallet->name());
+        const auto encoded = qmltest::Rpc(m_app, "walletcreatefundedpsbt",
+            qmltest::Json("[[],[{\"" + address.toStdString() + "\":0.005}]]"), wallet->name()).find_value("psbt").get_str();
+        const auto documents = qmltest::Call(m_app, [encoded, failure](interfaces::Node*) {
+            const auto parsed = DecodeBase64PSBT(encoded);
+            if (!parsed || parsed->inputs.empty() || parsed->outputs.empty()) throw std::runtime_error("funded fixture");
+            auto bad = *parsed;
+            if (failure == 0) bad.outputs[0].script = CScript{} << OP_TRUE;
+            else if (failure == 1) bad.inputs[0].final_script_sig = CScript{} << OP_TRUE;
+            else {
+                const auto output = bad.outputs.front();
+                bad.outputs.assign(26, output);
+                for (auto& output : bad.outputs) output.amount = 10'000;
+            }
+            auto retry = *parsed;
+            if (retry.outputs[0].amount <= 1'000) throw std::runtime_error("retry output");
+            retry.outputs[0].amount -= 1'000;
+            std::array<QByteArray, 3> bytes{PsbtQmlModel::SerializePsbtRaw(*parsed),
+                PsbtQmlModel::SerializePsbtRaw(bad), PsbtQmlModel::SerializePsbtRaw(retry)};
+            // Each input is a valid decoded PSBT. The intended failure occurs
+            // later in analysis/review, not in file I/O or the decoder.
+            for (const auto& item : bytes) if (!DecodeBase64PSBT(item.toBase64().toStdString())) throw std::runtime_error("post-decode fixture");
+            return bytes;
+        });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const std::array paths{directory.filePath("original.psbt"), directory.filePath("unsupported.psbt"), directory.filePath("retry.psbt")};
+        for (size_t i = 0; i < paths.size(); ++i) {
+            QFile file{paths[i]}; QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(documents[i]), documents[i].size());
+        }
+        auto* draft = wallet->sendRecipientList()->currentRecipient(); QVERIFY(draft);
+        draft->setAddress(address); draft->amount()->setSatoshi(COIN / 4);
+        QTRY_VERIFY(!wallet->sendRecipientList()->validationPending());
+        QCOMPARE(AwaitPsbtImport(*wallet, paths[0]), WalletQmlModel::PsbtImportResult::WalletCanSign);
+        const QPointer<WalletQmlModelTransaction> original{wallet->currentTransaction()}; QVERIFY(original);
+        const auto original_id = original->txid(), original_fee = original->fee();
+        const auto original_flow = wallet->currentTransactionFlow();
+        const bool can_send = wallet->currentTransactionCanSend(), can_broadcast = wallet->currentTransactionCanBroadcast();
+        QVERIFY(can_send); QVERIFY(!can_broadcast); QVERIFY(original->feeKnown());
+        QCOMPARE(AwaitPsbtImport(*wallet, paths[1]), WalletQmlModel::PsbtImportResult::PsbtUnsupported);
+        QCOMPARE(wallet->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtFailed);
+        QVERIFY2(wallet->psbtActionError().contains(reason), qPrintable(wallet->psbtActionError()));
+        QCOMPARE(wallet->currentTransaction(), original.data());
+        QVERIFY(wallet->currentTransactionIsImportedPsbt());
+        QCOMPARE(original->txid(), original_id); QCOMPARE(original->fee(), original_fee);
+        QCOMPARE(wallet->currentTransactionFlow(), original_flow);
+        QCOMPARE(wallet->currentTransactionCanSend(), can_send); QCOMPARE(wallet->currentTransactionCanBroadcast(), can_broadcast);
+        QCOMPARE(draft->address()->address(), address); QCOMPARE(draft->amount()->satoshi(), qint64{COIN / 4});
+        const auto preserved_path = directory.filePath("preserved.psbt");
+        QVERIFY(AwaitPsbtSave(*wallet, preserved_path));
+        QFile preserved{preserved_path}; QVERIFY(preserved.open(QIODevice::ReadOnly)); QCOMPARE(preserved.readAll(), documents[0]);
+        QCOMPARE(AwaitPsbtImport(*wallet, paths[2]), WalletQmlModel::PsbtImportResult::WalletCanSign);
+        QVERIFY(wallet->currentTransaction() && wallet->currentTransaction() != original.data());
+        QVERIFY(wallet->currentTransaction()->txid() != original_id);
+        QVERIFY(wallet->currentTransactionIsImportedPsbt()); QVERIFY(wallet->currentTransactionCanSend()); QVERIFY(!wallet->currentTransactionCanBroadcast());
+        const auto retry_path = directory.filePath("retry-export.psbt");
+        QVERIFY(AwaitPsbtSave(*wallet, retry_path));
+        QFile retry{retry_path}; QVERIFY(retry.open(QIODevice::ReadOnly)); QCOMPARE(retry.readAll(), documents[2]);
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
+    }
+
     void legacySelfTransferReviewAndFinalizedKnownIdentity()
     {
         auto* miner = qmltest::CreateWallet(m_app, "identity-miner"); QVERIFY(miner);
