@@ -15,6 +15,7 @@
 #include <net.h>
 #include <qml/core_settings.h>
 #include <node/chainstatemanager_args.h>
+#include <node/caches.h>
 #include <qml/datadir.h>
 #include <qml/guiconstants.h>
 #include <qml/legacy_settings_migration.h>
@@ -38,6 +39,7 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QSet>
+#include <QScopeGuard>
 #include <QStringList>
 #include <QUrl>
 #include <QVariantMap>
@@ -172,6 +174,7 @@ struct OptionsQmlModel::Snapshot {
     QmlCoreSettings::Values effective_core;
     QVariantMap statuses;
     QmlCoreSettings::StatusProjection entry_statuses;
+    preferences::WatchPaths watch;
     int dbcache;
     int mempool;
     int effective_mempool;
@@ -213,7 +216,7 @@ OptionsQmlModel::Snapshot OptionsQmlModel::readSnapshot(interfaces::Node& node, 
     };
     if (saved_override(QStringLiteral("listen"))) result.core.listen = SettingToBool(display_value(QStringLiteral("listen"))).value_or(result.core.listen);
     if (saved_override(QStringLiteral("natpmp"))) result.core.natpmp = SettingToBool(display_value(QStringLiteral("natpmp"))).value_or(result.core.natpmp);
-    result.dbcache = SettingTo<int64_t>(display_value(QStringLiteral("dbcache"))).value_or(DEFAULT_KERNEL_CACHE / 1_MiB);
+    result.dbcache = SettingTo<int64_t>(display_value(QStringLiteral("dbcache"))).value_or(node::GetDefaultDBCache() / 1_MiB);
     result.mempool = SettingTo<int64_t>(display_value(QStringLiteral("maxmempool"))).value_or(DEFAULT_MAX_MEMPOOL_SIZE_MB);
     result.min_threads=-GetNumCores();
     result.threads = SettingTo<int64_t>(display_value(QStringLiteral("par"))).value_or(DEFAULT_SCRIPTCHECK_THREADS);
@@ -227,15 +230,36 @@ OptionsQmlModel::Snapshot OptionsQmlModel::readSnapshot(interfaces::Node& node, 
         ? active_data_dir : gui_data_dir;
     if (!QmlDataDir::IsDefaultDataDir(result.data_dir)) result.custom_data_dir = result.data_dir;
     QSettings settings;
+    settings.sync();
+    result.watch = preferences::Paths(settings);
     result.language = QString::fromStdString(SettingToString(QmlCoreSettings::DisplaySettingValue(node, args, QStringLiteral("lang"))).value_or(""));
-    if (result.language.isEmpty() && !QmlCoreSettings::IsCommandLineOverridden(args, QStringLiteral("lang"))) {
+    const bool gui_language = result.language.isEmpty() && !QmlCoreSettings::IsCommandLineOverridden(args, QStringLiteral("lang"));
+    if (gui_language) {
         result.language = settings.value(SettingsKeys::LANGUAGE,
             QmlLegacySettings::ReadLegacyGuiLanguage(QString::fromStdString(args.GetChainTypeString()))).toString();
     }
     const QString command_line_language = QString::fromStdString(args.GetArg("-lang", ""));
     if (!command_line_language.isEmpty()) result.language = command_line_language;
     const int fallback = QmlLegacySettings::ReadLegacyGuiDisplayUnit(QString::fromStdString(args.GetChainTypeString()), 0);
-    result.display_unit = NormalizeDisplayUnit(settings.value(SettingsKeys::DISPLAY_UNIT, fallback).toInt());
+    const auto stored_unit = settings.value(SettingsKeys::DISPLAY_UNIT, fallback);
+    bool unit_valid{false};
+    const auto unit = stored_unit.toInt(&unit_valid);
+    if (stored_unit.metaType().id() == QMetaType::Double && stored_unit.toDouble() != unit) unit_valid = false;
+    result.display_unit = unit_valid ? NormalizeDisplayUnit(unit) : 0;
+    if (settings.contains(SettingsKeys::DISPLAY_UNIT) && (!unit_valid || unit != result.display_unit)) {
+        settings.setValue(SettingsKeys::DISPLAY_UNIT, result.display_unit);
+        settings.sync();
+    }
+    // Validate app-controlled language data against the installed catalog.
+    // An explicit CLI language remains the external Core request.
+    if (gui_language && !result.languages.contains(result.language) && command_line_language.isEmpty()) {
+        result.language.clear();
+        if (settings.contains(SettingsKeys::LANGUAGE)) {
+            settings.setValue(SettingsKeys::LANGUAGE, result.language);
+            settings.sync();
+        }
+    }
+    if (settings.status() != QSettings::NoError) throw std::runtime_error("Display preferences could not be read or repaired.");
     result.custom_data_dir_display=DataDirDisplay(result.custom_data_dir);
     result.transaction_urls = settings.value(SettingsKeys::THIRD_PARTY_TRANSACTION_URLS, "").toString();
     result.money_font = settings.value(SettingsKeys::MONEY_FONT_CHOICE, MONEY_FONT_EMBEDDED).toString();
@@ -292,12 +316,38 @@ OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, ArgsManager& args, exec
         if(result.presentation)observer->applySnapshot(*std::static_pointer_cast<const Snapshot>(result.presentation),true,false);
         if(!observer||observer->m_stopping)return;
         if(observer&&!observer->m_stopping)Q_EMIT observer->settingsOperationChanged();
+        if(observer&&!observer->m_stopping)observer->finishPreferenceRefresh();
     },[](CoreSettingsModel::EffectContext opaque){const auto context=std::static_pointer_cast<const NativeSettingsWrite>(opaque);
         if(context&&context->receipt->load()==SettingsPending)context->receipt->store(SettingsFailed);});
-    connect(&m_core_settings,&CoreSettingsModel::operationChanged,this,[this]{if(m_stopping)return;const QPointer<OptionsQmlModel> guard{this};Q_EMIT settingsPendingChanged();if(guard&&!m_stopping)Q_EMIT settingsErrorChanged();});
+    connect(&m_core_settings,&CoreSettingsModel::operationChanged,this,[this]{if(m_stopping)return;const QPointer<OptionsQmlModel> guard{this};Q_EMIT settingsPendingChanged();if(guard&&!m_stopping)Q_EMIT settingsErrorChanged();if(guard&&!m_stopping)Q_EMIT pruneTargetInputChanged();if(guard&&!m_stopping)finishPreferenceRefresh();});
     runCommand([](interfaces::Node&, ArgsManager&) { return QString{}; });
 }
 
+SettingsEditorModel* OptionsQmlModel::createSettingsEditor()
+{
+    if(m_stopping)return nullptr;
+    m_editors.removeIf([](const auto& editor){return !editor;});
+    if(m_editors.size()>=16){setError(tr("Close another settings editor before opening a new one."));return nullptr;}
+    SettingsEditorModel* editor{nullptr};
+    const bool admitted=m_work->submitAsync<bool>([&](auto done,auto){
+        auto ports=SettingsEditorModel::PublicPorts(m_node,m_args,m_services);
+        ports.retired=[done]{done(true);};
+        editor=new SettingsEditorModel(std::move(ports),this);
+        return true;
+    },[](bool){},[](std::exception_ptr){});
+    if(!admitted)return nullptr;
+    m_editors.push_back(editor);
+    const auto previous=std::make_shared<QString>();
+    connect(editor,&SettingsEditorModel::changed,this,[this,editor,previous]{
+        if(m_stopping||!editor->lastSavePresent()||!editor->lastSavePersisted()||*previous==editor->lastSaveId())return;
+        *previous=editor->lastSaveId();
+        const QPointer<OptionsQmlModel> guard{this};
+        runCommand([](interfaces::Node&,ArgsManager&){return QString{};});
+        if(guard&&m_signer_model)m_signer_model->refresh();
+    });
+    connect(editor,&SettingsEditorModel::closed,editor,[editor]{const QPointer<SettingsEditorModel> guard{editor};editor->retire([guard]{if(guard)guard->deleteLater();});});
+    return editor;
+}
 OptionsQmlModel::~OptionsQmlModel()
 {
     closeAdmission();
@@ -305,8 +355,10 @@ OptionsQmlModel::~OptionsQmlModel()
 }
 void OptionsQmlModel::closeAdmission()
 {
+    m_preference_watch.stop();
     m_stopping=true; m_pending=false; m_forwarded_signer_pending=false; m_validation_pending=false;m_signer_validation_pending=false; ++m_signer_validation_revision;
     m_work->close();m_links.reset();m_core_settings.closeAdmission();
+    for(const auto& editor:m_editors)if(editor)editor->retire();
 }
 void OptionsQmlModel::beginShutdown()
 {
@@ -380,6 +432,7 @@ void OptionsQmlModel::applySnapshot(Snapshot snapshot,bool core_adopted,bool not
     m_third_party_transaction_urls = std::move(snapshot.transaction_urls);
     m_money_font_choice = std::move(snapshot.money_font);
     m_available_languages=std::move(snapshot.languages);
+    m_preference_watch.update(std::move(snapshot.watch));
     m_ready = true;m_core_settings.setAdmissionReady(true);
     if(!observer||m_stopping)return;
     if (initial) {
@@ -428,10 +481,27 @@ void OptionsQmlModel::applySnapshot(Snapshot snapshot,bool core_adopted,bool not
 }
 
 
+void OptionsQmlModel::refreshDisplaySettings()
+{
+    if (m_stopping) return;
+    m_preference_refresh_requested = true;
+    finishPreferenceRefresh();
+}
+// Do not resume from synchronous admission failure: report it, retain demand,
+// and wait for a fresh trigger. Successful asynchronous outcomes can continue.
+void OptionsQmlModel::finishPreferenceRefresh()
+{
+    if (m_stopping || m_pending_commands || m_submitting_commands || m_core_settings.pending() || !m_preference_refresh_requested) return;
+    m_preference_refresh_requested = false;
+    runCommand([](interfaces::Node&, ArgsManager&) { return QString{}; });
+}
+
 void OptionsQmlModel::runCommand(std::function<QString(interfaces::Node&, ArgsManager&)> command,size_t payload_bytes)
 {
     if(m_stopping)return;
     const QPointer<OptionsQmlModel> observer{this};
+    ++m_submitting_commands;
+    const auto submitting=qScopeGuard([observer]{if(observer)--observer->m_submitting_commands;});
     auto receipt=std::make_shared<std::atomic<int>>(SettingsPending);m_operation_state=receipt;
     const quint64 revision=++m_command_revision;
     const bool clear_error=m_pending_commands++==0&&!m_error.isEmpty();
@@ -449,6 +519,7 @@ void OptionsQmlModel::runCommand(std::function<QString(interfaces::Node&, ArgsMa
         if(!observer||observer->m_stopping)return;
         if(--observer->m_pending_commands==0)observer->setPending(false);
         if(observer&&!observer->m_stopping)Q_EMIT observer->settingsOperationChanged();
+        if(observer&&!observer->m_stopping)observer->finishPreferenceRefresh();
     },[observer,receipt](std::exception_ptr exception) {
         if(receipt->load()==SettingsPending)receipt->store(SettingsFailed);
         if(!observer||observer->m_stopping)return;
@@ -477,8 +548,7 @@ bool OptionsQmlModel::connectionSettingsDirty() const
 bool OptionsQmlModel::storageSettingsDirty() const
 {
     const QmlCoreSettings::Values& values = m_core_settings.values();
-    if (values.prune != m_initial_core_values.prune) return true;
-    return values.prune && values.prune_size_gb != m_initial_core_values.prune_size_gb;
+    return !QmlCoreSettings::CoreSettingValuesEqual(QStringLiteral("prune"), QmlCoreSettings::PruneSetting(values), QmlCoreSettings::PruneSetting(m_initial_core_values));
 }
 
 bool OptionsQmlModel::developerSettingsDirty() const
@@ -493,8 +563,7 @@ bool OptionsQmlModel::restartRequired() const
            storageSettingsDirty() ||
            developerSettingsDirty() ||
            mempoolSettingsDirty() ||
-           proxySettingsDirty() ||
-           walletSettingsDirty();
+           proxySettingsDirty();
 }
 
 QVariantMap OptionsQmlModel::coreSettingStatuses() const
@@ -956,16 +1025,15 @@ void OptionsQmlModel::persistGuiSetting(const QString& key, const QVariant& valu
 void OptionsQmlModel::setLanguage(const QString& new_language)
 {
     if (!canEditCoreSetting(QStringLiteral("lang")) || new_language == m_language) return;
-    m_language = new_language;
-    const QPointer<OptionsQmlModel> observer{this};
+    if (new_language.size() > 64) { setError(tr("The selected language is not available.")); return; }
     runCommand([new_language](interfaces::Node&, ArgsManager& args) {
+        if (!buildAvailableLanguages().contains(new_language)) return tr("The selected language is not available.");
         QString error;
         if (QmlCoreSettings::PersistSettings(args, {QStringLiteral("lang")}, [&] {
                 return QmlCoreSettings::WriteCoreSettingOverride(args, QStringLiteral("lang"), common::SettingsValue{new_language.toStdString()});
             }, &error)) error = SaveGuiSetting(SettingsKeys::LANGUAGE, new_language);
         return error;
     },execution::Utf16PayloadBytes({size_t(new_language.size())}));
-    if(observer&&!m_stopping)Q_EMIT languageChanged();
 }
 
 QString OptionsQmlModel::languageSummary() const
@@ -978,6 +1046,7 @@ QString OptionsQmlModel::languageLabel(const QString& locale_tag) const
     if (locale_tag.isEmpty()) {
         return QObject::tr("System default");
     }
+    if (!m_available_languages.contains(locale_tag)) return tr("Unavailable translation (%1)").arg(locale_tag.left(64));
     QLocale locale(locale_tag);
     QString native = locale.nativeLanguageName();
     if (native.isEmpty()) {

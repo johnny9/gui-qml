@@ -55,6 +55,12 @@ private Q_SLOTS:
         const auto outcome = bump->commitResult(); QVERIFY(outcome); QVERIFY(outcome->committed);
         QCOMPARE(QString::fromStdString(outcome->original.GetHex()), original);
         QCOMPARE(QString::fromStdString(outcome->txid.GetHex()), replacement);
+        QCOMPARE(outcome->record, walletbump::Record::Recorded);
+        QCOMPARE(outcome->submission, walletbump::Submission::Mempool);
+        QCOMPARE(outcome->relay, walletbump::Relay::Unknown);
+        QCOMPARE(bump->walletRecordState(), BumpTransactionModel::WalletRecordRecorded);
+        QCOMPARE(bump->walletSubmissionState(), BumpTransactionModel::WalletSubmissionMempool);
+        QCOMPARE(bump->relayState(), BumpTransactionModel::RelayUnknown);
         const auto mempool = Mempool(m_app);
         QVERIFY(mempool.contains(replacement.toStdString())); QVERIFY(!mempool.contains(original.toStdString()));
         const auto transaction = qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + replacement.toStdString() + "\"]"), wallet->name());

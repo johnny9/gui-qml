@@ -7,12 +7,47 @@
 #include <qml/util.h>
 #include <qml/ownedwork.h>
 #include <qml/guipresentation.h>
+#include <qml/psbtdocument.h>
+#include <qml/retainedvalue.h>
 #include <limits>
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QPointer>
 #include <QThread>
 #include <algorithm>
+
+struct PsbtQmlModel::SummaryRequestState {
+    mutable std::mutex mutex;
+    std::shared_ptr<const psbtwork::SummarySource> source;
+    quint64 generation{0}, request{0};
+    int offset{0}, count{128};
+
+    psbtwork::SummaryPage read() const
+    {
+        std::shared_ptr<const psbtwork::SummarySource> captured_source;
+        quint64 captured_generation, captured_request;
+        int captured_offset, captured_count;
+        {
+            std::lock_guard lock{mutex};
+            captured_source = source;
+            captured_generation = generation;
+            captured_request = request;
+            captured_offset = offset;
+            captured_count = count;
+        }
+        try {
+            return psbtwork::ProjectSummaryPage(std::move(captured_source), captured_offset,
+                captured_count, captured_generation, captured_request);
+        } catch (...) {
+            psbtwork::SummaryPage page;
+            page.generation = captured_generation;
+            page.request = captured_request;
+            page.offset = captured_offset;
+            page.error = QObject::tr("The PSBT summary page could not be prepared.");
+            return page;
+        }
+    }
+};
 
 QString PsbtQmlModel::LocalFilePath(const QString& path) { return psbtwork::LocalFilePath(path); }
 QString PsbtQmlModel::LoadPsbtFromFile(const QString& path, PartiallySignedTransaction& document) { return psbtwork::LoadFile(path, document); }
@@ -48,6 +83,7 @@ void PsbtQmlModel::configureSession(std::shared_ptr<walletopening::Session> open
 void PsbtQmlModel::setFeeServices(psbtfee::Services services)
 {
     // In-flight work retains its original services and Native lifetime.
+    retireDocumentOwner();
     m_services = std::move(services);
     m_services.post=presentation::ReliablePost(std::move(m_services.post));
     if (!m_services.scheduler && m_opening) m_services.scheduler = m_opening->scheduler();
@@ -64,11 +100,16 @@ void PsbtQmlModel::ensureServices()
             QMetaObject::invokeMethod(bridge.get(), std::move(turn), Qt::QueuedConnection);
         };
     }
+    if (!m_document_owner) {
+        m_document_owner = execution::RetainValues<psbtdocument::Owner>(m_services.scheduler,
+            [generation = m_generation] { return std::make_unique<psbtdocument::Owner>(generation); });
+    }
 }
 void PsbtQmlModel::setNode(interfaces::Node* node)
 {
     if (m_node == node) return;
     m_node = node;
+    retireDocumentOwner();
     ++m_generation; // Late results from the old public Node context cannot publish.
     if (!busy() && m_snapshot && !m_closed) refreshState();
 }
@@ -76,6 +117,7 @@ void PsbtQmlModel::closeAdmission()
 {
     m_closed = true;
     m_phase = Phase::Closed;
+    retireDocumentOwner();
     // Closing GUI delivery cannot hold the service drain hostage. Native work
     // retains its own operation and bounded scalar receipt through its outcome.
     releaseSnapshot();
@@ -90,12 +132,27 @@ void PsbtQmlModel::detachWallet()
 }
 void PsbtQmlModel::releaseSnapshot()
 {
+    ++m_summary_epoch;
+    if (m_summary_query) m_summary_query->close();
+    m_summary_query.reset();
+    m_summary_request_state.reset();
     m_snapshot.reset();
     m_summary_window.clear();
+    m_summary_offset = 0;
+    m_summary_size = 128;
+    m_summary_pending = false;
+    m_summary_request_id = 0;
+    m_summary_error.clear();
     m_snapshot_lease.reset();
+}
+void PsbtQmlModel::retireDocumentOwner()
+{
+    if (m_document_owner) m_document_owner->withdraw();
+    m_document_owner.reset();
 }
 void PsbtQmlModel::clear()
 {
+    retireDocumentOwner();
     ++m_generation;
     releaseSnapshot();
     m_matched_txid.clear();
@@ -105,6 +162,7 @@ void PsbtQmlModel::clear()
 }
 void PsbtQmlModel::setError(const QString& error)
 {
+    retireDocumentOwner();
     ++m_generation;
     releaseSnapshot();
     m_matched_txid.clear();
@@ -122,16 +180,87 @@ bool PsbtQmlModel::submitted() const { if (!m_submission_receipt) return m_submi
 bool PsbtQmlModel::saved() const { if (!m_save_receipt) return m_saved; std::lock_guard lock{m_save_receipt->mutex}; return m_save_receipt->ready && m_save_receipt->saved; }
 QString PsbtQmlModel::savedPath() const { if (!m_save_receipt) return m_saved_path; std::lock_guard lock{m_save_receipt->mutex}; return m_save_receipt->ready && m_save_receipt->saved ? m_save_receipt->path : m_saved_path; }
 QString PsbtQmlModel::submittedTxid() const { if (!m_submission_receipt) return m_submitted_txid; std::lock_guard lock{m_submission_receipt->mutex}; return m_submission_receipt->ready ? m_submission_receipt->txid : m_submitted_txid; }
-void PsbtQmlModel::updateSummaryWindow()
+void PsbtQmlModel::prepareSummaryPaging()
 {
-    m_summary_window = m_snapshot ? m_snapshot->summary.mid(m_summary_offset, m_summary_size) : QStringList{};
+    m_summary_window = m_snapshot ? m_snapshot->initial_summary_page.rows : QStringList{};
+    m_summary_offset = m_snapshot ? m_snapshot->initial_summary_page.offset : 0;
+    m_summary_size = 128;
+    m_summary_request_id = 0;
+    m_summary_pending = false;
+    m_summary_error = m_snapshot ? m_snapshot->initial_summary_page.error : QString{};
+}
+
+void PsbtQmlModel::ensureSummaryQuery()
+{
+    if (m_summary_query || !m_snapshot || !m_snapshot->summary_source || !m_services.scheduler) return;
+
+    const auto state = execution::RetainValues<SummaryRequestState>(m_services.scheduler, [] {
+        return std::make_unique<SummaryRequestState>();
+    });
+    if (!state) {
+        m_summary_error = tr("PSBT summary paging is unavailable.");
+        return;
+    }
+    state->source = m_snapshot->summary_source;
+    state->generation = m_generation;
+    m_summary_request_state = state;
+
+    const auto generation = m_generation;
+    const auto epoch = ++m_summary_epoch;
+    const QPointer<PsbtQmlModel> observer{this};
+    m_summary_query = std::make_shared<execution::SnapshotQuery<psbtwork::SummaryPage>>(
+        m_services.scheduler, [state] { return state->read(); },
+        [post = m_services.post, observer, generation, epoch] {
+            post([observer, generation, epoch] {
+                if (observer) observer->publishSummaryPage(generation, epoch);
+            });
+        }, execution::Lane::Domain);
 }
 void PsbtQmlModel::requestSummaryWindow(int offset, int count)
 {
-    if (offset < 0 || count < 1) return;
+    if (offset < 0 || count < 1 || !m_snapshot || m_closed) return;
+    ensureSummaryQuery();
     m_summary_offset = offset;
     m_summary_size = std::min(count, 128);
-    updateSummaryWindow();
+    m_summary_window.clear();
+    m_summary_error.clear();
+    m_summary_pending = true;
+    const auto request = ++m_summary_request_id;
+    if (!m_summary_query || !m_summary_request_state) {
+        m_summary_pending = false;
+        m_summary_error = tr("PSBT summary paging is unavailable.");
+        Q_EMIT changed();
+        return;
+    }
+    {
+        std::lock_guard lock{m_summary_request_state->mutex};
+        m_summary_request_state->generation = m_generation;
+        m_summary_request_state->request = request;
+        m_summary_request_state->offset = offset;
+        m_summary_request_state->count = m_summary_size;
+    }
+    m_summary_query->request();
+    Q_EMIT changed();
+}
+
+void PsbtQmlModel::publishSummaryPage(quint64 generation, quint64 epoch)
+{
+    if (m_closed || generation != m_generation || epoch != m_summary_epoch || !m_summary_query) return;
+    auto result = m_summary_query->take();
+    if (!result) return;
+    if (result->error || !result->snapshot) {
+        m_summary_window.clear();
+        m_summary_pending = false;
+        m_summary_error = tr("The PSBT summary page could not be prepared.");
+        Q_EMIT changed();
+        return;
+    }
+    const auto& page = *result->snapshot;
+    if (page.generation != generation || page.request != m_summary_request_id) return;
+    m_summary_window = page.rows;
+    m_summary_offset = page.offset;
+    m_summary_error = page.error;
+    m_summary_pending = false;
     Q_EMIT changed();
 }
 quint64 PsbtQmlModel::requestLoadFromFile(const QString& path)
@@ -142,6 +271,7 @@ quint64 PsbtQmlModel::requestLoadFromFile(const QString& path)
         // is retired on Native/Domain and cannot publish into the new document.
         m_active.reset(); m_active_lease.reset();
     }
+    retireDocumentOwner();
     ++m_generation;
     releaseSnapshot();
     psbtwork::Request request; request.kind = psbtwork::Kind::Load; request.path = path;
@@ -157,6 +287,9 @@ quint64 PsbtQmlModel::requestSignWithPassphrase(const QString& passphrase)
 {
     if(busy()||m_closed||!canSign())return 0;
     ensureServices();
+    if (!m_document_owner) {
+        m_phase = Phase::Failed; m_error = tr("PSBT result capacity is unavailable."); Q_EMIT changed(); return 0;
+    }
     const auto captured=secretinput::Capture(m_services.scheduler,passphrase);
     if(!captured){m_phase=Phase::Failed;m_error=tr("The signing password could not be admitted for background execution.");Q_EMIT changed();return 0;}
     psbtwork::Request request;request.kind=psbtwork::Kind::Sign;request.captured_passphrase=captured.input;
@@ -182,6 +315,9 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
         m_phase = Phase::Failed; m_error = tr("The wallet session is unavailable."); Q_EMIT changed(); return ticket;
     }
     ensureServices();
+    if (!m_document_owner) {
+        m_phase = Phase::Failed; m_error = tr("PSBT result capacity is unavailable. Close an unused document and retry."); Q_EMIT changed(); return ticket;
+    }
     if (m_snapshot) {
         request.document = m_snapshot->document;
         request.proof = m_snapshot->proof;
@@ -230,22 +366,36 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
     m_active = operation; m_active_generation = generation; m_active_kind = request.kind;
     psbtwork::Context context{m_services.lookup ? m_services.lookup : psbtfee::NodeLookup(m_node), psbtwork::NodeBroadcast(m_node)};
     auto input = std::make_shared<psbtwork::Request>(std::move(request));
+    const auto consume = [owner = m_document_owner, ticket, kind = input->kind](auto done, auto failed) {
+        // Opening/Submit deliver Native outcomes on Domain. Analysis ownership
+        // is resolved there before OwnedCommand posts its GUI notification.
+        return [owner, ticket, kind, done = std::move(done), failed = std::move(failed)](psbtwork::Result result) mutable {
+            try { done(owner->consume(ticket, kind, std::move(result))); }
+            catch (...) { failed(std::current_exception()); }
+        };
+    };
     execution::Admission admission;
     if (m_opening) {
         const bool observation = input->kind == psbtwork::Kind::Load || input->kind == psbtwork::Kind::Inspect;
         const auto action = observation ? nullptr : m_opening->startAction();
-        if (observation) admission = operation->startWith([opening = m_opening, input, context,capture_bytes](auto done, auto failed) {
+        if (observation) admission = operation->startWith([opening = m_opening, input, context,capture_bytes,consume](auto done, auto failed) {
+            auto analyzed = consume(std::move(done), failed);
             return opening->read([input, context](interfaces::Wallet& wallet) {
                 return psbtwork::Execute(&wallet, std::move(*input), context);
-            }, std::move(done), std::move(failed),execution::WorkClass::Observation,capture_bytes);
+            }, std::move(analyzed), std::move(failed),execution::WorkClass::Observation,capture_bytes);
         });
-        else if (action) admission = operation->startWith([opening = m_opening, action, input, context,capture_bytes](auto done, auto failed) {
+        else if (action) admission = operation->startWith([opening = m_opening, action, input, context,capture_bytes,consume](auto done, auto failed) {
+            auto analyzed = consume(std::move(done), failed);
             return opening->perform(action, [input, context](interfaces::Wallet& wallet) {
                 return psbtwork::Execute(&wallet, std::move(*input), context);
-            }, std::move(done), std::move(failed),capture_bytes);
+            }, std::move(analyzed), std::move(failed),capture_bytes);
         });
         else admission = {{}, execution::Rejection::Closed};
-    } else admission = operation->start([input, context] { return psbtwork::Execute(nullptr, std::move(*input), context); },{execution::Lane::Core,capture_bytes});
+    } else admission = operation->startWith([scheduler = m_services.scheduler, input, context, capture_bytes, consume](auto done, auto failed) {
+        auto analyzed = consume(std::move(done), failed);
+        return execution::Submit(*scheduler, [input, context] { return psbtwork::Execute(nullptr, std::move(*input), context); },
+            std::move(analyzed), std::move(failed), {execution::Lane::Core, capture_bytes});
+    });
     if (!admission) {
         m_active.reset(); m_active_lease.reset();
         m_phase = Phase::Failed; m_error = tr("The PSBT action could not be queued."); Q_EMIT changed(); return ticket;
@@ -291,7 +441,7 @@ void PsbtQmlModel::publish(quint64 ticket, quint64 generation)
                 releaseSnapshot();
                 m_snapshot = result.snapshot;
                 if (m_active_lease) { m_snapshot_lease.emplace(std::move(*m_active_lease)); m_active_lease.reset(); }
-                m_summary_offset = 0; updateSummaryWindow();
+                prepareSummaryPaging();
                 m_status = result.snapshot->status; m_error = result.snapshot->error;
                 if (m_active_kind == psbtwork::Kind::Load) { m_broadcast_blocked = false; m_signing_blocked = false; }
             }

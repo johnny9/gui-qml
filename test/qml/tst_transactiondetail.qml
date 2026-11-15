@@ -21,6 +21,7 @@ TestCase {
     FontLoader { source: testSetup.supportsApplicationFonts ? "qrc:/fonts/bitcoincoresans/semibold" : "" }
     FontLoader { source: testSetup.supportsApplicationFonts ? "qrc:/fonts/robotomono/regular" : "" }
     Component { id: detailComponent; TransactionDetail { width: 1180; height: 1100; wallet: testWalletModel } }
+    Component { id: speedUpCompleteComponent; SpeedUpComplete { width: 560; height: 460 } }
     Component { id: activityComponent; ActivityList { width: 1180; height: 1100; wallet: testWalletModel } }
     SignalSpy { id: transactionSpy; signalName: "showTransaction" }
 
@@ -253,8 +254,34 @@ TestCase {
         verify(complete !== null)
         tryCompare(complete, "opened", true)
         compare(complete.txid, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        const outcome = findChild(complete.contentItem, "speedUpOutcomeText")
+        verify(outcome.text.indexOf("wallet's mempool") >= 0)
+        verify(outcome.text.indexOf("broadcast") < 0)
         findChild(complete.contentItem, "speedUpCompleteDoneButton").clicked()
         tryCompare(complete, "opened", false)
+    }
+    function test_fee_bump_completion_reports_only_observed_wallet_state_data() {
+        return [
+            {tag: "mempool", record: BumpTransactionModel.WalletRecordRecorded, submission: BumpTransactionModel.WalletSubmissionMempool, text: "wallet's mempool"},
+            {tag: "confirmed", record: BumpTransactionModel.WalletRecordRecorded, submission: BumpTransactionModel.WalletSubmissionConfirmed, text: "confirmed"},
+            {tag: "not-in-mempool", record: BumpTransactionModel.WalletRecordRecorded, submission: BumpTransactionModel.WalletSubmissionNotInMempool, text: "not currently in its mempool"},
+            {tag: "conflicted", record: BumpTransactionModel.WalletRecordRecorded, submission: BumpTransactionModel.WalletSubmissionConflicted, text: "conflicted"},
+            {tag: "abandoned", record: BumpTransactionModel.WalletRecordRecorded, submission: BumpTransactionModel.WalletSubmissionAbandoned, text: "abandoned"},
+            {tag: "recorded-unknown-status", record: BumpTransactionModel.WalletRecordRecorded, submission: BumpTransactionModel.WalletSubmissionUnknown, text: "saved to the wallet"},
+            {tag: "absent-record", record: BumpTransactionModel.WalletRecordAbsentAtObservation, submission: BumpTransactionModel.WalletSubmissionUnknown, text: "did not report a matching"},
+            {tag: "unknown-record", record: BumpTransactionModel.WalletRecordUnknown, submission: BumpTransactionModel.WalletSubmissionUnknown, text: "could not be confirmed"}
+        ]
+    }
+    function test_fee_bump_completion_reports_only_observed_wallet_state(data) {
+        const complete = createTemporaryObject(speedUpCompleteComponent, testCase.Window.window.contentItem)
+        verify(complete !== null)
+        complete.walletRecordState = data.record
+        complete.walletSubmissionState = data.submission
+        complete.open()
+        tryCompare(complete, "opened", true)
+        const outcome = findChild(complete.contentItem, "speedUpOutcomeText")
+        verify(outcome.text.indexOf(data.text) >= 0, outcome.text)
+        verify(outcome.text.indexOf("broadcast") < 0, outcome.text)
     }
     function test_full_width_scroll_and_narrow_layout() {
         const page = createDetail(transaction(), {width: 390, height: 650})

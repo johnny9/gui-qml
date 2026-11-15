@@ -6,6 +6,7 @@
 #define BITCOIN_QML_PSBTWORK_H
 
 #include <common/messages.h>
+#include <qml/psbtworktypes.h>
 #include <qml/models/psbtfeeservices.h>
 #include <qml/walletreview.h>
 #include <qml/secretinput.h>
@@ -20,8 +21,6 @@
 
 namespace interfaces { class Wallet; class Node; }
 namespace psbtwork {
-enum class Kind { Inspect, Load, Sign, Broadcast, Save, Clipboard };
-enum class Error { None, Invalid, Unavailable, NeedsUnlock, IncorrectPassphrase, Changed, Fee, Core, Uncertain, Relock };
 struct BroadcastResult {
     bool accepted{false};
     QString error;
@@ -31,6 +30,15 @@ struct BroadcastResult {
 using Broadcast = std::function<BroadcastResult(CTransactionRef)>;
 Broadcast NodeBroadcast(interfaces::Node* node);
 QString SaveFile(const PartiallySignedTransaction& document, const QString& path);
+// Summary pages are deterministic projections of Native-captured immutable
+// values. Capture calls the public Wallet ownership query and must run on Core;
+// page formatting is pure and may run on the Domain lane.
+std::shared_ptr<const SummarySource> CaptureSummarySource(
+    std::shared_ptr<const PartiallySignedTransaction> assessment,
+    std::shared_ptr<const psbtfee::Analysis> proof,
+    interfaces::Wallet* wallet);
+SummaryPage ProjectSummaryPage(std::shared_ptr<const SummarySource> source, int offset, int count,
+                               quint64 generation = 0, quint64 request = 0);
 // Credential materialization is a Native effect. Keep its failure independent
 // of wallet unlock/signing and injectable without exhausting process memory.
 using Materialize = std::function<SecureString(const secretinput::Captured&)>;
@@ -41,15 +49,6 @@ struct Context {
     Materialize materialize{secretinput::Materialize};
     Save save{SaveFile};
 };
-struct Snapshot {
-    std::shared_ptr<const PartiallySignedTransaction> document;
-    std::shared_ptr<const psbtfee::Analysis> proof;
-    QString status, error;
-    QStringList summary;
-    bool can_sign{false}, can_broadcast{false}, complete{false};
-    bool metadata_failed{false};
-    int unsigned_inputs{0}, could_sign{0};
-};
 struct Request {
     Kind kind{Kind::Inspect};
     std::shared_ptr<const PartiallySignedTransaction> document;
@@ -58,13 +57,6 @@ struct Request {
     QString path, status;
     std::optional<SecureString> passphrase; // Native/test callers only.
     secretinput::Captured captured_passphrase;
-};
-struct Result {
-    Error code{Error::None};
-    QString error, path, txid, clipboard;
-    CTransactionRef transaction;
-    std::shared_ptr<const Snapshot> snapshot;
-    bool submitted{false}, saved{false}, relock_failed{false};
 };
 // All helpers below are worker/test-setup utilities. Callers retain the original
 // Session Action/borrow throughout effects, outcomes and native result release.

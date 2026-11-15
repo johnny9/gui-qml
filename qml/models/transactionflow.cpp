@@ -84,7 +84,7 @@ QVariantMap BuildTransactionFlow(const interfaces::WalletTx& wtx,
             {"kind", output.scriptPubKey.IsUnspendable() ? "data" : "output"},
             {"amountSat", qint64(output.nValue)}, {"amountKnown", true},
             {"address", Address(output)}, {"ownership", wtx.txout_is_mine[i] ? "wallet" : "external"},
-            {"isChange", bool(wtx.txout_is_change[i])},
+            {"isChange", bool(wtx.txout_is_change[i])}, {"changeKnown", true},
         };
         entry.insert(DataOutput(output.scriptPubKey));
         outputs.append(entry);

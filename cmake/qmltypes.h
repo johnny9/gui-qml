@@ -16,6 +16,7 @@
 #include <qml/models/activitydetailmodel.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/models/backuppolicyoperation.h>
+#include <qml/models/fileexportoperation.h>
 #include <qml/models/imageexportoperation.h>
 #include <qml/models/banlistmodel.h>
 #include <qml/models/bitcoinaddress.h>
@@ -39,6 +40,7 @@
 #include <qml/models/monospaceoutputmodel.h>
 #include <qml/models/onboardingoptionsmodel.h>
 #include <qml/models/options_model.h>
+#include <qml/models/settingseditormodel.h>
 #include <qml/models/uipreferences.h>
 #include <qml/models/paymentrequest.h>
 #include <qml/models/peerdetailsmodel.h>
@@ -137,6 +139,13 @@ struct BackupFileOperationForeign {
     QML_FOREIGN(BackupFileOperation)
     QML_NAMED_ELEMENT(BackupFileOperation)
     QML_UNCREATABLE("Owned by a wallet")
+};
+
+struct FileExportOperationModelForeign {
+    Q_GADGET
+    QML_FOREIGN(FileExportOperationModel)
+    QML_NAMED_ELEMENT(FileExportOperationModel)
+    QML_UNCREATABLE("Owned by a PSBT export request")
 };
 
 struct QmlFileDialogForeign {
@@ -468,6 +477,24 @@ struct OptionsQmlModelForeign {
     QML_ANONYMOUS
 };
 
+struct SettingsSaveResultForeign {
+    Q_GADGET
+    QML_FOREIGN(SettingsSaveResult)
+    QML_NAMED_ELEMENT(SettingsSaveResult)
+    QML_UNCREATABLE("Retained settings outcome")
+};
+struct SettingsEditorModelForeign {
+    Q_GADGET
+    QML_FOREIGN(SettingsEditorModel)
+    QML_NAMED_ELEMENT(SettingsEditorModel)
+    QML_UNCREATABLE("Owned by the settings form")
+};
+struct SettingsEntryModelForeign {
+    Q_GADGET
+    QML_FOREIGN(SettingsEntryModel)
+    QML_NAMED_ELEMENT(SettingsEntryModel)
+    QML_UNCREATABLE("Owned by a settings editor")
+};
 struct CoreSettingsModelForeign {
     Q_GADGET
     QML_FOREIGN(CoreSettingsModel)

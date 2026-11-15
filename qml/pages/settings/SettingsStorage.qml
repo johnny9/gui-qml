@@ -11,8 +11,8 @@ InformationPage {
     id: root
     objectName: "settingsStoragePage"
     property var settingsModel: ApplicationModels.optionsModel
-    property bool customStorage: false
-    property int customStorageAmount
+    readonly property bool customStorage: storageSettings.customStorage
+    readonly property int customStorageAmount: storageSettings.customStorageAmount
     property bool onboarding: false
     property bool showBackButton: true
     bannerActive: false
@@ -25,12 +25,7 @@ InformationPage {
         id: storageSettings
         settingsModel: root.settingsModel
         showRestartNotice: !root.onboarding && root.settingsModel.storageSettingsDirty
-        onCustomStorageChanged: {
-            root.customStorage = storageSettings.customStorage
-        }
-        onCustomStorageAmountChanged: {
-            root.customStorageAmount = storageSettings.customStorageAmount
-        }
+
     }
     showNavBar: false
     header: SettingsHeader {

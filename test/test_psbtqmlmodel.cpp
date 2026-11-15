@@ -168,6 +168,52 @@ class PsbtQmlModelTests : public QObject
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void documentOwnerRetiresWithoutGuiDelivery_data()
+    {
+        QTest::addColumn<int>("when");
+        QTest::newRow("native-held") << 0;
+        QTest::newRow("analysis-owned-gui-held") << 1;
+        QTest::newRow("published-document") << 2;
+    }
+    void documentOwnerRetiresWithoutGuiDelivery()
+    {
+        QFETCH(int, when);
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        PsbtQmlModel model{nullptr, nullptr};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto path = directory.filePath("retained-document.psbt");
+        QCOMPARE(psbtwork::SaveFile(MakeCompletePsbt(), path), QString{});
+        const auto ticket = model.requestLoadFromFile(path);
+        QVERIFY(ticket);
+        if (when) {
+            QVERIFY(transport.step(execution::Lane::Core));
+            QVERIFY(transport.step(execution::Lane::Domain));
+            QCOMPARE(publications.size(), size_t{1});
+            QVERIFY(!model.loaded());
+            if (when == 2) {
+                auto publish = std::move(publications.front()); publications.pop_front(); publish();
+                QVERIFY(model.loaded());
+            }
+        }
+        model.closeAdmission();
+        transport.drain();
+        // The facade and its queued GUI callback are still alive. Neither may
+        // retain the document owner's cleanup reservation or its Native value.
+        QVERIFY(transport.quiescent());
+        QVERIFY(!model.loaded());
+        QVERIFY(!model.canSign());
+        QVERIFY(!model.canBroadcast());
+        while (!publications.empty()) {
+            auto publish = std::move(publications.front()); publications.pop_front(); publish();
+        }
+        QCOMPARE(model.phase(), PsbtQmlModel::Phase::Closed);
+        QCOMPARE(model.requestLoadFromFile(path), quint64{0});
+        QVERIFY(transport.quiescent());
+    }
+
     void manualReadRetainsOriginalDocumentAndPresentation_data()
     {
         QTest::addColumn<int>("change");
@@ -304,14 +350,163 @@ private Q_SLOTS:
         QCOMPARE(model.summaryOffset(), 0); QCOMPARE(model.summaryCount(), 0);
         QVERIFY(model.requestLoadFromFile(path)); transport.drain(); publish_all();
         const auto complete = model.summary(); QVERIFY(!complete.empty());
+        QCOMPARE(model.summaryCount(), complete.size());
+        QVERIFY(!model.summaryPending()); QVERIFY(model.summaryError().isEmpty());
         model.requestSummaryWindow(1, 1);
-        QCOMPARE(model.summaryOffset(), 1); QCOMPARE(model.summary(), complete.mid(1, 1));
-        model.requestSummaryWindow(0, 1000); QCOMPARE(model.summary(), complete.mid(0, 128));
-        model.requestSummaryWindow(1000, 2); QVERIFY(model.summary().empty());
+        QCOMPARE(model.summaryOffset(), 1); QVERIFY(model.summaryPending()); QVERIFY(model.summary().empty());
+        transport.drain(); publish_all();
+        QCOMPARE(model.summary(), complete.mid(1, 1)); QVERIFY(!model.summaryPending());
+        model.requestSummaryWindow(0, 1000); QVERIFY(model.summaryPending());
+        transport.drain(); publish_all();
+        QCOMPARE(model.summary(), complete.mid(0, 128));
+        model.requestSummaryWindow(1000, 2); QVERIFY(model.summaryPending());
+        transport.drain(); publish_all();
+        QVERIFY(model.summary().empty()); QVERIFY(!model.summaryPending()); QVERIFY(model.summaryError().isEmpty());
         model.setMatchedTxid(QStringLiteral("matched-original")); QCOMPARE(model.matchedTxid(), QStringLiteral("matched-original"));
         model.clear(); QVERIFY(model.summary().empty()); QCOMPARE(model.matchedTxid(), QString{});
         QVERIFY(!model.document()); QVERIFY(!model.psbt());
         model.refreshState(); model.retryPublication(); QVERIFY(!model.busy());
+        model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    }
+    void summaryPageSupersedesNativeHeldOldWindow()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        PsbtQmlModel model{nullptr, nullptr};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        const auto publish_all = [&] { while (!publications.empty()) { auto callback = std::move(publications.front()); publications.pop_front(); callback(); } };
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("summary-stale.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model.requestLoadFromFile(path)); transport.drain(); publish_all();
+        const auto original = model.summary(); QVERIFY(original.size() > 2);
+
+        model.requestSummaryWindow(0, 1);
+        const auto held = transport.dispatchNext(execution::Lane::Domain);
+        QVERIFY(held); QVERIFY(transport.finishWork(*held)); // The first formatted page has not reached its Domain outcome.
+        model.requestSummaryWindow(1, 1);
+        QVERIFY(model.summaryPending()); QVERIFY(model.summary().empty());
+        transport.drain();
+        QCOMPARE(publications.size(), size_t{1}); // Coalesced read publishes the latest page once.
+        publish_all();
+        QCOMPARE(model.summaryOffset(), 1);
+        QCOMPARE(model.summary(), original.mid(1, 1));
+        QVERIFY(!model.summaryPending()); QVERIFY(model.summaryError().isEmpty());
+        model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    }
+    void summaryPageWithHeldGuiPublicationUsesLatestRequest()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        PsbtQmlModel model{nullptr, nullptr};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        const auto publish_all = [&] { while (!publications.empty()) { auto callback = std::move(publications.front()); publications.pop_front(); callback(); } };
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("summary-held-gui.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model.requestLoadFromFile(path)); transport.drain(); publish_all();
+        const auto original = model.summary(); QVERIFY(original.size() > 2);
+
+        model.requestSummaryWindow(0, 1); transport.drain();
+        QCOMPARE(publications.size(), size_t{1});
+        model.requestSummaryWindow(2, 1); transport.drain();
+        QCOMPARE(publications.size(), size_t{1}); // The held notice now carries the latest query result.
+        QVERIFY(model.summaryPending()); QVERIFY(model.summary().empty());
+        publish_all();
+        QCOMPARE(model.summaryOffset(), 2);
+        QCOMPARE(model.summary(), original.mid(2, 1));
+        QVERIFY(!model.summaryPending());
+        model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    }
+    void sameGenerationRefreshRejectsRetiredSummaryPage()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        PsbtQmlModel model{nullptr, nullptr};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        const auto publish_all = [&] { while (!publications.empty()) { auto callback = std::move(publications.front()); publications.pop_front(); callback(); } };
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("summary-same-generation-refresh.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model.requestLoadFromFile(path)); transport.drain(); publish_all();
+        const auto original = model.summary(); QVERIFY(original.size() > 1);
+        const auto generation = model.documentGeneration();
+
+        model.requestSummaryWindow(1, 1);
+        transport.drain(); // Hold the old page's GUI notification.
+        QCOMPARE(publications.size(), size_t{1});
+        model.refreshState(QStringLiteral("same-generation refresh"));
+        QVERIFY(model.busy());
+        transport.drain();
+        QCOMPARE(publications.size(), size_t{2});
+        QCOMPARE(model.documentGeneration(), generation);
+
+        auto refreshed = std::move(publications.back());
+        publications.pop_back();
+        refreshed(); // Replace the immutable summary source before the old GUI notice.
+        QCOMPARE(model.status(), QStringLiteral("same-generation refresh"));
+        QCOMPARE(model.summaryOffset(), 0);
+        QCOMPARE(model.summary(), original);
+        QVERIFY(!model.summaryPending()); QVERIFY(model.summaryError().isEmpty());
+
+        auto retired = std::move(publications.front());
+        publications.pop_front();
+        retired(); // The old query shares the document generation, but not its page epoch.
+        QCOMPARE(model.documentGeneration(), generation);
+        QCOMPARE(model.summaryOffset(), 0);
+        QCOMPARE(model.summary(), original);
+        QVERIFY(!model.summaryPending()); QVERIFY(model.summaryError().isEmpty());
+        QVERIFY(publications.empty());
+        model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    }
+    void closeWithSummaryOutcomeHeldDrainsWhileFacadeLives()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        PsbtQmlModel model{nullptr, nullptr};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        const auto publish_all = [&] { while (!publications.empty()) { auto callback = std::move(publications.front()); publications.pop_front(); callback(); } };
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("summary-close.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model.requestLoadFromFile(path)); transport.drain(); publish_all();
+        model.requestSummaryWindow(1, 1);
+        const auto held = transport.dispatchNext(execution::Lane::Domain);
+        QVERIFY(held); QVERIFY(transport.finishWork(*held));
+        QVERIFY(transport.queuedCountIf([](const auto& turn) {
+            return turn.lane == execution::Lane::Domain && turn.phase == execution::Phase::OutcomeReady;
+        }) == 1);
+
+        model.closeAdmission(); // Keep the facade alive while its already-admitted page drains.
+        QVERIFY(!model.loaded()); QVERIFY(model.summary().empty()); QVERIFY(!model.summaryPending());
+        transport.drain(); publish_all();
+        QVERIFY(publications.empty());
+        QVERIFY(transport.quiescent());
+        QVERIFY(!model.loaded()); QVERIFY(model.summary().empty()); QVERIFY(!model.summaryPending());
+    }
+    void failedSummaryPageAdmissionIsVisibleAndRetryable()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        PsbtQmlModel model{nullptr, nullptr};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        const auto publish_all = [&] { while (!publications.empty()) { auto callback = std::move(publications.front()); publications.pop_front(); callback(); } };
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("summary-retry.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model.requestLoadFromFile(path)); transport.drain(); publish_all();
+        const auto expected = model.summary().mid(1, 1);
+
+        transport.rejectLane(execution::Lane::Domain);
+        model.requestSummaryWindow(1, 1);
+        QVERIFY(model.summaryPending());
+        publish_all();
+        QVERIFY(!model.summaryPending()); QVERIFY(model.summary().empty()); QVERIFY(!model.summaryError().isEmpty());
+
+        model.requestSummaryWindow(1, 1);
+        transport.drain(); publish_all();
+        QVERIFY(!model.summaryPending()); QVERIFY(model.summaryError().isEmpty());
+        QCOMPARE(model.summary(), expected);
         model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
     }
     void manualClipboardRequiresCurrentGuiInterest_data()
@@ -876,6 +1071,7 @@ private Q_SLOTS:
         QCOMPARE(PsbtQmlModel::SavePsbtToFile(psbt, path), QString{});
         QCOMPARE(AwaitLoad(model, path), QString{});
         QVERIFY(model.complete());
+        QCOMPARE(model.signaturesVerified(), !forged);
         const bool can_broadcast = model.canBroadcast();
         model.broadcast(); QVERIFY(AwaitIdle(model));
         if (forged) {
@@ -916,6 +1112,13 @@ void PsbtQmlModelTests::loadsRawAndBase64Psbt()
     QVERIFY(model.canSign());
     QCOMPARE(model.couldSignInputCount(), 1);
     QCOMPARE(model.unsignedInputCount(), 1);
+    const auto original_summary = model.summary();
+    QVERIFY(original_summary.size() > 1);
+    model.requestSummaryWindow(1, 1);
+    QVERIFY(model.summaryPending());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.summaryPending(), 5000);
+    QCOMPARE(model.summary(), original_summary.mid(1, 1));
+    QVERIFY(model.summaryError().isEmpty());
 
     const QString base64_path{temp_dir.filePath(QStringLiteral("base64.psbt"))};
     QFile base64_file{base64_path};

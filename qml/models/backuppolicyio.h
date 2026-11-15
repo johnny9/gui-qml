@@ -21,6 +21,8 @@ struct FileVersion { std::string digest; Error error{Error::None}; };
 FileVersion ReadVersion(QIODevice& device);
 Proposal Inspect(const std::string& raw, const std::string& wallet_name);
 Proposal InspectPng(const std::string& raw);
+/** Inspect a captured file destination with a caller-owned final suffix. */
+Proposal Inspect(const std::string& raw, const std::string& suggested_name, const std::string& suffix);
 WriteResult Write(const Proposal& approved, bool destination_approved, const Producer& producer, InstallCoordinator& coordinator,
                   std::function<bool()> admission = {});
 } // namespace backup

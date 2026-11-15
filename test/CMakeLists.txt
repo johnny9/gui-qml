@@ -47,11 +47,18 @@ add_executable(bitcoinqml_unit_tests
   test_backendexecutor.cpp
   test_backuppolicy.cpp
   test_backuppolicyoperation.cpp
+  test_fileexportoperation.cpp
   test_execution.cpp
   test_guipresentation.cpp
   test_atomicsharedptr.cpp
   test_persistenttrees.cpp
   test_core_settings_model.cpp
+  test_settingspreservation.cpp
+  test_effectivesettings.cpp
+  test_settingssession.cpp
+  test_settingseditormodel.cpp
+  test_setupcommit.cpp
+  test_prunedraft.cpp
   test_uipreferences.cpp
   test_flowpresentation.cpp
   test_flowdetailsmodel.cpp
@@ -116,6 +123,7 @@ if(ENABLE_WALLET)
     test_psbtfee.cpp
     test_psbtqmlmodel.cpp
     test_psbtwork.cpp
+    test_psbtdocument.cpp
     test_receiverequesthistorymodel.cpp
     test_receiverequestoperation.cpp
     test_paymentrequesteditormodel.cpp
@@ -263,6 +271,10 @@ add_executable(bitcoinqml_qmltests
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/signerdiscovery.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/onboarding_storage.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/settingsvalues.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/settingssession.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/settingseditormodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/signerconfiguration.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/signerdiscoverymodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/walletcreation.h

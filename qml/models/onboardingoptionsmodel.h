@@ -38,6 +38,8 @@ class OnboardingOptionsModel : public QObject
     Q_PROPERTY(QString dataDir READ dataDir NOTIFY dataDirChanged)
     Q_PROPERTY(QString getDefaultDataDirString READ getDefaultDataDirString NOTIFY dataDirDefaultsChanged)
     Q_PROPERTY(QUrl getDefaultDataDirectory READ getDefaultDataDirectory NOTIFY dataDirDefaultsChanged)
+    Q_PROPERTY(QString pruneTargetText READ pruneTargetText NOTIFY pruneTargetInputChanged)
+    Q_PROPERTY(QString pruneTargetError READ pruneTargetError NOTIFY pruneTargetInputChanged)
     Q_PROPERTY(bool prune READ prune WRITE setPrune NOTIFY pruneChanged)
     Q_PROPERTY(int pruneSizeGB READ pruneSizeGB WRITE setPruneSizeGB NOTIFY pruneSizeGBChanged)
     Q_PROPERTY(bool listen READ listen WRITE setListen NOTIFY listenChanged)
@@ -52,6 +54,10 @@ class OnboardingOptionsModel : public QObject
     Q_PROPERTY(bool validationPending READ validationPending NOTIFY validationPendingChanged)
     Q_PROPERTY(QString previewError READ previewError NOTIFY previewErrorChanged)
     Q_PROPERTY(bool canFinish READ canFinish NOTIFY canFinishChanged)
+    Q_PROPERTY(bool setupCommitPending READ setupCommitPending NOTIFY setupCommitChanged)
+    Q_PROPERTY(bool setupCommitted READ setupCommitted NOTIFY setupCommitChanged)
+    Q_PROPERTY(QString setupCommitError READ setupCommitError NOTIFY setupCommitChanged)
+    Q_PROPERTY(QString unpruneConsentToken READ unpruneConsentToken NOTIFY canFinishChanged)
     Q_PROPERTY(bool connectionSettingsDirty READ dirtyState CONSTANT)
     Q_PROPERTY(bool storageSettingsDirty READ dirtyState CONSTANT)
     Q_PROPERTY(bool proxySettingsDirty READ dirtyState CONSTANT)
@@ -68,9 +74,12 @@ class OnboardingOptionsModel : public QObject
     Q_PROPERTY(int storageMinimumRequiredGB READ storageMinimumRequiredGB NOTIFY storageStatusChanged)
     Q_PROPERTY(int fullStorageRequiredGB READ fullStorageRequiredGB NOTIFY storageStatusChanged)
     Q_PROPERTY(int prunedStorageRequiredGB READ prunedStorageRequiredGB NOTIFY storageStatusChanged)
+    Q_PROPERTY(int reducedStorageRequiredGB READ reducedStorageRequiredGB NOTIFY storageStatusChanged)
     Q_PROPERTY(int selectedStorageRequiredGB READ selectedStorageRequiredGB NOTIFY storageStatusChanged)
     Q_PROPERTY(bool storageEnoughForSelected READ storageEnoughForSelected NOTIFY storageStatusChanged)
     Q_PROPERTY(bool storageEnoughForFull READ storageEnoughForFull NOTIFY storageStatusChanged)
+    Q_PROPERTY(bool storageEnoughForReduced READ storageEnoughForReduced NOTIFY storageStatusChanged)
+    Q_PROPERTY(bool storageEnoughForCustom READ storageEnoughForCustom NOTIFY storageStatusChanged)
 
 public:
     explicit OnboardingOptionsModel(std::vector<std::string> argv, bool can_listen_ipc, QObject* parent = nullptr, execution::SnapshotServices services = {});
@@ -81,6 +90,17 @@ public:
     Q_PROPERTY(PreparationState preparationState READ preparationState NOTIFY preparationStateChanged)
     PreparationState preparationState() const {return PreparationState(m_preparation_state->load());}
 
+    enum SetupCommit {SetupIdle,SetupPending,SetupCommitted,SetupFailed,SetupUncertain};Q_ENUM(SetupCommit)
+    using CommitPort=std::function<std::pair<bool,QString>(const QmlOnboardingSettings::ApplyRequest&)>;
+    void configureSettingsCommit(ArgsManager& args);
+    void setSettingsCommitPort(CommitPort port){m_commit_port=std::move(port);}
+    Q_INVOKABLE void commitSettings();
+    QString unpruneConsentToken()const;
+    Q_INVOKABLE void confirmUnpruning(const QString& token);
+    bool setupCommitPending()const{return m_setup_commit->load()==SetupPending;}
+    bool setupCommitted()const{return m_setup_commit->load()==SetupCommitted;}
+    QString setupCommitError()const{return m_setup_error;}
+    std::shared_ptr<const std::atomic<int>> setupCommitReceipt()const{return m_setup_commit;}
     // Keep args and the preparation callback's dependencies alive until nodePrepared.
     void prepareNode(ArgsManager& args, std::function<bool()> prepare_node);
 
@@ -97,6 +117,9 @@ public:
     Q_INVOKABLE void useDefaultDataDir();
     Q_INVOKABLE bool setCustomDataDirArgs(QString path) { return selectCustomDataDir(path); }
 
+    QString pruneTargetText()const{return m_core_settings.pruneTargetText();}
+    QString pruneTargetError()const{return m_core_settings.pruneTargetError();}
+    Q_INVOKABLE void editPruneTarget(const QString& text){m_core_settings.changePruneTargetText(text);}
     bool prune() const { return m_core_settings.values().prune; }
     void setPrune(bool prune);
     int pruneSizeGB() const { return m_core_settings.values().prune_size_gb; }
@@ -120,7 +143,7 @@ public:
     QObject* coreSettings() { return &m_core_settings; }
     QVariantMap coreSettingStatuses() const { return m_core_settings.statuses(); }
     QString previewError() const { return m_preview_error; }
-    bool canFinish() const { return !m_preparing && !m_stopping && !m_core_settings.pending() && !m_preview_pending && m_preview_error.isEmpty() && !m_storage_check_pending && !m_storage_projection_pending && m_storage_error_text.isEmpty(); }
+    bool canFinish() const { return !m_preparing && !setupCommitPending() && !setupCommitted() && m_setup_commit->load()!=SetupUncertain && !m_stopping && !m_core_settings.pending() && m_core_settings.pruneTargetError().isEmpty() && !m_preview_pending && m_preview_error.isEmpty() && !m_storage_check_pending && !m_storage_projection_pending && m_storage_error_text.isEmpty() && m_storage_info.enough_for_selected; }
     bool dirtyState() const { return false; }
     int assumedBlockchainSize() const { return m_assumed_blockchain_size; }
     int assumedChainstateSize() const { return m_assumed_chainstate_size; }
@@ -135,9 +158,12 @@ public:
     int storageMinimumRequiredGB() const;
     int fullStorageRequiredGB() const;
     int prunedStorageRequiredGB() const;
+    int reducedStorageRequiredGB()const{return m_storage_info.reduced_required_gb;}
     int selectedStorageRequiredGB() const;
     bool storageEnoughForSelected() const;
     bool storageEnoughForFull() const;
+    bool storageEnoughForReduced()const{return m_storage_info.enough_for_reduced;}
+    bool storageEnoughForCustom()const{return m_storage_info.enough_for_custom;}
 
     Q_INVOKABLE quint64 requestProxyLocation(const QString& location);
     Q_INVOKABLE quint64 requestTorLocation(const QString& location);
@@ -147,10 +173,13 @@ public:
 
 Q_SIGNALS:
     void nodePrepared(bool success, const QString& error);
+    void setupCommitChanged();
+    void settingsCommitted();
     void preparationStateChanged();
     void dataDirDefaultsChanged();
     void customDataDirStringChanged(QString path);
     void dataDirChanged(QString path);
+    void pruneTargetInputChanged();
     void pruneChanged(bool prune);
     void pruneSizeGBChanged(int prune_size_gb);
     void listenChanged(bool listen);
@@ -190,6 +219,10 @@ private:
     void publishShutdown();
     void setPreviewError(const QString& error);
 
+    CommitPort m_commit_port;
+    std::shared_ptr<std::atomic<int>> m_setup_commit{std::make_shared<std::atomic<int>>(SetupIdle)};
+    QString m_setup_error;
+    QString m_unprune_consent;
     std::unique_ptr<BackendExecutor> m_executor;
     execution::SnapshotServices m_services;
     std::unique_ptr<execution::OwnedWork> m_work,m_preparation_work;

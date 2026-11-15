@@ -28,7 +28,6 @@
 #include <QInputMethodEvent>
 #include <QPersistentModelIndex>
 #include <QQmlEngine>
-#include <QQuickItem>
 #include <qml/models/texteditsessionmodel.h>
 #include <qml/models/options_model.h>
 #include <streams.h>
@@ -309,14 +308,17 @@ private Q_SLOTS:
         }));
     }
 
-    void committedSendReportsItsActualMempoolObservation_data()
+    void sendOutcomeReportsObservationOrRejectsStaleReview_data()
     {
         QTest::addColumn<int>("scenario");
-        QTest::newRow("accepted") << 0; QTest::newRow("broadcast-disabled") << 1; QTest::newRow("mempool-rejected") << 2;
+        QTest::newRow("accepted") << 0; QTest::newRow("broadcast-disabled") << 1; QTest::newRow("competing-spend-stales-review") << 2;
     }
-    void committedSendReportsItsActualMempoolObservation()
+    void sendOutcomeReportsObservationOrRejectsStaleReview()
     {
         QFETCH(int, scenario);
+        m_app.window()->resize(900, 800);
+        QTRY_COMPARE(m_app.window()->width(), 900);
+        QTRY_COMPARE(m_app.window()->height(), 800);
         auto* wallet = qmltest::CreateWallet(m_app, "submission"); QVERIFY(wallet); QVERIFY(qmltest::FundWallet(m_app, *wallet));
         const auto name = wallet->name(), address = qmltest::NewAddress(m_app, name);
         QVERIFY(qmltest::Click(m_app, "sendTabButton"));
@@ -335,12 +337,39 @@ private Q_SLOTS:
         }
         auto* page = qmltest::Find(m_app, "sendPage"); QVERIFY(page); QVERIFY(QMetaObject::invokeMethod(page, "openTransactionReview"));
         QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
+        if (scenario == 2) {
+            QTRY_VERIFY_WITH_TIMEOUT(!wallet->currentTransactionCanSend() || wallet->currentTransactionNeedsRevalidation(), 30'000);
+            auto* button = qmltest::Find(m_app, "sendTransactionReviewSendButton"); QVERIFY(button);
+            QTRY_VERIFY_WITH_TIMEOUT(!button->property("visible").toBool() || !button->property("enabled").toBool(), 10'000);
+            QVERIFY(!button->property("visible").toBool() || !button->property("enabled").toBool());
+            QCOMPARE(wallet->sendState(), WalletQmlModel::SendState::SendIdle);
+            QVERIFY(wallet->sendResultTxid().isEmpty());
+            const auto reviewed_txid = QString::fromStdString(approved->GetHash().GetHex());
+            bool recorded{false};
+            const auto history = qmltest::Rpc(m_app, "listtransactions", qmltest::Json("[\"*\",100,0,true]"), name);
+            for (const auto& entry : history.getValues()) {
+                const auto& txid = entry.find_value("txid");
+                recorded |= txid.isStr() && txid.get_str() == reviewed_txid.toStdString();
+            }
+            QVERIFY(!recorded);
+            bool competing_in_mempool{false}, reviewed_in_mempool{false};
+            const auto mempool = qmltest::Rpc(m_app, "getrawmempool");
+            for (const auto& id : mempool.getValues()) {
+                competing_in_mempool |= id.get_str() == competing.toStdString();
+                reviewed_in_mempool |= id.get_str() == reviewed_txid.toStdString();
+            }
+            QVERIFY(competing_in_mempool);
+            QVERIFY(!reviewed_in_mempool);
+            return;
+        }
         QVERIFY(qmltest::Click(m_app, "sendTransactionReviewSendButton"));
         QTRY_COMPARE(wallet->sendState(), WalletQmlModel::SendState::SendCommitted);
         QVERIFY(qmltest::WaitForVisible(m_app, "sendCompletePage"));
         auto* complete = qmltest::Find(m_app, "sendCompletePage"); QVERIFY(complete);
         const auto expected = scenario == 0 ? WalletQmlModel::SendSubmission::SubmissionMempool : WalletQmlModel::SendSubmission::SubmissionNotInMempool;
         QCOMPARE(wallet->sendSubmission(), expected); QCOMPARE(complete->property("submissionState").toInt(), static_cast<int>(expected));
+        QCOMPARE(wallet->sendRecordState(), WalletQmlModel::SendRecord::SendRecordRecorded);
+        QCOMPARE(complete->property("recordState").toInt(), static_cast<int>(WalletQmlModel::SendRecord::SendRecordRecorded));
         QCOMPARE(complete->property("titleText").toString(), scenario == 0 ? QString{"Transaction submitted"} : QString{"Transaction saved"});
         if (scenario != 0) QVERIFY(complete->property("descriptionText").toString().contains("not in the mempool"));
         const auto txid = QString::fromStdString(approved->GetHash().GetHex()); QCOMPARE(wallet->sendResultTxid(), txid);
@@ -1225,7 +1254,7 @@ std::unique_ptr<QObject> CreateReceiveTests(BitcoinQmlApplication& app, WalletMo
 
 QStringList ReceiveTestArguments(const QString& selector)
 {
-    if (selector == "committedSendReportsItsActualMempoolObservation:broadcast-disabled") return {"-walletbroadcast=0"};
+    if (selector == "sendOutcomeReportsObservationOrRejectsStaleReview:broadcast-disabled") return {"-walletbroadcast=0"};
     if (selector == "addressPreferenceWriteReportsDisabledSettings" || selector == "typedReceivePreferenceFailureRetainsTheGeneratedAddress") return {"-nosettings"};
     return selector == "receivingUnlockCanBeCancelledRetriedAndRelocks" ? QStringList{"-keypool=1"} : QStringList{};
 }

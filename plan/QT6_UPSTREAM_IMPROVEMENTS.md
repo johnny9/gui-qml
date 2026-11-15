@@ -318,3 +318,12 @@ keys, descriptors, document and reviewed transaction across device replacement.
 Core's existing PSBT signature verification helpers can supply a cryptographic
 check without wallet internals or Core changes. Finalization/transaction-term
 comparison and a fingerprint hint alone must not substitute for that check.
+
+## User-approved R20 and R30 remainders
+
+The [recorded API decision](API_DEFERRALS_20261115.md) explicitly defers a typed
+public wallet commit receipt (R20 scopes081/307RC11) and nonmutating per-output-
+type receive capability discovery (R30 scope007) to upstream Core improvements.
+The app must preserve truthful Unknown outcomes, Core broadcast policy and
+stale-reservation invalidation. These remainders do not block independent
+steps or authorize Core internals/subtree changes. Other focused gates remain.

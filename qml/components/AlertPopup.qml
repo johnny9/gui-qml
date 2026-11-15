@@ -201,7 +201,9 @@ Popup {
                         : Math.max(0, (actionRow.width - actionRow.spacing * (root.visibleActions.length - 1)) / root.visibleActions.length)
                     height: 46
 
+                    enabled: alertAction.enabled
                     function triggerAction() {
+                        if (!alertAction.enabled) return
                         if (alertAction.closesPopup) {
                             root.close()
                         }

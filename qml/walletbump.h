@@ -24,11 +24,17 @@ struct Prepared {
     QString old_fee_text, new_fee_text, increase_text, old_txid;
 };
 enum class Error { None, Invalid, InvalidId, Ineligible, Create, NeedsUnlock, IncorrectPassphrase, Sign, Changed, RelockFailed, Commit, Uncertain };
+enum class Record { Unknown, AbsentAtObservation, Recorded };
+enum class Submission { Unknown, Mempool, Confirmed, NotInMempool, Conflicted, Abandoned };
+enum class Relay { Unknown };
 struct Preparation { Error error{Error::None}; QString message; std::shared_ptr<const Prepared> review; };
 struct Commit {
     Error error{Error::None};
     QString message;
     bool committed{false}, relock_failed{false};
+    Record record{Record::Unknown};
+    Submission submission{Submission::Unknown};
+    Relay relay{Relay::Unknown};
     Txid original, txid;
 };
 Preparation Prepare(interfaces::Wallet& wallet, const QString& txid, unsigned int target,

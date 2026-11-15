@@ -16,6 +16,7 @@
 #include <node/types.h>
 #include <policy/feerate.h>
 #include <script/solver.h>
+#include <script/signingprovider.h>
 #include <streams.h>
 
 #include <QCoreApplication>
@@ -27,6 +28,7 @@
 #include <QUrl>
 #include <QtTest/QtTest>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <functional>
@@ -53,6 +55,21 @@ PartiallySignedTransaction Document(bool complete = false)
     PartiallySignedTransaction document{transaction, 2};
     document.inputs[0].non_witness_utxo = parent;
     if (complete) document.inputs[0].final_script_sig = CScript{} << std::vector<unsigned char>{};
+    return document;
+}
+
+PartiallySignedTransaction ManyOutputDocument(size_t output_count)
+{
+    CMutableTransaction previous;
+    previous.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0});
+    previous.vout.emplace_back(static_cast<CAmount>(output_count + 10'000), CScript{} << OP_TRUE);
+    const auto parent = MakeTransactionRef(previous);
+    CMutableTransaction transaction;
+    transaction.vin.emplace_back(COutPoint{parent->GetHash(), 0});
+    for (size_t i{0}; i < output_count; ++i) transaction.vout.emplace_back(1, CScript{} << OP_TRUE);
+    PartiallySignedTransaction document{transaction, 2};
+    document.inputs[0].non_witness_utxo = parent;
+    document.inputs[0].final_script_sig = CScript{} << std::vector<unsigned char>{};
     return document;
 }
 
@@ -727,9 +744,45 @@ private Q_SLOTS:
         QCOMPARE(result.code, psbtwork::Error::None);
         QVERIFY(result.snapshot); QVERIFY(result.snapshot->error.isEmpty());
         QVERIFY(result.snapshot->proof->amount); QCOMPARE(*result.snapshot->proof->amount, FEE);
-        QVERIFY(result.snapshot->summary.contains(
+        QVERIFY(result.snapshot->initial_summary_page.rows.contains(
             QString{"Analysis: PSBT is not valid. Input 0 spends unspendable output"}));
         QCOMPARE(wallet.inspect_calls, 1);
+    }
+
+    void largeInspectionSummaryKeepsOnlyBoundedFormattedPages()
+    {
+        constexpr size_t OUTPUTS{4096};
+        WorkWallet wallet;
+        wallet.owned_outputs = true;
+        const auto result = psbtwork::Execute(&wallet, Request(psbtwork::Kind::Inspect, ManyOutputDocument(OUTPUTS)), {});
+        QCOMPARE(result.code, psbtwork::Error::None);
+        QVERIFY(result.snapshot);
+        const auto& snapshot = *result.snapshot;
+        QVERIFY(snapshot.summary_source);
+        QCOMPARE(snapshot.summary_count, snapshot.summary_source->row_count);
+        QCOMPARE(snapshot.summary_source->owned_outputs.size(), static_cast<int>(OUTPUTS));
+        QCOMPARE(snapshot.summary_source->owned_outputs.count(true), static_cast<int>(OUTPUTS));
+        QCOMPARE(snapshot.initial_summary_page.total, snapshot.summary_count);
+        QCOMPARE(snapshot.initial_summary_page.offset, 0);
+        QCOMPARE(snapshot.initial_summary_page.rows.size(), 128);
+
+        QStringList all_rows;
+        for (int offset{0}; offset < snapshot.summary_count; offset += 128) {
+            const auto page = psbtwork::ProjectSummaryPage(snapshot.summary_source, offset, 128, 17, static_cast<quint64>(offset / 128 + 1));
+            QVERIFY2(page.error.isEmpty(), qPrintable(page.error));
+            QCOMPARE(page.generation, quint64{17});
+            QCOMPARE(page.request, static_cast<quint64>(offset / 128 + 1));
+            QCOMPARE(page.total, snapshot.summary_count);
+            QVERIFY(page.rows.size() <= 128);
+            all_rows.append(page.rows);
+        }
+        QCOMPARE(all_rows.size(), snapshot.summary_count);
+        QCOMPARE(all_rows.first(), snapshot.initial_summary_page.rows.first());
+        QVERIFY(all_rows.first().startsWith(QStringLiteral("Sends ")));
+        QVERIFY(all_rows.first().contains(QStringLiteral("(own address)")));
+        QVERIFY(std::any_of(all_rows.begin(), all_rows.end(), [](const QString& row) {
+            return row.startsWith(QStringLiteral("Total output amount: "));
+        }));
     }
 
     void translatedMetadataFailureCannotGrantBroadcastAuthority()
@@ -1098,6 +1151,195 @@ private Q_SLOTS:
         }
     }
 
+    void importedLegacyIdentityUsesFinalizedTransaction()
+    {
+        WorkWallet wallet;
+        const auto source = std::make_shared<const PartiallySignedTransaction>(psbtfeefixture::Legacy(2, false));
+        const auto original = Bytes(*source);
+        auto extracted = *source;
+        CMutableTransaction finalized;
+        QVERIFY(FinalizeAndExtractPSBT(extracted, finalized));
+        const auto unsigned_tx = source->GetUnsignedTx();
+        QVERIFY(unsigned_tx);
+        QVERIFY(finalized.GetHash() != unsigned_tx->GetHash());
+        const auto recorded = MakeTransactionRef(finalized);
+        wallet.transaction_read = [recorded](const Txid& txid) {
+            return txid == recorded->GetHash() ? recorded : CTransactionRef{};
+        };
+        const auto result = psbtwork::PrepareReview(wallet, source, {});
+        QCOMPARE(Bytes(*source), original);
+        QCOMPARE(wallet.sign_calls, 0);
+        QCOMPARE(wallet.unlock_calls, 0);
+        QCOMPARE(result.disposition, psbtwork::ImportResult::Disposition::Known);
+        QCOMPARE(result.txid, QString::fromStdString(recorded->GetHash().ToString()));
+        QVERIFY(!result.review);
+    }
+
+    void ownedOutputReviewDoesNotDependOnSigning_data()
+    {
+        QTest::addColumn<bool>("owned_inputs");
+        QTest::addColumn<bool>("keys_disabled");
+        QTest::addColumn<bool>("complete");
+        QTest::newRow("self-transfer-signable") << true << false << false;
+        QTest::newRow("self-transfer-watch-only-incomplete") << true << true << false;
+        QTest::newRow("self-transfer-watch-only-complete") << true << true << true;
+        QTest::newRow("owned-recipient-foreign-input") << false << false << false;
+    }
+    void signatureCommitmentsDoNotReplaceImmutableReview_data()
+    {
+        QTest::addColumn<int>("sighash");
+        QTest::addColumn<int>("changed_output");
+        QTest::addColumn<bool>("signature_remains_valid");
+        QTest::newRow("all-commits-every-output") << int(SIGHASH_ALL) << 1 << false;
+        QTest::newRow("none-does-not-commit-outputs") << int(SIGHASH_NONE) << 1 << true;
+        QTest::newRow("single-commits-corresponding-output") << int(SIGHASH_SINGLE) << 0 << false;
+        QTest::newRow("single-does-not-commit-other-output") << int(SIGHASH_SINGLE) << 1 << true;
+    }
+    void signatureCommitmentsDoNotReplaceImmutableReview()
+    {
+        QFETCH(int, sighash);
+        QFETCH(int, changed_output);
+        QFETCH(bool, signature_remains_valid);
+        CKey key; key.MakeNewKey(true);
+        FillableSigningProvider provider;
+        QVERIFY(provider.AddKey(key));
+        CMutableTransaction funding;
+        funding.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0});
+        funding.vout.emplace_back(2'000, GetScriptForDestination(PKHash(key.GetPubKey())));
+        const auto parent = MakeTransactionRef(funding);
+        CMutableTransaction transaction;
+        transaction.vin.emplace_back(COutPoint{parent->GetHash(), 0});
+        transaction.vout.emplace_back(1'000, GetScriptForDestination(PKHash(key.GetPubKey())));
+        transaction.vout.emplace_back(500, GetScriptForDestination(DecodeDestination("1BoatSLRHtKNngkdXEeobR76b53LETtpyT")));
+        PartiallySignedTransaction document{transaction, 2};
+        document.inputs[0].non_witness_utxo = parent;
+        const auto data = PrecomputePSBTData(document); QVERIFY(data);
+        QVERIFY(SignPSBTInput(provider, document, 0, &*data, {.sighash_type = sighash, .finalize = true}));
+        const auto signed_data = PrecomputePSBTData(document); QVERIFY(signed_data);
+        QVERIFY(PSBTInputSignedAndVerified(document, 0, &*signed_data));
+        opcodetype opcode;
+        std::vector<unsigned char> signature;
+        const auto& script = document.inputs[0].final_script_sig;
+        auto cursor = script.begin();
+        QVERIFY(script.GetOp(cursor, opcode, signature));
+        QVERIFY(!signature.empty());
+        QCOMPARE(int(signature.back()), sighash); // Actual signature byte, not PSBT metadata.
+        auto changed = document;
+        --changed.outputs[size_t(changed_output)].amount;
+        const auto changed_data = PrecomputePSBTData(changed); QVERIFY(changed_data);
+        QCOMPARE(PSBTInputSignedAndVerified(changed, 0, &*changed_data), signature_remains_valid);
+        const auto source = std::make_shared<const PartiallySignedTransaction>(std::move(document));
+        const auto original = Bytes(*source);
+        const auto proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(*source));
+        QCOMPARE(proof->amount, std::optional<CAmount>{500});
+        psbtwork::Request request;
+        request.kind = psbtwork::Kind::Broadcast;
+        request.document = source; request.proof = proof; request.approved_fee = 500;
+        int submissions{0};
+        CTransactionRef submitted;
+        psbtwork::Context context;
+        context.broadcast = [&](CTransactionRef tx) {
+            ++submissions; submitted = std::move(tx);
+            return psbtwork::BroadcastResult{true, {}};
+        };
+        request.document = std::make_shared<const PartiallySignedTransaction>(std::move(changed));
+        const auto refused = psbtwork::Execute(nullptr, request, context);
+        QCOMPARE(refused.code, psbtwork::Error::Fee);
+        QCOMPARE(submissions, 0);
+        request.document = source;
+        const auto accepted = psbtwork::Execute(nullptr, request, context);
+        QVERIFY(accepted.submitted); QCOMPARE(submissions, 1); QVERIFY(submitted);
+        QCOMPARE(submitted->vout, transaction.vout);
+        QCOMPARE(Bytes(*source), original);
+    }
+
+    void standaloneRejectsIncompatibleFinalizedSignatures_data()
+    {
+        QTest::addColumn<int>("kind");
+        QTest::addColumn<bool>("compatible");
+        for (const auto kind : {psbtwork::Kind::Inspect, psbtwork::Kind::Sign, psbtwork::Kind::Broadcast}) {
+            for (const bool compatible : {false, true}) {
+                const QByteArray name = QByteArray::number(int(kind)) + (compatible ? "-compatible-keys" : "-incompatible-keys");
+                QTest::newRow(name.constData()) << int(kind) << compatible;
+            }
+        }
+    }
+    void standaloneRejectsIncompatibleFinalizedSignatures()
+    {
+        QFETCH(int, kind);
+        QFETCH(bool, compatible);
+        auto original = psbtfeefixture::Legacy(2, false);
+        const auto signer_result = compatible ? original : psbtfeefixture::Legacy(2, false);
+        auto candidate = original;
+        for (size_t i = 0; i < candidate.inputs.size(); ++i) {
+            candidate.inputs[i].final_script_sig = signer_result.inputs[i].final_script_sig;
+        }
+        const auto data = PrecomputePSBTData(candidate); QVERIFY(data);
+        QCOMPARE(PSBTInputSignedAndVerified(candidate, 0, &*data), compatible);
+        if (psbtwork::Kind(kind) == psbtwork::Kind::Sign) {
+            for (auto& input : original.inputs) input.final_script_sig.clear();
+        } else original = std::move(candidate);
+        const auto source = std::make_shared<const PartiallySignedTransaction>(std::move(original));
+        const auto bytes = Bytes(*source);
+        psbtwork::Request request;
+        request.kind = psbtwork::Kind(kind); request.document = source;
+        request.proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(*source));
+        request.approved_fee = request.proof->amount;
+        WorkWallet wallet;
+        wallet.keys_disabled = true; wallet.external_signer = true;
+        wallet.signed_inputs = wallet.inspect_signable = 2;
+        wallet.sign_effect = [signer_result](auto& document) {
+            for (size_t i = 0; i < document.inputs.size(); ++i) document.inputs[i].final_script_sig = signer_result.inputs[i].final_script_sig;
+        };
+        int submissions{0};
+        psbtwork::Context context;
+        context.broadcast = [&](CTransactionRef) { ++submissions; return psbtwork::BroadcastResult{true, {}}; };
+        const auto result = psbtwork::Execute(&wallet, request, context);
+        QCOMPARE(Bytes(*source), bytes);
+        QCOMPARE(wallet.sign_calls, psbtwork::Kind(kind) == psbtwork::Kind::Sign ? 1 : 0);
+        QCOMPARE(submissions, psbtwork::Kind(kind) == psbtwork::Kind::Broadcast && compatible ? 1 : 0);
+        if (psbtwork::Kind(kind) == psbtwork::Kind::Inspect) {
+            QVERIFY(result.snapshot);
+            QCOMPARE(result.snapshot->can_broadcast, compatible);
+            QCOMPARE(result.snapshot->complete, compatible);
+            QCOMPARE(result.snapshot->signature_state, compatible ? psbtwork::SignatureState::Verified : psbtwork::SignatureState::Invalid);
+            if (!compatible) QVERIFY(!result.snapshot->error.isEmpty());
+        } else {
+            QCOMPARE(result.code, compatible ? psbtwork::Error::None : psbtwork::Error::Invalid);
+            if (!compatible) { QVERIFY(!result.snapshot); QVERIFY(!result.error.isEmpty()); }
+        }
+    }
+
+    void ownedOutputReviewDoesNotDependOnSigning()
+    {
+        QFETCH(bool, owned_inputs);
+        QFETCH(bool, keys_disabled);
+        QFETCH(bool, complete);
+        WorkWallet wallet;
+        wallet.owned_inputs = owned_inputs;
+        wallet.owned_outputs = true;
+        wallet.keys_disabled = keys_disabled;
+        auto document = Document(complete);
+        const auto destination = DecodeDestination("1BoatSLRHtKNngkdXEeobR76b53LETtpyT");
+        document.outputs[0].script = GetScriptForDestination(destination);
+        const auto source = std::make_shared<const PartiallySignedTransaction>(std::move(document));
+        const auto original = Bytes(*source);
+        const auto result = psbtwork::PrepareReview(wallet, source, {});
+        QCOMPARE(Bytes(*source), original);
+        QCOMPARE(wallet.sign_calls, 0);
+        QCOMPARE(result.disposition, psbtwork::ImportResult::Disposition::Review);
+        QVERIFY(result.review);
+        QCOMPARE(result.review->recipients.size(), 1);
+        QCOMPARE(result.review->recipients.front().amount, CAmount{1'500});
+        QCOMPARE(result.review->amount, CAmount{1'500});
+        QCOMPARE(result.review->destinations, QSet<QString>{QString::fromStdString(EncodeDestination(destination))});
+        const auto outputs = result.review->flow.value(QStringLiteral("outputs")).toList();
+        QCOMPARE(outputs.size(), 1);
+        QCOMPARE(outputs.front().toMap().value(QStringLiteral("ownership")).toString(), QStringLiteral("wallet"));
+        QVERIFY(!outputs.front().toMap().value(QStringLiteral("changeKnown")).toBool());
+        QVERIFY(!outputs.front().toMap().value(QStringLiteral("isChange")).toBool());
+    }
+
     void importReviewPreservesAuthorityAndOriginal_data()
     {
         QTest::addColumn<int>("mode");
@@ -1147,7 +1389,10 @@ private Q_SLOTS:
             if (mode == 6) candidate.inputs[0].witness_utxo = CTxOut{1'999,
                 candidate.inputs[0].non_witness_utxo->vout[0].scriptPubKey};
         };
-        const auto known = document.GetUnsignedTx();
+        auto known_document = document;
+        CMutableTransaction known_transaction;
+        const auto known = FinalizeAndExtractPSBT(known_document, known_transaction)
+            ? std::optional<CMutableTransaction>{std::move(known_transaction)} : document.GetUnsignedTx();
         wallet.transaction_read = [mode, known](const Txid& txid) -> CTransactionRef {
             if (mode == 18) throw std::runtime_error{"original transaction query failed"};
             return mode == 3 && known && txid == known->GetHash() ? MakeTransactionRef(*known) : CTransactionRef{};
@@ -1165,7 +1410,7 @@ private Q_SLOTS:
         if (source) QCOMPARE(Bytes(*source), original);
         QCOMPARE(wallet.sign_calls, 0); QCOMPARE(wallet.unlock_calls, 0); QCOMPARE(wallet.lock_calls, 0);
         QCOMPARE(lookups, mode == 17 ? 1 : 0);
-        const bool review = mode == 6 || mode == 9 || (mode >= 13 && mode <= 20 && mode != 18);
+        const bool review = mode == 6 || mode == 9 || mode == 10 || (mode >= 13 && mode <= 20 && mode != 18);
         const auto disposition = mode == 3 ? psbtwork::ImportResult::Disposition::Known
             : review ? psbtwork::ImportResult::Disposition::Review : psbtwork::ImportResult::Disposition::Unsupported;
         QCOMPARE(result.disposition, disposition);
@@ -1182,16 +1427,16 @@ private Q_SLOTS:
             QCOMPARE(result.review->recipients[0].amount, CAmount{1'500});
             QCOMPARE(result.review->recipients[0].label, QStringLiteral("Original review label"));
             QCOMPARE(result.review->amount, CAmount{1'500}); QCOMPARE(result.review->fee, mode == 6 ? CAmount{0} : FEE);
-            QCOMPARE(result.review->can_send, mode == 14 || mode == 16);
+            QCOMPARE(result.review->can_send, mode == 10 || mode == 14 || mode == 16);
             QCOMPARE(result.key_can_send, mode == 14);
-            QCOMPARE(result.can_commit_complete, mode == 14 || mode == 15 || mode == 16 || mode == 19);
-            QCOMPARE(result.key_can_broadcast, mode == 6 || mode == 9 || mode == 16);
+            QCOMPARE(result.can_commit_complete, mode == 10 || mode == 14 || mode == 15 || mode == 16 || mode == 19);
+            QCOMPARE(result.key_can_broadcast, mode == 9 || mode == 10 || mode == 16);
             if (mode == 6) {
                 QVERIFY(!result.review->can_send); QVERIFY(!result.key_can_send); QVERIFY(!result.can_commit_complete);
                 QCOMPARE(result.review->proof->state, psbtfee::State::Invalid);
                 QCOMPARE(result.message, QStringLiteral("The transaction fee is missing or invalid. Add valid input information before broadcasting."));
             } else if (mode == 20) QCOMPARE(result.message, QStringLiteral("This transaction requires 2 of 2 signatures."));
-            else if (mode == 9 || mode == 14 || mode == 16) QVERIFY(result.message.isEmpty());
+            else if (mode == 9 || mode == 10 || mode == 14 || mode == 16) QVERIFY(result.message.isEmpty());
             else QCOMPARE(result.message, QStringLiteral("This wallet does not have the keys to sign this transaction."));
             QVERIFY(!result.review->presentation.empty()); QVERIFY(!result.review->flow.empty());
         } else {
@@ -1203,7 +1448,6 @@ private Q_SLOTS:
             else if (mode == 5) expected=QStringLiteral("The wallet changed the reviewed transaction.");
             else if (mode == 6 || mode == 7) expected=QStringLiteral("The transaction fee is missing or invalid.");
             else if (mode == 8 || mode == 22) expected=QStringLiteral("Only PSBTs with standard address outputs are supported right now.");
-            else if (mode == 10) expected=QStringLiteral("The PSBT does not have any recipient outputs to review.");
             else if (mode == 11) expected=QStringLiteral("The PSBT has more recipients than this send flow supports.");
             else if (mode == 12) expected=QStringLiteral("The PSBT does not send a positive amount.");
             else expected=QStringLiteral("The PSBT could not be reviewed.");

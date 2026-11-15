@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/core_settings.h>
+#include <qml/settingsparse.h>
 #include <limits>
 #include <vector>
 #include <stdexcept>
@@ -238,7 +239,7 @@ const QStringList& OnboardingCoreSettingNames()
 
 int PruneMiBToGB(int64_t mib)
 {
-    return (mib * 1024 * 1024 + GB_BYTES - 1) / GB_BYTES;
+    return settingsparse::StorageGB(mib);
 }
 
 int64_t PruneGBToMiB(int gb)
@@ -248,7 +249,7 @@ int64_t PruneGBToMiB(int gb)
 
 bool PruneEnabled(const common::SettingsValue& setting)
 {
-    return SettingTo<int64_t>(setting).value_or(0) > 1;
+    return SettingTo<int64_t>(setting).value_or(0) > 0;
 }
 
 int PruneSizeGBFromSetting(const common::SettingsValue& setting)
@@ -261,6 +262,12 @@ common::SettingsValue PruneSetting(bool enabled, int prune_size_gb)
 {
     return enabled ? common::SettingsValue{PruneGBToMiB(prune_size_gb < 1 ? 1 : prune_size_gb)}
                    : common::SettingsValue{0};
+}
+
+common::SettingsValue PruneSetting(const Values& values)
+{
+    if (!values.prune) return int64_t{0};
+    return values.prune_target_mib >= 0 ? common::SettingsValue{values.prune_target_mib} : PruneSetting(true, values.prune_size_gb);
 }
 
 QString DefaultProxyAddress()
@@ -310,6 +317,13 @@ common::SettingsValue ProxySetting(bool enabled, const QString& address)
         : common::SettingsValue{false};
 }
 
+bool ProxyRequiresNameLookup(const QString& location)
+{
+    const std::string address = location.trimmed().toStdString();
+    if (address.starts_with(ADDR_PREFIX_UNIX)) return false;
+    return !LookupNumeric(address, DEFAULT_PROXY_PORT).IsValid();
+}
+
 Values LoadPersistentValues(interfaces::Node& node)
 {
     Values values;
@@ -322,6 +336,7 @@ Values LoadPersistentValues(interfaces::Node& node)
     values.prune_size_gb = values.prune
         ? PruneSizeGBFromSetting(prune_setting)
         : PruneSizeGBFromSetting(node.getPersistentSetting("prune-prev"));
+    values.prune_target_mib = SettingTo<int64_t>(values.prune ? prune_setting : node.getPersistentSetting("prune-prev")).value_or(-1);
 
     const QString proxy_setting = ProxyAddressFromSetting(node.getPersistentSetting("proxy"));
     values.proxy_enabled = !proxy_setting.isEmpty();
@@ -350,6 +365,7 @@ Values LoadEffectiveValues(ArgsManager& args)
     values.prune_size_gb = values.prune
         ? PruneSizeGBFromSetting(prune_setting)
         : PruneSizeGBFromSetting(args.GetPersistentSetting("prune-prev"));
+    values.prune_target_mib = SettingTo<int64_t>(values.prune ? prune_setting : args.GetPersistentSetting("prune-prev")).value_or(-1);
 
     const QString proxy_setting = ProxyAddressFromSetting(args.GetSetting("-proxy"));
     values.proxy_enabled = !proxy_setting.isEmpty();
@@ -397,6 +413,7 @@ Values LoadDisplayValues(interfaces::Node& node, ArgsManager& args)
     if (HasEffectiveSetting(args, QStringLiteral("prune"))) {
         values.prune = effective_values.prune;
         values.prune_size_gb = effective_values.prune_size_gb;
+        values.prune_target_mib = effective_values.prune_target_mib;
     }
     if (HasEffectiveSetting(args, QStringLiteral("proxy"))) {
         values.proxy_enabled = effective_values.proxy_enabled;
@@ -414,6 +431,7 @@ bool ValuesEqual(const Values& left, const Values& right)
 {
     return left.prune == right.prune &&
            left.prune_size_gb == right.prune_size_gb &&
+           CoreSettingValuesEqual(QStringLiteral("prune"), PruneSetting(left), PruneSetting(right)) &&
            left.listen == right.listen &&
            left.natpmp == right.natpmp &&
            left.server == right.server &&
@@ -455,7 +473,7 @@ bool PruneChanged(const Change& change)
 
 bool PruneSizeGBChanged(const Change& change)
 {
-    return change.before.prune_size_gb != change.after.prune_size_gb;
+    return change.before.prune_size_gb != change.after.prune_size_gb || !CoreSettingValuesEqual(QStringLiteral("prune"), PruneSetting(change.before), PruneSetting(change.after));
 }
 
 bool ProxyEnabledChanged(const Change& change)
@@ -484,7 +502,7 @@ common::SettingsValue DefaultCoreSettingValue(const QString& name)
     if (name == QStringLiteral("natpmp")) return DEFAULT_NATPMP;
     if (name == QStringLiteral("server")) return false;
     if (name == QStringLiteral("prune")) return 0;
-    if (name == QStringLiteral("dbcache")) return DEFAULT_KERNEL_CACHE / 1_MiB;
+    if (name == QStringLiteral("dbcache")) return node::GetDefaultDBCache() / 1_MiB;
     if (name == QStringLiteral("par")) return DEFAULT_SCRIPTCHECK_THREADS;
     if (name == QStringLiteral("maxmempool")) return DEFAULT_MAX_MEMPOOL_SIZE_MB;
     return {};
@@ -612,22 +630,11 @@ bool CanEditCoreSetting(ArgsManager& args, const QString& name)
 
 common::SettingsValue GuiOverrideValue(ArgsManager& args, const QString& name, const common::SettingsValue& value)
 {
-    const common::SettingsValue forced_value = ForcedParameterInteractionValue(args, name);
-    if (!forced_value.isNull()) {
-        return CoreSettingValuesEqual(name, value, forced_value) ? common::SettingsValue{} : value;
-    }
-
-    const common::SettingsValue config_value = ConfigCoreSettingValue(args, name);
-    const common::SettingsValue default_value = DefaultCoreSettingValue(name);
-
-    if (!config_value.isNull()) {
-        if (CoreSettingValuesEqual(name, value, config_value)) {
-            return {};
-        }
-    } else if (CoreSettingValuesEqual(name, value, default_value)) {
-        return {};
-    }
-
+    // A user command is an explicit override even when it numerically equals
+    // a default, config value or this process's startup adjustment. Removing
+    // an override is a separate editor intent, never an equality shortcut.
+    Q_UNUSED(args);
+    Q_UNUSED(name);
     return value;
 }
 
@@ -723,7 +730,7 @@ common::SettingsValue Session::settingValue(const QString& name) const
     if (name == QStringLiteral("listen")) return m_values.listen;
     if (name == QStringLiteral("natpmp")) return m_values.natpmp;
     if (name == QStringLiteral("server")) return m_values.server;
-    if (name == QStringLiteral("prune")) return PruneSetting(m_values.prune, m_values.prune_size_gb);
+    if (name == QStringLiteral("prune")) return PruneSetting(m_values);
     if (name == QStringLiteral("proxy")) return ProxySetting(m_values.proxy_enabled, m_values.proxy_address);
     if (name == QStringLiteral("onion")) return ProxySetting(m_values.tor_enabled, m_values.tor_address);
     return {};
@@ -761,7 +768,8 @@ Change Session::finishChange(Change change, bool accepted) const
 Change Session::changeListen(bool listen)
 {
     Change change = beginChange(QStringLiteral("listen"));
-    if (!canEdit(QStringLiteral("listen")) || listen == m_values.listen) return finishChange(std::move(change), false);
+    if (!canEdit(QStringLiteral("listen"))) return finishChange(std::move(change), false);
+    change.force_write = listen == m_values.listen;
     markTouched(QStringLiteral("listen"));
     m_values.listen = listen;
     return finishChange(std::move(change), true);
@@ -770,7 +778,8 @@ Change Session::changeListen(bool listen)
 Change Session::changeNatpmp(bool natpmp)
 {
     Change change = beginChange(QStringLiteral("natpmp"));
-    if (!canEdit(QStringLiteral("natpmp")) || natpmp == m_values.natpmp) return finishChange(std::move(change), false);
+    if (!canEdit(QStringLiteral("natpmp"))) return finishChange(std::move(change), false);
+    change.force_write = natpmp == m_values.natpmp;
     markTouched(QStringLiteral("natpmp"));
     m_values.natpmp = natpmp;
     return finishChange(std::move(change), true);
@@ -779,7 +788,8 @@ Change Session::changeNatpmp(bool natpmp)
 Change Session::changeServer(bool server)
 {
     Change change = beginChange(QStringLiteral("server"));
-    if (!canEdit(QStringLiteral("server")) || server == m_values.server) return finishChange(std::move(change), false);
+    if (!canEdit(QStringLiteral("server"))) return finishChange(std::move(change), false);
+    change.force_write = server == m_values.server;
     markTouched(QStringLiteral("server"));
     m_values.server = server;
     return finishChange(std::move(change), true);
@@ -788,29 +798,75 @@ Change Session::changeServer(bool server)
 Change Session::changePrune(bool prune)
 {
     Change change = beginChange(QStringLiteral("prune"));
-    if (!canEdit(QStringLiteral("prune")) || prune == m_values.prune) return finishChange(std::move(change), false);
+    if (!canEdit(QStringLiteral("prune"))) return finishChange(std::move(change), false);
+    change.force_write = prune == m_values.prune;
+    m_prune_input={};m_prune_input_error={};
     markTouched(QStringLiteral("prune"));
     m_values.prune = prune;
     return finishChange(std::move(change), true);
 }
 
+QString Session::pruneTargetText()const
+{
+    return m_prune_input.isNull()?QString::number(SettingTo<int64_t>(PruneSetting(m_values)).value_or(0)):m_prune_input;
+}
+int64_t Session::customPruneTarget()const
+{
+    const auto current=m_values.prune_target_mib>=0?m_values.prune_target_mib:SettingTo<int64_t>(PruneSetting(m_values)).value_or(0);
+    if(current>0&&current!=PruneGBToMiB(DEFAULT_PRUNE_TARGET_GB))return current;
+    return m_custom_prune_target;
+}
+Change Session::chooseStorage(StorageChoice choice)
+{
+    const auto remembered=customPruneTarget();if(remembered>0)m_custom_prune_target=remembered;
+    if(choice==StorageChoice::Full)return changePrune(false);
+    if(choice==StorageChoice::Reduced){
+        auto change=beginChange(QStringLiteral("prune"));if(!canEdit(QStringLiteral("prune")))return finishChange(std::move(change),false);
+        markTouched(QStringLiteral("prune"));m_prune_input={};m_prune_input_error={};m_values.prune=true;m_values.prune_size_gb=DEFAULT_PRUNE_TARGET_GB;m_values.prune_target_mib=-1;
+        change.force_write=ValuesEqual(change.before,m_values);return finishChange(std::move(change),true);
+    }
+    if(choice==StorageChoice::Custom&&remembered>0)return changePruneTargetText(QString::number(remembered));
+    return finishChange(beginChange(QStringLiteral("prune")),false);
+}
+Change Session::discardPruneInput()
+{
+    auto change=beginChange(QStringLiteral("prune"));m_prune_input={};m_prune_input_error={};return finishChange(std::move(change),true);
+}
+Change Session::changePruneTargetText(const QString& text)
+{
+    auto change=beginChange(QStringLiteral("prune"));
+    if(!canEdit(QStringLiteral("prune")))return finishChange(std::move(change),false);
+    m_prune_input=text.isNull()?QStringLiteral(""):text.left(65);m_prune_input_error={};markTouched(QStringLiteral("prune"));
+    const auto target=settingsparse::Integer(text,64);
+    if(!target||*target<0||(*target>1&&*target<550)){
+        m_prune_input_error=QCoreApplication::translate("OnboardingOptionsModel","Enter 0 for full storage, 1 for manual pruning, or a whole target of at least 550 MiB.");
+        return finishChange(std::move(change),false);
+    }
+    change.force_write=SettingTo<int64_t>(PruneSetting(m_values)).value_or(0)==*target;
+    m_values.prune=*target>0;
+    if(*target>0){m_values.prune_target_mib=*target;if(*target>1)m_values.prune_size_gb=PruneMiBToGB(*target);}
+    return finishChange(std::move(change),true);
+}
 Change Session::changePruneSizeGB(int prune_size_gb)
 {
     Change change = beginChange(QStringLiteral("prune"));
-    if (!canEdit(QStringLiteral("prune")) || prune_size_gb < 1 || prune_size_gb == m_values.prune_size_gb) return finishChange(std::move(change), false);
+    if (!canEdit(QStringLiteral("prune")) || prune_size_gb < 1) return finishChange(std::move(change), false);
+    change.force_write = prune_size_gb == m_values.prune_size_gb;
+    m_prune_input={};m_prune_input_error={};
     markTouched(QStringLiteral("prune"));
     m_values.prune_size_gb = prune_size_gb;
+    m_values.prune_target_mib = -1;
     return finishChange(std::move(change), true);
 }
 
 Change Session::changeProxyEnabled(bool enabled)
 {
     Change change = beginChange(QStringLiteral("proxy"));
-    if (!canEdit(QStringLiteral("proxy")) || enabled == m_values.proxy_enabled) return finishChange(std::move(change), false);
-    if (enabled && m_values.proxy_address.isEmpty()) {
-        m_values.proxy_address = DefaultProxyAddress();
-    }
-    if (enabled && !ProxyValidationError(m_values.proxy_address).isEmpty()) return finishChange(std::move(change), false);
+    if (!canEdit(QStringLiteral("proxy"))) return finishChange(std::move(change), false);
+    const auto address = m_values.proxy_address.isEmpty() ? DefaultProxyAddress() : m_values.proxy_address;
+    if (enabled && !ProxyValidationError(address).isEmpty()) return finishChange(std::move(change), false);
+    change.force_write = enabled == m_values.proxy_enabled;
+    if (enabled) m_values.proxy_address = address;
     markTouched(QStringLiteral("proxy"));
     m_values.proxy_enabled = enabled;
     return finishChange(std::move(change), true);
@@ -819,11 +875,11 @@ Change Session::changeProxyEnabled(bool enabled)
 Change Session::changeTorEnabled(bool enabled)
 {
     Change change = beginChange(QStringLiteral("onion"));
-    if (!canEdit(QStringLiteral("onion")) || enabled == m_values.tor_enabled) return finishChange(std::move(change), false);
-    if (enabled && m_values.tor_address.isEmpty()) {
-        m_values.tor_address = DefaultProxyAddress();
-    }
-    if (enabled && !ProxyValidationError(m_values.tor_address).isEmpty()) return finishChange(std::move(change), false);
+    if (!canEdit(QStringLiteral("onion"))) return finishChange(std::move(change), false);
+    const auto address = m_values.tor_address.isEmpty() ? DefaultProxyAddress() : m_values.tor_address;
+    if (enabled && !ProxyValidationError(address).isEmpty()) return finishChange(std::move(change), false);
+    change.force_write = enabled == m_values.tor_enabled;
+    if (enabled) m_values.tor_address = address;
     markTouched(QStringLiteral("onion"));
     m_values.tor_enabled = enabled;
     return finishChange(std::move(change), true);
@@ -835,7 +891,7 @@ Change Session::changeProxyLocation(const QString& location)
     if (!canEdit(QStringLiteral("proxy"))) return finishChange(std::move(change), false);
     const QString trimmed = location.trimmed();
     if (!ProxyValidationError(trimmed).isEmpty()) return finishChange(std::move(change), false);
-    if (trimmed == m_values.proxy_address) return finishChange(std::move(change), true);
+    change.force_write = trimmed == m_values.proxy_address;
     markTouched(QStringLiteral("proxy"));
     m_values.proxy_address = trimmed;
     return finishChange(std::move(change), true);
@@ -847,7 +903,7 @@ Change Session::changeTorLocation(const QString& location)
     if (!canEdit(QStringLiteral("onion"))) return finishChange(std::move(change), false);
     const QString trimmed = location.trimmed();
     if (!ProxyValidationError(trimmed).isEmpty()) return finishChange(std::move(change), false);
-    if (trimmed == m_values.tor_address) return finishChange(std::move(change), true);
+    change.force_write = trimmed == m_values.tor_address;
     markTouched(QStringLiteral("onion"));
     m_values.tor_address = trimmed;
     return finishChange(std::move(change), true);
@@ -859,6 +915,7 @@ Change Session::changePruneRecommendation(bool prune, int prune_size_gb, bool ma
     m_values.prune = prune;
     if (prune) {
         m_values.prune_size_gb = prune_size_gb;
+        m_values.prune_target_mib = -1;
     }
     if (mark_touched) {
         m_touched_settings.insert(QStringLiteral("prune"));
@@ -884,6 +941,7 @@ Change Session::applyPreviewValuesPreservingTouched(const Values& values, const 
     if (!m_touched_settings.contains(QStringLiteral("prune"))) {
         m_values.prune = values.prune;
         m_values.prune_size_gb = values.prune_size_gb;
+        m_values.prune_target_mib = values.prune_target_mib;
     }
     if (!m_touched_settings.contains(QStringLiteral("proxy"))) {
         m_values.proxy_enabled = values.proxy_enabled;
@@ -946,8 +1004,8 @@ void Session::setPruneRecommendation(bool prune, int prune_size_gb, bool mark_to
     changePruneRecommendation(prune, prune_size_gb, mark_touched);
 }
 
-bool PersistSettings(ArgsManager& args, const QStringList& keys,
-                     const std::function<bool()>& mutation, QString* error)
+PersistenceResult PersistTransaction(ArgsManager& args, const QStringList& keys,
+                     const std::function<bool()>& mutation, const std::function<void()>& after_save, bool skip_unchanged)
 {
     // This lock is independent of cs_args: ArgsManager methods acquire that
     // non-recursive lock internally. Backend writers remain free to update
@@ -967,6 +1025,7 @@ bool PersistSettings(ArgsManager& args, const QStringList& keys,
         });
         return values;
     };
+    PersistenceResult result;
     const Saved before = read();
     QString failure;
     Saved attempted;
@@ -977,9 +1036,16 @@ bool PersistSettings(ArgsManager& args, const QStringList& keys,
             failure = QCoreApplication::translate("OptionsQmlModel", "This setting cannot be changed.");
         } else {
             std::vector<std::string> errors;
-            if (args.WriteSettingsFile(&errors)) {
-                if (error) error->clear();
-                return true;
+            bool unchanged = before.size() == attempted.size();
+            for (const auto& [key, value] : before) {
+                const auto& other = attempted.at(key);
+                unchanged &= bool(value) == bool(other) && (!value || value->write() == other->write());
+            }
+            if ((skip_unchanged && unchanged) || args.WriteSettingsFile(&errors)) {
+                result.persisted = true;
+                if (after_save) after_save();
+                result.completed = true;
+                return result;
             }
             for (const auto& message : errors) {
                 if (!failure.isEmpty()) failure += QLatin1Char('\n');
@@ -990,6 +1056,10 @@ bool PersistSettings(ArgsManager& args, const QStringList& keys,
         failure = QString::fromUtf8(exception.what());
     } catch (...) {
         failure = QCoreApplication::translate("OptionsQmlModel", "Unable to save settings.");
+    }
+    if (result.persisted) {
+        result.error = failure.isEmpty() ? QCoreApplication::translate("OptionsQmlModel", "The settings were saved, but runtime application could not be confirmed.") : failure.left(4096);
+        return result;
     }
     if (attempted.empty()) attempted = read();
     args.LockSettings([&](common::Settings& settings) {
@@ -1005,8 +1075,16 @@ bool PersistSettings(ArgsManager& args, const QStringList& keys,
         }
     });
     if (failure.isEmpty()) failure = QCoreApplication::translate("OptionsQmlModel", "Unable to save settings.");
-    if (error) *error = failure;
-    return false;
+    result.error = failure.left(4096);
+    return result;
+}
+
+bool PersistSettings(ArgsManager& args, const QStringList& keys,
+                     const std::function<bool()>& mutation, QString* error)
+{
+    const auto result = PersistTransaction(args, keys, mutation);
+    if (error) *error = result.error;
+    return result.completed;
 }
 
 bool Session::writeToArgs(ArgsManager& args, const QString& name) const
@@ -1019,7 +1097,15 @@ bool Session::writeToArgs(ArgsManager& args, const QString& name) const
         return WriteProxySetting(args, QStringLiteral("onion"), m_values.tor_enabled, m_values.tor_address);
     }
     if (name == QStringLiteral("prune")) {
-        return WritePruneSetting(args, m_values.prune, m_values.prune_size_gb);
+        if (!CanEditCoreSetting(args, name)) return false;
+        if (m_values.prune) {
+            SetRwSetting(args, QStringLiteral("prune-prev"), {});
+        } else {
+            Values enabled = m_values;
+            enabled.prune = true;
+            SetRwSetting(args, QStringLiteral("prune-prev"), PruneSetting(enabled));
+        }
+        return WriteCoreSettingOverride(args, name, PruneSetting(m_values));
     }
     return WriteCoreSettingOverride(args, name, settingValue(name));
 }
@@ -1060,11 +1146,13 @@ bool Session::writeToNode(interfaces::Node& node, ArgsManager& args, const QStri
 
     if (name == QStringLiteral("prune")) {
         if (m_values.prune) {
-            UpdateRwSetting(node, name, GuiOverrideValue(args, name, PruneSetting(true, m_values.prune_size_gb)));
+            UpdateRwSetting(node, name, GuiOverrideValue(args, name, PruneSetting(m_values)));
             UpdateRwSetting(node, QStringLiteral("prune-prev"), common::SettingsValue{});
         } else {
-            UpdateRwSetting(node, QStringLiteral("prune-prev"), PruneSetting(true, m_values.prune_size_gb));
-            UpdateRwSetting(node, name, GuiOverrideValue(args, name, PruneSetting(false, m_values.prune_size_gb)));
+            Values enabled = m_values;
+            enabled.prune = true;
+            UpdateRwSetting(node, QStringLiteral("prune-prev"), PruneSetting(enabled));
+            UpdateRwSetting(node, name, GuiOverrideValue(args, name, PruneSetting(m_values)));
         }
         return true;
     }

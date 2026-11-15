@@ -367,8 +367,10 @@ Page {
         id: speedUpOverlay
         txid: root.txid
         bumpModel: root.wallet ? root.wallet.bumpModel : null
-        onBumpSucceeded: {
-            speedUpComplete.txid = speedUpOverlay.newTxid
+        onBumpSucceeded: function(newTxid, walletRecordState, walletSubmissionState) {
+            speedUpComplete.txid = newTxid
+            speedUpComplete.walletRecordState = walletRecordState
+            speedUpComplete.walletSubmissionState = walletSubmissionState
             speedUpComplete.open()
         }
     }

@@ -2,6 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/models/uipreferences.h>
+#include <qml/windowgeometry.h>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QWindow>
 #include <qml/backendexecutor.h>
 #include <qml/guipresentation.h>
 #include <test/mocks/manualexecutionenvironment.h>
@@ -30,6 +34,14 @@ UiPreferencesNamespace File(const QString& path){UiPreferencesNamespace id;id.fi
 class UiPreferencesTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void rejectedRefreshDoesNotReenterOrRetryItsFailure();
+    void watchPathsRetainTheExistingAncestor();
+    void geometryRestorePolicy_data();
+    void geometryRestorePolicy();
+    void nativeWindowRestoreWaitsForOriginalRead();
+    void manualRefreshCoalescesBeforeInitialReadCompletes();
+    void manualRefreshWaitsForAcceptedWritePublication();
+    void externalWriterIsObservedByRealWorkers();
     void loadWaitsForActualReadAndPublication();
     void acceptedWriteAndDrainSurviveQuietClose();
     void legacyFiltersAndOriginalNamespaceAreNative();
@@ -63,6 +75,101 @@ private Q_SLOTS:
     void legacyGeometryReadbackPreservesOnlyRepresentableValues();
     void manualOlderReadFailureCannotReplaceNewerConfirmedWrite();
 };
+
+
+
+void UiPreferencesTests::rejectedRefreshDoesNotReenterOrRetryItsFailure()
+{
+    QTemporaryDir directory;QVERIFY(directory.isValid());const auto path=directory.filePath("rejected.ini");ManualRoutedExecution transport;std::deque<std::function<void()>> gui;
+    UiPreferencesStore store{{transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}},File(path)};
+    transport.scheduler->closeOrdinaryAdmission();bool delivering{false},reentered{false};int notices{0};
+    const auto finish=qScopeGuard([&]{disconnect(&store,nullptr,this,nullptr);store.closeAdmission();Settle(transport,gui);transport.drain();});
+    const auto connection=connect(&store,&UiPreferencesStore::stateChanged,this,[&]{
+        reentered|=delivering;delivering=true;if(++notices<=2)store.refresh();delivering=false;
+    });
+    store.start();disconnect(connection);QVERIFY(!reentered);QCOMPARE(notices,1);QVERIFY(!store.ready());QVERIFY(!store.pending());QVERIFY(!store.error().isEmpty());
+    QVERIFY(!QFileInfo::exists(path));store.closeAdmission();QVERIFY(Settle(transport,gui));transport.drain();QVERIFY(transport.quiescent());
+}
+
+void UiPreferencesTests::watchPathsRetainTheExistingAncestor()
+{
+    QTemporaryDir directory;QVERIFY(directory.isValid());const auto file=directory.filePath("missing/also-missing/prefs.ini");
+    QSettings settings{file,QSettings::IniFormat};const auto paths=preferences::Paths(settings);
+    QCOMPARE(paths.file,file);QCOMPARE(paths.directory,directory.path());QVERIFY(!QFileInfo::exists(file));
+}
+
+void UiPreferencesTests::geometryRestorePolicy_data()
+{
+    QTest::addColumn<QRectF>("saved"); QTest::addColumn<QList<QRect>>("screens"); QTest::addColumn<QRect>("expected");
+    const QList<QRect> primary{{0, 0, 1920, 1080}};
+    QTest::newRow("subminimum-original-044") << QRectF{120, 130, 200, 100} << primary << QRect{120, 130, 800, 665};
+    QTest::newRow("removed-monitor") << QRectF{20000, -20000, 1200, 800} << primary << QRect{720, 0, 1200, 800};
+    QTest::newRow("oversized") << QRectF{20, 30, 20000, 20000} << primary << QRect{0, 0, 1920, 1080};
+    QTest::newRow("valid-unchanged") << QRectF{120, 130, 1200, 800} << primary << QRect{120, 130, 1200, 800};
+    QTest::newRow("negative-monitor") << QRectF{-1500, 40, 1000, 700} << QList<QRect>{{0,0,1920,1080},{-1920,0,1920,1080}} << QRect{-1500,40,1000,700};
+    QTest::newRow("largest-intersection") << QRectF{1700, 0, 1000, 700} << QList<QRect>{{0,0,1920,1080},{1920,0,1920,1080}} << QRect{1920,0,1000,700};
+    QTest::newRow("screen-below-supported-minimum") << QRectF{2000,2000,1200,800} << QList<QRect>{{10,20,640,480}} << QRect{10,20,800,665};
+    QTest::newRow("absent-uses-current-default") << QRectF{} << primary << QRect{50,60,900,740};
+    QTest::newRow("negative-size-uses-default") << QRectF{10,10,-1,-1} << primary << QRect{50,60,900,740};
+    QTest::newRow("scalar-integer-boundary") << QRectF{double(std::numeric_limits<int>::max()),double(std::numeric_limits<int>::min()),double(std::numeric_limits<int>::max()),double(std::numeric_limits<int>::max())} << primary << QRect{0,0,1920,1080};
+    QTest::newRow("no-screen-retains-bounded-position") << QRectF{30,40,1000,700} << QList<QRect>{} << QRect{30,40,1000,700};
+}
+void UiPreferencesTests::geometryRestorePolicy()
+{
+    QFETCH(QRectF, saved); QFETCH(QList<QRect>, screens); QFETCH(QRect, expected);
+    QCOMPARE(windowgeometry::Restore(saved, {800,665}, std::span{screens.constData(),size_t(screens.size())}, {50,60,900,740}), expected);
+}
+void UiPreferencesTests::nativeWindowRestoreWaitsForOriginalRead()
+{
+    QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path=directory.filePath("restore.ini");
+    {QSettings settings{path,QSettings::IniFormat};settings.setValue("windowWidth",200);settings.setValue("windowHeight",100);settings.setValue("windowX",20000);settings.setValue("windowY",20000);settings.sync();}
+    ManualRoutedExecution transport; std::deque<std::function<void()>> gui;
+    UiPreferencesStore store{{transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}},File(path)};
+    AppPreferences view;view.configure(&store);QWindow window;window.setMinimumSize({800,665});window.setGeometry({50,60,900,740});
+    const auto before=window.geometry(); QVERIFY(!view.restoreWindow(&window)); QCOMPARE(window.geometry(),before);
+    store.start(); transport.drain(); QVERIFY(!view.restoreWindow(&window)); QCOMPARE(window.geometry(),before);
+    QVERIFY(Settle(transport,gui)); QVERIFY(view.restoreWindow(&window));
+    QVERIFY(window.width()>=800);QVERIFY(window.height()>=665);
+    if(const auto* screen=QGuiApplication::primaryScreen()) {const auto available=screen->availableGeometry();QVERIFY(window.x()>=available.x());QVERIFY(window.y()>=available.y());QVERIFY(window.x()<available.x()+available.width());QVERIFY(window.y()<available.y()+available.height());}
+    // Restore itself is a native handoff, never an implicit persistence intent.
+    QVERIFY(!store.lastWriteReceipt());QSettings settings{path,QSettings::IniFormat};QCOMPARE(settings.value("windowWidth").toInt(),200);
+    store.closeAdmission();transport.drain();QVERIFY(transport.quiescent());
+}
+void UiPreferencesTests::manualRefreshCoalescesBeforeInitialReadCompletes()
+{
+    QTemporaryDir directory;QVERIFY(directory.isValid());ManualRoutedExecution transport;std::deque<std::function<void()>> gui;
+    UiPreferencesStore store{{transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}},File(directory.filePath("coalesce.ini"))};
+    store.start();const auto original=store.operationId();for(int i=0;i<64;++i)store.refresh();
+    QCOMPARE(store.operationId(),original);QVERIFY(Settle(transport,gui));QCOMPARE(store.operationId(),original+1);QVERIFY(store.ready());QVERIFY(!store.pending());
+    store.closeAdmission();const auto final=store.operationId();store.refresh();QCOMPARE(store.operationId(),final);transport.drain();QVERIFY(transport.quiescent());
+}
+void UiPreferencesTests::manualRefreshWaitsForAcceptedWritePublication()
+{
+    QTemporaryDir directory;QVERIFY(directory.isValid());const auto path=directory.filePath("pending.ini");ManualRoutedExecution transport;std::deque<std::function<void()>> gui;
+    UiPreferencesStore store{{transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}},File(path)};AppPreferences view;view.configure(&store);store.start();QVERIFY(Settle(transport,gui));
+    view.set_activityGrouping("day");const auto receipt=store.lastWriteReceipt();QVERIFY(receipt);transport.drain();QCOMPARE(receipt->load(),UiPreferencesStore::Applied);QVERIFY(store.pending());
+    {QSettings external{path,QSettings::IniFormat};external.setValue("dark",false);external.sync();}
+    const auto write=store.operationId();store.refresh();store.refresh();QCOMPARE(store.operationId(),write);QVERIFY(view.dark());
+    QVERIFY(Settle(transport,gui));QCOMPARE(receipt->load(),UiPreferencesStore::Applied);QCOMPARE(store.operationId(),write+1);QVERIFY(!view.dark());QCOMPARE(view.activityGrouping(),QStringLiteral("day"));
+    // A later unrelated intent reads the store before mutation and preserves
+    // external fields even without relying on a delivered watcher notification.
+    {QSettings external{path,QSettings::IniFormat};external.setValue("peerListSortAscending",false);external.sync();}
+    view.set_activityDisplayDensity("compact");QVERIFY(Settle(transport,gui));QVERIFY(!view.peerListSortAscending());QCOMPARE(view.activityDisplayDensity(),QStringLiteral("compact"));
+    store.closeAdmission();transport.drain();QVERIFY(transport.quiescent());
+}
+void UiPreferencesTests::externalWriterIsObservedByRealWorkers()
+{
+    QTemporaryDir directory;QVERIFY(directory.isValid());const auto path=directory.filePath("external.ini");BackendExecutor executor;
+    UiPreferencesStore store{{executor.scheduler(),presentation::QueuedPost()},File(path)};AppPreferences view;view.configure(&store);store.start();QTRY_VERIFY(store.ready());
+    // Ensure a physical file exists before testing an independent writer.
+    view.set_dark(true);QTRY_VERIFY(!store.pending());
+    {QSettings external{path,QSettings::IniFormat};external.setValue("dark",false);external.setValue("activityGrouping","day");external.sync();}
+    QTRY_VERIFY(!view.dark());QTRY_COMPARE(view.activityGrouping(),QStringLiteral("day"));QTRY_VERIFY(!store.pending());
+    {QSettings external{path,QSettings::IniFormat};external.remove("activityGrouping");external.sync();}
+    QTRY_COMPARE(view.activityGrouping(),QStringLiteral("month"));
+    bool drained{false};store.whenDrained([&]{drained=true;});QTRY_VERIFY(drained);executor.shutdown();
+}
+
 void UiPreferencesTests::loadWaitsForActualReadAndPublication(){
     QTemporaryDir directory;QVERIFY(directory.isValid());const auto path=directory.filePath("prefs.ini");
     {QSettings settings{path,QSettings::IniFormat};settings.setValue("windowWidth",1234);settings.setValue("windowHeight",777);settings.setValue("dark",false);settings.sync();}

@@ -28,10 +28,12 @@ class QmlInitExecutor : public QObject
 {
     Q_OBJECT
 public:
+    enum class StartupOutcome {Ready,Failed,Cancelled,Uncertain};
+    using StartupOutcomePort=std::function<void(StartupOutcome)>;
     using SubscriptionFactory = std::function<std::unique_ptr<interfaces::Handler>()>;
 
     explicit QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe = {},
-                             std::shared_ptr<std::atomic_bool> diagnostic_loss = {});
+                             std::shared_ptr<std::atomic_bool> diagnostic_loss = {}, StartupOutcomePort outcome = {});
     ~QmlInitExecutor();
     // Available during direct runawayException receipt delivery only.
     std::shared_ptr<execution::Scheduler> fatalDiagnosticScheduler() const { return m_fatal_diagnostic_scheduler; }

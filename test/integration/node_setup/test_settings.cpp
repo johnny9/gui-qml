@@ -5,7 +5,13 @@
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_util.h>
 #include <qml/models/core_settings_model.h>
+#include <qml/models/settingseditormodel.h>
 #include <qml/models/desktopwindowbehaviormodel.h>
+#include <qml/models/options_model.h>
+#include <qml/models/settings_keys.h>
+#include <node/caches.h>
+#include <common/settings.h>
+#include <util/byte_units.h>
 
 #include <QSettings>
 #include <QDesktopServices>
@@ -13,6 +19,7 @@
 #include <QUrl>
 
 #include <tuple>
+#include <map>
 
 class SettingsIntegrationTests : public QObject
 {
@@ -22,8 +29,16 @@ class SettingsIntegrationTests : public QObject
 
     QObject* openProxySettings()
     {
-        if (!qmltest::SelectSettings(m_app, "connection") || !qmltest::Click(m_app, "proxySettingsRow")) return nullptr;
-        return qmltest::WaitForVisible(m_app, "proxySettingsPage");
+        if (!qmltest::SelectSettings(m_app, "connection")) return nullptr;
+        auto* page=qmltest::WaitForVisible(m_app,"connectionSettingsPage");
+        auto* editor=settingsEditor();
+        if(!editor||!QTest::qWaitFor([&]{return editor->fresh();}))return nullptr;
+        return page;
+    }
+    SettingsEditorModel* settingsEditor()
+    {
+        auto* view=qmltest::Find(m_app,"settingsView");
+        return view?view->property("settingsEditor").value<SettingsEditorModel*>():nullptr;
     }
 
     QString persistentProxy(const std::string& key)
@@ -67,6 +82,38 @@ private Q_SLOTS:
         }
     }
 
+
+    void databaseCacheUsesCoreDefaultAndKeepsExplicitOverride()
+    {
+        auto* options=qmltest::Model<OptionsQmlModel>(m_app,"optionsModel");QVERIFY(options);QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(!options->settingsPending());
+        const auto expected=node::GetDefaultDBCache()/1_MiB;
+        QCOMPARE(options->dbcacheSizeMiB(),int(expected));QVERIFY(options->maxDbcacheSizeMiB()>=1636);
+        QVERIFY(qmltest::Call(m_app,&interfaces::Node::getPersistentSetting,"dbcache").isNull());
+        QVERIFY(qmltest::SelectSettings(m_app,"storage"));auto* editor=settingsEditor();QVERIFY(editor);QTRY_VERIFY(editor->fresh());
+        QCOMPARE(editor->entry(QStringLiteral("dbcache"))->effectiveText(),QString::number(expected));
+        QVERIFY(qmltest::SetText(m_app,"dbcacheSettingInput","450"));QTRY_VERIFY(editor->canSave());
+        QVERIFY(qmltest::Click(m_app,"settingsSaveBatchButton"));QTRY_VERIFY(editor->lastSavePersisted()&&!editor->busy());
+        const auto saved=qmltest::Call(m_app,&interfaces::Node::getPersistentSetting,"dbcache");
+        QCOMPARE(SettingTo<int64_t>(saved).value_or(-1),int64_t{450});
+        QCOMPARE(editor->entry(QStringLiteral("dbcache"))->effectiveText(),QString::number(expected));
+        QCOMPARE(editor->entry(QStringLiteral("dbcache"))->nextStartText(),QStringLiteral("450"));
+        QVERIFY(editor->saveResult().actualValues.contains(QStringLiteral("dbcache = 450")));
+    }
+
+    void externalPreferencesRefreshTheOpenDisplayAndWindowModels()
+    {
+        auto* options=qmltest::Model<OptionsQmlModel>(m_app,"optionsModel");
+        auto* behavior=qmltest::Model<DesktopWindowBehaviorModel>(m_app,"desktopWindowBehaviorModel");QVERIFY(options);QVERIFY(behavior);
+        QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(behavior->settingsReady());
+        QVERIFY(qmltest::SelectSettings(m_app,"display"));auto* picker=qmltest::WaitForVisible(m_app,"displayUnitPicker");QVERIFY(picker);
+        {QSettings external;external.setValue(SettingsKeys::DISPLAY_UNIT,2);external.setValue("fHideTrayIcon",true);external.sync();QCOMPARE(external.status(),QSettings::NoError);}
+        QTRY_COMPARE(picker->property("currentValue").toInt(),2);QTRY_COMPARE(options->displayUnit(),2);QTRY_VERIFY(!behavior->showTrayIcon());
+        QVERIFY(qmltest::SelectSettings(m_app,"window-behavior"));QVERIFY(qmltest::WaitForVisible(m_app,"windowBehaviorSettingsPage"));
+        QTRY_VERIFY(!qmltest::Find(m_app,"showTrayIconSwitch")->property("checked").toBool());
+        {QSettings external;external.remove("fHideTrayIcon");external.setValue(SettingsKeys::DISPLAY_UNIT,0);external.sync();}
+        QTRY_VERIFY(behavior->showTrayIcon());QTRY_COMPARE(options->displayUnit(),0);
+    }
+
     void displayControlsUpdateUnitsAndTranslations()
     {
         QVERIFY(qmltest::SelectSettings(m_app, "display"));
@@ -106,70 +153,70 @@ private Q_SLOTS:
     void proxyValidationKeepsInvalidDraftsOutOfCoreSettings()
     {
         QFETCH(bool, tor);
-        auto* page = openProxySettings();
-        QVERIFY(page);
-        const auto* enable = tor ? "torEnableSwitch" : "proxyEnableSwitch";
-        const auto* address = tor ? "torAddressInput" : "proxyAddressInput";
-        const auto* error = tor ? "draftTorValidationError" : "draftProxyValidationError";
-        const auto key = tor ? "onion" : "proxy";
-        const auto original = persistentProxy(key);
-        QVERIFY(!qmltest::Find(m_app, enable)->property("checked").toBool());
-        QVERIFY(!qmltest::Find(m_app, "proxyRestartNotice")->property("visible").toBool());
-        QVERIFY(qmltest::Click(m_app, enable));
-        QTRY_VERIFY(qmltest::Find(m_app, address)->property("enabled").toBool());
-        QVERIFY(qmltest::SetText(m_app, address, "999.999.999.999:9050"));
-        QTRY_VERIFY(!page->property(error).toString().isEmpty());
-        QVERIFY(!qmltest::Find(m_app, "proxySettingsSaveButton")->property("enabled").toBool());
-        QCOMPARE(persistentProxy(key), original);
-        QVERIFY(!qmltest::Find(m_app, "proxyRestartNotice")->property("visible").toBool());
-
-        QVERIFY(qmltest::SetText(m_app, address, "127.0.0.1:9050"));
-        QTRY_COMPARE(page->property(error).toString(), QString{});
-        QTRY_VERIFY(qmltest::Find(m_app, "proxySettingsSaveButton")->property("enabled").toBool());
-        QCOMPARE(persistentProxy(key), original);
-        QVERIFY(qmltest::Click(m_app, enable));
-        QTRY_VERIFY(!qmltest::Find(m_app, address)->property("enabled").toBool());
+        QVERIFY(openProxySettings());
+        auto* editor=settingsEditor();QVERIFY(editor);
+        const auto key=tor?"onion":"proxy";
+        const auto address=tor?"onionSettingInput":"proxySettingInput";
+        const auto original=persistentProxy(key);
+        QVERIFY(!editor->restartRequired());
+        QVERIFY(qmltest::SetText(m_app,address,"999.999.999.999:9050"));
+        QTRY_VERIFY(editor->dirty());
+        QVERIFY(qmltest::Click(m_app,"settingsSaveBatchButton"));
+        QTRY_VERIFY(!editor->busy()&&!editor->error().isEmpty());
+        QVERIFY(editor->dirty());QCOMPARE(persistentProxy(key),original);
+        QVERIFY(!editor->lastSavePersisted());QVERIFY(!editor->restartRequired());
+        QCOMPARE(editor->entry(QString::fromLatin1(key))->text(),QStringLiteral("999.999.999.999:9050"));
+        QVERIFY(qmltest::SetText(m_app,address,"127.0.0.1:9050"));
+        QTRY_VERIFY(editor->canSave());QCOMPARE(persistentProxy(key),original);
+        editor->discard();QTRY_VERIFY(!editor->dirty());
+        QCOMPARE(persistentProxy(key),original);
     }
 
     void cancellingBackPreservesProxyDraftAndConfirmingDiscardsIt()
     {
-        auto* page = openProxySettings();
-        QVERIFY(page);
-        const auto original = persistentProxy("proxy");
-        QVERIFY(qmltest::Click(m_app, "proxyEnableSwitch"));
-        QVERIFY(qmltest::SetText(m_app, "proxyAddressInput", "10.0.0.5:9050"));
-        QTRY_VERIFY(page->property("proxyDraftDirty").toBool());
-        QVERIFY(qmltest::Click(m_app, "proxySettingsBackButton"));
-        QVERIFY(qmltest::Click(m_app, "discardProxyChangesCancelButton"));
-        QTRY_VERIFY(!qmltest::Find(m_app, "discardProxyChangesPopup")->property("visible").toBool());
-        QCOMPARE(qmltest::Find(m_app, "proxyAddressInput")->property("text").toString(), QStringLiteral("10.0.0.5:9050"));
-        QVERIFY(qmltest::Click(m_app, "proxySettingsBackButton"));
-        QVERIFY(qmltest::Click(m_app, "discardProxyChangesConfirmButton"));
-        QVERIFY(qmltest::WaitForVisible(m_app, "proxySettingsRow"));
-        QVERIFY(qmltest::Click(m_app, "proxySettingsRow"));
-        QVERIFY(qmltest::WaitForVisible(m_app, "proxySettingsPage"));
-        QVERIFY(!qmltest::Find(m_app, "proxyEnableSwitch")->property("checked").toBool());
-        QCOMPARE(persistentProxy("proxy"), original);
+        QVERIFY(openProxySettings());auto* editor=settingsEditor();QVERIFY(editor);
+        const auto original=persistentProxy("proxy");
+        QVERIFY(qmltest::SetText(m_app,"proxySettingInput","10.0.0.5:9050"));
+        QTRY_VERIFY(editor->dirty());
+        QVERIFY(qmltest::SelectSettings(m_app,"storage"));
+        QTRY_VERIFY(editor->closeQuestion());
+        QVERIFY(qmltest::Click(m_app,"settingsCloseKeep"));
+        QTRY_VERIFY(!editor->closeQuestion());
+        QCOMPARE(qmltest::Find(m_app,"settingsView")->property("selectedSectionId").toString(),QStringLiteral("connection"));
+        QCOMPARE(editor->entry(QStringLiteral("proxy"))->text(),QStringLiteral("10.0.0.5:9050"));
+        QVERIFY(qmltest::SelectSettings(m_app,"storage"));QTRY_VERIFY(editor->closeQuestion());
+        QVERIFY(qmltest::Click(m_app,"settingsCloseDiscard"));
+        QTRY_COMPARE(qmltest::Find(m_app,"settingsView")->property("selectedSectionId").toString(),QStringLiteral("storage"));
+        QVERIFY(openProxySettings());QTRY_VERIFY(!settingsEditor()->dirty());
+        QCOMPARE(settingsEditor()->entry(QStringLiteral("proxy"))->text(),original);
+        QCOMPARE(persistentProxy("proxy"),original);
+    }
+
+    void readOnlyNetworkProxyKeepsOtherSettingsWritable()
+    {
+        const auto routes=[&]{std::map<std::string,std::string> result;const auto info=qmltest::Call(m_app,&interfaces::Node::executeRpc,"getnetworkinfo",UniValue{UniValue::VARR},"");for(const auto& network:info.find_value("networks").getValues())result.emplace(network.find_value("name").get_str(),network.find_value("proxy").get_str());return result;};
+        const auto original=routes();QCOMPARE(original.at("ipv4"),std::string{"127.0.0.1:9050"});QCOMPARE(original.at("onion"),std::string{});
+        QVERIFY(openProxySettings());auto* editor=settingsEditor();QVERIFY(editor);QVERIFY(!editor->entry(QStringLiteral("proxy"))->editable());
+        const auto running=editor->entry(QStringLiteral("maxmempool"))->effectiveText();
+        QVERIFY(qmltest::SelectSettings(m_app,"mempool"));QVERIFY(qmltest::WaitForVisible(m_app,"maxmempoolSettingInput"));QVERIFY(qmltest::SetText(m_app,"maxmempoolSettingInput","400"));QTRY_VERIFY(editor->canSave());
+        QVERIFY(qmltest::Click(m_app,"settingsSaveBatchButton"));QTRY_VERIFY(editor->lastSavePersisted()&&!editor->busy());
+        const auto saved=qmltest::Call(m_app,&interfaces::Node::getPersistentSetting,"maxmempool");QVERIFY(saved.isNum());QCOMPARE(saved.getInt<int64_t>(),400);QVERIFY(qmltest::Call(m_app,&interfaces::Node::getPersistentSetting,"proxy").isNull());
+        QVERIFY(routes()==original);QCOMPARE(editor->entry(QStringLiteral("maxmempool"))->effectiveText(),running);QCOMPARE(editor->entry(QStringLiteral("maxmempool"))->nextStartText(),QStringLiteral("400"));QVERIFY(editor->restartRequired());
     }
 
     void savingProxyDraftCommitsBothEntries()
     {
-        auto* page = openProxySettings();
-        QVERIFY(page);
-        auto* core = qobject_cast<CoreSettingsModel*>(page->property("coreSettingsModel").value<QObject*>());
-        QVERIFY(core);
-        for (const auto& [enable, address, value] : {
-                 std::tuple{"proxyEnableSwitch", "proxyAddressInput", "10.0.0.1:9050"},
-                 std::tuple{"torEnableSwitch", "torAddressInput", "127.0.0.1:9150"}}) {
-            QVERIFY(qmltest::Click(m_app, enable));
-            QVERIFY(qmltest::SetText(m_app, address, value));
-        }
-        QVERIFY(qmltest::Click(m_app, "proxySettingsSaveButton"));
-        QVERIFY(qmltest::WaitForVisible(m_app, "proxySettingsRow"));
-        QTRY_COMPARE(persistentProxy("proxy"), QStringLiteral("10.0.0.1:9050"));
-        QTRY_COMPARE(persistentProxy("onion"), QStringLiteral("127.0.0.1:9150"));
-        QVERIFY(core->values().proxy_enabled);
-        QVERIFY(core->values().tor_enabled);
+        QVERIFY(openProxySettings());auto* editor=settingsEditor();QVERIFY(editor);
+        for(const auto& [address,value]:{std::pair{"proxySettingInput","10.0.0.1:9050"},std::pair{"onionSettingInput","127.0.0.1:9150"}})QVERIFY(qmltest::SetText(m_app,address,value));
+        QTRY_VERIFY(editor->canSave());
+        QVERIFY(qmltest::Click(m_app,"settingsSaveBatchButton"));
+        QTRY_VERIFY(editor->lastSavePersisted()&&!editor->busy());
+        QTRY_COMPARE(persistentProxy("proxy"),QStringLiteral("10.0.0.1:9050"));
+        QTRY_COMPARE(persistentProxy("onion"),QStringLiteral("127.0.0.1:9150"));
+        const auto result=editor->saveResult();QVERIFY(result.outcomeKnown);QCOMPARE(result.outcome,SettingsSaveResult::Saved);
+        QVERIFY(result.actualValues.contains(QStringLiteral("proxy = 10.0.0.1:9050")));
+        QVERIFY(result.actualValues.contains(QStringLiteral("onion = 127.0.0.1:9150")));
+        QVERIFY(!editor->dirty());QVERIFY(editor->restartRequired());
     }
 
     void windowBehaviorControlsUpdateTheLiveModelAndRetainNavigation()
@@ -201,6 +248,11 @@ private Q_SLOTS:
 std::unique_ptr<QObject> CreateSettingsTests(BitcoinQmlApplication& app, WalletMode)
 {
     return std::make_unique<SettingsIntegrationTests>(app);
+}
+
+QStringList SettingsTestArguments(const QString& selector)
+{
+    return selector==QStringLiteral("readOnlyNetworkProxyKeepsOtherSettingsWritable")?QStringList{QStringLiteral("-proxy=127.0.0.1:9050=ipv4")}:QStringList{};
 }
 
 #include <test_settings.moc>

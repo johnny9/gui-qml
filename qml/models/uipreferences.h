@@ -4,10 +4,12 @@
 #ifndef BITCOIN_QML_MODELS_UIPREFERENCES_H
 #define BITCOIN_QML_MODELS_UIPREFERENCES_H
 #include <qml/ownedwork.h>
+#include <qml/preferenceswatch.h>
 #include <QObject>
 #include <QPointer>
 #include <QQmlParserStatus>
 #include <QSettings>
+#include <QWindow>
 #include <QStringList>
 #include <atomic>
 #include <map>
@@ -40,6 +42,7 @@ public:
     ~UiPreferencesStore() override;
     void start();
     Q_INVOKABLE void retry();
+    Q_INVOKABLE void refresh();
     bool ready()const{return m_ready;}bool pending()const{return m_pending!=0;}
     QString error()const{return m_error;}
     const UiPreferencesValues& values()const;
@@ -55,6 +58,9 @@ private:
     using Mutation=std::function<void(UiPreferencesValues&)>;
     quint64 write(QStringList keys,Mutation,size_t bytes=256);
     quint64 rejectIntent(QString error);
+    void finishRefresh();
+    preferences::Watch m_watch{[this] { refresh(); }};
+    bool m_refresh_requested{false}, m_loading{false};
     void load();void publish(std::shared_ptr<const Result>,quint64);
     bool attach(AppPreferences*);void notifyViews();void notifyTurn();
     execution::SnapshotServices m_services;
@@ -110,6 +116,8 @@ public:
     QStringList peerConnectionTypeFilters()const{return values().peerConnectionTypeFilters;}
     QStringList peerNetworkFilters()const{return values().peerNetworkFilters;}
     QStringList peerTransportFilters()const{return values().peerTransportFilters;}
+    Q_INVOKABLE bool restoreWindow(QWindow* window) const;
+    Q_INVOKABLE void refresh(){if(m_store)m_store->refresh();}
     Q_INVOKABLE quint64 requestGeometry(double x,double y,double width,double height);
     Q_INVOKABLE quint64 togglePeerFilter(QString group,QString id);
     Q_INVOKABLE quint64 clearPeerFilters();

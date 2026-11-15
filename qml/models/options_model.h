@@ -4,6 +4,9 @@
 
 #ifndef BITCOIN_QML_MODELS_OPTIONS_MODEL_H
 #define BITCOIN_QML_MODELS_OPTIONS_MODEL_H
+#include <qml/preferenceswatch.h>
+#include <limits>
+#include <algorithm>
 
 #include <common/args.h>
 #include <txdb.h>
@@ -18,6 +21,7 @@
 
 #include <qml/backendexecutor.h>
 #include <qml/ownedwork.h>
+#include <qml/models/settingseditormodel.h>
 #include <qml/core_settings.h>
 #include <qml/models/core_settings_model.h>
 #include <qml/models/settings_keys.h>
@@ -97,6 +101,8 @@ class OptionsQmlModel : public QObject
     Q_PROPERTY(int maxScriptThreads READ maxScriptThreads CONSTANT)
     Q_PROPERTY(int minScriptThreads READ minScriptThreads NOTIFY threadLimitsChanged)
     Q_PROPERTY(bool natpmp READ natpmp WRITE setNatpmp NOTIFY natpmpChanged)
+    Q_PROPERTY(QString pruneTargetText READ pruneTargetText NOTIFY pruneTargetInputChanged)
+    Q_PROPERTY(QString pruneTargetError READ pruneTargetError NOTIFY pruneTargetInputChanged)
     Q_PROPERTY(bool prune READ prune WRITE setPrune NOTIFY pruneChanged)
     Q_PROPERTY(int pruneSizeGB READ pruneSizeGB WRITE setPruneSizeGB NOTIFY pruneSizeGBChanged)
     Q_PROPERTY(int scriptThreads READ scriptThreads WRITE setScriptThreads NOTIFY scriptThreadsChanged)
@@ -130,6 +136,7 @@ class OptionsQmlModel : public QObject
 public:
     explicit OptionsQmlModel(interfaces::Node& node, ArgsManager& args = gArgs, execution::SnapshotServices services = {});
 
+    Q_INVOKABLE void refreshDisplaySettings();
     ~OptionsQmlModel() override;
     bool presentationOpen() const {return !m_stopping;}
     enum SettingsOperationState {SettingsIdle,SettingsPending,SettingsApplied,SettingsFailed,SettingsUncertain};
@@ -163,6 +170,9 @@ public:
     int minScriptThreads() const { return m_min_script_threads; }
     bool natpmp() const { return m_core_settings.values().natpmp; }
     void setNatpmp(bool new_natpmp);
+    QString pruneTargetText()const{return m_core_settings.pruneTargetText();}
+    QString pruneTargetError()const{return m_core_settings.pruneTargetError();}
+    Q_INVOKABLE void editPruneTarget(const QString& text){m_core_settings.changePruneTargetText(text);}
     bool prune() const { return m_core_settings.values().prune; }
     void setPrune(bool new_prune);
     int pruneSizeGB() const { return m_core_settings.values().prune_size_gb; }
@@ -210,6 +220,7 @@ public:
     }
     bool restartRequired() const;
     QObject* coreSettings() { return &m_core_settings; }
+    Q_INVOKABLE SettingsEditorModel* createSettingsEditor();
     QVariantMap coreSettingStatuses() const;
     Q_INVOKABLE QVariantMap coreSettingStatus(const QString& name) const;
     Q_INVOKABLE quint64 requestProxyLocation(const QString& location);
@@ -250,6 +261,7 @@ Q_SIGNALS:
     void listenChanged(bool new_listen);
     void maxMempoolSizeMBChanged(int new_max_mempool_size_mb);
     void natpmpChanged(bool new_natpmp);
+    void pruneTargetInputChanged();
     void pruneChanged(bool new_prune);
     void pruneSizeGBChanged(int new_prune_size_gb);
     void scriptThreadsChanged(int new_script_threads);
@@ -297,6 +309,7 @@ private:
     interfaces::Node& m_node;
     ArgsManager& m_args;
     CoreSettingsModel m_core_settings;
+    QList<QPointer<SettingsEditorModel>> m_editors;
     std::unique_ptr<BackendExecutor> m_executor;
     execution::SnapshotServices m_services;
     std::unique_ptr<execution::OwnedWork> m_work;
@@ -315,6 +328,10 @@ private:
     int m_pending_commands{0};
     quint64 m_command_revision{0};
     bool m_stopping{false};
+    bool m_preference_refresh_requested{false};
+    size_t m_submitting_commands{0};
+    preferences::Watch m_preference_watch{[this] { refreshDisplaySettings(); }};
+    void finishPreferenceRefresh();
     bool m_shutdown_started{false};
     bool m_applying_snapshot{false};
     bool m_validation_pending{false};
@@ -336,7 +353,7 @@ private:
     // Properties that are exposed to QML.
     int m_dbcache_size_mib{DEFAULT_KERNEL_CACHE / 1_MiB};
     const int m_min_dbcache_size_mib{MIN_DBCACHE_BYTES / 1_MiB};
-    const int m_max_dbcache_size_mib{MAX_COINS_DB_CACHE / 1_MiB};
+    const int m_max_dbcache_size_mib{int(std::min<uint64_t>(MAX_DBCACHE_BYTES / 1_MiB, std::numeric_limits<int>::max()))};
     int m_max_mempool_size_mb{DEFAULT_MAX_MEMPOOL_SIZE_MB};
     const int m_min_max_mempool_size_mb{
         static_cast<int>((DEFAULT_CLUSTER_SIZE_LIMIT_KVB * 1000 * 40 + 999999) / 1000000)

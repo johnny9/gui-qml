@@ -39,6 +39,7 @@ Page {
     readonly property real reviewContentWidth: Math.max(0, Math.min(1100, width - sidePadding * 2))
     readonly property bool sendBusy: wallet !== null && (wallet.sendBusy || wallet.psbtActionBusy)
     property WalletQmlModelTransaction sendReview: null
+    property WalletQmlModel sendWallet: null
     property double sendTicket: 0
     property bool sending: false
     property double psbtTicket: 0
@@ -49,9 +50,12 @@ Page {
 
     onVisibleChanged: {
         if (!visible) {
+            cancelPendingSendPrompt()
             sweepAlert.close()
             reviewEntryPopup.close()
             sendPassphrasePopup.close()
+            if (wallet && wallet.fileExportOperation && wallet.fileExportOperation.pending)
+                wallet.fileExportOperation.retire()
             sending = false
             sendTicket = 0
             saveStatus = ""
@@ -60,7 +64,7 @@ Page {
     }
 
     signal back()
-    signal transactionSent(string txid, int submissionState)
+    signal transactionSent(string txid, int submissionState, int recordState)
 
     function focusInitialControl() {
         reviewCloseButton.forceActiveFocus(Qt.TabFocusReason)
@@ -75,25 +79,39 @@ Page {
         }
     }
 
-    onWalletChanged: { psbtTicket = 0; psbtReview = null; sendTicket = 0; sendReview = null; sweepAlert.close(); sendPassphrasePopup.close() }
-    onTransactionChanged: { sweepAlert.close(); reviewEntryPopup.close() }
+    onWalletChanged: {
+        cancelPendingSendPrompt()
+        if (sendWallet && sendWallet.fileExportOperation && sendWallet.fileExportOperation.pending)
+            sendWallet.fileExportOperation.retire()
+        psbtTicket = 0; psbtReview = null; sendTicket = 0; sendReview = null; sendWallet = null
+        sweepAlert.close(); sendPassphrasePopup.close()
+    }
+    onTransactionChanged: {
+        if (sendReview !== null && sendReview !== transaction) cancelPendingSendPrompt()
+        sweepAlert.close(); reviewEntryPopup.close()
+    }
     onDetailsContextValidChanged: if (!detailsContextValid) reviewEntryPopup.close()
 
     function requestSend() {
         if (sending || sendBusy || !wallet || !detailsReady) return
-        if (wallet.currentTransactionSweepsWallet) {
-            sweepAlert.reviewedTransaction = wallet.currentTransaction
-            sweepAlert.open()
-        } else {
-            commitSend()
-        }
+        commitSend()
     }
 
     function commitSend() {
         if (sending || sendBusy || !wallet || !detailsReady) return
+        sendWallet = wallet
         sendReview = wallet.currentTransaction
         sendTicket = 0
         sendTicket = wallet.requestSendTransaction()
+        handleSendOutcome()
+    }
+
+    function signOnly() {
+        if (sending || sendBusy || !wallet || !detailsReady || !wallet.currentTransactionCanSignOnly) return
+        sendWallet = wallet
+        sendReview = wallet.currentTransaction
+        sendTicket = 0
+        sendTicket = wallet.requestSignOnlyTransaction()
         handleSendOutcome()
     }
 
@@ -105,16 +123,25 @@ Page {
         return visible && wallet !== null && wallet.available && reviewed !== null && reviewed === wallet.currentTransaction
     }
 
+    function cancelPendingSendPrompt() {
+        if (sendWallet && sendTicket) {
+            sendWallet.cancelSendTransaction(sendTicket)
+        }
+    }
+
     function handleSendOutcome() {
-            if (!root.sendTicket || root.wallet.sendOperationId !== root.sendTicket || !root.isCurrentTransaction(root.sendReview) || root.sending) return
-            if (root.wallet.sendState === WalletQmlModel.SendNeedsUnlock) {
+            if (!root.sendTicket || !root.wallet || root.wallet.sendOperationId !== root.sendTicket || !root.isCurrentTransaction(root.sendReview) || root.sending) return
+            if (root.wallet.sendState === WalletQmlModel.SendNeedsConfirmation) {
+                sweepAlert.reviewedTransaction = root.sendReview
+                if (!sweepAlert.opened) sweepAlert.open()
+            } else if (root.wallet.sendState === WalletQmlModel.SendNeedsUnlock) {
                 sendPassphrasePopup.reviewedTransaction = root.sendReview
                 sendPassphrasePopup.errorText = root.wallet.transactionError
                 if (!sendPassphrasePopup.opened) sendPassphrasePopup.open()
             } else if (root.wallet.sendState === WalletQmlModel.SendCommitted) {
                 sendPassphrasePopup.close()
                 root.sending = true
-                root.transactionSent(root.wallet.sendResultTxid, root.wallet.sendSubmission)
+                root.transactionSent(root.wallet.sendResultTxid, root.wallet.sendSubmission, root.wallet.sendRecordState)
             } else if (sendPassphrasePopup.opened && !root.sendBusy) {
                 sendPassphrasePopup.errorText = root.wallet.transactionError
             }
@@ -218,6 +245,16 @@ Page {
         onRejected: targetWallet = null
     }
 
+    Instantiator {
+        model: root.wallet && root.wallet.fileExportOperation ? [root.wallet.fileExportOperation] : []
+        delegate: PsbtExportConfirmation {
+            required property FileExportOperationModel modelData
+            parent: root.Overlay.overlay
+            operation: modelData
+            visible: root.visible && modelData.confirmationRequired
+        }
+    }
+
     Item {
         id: savePsbtAutomationPath
         objectName: "sendTransactionReviewSavePsbtPathField"
@@ -271,7 +308,15 @@ Page {
             FormSection {
                 objectName: "sendTransactionReviewRecipients"
                 Layout.fillWidth: true
-                title: qsTr("Recipients")
+                title: root.importedPsbt ? qsTr("Outputs") : qsTr("Recipients")
+                CoreText {
+                    objectName: "sendReviewImportedOutputsNotice"
+                    Layout.fillWidth: true
+                    visible: root.importedPsbt
+                    text: qsTr("All transaction outputs are shown. Wallet-owned outputs may include change.")
+                    wrapMode: Text.WordWrap
+                    color: Theme.color.neutral7
+                }
                 ListView {
                     id: recipientRows
                     objectName: "sendTransactionReviewRecipientRows"
@@ -378,7 +423,7 @@ Page {
                     objectName: "sendTransactionReviewTotal"
                     amountValue: true
                     Layout.fillWidth: true
-                    title: qsTr("Total amount")
+                    title: root.importedPsbt ? qsTr("Outputs plus fee") : qsTr("Total amount")
                     value: root.transaction ? root.transaction.total : ""
                     showDivider: false
                 }
@@ -439,6 +484,16 @@ Page {
                     text: qsTr("Save transaction")
                     onClicked: root.startSavePsbt()
                 }
+                NeutralButton {
+                    objectName: "sendTransactionReviewSignOnlyButton"
+                    visible: root.wallet && root.wallet.currentTransactionCanSignOnly
+                    buttonSize: NeutralButton.Large
+                    enabled: root.detailsReady && !root.sending && !root.sendBusy
+                    width: parent.width < 540 ? parent.width : (parent.width - 12) / 2
+                    height: 46
+                    text: qsTr("Sign only")
+                    onClicked: root.signOnly()
+                }
                 ContinueButton {
                     objectName: "sendTransactionReviewSendButton"
                     visible: (root.showSend && !externalSignerActions.visible) || root.showBroadcast
@@ -451,13 +506,24 @@ Page {
             }
 
             ToastBanner {
-                visible: root.saveStatus.length > 0
+                objectName: "sendTransactionReviewSaveToast"
+                visible: root.saveStatus.length > 0 && !root.saveError
                 Layout.fillWidth: true
-                tintColor: root.saveError ? Theme.color.red : Theme.color.green
-                iconSource: root.saveError ? "image://images/info-filled" : "image://images/check"
+                tintColor: Theme.color.green
+                iconSource: "image://images/check"
                 text: root.saveStatus
                 dismissAfter: 3
-                onDismissed: root.saveStatus = ""
+                onDismissed: if (!root.saveError) root.saveStatus = ""
+            }
+
+            CoreText {
+                objectName: "sendTransactionReviewSaveError"
+                visible: root.saveError && root.saveStatus.length > 0
+                Layout.fillWidth: true
+                text: root.saveStatus
+                color: Theme.color.red
+                font: Theme.text.description.font
+                wrap: true
             }
 
             CoreText {
@@ -546,15 +612,19 @@ Page {
             text: qsTr("Back to review")
             role: AlertAction.Cancel
             buttonObjectName: "sendSweepCancelButton"
+            onTriggered: root.cancelPendingSendPrompt()
         }
         AlertAction {
             //: Confirm and send the prepared transaction using all available wallet funds.
             text: qsTr("Send all funds")
             buttonObjectName: "sendSweepConfirmButton"
             onTriggered: {
-                if (root.isCurrentTransaction(sweepAlert.reviewedTransaction)) root.commitSend()
+                if (root.isCurrentTransaction(sweepAlert.reviewedTransaction) && root.wallet && root.sendTicket) {
+                    root.wallet.confirmSendTransaction(root.sendTicket)
+                }
             }
         }
+        onClosed: root.cancelPendingSendPrompt()
     }
 
     WalletPassphrasePopup {
@@ -563,9 +633,11 @@ Page {
         parent: Overlay.overlay
         width: Math.min(420, root.width - 40)
         titleText: qsTr("Enter wallet password")
-        descriptionText: qsTr("Enter your wallet password to send this transaction.")
-        confirmText: qsTr("Unlock and send")
-        busyConfirmText: qsTr("Unlocking...")
+        descriptionText: actionWallet && actionWallet.sendSignOnly
+            ? qsTr("Enter your wallet password to sign this PSBT. The transaction will not be sent.")
+            : qsTr("Enter your wallet password to send this transaction.")
+        confirmText: actionWallet && actionWallet.sendSignOnly ? qsTr("Unlock and sign") : qsTr("Unlock and send")
+        busyConfirmText: actionWallet && actionWallet.sendSignOnly ? qsTr("Signing...") : qsTr("Unlocking...")
         property WalletQmlModel actionWallet: null
         property WalletQmlModelTransaction reviewedTransaction: null
         readonly property bool contextValid: root.visible && actionWallet !== null
@@ -575,6 +647,7 @@ Page {
         onContextValidChanged: if (!contextValid) close()
         busy: actionWallet !== null && actionWallet.sendBusy
         onAboutToHide: clearPassphraseField()
+        onClosed: root.cancelPendingSendPrompt()
         onSubmitted: (passphrase) => {
             if (!opened || !contextValid) {
                 close()

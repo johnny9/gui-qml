@@ -20,7 +20,17 @@ inline bool AwaitCommittedSend(WalletQmlModel& model, std::optional<QString> pas
         QTest::qFail("Send observer disappeared or changed before its original receipt was captured", __FILE__, __LINE__);
         return false;
     }
-    const auto original = guard->sendState() == WalletQmlModel::SendState::SendPending ? guard->sendOperation() : nullptr;
+    const auto original = guard->sendOperation();
+    if (original && guard->sendState() == WalletQmlModel::SendState::SendPending &&
+        !QTest::qWaitFor([&] {
+            return !guard || original->result().has_value() || guard->sendState() != WalletQmlModel::SendState::SendPending;
+        }, 5000)) {
+        QTest::qFail("Accepted send did not reach its first prompt or native outcome", __FILE__, __LINE__);
+        return false;
+    }
+    if (guard && guard->sendState() == WalletQmlModel::SendState::SendNeedsConfirmation &&
+        !guard->confirmSendTransaction(ticket)) return false;
+    if (guard && guard->sendState() == WalletQmlModel::SendState::SendNeedsUnlock) return false;
     if (original && !QTest::qWaitFor([&] { return original->result().has_value(); }, 5000)) {
         QTest::qFail("Accepted send did not produce its original domain outcome", __FILE__, __LINE__);
         return false;
