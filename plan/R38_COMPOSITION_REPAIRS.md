@@ -99,3 +99,16 @@ No Core or Qt code, persisted format, native component, animation, watchdog,
 warning allowance or test selection is weakened. These are app composition and
 fixture boundaries, not missing Wallet/WalletLoader capabilities. Broad coverage,
 platform matrices and sanitizers remain final R42 work by the approved cadence.
+
+
+Composed02 independently passed the corrected no-Chainman row, both real Core
+navigation journeys, all three controlled Done schedules, all fourteen original
+effective-settings/consent rows, both GUI privacy processes, pinned nine checks
+and full QML lint. Its remaining signer fixture row invoked `clicked()` as soon
+as the label read "Save and check", without proving the same control enabled.
+The production handler correctly rejects disabled clicks. The fixture now waits
+for actual enablement and performs one physical center click in the visible
+Settings window, with all ancestor clipping checks. All persistence/pending/
+indicator/effect-count/original-path assertions remain. Other original signer
+rows and the controlled Done rows are selected with it; no production, Cpp,
+watchdog or animation change is required for this fixture repair.

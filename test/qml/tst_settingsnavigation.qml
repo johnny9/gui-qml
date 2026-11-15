@@ -180,8 +180,7 @@ TestCase {
         fail("Controlled settings Domain did not become idle")
     }
 
-    function clickDoneControl(view, enabled) {
-        const button = findChild(view, "settingsDoneButton")
+    function clickSettingsControl(button, enabled) {
         verify(button !== null)
         tryVerify(() => button.width > 0 && button.height > 0)
         compare(button.enabled, enabled)
@@ -195,6 +194,10 @@ TestCase {
             }
         }
         mouseClick(button, button.width / 2, button.height / 2)
+    }
+
+    function clickDoneControl(view, enabled) {
+        clickSettingsControl(findChild(view, "settingsDoneButton"), enabled)
     }
 
     function test_settingsDoneCapturesOnlySafeNavigation_data() {
@@ -416,7 +419,8 @@ TestCase {
         verify(page.signerConnected)
         compare(walletController.signerEnumerationCalls, initialScans)
         tryCompare(check, "text", "Save and check")
-        check.clicked()
+        tryCompare(check, "enabled", true)
+        clickSettingsControl(check, true)
         tryVerify(() => view.settingsEditor.saveResult.persisted)
         tryVerify(() => view.settingsEditor.saveResult.outcomeKnown)
         compare(optionsModel.settingsWritesForTest(), 1)
