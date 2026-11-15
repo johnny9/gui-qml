@@ -38,6 +38,24 @@ QtObject {
         if (holdPublications) _heldOperations.push(operation)
         return operation
     }
+    property Component _importFactory: Component { PaymentImportOperation {} }
+    function requestImportText(text, wallet, recipient, owner) {
+        let outcome
+        try { outcome = _parse(text) } catch (error) { outcome = {success: false, error: "Not a valid Bitcoin payment URI."} }
+        return _importRequest(outcome, wallet, recipient, owner)
+    }
+    function requestImportFile(path, wallet, recipient, owner) {
+        return _importRequest({success: false, error: "File parsing is unavailable in QML unit tests."}, wallet, recipient, owner)
+    }
+    function _importRequest(outcome, wallet, recipient, owner) {
+        ++requestCallsForTest
+        if (!owner || !admitRequestsForTest) return null
+        const operation = _importFactory.createObject(owner, {requestId: ++_sequence, requestOwner: owner,
+            originalWallet: wallet, originalRecipient: recipient, originalRevision: wallet ? wallet.recipients.revision : ""})
+        operation.prepare(outcome, holdPublications)
+        if (holdPublications) _heldOperations.push(operation)
+        return operation
+    }
     property var _sourceIds: ({})
     property int _sourceSequence: 0
     function requestParse(text, owner, replace) { return requestProbe(text, {}, owner, replace) }

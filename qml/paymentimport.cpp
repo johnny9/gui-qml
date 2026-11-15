@@ -230,7 +230,7 @@ std::shared_ptr<Owner::Delivery> Owner::reserve(ReplyKind kind, std::optional<Ch
     }, [self = shared_from_this(), identity, kind, source, target, child](Reply reply) {
         self->m_state->deliveries.erase(identity);
         self->finish(std::move(reply), kind, source, target, child, identity);
-    }, {}, {execution::Lane::Cleanup, 1024, m_key}, true);
+    }, {}, {execution::Lane::Cleanup, 1024, m_scope->allocateKey()}, true);
     if (!cleanup) return {};
     result->cleanup = cleanup.id;
     try { state.deliveries.emplace(identity, result); }

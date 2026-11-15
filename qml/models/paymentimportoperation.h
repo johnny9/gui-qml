@@ -7,6 +7,8 @@
 #include <QObject>
 #include <qml/models/fileexportoperation.h>
 class BitcoinUriModel;
+class WalletQmlModel;
+class SendRecipient;
 /** Bounded GUI projection of one independently owned import. Commands retain
  * the original source, wallet opening and recipient; no selection lookup. */
 class PaymentImportOperation final : public QObject
@@ -20,6 +22,7 @@ class PaymentImportOperation final : public QObject
     Q_PROPERTY(bool canExport READ canExport NOTIFY changed)
     Q_PROPERTY(bool canReconcile READ canReconcile NOTIFY changed)
     Q_PROPERTY(quint64 promptToken READ promptToken NOTIFY changed)
+    Q_PROPERTY(quint64 resultId READ resultId NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(QString address READ address NOTIFY changed)
     Q_PROPERTY(QString publicLabel READ publicLabel NOTIFY changed)
@@ -41,6 +44,7 @@ public:
     bool canExport() const { return !m_closed && m_snapshot.can_export; }
     bool canReconcile() const { return m_snapshot.can_reconcile; }
     quint64 promptToken() const { return m_snapshot.prompt ? m_snapshot.prompt->id : 0; }
+    quint64 resultId() const { return m_snapshot.result ? m_snapshot.result->result : 0; }
     QString error() const { return m_snapshot.error; }
     QString address() const { return m_snapshot.inspection ? m_snapshot.inspection->payment.address : QString{}; }
     QString publicLabel() const { return m_snapshot.inspection ? m_snapshot.inspection->payment.label : QString{}; }
@@ -50,6 +54,7 @@ public:
     QString exportToken() const;
     FileExportOperationModel* fileExportOperation() const { return m_export; }
     Q_INVOKABLE bool requestSaveOriginal(const QString& token, const QString& path);
+    Q_INVOKABLE void chooseTarget(WalletQmlModel* wallet, SendRecipient* recipient);
     Q_INVOKABLE void use();
     Q_INVOKABLE void apply();
     Q_INVOKABLE void openReview();

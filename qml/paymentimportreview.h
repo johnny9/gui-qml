@@ -14,7 +14,7 @@ struct ReviewServices {
     using Done = std::function<void(psbtwork::ImportResult)>;
     std::function<execution::Admission(std::shared_ptr<const Inspection>, Done, TargetPort::Failed)> prepare;
     // Presentation handoff only; logical outcomes are retained before delivery.
-    std::function<void(std::shared_ptr<const psbtwork::ImportResult>, std::shared_ptr<const std::atomic_bool>)> present;
+    std::function<void(CommandKey, Child, std::shared_ptr<const psbtwork::ImportResult>, std::shared_ptr<const std::atomic_bool>)> present;
     uint64_t view{0};
 };
 std::shared_ptr<const TargetPort> WithReviewFactory(std::shared_ptr<const TargetPort> payment, ReviewServices services);

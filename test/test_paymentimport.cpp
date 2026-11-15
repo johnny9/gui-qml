@@ -77,7 +77,10 @@ struct Fixture {
 class PaymentImportTests : public QObject
 {
     Q_OBJECT
+    std::unique_ptr<ECC_Context> m_ecc;
 private Q_SLOTS:
+    void initTestCase() { m_ecc = std::make_unique<ECC_Context>(); }
+    void cleanupTestCase() { m_ecc.reset(); }
     void readerKeepsPublicMetadataSeparateFromPrivateNote() {
         const auto result = paymentimport::ReadSource({paymentimport::Input::Kind::Text, Uri()});
         QCOMPARE(result.kind, paymentimport::Kind::Payment); QCOMPARE(result.payment.address, Address());
@@ -215,7 +218,7 @@ private Q_SLOTS:
                 ++creates; psbtwork::ImportResult result; result.review = std::make_shared<const walletreview::Snapshot>(); result.document = Document(); done(result);
             }, [] {}, std::move(failed), {execution::Lane::Core, 512});
         };
-        services.present = [&](auto, auto) { ++presentations; };
+        services.present = [&](auto, auto, auto, auto) { ++presentations; };
         const auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
         const paymentimport::Child child{1, 1, paymentimport::ChildKind::CreateReview, Target(), false};
         std::optional<paymentimport::ChildReply> queried; const auto source = std::make_shared<const paymentimport::Inspection>(Psbt());
@@ -255,7 +258,7 @@ private Q_SLOTS:
                 ++creates; psbtwork::ImportResult value; value.review = std::make_shared<const walletreview::Snapshot>(); done(value);
             }, [] {}, std::move(failed), {execution::Lane::Core, 512});
         };
-        services.present = [&](auto, auto allowed) { gui = [&, allowed] { if (allowed->load()) ++installs; }; };
+        services.present = [&](auto, auto, auto, auto allowed) { gui = [&, allowed] { if (allowed->load()) ++installs; }; };
         const auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
         const paymentimport::Child child{1, 1, paymentimport::ChildKind::CreateReview, Target(), false};
         QVERIFY(port->dispatch({42, 1}, child, std::make_shared<const paymentimport::Inspection>(Psbt()), [](auto) {}, {}));
@@ -299,8 +302,18 @@ private Q_SLOTS:
         operation->cancel(); QVERIFY(!operation->requestSaveOriginal(operation->exportToken(), dir.filePath("closed")));
         model.closeAdmission(); commands.drain();
     }
+    void closedTypedSourcesReleaseTheirActionScopes() {
+        ManualRoutedExecution commands; BitcoinUriModel importer; QObject view;
+        importer.setServices({commands.scheduler, {}});
+        for (int n{0}; n < 32; ++n) {
+            auto* operation = importer.requestImport({paymentimport::Input::Kind::Text, Uri()}, {}, &view); QVERIFY(operation);
+            commands.drain(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+            operation->cancel(); commands.drain(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall); commands.drain();
+        }
+        importer.closeAdmission(); commands.drain();
+    }
     void realThreadSourceReadAndDomainDecisionsStayOutsideGui() {
-        BackendExecutor executor;
+        BackendExecutor executor{execution::Limits::Bounded()};
         std::atomic<QThread*> native{nullptr}, domain{nullptr};
         {
             paymentimport::Snapshot observed;

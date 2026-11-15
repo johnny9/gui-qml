@@ -2,12 +2,26 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/models/paymentimportoperation.h>
+#include <qml/models/walletqmlmodel.h>
+#include <QPointer>
 PaymentImportOperation::~PaymentImportOperation() { cancel(); }
 void PaymentImportOperation::project(paymentimport::Snapshot snapshot)
 {
     if (snapshot.owner != m_identity || snapshot.sequence <= m_snapshot.sequence) return;
+    if (m_closed || snapshot.phase == paymentimport::Phase::Closed) {
+        snapshot.inspection.reset(); snapshot.child_result.reset();
+    }
+    if (snapshot.phase == paymentimport::Phase::Closed) m_owner.reset();
     m_snapshot = std::move(snapshot);
     Q_EMIT changed();
+}
+void PaymentImportOperation::chooseTarget(WalletQmlModel* wallet, SendRecipient* recipient)
+{
+    if (m_closed || !m_owner) return;
+    const QPointer<PaymentImportOperation> self{this};
+    const auto actor = m_owner;
+    const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
+    if (self && !self->m_closed && self->m_owner == actor) actor->chooseTarget(target);
 }
 void PaymentImportOperation::use() { if (!m_closed && m_owner) m_owner->use(); }
 void PaymentImportOperation::apply() { if (!m_closed && m_owner) m_owner->apply(); }
@@ -18,7 +32,9 @@ void PaymentImportOperation::reconcile() { if (m_owner) m_owner->reconcile(); }
 void PaymentImportOperation::cancel()
 {
     if (std::exchange(m_closed, true)) return;
-    if (m_owner) m_owner->close();
+    if (const auto owner = std::exchange(m_owner, {})) owner->close();
+    m_snapshot.inspection.reset(); m_snapshot.child_result.reset();
+    Q_EMIT changed();
 }
 
 QString PaymentImportOperation::exportToken() const

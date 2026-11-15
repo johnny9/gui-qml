@@ -3383,6 +3383,7 @@ void WalletQmlModel::publishSendOperation()
 
 void WalletQmlModel::invalidateImportReview()
 {
+    m_imported_review_owner = 0; m_imported_review_child = 0;
     m_import_review_current->store(false);
     m_import_review_current = std::make_shared<std::atomic_bool>(true);
 }
@@ -3412,8 +3413,8 @@ std::shared_ptr<const paymentimport::TargetPort> WalletQmlModel::importTarget(Se
             return true;
         }, [](bool) {}, std::move(failed), execution::WorkClass::Observation, 2048);
     };
-    services.present = [post, observer, opening, current, view, review_identity, original_review](auto imported, auto presentation_allowed) {
-        post([observer, opening, current, view, review_identity, original_review, imported, presentation_allowed] {
+    services.present = [post, observer, opening, current, view, review_identity, original_review](auto key, auto child, auto imported, auto presentation_allowed) {
+        post([observer, opening, current, view, review_identity, original_review, key, child, imported, presentation_allowed] {
             if (!observer || !observer->observationsAllowed() || observer->m_opening != opening || !current->load() ||
                 observer->m_psbt_view_epoch != view || observer->m_current_review_identity != review_identity ||
                 observer->m_current_transaction != original_review || !presentation_allowed->load() || !imported->review) return;
@@ -3448,6 +3449,7 @@ std::shared_ptr<const paymentimport::TargetPort> WalletQmlModel::importTarget(Se
             observer->m_psbt_import_result = review->node_policy_blocked ? PsbtImportResult::ReviewPending
                 : review->can_send ? PsbtImportResult::WalletCanSign : PsbtImportResult::WalletCannotSign;
             observer->m_psbt_action_state = PsbtActionState::PsbtImported;
+            observer->m_imported_review_owner = key.owner; observer->m_imported_review_child = child.id;
             observer->adoptCurrentFlow(review->flow);
             if (!observer || observer->m_current_transaction != transaction) return;
             Q_EMIT observer->currentTransactionChanged();

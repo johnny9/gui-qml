@@ -81,20 +81,22 @@ std::shared_ptr<const TargetPort> WithReviewFactory(std::shared_ptr<const Target
         try { std::lock_guard lock{routes->mutex}; if (routes->calls.size() < DraftTarget::CAPACITY) inserted = routes->calls.emplace(key, call).second; }
         catch (...) { call->scope->activateCleanup(call->cleanup); throw; }
         if (!inserted) { call->scope->activateCleanup(call->cleanup); return execution::Admission{{}, execution::Rejection::Capacity}; }
-        const auto completed = [call, output, services, child, done](psbtwork::ImportResult result) {
+        const auto completed = [call, output, services, key, child, done](psbtwork::ImportResult result) {
             const bool current = services.current() && child.target.revision == services.view;
             ChildReply reply;
             {
                 std::lock_guard lock{call->mutex};
                 if (call->result) return;
                 *output = std::move(result);
+                if (output->disposition == psbtwork::ImportResult::Disposition::Known && output->message.isEmpty())
+                    output->message = QStringLiteral("This transaction is already known to the original wallet.");
                 // Every admitted attempt records its exact outcome before a
                 // callback can be lost; queries never prepare a second review.
                 reply = ChildReply{Receipt{child, current ? (output->review ? Outcome::ReviewOpened : Outcome::Rejected) : Outcome::Stale,
                     current && output->review ? child.id : 0, services.view}, {}, {}, output, call->presentation_allowed};
                 call->result = reply;
             }
-            if (current && services.present) { try { services.present(output, call->presentation_allowed); } catch (...) {} }
+            if (current && services.present) { try { services.present(key, child, output, call->presentation_allowed); } catch (...) {} }
             done(std::move(reply));
         };
         const auto rejected = [completed](std::exception_ptr) {
@@ -102,7 +104,9 @@ std::shared_ptr<const TargetPort> WithReviewFactory(std::shared_ptr<const Target
         };
         if (!services.current() || child.target.opening != payment->opening || child.target.draft != payment->draft ||
             child.target.recipient != payment->recipient || child.target.revision != services.view) {
-            return execution::Submit(*call->scope, [] { return psbtwork::ImportResult{}; }, completed, rejected, {execution::Lane::Domain, 512});
+            const auto admission = execution::Submit(*call->scope, [] { return psbtwork::ImportResult{}; }, completed, rejected, {execution::Lane::Domain, 512});
+            if (!admission) call->scope->activateCleanup(call->cleanup);
+            return admission;
         }
         execution::Admission admission;
         try { admission = services.prepare(std::move(source), completed, rejected); }
