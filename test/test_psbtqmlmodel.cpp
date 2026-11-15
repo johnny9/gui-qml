@@ -418,6 +418,47 @@ private Q_SLOTS:
         QVERIFY(!model.summaryPending());
         model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
     }
+    void sameGenerationRefreshRejectsRetiredSummaryPage()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        PsbtQmlModel model{nullptr, nullptr};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        const auto publish_all = [&] { while (!publications.empty()) { auto callback = std::move(publications.front()); publications.pop_front(); callback(); } };
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("summary-same-generation-refresh.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model.requestLoadFromFile(path)); transport.drain(); publish_all();
+        const auto original = model.summary(); QVERIFY(original.size() > 1);
+        const auto generation = model.documentGeneration();
+
+        model.requestSummaryWindow(1, 1);
+        transport.drain(); // Hold the old page's GUI notification.
+        QCOMPARE(publications.size(), size_t{1});
+        model.refreshState(QStringLiteral("same-generation refresh"));
+        QVERIFY(model.busy());
+        transport.drain();
+        QCOMPARE(publications.size(), size_t{2});
+        QCOMPARE(model.documentGeneration(), generation);
+
+        auto refreshed = std::move(publications.back());
+        publications.pop_back();
+        refreshed(); // Replace the immutable summary source before the old GUI notice.
+        QCOMPARE(model.status(), QStringLiteral("same-generation refresh"));
+        QCOMPARE(model.summaryOffset(), 0);
+        QCOMPARE(model.summary(), original);
+        QVERIFY(!model.summaryPending()); QVERIFY(model.summaryError().isEmpty());
+
+        auto retired = std::move(publications.front());
+        publications.pop_front();
+        retired(); // The old query shares the document generation, but not its page epoch.
+        QCOMPARE(model.documentGeneration(), generation);
+        QCOMPARE(model.summaryOffset(), 0);
+        QCOMPARE(model.summary(), original);
+        QVERIFY(!model.summaryPending()); QVERIFY(model.summaryError().isEmpty());
+        QVERIFY(publications.empty());
+        model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    }
     void closeWithSummaryOutcomeHeldDrainsWhileFacadeLives()
     {
         ManualRoutedExecution transport;
