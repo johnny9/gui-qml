@@ -819,6 +819,9 @@ TestCase {
     function clickNoteControl(root, name) {
         const item = findChild(root, name)
         verify(item !== null)
+        // Newly visible conflict buttons still share their old positions
+        // until the parent layouts polish. Click their actual final bounds.
+        for (let parent = item.parent; parent; parent = parent.parent) verify(waitForItemPolished(parent))
         verify(waitForItemPolished(item))
         tryVerify(function() {
             if (!item.visible || !item.enabled || item.width <= 0 || item.height <= 0) return false
