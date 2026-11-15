@@ -13,12 +13,14 @@ progress without changing shared finding or schedule registers.
 | R11 | Implementation/focused checkpoint complete:274 behavioral bodies,5 IPC scenarios; final qualification pending R42 |
 | R16 | Focused checkpoint integrated:227 native,19 Core integration,17 Linux QML bodies across recorded snapshots; final qualification pending R42 |
 | R17 | Focused conditional checkpoint integrated:177 worker ordinary bodies plus25 Mac; merged265-body gate passes. D048 remains unresolved, requires Core interface changes, with user-accepted deferral |
-| R14 | Security/storage in progress; private security extraction and reservation repair pass 166 focused bodies; whole-step gate pending |
+| R14 | Focused checkpoint integrated:310 bodies across preserved snapshots,26 pinned static entries andlint pass; merged375-body gate plus9 static entries/QMLlint/applint pass. Final qualification R42 |
 | R28 | Focused checkpoint integrated: 51 native, 56 Activity QML and one public Core/RPC body across recorded inputs; final qualification pending R42 |
 | R18 | Coin-selection/lock-operation extraction active in parallel with integration |
 | R12 | Focused checkpoint integrated:327 distinct bodies across recorded worker snapshots; merged50-body gate, QML lint, pinned tidy and app lint pass |
-| R13, R15 | Restore/migration and signer discovery implementation active on independent owners/build lanes |
-| R19–R27, R29–R40 | Authorized next, according to stated prerequisites; implementation and focused gates pending |
+| R13, R15 | Restore/migration and signer discovery implementation/focused repairs active on independent owners/build lanes |
+| R19 | Candidate preparation/review implementation active; focused gate under repair |
+| R29 | Shared label-editor preparation started; whole-stage ownership queued after R13 |
+| R20–R27, R30–R40 | Authorized next according to actual prerequisites; implementation/gates pending |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
