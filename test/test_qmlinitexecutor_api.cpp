@@ -350,9 +350,10 @@ void QmlInitExecutorApiTests::fatalInitializationRejectsPendingAndLaterShutdown(
 {
     PassiveStartupNode node;
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
-    QSemaphore release_init, release_interrupt;
+    QSemaphore entered_init, release_init, release_interrupt;
     std::atomic_bool interrupted{false};
     node.app_init_main_fn = [&](interfaces::BlockAndHeaderTipInfo*) -> bool {
+        entered_init.release();
         release_init.acquire();
         throw std::runtime_error{"init failed during shutdown"};
     };
@@ -366,12 +367,13 @@ void QmlInitExecutorApiTests::fatalInitializationRejectsPendingAndLaterShutdown(
     QSignalSpy interrupt_spy(&executor, &QmlInitExecutor::interruptResult);
     QSignalSpy shutdown_spy(&executor, &QmlInitExecutor::shutdownResult);
     executor.initialize();
+    QVERIFY(entered_init.tryAcquire(1,SIGNAL_TIMEOUT));
     coordinator.requestShutdown();
     release_init.release();
     QVERIFY(!runaway_spy.isEmpty() || runaway_spy.wait(SIGNAL_TIMEOUT));
     release_interrupt.release();
     QTRY_VERIFY_WITH_TIMEOUT(interrupted.load(), SIGNAL_TIMEOUT);
-    QTest::qWait(100);
+    DrainRetiredExecutors();
     // With no diagnostic owner, the receipt must not leave an idle action
     // capability on the live executor and prevent physical worker drain.
     QVERIFY(!executor.fatalDiagnosticScheduler());

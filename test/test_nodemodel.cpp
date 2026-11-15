@@ -27,6 +27,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -159,7 +160,7 @@ private Q_SLOTS:
         connect(model.get(),&NodeModel::chainStateReady,this,[&]{++chain_ready;});
         // Availability ingress is already admitted by the earlier connection;
         // reject the next fresh prompt intake, before any handoff is owned.
-        connect(model.get(),&NodeModel::networkActionReadyChanged,this,[&]{if(!armed){armed=true;env.rejectNext();}});
+        connect(model.get(),&NodeModel::networkBackendAvailabilityChanged,this,[&]{if(!armed){armed=true;env.rejectNext();}});
         connect(model.get(),&NodeModel::observationErrorChanged,this,[&]{rejection=true;model.reset();});
         model->addStartupWarnings({QStringLiteral("Original startup warning")});
         model->initializeResult(true,{},false,false);
@@ -966,13 +967,13 @@ void NodeModelTests::networkActionReadyFollowsInitializationAndShutdown()
 
     model.initializeResult(initialize_success, {}, false, false);
     QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
-    QCOMPARE(model.networkActionReady(), initialize_success);
+    QTRY_COMPARE_WITH_TIMEOUT(model.networkActionReady(), initialize_success, ASYNC_TIMEOUT_MS);
     QCOMPARE(ready.count(), initialize_success ? 1 : 0);
 
     if (direct_drain) model.beginShutdown();
     else model.requestShutdown();
     QVERIFY(!model.networkActionReady());
-    QCOMPARE(ready.count(), initialize_success ? 2 : 1);
+    QCOMPARE(ready.count(), initialize_success ? 2 : 0);
 
     // Repeated shutdown and a late successful initialization cannot enable
     // network controls after a shutdown request or worker retirement.
@@ -1725,7 +1726,7 @@ void NodeModelTests::startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings()
     QVERIFY(model.startupError().isEmpty());
 
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
-    QCOMPARE(runtime_dialog_spy.count(), 2);
+    QTRY_COMPARE_WITH_TIMEOUT(runtime_dialog_spy.count(), 2, ASYNC_TIMEOUT_MS);
     QVERIFY(!model.runtimeDialogVisible());
 
     QSignalSpy warnings_spy{&model, &NodeModel::warningsChanged};
@@ -1771,10 +1772,9 @@ void NodeModelTests::manualStartupCallbacksKeepTheirPresentationPhase()
     node.handle_message_box_fn = [&](auto callback) { message_box = std::move(callback); return MakeNoopHandler(); };
     node.handle_question_fn = [&](auto callback) { ask = std::move(callback); return MakeNoopHandler(); };
     ManualExecutionEnvironment env;
-    QSemaphore queued;
     auto loss = std::make_shared<std::atomic_bool>(false);
     NodeModel::Services services;
-    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); queued.release(); }};
+    services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
     services.diagnostic_loss = loss;
     NodeModel model{node, false, std::move(services)};
     std::thread native;
@@ -1790,7 +1790,6 @@ void NodeModelTests::manualStartupCallbacksKeepTheirPresentationPhase()
     QVERIFY(model.notificationsReady());
     QVERIFY(message_box);
     QVERIFY(ask);
-    while (queued.tryAcquire()) {}
     QSignalSpy initialized{&model, &NodeModel::nodeInitialized};
     QSignalSpy shutdown{&model, &NodeModel::requestedShutdown};
     native = std::thread([&] {
@@ -1799,17 +1798,20 @@ void NodeModelTests::manualStartupCallbacksKeepTheirPresentationPhase()
         else message_box(text, style);
         returned = true;
     });
-    QVERIFY(queued.tryAcquire(1, ASYNC_TIMEOUT_MS)); // The Native callback queued its owned request; GUI has not run it.
+    QTRY_VERIFY_WITH_TIMEOUT(!env.turnsIdle() || env.publicationCount() > 0 || returned.load(), ASYNC_TIMEOUT_MS);
+    // Native ingress is captured, but its Domain intake and GUI frame are held.
     QVERIFY(!model.runtimeDialogVisible());
-    if (question || (style & CClientUIInterface::MODAL)) QVERIFY(!returned.load());
-    env.publishAll();
+    if (dialog_expected) QVERIFY(!returned.load());
+    env.drain(); env.publishAll();
     QCOMPARE(model.runtimeDialogVisible(), dialog_expected);
     if (dialog_expected) {
         QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated startup message"));
         QCOMPARE(model.runtimeDialogQuestion(), question);
         model.answerRuntimeDialog(question ? CClientUIInterface::BTN_ABORT : CClientUIInterface::BTN_OK);
+        env.drain();
     }
     native.join();
+    env.drain(); env.publishAll();
     QVERIFY(returned.load());
     if (question) QVERIFY(!answer);
     QCOMPARE(initialized.size(), 0);
@@ -1862,18 +1864,29 @@ void NodeModelTests::manualStartupSummaryReportsAFullRuntimeQueue()
     QSignalSpy initialized{&model, &NodeModel::nodeInitialized};
     model.initializeResult(true, {}, false, false);
     QVERIFY(model.startupDiagnosticsPending());
-    // Initialization has changed the presentation phase, but its Native
-    // diagnostic projection is held while real callbacks fill the dialog queue.
+    env.drain();
+    // Physical diagnostic work settles, but its original GUI receipt stays
+    // held while Runtime ingress fills the owned prompt queue.
+    std::deque<std::function<void()>> held_projection;
+    while(auto turn=env.takePublicationBack())held_projection.push_front(std::move(turn));
+    const auto release_projection=[&]{
+        while(!held_projection.empty()){
+            auto turn=std::move(held_projection.front());held_projection.pop_front();turn();
+        }
+    };
+    const auto restore_projection=qScopeGuard([&]{release_projection();env.drain();env.publishAll();});
+    QVERIFY(!held_projection.empty());
     std::thread native([&] {
         for (int index = 0; index < 32; ++index) {
             message_box(Untranslated(QStringLiteral("Runtime message %1").arg(index).toStdString()), CClientUIInterface::ICON_INFORMATION);
         }
     });
     native.join();
-    env.publishAll();
+    env.drain();env.publishAll();
     QVERIFY(model.runtimeDialogVisible());
     QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Runtime message 0"));
     QCOMPARE(initialized.size(), 0);
+    release_projection();
     env.drain(); env.publishAll();
     QVERIFY(!model.startupDiagnosticsPending());
     QCOMPARE(initialized.size(), 1);
@@ -1884,6 +1897,7 @@ void NodeModelTests::manualStartupSummaryReportsAFullRuntimeQueue()
         QVERIFY(model.runtimeDialogVisible());
         QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Runtime message %1").arg(index));
         model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+        env.drain();env.publishAll();
     }
     QVERIFY(!model.runtimeDialogVisible());
     QVERIFY(!loss->load());
@@ -1913,19 +1927,33 @@ void NodeModelTests::manualStartupSummaryPreservesDiagnosticsWhenDialogTextBudge
     model.addStartupWarnings({QStringLiteral("Original startup warning remains in its details")});
     model.initializeResult(true, {}, false, false);
     QVERIFY(model.startupDiagnosticsPending());
+    env.drain();
+    // Physical diagnostic work settles, but its original GUI receipt stays
+    // held while Runtime ingress fills the owned prompt queue.
+    std::deque<std::function<void()>> held_projection;
+    while(auto turn=env.takePublicationBack())held_projection.push_front(std::move(turn));
+    const auto release_projection=[&]{
+        while(!held_projection.empty()){
+            auto turn=std::move(held_projection.front());held_projection.pop_front();turn();
+        }
+    };
+    const auto restore_projection=qScopeGuard([&]{release_projection();env.drain();env.publishAll();});
+    QVERIFY(!held_projection.empty());
     std::thread native([&] {
         message_box(Untranslated(std::string(startupdiagnostics::TextBudget::MAX_CHARS, 'r')), CClientUIInterface::ICON_INFORMATION);
     });
     native.join();
-    env.publishAll();
+    env.drain();env.publishAll();
     QVERIFY(model.runtimeDialogVisible());
     QVERIFY(model.runtimeDialogMessage().startsWith(QString(16384, QLatin1Char('r'))));
     QVERIFY(model.runtimeDialogMessage().contains(QStringLiteral("additional message text omitted")));
     QVERIFY(!loss->load()); // The full text was accepted on Native and remains retained by this request.
+    release_projection();
     env.drain(); env.publishAll();
     QVERIFY(!model.startupDiagnosticsPending());
     QVERIFY(loss->load());
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+    env.drain();env.publishAll();
     QVERIFY(model.runtimeDialogVisible());
     QCOMPARE(model.runtimeDialogTitle(), QStringLiteral("Warning"));
     QVERIFY(model.runtimeDialogMessage().contains(QStringLiteral("Original startup warning remains in its details")));
@@ -1935,6 +1963,7 @@ void NodeModelTests::manualStartupSummaryPreservesDiagnosticsWhenDialogTextBudge
     for (int row = 0; row < details->rowCount(); ++row) full += details->data(details->index(row, 0), Qt::UserRole + 1).toString();
     QVERIFY(full.contains(QStringLiteral("Original startup warning remains in its details")));
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+    env.drain();env.publishAll();
     QVERIFY(!model.runtimeDialogVisible());
 }
 
@@ -1958,8 +1987,8 @@ void NodeModelTests::manualStartupSummaryRejectsReentrantShutdown()
     bool interrupted{false};
     QSignalSpy shutdown{&model, &NodeModel::requestedShutdown};
     QSignalSpy dialogs{&model, &NodeModel::runtimeDialogChanged};
-    connect(&model, &NodeModel::networkActionReadyChanged, this, [&] {
-        if (interrupted || !model.networkActionReady()) return;
+    connect(&model, &NodeModel::networkBackendAvailabilityChanged, this, [&] {
+        if (interrupted || !model.networkBackendAvailable()) return;
         interrupted = true;
         model.requestShutdown();
     });
@@ -2062,7 +2091,7 @@ void NodeModelTests::manualInitializationStopsAfterPublicReentrancy()
         else if (invalidation == 3) model.reset();
     };
     switch (boundary) {
-    case 0: case 20: connect(model.get(), &NodeModel::networkActionReadyChanged, this, invalidate); break;
+    case 0: case 20: connect(model.get(), &NodeModel::networkBackendAvailabilityChanged, this, invalidate); break;
     case 1: case 19: connect(model.get(), &NodeModel::runtimeDialogChanged, this, invalidate); break;
     case 2: case 24: connect(model.get(), &NodeModel::blockTipHeightChanged, this, invalidate); break;
     case 3: case 25: connect(model.get(), &NodeModel::remainingSyncTimeChanged, this, invalidate); break;
@@ -2552,6 +2581,11 @@ void NodeModelTests::runtimeNonBlockingDialogsAreQueued()
     QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QSignalSpy runtime_dialog_spy{&model, &NodeModel::runtimeDialogChanged};
+    QStringList presented;
+    connect(&model,&NodeModel::runtimeDialogChanged,this,[&]{
+        if(model.runtimeDialogVisible())presented.push_back(model.runtimeDialogMessage());
+    });
+    const auto disconnect=qScopeGuard([&]{QObject::disconnect(&model,nullptr,this,nullptr);});
     message_box_fn(
         bilingual_str{"First", "Translated first"},
         CClientUIInterface::ICON_INFORMATION);
@@ -2568,13 +2602,12 @@ void NodeModelTests::runtimeNonBlockingDialogsAreQueued()
     QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated first"));
 
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
-    QCOMPARE(runtime_dialog_spy.count(), 2);
+    QTRY_COMPARE_WITH_TIMEOUT(model.runtimeDialogMessage(), QStringLiteral("Translated second"), ASYNC_TIMEOUT_MS);
     QVERIFY(model.runtimeDialogVisible());
-    QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated second"));
 
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
-    QCOMPARE(runtime_dialog_spy.count(), 3);
-    QVERIFY(!model.runtimeDialogVisible());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.runtimeDialogVisible(), ASYNC_TIMEOUT_MS);
+    QCOMPARE(presented,QStringList({QStringLiteral("Translated first"),QStringLiteral("Translated second")}));
 }
 
 void NodeModelTests::initializeFailureShowsStartupWarningsWithoutMakingThemCurrentWarnings()

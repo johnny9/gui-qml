@@ -186,6 +186,23 @@ private Q_SLOTS:
         QVERIFY(fixture.model->effect().attempted);
     }
 
+    void capturedExternalObservationOwnsAnIntentBeforeItsGuiProjection()
+    {
+        Fixture fixture;fixture.ready();
+        fixture.rpc(false);
+        fixture.model->observe(false,fixture.generation);
+        // Hold both Domain intake and its GUI frame. This explicit successor
+        // is based on the captured external notice, not the old displayed one.
+        QVERIFY(fixture.model->requestActive(true));
+        QCOMPARE(fixture.writes,0);
+        fixture.settle();
+        QCOMPARE(fixture.writes,1);QVERIFY(fixture.active);
+        QVERIFY(fixture.model->observedActive());QVERIFY(!fixture.model->pending());
+        QCOMPARE(fixture.model->outcome(),NetworkModel::Succeeded);
+        QCOMPARE(fixture.model->effect().before,uint64_t{2});
+        QCOMPARE(fixture.model->effect().after,uint64_t{3});
+    }
+
     void externalObservationSupersedesOlderQueuedIntent()
     {
         Command command;

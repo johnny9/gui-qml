@@ -160,8 +160,8 @@ TestCase {
         tryCompare(popup, "opened", true)
         compare(popup.prompt, original)
         compare(popup.parent, window.Overlay.overlay)
+        tryVerify(function() { return findChild(popup, "nodeRuntimeDialogButtonOk") !== null })
         const button = findChild(popup, "nodeRuntimeDialogButtonOk")
-        verify(button !== null)
         clickVisible(button)
         tryCompare(nodeModel, "runtimeDialogVisible", false)
     }

@@ -62,7 +62,7 @@ private:
     networkcommand::Projection m_projection;
     networkcommand::Error m_error{networkcommand::Error::None};
     Outcome m_outcome{Idle};
-    uint64_t m_request_id{0}, m_availability{0};
+    uint64_t m_request_id{0}, m_availability{0}, m_observation_ingress{0};
     bool m_ingress_pending{false}, m_available{false}, m_closed{false}, m_drained{false};
 };
 
