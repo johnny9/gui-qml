@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/backendexecutor.h>
+#include <qml/retainedsnapshot.h>
 #include <qml/asyncjoin.h>
 
 #include <QCoreApplication>
@@ -184,6 +185,38 @@ private Q_SLOTS:
         QCOMPARE(probe->consumed.load(), 42);
         QCOMPARE(scheduler->pending(), size_t{0});
         QVERIFY(executor.isDrained());
+    }
+    void nativeCleanupAffinityRetiresOnCoreWhileControlRemainsIndependent()
+    {
+        using namespace execution;
+        BackendExecutor executor{Limits::Bounded(),nullptr,BackendExecutor::CleanupAffinity::Core};
+        const auto scheduler=executor.scheduler();
+        const auto gate=std::make_shared<Gate>();
+        const auto release=qScopeGuard([gate]{gate->release.release();});
+        struct Probe {
+            std::atomic<QThread*> core{nullptr},cleanup{nullptr},control{nullptr};
+            std::atomic_int retired{0};
+            std::atomic_bool heartbeat{false};
+            QSemaphore read,interrupted;
+        };
+        const auto probe=std::make_shared<Probe>();
+        QVERIFY(Submit(*scheduler,[probe]{probe->core=QThread::currentThread();},[probe]{probe->read.release();}));
+        QVERIFY(probe->read.tryAcquire(1,TIMEOUT));
+        struct Native {
+            std::shared_ptr<Probe> probe;std::shared_ptr<Gate> gate;
+            Native(std::shared_ptr<Probe> p,std::shared_ptr<Gate> g):probe(std::move(p)),gate(std::move(g)){}
+            ~Native(){probe->cleanup=QThread::currentThread();gate->entered.release();gate->release.acquire();++probe->retired;}
+        };
+        auto value=RetainSnapshot<Native>(scheduler,[&]{return std::make_unique<Native>(probe,gate);});
+        QVERIFY(value);value.reset();
+        QVERIFY(gate->entered.tryAcquire(1,TIMEOUT));
+        QCOMPARE(probe->cleanup.load(),probe->core.load());QVERIFY(probe->core.load()!=qApp->thread());
+        QVERIFY(Submit(*scheduler,[probe]{probe->control=QThread::currentThread();probe->interrupted.release();},[] {},{}, {Lane::Control,128}));
+        QVERIFY(probe->interrupted.tryAcquire(1,TIMEOUT));
+        QVERIFY(probe->control.load()!=probe->core.load());QVERIFY(probe->control.load()!=qApp->thread());
+        QTimer::singleShot(0,this,[probe]{probe->heartbeat=true;});
+        executor.shutdown();QTRY_VERIFY(probe->heartbeat);QVERIFY(!executor.isDrained());QCOMPARE(probe->retired.load(),0);
+        gate->release.release();QTRY_VERIFY(executor.isDrained());QCOMPARE(probe->retired.load(),1);
     }
     void routedOwningOutcomeSurvivesDestroyedGuiOwner()
     {

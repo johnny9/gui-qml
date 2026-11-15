@@ -348,6 +348,9 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
     qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");
     qmlRegisterUncreatableType<NodeModel>("org.bitcoincore.qt", 1, 0, "NodeModel", "Provided by ApplicationModels");
+    qmlRegisterUncreatableType<NetworkModel>("org.bitcoincore.qt",1,0,"NetworkModel","Owned by node");
+    qmlRegisterUncreatableType<RuntimePromptModel>("org.bitcoincore.qt",1,0,"RuntimePromptModel","Owned by original node prompt");
+    qmlRegisterUncreatableMetaObject(nodelifecycle::staticMetaObject,"org.bitcoincore.qt",1,0,"NodeLifecycle","Lifecycle phase");
     qmlRegisterAnonymousType<NativeListModel>("org.bitcoincore.qt", 1);
     qmlRegisterUncreatableMetaObject(SettingsSaveResult::staticMetaObject,"org.bitcoincore.qt",1,0,"SettingsSaveResult","Retained settings outcome");
     qRegisterMetaType<SettingsSaveResult>();
@@ -615,6 +618,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
     const auto startup_failed=std::make_shared<std::atomic_bool>(false);
     const auto setup_record_failed=std::make_shared<std::atomic_bool>(false);
     const auto core_exit_status=std::make_shared<std::atomic_int>(EXIT_SUCCESS);
+    const auto lifecycle_failed=std::make_shared<std::atomic_bool>(false);
     const auto run_gui = [&]() -> int {
         noui_connect();
         Q_INIT_RESOURCE(bitcoin_qml);
@@ -889,7 +893,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                 *setup_record_failed=true;
                 InitWarning(Untranslated(QString{QStringLiteral("The startup outcome could not be saved. Setup will need review once settings storage is writable. ")+error}.toStdString()));
             }
-        }, [core_exit_status](int status) { core_exit_status->store(status); }};
+        }, [core_exit_status](int status) { core_exit_status->store(status); }, lifecycle_failed};
+        QObject::connect(&init_executor,&QmlInitExecutor::phaseChanged,&node_model,[&]{node_model.setLifecyclePhase(init_executor.phase());});
         QmlShutdownCoordinator shutdown_coordinator{init_executor};
         QPointer<QQuickWindow> main_window;
         bool shutdown_requested{false};
@@ -918,6 +923,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
         QObject::connect(&node_model, &NodeModel::requestedShutdown,
                          &shutdown_coordinator, &QmlShutdownCoordinator::requestShutdown);
+        shutdown_coordinator.addAdmissionFence([&] { init_executor.closeAdmission(); });
         shutdown_coordinator.addAdmissionFence([&] { node_model.closeAdmission(); });
         shutdown_coordinator.addAdmissionFence([amount_admission] { *amount_admission = true; });
         shutdown_coordinator.addAdmissionFence([&] { bitcoin_uri_model.closeAdmission(); });
@@ -1248,7 +1254,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
     const auto gui_exit_code = run_gui();
     const int native_exit_code=core_exit_status->load();
     const int exit_code=native_exit_code!=EXIT_SUCCESS?native_exit_code
-        : startup_failed->load()||setup_record_failed->load()?EXIT_FAILURE:gui_exit_code;
+        : lifecycle_failed->load()||startup_failed->load()||setup_record_failed->load()?EXIT_FAILURE:gui_exit_code;
     // QApplication and every GUI owner have been destroyed. Flush and join the
     // process writer before deciding the actual externally visible exit status.
     finish_qt_logging();
