@@ -52,7 +52,30 @@ struct PeerPresentation {
     QString mappedAS;
     QString permission;
 };
-struct PeerRecord { CNodeCombinedStats raw; PeerPresentation presentation; };
+/** Public connection facts, copied while the immutable peer row is prepared.
+ * A numeric ID alone is not authority to act on a later connection. An empty
+ * transport session can become populated during the original handshake. */
+struct PeerConnection {
+    QString key;
+    qint64 node_id{-1};
+    NodeClock::time_point connected;
+    CService endpoint;
+    QString session;
+    QString raw_address;
+    QString display_address;
+    bool ban_supported{false};
+};
+inline bool SamePeerConnection(const PeerConnection& expected, const PeerConnection& current)
+{
+    return expected.node_id == current.node_id && expected.connected == current.connected && expected.endpoint == current.endpoint &&
+        (expected.session.isEmpty() || expected.session == current.session);
+}
+inline bool SamePeerConnection(const CNodeStats& expected, const CNodeStats& current)
+{
+    return expected.nodeid == current.nodeid && expected.m_connected == current.m_connected && expected.addr == current.addr &&
+        (expected.m_session_id.empty() || expected.m_session_id == current.m_session_id);
+}
+struct PeerRecord { CNodeCombinedStats raw; PeerPresentation presentation; PeerConnection connection; };
 
 /** GUI presentation subscription. The receiver owns this port and remains
  * valid until observerObject() emits destroyed; no Native work uses the port. */

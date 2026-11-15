@@ -12,6 +12,7 @@
 #include <set>
 
 #include <QModelIndex>
+#include <QPointer>
 #include <QStringList>
 #include <QVariant>
 
@@ -22,6 +23,7 @@ class Node;
 QT_BEGIN_NAMESPACE
 class QTimer;
 QT_END_NAMESPACE
+class PeerCommandPort;
 
 class PeerListModel : public NativeListModel
 {
@@ -42,6 +44,9 @@ public:
     void closeAdmission() override;
     int rowForId(qint64 id) const { return indexForKey(QString::number(id)); }
     void watchDetails(qint64 id, PeerPresentationObserver* details);
+    void setCommands(PeerCommandPort* commands);
+    PeerCommandPort* commands() const;
+    bool readingAvailable() const { return !stopping(); }
 
     enum Role {
         StatsRole = Qt::UserRole,
@@ -56,6 +61,8 @@ public:
         Received,
         Subversion,
         Transport,
+        ConnectionId,
+        NodeIdText,
     };
 
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -64,6 +71,8 @@ public:
 
 public Q_SLOTS:
     void refresh();
+Q_SIGNALS:
+    void commandsChanged();
 
 protected:
     void rowUpdated(const QString& key, const NativeRowHandle& row) override;
@@ -75,5 +84,9 @@ private:
     QTimer* m_timer{nullptr};
     bool m_backend_ready;
     bool m_auto_refresh_requested{false};
+    bool m_destroying{false};
+    PeerCommandPort* m_commands{nullptr};
+    QPointer<QObject> m_commands_object;
+    QMetaObject::Connection m_commands_change, m_commands_destroyed;
 };
 #endif // BITCOIN_QML_MODELS_PEERLISTMODEL_H

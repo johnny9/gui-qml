@@ -6,8 +6,10 @@
 #define BITCOIN_QML_MODELS_PEERDETAILSMODEL_H
 
 #include <qml/models/peerrecord.h>
+#include <qml/peercommandport.h>
 
 #include <QObject>
+#include <QPointer>
 
 class PeerListModel;
 
@@ -15,6 +17,11 @@ class PeerDetailsModel : public QObject, public PeerPresentationObserver
 {
     Q_OBJECT
     Q_PROPERTY(qint64 nodeId READ nodeId NOTIFY dataChanged)
+    Q_PROPERTY(QString nodeIdText READ nodeIdText CONSTANT)
+    Q_PROPERTY(QString connectionId READ connectionId CONSTANT)
+    Q_PROPERTY(bool connected READ connected NOTIFY dataChanged)
+    Q_PROPERTY(bool canDisconnect READ canDisconnect NOTIFY dataChanged)
+    Q_PROPERTY(bool canBan READ canBan NOTIFY dataChanged)
     Q_PROPERTY(QString rawAddress READ rawAddress CONSTANT)
     Q_PROPERTY(QString address READ address NOTIFY dataChanged)
     Q_PROPERTY(QString addressLocal READ addressLocal NOTIFY dataChanged)
@@ -49,6 +56,15 @@ class PeerDetailsModel : public QObject, public PeerPresentationObserver
 public:
     explicit PeerDetailsModel(PeerStatsHandle stats, PeerListModel* model);
     qint64 nodeId() const { return m_node_id; }
+    QString nodeIdText() const { return m_node_id < 0 ? QString{} : QString::number(m_node_id); }
+    QString connectionId() const { return m_connection.key; }
+    bool connected() const;
+    PeerConnection commandTarget() const { return m_connection; }
+    PeerListModel* source() const;
+    bool canDisconnect() const;
+    bool canBan() const;
+    Q_INVOKABLE PeerCommandOperation* prepareDisconnect();
+    Q_INVOKABLE PeerCommandOperation* prepareBan(PeerCommandOperation::BanDuration duration);
     QString rawAddress() const { return m_cache.rawAddress; }
     QString address() const { return m_cache.address; }
     QString addressLocal() const { return m_cache.addressLocal; }
@@ -87,7 +103,9 @@ Q_SIGNALS:
     void disconnected();
 private:
     qint64 m_node_id{-1};
+    QPointer<PeerListModel> m_model;
     PeerPresentation m_cache;
-    bool m_disconnected{false};
+    PeerConnection m_connection;
+    bool m_disconnected{true};
 };
 #endif // BITCOIN_QML_MODELS_PEERDETAILSMODEL_H

@@ -14,6 +14,7 @@
 #include <qml/models/runtimepromptmodel.h>
 #include <qml/nodelifecycle.h>
 #include <qml/snapshotquery.h>
+#include <qml/models/peercommandmodel.h>
 
 #include <deque>
 #include <memory>
@@ -68,6 +69,7 @@ class NodeModel : public QObject
     Q_PROPERTY(bool networkActionReady READ networkActionReady NOTIFY networkActionReadyChanged)
     Q_PROPERTY(bool networkActionPending READ networkActionPending NOTIFY networkActionPendingChanged)
     Q_PROPERTY(bool peerActionPending READ peerActionPending NOTIFY peerActionChanged)
+    Q_PROPERTY(PeerCommandModel* peerCommands READ peerCommands CONSTANT)
     Q_PROPERTY(QString networkActionError READ networkActionError NOTIFY networkActionErrorChanged)
     Q_PROPERTY(bool pause READ pause WRITE setPause NOTIFY pauseChanged)
     Q_PROPERTY(bool faulted READ errorState WRITE setErrorState NOTIFY errorStateChanged)
@@ -125,7 +127,8 @@ public:
     bool networkBackendAvailable() const { return m_backend_queries_ready && m_subscriptions_ready && !m_admission_closed && !m_shutdown_requested && !m_workers_stopping; }
     // Command readiness additionally requires an actual current observation.
     bool networkActionReady() const { return networkBackendAvailable() && m_network_model && m_network_model->ready(); }
-    bool peerActionPending() const { return bool(m_peer_command); }
+    bool peerActionPending() const { return m_peer_actions && m_peer_actions->pending(); }
+    PeerCommandModel* peerCommands() const { return m_peer_actions; }
     enum class PeerActionOutcome { Succeeded, Rejected, PartiallyApplied, Uncertain };
     Q_ENUM(PeerActionOutcome)
     bool networkActionPending() const { return m_network_action_pending; }
@@ -267,11 +270,7 @@ private:
     QString m_status_error, m_mempool_error, m_shutdown_error;
     bool m_status_ready{false};
     bool m_admission_closed{false};
-    struct PeerActionResult { PeerActionOutcome outcome; QString error; };
-    std::shared_ptr<execution::OwnedCommand<PeerActionResult>> m_peer_command;
-    quint64 m_peer_ticket{0};
-    quint64 startPeerAction(std::function<PeerActionResult()> effect);
-    void publishPeerAction(quint64 ticket);
+    PeerCommandModel* m_peer_actions{nullptr};
     QString m_information_local_addresses;
     QString m_information_data_dir, m_information_blocks_dir, m_information_network;
     int m_information_header_height{0}, m_information_block_height{0};
