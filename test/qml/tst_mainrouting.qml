@@ -379,6 +379,43 @@ TestCase {
         compare(findChild(window, "createWalletWizard"), null)
     }
 
+    function test_onboarding_wallet_presentation_waits_for_the_original_runtime_prompt() {
+        const window = createMain(true, true, true, false, false)
+        nodeModel.setRuntimeDialogForTest("Original runtime prompt", "Continue?", DialogButtonBox.Ok, true)
+        tryCompare(findChild(window, "nodeRuntimeDialog"), "opened", true)
+        walletController.setInitialized(true)
+        walletListModel.setWalletDirLoaded(true)
+        tryCompare(window, "postOnboardingWalletRouteResolved", true)
+        wait(0)
+        compare(findChild(window, "walletCreationModal").visible, false)
+        compare(walletController.creationCalls, 0)
+        nodeModel.answerRuntimeDialog(DialogButtonBox.Ok)
+        tryCompare(nodeModel, "runtimeDialogVisible", false)
+        tryCompare(findChild(window, "walletCreationModal"), "opened", true)
+        compare(findChild(window, "blockClockTabButton").checked, true)
+        compare(walletController.creationCalls, 0)
+    }
+
+    function test_a_new_catalog_fact_cancels_the_original_deferred_wallet_presentation() {
+        const window = createMain(true, true, true, false, false)
+        nodeModel.setRuntimeDialogForTest("Original runtime prompt", "Continue?", DialogButtonBox.Ok, true)
+        tryCompare(findChild(window, "nodeRuntimeDialog"), "opened", true)
+        walletController.setInitialized(true)
+        walletListModel.setWalletDirLoaded(true)
+        tryCompare(window, "postOnboardingWalletRouteResolved", true)
+        walletController.setNoWalletsFound(false)
+        nodeModel.answerRuntimeDialog(DialogButtonBox.Ok)
+        tryCompare(nodeModel, "runtimeDialogVisible", false)
+        wait(0)
+        compare(findChild(window, "walletCreationModal").visible, false)
+        // Returning to an empty catalog is a successor observation, not a
+        // replay of the completed onboarding presentation request.
+        walletController.setNoWalletsFound(true)
+        wait(0)
+        compare(findChild(window, "walletCreationModal").visible, false)
+        compare(walletController.creationCalls, 0)
+    }
+
     function test_shell_round_trip_retains_the_original_dirty_settings_context_data() {
         return [{tag: "wallet-shell", wallet: true}, {tag: "node-shell", wallet: false}]
     }

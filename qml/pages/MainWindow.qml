@@ -44,6 +44,7 @@ ApplicationWindow {
     readonly property bool desktopWalletMode: walletAvailableForUi && appModeDesktopForUi
     readonly property bool waitForPostOnboardingWalletRoute: preInitOnboardingRanForUi && desktopWalletMode
     property bool postOnboardingWalletRouteResolved: false
+    property bool onboardingWalletPresentationPending: false
     property bool shutdownInProgress: false
     readonly property var menuEditTarget: appWindow.editTarget(appWindow.activeFocusItem)
     readonly property var menuWalletController: appWindow.desktopWalletMode ? ApplicationModels.walletController : null
@@ -63,6 +64,13 @@ ApplicationWindow {
         && (!appWindow.waitForPostOnboardingWalletRoute || appWindow.postOnboardingWalletRouteResolved)
         && !appWindow.modalNavigationBlocked
         && !appWindow.shutdownInProgress && !ApplicationModels.nodeModel.fatalException
+    readonly property bool onboardingWalletPresentationAdmitted: appWindow.onboardingWalletPresentationPending
+        && appWindow.desktopWalletMode && appWindow.menuNavigationEnabled
+        && walletCreationModal.item !== null && ApplicationModels.walletController.noWalletsFound
+
+    onDesktopWalletModeChanged: {
+        if (!appWindow.desktopWalletMode) appWindow.onboardingWalletPresentationPending = false
+    }
 
     enum NavigationRoute { RouteCloseWallet, RouteBackup, RouteImportUri, RouteSignMessage,
         RouteVerifyMessage, RouteImportPsbt, RouteNode, RouteActivity, RouteSend,
@@ -136,6 +144,7 @@ ApplicationWindow {
         if (!appWindow.desktopWalletMode || !appWindow.menuNavigationEnabled) {
             return
         }
+        appWindow.onboardingWalletPresentationPending = false
         walletCreationModal.open()
     }
 
@@ -159,8 +168,7 @@ ApplicationWindow {
         }
         appWindow.postOnboardingWalletRouteResolved = true
         if (ApplicationModels.walletController.noWalletsFound) {
-            appWindow.routeToShell(MainWindow.RouteNode)
-            onboardingWalletPresentation.restart()
+            appWindow.onboardingWalletPresentationPending = true
         }
     }
 
@@ -175,9 +183,15 @@ ApplicationWindow {
         id: onboardingWalletPresentation
         interval: 0
         repeat: false
+        running: appWindow.onboardingWalletPresentationAdmitted
         onTriggered: {
-            if (appWindow.desktopWalletMode && appWindow.menuNavigationEnabled
-                    && ApplicationModels.walletController.noWalletsFound) walletCreationModal.openForOnboarding()
+            if (!appWindow.onboardingWalletPresentationAdmitted) return
+            appWindow.routeToShell(MainWindow.RouteNode)
+            // Navigation can synchronously publish another owned modal or
+            // stopping state. Retain this presentation until it is admitted.
+            if (!appWindow.onboardingWalletPresentationAdmitted) return
+            appWindow.onboardingWalletPresentationPending = false
+            walletCreationModal.openForOnboarding()
         }
     }
 
@@ -384,11 +398,13 @@ ApplicationWindow {
         target: ApplicationModels.nodeModel
         function onFatalExceptionChanged() {
             if (!ApplicationModels.nodeModel.fatalException) return
+            appWindow.onboardingWalletPresentationPending = false
             appWindow.showNormal()
             appWindow.raise()
             appWindow.requestActivate()
         }
         function onRequestedShutdown() {
+            appWindow.onboardingWalletPresentationPending = false
             appWindow.shutdownInProgress = true
         }
     }
@@ -417,6 +433,7 @@ ApplicationWindow {
             appWindow.resolvePostOnboardingWalletRoute()
         }
         function onNoWalletsFoundChanged() {
+            if (!ApplicationModels.walletController.noWalletsFound) appWindow.onboardingWalletPresentationPending = false
             appWindow.resolvePostOnboardingWalletRoute()
         }
     }
@@ -486,6 +503,8 @@ ApplicationWindow {
         id: nodeStack
         vertical: true
         property bool settingsInstantiated: false
+        property bool settingsPresentationPending: false
+        property string settingsPresentationSection: ""
         readonly property SettingsView settingsView: nodeSettings.item as SettingsView
         readonly property bool modalNavigationBlocked: settingsView !== null
             && settingsView.visible
@@ -494,6 +513,7 @@ ApplicationWindow {
         initialItem: node
 
         function resetToRoot() {
+            nodeStack.settingsPresentationPending = false
             ApplicationModels.peerTableModel.stopAutoRefresh()
             if (nodeStack.depth > 1) {
                 nodeStack.pop(null, StackView.Immediate)
@@ -502,13 +522,31 @@ ApplicationWindow {
 
         function openSettings(section) {
             nodeStack.resetToRoot()
+            nodeStack.settingsPresentationSection = section || ""
+            nodeStack.settingsPresentationPending = true
             nodeStack.settingsInstantiated = true
+            nodeStack.presentSettingsIfReady()
+        }
+
+        function presentSettingsIfReady() {
             const page = nodeStack.settingsView
-            if (page === null) return
+            if (!nodeStack.settingsPresentationPending || page === null
+                    || appWindow.nodeShell !== nodeStack || !appWindow.menuNavigationEnabled) return
+            const section = nodeStack.settingsPresentationSection
+            nodeStack.settingsPresentationPending = false
             nodeStack.push(page, {}, StackView.Immediate)
-            if (section) {
+            if (section && nodeStack.currentItem === page && appWindow.nodeShell === nodeStack
+                    && appWindow.menuNavigationEnabled && nodeStack.settingsPresentationSection === section) {
                 page.selectSection(section)
             }
+        }
+
+        Timer {
+            interval: 0
+            repeat: false
+            running: nodeStack.settingsPresentationPending && nodeStack.settingsView !== null
+                && appWindow.nodeShell === nodeStack && appWindow.menuNavigationEnabled
+            onTriggered: nodeStack.presentSettingsIfReady()
         }
 
         function openNode() {
@@ -537,6 +575,7 @@ ApplicationWindow {
             width: nodeStack.width
             height: nodeStack.height
             sourceComponent: settingsPage
+            onLoaded: nodeStack.presentSettingsIfReady()
         }
         Component {
             id: node
