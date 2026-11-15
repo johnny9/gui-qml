@@ -15,9 +15,10 @@ progress without changing shared finding or schedule registers.
 | R17 | Focused conditional checkpoint integrated:177 worker ordinary bodies plus25 Mac; merged265-body gate passes. D048 remains unresolved, requires Core interface changes, with user-accepted deferral |
 | R14 | Focused checkpoint integrated:310 bodies across preserved snapshots,26 pinned static entries andlint pass; merged375-body gate plus9 static entries/QMLlint/applint pass. Final qualification R42 |
 | R28 | Focused checkpoint integrated: 51 native, 56 Activity QML and one public Core/RPC body across recorded inputs; final qualification pending R42 |
-| R18 | Coin-selection/lock-operation extraction active in parallel with integration |
+| R18 | Candidate integrated; original parent manual-fallback/avoid-reuse failures reproduced and candidate3/3pass. Combined new manual regression passes. Remaining focused lock/cancel/per-item and5000-coin follow-up active |
 | R12 | Focused checkpoint integrated:327 distinct bodies across recorded worker snapshots; merged50-body gate, QML lint, pinned tidy and app lint pass |
-| R13, R15 | Restore/migration and signer discovery implementation/focused repairs active on independent owners/build lanes |
+| R15 | Focused checkpoint integrated:135 worker Linux bodies and31 supplemental Mac; merged206 actual behaviors pass, manifest count corrected by affected7-case rerun plus1newCore regression (207 distinct). QMLlint,11pinned static entries and app lint pass; R24 signing handoffs/R42 qualification pending |
+| R13 | Restore/migration final reduced Desktop18 +2compatibility scenarios pass; clean handoff/scope reconciliation pending |
 | R19 | Candidate preparation/review implementation active; focused gate under repair |
 | R29 | Shared label-editor preparation started; whole-stage ownership queued after R13 |
 | R20–R27, R30–R40 | Authorized next according to actual prerequisites; implementation/gates pending |
