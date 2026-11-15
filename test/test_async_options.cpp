@@ -506,8 +506,14 @@ private Q_SLOTS:
         QTRY_VERIFY(!model.settingsPending());
         QVERIFY(!model.settingsError().isEmpty());
         QVERIFY(model.externalSignerPath().isEmpty());
+        const QString signer_path = fixture.directory.filePath(QStringLiteral("fake-signer"));
+        QFile signer{signer_path};
+        QVERIFY(signer.open(QIODevice::WriteOnly));
+        QCOMPARE(signer.write("#!/bin/sh\nexit 0\n"), qint64{17});
+        signer.close();
+        QVERIFY(signer.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
         model.requestExternalSignerPathValidation(QStringLiteral("/definitely/missing/signer"));
-        model.requestExternalSignerPathValidation(QStringLiteral("hwi"));
+        model.requestExternalSignerPathValidation(signer_path);
         QTRY_VERIFY(!model.signerPathValidationPending());
         QVERIFY(model.signerPathError().isEmpty());
         QSignalSpy selected(&model, &OptionsQmlModel::dataDirSelectionFinished);
