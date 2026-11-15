@@ -116,7 +116,7 @@ private:
 } // namespace walletsend
 
 namespace walletsigning {
-enum class Error { None, InvalidFee, ChangedTransaction, SignerNotFound, SignerFailed, Fill, Failed, Uncertain, UnverifiedInputs, InvalidSignature, UnverifiedSignatures };
+enum class Error { None, InvalidFee, ChangedTransaction, SignerNotFound, SignerFailed, Fill, Failed, Uncertain, UnverifiedInputs, InvalidSignature, UnverifiedSignatures, FeeUnavailable };
 struct Request {
     CTransactionRef reviewed;
     std::shared_ptr<const PartiallySignedTransaction> document;

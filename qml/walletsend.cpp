@@ -624,7 +624,10 @@ namespace walletsigning {
 static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request)
 {
     Result result;
-    if (!request.reviewed || !request.proof || !request.approved_fee) {
+    if (!request.proof || !request.proof->amount || !request.approved_fee) {
+        result.error = Error::FeeUnavailable; return result;
+    }
+    if (!request.reviewed) {
         result.error = Error::InvalidFee; return result;
     }
     if (!wallet.hasExternalSigner()) { result.error = Error::SignerNotFound; return result; }
@@ -871,7 +874,11 @@ execution::Admission ApprovalOwner::request(uint64_t attempt_id, uint64_t review
             reject(Error::Failed);
             return;
         }
-        if (!retained_request->reviewed || !retained_request->proof || !retained_request->approved_fee) {
+        if (!retained_request->proof || !retained_request->proof->amount || !retained_request->approved_fee) {
+            reject(Error::FeeUnavailable);
+            return;
+        }
+        if (!retained_request->reviewed) {
             reject(Error::InvalidFee);
             return;
         }

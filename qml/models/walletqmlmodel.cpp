@@ -2946,6 +2946,7 @@ void WalletQmlModel::publishApproval(walletsigning::ApprovalSnapshot snapshot)
     m_approval_error.clear(); m_approval_signer_not_found = value.error == walletsigning::Error::SignerNotFound;
     switch (value.error) {
     case walletsigning::Error::None: break;
+    case walletsigning::Error::FeeUnavailable: m_approval_error = tr("The transaction fee is missing or invalid."); break;
     case walletsigning::Error::InvalidFee: m_approval_error = tr("The transaction fee changed after review."); break;
     case walletsigning::Error::ChangedTransaction: m_approval_error = tr("External signer changed the reviewed transaction."); break;
     case walletsigning::Error::SignerNotFound: m_approval_error = tr("External signer not found. Connect one device and try again."); break;

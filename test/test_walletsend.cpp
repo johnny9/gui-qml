@@ -444,7 +444,7 @@ private Q_SLOTS:
     void signingApprovalRejectsIncompleteAuthorityBeforeDeviceWork_data()
     {
         QTest::addColumn<int>("mode");
-        const std::array names{"missing-review", "missing-proof", "missing-fee", "fee-changed", "unsigned-terms-changed", "signer-missing", "missing-output-owner"};
+        const std::array names{"missing-review", "missing-proof", "missing-fee", "fee-changed", "unsigned-terms-changed", "signer-missing", "missing-output-owner", "unknown-proof-fee"};
         for (size_t i{0}; i < names.size(); ++i) QTest::newRow(names[i]) << int(i);
     }
     void signingApprovalRejectsIncompleteAuthorityBeforeDeviceWork()
@@ -462,13 +462,62 @@ private Q_SLOTS:
             changed.outputs[0].amount = 999;
             request.document = std::make_shared<const PartiallySignedTransaction>(std::move(changed));
         }
+        if (mode == 7) {
+            auto proof = std::make_shared<psbtfee::Analysis>(*request.proof);
+            proof->amount.reset(); proof->state = psbtfee::State::Missing;
+            request.proof = std::move(proof);
+        }
         const auto result = mode == 6 ? walletsigning::ApproveInto(*f.wallet, request, {})
             : walletsigning::Approve(*f.wallet, request, f.opening);
-        QCOMPARE(result.error, mode == 5 ? walletsigning::Error::SignerNotFound : mode == 6 ? walletsigning::Error::Failed : walletsigning::Error::InvalidFee);
+        const auto expected = mode == 1 || mode == 2 || mode == 7 ? walletsigning::Error::FeeUnavailable
+            : mode == 5 ? walletsigning::Error::SignerNotFound : mode == 6 ? walletsigning::Error::Failed : walletsigning::Error::InvalidFee;
+        QCOMPARE(result.error, expected);
         QVERIFY(!result.document && !result.signed_transaction && !result.partial);
         QCOMPARE(f.wallet->fill_options.size(), size_t{0});
         QCOMPARE(f.wallet->commits, 0); QCOMPARE(f.wallet->unlocks, 0); QCOMPARE(f.wallet->locks, 0);
         QCOMPARE(psbtwork::SerializeRaw(*send.psbt), original);
+    }
+    void unavailableFeeOwnsTheOriginalApprovalOutcome_data()
+    {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("missing-proof") << 0;
+        QTest::newRow("missing-approved-fee") << 1;
+        QTest::newRow("unknown-proof-amount") << 2;
+    }
+    void unavailableFeeOwnsTheOriginalApprovalOutcome()
+    {
+        QFETCH(int, mode);
+        Fixture f; f.wallet->signer = true;
+        const auto send = PsbtRequest(); const auto original = psbtwork::SerializeRaw(*send.psbt);
+        auto request = walletopening::RetainValues<walletsigning::Request>(f.opening, [&] {
+            return std::make_unique<walletsigning::Request>(send.reviewed, send.psbt, send.proof, send.approved_fee);
+        });
+        QVERIFY(request);
+        if (mode == 0) request->proof.reset();
+        if (mode == 1) request->approved_fee.reset();
+        if (mode == 2) {
+            auto proof = std::make_shared<psbtfee::Analysis>(*request->proof);
+            proof->amount.reset(); proof->state = psbtfee::State::Missing;
+            request->proof = std::move(proof);
+        }
+        std::vector<walletsigning::ApprovalSnapshot> snapshots;
+        auto owner = std::make_shared<walletsigning::ApprovalOwner>(f.opening, [&snapshots](auto snapshot) { snapshots.push_back(std::move(snapshot)); });
+        constexpr uint64_t review{71}, view{4}, attempt{91};
+        QVERIFY(owner->reviewChanged(review, view)); f.commands.drain();
+        QVERIFY(owner->request(attempt, review, view, std::move(request)));
+        QCOMPARE(f.wallet->signs, 0); QVERIFY(f.wallet->fill_options.empty());
+        f.commands.drain();
+        const auto original_outcome = snapshots.back();
+        QCOMPARE(original_outcome.error, walletsigning::Error::FeeUnavailable);
+        QCOMPARE(original_outcome.phase, walletsigning::ApprovalPhase::Failed);
+        QCOMPARE(original_outcome.attempt_id, attempt); QCOMPARE(original_outcome.attempt_review, review); QCOMPARE(original_outcome.attempt_view, view);
+        QVERIFY(original_outcome.publishable); QVERIFY(!original_outcome.in_flight);
+        QVERIFY(owner->reviewChanged(review + 1, view + 1)); f.commands.drain();
+        QCOMPARE(snapshots.back().current_review, review + 1); QCOMPARE(snapshots.back().current_view, view + 1);
+        QCOMPARE(original_outcome.error, walletsigning::Error::FeeUnavailable); QCOMPARE(original_outcome.attempt_review, review);
+        QCOMPARE(f.wallet->signs, 0); QCOMPARE(f.wallet->commits, 0); QCOMPARE(f.wallet->unlocks, 0); QCOMPARE(f.wallet->locks, 0);
+        QVERIFY(f.wallet->fill_options.empty()); QCOMPARE(psbtwork::SerializeRaw(*send.psbt), original);
+        QVERIFY(owner->close()); f.commands.drain();
     }
     void approvalCannotStartDeviceWorkWithoutReservedOutput()
     {
