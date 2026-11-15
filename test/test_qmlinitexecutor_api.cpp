@@ -126,6 +126,28 @@ private Q_SLOTS:
         DrainRetiredExecutors();
         QCOMPARE(node.calls.appInitMain.load(),0);QCOMPARE(node.calls.startShutdown.load(),0);QCOMPARE(node.calls.appShutdown.load(),0);
     }
+    void terminalShutdownRejectsLateControlIngress_data(){
+        QTest::addColumn<bool>("reentrant");QTest::newRow("Stopped-signal")<<true;QTest::newRow("after-Stopped")<<false;
+    }
+    void terminalShutdownRejectsLateControlIngress(){
+        QFETCH(bool,reentrant);NormalExitNode node;
+        node.app_init_main_fn=[](interfaces::BlockAndHeaderTipInfo*){return true;};
+        node.is_initial_block_download_fn=[]{return false;};node.shutdown_requested_fn=[]{return false;};
+        node.start_shutdown_fn=[]{};node.app_shutdown_fn=[]{};
+        const auto drain=qScopeGuard([]{DrainRetiredExecutors();});QmlInitExecutor executor{node};
+        QSignalSpy initialized{&executor,&QmlInitExecutor::initializeResult},finished{&executor,&QmlInitExecutor::shutdownResult},fatal{&executor,&QmlInitExecutor::runawayException};
+        int terminal_observations{0};
+        const auto disconnect=qScopeGuard([&]{QObject::disconnect(&executor,nullptr,this,nullptr);});
+        const auto late=[&]{executor.initialize();executor.interrupt();executor.shutdown();};
+        connect(&executor,&QmlInitExecutor::phaseChanged,this,[&]{
+            if(executor.phase()==nodelifecycle::Phase::Stopped){++terminal_observations;if(reentrant)late();}
+        });
+        executor.initialize();QTRY_COMPARE(initialized.count(),1);executor.shutdown();QTRY_COMPARE(finished.count(),1);
+        if(!reentrant)late();
+        QCOMPARE(fatal.count(),0);QCOMPARE(terminal_observations,1);QCOMPARE(executor.phase(),nodelifecycle::Phase::Stopped);
+        QVERIFY(!executor.admissionOpen());QCOMPARE(node.calls.appInitMain.load(),1);
+        QCOMPARE(node.calls.startShutdown.load(),1);QCOMPARE(node.calls.appShutdown.load(),1);QCOMPARE(node.exit_reads.load(),1);
+    }
     void nativeCoreExitStatusPrecedesGuiDelivery_data() {
         QTest::addColumn<int>("status");QTest::addColumn<bool>("drop_observer");
         QTest::newRow("success-visible")<<0<<false;QTest::newRow("failure-visible")<<1<<false;
