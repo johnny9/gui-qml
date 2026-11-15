@@ -3010,6 +3010,7 @@ void WalletQmlModel::publishSendOperation()
         case Error::ChangedTransaction: message = tr("External signer changed the reviewed transaction."); break;
         case Error::Incomplete: message = tr("Only PSBTs this wallet can fully sign are supported right now."); break;
         case Error::NeedsSignerApproval: message = tr("Approve this transaction on the signing device before sending it."); break;
+        case Error::InvalidSignature: message = tr("The returned signatures could not be verified for the reviewed transaction. Check the signing device and try again."); break;
         case Error::Signer: message = result->signer_error ? PsbtQmlModel::PsbtErrorText(*result->signer_error) : tr("Signing failed."); break;
         case Error::Uncertain: message = tr("The transaction result could not be confirmed. Check wallet activity before retrying."); break;
         case Error::Cancelled: message = tr("The transaction review was discarded before sending."); break;

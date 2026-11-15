@@ -33,7 +33,7 @@ walletsend::Request SignedRequest()
 }
 walletsend::Request PsbtRequest()
 {
-    CMutableTransaction funding; funding.vin.resize(1); funding.vout.emplace_back(2000, CScript{} << OP_DUP << OP_HASH160 << std::vector<unsigned char>(20) << OP_EQUALVERIFY << OP_CHECKSIG);
+    CMutableTransaction funding; funding.vin.resize(1); funding.vout.emplace_back(2000, CScript{} << OP_DROP << OP_TRUE);
     const auto previous = MakeTransactionRef(std::move(funding));
     CMutableTransaction transaction{*Transaction()}; transaction.vin[0].prevout = COutPoint{previous->GetHash(), 0};
     PartiallySignedTransaction psbt{transaction, 2}; psbt.inputs[0].non_witness_utxo = previous;
@@ -88,7 +88,7 @@ struct Wallet : StubWallet {
             complete = true; return {};
         }
         if (change_transaction) psbt.outputs[0].amount = 999;
-        psbt.inputs[0].final_script_sig = CScript{} << OP_TRUE; complete = true; return {};
+        psbt.inputs[0].final_script_sig = CScript{} << OP_0; complete = true; return {};
     }
     void commitTransaction(CTransactionRef transaction, const std::vector<std::string>&) override { if(before_commit)before_commit();++commits; last_transaction = std::move(transaction); if (throw_commit) throw std::runtime_error{"commit uncertainty"}; }
     interfaces::WalletTx getWalletTxDetails(const Txid&, interfaces::WalletTxStatus& status, std::vector<std::string>&, std::vector<std::string>&, bool& mempool, int&) override {
@@ -306,6 +306,45 @@ private Q_SLOTS:
         QCOMPARE(bool(result.document), returned == 0); QCOMPARE(result.partial, returned == 0);
         QVERIFY(!result.signed_transaction); QCOMPARE(signer.device_calls, 1); QCOMPARE(signer.commits, 0);
         if (result.document) QVERIFY(psbtfee::MatchesReview(*result.document, psbtfee::Analyze(original), psbtfeefixture::ACTUAL_FEE));
+    }
+    void directPsbtSendRejectsIncompatibleSignatures_data()
+    {
+        QTest::addColumn<int>("returned");
+        QTest::newRow("compatible-keys") << 0;
+        QTest::newRow("incompatible-keys-same-terms") << 1;
+        QTest::newRow("invalid-final-script-same-terms") << 2;
+    }
+    void directPsbtSendRejectsIncompatibleSignatures()
+    {
+        QFETCH(int, returned);
+        ECC_Context ecc;
+        const auto original = psbtfeefixture::Legacy(2, false);
+        struct ReturningWallet : Wallet {
+            PartiallySignedTransaction response;
+            explicit ReturningWallet(PartiallySignedTransaction source) : response(std::move(source)) { signer = true; no_keys = true; }
+            std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options, size_t*, PartiallySignedTransaction& document, bool& complete) override {
+                ++signs; complete = options.sign;
+                if (options.sign) document = response;
+                return {};
+            }
+        };
+        auto response = original;
+        if (returned == 1) {
+            const auto other_keys = psbtfeefixture::Legacy(2, false);
+            for (size_t i = 0; i < response.inputs.size(); ++i) response.inputs[i].final_script_sig = other_keys.inputs[i].final_script_sig;
+        } else if (returned == 2) {
+            for (auto& input : response.inputs) input.final_script_sig = CScript{} << OP_TRUE;
+        }
+        auto wallet = std::make_shared<ReturningWallet>(response); Fixture f{wallet};
+        auto unsigned_document = original;
+        for (auto& input : unsigned_document.inputs) input.final_script_sig.clear();
+        walletsend::Request request; request.reviewed = MakeTransactionRef(*original.GetUnsignedTx());
+        request.psbt = std::make_shared<const PartiallySignedTransaction>(unsigned_document);
+        request.proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(original)); request.approved_fee = psbtfeefixture::ACTUAL_FEE;
+        auto operation = f.operation(); QVERIFY(operation->start(std::move(request))); f.commands.drain();
+        QVERIFY(operation->result()); QCOMPARE(operation->result()->error, returned == 0 ? Error::None : Error::InvalidSignature);
+        QCOMPARE(wallet->commits, returned == 0 ? 1 : 0); QCOMPARE(wallet->signs, 1);
+        QCOMPARE(bool(operation->result()->committed), returned == 0);
     }
     void unverifiedPreparedInputsCannotReachTheSigner_data()
     {
