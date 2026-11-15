@@ -338,6 +338,56 @@ private Q_SLOTS:
         QCOMPARE(operations.size(), 2);
     }
 
+    void recoveryNotificationCannotApplyAnOldSnapshotToItsReentrantSuccessor()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> gui;
+        Fixture fixture;
+        const auto throw_read = std::make_shared<std::atomic_bool>(false);
+        QString original_error;
+        bool successor_started{false};
+        int amount{0};
+        fixture.node.get_persistent_setting_fn = [&fixture, throw_read](const std::string& name) {
+            if (throw_read->load()) throw std::runtime_error("Recovery observation error");
+            return fixture.args.GetPersistentSetting(name);
+        };
+        OptionsQmlModel model{fixture.node, fixture.args,
+            {transport.scheduler, [&](auto turn) { gui.push_back(std::move(turn)); }}};
+        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); SettleManualOptions(transport, gui); });
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(model.settingsReady());
+        model.setExternalSignerPath(QStringLiteral("failed-user-signer-before-observation-recovery"));
+        QVERIFY(SettleManualOptions(transport, gui));
+        original_error = model.settingsError();
+        QVERIFY(!original_error.isEmpty());
+        const auto original_id = model.settingsOperationId();
+        throw_read->store(true);
+        model.refreshDisplaySettings();
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(model.settingsError().contains(QStringLiteral("Recovery observation error")));
+        throw_read->store(false);
+        amount = model.maxMempoolSizeMB() + 10;
+        QSignalSpy values{&model, &OptionsQmlModel::maxMempoolSizeMBChanged};
+        QSignalSpy operations{&model, &OptionsQmlModel::settingsOperationChanged};
+        connect(&model, &OptionsQmlModel::settingsErrorChanged, &model, [&] {
+            if (successor_started || !model.presentationOpen() || model.settingsError() != original_error) return;
+            successor_started = true;
+            model.setMaxMempoolSizeMB(amount);
+        });
+        model.refreshDisplaySettings();
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(successor_started);
+        QCOMPARE(model.settingsOperationId(), original_id + 1);
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsApplied);
+        QVERIFY(!model.settingsPending());
+        QVERIFY(model.settingsError().isEmpty());
+        QCOMPARE(model.maxMempoolSizeMB(), amount);
+        QCOMPARE(fixture.args.GetPersistentSetting("maxmempool").getInt<int>(), amount);
+        QVERIFY(!values.empty());
+        for (const auto& value : values) QCOMPARE(value.front().toInt(), amount);
+        QCOMPARE(operations.size(), 2);
+    }
+
     void savingSettingsOnlyNotifiesChangedValues()
     {
         Fixture fixture;

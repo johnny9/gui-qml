@@ -523,7 +523,7 @@ void OptionsQmlModel::runCommand(std::function<QString(interfaces::Node&, ArgsMa
         if(revision==observer->m_command_revision) {
             if(observation)observer->setObservationError({});
             if(!observer||observer->m_stopping)return;
-            observer->applySnapshot(std::move(result.first));
+            if(revision==observer->m_command_revision)observer->applySnapshot(std::move(result.first));
         }
         if(!observer||observer->m_stopping)return;
         if(revision==observer->m_command_revision&&!result.second.isEmpty())observer->setError(result.second);
