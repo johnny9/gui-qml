@@ -76,3 +76,7 @@ partial-signature or physical-device lifecycle guarantee.
 The [R20/R30 API decision](API_DEFERRALS_20261115.md) records the user-approved
 upstream remainders and the required truthful app behavior. These narrow
 deferrals do not authorize Core changes or waive other acceptance gates.
+
+The [parallel implementation strategy](PARALLEL_IMPLEMENTATION_20261115.md)
+keeps three workers on related families while the coordinator integrates and
+dispatches frozen candidates. Each build tree retains one writer.
