@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/desktopintent.h>
+#include <QDir>
+#include <QUrl>
 
 #include <algorithm>
 #include <limits>
@@ -20,6 +22,11 @@ Error Queue::admitOne(const Input& input, Receipt& receipt)
     if (m_stopping) return Error::Closed;
     if (input.producer_key.isEmpty() || input.producer_key.size() > MAX_KEY_CHARS ||
         input.value.isEmpty() || input.value.size() > MAX_INPUT_CHARS) return Error::Invalid;
+    if (input.origin == Origin::FileOpen && input.kind == Kind::File) {
+        const QUrl url{input.value, QUrl::StrictMode};
+        const auto path = url.isLocalFile() && url.host().isEmpty() ? url.toLocalFile() : input.value;
+        if (!QDir::isAbsolutePath(path)) return Error::Invalid;
+    }
     for (const auto& record : m_records) {
         if (record.input.producer_key != input.producer_key) continue;
         if (record.input.kind != input.kind || record.input.value != input.value) return Error::Invalid;
@@ -43,7 +50,7 @@ Error Queue::admitOne(const Input& input, Receipt& receipt)
 
 Admission Queue::admit(const std::vector<Input>& inputs)
 {
-    if (m_stopping) return {Error::Closed, {}};
+    if (m_stopping || m_forwarding) return {Error::Closed, {}};
     if (inputs.empty() || inputs.size() > MAX_PENDING) return {Error::Invalid, {}};
     // Forwarded frames are atomic bounded admissions. A rejected suffix cannot
     // leave an accepted prefix or consume the original queue's identities.
@@ -61,9 +68,27 @@ Admission Queue::admit(const std::vector<Input>& inputs)
     return result;
 }
 
+ForwardingSnapshot Queue::prepareForwarding(const std::vector<Input>& arguments)
+{
+    if (m_stopping || m_forwarding) return {Error::Closed, {}};
+    if (m_ready || m_active) return {Error::Invalid, {}};
+    Queue trial{*this};
+    const auto admitted = arguments.empty() ? Admission{} : trial.admit(arguments);
+    if (!admitted) {
+        m_forwarding = true; m_error = admitted.error; updatePhase();
+        return {admitted.error, {}};
+    }
+    ForwardingSnapshot snapshot;
+    snapshot.inputs.reserve(trial.m_pending.size());
+    for (const auto id : trial.m_pending) snapshot.inputs.push_back(trial.find(id)->input);
+    trial.m_forwarding = true; trial.updatePhase();
+    *this = std::move(trial);
+    return snapshot;
+}
+
 void Queue::readiness(uint64_t revision, bool ready)
 {
-    if (m_stopping || revision <= m_readiness_revision) return;
+    if (m_stopping || m_forwarding || revision <= m_readiness_revision) return;
     m_readiness_revision = revision;
     m_ready = ready;
     updatePhase();
@@ -122,7 +147,8 @@ bool Queue::unknown(Ticket ticket)
 
 bool Queue::dismiss()
 {
-    if (m_stopping || m_active || m_pending.empty()) return false;
+    if (m_stopping || m_active) return false;
+    if (m_pending.empty()) { m_error = Error::None; return true; }
     settle(Disposition::Dismissed);
     return true;
 }
@@ -142,6 +168,7 @@ void Queue::stop()
 void Queue::updatePhase()
 {
     if (m_stopping) m_phase = m_active ? Phase::Stopping : Phase::Stopped;
+    else if (m_forwarding) m_phase = Phase::Forwarding;
     else if (m_active) m_phase = m_unknown ? Phase::ReconcilingDelivery : Phase::Delivering;
     else m_phase = m_ready ? Phase::Ready : Phase::WaitingReady;
 }

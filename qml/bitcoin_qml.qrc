@@ -16,6 +16,7 @@
         <file>components/DebugLogItemRow.qml</file>
         <file>components/DebugLogTitlesHeader.qml</file>
         <file>components/DesktopMenuActions.qml</file>
+        <file>components/DesktopRequestsBar.qml</file>
         <file>components/DesktopNativeMenuBar.qml</file>
         <file>components/MempoolInformationRows.qml</file>
         <file>components/MenuCommand.qml</file>

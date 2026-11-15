@@ -11,6 +11,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
 
 namespace desktopintent {
 enum class Knowledge { Accepted, NotAccepted, Unknown };
@@ -35,6 +36,8 @@ struct Services {
     std::function<Time()> now{std::chrono::steady_clock::now};
     std::function<void(std::chrono::milliseconds, std::function<void()>)> wake;
     std::chrono::milliseconds receipt_timeout{250};
+    // Native authority fences a terminal parent before GUI phase publication.
+    std::function<bool()> available{};
 };
 
 /** Process-lifetime Domain owner. Native/GUI entry points only submit owned
@@ -44,6 +47,7 @@ public:
     using Notify = std::function<void(Snapshot)>;
     static std::shared_ptr<Owner> Create(Services services, Notify notify);
     execution::Admission admit(std::vector<Input> inputs, std::function<void(Admission)> done);
+    execution::Admission prepareForwarding(std::vector<Input> arguments, std::function<void(ForwardingSnapshot)> done);
     execution::Admission readiness(uint64_t revision, bool ready);
     execution::Admission review(std::shared_ptr<const Sink> sink);
     execution::Admission reconcile();
@@ -70,6 +74,8 @@ private:
     const std::shared_ptr<State> m_state;
     const Notify m_notify;
     const std::shared_ptr<std::atomic_bool> m_closed{std::make_shared<std::atomic_bool>(false)};
+    std::mutex m_admission_mutex; // Bounded submission only; never held across Native work or callbacks.
+    std::atomic_bool m_forwarding_closed{false};
 };
 } // namespace desktopintent
 #endif // BITCOIN_QML_DESKTOPINTENTOWNER_H

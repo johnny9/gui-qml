@@ -9,6 +9,8 @@
 #include <qml/models/exacttextdocument.h>
 #include <qml/models/messagesigningprompt.h>
 #include <qml/guipresentation.h>
+#include <QUuid>
+#include <QPointer>
 #include <QtQuickTest/quicktest.h>
 #include <test/qmlcoverage.h>
 #include <qml/models/bumptransactionmodel.h>
@@ -56,7 +58,6 @@
 #include <QTest>
 #include <QTimer>
 #include <QUrl>
-#include <QUuid>
 #include <QVariantList>
 #include <QVariantMap>
 #include <qqml.h>
@@ -131,10 +132,102 @@ public:
     QString fullClientVersion() const { return QStringLiteral("v0.0.0-test"); }
 };
 
+class MockNodeModel;
+class MockPeerDetailsModel;
+class MockPeerCommandResult;
+struct MockPeerOperationState;
+class MockPeerCommandOperation : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QString operationId READ operationId CONSTANT)
+    Q_PROPERTY(QString connectionId READ connectionId CONSTANT)
+    Q_PROPERTY(QString nodeIdText READ nodeIdText CONSTANT)
+    Q_PROPERTY(QString address READ address CONSTANT)
+    Q_PROPERTY(int banDuration READ banDuration CONSTANT)
+    Q_PROPERTY(bool confirmationRequired READ confirmationRequired NOTIFY changed)
+    Q_PROPERTY(bool pending READ pending NOTIFY changed)
+    Q_PROPERTY(bool queryPending READ queryPending NOTIFY changed)
+    Q_PROPERTY(bool resultPresent READ resultPresent NOTIFY changed)
+    Q_PROPERTY(bool outcomeKnown READ outcomeKnown NOTIFY changed)
+    Q_PROPERTY(QString errorText READ errorText NOTIFY changed)
+    Q_PROPERTY(QString queryError READ queryError NOTIFY changed)
+    Q_PROPERTY(MockPeerCommandResult result READ result NOTIFY changed)
+public:
+    enum Outcome { Succeeded, Rejected, PartiallyApplied, Uncertain, Cancelled };
+    Q_ENUM(Outcome)
+    enum BanDuration { Hour = 3600, Day = 86400, Week = 604800, Year = 31536000 };
+    Q_ENUM(BanDuration)
+    MockPeerCommandOperation(MockNodeModel* node, std::shared_ptr<MockPeerOperationState> original);
+    QString operationId() const;
+    QString connectionId() const;
+    QString nodeIdText() const;
+    QString address() const;
+    int banDuration() const;
+    bool confirmationRequired() const;
+    bool pending() const;
+    bool queryPending() const;
+    bool resultPresent() const;
+    bool outcomeKnown() const;
+    QString errorText() const;
+    QString queryError() const;
+    MockPeerCommandResult result() const;
+    Q_INVOKABLE bool confirm();
+    Q_INVOKABLE bool cancel();
+    Q_INVOKABLE bool reconcile();
+    Q_INVOKABLE void refresh();
+    Q_INVOKABLE void retire();
+Q_SIGNALS:
+    void changed();
+private:
+    bool cancelOriginal();
+    QPointer<MockNodeModel> m_node;
+    std::shared_ptr<MockPeerOperationState> m_original;
+    bool m_retired{false};
+};
+
+class MockPeerCommandResult {
+    Q_GADGET
+    Q_PROPERTY(QString operationId MEMBER operationId)
+    Q_PROPERTY(QString connectionId MEMBER connectionId)
+    Q_PROPERTY(QString nodeIdText MEMBER nodeIdText)
+    Q_PROPERTY(QString address MEMBER address)
+    Q_PROPERTY(QString errorText MEMBER errorText)
+    Q_PROPERTY(QString queryError MEMBER queryError)
+    Q_PROPERTY(MockPeerCommandOperation::Outcome outcome MEMBER outcome)
+    Q_PROPERTY(bool present MEMBER present)
+    Q_PROPERTY(bool outcomeKnown MEMBER outcomeKnown)
+    Q_PROPERTY(bool mutationAttempted MEMBER mutationAttempted)
+    Q_PROPERTY(bool banApplied MEMBER banApplied)
+    Q_PROPERTY(bool disconnectConfirmed MEMBER disconnectConfirmed)
+    Q_PROPERTY(bool observationAvailable MEMBER observationAvailable)
+    Q_PROPERTY(bool targetConnected MEMBER targetConnected)
+    Q_PROPERTY(bool banObservationAvailable MEMBER banObservationAvailable)
+    Q_PROPERTY(bool targetBanned MEMBER targetBanned)
+public:
+    QString operationId, connectionId, nodeIdText, address, errorText, queryError;
+    MockPeerCommandOperation::Outcome outcome{MockPeerCommandOperation::Rejected};
+    bool present{false}, outcomeKnown{false}, mutationAttempted{false}, banApplied{false}, disconnectConfirmed{false};
+    bool observationAvailable{false}, targetConnected{false}, banObservationAvailable{false}, targetBanned{false};
+};
+Q_DECLARE_METATYPE(MockPeerCommandResult)
+struct MockPeerOperationState {
+    QString id, connection, node_id, raw_address, address;
+    int duration{0};
+    quint64 ticket{0};
+    QPointer<MockPeerDetailsModel> target;
+    MockPeerCommandResult result;
+    bool confirmed{false}, pending{false}, query_pending{false};
+    std::function<void()> notify;
+};
+
 class MockPeerDetailsModel : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(int nodeId MEMBER m_node_id NOTIFY dataChanged)
+    Q_PROPERTY(qint64 nodeId MEMBER m_node_id NOTIFY dataChanged)
+    Q_PROPERTY(QString nodeIdText READ nodeIdText CONSTANT)
+    Q_PROPERTY(QString connectionId READ connectionId CONSTANT)
+    Q_PROPERTY(bool connected READ connected NOTIFY dataChanged)
+    Q_PROPERTY(bool canDisconnect READ canDisconnect NOTIFY dataChanged)
+    Q_PROPERTY(bool canBan READ canBan NOTIFY dataChanged)
     Q_PROPERTY(QString rawAddress MEMBER m_raw_address NOTIFY dataChanged)
     Q_PROPERTY(QString address MEMBER m_address NOTIFY dataChanged)
     Q_PROPERTY(QString addressLocal MEMBER m_address_local NOTIFY dataChanged)
@@ -167,7 +260,17 @@ class MockPeerDetailsModel : public QObject
     Q_PROPERTY(QString timeOffset MEMBER m_time_offset NOTIFY dataChanged)
 
 public:
-    int m_node_id{7};
+    explicit MockPeerDetailsModel(QObject* parent = nullptr) : QObject(parent) {}
+    QString nodeIdText() const { return QString::number(m_node_id); }
+    QString connectionId() const { return m_connection_id; }
+    bool connected() const { return m_connected; }
+    bool canDisconnect() const;
+    bool canBan() const { return canDisconnect() && !m_raw_address.isEmpty(); }
+    void setCommands(MockNodeModel* node);
+    Q_INVOKABLE MockPeerCommandOperation* prepareDisconnect();
+    Q_INVOKABLE MockPeerCommandOperation* prepareBan(MockPeerCommandOperation::BanDuration duration);
+    Q_INVOKABLE void resetConnectionForTest() { m_connected = true; Q_EMIT dataChanged(); }
+    qint64 m_node_id{7};
     QString m_raw_address{QStringLiteral("127.0.0.1")};
     QString m_address{QStringLiteral("127.0.0.1:8333")};
     QString m_address_local{QStringLiteral("127.0.0.1:18444")};
@@ -199,7 +302,10 @@ public:
     QString m_ping_min{QStringLiteral("7 ms")};
     QString m_time_offset{QStringLiteral("0 s")};
 
-    Q_INVOKABLE void triggerDisconnected() { Q_EMIT disconnected(); }
+    Q_INVOKABLE void triggerDisconnected() { if (!m_connected) return; m_connected = false; Q_EMIT dataChanged(); Q_EMIT disconnected(); }
+    MockNodeModel* m_commands{nullptr};
+    const QString m_connection_id{QUuid::createUuid().toString(QUuid::WithoutBraces)};
+    bool m_connected{true};
 
 Q_SIGNALS:
     void dataChanged();
@@ -4722,6 +4828,9 @@ class MockNodeModel : public QObject
     Q_PROPERTY(bool banPeerResult MEMBER m_ban_peer_result NOTIFY peerActionStateChanged)
     Q_PROPERTY(QVariantList informationRows READ nodeInformationRows NOTIFY peerActionStateChanged)
     Q_PROPERTY(bool autoCompletePeerAction MEMBER m_auto_complete_peer_action)
+    Q_PROPERTY(bool autoCompletePeerQuery MEMBER m_auto_complete_peer_query)
+    Q_PROPERTY(int peerQueryCalls READ peerQueryCalls NOTIFY peerCommandStateChanged)
+    Q_PROPERTY(int lastBanDuration MEMBER m_last_ban_duration NOTIFY peerActionCallsChanged)
     Q_PROPERTY(int disconnectPeerCalls READ disconnectPeerCalls NOTIFY peerActionCallsChanged)
     Q_PROPERTY(int banPeerCalls READ banPeerCalls NOTIFY peerActionCallsChanged)
     Q_PROPERTY(int lastDisconnectedNodeId MEMBER m_last_disconnected_node_id NOTIFY peerActionCallsChanged)
@@ -4773,7 +4882,53 @@ public:
     bool m_mempool_information_available{true};
     bool m_disconnect_peer_result{true};
     bool m_ban_peer_result{true};
-    bool m_auto_complete_peer_action{true};
+    bool m_auto_complete_peer_action{true}, m_auto_complete_peer_query{true};
+    bool m_typed_peer_pending{false}, m_peer_commands_closed{false};
+    int m_peer_query_calls{0}, m_last_ban_duration{0};
+    QHash<QString, std::shared_ptr<MockPeerOperationState>> m_typed_peer_operations;
+    std::function<void()> m_refresh_peer_inventories;
+    int peerQueryCalls() const { return m_peer_query_calls; }
+    bool canStartPeerCommand() const { return !m_peer_commands_closed && m_network_action_ready && !m_typed_peer_pending; }
+    Q_INVOKABLE void closePeerCommandAdmission() { m_peer_commands_closed = true; Q_EMIT peerCommandStateChanged(); }
+    MockPeerCommandOperation* preparePeerCommand(MockPeerDetailsModel* details, int duration);
+    bool confirmPeerCommand(std::shared_ptr<MockPeerOperationState> original);
+    Q_INVOKABLE void completePeerOperation(const QString& id) {
+        const auto original = m_typed_peer_operations.value(id);
+        if (original && original->ticket) completePeerAction(original->ticket);
+    }
+    Q_INVOKABLE void completePeerOperationWithOutcome(const QString& id, int outcome, const QString& error) {
+        const auto original = m_typed_peer_operations.value(id);
+        if (original && original->ticket) completePeerActionWithOutcome(original->ticket, outcome, error);
+    }
+    Q_INVOKABLE void completePeerQuery(const QString& id, bool connected, bool banned, const QString& error) {
+        const auto original = m_typed_peer_operations.value(id);
+        if (!original || !original->query_pending) return;
+        original->query_pending = false; original->pending = false;
+        original->result.queryError = error;
+        original->result.observationAvailable = error.isEmpty(); original->result.targetConnected = connected;
+        original->result.banObservationAvailable = error.isEmpty(); original->result.targetBanned = banned;
+        m_typed_peer_pending = false;
+        if (original->notify) original->notify();
+        Q_EMIT peerCommandStateChanged();
+    }
+    Q_INVOKABLE void repeatPeerOperationNotification(const QString& id) {
+        const auto original = m_typed_peer_operations.value(id);
+        if (!original || !original->ticket || !original->result.present) return;
+        Q_EMIT peerActionFinished(original->ticket, static_cast<int>(original->result.outcome), original->result.errorText);
+    }
+    bool reconcilePeerCommand(std::shared_ptr<MockPeerOperationState> original) {
+        if (original->pending || !original->result.present || original->result.outcomeKnown) return false;
+        if (!canStartPeerCommand()) {
+            original->result.queryError = QStringLiteral("The node is busy or closing. The original peer state was not refreshed.");
+            if (original->notify) original->notify();
+            return false;
+        }
+        original->query_pending = original->pending = m_typed_peer_pending = true; ++m_peer_query_calls;
+        if (original->notify) original->notify();
+        Q_EMIT peerCommandStateChanged();
+        if (m_auto_complete_peer_query) QTimer::singleShot(0, this, [this, id = original->id] { completePeerQuery(id, true, false, {}); });
+        return true;
+    }
     quint64 m_peer_ticket{0};
     struct PeerOutcome { PeerActionOutcome outcome; QString error; };
     QMap<quint64, PeerOutcome> m_peer_outcomes;
@@ -4867,6 +5022,11 @@ public:
         m_ban_peer_result = true;
         m_auto_complete_peer_action = true;
         m_peer_outcomes.clear();
+        m_typed_peer_operations.clear(); m_typed_peer_pending = false; m_peer_commands_closed = false;
+        m_auto_complete_peer_query = true; m_peer_query_calls = 0; m_last_ban_duration = 0;
+        m_network_action_ready = true;
+        Q_EMIT peerCommandStateChanged();
+        Q_EMIT networkActionReadyChanged();
         m_disconnect_peer_calls = 0;
         m_ban_peer_calls = 0;
         Q_EMIT peerActionStateChanged();
@@ -4911,6 +5071,26 @@ public:
         if (found == m_peer_outcomes.end()) return;
         auto result = std::move(found.value());
         m_peer_outcomes.erase(found);
+        // Only a terminal receipt belonging to an admitted typed operation
+        // drives composition refresh. Arbitrary legacy signals have no owner.
+        std::shared_ptr<MockPeerOperationState> original;
+        for (const auto& candidate : std::as_const(m_typed_peer_operations)) {
+            if (candidate->ticket == ticket && !candidate->result.present) { original = candidate; break; }
+        }
+        if (original) {
+            auto& value = original->result;
+            value.operationId = original->id; value.connectionId = original->connection;
+            value.nodeIdText = original->node_id; value.address = original->address;
+            value.outcome = static_cast<MockPeerCommandOperation::Outcome>(result.outcome);
+            value.present = true; value.outcomeKnown = result.outcome != PeerActionOutcome::Uncertain;
+            value.errorText = result.error; value.mutationAttempted = true;
+            value.banApplied = original->duration > 0 && (result.outcome == PeerActionOutcome::Succeeded || result.outcome == PeerActionOutcome::PartiallyApplied);
+            value.disconnectConfirmed = result.outcome == PeerActionOutcome::Succeeded;
+            original->pending = false; m_typed_peer_pending = false;
+            if (!m_peer_commands_closed && m_refresh_peer_inventories && result.outcome != PeerActionOutcome::Rejected) m_refresh_peer_inventories();
+            if (original->notify) original->notify();
+            Q_EMIT peerCommandStateChanged();
+        }
         Q_EMIT peerActionFinished(ticket, static_cast<int>(result.outcome), result.error);
     }
     Q_INVOKABLE void completePeerActionWithOutcome(quint64 ticket, int outcome, const QString& error)
@@ -4923,13 +5103,14 @@ public:
     Q_INVOKABLE bool banPeer(const QString& raw_address, qint64 ban_duration)
     {
         m_last_banned_address = raw_address;
-        Q_UNUSED(ban_duration);
+        m_last_ban_duration = static_cast<int>(ban_duration);
         ++m_ban_peer_calls;
         Q_EMIT peerActionCallsChanged();
         return m_ban_peer_result;
     }
 
 Q_SIGNALS:
+    void peerCommandStateChanged();
     void lifecyclePhaseChanged();
     void peerActionFinished(quint64 ticket, int outcome, const QString& error);
     void networkActionReadyChanged();
@@ -4958,6 +5139,91 @@ Q_SIGNALS:
     void peerActionStateChanged();
     void peerActionCallsChanged();
 };
+
+QString MockPeerCommandOperation::operationId() const { return m_original->id; }
+QString MockPeerCommandOperation::connectionId() const { return m_original->connection; }
+QString MockPeerCommandOperation::nodeIdText() const { return m_original->node_id; }
+QString MockPeerCommandOperation::address() const { return m_original->address; }
+int MockPeerCommandOperation::banDuration() const { return m_original->duration; }
+bool MockPeerCommandOperation::confirmationRequired() const { return !m_retired && !m_original->confirmed; }
+bool MockPeerCommandOperation::pending() const { return m_original->pending; }
+bool MockPeerCommandOperation::queryPending() const { return m_original->query_pending; }
+bool MockPeerCommandOperation::resultPresent() const { return m_original->result.present; }
+bool MockPeerCommandOperation::outcomeKnown() const { return m_original->result.outcomeKnown; }
+QString MockPeerCommandOperation::errorText() const { return m_original->result.errorText; }
+QString MockPeerCommandOperation::queryError() const { return m_original->result.queryError; }
+MockPeerCommandResult MockPeerCommandOperation::result() const { return m_original->result; }
+void MockPeerCommandOperation::refresh() { if (!m_retired && m_node && !m_node->m_peer_commands_closed) Q_EMIT changed(); }
+void MockPeerCommandOperation::retire() { if (m_retired) return; m_retired = true; cancelOriginal(); }
+MockPeerCommandOperation::MockPeerCommandOperation(MockNodeModel* node, std::shared_ptr<MockPeerOperationState> original)
+    : m_node(node), m_original(std::move(original))
+{
+    const QPointer<MockPeerCommandOperation> observer{this};
+    m_original->notify = [observer] { if (observer) observer->refresh(); };
+    QQmlEngine::setObjectOwnership(this, QQmlEngine::JavaScriptOwnership);
+}
+bool MockPeerCommandOperation::confirm()
+{
+    if (m_retired || m_original->confirmed) return false;
+    return m_node && m_node->confirmPeerCommand(m_original);
+}
+bool MockPeerCommandOperation::cancelOriginal()
+{
+    if (m_original->confirmed) return false;
+    m_original->confirmed = true;
+    auto& result = m_original->result;
+    result.operationId = operationId(); result.connectionId = connectionId(); result.nodeIdText = nodeIdText(); result.address = address();
+    result.present = result.outcomeKnown = true; result.outcome = MockPeerCommandOperation::Outcome::Cancelled;
+    return true;
+}
+bool MockPeerCommandOperation::cancel()
+{
+    if (m_retired || !cancelOriginal()) return false;
+    refresh(); return true;
+}
+bool MockPeerCommandOperation::reconcile() { return !m_retired && m_node && m_node->reconcilePeerCommand(m_original); }
+MockPeerCommandOperation* MockNodeModel::preparePeerCommand(MockPeerDetailsModel* details, int duration)
+{
+    if (!details || !details->connected()) return nullptr;
+    auto original = std::make_shared<MockPeerOperationState>();
+    original->id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    original->connection = details->connectionId(); original->node_id = details->nodeIdText();
+    original->address = details->m_address; original->raw_address = details->m_raw_address;
+    original->duration = duration; original->target = details;
+    m_typed_peer_operations.insert(original->id, original);
+    return new MockPeerCommandOperation(this, std::move(original));
+}
+bool MockNodeModel::confirmPeerCommand(std::shared_ptr<MockPeerOperationState> original)
+{
+    if (original->confirmed) return false;
+    original->confirmed = true;
+    if (!canStartPeerCommand() || !original->target || !original->target->connected()
+        || original->target->connectionId() != original->connection) {
+        auto& result = original->result;
+        result.operationId = original->id; result.connectionId = original->connection;
+        result.nodeIdText = original->node_id; result.address = original->address;
+        result.present = result.outcomeKnown = true; result.outcome = MockPeerCommandOperation::Outcome::Rejected;
+        result.errorText = QStringLiteral("The original peer command was not admitted. The node is busy, closing, or the connection has ended.");
+        if (original->notify) original->notify();
+        return false;
+    }
+    original->pending = m_typed_peer_pending = true;
+    // Reuse the fixture's existing single mutation/effect and outcome ledger.
+    original->ticket = original->duration > 0 ? requestBanPeer(original->raw_address, original->duration)
+        : requestDisconnectPeer(original->node_id.toLongLong());
+    if (original->notify) original->notify();
+    Q_EMIT peerCommandStateChanged();
+    return true;
+}
+bool MockPeerDetailsModel::canDisconnect() const { return connected() && m_commands && m_commands->canStartPeerCommand(); }
+void MockPeerDetailsModel::setCommands(MockNodeModel* node)
+{
+    m_commands = node;
+    connect(node, &MockNodeModel::peerCommandStateChanged, this, &MockPeerDetailsModel::dataChanged);
+    connect(node, &MockNodeModel::networkActionReadyChanged, this, &MockPeerDetailsModel::dataChanged);
+}
+MockPeerCommandOperation* MockPeerDetailsModel::prepareDisconnect() { return m_commands ? m_commands->preparePeerCommand(this, 0) : nullptr; }
+MockPeerCommandOperation* MockPeerDetailsModel::prepareBan(MockPeerCommandOperation::BanDuration duration) { return m_commands ? m_commands->preparePeerCommand(this, static_cast<int>(duration)) : nullptr; }
 
 class MockPeerTableModel : public QObject
 {
@@ -5089,6 +5355,8 @@ public:
         TransportRole,
         SentRole,
         ReceivedRole,
+        ConnectionIdRole,
+        NodeIdTextRole,
     };
 
     QString sortBy() const { return m_sort_by; }
@@ -5109,8 +5377,10 @@ public:
     {
         if (!index.isValid() || index.row() < 0 || index.row() >= m_peer_count) return {};
         switch (role) {
-        case NodeIdRole: return index.row();
-        case AddressRole: return QStringLiteral("127.0.0.1:8333");
+        case NodeIdRole: { const auto* details = peerDetailsAt(index.row()); return details ? QVariant::fromValue(details->m_node_id) : QVariant{}; }
+        case NodeIdTextRole: { const auto* details = peerDetailsAt(index.row()); return details ? details->nodeIdText() : QString{}; }
+        case ConnectionIdRole: { const auto* details = peerDetailsAt(index.row()); return details ? details->connectionId() : QString{}; }
+        case AddressRole: { const auto* details = peerDetailsAt(index.row()); return details ? details->m_address : QString{}; }
         case SubversionRole: return QStringLiteral("/Satoshi:test/");
         case DirectionRole: return QStringLiteral("Outbound");
         case ConnectionTypeRole: return QStringLiteral("Full relay");
@@ -5134,6 +5404,8 @@ public:
             {TransportRole, "transport"},
             {SentRole, "sent"},
             {ReceivedRole, "received"},
+            {ConnectionIdRole, "connectionId"},
+            {NodeIdTextRole, "nodeIdText"},
         };
     }
 
@@ -5141,21 +5413,31 @@ public:
     {
         if (m_peer_count == count) return;
         beginResetModel();
-        m_peer_count = std::max(0, count);
+        m_peer_count = std::clamp(count, 0, 2);
         endResetModel();
         Q_EMIT countChanged();
     }
 
-    Q_INVOKABLE QObject* peerDetailsAt(int row) const
+    Q_INVOKABLE MockPeerDetailsModel* peerDetailsAt(int row) const
     {
-        return row >= 0 && row < m_peer_count ? m_peer_details : nullptr;
+        return row >= 0 && row < m_peer_count ? row == 1 ? m_other_details : m_peer_details : nullptr;
     }
-
-    void setPeerDetailsForTest(QObject* peer_details) { m_peer_details = peer_details; }
+    void setPeerDetailsForTest(MockPeerDetailsModel* first, MockPeerDetailsModel* second) { m_peer_details = m_default_details = first; m_other_details = second; }
+    Q_INVOKABLE void resetPeerInventoryForTest() {
+        beginResetModel(); m_peer_count = 0; m_peer_details = m_default_details; endResetModel(); Q_EMIT countChanged();
+    }
+    Q_INVOKABLE void replaceFirstConnectionForTest() {
+        auto* replacement = new MockPeerDetailsModel(this);
+        replacement->m_node_id = m_peer_details->m_node_id;
+        replacement->m_address = m_peer_details->m_address;
+        replacement->m_raw_address = m_peer_details->m_raw_address;
+        replacement->setCommands(m_peer_details->m_commands);
+        beginResetModel(); m_peer_details->triggerDisconnected(); m_peer_details = replacement; endResetModel(); Q_EMIT countChanged();
+    }
 
     Q_INVOKABLE int indexOfNodeId(qint64 node_id) const
     {
-        Q_UNUSED(node_id);
+        for (int row = 0; row < m_peer_count; ++row) if (auto* details = peerDetailsAt(row); details && details->m_node_id == node_id) return row;
         return -1;
     }
 
@@ -5172,7 +5454,9 @@ Q_SIGNALS:
 
 private:
     int m_peer_count{0};
-    QObject* m_peer_details{nullptr};
+    MockPeerDetailsModel* m_peer_details{nullptr};
+    MockPeerDetailsModel* m_other_details{nullptr};
+    MockPeerDetailsModel* m_default_details{nullptr};
     QString m_sort_by{QStringLiteral("nodeId")};
     bool m_sort_ascending{true};
     QString m_search_text;
@@ -5180,6 +5464,70 @@ private:
     QStringList m_connection_type_filters;
     QStringList m_network_filters;
     QStringList m_transport_filters;
+};
+
+class MockPeerSelectionModel : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(MockPeerListModelProxy* source READ source WRITE setSource NOTIFY sourceChanged)
+    Q_PROPERTY(bool autoSelectFirst READ autoSelectFirst WRITE setAutoSelectFirst NOTIFY autoSelectFirstChanged)
+    Q_PROPERTY(MockPeerDetailsModel* selectedDetails READ selectedDetails NOTIFY changed)
+    Q_PROPERTY(QString connectionId READ connectionId NOTIFY changed)
+    Q_PROPERTY(QString nodeIdText READ nodeIdText NOTIFY changed)
+    Q_PROPERTY(qint64 nodeId READ nodeId NOTIFY changed)
+    Q_PROPERTY(bool connected READ connected NOTIFY changed)
+    Q_PROPERTY(Phase phase READ phase NOTIFY changed)
+public:
+    enum Phase { NoSelection, Connected, Disconnected, Stopped };
+    Q_ENUM(Phase)
+    explicit MockPeerSelectionModel(QObject* parent = nullptr) : QObject(parent) {}
+    MockPeerListModelProxy* source() const { return m_source; }
+    void setSource(MockPeerListModelProxy* value) {
+        if (m_source == value) return;
+        if (m_source) disconnect(m_source, nullptr, this, nullptr);
+        clear(); m_source = value;
+        if (value) {
+            connect(value, &MockPeerListModelProxy::countChanged, this, &MockPeerSelectionModel::reconcile);
+            connect(value, &QObject::destroyed, this, [this] { clear(); m_source = nullptr; m_phase = Stopped; Q_EMIT changed(); });
+        }
+        Q_EMIT sourceChanged(); reconcile();
+    }
+    bool autoSelectFirst() const { return m_auto; }
+    void setAutoSelectFirst(bool value) { if (m_auto == value) return; m_auto = value; Q_EMIT autoSelectFirstChanged(); reconcile(); }
+    MockPeerDetailsModel* selectedDetails() const { return m_selected; }
+    QString connectionId() const { return m_connection; }
+    QString nodeIdText() const { return m_node_id < 0 ? QString{} : QString::number(m_node_id); }
+    qint64 nodeId() const { return m_node_id; }
+    bool connected() const { return m_phase == Connected && m_selected && m_selected->connected(); }
+    Phase phase() const { return m_phase; }
+    Q_INVOKABLE bool select(MockPeerDetailsModel* details) {
+        if (!m_source || !details || !details->connected() || m_phase == Stopped) return false;
+        const int row = m_source->indexOfNodeId(details->m_node_id);
+        if (row < 0 || m_source->peerDetailsAt(row) != details) return false;
+        clear(); m_selected = details; m_connection = details->connectionId(); m_node_id = details->m_node_id; m_phase = Connected;
+        connect(details, &MockPeerDetailsModel::dataChanged, this, [this] { if (m_selected && !m_selected->connected()) { m_phase = Disconnected; Q_EMIT changed(); } });
+        Q_EMIT changed(); return true;
+    }
+    Q_INVOKABLE void clear() {
+        if (!m_selected && m_phase == NoSelection) return;
+        if (m_selected) disconnect(m_selected, nullptr, this, nullptr);
+        m_selected = nullptr; m_connection.clear(); m_node_id = -1; m_phase = NoSelection; Q_EMIT changed();
+    }
+Q_SIGNALS:
+    void sourceChanged();
+    void autoSelectFirstChanged();
+    void changed();
+private:
+    void reconcile() {
+        if (!m_source || m_phase == Stopped) return;
+        const int row = m_source->indexOfNodeId(m_node_id);
+        if (connected() && row >= 0 && m_source->peerDetailsAt(row) == m_selected) return;
+        clear(); if (m_auto && m_source->rowCount() > 0) select(m_source->peerDetailsAt(0));
+    }
+    QPointer<MockPeerListModelProxy> m_source;
+    QPointer<MockPeerDetailsModel> m_selected;
+    QString m_connection;
+    qint64 m_node_id{-1};
+    bool m_auto{false}; Phase m_phase{NoSelection};
 };
 
 class MockBanListModel : public QAbstractListModel
@@ -6669,6 +7017,7 @@ class MockApplicationModels : public QObject
     Q_PROPERTY(SignerDiscoveryModel* signers READ signers CONSTANT)
     Q_PROPERTY(MockWalletListModel* walletListModel READ walletListModel CONSTANT)
     Q_PROPERTY(MockDesktopWindowBehaviorModel* desktopWindowBehaviorModel READ desktopWindowBehaviorModel CONSTANT)
+    Q_PROPERTY(QObject* desktopIntentModel READ desktopIntentModel CONSTANT)
     Q_PROPERTY(QObject* desktopTrayIconController READ desktopTrayIconController CONSTANT)
     Q_PROPERTY(MockOptionsModel* onboardingOptionsModel READ onboardingOptionsModel CONSTANT)
     Q_PROPERTY(bool testAutomationEnabled READ testAutomationEnabled CONSTANT)
@@ -6700,6 +7049,7 @@ public:
     MockWalletController* walletController() const { return m_context->contextProperty(QStringLiteral("walletController")).value<MockWalletController*>(); }
     MockWalletListModel* walletListModel() const { return m_context->contextProperty(QStringLiteral("walletListModel")).value<MockWalletListModel*>(); }
     MockDesktopWindowBehaviorModel* desktopWindowBehaviorModel() const { return m_context->contextProperty(QStringLiteral("desktopWindowBehaviorModel")).value<MockDesktopWindowBehaviorModel*>(); }
+    QObject* desktopIntentModel() const { return m_context->contextProperty(QStringLiteral("desktopIntentModel")).value<QObject*>(); }
     QObject* desktopTrayIconController() const { return m_context->contextProperty(QStringLiteral("desktopTrayIconController")).value<QObject*>(); }
     MockOptionsModel* onboardingOptionsModel() const { return m_context->contextProperty(QStringLiteral("optionsModel")).value<MockOptionsModel*>(); }
     bool testAutomationEnabled() const { return m_context->contextProperty(QStringLiteral("testAutomationEnabled")).toBool(); }
@@ -7006,7 +7356,10 @@ public Q_SLOTS:
         other_peer_details_model.m_raw_address = QStringLiteral("192.0.2.1");
         other_peer_details_model.m_address = QStringLiteral("192.0.2.1:8333");
         QQmlEngine::setObjectOwnership(&peer_details_model, QQmlEngine::CppOwnership);
-        peer_list_model_proxy.setPeerDetailsForTest(&peer_details_model);
+        peer_details_model.setCommands(&node_model);
+        other_peer_details_model.setCommands(&node_model);
+        peer_list_model_proxy.setPeerDetailsForTest(&peer_details_model, &other_peer_details_model);
+        node_model.m_refresh_peer_inventories = [] { peer_table_model.refresh(); ban_list_model.refresh(); };
         static MockWalletQmlModelTransaction wallet_transaction;
         static MockPaymentRequest payment_request;
         static MockSendRecipient send_recipient;
@@ -7066,6 +7419,10 @@ public Q_SLOTS:
             "PeerDetailsModel",
             "Test stub type"
         );
+        qmlRegisterUncreatableType<MockPeerCommandOperation>("org.bitcoincore.qt", 1, 0, "PeerCommandOperation", "Captured peer operation");
+        qmlRegisterType<MockPeerSelectionModel>("org.bitcoincore.qt", 1, 0, "PeerSelectionModel");
+        qRegisterMetaType<MockPeerCommandResult>();
+        qmlRegisterUncreatableMetaObject(MockPeerCommandResult::staticMetaObject, "org.bitcoincore.qt", 1, 0, "PeerCommandResult", "Retained peer result");
         qmlRegisterUncreatableType<MockNodeModel>("org.bitcoincore.qt", 1, 0, "NodeModel", "Provided by ApplicationModels");
         qmlRegisterType<BitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
         RegisterReceiveTypes();

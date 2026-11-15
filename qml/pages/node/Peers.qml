@@ -20,11 +20,15 @@ Page {
     property bool showHeader: false
     property bool showBackButton: true
     property Item popupParent: null
-    property int selectedNodeId: -1
-    property double peerActionTicket: 0
-    property var contextPeerDetails: null
-    property int pendingContextBanDuration: 3600
-    property string pendingContextBanLabel: qsTr("1 hour")
+    property string selectedConnectionId: ""
+    property PeerDetailsModel contextPeerDetails: null
+    property PeerCommandOperation operation: null
+    readonly property bool confirmationVisible: peerListBanConfirmation.visible || peerListDisconnectConfirmation.visible
+    readonly property bool actionPending: operation !== null && operation.pending
+    readonly property string operationError: operation === null ? ""
+        : operation.queryError.length > 0 ? operation.queryError : operation.errorText
+    readonly property string observationText: operation !== null && operation.resultPresent && operation.result.observationAvailable
+        ? operation.result.targetConnected ? qsTr("The original connection is still connected.") : qsTr("The original connection is no longer connected.") : ""
 
     readonly property var directionOptions: [
         { text: qsTr("Inbound"), value: "inbound" },
@@ -122,42 +126,39 @@ Page {
             root.height - peerRowActionsMenu.height - 12))
         peerRowActionsMenu.open()
     }
+    function replaceOperation(captured) {
+        if (captured === null) return false
+        if (confirmationVisible || (operation !== null && (operation.confirmationRequired || operation.pending))) {
+            captured.retire()
+            return false
+        }
+        if (operation !== null) operation.retire()
+        operation = captured
+        return true
+    }
     function requestContextPeerBan(duration, label) {
-        pendingContextBanDuration = duration
-        pendingContextBanLabel = label
-        peerListBanConfirmation.open()
-    }
-    function confirmContextPeerBan() {
-        const ticket = contextPeerDetails
-            ? ApplicationModels.nodeModel.requestBanPeer(contextPeerDetails.rawAddress, pendingContextBanDuration) : 0
-        if (ticket) peerActionTicket = ticket
-        else showPeerListActionError(qsTr("Could not start the ban request. The node may be busy or closing."))
-    }
-    function disconnectContextPeer() {
-        const ticket = contextPeerDetails
-            ? ApplicationModels.nodeModel.requestDisconnectPeer(contextPeerDetails.nodeId) : 0
-        if (ticket) peerActionTicket = ticket
-        else showPeerListActionError(qsTr("Could not start the disconnect request. The node may be busy or closing."))
-    }
-    Connections {
-        target: ApplicationModels.nodeModel
-        function onPeerActionFinished(ticket, outcome, error) {
-            if (ticket !== root.peerActionTicket) return
-            root.peerActionTicket = 0
-            if (root.visible && outcome !== NodeModel.Rejected) {
-                ApplicationModels.peerTableModel.refresh()
-                ApplicationModels.banListModel.refresh()
-            }
-            if (root.visible && error.length > 0) root.showPeerListActionError(error)
+        if (!confirmationVisible && contextPeerDetails !== null && contextPeerDetails.canBan && replaceOperation(contextPeerDetails.prepareBan(duration))) {
+            peerListBanConfirmation.originalOperation = operation
+            peerListBanConfirmation.durationLabel = label
+            peerListBanConfirmation.open()
         }
     }
+    function confirmContextPeerBan() { if (peerListBanConfirmation.originalOperation !== null) peerListBanConfirmation.originalOperation.confirm() }
+    function disconnectContextPeer() { if (peerListDisconnectConfirmation.originalOperation !== null) peerListDisconnectConfirmation.originalOperation.confirm() }
     function requestContextPeerDisconnect() {
-        peerListDisconnectConfirmation.open()
+        if (!confirmationVisible && contextPeerDetails !== null && contextPeerDetails.canDisconnect && replaceOperation(contextPeerDetails.prepareDisconnect())) {
+            peerListDisconnectConfirmation.originalOperation = operation
+            peerListDisconnectConfirmation.open()
+        }
     }
-    function showPeerListActionError(message) {
-        peerListActionError.message = message
-        peerListActionError.open()
+    Connections {
+        target: root.operation
+        function onChanged() {
+            if (root.visible && root.operation.resultPresent && !root.operation.pending && root.operationError.length > 0)
+                peerListActionError.open()
+        }
     }
+    Component.onDestruction: if (operation !== null) operation.retire()
 
     Component.onCompleted: ApplicationModels.peerListModelProxy.searchText = ""
 
@@ -373,8 +374,9 @@ Page {
                     delegate: ItemDelegate {
                         id: delegate
                         required property int index
-                        objectName: "peerListItem_" + nodeId
-                        required property int nodeId
+                        objectName: "peerListItem_" + nodeIdText
+                        required property string nodeIdText
+                        required property string connectionId
                         required property string address
                         required property string subversion
                         required property string direction
@@ -406,7 +408,7 @@ Page {
                                 anchors.margins: 4
                                 radius: 16
                                 color: delegate.down ? Theme.color.neutral3
-                                    : ((!root.compact && root.selectedNodeId === delegate.nodeId) || delegate.hovered)
+                                    : ((!root.compact && root.selectedConnectionId === delegate.connectionId) || delegate.hovered)
                                         ? Theme.color.neutral2 : "transparent"
                             }
                             Rectangle {
@@ -437,7 +439,7 @@ Page {
                                 CoreText {
                                     id: idText
                                     anchors.centerIn: parent
-                                    text: "#" + delegate.nodeId
+                                    text: "#" + delegate.nodeIdText
                                     font: Theme.text.description.font
                                     lineHeight: Theme.text.description.lineHeight
                                     lineHeightMode: Text.FixedHeight
@@ -563,6 +565,8 @@ Page {
     PeerActionsMenu {
         id: peerRowActionsMenu
         objectName: "peerRowActionsMenu"
+        canBan: root.contextPeerDetails !== null && root.contextPeerDetails.canBan && !root.actionPending && !root.confirmationVisible
+        canDisconnect: root.contextPeerDetails !== null && root.contextPeerDetails.canDisconnect && !root.actionPending && !root.confirmationVisible
         onBanRequested: (duration, label) => root.requestContextPeerBan(duration, label)
         onDisconnectRequested: root.requestContextPeerDisconnect()
     }
@@ -570,20 +574,28 @@ Page {
     AlertPopup {
         id: peerListBanConfirmation
         objectName: "peerListBanConfirmationPopup"
+        property PeerCommandOperation originalOperation: null
+        property string durationLabel: qsTr("1 hour")
+        onClosed: {
+            const original = peerListBanConfirmation.originalOperation
+            if (original !== null && original.confirmationRequired) original.cancel()
+        }
         parent: root.popupParent ? root.popupParent : root
         title: qsTr("Ban peer?")
-        message: root.contextPeerDetails
-            ? qsTr("Ban %1 for %2?").arg(root.contextPeerDetails.address).arg(root.pendingContextBanLabel)
-            : qsTr("Ban this peer for %1?").arg(root.pendingContextBanLabel)
+        message: peerListBanConfirmation.originalOperation !== null
+            ? qsTr("Ban %1 for %2?").arg(peerListBanConfirmation.originalOperation.address).arg(peerListBanConfirmation.durationLabel)
+            : qsTr("Ban this peer for %1?").arg(peerListBanConfirmation.durationLabel)
         AlertAction {
             text: qsTr("Cancel")
             role: AlertAction.Cancel
             buttonObjectName: "peerListBanCancelButton"
+            onTriggered: if (peerListBanConfirmation.originalOperation !== null) peerListBanConfirmation.originalOperation.cancel()
         }
         AlertAction {
             text: qsTr("Ban")
             role: AlertAction.Destructive
             buttonObjectName: "peerListBanConfirmButton"
+            enabled: peerListBanConfirmation.originalOperation !== null && peerListBanConfirmation.originalOperation.confirmationRequired
             onTriggered: root.confirmContextPeerBan()
         }
     }
@@ -594,6 +606,14 @@ Page {
         parent: root.popupParent ? root.popupParent : root
         title: qsTr("Peer action failed")
         messageObjectName: "peerListActionErrorMessage"
+        message: root.operationError + (root.observationText.length > 0 ? "\n" + root.observationText : "")
+        AlertAction {
+            text: qsTr("Refresh original peer state")
+            buttonObjectName: "peerListCommandReconcileButton"
+            closesPopup: false
+            enabled: root.operation !== null && root.operation.resultPresent && !root.operation.outcomeKnown && !root.operation.pending
+            onTriggered: root.operation.reconcile()
+        }
         AlertAction {
             text: qsTr("OK")
             buttonObjectName: "peerListActionErrorCloseButton"
@@ -603,20 +623,27 @@ Page {
     AlertPopup {
         id: peerListDisconnectConfirmation
         objectName: "peerListDisconnectConfirmationPopup"
+        property PeerCommandOperation originalOperation: null
+        onClosed: {
+            const original = peerListDisconnectConfirmation.originalOperation
+            if (original !== null && original.confirmationRequired) original.cancel()
+        }
         parent: root.popupParent ? root.popupParent : root
         title: qsTr("Disconnect peer?")
-        message: root.contextPeerDetails
-            ? qsTr("Disconnect from %1? The peer may reconnect automatically.").arg(root.contextPeerDetails.address)
+        message: peerListDisconnectConfirmation.originalOperation !== null
+            ? qsTr("Disconnect from %1? The peer may reconnect automatically.").arg(peerListDisconnectConfirmation.originalOperation.address)
             : qsTr("Disconnect this peer? The peer may reconnect automatically.")
         AlertAction {
             text: qsTr("Cancel")
             role: AlertAction.Cancel
             buttonObjectName: "peerListDisconnectCancelButton"
+            onTriggered: if (peerListDisconnectConfirmation.originalOperation !== null) peerListDisconnectConfirmation.originalOperation.cancel()
         }
         AlertAction {
             text: qsTr("Disconnect")
             role: AlertAction.Destructive
             buttonObjectName: "peerListDisconnectConfirmButton"
+            enabled: peerListDisconnectConfirmation.originalOperation !== null && peerListDisconnectConfirmation.originalOperation.confirmationRequired
             onTriggered: root.disconnectContextPeer()
         }
     }

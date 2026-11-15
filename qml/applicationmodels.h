@@ -11,6 +11,7 @@
 #include <qml/models/blockclockmodel.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/debuglogmodel.h>
+#include <qml/models/desktopintentmodel.h>
 #include <qml/models/desktoptrayiconcontroller.h>
 #include <qml/models/desktopwindowbehaviormodel.h>
 #include <qml/models/networkstatusmodel.h>
@@ -36,6 +37,7 @@ class ApplicationModels : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(NodeModel* nodeModel READ nodeModel CONSTANT)
+    Q_PROPERTY(DesktopIntentModel* desktopIntentModel READ desktopIntentModel CONSTANT)
     Q_PROPERTY(ChainModel* chainModel READ chainModel CONSTANT)
     Q_PROPERTY(BlockClockModel* blockClockModel READ blockClockModel CONSTANT)
     Q_PROPERTY(OptionsQmlModel* optionsModel READ optionsModel CONSTANT)
@@ -75,6 +77,7 @@ public:
     }
 
     NodeModel* nodeModel() const { return m_context ? m_context->contextProperty(QStringLiteral("nodeModel")).value<NodeModel*>() : nullptr; }
+    DesktopIntentModel* desktopIntentModel() const { return m_context ? m_context->contextProperty(QStringLiteral("desktopIntentModel")).value<DesktopIntentModel*>() : nullptr; }
     ChainModel* chainModel() const { return m_context ? m_context->contextProperty(QStringLiteral("chainModel")).value<ChainModel*>() : nullptr; }
     BlockClockModel* blockClockModel() const { return m_context ? m_context->contextProperty(QStringLiteral("blockClockModel")).value<BlockClockModel*>() : nullptr; }
     OptionsQmlModel* optionsModel() const { return m_context ? m_context->contextProperty(QStringLiteral("optionsModel")).value<OptionsQmlModel*>() : nullptr; }

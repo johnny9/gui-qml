@@ -69,7 +69,8 @@ void Owner::publish()
 
 execution::Admission Owner::admit(std::vector<Input> inputs, std::function<void(Admission)> done)
 {
-    if (m_closed->load()) return {{}, execution::Rejection::Closed};
+    std::lock_guard lock{m_admission_mutex};
+    if (m_closed->load() || m_forwarding_closed.load()) return {{}, execution::Rejection::Closed};
     if (inputs.empty() || inputs.size() > Queue::MAX_PENDING) return {{}, execution::Rejection::Invalid};
     size_t payload_bytes{sizeof(inputs) + inputs.size() * sizeof(Input)};
     for (const auto& input : inputs) {
@@ -86,8 +87,33 @@ execution::Admission Owner::admit(std::vector<Input> inputs, std::function<void(
     }, payload_bytes);
 }
 
+execution::Admission Owner::prepareForwarding(std::vector<Input> arguments, std::function<void(ForwardingSnapshot)> done)
+{
+    std::lock_guard lock{m_admission_mutex};
+    if (m_closed->load() || m_forwarding_closed.load()) return {{}, execution::Rejection::Closed};
+    if (arguments.size() > Queue::MAX_PENDING) return {{}, execution::Rejection::Invalid};
+    size_t bytes{sizeof(arguments) + arguments.size() * sizeof(Input)};
+    for (const auto& input : arguments) {
+        if (input.value.size() > Queue::MAX_INPUT_CHARS || input.producer_key.size() > Queue::MAX_KEY_CHARS)
+            return {{}, execution::Rejection::Capacity};
+        bytes += static_cast<size_t>(input.value.size() + input.producer_key.size()) * sizeof(QChar);
+    }
+    auto retained = execution::RetainValues<std::vector<Input>>(m_scope, [&] { return std::make_unique<std::vector<Input>>(std::move(arguments)); });
+    if (!retained) return {{}, execution::Rejection::Capacity};
+    m_forwarding_closed.store(true);
+    const auto admitted = submit([self = shared_from_this(), retained, done = std::move(done)] {
+        if (self->m_closed->load()) self->m_state->queue.stop();
+        auto snapshot = self->m_state->queue.prepareForwarding(*retained);
+        try { if (done) done(std::move(snapshot)); } catch (...) {}
+    }, bytes);
+    if (!admitted) m_forwarding_closed.store(false);
+    return admitted;
+}
+
 execution::Admission Owner::readiness(uint64_t revision, bool ready)
 {
+    std::lock_guard lock{m_admission_mutex};
+    if (m_forwarding_closed.load()) return {{}, execution::Rejection::Closed};
     return submit([self = shared_from_this(), revision, ready] {
         self->m_state->queue.readiness(revision, ready && !self->m_closed->load());
     });
@@ -121,9 +147,14 @@ execution::Admission Owner::review(std::shared_ptr<const Sink> sink)
 {
     return submit([self = shared_from_this(), sink = std::move(sink)] {
         auto& state = *self->m_state;
-        if (self->m_closed->load() || !sink || !sink->identity || !sink->inspect || !sink->query) return;
+        if (self->m_closed->load() || self->m_forwarding_closed.load() || !sink || !sink->identity || !sink->inspect || !sink->query) return;
         const auto delivery = state.queue.deliver(sink->identity);
         if (!delivery) return;
+        try {
+            if (self->m_services.available && !self->m_services.available()) {
+                state.queue.rejected(delivery->ticket); return;
+            }
+        } catch (...) { state.queue.rejected(delivery->ticket); return; }
         std::shared_ptr<ReplyCell> cell;
         try { cell = self->reserve(ReplyKind::Inspect, delivery->ticket); } catch (...) {}
         if (!cell) { state.queue.rejected(delivery->ticket); return; }

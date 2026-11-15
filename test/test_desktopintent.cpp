@@ -11,6 +11,7 @@
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/qt_test_registry.h>
 #include <QtTest/QtTest>
+#include <QFileOpenEvent>
 
 namespace {
 desktopintent::Input Input(int id, QString value = QStringLiteral("bitcoin:request"))
@@ -21,6 +22,83 @@ desktopintent::Input Input(int id, QString value = QStringLiteral("bitcoin:reque
 class DesktopIntentTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void forwardingSnapshotMergesEarlyInputsWithoutAnAcceptedPrefix()
+    {
+        desktopintent::Queue queue;
+        QVERIFY(queue.admit({Input(1)}));
+        const auto snapshot = queue.prepareForwarding({Input(2), Input(1)});
+        QVERIFY(snapshot); QCOMPARE(snapshot.inputs.size(), size_t{2});
+        QCOMPARE(snapshot.inputs[0].producer_key, QStringLiteral("1"));
+        QCOMPARE(snapshot.inputs[1].producer_key, QStringLiteral("2"));
+        QVERIFY(queue.snapshot().phase == desktopintent::Phase::Forwarding);
+        queue.readiness(1, true); QVERIFY(!queue.deliver(10));
+        QVERIFY(queue.admit({Input(3)}).error == desktopintent::Error::Closed);
+        QCOMPARE(queue.lookup(QStringLiteral("1"))->inspection, uint64_t{0});
+        desktopintent::Queue full;
+        std::vector<desktopintent::Input> before;
+        for (int id = 1; id <= 15; ++id) before.push_back(Input(id));
+        QVERIFY(full.admit(before));
+        const auto rejected = full.prepareForwarding({Input(16), Input(17)});
+        QVERIFY(rejected.error == desktopintent::Error::Capacity); QVERIFY(rejected.inputs.empty());
+        QCOMPARE(full.snapshot().pending, size_t{15}); QVERIFY(!full.lookup(QStringLiteral("16")));
+        full.stop(); QVERIFY(full.snapshot().phase == desktopintent::Phase::Stopped);
+        desktopintent::Queue active;
+        QVERIFY(active.admit({Input(1)})); active.readiness(1, true);
+        const auto original = active.deliver(5); QVERIFY(original);
+        QVERIFY(active.prepareForwarding({Input(2)}).error == desktopintent::Error::Invalid);
+        QVERIFY(active.accepted(original->ticket, 99));
+    }
+    void forwardingFenceOrdersEarlierAdmissionsAndRefusesLateCapture()
+    {
+        ManualRoutedExecution transport;
+        desktopintent::Services services; services.scheduler = transport.scheduler;
+        auto owner = desktopintent::Owner::Create(std::move(services), {}); QVERIFY(owner);
+        bool early_admitted{false};
+        QVERIFY(owner->admit({Input(1)}, [&](auto admitted) { early_admitted = static_cast<bool>(admitted); }));
+        desktopintent::ForwardingSnapshot captured;
+        QVERIFY(owner->prepareForwarding({Input(2)}, [&](auto snapshot) { captured = std::move(snapshot); }));
+        QVERIFY(!owner->admit({Input(3)}, {}));
+        QVERIFY(!owner->readiness(1, true));
+        transport.drain(); QVERIFY(early_admitted); QVERIFY(captured);
+        QCOMPARE(captured.inputs.size(), size_t{2});
+        QCOMPARE(captured.inputs.front().producer_key, QStringLiteral("1"));
+        QCOMPARE(captured.inputs.back().producer_key, QStringLiteral("2"));
+        QVERIFY(owner->stop()); transport.drain(); owner.reset(); transport.drain();
+        QVERIFY(transport.quiescent());
+    }
+    void actualQtFileOpenQueuesBeforeReadinessAndFencesLateEvents()
+    {
+        ManualRoutedExecution commands;
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        DesktopIntentModel model{{commands.scheduler, post}, false};
+        model.installFileOpenHandler();
+        QFileOpenEvent link{QUrl{QStringLiteral("bitcoin:request?amount=1")}};
+        QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &link));
+        QCOMPARE(model.pendingCount(), 0); // The event handler does not decide/admit on GUI.
+        drain(); QCOMPARE(model.pendingCount(), 1); QVERIFY(!model.canInspect());
+        QVERIFY(!model.error().isEmpty()); // Compiled/runtime wallet absence is explicit.
+        QFileOpenEvent relative{QStringLiteral("relative-to-a-later-directory.psbt")};
+        QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &relative));
+        drain(); QCOMPARE(model.pendingCount(), 1); // Never reinterpret an OS path against a later working directory.
+        model.dismiss(); drain(); QCOMPARE(model.pendingCount(), 0);
+        QFileOpenEvent invalid{QUrl{}};
+        QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &invalid));
+        drain(); QVERIFY(!model.error().isEmpty()); QVERIFY(model.canDismiss());
+        model.dismiss(); drain(); QVERIFY(model.error().isEmpty());
+        model.closeAdmission();
+        QFileOpenEvent late{QUrl{QStringLiteral("bitcoin:late")}};
+        QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &late));
+        drain(); QCOMPARE(model.pendingCount(), 0);
+        QVERIFY(model.state() == DesktopIntentModel::State::Stopped);
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
     void actualArgumentsKeepCoreOptionsBeforeRequestsOnly()
     {
         QByteArray executable{"bitcoin-core-app"}, option{"-regtest"}, uri{"bitcoin:request"}, injected{"-platform"};
@@ -45,6 +123,35 @@ private Q_SLOTS:
         QVERIFY(!desktopintent::ParseArguments(2, arguments, QStringLiteral("process"), QStringLiteral("/captured")).error.isEmpty());
     }
 #ifdef ENABLE_WALLET
+    void nativeAdmissionFenceBeatsAHeldReadyProjection()
+    {
+        ManualRoutedExecution commands;
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel factory; factory.setServices({commands.scheduler, post});
+        DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
+        const auto native_closed = std::make_shared<std::atomic_bool>(false);
+        model.setAdmissionGate(native_closed);
+        QVERIFY(model.owner()->admit({Input(1)}, {})); model.setReady(true); drain();
+        QVERIFY(model.canInspect());
+        native_closed->store(true); // The terminal phase's GUI notification is deliberately held.
+        model.inspectNext(); drain();
+        QVERIFY(!model.hasInspection()); QCOMPARE(model.pendingCount(), 1);
+        QVERIFY(model.state() == DesktopIntentModel::State::WaitingReady);
+        model.inspectNext(); drain(); // An explicit retry still cannot bypass Native admission.
+        QVERIFY(!model.hasInspection());
+        QObject control_view;
+        auto* control = factory.requestImport({paymentimport::Input::Kind::Text, QStringLiteral("bitcoin:control")}, {}, &control_view);
+        QVERIFY(control); QCOMPARE(control->requestId(), quint64{1}); // Neither rejected handoff called the Source factory.
+        delete control; model.closeAdmission(); factory.closeAdmission(); drain();
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
     void retainedFacadeDoesNotHoldPhysicalShutdownAfterStop()
     {
         ManualRoutedExecution commands;
