@@ -71,13 +71,26 @@ class SendIntegrationTests : public QObject
             if (!qmltest::Click(m_app, "sendCoinControlPickerOption_1")) return std::nullopt;
             auto* model = wallet->coinsListModel();
             model->update();
-            if (!QTest::qWaitFor([&] { return model->rowCount() >= 2; }, 30'000)) return std::nullopt;
+            // Mode selection and the post-lock Core catalog are separate owned
+            // operations. Do not Apply against an earlier, still-loading catalog.
+            if (!QTest::qWaitFor([&] { return !model->loading() && !wallet->coinSelectionPending() &&
+                        model->manualInputSelection() && model->rowCount() == 3 && model->lockedCoinsCount() == 1; }, 30'000)) return std::nullopt;
             model->beginSelection();
             for (const auto& input : inputs.getValues()) {
                 const QString id = QString::fromStdString(input.find_value("txid").get_str()) + ":" + QString::number(input.find_value("vout").getInt<int>());
                 if (!model->toggleCoinSelectionById(id)) return std::nullopt;
             }
             model->applySelection();
+            if (!QTest::qWaitFor([&] { return !wallet->coinSelectionPending() &&
+                        wallet->selectedCoins()->size() == inputs.size() && model->totalSelectedSatoshi() == 100 * COIN; }, 30'000)) return std::nullopt;
+            for (const auto& selected : *wallet->selectedCoins()) {
+                bool matches{false};
+                for (const auto& input : inputs.getValues()) {
+                    if (selected.hash.GetHex() == input.find_value("txid").get_str() &&
+                        selected.n == input.find_value("vout").getInt<unsigned>()) matches = true;
+                }
+                if (!matches) return std::nullopt;
+            }
         }
         return Sweep{wallet, destination, address, locked, expected_amount};
     }
@@ -645,7 +658,13 @@ private Q_SLOTS:
         auto* coins = wallet->coinsListModel();
         wallet->clearSelectedCoins();
         coins->update();
+        QTRY_VERIFY(!wallet->coinSelectionPending());
         QTRY_COMPARE(coins->selectedCoinsCount(), 0);
+        QVERIFY(!coins->manualInputSelection());
+        // Reset deliberately returns to Automatic. Re-enter Manual through the
+        // visible intent before opening its explicit selection dialog.
+        QVERIFY(qmltest::Click(m_app, "sendCoinControlPickerOption_1"));
+        QTRY_VERIFY(!wallet->coinSelectionPending() && coins->manualInputSelection());
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
 
         // Apply one real input through the dialog's production controls.

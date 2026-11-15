@@ -690,7 +690,9 @@ TestCase {
         actions.nodeView.trigger()
         compare(stack.depth, 1)
         compare(stack.currentItem, originalNode)
-        compare(refresh.count, 2)
+        // Replacing an already inactive peer page must not invent a state transition.
+        compare(peerTableModel.autoRefreshActive, false)
+        compare(refresh.count, 1)
         compare(shutdownSpy.count, 0)
     }
 

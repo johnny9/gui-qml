@@ -15,6 +15,7 @@ from qml_smoke_lib import (
     open_receive,
     open_wallet_settings,
     request_qr_payload,
+    select_wallet,
     stop_gui_checked,
     wait_until,
     wallet_scenario,
@@ -35,7 +36,7 @@ def receive_smoke(harness, checkpoint):
     mining_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="payer")
     rpc_call(harness.gui_rpc_port, "generatetoaddress", [101, mining_address])
     rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": "receiver", "passphrase": "activity password"})
-    gui.wait_for_property("walletBadge", "text", "receiver", timeout_ms=30000)
+    select_wallet(gui, "receiver")
     address = rpc_call(harness.gui_rpc_port, "getnewaddress", ["Smoke signing address", "legacy"], wallet="receiver")
     open_wallet_settings(gui)
     gui.click("walletSignVerifyMessageRow")
@@ -75,22 +76,35 @@ def receive_smoke(harness, checkpoint):
     checkpoint("payment request created")
 
     qr_path = Path(harness.tmpdir) / "payment-qr.png"
-    gui.click("paymentRequestMoreButton")
-    gui.wait_for_property("paymentRequestMoreMenu", "opened", True)
-    gui.click("requestPaymentSaveQRMenuButton")
-    gui.wait_for_property("requestPaymentSaveQRDialog", "visible", True)
-    gui.set_property("requestPaymentSaveQRDialog", "selectedFile", qr_path.as_uri())
-    gui.invoke("requestPaymentSaveQRDialog", "accepted")
-    gui.invoke("requestPaymentSaveQRDialog", "close")
-    wait_until(lambda: qr_path.is_file() and qr_path.read_bytes().startswith(bytes.fromhex("89504e470d0a1a0a")),
-               "the payment QR to be saved as PNG")
+    gui.wait_for_property("paymentRequestModal/savedRequestExportQrButton", "enabled", True)
+    original_request = gui.get_property("paymentRequestModal", "openedEditor.requestId")
+    gui.click("paymentRequestModal/savedRequestExportQrButton")
+    gui.wait_for_property("paymentRequestModal/savedRequestPngDialog", "visible", True)
+    original_export = gui.get_property("paymentRequestModal/savedRequestPngDialog", "contextObject.operationId")
+    assert original_export
+    assert gui.invoke_property_object("paymentRequestModal/savedRequestPngDialog", "contextObject", "choose", [qr_path.as_uri()]) is True
+
+    def original_png_written():
+        assert gui.get_property("paymentRequestModal/savedRequestPngDialog", "contextObject.operationId") == original_export
+        assert gui.get_property("paymentRequestModal", "openedEditor.requestId") == original_request
+        phase = gui.get_enum_property("paymentRequestModal/savedRequestPngDialog", "contextObject.phase")
+        assert phase["key"] not in ("Failed", "OutcomeUnknown", "Cancelled"), phase
+        return phase["key"] == "Completed"
+
+    wait_until(original_png_written, "the original QR export's confirmed write")
+    assert gui.get_property("paymentRequestModal/savedRequestPngDialog", "contextObject.finalPath") == str(qr_path)
+    assert gui.get_property("paymentRequestModal/savedRequestPngDialog", "contextObject.errorText") in (None, "")
+    gui.invoke("paymentRequestModal/savedRequestPngDialog", "close")
+    gui.wait_for_property("paymentRequestModal/savedRequestPngDialog", "visible", False)
+    assert qr_path.is_file() and qr_path.read_bytes().startswith(bytes.fromhex("89504e470d0a1a0a"))
     checkpoint("payment QR exported")
 
     txid = rpc_call(harness.gui_rpc_port, "sendtoaddress", {
         "address": address, "amount": 0.00001, "fee_rate": 1,
     }, wallet="payer")
-    gui.wait_for_property("paymentRequestStatus", "text", "Payment received", timeout_ms=30000)
-    gui.click("paymentRequestModalClose")
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True, timeout_ms=30000)
+    gui.wait_for_property("paymentRequestModal/savedRequestReceiptStatus", "text", "Payment received", timeout_ms=30000)
+    gui.click("paymentRequestModal/savedRequestCloseButton")
     gui.wait_for_property("paymentRequestModal", "visible", False)
     checkpoint("request received a payment")
 
@@ -119,11 +133,14 @@ def receive_smoke(harness, checkpoint):
     gui.click_list_item("activityListView", 0, "activityRowOpenButton")
     gui.wait_for_page("activityDetailsPage")
     gui.wait_for_property("activityDetailsPage", "detailsLoading", False, timeout_ms=30000)
-    gui.wait_for_property("transactionFlowRequest_1", "visible", True)
-    gui.click("transactionFlowRequest_1")
+    gui.wait_for_property(f"transactionFlowRequest_{original_request}", "visible", True)
+    gui.click(f"transactionFlowRequest_{original_request}")
     gui.wait_for_property("transactionPaymentRequestModal", "opened", True)
-    gui.wait_for_property("paymentRequestStatus", "text", "Payment received")
-    gui.wait_for_property("requestPaymentNoteRow", "value", "Private lunch note")
+    gui.wait_for_property("transactionPaymentRequestModal", "owned.openedEditor.receipts.fresh", True)
+    gui.wait_for_property("transactionPaymentRequestModal/savedRequestReceiptStatus", "text", "Payment received")
+    assert gui.get_property("transactionPaymentRequestModal", "owned.openedEditor.requestId") == original_request
+    assert gui.get_property("transactionPaymentRequestModal", "owned.openedEditor.address") == address
+    assert gui.get_property("transactionPaymentRequestModal", "owned.openedEditor.privateNote.text") == "Private lunch note"
     checkpoint("receipt reopened from Activity after restart")
 
 def typed_receipt_restart(harness, checkpoint):

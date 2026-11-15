@@ -5300,8 +5300,18 @@ class MockPeerTableModel : public QObject
     Q_PROPERTY(int refreshCalls READ refreshCalls NOTIFY refreshCallsChanged)
 
 public:
-    Q_INVOKABLE void startAutoRefresh() { m_auto_refresh_active = true; Q_EMIT autoRefreshActiveChanged(); }
-    Q_INVOKABLE void stopAutoRefresh() { m_auto_refresh_active = false; Q_EMIT autoRefreshActiveChanged(); }
+    Q_INVOKABLE void startAutoRefresh()
+    {
+        if (m_auto_refresh_active) return;
+        m_auto_refresh_active = true;
+        Q_EMIT autoRefreshActiveChanged();
+    }
+    Q_INVOKABLE void stopAutoRefresh()
+    {
+        if (!m_auto_refresh_active) return;
+        m_auto_refresh_active = false;
+        Q_EMIT autoRefreshActiveChanged();
+    }
     Q_INVOKABLE void refresh()
     {
         ++m_refresh_calls;

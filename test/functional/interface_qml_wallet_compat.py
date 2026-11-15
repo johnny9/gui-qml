@@ -151,7 +151,12 @@ def launch_bitcoin_qt(bitcoin_qt, harness):
         "-debugexclude=leveldb",
         "-printtoconsole=1",
     ]
+    if Path(command[0]).name == "xvfb-run":
+        # The QML process may intentionally use minimal. Xvfb supplies an X11
+        # display for Widgets, whose application fonts require that backend.
+        env["QT_QPA_PLATFORM"] = "xcb"
     print(f"[qml_wallet_qt_compat] starting bitcoin-qt: {' '.join(command)}")
+    print(f"[qml_wallet_qt_compat] Widgets QPA platform: {env.get('QT_QPA_PLATFORM', 'default')}")
     # Both streams can exceed pipe capacity during two-wallet startup/RPC.
     # Preserve full diagnostics on task-backed disk while the process runs;
     # no output reader or RPC may be responsible for unblocking Core's logger.
@@ -186,9 +191,22 @@ def create_unencrypted_wallet(gui, wallet_name):
 
 def create_full_payment_request(gui):
     gui.click("receiveTabButton")
-    gui.wait_for_page("requestPaymentPage", timeout_ms=10000)
+    gui.wait_for_page("receiveWorkspace", timeout_ms=10000)
+    gui.wait_for_property("receiveAmountInput", "visible", True, timeout_ms=10000)
     create_request(gui, REQUEST_AMOUNT, REQUEST_LABEL, REQUEST_MESSAGE, REQUEST_NOTE_SELF)
-    gui.wait_for_property("requestPaymentTitle", "text", "Payment request", timeout_ms=10000)
+    gui.wait_for_property("paymentRequestModal", "opened", True, timeout_ms=10000)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.busy", False, timeout_ms=10000)
+    request_id = gui.get_property("paymentRequestModal", "openedEditor.requestId")
+    address = gui.get_property("paymentRequestModal", "openedEditor.address")
+    assert request_id and address, "The compatibility check requires the original saved request"
+    assert gui.get_property("paymentRequestModal", "openedWallet.name") == WALLET_NAME
+    assert gui.get_property("paymentRequestModal", "openedEditor.dirty") is False
+    assert gui.get_property("paymentRequestModal", "openedEditor.amount.satoshi") == 100_000
+    assert gui.get_property("paymentRequestModal", "openedEditor.publicLabel.text") == REQUEST_LABEL
+    assert gui.get_property("paymentRequestModal", "openedEditor.message.text") == REQUEST_MESSAGE
+    assert gui.get_property("paymentRequestModal", "openedEditor.privateNote.text") == REQUEST_NOTE_SELF
+    assert gui.get_property("paymentRequestModal", "openedEditor.requestId") == request_id
+    assert gui.get_property("paymentRequestModal", "openedEditor.address") == address
 
 
 def qt_metadata_compatibility():

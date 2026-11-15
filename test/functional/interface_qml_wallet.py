@@ -12,6 +12,7 @@ from qml_smoke_lib import (
     create_wallet,
     import_wallet,
     open_wallet_settings,
+    select_wallet,
     stop_gui_checked,
     wallet_scenario,
 )
@@ -47,10 +48,8 @@ def wallet_smoke(harness, checkpoint):
     harness.start_gui()
     gui = harness.driver
     gui.wait_for_property("walletBadge", "loading", False, timeout_ms=30000)
-    open_wallet_selector(gui)
-    gui.click(f"walletSelectItem_{name}")
-    gui.wait_for_property("walletBadge", "text", name, timeout_ms=30000)
-    checkpoint("closed wallet loaded after restart")
+    select_wallet(gui, name)
+    checkpoint("closed wallet loaded and explicitly selected after restart")
 
     close_wallet(harness, name)
     restored = Path(harness.tmpdir) / "restored_smoke.bak"
@@ -66,7 +65,7 @@ def backup_recovery_disclosure(harness, checkpoint):
     name = "recovery_live"
     gui.wait_for_property("walletBadge", "loading", False, timeout_ms=30000)
     rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": name})
-    gui.wait_for_property("walletBadge", "text", name, timeout_ms=30000)
+    select_wallet(gui, name)
     original_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet=name)
     old_backup = Path(harness.tmpdir) / "before-password.bak"
     fresh_backup = Path(harness.tmpdir) / "after-password.bak"
@@ -124,7 +123,7 @@ def backup_final_destination(harness, checkpoint):
     selected.write_bytes(b"selected sentinel")
     rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": "destination_replacement"})
     replacement_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="destination_replacement")
-    gui.wait_for_property("walletBadge", "text", "destination_replacement", timeout_ms=30000)
+    select_wallet(gui, "destination_replacement")
     open_wallet_settings(gui)
     gui.set_text("walletSettingsBackupPathField", str(selected))
     gui.click("walletBackupRow")

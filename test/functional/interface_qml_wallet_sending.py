@@ -106,7 +106,7 @@ def psbt_smoke(harness, checkpoint):
     gui.wait_for_property("walletBadge", "loading", False, timeout_ms=30000)
     for name in ("signer", "recipient", "reviewer"):
         rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": name})
-    gui.wait_for_property("walletBadge", "text", "reviewer", timeout_ms=30000)
+    select_wallet(gui, "reviewer")
     addresses = [rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="recipient") for _ in range(2)]
     mining_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="signer")
     rpc_call(harness.gui_rpc_port, "generatetoaddress", [101, mining_address])
@@ -206,7 +206,7 @@ def legacy_fee_matrix(harness, checkpoint, version, confirmed=True):
     gui.wait_for_property("walletBadge", "loading", False, timeout_ms=30000)
     for name in ("fee-miner", "fee-foreign", "fee-reviewer"):
         rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": name})
-    gui.wait_for_property("walletBadge", "text", "fee-reviewer", timeout_ms=30000)
+    select_wallet(gui, "fee-reviewer")
     mining = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="fee-miner")
     rpc_call(harness.gui_rpc_port, "generatetoaddress", [101, mining])
     checked = 0

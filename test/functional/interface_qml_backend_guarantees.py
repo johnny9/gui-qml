@@ -7,7 +7,7 @@
 from decimal import Decimal
 
 from qml_scenarios import run_scenarios
-from qml_smoke_lib import wallet_scenario
+from qml_smoke_lib import select_wallet, wallet_scenario
 from qml_wallet_test_lib import rpc_call
 
 
@@ -24,7 +24,7 @@ def public_balance_observation(harness, checkpoint):
     name = "balance_observation"
     gui.wait_for_property("walletBadge", "loading", False, timeout_ms=30000)
     rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": name})
-    gui.wait_for_property("walletBadge", "text", name, timeout_ms=30000)
+    select_wallet(gui, name)
     gui.wait_for_property("walletBadge", "balanceKnown", True, timeout_ms=30000)
     gui.wait_for_property("walletBadge", "balanceSatoshi", 0)
     checkpoint("public grouped observation distinguishes a known empty wallet")

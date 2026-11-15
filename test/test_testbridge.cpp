@@ -11,6 +11,7 @@
 #include <QQuickItem>
 #include <QPointer>
 #include <QTemporaryDir>
+#include <QUrl>
 #include <QtTest/QtTest>
 #include <memory>
 #include <vector>
@@ -27,10 +28,14 @@ public:
     quint64 ticket{0};
     int requests{0}, boolean_calls{0}, void_calls{0};
     QString original_path;
+    QUrl original_url;
+    int url_calls{0}, unsupported_calls{0};
     quint64 operationId() const { return ticket; }
     Phase phase() const { return Phase::Ready; }
     Q_INVOKABLE quint64 request(const QString& path) { ++requests; original_path = path; return ticket; }
     Q_INVOKABLE quint64 requestOriginal() { ++requests; return ticket; }
+    Q_INVOKABLE bool choose(const QUrl& url) { ++url_calls; original_url = url; return url.isValid() && url.isLocalFile(); }
+    Q_INVOKABLE void unsupported(int) { ++unsupported_calls; }
     Q_INVOKABLE bool accepted() { ++boolean_calls; return true; }
     Q_INVOKABLE void unchanged() { ++void_calls; }
 };
@@ -105,6 +110,59 @@ private Q_SLOTS:
         QVERIFY(boolean.value("value").isBool()); QVERIFY(boolean.value("value").toBool()); QCOMPARE(f.port.boolean_calls, 1);
         const auto nothing = f.request({{"cmd", "invoke_property_object"}, {"objectName", "root"}, {"prop", "port"}, {"method", "unchanged"}});
         QVERIFY(!nothing.contains("error")); QVERIFY(!nothing.contains("value")); QCOMPARE(f.port.void_calls, 1);
+    }
+    void propertyActionsPreserveTypedArguments_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("implicit-url") << 0; QTest::newRow("explicit-url") << 1;
+        QTest::newRow("string-control") << 2; QTest::newRow("nonstring-rejected") << 3;
+        QTest::newRow("unsupported-type-rejected") << 4; QTest::newRow("invalid-url-original-refusal") << 5;
+    }
+    void propertyActionsPreserveTypedArguments() {
+        QFETCH(int, kind); BridgeFixture f; QVERIFY(f.valid); f.port.ticket = 7;
+        const auto original = QUrl::fromLocalFile(QStringLiteral("/original path/caf\u00e9.png"));
+        QJsonObject command{{"cmd", "invoke_property_object"}, {"objectName", "root"}, {"prop", "port"},
+            {"method", kind == 1 ? "choose(QUrl)" : kind == 2 ? "request" : kind == 4 ? "unsupported(int)" : "choose"},
+            {"args", QJsonArray{kind == 5 ? QStringLiteral("http://[") : original.toString()}}};
+        if (kind == 3) command["args"] = QJsonArray{23};
+        const auto result = f.request(command);
+        if (kind == 3 || kind == 4) {
+            QVERIFY(result.contains("error")); QCOMPARE(f.port.url_calls, 0); QCOMPARE(f.port.requests, 0);
+        } else if (kind == 2) {
+            QVERIFY(!result.contains("error")); QCOMPARE(result.value("value").toString(), QStringLiteral("7"));
+            QCOMPARE(f.port.original_path, original.toString()); QCOMPARE(f.port.requests, 1); QCOMPARE(f.port.url_calls, 0);
+        } else {
+            QVERIFY(!result.contains("error")); QVERIFY(result.value("value").isBool());
+            QCOMPARE(result.value("value").toBool(), kind != 5); QCOMPARE(f.port.url_calls, 1);
+            QCOMPARE(f.port.original_url, kind == 5 ? QUrl{QStringLiteral("http://[")} : original);
+        }
+        QCOMPARE(f.port.unsupported_calls, 0);
+    }
+    void scopedLookupKeepsTheOriginalCard_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("original-modal") << 0; QTest::newRow("missing-scope") << 1;
+        QTest::newRow("ambiguous-scope") << 2; QTest::newRow("ambiguous-child") << 3;
+        QTest::newRow("missing-child-no-global-fallback") << 4; QTest::newRow("empty-segment") << 5;
+    }
+    void scopedLookupKeepsTheOriginalCard() {
+        QFETCH(int, kind); BridgeFixture f; QVERIFY(f.valid);
+        auto* root = f.engine.rootObjects().front();
+        QQuickItem background{qobject_cast<QQuickItem*>(root)}; background.setObjectName(QStringLiteral("background"));
+        QQuickItem modal{qobject_cast<QQuickItem*>(root)}; modal.setObjectName(QStringLiteral("originalModal"));
+        QQuickItem background_button{&background}; background_button.setObjectName(QStringLiteral("sameAction"));
+        background_button.setProperty("receipt", QStringLiteral("background"));
+        QQuickItem original_button{&modal}; original_button.setObjectName(QStringLiteral("sameAction"));
+        original_button.setProperty("receipt", QStringLiteral("original"));
+        QQuickItem duplicate_scope{qobject_cast<QQuickItem*>(root)}; duplicate_scope.setObjectName(QStringLiteral("otherModal"));
+        QQuickItem duplicate_button{&modal}; duplicate_button.setObjectName(QStringLiteral("otherAction"));
+        if (kind == 2) duplicate_scope.setObjectName(QStringLiteral("originalModal"));
+        if (kind == 3) duplicate_button.setObjectName(QStringLiteral("sameAction"));
+        if (kind == 4) original_button.setObjectName(QStringLiteral("differentAction"));
+        const auto name = kind == 1 ? QStringLiteral("missingModal/sameAction") :
+            kind == 5 ? QStringLiteral("originalModal//sameAction") : QStringLiteral("originalModal/sameAction");
+        const auto result = f.request({{"cmd", "get_property"}, {"objectName", name}, {"prop", "receipt"}});
+        if (kind == 0) { QVERIFY(!result.contains("error")); QCOMPARE(result.value("value").toString(), QStringLiteral("original")); }
+        else QVERIFY(result.contains("error"));
+        QCOMPARE(background_button.property("receipt").toString(), QStringLiteral("background"));
     }
     void namedEnumsUseActualMetaObject() {
         BridgeFixture f; QVERIFY(f.valid);

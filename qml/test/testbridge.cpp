@@ -381,6 +381,31 @@ QObject* TestBridge::findObjectByName(const QString& name) const
         visitor.visit(root);
     }
 
+    if (name.contains(QLatin1Char('/'))) {
+        // A reused card may have the same child names in the background and in
+        // its modal. An explicit scope never falls back to a global match.
+        const auto parts = name.split(QLatin1Char('/'));
+        if (name.size() > 512 || parts.size() > 16 || parts.contains(QString{})) return nullptr;
+        QList<QObject*> roots = m_engine->rootObjects();
+        QObject* original{nullptr};
+        for (const auto& part : parts) {
+            QList<QObject*> candidates;
+            QSet<const QObject*> scope_visited;
+            Visitor scoped{part, candidates, scope_visited};
+            for (QObject* root : roots) scoped.visit(root);
+            QList<QObject*> visible;
+            for (QObject* candidate : candidates) {
+                if (const auto* item = qobject_cast<QQuickItem*>(candidate)) {
+                    if (item->isVisible()) visible.append(candidate);
+                } else if (candidate->property("visible").toBool()) visible.append(candidate);
+            }
+            const auto& exact = visible.isEmpty() ? candidates : visible;
+            if (exact.size() != 1) return nullptr;
+            original = exact.front();
+            roots = {original};
+        }
+        return original;
+    }
     if (matches.isEmpty()) return nullptr;
 
     // Prefer a visible QQuickItem (important when StackView keeps
@@ -939,7 +964,7 @@ QByteArray TestBridge::cmdInvokePropertyObject(const QString& object_name, const
     if (object_name.isEmpty() || prop.isEmpty() || method.isEmpty()) {
         return errorResponse(QStringLiteral("objectName, prop, and method are required"));
     }
-    if (args.size() > 1) {
+    if (args.size() > 1 || (args.size() == 1 && !args.at(0).isString())) {
         return errorResponse(QStringLiteral("Only zero or one string argument is supported"));
     }
 
@@ -959,7 +984,11 @@ QByteArray TestBridge::cmdInvokePropertyObject(const QString& object_name, const
     }
 
     const QMetaObject* meta = property_object->metaObject();
-    const int idx = meta->indexOfMethod(QMetaObject::normalizedSignature(signature.constData()));
+    int idx = meta->indexOfMethod(QMetaObject::normalizedSignature(signature.constData()));
+    if (idx < 0 && args.size() == 1 && !method.contains(QLatin1Char('('))) {
+        signature = method.toUtf8() + "(QUrl)";
+        idx = meta->indexOfMethod(QMetaObject::normalizedSignature(signature.constData()));
+    }
     if (idx < 0) {
         return errorResponse(QStringLiteral("Method not found: %1 on %2.%3").arg(QString::fromUtf8(signature), object_name, prop));
     }
@@ -975,10 +1004,19 @@ QByteArray TestBridge::cmdInvokePropertyObject(const QString& object_name, const
         else if (returns_ticket) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(quint64, ticket_result));
         else invoked = meta_method.invoke(property_object, Qt::DirectConnection);
     } else {
-        const QString arg = args.at(0).toString();
-        if (returns_bool) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(bool, bool_result), Q_ARG(QString, arg));
-        else if (returns_ticket) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(quint64, ticket_result), Q_ARG(QString, arg));
-        else invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_ARG(QString, arg));
+        if (meta_method.parameterCount() != 1) return errorResponse(QStringLiteral("Method does not accept one supported argument"));
+        const auto type = meta_method.parameterMetaType(0);
+        if (type == QMetaType::fromType<QString>()) {
+            const QString arg = args.at(0).toString();
+            if (returns_bool) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(bool, bool_result), Q_ARG(QString, arg));
+            else if (returns_ticket) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(quint64, ticket_result), Q_ARG(QString, arg));
+            else invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_ARG(QString, arg));
+        } else if (type == QMetaType::fromType<QUrl>()) {
+            const QUrl arg{args.at(0).toString()};
+            if (returns_bool) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(bool, bool_result), Q_ARG(QUrl, arg));
+            else if (returns_ticket) invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_RETURN_ARG(quint64, ticket_result), Q_ARG(QUrl, arg));
+            else invoked = meta_method.invoke(property_object, Qt::DirectConnection, Q_ARG(QUrl, arg));
+        } else return errorResponse(QStringLiteral("Method argument is not QString or QUrl"));
     }
     if (!invoked) {
         return errorResponse(QStringLiteral("Could not invoke %1 on %2.%3").arg(QString::fromUtf8(signature), object_name, prop));

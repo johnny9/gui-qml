@@ -266,6 +266,55 @@ private Q_SLOTS:
         QVERIFY(!coins.selectionReconciliationRequired());
     }
 
+    void newerInventoryReconcilesCatalogBeforeAnOlderSelectionReadCanPublish()
+    {
+        ManualCoins fixture{0}; auto& coins = *fixture.model;
+        QCOMPARE(coins.rowCount(), 0);
+        const auto original_revision = coins.selectionRevision();
+        const auto reads = fixture.wallet->read_calls.load();
+        for (int i{0}; i < 3; ++i)
+            fixture.wallet->add(i, 1000 + i, 1700000000 + i, 1, "new coin");
+
+        coins.update();
+        QVERIFY(coins.setManualInputSelection(true));
+        // Capture the newer inventory at the old selection epoch. The Manual
+        // intent is ahead of its outcome on Domain, so that intent settles
+        // before the snapshot is consumed. Keep the requested Core retry held.
+        QVERIFY(fixture.commands.step(execution::Lane::Core));
+        QCOMPARE(fixture.wallet->read_calls.load(), reads + 1);
+        const auto domain_and_gui = [&] {
+            for (int turn{0}; turn < 128; ++turn) {
+                bool progressed = fixture.commands.step(execution::Lane::Domain);
+                while (fixture.publishOne()) progressed = true;
+                if (!progressed) return true;
+            }
+            return false;
+        };
+        QVERIFY(domain_and_gui());
+        QCOMPARE(coins.rowCount(), 3);
+        QVERIFY(coins.manualInputSelection());
+        QVERIFY(!coins.selectionPending());
+        QCOMPARE(coins.selectionRevision(), original_revision + 1);
+        QVERIFY(fixture.commands.queuedCountIf([](const auto& turn) { return turn.lane == execution::Lane::Core; }) == 1);
+        QCOMPARE(fixture.wallet->read_calls.load(), reads + 1);
+
+        const COutPoint original{Txid{}, 0};
+        const auto id = QString::fromStdString(original.hash.GetHex()) + QStringLiteral(":0");
+        coins.beginSelection();
+        QVERIFY(coins.toggleCoinSelectionById(id));
+        coins.applySelection();
+        QVERIFY(domain_and_gui());
+        QVERIFY(!coins.selectionPending());
+        QVERIFY(coins.manualInputSelection());
+        QCOMPARE(coins.selectionSnapshot()->size(), size_t{1});
+        QVERIFY(coins.selectionSnapshot()->contains(original));
+        QCOMPARE(coins.totalSelectedSatoshi(), qint64{1000});
+        QVERIFY(!coins.selectionReconciliationRequired());
+        QCOMPARE(fixture.wallet->read_calls.load(), reads + 1);
+        QVERIFY(fixture.commands.queuedCountIf([](const auto& turn) { return turn.lane == execution::Lane::Core; }) == 1);
+        QVERIFY(fixture.wallet->lockCalls().empty());
+    }
+
     void coinRefreshKeepsSelectionIdentity()
     {
         ManualCoins fixture{2};

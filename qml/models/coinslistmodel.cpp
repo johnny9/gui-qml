@@ -236,13 +236,16 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
             const auto value = *result->snapshot;
             if (value->lock_revision != lock_revision->load()) { native_query->request(); return; }
             native = value;
-            if (native->selection_revision != session->revision()) { native_query->request(); projection->request(); return; }
             // A missing selected input is an explicit reconciliation state.
             // Keep the user's Manual intent until they choose a replacement
             // or explicitly switch back to Automatic.
             Selection spendable;
             for (const auto& coin : native->coins) if (!coin.locked) spendable.insert(coin.outpoint);
             session->reconcileCatalog(spendable);
+            // Spendability belongs to this native inventory, independently of
+            // a newer selection intent. Never expose new rows while Apply
+            // would still reconcile them against an older catalog.
+            if (native->selection_revision != session->revision()) { native_query->request(); projection->request(); return; }
         }
         projection->request();
     }

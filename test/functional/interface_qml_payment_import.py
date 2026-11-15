@@ -14,7 +14,7 @@ from qml_scenarios import (
     run_scenarios,
     scenario,
 )
-from qml_smoke_lib import wallet_scenario
+from qml_smoke_lib import select_wallet, wallet_scenario
 from qml_test_harness import (
     QmlTestHarness,
     find_gui_binary,
@@ -141,7 +141,7 @@ def uri_smoke(harness, checkpoint):
     gui = harness.driver
     gui.wait_for_property("walletBadge", "loading", False, timeout_ms=30000)
     rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": "uri_smoke"})
-    gui.wait_for_property("walletBadge", "text", "uri_smoke", timeout_ms=30000)
+    select_wallet(gui, "uri_smoke")
     address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="uri_smoke")
     gui.click("sendTabButton")
     gui.wait_for_page("sendPage")
