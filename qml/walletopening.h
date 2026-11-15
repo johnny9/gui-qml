@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QML_WALLETOPENING_H
 #define BITCOIN_QML_WALLETOPENING_H
 
+#include <qml/sourceepoch.h>
+
 #include <qml/execution.h>
 #include <qml/walletopeningstate.h>
 
@@ -141,13 +143,17 @@ public:
     // lease gates cleanup through rejection/closure, without a GUI completion.
     execution::BorrowAdmission holdValues(std::function<void()> cleanup);
     uint64_t transactionRevision() const;
+    // Captured atomic facts only: no Session/Wallet lifetime or GUI Core read.
+    std::function<bool()> observationGuard() const;
     execution::Admission planAction(const std::shared_ptr<const Action>& action,
                                     std::function<void()> work, size_t payload_bytes = 256);
     using Transactions = std::function<void(uint64_t, std::map<Txid, ChangeType>, bool)>;
     // Install the opening's backend receipt consumer, not a GUI subscription.
     // Its callback is invoked on Domain; it must retain only a weak owner.
     void onTransactions(Transactions consumer);
-    execution::Admission setReceivePreference(std::string type);
+    execution::Admission setReceivePreference(std::string type, std::shared_ptr<const Action> original = {}, std::function<void(bool)> done = {});
+    // Native-only preference read; selecting a template never writes it.
+    OutputType preferredReceiveType(interfaces::Wallet& wallet) const;
     uint64_t preferenceRevision() const { return m_preference_revision.load(); }
     void answerClose(Question question, bool accept);
     void retire(bool remove_wallet = false);
@@ -203,6 +209,7 @@ private:
     const Preferences m_preferences;
     const Clock m_clock;
     const NativeEvents m_native_events;
+    const std::shared_ptr<SourceEpoch> m_source_epoch{std::make_shared<SourceEpoch>()};
     std::shared_ptr<Resources> m_resources;
     State m_state{m_identity}; // Shared command Domain only
     std::atomic<uint64_t> m_preference_revision{0};

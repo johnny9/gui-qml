@@ -62,6 +62,13 @@ SettingsPage {
             root.paymentRequestRequested(requestId);
             return;
         }
+        if (wallet && wallet.receive) {
+            if (wallet.receive.useAddress(root.selectedAddress)) {
+                if (closeAction) closeAction();
+                root.receiveRequested();
+            } else root.errorText = wallet.receive.error.message;
+            return;
+        }
         const operation = wallet ? wallet.setCurrentPaymentRequestAddress(root.selectedAddress) : null;
         if (operation) {
             receiveOperationWallet = wallet;

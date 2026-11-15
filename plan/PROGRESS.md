@@ -22,13 +22,13 @@ progress without changing shared finding or schedule registers.
 | R19 | Focused checkpoint integrated:42 worker bodies,3 exact-parent REDs and merged248-body/17-static gate pass; source-refuted RC80 retained, R42 pending |
 | R29 | Focused checkpoint integrated:255 distinct worker bodies (135 native,95 QML,25 Core); parent25 executes20 intended failures and5 controls. Pinned static/QML/app lint pass. Combined122 native/Core bodies pass with R21; R42 remains pending |
 | R33 | Focused checkpoint integrated at3806a197:272 distinct worker Qt bodies plus2process scenarios with explicit source carry. Merged246 bodies,12pinnedstatic,app/QMLlint and startup failure/recovery pass;30scopes reconciled, R42 pending |
-| R20 | Candidate6f5100c9:139 distinct focused bodies and pinned lint/tidy/QML checks pass. Missing receipt reason distinction is user-deferred upstream; combined integration gate pending; no disabled/rejected/relay inference |
+| R20 | Focused conditional checkpoint integrated at644abba:139worker distinct bodies; merged387-body/31-static gate, app/QML lint and2IPC process scenarios pass. Receipt reason precision is user-deferred upstream; no disabled/rejected/relay inference. R42 pending |
 | R21 | Focused checkpoint integrated atffe3637d:270 R21 bodies plus122 R29 composition bodies pass (392 distinct combined);16 pinned static entries,app/QML lint pass. Scope095 held; R24 lifecycle and R42 remain open |
 | R24 | Compatibility guard and error-return repair integrated: prior157 bodies plus later focused33-body/10-static/actualCoreHWI gates pass at recorded inputs. Six new held-device schedules pass again in merged246. Whole R24 Domain/lifetime/partial/timeout gate remains open |
-| R22 | Independent implementation starting on R21/R20 candidates; R20 API distinction is user-deferred; combined prerequisites and its own focused gates remain |
-| R30 | Reservation/request editor work active; exact receive-type capability filtering007 is user-deferred as an upstream improvement; other implementation/gates remain |
-| R34 | Independent display/geometry implementation active on accepted R33/R07; focused gate pending |
-| R35 | Isolated source prepared on3806a197; durability/migration/path audit active, no acceptance claim |
+| R22 | Reopened during R23 integration: earlier198worker/merged387 focused bodies passed, but expanded original save timing cases expose GUI-dependent export admission and retirement. Signing/export worker owns a background continuation repair; no acceptance claim until original quiet/delete oracles pass |
+| R30 | Owned receive/editor/reservation/sharing implementation integrated at07095da3:317 current worker bodies pass, with explicit earlier-source carries, exact original025 parent failure and independent QR decoding. Merged composition and reopened R22 prerequisite remain pending; capability007 stays user-deferred upstream |
+| R34 | Focused checkpoint integrated at644abba:119worker Qt bodies plus3X11 geometry scenarios; merged387-body/31-static gate and2IPC scenarios pass. Five scopes reconciled, known Qt/upstream limits retained; R42 pending |
+| R35 | Whole M18 implementation active in isolated source;2parent source-retention failures and1preview control recorded; no acceptance claim |
 | R23, R25–R27, R31–R32, R36–R40 | Authorized according to actual prerequisites; remaining implementation/gates pending |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
@@ -65,8 +65,8 @@ not a matching fingerprint alone. Creation swaps pass; signing acceptance is pen
 The [R19 checkpoint](R19_PREPARATION_CHECKPOINT.md) records background-owned
 preparation and exact scope dispositions. The [signer repair](R24_SIGNER_GUARD_CHECKPOINT.md)
 records key compatibility without physical-device identity assumptions. The
-[R20 public receipt limitation](R20_PUBLIC_RECEIPT_LIMIT.md) is a separate pending
-user decision; it does not authorize Core changes or automatic rebroadcast.
+[R20 public receipt limitation](R20_PUBLIC_RECEIPT_LIMIT.md) has a user-approved narrow
+upstream deferral; it does not authorize Core changes or automatic rebroadcast.
 
 The [device-switch review](execution/R24-device-switch.md) records the required
 held admission/process/Domain/GUI schedules and the remaining partial-result
@@ -76,3 +76,7 @@ partial-signature or physical-device lifecycle guarantee.
 The [R20/R30 API decision](API_DEFERRALS_20261115.md) records the user-approved
 upstream remainders and the required truthful app behavior. These narrow
 deferrals do not authorize Core changes or waive other acceptance gates.
+
+The [parallel implementation strategy](PARALLEL_IMPLEMENTATION_20261115.md)
+keeps three workers on related families while the coordinator integrates and
+dispatches frozen candidates. Each build tree retains one writer.

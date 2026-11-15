@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/walletqmlmodel.h>
+#include <qml/walletreceiveadapter.h>
 #include <qml/walletidentity.h>
 #include <qml/walletsend.h>
 #include <qml/wallettransaction.h>
@@ -89,6 +90,27 @@ constexpr int FEE_ESTIMATE_DEBOUNCE_MS{250};
 constexpr unsigned int FEE_RATE_BASIS_VBYTES{1000};
 constexpr std::array<unsigned int, 3> STANDARD_FEE_TARGETS{2, DEFAULT_STANDARD_FEE_TARGET, 10};
 constexpr std::array<unsigned int, 7> CUSTOM_FEE_TARGETS{2, 3, 4, 6, 10, 25, 50};
+
+struct PsbtExportActionSlot {
+    mutable std::mutex mutex;
+    std::shared_ptr<std::shared_ptr<const walletopening::Session::Action>> retained;
+
+    std::shared_ptr<const walletopening::Session::Action> get() const
+    {
+        std::lock_guard lock{mutex};
+        if (!retained || !*retained) return {};
+        return {retained, retained->get()};
+    }
+    void clear()
+    {
+        std::shared_ptr<std::shared_ptr<const walletopening::Session::Action>> released;
+        {
+            std::lock_guard lock{mutex};
+            released = std::move(retained);
+        }
+        released.reset();
+    }
+};
 
 
 
@@ -366,6 +388,15 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
         m_opening->onTransactions([weak = std::weak_ptr<walletreceipts::Reader>{m_receipts}](uint64_t revision, std::map<Txid, ChangeType> changes, bool rescan) {
             if (const auto owner = weak.lock()) owner->notice(revision, std::move(changes), rescan);
         });
+        if (!m_backup_services.coordinator) m_backup_services.coordinator = std::make_shared<backup::InstallCoordinator>();
+        m_receive = new WalletReceiveModel(2, MakeReceivePorts(m_opening, m_request_store,
+            {m_opening->scheduler(), m_fee_read_services.post}, m_backup_services.coordinator), this);
+        connect(m_receive->reservation(), &ReceiveReservationModel::changed, this, [this] {
+            if (!m_receive->reservation()->generationPersisted()) return;
+            const auto type = m_receive->reservation()->lastGeneratedAddressType();
+            if ((type != QStringLiteral("legacy") && type != QStringLiteral("p2sh-segwit") && type != QStringLiteral("bech32") && type != QStringLiteral("bech32m")) || m_proven_receive_types.contains(type)) return;
+            m_proven_receive_types.insert(type); Q_EMIT openingMetadataChanged();
+        });
     }
     connect(m_receiving_address, &PaymentRequest::addressChanged, this, &WalletQmlModel::refreshReceiveRequestPayments);
     reloadReceiveRequests();
@@ -570,6 +601,7 @@ void WalletQmlModel::publishOpening()
         m_security->observe(metadata); if (!guard || m_stopping) return;
         if (name_changed) { Q_EMIT nameChanged(); if (!guard || m_stopping) return; }
         Q_EMIT openingMetadataChanged(); if (!guard || m_stopping) return;
+        if (m_receive) m_receive->refresh(); if (!guard || m_stopping) return;
         if (m_current_transaction) { Q_EMIT currentTransactionChanged(); if (!guard || m_stopping) return; }
     }
     if (update->preference_saved && update->preference_revision == m_opening->preferenceRevision()) {
@@ -674,6 +706,7 @@ void WalletQmlModel::checkShutdownFinished()
 void WalletQmlModel::closeAdmission()
 {
     const bool admission_changed = !std::exchange(m_admission_closed, true);
+    if (m_receive) m_receive->retire();
     if (m_transaction_attempt) m_transaction_attempt->close({});
     m_preparation_projection.phase = transactionattempt::Phase::Closed;
     m_preparation_projection.candidate.reset();
@@ -1424,7 +1457,7 @@ ImageExportOperation* WalletQmlModel::savePaymentRequestImage(PaymentRequest* re
         !request || (request != m_current_payment_request && request != m_detail_payment_request && request != m_receiving_address) ||
         request->paymentReceived() || request->qrPayload().isEmpty()) return nullptr;
     const auto* record = m_receive_requests->preparedEntry(request->id());
-    if (!record || record->entry.payment_received || record->display.uri != request->qrPayload()) return nullptr;
+    if (!record || record->entry.payment_received || !request->matchesStoredRevision(record->revision)) return nullptr;
     const auto publication = m_receive_requests->snapshot();
     if (!publication || !m_request_store->presentationCurrent() || publication->revision != m_request_store->revision()) return nullptr;
     imageexport::Identity identity{m_opening->identity(), request->id(), request->qrPayload(), request->generation(), request->revision()};
@@ -1462,7 +1495,7 @@ void WalletQmlModel::clearSettingsError()
 
 QVariantList WalletQmlModel::availableReceiveAddressTypes() const
 {
-    if (!available() || !m_metadata_known || !m_can_get_addresses) {
+    if (!available() || !m_metadata_known) {
         return {};
     }
 
@@ -1482,6 +1515,10 @@ QVariantList WalletQmlModel::availableReceiveAddressTypes() const
         item.insert(QStringLiteral("id"), OutputTypeId(type));
         item.insert(QStringLiteral("label"), OutputTypeLabel(type));
         item.insert(QStringLiteral("description"), OutputTypeDescription(type));
+        const bool proven = m_proven_receive_types.contains(OutputTypeId(type)) || (type == OutputType::BECH32M && m_taproot);
+        item.insert(QStringLiteral("capability"), static_cast<int>(proven ? ReceiveTypeStatus::Support::Proven : ReceiveTypeStatus::Support::Unknown));
+        item.insert(QStringLiteral("generationAvailability"), static_cast<int>(m_can_get_addresses ? ReceiveTypeStatus::Availability::Unknown : ReceiveTypeStatus::Availability::Unavailable));
+        if (!proven) item.insert(QStringLiteral("description"), QString{OutputTypeDescription(type) + QLatin1Char(' ') + tr("Support for this type will be checked when generating an address.")});
         types.append(item);
     }
     return types;
@@ -1659,7 +1696,7 @@ ReceiveRequestOperation* WalletQmlModel::submitRequest(walletrequests::Command c
             }
         }
         if (apply && intent) {
-            target->setNeedsUnlock(result.error == walletrequests::Error::NeedsUnlock || result.error == walletrequests::Error::IncorrectPassphrase);
+            target->setNeedsUnlock(result.error == walletrequests::Error::NeedsUnlock || result.error == walletrequests::Error::LockedAttemptFailed || result.error == walletrequests::Error::IncorrectPassphrase);
             if (!observer || !target || observer->m_stopping) return;
             target->setUnlockError(result.error == walletrequests::Error::IncorrectPassphrase ? error_text : QString{});
             if (!observer || !target || observer->m_stopping) return;
@@ -1811,7 +1848,9 @@ bool WalletQmlModel::applyRequest(PaymentRequest* target, walletrequests::Prepar
     if (!update(0, [&] { target->setNeedsUnlock(false); })) return false;
     if (!update(0, [&] { target->setUnlockError({}); })) return false;
     if (!update(0, [&] { target->setIsEditing(false); })) return false;
-    return update(0, [&] { target->setPreparedPayload(data.uri); });
+    if (!update(0, [&] { target->setPreparedPayload(data.uri); })) return false;
+    target->setStoredRevision(data.revision);
+    return true;
 }
 
 bool WalletQmlModel::receiveRequestReconciliationPending() const
@@ -1833,6 +1872,7 @@ void WalletQmlModel::publishRequestHistory()
     m_request_storage_loaded = update->loaded;
     m_request_storage_busy = update->busy;
     m_request_storage_error = ReceiveRequestOperation::ErrorText(update->error);
+    if (m_receive) m_receive->refresh();
     Q_EMIT receiveRequestReconciliationPendingChanged();
     if (!observer || m_stopping) return;
     if (!update->snapshot) { Q_EMIT receiveRequestStorageChanged(); return; }
@@ -3277,39 +3317,80 @@ QString WalletQmlModel::psbtSubmittedTxid() const
     if (!m_psbt_receipt) return {};
     std::lock_guard lock{m_psbt_receipt->mutex}; return m_psbt_receipt->submitted ? m_psbt_receipt->txid : QString{};
 }
-void WalletQmlModel::startPsbtFileExport(quint64 action_id, const QString& path,
-    std::shared_ptr<const PartiallySignedTransaction> document, const std::shared_ptr<PsbtReceipt>& receipt)
+std::shared_ptr<FileExportRequest> WalletQmlModel::preparePsbtFileExport(
+    quint64 action_id, const QString& path, const std::shared_ptr<PsbtReceipt>& receipt)
 {
-    if (!observationsAllowed() || action_id != m_psbt_action_id || m_psbt_action_kind != PsbtActionKind::Save || !document) return;
+    if (!observationsAllowed() || action_id != m_psbt_action_id || m_psbt_action_kind != PsbtActionKind::Save) return {};
     const QPointer<WalletQmlModel> observer{this};
     const auto opening = m_opening;
     auto services = m_backup_services;
     services.scheduler = opening ? opening->scheduler() : m_psbt_fee_services.scheduler;
     services.post = presentation::ReliablePost(m_fee_read_services.post);
-    services.available = [weak = std::weak_ptr<walletopening::Session>{opening}] {
-        const auto session = weak.lock(); return session && session->available();
+    services.available = [has_opening = bool(opening), weak = std::weak_ptr<walletopening::Session>{opening}] {
+        if (!has_opening) return true;
+        const auto session = weak.lock(); return session && session->observationOpen();
     };
-    services.submit = [weak = std::weak_ptr<walletopening::Session>{opening}](std::function<void()> work) {
-        const auto session = weak.lock();
-        const auto action = session ? session->startAction() : nullptr;
-        if (!action) return execution::Admission{{}, execution::Rejection::Closed};
-        return session->perform(action, [work = std::move(work)](interfaces::Wallet&) { work(); return true; }, [](bool) {});
+    const auto action_slot = std::make_shared<PsbtExportActionSlot>();
+    if (opening) {
+        services.submit = [weak = std::weak_ptr<walletopening::Session>{opening}, action_slot](std::function<void()> work) {
+            const auto session = weak.lock();
+            const auto action = action_slot->get();
+            if (!session || !action) return execution::Admission{{}, execution::Rejection::Closed};
+            return session->perform(action, [work = std::move(work)](interfaces::Wallet&) { work(); return true; }, [](bool) {});
+        };
+    } else {
+        const auto scheduler = services.scheduler;
+        services.submit = [scheduler](std::function<void()> work) {
+            return scheduler ? execution::Submit(*scheduler, std::move(work), [] {})
+                : execution::Admission{{}, execution::Rejection::Closed};
+        };
+    }
+    const auto previous_outcome = std::move(services.outcome);
+    services.outcome = [receipt, action_slot, previous_outcome](backup::Snapshot snapshot) {
+        {
+            std::lock_guard lock{receipt->mutex};
+            receipt->path = QString::fromUtf8(snapshot.target.path.data(), static_cast<qsizetype>(snapshot.target.path.size()));
+            receipt->saved = snapshot.phase == backup::Phase::Succeeded;
+        }
+        action_slot->clear();
+        if (previous_outcome) previous_outcome(std::move(snapshot));
+    };
+    const auto previous_abandon = std::move(services.abandon);
+    services.abandon = [action_slot, previous_abandon] {
+        action_slot->clear();
+        if (previous_abandon) previous_abandon();
     };
     if (!services.coordinator) {
         services.coordinator = std::make_shared<backup::InstallCoordinator>();
         m_backup_services.coordinator = services.coordinator;
     }
+    // Construct without a QObject parent. Cleanup reservation admission can
+    // run a reentrant close callback, so the model must not be deleted from
+    // inside its own constructor.
+    auto* export_operation = new FileExportOperationModel(path, std::move(services));
+    if (!observer) { delete export_operation; return {}; }
+    if (opening) {
+        // Reserve the original wallet action before admitting PSBT creation.
+        // The retained action holder releases its wallet borrower on Cleanup.
+        action_slot->retained = walletopening::RetainValues<std::shared_ptr<const walletopening::Session::Action>>(
+            opening, [] { return std::make_unique<std::shared_ptr<const walletopening::Session::Action>>(); });
+        if (!action_slot->retained || !observer || !opening->available()) { delete export_operation; return {}; }
+        *action_slot->retained = opening->startAction();
+        if (!*action_slot->retained) { action_slot->clear(); delete export_operation; return {}; }
+    }
     if (m_file_export_operation) {
         m_file_export_operation->retire();
         m_file_export_operation->deleteLater();
     }
-    auto* export_operation = new FileExportOperationModel(path, document, std::move(services), this);
+    export_operation->setParent(this);
     m_file_export_operation = export_operation;
-    const QPointer<FileExportOperationModel> export_guard{export_operation};
+    m_psbt_file_export_action_id = action_id;
+    const auto request = export_operation->requestForAcceptedContinuation();
     connect(export_operation, &FileExportOperationModel::changed, this,
-        [observer, export_operation, receipt, action_id] {
+        [observer = QPointer<WalletQmlModel>{this}, export_operation, receipt, action_id] {
             if (!observer || observer->m_file_export_operation != export_operation ||
-                observer->m_psbt_action_id != action_id || observer->m_psbt_action_kind != PsbtActionKind::Save) return;
+                observer->m_psbt_action_id != action_id || observer->m_psbt_action_kind != PsbtActionKind::Save ||
+                !observer->observationsAllowed() || observer->m_admission_closed) return;
             if (export_operation->pending()) {
                 Q_EMIT observer->psbtActionChanged();
                 return;
@@ -3324,15 +3405,74 @@ void WalletQmlModel::startPsbtFileExport(quint64 action_id, const QString& path,
             }
             Q_EMIT observer->psbtActionChanged();
         });
-    Q_EMIT fileExportOperationChanged();
-    if (!observer || !export_guard || m_file_export_operation != export_guard || action_id != m_psbt_action_id) return;
-    const bool admitted = export_operation->start();
-    if (!admitted && m_psbt_action_state == PsbtActionState::PsbtPending) {
-        m_psbt_action_state = PsbtActionState::PsbtFailed;
-        m_psbt_action_error = export_operation->errorText().isEmpty()
-            ? tr("The PSBT export could not be scheduled.") : export_operation->errorText();
+    return request;
+}
+
+void WalletQmlModel::startPsbtFileExport(quint64 action_id, const QString& path,
+    std::shared_ptr<const PartiallySignedTransaction> document, const std::shared_ptr<PsbtReceipt>& receipt)
+{
+    if (!observationsAllowed() || action_id != m_psbt_action_id || m_psbt_action_kind != PsbtActionKind::Save || !document) return;
+    const QPointer<WalletQmlModel> observer{this};
+    const auto opening = m_opening;
+    const auto review = m_psbt_action_review;
+    const auto view = m_psbt_action_view_epoch;
+    const bool had_review = m_psbt_action_had_review;
+    const bool had_document = m_psbt_action_had_document;
+    const auto request = preparePsbtFileExport(action_id, path, receipt);
+    if (!observer) {
+        if (request) request->abandon();
+        return;
     }
-    Q_EMIT psbtActionChanged();
+    if (!request) {
+        if (observationsAllowed() && action_id == m_psbt_action_id && m_psbt_action_state == PsbtActionState::PsbtPending) {
+            m_psbt_action_state = PsbtActionState::PsbtFailed;
+            m_psbt_action_error = tr("The PSBT export could not be queued.");
+        }
+        if (!observer) return;
+        Q_EMIT fileExportOperationChanged();
+        if (observer && action_id == m_psbt_action_id) Q_EMIT psbtActionChanged();
+        return;
+    }
+    const bool same_document = had_document && m_current_psbt &&
+        !document.owner_before(m_current_psbt) && !m_current_psbt.owner_before(document);
+    const bool same_review = had_review ? review && m_current_transaction == review : !m_current_transaction;
+    const bool still_pending = observer && observationsAllowed() && !m_admission_closed &&
+        m_opening == opening && action_id == m_psbt_action_id &&
+        m_psbt_action_kind == PsbtActionKind::Save && m_psbt_action_state == PsbtActionState::PsbtPending &&
+        m_psbt_view_epoch == view && m_psbt_action_view_epoch == view && same_review &&
+        (had_document ? same_document : !m_current_psbt);
+    if (!still_pending) {
+        const bool same_action = observer && action_id == m_psbt_action_id &&
+            m_psbt_action_kind == PsbtActionKind::Save && m_psbt_action_state == PsbtActionState::PsbtPending;
+        QPointer<FileExportOperationModel> stale_export;
+        if (same_action) {
+            m_psbt_action_state = PsbtActionState::PsbtStale;
+            m_psbt_action_error.clear();
+            if (m_psbt_file_export_action_id == action_id) {
+                stale_export = m_file_export_operation;
+                m_file_export_operation = nullptr;
+                m_psbt_file_export_action_id = 0;
+            }
+        }
+        request->abandon();
+        if (!observer) return;
+        if (stale_export) stale_export->deleteLater();
+        if (same_action) {
+            Q_EMIT fileExportOperationChanged();
+            if (observer && action_id == m_psbt_action_id) Q_EMIT psbtActionChanged();
+        }
+        return;
+    }
+    if (!request->start(std::move(document))) {
+        if (observer && action_id == m_psbt_action_id && m_psbt_action_state == PsbtActionState::PsbtPending) {
+            m_psbt_action_state = PsbtActionState::PsbtFailed;
+            m_psbt_action_error = tr("The PSBT export could not be queued.");
+            request->abandon();
+        }
+    }
+    if (!observer) return;
+    Q_EMIT fileExportOperationChanged();
+    if (observer && action_id == m_psbt_action_id) Q_EMIT psbtActionChanged();
 }
 quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requested_path)
 {
@@ -3365,6 +3505,7 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     (void)previous_action; (void)previous_lease;
     const auto id = ++m_psbt_action_id;
     m_psbt_action_kind = kind; m_psbt_action_state = PsbtActionState::PsbtPending;
+    m_psbt_file_export_action_id = 0;
     m_psbt_action_error.clear(); m_psbt_import_result = PsbtImportResult::PsbtUnsupported;
     m_psbt_action_path = path;
     if (kind == PsbtActionKind::Import || kind == PsbtActionKind::Recheck) ++m_psbt_view_epoch;
@@ -3405,6 +3546,17 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
         rejected(tr("The PSBT action input is too large.")); return id;
     }
     const size_t capture_bytes{FIXED_CAPTURE_BYTES + static_cast<size_t>(path.size()) * sizeof(QChar)};
+    std::shared_ptr<FileExportRequest> file_export_request;
+    if (kind == PsbtActionKind::Save && !document) {
+        file_export_request = preparePsbtFileExport(id, path, m_psbt_receipt);
+        if (!file_export_request) {
+            rejected(tr("The PSBT export could not be reserved."));
+            return id;
+        }
+    }
+    auto abandon_unaccepted_export = qScopeGuard([&] {
+        if (file_export_request) file_export_request->abandon();
+    });
     if (kind == PsbtActionKind::Save && document) {
         if (!opening || !opening->available() || !reviewed || !owns_pending()) {
             rejected(tr("The captured PSBT review is no longer available."));
@@ -3414,11 +3566,21 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
         return id;
     }
     auto weak = std::make_shared<std::weak_ptr<PsbtAction>>();
-    auto operation = std::make_shared<PsbtAction>(scheduler, [weak, receipt, post, observer, id] {
-        if (auto owner = weak->lock()) if (auto result = owner->result(); result && result->value) {
-            std::lock_guard lock{receipt->mutex};
-            receipt->path = result->value->effect.path; receipt->txid = result->value->effect.txid;
-            receipt->saved = result->value->effect.saved; receipt->submitted = result->value->effect.submitted;
+    auto operation = std::make_shared<PsbtAction>(scheduler, [weak, receipt, post, observer, id, kind, file_export_request] {
+        if (const auto owner = weak->lock()) {
+            if (const auto result = owner->result(); result && result->value) {
+                if (kind == PsbtActionKind::Save && file_export_request) {
+                    if (!result->value->error.isEmpty() || !result->value->export_document) file_export_request->abandon();
+                    else file_export_request->start(result->value->export_document);
+                }
+                std::lock_guard lock{receipt->mutex};
+                receipt->path = result->value->effect.path; receipt->txid = result->value->effect.txid;
+                receipt->saved = result->value->effect.saved; receipt->submitted = result->value->effect.submitted;
+            } else if (kind == PsbtActionKind::Save && file_export_request) {
+                file_export_request->abandon();
+            }
+        } else if (kind == PsbtActionKind::Save && file_export_request) {
+            file_export_request->abandon();
         }
         post([observer, id] { if (observer && observer->m_psbt_action_id == id) observer->publishPsbtAction(); });
     });
@@ -3501,11 +3663,15 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
             return opening->perform(action, [work](interfaces::Wallet& wallet) { return work(&wallet); }, std::move(done), std::move(failed), capture_bytes);
         });
     } else admission = operation->start([work] { return work(nullptr); }, {execution::Lane::Core, capture_bytes});
+    if (admission) abandon_unaccepted_export.dismiss();
     // Effect admission can close/delete/replace the observer. The original
     // command owns its actual outcome independently; never adopt a successor.
     if (!owns_action() || observer->m_psbt_action != operation || observer->m_psbt_action_state != PsbtActionState::PsbtPending) return id;
     if (!admission) rejected(tr("The PSBT action could not be queued."));
-    else if (owns_pending()) Q_EMIT observer->psbtActionChanged();
+    else if (owns_pending()) {
+        if (file_export_request) Q_EMIT observer->fileExportOperationChanged();
+        if (owns_pending()) Q_EMIT observer->psbtActionChanged();
+    }
     return id;
 }
 
@@ -3570,6 +3736,7 @@ void WalletQmlModel::publishPsbtAction()
         }
         m_psbt_action_error = !value.error.isEmpty() ? value.error : value.effect.error;
         if (original_kind == PsbtActionKind::Save && m_psbt_action_error.isEmpty() && value.export_document) {
+            if (m_psbt_file_export_action_id == original_id) return;
             if (!same) {
                 m_psbt_action_state = PsbtActionState::PsbtStale;
             } else {

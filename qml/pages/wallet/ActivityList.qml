@@ -12,6 +12,7 @@ PageStack {
     id: stackView
     objectName: "activityStack"
     property var wallet: null
+    property bool walletViewActive: true
 
     replaceEnter: Transition {
         NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 250; easing.type: Easing.OutCubic }
@@ -27,7 +28,7 @@ PageStack {
 
     function navigateToTransaction(txid, outputIndex) {
         if (!wallet || !wallet.available || !txid) return
-        const details = { transactionId: txid, wallet: stackView.wallet,
+        const details = { transactionId: txid, wallet: stackView.wallet, walletViewActive: Qt.binding(function() { return stackView.walletViewActive }),
             outputIndex: outputIndex === undefined ? -1 : outputIndex }
         let page
         if (stackView.currentItem && stackView.currentItem.objectName === "activityDetailsPage")
@@ -54,7 +55,7 @@ PageStack {
         when: stackView.wallet !== null
     }
 
-    PaymentRequestModal { id: paymentRequestModal; wallet: stackView.wallet }
+    RequestDetailsHost { id: paymentRequestModal; wallet: stackView.wallet; contextActive: stackView.walletViewActive }
 
     initialItem: ActivityListPage {
         wallet: stackView.wallet

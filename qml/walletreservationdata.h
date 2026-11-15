@@ -13,6 +13,7 @@
 #include <QString>
 
 #include <functional>
+#include <atomic>
 #include <memory>
 #include <optional>
 
@@ -29,7 +30,15 @@ struct AddressIntent {
     const uint64_t token, view, view_revision;
     const Draft draft;
     const bool next, explicit_type, create, select;
+    const bool remember_type{false};
+    // Bounded revocation ingress. Store still owns generation/bind decisions
+    // and the actual outcome of a write admitted before revocation.
+    const std::shared_ptr<std::atomic_bool> revoked{std::make_shared<std::atomic_bool>(false)};
 };
+inline void RevokeAddressIntent(const std::shared_ptr<const AddressIntent>& intent)
+{
+    if (intent) intent->revoked->store(true);
+}
 struct ReservedAddress {
     CTxDestination destination;
     QString address, address_type, label;

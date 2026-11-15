@@ -812,7 +812,7 @@ TestCase {
         else if (data.tag === "checking-before-notify") testWalletModel.checkBeforeReconciliationNotificationForTest()
         else compare(dialog.visible, false)
         // The platform may still deliver the old chooser's accept signal.
-        dialog.selectAndAccept("file:///tmp/request-qr-old-interest.png")
+        dialog.deliverLateAcceptedForTest("file:///tmp/request-qr-old-interest.png")
         compare(grabber.captures, 0)
         compare(card.actionErrorText, "The payment request changed before the QR code was saved.")
     }

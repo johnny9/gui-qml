@@ -83,9 +83,9 @@ QVariant ReceiveRequestHistoryModel::dataForRecord(const walletrequests::Record&
     case DateIsoRole: return display.date_iso;
     case AddressRole: return display.address;
     case AddressShortRole: return display.address_short;
-    case LabelRole: return display.label;
-    case MessageRole: return display.message;
-    case NoteSelfRole: return display.note;
+    case LabelRole: return display.label_preview;
+    case MessageRole: return display.message_preview;
+    case NoteSelfRole: return display.note_preview;
     case AmountSatRole: return QVariant::fromValue<qlonglong>(record.entry.recipient.amount);
     case AmountDisplayRole: return display.amount;
     case UriRole: return display.uri;

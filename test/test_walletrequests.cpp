@@ -149,6 +149,44 @@ class WalletRequestsTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void legacyHistoryPreviewsRemainBoundedWithoutTruncatingTheRecord()
+    {
+        Fixture f; auto legacy = Entry(); legacy.recipient.message = std::string(20'000, 'm');
+        legacy.recipient.label = std::string(1024, 'l'); legacy.recipient.noteSelf = std::string(2048, 'n');
+        f.wallet->stored["1"] = Encode(legacy);
+        const auto loaded = f.settle(Intent(Kind::Reload)); QCOMPARE(loaded->result()->error, Error::None); f.observe();
+        const auto snapshot = f.store->take()->snapshot; QVERIFY(snapshot); QCOMPARE(snapshot->records.size(), size_t{1});
+        ReceiveRequestHistoryModel model; model.setSnapshot(snapshot);
+        QVERIFY(model.data(model.index(0), ReceiveRequestHistoryModel::UriRole).toString().isEmpty());
+        for (const auto role : {ReceiveRequestHistoryModel::LabelRole, ReceiveRequestHistoryModel::MessageRole, ReceiveRequestHistoryModel::NoteSelfRole}) {
+            const auto preview = model.data(model.index(0), role).toString();
+            QCOMPARE(preview.size(), 513); QVERIFY(preview.endsWith(QChar{0x2026}));
+        }
+        QCOMPARE(snapshot->find(1)->entry.recipient.message, legacy.recipient.message);
+        QCOMPARE(snapshot->find(1)->display.message.size(), 20'000);
+        QCOMPARE(Decode({f.wallet->stored.at("1")}).entries.front().recipient.message, legacy.recipient.message);
+        QCOMPARE(f.wallet->writes, 0); QCOMPARE(f.wallet->label_writes, 0);
+    }
+    void requestNoteConflictRetainsTheSavedRequestWithoutOverwritingTheAddress_data()
+    {
+        QTest::addColumn<bool>("external");
+        QTest::newRow("unchanged-label") << false; QTest::newRow("external-relabel") << true;
+    }
+    void requestNoteConflictRetainsTheSavedRequestWithoutOverwritingTheAddress()
+    {
+        QFETCH(bool, external);
+        Fixture f; f.load(); auto command = f.edit(f.record(), "new request note"); command.expected_label = "private";
+        const auto operation = f.store->submit(command).operation; QVERIFY(operation);
+        while (f.commands.step(Lane::Domain)) {}
+        if (external) f.wallet->label = "external address note";
+        f.commands.drain(); const auto result = operation->result(); QVERIFY(result); QVERIFY(result->request_saved);
+        QCOMPARE(result->error, external ? Error::Changed : Error::None); QCOMPARE(result->label_saved, !external);
+        QCOMPARE(f.wallet->label_writes, external ? 0 : 1);
+        QCOMPARE(f.wallet->label, external ? std::string{"external address note"} : std::string{"new request note"});
+        const auto saved = Decode({f.wallet->stored.at("1")}).entries.front();
+        QCOMPARE(saved.recipient.noteSelf, std::string{"new request note"}); QCOMPARE(saved.recipient.label, std::string{"public"});
+        QCOMPARE(saved.recipient.message, std::string{"message"}); QCOMPARE(saved.recipient.amount, CAmount{100});
+    }
     void confirmedPersistenceOwnsItsOutcomeWhenRowPreparationFails_data()
     {
         QTest::addColumn<int>("mode");
@@ -898,7 +936,8 @@ private Q_SLOTS:
             QCOMPARE(snapshot->find(id), rows.at(id).get());
             QVERIFY(snapshot->find(id)->entry.payment_received); QVERIFY(snapshot->find(id)->display.uri.isEmpty());
         }
-        QVERIFY(!original->entry.payment_received); QVERIFY(!original->display.uri.isEmpty());
+        QVERIFY(!original->entry.payment_received); QVERIFY(original->display.uri.isEmpty());
+        QVERIFY(!BuildBitcoinUri(original->display.address, original->entry.recipient.amount, original->display.label, original->display.message).isEmpty());
         QCOMPARE(snapshot->by_address.at(Address()), std::vector<int64_t>({3, 2, 1}));
     }
     void ownerYieldsBeforeCompletingHistoryPreparation()
@@ -1024,12 +1063,15 @@ private Q_SLOTS:
         f.wallet->stored["2"] = Encode(other); f.load();
         const auto before = f.store->take()->snapshot;
         const auto* unpaid = before->find(1); const auto* untouched = before->find(2);
-        QVERIFY(unpaid && untouched); QVERIFY(!unpaid->display.uri.isEmpty());
+        QVERIFY(unpaid && untouched); QVERIFY(unpaid->display.uri.isEmpty());
+        const auto original_payload = BuildBitcoinUri(unpaid->display.address, unpaid->entry.recipient.amount, unpaid->display.label, unpaid->display.message);
+        QVERIFY(!original_payload.isEmpty());
         f.observe({Address()}); const auto after = f.store->take()->snapshot;
         QVERIFY(after->find(1) != unpaid); QCOMPARE(after->find(2), untouched);
         QVERIFY(after->find(1)->entry.payment_received); QVERIFY(after->find(1)->display.payment_received);
         QVERIFY(after->find(1)->display.uri.isEmpty());
-        QVERIFY(!unpaid->entry.payment_received); QVERIFY(!unpaid->display.uri.isEmpty());
+        QVERIFY(!unpaid->entry.payment_received); QVERIFY(unpaid->display.uri.isEmpty());
+        QCOMPARE(BuildBitcoinUri(unpaid->display.address, unpaid->entry.recipient.amount, unpaid->display.label, unpaid->display.message), original_payload);
         QVERIFY(!untouched->entry.payment_received); QCOMPARE(f.wallet->writes, 1);
     }
     void retainedOutcomeOwnsPreparedValuesAcrossLaterHistoryChanges()
@@ -1042,8 +1084,10 @@ private Q_SLOTS:
         QCOMPARE(record->display.created, Entry().date);
         QCOMPARE(record->display.amount_sats, CAmount{100});
         QCOMPARE(record->display.label, QStringLiteral("tea & cake"));
-        QCOMPARE(record->display.uri, QStringLiteral("bitcoin:") + Address() + QStringLiteral("?amount=0.00000100&label=tea%20%26%20cake&message=two%3F"));
-        QVERIFY(!record->display.uri.contains("private"));
+        QVERIFY(record->display.uri.isEmpty());
+        const auto selected_payload = BuildBitcoinUri(record->display.address, record->entry.recipient.amount, record->display.label, record->display.message);
+        QCOMPARE(selected_payload, QStringLiteral("bitcoin:") + Address() + QStringLiteral("?amount=0.00000100&label=tea%20%26%20cake&message=two%3F"));
+        QVERIFY(!selected_payload.contains("private"));
         QCOMPARE(operation->result()->record.get(), record.get());
         auto edit = f.edit(*record, "new private note"); edit.draft.label = "changed label";
         QVERIFY(f.settle(edit)->result()->request_saved);

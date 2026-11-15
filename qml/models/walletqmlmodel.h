@@ -36,6 +36,7 @@
 #include <qml/models/transactionactivitymodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/models/walletbalancereader.h>
+#include <qml/models/walletreceivemodel.h>
 
 #include <consensus/amount.h>
 #include <interfaces/handler.h>
@@ -223,6 +224,7 @@ private:
     Q_PROPERTY(BackupFileOperation* backupOperation READ backupOperation NOTIFY backupOperationChanged)
     Q_PROPERTY(QString settingsError READ settingsError NOTIFY settingsErrorChanged)
     Q_PROPERTY(WalletSecurityModel* security READ security CONSTANT)
+    Q_PROPERTY(WalletReceiveModel* receive READ receive CONSTANT)
     Q_PROPERTY(SecurityState securityState READ securityState NOTIFY securityOperationChanged)
     Q_PROPERTY(bool securityBusy READ securityBusy NOTIFY securityOperationChanged)
     Q_PROPERTY(QString securityError READ securityError NOTIFY securityOperationChanged)
@@ -273,6 +275,7 @@ public:
     Q_INVOKABLE void requestClose();
     Q_INVOKABLE void answerClose(const QString& token, bool accept);
     std::shared_ptr<walletopening::Session> opening() const { return m_opening; }
+    WalletReceiveModel* receive() const { return m_receive; }
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequest();
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequestWithPassphrase(const QString& passphrase);
     Q_INVOKABLE void reloadReceiveRequests();
@@ -593,6 +596,8 @@ private:
     };
     using PsbtAction = execution::OwnedCommand<PsbtActionValue>;
     quint64 startPsbtAction(PsbtActionKind kind, const QString& path = {});
+    std::shared_ptr<FileExportRequest> preparePsbtFileExport(quint64 action_id, const QString& path,
+                                                             const std::shared_ptr<PsbtReceipt>& receipt);
     void startPsbtFileExport(quint64 action_id, const QString& path,
                              std::shared_ptr<const PartiallySignedTransaction> document,
                              const std::shared_ptr<PsbtReceipt>& receipt);
@@ -604,6 +609,7 @@ private:
     PsbtActionKind m_psbt_action_kind{PsbtActionKind::Import};
     PsbtImportResult m_psbt_import_result{PsbtImportResult::PsbtUnsupported};
     quint64 m_psbt_action_id{0};
+    quint64 m_psbt_file_export_action_id{0};
     quint64 m_psbt_view_epoch{0}, m_psbt_action_view_epoch{0};
     std::weak_ptr<const PartiallySignedTransaction> m_psbt_action_document;
     bool m_psbt_action_had_document{false};
@@ -631,6 +637,7 @@ private:
     QString m_name, m_rpc_name;
     bool m_canonical_identity{false};
     bool m_can_get_addresses{false}, m_taproot{false}, m_receive_preference_pending{false};
+    QSet<QString> m_proven_receive_types;
     QString m_receive_preference, m_receive_preference_error;
     bool m_metadata_known{false}, m_private_keys_disabled{false}, m_external_signer{false}, m_opening_drained{true};
     std::shared_ptr<BackendExecutor> m_backend_executor{std::make_shared<BackendExecutor>(execution::Limits::Bounded())};
@@ -657,6 +664,7 @@ private:
     ReceiveRequestHistoryModel* m_receive_requests{nullptr};
     std::shared_ptr<walletreceipts::Reader> m_receipts;
     std::shared_ptr<walletrequests::Store> m_request_store;
+    WalletReceiveModel* m_receive{nullptr};
     bool m_request_storage_loaded{false}, m_request_storage_busy{false};
     QString m_request_storage_error;
     bool m_receiving_address_ready{false}, m_receiving_address_pending{false};

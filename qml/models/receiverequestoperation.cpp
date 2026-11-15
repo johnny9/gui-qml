@@ -48,29 +48,5 @@ QString ReceiveRequestOperation::errorText() const
 
 QString ReceiveRequestOperation::ErrorText(walletrequests::Error error, bool request_saved)
 {
-    switch (static_cast<Error>(error)) {
-    case Error::None: return {};
-    case Error::Loading: return tr("Payment requests are still loading.");
-    case Error::Checking: return tr("Payments are still being checked. Try again when checking finishes.");
-    case Error::Invalid: return tr("Check the payment request fields.");
-    case Error::Missing: return tr("This payment request is no longer available.");
-    case Error::Changed: return tr("This payment request changed. Reopen it before saving.");
-    case Error::Paid: return tr("This address has received a payment. Its public request fields cannot be changed.");
-    case Error::IdExhausted: return tr("Another payment request cannot be created in this wallet.");
-    case Error::NeedsUnlock: return tr("Unlock the wallet to create a receiving address.");
-    case Error::Rejected: return tr("The operation could not be scheduled. Try again.");
-    case Error::Closed: return tr("This wallet opening has closed.");
-    case Error::Persistence: return tr("The payment request could not be saved. Try again.");
-    case Error::LabelPersistence: return request_saved
-        ? tr("The request was saved, but its address note could not be saved.")
-        : tr("The address note could not be saved.");
-    case Error::Partial: return tr("Only part of the change was saved. Reload before retrying.");
-    case Error::Uncertain: return tr("The result could not be confirmed. Reload before retrying.");
-    case Error::Unsupported: return tr("This operation is not supported by the wallet interface.");
-    case Error::AlreadySaved: return tr("This receiving address was already used for a request. Create a new receiving address.");
-    case Error::IncorrectPassphrase: return tr("The wallet password you entered was incorrect.");
-    case Error::AddressCreation: return tr("A receiving address could not be generated. Please try again.");
-    case Error::ReservationPersistence: return tr("The receiving-address reservation could not be saved. Retry before creating a request.");
-    }
-    return {};
+    return walletrequests::ErrorText(error, request_saved);
 }
