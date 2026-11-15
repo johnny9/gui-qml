@@ -53,6 +53,20 @@ auto Stop(const std::shared_ptr<Service>& service)
     if (!service->stop([promise] { promise->set_value(); })) promise->set_value();
     return future;
 }
+auto Probe(const std::shared_ptr<Service>& service, const QString& profile, const std::vector<Input>& inputs = {})
+{
+    auto promise = std::make_shared<std::promise<ProbeResult>>();
+    auto future = promise->get_future();
+    if (!service->probeExisting(profile, QStringLiteral("regtest"), inputs, [promise](auto result) { promise->set_value(std::move(result)); }))
+        promise->set_value({ProbeStatus::Rejected, {StartStatus::Rejected, QStringLiteral("Not admitted"), {}}});
+    return future;
+}
+auto Lookup(const std::shared_ptr<Owner>& owner, const QString& key)
+{
+    auto promise = std::make_shared<std::promise<std::optional<Receipt>>>(); auto future = promise->get_future();
+    if (!owner->lookup(key, [promise](auto value) { promise->set_value(std::move(value)); })) promise->set_value({});
+    return future;
+}
 }
 
 class DesktopIntentTransportTests : public QObject {
@@ -240,6 +254,92 @@ private Q_SLOTS:
         QVERIFY(!Service::Create(commands.scheduler, owner, limits));
         limits = {}; limits.now = {};
         QVERIFY(!Service::Create(commands.scheduler, owner, limits));
+        owner.reset(); commands.drain(); QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
+    void missingProbeLeavesOriginalQueueAndLaterFinalProfileStartUntouched()
+    {
+        BackendExecutor executor{execution::Limits::Bounded()}, rival_executor{execution::Limits::Bounded()};
+        auto owner = NewOwner(executor.scheduler()), rival_owner = NewOwner(rival_executor.scheduler());
+        auto service = Service::Create(executor.scheduler(), owner), rival = Service::Create(rival_executor.scheduler(), rival_owner);
+        const auto cleanup = qScopeGuard([&] { service->stop(); rival->stop(); owner.reset(); rival_owner.reset(); Shutdown(executor); Shutdown(rival_executor); });
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto lookup_profile = directory.filePath(QStringLiteral("initial/missing"));
+        const auto final_profile = directory.filePath(QStringLiteral("final/missing"));
+        QVERIFY(owner->admit({Request(1, Origin::FileOpen)}, {})); auto before = Lookup(owner, QStringLiteral("1")); QVERIFY(Ready(before)); const auto original = before.get(); QVERIFY(original);
+        const std::vector<Input> arguments{Request(2)};
+        auto probed = Probe(service, lookup_profile, arguments); QVERIFY(Ready(probed)); const auto absent = probed.get();
+        QVERIFY(absent.status == ProbeStatus::Missing); QVERIFY(absent.transfer.receipts.empty()); QVERIFY(absent.transfer.producer_keys.empty());
+        auto early = Lookup(owner, QStringLiteral("1")); auto unadmitted = Lookup(owner, QStringLiteral("2")); QVERIFY(Ready(early)); QVERIFY(Ready(unadmitted));
+        const auto retained = early.get(); QVERIFY(retained); QCOMPARE(retained->delivery, original->delivery); QVERIFY(!unadmitted.get());
+        QCOMPARE(arguments.size(), size_t{1}); QCOMPARE(arguments.front().producer_key, QStringLiteral("2"));
+        auto independent = Start(rival, lookup_profile); QVERIFY(Ready(independent)); QVERIFY(independent.get().status == StartStatus::Primary); // Probe bound no early listener/lock.
+        auto final = Start(service, final_profile, arguments); QVERIFY(Ready(final)); const auto started = final.get();
+        QVERIFY(started.status == StartStatus::Primary); QCOMPARE(started.receipts.front().delivery, uint64_t{2});
+        QVERIFY(!QFileInfo::exists(lookup_profile)); QVERIFY(!QFileInfo::exists(final_profile));
+    }
+    void existingProbeForwardsOriginalEarlyInputsAndNeverFallsThrough_data()
+    {
+        QTest::addColumn<bool>("arguments"); QTest::newRow("early-open-only") << false; QTest::newRow("early-open-plus-argv") << true;
+    }
+    void existingProbeForwardsOriginalEarlyInputsAndNeverFallsThrough()
+    {
+        QFETCH(bool, arguments);
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(primary_executor.scheduler()), secondary_owner = NewOwner(secondary_executor.scheduler());
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner), secondary = Service::Create(secondary_executor.scheduler(), secondary_owner);
+        const auto cleanup = qScopeGuard([&] { primary->stop(); secondary->stop(); primary_owner.reset(); secondary_owner.reset(); Shutdown(primary_executor); Shutdown(secondary_executor); });
+        QTemporaryDir directory; QVERIFY(directory.isValid()); auto listening = Start(primary, directory.path()); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        QVERIFY(secondary_owner->admit({Request(1, Origin::FileOpen)}, {}));
+        const auto inputs = arguments ? std::vector<Input>{Request(2)} : std::vector<Input>{};
+        auto probed = Probe(secondary, directory.path(), inputs); QVERIFY(Ready(probed)); const auto result = probed.get();
+        QVERIFY(result.status == ProbeStatus::Forwarded); QVERIFY(result.transfer.status == StartStatus::Forwarded);
+        QCOMPARE(result.transfer.receipts.size(), arguments ? size_t{2} : size_t{1});
+        QCOMPARE(result.transfer.producer_keys.front(), QStringLiteral("1"));
+        if (arguments) QCOMPARE(result.transfer.producer_keys.back(), QStringLiteral("2"));
+        QVERIFY(!secondary->start(directory.filePath(QStringLiteral("other-profile")), QStringLiteral("regtest"), inputs, {}));
+        QVERIFY(!secondary->probeExisting(directory.path(), QStringLiteral("regtest"), inputs, {}));
+        QVERIFY(!secondary_owner->admit({Request(3)}, {}));
+    }
+    void rejectedExistingProbeCannotAcquireAnotherPrimary_data()
+    {
+        QTest::addColumn<bool>("full"); QTest::newRow("no-input") << false; QTest::newRow("peer-capacity") << true;
+    }
+    void rejectedExistingProbeCannotAcquireAnotherPrimary()
+    {
+        QFETCH(bool, full);
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(primary_executor.scheduler()), secondary_owner = NewOwner(secondary_executor.scheduler());
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner), secondary = Service::Create(secondary_executor.scheduler(), secondary_owner);
+        const auto cleanup = qScopeGuard([&] { primary->stop(); secondary->stop(); primary_owner.reset(); secondary_owner.reset(); Shutdown(primary_executor); Shutdown(secondary_executor); });
+        QTemporaryDir directory; QVERIFY(directory.isValid()); std::vector<Input> initial;
+        if (full) for (int index{1}; index <= 16; ++index) initial.push_back(Request(index));
+        auto listening = Start(primary, directory.path(), initial); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        const auto inputs = full ? std::vector<Input>{Request(17)} : std::vector<Input>{};
+        auto probed = Probe(secondary, directory.path(), inputs); QVERIFY(Ready(probed)); const auto result = probed.get();
+        QVERIFY(result.status == ProbeStatus::Rejected); QVERIFY(result.transfer.status == StartStatus::Rejected);
+        QVERIFY(!secondary->start(directory.filePath(QStringLiteral("successor")), QStringLiteral("regtest"), inputs, {}));
+        QVERIFY(!primary->retired());
+    }
+    void unknownProbeTransferRetainsOriginalKeysAndCannotReplay()
+    {
+        ManualRoutedExecution original;
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(original.scheduler), secondary_owner = NewOwner(secondary_executor.scheduler());
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner), secondary = Service::Create(secondary_executor.scheduler(), secondary_owner);
+        const auto cleanup = qScopeGuard([&] { primary->stop(); secondary->stop(); original.drain(); primary_owner.reset(); secondary_owner.reset(); original.drain(); Shutdown(primary_executor); Shutdown(secondary_executor); original.drain(); });
+        QTemporaryDir directory; QVERIFY(directory.isValid()); auto listening = Start(primary, directory.path()); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        auto probed = Probe(secondary, directory.path(), {Request(1)});
+        QVERIFY(QTest::qWaitFor([&] { return original.queuedCount() > 0; }, 8000));
+        auto retired = Stop(primary); QVERIFY(Ready(retired));
+        QVERIFY(Ready(probed)); const auto result = probed.get(); QVERIFY(result.status == ProbeStatus::Unknown); QVERIFY(result.transfer.status == StartStatus::Unknown);
+        QCOMPARE(result.transfer.producer_keys, std::vector<QString>{QStringLiteral("1")}); QVERIFY(result.transfer.receipts.empty());
+        QVERIFY(!secondary->start(directory.filePath(QStringLiteral("new-profile")), QStringLiteral("regtest"), {Request(1)}, {}));
+        original.drain();
+    }
+    void stopBeforeProbeNativeTurnRetiresWithoutLookupOrPrimary()
+    {
+        ManualRoutedExecution commands; auto owner = NewOwner(commands.scheduler); auto service = Service::Create(commands.scheduler, owner); QVERIFY(service);
+        auto probed = Probe(service, QStringLiteral("/unused-profile"), {Request(1)}); auto retired = Stop(service);
+        commands.drain(); QVERIFY(Ready(probed)); QVERIFY(probed.get().status == ProbeStatus::Rejected); QVERIFY(Ready(retired)); QVERIFY(service->retired());
         owner.reset(); commands.drain(); QCOMPARE(commands.scheduler->pending(), size_t{0});
     }
 };

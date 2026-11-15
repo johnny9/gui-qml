@@ -63,6 +63,8 @@ private:
     struct State;
     struct Flags;
     explicit Service(std::shared_ptr<State> state);
+    execution::Admission begin(QString directory, QString network, std::vector<Input> inputs, bool existing_only,
+                               std::function<void(StartResult)> completed, std::function<void()> missing);
     ownership::AtomicSharedPtr<State> m_state;
     const std::shared_ptr<Flags> m_flags;
 };
