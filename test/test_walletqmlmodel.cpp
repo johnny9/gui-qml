@@ -6,6 +6,7 @@
 #include <test/mocks/sendtest.h>
 #include <test/mocks/preparationtest.h>
 #include <qml/guipresentation.h>
+#include <qml/paymentimportports.h>
 #include <util/string.h>
 #include <addresstype.h>
 #include <chainparams.h>
@@ -1351,6 +1352,45 @@ private Q_SLOTS:
         QCOMPARE(model.currentTransaction()->amountAmount()->satoshi(), CAmount{2'000});
         QVERIFY(!model.currentTransactionNeedsRevalidation());
         QCOMPARE(create_calls.load(), initial_create_calls + 1);
+    }
+    void heldAtomicImportCannotReuseTheEarlierReviewedSend()
+    {
+        ManualRoutedExecution transport;
+        auto wallet = std::make_shared<FakePasswordWallet>();
+        WalletQmlModel model{WalletQmlModel::SharedWallet{wallet, transport.scheduler}, nullptr,
+                             FeeReadServices{}, psbtfee::Services{}, backup::Services{}};
+        ManualWalletDrain drain{transport, &model};
+        const auto pump = [&] { transport.drain(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall); };
+        QVERIFY(QTest::qWaitFor([&] { pump(); return model.capabilitiesKnown() && model.balanceKnown() &&
+            model.property("receiveRequestsLoaded").toBool() && !model.receiveRequestReconciliationPending(); }, 5000));
+        SetPasswordRecipient(model, 1'000, pump);
+        QVERIFY(AwaitPreparation(model, QStringLiteral("secret"), pump));
+        const QPointer<WalletQmlModelTransaction> approved{model.currentTransaction()}; QVERIFY(approved);
+        QVERIFY(model.currentTransactionCanSend()); QVERIFY(!model.currentTransactionNeedsRevalidation());
+        auto* recipient = model.sendRecipientList()->currentRecipient();
+        const auto target = model.sendRecipientList()->importTarget(recipient); QVERIFY(target);
+        auto source = std::make_shared<paymentimport::Inspection>(); source->kind = paymentimport::Kind::Payment;
+        source->payment.address = VALID_MAINNET_ADDRESS; source->payment.amount = 2'000;
+        source->payment.label = QStringLiteral("Public invoice"); source->payment.message = QStringLiteral("Whole batch");
+        std::optional<paymentimport::Target> facts;
+        QVERIFY(target->observe(source, [&](auto value) { facts = value; }, {})); transport.drain(); QVERIFY(facts);
+        const paymentimport::Child child{1, 1, paymentimport::ChildKind::Apply, *facts, true};
+        std::optional<paymentimport::ChildReply> result;
+        QVERIFY(target->dispatch({77, 1}, child, source, [&](auto value) { result = std::move(value); }, {}));
+        QVERIFY(model.sendRecipientList()->importPending()); QVERIFY(model.currentTransactionNeedsRevalidation());
+        QCOMPARE(recipient->amount()->satoshi(), CAmount{1'000}); QVERIFY(model.currentTransaction() == approved);
+        const auto queued = transport.queuedCount();
+        QVERIFY(model.requestSendTransactionWithPassphrase(QStringLiteral("secret")) > 0);
+        QCOMPARE(model.sendState(), WalletQmlModel::SendState::SendFailed);
+        QVERIFY(model.transactionError().contains(QStringLiteral("no longer matches")));
+        QCOMPARE(transport.queuedCount(), queued); QCOMPARE(wallet->commit_calls, 0);
+        transport.drain(); QVERIFY(result); QCOMPARE(result->receipt.outcome, paymentimport::Outcome::Applied);
+        QVERIFY(QTest::qWaitFor([&] { pump(); return !model.sendRecipientList()->importPending() && model.sendRecipientList()->allValid(); }, 5000));
+        QCOMPARE(recipient->amount()->satoshi(), CAmount{2'000}); QCOMPARE(recipient->message(), QStringLiteral("Whole batch"));
+        QVERIFY(!model.currentTransaction() || model.currentTransactionNeedsRevalidation());
+        QVERIFY(target->acknowledge({77, 1}, child)); pump();
+        QVERIFY(AwaitPreparation(model, QStringLiteral("secret"), pump));
+        QCOMPARE(model.currentTransaction()->amountAmount()->satoshi(), CAmount{2'000}); QCOMPARE(wallet->commit_calls, 0);
     }
     void heldPrepareCompletionCannotInstallEditedDraft_data()
     {

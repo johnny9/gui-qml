@@ -140,6 +140,9 @@ private:
     Q_PROPERTY(AddressListModel* addressListModel READ addressListModel CONSTANT)
     Q_PROPERTY(CoinsListModel* coinsListModel READ coinsListModel CONSTANT)
     Q_PROPERTY(SendRecipientsListModel* recipients READ sendRecipientList CONSTANT)
+    Q_PROPERTY(quint64 importedReviewOwner READ importedReviewOwner NOTIFY currentTransactionChanged)
+    Q_PROPERTY(quint64 importedReviewChild READ importedReviewChild NOTIFY currentTransactionChanged)
+    Q_PROPERTY(QString importedReviewToken READ importedReviewToken NOTIFY currentTransactionChanged)
     Q_PROPERTY(SignVerifyMessageModel* signVerifyMessageModel READ signVerifyMessageModel CONSTANT)
     Q_PROPERTY(PaymentRequest* currentPaymentRequest READ currentPaymentRequest CONSTANT)
     Q_PROPERTY(PaymentRequest* receivingAddress READ receivingAddress CONSTANT)
@@ -276,6 +279,11 @@ public:
     Q_INVOKABLE void requestClose();
     Q_INVOKABLE void answerClose(const QString& token, bool accept);
     std::shared_ptr<walletopening::Session> opening() const { return m_opening; }
+    std::shared_ptr<const paymentimport::TargetPort> importTarget(SendRecipient* recipient);
+    quint64 importedReviewOwner() const { return m_imported_review_owner; }
+    quint64 importedReviewChild() const { return m_imported_review_child; }
+    QString importedReviewToken() const { return m_imported_review_owner && m_imported_review_child
+        ? QString::number(m_imported_review_owner) + QLatin1Char(':') + QString::number(m_imported_review_child) : QString{}; }
     WalletReceiveModel* receive() const { return m_receive; }
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequest();
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequestWithPassphrase(const QString& passphrase);
@@ -618,6 +626,9 @@ private:
     quint64 m_psbt_action_id{0};
     quint64 m_psbt_file_export_action_id{0};
     quint64 m_psbt_view_epoch{0}, m_psbt_action_view_epoch{0};
+    std::shared_ptr<std::atomic_bool> m_import_review_current{std::make_shared<std::atomic_bool>(true)};
+    void invalidateImportReview();
+    quint64 m_imported_review_owner{0}, m_imported_review_child{0};
     std::weak_ptr<const PartiallySignedTransaction> m_psbt_action_document;
     bool m_psbt_action_had_document{false};
     QPointer<WalletQmlModelTransaction> m_psbt_action_review;

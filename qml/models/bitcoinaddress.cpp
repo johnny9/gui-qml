@@ -75,9 +75,17 @@ int BitcoinAddress::apply(Normalized value, bool force)
     Q_EMIT normalizationChanged();
     return value.cursor;
 }
+void BitcoinAddress::projectAddress(QString address, QString formatted)
+{
+    if (admissionClosed() || address.size() > 1024 || formatted.size() > 2048) return;
+    ++m_revision;
+    m_operation.reset();
+    const int cursor = static_cast<int>(formatted.size());
+    apply({std::move(address), std::move(formatted), cursor, true}, true);
+}
 int BitcoinAddress::setAddress(const QString& input, int cursor)
 {
-    if (admissionClosed()) return -1;
+    if (inputAdmissionClosed()) return -1;
     ++m_revision;
     auto value = NormalizeEditorInput(input, cursor, EDITOR_BUDGET);
     if (value.complete) { const bool force = input != value.formatted; return apply(std::move(value), force); }
@@ -85,7 +93,7 @@ int BitcoinAddress::setAddress(const QString& input, int cursor)
 }
 int BitcoinAddress::pasteAddress(const QString& text, int start, int end)
 {
-    if (admissionClosed() || m_pending) return -1;
+    if (inputAdmissionClosed() || m_pending) return -1;
     start = std::clamp(start, 0, static_cast<int>(m_formattedAddress.size()));
     end = std::clamp(end, start, static_cast<int>(m_formattedAddress.size()));
     const auto prefix = m_formattedAddress.left(start), suffix = m_formattedAddress.mid(end);
@@ -95,7 +103,7 @@ int BitcoinAddress::pasteAddress(const QString& text, int start, int end)
 }
 int BitcoinAddress::enqueue(const QString& input, int cursor, const QString& prefix, const QString& suffix)
 {
-    if (admissionClosed()) return -1;
+    if (inputAdmissionClosed()) return -1;
     if (!m_services.scheduler) {
         m_pending = false; m_error = tr("Address normalization services are unavailable."); Q_EMIT normalizationChanged(); return -1;
     }
@@ -110,7 +118,7 @@ int BitcoinAddress::enqueue(const QString& input, int cursor, const QString& pre
     }, {execution::Lane::Domain, bytes, {}, execution::WorkClass::Observation});
     // The accepted original operation owns its Domain result even when the
     // admission port closes, destroys or edits its presentation observer.
-    if (!observer || observer->admissionClosed() || observer->m_revision != revision) return -1;
+    if (!observer || observer->inputAdmissionClosed() || observer->m_revision != revision) return -1;
     if (!admitted) {
         m_pending = false; m_error = tr("Address normalization could not be queued. Try again."); Q_EMIT normalizationChanged(); return -1;
     }

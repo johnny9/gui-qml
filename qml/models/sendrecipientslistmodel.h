@@ -14,6 +14,8 @@
 #include <deque>
 #include <vector>
 
+namespace paymentimport { struct TargetPort; }
+
 class WalletQmlModel;
 class SendRecipientsListModel : public QAbstractListModel
 {
@@ -33,6 +35,7 @@ class SendRecipientsListModel : public QAbstractListModel
     Q_PROPERTY(bool allValid READ allValid NOTIFY validationChanged)
     Q_PROPERTY(QString validationError READ validationError NOTIFY validationChanged)
     Q_PROPERTY(bool validationPending READ validationPending NOTIFY validationChanged)
+    Q_PROPERTY(bool importPending READ importPending NOTIFY validationChanged)
 public:
     using DraftSnapshot = senddraft::Snapshot;
     enum class DraftState { Empty, Editing, Ready, Retired };
@@ -43,7 +46,7 @@ public:
     QString revision() const { return QString::number(m_intent_revision); }
     DraftState state() const;
     int maximumRecipients() const { return m_limits.recipients; }
-    bool canAddRecipient() const { return !m_closed && count() < maximumRecipients() && m_pending_row_creations < senddraft::Limits::pending_recipients; }
+    bool canAddRecipient() const { return !m_closed && !importPending() && count() < maximumRecipients() && m_pending_row_creations < senddraft::Limits::pending_recipients; }
     QString budgetError() const { return m_command_error; }
     SendRecipient* maximumRecipient() const { return m_maximum_recipient; }
     void chooseAmountMode(SendRecipient* recipient, SendRecipient::AmountMode mode);
@@ -53,6 +56,8 @@ public:
     void closeAdmission();
     void retryPublications();
     std::shared_ptr<const DraftSnapshot> draftSnapshot() const;
+    std::shared_ptr<const paymentimport::TargetPort> importTarget(SendRecipient* recipient);
+    bool importPending() const { return m_import_pending->load(); }
     quint64 recipientToken(const SendRecipient* recipient) const { return recipient ? recipient->identity() : 0; }
     int rowCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -73,7 +78,7 @@ public:
     QString totalAmount() const { return m_total_text; }
     qint64 totalAmountSatoshi() const { return m_totalAmount; }
     bool validationPending() const { return !m_closed && (m_pending || m_initializing || m_clearing || m_units_pending || (!m_failed && m_snapshot && m_snapshot->revision == m_revision && m_snapshot->pending_count > 0)); }
-    bool allValid() const { return !m_closed && !m_failed && !validationPending() && m_snapshot && m_snapshot->revision == m_revision && m_snapshot->all_valid; }
+    bool allValid() const { return !m_closed && !importPending() && !m_failed && !validationPending() && m_snapshot && m_snapshot->revision == m_revision && m_snapshot->all_valid; }
     QString validationError() const { return m_error; }
 Q_SIGNALS:
     void intentSubmitted();
@@ -101,6 +106,7 @@ private:
     void submitIntent();
     void removeDraft(quint64 token);
     void publishDraft();
+    bool projectImport(const senddraft::AppliedImport& value, quint64 revision);
     void initializeRecipients(int row);
     void retryRecipients(int row);
     void synchronizeUnits(BitcoinAmount::Unit unit, int row, quint64 generation);
@@ -117,6 +123,9 @@ private:
     bool clearCommandError();
     std::shared_ptr<QObject> m_recipient_owner;
     std::shared_ptr<std::atomic_bool> m_owner_closed{std::make_shared<std::atomic_bool>(false)};
+    std::shared_ptr<std::atomic_bool> m_import_pending{std::make_shared<std::atomic_bool>(false)};
+    quint64 m_import_owner{0}, m_import_child{0};
+    bool m_projecting_import{false};
     std::function<void(std::function<void()>)> m_retirement_post;
     std::shared_ptr<Retired> m_retired;
     std::shared_ptr<Rows> m_empty_rows{std::make_shared<Rows>()};

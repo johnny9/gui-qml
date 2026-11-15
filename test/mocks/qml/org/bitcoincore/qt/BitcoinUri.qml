@@ -38,6 +38,24 @@ QtObject {
         if (holdPublications) _heldOperations.push(operation)
         return operation
     }
+    property Component _importFactory: Component { PaymentImportOperation {} }
+    function requestImportText(text, wallet, recipient, owner) {
+        let outcome
+        try { outcome = _parse(text) } catch (error) { outcome = {success: false, error: "Not a valid Bitcoin payment URI."} }
+        return _importRequest(outcome, wallet, recipient, owner)
+    }
+    function requestImportFile(path, wallet, recipient, owner) {
+        return _importRequest({success: false, error: "File parsing is unavailable in QML unit tests."}, wallet, recipient, owner)
+    }
+    function _importRequest(outcome, wallet, recipient, owner) {
+        ++requestCallsForTest
+        if (!owner || !admitRequestsForTest) return null
+        const operation = _importFactory.createObject(owner, {requestId: ++_sequence, requestOwner: owner,
+            originalWallet: wallet, originalRecipient: recipient, originalRevision: wallet ? wallet.recipients.revision : ""})
+        operation.prepare(outcome, holdPublications)
+        if (holdPublications) _heldOperations.push(operation)
+        return operation
+    }
     property var _sourceIds: ({})
     property int _sourceSequence: 0
     function requestParse(text, owner, replace) { return requestProbe(text, {}, owner, replace) }
@@ -57,11 +75,12 @@ QtObject {
         outcome.privateNote = outcome.hasMessage && outcome.uriMessage.length > 0
             ? outcome.uriMessage + (outcome.hasLabel && outcome.label.length > 0 ? " - " + outcome.label : "") : ""
         const field = context.sourceField || ""
-        outcome.conflicts = outcome.success && (
-            (field !== "address" && !!context.address && context.address !== outcome.address)
+        const replacesMaximum = !!context.maximum && outcome.hasAmount
+        outcome.conflicts = outcome.success && (replacesMaximum
+            || (field !== "address" && !!context.address && context.address !== outcome.address)
             || (field !== "amount" && outcome.hasAmount && !!context.amount && context.amount !== outcome.amountSats)
             || (field !== "label" && !!context.note && !!outcome.privateNote && context.note !== outcome.privateNote))
-        outcome.matchesExistingRequest = outcome.success && context.address === outcome.address
+        outcome.matchesExistingRequest = outcome.success && !replacesMaximum && context.address === outcome.address
             && (!outcome.hasAmount || context.amount === outcome.amountSats)
             && (!outcome.hasLabel || context.requestLabel === outcome.label)
         outcome.pasteProvenance = true
