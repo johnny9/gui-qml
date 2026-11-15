@@ -5,6 +5,18 @@
 #include <qml/models/walletqmlmodel.h>
 #include <QPointer>
 PaymentImportOperation::~PaymentImportOperation() { cancel(); }
+PaymentImportOperation::Outcome PaymentImportOperation::outcome() const
+{
+    if (!m_snapshot.result) return Outcome::NoOutcome;
+    switch (m_snapshot.result->outcome) {
+    case paymentimport::Outcome::Applied: return Outcome::AppliedOutcome;
+    case paymentimport::Outcome::ReviewOpened: return Outcome::ReviewOpenedOutcome;
+    case paymentimport::Outcome::Rejected: return Outcome::RejectedOutcome;
+    case paymentimport::Outcome::Stale: return Outcome::StaleOutcome;
+    case paymentimport::Outcome::Unknown: return Outcome::UnknownOutcome;
+    }
+    return Outcome::NoOutcome;
+}
 void PaymentImportOperation::project(paymentimport::Snapshot snapshot)
 {
     if (snapshot.owner != m_identity || snapshot.sequence <= m_snapshot.sequence) return;

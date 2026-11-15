@@ -16,6 +16,8 @@ class PaymentImportOperation final : public QObject
     Q_OBJECT
     Q_PROPERTY(quint64 requestId READ requestId CONSTANT)
     Q_PROPERTY(State state READ state NOTIFY changed)
+    Q_PROPERTY(SourceKind sourceKind READ sourceKind NOTIFY changed)
+    Q_PROPERTY(Outcome outcome READ outcome NOTIFY changed)
     Q_PROPERTY(bool pending READ pending NOTIFY changed)
     Q_PROPERTY(bool canApply READ canApply NOTIFY changed)
     Q_PROPERTY(bool canReview READ canReview NOTIFY changed)
@@ -36,9 +38,15 @@ public:
     enum class State { Empty, Reading, Analyzing, Inspecting, AwaitingReplacement, Applying, CreatingReview,
         Reconciling, Applied, ReviewOpened, Failed, Closing, Closed };
     Q_ENUM(State)
+    enum class SourceKind { UnknownSource, PaymentSource, PsbtSource };
+    Q_ENUM(SourceKind)
+    enum class Outcome { NoOutcome, AppliedOutcome, ReviewOpenedOutcome, RejectedOutcome, StaleOutcome, UnknownOutcome };
+    Q_ENUM(Outcome)
     ~PaymentImportOperation() override;
     quint64 requestId() const { return m_identity; }
     State state() const { return static_cast<State>(m_snapshot.phase); }
+    SourceKind sourceKind() const { return static_cast<SourceKind>(m_snapshot.kind); }
+    Outcome outcome() const;
     bool pending() const { return m_snapshot.pending; }
     bool canApply() const { return !m_closed && m_snapshot.can_apply; }
     bool canReview() const { return !m_closed && m_snapshot.can_review; }
