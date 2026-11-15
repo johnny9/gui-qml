@@ -9,7 +9,6 @@
 #include <qml/models/exacttextdocument.h>
 #include <qml/models/messagesigningprompt.h>
 #include <qml/guipresentation.h>
-#include <qml/models/desktopintentmodel.h>
 #include <QUuid>
 #include <QPointer>
 #include <QtQuickTest/quicktest.h>
@@ -7018,7 +7017,7 @@ class MockApplicationModels : public QObject
     Q_PROPERTY(SignerDiscoveryModel* signers READ signers CONSTANT)
     Q_PROPERTY(MockWalletListModel* walletListModel READ walletListModel CONSTANT)
     Q_PROPERTY(MockDesktopWindowBehaviorModel* desktopWindowBehaviorModel READ desktopWindowBehaviorModel CONSTANT)
-    Q_PROPERTY(DesktopIntentModel* desktopIntentModel READ desktopIntentModel CONSTANT)
+    Q_PROPERTY(QObject* desktopIntentModel READ desktopIntentModel CONSTANT)
     Q_PROPERTY(QObject* desktopTrayIconController READ desktopTrayIconController CONSTANT)
     Q_PROPERTY(MockOptionsModel* onboardingOptionsModel READ onboardingOptionsModel CONSTANT)
     Q_PROPERTY(bool testAutomationEnabled READ testAutomationEnabled CONSTANT)
@@ -7050,7 +7049,7 @@ public:
     MockWalletController* walletController() const { return m_context->contextProperty(QStringLiteral("walletController")).value<MockWalletController*>(); }
     MockWalletListModel* walletListModel() const { return m_context->contextProperty(QStringLiteral("walletListModel")).value<MockWalletListModel*>(); }
     MockDesktopWindowBehaviorModel* desktopWindowBehaviorModel() const { return m_context->contextProperty(QStringLiteral("desktopWindowBehaviorModel")).value<MockDesktopWindowBehaviorModel*>(); }
-    DesktopIntentModel* desktopIntentModel() const { return m_context->contextProperty(QStringLiteral("desktopIntentModel")).value<DesktopIntentModel*>(); }
+    QObject* desktopIntentModel() const { return m_context->contextProperty(QStringLiteral("desktopIntentModel")).value<QObject*>(); }
     QObject* desktopTrayIconController() const { return m_context->contextProperty(QStringLiteral("desktopTrayIconController")).value<QObject*>(); }
     MockOptionsModel* onboardingOptionsModel() const { return m_context->contextProperty(QStringLiteral("optionsModel")).value<MockOptionsModel*>(); }
     bool testAutomationEnabled() const { return m_context->contextProperty(QStringLiteral("testAutomationEnabled")).toBool(); }
@@ -7425,7 +7424,6 @@ public Q_SLOTS:
         qRegisterMetaType<MockPeerCommandResult>();
         qmlRegisterUncreatableMetaObject(MockPeerCommandResult::staticMetaObject, "org.bitcoincore.qt", 1, 0, "PeerCommandResult", "Retained peer result");
         qmlRegisterUncreatableType<MockNodeModel>("org.bitcoincore.qt", 1, 0, "NodeModel", "Provided by ApplicationModels");
-        qmlRegisterUncreatableType<DesktopIntentModel>("org.bitcoincore.qt", 1, 0, "DesktopIntentModel", "Owned by the application");
         qmlRegisterType<BitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
         RegisterReceiveTypes();
         qmlRegisterType<ReceiveQmlFixture>("org.bitcoincore.qt", 1, 0, "ControlledReceiveFixture");
