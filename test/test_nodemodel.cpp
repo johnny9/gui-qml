@@ -36,6 +36,7 @@
 #include <vector>
 
 #include <QVariantMap>
+#include <QDateTime>
 #include <QEventLoop>
 #include <QScopeGuard>
 #include <QSemaphore>
@@ -129,6 +130,54 @@ void WaitForInitialMempoolRefresh(MempoolState& mempool)
     QTRY_VERIFY_WITH_TIMEOUT(mempool.max_usage_calls.load() >= 1, ASYNC_TIMEOUT_MS);
     QCoreApplication::processEvents();
 }
+
+// These are public Node observations/callbacks, driven by the existing manual
+// transport. No private model state or Core chainstate is inspected.
+struct ManualTipState {
+    int block{200}, header{200};
+    int64_t now{1'800'000'000}, block_time{now}, header_time{now};
+    bool header_available{true};
+    interfaces::Node::NotifyBlockTipFn block_tip;
+    interfaces::Node::NotifyHeaderTipFn header_tip;
+    interfaces::Node::NotifyNumConnectionsChangedFn peers;
+};
+
+void ConfigureManualTips(MockNode& node, ManualTipState& tips)
+{
+    ConfigureNodeModelDefaults(node);
+    node.get_num_blocks_fn = [&] { return tips.block; };
+    node.get_last_block_time_fn = [&] { return tips.block_time; };
+    node.get_header_tip_fn = [&](int& height, int64_t& time) {
+        if (!tips.header_available) return false;
+        height = tips.header; time = tips.header_time; return true;
+    };
+    node.handle_notify_block_tip_fn = [&](auto callback) { tips.block_tip = std::move(callback); return MakeNoopHandler(); };
+    node.handle_notify_header_tip_fn = [&](auto callback) { tips.header_tip = std::move(callback); return MakeNoopHandler(); };
+    node.handle_notify_num_connections_changed_fn = [&](auto callback) { tips.peers = std::move(callback); return MakeNoopHandler(); };
+}
+
+NodeModel::Services ManualTipServices(ManualExecutionEnvironment& env, ManualTipState& tips)
+{
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
+    services.wall_seconds = [&] { return tips.now; };
+    services.monotonic_milliseconds = [] { return int64_t{0}; };
+    services.schedule = [](auto, auto, auto) {};
+    services.cancel = [](auto) {};
+    return services;
+}
+
+bool DrainManualTipTurns(ManualExecutionEnvironment& env)
+{
+    // Each Native/Domain/GUI phase can enqueue its successor. Idle retained
+    // cleanup reservations are not runnable turns and need no polling clock.
+    for (int turn = 0; turn < 32; ++turn) {
+        if (env.turnsIdle() && env.publicationsIdle()) return true;
+        env.drain(); env.publishAll();
+    }
+    return env.turnsIdle() && env.publicationsIdle();
+}
+
 } // namespace
 
 class NodeModelTests : public QObject
@@ -298,6 +347,13 @@ private Q_SLOTS:
     void fatalExceptionExitsWithoutDraining();
     void nodeInformationRowsAvoidChainmanBeforeInitialization();
     void nodeInformationRowsExposeDiagnostics();
+    void manualRewindUsesCurrentHeaderReadback_data();
+    void manualRewindUsesCurrentHeaderReadback();
+    void manualBlockRowsRejectOlderStatusRead_data();
+    void manualBlockRowsRejectOlderStatusRead();
+    void manualReadbackDoesNotReplayPendingTip();
+    void manualReadbackPreservesPresync();
+    void manualHeaderProjectionCannotOverwriteReentrantBlockTip();
     void initEmitsRequestedInitialize();
     void initGuardBlocksSecondEmission();
     void shutdownPollingOnlyRequestsLifecycleControl();
@@ -2682,6 +2738,175 @@ void NodeModelTests::nodeInformationRowsExposeDiagnostics()
     }
     QVERIFY(saw_network_active);
     QVERIFY(saw_peer_counts);
+}
+
+void NodeModelTests::manualRewindUsesCurrentHeaderReadback_data()
+{
+    QTest::addColumn<int>("depth");
+    QTest::addColumn<bool>("invalidate_header");
+    QTest::addColumn<bool>("header_available");
+    QTest::newRow("shallow-invalidation") << 20 << true << true;
+    QTest::newRow("deep-invalidation") << 30 << true << true;
+    QTest::newRow("valid-header-rewind-control") << 30 << false << true;
+    QTest::newRow("unavailable-header-control") << 30 << true << false;
+}
+
+void NodeModelTests::manualRewindUsesCurrentHeaderReadback()
+{
+    QFETCH(int, depth); QFETCH(bool, invalidate_header); QFETCH(bool, header_available);
+    MockNode node; ManualTipState tips; ConfigureManualTips(node, tips);
+    ManualExecutionEnvironment env;
+    NodeModel model{node, false, ManualTipServices(env, tips)};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    QVERIFY(DrainManualTipTurns(env)); QVERIFY(model.notificationsReady()); QVERIFY(tips.block_tip);
+    model.initializeResult(true, interfaces::BlockAndHeaderTipInfo{
+        .block_height = tips.block, .block_time = tips.block_time,
+        .header_height = tips.header, .header_time = tips.header_time, .verification_progress = 1.0,
+    }, false, false);
+    QVERIFY(DrainManualTipTurns(env)); QVERIFY(model.initialSyncComplete());
+    QCOMPARE(InformationValue(model, "Header height"), QStringLiteral("200"));
+    const auto getter_calls = node.calls.getHeaderTip.load();
+    tips.block -= depth; tips.block_time -= depth;
+    if (invalidate_header) { tips.header = tips.block; tips.header_time = tips.block_time; }
+    tips.header_available = header_available;
+    tips.block_tip(SynchronizationState::POST_INIT, interfaces::BlockTip{tips.block, tips.block_time, uint256{}}, 0.9999);
+    env.publishAll(); // Publish the actual block callback; the read is held.
+    QCOMPARE(model.blockTipHeight(), tips.block);
+    QCOMPARE(node.calls.getHeaderTip.load(), getter_calls); // No Core getter on GUI.
+    QCOMPARE(model.initialSyncComplete(), depth <= 24);
+    QVERIFY(DrainManualTipTurns(env));
+    const int observed_header = header_available ? tips.header : 200;
+    const auto observed_time = header_available ? tips.header_time : tips.now;
+    QCOMPARE(InformationValue(model, "Header height"), QString::number(observed_header));
+    QCOMPARE(InformationValue(model, "Block height"), QString::number(tips.block));
+    QCOMPARE(InformationValue(model, "Header time"), QDateTime::fromSecsSinceEpoch(observed_time).toString());
+    QCOMPARE(InformationValue(model, "Last block time"), QDateTime::fromSecsSinceEpoch(tips.block_time).toString());
+    QCOMPARE(model.initialSyncComplete(), observed_header == tips.block);
+}
+
+void NodeModelTests::manualBlockRowsRejectOlderStatusRead_data()
+{
+    QTest::addColumn<bool>("domain_first");
+    QTest::newRow("old-result-before-notification") << true;
+    QTest::newRow("notification-before-old-result") << false;
+}
+
+void NodeModelTests::manualBlockRowsRejectOlderStatusRead()
+{
+    QFETCH(bool, domain_first);
+    MockNode node; ManualTipState tips; ConfigureManualTips(node, tips);
+    ManualExecutionEnvironment env;
+    NodeModel model{node, false, ManualTipServices(env, tips)};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    QVERIFY(DrainManualTipTurns(env)); QVERIFY(tips.block_tip); QVERIFY(tips.peers);
+    model.initializeResult(true, interfaces::BlockAndHeaderTipInfo{
+        .block_height = tips.block, .block_time = tips.block_time,
+        .header_height = tips.header, .header_time = tips.header_time, .verification_progress = 1.0,
+    }, false, false);
+    QVERIFY(DrainManualTipTurns(env));
+    tips.peers(1); env.publishAll();
+    QVERIFY(env.step()); // Native status read owns the old 200/200 facts.
+    if (domain_first) QVERIFY(env.step());
+    tips.block = tips.header = 170; tips.block_time = tips.header_time = tips.now - 30;
+    tips.block_tip(SynchronizationState::POST_INIT, interfaces::BlockTip{170, tips.block_time, uint256{}}, 0.9999);
+    env.publishAll();
+    if (!domain_first) { QVERIFY(env.step()); env.publishAll(); }
+    QCOMPARE(model.blockTipHeight(), 170);
+    // The later read has not run: an information consumer must already see
+    // the downgoing public notification, rather than the maximum of two ages.
+    QVERIFY(!env.turnsIdle());
+    const auto getter_calls = node.calls.getNumBlocks.load();
+    QCOMPARE(InformationValue(model, "Block height"), QStringLiteral("170"));
+    QCOMPARE(InformationValue(model, "Last block time"), QDateTime::fromSecsSinceEpoch(tips.block_time).toString());
+    QCOMPARE(node.calls.getNumBlocks.load(), getter_calls);
+    QVERIFY(DrainManualTipTurns(env));
+    QCOMPARE(InformationValue(model, "Block height"), QStringLiteral("170"));
+    QCOMPARE(InformationValue(model, "Header height"), QStringLiteral("170"));
+    QVERIFY(model.initialSyncComplete());
+}
+
+void NodeModelTests::manualReadbackDoesNotReplayPendingTip()
+{
+    MockNode node; ManualTipState tips; ConfigureManualTips(node, tips);
+    ManualExecutionEnvironment env;
+    NodeModel model{node, false, ManualTipServices(env, tips)};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    QVERIFY(DrainManualTipTurns(env)); QVERIFY(tips.block_tip); QVERIFY(tips.peers);
+    model.initializeResult(true, interfaces::BlockAndHeaderTipInfo{
+        .block_height = tips.block, .block_time = tips.block_time,
+        .header_height = tips.header, .header_time = tips.header_time, .verification_progress = 1.0,
+    }, true, false);
+    QVERIFY(DrainManualTipTurns(env));
+    QSignalSpy times{&model, &NodeModel::blockTipTimeChanged};
+    tips.peers(1); env.publishAll(); // Admit a read, but hold Native execution.
+    tips.block_tip(SynchronizationState::POST_INIT, interfaces::BlockTip{210, tips.now + 1, uint256{}}, 0.75);
+    auto old_notification = env.takePublicationBack(); QVERIFY(old_notification);
+    tips.block = tips.header = 220; tips.block_time = tips.header_time = tips.now + 2;
+    env.drain(); env.publishAll(); // The public getters sample after callback210.
+    QCOMPARE(model.blockTipHeight(), 220);
+    QCOMPARE(InformationValue(model, "Header height"), QStringLiteral("220"));
+    const auto getter_calls = node.calls.getHeaderTip.load();
+    old_notification(); // Deliver the original retained GUI callback unchanged.
+    QCOMPARE(model.blockTipHeight(), 220);
+    QCOMPARE(InformationValue(model, "Block height"), QStringLiteral("220"));
+    QCOMPARE(InformationValue(model, "Header height"), QStringLiteral("220"));
+    QCOMPARE(node.calls.getHeaderTip.load(), getter_calls);
+    QVERIFY(!times.isEmpty()); QCOMPARE(times.last().at(0).toLongLong(), tips.block_time);
+    QVERIFY(!model.blockSyncActive());
+    QCOMPARE(model.verificationProgress(), 0.75);
+    QVERIFY(model.initialSyncComplete());
+}
+
+void NodeModelTests::manualReadbackPreservesPresync()
+{
+    MockNode node; ManualTipState tips; ConfigureManualTips(node, tips);
+    ManualExecutionEnvironment env;
+    NodeModel model{node, false, ManualTipServices(env, tips)};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    QVERIFY(DrainManualTipTurns(env)); QVERIFY(tips.header_tip); QVERIFY(tips.peers);
+    model.initializeResult(true, interfaces::BlockAndHeaderTipInfo{
+        .block_height = tips.block, .block_time = tips.block_time,
+        .header_height = tips.header, .header_time = tips.header_time, .verification_progress = 1.0,
+    }, false, false);
+    QVERIFY(DrainManualTipTurns(env));
+    tips.header_tip(SynchronizationState::POST_INIT, interfaces::BlockTip{300, tips.now, uint256{}}, true);
+    tips.peers(7); QVERIFY(DrainManualTipTurns(env));
+    QVERIFY(model.headerPresync()); QVERIFY(!model.initialSyncComplete());
+    QCOMPARE(InformationValue(model, "Header height"), QStringLiteral("300"));
+    QCOMPARE(model.numPeers(), 7); // Unrelated status still advances.
+    tips.header_tip(SynchronizationState::POST_INIT, interfaces::BlockTip{200, tips.now, uint256{}}, false);
+    QVERIFY(DrainManualTipTurns(env));
+    QVERIFY(!model.headerPresync()); QVERIFY(model.initialSyncComplete());
+    QCOMPARE(InformationValue(model, "Header height"), QStringLiteral("200"));
+}
+
+void NodeModelTests::manualHeaderProjectionCannotOverwriteReentrantBlockTip()
+{
+    MockNode node; ManualTipState tips; ConfigureManualTips(node, tips);
+    ManualExecutionEnvironment env;
+    NodeModel model{node, false, ManualTipServices(env, tips)};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    QVERIFY(DrainManualTipTurns(env)); QVERIFY(tips.block_tip); QVERIFY(tips.peers);
+    model.initializeResult(true, interfaces::BlockAndHeaderTipInfo{
+        .block_height = tips.block, .block_time = tips.block_time,
+        .header_height = tips.header, .header_time = tips.header_time, .verification_progress = 1.0,
+    }, false, false);
+    QVERIFY(DrainManualTipTurns(env));
+    bool reentered{false};
+    connect(&model, &NodeModel::headerSyncChanged, &model, [&] {
+        if (std::exchange(reentered, true)) return;
+        tips.block = tips.header = 150; tips.block_time = tips.header_time = tips.now;
+        tips.block_tip(SynchronizationState::POST_INIT, interfaces::BlockTip{150, tips.now, uint256{}}, 0.9);
+        env.publishAll(); // Deliver the genuine public callback at this signal.
+    });
+    tips.block = tips.header = 300; tips.header_time = tips.now - 100 * 600;
+    tips.peers(1); env.publishAll(); env.drain(); env.publishAll();
+    QVERIFY(reentered); QCOMPARE(model.blockTipHeight(), 150);
+    QCOMPARE(InformationValue(model, "Block height"), QStringLiteral("150"));
+    QVERIFY(!env.turnsIdle()); // The newer query is admitted, not executed yet.
+    QVERIFY(DrainManualTipTurns(env));
+    QCOMPARE(InformationValue(model, "Header height"), QStringLiteral("150"));
+    QCOMPARE(model.blockTipHeight(), 150); QVERIFY(model.initialSyncComplete());
 }
 
 void NodeModelTests::initEmitsRequestedInitialize()

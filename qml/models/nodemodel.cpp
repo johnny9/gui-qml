@@ -105,8 +105,8 @@ QVariant InformationRow(const QString& label, const QString& value)
 // Core callbacks share a bounded mailbox and coalesce changes into one pending
 // GUI delivery. The mutex also protects the receiver until shutdown detaches it.
 struct NodeModel::Notifications : std::enable_shared_from_this<Notifications> {
-    struct Block { SynchronizationState state; interfaces::BlockTip tip; double progress; };
-    struct Header { interfaces::BlockTip tip; bool presync; };
+    struct Block { SynchronizationState state; interfaces::BlockTip tip; double progress; uint64_t generation; };
+    struct Header { interfaces::BlockTip tip; bool presync; uint64_t generation; };
     std::mutex mutex;
     NodeModel* receiver{nullptr};
     std::shared_ptr<execution::Scheduler> scheduler;
@@ -157,6 +157,8 @@ struct NodeModel::Notifications : std::enable_shared_from_this<Notifications> {
     bool bans{false};
     uint64_t status_generation{0};
     uint64_t network_generation{0};
+    uint64_t tip_generation{0};
+    bool header_presync{false};
 
     // Called with mutex held, so detaching the receiver cannot race dispatch.
     void schedule()
@@ -181,6 +183,8 @@ struct NodeModel::StatusSnapshot {
     std::optional<bool> network_active;
     bool mempool_available{false};
     uint64_t generation{0}, network_generation{0};
+    uint64_t tip_generation{0};
+    bool chain_known{false};
     quint64 received{0}, sent{0};
     QString startup_time, user_agent;
     QStringList warning_list;
@@ -396,6 +400,16 @@ void NodeModel::publishNotifications()
         warnings = std::exchange(m_notifications->warnings, false);
         bans = std::exchange(m_notifications->bans, false);
     }
+    // A public getter sampled after these Native callbacks may already have
+    // supplied newer facts. Do not replay an older retained GUI notification.
+    if (header) {
+        m_seen_header_tip = true;
+        if (header->generation <= m_chain_read_generation) header.reset();
+    }
+    if (block) {
+        m_seen_block_tip = true;
+    }
+    bool block_changed{false};
     {
         // Decide sync completion only after both heights belong to this snapshot.
         const bool previous = std::exchange(m_applying_sync_snapshot, true);
@@ -407,13 +421,21 @@ void NodeModel::publishNotifications()
         }
         if (block) {
             m_seen_block_tip = true;
-            m_block_tip_time = block->tip.block_time;
-            setBlockTipHeight(block->tip.block_height);
-            if (!current()) return;
+            if (block->generation > m_chain_read_generation) {
+                block_changed = true;
+                m_block_tip_time = block->tip.block_time;
+                setBlockTipHeight(block->tip.block_height);
+                if (!current()) return;
+            }
+            // Getter readback covers height/time, not these independent
+            // observations. A delayed callback still owns its sync/progress.
             setVerificationProgress(block->progress);
             if (!current()) return;
             setBlockSyncActive(block->state != SynchronizationState::POST_INIT);
             if (!current()) return;
+            // Equal timestamps/heights can still identify a different active
+            // chain. Preserve the notification for history consumers, using
+            // the newer cached time when getter readback covered this payload.
             Q_EMIT blockTipTimeChanged(m_block_tip_time);
             if (!current()) return;
         }
@@ -474,7 +496,7 @@ void NodeModel::publishNotifications()
     }
     updateSyncCompletion();
     if (!current()) return;
-    if (block || header || peers || warnings || network_active) refreshStatus();
+    if (block_changed || header || peers || warnings || network_active) refreshStatus();
     if (network_active) {
         m_network_known = true;
         if (m_pause != !*network_active) {
@@ -503,8 +525,12 @@ void NodeModel::refreshStatus()
         m_status_query = std::make_shared<execution::SnapshotQuery<StatusSnapshot>>(m_query_scheduler,
             [node = &m_node, state = m_notifications] {
                 StatusSnapshot result;
-                bool ready;
-                { std::lock_guard lock{state->mutex}; ready = state->ready; result.generation = state->status_generation; result.network_generation = state->network_generation; }
+                bool ready, presync;
+                {
+                    std::lock_guard lock{state->mutex}; ready = state->ready; presync = state->header_presync;
+                    result.generation = state->status_generation; result.network_generation = state->network_generation;
+                    result.tip_generation = state->tip_generation;
+                }
                 result.inbound = node->getNodeCount(ConnectionDirection::In);
                 result.outbound = node->getNodeCount(ConnectionDirection::Out);
                 const auto warning_text = QString::fromStdString(node->getWarnings().translated);
@@ -520,7 +546,7 @@ void NodeModel::refreshStatus()
                 result.user_agent = QString::fromStdString(strSubVersion);
                 result.received = std::max(int64_t{0}, node->getTotalBytesRecv()); result.sent = std::max(int64_t{0}, node->getTotalBytesSent());
                 if (ready) {
-                    node->getHeaderTip(result.header_height, result.header_time);
+                    result.chain_known = node->getHeaderTip(result.header_height, result.header_time) && !presync;
                     result.block_height = node->getNumBlocks(); result.block_time = node->getLastBlockTime();
                     for (const auto& [addr, info] : node->getNetLocalAddresses()) {
                         if (!result.local_addresses.isEmpty()) result.local_addresses += QStringLiteral(", ");
@@ -537,34 +563,70 @@ void NodeModel::refreshStatus()
 
 void NodeModel::publishStatus()
 {
+    const QPointer<NodeModel> observer{this};
+    const auto current = [&] { return observer && !observer->m_workers_stopping && !observer->m_shutdown_requested && !observer->m_admission_closed; };
     const auto result = m_status_query->take();
-    if (m_workers_stopping || m_shutdown_requested || !result) return;
+    if (!current() || !result) return;
     const auto error = result->error ? tr("Node information could not be refreshed.") : QString{};
     if (m_status_error != error) { m_status_error = error; Q_EMIT observationErrorChanged(); }
+    if (!current()) return;
     if (!result->snapshot) return; // A failed read preserves the previous facts.
     const auto& snapshot = *result->snapshot;
-    bool network_current;
+    bool network_current, chain_current;
     std::optional<int> total;
-    { std::lock_guard lock{m_notifications->mutex}; network_current = snapshot.network_generation == m_notifications->network_generation; total = m_notifications->last_peer_total; }
+    {
+        std::lock_guard lock{m_notifications->mutex};
+        network_current = snapshot.network_generation == m_notifications->network_generation;
+        chain_current = snapshot.tip_generation == m_notifications->tip_generation;
+        total = m_notifications->last_peer_total;
+    }
     m_status_ready = true;
     m_information_local_addresses = snapshot.local_addresses;
     m_information_data_dir = snapshot.data_dir; m_information_blocks_dir = snapshot.blocks_dir;
     m_information_network = snapshot.network; m_information_startup_time = snapshot.startup_time;
     m_information_user_agent = snapshot.user_agent;
-    m_information_header_height = snapshot.header_height; m_information_header_time = snapshot.header_time;
-    m_information_block_height = snapshot.block_height; m_information_block_time = snapshot.block_time;
+    if (snapshot.chain_known && chain_current) {
+        // InvalidateBlock can lower Core's best header without a header-tip
+        // callback. Reuse this already admitted public read instead of keeping
+        // a historical maximum in either information or synchronization state.
+        m_chain_read_generation = snapshot.tip_generation;
+        const bool time_changed = m_block_tip_time != snapshot.block_time || m_block_tip_height != snapshot.block_height;
+        m_block_tip_time = snapshot.block_time;
+        {
+            const bool previous = std::exchange(m_applying_sync_snapshot, true);
+            const auto applying = qScopeGuard([observer, previous] { if (observer) observer->m_applying_sync_snapshot = previous; });
+            setHeaderSyncState(snapshot.header_height, snapshot.header_time, /*presync=*/false);
+            if (!current()) return;
+            // A public header projection signal can reenter GUI delivery and
+            // consume a newer Native block notification before this setter.
+            bool block_current;
+            { std::lock_guard lock{m_notifications->mutex}; block_current = snapshot.tip_generation == m_notifications->tip_generation; }
+            if (block_current) {
+                setBlockTipHeight(snapshot.block_height);
+                if (!current()) return;
+            }
+        }
+        updateSyncCompletion();
+        if (!current()) return;
+        if (time_changed) { Q_EMIT blockTipTimeChanged(m_block_tip_time); if (!current()) return; }
+    }
     m_total_bytes_received = snapshot.received; m_total_bytes_sent = snapshot.sent;
-    setNumInboundPeers(snapshot.inbound); setNumOutboundPeers(snapshot.outbound);
+    setNumInboundPeers(snapshot.inbound); if (!current()) return;
+    setNumOutboundPeers(snapshot.outbound); if (!current()) return;
     setNumPeers(total.value_or(snapshot.inbound + snapshot.outbound));
+    if (!current()) return;
     if (m_warnings != snapshot.warnings || m_warning_list != snapshot.warning_list) {
         m_warnings = snapshot.warnings; m_warning_list = snapshot.warning_list; Q_EMIT warningsChanged();
+        if (!current()) return;
     }
     if (snapshot.network_active && network_current) {
         m_network_known = true;
         if (m_pause != !*snapshot.network_active) { m_pause = !*snapshot.network_active; Q_EMIT pauseChanged(m_pause); }
+        if (!current()) return;
     }
     if (m_mempool_information_available != snapshot.mempool_available) {
         m_mempool_information_available = snapshot.mempool_available; Q_EMIT mempoolInfoChanged();
+        if (!current()) return;
     }
     Q_EMIT nodeInformationChanged();
 }
@@ -1132,10 +1194,11 @@ void NodeModel::initializeSubscriptions()
             { std::lock_guard lock{state->mutex}; state->header_spacing = std::max(int64_t{1}, int64_t{Params().GetConsensus().nPowTargetSpacing}); }
             auto& handlers = subscriptions->handlers;
             handlers.push_back(node->handleNotifyBlockTip([state](SynchronizationState sync, interfaces::BlockTip tip, double progress) {
-                std::lock_guard lock{state->mutex}; state->block = Notifications::Block{sync, std::move(tip), progress}; state->schedule();
+                std::lock_guard lock{state->mutex}; state->block = Notifications::Block{sync, std::move(tip), progress, ++state->tip_generation}; state->schedule();
             }));
             handlers.push_back(node->handleNotifyHeaderTip([state](SynchronizationState, interfaces::BlockTip tip, bool presync) {
-                std::lock_guard lock{state->mutex}; state->header = Notifications::Header{std::move(tip), presync}; state->schedule();
+                std::lock_guard lock{state->mutex}; state->header_presync = presync;
+                state->header = Notifications::Header{std::move(tip), presync, ++state->tip_generation}; state->schedule();
             }));
             handlers.push_back(node->handleNotifyNumConnectionsChanged([state](int total) {
                 std::lock_guard lock{state->mutex}; state->peers = total; state->last_peer_total = total; ++state->status_generation; state->schedule();
@@ -1236,12 +1299,11 @@ void NodeModel::publishPeerAction(quint64 ticket)
 QVariantList NodeModel::nodeInformationRows()
 {
     if (!m_backend_queries_ready || m_shutdown_requested || m_workers_stopping) return {};
-    const int header_height = std::max(m_header_tip_height, m_information_header_height);
-    const int64_t header_time = m_header_tip_height >= m_information_header_height
-        ? m_header_tip_time : m_information_header_time;
+    const int header_height = m_header_tip_height;
+    const int64_t header_time = m_header_tip_time;
     const QString local_addresses = m_information_local_addresses.isEmpty() ? tr("None") : m_information_local_addresses;
-    const int block_height = std::max(m_block_tip_height, m_information_block_height);
-    const int64_t last_block_time = m_information_block_time;
+    const int block_height = m_block_tip_height;
+    const int64_t last_block_time = m_block_tip_time;
     const QString warning_text{m_warning_list.empty() ? tr("None") : m_warning_list.join(QStringLiteral("\n"))};
 
     QVariantList rows;

@@ -257,8 +257,7 @@ private:
     void publishPeerAction(quint64 ticket);
     QString m_information_local_addresses;
     QString m_information_data_dir, m_information_blocks_dir, m_information_network;
-    int m_information_header_height{0}, m_information_block_height{0};
-    int64_t m_information_header_time{0}, m_information_block_time{0};
+    uint64_t m_chain_read_generation{0};
     struct NetworkActionResult { bool paused; uint64_t generation; bool requested; };
     std::shared_ptr<execution::OwnedCommand<NetworkActionResult>> m_network_command;
     void publishNetworkAction();

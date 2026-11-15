@@ -69,3 +69,27 @@ Reactivation catches up from the owned file state and preserves wider pending
 pagination. It neither closes the shared scheduler nor cancels console commands.
 Watchers still use actual platform file/directory notifications; explicit refresh
 and existing path/disabled-logging controls remain independent observations.
+
+## Chain information adjacent to the console
+
+Node information and synchronization now use one height/time projection. A
+block callback can lower its block row immediately; an older completed status
+read cannot restore a historical maximum. The existing status query reads the
+public best-header, active-chain height and block-time getters off GUI. A
+chain-specific notification revision fences those samples independently of peer,
+warning and network revisions. A fresh known header read can therefore lower a
+header invalidated without a header callback and release synchronization against
+Core's actual current header.
+
+Readback supersedes only callback height/time fields that it actually observes.
+A later GUI delivery still consumes its independent sync/progress facts and
+notifies history consumers, including equal timestamp/height replacements.
+Header presync remains owned by the public header notification; the best-header
+getter does not represent unvalidated presync progress. Unavailable header
+readback preserves the previous header rather than fabricating a zero tip.
+
+These are versioned public observations, not an atomic Core chain snapshot. The
+public getters still take their existing Core locks and can observe a concurrent
+change between calls. Subsequent real tip notifications retain catch-up work.
+This change does not remove the previously recorded conditional Core lock or
+whole-GUI validation limits.
