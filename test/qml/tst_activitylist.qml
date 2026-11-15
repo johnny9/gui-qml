@@ -4,6 +4,7 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Window 2.15
 import QtTest 1.2
 import org.bitcoincore.qt 1.0
 import "../../qml/controls"
@@ -24,6 +25,7 @@ TestCase {
 
     Component { id: pageComponent; ActivityList { width: 1180; height: 950; wallet: testWalletModel } }
     Component { id: receiveFixtureComponent; ControlledReceiveFixture {} }
+    Component { id: signalSpyComponent; SignalSpy {} }
 
     Component {
         id: iconImageComponent
@@ -1025,14 +1027,45 @@ TestCase {
         const reset = findChild(page, "activityDateRangeReset")
         tryCompare(reset, "visible", true)
         verify(reset.enabled)
-        mouseClick(reset)
-        compare(proxy.dateFilter, ActivityFilterProxyModel.DateAll)
-        compare(proxy.searchText, "original")
-        compare(proxy.typeFilters.length, 1)
-        compare(proxy.typeFilters[0], ActivityFilterProxyModel.Received)
-        compare(proxy.minAmount, 100)
-        compare(proxy.maxAmount, 500)
-        compare(reset.enabled, false)
+        // Expanding the calendar changes its parent layout after visible is
+        // published. Dispatch to the settled control, not its old preset-row
+        // coordinates; the model's clear command itself is synchronous.
+        verify(waitForItemPolished(popup.contentItem))
+        verify(waitForItemPolished(reset.parent))
+        verify(waitForItemPolished(reset))
+        verify(waitForRendering(popup.contentItem))
+        const window = testCase.Window.window
+        verify(window !== null)
+        tryVerify(function() {
+            if (!(reset.width > 0 && reset.height > 0)) return false
+            const cx = reset.width / 2
+            const cy = reset.height / 2
+            const point = reset.mapToItem(window.contentItem, cx, cy)
+            if (point.x < 0 || point.y < 0 || point.x >= window.width || point.y >= window.height) return false
+            for (let ancestor = reset; ancestor; ancestor = ancestor.parent) {
+                if (!ancestor.visible || ancestor.opacity <= 0) return false
+                if (!ancestor.clip) continue
+                const local = reset.mapToItem(ancestor, cx, cy)
+                if (local.x < 0 || local.y < 0 || local.x >= ancestor.width || local.y >= ancestor.height) return false
+            }
+            return true
+        })
+        const clicked = createTemporaryObject(signalSpyComponent, testCase, { target: reset, signalName: "clicked" })
+        verify(clicked !== null)
+        try {
+            verify(clicked.valid)
+            mouseClick(reset, reset.width / 2, reset.height / 2)
+            compare(clicked.count, 1)
+            compare(proxy.dateFilter, ActivityFilterProxyModel.DateAll)
+            compare(proxy.searchText, "original")
+            compare(proxy.typeFilters.length, 1)
+            compare(proxy.typeFilters[0], ActivityFilterProxyModel.Received)
+            compare(proxy.minAmount, 100)
+            compare(proxy.maxAmount, 500)
+            compare(reset.enabled, false)
+        } finally {
+            clicked.target = null
+        }
     }
     function test_two_live_grouping_views_and_reopen_keep_the_last_explicit_choice() {
         const first = createPage()
