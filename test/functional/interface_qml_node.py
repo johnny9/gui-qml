@@ -6,6 +6,7 @@
 
 import time
 import configparser
+import json
 from pathlib import Path
 from qml_scenarios import run_scenarios
 from qml_smoke_lib import (
@@ -41,11 +42,11 @@ def open_settings(gui, section):
     gui.settle(stack_view_names=("mainPageStack", f"settingsNavigationStack_{section}"))
 
 
-def open_proxy(gui):
+def open_connection_settings(gui):
     open_settings(gui, "connection")
-    gui.wait_for_page("proxySettingsRow")
-    gui.click("proxySettingsRow")
-    gui.wait_for_page("proxySettingsPage")
+    gui.wait_for_page("connectionSettingsPage")
+    gui.wait_for_property("settingsView", "settingsEditor.fresh", True, timeout_ms=30000)
+    gui.wait_for_property("settingsView", "settingsEditor.busy", False, timeout_ms=30000)
 
 
 def node_smoke(harness, checkpoint):
@@ -65,38 +66,41 @@ def node_smoke(harness, checkpoint):
     gui.wait_for_property("appWindow", "height", 800)
     checkpoint("wallet shell started with saved geometry")
 
-    open_proxy(gui)
-    gui.wait_for_property("proxySettingsPage", "proxyDraft.ready", True, timeout_ms=30000)
-    gui.wait_for_property("proxySettingsPage", "proxyDraft.pending", False, timeout_ms=30000)
-    assert gui.get_property("proxySettingsPage", "proxyDraft.error") in (None, "")
-    for switch, field, value in (
-        ("proxyEnableSwitch", "proxyAddressInput", "127.0.0.1:9050"),
-        ("torEnableSwitch", "torAddressInput", "127.0.0.1:9150"),
-    ):
-        gui.wait_for_property(switch, "enabled", True)
-        gui.wait_for_property(switch, "checked", False)
-        gui.click(switch)
-        gui.wait_for_property(switch, "checked", True)
+    open_connection_settings(gui)
+    expected_proxies = {"proxy": "127.0.0.1:9050", "onion": "127.0.0.1:9150"}
+    for key, value in expected_proxies.items():
+        field = key + "SettingInput"
         gui.wait_for_property(field, "enabled", True)
+        gui.wait_for_property(field, "text", "")
         gui.set_text(field, value)
-        gui.wait_for_property("proxySettingsPage", "proxyDraft.pending", False, timeout_ms=30000)
-    gui.wait_for_property("proxySettingsSaveButton", "enabled", True)
-    previous_apply = gui.get_property("connectionSettingsPage", "settingsModel.settingsOperationId")
-    gui.click("proxySettingsSaveButton")
-    apply_ticket = gui.wait_for_property("connectionSettingsPage", "settingsModel.settingsOperationId",
-                                         lambda value: isinstance(value, int) and value > previous_apply, timeout_ms=30000)
-    def original_proxy_applied():
-        assert gui.get_property("connectionSettingsPage", "settingsModel.settingsOperationId") == apply_ticket
-        if gui.get_property("connectionSettingsPage", "settingsModel.settingsPending"):
-            assert gui.get_property("connectionSettingsPage", "settingsModel.settingsOperationId") == apply_ticket
+        gui.wait_for_property("settingsView", "settingsEditor.inputPending", False, timeout_ms=30000)
+        assert gui.get_property("effectiveSetting_" + key, "entry.error") in (None, "")
+    gui.wait_for_property("settingsSaveBatchButton", "enabled", True)
+    editor_id = gui.get_property("settingsView", "settingsEditor.editorId")
+    # lastSaveId is the token in saveResult.operationId. Only this one Save
+    # is requested, so its original receipt must have the next editor token.
+    save_token = str(int(gui.get_property("settingsView", "settingsEditor.lastSaveId")) + 1)
+    gui.click("settingsSaveBatchButton")
+    def original_proxy_saved():
+        assert gui.get_property("settingsView", "settingsEditor.editorId") == editor_id
+        observed = gui.get_property("settingsView", "settingsEditor.lastSaveId")
+        if observed != save_token:
+            assert int(observed) < int(save_token), "Another save replaced the original settings receipt"
             return False
-        applied = gui.get_enum_property("connectionSettingsPage", "settingsModel.settingsOperationState")
-        assert applied["enum"] == "SettingsOperationState" and applied["key"] == "SettingsApplied", applied
-        assert gui.get_property("connectionSettingsPage", "settingsModel.settingsOperationId") == apply_ticket
-        assert gui.get_property("connectionSettingsPage", "settingsModel.settingsError") in (None, "")
+        if gui.get_property("settingsView", "settingsEditor.busy"):
+            return False
+        assert gui.get_property("settingsView", "settingsEditor.lastSavePresent")
+        assert gui.get_property("settingsView", "settingsEditor.lastSaveKnown")
+        assert gui.get_property("settingsView", "settingsEditor.lastSavePersisted")
+        assert gui.get_property("settingsView", "settingsEditor.error") in (None, "")
+        assert gui.get_property("settingsView", "settingsEditor.lastSaveId") == save_token
         return True
-    wait_until(original_proxy_applied, "the original proxy settings Apply receipt")
-    gui.wait_for_page("proxySettingsRow")
+    wait_until(original_proxy_saved, "the original proxy settings batch Save receipt")
+    actual_values = gui.get_property("settingsActualSaveResult", "text").splitlines()
+    saved = json.loads(Path(harness.gui_settings_path).read_text(encoding="utf8"))
+    for key, value in expected_proxies.items():
+        assert f"{key} = {value}" in actual_values, actual_values
+        assert saved[key] == value, saved
     checkpoint("proxy settings saved")
 
     open_settings(gui, "window-behavior")
@@ -149,11 +153,14 @@ def node_smoke(harness, checkpoint):
     open_settings(gui, "window-behavior")
     gui.wait_for_property("showTrayIconSwitch", "checked", False)
     gui.wait_for_property("minimizeOnCloseSwitch", "checked", True)
-    open_proxy(gui)
-    gui.wait_for_property("proxyEnableSwitch", "checked", True)
-    gui.wait_for_property("proxyAddressInput", "text", "127.0.0.1:9050")
-    gui.wait_for_property("torEnableSwitch", "checked", True)
-    gui.wait_for_property("torAddressInput", "text", "127.0.0.1:9150")
+    open_connection_settings(gui)
+    for key, value in expected_proxies.items():
+        gui.wait_for_property(key + "SettingInput", "text", value)
+        gui.wait_for_property("effectiveSetting_" + key, "entry.effectiveText", value)
+    networks = {network["name"]: network for network in rpc_call(harness.gui_rpc_port, "getnetworkinfo")["networks"]}
+    assert networks["ipv4"]["proxy"] == expected_proxies["proxy"], networks
+    assert networks["ipv6"]["proxy"] == expected_proxies["proxy"], networks
+    assert networks["onion"]["proxy"] == expected_proxies["onion"], networks
     checkpoint("settings restored after restart")
     gui.click("settingsDoneButton")
     gui.wait_for_page("blockClock")
