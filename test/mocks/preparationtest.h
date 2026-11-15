@@ -14,7 +14,7 @@
 inline bool AwaitPreparation(WalletQmlModel& model, std::optional<QString> passphrase = {}, std::function<void()> pump = {})
 {
     const QPointer<WalletQmlModel> guard{&model};
-    if (!QTest::qWaitFor([&] { if (pump) pump(); return !guard || (!guard->coinSelectionPending() && !guard->sendRecipientList()->validationPending()); }, 5000) || !guard) return false;
+    if (!QTest::qWaitFor([&] { if (pump) pump(); return !guard || (!guard->coinSelectionPending() && !guard->sendRecipientList()->validationPending() && !guard->customFeeTargetPending()); }, 5000) || !guard) return false;
     const auto ticket = passphrase ? model.requestPrepareTransactionWithPassphrase(*passphrase) : model.requestPrepareTransaction();
     if (!ticket) return false;
     return QTest::qWaitFor([&] { if (pump) pump(); return !guard || !guard->preparationBusy(); }, 5000) && guard &&

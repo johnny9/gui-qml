@@ -18,6 +18,40 @@ bool SameTransaction(const CTransaction& reviewed, const CMutableTransaction& ca
     }
     return original.GetHash() == returned.GetHash();
 }
+bool KnownOutputs(interfaces::Wallet& wallet, const std::vector<COutPoint>& outputs)
+{
+    // Pinned getCoins does not bounds-check an index in a known transaction.
+    // Keep malformed/stale identifiers outside that public call.
+    for (const auto& output : outputs) {
+        const auto transaction = wallet.getTx(output.hash);
+        if (!transaction || output.n >= transaction->vout.size()) return false;
+    }
+    return true;
+}
+bool VerifiedExternalTransaction(interfaces::Wallet& wallet, const CTransaction& transaction)
+{
+    try {
+        std::vector<COutPoint> outputs;
+        outputs.reserve(transaction.vin.size());
+        for (const auto& input : transaction.vin) outputs.push_back(input.prevout);
+        if (!KnownOutputs(wallet, outputs)) return false;
+        const auto coins = wallet.getCoins(outputs);
+        if (outputs.empty() || coins.size() != outputs.size()) return false;
+        PartiallySignedTransaction document{CMutableTransaction{transaction}, 2};
+        for (size_t i = 0; i < outputs.size(); ++i) {
+            if (coins[i].txout.IsNull()) return false;
+            document.inputs[i].witness_utxo = coins[i].txout;
+            document.inputs[i].final_script_sig = transaction.vin[i].scriptSig;
+            document.inputs[i].final_script_witness = transaction.vin[i].scriptWitness;
+        }
+        const auto data = PrecomputePSBTData(document);
+        if (!data) return false;
+        for (size_t i = 0; i < outputs.size(); ++i) {
+            if (!PSBTInputSignedAndVerified(document, static_cast<unsigned int>(i), &*data)) return false;
+        }
+        return true;
+    } catch (...) { return false; }
+}
 Submission ObserveSubmission(interfaces::Wallet& wallet, const CTransaction& transaction)
 {
     try {
@@ -90,8 +124,14 @@ Result Execute(interfaces::Wallet& wallet, Request request)
             if (!SameTransaction(*request.reviewed, extracted)) { result.error = Error::ChangedTransaction; return result; }
             if (!psbtfee::MatchesReview(psbt, *request.proof, request.approved_fee)) { result.error = Error::InvalidFee; return result; }
             transaction = MakeTransactionRef(std::move(extracted));
-        } else if (wallet.privateKeysDisabled() && !wallet.hasExternalSigner()) {
-            result.error = Error::CannotSign; return result;
+        } else if (wallet.privateKeysDisabled()) {
+            if (!wallet.hasExternalSigner()) { result.error = Error::CannotSign; return result; }
+            // A prepared external-wallet transaction is unsigned until an
+            // explicit approval supplies valid signatures. A failed approval
+            // must not make a later direct Send commit that original value.
+            if (!VerifiedExternalTransaction(wallet, *transaction)) {
+                result.error = Error::NeedsSignerApproval; return result;
+            }
         }
         request.passphrase.reset();
         if (result.relock_failed) { result.error = Error::Uncertain; return result; }
@@ -192,7 +232,29 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
     if (!psbtfee::MatchesReview(document, *request.proof, request.approved_fee)) {
         result.error = Error::InvalidFee; return result;
     }
-    psbtfee::FillMissing(document, *request.proof);
+    auto verified = request.proof->verified;
+    if (request.proof->wallet_prepared) {
+        // A prepared fee is an aggregate receipt, not a proof of input keys.
+        // Capture canonical prevouts from the original public wallet before
+        // any external-device invocation can replace PSBT metadata.
+        std::vector<COutPoint> outputs;
+        outputs.reserve(request.reviewed->vin.size());
+        for (const auto& input : request.reviewed->vin) outputs.push_back(input.prevout);
+        try {
+            if (!walletsend::KnownOutputs(wallet, outputs)) { result.error = Error::UnverifiedInputs; return result; }
+            const auto coins = wallet.getCoins(outputs);
+            if (coins.size() != outputs.size()) { result.error = Error::UnverifiedInputs; return result; }
+            for (size_t i = 0; i < outputs.size(); ++i) {
+                if (coins[i].txout.IsNull()) { result.error = Error::UnverifiedInputs; return result; }
+                verified.insert_or_assign(outputs[i], coins[i].txout);
+            }
+        } catch (...) { result.error = Error::UnverifiedInputs; return result; }
+    }
+    const auto authenticated = psbtfee::Analyze(document, verified);
+    if (authenticated.state != psbtfee::State::Known || authenticated.amount != request.approved_fee) {
+        result.error = Error::UnverifiedInputs; return result;
+    }
+    psbtfee::FillMissing(document, authenticated);
     const auto approved = std::make_shared<const PartiallySignedTransaction>(document);
     bool complete{false};
     try {
@@ -217,9 +279,22 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
         }
         CMutableTransaction signed_tx;
         const bool extracted = FinalizeAndExtractPSBT(document, signed_tx);
-        if (!psbtfee::MatchesReview(document, *request.proof, request.approved_fee)) {
+        if (!psbtfee::MatchesReview(document, authenticated, request.approved_fee)) {
             result.document = approved;
             result.error = Error::InvalidFee; return result;
+        }
+        if (extracted) {
+            const auto data = PrecomputePSBTData(document);
+            bool valid = data.has_value();
+            for (size_t i = 0; valid && i < document.inputs.size(); ++i) {
+                valid = PSBTInputSignedAndVerified(document, static_cast<unsigned int>(i), &*data);
+            }
+            if (!valid) {
+                // Finalization and a signer's completion flag do not prove
+                // that the replacement can service the original input keys.
+                result.document = approved;
+                result.error = Error::InvalidSignature; return result;
+            }
         }
         result.document = std::make_shared<const PartiallySignedTransaction>(std::move(document));
         result.partial = !extracted;

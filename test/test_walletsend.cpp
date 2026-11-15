@@ -47,6 +47,7 @@ struct Wallet : StubWallet {
     bool report_sign_error{false}, mutate_then_throw{false}, change_transaction{false}, throw_sign{false}, fail_lock{false}, throw_commit{false}, partial_sign{false};
     int commits{0}, signs{0}, unlocks{0}, locks{0}, labels{0}, status_reads{0};
     CTransactionRef last_transaction;
+    std::shared_ptr<const PartiallySignedTransaction> completed_document;
     std::function<void()> after_unlock,before_commit;
     std::function<void(PartiallySignedTransaction&, bool&)> metadata;
     std::optional<common::PSBTError> metadata_error;
@@ -81,6 +82,11 @@ struct Wallet : StubWallet {
         }
         if (throw_sign) throw std::runtime_error{"signer failure"};
         if (partial_sign) { complete = false; return {}; }
+        if (completed_document) {
+            psbt = *completed_document;
+            if (change_transaction) psbt.outputs[0].amount = 999;
+            complete = true; return {};
+        }
         if (change_transaction) psbt.outputs[0].amount = 999;
         psbt.inputs[0].final_script_sig = CScript{} << OP_TRUE; complete = true; return {};
     }
@@ -95,13 +101,25 @@ struct Wallet : StubWallet {
     bool getAddress(const CTxDestination&, std::string*, wallet::AddressPurpose*) override { return true; }
     bool setAddressBook(const CTxDestination&, const std::string&, const std::optional<wallet::AddressPurpose>&) override { ++labels; return true; }
 };
+walletsigning::Request VerifiedApprovalRequest(Wallet& wallet)
+{
+    wallet.completed_document = std::make_shared<const PartiallySignedTransaction>(psbtfeefixture::Legacy(2, false));
+    auto unsigned_document = *wallet.completed_document;
+    for (auto& input : unsigned_document.inputs) {
+        input.final_script_sig.clear(); input.final_script_witness.SetNull();
+    }
+    return {MakeTransactionRef(*unsigned_document.GetUnsignedTx()),
+        std::make_shared<const PartiallySignedTransaction>(std::move(unsigned_document)),
+        std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(*wallet.completed_document)),
+        psbtfeefixture::ACTUAL_FEE};
+}
 struct Fixture {
     ManualRoutedExecution commands, retirement;
     std::shared_ptr<Wallet> wallet{std::make_shared<Wallet>()};
     std::shared_ptr<walletopening::Session> opening{std::make_shared<walletopening::Session>(commands.scheduler, retirement.scheduler, std::make_shared<std::atomic_bool>(false), [] {})};
     std::shared_ptr<walletrequests::Store> notes{std::make_shared<walletrequests::Store>(opening, [] {})};
     int notifications{0};
-    Fixture() { opening->start(wallet); commands.drain(); opening->take(); }
+    explicit Fixture(std::shared_ptr<Wallet> original = std::make_shared<Wallet>()) : wallet(std::move(original)) { opening->start(wallet); commands.drain(); opening->take(); }
     ~Fixture() { notes->close(); opening->retire(); commands.drain(); retirement.drain(); }
     std::shared_ptr<walletsend::Operation> operation() { return std::make_shared<walletsend::Operation>(opening, notes, [this](auto) { ++notifications; }); }
 };
@@ -112,6 +130,159 @@ class WalletSendTests : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void initTestCase() { SelectParams(ChainType::MAIN); }
+    void replacementSignerMustServiceTheReviewedKeys_data()
+    {
+        QTest::addColumn<int>("replacement");
+        QTest::addColumn<bool>("prepared");
+        for (bool prepared : {false, true}) {
+            const auto prefix = prepared ? "prepared-" : "imported-";
+            QTest::newRow(qPrintable(QString::fromLatin1(prefix) + "compatible-keys-control")) << 0 << prepared;
+            QTest::newRow(qPrintable(QString::fromLatin1(prefix) + "incompatible-keys-same-terms")) << 1 << prepared;
+            QTest::newRow(qPrintable(QString::fromLatin1(prefix) + "invalid-final-script-same-terms")) << 2 << prepared;
+        }
+    }
+    void replacementSignerMustServiceTheReviewedKeys()
+    {
+        QFETCH(int, replacement);
+        QFETCH(bool, prepared);
+        ECC_Context ecc;
+        const auto original = psbtfeefixture::Legacy(2, false);
+        auto returned = original;
+        if (replacement == 1) {
+            const auto other_keys = psbtfeefixture::Legacy(2, false);
+            for (size_t i = 0; i < returned.inputs.size(); ++i) {
+                returned.inputs[i].final_script_sig = other_keys.inputs[i].final_script_sig;
+            }
+        } else if (replacement == 2) {
+            for (auto& input : returned.inputs) input.final_script_sig = CScript{} << OP_TRUE;
+        }
+        auto unsigned_document = original;
+        for (auto& input : unsigned_document.inputs) {
+            input.final_script_sig.clear(); input.final_script_witness.SetNull();
+        }
+        const auto original_tx = original.GetUnsignedTx(); QVERIFY(original_tx);
+        const auto returned_tx = returned.GetUnsignedTx(); QVERIFY(returned_tx);
+        QCOMPARE(returned_tx->GetHash(), original_tx->GetHash());
+        const auto proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(original));
+        QVERIFY(psbtfee::MatchesReview(returned, *proof, psbtfeefixture::ACTUAL_FEE));
+        const auto txdata = PrecomputePSBTData(returned); QVERIFY(txdata);
+        bool signatures_valid{true};
+        for (size_t i = 0; i < returned.inputs.size(); ++i) {
+            signatures_valid &= PSBTInputSignedAndVerified(returned, static_cast<unsigned int>(i), &*txdata);
+        }
+        QCOMPARE(signatures_valid, replacement == 0);
+        struct ReplacementWallet : Wallet {
+            std::vector<interfaces::WalletTxOut> known;
+            std::map<Txid, CTransactionRef> previous;
+            CTransactionRef getTx(const Txid& id) override { const auto found = previous.find(id); return found == previous.end() ? CTransactionRef{} : found->second; }
+            size_t input_reads{0};
+            std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>&) override {
+                ++input_reads; return known;
+            }
+        } signer;
+        signer.signer = true;
+        for (const auto& input : original.inputs) {
+            interfaces::WalletTxOut coin{};
+            coin.txout = input.non_witness_utxo->vout[input.GetOutPoint().n];
+            signer.known.push_back(std::move(coin));
+            signer.previous.emplace(input.GetOutPoint().hash, input.non_witness_utxo);
+        }
+        // Controlled public-wallet return, independent of physical hardware.
+        // A completion flag and unchanged terms cannot replace verification.
+        signer.metadata = [&returned](PartiallySignedTransaction& document, bool& complete) {
+            document = returned; complete = true;
+        };
+        const auto authority = prepared
+            ? std::make_shared<const psbtfee::Analysis>(psbtfee::Prepared(CTransaction{*original_tx}, psbtfeefixture::ACTUAL_FEE))
+            : proof;
+        walletsigning::Request request{MakeTransactionRef(*original_tx),
+            std::make_shared<const PartiallySignedTransaction>(unsigned_document), authority,
+            psbtfeefixture::ACTUAL_FEE};
+        const auto result = walletsigning::Approve(signer, request);
+        QCOMPARE(signer.commits, 0); QCOMPARE(signer.input_reads, prepared ? size_t{1} : size_t{0});
+        if (replacement == 0) {
+            QCOMPARE(result.error, walletsigning::Error::None);
+            QVERIFY(result.signed_transaction);
+            auto finalized = original; CMutableTransaction extracted;
+            QVERIFY(FinalizeAndExtractPSBT(finalized, extracted));
+            QCOMPARE(result.signed_transaction->GetHash(), MakeTransactionRef(extracted)->GetHash());
+        } else {
+            QCOMPARE(result.error, walletsigning::Error::InvalidSignature);
+            QVERIFY(!result.signed_transaction); QVERIFY(!result.partial);
+            QVERIFY(result.document);
+            QCOMPARE(result.document->GetUnsignedTx()->GetHash(), original_tx->GetHash());
+        }
+    }
+    void directExternalCommitRequiresTheOriginalKeys_data()
+    {
+        QTest::addColumn<int>("candidate");
+        QTest::newRow("compatible-signed-candidate") << 0;
+        QTest::newRow("unsigned-after-failed-approval") << 1;
+        QTest::newRow("incompatible-key-candidate") << 2;
+    }
+    void directExternalCommitRequiresTheOriginalKeys()
+    {
+        QFETCH(int, candidate);
+        ECC_Context ecc;
+        const auto original = psbtfeefixture::Legacy(2, false);
+        const auto signatures = candidate == 2 ? psbtfeefixture::Legacy(2, false) : original;
+        CMutableTransaction reviewed = *original.GetUnsignedTx();
+        if (candidate != 1) for (size_t i = 0; i < reviewed.vin.size(); ++i) {
+            reviewed.vin[i].scriptSig = signatures.inputs[i].final_script_sig;
+            reviewed.vin[i].scriptWitness = signatures.inputs[i].final_script_witness;
+        }
+        struct ExternalWallet : Wallet {
+            std::vector<interfaces::WalletTxOut> known;
+            std::map<Txid, CTransactionRef> previous;
+            CTransactionRef getTx(const Txid& id) override { const auto found = previous.find(id); return found == previous.end() ? CTransactionRef{} : found->second; }
+            std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>&) override { return known; }
+        };
+        auto wallet = std::make_shared<ExternalWallet>(); wallet->signer = true; wallet->no_keys = true;
+        for (const auto& input : original.inputs) {
+            interfaces::WalletTxOut coin{}; coin.txout = input.non_witness_utxo->vout[input.GetOutPoint().n];
+            wallet->known.push_back(std::move(coin));
+            wallet->previous.emplace(input.GetOutPoint().hash, input.non_witness_utxo);
+        }
+        Fixture f{wallet}; auto operation = f.operation();
+        walletsend::Request request; request.reviewed = MakeTransactionRef(reviewed); request.approved_fee = psbtfeefixture::ACTUAL_FEE;
+        QVERIFY(operation->start(std::move(request))); QCOMPARE(wallet->commits, 0);
+        f.commands.drain(); QVERIFY(operation->result());
+        QCOMPARE(operation->result()->error, candidate == 0 ? Error::None : Error::NeedsSignerApproval);
+        QCOMPARE(wallet->commits, candidate == 0 ? 1 : 0);
+        QCOMPARE(bool(operation->result()->committed), candidate == 0);
+        if (candidate == 0) QCOMPARE(operation->result()->committed->GetHash(), MakeTransactionRef(reviewed)->GetHash());
+        QVERIFY(wallet->fill_options.empty()); QCOMPARE(wallet->unlocks, 0);
+    }
+    void unverifiedPreparedInputsCannotReachTheSigner_data()
+    {
+        QTest::addColumn<int>("failure");
+        QTest::newRow("missing-public-outputs") << 0;
+        QTest::newRow("null-public-output") << 1;
+        QTest::newRow("public-read-throws") << 2;
+    }
+    void unverifiedPreparedInputsCannotReachTheSigner()
+    {
+        QFETCH(int, failure);
+        struct UnavailableWallet : Wallet {
+            CTransactionRef previous;
+            CTransactionRef getTx(const Txid&) override { return previous; }
+            int failure;
+            explicit UnavailableWallet(int value) : failure(value) { signer = true; }
+            std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>&) override {
+                if (failure == 2) throw std::runtime_error("public prevout read unavailable");
+                return failure == 0 ? std::vector<interfaces::WalletTxOut>{} : std::vector<interfaces::WalletTxOut>(1);
+            }
+        } signer{failure};
+        const auto send = PsbtRequest();
+        signer.previous = send.psbt->inputs.front().non_witness_utxo;
+        walletsigning::Request request{send.reviewed, send.psbt,
+            std::make_shared<const psbtfee::Analysis>(psbtfee::Prepared(*send.reviewed, *send.approved_fee)), send.approved_fee};
+        const auto result = walletsigning::Approve(signer, request);
+        QCOMPARE(result.error, walletsigning::Error::UnverifiedInputs);
+        QVERIFY(!result.document && !result.signed_transaction && !result.partial);
+        QVERIFY(signer.fill_options.empty());
+        QCOMPARE(signer.commits, 0); QCOMPARE(signer.unlocks, 0);
+    }
     void signingApprovalRejectsIncompleteAuthorityBeforeDeviceWork_data()
     {
         QTest::addColumn<int>("mode");
@@ -378,13 +549,14 @@ private Q_SLOTS:
     void signerApprovalOwnsItsOriginalOutcome()
     {
         QFETCH(int, scenario);
+        ECC_Context ecc;
         Fixture f;
         f.wallet->signer = scenario != 4;
         f.wallet->partial_sign = scenario == 1;
         f.wallet->change_transaction = scenario == 2;
         f.wallet->throw_sign = scenario == 5;
-        const auto send = PsbtRequest();
-        walletsigning::Request request{send.reviewed, send.psbt, send.proof, scenario == 3 ? std::optional<CAmount>{999} : send.approved_fee};
+        auto request = VerifiedApprovalRequest(*f.wallet);
+        if (scenario == 3) request.approved_fee = 999;
         const auto action = f.opening->startAction();
         QVERIFY(action);
         auto command = std::make_shared<execution::OwnedCommand<walletsigning::Result>>(f.commands.scheduler, [] {});
@@ -416,10 +588,10 @@ private Q_SLOTS:
     }
     void admittedSignerRunsAfterQueueClosureUsingReservedOutput()
     {
+        ECC_Context ecc;
         Fixture f;
         f.wallet->signer = true;
-        const auto send = PsbtRequest();
-        walletsigning::Request request{send.reviewed, send.psbt, send.proof, send.approved_fee};
+        const auto request = VerifiedApprovalRequest(*f.wallet);
         auto output = walletopening::RetainValues<walletsigning::Result>(f.opening, [] { return std::make_unique<walletsigning::Result>(); });
         QVERIFY(output);
         auto action = f.opening->startAction(); QVERIFY(action);

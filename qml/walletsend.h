@@ -13,7 +13,7 @@
 namespace walletsend {
 enum class Submission { Unknown, Mempool, Confirmed, NotInMempool, Conflicted, Abandoned };
 enum class Notice { Finished, Notes };
-enum class Error { None, Rejected, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled };
+enum class Error { None, Rejected, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled, NeedsSignerApproval };
 /** Explicit review withdrawal may win before the irreversible commit boundary.
  * Observer destruction does not withdraw an already admitted action. */
 class CommitConsent {
@@ -71,7 +71,7 @@ private:
 } // namespace walletsend
 
 namespace walletsigning {
-enum class Error { None, InvalidFee, ChangedTransaction, SignerNotFound, SignerFailed, Fill, Failed, Uncertain };
+enum class Error { None, InvalidFee, ChangedTransaction, SignerNotFound, SignerFailed, Fill, Failed, Uncertain, UnverifiedInputs, InvalidSignature };
 struct Request {
     CTransactionRef reviewed;
     std::shared_ptr<const PartiallySignedTransaction> document;

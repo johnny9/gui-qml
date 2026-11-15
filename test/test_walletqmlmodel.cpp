@@ -838,7 +838,21 @@ public:
     CAmount getDebit(const CTxIn&) override { return 0; }
     CAmount getCredit(const CTxOut&) override { return 0; }
     CoinsList listCoins() override { return {}; }
-    std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>& inputs) override { return funding.coins(inputs); }
+    std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>& inputs) override {
+        std::vector<interfaces::WalletTxOut> result;
+        for (const auto& input : inputs) {
+            const auto known = known_transactions.find(input.hash);
+            if (known != known_transactions.end() && input.n < known->second->vout.size()) {
+                interfaces::WalletTxOut output{}; output.txout = known->second->vout[input.n]; output.depth_in_main_chain = 6;
+                result.push_back(std::move(output));
+            } else {
+                const auto synthetic = funding.coins({input});
+                if (synthetic.empty()) return {};
+                result.push_back(synthetic.front());
+            }
+        }
+        return result;
+    }
     CAmount getRequiredFee(unsigned int) override { return 0; }
     CAmount getMinimumFee(unsigned int, const wallet::CCoinControl&, std::optional<int>*, FeeReason*) override { return 0; }
     unsigned int getConfirmTarget() override { return 6; }
@@ -3305,11 +3319,16 @@ private Q_SLOTS:
 
     void preparedFeeProofSurvivesOnlyMatchingApproval()
     {
-        auto [wallet, model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) {
+        const auto document = signerfixture::Review();
+        auto [wallet, model] = MakeConfiguredPasswordWalletModel([document](FakePasswordWallet& original) {
             original.private_keys_disabled = true;
             original.external_signer = true;
+            for (const auto& input : document.inputs) original.known_transactions.emplace(input.GetOutPoint().hash, input.non_witness_utxo);
+        original.txout_is_mine_fn = [document](const CTxOut& output) {
+            for (const auto& input : document.inputs) if (input.non_witness_utxo->vout[input.GetOutPoint().n] == output) return true;
+            return false;
+        };
         });
-        const auto document = signerfixture::Review();
         const auto transaction = *document.GetUnsignedTx();
         wallet->create_transaction_fn = [transaction](const std::vector<wallet::CRecipient>&, const wallet::CCoinControl&, bool,
                                                       int& change_pos, CAmount& fee) -> util::Result<CTransactionRef> {
@@ -7839,12 +7858,18 @@ void WalletQmlModelTests::signerSubstitutionIsRejected()
     QFETCH(bool, partial);
     QFETCH(bool, direct_send);
     QFETCH(bool, draft);
-    auto [wallet, model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) {
+    const auto reviewed = signerfixture::Review();
+    auto [wallet, model] = MakeConfiguredPasswordWalletModel([reviewed](FakePasswordWallet& original) {
         original.private_keys_disabled = true;
         original.external_signer = true;
         original.balance = COIN;
         original.encrypted = false;
         original.locked = false;
+        for (const auto& input : reviewed.inputs) original.known_transactions.emplace(input.GetOutPoint().hash, input.non_witness_utxo);
+        original.txout_is_mine_fn = [reviewed](const CTxOut& output) {
+            for (const auto& input : reviewed.inputs) if (input.non_witness_utxo->vout[input.GetOutPoint().n] == output) return true;
+            return false;
+        };
     });
     model->refreshBalance();
     QTRY_COMPARE(model->displayedBalanceSatoshi(), qint64{COIN});
@@ -7872,7 +7897,6 @@ void WalletQmlModelTests::signerSubstitutionIsRejected()
     };
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    const auto reviewed = signerfixture::Review();
     const auto unsigned_review = *reviewed.GetUnsignedTx();
     const auto original = unsigned_review.GetHash();
     const auto file = WritePsbt(reviewed, dir, QStringLiteral("reviewed.psbt"));
