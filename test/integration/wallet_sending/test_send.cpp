@@ -827,6 +827,104 @@ private Q_SLOTS:
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
     }
 
+    void emptyManualSelectionCannotBroadenToWalletInputs()
+    {
+        auto* destination = qmltest::CreateWallet(m_app, "empty_manual_destination");
+        QVERIFY(destination);
+        auto* wallet = qmltest::CreateWallet(m_app, "empty_manual_sender");
+        QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        // One further block matures a second independent input.
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + qmltest::NewAddress(m_app, wallet->name()).toStdString() + "\"]"));
+        const auto destination_address = qmltest::NewAddress(m_app, destination->name());
+        QVERIFY(qmltest::Rpc(m_app, "listunspent", {}, wallet->name()).size() >= 2);
+
+        QVERIFY(qmltest::Click(m_app, "sendTabButton"));
+        QVERIFY(qmltest::Click(m_app, "feeSelectionPickerButton"));
+        QVERIFY(qmltest::Click(m_app, "feeSelectionOption3"));
+        QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "1"));
+        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", destination_address));
+        QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "1"));
+        QTRY_VERIFY(!wallet->sendRecipientList()->validationPending());
+        auto* picker = qmltest::Find(m_app, "sendCoinControlPicker");
+        QVERIFY(picker);
+        QVERIFY(qmltest::Click(m_app, "sendCoinControlPickerOption_1"));
+        QTRY_COMPARE(picker->property("currentIndex").toInt(), 1);
+
+        auto* coins = wallet->coinsListModel();
+        QVERIFY(coins);
+        coins->update();
+        QTRY_VERIFY(!coins->loading() && coins->rowCount() > 0);
+        int selectable{-1};
+        for (int row{0}; row < coins->rowCount(); ++row) {
+            if (!coins->data(coins->index(row), CoinsListModel::LockedRole).toBool()) {
+                selectable = row;
+                break;
+            }
+        }
+        QVERIFY(selectable >= 0);
+        const auto selected_id = coins->data(coins->index(selectable), CoinsListModel::CoinIdRole).toString();
+        QVERIFY(!selected_id.isEmpty());
+
+        // Apply one real input through reachable production controls. Empty
+        // Apply is disabled, so never force a click to manufacture that state.
+        QVERIFY(qmltest::Click(m_app, "sendSelectInputsButton"));
+        QTRY_VERIFY(qmltest::Find(m_app, "coinSelectionPopup")->property("opened").toBool());
+        QVERIFY(qmltest::Click(m_app, qPrintable(QString{"coinSelectionItem_%1"}.arg(selectable))));
+        QTRY_COMPARE(coins->selectedCoinsCount(), 1);
+        QVERIFY(qmltest::Click(m_app, "coinSelectionDoneButton"));
+        QTRY_VERIFY(!qmltest::Find(m_app, "coinSelectionPopup")->property("visible").toBool());
+        QTRY_VERIFY(!wallet->coinSelectionPending());
+        QTRY_COMPARE(wallet->selectedCoins()->size(), 1U);
+        const auto selected = *wallet->selectedCoins()->begin();
+        QCOMPARE(selected_id, QString::fromStdString(selected.hash.GetHex()) + QLatin1Char(':') + QString::number(selected.n));
+
+        // An independent RPC writer spends exactly that input. At least one
+        // other input remains, making wallet-wide fallback observably wrong.
+        UniValue input{UniValue::VOBJ}; input.pushKV("txid", selected.hash.GetHex()); input.pushKV("vout", selected.n);
+        UniValue inputs{UniValue::VARR}; inputs.push_back(input);
+        const auto spent = qmltest::Rpc(m_app, "sendall", qmltest::Json(
+            "{\"recipients\":[\"" + destination_address.toStdString() + "\"],\"fee_rate\":1,\"options\":{\"inputs\":" + inputs.write() + ",\"add_to_wallet\":false}}"), wallet->name());
+        const auto hex = spent.find_value("hex").get_str();
+        const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + hex + "\"]"));
+        QCOMPARE(decoded.find_value("vin").size(), size_t{1});
+        QCOMPARE(decoded.find_value("vin")[0].find_value("txid").get_str(), selected.hash.GetHex());
+        QCOMPARE(decoded.find_value("vin")[0].find_value("vout").getInt<int>(), int(selected.n));
+        const auto spent_txid = qmltest::Rpc(m_app, "sendrawtransaction", qmltest::Json("[\"" + hex + "\"]")).get_str();
+        QVERIFY(!spent_txid.empty());
+        const auto remaining = qmltest::Rpc(m_app, "listunspent", {}, wallet->name());
+        QVERIFY(remaining.size() >= 1);
+        for (const auto& output : remaining.getValues()) {
+            QVERIFY(output.find_value("txid").get_str() != selected.hash.GetHex() || output.find_value("vout").getInt<int>() != int(selected.n));
+        }
+        coins->update();
+        const auto selected_visible = [&] {
+            for (int row{0}; row < coins->rowCount(); ++row)
+                if (coins->data(coins->index(row), CoinsListModel::CoinIdRole).toString() == selected_id) return true;
+            return false;
+        };
+        QTRY_VERIFY(!coins->loading() && !selected_visible());
+        QTRY_VERIFY(!wallet->coinSelectionPending() && !wallet->feeEstimatePending());
+        QCOMPARE(picker->property("currentIndex").toInt(), 1);
+
+        auto* review = qmltest::Find(m_app, "sendReviewButton");
+        auto* review_popup = qmltest::Find(m_app, "transactionReviewPopup");
+        QVERIFY(review);
+        QVERIFY(review_popup);
+        if (review->property("enabled").toBool()) QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
+        const bool opened_review_with_wallet_inputs = QTest::qWaitFor(
+            [&] { return review_popup->property("opened").toBool(); }, 2'000);
+        if (opened_review_with_wallet_inputs) {
+            QMetaObject::invokeMethod(review_popup, "close");
+            wallet->discardCurrentTransaction();
+            QTRY_VERIFY(!wallet->currentTransaction());
+        }
+        QVERIFY2(!opened_review_with_wallet_inputs,
+                 "A spent explicit Manual input must not prepare using different wallet-wide inputs.");
+        QVERIFY(!review->property("enabled").toBool());
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{1});
+    }
+
     void lockedHardenedDescriptorWalletRebuildsReviewAfterUnlock()
     {
         auto* destination = qmltest::CreateWallet(m_app, "destination");
