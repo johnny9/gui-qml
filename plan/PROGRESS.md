@@ -42,7 +42,8 @@ progress without changing shared finding or schedule registers.
 | R23 | Focused acceptance satisfied with R22 restored at e3508980. Public Node admission-read adapter at51c40864 has29 passing bodies/11 static entries/app lint. Combined626 distinct passing identities use explicit source carries; no required Core API gap. R42 remains open |
 | R25 | Focused accepted at a218:127 isolated ordinary bodies including5 real Core/RPC cases;15 current static plus2 explicit CPP carries, app/QML lint and3processes; composed229-body/14-static gate passes. Nineteen assigned scopes reconciled. R42 pending |
 | R32 | Focused accepted/integrated:194 current worker bodies plus205 explicit old-source carries; composed159 at799 and targeted229 at a218 pass. Pinned static/app/QML lint green. R42 pending |
-| R26–R27, R37–R40 | R26 typed source/target/consumer implemented, manual/real-thread gates active; R39 typed peer command/selection implemented awaiting frozen gate; independent R38/R40 preparation. Prerequisite composition still required |
+| R26 | Focused accepted/integrated at725123ae:192 actual bodies,22 distinct pinned static units, app/full259QML per variant and2IPC lifecycle controls pass. App/test/CMake/Core bytes match tested e94; R27/R40 follow-ups andR42 remain separate |
+| R27, R37–R40 | R27 clipboard/chooser/drop migration active; R39 repair02 runtime green pending detailed reconciliation/R36 composition; R37/R38/R40 independent implementation active. R42 final qualification remains open |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 

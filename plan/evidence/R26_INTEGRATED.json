@@ -1,0 +1,14 @@
+{
+  "status": "R26 focused accepted/integrated; R27/R40 follow-ups and R42 final qualification remain separate",
+  "tested_app": "e94e4397a209bfdabbdcb1db4bf8eb45da4fcbd7",
+  "merged_app": "725123aecced4c44cdf0cc87f9e5578fd00a9c0a",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "composition": "All application/test/CMake/workflow/Core bytes equal the already qualified tested source; root did not replay192 identical bodies",
+  "actual_component_bodies": 192,
+  "scope": "160unit+26existingQML+6actualCore, no skips/incomplete",
+  "static": "22 distinct pinned23 units through explicit source-qualified full/new-test unions",
+  "lifecycle": "2actual IPC processes, expectedGUI exits0/1, stderr inspected",
+  "source_receipt": "plan/evidence/R26_FOCUSED.json",
+  "upstream_note": "plan/R26_UPSTREAM_NOTES.md",
+  "no_canonical_register_overwrite": true
+}
