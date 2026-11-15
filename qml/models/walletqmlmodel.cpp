@@ -3585,7 +3585,7 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     const auto post = presentation::ReliablePost(m_fee_read_services.post);
     const auto path = QString{requested_path};
     const auto review_document = m_current_psbt;
-    const auto document = export_document ? std::move(export_document) : review_document;
+    const auto document = export_document ? export_document : review_document;
     const auto proof = m_psbt_fee_proof;
     const auto assessment = review ? review->assessedPsbt() : nullptr;
     const auto reviewed = review ? review->getWtx() : CTransactionRef{};
