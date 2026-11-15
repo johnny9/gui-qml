@@ -22,6 +22,13 @@ struct StartResult {
     // correspond positionally; Unknown keeps keys without inventing receipts.
     std::vector<QString> producer_keys{};
 };
+enum class ProbeStatus { Missing, Forwarded, Rejected, Unknown };
+struct ProbeResult {
+    ProbeStatus status{ProbeStatus::Rejected};
+    // Exact existing transfer DTO for the startup receipt/trace. A probe never
+    // returns Primary. Missing carries no admission or transfer receipts.
+    StartResult transfer{};
+};
 struct Limits {
     using Time = std::chrono::steady_clock::time_point;
     std::function<Time()> now{std::chrono::steady_clock::now};
@@ -39,6 +46,11 @@ class Service final {
 public:
     static std::shared_ptr<Service> Create(std::shared_ptr<execution::Scheduler> scheduler, std::shared_ptr<Owner> owner, Limits limits = {});
     ~Service();
+    // One existing-instance-only attempt. Missing leaves the original Owner
+    // and inputs untouched and permits start() at the later final profile.
+    // Other outcomes are terminal for this Service; Unknown cannot fall back.
+    execution::Admission probeExisting(QString profile_directory, QString network, const std::vector<Input>& inputs,
+                                       std::function<void(ProbeResult)> completed);
     execution::Admission start(QString profile_directory, QString network, std::vector<Input> inputs,
                                std::function<void(StartResult)> completed);
     // Synchronous admission fence only; no signals, I/O or drain work.
