@@ -168,13 +168,15 @@ QtObject {
         self.run_qml(source, transformed, "for (const value of [0, 8, -1]) compare(measured.typed(value), original.typed(value));")
 
     def test_explicit_metadata_disposition_has_structural_proof(self):
-        source = (Path(__file__).resolve().parents[2] / "qml/pages/wallet/WalletNavigationTab.qml").read_text()
-        with self.assertRaises(instrument.MappingError):
-            self.map(source)
-        tool, transformed = self.map(source, metadata_only=True)
-        self.assertEqual(transformed, source)
-        self.assertFalse(tool.points)
-        self.assertEqual(tool.metadata[0]["source_sha256"], instrument.digest(source.encode()))
+        for relative in ["qml/pages/wallet/WalletNavigationTab.qml", "qml/compat/qt65/AppSettings.qml"]:
+            source = (Path(__file__).resolve().parents[2] / relative).read_text()
+            with self.subTest(relative=relative):
+                with self.assertRaises(instrument.MappingError):
+                    self.map(source)
+                tool, transformed = self.map(source, metadata_only=True)
+                self.assertEqual(transformed, source)
+                self.assertFalse(tool.points)
+                self.assertEqual(tool.metadata[0]["source_sha256"], instrument.digest(source.encode()))
         for source in ["import QtQml\nQtObject { property int value: 3 }",
                        "import QtQml\nQtObject { function work() { return 3; } }"]:
             with self.subTest(source=source), self.assertRaises(instrument.MappingError):
