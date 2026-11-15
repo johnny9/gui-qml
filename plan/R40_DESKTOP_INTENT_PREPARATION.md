@@ -1,13 +1,16 @@
 # R40 desktop intent owner — component checkpoint
 
-Implementation `1741e20b4c366a82bec6b6f5da7fc8c547c5becc`, unchanged Core
+Component implementation `30fe15f7e44165661c08baca18060f1a924c4573`, unchanged Core
 `44901d8f64cb617714707bd025ecd83f108353c2`. This is private component
 development, not R40 acceptance or completed production ingress wiring.
 
 The desktop intent owner is an application mailbox for external Bitcoin links,
 opened files and forwarded process requests. It retains a bounded queue until
-an actual registered inspection receiver is ready. Inspect creates a Source;
-it does not apply a payment, sign or send a transaction. The original receiver,
+an actual registered inspection receiver is ready. Readiness automatically
+inspects one request at a time by creating its Source. This does not select a
+wallet, apply a payment, prepare a review, sign or send a transaction. Closing
+that inspection or explicitly handing it to the captured wallet view releases
+the presentation slot. The original receiver,
 delivery and route remain fixed while its creation acknowledgment is unresolved.
 A lost acknowledgment queries the same pre-reserved receipt instead of calling
 the factory again. The receipt means Source admission, independently of parsing,
@@ -21,27 +24,33 @@ requests with explicit receipts and accounts for an original in-flight handoff.
 The Qt model exposes cached state and narrow commands. Its admission fence
 releases Native owners independently of view destruction and emits no UI signal.
 
-Nine current ordinary Qt bodies pass: bounded admission and stale tickets,
-manual lost-acknowledgment schedules, argument/option boundaries, captured paths,
-real Source-factory receipts, GUI readiness and physical drain with retained
-facades. Pinned Clang23/Bitcoin-plugin analysis passes three affected C++ units
-and seven fresh MOC aggregates, with four unchanged C++ units explicitly carried
-from the earlier static run. Exact app lint passes. The source-qualified logs,
-commands, XML, failed runs and counts are in
-`.validation/qt6-r11-r40-20261114/R40/COMPONENT_CHECKPOINT.json` and its linked
-`domain-focused-06`, `static-06`, `lint-06` directories. The actual one-body
-shutdown counterexample remains in `drain-red-05`; zero-body compiler failures
-and the corrected direct-include lint failure remain separately recorded.
+Thirty-six current ordinary bodies pass: 16 owner/facade rows, ten Native
+transport rows and ten QML consumer rows. They cover bounded admission, stale
+tickets, manual lost-acknowledgment schedules, argument boundaries, actual Qt
+file-open events, captured paths, real Source-factory receipts, one presentation
+at a time, early reentrant close, and physical drain with retained facades.
+The Native admission fence is checked both by Domain and at the queued GUI
+factory handoff. The new held-handoff timing row failed before the repair;
+its original earlier-closure control still passed. Full focused rerun and
+exact app lint pass. Logs, commands, XML and actual body counts are retained in
+`.validation/qt6-r11-r40-20261114/R40/gui-focused-12`, `gui-fence-red-12` and
+`gui-lint-12`. Current pinned analysis is recorded separately in `gui-static-12`.
+Earlier zero-body compiler failures and actual shutdown counterexamples remain
+retained with their original source revisions.
 
-Remaining work includes Native local transport, early file-open capture, typed
-startup continuation before Core configuration writes, declarative desktop
-inspection/continuation, real-thread controls and actual process/platform ingress
-evidence. Startup must distinguish Primary, Forwarded, Rejected and Unknown;
+The Native transport component is qualified independently, including real-thread
+controls, original-key receipt queries and physical socket retirement. Early
+Qt file-open capture and declarative inspection/continuation are implemented.
+Remaining acceptance work is actual startup composition before Core
+configuration writes, direct/onboarding continuation, and actual application
+argument/two-process ingress evidence. Startup distinguishes Primary,
+Forwarded, Rejected and Unknown;
 Forwarded cannot be presented as a locally initialized node. A synchronous
 startup-Core callback cannot post to the same lane and wait for its own result.
 Keep the listener on a stable existing executor until actual Native retirement.
 
-R27 consumer qualification and R36/R39 shared composition are independent
-prerequisites. Full suites, exhaustive coverage, platform/configuration matrices,
+R27 consumers and R36/R39 shared composition are qualified prerequisites.
+R37/R38 composition remains separately tracked. Full suites, exhaustive
+coverage, platform/configuration matrices,
 native Windows and sanitizers remain explicitly pending at R42. No Core or Qt
 source changes, finding-register rewrites, push or external submission occurred.
