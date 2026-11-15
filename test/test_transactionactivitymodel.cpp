@@ -445,6 +445,7 @@ private Q_SLOTS:
     void oneChangedStatusReusesLargeNativeRowsAndFiltersOnlyItsExactDelta();
     void fullHiddenSearchChangesInvalidateTheDeltaWithoutAGuiPreviewChange();
     void manualProjectionWaitsForOutcomeAndGuiDelivery();
+    void manualProjectionOwnsTransactionKeysAcrossRefresh();
     void manualStatusSnapshotPublishesOnlyAtGuiBoundary();
     void oldGuiWakeupCannotResurrectDeletedRows();
     void notificationDuringApplyingRetainsDeletionWork();
@@ -549,6 +550,45 @@ void TransactionActivityModelTests::manualProjectionWaitsForOutcomeAndGuiDeliver
     QVERIFY(fixture.poll); const auto stale_deadline = fixture.poll;
     model->stop(); stale_deadline(); env.drain(); env.publishAll();
     QCOMPARE(model->rowCount(), 0); QVERIFY(!model->loading());
+}
+
+void TransactionActivityModelTests::manualProjectionOwnsTransactionKeysAcrossRefresh()
+{
+    ManualExecutionEnvironment env;
+    auto original = std::make_shared<ActivityWallet>();
+    const auto first = MakeTx({{50'000, false}}, {{49'000, true}});
+    const auto second = MakeTx({{60'000, false}}, {{59'000, true}});
+    original->put(first, 2);
+    ManualActivityFixture fixture{env, original};
+    fixture.settle();
+    auto* model = fixture.activity.get();
+    const QString first_id = QStringLiteral("tx:").append(Id(first));
+    const QString second_id = QStringLiteral("tx:").append(Id(second));
+    auto row = Find(*model, Id(first));
+    QVERIFY(row.isValid());
+    QCOMPARE(row.data(Model::IdRole).toString(), first_id);
+    QCOMPARE(model->transactionCount(), 1);
+    QVERIFY(model->preparedSnapshot()->snapshot->rows.contains(first_id));
+    original->put(second, 3);
+    Q_EMIT fixture.wallet->transactionChanged(Id(second), CT_NEW);
+    QCoreApplication::processEvents();
+    env.drain();
+    QCOMPARE(model->transactionCount(), 1);
+    QCOMPARE(row.data(Model::IdRole).toString(), first_id);
+    fixture.settle();
+    QCOMPARE(model->transactionCount(), 2);
+    row = Find(*model, Id(first));
+    QVERIFY(row.isValid());
+    QCOMPARE(row.data(Model::IdRole).toString(), first_id);
+    QCOMPARE(Find(*model, Id(second)).data(Model::IdRole).toString(), second_id);
+    QVERIFY(model->preparedSnapshot()->snapshot->rows.contains(first_id));
+    QVERIFY(model->preparedSnapshot()->snapshot->rows.contains(second_id));
+    model->reload();
+    fixture.settle();
+    QCOMPARE(model->transactionCount(), 2);
+    QCOMPARE(Find(*model, Id(first)).data(Model::IdRole).toString(), first_id);
+    QCOMPARE(Find(*model, Id(second)).data(Model::IdRole).toString(), second_id);
+    QVERIFY(!original->blocking_read_on_gui.load());
 }
 
 void TransactionActivityModelTests::oldGuiWakeupCannotResurrectDeletedRows()

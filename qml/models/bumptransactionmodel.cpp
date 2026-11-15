@@ -108,7 +108,7 @@ void BumpTransactionModel::refreshFeePresentation()
 {
     if (!m_review) return;
     const auto unit = QmlBitcoinUnits::fromDisplayUnit(m_display_unit);
-    const auto format = [unit](CAmount amount) {
+    const auto format = [unit](CAmount amount) -> QString {
         return QmlBitcoinUnits::formatForDisplay(unit, amount) + QStringLiteral(" ") + QmlBitcoinUnits::label(unit, amount);
     };
     // Three bounded scalar presentations. No wallet, Core, disk or draft work.

@@ -450,7 +450,7 @@ void TransactionActivityModel::project(const std::shared_ptr<Job>& job)
         } else if (owner.phase == 2) {
             if (owner.next_record == owner.result->records.cend()) { owner.request_position = 0; owner.phase = 3; continue; }
             const auto& record = (owner.next_record++).value();
-            const auto id = QStringLiteral("tx:") + record.activity.txid;
+            const QString id = QStringLiteral("tx:") + record.activity.txid;
             const auto cached = owner.building->rows.find(id);
             const auto basis = owner.previous && owner.previous->snapshot->detail_source
                 ? std::static_pointer_cast<const DetailSource>(owner.previous->snapshot->detail_source) : nullptr;

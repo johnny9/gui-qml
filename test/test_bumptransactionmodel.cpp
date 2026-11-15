@@ -10,7 +10,9 @@
 #include <qml/models/bumptransactionmodel.h>
 #include <wallet/coincontrol.h>
 
+#include <QLocale>
 #include <QSignalSpy>
+#include <QScopeGuard>
 
 #include <memory>
 #include <stdexcept>
@@ -665,6 +667,61 @@ private Q_SLOTS:
 
         QCOMPARE(model.state(), BumpTransactionModel::NeedsConfirmation);
         QVERIFY(stateSpy.count() >= 2); // Idle -> Preparing -> NeedsConfirmation
+    }
+
+    void feePresentationOwnsFormattedValues_data()
+    {
+        QTest::addColumn<QString>("locale");
+        QTest::addColumn<int>("unit");
+        QTest::addColumn<QString>("old_fee");
+        QTest::addColumn<QString>("new_fee");
+        QTest::addColumn<QString>("increase");
+        QTest::newRow("btc-en") << QString{"en_US"} << 0 << QString{"0.00000001 BTC"} << QString{"0.00023456 BTC"} << QString{"0.00023455 BTC"};
+        QTest::newRow("mbtc-en") << QString{"en_US"} << 1 << QString{"0.00001 mBTC"} << QString{"0.23456 mBTC"} << QString{"0.23455 mBTC"};
+        QTest::newRow("bits-en") << QString{"en_US"} << 2 << QString{"0.01 bits"} << QString{"234.56 bits"} << QString{"234.55 bits"};
+        QTest::newRow("sats-en") << QString{"en_US"} << 3 << QString{"1 sat"} << QString{"23,456 sats"} << QString{"23,455 sats"};
+        QTest::newRow("btc-de") << QString{"de_DE"} << 0 << QString{"0,00000001 BTC"} << QString{"0,00023456 BTC"} << QString{"0,00023455 BTC"};
+        QTest::newRow("mbtc-de") << QString{"de_DE"} << 1 << QString{"0,00001 mBTC"} << QString{"0,23456 mBTC"} << QString{"0,23455 mBTC"};
+        QTest::newRow("bits-de") << QString{"de_DE"} << 2 << QString{"0,01 bits"} << QString{"234,56 bits"} << QString{"234,55 bits"};
+        QTest::newRow("sats-de") << QString{"de_DE"} << 3 << QString{"1 sat"} << QString{"23.456 sats"} << QString{"23.455 sats"};
+    }
+
+    void feePresentationOwnsFormattedValues()
+    {
+        QFETCH(QString, locale);
+        QFETCH(int, unit);
+        QFETCH(QString, old_fee);
+        QFETCH(QString, new_fee);
+        QFETCH(QString, increase);
+        const QLocale previous_locale;
+        const auto restore_locale = qScopeGuard([previous_locale] { QLocale::setDefault(previous_locale); });
+        QLocale::setDefault(QLocale{locale});
+        auto wallet = MakeBumpableWallet();
+        wallet->create_bump_transaction_fn = [](const Txid&, const wallet::CCoinControl&, std::vector<bilingual_str>&,
+                                                CAmount& old_amount, CAmount& new_amount, CMutableTransaction& tx) {
+            old_amount = 1;
+            new_amount = 23'456;
+            tx = ApprovedReplacement();
+            return true;
+        };
+        Fixture fixture{wallet};
+        auto& model = *fixture.model;
+        model.setDisplayUnit(unit);
+        QVERIFY(model.requestPrepareFeeBump(TEST_TXID, 1));
+        fixture.finish();
+        QCOMPARE(model.state(), BumpTransactionModel::NeedsConfirmation);
+        QCOMPARE(model.oldFee(), old_fee);
+        QCOMPARE(model.newFee(), new_fee);
+        QCOMPARE(model.feeIncrease(), increase);
+        QCOMPARE(wallet->calls.createBumpTransaction.load(), 1);
+        // A subsequent presentation update uses the retained original amounts,
+        // independently of the lifetime of the formatter's temporary strings.
+        model.setDisplayUnit((unit + 1) % 4);
+        model.setDisplayUnit(unit);
+        QCOMPARE(model.oldFee(), old_fee);
+        QCOMPARE(model.newFee(), new_fee);
+        QCOMPARE(model.feeIncrease(), increase);
+        QCOMPARE(wallet->calls.createBumpTransaction.load(), 1);
     }
 
     void prepareFeeBump_populatesFees()
