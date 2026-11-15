@@ -20,6 +20,7 @@ QString ErrorMessage(walletbump::Error error)
     case walletbump::Error::IncorrectPassphrase: return BumpTransactionModel::tr("The wallet password you entered was incorrect.");
     case walletbump::Error::Sign: return BumpTransactionModel::tr("Failed to sign transaction.");
     case walletbump::Error::Changed: return BumpTransactionModel::tr("Signer changed the reviewed replacement transaction.");
+    case walletbump::Error::InvalidSignature: return BumpTransactionModel::tr("The replacement transaction has invalid or unverified signatures.");
     case walletbump::Error::Policy: return BumpTransactionModel::tr("The reviewed replacement no longer meets current node policy. Prepare it again before confirming.");
     case walletbump::Error::RelockFailed: return BumpTransactionModel::tr("The wallet lock could not be restored. Check its security state before retrying.");
     case walletbump::Error::Commit: return BumpTransactionModel::tr("Failed to commit transaction.");

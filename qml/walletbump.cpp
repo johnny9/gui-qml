@@ -4,6 +4,7 @@
 
 #include <qml/walletbump.h>
 #include <qml/walletopening.h>
+#include <qml/walletsend.h>
 #include <qml/models/signertransaction.h>
 #include <qml/bitcoinunits.h>
 #include <wallet/coincontrol.h>
@@ -161,6 +162,9 @@ Commit Execute(interfaces::Wallet& wallet, const Prepared& review, std::optional
         CMutableTransaction signed_tx{review.transaction};
         if (!wallet.signBumpTransaction(signed_tx)) { result.error = Error::Sign; return finish(); }
         if (!MatchesUnsignedTransaction(review.transaction, signed_tx)) { result.error = Error::Changed; return finish(); }
+        if (wallet.hasExternalSigner() && !walletsend::VerifyExternalTransaction(wallet, CTransaction{signed_tx})) {
+            result.error = Error::InvalidSignature; return finish();
+        }
         if (const auto scope_error = CheckApprovedScope(wallet, review); scope_error != Error::None) {
             result.error = scope_error; return finish();
         }

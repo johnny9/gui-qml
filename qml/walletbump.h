@@ -29,7 +29,7 @@ struct Prepared {
     unsigned int target_blocks{0};
     QString old_fee_text, new_fee_text, increase_text, old_txid;
 };
-enum class Error { None, Invalid, InvalidId, Ineligible, Create, NeedsUnlock, IncorrectPassphrase, Sign, Changed, Policy, RelockFailed, Commit, Uncertain };
+enum class Error { None, Invalid, InvalidId, Ineligible, Create, NeedsUnlock, IncorrectPassphrase, Sign, Changed, InvalidSignature, Policy, RelockFailed, Commit, Uncertain };
 enum class Record { Unknown, AbsentAtObservation, Recorded };
 enum class Submission { Unknown, Mempool, Confirmed, NotInMempool, Conflicted, Abandoned };
 enum class Relay { Unknown };
