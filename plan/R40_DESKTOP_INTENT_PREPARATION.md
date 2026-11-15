@@ -62,3 +62,5 @@ R37/R38 composition remains separately tracked. Full suites, exhaustive
 coverage, platform/configuration matrices,
 native Windows and sanitizers remain explicitly pending at R42. No Core or Qt
 source changes, finding-register rewrites, push or external submission occurred.
+
+The read-only profile adapter, its precise limits and upstream retirement capability are documented in [R40_STARTUP_PREPARATION_ADAPTER.md](R40_STARTUP_PREPARATION_ADAPTER.md).

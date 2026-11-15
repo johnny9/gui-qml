@@ -59,7 +59,14 @@ OnboardingOptionsModel::OnboardingOptionsModel(std::vector<std::string> argv,boo
     const QPointer<OnboardingOptionsModel> flow_observer{this};
     const auto flow_post = presentation::ReliablePost(m_services.post);
     m_flow = std::make_unique<onboarding::Coordinator>(m_services,
-        [mailbox=m_flow_mailbox,flow_observer,flow_post](onboarding::Projection value) {
+        [mailbox=m_flow_mailbox,flow_observer,flow_post,receipt=m_preparation_state](onboarding::Projection value) {
+            if(value.preparation_disposition) {
+                using Disposition=startup::preparation::Disposition;
+                const auto outcome=*value.preparation_disposition;
+                receipt->store(outcome==Disposition::Ready ? PreparationSucceeded
+                    : outcome==Disposition::Forwarded ? PreparationForwarded
+                    : outcome==Disposition::Uncertain ? PreparationUncertain : PreparationFailed);
+            }
             { std::lock_guard lock{mailbox->mutex}; mailbox->latest = std::move(value); }
             if (mailbox->posted.exchange(true)) return;
             flow_post([mailbox,flow_observer] {
@@ -125,8 +132,12 @@ void OnboardingOptionsModel::finishDrain()
         if(!observer)return;
         if(observer->m_preparation_terminal_pending&&observer->m_preparation_ledger_drained&&!observer->m_preparation_published){
             observer->m_preparation_published=true;observer->m_preparation_terminal_pending=false;
+            const auto outcome=observer->preparationState();
+            const bool success=observer->m_preparation_success;
+            const QString error=observer->m_preparation_error;
             Q_EMIT observer->preparationStateChanged();if(!observer)return;
-            Q_EMIT observer->nodePrepared(observer->m_preparation_success,observer->m_preparation_error);if(!observer)return;
+            Q_EMIT observer->nodePreparationFinished(outcome,error);if(!observer)return;
+            Q_EMIT observer->nodePrepared(success,error);if(!observer)return;
         }
         observer->m_terminal_scheduled=false;
         if(observer->m_shutdown_requested&&!observer->m_preparing&&!observer->m_preparation_terminal_pending)observer->publishShutdown();
@@ -219,8 +230,9 @@ void OnboardingOptionsModel::publishFlow(onboarding::Projection value)
     Q_EMIT setupCommitChanged(); if (!observer) return;
     Q_EMIT canFinishChanged(); if (!observer) return;
     if (m_preparing && !m_flow_projection.pending && m_flow_projection.preparation_finished) {
-        m_preparation_state->store(m_flow_projection.preparation_complete ? PreparationSucceeded
-            : m_flow_projection.preparation_unknown || m_flow_projection.profile_unknown ? PreparationUncertain : PreparationFailed);
+        if(!m_flow_projection.preparation_disposition)
+            m_preparation_state->store(m_flow_projection.preparation_complete ? PreparationSucceeded
+                : m_flow_projection.preparation_unknown || m_flow_projection.profile_unknown ? PreparationUncertain : PreparationFailed);
         if (m_flow) { m_flow->close(); m_flow.reset(); }
         finishNodePreparation(m_flow_projection.preparation_complete, m_flow_projection.error);
         return;
@@ -329,6 +341,40 @@ void OnboardingOptionsModel::finishNodePreparation(bool success,const QString& e
     m_preparation_work->close([observer]{if(observer){observer->m_preparation_ledger_drained=true;observer->finishDrain();}});
     if(m_executor){m_executor->whenDrained(this,[observer]{if(observer){observer->m_backend_drained=true;observer->finishDrain();}});m_executor->shutdown();}
     finishDrain();
+}
+void OnboardingOptionsModel::prepareNodeAsync(ArgsManager& args,onboarding::AsyncPreparation preparation)
+{
+    if(m_preparation_started)return;
+    const QPointer<OnboardingOptionsModel> observer{this};
+    const auto reject=[observer,post=m_services.post](const QString& error){
+        post([observer,error]{if(observer){
+            Q_EMIT observer->nodePreparationFinished(PreparationFailed,error);if(!observer)return;
+            Q_EMIT observer->nodePrepared(false,error);
+        }});
+    };
+    if(m_stopping){reject(tr("The application is shutting down."));return;}
+    if(setupCommitPending()||setupPartial()||setupUncertain()){
+        reject(tr("Resolve the original setup handoff before preparing the node. It will not be repeated."));return;
+    }
+    if(!m_flow||(!m_flow_projection.profile_complete&&!canFinish())){
+        reject(tr("Finish or correct the staged storage input before preparing the node."));return;
+    }
+    m_preparation_started=true;m_preparing=true;m_preparation_state->store(PreparationPending);
+    bool admitted{false};
+    if(m_flow_projection.profile_complete)admitted=m_flow->prepareAsync(std::move(preparation));
+    else{
+        configureSettingsCommit(args);
+        admitted=m_flow->finishAndPrepareAsync(m_flow_revision,applyRequest(),m_profile_ports,std::move(preparation));
+    }
+    m_stopping=true;++m_preview_request_id;++m_storage_request_id;++m_storage_projection_revision;++m_path_revision;
+    m_inspection_cancel->store(true);
+    m_work->close();m_argv.reset();m_core_settings.closeAdmission();if(!observer)return;
+    if(!admitted){
+        m_preparation_state->store(PreparationFailed);
+        if(m_flow){m_flow->close();m_flow.reset();}
+        finishNodePreparation(false,tr("Node preparation was not admitted. The saved profile is retained; restart to continue."));
+    }
+    if(observer)Q_EMIT preparationStateChanged();
 }
 QString OnboardingOptionsModel::getDefaultDataDirString() const{return m_default_data_dir;}
 QUrl OnboardingOptionsModel::getDefaultDataDirectory() const{return m_default_data_directory;}
