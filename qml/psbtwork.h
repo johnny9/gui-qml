@@ -6,6 +6,7 @@
 #define BITCOIN_QML_PSBTWORK_H
 
 #include <common/messages.h>
+#include <qml/psbtworktypes.h>
 #include <qml/models/psbtfeeservices.h>
 #include <qml/walletreview.h>
 #include <qml/secretinput.h>
@@ -20,8 +21,6 @@
 
 namespace interfaces { class Wallet; class Node; }
 namespace psbtwork {
-enum class Kind { Inspect, Load, Sign, Broadcast, Save, Clipboard };
-enum class Error { None, Invalid, Unavailable, NeedsUnlock, IncorrectPassphrase, Changed, Fee, Core, Uncertain, Relock };
 struct BroadcastResult {
     bool accepted{false};
     QString error;
@@ -41,15 +40,6 @@ struct Context {
     Materialize materialize{secretinput::Materialize};
     Save save{SaveFile};
 };
-struct Snapshot {
-    std::shared_ptr<const PartiallySignedTransaction> document;
-    std::shared_ptr<const psbtfee::Analysis> proof;
-    QString status, error;
-    QStringList summary;
-    bool can_sign{false}, can_broadcast{false}, complete{false};
-    bool metadata_failed{false};
-    int unsigned_inputs{0}, could_sign{0};
-};
 struct Request {
     Kind kind{Kind::Inspect};
     std::shared_ptr<const PartiallySignedTransaction> document;
@@ -58,13 +48,6 @@ struct Request {
     QString path, status;
     std::optional<SecureString> passphrase; // Native/test callers only.
     secretinput::Captured captured_passphrase;
-};
-struct Result {
-    Error code{Error::None};
-    QString error, path, txid, clipboard;
-    CTransactionRef transaction;
-    std::shared_ptr<const Snapshot> snapshot;
-    bool submitted{false}, saved{false}, relock_failed{false};
 };
 // All helpers below are worker/test-setup utilities. Callers retain the original
 // Session Action/borrow throughout effects, outcomes and native result release.
