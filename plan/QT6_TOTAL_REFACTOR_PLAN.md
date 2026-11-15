@@ -348,6 +348,14 @@ external signer cancellation/unlock and atomic descriptor-creation improvements
 upstream in the task-local notes. Notify and wait if evidence establishes that a
 required behavior cannot be implemented behind the permitted interfaces.
 
+Device changes during a flow must preserve its original descriptors, wallet,
+document and reviewed transaction. A compatible replacement may service those
+keys; incompatible keys must fail clearly without retargeting or automatic
+replay. R15 covers creation/discovery handoffs, R19 immutable review, and R23
+signing handoffs. Preserve partial or uncertain Core effects and recovery
+guidance. The [signer requirements](R15_SIGNER_IDENTITY_SEMANTICS.md) distinguish
+key compatibility from physical-device selection and define the focused cases.
+
 The ongoing implementation and written regression sources are not acceptance
 results. Complete remaining GUI work before the next validation round; retain
 all focused, broad acceptance, platform, coverage, lint/tidy, sanitizer and

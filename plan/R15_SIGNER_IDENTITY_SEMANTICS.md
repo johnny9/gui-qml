@@ -16,6 +16,18 @@ keeps the candidate/review immutable; R23 covers the signing handoff. Use
 manual executors and controlled process fixtures. Notify the user before
 accepting a required guarantee that public Core interfaces cannot establish.
 
+Mid-flow acceptance must cover replacement before creation, while Core requests
+descriptors, after the wallet has stored descriptors, and during signing. A
+failed descriptor handoff must not publish a usable wallet or silently retry.
+If Core has already created a storage artifact, retain the uncertain outcome
+and recovery guidance rather than declaring that nothing happened. A later
+discovery result must not replace the operation's result or selected wallet.
+Signing must preserve the exact reviewed transaction and authenticate the
+returned signatures against its keys; a matching short fingerprint is not
+sufficient. Creation/process controls belong to R15, immutable review to R19,
+and signing/device-change controls to R23. These are required focused gates,
+not a claim that physical hardware or all signing cases are already tested.
+
 The external-signer protocol's fingerprint identifies a master key origin. It
 is a short matching hint, not a physical-device identifier, a unique wallet ID
 or a cryptographic proof of identity. Devices holding the same seed share it.
