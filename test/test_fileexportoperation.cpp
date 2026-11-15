@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/fileexportoperation.h>
+#include <qml/backendexecutor.h>
 #include <qml/psbtwork.h>
 #include <chainparams.h>
 #include <test/mocks/manualexecutionenvironment.h>
@@ -11,8 +12,10 @@
 
 #include <QFile>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QtTest/QtTest>
 
+#include <atomic>
 #include <deque>
 
 namespace {
@@ -78,6 +81,51 @@ private Q_SLOTS:
         QCOMPARE(operation.finalPath(), path);
         QCOMPARE(ReadFile(path), expected);
         QVERIFY(operation.errorText().isEmpty());
+    }
+
+    void realWorkerExportsCapturedPsbtOffGui()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString path = directory.filePath(QStringLiteral("worker.psbt"));
+        const auto document = std::make_shared<const PartiallySignedTransaction>(psbtfeefixture::Legacy(2, false));
+        const QByteArray expected = psbtwork::SerializeRaw(*document);
+        QVERIFY(!expected.isEmpty());
+
+        BackendExecutor executor;
+        QObject gui;
+        std::atomic<bool> off_gui{true};
+        std::atomic<int> outcomes{0};
+        std::atomic<int> outcome_phase{-1};
+        backup::Services services;
+        services.scheduler = executor.scheduler();
+        services.post = [&gui](auto publication) {
+            if (!QMetaObject::invokeMethod(&gui, std::move(publication), Qt::QueuedConnection)) {
+                throw std::runtime_error("GUI publication could not be queued");
+            }
+        };
+        services.available = [&] {
+            if (QThread::currentThread() == qApp->thread()) off_gui = false;
+            return true;
+        };
+        services.outcome = [&](backup::Snapshot result) {
+            if (QThread::currentThread() == qApp->thread()) off_gui = false;
+            outcome_phase = static_cast<int>(result.phase);
+            ++outcomes;
+        };
+        FileExportOperationModel operation{path, document, std::move(services)};
+
+        QVERIFY(operation.start());
+        QTRY_VERIFY_WITH_TIMEOUT(operation.saved(), 5'000);
+        QCOMPARE(ReadFile(path), expected);
+        QCOMPARE(operation.finalPath(), path);
+        QVERIFY(operation.errorText().isEmpty());
+        QCOMPARE(outcomes.load(), 1);
+        QCOMPARE(outcome_phase.load(), static_cast<int>(backup::Phase::Succeeded));
+        QVERIFY(off_gui.load());
+
+        executor.shutdown();
+        QTRY_VERIFY(executor.isDrained());
     }
 
     void overwriteNeedsApprovalAndRechecksDestinationVersion()
