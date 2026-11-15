@@ -37,3 +37,8 @@ The [R28 integration record](R28_ACTIVITY_READER.md) retains exact inputs,
 original comparisons and the passing 151-body Send follow-up. The
 [R17 preview limitation](R17_PUBLIC_PREVIEW_LIMIT.md) records the accepted upstream
 deferral; independent steps continue.
+
+The [R15 identity clarification](R15_SIGNER_IDENTITY_SEMANTICS.md) distinguishes
+key-origin fingerprint hints from physical devices and wallet identity. R15
+preserves Core's existing single-signer creation policy; discovery freshness
+and truthful provenance are the app's responsibility.
