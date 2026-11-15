@@ -14,6 +14,7 @@ Page {
     objectName: "activityPage"
     property WalletQmlModel wallet: null
     property bool exportSucceeded: true
+    readonly property ActivityExportOperation csvExport: activityFilterProxy.exportOperation
     property bool ready: false
     readonly property bool activitySourceEmpty: !wallet || wallet.transactionActivityModel.count === 0
     readonly property bool typeFilterActive: activityFilterProxy.typeFilters.length > 0
@@ -77,6 +78,8 @@ Page {
     }
     function exportResultTitle() { return exportSucceeded ? qsTr("Export complete") : qsTr("Export failed") }
     function exportResultDescription() {
+        if (activityFilterProxy.exportRejected) return activityFilterProxy.exportError
+        if (csvExport && !csvExport.outcomeKnown) return qsTr("The export outcome is unknown. Check the original destination before trying again: %1").arg(csvExport.finalPath)
         return exportSucceeded ? qsTr("Your Activity CSV has been saved.")
             : activityFilterProxy.exportError || qsTr("The Activity CSV could not be saved. Check the file path and try again.")
     }
@@ -91,6 +94,7 @@ Page {
     Connections {
         target: activityFilterProxy
         function onExportFinished(ticket, saved, path, error) {
+            if (root.csvExport && root.csvExport.cancelled) return
             root.exportSucceeded = saved
             exportResultPopup.open()
         }
@@ -160,6 +164,7 @@ Page {
         id: exportDialog
         objectName: "activityExportDialog"
         defaultSuffix: "csv"
+        confirmOverwrite: false
         fileMode: AppFileDialog.SaveFile
         nameFilters: [qsTr("Comma separated file (*.csv)")]
         onAccepted: root.exportActivity(exportDialog.selectedFile.toString())
@@ -649,6 +654,42 @@ Page {
     }
 
     Popup {
+        objectName: "activityCsvDestinationConfirmation"
+        parent: Overlay.overlay
+        visible: root.csvExport !== null && root.csvExport.confirmationRequired
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+        width: parent ? Math.min(520, parent.width - 40) : 520
+        x: parent ? (parent.width - width) / 2 : 0
+        y: parent ? (parent.height - height) / 2 : 0
+        padding: 24
+        contentItem: ColumnLayout {
+            spacing: 16
+            CoreText { Layout.fillWidth: true; text: root.csvExport && root.csvExport.replacing ? qsTr("Replace Activity CSV?") : qsTr("Save Activity CSV?"); font: Theme.text.subtitle.font }
+            CoreText { objectName: "activityCsvFinalDestination"; Layout.fillWidth: true; text: root.csvExport ? root.csvExport.finalPath : ""; textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere }
+            RowLayout {
+                NeutralButton {
+                    objectName: "activityCsvRefuseDestination"
+                    text: qsTr("Cancel")
+                    property ActivityExportOperation pressedOperation: null
+                    onPressed: pressedOperation = root.csvExport
+                    onCanceled: pressedOperation = null
+                    onClicked: if (pressedOperation) pressedOperation.refuse()
+                }
+                NeutralButton {
+                    objectName: "activityCsvApproveDestination"
+                    text: root.csvExport && root.csvExport.replacing ? qsTr("Replace file") : qsTr("Save file")
+                    property ActivityExportOperation pressedOperation: null
+                    onPressed: pressedOperation = root.csvExport
+                    onCanceled: pressedOperation = null
+                    onClicked: if (pressedOperation) pressedOperation.approve()
+                }
+            }
+        }
+    }
+
+    Popup {
         id: exportResultPopup
         objectName: "activityExportResultPopup"
         modal: true
@@ -853,8 +894,7 @@ Page {
                     //: Button that clears the Activity custom date range.
                     text: qsTr("Reset")
                     textSize: 15
-                    // Nothing to reset until a date has been picked.
-                    enabled: calendar.hasSelection
+                    enabled: calendar.hasSelection || activityFilterProxy.dateFilter !== ActivityFilterProxyModel.DateAll
                     textColor: enabled ? Theme.color.neutral7 : Theme.color.neutral5
                     // A disabled control still receives hover, which would
                     // trigger the button's hover recolor; gate it on enabled.
@@ -863,7 +903,7 @@ Page {
                     // but stay in the calendar so a new range can be picked.
                     onClicked: {
                         calendar.reset()
-                        activityFilterProxy.dateFilter = ActivityFilterProxyModel.DateAll
+                        activityFilterProxy.clearDateFilter()
                     }
                 }
 
@@ -932,15 +972,7 @@ Page {
         modal: true
         dim: false
 
-        function seedRange() {
-            const maximum = activityFilterProxy.availableMaxAmount
-            amountSlider.setValues(Math.min(Math.max(0, activityFilterProxy.minAmount), maximum),
-                activityFilterProxy.maxAmount < 0 ? maximum : Math.min(activityFilterProxy.maxAmount, maximum))
-        }
-        onAboutToShow: {
-            x = root.filterPopupX(amountFilterButton, amountPopup)
-            seedRange()
-        }
+        onAboutToShow: x = root.filterPopupX(amountFilterButton, amountPopup)
 
         ColumnLayout {
             Layout.fillWidth: true
@@ -959,7 +991,10 @@ Page {
                 objectName: "activityAmountRangeSlider"
                 Layout.fillWidth: true
                 minValue: 0
-                maxValue: activityFilterProxy.availableMaxAmount
+                maxValue: Math.max(activityFilterProxy.availableMaxAmount,
+                                   activityFilterProxy.minAmount, activityFilterProxy.maxAmount)
+                selectedLower: Math.max(0, activityFilterProxy.minAmount)
+                selectedUpper: activityFilterProxy.maxAmount < 0 ? Math.max(activityFilterProxy.availableMaxAmount, activityFilterProxy.minAmount) : activityFilterProxy.maxAmount
                 Accessible.name: qsTr("Activity amount range")
                 first.onMoved: root.applyAmountRange()
                 second.onMoved: root.applyAmountRange()

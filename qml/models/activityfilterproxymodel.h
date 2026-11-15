@@ -9,6 +9,8 @@
 
 #include <QByteArray>
 #include <QDate>
+#include <QLocale>
+#include <QTimeZone>
 #include <QHash>
 #include <QList>
 #include <QModelIndex>
@@ -16,6 +18,7 @@
 #include <QTimer>
 #include <QPointer>
 #include <qml/models/activitysnapshot.h>
+#include <qml/models/activityexportoperation.h>
 #include <qml/snapshotquery.h>
 #include <QString>
 
@@ -26,7 +29,9 @@ class ActivityFilterProxyModel : public QAbstractProxyModel
     Q_OBJECT
     Q_PROPERTY(bool busy READ busy NOTIFY stateChanged)
     Q_PROPERTY(QString error READ error NOTIFY stateChanged)
+    Q_PROPERTY(ActivityExportOperation* exportOperation READ exportOperation NOTIFY exportChanged)
     Q_PROPERTY(bool exportBusy READ exportBusy NOTIFY exportChanged)
+    Q_PROPERTY(bool exportRejected READ exportRejected NOTIFY exportChanged)
     Q_PROPERTY(QString exportError READ exportError NOTIFY exportChanged)
     Q_PROPERTY(QString exportedPath READ exportedPath NOTIFY exportChanged)
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
@@ -75,22 +80,32 @@ public:
     Q_ENUM(GroupBy)
     enum SectionRole { SectionKeyRole = Qt::UserRole + 200, SectionLabelRole, DateTimeLabelRole };
 
-    struct CsvResult { bool saved{false}; QString path, error; };
-    struct CsvRequest { QString path; std::shared_ptr<const activityview::Hold> snapshot; int unit{0}; };
+    using CsvResult = activityexport::Result;
+    using CsvRequest = activityexport::Request;
     struct Services {
         execution::SnapshotServices execution;
         std::function<QDate()> today;
         std::function<CsvResult(const CsvRequest&)> write;
+        std::function<QLocale()> locale{};
+        std::function<QTimeZone()> timezone{};
+        bool automaticDateRefresh{true};
     };
     explicit ActivityFilterProxyModel(QObject* parent = nullptr);
     ActivityFilterProxyModel(Services services, QObject* parent = nullptr);
     ~ActivityFilterProxyModel() override;
     bool busy() const { return m_scheduled || bool(m_job) || m_source_loading; }
     QString error() const { return m_error.isEmpty() ? m_source_error : m_error; }
-    bool exportBusy() const { return bool(m_export); }
+    bool exportBusy() const { return bool(m_export) || (m_export_operation && (m_export_operation->pending() || m_export_operation->confirmationRequired())); }
+    ActivityExportOperation* exportOperation() const { return m_export_operation; }
+    bool exportRejected() const { return m_export_rejected; }
     QString exportError() const { return m_export_error; }
     QString exportedPath() const { return m_exported_path; }
     void closeAdmission();
+    struct WorkReport { size_t examined{0}, prepared{0}, patches{0}, turns{0}, largestTurn{0}; bool delta{false}; };
+    WorkReport lastWork() const { return m_last_work; }
+    // Bounded clock handoff; manual clocks call this explicitly.
+    void refreshDate();
+    Q_INVOKABLE void clearDateFilter();
     int rowCount(const QModelIndex& parent = {}) const override;
     int columnCount(const QModelIndex& parent = {}) const override { return parent.isValid() ? 0 : 1; }
     QModelIndex index(int row, int column = 0, const QModelIndex& parent = {}) const override;
@@ -181,6 +196,7 @@ private:
     void finishClose();
     void sourceChanged();
     static void step(const std::shared_ptr<Job>& job);
+    static void patchRow(Owner& owner, const QString& id, activityview::SharedRow row);
     static bool typeMatches(const activityview::Row& row, TypeFilter type);
     static bool dateMatches(qint64 timestamp, const Parameters& parameters);
     static bool matches(const activityview::Row& row, const Parameters& parameters);
@@ -191,10 +207,12 @@ private:
     execution::SnapshotServices m_execution;
     std::shared_ptr<Mailbox> m_mailbox;
     std::shared_ptr<Job> m_job;
-    std::shared_ptr<const activityview::Hold> m_current, m_input;
+    std::shared_ptr<const activityview::Hold> m_current, m_input, m_applied_input;
     activityview::Tree m_root;
     QHash<int, QByteArray> m_roles;
-    QTimer m_start_timer, m_apply_timer;
+    QTimer m_start_timer, m_apply_timer, m_date_timer;
+    QDate m_date_observed;
+    WorkReport m_last_work;
     QPointer<QAbstractItemModel> m_deferred_source;
     bool m_source_deferred{false};
     quint64 m_generation{0}, m_settings_generation{0}, m_applied_settings{0};
@@ -205,8 +223,10 @@ private:
     CAmount m_pending_total{0};
     QString m_pending_text;
     std::shared_ptr<execution::OwnedCommand<CsvResult>> m_export;
+    QPointer<ActivityExportOperation> m_export_operation;
     quint64 m_export_ticket{0}, m_copy_ticket{0};
     QString m_export_error, m_exported_path;
+    bool m_export_rejected{false};
     std::shared_ptr<const activityview::Hold> m_context;
     QString m_context_txid;
     quint64 m_context_token{0};

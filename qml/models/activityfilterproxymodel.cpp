@@ -51,18 +51,23 @@ struct ActivityFilterProxyModel::Parameters {
     CAmount minimum{-1}, maximum{-1};
     QDate today, start, end;
     GroupBy group{Month};
+    QLocale locale;
+    QTimeZone timezone;
+    bool operator==(const Parameters&) const = default;
 };
 struct ActivityFilterProxyModel::Owner {
-    std::shared_ptr<const activityview::Hold> input, previous;
+    std::shared_ptr<const activityview::Hold> input, previous, previous_input;
     std::shared_ptr<activityview::Snapshot> result;
     activityview::Tree tree;
     std::vector<activityview::Patch> patches;
-    std::map<QString, activityview::SharedRow>::const_iterator next, old, fresh;
+    activityview::Map<activityview::SharedRow>::const_iterator next, old, fresh;
     Parameters parameters;
     CAmount available{0}, pending{0};
     QString pending_text, error;
     int phase{0};
-    void clear() { input.reset(); previous.reset(); result.reset(); tree.reset(); patches.clear(); parameters = {}; }
+    size_t changed_position{0};
+    WorkReport work;
+    void clear() { input.reset(); previous.reset(); previous_input.reset(); result.reset(); tree.reset(); patches.clear(); parameters = {}; next = old = fresh = {}; }
 };
 struct ActivityFilterProxyModel::Mailbox {
     std::mutex mutex;
@@ -91,17 +96,24 @@ ActivityFilterProxyModel::ActivityFilterProxyModel(Services services, QObject* p
     if (!m_services.execution.post) m_services.execution.post = presentation::QueuedPost();
     if (!m_services.today) m_services.today = [] { return QDate::currentDate(); };
     if (!m_services.write) m_services.write = WriteCsv;
+    m_date_observed = m_services.today();
+    if (!m_services.locale) m_services.locale = [] { return QLocale{}; };
+    if (!m_services.timezone) m_services.timezone = QTimeZone::systemTimeZone;
     const QPointer<ActivityFilterProxyModel> observer{this};
     m_mailbox->notify = [post = m_services.execution.post, observer] { post([observer] { if (observer) observer->receive(); }); };
     m_start_timer.setSingleShot(true); m_apply_timer.setSingleShot(true);
     connect(&m_start_timer, &QTimer::timeout, this, &ActivityFilterProxyModel::start);
     connect(&m_apply_timer, &QTimer::timeout, this, &ActivityFilterProxyModel::apply);
+    connect(&m_date_timer, &QTimer::timeout, this, &ActivityFilterProxyModel::refreshDate);
+    // A clock wakeup only compares bounded dates and requests Domain work.
+    // No history scan, transformation, or blocking native call occurs here.
+    m_date_timer.setInterval(1000);
 }
 ActivityFilterProxyModel::~ActivityFilterProxyModel() { closeAdmission(); finishClose(); }
 void ActivityFilterProxyModel::closeAdmission()
 {
     if (std::exchange(m_closed, true)) return;
-    m_start_timer.stop(); m_apply_timer.stop(); m_scheduled = false;
+    m_start_timer.stop(); m_apply_timer.stop(); m_date_timer.stop(); m_scheduled = false;
     for (const auto& connection : m_source_connections) disconnect(connection);
     m_source_connections.clear();
     if (m_job) m_job->cancelled->store(true);
@@ -110,9 +122,9 @@ void ActivityFilterProxyModel::closeAdmission()
 }
 void ActivityFilterProxyModel::finishClose()
 {
-    m_root.reset(); m_current.reset(); m_input.reset(); m_context.reset(); m_context_txid.clear(); m_job.reset();
+    m_root.reset(); m_current.reset(); m_input.reset(); m_applied_input.reset(); m_context.reset(); m_context_txid.clear(); m_job.reset();
     // OwnedCommand retains accepted file effects and their actual outcomes.
-    m_export.reset();
+    m_export.reset(); if (m_export_operation) m_export_operation->retire();
 }
 int ActivityFilterProxyModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : activityview::Size(m_root); }
 QModelIndex ActivityFilterProxyModel::index(int row, int column, const QModelIndex& parent) const {
@@ -158,7 +170,7 @@ void ActivityFilterProxyModel::setSourceModel(QAbstractItemModel* model)
     m_apply_timer.stop(); m_job.reset();
     const QPointer<ActivityFilterProxyModel> observer{this};
     m_in_update = true; beginResetModel(); if (!observer) return;
-    m_root.reset(); m_current.reset(); m_input.reset(); m_context.reset(); m_context_txid.clear(); ++m_context_token;
+    m_root.reset(); m_current.reset(); m_input.reset(); m_applied_input.reset(); m_context.reset(); m_context_txid.clear(); ++m_context_token;
     m_transactions = m_requests = 0; m_pending_total = m_available_max_amount = 0; m_pending_text.clear();
     QAbstractProxyModel::setSourceModel(model);
     m_roles = model ? model->roleNames() : QHash<int, QByteArray>{};
@@ -186,7 +198,7 @@ void ActivityFilterProxyModel::sourceChanged()
         m_apply_timer.stop(); m_start_timer.stop(); m_scheduled = false;
         const QPointer<ActivityFilterProxyModel> observer{this};
         m_in_update = true; beginResetModel(); if (!observer) return;
-        m_root.reset(); m_current.reset(); m_input.reset(); m_context.reset(); m_context_txid.clear(); m_job.reset();
+        m_root.reset(); m_current.reset(); m_input.reset(); m_applied_input.reset(); m_context.reset(); m_context_txid.clear(); m_job.reset();
         m_transactions = m_requests = 0; m_pending_total = m_available_max_amount = 0; m_pending_text.clear();
         endResetModel(); if (!observer) return; m_in_update = false;
         if (m_closed) { finishClose(); return; }
@@ -225,81 +237,142 @@ void ActivityFilterProxyModel::start()
     if (!held) { m_error = tr("Activity filtering could not reserve native result ownership."); Q_EMIT stateChanged(); return; }
     auto job = std::make_shared<Job>(); job->owner = owner; job->lease = std::make_shared<execution::ResourceLease>(std::move(*held.lease));
     job->scheduler = m_execution.scheduler; job->mailbox = m_mailbox; job->generation = m_generation; job->settings = m_settings_generation;
-    owner->input = m_input; owner->previous = m_current;
-    owner->parameters = {m_search_text, m_date_filter, m_type_filters, m_display_unit, m_min_amount, m_max_amount, m_services.today(), m_range_start, m_range_end, m_group_by};
+    owner->input = m_input; owner->previous = m_current; owner->previous_input = m_applied_input;
+    owner->parameters = {m_search_text, m_date_filter, m_type_filters, m_display_unit, m_min_amount, m_max_amount, m_services.today(), m_range_start, m_range_end, m_group_by, {}, {}};
+    // Locale/timezone lookup and address normalization are Domain work.
+    const auto locale = m_services.locale; const auto timezone = m_services.timezone;
     m_job = job;
-    const auto admitted = execution::Submit(*job->scheduler, [job] { step(job); }, [] {},
+    const auto admitted = execution::Submit(*job->scheduler, [job, locale, timezone] { job->owner->parameters.locale = locale(); job->owner->parameters.timezone = timezone(); step(job); }, [] {},
         [job](std::exception_ptr) { job->owner->error = tr("Activity filtering failed."); job->mailbox->publish(job); },
         {execution::Lane::Domain, 512, {}, execution::WorkClass::Observation});
     if (!admitted) { owner->error = tr("Activity filtering could not be scheduled."); m_mailbox->publish(job); }
+}
+void ActivityFilterProxyModel::patchRow(Owner& owner, const QString& id, activityview::SharedRow row)
+{
+    const auto found = owner.result->rows.find(id);
+    const bool existing = found != owner.result->rows.end();
+    const auto previous = existing ? found->second : activityview::SharedRow{};
+    const auto old_key = existing ? owner.result->order_keys.at(id) : QString{};
+    const auto key = row ? orderKey(*row) : QString{};
+    const bool old_request = previous && previous->value(A::IsPendingRequestRole).toBool();
+    const bool request = row && row->value(A::IsPendingRequestRole).toBool();
+    const int tx_delta = int(bool(row) && !request) - int(existing && !old_request);
+    const int request_delta = int(request) - int(existing && old_request);
+    if (!row) {
+        if (!existing) return;
+        const int position = activityview::Rank(owner.tree, old_key);
+        owner.tree = activityview::Erase(owner.tree, old_key);
+        owner.result->rows.erase(id); owner.result->order_keys.erase(id);
+        owner.patches.push_back({activityview::Patch::Kind::Remove, position, owner.tree, {}, tx_delta, request_delta});
+        return;
+    }
+    if (existing && (*previous == *row)) return;
+    owner.result->rows.insert_or_assign(id, row); owner.result->order_keys.insert_or_assign(id, key);
+    const auto amount = row->value(A::NetAmountSatRole).toLongLong();
+    const activityview::Measure measure{request ? 0 : 1, request ? 1 : 0,
+        !request && row->value(A::IsPendingRole).toBool() ? amount : 0, Magnitude(amount)};
+    const auto preview = std::make_shared<const Row>(A::presentationRow(*row));
+    if (!existing) {
+        const int position = activityview::Rank(owner.tree, key);
+        owner.tree = activityview::Insert(owner.tree, key, preview, measure);
+        owner.patches.push_back({activityview::Patch::Kind::Insert, position, owner.tree, {}, tx_delta, request_delta});
+    } else if (key != old_key) {
+        const int position = activityview::Rank(owner.tree, old_key);
+        auto without = activityview::Erase(owner.tree, old_key);
+        const int destination = activityview::Rank(without, key);
+        owner.tree = activityview::Insert(without, key, preview, measure);
+        owner.patches.push_back({activityview::Patch::Kind::Move, position, owner.tree, {}, tx_delta, request_delta, destination});
+    } else {
+        QList<int> roles;
+        for (auto value = row->cbegin(); value != row->cend(); ++value) if (previous->value(value.key()) != value.value()) roles.append(value.key());
+        owner.tree = activityview::Insert(owner.tree, key, preview, measure);
+        owner.patches.push_back({activityview::Patch::Kind::Change, activityview::Rank(owner.tree, key), owner.tree, roles, tx_delta, request_delta});
+    }
 }
 void ActivityFilterProxyModel::step(const std::shared_ptr<Job>& job)
 {
     if (job->cancelled->load()) return;
     auto& owner = *job->owner;
     if (!owner.result) {
+        if (owner.parameters.date == DateAll || owner.parameters.date == CustomRange) owner.parameters.today = {};
         owner.parameters.search = owner.parameters.search.trimmed();
+        // Grouped display addresses are canonicalized only after validation.
+        // Ordinary notes retain their internal whitespace semantics.
+        if (owner.input->snapshot->canonical_address) owner.parameters.search = owner.input->snapshot->canonical_address(owner.parameters.search);
         owner.result = std::make_shared<activityview::Snapshot>(); owner.result->revision = job->generation;
+        owner.result->canonical_address = owner.input->snapshot->canonical_address;
         owner.result->opening = owner.input->snapshot->opening; owner.result->raw = owner.input->snapshot->raw;
+        owner.result->presentation_context = std::make_shared<const Parameters>(owner.parameters);
         owner.tree = owner.previous ? owner.previous->snapshot->presentation : activityview::Tree{};
+        const auto policy = owner.previous && owner.previous->snapshot->presentation_context
+            ? std::static_pointer_cast<const Parameters>(owner.previous->snapshot->presentation_context) : nullptr;
+        owner.work.delta = policy && *policy == owner.parameters && owner.previous_input &&
+            owner.input->snapshot->delta_base.lock() == owner.previous_input->snapshot && owner.input->snapshot->statistics_valid;
+        if (owner.work.delta) {
+            owner.result->rows = owner.previous->snapshot->rows;
+            owner.result->order_keys = owner.previous->snapshot->order_keys;
+        }
         owner.next = owner.input->snapshot->rows.begin();
     }
-    int budget{128};
-    while (budget-- > 0) {
+    constexpr size_t TURN_BUDGET{128};
+    size_t used{0}; ++owner.work.turns;
+    while (used < TURN_BUDGET) {
         if (owner.phase == 0) {
-            if (owner.next == owner.input->snapshot->rows.end()) { owner.phase = 1; if (owner.previous) owner.old = owner.previous->snapshot->rows.begin(); continue; }
-            const auto& [id, row] = *owner.next++;
-            if (!row->value(A::IsPendingRequestRole).toBool()) owner.available = std::max(owner.available, Magnitude(row->value(A::NetAmountSatRole).toLongLong()));
-            if (!matches(*row, owner.parameters)) continue;
-            const auto prepared = std::make_shared<const Row>(present(*row, owner.parameters));
-            owner.result->rows.emplace(id, prepared); owner.result->order_keys.emplace(id, orderKey(*prepared));
-            if (row->value(A::IsPendingRequestRole).toBool()) ++owner.result->requests;
-            else { ++owner.result->transactions; if (row->value(A::IsPendingRole).toBool()) {
-                const auto amount = row->value(A::NetAmountSatRole).toLongLong();
-                if ((amount > 0 && owner.pending > std::numeric_limits<CAmount>::max() - amount) || (amount < 0 && owner.pending < std::numeric_limits<CAmount>::min() - amount)) throw std::overflow_error("activity total");
-                owner.pending += amount;
-            }}
+            if (owner.work.delta) {
+                if (owner.changed_position == owner.input->snapshot->changed_ids.size()) { owner.phase = 3; continue; }
+                const auto& id = owner.input->snapshot->changed_ids[owner.changed_position++];
+                const auto found = owner.input->snapshot->rows.find(id);
+                ++used; ++owner.work.examined;
+                activityview::SharedRow prepared;
+                if (found != owner.input->snapshot->rows.end() && matches(*found->second, owner.parameters)) {
+                    prepared = std::make_shared<const Row>(present(*found->second, owner.parameters)); ++owner.work.prepared;
+                }
+                patchRow(owner, id, std::move(prepared));
+            } else {
+                if (owner.next == owner.input->snapshot->rows.end()) { owner.phase = 1; if (owner.previous) owner.old = owner.previous->snapshot->rows.begin(); continue; }
+                const auto& [id, row] = *owner.next++; ++used; ++owner.work.examined;
+                owner.available = std::max(owner.available, Magnitude(row->value(A::NetAmountSatRole).toLongLong()));
+                if (!matches(*row, owner.parameters)) continue;
+                owner.result->rows.emplace(id, std::make_shared<const Row>(present(*row, owner.parameters))); ++owner.work.prepared;
+            }
         } else if (owner.phase == 1) {
             if (!owner.previous || owner.old == owner.previous->snapshot->rows.end()) { owner.phase = 2; owner.fresh = owner.result->rows.begin(); continue; }
-            const auto& [id, row] = *owner.old++;
+            const auto& [id, row] = *owner.old++; ++used;
             if (owner.result->rows.contains(id)) continue;
             const auto key = owner.previous->snapshot->order_keys.at(id);
-            const auto position = activityview::Rank(owner.tree, key);
-            owner.tree = activityview::Erase(owner.tree, key);
+            const auto position = activityview::Rank(owner.tree, key); owner.tree = activityview::Erase(owner.tree, key);
             const bool request = row->value(A::IsPendingRequestRole).toBool();
             owner.patches.push_back({activityview::Patch::Kind::Remove, position, owner.tree, {}, request ? 0 : -1, request ? -1 : 0});
         } else if (owner.phase == 2) {
             if (owner.fresh == owner.result->rows.end()) { owner.phase = 3; continue; }
-            const auto& [id, row] = *owner.fresh++;
-            const auto key = owner.result->order_keys.at(id);
+            const auto& [id, row] = *owner.fresh++; ++used;
+            // The fresh map is an immutable traversal root; patchRow mutates a
+            // separate persistent root without invalidating this cursor.
             const auto old = owner.previous ? owner.previous->snapshot->rows.find(id) : owner.result->rows.end();
             const bool existing = owner.previous && old != owner.previous->snapshot->rows.end();
-            // The GUI receives bounded previews; the full native row remains available to search/export.
-            auto presentation = std::make_shared<const Row>(A::presentationRow(*row));
-            if (!existing) {
-                const auto position = activityview::Rank(owner.tree, key); owner.tree = activityview::Insert(owner.tree, key, presentation);
-                const bool request = row->value(A::IsPendingRequestRole).toBool();
-                owner.patches.push_back({activityview::Patch::Kind::Insert, position, owner.tree, {}, request ? 0 : 1, request ? 1 : 0});
-            } else {
-                const auto old_key = owner.previous->snapshot->order_keys.at(id);
-                const auto position = activityview::Rank(owner.tree, old_key);
-                if (old_key != key) {
-                    auto without = activityview::Erase(owner.tree, old_key); const auto destination = activityview::Rank(without, key);
-                    owner.tree = activityview::Insert(without, key, presentation);
-                    owner.patches.push_back({activityview::Patch::Kind::Move, position, owner.tree, {}, 0, 0, destination});
-                } else if (*old->second != *row) {
-                    QList<int> roles; for (auto value = row->cbegin(); value != row->cend(); ++value) if (old->second->value(value.key()) != value.value()) roles.append(value.key());
-                    owner.tree = activityview::Insert(owner.tree, key, presentation);
-                    owner.patches.push_back({activityview::Patch::Kind::Change, position, owner.tree, roles});
-                }
+            owner.result->rows.erase(id);
+            if (existing) {
+                owner.result->rows.emplace(id, old->second);
+                owner.result->order_keys.emplace(id, owner.previous->snapshot->order_keys.at(id));
             }
+            patchRow(owner, id, row);
+            // Unchanged full rows also need their original ordering entry.
+            if (!owner.result->order_keys.contains(id)) owner.result->order_keys.emplace(id, orderKey(*row));
         } else {
             owner.result->presentation = owner.tree;
+            const auto total = owner.tree ? owner.tree->total : activityview::Measure{};
+            owner.result->transactions = total.transactions; owner.result->requests = total.requests; owner.pending = total.pending;
+            if (owner.input->snapshot->statistics_valid) owner.available = owner.input->snapshot->presentation ? owner.input->snapshot->presentation->total.maximum : 0;
             const auto unit = ExportDisplayUnit(owner.parameters.unit);
             owner.pending_text = QmlBitcoinUnits::formatForDisplay(unit, owner.pending, true) + QLatin1Char(' ') + QmlBitcoinUnits::displayLabel(unit, owner.pending);
+            owner.work.largestTurn = std::max(owner.work.largestTurn, used); owner.work.patches = owner.patches.size();
+            // A committed frame must not retain the preceding frame's cleanup
+            // lease and form an ever-growing history of owners.
+            owner.previous.reset(); owner.previous_input.reset(); owner.next = owner.old = owner.fresh = {};
             job->mailbox->publish(job); return;
         }
     }
+    owner.work.largestTurn = std::max(owner.work.largestTurn, used);
     const auto admitted = execution::Submit(*job->scheduler, [job] { step(job); }, [] {},
         [job](std::exception_ptr) { job->owner->error = tr("Activity filtering could not continue."); job->mailbox->publish(job); },
         {execution::Lane::Domain, 512, {}, execution::WorkClass::Observation});
@@ -311,6 +384,7 @@ void ActivityFilterProxyModel::receive()
     std::shared_ptr<Job> ready;
     { std::lock_guard lock{m_mailbox->mutex}; ready = std::exchange(m_mailbox->ready, {}); }
     if (!ready || ready != m_job) return;
+    if (ready->owner->parameters.date >= Today && ready->owner->parameters.date <= ThisYear && ready->owner->parameters.today != m_services.today()) refreshDate();
     if (ready->generation != m_generation) { m_job.reset(); if (m_scheduled) m_start_timer.start(0); return; }
     if (!ready->owner->error.isEmpty()) { m_error = ready->owner->error; m_job.reset(); Q_EMIT stateChanged(); return; }
     m_patch_position = 0; apply();
@@ -326,21 +400,32 @@ void ActivityFilterProxyModel::apply()
         if (patch.kind == activityview::Patch::Kind::Insert) { beginInsertRows({}, patch.position, patch.position); if (!observer) return; m_root = patch.root; m_transactions += patch.transaction_delta; m_requests += patch.request_delta; endInsertRows(); }
         else if (patch.kind == activityview::Patch::Kind::Remove) { beginRemoveRows({}, patch.position, patch.position); if (!observer) return; m_root = patch.root; m_transactions += patch.transaction_delta; m_requests += patch.request_delta; endRemoveRows(); }
         else if (patch.kind == activityview::Patch::Kind::Move) {
+            m_transactions += patch.transaction_delta; m_requests += patch.request_delta;
             if (patch.position != patch.destination) { beginMoveRows({}, patch.position, patch.position, {}, patch.destination > patch.position ? patch.destination + 1 : patch.destination); if (!observer) return; m_root = patch.root; endMoveRows(); }
             else m_root = patch.root;
             Q_EMIT dataChanged(index(patch.destination), index(patch.destination), {});
-        } else { m_root = patch.root; Q_EMIT dataChanged(index(patch.position), index(patch.position), patch.roles); }
+        } else { m_root = patch.root; m_transactions += patch.transaction_delta; m_requests += patch.request_delta; Q_EMIT dataChanged(index(patch.position), index(patch.position), patch.roles); }
         if (!observer) return;
         m_in_update = false;
         if (m_closed) { finishClose(); return; }
     }
     if (m_patch_position < patches.size()) { m_apply_timer.start(0); return; }
     const auto& owner = *job->owner;
+    m_applied_input = owner.input; m_last_work = owner.work;
     auto hold = std::make_shared<activityview::Hold>(); hold->snapshot = owner.result; hold->lease = job->lease; m_current = std::move(hold);
     const bool maximum_changed = m_available_max_amount != owner.available;
     const bool pending_changed = m_pending_total != owner.pending || m_pending_text != owner.pending_text;
     m_available_max_amount = owner.available; m_pending_total = owner.pending; m_pending_text = owner.pending_text;
     m_applied_settings = job->settings; m_error.clear(); m_job.reset();
+    // Drop transient persistent roots on Native after the last GUI patch. If
+    // ordinary work is closed, the already-reserved owner retirement remains
+    // the fallback; no last large vector is cleared on GUI.
+    if (auto* provider = qobject_cast<activityview::Source*>(sourceModel()); provider && provider->opening()) {
+        provider->opening()->retireValues([owner = job->owner] { owner->patches.clear(); });
+    } else {
+        execution::Submit(*job->scheduler, [owner = job->owner] { owner->patches.clear(); }, [] {}, {},
+            {execution::Lane::Domain, 256, {}, execution::WorkClass::Observation});
+    }
     Q_EMIT countChanged(); if (!observer || m_closed) return;
     if (maximum_changed) Q_EMIT availableMaxAmountChanged();
     if (!observer || m_closed) return;
@@ -353,7 +438,17 @@ void ActivityFilterProxyModel::apply()
 QString ActivityFilterProxyModel::searchText() const { return m_search_text; }
 void ActivityFilterProxyModel::setSearchText(const QString& value) { if (value == m_search_text) return; m_search_text = value; ++m_settings_generation; reload(); Q_EMIT searchTextChanged(); }
 ActivityFilterProxyModel::DateFilter ActivityFilterProxyModel::dateFilter() const { return m_date_filter; }
-void ActivityFilterProxyModel::setDateFilter(DateFilter value) { if (value < DateAll || value > CustomRange || value == m_date_filter) return; m_date_filter = value; ++m_settings_generation; reload(); Q_EMIT dateFilterChanged(); }
+void ActivityFilterProxyModel::setDateFilter(DateFilter value) { if (value < DateAll || value > CustomRange) return; if (value == m_date_filter) { refreshDate(); return; } m_date_filter = value;
+    if (m_services.automaticDateRefresh && value >= Today && value <= ThisYear) m_date_timer.start(); else m_date_timer.stop();
+    ++m_settings_generation; reload(); Q_EMIT dateFilterChanged(); }
+void ActivityFilterProxyModel::refreshDate()
+{
+    if (m_closed) return;
+    const auto today = m_services.today(); if (today == m_date_observed) return;
+    m_date_observed = today;
+    if (m_date_filter >= Today && m_date_filter <= ThisYear) { ++m_settings_generation; reload(); }
+}
+void ActivityFilterProxyModel::clearDateFilter() { setDateFilter(DateAll); }
 ActivityFilterProxyModel::TypeFilter ActivityFilterProxyModel::typeFilter() const { return m_type_filters.isEmpty() ? TypeAll : TypeFilter(m_type_filters.first()); }
 void ActivityFilterProxyModel::setTypeFilter(TypeFilter value) { setTypeFilters(value == TypeAll ? QList<int>{} : QList<int>{value}); }
 void ActivityFilterProxyModel::setTypeFilters(const QList<int>& values) {
@@ -379,7 +474,7 @@ bool ActivityFilterProxyModel::applyCustomRange(const QString& start_iso, const 
     const auto start = QDate::fromString(start_iso, Qt::ISODate), end = QDate::fromString(end_iso, Qt::ISODate);
     if (!start.isValid() || !end.isValid() || start > end) return false;
     const bool range = m_range_start != start || m_range_end != end, filter = m_date_filter != CustomRange; if (!range && !filter) return true;
-    m_range_start = start; m_range_end = end; m_date_filter = CustomRange; ++m_settings_generation; reload(); const QPointer<ActivityFilterProxyModel> observer{this}; if (range) Q_EMIT rangeChanged(); if (!observer || m_closed) return true; if (filter) Q_EMIT dateFilterChanged(); return true;
+    m_range_start = start; m_range_end = end; m_date_filter = CustomRange; m_date_timer.stop(); ++m_settings_generation; reload(); const QPointer<ActivityFilterProxyModel> observer{this}; if (range) Q_EMIT rangeChanged(); if (!observer || m_closed) return true; if (filter) Q_EMIT dateFilterChanged(); return true;
 }
 int ActivityFilterProxyModel::count() const { return rowCount(); }
 int ActivityFilterProxyModel::transactionCount() const { return m_transactions; }
@@ -424,15 +519,15 @@ bool ActivityFilterProxyModel::dateMatches(qint64 timestamp, const Parameters& p
     if (timestamp <= 0) return false;
     QDate start, end;
     switch (parameters.date) {
-    case Today: start = parameters.today; end = start.addDays(1); break;
-    case ThisWeek: start = parameters.today.addDays(-(parameters.today.dayOfWeek() - 1)); end = start.addDays(7); break;
-    case ThisMonth: start = QDate(parameters.today.year(), parameters.today.month(), 1); end = start.addMonths(1); break;
-    case ThisYear: start = QDate(parameters.today.year(), 1, 1); end = start.addYears(1); break;
-    case CustomRange: start = parameters.start; end = parameters.end.addDays(1); break;
+    case Today: start = end = parameters.today; break;
+    case ThisWeek: start = parameters.today.addDays(-((parameters.today.dayOfWeek() - int(parameters.locale.firstDayOfWeek()) + 7) % 7)); end = start.addDays(6); break;
+    case ThisMonth: start = QDate(parameters.today.year(), parameters.today.month(), 1); end = start.addMonths(1).addDays(-1); break;
+    case ThisYear: start = QDate(parameters.today.year(), 1, 1); end = start.addYears(1).addDays(-1); break;
+    case CustomRange: start = parameters.start; end = parameters.end; break;
     case DateAll: return true;
     }
-    const auto time = QDateTime::fromSecsSinceEpoch(timestamp);
-    return (!start.isValid() || time >= start.startOfDay()) && (!end.isValid() || time < end.startOfDay());
+    const auto date = QDateTime::fromSecsSinceEpoch(timestamp, parameters.timezone).date();
+    return (!start.isValid() || date >= start) && (!end.isValid() || date <= end);
 }
 QString ActivityFilterProxyModel::orderKey(const Row& row)
 {
@@ -446,10 +541,12 @@ Row ActivityFilterProxyModel::present(const Row& original, const Parameters& par
 {
     Row row = original;
     const bool pending = row.value(A::IsPendingRole).toBool();
-    const auto date = QDateTime::fromSecsSinceEpoch(row.value(A::TimestampRole).toLongLong());
-    row[DateTimeLabelRole] = QLocale().toString(date, parameters.group == Day && !pending ? "h:mm AP" : "MMM d, h:mm AP");
+    const auto date = QDateTime::fromSecsSinceEpoch(row.value(A::TimestampRole).toLongLong(), parameters.timezone);
+    const auto time = parameters.locale.toString(date.time(), QLocale::ShortFormat);
+    row[DateTimeLabelRole] = parameters.group == Day && !pending ? time
+        : parameters.locale.toString(date.date(), QStringLiteral("MMM d")) + QStringLiteral(", ") + time;
     row[SectionKeyRole] = pending ? QStringLiteral("pending") : date.toString(parameters.group == Day ? "yyyy-MM-dd" : "yyyy-MM");
-    row[SectionLabelRole] = pending ? tr("Pending") : QLocale().toString(date.date(), parameters.group == Day ? "MMMM d, yyyy" : "MMMM yyyy");
+    row[SectionLabelRole] = pending ? tr("Pending") : parameters.locale.toString(date.date(), parameters.group == Day ? "MMMM d, yyyy" : "MMMM yyyy");
     return row;
 }
 QString ActivityFilterProxyModel::typeLabel(const Row& row)
@@ -468,7 +565,9 @@ ActivityFilterProxyModel::CsvResult ActivityFilterProxyModel::WriteCsv(const Csv
     const QUrl url{request.path};
     const QString filename = url.isLocalFile() ? url.toLocalFile() : request.path;
     if (filename.isEmpty() || !request.snapshot || !request.snapshot->snapshot) return {false, filename, tr("There is no activity snapshot to export.")};
-    QSaveFile file(filename);
+    auto destination = request.destination ? request.destination(filename) : std::make_unique<QSaveFile>(filename);
+    if (!destination) return {false, filename, tr("The Activity export destination is unavailable.")};
+    auto& file = *destination;
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return {false, filename, file.errorString()};
     QTextStream stream(&file);
     QStringList header{
@@ -555,13 +654,32 @@ ActivityFilterProxyModel::CsvResult ActivityFilterProxyModel::WriteCsv(const Csv
 }
 quint64 ActivityFilterProxyModel::requestExportCsv(const QString& path)
 {
+    refreshDate(); // A file command may arrive before the next clock wakeup.
     if (m_closed || exportBusy() || busy() || !m_current || !m_execution.scheduler || path.isEmpty() || path.size() > 4096) {
-        m_export_error = tr("The activity snapshot is not ready for export."); Q_EMIT exportChanged(); return 0;
+        m_export_rejected = true; m_export_error = tr("The activity snapshot is not ready for export."); Q_EMIT exportChanged(); return 0;
     }
     auto* provider = qobject_cast<activityview::Source*>(sourceModel());
-    if (provider && provider->opening() && !provider->opening()->available()) { m_export_error = tr("The wallet is closing."); Q_EMIT exportChanged(); return 0; }
-    const auto ticket = ++m_export_ticket;
+    if (provider && provider->opening() && !provider->opening()->available()) { m_export_rejected = true; m_export_error = tr("The wallet is closing."); Q_EMIT exportChanged(); return 0; }
+    const auto ticket = ++m_export_ticket; m_export_rejected = false;
     const QPointer<ActivityFilterProxyModel> observer{this};
+    const auto files = provider ? provider->activityFiles() : activityexport::Files{};
+    if (files.inspect && files.install) {
+        if (m_export_operation) m_export_operation->deleteLater();
+        auto* operation = new ActivityExportOperation({path, m_current, m_display_unit}, files,
+            {m_execution.scheduler, m_services.execution.post}, m_services.write, this);
+        m_export_operation = operation; m_export_error.clear(); m_exported_path.clear();
+        auto finished = std::make_shared<bool>(false);
+        connect(operation, &ActivityExportOperation::changed, this, [observer, operation, ticket, finished] {
+            if (!observer || observer->m_closed || observer->m_export_operation != operation) return;
+            observer->m_export_rejected = false; observer->m_export_error = operation->error(); observer->m_exported_path = operation->saved() ? operation->finalPath() : QString{};
+            const bool terminal = operation->resultPresent();
+            if (terminal && !std::exchange(*finished, true)) {
+                Q_EMIT observer->exportChanged(); if (!observer || observer->m_closed) return;
+                Q_EMIT observer->exportFinished(ticket, operation->saved(), operation->finalPath(), operation->error());
+            } else Q_EMIT observer->exportChanged();
+        });
+        const bool admitted = operation->start(); Q_EMIT exportChanged(); return admitted ? ticket : 0;
+    }
     auto command = std::make_shared<execution::OwnedCommand<CsvResult>>(m_execution.scheduler, [observer, post = m_services.execution.post, ticket] {
         post([observer, ticket] {
             if (!observer || observer->m_closed || ticket != observer->m_export_ticket || !observer->m_export) return;
@@ -575,7 +693,7 @@ quint64 ActivityFilterProxyModel::requestExportCsv(const QString& path)
     m_export = command; m_export_error.clear(); m_exported_path.clear();
     const CsvRequest request{path, m_current, m_display_unit};
     const auto admission = command->start([request, write = m_services.write] { return write(request); }, {execution::Lane::Core, 512, m_execution.scheduler->allocateKey(), execution::WorkClass::Action});
-    if (!admission) { m_export.reset(); m_export_error = tr("The activity export could not be scheduled."); Q_EMIT exportChanged(); return 0; }
+    if (!admission) { m_export.reset(); m_export_rejected = true; m_export_error = tr("The activity export could not be scheduled."); Q_EMIT exportChanged(); return 0; }
     Q_EMIT exportChanged(); return ticket;
 }
 quint64 ActivityFilterProxyModel::captureRowContext(int row)

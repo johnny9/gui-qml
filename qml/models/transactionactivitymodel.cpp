@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/transactionactivitymodel.h>
+#include <key_io.h>
+#include <qml/models/backuppolicyio.h>
 #include <qml/retainedvalue.h>
 #include <qml/guipresentation.h>
 #include <qml/walletrequests.h>
@@ -99,6 +101,14 @@ void ActivityValueListModel::setSnapshot(std::shared_ptr<const activityview::Hol
     if (!quiet) endResetModel();
 }
 
+namespace {
+bool SameRowInput(const activitystore::Record& a, const activitystore::Record& b)
+{
+    return a.activity == b.activity && a.labels == b.labels && a.status == b.status && a.depth == b.depth &&
+        a.blocks_to_maturity == b.blocks_to_maturity && a.block_height == b.block_height && a.status_known == b.status_known;
+}
+} // namespace
+
 struct TransactionActivityModel::Owner {
     std::shared_ptr<const Snapshot> input, result;
     std::shared_ptr<const activityview::Hold> previous;
@@ -110,10 +120,9 @@ struct TransactionActivityModel::Owner {
     std::vector<activityview::Patch> patches;
     QMap<QString, QVariantList> request_matches;
     QSet<QString> fulfilled;
-    QMap<QString, Row> rows;
     QMap<QString, Record>::const_iterator next_record;
-    QMap<QString, Row>::const_iterator next_row;
-    std::map<QString, activityview::SharedRow>::const_iterator previous_row, new_row;
+    activityview::Map<activityview::SharedRow>::const_iterator next_row;
+    activityview::Map<activityview::SharedRow>::const_iterator previous_row, new_row;
     std::shared_ptr<activityview::Snapshot> building;
     activityview::Tree tree;
     size_t request_position{0};
@@ -121,7 +130,7 @@ struct TransactionActivityModel::Owner {
     bool counts_changed{false};
     QString error;
     void clear() {
-        input.reset(); result.reset(); previous.reset(); requests.reset(); view.reset(); preview.reset(); preview_view.reset(); copied.reset(); patches.clear(); request_matches.clear(); fulfilled.clear(); rows.clear(); building.reset(); tree.reset();
+        input.reset(); result.reset(); previous.reset(); requests.reset(); view.reset(); preview.reset(); preview_view.reset(); copied.reset(); patches.clear(); request_matches.clear(); fulfilled.clear(); building.reset(); tree.reset(); previous_row = new_row = next_row = {};
     }
 };
 struct TransactionActivityModel::Job {
@@ -156,7 +165,8 @@ TransactionActivityModel::TransactionActivityModel(WalletQmlModel* wallet)
 
 TransactionActivityModel::TransactionActivityModel(WalletQmlModel* wallet, Services services)
     : QAbstractListModel(wallet), m_wallet_model(wallet), m_display_unit(wallet->displayUnit()),
-      m_opening(wallet->opening()), m_services(std::move(services)), m_mailbox(std::make_shared<Mailbox>())
+      m_opening(wallet->opening()), m_services(std::move(services)),
+      m_export_installs(wallet->fileInstallCoordinator() ? wallet->fileInstallCoordinator() : std::make_shared<backup::InstallCoordinator>()), m_mailbox(std::make_shared<Mailbox>())
 {
     const QPointer<TransactionActivityModel> observer{this};
     if (!m_services.post) m_services.post = presentation::QueuedPost();
@@ -310,6 +320,20 @@ void TransactionActivityModel::schedule()
     if (m_work_pending || m_scheduled) return;
     m_scheduled = true; QTimer::singleShot(0, this, &TransactionActivityModel::startWork);
 }
+activityexport::Files TransactionActivityModel::activityFiles() const
+{
+    activityexport::Files files;
+    const auto coordinator = m_export_installs;
+    files.inspect = [](const QString& path) {
+        const auto bytes = path.toUtf8(); return backup::Inspect({bytes.constData(), size_t(bytes.size())}, "activity", ".csv");
+    };
+    files.install = [coordinator](const backup::Proposal& target, bool approved, const activityexport::Files::Producer& producer) {
+        return backup::Write(target, approved, producer, *coordinator);
+    };
+    const std::weak_ptr<walletopening::Session> opening = m_opening;
+    files.available = [opening] { const auto original = opening.lock(); return original && original->available(); };
+    return files;
+}
 void TransactionActivityModel::startWork()
 {
     m_scheduled = false;
@@ -396,6 +420,15 @@ void TransactionActivityModel::project(const std::shared_ptr<Job>& job)
         }
         owner.building->detail_source = std::move(detail_source);
         owner.building->revision = job->revision; owner.building->opening = job->opening->identity();
+        if (owner.previous && owner.previous->snapshot) {
+            owner.building->delta_base = owner.previous->snapshot;
+            owner.building->rows = owner.previous->snapshot->rows;
+            owner.building->details = owner.previous->snapshot->details;
+        }
+        owner.building->canonical_address = [](const QString& search) {
+            auto compact = search; compact.remove(QLatin1Char(' '));
+            return IsValidDestination(DecodeDestination(compact.toStdString())) ? compact : search;
+        };
         owner.building->raw = [snapshot = owner.result](const QString& txid) {
             const auto found = snapshot->records.constFind(txid);
             return found != snapshot->records.cend() && found->transaction ? QString::fromStdString(EncodeHexTx(*found->transaction)) : QString{};
@@ -407,6 +440,7 @@ void TransactionActivityModel::project(const std::shared_ptr<Job>& job)
         if (job->cancelled->load()) return;
         if (owner.phase == 1) {
             if (!owner.requests || owner.request_position == owner.requests->records.size()) {
+                owner.building->request_context = std::make_shared<const QMap<QString, QVariantList>>(owner.request_matches);
                 owner.next_record = owner.result->records.cbegin(); owner.phase = 2; continue;
             }
             const auto& request = owner.requests->records[owner.request_position++];
@@ -415,15 +449,50 @@ void TransactionActivityModel::project(const std::shared_ptr<Job>& job)
             --budget;
         } else if (owner.phase == 2) {
             if (owner.next_record == owner.result->records.cend()) { owner.request_position = 0; owner.phase = 3; continue; }
-            const auto value = buildTransactionRow((owner.next_record++).value(), owner.request_matches, job->unit, owner.fulfilled);
-            owner.rows.insert(value.first, value.second); --budget;
+            const auto& record = (owner.next_record++).value();
+            const auto id = QStringLiteral("tx:") + record.activity.txid;
+            const auto cached = owner.building->rows.find(id);
+            const auto basis = owner.previous && owner.previous->snapshot->detail_source
+                ? std::static_pointer_cast<const DetailSource>(owner.previous->snapshot->detail_source) : nullptr;
+            bool reuse{false};
+            if (basis && owner.previous->snapshot->display_unit == job->unit && cached != owner.building->rows.end()) {
+                const auto old = basis->core->records.constFind(record.activity.txid);
+                reuse = old != basis->core->records.cend() && SameRowInput(old.value(), record);
+                if (reuse && basis->requests != owner.requests) {
+                    const auto prior = owner.previous->snapshot->request_context
+                        ? std::static_pointer_cast<const QMap<QString, QVariantList>>(owner.previous->snapshot->request_context) : nullptr;
+                    reuse = bool(prior);
+                    if (prior) for (const auto& action : record.activity.actions) {
+                        if (action.output_index >= 0 && action.direction != Direction::Send && action.amount > 0 &&
+                            prior->value(action.address) != owner.request_matches.value(action.address)) { reuse = false; break; }
+                    }
+                }
+            }
+            if (reuse) {
+                if (cached->second->value(StatusKnownRole).toBool() && !cached->second->value(IsInactiveRole).toBool())
+                    for (const auto& request : cached->second->value(PaymentRequestsRole).toList()) owner.fulfilled.insert(request.toMap().value("requestId").toString());
+            } else {
+                const auto value = buildTransactionRow(record, owner.request_matches, job->unit, owner.fulfilled);
+                ++owner.building->transformed_rows;
+                if (cached == owner.building->rows.end() || *cached->second != value.second) {
+                    owner.building->rows.insert_or_assign(value.first, std::make_shared<const Row>(value.second));
+                    owner.building->changed_ids.push_back(value.first);
+                }
+            }
+            --budget;
         } else if (owner.phase == 3) {
-            if (!owner.requests || owner.request_position == owner.requests->records.size()) { owner.next_row = owner.rows.cbegin(); owner.phase = 4; continue; }
+            if (!owner.requests || owner.request_position == owner.requests->records.size()) { owner.next_row = owner.building->rows.begin(); owner.phase = 4; continue; }
             const auto row = buildRequestRow(RequestMap(*owner.requests->records[owner.request_position++]), job->unit, owner.fulfilled);
-            if (row) owner.rows.insert(row->first, row->second);
+            if (row) {
+                const auto cached = owner.building->rows.find(row->first);
+                if (cached == owner.building->rows.end() || *cached->second != row->second) {
+                    owner.building->rows.insert_or_assign(row->first, std::make_shared<const Row>(row->second));
+                    owner.building->changed_ids.push_back(row->first); ++owner.building->transformed_rows;
+                }
+            }
             --budget;
         } else if (owner.phase == 4) {
-            if (owner.next_row == owner.rows.cend()) {
+            if (owner.next_row == owner.building->rows.end()) {
                 owner.building->selected_txid = job->selected;
                 const auto selected = owner.building->rows.find(QStringLiteral("tx:") + job->selected);
                 if (selected != owner.building->rows.end()) {
@@ -434,14 +503,29 @@ void TransactionActivityModel::project(const std::shared_ptr<Job>& job)
                 if (owner.previous && owner.previous->snapshot) owner.previous_row = owner.previous->snapshot->rows.begin();
                 owner.phase = 5; continue;
             }
-            const auto row = owner.next_row++;
-            owner.building->source_positions.emplace(row.key(), owner.building->rows.size());
-            owner.building->rows.emplace(row.key(), std::make_shared<const Row>(row.value()));
-            if (row->value(IsPendingRequestRole).toBool()) ++owner.building->requests;
+            const auto& [id, full] = *owner.next_row++;
+            bool kept{true};
+            if (full->value(IsPendingRequestRole).toBool()) {
+                bool valid{false}; const auto request_id = full->value(RequestIdRole).toString(); const auto number = request_id.toLongLong(&valid);
+                kept = valid && owner.requests && owner.requests->find(number) && !owner.fulfilled.contains(request_id);
+            } else kept = owner.result->records.contains(full->value(TxidRole).toString());
+            if (!kept) {
+                owner.building->rows.erase(id); owner.building->details.erase(full->value(TxidRole).toString());
+                owner.building->changed_ids.push_back(id); --budget; continue;
+            }
+            if (full->value(IsPendingRequestRole).toBool()) ++owner.building->requests;
             else {
                 ++owner.building->transactions;
-                const auto txid = row->value(TxidRole).toString();
-                owner.building->details.emplace(txid, std::make_shared<const QVariantMap>(buildDetails(txid, row.value(), *owner.result, owner.requests, job->unit, false)));
+                const auto txid = full->value(TxidRole).toString();
+                const auto previous = owner.previous ? owner.previous->snapshot->rows.find(id) : owner.building->rows.end();
+                const auto basis = owner.previous && owner.previous->snapshot->detail_source
+                    ? std::static_pointer_cast<const DetailSource>(owner.previous->snapshot->detail_source) : nullptr;
+                bool reuse = basis && previous != owner.previous->snapshot->rows.end() && previous->second == full;
+                if (reuse) {
+                    const auto old = basis->core->records.constFind(txid); const auto current = owner.result->records.constFind(txid);
+                    reuse = old != basis->core->records.cend() && current != owner.result->records.cend() && SameRowInput(old.value(), current.value());
+                }
+                if (!reuse) owner.building->details.insert_or_assign(txid, std::make_shared<const QVariantMap>(buildDetails(txid, *full, *owner.result, owner.requests, job->unit, false)));
             }
             --budget;
         } else if (owner.phase == 5) {
@@ -459,26 +543,34 @@ void TransactionActivityModel::project(const std::shared_ptr<Job>& job)
         } else {
             if (owner.new_row == owner.building->rows.end()) { owner.phase = 7; continue; }
             const auto& [id, full] = *owner.new_row++;
+            const auto old = owner.previous ? owner.previous->snapshot->rows.find(id) : owner.building->rows.end();
+            if (owner.previous && old != owner.previous->snapshot->rows.end() && old->second == full) { --budget; continue; }
             auto row = std::make_shared<const Row>(presentationRow(*full));
+            const auto amount = full->value(NetAmountSatRole).toLongLong();
+            const bool request = full->value(IsPendingRequestRole).toBool();
+            const activityview::Measure measure{request ? 0 : 1, request ? 1 : 0,
+                !request && full->value(IsPendingRole).toBool() ? amount : 0,
+                amount == std::numeric_limits<qint64>::min() ? std::numeric_limits<qint64>::max() : amount < 0 ? -amount : amount};
             const int position = activityview::Rank(owner.tree, id);
             const auto* previous = activityview::At(owner.tree, position);
             if (!previous || previous->id != id) {
-                owner.tree = activityview::Insert(owner.tree, id, row);
+                owner.tree = activityview::Insert(owner.tree, id, row, measure);
                 const bool request = row->value(IsPendingRequestRole).toBool();
                 owner.counts_changed = true;
                 owner.patches.push_back({activityview::Patch::Kind::Insert, position, owner.tree, {}, request ? 0 : 1, request ? 1 : 0});
             } else if (*previous->row != *row) {
                 QList<int> changed;
                 for (auto role = row->cbegin(); role != row->cend(); ++role) if (previous->row->value(role.key()) != role.value()) changed.append(role.key());
-                owner.tree = activityview::Insert(owner.tree, id, row);
+                owner.tree = activityview::Insert(owner.tree, id, row, measure);
                 owner.patches.push_back({activityview::Patch::Kind::Change, position, owner.tree, changed});
             }
             --budget;
         }
     }
     if (owner.phase == 7) {
-        owner.building->presentation = std::move(owner.tree); owner.view = std::move(owner.building);
-        owner.input.reset(); owner.previous.reset(); owner.request_matches.clear(); owner.fulfilled.clear(); owner.rows.clear();
+        owner.building->presentation = std::move(owner.tree); owner.building->statistics_valid = true; owner.view = std::move(owner.building);
+        owner.input.reset(); owner.previous.reset(); owner.previous_row = owner.new_row = {};
+        owner.request_matches.clear(); owner.fulfilled.clear(); owner.next_row = {};
         job->mailbox->publish(job); return;
     }
     const auto admitted = execution::Submit(*job->opening->scheduler(), [job] { project(job); }, [] {},

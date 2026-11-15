@@ -396,6 +396,8 @@ class TransactionActivityModelTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void oneChangedStatusReusesLargeNativeRowsAndFiltersOnlyItsExactDelta();
+    void fullHiddenSearchChangesInvalidateTheDeltaWithoutAGuiPreviewChange();
     void manualProjectionWaitsForOutcomeAndGuiDelivery();
     void manualStatusSnapshotPublishesOnlyAtGuiBoundary();
     void oldGuiWakeupCannotResurrectDeletedRows();
@@ -448,6 +450,47 @@ private Q_SLOTS:
     void recognizesSelfSendToPaymentRequest();
     void loadsFlowLazilyAndRefreshesOutputAssociations();
 };
+
+void TransactionActivityModelTests::oneChangedStatusReusesLargeNativeRowsAndFiltersOnlyItsExactDelta()
+{
+    ManualExecutionEnvironment env; auto original = std::make_shared<ActivityWallet>(); std::vector<interfaces::WalletTx> values;
+    for (int i{0}; i < 512; ++i) { auto tx = MakeTx({{100'000 + i, false}}, {{50'000 + i, true}}, 1'789'200'000 + i); original->put(tx, 6); values.push_back(std::move(tx)); }
+    ManualActivityFixture fixture{env, original}; fixture.settle(); auto* model = fixture.activity.get();
+    Proxy::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    Proxy proxy{services}; proxy.setSourceModel(model);
+    QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy(); }, 5000)); QCOMPARE(proxy.rowCount(), 512);
+    auto previous = model->preparedSnapshot(); QVERIFY(previous); const std::weak_ptr<const activityview::Snapshot> retired = previous->snapshot;
+    const QPersistentModelIndex retained{Find(*model, Id(values[10]))}; QVERIFY(retained.isValid());
+    original->statuses[values[300].tx->GetHash()].depth_in_main_chain = 7; model->refreshStatuses();
+    QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy() && !model->loading(); }, 5000));
+    const auto current = model->preparedSnapshot(); QVERIFY(current); QCOMPARE(current->snapshot->transformed_rows, size_t{1}); QCOMPARE(current->snapshot->changed_ids.size(), size_t{1});
+    size_t shared{0}; for (const auto& [id, row] : previous->snapshot->rows) if (current->snapshot->rows.at(id) == row) ++shared;
+    QCOMPARE(shared, size_t{511}); QVERIFY(proxy.lastWork().delta); QCOMPARE(proxy.lastWork().examined, size_t{1}); QCOMPARE(proxy.lastWork().prepared, size_t{1}); QVERIFY(proxy.lastWork().largestTurn <= size_t{128});
+    QVERIFY(retained.isValid()); QCOMPARE(retained.data(Model::TxidRole).toString(), Id(values[10])); QCOMPARE(proxy.rowCount(), 512); QCOMPARE(proxy.pendingBalanceSat(), CAmount{0});
+    previous.reset(); fixture.settle(); QVERIFY(retired.expired());
+    proxy.closeAdmission(); fixture.settle();
+}
+void TransactionActivityModelTests::fullHiddenSearchChangesInvalidateTheDeltaWithoutAGuiPreviewChange()
+{
+    ManualExecutionEnvironment env; auto original = std::make_shared<ActivityWallet>();
+    const auto changed = MakeTx({{100'000, false}}, {{50'000, true}});
+    const auto kept = MakeTx({{100'001, false}}, {{50'001, true, false, 2}});
+    original->put(changed); original->put(kept);
+    original->labels[Address(changed).toStdString()] = std::string(2048, 'x') + "oldTail";
+    ManualActivityFixture fixture{env, original}; fixture.settle(); auto* model = fixture.activity.get();
+    Proxy::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    Proxy proxy{services}; proxy.setSourceModel(model); proxy.setSearchText("newTail");
+    QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy(); }, 5000)); QCOMPARE(proxy.rowCount(), 0);
+    QSignalSpy previews{model, &QAbstractItemModel::dataChanged}; const auto before = model->preparedSnapshot();
+    original->labels[Address(changed).toStdString()] = std::string(2048, 'x') + "newTail";
+    Q_EMIT fixture.wallet->addressListChanged();
+    QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy() && !model->loading(); }, 5000));
+    const auto after = model->preparedSnapshot(); QCOMPARE(after->snapshot->transformed_rows, size_t{1}); QCOMPARE(after->snapshot->changed_ids.size(), size_t{1});
+    QCOMPARE(after->snapshot->rows.at("tx:" + Id(kept)), before->snapshot->rows.at("tx:" + Id(kept)));
+    QCOMPARE(previews.count(), 0); QCOMPARE(proxy.rowCount(), 1); QCOMPARE(proxy.index(0).data(Model::TxidRole).toString(), Id(changed));
+    QVERIFY(proxy.lastWork().delta); QCOMPARE(proxy.lastWork().examined, size_t{1});
+    proxy.closeAdmission(); fixture.settle();
+}
 
 void TransactionActivityModelTests::manualProjectionWaitsForOutcomeAndGuiDelivery()
 {

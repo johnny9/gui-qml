@@ -370,6 +370,7 @@ public:
     Q_INVOKABLE bool setDefaultReceiveAddressType(const QString& address_type);
     Q_INVOKABLE QString receiveAddressTypeLabel(const QString& address_type) const;
     Q_INVOKABLE quint64 requestImportPsbtFromFile(const QString& path);
+    std::shared_ptr<backup::InstallCoordinator> fileInstallCoordinator() const { return m_backup_services.coordinator; }
     Q_INVOKABLE quint64 requestSaveCurrentTransactionAsPsbt(const QString& path);
     PsbtActionState psbtActionState() const { return m_psbt_action_state; }
     quint64 psbtActionId() const { return m_psbt_action_id; }

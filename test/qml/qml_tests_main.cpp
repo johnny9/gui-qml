@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/texteditsessionmodel.h>
+#include <qml/models/activityexportoperation.h>
 #include <qml/receivetyperegistration.h>
 #include <qml/components/ownedqrimage.h>
 #include <qml/models/exacttextdocument.h>
@@ -1098,8 +1099,8 @@ class MockCoinsListModel : public QAbstractListModel
     Q_PROPERTY(bool lockPending READ lockPending CONSTANT)
     Q_PROPERTY(int markedCount READ markedCount NOTIFY marksChanged)
     Q_PROPERTY(bool marksPending READ marksPending CONSTANT)
-    Q_PROPERTY(qint64 availableMinAmount READ availableMinAmount CONSTANT)
-    Q_PROPERTY(qint64 availableMaxAmount READ availableMaxAmount CONSTANT)
+    Q_PROPERTY(qint64 availableMinAmount READ availableMinAmount NOTIFY viewChanged)
+    Q_PROPERTY(qint64 availableMaxAmount READ availableMaxAmount NOTIFY viewChanged)
     Q_PROPERTY(qint64 minAmount MEMBER m_min_amount NOTIFY viewChanged)
     Q_PROPERTY(qint64 maxAmount MEMBER m_max_amount NOTIFY viewChanged)
     Q_PROPERTY(int lockCalls READ lockCalls NOTIFY viewChanged)
@@ -1107,8 +1108,9 @@ class MockCoinsListModel : public QAbstractListModel
     Q_PROPERTY(int markCalls READ markCalls NOTIFY viewChanged)
 
 public:
-    qint64 availableMinAmount() const { return 100000; }
-    qint64 availableMaxAmount() const { return 300000; }
+    qint64 availableMinAmount() const { return m_available_min; }
+    qint64 availableMaxAmount() const { return m_available_max; }
+    Q_INVOKABLE void controlAvailableRange(qint64 minimum, qint64 maximum) { m_available_min = minimum; m_available_max = maximum; Q_EMIT viewChanged(); }
     int lockCalls() const { return m_lock_calls; }
     int markCalls() const { return m_mark_calls; }
     QStringList lastLockIds() const { return m_last_lock_ids; }
@@ -1371,6 +1373,7 @@ Q_SIGNALS:
     void changeAmountChanged();
 
 private:
+    qint64 m_available_min{100000}, m_available_max{300000};
     void emitAggregateSignals()
     {
         ++m_selection_revision;
@@ -5623,7 +5626,9 @@ class MockActivityFilterProxyModel : public QSortFilterProxyModel
     Q_OBJECT
     Q_PROPERTY(bool busy READ busy NOTIFY sourceStateChanged)
     Q_PROPERTY(QString error READ error NOTIFY sourceStateChanged)
+    Q_PROPERTY(ActivityExportOperation* exportOperation READ exportOperation NOTIFY exportChanged)
     Q_PROPERTY(bool exportBusy READ exportBusy NOTIFY exportChanged)
+    Q_PROPERTY(bool exportRejected READ exportRejected NOTIFY exportChanged)
     Q_PROPERTY(QString exportError READ exportError NOTIFY exportChanged)
     Q_PROPERTY(QString exportedPath READ exportedPath NOTIFY exportChanged)
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
@@ -5849,7 +5854,7 @@ public:
         qint64 result{0};
         if (sourceModel()) for (int i = 0; i < sourceModel()->rowCount(); ++i) {
             const auto row = sourceModel()->index(i, 0);
-            if (!namedData(row, "isPendingRequest").toBool()) result = qMax(result, qAbs(namedData(row, "netAmountSat").toLongLong()));
+            result = qMax(result, qAbs(namedData(row, "netAmountSat").toLongLong()));
         }
         return result;
     }
@@ -5895,7 +5900,10 @@ public:
         const auto* source = qobject_cast<MockTransactionActivityModel*>(sourceModel());
         return source ? source->activityError() : QString{};
     }
+    ActivityExportOperation* exportOperation() const { return nullptr; }
+    Q_INVOKABLE void clearDateFilter() { setDateFilter(DateAll); }
     bool exportBusy() const { return m_export_busy; }
+    bool exportRejected() const { return false; }
     QString exportError() const { return {}; }
     QString exportedPath() const { return m_export_path; }
     Q_INVOKABLE quint64 requestExportCsv(const QString& path) {
@@ -6640,6 +6648,8 @@ public:
     bool supportsApplicationFonts() const { return QGuiApplication::platformName() != QStringLiteral("minimal"); }
 
 public Q_SLOTS:
+    QString localeName() const { return QLocale{}.name(); }
+    void setLocale(const QString& name) { QLocale::setDefault(QLocale{name}); }
     QObject* watchDestruction(QObject* root) { return new DestructionReceipt(root, this); }
     void releaseDestructionWatch(QObject* receipt)
     {
@@ -6943,6 +6953,7 @@ public Q_SLOTS:
         qmlRegisterType<ReceiveQmlFixture>("org.bitcoincore.qt", 1, 0, "ControlledReceiveFixture");
         qmlRegisterType<OwnedQrImage>("org.bitcoincore.qt", 1, 0, "OwnedQrImage");
         qmlRegisterType<MockBitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
+        qmlRegisterUncreatableType<ActivityExportOperation>("org.bitcoincore.qt", 1, 0, "ActivityExportOperation", "Owned by the original export action");
         qmlRegisterType<MockActivityFilterProxyModel>("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel");
         qmlRegisterUncreatableType<MockTransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Test fixture");
         qmlRegisterUncreatableType<MockActivityDetailModel>("org.bitcoincore.qt",1,0,"ActivityDetailModel","Per-view factory");

@@ -13,6 +13,7 @@
 #include <qml/components/blockclockdial.h>
 #include <qml/controls/linegraph.h>
 #include <qml/models/activityfilterproxymodel.h>
+#include <qml/models/activityexportoperation.h>
 #include <qml/models/activitydetailmodel.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/models/backuppolicyoperation.h>
@@ -275,6 +276,7 @@ struct BitcoinAddressForeign {
     QML_NAMED_ELEMENT(BitcoinAddress)
 };
 
+struct ActivityExportOperationForeign { Q_GADGET QML_FOREIGN(ActivityExportOperation) QML_NAMED_ELEMENT(ActivityExportOperation) QML_UNCREATABLE("Owned by the original export action") };
 struct ActivityFilterProxyModelForeign {
     Q_GADGET
     QML_FOREIGN(ActivityFilterProxyModel)
