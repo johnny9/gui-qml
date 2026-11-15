@@ -14,6 +14,7 @@ namespace backup {
 struct OperationState {
     QString raw;
     Services services;
+    execution::ResourceKey serial;
     Snapshot current;
     enum class Admission { Open, Writing, Retired };
     std::atomic<Admission> admission{Admission::Open};
@@ -134,6 +135,7 @@ backup::Operation::Operation(QString raw, Services services, Publish publish)
 {
     m_state->raw = std::move(raw);
     m_state->services = std::move(services);
+    if (m_state->services.scheduler && !m_state->services.submit) m_state->serial = m_state->services.scheduler->allocateKey();
     m_state->publish = std::move(publish);
 }
 
@@ -144,7 +146,8 @@ bool backup::Operation::start()
     bool expected{false};
     if (!state->started.compare_exchange_strong(expected, true)) return false;
     const auto& services = state->services;
-    if (!services.scheduler || !services.post || !services.wallet_name || !services.inspect || !services.write) {
+    if (!services.scheduler || !services.post || !services.wallet_name || !services.inspect || !services.write ||
+        (!services.submit && state->serial == execution::ResourceKey{})) {
         failBeforeStart(Error::Transport);
         return false;
     }
@@ -179,7 +182,7 @@ bool backup::Operation::submit(Event event)
     if (!state || !state->services.scheduler) return false;
     const auto work = [state, event] { state->consume(event); };
     const auto admission = state->services.submit ? state->services.submit(work)
-        : execution::Submit(*state->services.scheduler, work, [] {});
+        : execution::Submit(*state->services.scheduler, work, [] {}, {}, {execution::Lane::Core, 512, state->serial, execution::WorkClass::Action});
     if (event == Event::Start) {
         state->admitted.store(bool(admission));
         if (!admission) failBeforeStart(Error::Transport);
@@ -208,7 +211,15 @@ void backup::Operation::retire()
     if (!state || !state->admitted.load()) return;
     auto expected = OperationState::Admission::Open;
     if (!state->admission.compare_exchange_strong(expected, OperationState::Admission::Retired)) return;
-    execution::Submit(*state->services.scheduler, [state] { state->consume(Event::Retire); }, [] {});
+    const auto work = [state] { state->consume(Event::Retire); };
+    if (state->services.submit) state->services.submit(work);
+    else execution::Submit(*state->services.scheduler, work, [] {}, {}, {execution::Lane::Core, 256, state->serial, execution::WorkClass::Action});
+}
+
+bool backup::Operation::retiredBeforeWrite() const
+{
+    const auto state = m_state;
+    return state && state->admission.load() == OperationState::Admission::Retired;
 }
 
 void backup::Operation::retireIfAwaitingConfirmation()

@@ -299,7 +299,7 @@ ColumnLayout {
                         CoreText { visible: coinRow.label.length > 0; Layout.fillWidth: true; text: coinRow.label; horizontalAlignment: Text.AlignLeft; font: Theme.text.subheading.font; wrap: false; elide: Text.ElideRight }
                     }
                     CoreText { visible: !root.coins || root.coins.groupBy !== "address"; Layout.fillWidth: true; text: coinRow.address; horizontalAlignment: Text.AlignLeft; font: Theme.text.monoCaption.font; color: Theme.color.neutral7; wrap: false; elide: Text.ElideMiddle }
-                    CoreText { Layout.fillWidth: true; text: Qt.formatDateTime(coinRow.date, "MMM d, h:mm AP"); horizontalAlignment: Text.AlignLeft; font: Theme.text.caption.font; color: Theme.color.neutral7; wrap: false }
+                    CoreText { objectName: "coinLocalizedDateTime"; Layout.fillWidth: true; text: Qt.formatDateTime(coinRow.date, Qt.locale(), Locale.ShortFormat); horizontalAlignment: Text.AlignLeft; font: Theme.text.caption.font; color: Theme.color.neutral7; wrap: false }
                 }
                 RowLayout {
                     spacing: 6
@@ -391,12 +391,6 @@ ColumnLayout {
     ContextMenu {
         id: amountPopup; parent: Overlay.overlay; objectName: "coinBrowserAmountFilterPopup"
         implicitWidth: Math.min(320, root.width)
-        onAboutToShow: {
-            const low = root.coins && root.coins.availableMinAmount !== undefined ? root.coins.availableMinAmount : 0
-            const high = root.coins && root.coins.availableMaxAmount !== undefined ? root.coins.availableMaxAmount : 0
-            amountSlider.setValues(root.coins && root.coins.minAmount >= 0 ? root.coins.minAmount : low,
-                                   root.coins && root.coins.maxAmount >= 0 ? root.coins.maxAmount : high)
-        }
         ColumnLayout {
             Layout.fillWidth: true
             Layout.margins: 12
@@ -404,8 +398,12 @@ ColumnLayout {
             BitcoinAmountDisplayLabel { Layout.fillWidth: true; text: qsTr("%1 to %2").arg(lowerAmountText.display).arg(upperAmountText.displayWithUnit); font: Theme.text.description.font; horizontalAlignment: Text.AlignLeft }
             RangeSlider {
                 id: amountSlider; objectName: "coinBrowserAmountRangeSlider"; Layout.fillWidth: true
-                minValue: root.coins && root.coins.availableMinAmount !== undefined ? root.coins.availableMinAmount : 0
-                maxValue: root.coins && root.coins.availableMaxAmount !== undefined ? root.coins.availableMaxAmount : 0
+                minValue: root.coins ? Math.min(root.coins.availableMinAmount,
+                                               root.coins.minAmount < 0 ? root.coins.availableMinAmount : root.coins.minAmount,
+                                               root.coins.maxAmount < 0 ? root.coins.availableMinAmount : root.coins.maxAmount) : 0
+                maxValue: root.coins ? Math.max(root.coins.availableMaxAmount, root.coins.minAmount, root.coins.maxAmount) : 0
+                selectedLower: root.coins && root.coins.minAmount >= 0 ? root.coins.minAmount : minValue
+                selectedUpper: root.coins && root.coins.maxAmount >= 0 ? root.coins.maxAmount : maxValue
                 Accessible.name: qsTr("Coin amount range")
                 first.onMoved: if (root.coins) root.coins.minAmount = Math.round(lowerValue)
                 second.onMoved: if (root.coins) root.coins.maxAmount = Math.round(upperValue)

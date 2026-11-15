@@ -62,6 +62,69 @@ TestCase {
         popup.close()
         tryCompare(popup, "opened", false)
     }
+    function test_open_coin_range_stays_bound_to_committed_amounts() {
+        const item = browser()
+        testCoinsListModel.minAmount = 150000
+        testCoinsListModel.maxAmount = 250000
+        mouseClick(findChild(item, "coinBrowserAmountFilterButton"))
+        const popup = findChild(testCase.Window.window.contentItem, "coinBrowserAmountFilterPopup")
+        tryCompare(popup, "opened", true)
+        const slider = findChild(popup.contentItem, "coinBrowserAmountRangeSlider")
+        try {
+            testCoinsListModel.controlAvailableRange(50000, 700000)
+            tryCompare(slider, "maxValue", 700000)
+            compare(slider.lowerValue, 150000)
+            compare(slider.upperValue, 250000)
+            testCoinsListModel.controlAvailableRange(50000, 100000)
+            compare(slider.maxValue, 250000)
+            compare(slider.lowerValue, 150000)
+            compare(slider.upperValue, 250000)
+            compare(testCoinsListModel.minAmount, 150000)
+            compare(testCoinsListModel.maxAmount, 250000)
+            compare(testCoinsListModel.lockCalls, 0)
+            compare(testCoinsListModel.markCalls, 0)
+        } finally {
+            testCoinsListModel.controlAvailableRange(100000, 300000)
+            popup.close()
+        }
+    }
+    function test_upper_only_range_below_available_minimum_keeps_the_committed_boundary() {
+        const item = browser()
+        testCoinsListModel.maxAmount = 50000
+        mouseClick(findChild(item, "coinBrowserAmountFilterButton"))
+        const popup = findChild(testCase.Window.window.contentItem, "coinBrowserAmountFilterPopup")
+        tryCompare(popup, "opened", true)
+        const slider = findChild(popup.contentItem, "coinBrowserAmountRangeSlider")
+        compare(slider.minValue, 50000)
+        compare(slider.upperValue, 50000)
+        compare(slider.lowerValue, 50000)
+        compare(testCoinsListModel.minAmount, -1)
+        compare(testCoinsListModel.maxAmount, 50000)
+        popup.close()
+    }
+    function test_coin_date_uses_the_localized_calendar_and_clock_data() {
+        return [{tag: "german-24-hour", locale: "de_DE"}, {tag: "us-12-hour", locale: "en_US"}]
+    }
+    function test_coin_date_uses_the_localized_calendar_and_clock(data) {
+        const previous = testSetup.localeName()
+        testSetup.setLocale(data.locale)
+        try {
+            const item = browser()
+            const row = findChild(item, "coinSelectionItem_0")
+            verify(row !== null)
+            const label = findChild(row, "coinLocalizedDateTime")
+            verify(label !== null)
+            const date = row.date
+            if (data.locale === "de_DE") {
+                verify(/\d{1,2}\.\d{1,2}\.\d{2,4}/.test(label.text), label.text)
+                verify(label.text.indexOf((date.getHours() < 10 ? "0" : "") + date.getHours() + ":") >= 0, label.text)
+                verify(!/(?:AM|PM)/.test(label.text))
+            } else {
+                verify(/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(label.text), label.text)
+                verify(/(?:AM|PM)/.test(label.text), label.text)
+            }
+        } finally { testSetup.setLocale(previous) }
+    }
     function test_wallet_marks_refusal_has_no_lock_effect_data() { return [{tag: "admitted", admitted: true}, {tag: "refused", admitted: false}] }
     function test_wallet_marks_refusal_has_no_lock_effect(data) {
         const item = browser()

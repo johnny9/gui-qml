@@ -154,7 +154,7 @@ Page {
                     amount: root.amount
                     amountColor: root.inactive ? Theme.color.neutral7 : root.incoming ? Theme.color.green : Theme.color.neutral9
                     subtitle: root.actionLabel + (root.transactionData.timestamp
-                        ? " · " + Qt.formatDateTime(new Date(root.transactionData.timestamp * 1000), "MMM d, h:mm AP") : "")
+                        ? " · " + Qt.formatDateTime(new Date(root.transactionData.timestamp * 1000), Qt.locale(), Locale.ShortFormat) : "")
                     iconComponent: ActivityIcon {
                         objectName: "transactionDetailIcon"
                         iconSize: 48

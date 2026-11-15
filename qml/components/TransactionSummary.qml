@@ -68,6 +68,7 @@ ColumnLayout {
         }
     }
     CoreText {
+        objectName: "transactionSummarySubtitle"
         visible: root.subtitle.length > 0
         Layout.fillWidth: true
         text: root.subtitle
