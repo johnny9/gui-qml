@@ -1,5 +1,12 @@
 # R15 fingerprint and discovery semantics
 
+User clarification, 2026-11-15: explicit device selection is not a requirement.
+Core/HWI handles the device specifics. A signer must be able to service the
+wallet's descriptors; the GUI must present an accurate selection/discovery
+process. Physical-device binding is outside this program's current scope.
+Preserve the pinned Core version's sole-connected-signer constraint; this does
+not promise automatic selection among multiple connected signers.
+
 The external-signer protocol's fingerprint identifies a master key origin. It
 is a short matching hint, not a physical-device identifier, a unique wallet ID
 or a cryptographic proof of identity. Devices holding the same seed share it.
