@@ -287,6 +287,20 @@ NodeModel::NodeModel(interfaces::Node& node, bool backend_ready, Services servic
     m_notifications->post = post;
     m_work_ledger->notify = [observer, post] { post([observer] { if (observer) observer->finishDrain(); }); };
     m_query_scheduler = std::make_shared<TrackedScheduler>(m_services.execution.scheduler, m_work_ledger);
+    m_peer_actions = new PeerCommandModel(node, {m_query_scheduler, post}, [this] {
+        return m_backend_queries_ready && m_subscriptions_ready && !m_admission_closed && !m_shutdown_requested && !m_workers_stopping;
+    }, this);
+    connect(m_peer_actions, &PeerCommandModel::changed, this, &NodeModel::peerActionChanged);
+    connect(this, &NodeModel::networkActionReadyChanged, m_peer_actions, [this] {
+        if (m_admission_closed || m_workers_stopping || m_shutdown_requested) m_peer_actions->closeAdmission();
+        else m_peer_actions->readinessChanged();
+    });
+    connect(this, &NodeModel::notificationsReadyChanged, m_peer_actions, &PeerCommandModel::readinessChanged);
+    connect(this, &NodeModel::chainStateReady, m_peer_actions, &PeerCommandModel::readinessChanged);
+    connect(m_peer_actions, &PeerCommandModel::finished, this, [this](quint64 ticket, PeerCommandOperation::Outcome outcome, const QString& error) {
+        if (!m_admission_closed && !m_workers_stopping && !m_shutdown_requested)
+            Q_EMIT peerActionFinished(ticket, static_cast<PeerActionOutcome>(outcome), error);
+    });
     m_retirement_scheduler = std::make_shared<TrackedScheduler>(m_services.execution.scheduler, m_work_ledger);
     m_notifications->scheduler = m_query_scheduler;
     m_notifications->diagnostic_loss = m_services.diagnostic_loss;
@@ -1177,60 +1191,12 @@ void NodeModel::initializeSubscriptions()
 
 quint64 NodeModel::requestDisconnectPeer(qint64 node_id)
 {
-    if (node_id < 0) return 0;
-    return startPeerAction([node = &m_node, node_id] {
-        const bool disconnected = node->disconnectById(node_id);
-        return PeerActionResult{disconnected ? PeerActionOutcome::Succeeded : PeerActionOutcome::Rejected,
-            disconnected ? QString{} : tr("The peer could not be disconnected. It may already be disconnected.")};
-    });
+    return m_peer_actions ? m_peer_actions->requestDisconnectPeer(node_id) : 0;
 }
 
 quint64 NodeModel::requestBanPeer(const QString& raw_address, int64_t duration)
 {
-    if (duration <= 0 || raw_address.isEmpty() || raw_address.size() > 512) return 0;
-    return startPeerAction([node = &m_node, raw_address, duration] {
-        const auto address = LookupHost(raw_address.toStdString(), false);
-        if (!address) return PeerActionResult{PeerActionOutcome::Rejected, tr("The peer address is invalid.")};
-        if (!node->ban(*address, duration)) return PeerActionResult{PeerActionOutcome::Rejected, tr("The peer could not be banned.")};
-        try {
-            // A ban that was applied remains applied even if disconnect fails.
-            node->disconnectByAddress(*address);
-        } catch (...) {
-            return PeerActionResult{PeerActionOutcome::PartiallyApplied,
-                tr("The ban was applied, but disconnecting the peer failed.")};
-        }
-        return PeerActionResult{PeerActionOutcome::Succeeded, {}};
-    });
-}
-
-quint64 NodeModel::startPeerAction(std::function<PeerActionResult()> effect)
-{
-    if (!networkActionReady() || m_peer_command) return 0;
-    const auto ticket = ++m_peer_ticket;
-    const QPointer<NodeModel> observer{this};
-    auto command = std::make_shared<execution::OwnedCommand<PeerActionResult>>(m_query_scheduler,
-        [observer, ticket, post = m_services.execution.post] {
-            post([observer, ticket] { if (observer) observer->publishPeerAction(ticket); });
-        });
-    m_peer_command = command;
-    if (!command->start(std::move(effect))) { m_peer_command.reset(); return 0; }
-    Q_EMIT peerActionChanged();
-    return ticket;
-}
-
-void NodeModel::publishPeerAction(quint64 ticket)
-{
-    if (ticket != m_peer_ticket || !m_peer_command) return;
-    const auto result = m_peer_command->result();
-    if (!result) return;
-    m_peer_command.reset();
-    if (m_admission_closed || m_workers_stopping || m_shutdown_requested) return;
-    const auto outcome = result->value.value_or(PeerActionResult{PeerActionOutcome::Uncertain,
-        tr("The peer action failed without a confirmed outcome. Refresh the peer and ban lists before retrying.")});
-    const QPointer<NodeModel> observer{this};
-    Q_EMIT peerActionChanged();
-    if (!observer || m_admission_closed) return;
-    Q_EMIT peerActionFinished(ticket, outcome.outcome, outcome.error);
+    return m_peer_actions ? m_peer_actions->requestBanPeer(raw_address, duration) : 0;
 }
 
 QVariantList NodeModel::nodeInformationRows()

@@ -69,6 +69,9 @@
 #include <qml/models/options_model.h>
 #include <qml/models/uipreferences.h>
 #include <qml/models/peerdetailsmodel.h>
+#include <qml/models/peercommandmodel.h>
+#include <qml/models/peercommandoperation.h>
+#include <qml/models/peerselectionmodel.h>
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/peerlistmodel.h>
 #include <qml/models/rpcconsolemodel.h>
@@ -346,6 +349,11 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<UiPreferencesStore>("org.bitcoincore.qt", 1, 0, "UiPreferencesStore", "Owned by the application engine");
     qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
     qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");
+    qmlRegisterUncreatableType<PeerCommandModel>("org.bitcoincore.qt", 1, 0, "PeerCommandModel", "Application peer commands");
+    qmlRegisterUncreatableType<PeerCommandOperation>("org.bitcoincore.qt", 1, 0, "PeerCommandOperation", "Captured peer command");
+    qmlRegisterType<PeerSelectionModel>("org.bitcoincore.qt", 1, 0, "PeerSelectionModel");
+    qRegisterMetaType<PeerCommandResult>();
+    qmlRegisterUncreatableMetaObject(PeerCommandResult::staticMetaObject, "org.bitcoincore.qt", 1, 0, "PeerCommandResult", "Retained peer result");
     qmlRegisterUncreatableType<NodeModel>("org.bitcoincore.qt", 1, 0, "NodeModel", "Provided by ApplicationModels");
     qmlRegisterAnonymousType<NativeListModel>("org.bitcoincore.qt", 1);
     qmlRegisterUncreatableMetaObject(SettingsSaveResult::staticMetaObject,"org.bitcoincore.qt",1,0,"SettingsSaveResult","Retained settings outcome");
@@ -990,6 +998,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         });
 
         PeerListModel peer_model{*node, nullptr, backend_ready, {node_model.queryScheduler(), {}}};
+        peer_model.setCommands(node_model.peerCommands());
+        shutdown_coordinator.addAdmissionFence([&] { node_model.peerCommands()->closeAdmission(); });
         shutdown_coordinator.addAdmissionFence([&] { peer_model.closeAdmission(); });
         QObject::connect(&node_model, &NodeModel::chainStateReady,
                          &peer_model, &PeerListModel::backendInitialized);
@@ -1003,6 +1013,11 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                          &ban_list_model, &BanListModel::refresh);
         QObject::connect(&node_model, &NodeModel::chainStateReady,
                          &ban_list_model, &BanListModel::backendInitialized);
+        QObject::connect(node_model.peerCommands(), &PeerCommandModel::finished, &peer_model,
+                         [&](quint64, PeerCommandOperation::Outcome outcome, const QString&) {
+            if (outcome == PeerCommandOperation::Outcome::Rejected || outcome == PeerCommandOperation::Outcome::Cancelled) return;
+            peer_model.refresh(); ban_list_model.refresh();
+        });
 
         QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::shutdownStarted, &peer_model, [&] {
             peer_model.beginShutdown();

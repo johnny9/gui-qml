@@ -44,6 +44,9 @@
 #include <qml/models/uipreferences.h>
 #include <qml/models/paymentrequest.h>
 #include <qml/models/peerdetailsmodel.h>
+#include <qml/models/peercommandmodel.h>
+#include <qml/models/peercommandoperation.h>
+#include <qml/models/peerselectionmodel.h>
 #include <qml/models/peerlistmodel.h>
 #include <qml/models/peerlistsortproxy.h>
 #include <qml/models/psbtqmlmodel.h>
@@ -184,6 +187,30 @@ struct PeerDetailsModelForeign {
     QML_FOREIGN(PeerDetailsModel)
     QML_NAMED_ELEMENT(PeerDetailsModel)
     QML_UNCREATABLE("Owned by the application")
+};
+
+struct PeerCommandModelForeign {
+    Q_GADGET
+    QML_FOREIGN(PeerCommandModel)
+    QML_NAMED_ELEMENT(PeerCommandModel)
+    QML_UNCREATABLE("Application peer commands")
+};
+struct PeerCommandOperationForeign {
+    Q_GADGET
+    QML_FOREIGN(PeerCommandOperation)
+    QML_NAMED_ELEMENT(PeerCommandOperation)
+    QML_UNCREATABLE("Captured peer command")
+};
+struct PeerCommandResultForeign {
+    Q_GADGET
+    QML_FOREIGN(PeerCommandResult)
+    QML_NAMED_ELEMENT(PeerCommandResult)
+    QML_UNCREATABLE("Retained peer result")
+};
+struct PeerSelectionModelForeign {
+    Q_GADGET
+    QML_FOREIGN(PeerSelectionModel)
+    QML_NAMED_ELEMENT(PeerSelectionModel)
 };
 
 struct DebugLogModelForeign {

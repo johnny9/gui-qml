@@ -66,6 +66,7 @@ Q_SIGNALS:
     void networkFiltersChanged(const QStringList& filters);
     void transportFiltersChanged(const QStringList& filters);
     void countChanged();
+    void admissionClosed();
 
 private:
     struct Input;
@@ -82,6 +83,7 @@ private:
     QStringList m_transport_filters;
     struct DetailCache;
     std::shared_ptr<DetailCache> m_details;
+    bool m_destroying{false};
 };
 
 #endif // BITCOIN_QML_MODELS_PEERLISTSORTPROXY_H
