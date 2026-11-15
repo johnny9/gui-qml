@@ -252,15 +252,17 @@ private Q_SLOTS:
     void unsupportedOrUnconfirmedPreferenceNeverClaimsPersistence_data()
     {
         QTest::addColumn<bool>("addresses"); QTest::addColumn<bool>("write_ok");
-        QTest::newRow("no-address-capability") << false << true;
-        QTest::newRow("write-failed") << true << false;
-        QTest::newRow("write-succeeded-readback-differs") << true << true;
+        QTest::addColumn<bool>("taproot");
+        QTest::newRow("no-address-capability") << false << true << true;
+        QTest::newRow("write-failed") << true << false << true;
+        QTest::newRow("write-succeeded-readback-differs") << true << true << true;
+        QTest::newRow("unsupported-taproot") << true << true << false;
     }
     void unsupportedOrUnconfirmedPreferenceNeverClaimsPersistence()
     {
-        QFETCH(bool, addresses); QFETCH(bool, write_ok);
+        QFETCH(bool, addresses); QFETCH(bool, write_ok); QFETCH(bool, taproot);
         ManualRoutedExecution commands, retirement;
-        auto native = std::make_shared<Wallet>(); native->addresses = addresses;
+        auto native = std::make_shared<Wallet>(); native->addresses = addresses; native->taproot = taproot;
         int writes{0};
         auto session = std::make_shared<walletopening::Session>(commands.scheduler, retirement.scheduler,
             std::make_shared<std::atomic_bool>(false), [] {}, walletopening::Session::Preferences{
@@ -268,12 +270,33 @@ private Q_SLOTS:
                 [&](const auto&, const auto&) { ++writes; return write_ok; }});
         const auto cleanup = qScopeGuard([&] { session->retire(); commands.drain(); retirement.drain(); });
         QVERIFY(session->start(native)); commands.drain(); session->take();
-        QVERIFY(session->setReceivePreference("legacy")); commands.drain();
+        QVERIFY(session->setReceivePreference(taproot ? "legacy" : "bech32m")); commands.drain();
         const auto result = session->take();
         QVERIFY(result && result->metadata && result->preference_saved);
         QVERIFY(!*result->preference_saved);
         QCOMPARE(result->metadata->receive_preference, std::string{"bech32"});
-        QCOMPARE(result->preference_revision, uint64_t{1}); QCOMPARE(writes, addresses ? 1 : 0);
+        QCOMPARE(result->metadata->can_get_addresses, addresses);
+        // R30 separates temporary aggregate keypool/unlock availability from
+        // per-type support. Unconfirmed readback never claims success; a known
+        // unsupported Taproot request still must not call the write port.
+        QCOMPARE(result->preference_revision, uint64_t{1}); QCOMPARE(writes, taproot ? 1 : 0);
+    }
+    void temporaryAddressUnavailabilityStillRequiresExactPreferenceReadback()
+    {
+        ManualRoutedExecution commands, retirement;
+        auto native = std::make_shared<Wallet>(); native->addresses = false;
+        std::string saved{"bech32"}; int writes{0};
+        auto session = std::make_shared<walletopening::Session>(commands.scheduler, retirement.scheduler,
+            std::make_shared<std::atomic_bool>(false), [] {}, walletopening::Session::Preferences{
+                [&](const auto&) { return saved; },
+                [&](const auto&, const auto& type) { ++writes; saved = type; return true; }});
+        const auto cleanup = qScopeGuard([&] { session->retire(); commands.drain(); retirement.drain(); });
+        QVERIFY(session->start(native)); commands.drain(); session->take();
+        QVERIFY(session->setReceivePreference("legacy")); commands.drain();
+        const auto result = session->take(); QVERIFY(result && result->metadata && result->preference_saved);
+        QVERIFY(*result->preference_saved); QCOMPARE(writes, 1); QCOMPARE(saved, std::string{"legacy"});
+        QVERIFY(!result->metadata->can_get_addresses);
+        QCOMPARE(result->metadata->receive_preference, std::string{"legacy"});
     }
     void failedStatusRefreshDoesNotInventTransactionWork()
     {
@@ -789,11 +812,37 @@ private Q_SLOTS:
         QVERIFY(model.setDefaultReceiveAddressType("legacy"));
         QVERIFY(model.setDefaultReceiveAddressType("bech32"));
         QCOMPARE(writes, 0);
-        QVERIFY(commands.step(Lane::Core)); QVERIFY(commands.step(Lane::Domain));
+        const auto write = [&](int expected) -> std::optional<execution::TaskId> {
+            for (int turn{0}; turn < 64 && writes < expected; ++turn) {
+                if (const auto id = commands.dispatchNext(Lane::Core)) {
+                    if (!commands.finishWork(*id)) return {};
+                    if (writes == expected) return id;
+                } else if (!commands.step(Lane::Domain)) break;
+            }
+            return {};
+        };
+        const auto consume = [&](execution::TaskId original) {
+            for (int turn{0}; turn < 64; ++turn) {
+                std::optional<ManualRoutedExecution::TurnInfo> front;
+                commands.queuedCountIf([&](const auto& value) {
+                    if (!front && value.lane == Lane::Domain) front = value;
+                    return false;
+                });
+                if (front && front->id == original && front->phase != execution::Phase::OutcomeReady) return false;
+                if (!front || !commands.step(Lane::Domain)) return false;
+                if (front->id == original) return true;
+            }
+            return false;
+        };
+        const auto first = write(1); QVERIFY(first); QVERIFY(consume(*first));
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         QCOMPARE(writes, 1);
         QVERIFY(model.property("receivePreferencePending").toBool());
-        QVERIFY(commands.step(Lane::Core)); QVERIFY(commands.step(Lane::Domain));
+        const auto second = write(2); QVERIFY(second);
+        // Metadata publication can enqueue other Domain work. Native success
+        // alone cannot settle pending: consume the exact second write outcome.
+        QVERIFY(model.property("receivePreferencePending").toBool());
+        QVERIFY(consume(*second));
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         QCOMPARE(writes, 2);
         QVERIFY(!model.property("receivePreferencePending").toBool());

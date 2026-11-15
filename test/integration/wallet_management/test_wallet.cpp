@@ -1024,14 +1024,27 @@ private Q_SLOTS:
         QVERIFY(directory.isValid());
         QFile invalid{directory.filePath("invalid.bak")};
         QVERIFY(invalid.open(QIODevice::WriteOnly));
-        QVERIFY(invalid.write("not a wallet backup") > 0);
+        const QByteArray original{"not a wallet backup"};
+        QCOMPARE(invalid.write(original), original.size());
         invalid.close();
         auto* wizard = qmltest::Find(m_app, "createWalletWizard");
         QVERIFY(wizard);
         QVERIFY(QMetaObject::invokeMethod(wizard, "importFile", Q_ARG(QVariant, invalid.fileName())));
         QVERIFY(qmltest::WaitForVisible(m_app, "walletImportErrorPage"));
         QVERIFY(!controller->walletLoadError().isEmpty());
-        QCOMPARE(qmltest::Find(m_app, "importWalletErrorTitle")->property("text").toString(), QStringLiteral("This wallet type is not supported"));
+        auto* operation = controller->creationOperation(); QVERIFY(operation);
+        QTRY_VERIFY(operation->terminal());
+        QCOMPARE(operation->kind(), WalletOperationModel::Restore);
+        QCOMPARE(operation->phase(), WalletOperationModel::Failed);
+        QCOMPARE(operation->error().code, QStringLiteral("UnsupportedBackup"));
+        QCOMPARE(operation->source().path(), invalid.fileName());
+        QVERIFY(operation->outcomeKnown());
+        QCOMPARE(operation->result().effect, WalletOperationResult::NoEffect);
+        QVERIFY(!operation->resultWallet()); QVERIFY(!operation->canOpenResult());
+        // Invalid database bytes are not a SingleKey/MultiKey policy claim.
+        // R13 rejects the bounded format hint before any restore mutation and
+        // projects that exact owned failure, preserving the original source.
+        QCOMPARE(qmltest::Find(m_app, "importWalletErrorTitle")->property("text").toString(), QStringLiteral("This wallet backup could not be opened"));
         QTRY_VERIFY(!controller->walletImportErrorPending());
         QVERIFY(controller->walletImportErrorProjectionError().isEmpty());
         auto* help = controller->walletImportErrorHelpModel(); QVERIFY(help);
@@ -1039,7 +1052,8 @@ private Q_SLOTS:
         QString details;
         for (int row{0}; row < help->rowCount(); ++row)
             details += help->data(help->index(row, 0), Qt::UserRole).toString() + QLatin1Char('\n');
-        QVERIFY2(details.contains("Data is not in recognized format."), qPrintable(details));
+        QVERIFY2(details.contains("The selected file does not have a supported wallet database header. The original file was not changed."), qPrintable(details));
+        QCOMPARE(BackupBytes(invalid.fileName()), original);
         QVERIFY(!QFileInfo::exists(QString::fromStdString(m_app.node().walletLoader().getWalletDir()) + "/invalid"));
         QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
     }

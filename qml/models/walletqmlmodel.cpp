@@ -591,10 +591,13 @@ void WalletQmlModel::initializeOpening()
         }, std::move(preferences), std::chrono::steady_clock::now, m_admission_closed.shared(), m_opening_native_events);
     const QPointer<WalletQmlModel> approval_observer{this};
     const auto approval_post = presentation::ReliablePost(m_fee_read_services.post);
-    const auto approval_gate = m_sending_commit;
+    const auto approval_gate = m_approval_running;
     m_signer_approval_operation = std::make_shared<walletsigning::ApprovalOwner>(m_opening,
         [approval_observer, approval_post, approval_gate](walletsigning::ApprovalSnapshot snapshot) mutable {
-            if (!snapshot.in_flight) approval_gate->store(false);
+            if (!snapshot.in_flight && snapshot.attempt_id) {
+                auto original = static_cast<quint64>(snapshot.attempt_id);
+                approval_gate->compare_exchange_strong(original, 0);
+            }
             approval_post([approval_observer, snapshot = std::move(snapshot)]() mutable {
                 if (approval_observer) approval_observer->publishApproval(std::move(snapshot));
             });
@@ -1422,7 +1425,7 @@ WalletQmlModel::ApprovalState WalletQmlModel::signerApprovalState() const
 
 bool WalletQmlModel::signerApprovalBusy() const
 {
-    return m_approval_local_pending || (m_approval_projection && m_approval_projection->in_flight);
+    return m_approval_running->load() || m_approval_local_pending || (m_approval_projection && m_approval_projection->in_flight);
 }
 
 QString WalletQmlModel::signerUnverifiedResultToken() const
@@ -2856,9 +2859,13 @@ quint64 WalletQmlModel::approveExternalSignerTransaction()
             observer->m_current_review_identity == review_id && observer->m_psbt_view_epoch == view &&
             review->getWtx() == reviewed;
     };
-    const auto gate = m_sending_commit;
-    if (gate->exchange(true)) return 0;
-    auto release = qScopeGuard([gate] { gate->store(false); });
+    const auto gate = m_approval_running;
+    quint64 no_approval{0};
+    if (!gate->compare_exchange_strong(no_approval, ticket)) return 0;
+    auto release = qScopeGuard([gate, ticket] {
+        auto original = ticket;
+        gate->compare_exchange_strong(original, 0);
+    });
 
     observer->m_approval_attempt_review = review_id;
     observer->m_approval_attempt_view = view;

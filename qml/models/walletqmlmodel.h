@@ -583,6 +583,7 @@ private:
     bool m_sent_labels_pending{false};
     QString m_sent_labels_error, m_sent_labels_txid;
     const std::shared_ptr<std::atomic_bool> m_sending_commit{std::make_shared<std::atomic_bool>(false)};
+    const std::shared_ptr<std::atomic<quint64>> m_approval_running{std::make_shared<std::atomic<quint64>>(0)};
     quint64 m_send_request_id{0};
     quint64 m_send_review_id{0};
     void clearTransactionStatus();

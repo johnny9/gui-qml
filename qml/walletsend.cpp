@@ -603,6 +603,16 @@ void Operation::complete(Result result)
         std::lock_guard lock{m_mutex};
         if (m_result) return;
         if (!result.candidate) result.candidate = m_request.reviewed;
+        if (result.candidate) {
+            result.candidate_txid = result.candidate->GetHash();
+            result.candidate_wtxid = result.candidate->GetWitnessHash();
+        }
+        if (!result.committed && !result.signed_transaction && !result.document && !result.quarantined_document) {
+            // No returned artifact needs Native retention. The original
+            // review remains with its view until retirement; retaining this
+            // bounded failure receipt cannot retain that view's lease.
+            result.candidate.reset();
+        }
         m_stage = Stage::Finished;
         result.publication_failed |= m_publication_failed;
         m_result = std::move(result);

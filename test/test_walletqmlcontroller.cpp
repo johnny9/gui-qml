@@ -164,6 +164,7 @@ public:
     int get_wallets_calls{0};
     int list_wallet_dir_calls{0};
     int load_wallet_calls{0};
+    std::atomic<int> get_wallet_dir_calls{0};
     std::string wallet_dir;
 
     std::function<util::Result<std::unique_ptr<interfaces::Wallet>>(const std::string&, const SecureString&, uint64_t, std::vector<bilingual_str>&)>
@@ -214,7 +215,7 @@ public:
         return load_wallet_fn(name, warnings);
     }
     std::atomic<QThread*> directory_path_thread{nullptr};
-    std::string getWalletDir() override { directory_path_thread.store(QThread::currentThread()); return wallet_dir; }
+    std::string getWalletDir() override { ++get_wallet_dir_calls; directory_path_thread.store(QThread::currentThread()); return wallet_dir; }
     util::Result<std::unique_ptr<interfaces::Wallet>> restoreWallet(const fs::path& source, const std::string& target, std::vector<bilingual_str>& warnings, bool load) override
     {
         ++restore_wallet_calls;
@@ -1929,7 +1930,7 @@ void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement()
     QFETCH(bool, destroy_owner);
     QFETCH(int, signal_index);
     FakeWallet::State state;
-    std::atomic<int> signer_reads{0}, unexpected_settings{0}, gui_metadata_reads{0};
+    std::atomic<int> signer_reads{0}, signer_gui_reads{0}, unexpected_settings{0}, gui_metadata_reads{0};
     StrictMockNode node;
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     FakeWalletLoader loader;
@@ -1939,6 +1940,7 @@ void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement()
         node.get_persistent_setting_fn = [&](const std::string& name) {
             if (name == "signer") {
                 ++signer_reads;
+                if (QThread::currentThread() == qApp->thread()) ++signer_gui_reads;
                 return signal_index == 6 ? common::SettingsValue{std::string{"synthetic-signer"}} : common::SettingsValue{};
             }
             if (name == "qml_receive_address_types") {
@@ -1949,7 +1951,9 @@ void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement()
         node.force_setting_fn = [](const std::string&, const common::SettingsValue&) {};
         node.list_external_signers_fn = [] { return std::vector<std::unique_ptr<interfaces::ExternalSigner>>{}; };
         node.get_dust_relay_fee_fn = [] { return CFeeRate{3000}; };
-        node.ExpectExactly(node.calls.walletLoader, 2);
+        // Registration + the single startup getter + canonical-identity path.
+        // The public getWalletDir read is not another inventory recapture.
+        node.ExpectExactly(node.calls.walletLoader, 3);
         const int signer_calls = 0;
         node.ExpectAtLeast(node.calls.getPersistentSetting, signer_calls);
         node.ExpectExactly(node.calls.forceSetting, signer_calls);
@@ -1973,9 +1977,17 @@ void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement()
         QTRY_VERIFY(drained);
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         if (initial) {
-            QCOMPARE(signer_reads.load(), 0);
+            // R15 independently admits the configuration read before device
+            // discovery. A read already running may finish after retirement;
+            // the injected discovery turn itself remains held and never runs.
+            QVERIFY(signer_reads.load() <= (signal_index >= 6 ? 1 : 0));
+            QCOMPARE(signer_gui_reads.load(), 0);
             QCOMPARE(unexpected_settings.load(), 0);
             QCOMPARE(gui_metadata_reads.load(), 0);
+            QCOMPARE(loader.handle_load_wallet_calls, 1);
+            QCOMPARE(loader.get_wallets_calls, 1);
+            QCOMPARE(loader.get_wallet_dir_calls.load(), 1);
+            QVERIFY(loader.directory_path_thread.load() != qApp->thread());
         }
     });
     if (!initial) {
@@ -1999,7 +2011,10 @@ void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement()
         interrupted = true;
         if (initial && signal_index >= 6) {
             original_signer_observation_held = (signer_environment.queuedCountIf([](const auto& turn) {
-                return turn.lane == execution::Lane::Core && turn.phase == execution::Phase::Queued;
+                // R15 requests enter a non-inline Domain planning turn before
+                // acquiring Core/process work; either original stage is held.
+                return (turn.lane == execution::Lane::Domain || turn.lane == execution::Lane::Core)
+                    && turn.phase == execution::Phase::Queued;
             }) != 0);
         }
         if (destroy_owner) controller.reset();
@@ -2218,23 +2233,39 @@ void WalletQmlControllerTests::createErrorProjectionRetainsNativeDocumentAndFenc
     QCOMPARE(complete, original);
     QVERIFY(controller.m_command->result()->value->effect_succeeded);
     bool successor{false};
+    std::atomic<int> rejected_effects{0};
     const auto reentrant = connect(&controller, &WalletQmlController::walletCreateErrorChanged, &controller, [&] {
         if (std::exchange(successor, true)) return;
-        QVERIFY(controller.submitWalletCommand([] {
-            WalletQmlController::CommandResult result; result.error = QStringLiteral("Successor failure"); return result;
-        }, [&controller](const auto& result) { controller.setWalletCreateError(result.error); }, [](auto) {}));
+        // R11's original137/284 contract forbids a new Core command from a
+        // partially published terminal result. Presentation can reenter, but
+        // cannot replace the owned command or its remaining error projection.
+        QVERIFY(!controller.submitWalletCommand([&] {
+            ++rejected_effects;
+            return WalletQmlController::CommandResult{};
+        }, [](const auto&) {}, [](auto) {}));
     });
     QVERIFY(controller.submitWalletCommand([] {
         WalletQmlController::CommandResult result; result.error = QStringLiteral("Superseded failure"); return result;
     }, [&controller](const auto& result) {
-        controller.setWalletCreateError(result.error); // Signal admits the successor and replaces member callbacks.
-        controller.setWalletLoadError(result.error); // Remaining old publication must not capture a successor receipt.
+        controller.setWalletCreateError(result.error);
+        controller.setWalletLoadError(result.error);
     }, [](auto) {}));
     QTRY_VERIFY(successor);
     QVERIFY(AwaitWalletOperation(controller));
+    QCOMPARE(rejected_effects.load(), 0);
+    QCOMPARE(controller.walletCreateError(), QStringLiteral("Superseded failure"));
+    QCOMPARE(controller.walletLoadError(), QStringLiteral("Superseded failure"));
+    disconnect(reentrant);
+    // A fresh explicit action is allowed after the entire original result is
+    // published. Clearing its scoped load status is the normal load admission
+    // behavior, rather than admitting a replacement inside the old callback.
+    controller.clearWalletLoadStatus();
+    QVERIFY(controller.submitWalletCommand([] {
+        WalletQmlController::CommandResult result; result.error = QStringLiteral("Successor failure"); return result;
+    }, [&controller](const auto& result) { controller.setWalletCreateError(result.error); }, [](auto) {}));
+    QVERIFY(AwaitWalletOperation(controller));
     QCOMPARE(controller.walletCreateError(), QStringLiteral("Successor failure"));
     QVERIFY(!controller.walletLoadHasError());
-    disconnect(reentrant);
     controller.closeAdmission(); QCOMPARE(details->rowCount(), 0);
 }
 

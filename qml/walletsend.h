@@ -57,6 +57,11 @@ struct Request {
 };
 struct Result {
     Error error{Error::None};
+    // Immutable outcome identity is independent of a borrowed review value.
+    // A failed operation with no new Native artifact retains these facts,
+    // without keeping the original presentation's cleanup lease alive.
+    Txid candidate_txid{};
+    Wtxid candidate_wtxid{};
     CTransactionRef committed{};
     CTransactionRef candidate{};
     CTransactionRef signed_transaction{};

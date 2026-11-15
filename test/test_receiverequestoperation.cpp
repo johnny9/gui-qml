@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/walletqmlmodel.h>
+#include <qml/walletsettings.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/mocks/mockwallet.h>
 #include <test/qt_test_registry.h>
@@ -70,7 +71,13 @@ struct Fixture {
     std::unique_ptr<WalletQmlModel> model{new WalletQmlModel{
         WalletQmlModel::SharedWallet{wallet, env.scheduler, "request-consumer"}, nullptr,
         FeeReadServices{}, psbtfee::Services{}, backup::Services{}}};
-    Fixture() { QSettings settings; settings.remove("receiveAddressTypes/request-consumer"); settings.sync(); }
+    Fixture()
+    {
+        QSettings settings;
+        settings.remove("receiveAddressTypes/request-consumer");
+        settings.remove(walletsettings::EntryKey(walletsettings::Area::Reservations, QStringLiteral("request-consumer")));
+        settings.sync();
+    }
     void settle()
     {
         // A live projection owns idle cleanup reservations. Those count toward
@@ -128,7 +135,10 @@ private Q_SLOTS:
     void qrExportUsesTheOriginalOpeningAndBackgroundWriter()
     {
         Fixture f; f.settle(); QVERIFY(f.model->loadPaymentRequestDetail("1"));
+        // Only the selected request, not every history row, formats its URI.
+        f.settle();
         auto* request = f.model->detailPaymentRequest();
+        QVERIFY(!request->qrPayload().isEmpty());
         QTemporaryDir directory; QVERIFY(directory.isValid());
         const QString path = directory.path() + QStringLiteral("/request.png");
         QImage image{32, 32, QImage::Format_ARGB32}; image.fill(Qt::blue);
@@ -145,6 +155,8 @@ private Q_SLOTS:
     void queuedQrExportRejectsNewNativeFactsBeforeGuiNotification()
     {
         Fixture f; f.settle(); QVERIFY(f.model->loadPaymentRequestDetail("1"));
+        f.settle();
+        QVERIFY(!f.model->detailPaymentRequest()->qrPayload().isEmpty());
         QTemporaryDir directory; QVERIFY(directory.isValid());
         const QString path = directory.path() + QStringLiteral("/stale.png");
         QImage image{32, 32, QImage::Format_ARGB32}; image.fill(Qt::blue);
@@ -262,8 +274,14 @@ private Q_SLOTS:
     {
         Fixture f; f.settle(); QVERIFY(f.model->loadPaymentRequest("1"));
         const QString expected = QStringLiteral("bitcoin:") + Address() + QStringLiteral("?amount=0.00000100&label=public&message=message");
-        QCOMPARE(f.model->currentPaymentRequest()->qrPayload(), expected);
+        // Selected formatting is asynchronous. The address-only formatter
+        // queued before all stored fields cannot publish as the final URI.
+        QVERIFY(f.model->currentPaymentRequest()->qrPayload().isEmpty());
+        f.env.drain(); QVERIFY(f.model->currentPaymentRequest()->qrPayload().isEmpty());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(f.model->currentPaymentRequest()->qrPayload().isEmpty());
         f.settle(); QCOMPARE(f.model->currentPaymentRequest()->qrPayload(), expected);
+        QCOMPARE(f.wallet->loads, 1); QCOMPARE(f.wallet->writes, 0); QCOMPARE(f.wallet->generated, 0);
     }
     void clearAndPaymentRetireEarlierUriResults_data()
     {
