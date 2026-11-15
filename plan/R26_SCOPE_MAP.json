@@ -1,0 +1,87 @@
+{
+  "app": "e94e4397a209bfdabbdcb1db4bf8eb45da4fcbd7",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "scope": "Component evidence mapping; root owns canonical scope closure and consumer composition",
+  "scopes": [
+    {
+      "scope": "draft-002-RC20",
+      "component_status": "R26 focused Source/target/explicit consumer qualified",
+      "selectors": [
+        "PaymentImportTests::sourceAndTargetExecutorsKeepSeparateDecisions",
+        "PaymentImportTests::changedTargetRetiresOldReplacementAndRequiresFreshConsent",
+        "WalletQmlModelTests::heldAtomicImportCannotReuseTheEarlierReviewedSend"
+      ],
+      "evidence": "evidence/R26_FOCUSED.json",
+      "followup": "R27 clipboard/chooser/drop cross-consumers; R40 native delivery where applicable; R42 exhaustive qualification"
+    },
+    {
+      "scope": "draft-004-RC20",
+      "component_status": "R26 focused Source/target/explicit consumer qualified",
+      "selectors": [
+        "PaymentImportTests::actualDraftReceiptSurvivesSourceDismissalAndQuietTargetClose",
+        "SendCreate::test_reentrant_uri_projection_cannot_finish_in_replacement_view"
+      ],
+      "evidence": "evidence/R26_FOCUSED.json",
+      "followup": "R27 clipboard/chooser/drop cross-consumers; R40 native delivery where applicable; R42 exhaustive qualification"
+    },
+    {
+      "scope": "draft-005-RC20",
+      "component_status": "R26 focused Source/target/explicit consumer qualified",
+      "selectors": [
+        "PaymentImportTests::unknownAfterCloseKeepsOriginalChildAndReadOnlyRecovery",
+        "PaymentImportTests::knownOutcomeRetainedUntilAcknowledgeAdmission",
+        "PaymentImportTests::replacedTargetCannotReceiveOldObservation"
+      ],
+      "evidence": "evidence/R26_FOCUSED.json",
+      "followup": "R27 clipboard/chooser/drop cross-consumers; R40 native delivery where applicable; R42 exhaustive qualification"
+    },
+    {
+      "scope": "draft-107-RC20",
+      "component_status": "R26 focused Source/target/explicit consumer qualified",
+      "selectors": [
+        "PaymentImportTests::realTypedConsumerUsesPublicReviewFactoryAndOriginalView",
+        "PaymentImportTests::lostReviewFactoryAcknowledgmentQueriesOriginalResultWithoutReplay"
+      ],
+      "evidence": "evidence/R26_FOCUSED.json",
+      "followup": "R27 clipboard/chooser/drop cross-consumers; R40 native delivery where applicable; R42 exhaustive qualification"
+    },
+    {
+      "scope": "draft-246-RC20",
+      "component_status": "R26 focused Source/target/explicit consumer qualified",
+      "selectors": [
+        "PaymentImportTests::psbtTargetSwitchDuringAnalysisAndClosedTargetKeepsOriginalFactory",
+        "PaymentImportTests::originalExportRequiresMatchingSourceToken",
+        "SendCreate::test_uri_probe_is_fenced_by_draft_and_visibility"
+      ],
+      "evidence": "evidence/R26_FOCUSED.json",
+      "followup": "R27 clipboard/chooser/drop cross-consumers; R40 native delivery where applicable; R42 exhaustive qualification"
+    },
+    {
+      "scope": "draft-312-D312",
+      "component_status": "R26 focused Source/target/explicit consumer qualified",
+      "selectors": [
+        "PaymentImportTests::readerKeepsPublicMetadataSeparateFromPrivateNote",
+        "PaymentImportTests::batchProtectsPrivateNoteAndPreservesOmittedMaximumIntent",
+        "PaymentImportIntegrationTests::typedExplicitImportPreservesPrivateNoteAndPublicMetadata"
+      ],
+      "evidence": "evidence/R26_FOCUSED.json",
+      "followup": "R27 clipboard/chooser/drop cross-consumers; R40 native delivery where applicable; R42 exhaustive qualification"
+    },
+    {
+      "scope": "draft-001-RC16",
+      "component_status": "R26 focused Source/target/explicit consumer qualified",
+      "selectors": [
+        "BitcoinUriModelTests::probeTreatsMaximumAsAnAmountIntent",
+        "PaymentImportTests::draftLedgerCommitsCompleteBatchOnceAndRetainsOriginalReceipt",
+        "PaymentImportIntegrationTests::equalImportedAmountReplacesMaximumIntentWithoutChangingTheRequest"
+      ],
+      "evidence": "evidence/R26_FOCUSED.json",
+      "followup": "R27 clipboard/chooser/drop cross-consumers; R40 native delivery where applicable; R42 exhaustive qualification"
+    }
+  ],
+  "ordering": {
+    "O11": "changedTargetRetiresOldReplacementAndRequiresFreshConsent + original view/recipient controls; native delivery redelivery staysR40",
+    "O29": "psbtTargetSwitchDuringAnalysisAndClosedTargetKeepsOriginalFactory + lostReviewFactoryAcknowledgmentQueriesOriginalResultWithoutReplay",
+    "O30": "actualDraftReceiptSurvivesSourceDismissalAndQuietTargetClose + draftLedgerCommitsCompleteBatchOnceAndRetainsOriginalReceipt; outer native receipt composition staysR40"
+  }
+}

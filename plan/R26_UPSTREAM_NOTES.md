@@ -1,4 +1,4 @@
-# R26 public review adapter upstream note (draft; focused gate pending)
+# R26 public review adapter upstream note (focused qualification complete)
 
 Core pin44901d8f64cb617714707bd025ecd83f108353c2 remains unchanged. M26's source reader, local draft command ledger and view ownership are application responsibilities; atomic local URI replacement requires no Wallet API addition.
 
@@ -8,4 +8,4 @@ This is an optional upstream improvement for M26, not a request to change Core o
 
 A future public typed read-only review API should document snapshot/known-status/fee/capability consistency and preserve exact source bytes while returning a separate assessment. Suggested upstream tests: metadata/status changes during inspection, known transactions whose final txid differs from unsigned id, missing/forged prevouts, standard/nonstandard outputs, unsupported scripts, incomplete and verified complete signatures, independent RPC changes and shutdown. Replace the app composition only after the pinned public contract provides equivalent guarantees and independent focused Core/RPC tests pass. Keep the app's source and view lifecycle fences and explicit final command boundary.
 
-Evidence is pending R26 focused qualification. No acceptance or source gate is established by this draft.
+Focused app evidence is recorded in [R26 receipt](evidence/R26_FOCUSED.json) at e94e4397a209bfdabbdcb1db4bf8eb45da4fcbd7. The source/target/explicit consumer component passed192 ordinary bodies, pinned lint/tidy, QML compatibility checks and IPC lifecycle controls. R27 consumer migration and the deferred R42 qualification remain separate. Export preserves the captured original parsed PSBT value through Core serialization; this is not a promise to preserve noncanonical input wire ordering.

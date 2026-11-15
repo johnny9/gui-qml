@@ -482,4 +482,4 @@ unsigned commitments, a Native-retained per-child outcome and original
 opening/review/view guards. This API improvement is optional for M26: no Core
 edit is required for independent source inspection or atomic local draft
 replacement. Later signing/submission retains its separate protected checks.
-Focused R26 acceptance remains pending its final receipt.
+The [focused R26 receipt](evidence/R26_FOCUSED.json) qualifies the Source/target/explicit consumer component; R27 and R42 remain separate.
