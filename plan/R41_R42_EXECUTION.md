@@ -2,8 +2,9 @@
 
 Work starts at app `f1c03c3dfccd42f4b89f0322e08d5de5d60f95a1`, stock Core
 `44901d8f64cb617714707bd025ecd83f108353c2`. Evidence is retained under workspace
-`.validation/qt6-r41-r42-20261115/`. R41 is active; R42 execution waits for its
-focused gate. R11–R40 focused acceptance remains distinct from final acceptance.
+`.validation/qt6-r41-r42-20261115/`. R41 is focused accepted at `90abf2fdd92`;
+R42 final qualification is active. R11–R41 focused acceptance remains distinct
+from final acceptance. See [R41 evidence](R41_FOCUSED_ACCEPTANCE.md).
 
 R41 audits old methods, members, callbacks and QML callers against their current
 owners and original test requirements. Only fully migrated paths are removed.
