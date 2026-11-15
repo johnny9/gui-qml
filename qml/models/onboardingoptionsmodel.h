@@ -87,7 +87,7 @@ public:
         profileinspection::Port inspect = {});
     ~OnboardingOptionsModel() override;
 
-    enum PreparationState {PreparationIdle,PreparationPending,PreparationSucceeded,PreparationFailed,PreparationUncertain};
+    enum PreparationState {PreparationIdle,PreparationPending,PreparationSucceeded,PreparationFailed,PreparationUncertain,PreparationForwarded};
     Q_ENUM(PreparationState)
     Q_PROPERTY(PreparationState preparationState READ preparationState NOTIFY preparationStateChanged)
     PreparationState preparationState() const {return PreparationState(m_preparation_state->load());}
@@ -119,6 +119,9 @@ public:
     std::shared_ptr<const std::atomic<int>> setupCommitReceipt()const{return m_setup_commit;}
     // Keep args and the preparation callback's dependencies alive until nodePrepared.
     void prepareNode(ArgsManager& args, std::function<bool()> prepare_node);
+    // Bounded commands into a stable asynchronous preparation owner. Native
+    // transport must not belong to this transient onboarding executor.
+    void prepareNodeAsync(ArgsManager& args, onboarding::AsyncPreparation preparation);
 
     void beginShutdown();
     void closeAdmission();
@@ -189,6 +192,7 @@ public:
 
 Q_SIGNALS:
     void nodePrepared(bool success, const QString& error);
+    void nodePreparationFinished(PreparationState outcome, const QString& error);
     void setupCommitChanged();
     void settingsCommitted();
     void preparationStateChanged();

@@ -6,13 +6,14 @@
 
 #include <qml/onboarding_settings.h>
 #include <qml/snapshotquery.h>
+#include <qml/startuppreparation.h>
 
 #include <functional>
 #include <memory>
 #include <optional>
 
 namespace onboarding {
-enum class Phase {Drafting, Checking, Ready, Persisting, PreparingNode, Completed, Failed, Closing, Closed, Reconciling};
+enum class Phase {Drafting, Checking, Ready, Persisting, PreparingNode, Completed, Failed, Closing, Closed, Reconciling, Forwarded};
 struct Checks {
     uint64_t revision{0};
     bool preview{false}, storage{false}, effective{false};
@@ -35,6 +36,7 @@ public:
     bool beginCompletion();
     bool beginPreparation();
     void prepared(bool success, bool unknown, QString error);
+    void prepared(startup::preparation::Disposition disposition, QString error);
     void close();
     void queryUnavailable(QString error);
     Phase phase() const { return m_phase; }
@@ -62,10 +64,18 @@ struct Projection {
     bool pending{false}, profile_written{false}, profile_complete{false}, preparation_complete{false};
     bool preparation_finished{false}, preparation_unknown{false}, profile_unknown{false};
     QString error;
+    std::optional<startup::preparation::Disposition> preparation_disposition{};
 };
 struct Ports {
     std::function<QmlOnboardingSettings::ProfileResult(const QmlOnboardingSettings::ApplyRequest&)> write;
     std::function<QmlOnboardingSettings::ProfileResult(const QmlOnboardingSettings::ProfileResult&)> query, complete;
+};
+struct AsyncPreparation {
+    using Complete = startup::preparation::CompleteResult;
+    std::function<execution::Admission(startup::preparation::Context, Complete)> start;
+    // Bounded command only. The original admitted completion still owns its
+    // receipt and physical retirement after this cancellation request.
+    std::function<void()> close;
 };
 /** Slice-specific asynchronous owner. GUI supplies immutable input and narrow
  * commands; all decisions run on Domain and effects on Core. */
@@ -80,6 +90,8 @@ public:
         std::function<std::pair<bool,QString>(const QmlOnboardingSettings::ApplyRequest&, bool)> effect);
     bool recover(bool complete);
     bool prepare(std::function<std::pair<bool,QString>(const QmlOnboardingSettings::ApplyRequest&, bool)> effect);
+    bool finishAndPrepareAsync(uint64_t revision, QmlOnboardingSettings::ApplyRequest request, Ports ports, AsyncPreparation preparation);
+    bool prepareAsync(AsyncPreparation preparation);
     void close();
 private:
     struct State;
