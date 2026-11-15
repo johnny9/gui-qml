@@ -15,3 +15,13 @@ Scope098 remains source-refuted/HOLD: the old raw-list-pointer mechanism is abse
 2. Public ban returns a Boolean rather than an immutable effect/durability receipt. The adapter retains a confirmed ban return separately from disconnect success and preserves uncertainty if a later effect throws. Explicit getBanned/getNodesStats observations do not prove which writer caused the state, and getBanned may sweep expired entries in pinned Core. The real restart/multi-node journey validates actual persistence without promoting the Boolean into a durable-write guarantee. A future typed public command receipt should report applied changes, causal identity and persistence status. Retire the uncertainty adapter only when that receipt is available and partial/unknown/read-retry plus restart controls preserve their oracles.
 
 No Core/Qt change, private interface, mutation probe, automatic retry, custom native component or persisted-format migration is introduced. Exhaustive coverage, platform/configuration matrices and sanitizers remain explicitly assigned to R42; ordinary focused compiler/lint/tidy, manual timing, real-thread and independent Core/GUI journeys qualify this slice.
+
+
+The typed confirmation accepts only the four declared GUI ban durations. The
+retained legacy raw-address API still accepts positive custom seconds until its
+R41 caller audit. Manual parity controls cover standard/custom legacy values and
+a positive custom value rejected through the typed API; both routes keep exact
+parameters and outcomes. The ordinary focused profile can compile only the named
+unit classes using the qualified APP_UNIT_TEST_CLASSES option. Its generated
+scope metadata and real binary discovery are required; the full-build default
+and R42 exhaustive qualification remain distinct.
