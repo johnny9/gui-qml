@@ -7,6 +7,8 @@
 #include <test/integration/fixture/test_wallet.h>
 #include <qml/models/activityfilterproxymodel.h>
 #include <qml/models/activitydetailmodel.h>
+#include <qml/models/activityexportoperation.h>
+#include <qml/models/bitcoinaddress.h>
 #include <qt/bitcoinunits.h>
 
 #include <QDate>
@@ -14,6 +16,7 @@
 #include <QPointer>
 #include <QQuickItem>
 #include <QTemporaryDir>
+#include <QScopeGuard>
 
 #include <initializer_list>
 
@@ -217,6 +220,54 @@ private Q_SLOTS:
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", "Alice"));
         QTRY_COMPARE(m_filter->rowCount(), 1);
         QCOMPARE(m_filter->index(0, 0).data(TransactionActivityModel::RequestIdRole).toString(), m_request_id);
+    }
+
+    void sharedSendReviewAddressFormattingFindsTheOriginalActivityAndCsv()
+    {
+        QVERIFY(createPendingRequestAndMiningReward());
+        const auto displayed = BitcoinAddress::formattedAddress(m_request_address); QVERIFY(displayed.contains(' '));
+        // Send review uses this exact shared formatter through its typed
+        // recipient entry. Core independently proves the canonical address.
+        UniValue params{UniValue::VARR}; params.push_back(m_request_address.toStdString());
+        QVERIFY(qmltest::Rpc(m_app, "getaddressinfo", params, m_wallet->name()).find_value("ismine").get_bool());
+        QVERIFY(qmltest::SetText(m_app, "activitySearchField", displayed));
+        QTRY_VERIFY(!m_filter->busy()); QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE(m_filter->index(0).data(TransactionActivityModel::RequestIdRole).toString(), m_request_id);
+        QTemporaryDir directory; QVERIFY(directory.isValid()); QString csv;
+        QVERIFY(ExportActivityCsv(m_app, directory.filePath("grouped-address.csv"), csv));
+        QVERIFY(csv.contains('"' + m_request_address + '"')); QVERIFY(!csv.contains(m_reward_txid));
+    }
+
+    void csvConsentKeepsItsOriginalSnapshotUnitAndTargetAcrossLiveFilterChanges()
+    {
+        QVERIFY(createPendingRequestAndMiningReward()); QTRY_VERIFY(!m_filter->busy());
+        const int original_unit = m_filter->displayUnit(); m_filter->setDisplayUnit(0); QTRY_VERIFY(!m_filter->busy());
+        const auto restore = qScopeGuard([&] { m_filter->setDisplayUnit(original_unit); });
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("captured.csv");
+        { QFile file{path}; QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write("original destination"), qint64{20}); }
+        auto* field = qmltest::Find(m_app, "activityExportPathField"); QVERIFY(field); QVERIFY(field->setProperty("text", path));
+        QVERIFY(qmltest::Click(m_app, "activityMoreButton")); QVERIFY(qmltest::Click(m_app, "activityExportButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "activityCsvApproveDestination"));
+        auto* original = m_filter->exportOperation(); QVERIFY(original); QVERIFY(original->confirmationRequired());
+        const auto revision = original->snapshotRevision(); const auto operation = original->operationId();
+        m_filter->setSearchText(m_request_address); m_filter->setDisplayUnit(3); QTRY_VERIFY(!m_filter->busy()); QTRY_COMPARE(m_filter->rowCount(), 1);
+        QCOMPARE(m_filter->exportOperation(), original); QCOMPARE(original->snapshotRevision(), revision); QCOMPARE(original->displayUnit(), 0);
+        QVERIFY(qmltest::Click(m_app, "activityCsvApproveDestination")); QTRY_VERIFY(original->resultPresent()); QVERIFY(original->saved()); QVERIFY(original->outcomeKnown());
+        QCOMPARE(original->operationId(), operation); QCOMPARE(original->finalPath(), path);
+        { QFile file{path}; QVERIFY(file.open(QIODevice::ReadOnly)); const auto csv = QString::fromUtf8(file.readAll()); QVERIFY(csv.startsWith(ActivityCsvHeader("BTC"))); QVERIFY(csv.contains(m_reward_txid)); QVERIFY(csv.contains(m_request_address)); }
+        QVERIFY(qmltest::Click(m_app, "activityExportResultCloseButton")); QString successor;
+        QVERIFY(ExportActivityCsv(m_app, directory.filePath("successor.csv"), successor)); QVERIFY(successor.startsWith(ActivityCsvHeader("sat"))); QVERIFY(!successor.contains(m_reward_txid));
+    }
+
+    void requestOnlyAmountControlsReachTheSameRowsTheyFilterWithoutAddingPendingBalance()
+    {
+        auto* request = m_wallet->currentPaymentRequest(); request->amount()->setSatoshi(9000);
+        QVERIFY(AwaitReceiveRequest(m_wallet->commitPaymentRequest())); QTRY_COMPARE(m_filter->rowCount(), 1); QTRY_VERIFY(!m_filter->busy());
+        QCOMPARE(m_filter->requestCount(), 1); QCOMPARE(m_filter->pendingBalanceSat(), CAmount{0}); QCOMPARE(m_filter->availableMaxAmount(), CAmount{9000});
+        QVERIFY(qmltest::Click(m_app, "activityAmountFilterButton")); auto* slider = qmltest::Find(m_app, "activityAmountRangeSlider"); QVERIFY(slider);
+        QCOMPARE(slider->property("maxValue").toLongLong(), qint64{9000}); QVERIFY(slider->property("enabled").toBool());
+        QVERIFY(m_filter->setAmountRange(0, 4500)); QTRY_VERIFY(!m_filter->busy()); QCOMPARE(m_filter->rowCount(), 0); QCOMPARE(m_filter->availableMaxAmount(), CAmount{9000}); QCOMPARE(m_filter->pendingBalanceSat(), CAmount{0});
+        QCOMPARE(slider->property("upperValue").toLongLong(), qint64{4500});
     }
 
     void displayUnitFlowsFromSettingsToExportAndDetails()

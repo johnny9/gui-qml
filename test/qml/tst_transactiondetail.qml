@@ -23,6 +23,8 @@ TestCase {
     Component { id: detailComponent; TransactionDetail { width: 1180; height: 1100; wallet: testWalletModel } }
     Component { id: speedUpCompleteComponent; SpeedUpComplete { width: 560; height: 460 } }
     Component { id: activityComponent; ActivityList { width: 1180; height: 1100; wallet: testWalletModel } }
+    Component { id: bumpComponent; TestBumpTransactionModel {} }
+    Component { id: bumpOverlayComponent; SpeedUpOverlay {} }
     SignalSpy { id: transactionSpy; signalName: "showTransaction" }
 
     function entry(id, amount, ownership, overrides) {
@@ -77,6 +79,94 @@ TestCase {
         popup.close()
         overlay.close()
         tryCompare(overlay, "visible", false)
+    }
+
+    function test_password_context_closes_after_review_invalidation_data() {
+        return [{tag: "ineligible", phase: BumpTransactionModel.NeedsRevalidation},
+                {tag: "failed", phase: BumpTransactionModel.Failed}]
+    }
+    function test_password_context_closes_after_review_invalidation(data) {
+        testBumpModel.requireUnlock = true
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "readyToConfirm", true)
+        findChild(overlay, "updateTransactionButton").clicked()
+        const popup = findChild(overlay, "speedUpPassphrasePopup")
+        tryCompare(popup, "opened", true)
+        const prepared = testBumpModel.preparationCount
+        testBumpModel.state = data.phase
+        tryCompare(popup, "opened", false)
+        verify(overlay.opened)
+        verify(!overlay.readyToConfirm)
+        compare(testBumpModel.preparationCount, prepared)
+        overlay.close()
+        tryCompare(overlay, "visible", false)
+    }
+
+    function test_wallet_switch_keeps_cleanup_on_the_original_bump_model() {
+        const first = createTemporaryObject(bumpComponent, this)
+        const second = createTemporaryObject(bumpComponent, this)
+        const overlay = createTemporaryObject(bumpOverlayComponent, this, {bumpModel: first, txid: "first-wallet-transaction"})
+        verify(first !== null && second !== null && overlay !== null)
+        overlay.open()
+        tryCompare(overlay, "readyToConfirm", true)
+        second.requestPrepareFeeBump("second-wallet-transaction", 1)
+        tryCompare(second, "state", BumpTransactionModel.NeedsConfirmation)
+        // Independent models can have identical local sequence numbers.
+        compare(first.attemptId, second.attemptId)
+        const originalCount = second.preparationCount
+        overlay.bumpModel = second
+        tryCompare(overlay, "opened", false)
+        compare(first.state, BumpTransactionModel.Idle)
+        compare(second.state, BumpTransactionModel.NeedsConfirmation)
+        compare(second.oldTxid, "second-wallet-transaction")
+        compare(second.preparationCount, originalCount)
+    }
+
+    function test_uncertain_replacement_offers_a_query_without_preparing_again() {
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "opened", true)
+        tryCompare(overlay, "readyToConfirm", true)
+        const prepared = testBumpModel.preparationCount
+        const observations = testBumpModel.observationCount
+        testBumpModel.state = BumpTransactionModel.Uncertain
+        const button = findChild(overlay, "updateTransactionButton")
+        compare(button.text, "Check transaction status")
+        verify(button.enabled)
+        button.clicked()
+        compare(testBumpModel.observationCount, observations + 1)
+        compare(testBumpModel.preparationCount, prepared)
+        compare(testBumpModel.state, BumpTransactionModel.Uncertain)
+        overlay.close()
+        tryCompare(overlay, "visible", false)
+    }
+
+    function test_wallet_unavailability_retires_the_owned_password_and_review() {
+        testBumpModel.requireUnlock = true
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "opened", true)
+        tryCompare(overlay, "readyToConfirm", true)
+        findChild(overlay, "updateTransactionButton").clicked()
+        const popup = findChild(overlay, "speedUpPassphrasePopup")
+        tryCompare(popup, "opened", true)
+        testWalletModel.available = false
+        tryCompare(popup, "visible", false)
+        tryCompare(overlay, "visible", false)
+        testWalletModel.available = true
+    }
+    function test_other_transaction_retires_the_original_review() {
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "readyToConfirm", true)
+        page.transactionId = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        tryCompare(overlay, "visible", false)
+        compare(testBumpModel.state, BumpTransactionModel.Idle)
     }
 
     function createDetail(data, properties) {
@@ -239,6 +329,29 @@ TestCase {
         compare(findChild(overlay.contentItem, "speedUpFeeSection").backgroundColor, Theme.color.neutral2)
         compare(findChild(overlay.contentItem, "speedUpOriginalFeeRow").value, testBumpModel.oldFee)
         compare(findChild(overlay.contentItem, "speedUpNewFeeRow").value, testBumpModel.newFee)
+        mouseClick(findChild(overlay.contentItem, "speedUpCloseButton"))
+        tryCompare(overlay, "visible", false)
+    }
+    function test_fee_bump_revalidation_requires_explicit_reprepare() {
+        testBumpModel.revalidateOnNextConfirm()
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "readyToConfirm", true)
+        const originalAttempt = overlay.ownedAttemptId
+        mouseClick(findChild(overlay.contentItem, "updateTransactionButton"))
+        tryCompare(testBumpModel, "state", BumpTransactionModel.NeedsRevalidation)
+        const error = findChild(overlay.contentItem, "speedUpErrorText")
+        tryCompare(error, "visible", true)
+        verify(error.text.indexOf("Prepare it again") >= 0)
+        verify(!overlay.readyToConfirm)
+        const prepareAgain = findChild(overlay.contentItem, "updateTransactionButton")
+        compare(prepareAgain.text, "Prepare again")
+        verify(prepareAgain.enabled)
+        mouseClick(prepareAgain)
+        tryCompare(overlay, "readyToConfirm", true)
+        compare(testBumpModel.preparationCount, 2)
+        verify(overlay.ownedAttemptId !== originalAttempt)
         mouseClick(findChild(overlay.contentItem, "speedUpCloseButton"))
         tryCompare(overlay, "visible", false)
     }

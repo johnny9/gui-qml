@@ -1,0 +1,196 @@
+{
+  "candidate": "be2a3869be89f9c3767ce1d3e90b5b5be0a49aa2",
+  "accepted_base": "0224c4c0f2f",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "status": "R32 worker focused gate and merged shared-policy composition passed; final series qualification pending R42",
+  "primary_count": 11,
+  "rows": [
+    {
+      "scope": "010-D010",
+      "disposition": "declarative committed bounds; range envelope keeps valid hidden bounds after source changes",
+      "selectors": [
+        "ActivityList::test_open_amount_range_keeps_committed_values_when_history_maximum_changes",
+        "ActivityList::test_open_amount_range_retains_lower_only_boundary_after_maximum_shrinks",
+        "R10Coins::test_open_coin_range_stays_bound_to_committed_amounts",
+        "R10Coins::test_upper_only_range_below_available_minimum_keeps_the_committed_boundary"
+      ],
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "013-D013",
+      "disposition": "available maximum covers every amount-filtered row, including requests; requests never enter pending balance",
+      "selectors": [
+        "ActivityFilterProxyModelTests::availableMaximumUsesUnfilteredTransactionsAndUpdates",
+        "ActivityList::test_request_only_history_exposes_a_reachable_amount_range",
+        "ActivityIntegrationTests::requestOnlyAmountControlsReachTheSameRowsTheyFilterWithoutAddingPendingBalance"
+      ],
+      "old_oracle_change": "Original test's exclusion of unpaid requests corrected to the actual rows governed by the amount filter; all source-update/search/source-switch and pending-balance assertions retained",
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "027-D027",
+      "disposition": "existing stream-status/commit fix preserved; versioned staged installation and known/unknown outcomes added",
+      "selectors": [
+        "ActivityExportOperationTests::streamWriteFailureAfterSuccessfulOpenNeverCommitsOrTruncatesTheOriginal",
+        "ActivityExportOperationTests::failedProducerPreservesTheOriginalDestination",
+        "ActivityExportOperationTests::unknownNativeOutcomeCannotBeReportedAsKnownFailureOrRetriedImplicitly",
+        "ActivityIntegrationTests::csvConsentKeepsItsOriginalSnapshotUnitAndTargetAcrossLiveFilterChanges"
+      ],
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "028-D028",
+      "disposition": "injected clock wakeup, same-preset refresh, stale-day publication and export admission guards",
+      "selectors": [
+        "ActivityFilterProxyModelTests::relativeDateRefreshUsesManualClockAndRejectsYesterdayBeforePublish"
+      ],
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "052-D052",
+      "disposition": "locale first weekday/clock captured per filter job; bounded localized detail/request/coin/ban/Node formatting",
+      "selectors": [
+        "ActivityFilterProxyModelTests::localeWeekAndClockFormatUseOneCapturedPolicy",
+        "NodeModelTests::localizedInformationDatesUseTheCapturedSystemConvention",
+        "BanListModelTests::localizedBanExpiryUsesTheLocaleTimeConvention",
+        "ActivityList::test_detail_date_uses_the_same_locale_clock_convention",
+        "R10Coins::test_coin_date_uses_the_localized_calendar_and_clock",
+        "RequestPayment::test_legacy_created_date_uses_the_locale_calendar_and_clock"
+      ],
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "100-RC77",
+      "disposition": "generation-consistent indexed pending/count/max aggregates, full-value deltas and stale-base fallback",
+      "selectors": [
+        "TransactionActivityModelTests::oneChangedStatusReusesLargeNativeRowsAndFiltersOnlyItsExactDelta",
+        "TransactionActivityModelTests::fullHiddenSearchChangesInvalidateTheDeltaWithoutAGuiPreviewChange",
+        "ActivityFilterProxyModelTests::staleDeltaBaseFallsBackWithoutLosingOriginalRows",
+        "ActivityFilterProxyModelTests::refiltersWhenSourceAmountChanges"
+      ],
+      "limit": "No claim of a reproduced dust attack or constant-size initial public Core capture; actual per-turn and row/allocation counts are the oracle",
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "100-RC78",
+      "disposition": "structurally shared indexes/rows and cached locale/timezone/search policy; exact changed IDs filter only their affected rows",
+      "selectors": [
+        "ActivityFilterProxyModelTests::persistentValuesShareUnchangedPathsAndPreserveIndependentSnapshots",
+        "ActivityFilterProxyModelTests::incrementalSourceChangeVisitsOnlyExactChangedRows",
+        "TransactionActivityModelTests::oneChangedStatusReusesLargeNativeRowsAndFiltersOnlyItsExactDelta"
+      ],
+      "limit": "Full fallback/changed filter still examines all rows in bounded Domain turns; Native Core history capture remains its public bulk API",
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "299-D299",
+      "disposition": "already addressed by accepted shared UiPreferencesStore, confirmed through live cross-view writes/reopen and Native persisted-key controls; no new store/format",
+      "selectors": [
+        "ActivityList::test_two_live_grouping_views_and_reopen_keep_the_last_explicit_choice",
+        "UiPreferencesTests::scalarWritesOwnTheirValidationAndPersistedKeys:group-day",
+        "UiPreferencesTests::scalarWritesOwnTheirValidationAndPersistedKeys:group-month",
+        "UiPreferencesTests::manualRefreshWaitsForAcceptedWritePublication",
+        "UiPreferencesTests::realThreadRoundTrip"
+      ],
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "300-D300",
+      "disposition": "narrow date-only clear command; Reset works for applied presets without requiring a dummy date",
+      "selectors": [
+        "ActivityList::test_date_reset_clears_a_preset_without_touching_other_filters",
+        "ActivityFilterProxyModelTests::clearDateLeavesSearchTypesAndAmountsUntouched"
+      ],
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "301-D301",
+      "disposition": "inclusive captured-zone civil dates avoid invalid next-day midnight; independent original/control comparison prepared",
+      "selectors": [
+        "ActivityFilterProxyModelTests::skippedCivilDayDoesNotExcludeValidInclusiveEnd",
+        "ActivityFilterProxyModelTests::customRangeHandlesDstGapDayBoundaries",
+        "ActivityIntegrationTests::calendarRangeFiltersAndResetsLiveRows"
+      ],
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    },
+    {
+      "scope": "318-D318",
+      "disposition": "normalize grouped valid Bitcoin address searches through the public codec on Domain, preserving ordinary note whitespace",
+      "selectors": [
+        "ActivityFilterProxyModelTests::groupedAddressSearchPreservesOrdinaryNoteWhitespace",
+        "ActivityIntegrationTests::sharedSendReviewAddressFormattingFindsTheOriginalActivityAndCsv"
+      ],
+      "oracle": "Exact existing BitcoinAddress::formattedAddress used by send review; public Core independently proves owned canonical address; exact filtered CSV control",
+      "runtime_executed": true,
+      "runtime_evidence_status": "Exact current06 or explicit successful historical02/04 receipt; source/ELF distinction retained in FOCUSED_ACCEPTANCE_06.json/UNCHANGED_CARRY_06.json"
+    }
+  ],
+  "cross": {
+    "174": "Accepted R28 total/pending exact generation ownership remains; same-count replacement/status scenarios rerun in full Activity model suite",
+    "277": "Stable parent transaction/request counts and replacement aggregation remain; no fee/action amount double count"
+  },
+  "M24": {
+    "typed": "Original snapshot revision, unit, final-path/version consent, retained bounded result, native terminal outcome and off-GUI cleanup",
+    "selectors": [
+      "ActivityExportOperationTests",
+      "ActivityFilterProxyModelTests::terminalExportReceiptSurvivesReentrantObserverDeletionAndSuccessorAdmission",
+      "BackupPolicyOperationTests",
+      "FileExportOperationTests",
+      "ActivityExportOperationTests::closedOrdinaryAdmissionRefusesANewExportWithoutAFileEffect",
+      "ActivityFilterProxyModelTests::csvConstructorReservationCanRetireItsOriginalProxy",
+      "ActivityFilterProxyModelTests::csvOwnershipRefusalPublishesItsOriginalFailure"
+    ],
+    "original_rejected_start_control": {
+      "before": "ce0462ab687c4a1ac10c64954bf3342f47355089,1body actual frame.expired FAIL; setup/cleanup pass",
+      "after": "be2a3869be89f9c3767ce1d3e90b5b5be0a49aa2, exact same selected body PASS",
+      "evidence": "red-abandon-01/CLASSIFICATION.json and gameboy/run-06/artifacts/native/typed-original-csv-consent-outcome-and-native-retirement/result.json"
+    }
+  },
+  "R42": "Exhaustive coverage/full config/platform/compatibility matrices and sanitizers deferred by explicit user cadence; no pass claimed",
+  "unchanged_carry": "UNCHANGED_CARRY_06.json",
+  "unique_scope_bodies": 399,
+  "upstream_notes": "plan/R32_UPSTREAM_NOTES.md",
+  "runtime_evidence": "FOCUSED_ACCEPTANCE_06.json",
+  "current_executed": {
+    "native": 186,
+    "Core": 8,
+    "total": 194
+  },
+  "carried_successes": 205,
+  "baseline_debt": [
+    {
+      "scope": "WalletOpening outside R32",
+      "selectors": [
+        "unsupportedOrUnconfirmedPreferenceNeverClaimsPersistence:no-address-capability",
+        "queuedPreferenceChangesKeepLatestOutcomePending"
+      ],
+      "status": "Same failures reproduced on accepted0224 production; not introduced/fixed/claimed green by R32",
+      "evidence": "red-parent-01/artifacts-worker-collection/baseline"
+    }
+  ],
+  "composition": {
+    "source": "79927fdd9d4e1ef3546e0a9b12728ce6672a32e8",
+    "native": 158,
+    "independent_public_Core": 1,
+    "total": 159,
+    "evidence": "COMPOSED_ACCEPTANCE_07.json",
+    "not_additive_to_399": true
+  },
+  "original_comparison_accounting": {
+    "date301": "2parent bodies: ordinary controlPASS, skipped-day intendedFAIL; both headPASS",
+    "rejected_csv_lifetime": "1separate parent body intendedFAIL at frame.expired; same head bodyPASS",
+    "original_regression_rows_total": 3,
+    "legacy_baseline_packet": "12parent bodies includes those2date rows plus6existing Activity rows and4WalletOpening diagnostics; do not add12+3 as disjoint",
+    "Core": "8unique publicCore Activity selectors in worker06; composition07 repeats1ofthose8, not9unique"
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "status": "R22 focused affected-scope acceptance restored; expanded baseline failures explicitly retained",
+  "app_tested_and_integrated": "e3508980eb283a4ab939aec2eda32ce2b9db97ba",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "source": "R22/composed/source",
+  "unit_rows": [
+    {
+      "id": "file-export-operation-full-class",
+      "count": 20,
+      "pass": 20,
+      "fail": 0,
+      "skip": 0
+    },
+    {
+      "id": "shared-backup-operation",
+      "count": 73,
+      "pass": 73,
+      "fail": 0,
+      "skip": 0
+    },
+    {
+      "id": "wallet-backup-consumers",
+      "count": 6,
+      "pass": 6,
+      "fail": 0,
+      "skip": 0
+    },
+    {
+      "id": "original-psbt-effect-and-view-admission",
+      "count": 21,
+      "pass": 21,
+      "fail": 0,
+      "skip": 0
+    },
+    {
+      "id": "psbt-save-and-preparation-continuation",
+      "count": 23,
+      "pass": 23,
+      "fail": 0,
+      "skip": 0
+    },
+    {
+      "id": "wallet-model-signer-view-and-replacement",
+      "count": 15,
+      "pass": 15,
+      "fail": 0,
+      "skip": 0
+    },
+    {
+      "id": "original-opening-lifetime-and-action-scopes",
+      "count": 59,
+      "pass": 57,
+      "fail": 2,
+      "skip": 0
+    }
+  ],
+  "unit_summary": {
+    "executed": 217,
+    "passed": 215,
+    "failed": 2,
+    "skipped": 0,
+    "R22_and_signer_interaction_bodies": 158,
+    "affected_scope_passed": 158
+  },
+  "expanded_baseline_failures": {
+    "source_parent": "7d3aa493de049bb3f57914ee67d13dfeb75c11c6",
+    "production_parent": "0224c4c0f2fa919990a21f723da589a6bef87803",
+    "production_equal_main71": true,
+    "test_oracles_unchanged": true,
+    "parent_artifact": "R32/red-parent-01/artifacts-worker-collection/baseline/report.json",
+    "same_failing_identities": [
+      "WalletOpeningTests::unsupportedOrUnconfirmedPreferenceNeverClaimsPersistence:no-address-capability",
+      "WalletOpeningTests::queuedPreferenceChangesKeepLatestOutcomePending"
+    ],
+    "disposition": "Existing preference policy/fixture reconciliation debt; not changed or silently excluded. Expanded class remains57/59, not green. Full qualification remains pending."
+  },
+  "current_positive_checks": {
+    "Core": "final-01/core/report.json:1/1 actual import/sign/PSBT-save/broadcast/known-identity body",
+    "signer_process": "final-01/functional.stdout:actual signer-substitution-send PASS;outerstderr0",
+    "IPC_lifecycle": "lifecycle-02:bridge exit0 and real Core fatal block-write exit1 PASS;outerstderr0",
+    "same_app_Core_binaries_across_process_checks": true,
+    "pinned_tidy": "final-01/tidy/results.json:5CPP+7freshMOC=12/12",
+    "app_lint": "lint-01/RESULT.json exit0 exacte350, branch/head/Core rechecked",
+    "QML_lint": "focused-01/qml-lint.exit0 full production variants"
+  },
+  "retained_setup_failure": "final-01 lifecycle selector native-startup-failure-recovery unsupported:exit2,zero lifecycle scenarios. Other independent checks ran; valid2selector rerun lifecycle-02 passed without rebuild.",
+  "worker_receipts": [
+    "R22/continuation/evidence/continuation-retire-audit-08/FINAL_HANDOFF.json",
+    "R22/continuation/evidence/retire-capacity-final-03/R22_QUEUE_REJECTION_FOLLOWUP.json",
+    "R22/continuation/evidence/retire-capacity-final-04/R22_FOLLOWUP_ACCEPTANCE.json"
+  ],
+  "commands": {
+    "focused": "QT6_VALIDATION_BUILD_ROOT=/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113 QT6_VALIDATION_BUILD_PROFILE=tidy python3 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R14/run_red.py /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R22/composed/source /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R22/composed/focused-01 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R22/composed/focused-01.json --qml-lint",
+    "static_Core_signer": "python3 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R22/composed/final-01/run_host.py",
+    "lifecycle": "python3 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R22/composed/lifecycle-02/run_host.py",
+    "lint": "python3 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R22/composed/lint-01/run.py"
+  },
+  "Core_and_Qt_changes": false,
+  "R42": "Exhaustive100% coverage, full suites/matrices, native Windows and sanitizers pending; no current full pass claim",
+  "no_push": true
+}

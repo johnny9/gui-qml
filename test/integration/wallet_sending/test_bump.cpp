@@ -25,6 +25,25 @@ QString SendReplaceable(BitcoinQmlApplication& app, WalletQmlModel& wallet, cons
     params.pushKV("fee_rate", 1);
     return QString::fromStdString(qmltest::Rpc(app, "sendtoaddress", params, wallet.name()).get_str());
 }
+QString SpendWholeCoin(BitcoinQmlApplication& app, const QString& wallet, const UniValue& coin, const QString& address)
+{
+    UniValue input{UniValue::VOBJ};
+    input.pushKV("txid", coin.find_value("txid")); input.pushKV("vout", coin.find_value("vout"));
+    input.pushKV("sequence", int64_t{0xfffffffd});
+    UniValue inputs{UniValue::VARR}; inputs.push_back(input);
+    UniValue outputs{UniValue::VOBJ}; outputs.pushKV(address.toStdString(), coin.find_value("amount"));
+    UniValue create{UniValue::VARR}; create.push_back(inputs); create.push_back(outputs);
+    const auto raw = qmltest::Rpc(app, "createrawtransaction", create);
+    UniValue options{UniValue::VOBJ}; options.pushKV("add_inputs", false); options.pushKV("fee_rate", 1);
+    UniValue subtract{UniValue::VARR}; subtract.push_back(0); options.pushKV("subtractFeeFromOutputs", subtract);
+    UniValue fund{UniValue::VARR}; fund.push_back(raw); fund.push_back(options);
+    const auto funded = qmltest::Rpc(app, "fundrawtransaction", fund, wallet);
+    UniValue sign{UniValue::VARR}; sign.push_back(funded.find_value("hex"));
+    const auto signed_transaction = qmltest::Rpc(app, "signrawtransactionwithwallet", sign, wallet);
+    if (!signed_transaction.find_value("complete").get_bool()) throw std::runtime_error("fixture signature incomplete");
+    UniValue send{UniValue::VARR}; send.push_back(signed_transaction.find_value("hex"));
+    return QString::fromStdString(qmltest::Rpc(app, "sendrawtransaction", send).get_str());
+}
 } // namespace
 
 class FeeBumpIntegrationTests : public QObject
@@ -34,6 +53,83 @@ class FeeBumpIntegrationTests : public QObject
 public:
     explicit FeeBumpIntegrationTests(BitcoinQmlApplication& app) : m_app(app) {}
 private Q_SLOTS:
+    void counterpartySpendingThePaymentInvalidatesTheOpenReview()
+    {
+        auto* destination = qmltest::CreateWallet(m_app, "descendant_destination"); QVERIFY(destination);
+        auto* wallet = qmltest::CreateWallet(m_app, "descendant_sender"); QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        const auto address = qmltest::NewAddress(m_app, destination->name());
+        const auto original = SendReplaceable(m_app, *wallet, address);
+        auto* bump = wallet->bumpModel(); QVERIFY(bump);
+        QVERIFY2(AwaitBumpPreparation(*bump, original, 1), qPrintable(bump->errorText()));
+        const auto received = qmltest::Rpc(m_app, "listunspent", qmltest::Json("[0]"), destination->name());
+        UniValue payment;
+        for (const auto& coin : received.getValues())
+            if (coin.find_value("txid").get_str() == original.toStdString()) payment = coin;
+        QVERIFY(payment.isObject());
+        const auto child = SpendWholeCoin(m_app, destination->name(), payment, qmltest::NewAddress(m_app, destination->name()));
+        const auto before = Mempool(m_app); QVERIFY(before.contains(original.toStdString())); QVERIFY(before.contains(child.toStdString()));
+        QVERIFY(!AwaitBumpCommit(*bump));
+        QCOMPARE(bump->state(), BumpTransactionModel::NeedsRevalidation);
+        QVERIFY(!bump->errorText().isEmpty());
+        const auto outcome = bump->commitResult(); QVERIFY(outcome); QVERIFY(!outcome->committed);
+        QCOMPARE(outcome->error, walletbump::Error::Ineligible);
+        QCOMPARE(Mempool(m_app), before);
+    }
+    void independentSpendOfAddedInputCannotReplaceTheUnrelatedPayment()
+    {
+        auto* destination = qmltest::CreateWallet(m_app, "added_input_destination"); QVERIFY(destination);
+        auto* wallet = qmltest::CreateWallet(m_app, "added_input_sender"); QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        const auto mining = qmltest::NewAddress(m_app, wallet->name());
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
+        const auto coins = qmltest::Rpc(m_app, "listunspent", qmltest::Json("[101]"), wallet->name());
+        QCOMPARE(coins.size(), size_t{2});
+        const auto address = qmltest::NewAddress(m_app, destination->name());
+        const auto original = SpendWholeCoin(m_app, wallet->name(), coins[0], address);
+        const auto remaining = qmltest::Rpc(m_app, "listunspent", qmltest::Json("[101]"), wallet->name());
+        QCOMPARE(remaining.size(), size_t{1});
+        auto* bump = wallet->bumpModel(); QVERIFY(bump);
+        QVERIFY2(AwaitBumpPreparation(*bump, original, 1), qPrintable(bump->errorText()));
+        const auto preparation = bump->preparationOperation()->result(); QVERIFY(preparation && preparation->value);
+        const auto review = preparation->value->review; QVERIFY(review);
+        QCOMPARE(review->added_inputs.size(), size_t{1});
+        QCOMPARE(review->added_inputs.front().hash.GetHex(), remaining[0].find_value("txid").get_str());
+        QCOMPARE(review->added_inputs.front().n, remaining[0].find_value("vout").getInt<uint32_t>());
+        const auto unrelated = SpendWholeCoin(m_app, wallet->name(), remaining[0], address);
+        const auto before = Mempool(m_app); QVERIFY(before.contains(original.toStdString())); QVERIFY(before.contains(unrelated.toStdString()));
+        QVERIFY(!AwaitBumpCommit(*bump));
+        QCOMPARE(bump->state(), BumpTransactionModel::NeedsRevalidation);
+        const auto outcome = bump->commitResult(); QVERIFY(outcome); QVERIFY(!outcome->committed);
+        QCOMPARE(outcome->error, walletbump::Error::Ineligible);
+        QCOMPARE(Mempool(m_app), before);
+    }
+    void futureLockRemainsInReviewAndIndependentAbandonmentInvalidatesIt()
+    {
+        auto* destination = qmltest::CreateWallet(m_app, "abandon_destination"); QVERIFY(destination);
+        auto* wallet = qmltest::CreateWallet(m_app, "abandon_sender"); QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        const int height = qmltest::Rpc(m_app, "getblockcount").getInt<int>();
+        UniValue outputs{UniValue::VOBJ};
+        outputs.pushKV(qmltest::NewAddress(m_app, destination->name()).toStdString(), UniValue{UniValue::VNUM, "0.01"});
+        UniValue options{UniValue::VOBJ}; options.pushKV("locktime", height + 100);
+        UniValue params{UniValue::VOBJ}; params.pushKV("outputs", outputs); params.pushKV("fee_rate", 1); params.pushKV("options", options);
+        const auto sent = qmltest::Rpc(m_app, "send", params, wallet->name());
+        QVERIFY(sent.find_value("complete").get_bool());
+        const auto original = QString::fromStdString(sent.find_value("txid").get_str());
+        QVERIFY(!Mempool(m_app).contains(original.toStdString()));
+        auto* bump = wallet->bumpModel(); QVERIFY(bump);
+        QVERIFY2(AwaitBumpPreparation(*bump, original, 1), qPrintable(bump->errorText()));
+        const auto preparation = bump->preparationOperation()->result(); QVERIFY(preparation && preparation->value);
+        const auto review = preparation->value->review; QVERIFY(review);
+        QCOMPARE(review->transaction.nLockTime, uint32_t(height + 100));
+        qmltest::Rpc(m_app, "abandontransaction", qmltest::Json("[\"" + original.toStdString() + "\"]"), wallet->name());
+        QVERIFY(!AwaitBumpCommit(*bump));
+        QCOMPARE(bump->state(), BumpTransactionModel::NeedsRevalidation);
+        const auto outcome = bump->commitResult(); QVERIFY(outcome); QVERIFY(!outcome->committed);
+        QCOMPARE(outcome->error, walletbump::Error::Ineligible);
+        QVERIFY(Mempool(m_app).empty());
+    }
     void committedReplacementPreservesPaymentAndIsObservedByRpc()
     {
         auto* destination = qmltest::CreateWallet(m_app, "bump_destination"); QVERIFY(destination);
@@ -93,7 +189,7 @@ private Q_SLOTS:
         const auto transaction = qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + original.toStdString() + "\"]"), wallet->name());
         QVERIFY(transaction.find_value("confirmations").getInt<int>() >= 1);
         QVERIFY(!AwaitBumpCommit(*bump));
-        QCOMPARE(bump->state(), BumpTransactionModel::Failed);
+        QCOMPARE(bump->state(), BumpTransactionModel::NeedsRevalidation);
         QVERIFY(bump->newTxid().isEmpty());
         const auto result = bump->commitResult(); QVERIFY(result); QVERIFY(!result->committed);
         QCOMPARE(result->error, walletbump::Error::Ineligible);

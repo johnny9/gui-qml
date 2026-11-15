@@ -121,9 +121,18 @@ void FileExportRequest::retireFromProjection()
 {
     const auto state = m_state;
     if (!state) return;
-    if (state->continuation->load()) return;
-    if (state->started.load() && state->operation) state->operation->retire();
-    else abandon();
+    // A pre-start continuation is still waiting for the accepted PSBT
+    // preparation result and must survive loss of its GUI projection. Once
+    // file export has started, accepted continuations only retire if the
+    // inspected destination requires confirmation. A fresh-path save remains
+    // the accepted effect; an already admitted write is also preserved.
+    if (!state->started.load() && state->continuation->load()) return;
+    if (state->started.load() && state->operation) {
+        if (state->continuation->load()) state->operation->retireIfAwaitingConfirmation();
+        else state->operation->retire();
+    } else {
+        abandon();
+    }
 }
 
 FileExportOperationModel::FileExportOperationModel(QString rawPath, backup::Services services, QObject* parent)

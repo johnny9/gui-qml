@@ -1,0 +1,121 @@
+{
+  "status": "R25 focused component qualification passed; composed-source acceptance pending",
+  "tested_app": "4d84fe7c3e5056702bf4636a800e84d0fcc49e64",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "runtime": [
+    {
+      "id": "bump-model",
+      "executed": 64,
+      "passed": 64,
+      "skipped": 0
+    },
+    {
+      "id": "wallet-bump-consumer",
+      "executed": 5,
+      "passed": 5,
+      "skipped": 0
+    },
+    {
+      "id": "shared-attempt-domain",
+      "executed": 13,
+      "passed": 13,
+      "skipped": 0
+    },
+    {
+      "id": "original-bump-model-context",
+      "executed": 40,
+      "passed": 40,
+      "skipped": 0
+    },
+    {
+      "id": "replacement-core-rpc",
+      "executed": 1,
+      "passed": 1,
+      "skipped": 0
+    },
+    {
+      "id": "confirmed-original-core-rpc",
+      "executed": 1,
+      "passed": 1,
+      "skipped": 0
+    },
+    {
+      "id": "Core-independentSpendOfAddedInputCannotReplaceTheUnrelatedPayment",
+      "executed": 1,
+      "passed": 1,
+      "skipped": 0
+    },
+    {
+      "id": "Core-futureLockRemainsInReviewAndIndependentAbandonmentInvalidatesIt",
+      "executed": 1,
+      "passed": 1,
+      "skipped": 0
+    },
+    {
+      "id": "Core-counterparty-descendant-invalidates-review",
+      "executed": 1,
+      "passed": 1,
+      "skipped": 0
+    }
+  ],
+  "total_actual_bodies": 127,
+  "runtime_evidence": "final-04/focused/report.json",
+  "static": {
+    "current_entries_passed": 15,
+    "handwritten_CPP": 8,
+    "fresh_MOC": 7,
+    "unchanged_CPP_carries": [
+      {
+        "file": "qml/models/walletqmlmodel.cpp",
+        "sha256": "64de377be8c663917b2ff02db8fe96241b6fd458cf200c2346aa9cd64d8f82d4",
+        "evidence": "final-03/tidy/results.json",
+        "provided_revision": "b3717870616a92c9b924a9c62c20d477734846a1"
+      },
+      {
+        "file": "qml/walletsend.cpp",
+        "sha256": "23522bbf2c215b989a3e94b347a0043e9cc4e1bdbbc59fc2b532f27821657250",
+        "evidence": "final-01/tidy/results.json",
+        "provided_revision": "5179333f4ac"
+      }
+    ],
+    "tool": "pinned clang-tidy23/Core449 config and Bitcoin plugin",
+    "evidence": "final-04/tidy/results.json"
+  },
+  "app_lint": {
+    "exit": 0,
+    "seconds": 2.915115494048223,
+    "app": "4d84fe7c3e5056702bf4636a800e84d0fcc49e64",
+    "post_branch": "",
+    "post_status": "",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2"
+  },
+  "qml_lint": {
+    "exit": 0,
+    "evidence": "../R14/r25-context-green-01/qml-lint",
+    "source": "db986158f7f",
+    "carry": "QML/public registration/header and tooling bytes unchanged after context gate; only transactionattempt.cpp and test_transactionattempt.cpp changed"
+  },
+  "actual_processes": {
+    "passed": 3,
+    "cases": [
+      "signer-substitution-speed-up",
+      "encrypted-replacement",
+      "bridge-protocol"
+    ],
+    "outer_stderr_bytes": 0,
+    "GUI_exit_and_stderr": "Existing shared harness check_gui_exit checks real child status and unexpected stderr after shutdown; IPC enabled",
+    "evidence": "final-04/{signer,replacement,lifecycle}.{stdout,stderr,exit}"
+  },
+  "rejected_metadata_red": {
+    "tested_app": "896161f712f200b49e4aded35ab907ef12c558c4",
+    "executed": 2,
+    "failed": 2,
+    "controls": "same-ID rejected replacement and ordinary request cannot change original kind/txid",
+    "evidence": "../R14/r25-domain-red-01/actual/immutable-original-attempt-metadata/results.txt",
+    "fixed_app": "4d84fe7c3e5056702bf4636a800e84d0fcc49e64"
+  },
+  "other_parent_failures": "Invalid signer1fail/1control; timing/abandonment4fail; unit1fail; obsolete password2fail; cross-wallet context1fail; retained numbered artifacts",
+  "scope_map": "source/plan/R25_SCOPE_MAP.json",
+  "upstream_note": "plan/QT6_UPSTREAM_IMPROVEMENTS.md#r25-replacement-signing-and-commit-observations",
+  "limitations": "Separate public observations are not atomic with independent RPC. Unknown commit remains Uncertain; no new write replay. R09/R20 approved Core receipt/device limitations retained. R42 exhaustive coverage/platform/full matrix/native Windows/sanitizers pending. No Core/Qt changes."
+}

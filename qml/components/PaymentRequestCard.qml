@@ -507,7 +507,7 @@ Pane {
                 visible: root.saved && !!root.request.createdIso
                 Layout.fillWidth: true
                 Layout.topMargin: root.sharing ? 4 : 0
-                text: visible ? qsTr("Created %1").arg(Qt.formatDateTime(new Date(root.request.createdIso), "MMM d, h:mm AP")) : ""
+                text: visible ? qsTr("Created %1").arg(Qt.formatDateTime(new Date(root.request.createdIso), Qt.locale(), Locale.ShortFormat)) : ""
                 font: Theme.text.caption.font
                 color: Theme.color.neutral7
                 horizontalAlignment: Text.AlignHCenter

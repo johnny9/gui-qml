@@ -29,3 +29,12 @@ integration, changed-scope app/QML lint and pinned tidy at each checkpoint.
 Exhaustive coverage, complete configuration/platform matrices, native Windows
 and sanitizers remain explicitly pending at R42. Keep Core and Qt unchanged;
 record approved upstream limitations without expanding their exceptions.
+
+Every worker must link each new or materially changed adapter compensating for
+missing Wallet/WalletLoader functionality to an entry in
+[upstream improvement notes](QT6_UPSTREAM_IMPROVEMENTS.md), including when the
+app-only workaround succeeds. Record the absent capability, actual guarantee,
+remaining limits, proposed upstream API/Core improvement, regression evidence
+and retirement condition. Include this link in the handoff and acceptance
+receipt. This is the user's `wallet-adapter-upstream-notes-20261115` amendment;
+it authorizes local notes, not Core edits or external submissions.

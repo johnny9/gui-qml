@@ -1,0 +1,142 @@
+{
+  "status": "R24 contributed-signature repair focused qualification satisfied; full order integration/prerequisite accounting belongs to coordinator",
+  "tested_app": "4c3d01e6e631265ebab4328a6719759910906fc1",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "runtime": [
+    {
+      "selection": "wallet-send",
+      "source": "bde32683d1ab91c35a5a65fdccb50a0aadf73480",
+      "executed": 137,
+      "passed": 137,
+      "failed": 0,
+      "skipped": 0,
+      "current_affected_rerun": false
+    },
+    {
+      "selection": "wallet-model-signer",
+      "source": "bde32683d1ab91c35a5a65fdccb50a0aadf73480",
+      "executed": 17,
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "current_affected_rerun": false
+    },
+    {
+      "selection": "signer-qml",
+      "source": "bde32683d1ab91c35a5a65fdccb50a0aadf73480",
+      "executed": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "current_affected_rerun": false
+    },
+    {
+      "selection": "review-export-qml",
+      "source": "bde32683d1ab91c35a5a65fdccb50a0aadf73480",
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "current_affected_rerun": false
+    },
+    {
+      "selection": "watchonly-core",
+      "source": "bde32683d1ab91c35a5a65fdccb50a0aadf73480",
+      "executed": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "current_affected_rerun": false
+    },
+    {
+      "selection": "wallet-model-partial-exports",
+      "source": "4c3d01e6e631265ebab4328a6719759910906fc1",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "current_affected_rerun": true
+    },
+    {
+      "selection": "review-export-qml",
+      "source": "4c3d01e6e631265ebab4328a6719759910906fc1",
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "current_affected_rerun": true
+    }
+  ],
+  "distinct_qualified_body_union": 177,
+  "final_affected_rerun_bodies": 5,
+  "unchanged_body_carry": 172,
+  "carry_limitation": "177 is a union of explicit source carries and final affected reruns, not177 bodies executed at one final ELF. Final delta removes one ineffective std::move in export selection; changed-scope consumer rerun5/5.",
+  "real_process_cases": {
+    "source": "4c3d01e6e631265ebab4328a6719759910906fc1",
+    "cases": [
+      "signer-substitution-send",
+      "signer-substitution-speed-up",
+      "bridge-protocol",
+      "runtime-block-write-failure-exit-status"
+    ],
+    "passed": 4,
+    "normal_gui_exit": 0,
+    "expected_fatal_Core_exit": 1,
+    "outer_stderr_bytes": 0,
+    "evidence": "partial-final-02/{functional,lifecycle}.{stdout,stderr,exit}"
+  },
+  "static": {
+    "distinct_entries": 13,
+    "handwritten_CPP": 6,
+    "MOC_aggregates": 7,
+    "final_changed_CPP_plus_MOC": {
+      "entries": 8,
+      "passed": 8,
+      "evidence": "partial-final-02/tidy/results.json"
+    },
+    "unchanged_handwritten_carry": {
+      "entries": 5,
+      "passed": 5,
+      "source": "bde32683d1ab91c35a5a65fdccb50a0aadf73480",
+      "evidence": "partial-final-01/tidy/results.json"
+    },
+    "toolchain": "pinned clang-tidy23.1.6, Core .clang-tidy and Bitcoin plugin; ordinary O0/g0 wallet+IPC profile"
+  },
+  "app_lint": {
+    "source": "4c3d01e6e631265ebab4328a6719759910906fc1",
+    "exit": 0,
+    "scope": "app",
+    "command": "COMMIT_RANGE=6151996cc8e..4c3d01e6e631265ebab4328a6719759910906fc1 python3 ci/lint.py --scope app --no-build --image qt6-r17-linter-core449:20261114",
+    "evidence": "partial-lint-03",
+    "post_lint_head_Core_and_status": "recorded and clean"
+  },
+  "qml_lint": {
+    "source": "bde32683d1ab91c35a5a65fdccb50a0aadf73480",
+    "files_per_variant": 259,
+    "variants": [
+      "qt65",
+      "qt62"
+    ],
+    "warnings_or_errors": 0,
+    "unchanged_QML_carry": true,
+    "evidence": "partial-green-02/qml-lint"
+  },
+  "red_proof": {
+    "source": "bbbb27f092b48795a1a7cc9367fe2121e72d9bd2",
+    "executed": 3,
+    "failed": 3,
+    "skipped": 0,
+    "evidence": "partial-audit-red-02/actual/report.json",
+    "confirmed_impact": "Corrupt unfinished signature map installed on normal/error/exception returns; no submission"
+  },
+  "retained_failed_attempts": [
+    "partial-audit-red-01 (normal fixture path did not exercise actual sign return; error+exception2 actual failures)",
+    "partial-green-01 (malformed-value test violated Core finalizer precondition; new terminal state omitted by old await helper)",
+    "partial-lint-01 (introduced leading translation whitespace)",
+    "partial-final-01 (ineffective std::move,12/13 pinned static; processes4/4 pass)"
+  ],
+  "upstream_note": "plan/QT6_UPSTREAM_IMPROVEMENTS.md#r24-verified-partial-signing-outcomes--app-verification-and-quarantine",
+  "uncertainty": "Missing script/execution/MuSig context stays Unknown, exact returned value remains separately owned/exportable; no verified Partial/submit authority. Known-invalid contributions rejected.",
+  "remaining": "Physical hardware and R42 exhaustive coverage/platform/configuration matrices/native Windows/sanitizers pending. Sibling local SignOnly/standalone PSBT Sign handling is a separately reopened follow-up, not claimed covered by this R24 approval repair.",
+  "artifact_root": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R24"
+}

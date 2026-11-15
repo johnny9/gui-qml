@@ -9,16 +9,20 @@
 #include <qml/walletrequests.h>
 #include <qml/secretinput.h>
 #include <qml/psbtpolicy.h>
+#include <qml/psbtsignatures.h>
 #include <atomic>
 
 namespace walletsend {
+// Native-only: authenticate prevouts through the original public wallet and
+// verify every finalized input before accepting an external signer's result.
+bool VerifyExternalTransaction(interfaces::Wallet& wallet, const CTransaction& transaction);
 enum class Submission { Unknown, Mempool, Confirmed, NotInMempool, Conflicted, Abandoned };
 enum class Intent { Submit, SignOnly };
 enum class Notice { SweepConsentRequired, CredentialsRequired, Finished, Notes };
 enum class Stage { Idle, AwaitingSweepConsent, AwaitingCredentials, SigningOnly, Submitting, Finished };
 enum class Record { Unknown, AbsentAtObservation, Recorded };
 enum class Relay { Unknown };
-enum class Error { None, Rejected, InvalidStructure, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled, NeedsSignerApproval, InvalidSignature, NodePolicy };
+enum class Error { None, Rejected, InvalidStructure, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled, NeedsSignerApproval, InvalidSignature, NodePolicy, UnverifiedSignatures };
 /** Explicit review withdrawal may win before the irreversible commit boundary.
  * Observer destruction does not withdraw an already admitted action. */
 class CommitConsent {
@@ -59,6 +63,8 @@ struct Result {
     // SignOnly returns the captured document even when the wallet can add only
     // a subset of signatures. It never returns a committed transaction.
     std::shared_ptr<const PartiallySignedTransaction> document;
+    std::shared_ptr<const PartiallySignedTransaction> quarantined_document;
+    psbtsignatures::Status signature_status{psbtsignatures::Status::Unknown};
     size_t signed_inputs{0};
     bool partial{false};
     Record record{Record::Unknown};
@@ -110,7 +116,7 @@ private:
 } // namespace walletsend
 
 namespace walletsigning {
-enum class Error { None, InvalidFee, ChangedTransaction, SignerNotFound, SignerFailed, Fill, Failed, Uncertain, UnverifiedInputs, InvalidSignature };
+enum class Error { None, InvalidFee, ChangedTransaction, SignerNotFound, SignerFailed, Fill, Failed, Uncertain, UnverifiedInputs, InvalidSignature, UnverifiedSignatures };
 struct Request {
     CTransactionRef reviewed;
     std::shared_ptr<const PartiallySignedTransaction> document;
@@ -122,6 +128,10 @@ struct Result {
     Error error{Error::None};
     std::optional<common::PSBTError> fill_error{};
     std::shared_ptr<const PartiallySignedTransaction> document{};
+    // Recoverable bytes are separate from the approved review. Unknown
+    // contributions may be exported explicitly, never installed or submitted.
+    std::shared_ptr<const PartiallySignedTransaction> quarantined_document{};
+    psbtsignatures::Status signature_status{psbtsignatures::Status::Unknown};
     CTransactionRef signed_transaction{};
     bool partial{false};
 };
@@ -130,7 +140,7 @@ Result Approve(interfaces::Wallet& wallet, const Request& request, std::shared_p
 // accepted work does not need new allocation admission after shutdown closes.
 Result ApproveInto(interfaces::Wallet& wallet, const Request& request, std::shared_ptr<Result> output);
 
-enum class ApprovalPhase { Idle, Preparing, WaitingDevice, Verifying, Complete, Partial, Failed, Cancelling, Closed, Uncertain };
+enum class ApprovalPhase { Idle, Preparing, WaitingDevice, Verifying, Complete, Partial, Failed, Cancelling, Closed, Uncertain, Unverified };
 struct ApprovalSnapshot {
     uint64_t sequence{0}, attempt_id{0}, attempt_review{0}, attempt_view{0};
     uint64_t current_review{0}, current_view{0};

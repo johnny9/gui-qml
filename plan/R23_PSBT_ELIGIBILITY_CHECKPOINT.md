@@ -60,8 +60,9 @@ replacement and relative locks that become admissible after a block. All11
 pinned static entries and exact-head app lint pass. The source-pinned
 `FINAL_ADMISSION_FOCUSED_UNION.json` records626 distinct passing identities,
 replacing overlaps in the earlier609-body union. This is an explicit carry
-across tested sources, not one final-ELF/full-suite result. R23's final order
-acceptance still waits for the reopened R22 overwrite-retirement prerequisite.
+across tested sources, not one final-ELF/full-suite result. R22's scoped gate was
+restored at e3508980 with the reserved, keyed retirement receipt and its original
+and new schedules. R23's focused acceptance is satisfied; R42 remains pending.
 
 Future optional upstream improvement: expose a typed, revisioned, read-only
 finalized transaction eligibility observation to simplify the Node RPC adapter.
