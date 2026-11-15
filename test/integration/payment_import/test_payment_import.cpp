@@ -240,12 +240,12 @@ private Q_SLOTS:
 
     void clipboardOfferComparesPublicMessageIndependentlyOfPrivateNote() {
         auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
-        const auto original = "bitcoin:" + m_address + "?amount=0.007&label=Public&message=Original";
+        const QString original = "bitcoin:" + m_address + "?amount=0.007&label=Public&message=Original";
         auto* page = qmltest::Find(m_app, "walletSendPage"); QVERIFY(page);
         QVERIFY(QMetaObject::invokeMethod(page, "applyPaymentRequestFromText", Q_ARG(QVariant, original), Q_ARG(QVariant, "explicit request")));
         QTRY_COMPARE(recipient->message(), QStringLiteral("Original"));
         QVERIFY(recipient->editPrivateNote(QStringLiteral("Private bookkeeping")));
-        const auto reordered = "BITCOIN:" + m_address + "?message=%4Friginal&label=Public&amount=0.00700000";
+        const QString reordered = "BITCOIN:" + m_address + "?message=%4Friginal&label=Public&amount=0.00700000";
         QGuiApplication::clipboard()->setText(reordered);
         QTRY_VERIFY(page->property("m_clipboardOperation").value<QObject*>());
         QTRY_VERIFY(!page->property("m_clipboardOperation").value<QObject*>()->property("pending").toBool());
