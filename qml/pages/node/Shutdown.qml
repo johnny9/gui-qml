@@ -5,10 +5,13 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import org.bitcoincore.qt 1.0
 import "../../controls"
 
 Page {
+    id: root
     objectName: "shutdownPage"
+    readonly property int lifecyclePhase: ApplicationModels.nodeModel.lifecyclePhase
     background: null
 
     ColumnLayout {
@@ -27,7 +30,7 @@ Page {
             Layout.fillWidth: true
             Layout.leftMargin: 20
             Layout.rightMargin: 20
-            header: qsTr("Saving...")
+            header: root.lifecyclePhase === NodeLifecycle.Stopped ? qsTr("Shutdown complete") : qsTr("Saving...")
             headerBold: true
             description: qsTr("Do not shut down the computer until this is done.")
             descriptionColor: Theme.color.neutral7

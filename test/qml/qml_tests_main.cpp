@@ -904,6 +904,7 @@ class MockRecipientsModel : public QAbstractListModel
 {
     Q_OBJECT
     Q_PROPERTY(QString revision READ revision NOTIFY revisionChanged)
+    Q_PROPERTY(bool importPending MEMBER m_import_pending NOTIFY validationChanged)
     Q_PROPERTY(bool canAddRecipient READ canAddRecipient NOTIFY countChanged)
     Q_PROPERTY(QString budgetError READ budgetError CONSTANT)
     Q_PROPERTY(bool validationPending READ validationPending CONSTANT)
@@ -915,6 +916,7 @@ class MockRecipientsModel : public QAbstractListModel
     Q_PROPERTY(QString validationError READ validationError WRITE setValidationError NOTIFY validationChanged)
 
 public:
+    bool m_import_pending{false};
     QString revision() const { return QString::number(m_revision); }
     void editRevision() { ++m_revision; Q_EMIT revisionChanged(); }
     bool canAddRecipient() const { return count() < 25; }
@@ -4645,9 +4647,39 @@ Q_SIGNALS:
     void blockTimeFractionsChanged();
 };
 
+class MockNodeLifecycle : public QObject {
+    Q_OBJECT
+public:
+    enum Phase { Constructed,Initializing,Ready,StartupFailed,Stopping,Draining,Stopped,Fatal };
+    Q_ENUM(Phase)
+};
+class MockRuntimePrompt : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QString title MEMBER title CONSTANT)
+    Q_PROPERTY(QString message MEMBER message CONSTANT)
+    Q_PROPERTY(QString icon MEMBER icon CONSTANT)
+    Q_PROPERTY(unsigned int buttons MEMBER buttons CONSTANT)
+    Q_PROPERTY(bool question MEMBER question CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* diagnostics READ diagnostics CONSTANT)
+public:
+    using QObject::QObject;
+    QString title,message,icon;unsigned int buttons{0};bool question{false};
+    std::function<void()> complete;
+    QAbstractItemModel* diagnostics()const{return nullptr;}
+    Q_INVOKABLE bool presented(){return true;}
+    Q_INVOKABLE bool answer(unsigned int button){
+        if(!button||(button&(button-1))||(button&buttons)!=button)return false;
+        if(complete)complete();return true;
+    }
+    Q_INVOKABLE bool unavailable(){if(complete)complete();return true;}
+};
+
 class MockNodeModel : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(MockRuntimePrompt* runtimePrompt READ runtimePrompt NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(QVariantList runtimePrompts READ runtimePrompts NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(int lifecyclePhase MEMBER m_lifecycle_phase NOTIFY lifecyclePhaseChanged)
     Q_PROPERTY(bool networkActionReady MEMBER m_network_action_ready NOTIFY networkActionReadyChanged)
     Q_PROPERTY(bool networkActionPending MEMBER m_network_action_pending NOTIFY networkActionPendingChanged)
     Q_PROPERTY(QString networkActionError MEMBER m_network_action_error NOTIFY networkActionErrorChanged)
@@ -4698,6 +4730,10 @@ public:
     QAbstractItemModel* startupDiagnostics() const { return nullptr; }
     QAbstractItemModel* runtimeDialogDiagnostics() const { return nullptr; }
 
+    int m_lifecycle_phase{MockNodeLifecycle::Constructed};
+    MockRuntimePrompt* m_runtime_prompt{nullptr};
+    MockRuntimePrompt* runtimePrompt()const{return m_runtime_prompt;}
+    QVariantList runtimePrompts()const{return m_runtime_prompt?QVariantList{QVariant::fromValue(m_runtime_prompt)}:QVariantList{};}
     bool m_network_action_ready{true};
     bool m_network_action_pending{false};
     QString m_network_action_error;
@@ -4756,7 +4792,7 @@ public:
     Q_INVOKABLE void answerRuntimeDialog(unsigned int button)
     {
         Q_UNUSED(button);
-        m_runtime_dialog_visible = false;
+        m_runtime_dialog_visible = false;m_runtime_prompt=nullptr;
         Q_EMIT runtimeDialogChanged();
     }
     Q_INVOKABLE QVariantList nodeInformationRows() const
@@ -4805,6 +4841,10 @@ public:
         m_runtime_dialog_buttons = buttons;
         m_runtime_dialog_question = question;
         m_runtime_dialog_visible = true;
+        auto prompt=new MockRuntimePrompt(this);prompt->title=title;prompt->message=message;
+        prompt->icon=m_runtime_dialog_icon;prompt->buttons=buttons;prompt->question=question;
+        prompt->complete=[this,prompt]{if(m_runtime_prompt!=prompt)return;m_runtime_prompt=nullptr;m_runtime_dialog_visible=false;Q_EMIT runtimeDialogChanged();};
+        m_runtime_prompt=prompt;
         Q_EMIT runtimeDialogChanged();
     }
     Q_INVOKABLE void setStartupErrorForTest(const QString& error)
@@ -4887,6 +4927,7 @@ public:
     }
 
 Q_SIGNALS:
+    void lifecyclePhaseChanged();
     void peerActionFinished(quint64 ticket, int outcome, const QString& error);
     void networkActionReadyChanged();
     void networkActionPendingChanged();
@@ -7021,6 +7062,8 @@ public Q_SLOTS:
         qmlRegisterSingletonInstance<MockAppMode>("org.bitcoincore.qt", 1, 0, "AppMode", &app_mode);
         qmlRegisterSingletonInstance<MockBuildInfo>("org.bitcoincore.qt", 1, 0, "BuildInfo", &build_info);
         qmlRegisterSingletonInstance<MockUrlOpener>("org.bitcoincore.qt", 1, 0, "UrlOpener", &url_opener);
+        qmlRegisterUncreatableType<MockRuntimePrompt>("org.bitcoincore.qt",1,0,"RuntimePromptModel","Original mock prompt");
+        qmlRegisterUncreatableType<MockNodeLifecycle>("org.bitcoincore.qt",1,0,"NodeLifecycle","Lifecycle values");
         qmlRegisterUncreatableType<MockPeerDetailsModel>(
             "org.bitcoincore.qt",
             1,

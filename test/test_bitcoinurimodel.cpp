@@ -102,6 +102,23 @@ private Q_SLOTS:
         f.finish(); QCOMPARE(same->result().value("sourceId").toString(), identity);
         QVERIFY(same->result().value("matchesExistingRequest").toBool()); QVERIFY(!same->result().value("conflicts").toBool());
     }
+    void probeTreatsMaximumAsAnAmountIntent_data() {
+        QTest::addColumn<bool>("maximum"); QTest::addColumn<bool>("explicit_amount");
+        QTest::newRow("fixed-same-amount") << false << true;
+        QTest::newRow("maximum-same-numeric-amount") << true << true;
+        QTest::newRow("maximum-without-amount") << true << false;
+    }
+    void probeTreatsMaximumAsAnAmountIntent() {
+        QFETCH(bool, maximum); QFETCH(bool, explicit_amount);
+        Fixture f;
+        const auto source = explicit_amount ? Uri() : "bitcoin:" + Address() + "?label=Invoice";
+        auto* operation = f.model->requestProbe(source,
+            {{"address", Address()}, {"amount", qint64{12'345'678}}, {"maximum", maximum}, {"requestLabel", "Invoice"}}, f.owner.get());
+        QVERIFY(operation); f.finish();
+        const auto result = operation->result(); QVERIFY(result.value("success").toBool());
+        QCOMPARE(result.value("conflicts").toBool(), maximum && explicit_amount);
+        QCOMPARE(result.value("matchesExistingRequest").toBool(), !(maximum && explicit_amount));
+    }
     void probeVerifiesExactNativePasteProvenance_data() {
         QTest::addColumn<QString>("previous"); QTest::addColumn<QString>("current"); QTest::addColumn<QString>("literal"); QTest::addColumn<bool>("accepted");
         const auto uri = Uri();

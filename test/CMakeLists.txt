@@ -88,6 +88,11 @@ add_executable(bitcoinqml_unit_tests
   test_qrimageprovider.cpp
   test_imageexportoperation.cpp
   test_nodemodel.cpp
+  test_nodelifecycle.cpp
+  test_nodelifecycleworker.cpp
+  test_runtimeprompt.cpp
+  test_runtimepromptworker.cpp
+  test_networkcommand.cpp
   test_startupdiagnosticsmodel.cpp
   test_secretinput.cpp
   test_networkstyle.cpp
@@ -132,6 +137,7 @@ if(ENABLE_WALLET)
     test_psbtfee.cpp
     test_psbtqmlmodel.cpp
     test_psbtwork.cpp
+    test_paymentimport.cpp
     test_psbtdocument.cpp
     test_receiverequesthistorymodel.cpp
     test_receiverequestoperation.cpp

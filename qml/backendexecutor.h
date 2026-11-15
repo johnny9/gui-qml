@@ -41,7 +41,10 @@ public:
     // One shared Core lane plus independent domain/control/cleanup transports.
     // Migrated Core effects use one worker. Legacy GUI-completion commands
     // retain a separate compatibility worker until their callers migrate.
-    explicit BackendExecutor(execution::Limits limits, QObject* parent = nullptr);
+    // Native adapters may require retirement on the original Core thread.
+    // Control remains independent and cleanup keeps its reserved budget.
+    enum class CleanupAffinity { Independent, Core };
+    explicit BackendExecutor(execution::Limits limits, QObject* parent = nullptr, CleanupAffinity cleanup_affinity = CleanupAffinity::Independent);
     ~BackendExecutor() override;
 
     template <typename Work, typename Done>
@@ -145,7 +148,7 @@ private:
 
     struct ExecutorState;
     TaskId enqueueTask(std::function<void(bool)> work, std::function<void(std::optional<Cancelled>)> gui_completion, CancelPolicy policy);
-    BackendExecutor(std::optional<execution::Limits> limits, QObject* parent);
+    BackendExecutor(std::optional<execution::Limits> limits, QObject* parent, CleanupAffinity cleanup_affinity);
     bool enqueue(std::function<void()> work, std::function<void()> gui_completion);
     std::shared_ptr<ExecutorState> m_state;
     std::shared_ptr<execution::TaskQueue> m_scheduler;

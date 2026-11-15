@@ -3,7 +3,13 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/bitcoinurimodel.h>
+
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <qml/models/bitcoinuri.h>
+#ifdef ENABLE_WALLET
+#include <qml/models/walletqmlmodel.h>
+#endif
+#include <QTimer>
 #include <qml/guipresentation.h>
 #include <QFile>
 #include <QCryptographicHash>
@@ -69,13 +75,14 @@ QVariantMap ContextResult(QVariantMap result, const QString& text, const QVarian
 {
     const auto address = context.value("address").toString(), note = context.value("note").toString();
     const auto amount = context.value("amount").toLongLong();
+    const bool fixed_replaces_maximum = context.value("maximum").toBool() && result.value("hasAmount").toBool();
     const auto field = context.value("sourceField").toString();
     const auto private_note = result.value("privateNote").toString();
-    result.insert(QStringLiteral("conflicts"), result.value("success").toBool() && (
+    result.insert(QStringLiteral("conflicts"), result.value("success").toBool() && (fixed_replaces_maximum ||
         (field != "address" && !address.isEmpty() && address != result.value("address").toString()) ||
         (field != "amount" && result.value("hasAmount").toBool() && amount != 0 && amount != result.value("amountSats").toLongLong()) ||
         (field != "label" && !note.isEmpty() && !private_note.isEmpty() && note != private_note)));
-    result.insert(QStringLiteral("matchesExistingRequest"), result.value("success").toBool() &&
+    result.insert(QStringLiteral("matchesExistingRequest"), result.value("success").toBool() && !fixed_replaces_maximum &&
         address == result.value("address").toString() && (!result.value("hasAmount").toBool() || amount == result.value("amountSats").toLongLong()) &&
         (!result.value("hasLabel").toBool() || context.value("requestLabel").toString() == result.value("label").toString()));
     if (context.value("edited").toBool()) {
@@ -128,6 +135,16 @@ void BitcoinUriParseOperation::retryPublication()
 struct BitcoinUriOperations : std::enable_shared_from_this<BitcoinUriOperations> {
     std::map<quint64, QPointer<BitcoinUriParseOperation>> live;
     presentation::Post post;
+#ifdef ENABLE_WALLET
+    std::mutex import_mutex;
+    std::map<uint64_t, std::shared_ptr<paymentimport::Owner>> imports;
+    std::shared_ptr<QObject> timer{presentation::MakeGuiObject()};
+    void retireImports() {
+        std::vector<std::shared_ptr<paymentimport::Owner>> retained;
+        { std::lock_guard lock{import_mutex}; for (const auto& [id, operation] : imports) retained.push_back(operation); }
+        for (const auto& operation : retained) operation->close();
+    }
+#endif
     void retire() {
         for (size_t n{0}; n < 32 && !live.empty(); ++n) {
             const auto operation = live.begin()->second;
@@ -155,8 +172,57 @@ void BitcoinUriModel::closeAdmission()
 {
     if (std::exchange(m_closed, true)) return;
     *m_admission = true;
+#ifdef ENABLE_WALLET
+    m_operations->retireImports();
+#endif
     m_operations->retire();
 }
+#ifdef ENABLE_WALLET
+PaymentImportOperation* BitcoinUriModel::requestImportText(const QString& text, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+{
+    const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
+    const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
+    return self && original_owner ? self->requestImport({paymentimport::Input::Kind::Text, text}, target, original_owner) : nullptr;
+}
+PaymentImportOperation* BitcoinUriModel::requestImportFile(const QString& path, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+{
+    const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
+    const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
+    return self && original_owner ? self->requestImport({paymentimport::Input::Kind::File, path}, target, original_owner) : nullptr;
+}
+PaymentImportOperation* BitcoinUriModel::requestImport(paymentimport::Input input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner)
+{
+    if (m_closed || !owner || !m_services.scheduler || input.value.size() > 1024 * 1024 ||
+        m_sequence == std::numeric_limits<quint64>::max()) return nullptr;
+    bool capacity;
+    { std::lock_guard lock{m_operations->import_mutex}; capacity = m_operations->imports.size() >= MAX_OPERATIONS; }
+    if (capacity) { Q_EMIT requestRejected(Rejection::Capacity); return nullptr; }
+    auto* operation = new PaymentImportOperation(++m_sequence, owner);
+    const QPointer<PaymentImportOperation> observer{operation};
+    const auto registry = m_operations;
+    const auto post = presentation::ReliablePost(m_services.post);
+    paymentimport::Services services; services.scheduler = m_services.scheduler;
+    services.wake = [post, timer = registry->timer](auto delay, auto callback) {
+        post([timer, delay, callback = std::move(callback)] { QTimer::singleShot(delay, timer.get(), callback); });
+    };
+    const auto admission = m_admission;
+    const auto identity = operation->requestId();
+    auto actor = paymentimport::Owner::Create(identity, std::move(services),
+        [post, observer](auto snapshot) { post([observer, snapshot = std::move(snapshot)]() mutable { if (observer) observer->project(std::move(snapshot)); }); },
+        [weak = std::weak_ptr<BitcoinUriOperations>{registry}](uint64_t id) {
+            if (const auto retained = weak.lock()) { std::lock_guard lock{retained->import_mutex}; retained->imports.erase(id); }
+        });
+    if (!actor || !observer || admission->load()) { if (actor) actor->close(); if (observer) delete observer.data(); return nullptr; }
+    operation->m_owner = actor;
+    operation->m_snapshot.phase = paymentimport::Phase::Reading; operation->m_snapshot.pending = true;
+    operation->m_export_services.scheduler = m_services.scheduler; operation->m_export_services.post = post;
+    { std::lock_guard lock{registry->import_mutex}; registry->imports.emplace(operation->requestId(), actor); }
+    if (!actor->inspect(std::move(input)) || !actor->chooseTarget(std::move(target)) || !observer || admission->load()) {
+        actor->close(); if (observer) delete observer.data(); return nullptr;
+    }
+    return observer;
+}
+#endif
 BitcoinUriParseOperation* BitcoinUriModel::requestParse(const QString& text, QObject* owner, BitcoinUriParseOperation* replace)
 { return start(text, false, owner, replace); }
 BitcoinUriParseOperation* BitcoinUriModel::requestProbe(const QString& text, const QVariantMap& context, QObject* owner, BitcoinUriParseOperation* replace)
