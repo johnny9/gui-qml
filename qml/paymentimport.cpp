@@ -35,6 +35,7 @@ Inspection ReadSource(const Input& input)
     if (input.kind == Input::Kind::File) {
         const auto path = psbtwork::LocalFilePath(input.value);
         if (path.isEmpty() || path.size() > 4096) return Invalid(QStringLiteral("The import path is invalid."));
+        if (!QFileInfo(path).isFile()) return Invalid(QStringLiteral("The import source must be a regular local file."));
         QFile file{path};
         if (!file.open(QIODevice::ReadOnly)) return Invalid(QStringLiteral("The import source could not be opened."));
         identity_path = QFileInfo(file).canonicalFilePath();
@@ -186,6 +187,18 @@ execution::Admission Owner::inspect(Input input)
     });
 }
 
+execution::Admission Owner::retry()
+{
+    return submit([self = shared_from_this()] {
+        auto& state = *self->m_state;
+        if (state.flow.phase() != Phase::Failed || state.closing || !state.input || state.native_jobs) return;
+        const auto source = state.flow.inspect();
+        if (!source) return;
+        state.use_requested = false; state.inspection.reset(); state.result.reset(); state.error.clear();
+        self->cancelObsolete(); self->read(*source, false);
+    });
+}
+
 void Owner::read(uint64_t source, bool analysis)
 {
     auto output = execution::RetainValues<Inspection>(m_scope, [] { return std::make_unique<Inspection>(); });
@@ -304,7 +317,9 @@ void Owner::finish(Reply reply, ReplyKind kind, uint64_t source, uint64_t target
     if (kind == ReplyKind::Query && delivery != state.query_delivery && !established) { cancelObsolete(); publish(); return; }
     if (kind == ReplyKind::Observe) {
         if (!state.closing && source == state.flow.source() && target == state.target_sequence) {
-            if (reply.target) state.flow.chooseTarget(reply.target);
+            if (reply.target) {
+                if (state.flow.chooseTarget(reply.target) && state.flow.error() != Error::Source) state.error.clear();
+            }
             else state.error = QStringLiteral("The original target could not be observed.");
         }
     } else if (child && state.flow.child() && *child == *state.flow.child() &&

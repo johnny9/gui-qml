@@ -45,7 +45,7 @@ public:
     bool canReconcile() const { return m_snapshot.can_reconcile; }
     quint64 promptToken() const { return m_snapshot.prompt ? m_snapshot.prompt->id : 0; }
     quint64 resultId() const { return m_snapshot.result ? m_snapshot.result->result : 0; }
-    QString error() const { return m_snapshot.error; }
+    QString error() const { return m_transport_error.isEmpty() ? m_snapshot.error : m_transport_error; }
     QString address() const { return m_snapshot.inspection ? m_snapshot.inspection->payment.address : QString{}; }
     QString publicLabel() const { return m_snapshot.inspection ? m_snapshot.inspection->payment.label : QString{}; }
     QString message() const { return m_snapshot.inspection ? m_snapshot.inspection->payment.message : QString{}; }
@@ -55,6 +55,7 @@ public:
     FileExportOperationModel* fileExportOperation() const { return m_export; }
     Q_INVOKABLE bool requestSaveOriginal(const QString& token, const QString& path);
     Q_INVOKABLE void chooseTarget(WalletQmlModel* wallet, SendRecipient* recipient);
+    Q_INVOKABLE void retry();
     Q_INVOKABLE void use();
     Q_INVOKABLE void apply();
     Q_INVOKABLE void openReview();
@@ -71,6 +72,8 @@ private:
     void project(paymentimport::Snapshot snapshot);
     const quint64 m_identity;
     bool m_closed{false};
+    QString m_transport_error;
+    void command(const std::function<execution::Admission(paymentimport::Owner&)>& submit);
     backup::Services m_export_services;
     FileExportOperationModel* m_export{nullptr};
     paymentimport::Snapshot m_snapshot;

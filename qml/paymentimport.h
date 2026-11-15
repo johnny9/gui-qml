@@ -57,6 +57,7 @@ public:
     using Retired = std::function<void(uint64_t)>;
     static std::shared_ptr<Owner> Create(uint64_t identity, Services services, Notify notify, Retired retired = {});
     execution::Admission inspect(Input input);
+    execution::Admission retry();
     execution::Admission chooseTarget(std::shared_ptr<const TargetPort> target);
     execution::Admission apply();
     execution::Admission use();

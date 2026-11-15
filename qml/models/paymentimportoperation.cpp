@@ -23,12 +23,22 @@ void PaymentImportOperation::chooseTarget(WalletQmlModel* wallet, SendRecipient*
     const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
     if (self && !self->m_closed && self->m_owner == actor) actor->chooseTarget(target);
 }
-void PaymentImportOperation::use() { if (!m_closed && m_owner) m_owner->use(); }
-void PaymentImportOperation::apply() { if (!m_closed && m_owner) m_owner->apply(); }
-void PaymentImportOperation::openReview() { if (!m_closed && m_owner) m_owner->openReview(); }
-void PaymentImportOperation::replace(quint64 prompt) { if (!m_closed && m_owner) m_owner->replace(prompt); }
-void PaymentImportOperation::keepDraft(quint64 prompt) { if (!m_closed && m_owner) m_owner->keepDraft(prompt); }
-void PaymentImportOperation::reconcile() { if (m_owner) m_owner->reconcile(); }
+void PaymentImportOperation::command(const std::function<execution::Admission(paymentimport::Owner&)>& submit)
+{
+    if (m_closed || !m_owner) return;
+    const QPointer<PaymentImportOperation> self{this}; const auto owner = m_owner;
+    const auto admitted = submit(*owner);
+    if (!self || self->m_closed || self->m_owner != owner) return;
+    const auto error = admitted ? QString{} : tr("The import command could not be queued. Try again.");
+    if (m_transport_error != error) { m_transport_error = error; Q_EMIT changed(); }
+}
+void PaymentImportOperation::retry() { command([](auto& owner) { return owner.retry(); }); }
+void PaymentImportOperation::use() { command([](auto& owner) { return owner.use(); }); }
+void PaymentImportOperation::apply() { command([](auto& owner) { return owner.apply(); }); }
+void PaymentImportOperation::openReview() { command([](auto& owner) { return owner.openReview(); }); }
+void PaymentImportOperation::replace(quint64 prompt) { command([prompt](auto& owner) { return owner.replace(prompt); }); }
+void PaymentImportOperation::keepDraft(quint64 prompt) { command([prompt](auto& owner) { return owner.keepDraft(prompt); }); }
+void PaymentImportOperation::reconcile() { command([](auto& owner) { return owner.reconcile(); }); }
 void PaymentImportOperation::cancel()
 {
     if (std::exchange(m_closed, true)) return;
@@ -46,9 +56,13 @@ bool PaymentImportOperation::requestSaveOriginal(const QString& token, const QSt
 {
     if (token.isEmpty() || token != exportToken() || (m_export && m_export->pending())) return false;
     const auto document = std::shared_ptr<const PartiallySignedTransaction>{m_snapshot.inspection, m_snapshot.inspection->psbt->document.get()};
-    auto* next = new FileExportOperationModel(path, document, m_export_services, this);
+    const QPointer<PaymentImportOperation> self{this};
+    auto* next = new FileExportOperationModel(path, document, m_export_services);
+    if (!self || self->m_closed || token != self->exportToken()) { next->deleteLater(); return false; }
+    next->setParent(this);
     if (m_export) m_export->deleteLater();
     m_export = next;
-    Q_EMIT exportChanged();
-    return next->start();
+    const auto admitted = next->start();
+    if (self && self->m_export == next) Q_EMIT self->exportChanged();
+    return admitted;
 }

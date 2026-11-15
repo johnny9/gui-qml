@@ -44,7 +44,7 @@ struct Fixture {
     std::shared_ptr<paymentimport::TargetPort> port{std::make_shared<paymentimport::TargetPort>()};
     paymentimport::Target facts{Target()};
     int reads{0}, analyses{0}, writes{0}, queries{0}, acks{0}, retired{0};
-    bool lose_reply{false}, unknown_query{false}, reject_ack{false};
+    bool lose_reply{false}, unknown_query{false}, reject_ack{false}, read_fail{false};
     std::optional<paymentimport::ChildReply> result;
     Fixture() {
         port->opening = facts.opening; port->draft = facts.draft; port->recipient = facts.recipient;
@@ -63,7 +63,7 @@ struct Fixture {
         };
         port->acknowledge = [this](auto, auto) { ++acks; return execution::Admission{{}, reject_ack ? execution::Rejection::Transport : execution::Rejection::None}; };
         paymentimport::Services services; services.scheduler = source.scheduler;
-        services.read = [this](const auto& input) { ++reads; return paymentimport::ReadSource(input); };
+        services.read = [this](const auto& input) { ++reads; if (read_fail) { paymentimport::Inspection failed; failed.error = "read unavailable"; return failed; } return paymentimport::ReadSource(input); };
         services.analyze = [this](const auto& input) { ++analyses; return paymentimport::AnalyzeSource(input); };
         services.now = [this] { return now; }; services.wake = [this](auto, auto wake) { wakes.push_back(std::move(wake)); };
         owner = paymentimport::Owner::Create(42, services, [this](auto value) { snapshot = std::move(value); }, [this](auto) { ++retired; });
@@ -114,6 +114,13 @@ private Q_SLOTS:
         QCOMPARE(parsed.kind, paymentimport::Kind::Psbt); QVERIFY(parsed.psbt->document);
         const auto analyzed = paymentimport::AnalyzeSource(parsed); QCOMPARE(analyzed.kind, paymentimport::Kind::Psbt);
         QVERIFY(analyzed.psbt); QCOMPARE(psbtwork::SerializeRaw(*analyzed.psbt->document), psbtwork::SerializeRaw(*Document()));
+    }
+    void retryReadsFreshSourceWithoutCarryingOldApplyIntent() {
+        Fixture f; f.read_fail = true; f.owner->use(); f.inspect();
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::Failed); const auto original = f.snapshot.source;
+        f.read_fail = false; f.owner->retry(); f.drain();
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::Inspecting); QVERIFY(f.snapshot.source != original); QCOMPARE(f.reads, 2); QCOMPARE(f.writes, 0);
+        QVERIFY(f.snapshot.can_apply); f.owner->apply(); f.drain(); QCOMPARE(f.writes, 1);
     }
     void sourceAndTargetExecutorsKeepSeparateDecisions() {
         Fixture f; f.owner->inspect({paymentimport::Input::Kind::Text, Uri()}); f.owner->chooseTarget(f.port);
@@ -350,7 +357,11 @@ private Q_SLOTS:
         importer.setServices({sources.scheduler, [&](auto post) { source_gui.push_back(std::move(post)); }});
         const auto publish = [](auto& queue) { while (!queue.empty()) { auto turn = std::move(queue.front()); queue.pop_front(); turn(); } };
         const auto pump = [&] { sources.drain(); commands.drain(); publish(target_gui); publish(source_gui); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall); };
-        const auto cleanup = qScopeGuard([&] { importer.closeAdmission(); for (int turn{0}; turn < 10; ++turn) pump(); });
+        const auto cleanup = qScopeGuard([&] {
+            importer.closeAdmission(); model.beginShutdown();
+            if (!QTest::qWaitFor([&] { pump(); return model.shutdownComplete() && model.backendExecutor()->isDrained() && commands.quiescent(); }, 3000))
+                QTest::qFail("Original typed import and wallet graph did not physically drain", __FILE__, __LINE__);
+        });
         QVERIFY(QTest::qWaitFor([&] { pump(); return model.capabilitiesKnown() && !model.sendRecipientList()->validationPending(); }, 5000));
         const auto document = psbtfeefixture::Legacy(2, false);
         const auto bytes = psbtwork::SerializeRaw(document);
