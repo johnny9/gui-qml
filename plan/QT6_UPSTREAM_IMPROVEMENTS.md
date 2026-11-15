@@ -340,11 +340,15 @@ and actual submission ownership.
 A future typed observation would simplify RPC adaptation, but cannot reserve
 later admission against independent changes. It is an optional improvement.
 
-## R35 proposed wallet-directory inspection — decision pending
+## R35 proposed wallet-directory inspection — public helper workaround
 
 The [boundary audit](R35_WALLET_DIRECTORY_BOUNDARY.md) identifies the preexisting
 direct `wallet::ListDatabases(proposed_path)` helper. Public WalletLoader directory
 enumeration reads global configuration and cannot inspect that proposed path.
-A typed explicit-path read-only public inspector would preserve the existing
-wallet-versus-junk distinction without changing global state. The affected
-piece is held pending user input; no temporary exception is assumed.
+A fresh headless app helper has demonstrated the same classification through
+public Init/Node/WalletLoader calls and child-only directory/network settings:
+10 actual controls pass, including parent isolation and read-only targets.
+The user requested this app-side solution; production integration and its
+focused gate remain pending. A typed explicit-path inspector would remove the
+process workaround and provide bounded/structured scan diagnostics. It is an
+upstream improvement, not a required Core change or a private-access exception.
