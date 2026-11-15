@@ -1,6 +1,8 @@
 # R20 public submission receipt limitation
 
-Decision pending. Core remains `44901d8f64cb617714707bd025ecd83f108353c2`.
+The user approved an app-side conditional checkpoint with the missing receipt
+guarantees marked **needs upstream improvement**; see
+[the decision](API_DEFERRALS_20261115.md). Core remains `44901d8f64cb617714707bd025ecd83f108353c2`.
 No Core/Qt changes, wallet RPC escape or forced rebroadcast are authorized.
 
 The pinned interfaces::Wallet::commitTransaction returns void. Public
@@ -21,8 +23,8 @@ successor draft remain mandatory. No unsupported reason is inferred from absence
 
 R20 scopes draft-081-RC11 and draft-307-RC11 explicitly ask for disabled versus
 rejected outcomes. Their reason distinction cannot be accepted as implemented
-through this interface. The user must choose a conditional focused app checkpoint
-with that distinction explicitly unresolved, or keep R20 acceptance on hold.
+through this interface. The user chose to defer that exact distinction as an upstream improvement.
+Other R20 implementation and focused integration gates still apply.
 The ordinary truthful-ledger implementation and independent stages can continue.
 This is separate from R17's already accepted fee-preview limitation and R19's
 source-refuted preparation-time cluster-policy allegation.
