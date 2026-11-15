@@ -56,7 +56,7 @@ Error CheckApprovedScope(interfaces::Wallet& wallet, const Prepared& review)
     }
     return Error::None;
 }
-void Observe(interfaces::Wallet& wallet, Commit& result)
+void Observe(interfaces::Wallet& wallet, Commit& result, bool exact_witness = false)
 {
     try {
         interfaces::WalletTxStatus status{}; bool in_mempool{false}; int num_blocks{0};
@@ -66,6 +66,7 @@ void Observe(interfaces::Wallet& wallet, Commit& result)
             result.record = Record::AbsentAtObservation;
             return;
         }
+        if (exact_witness && record.tx->GetWitnessHash() != result.candidate_wtxid) return;
         result.record = Record::Recorded;
         if (status.depth_in_main_chain > 0) result.submission = Submission::Confirmed;
         else if (status.depth_in_main_chain < 0) result.submission = Submission::Conflicted;
@@ -188,6 +189,10 @@ Commit Execute(interfaces::Wallet& wallet, const Prepared& review, std::optional
         }
         std::vector<bilingual_str> errors;
         Txid txid;
+        const CTransaction exact{signed_tx};
+        result.candidate_txid = exact.GetHash();
+        result.candidate_wtxid = exact.GetWitnessHash();
+        result.commit_attempted = true;
         if (!wallet.commitBumpTransaction(review.original, std::move(signed_tx), errors, txid)) {
             result.error = Error::Commit; result.message = Message(errors); return result;
         }
@@ -198,5 +203,17 @@ Commit Execute(interfaces::Wallet& wallet, const Prepared& review, std::optional
         result.error = Error::Invalid; result.message = QObject::tr("The wallet password could not be prepared. No fee bump was submitted.");
     } catch (...) { result.error = Error::Uncertain; }
     return finish();
+}
+Commit ObserveOutcome(interfaces::Wallet& wallet, const Commit& original)
+{
+    auto result = original;
+    result.record = Record::Unknown;
+    result.submission = Submission::Unknown;
+    if (!original.commit_attempted || original.candidate_txid == Txid{}) return result;
+    result.txid = original.candidate_txid;
+    Observe(wallet, result, true);
+    // Observing a record cannot manufacture the original call's missing
+    // persistence/replacement-metadata receipt. Keep its uncertainty explicit.
+    return result;
 }
 } // namespace walletbump

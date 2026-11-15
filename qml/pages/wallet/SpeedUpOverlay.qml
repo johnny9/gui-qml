@@ -29,6 +29,7 @@ Popup {
         && root.bumpModel.state === BumpTransactionModel.NeedsConfirmation
     readonly property bool readyToPrepareAgain: root.ownsAttempt && root.bumpModel
         && root.bumpModel.state === BumpTransactionModel.NeedsRevalidation
+    readonly property bool uncertainOutcome: root.ownsAttempt && root.originalModel.state === BumpTransactionModel.Uncertain
 
     signal done()
     signal viewNewTransaction(string newTxid)
@@ -63,7 +64,7 @@ Popup {
     onAboutToShow: {
         root.newTxid = ""
         root.originalModel = root.bumpModel
-        root.ownedAttemptId = root.originalModel ? root.originalModel.requestPrepareFeeBump(root.txid, 1) : 0
+        root.ownedAttemptId = root.originalModel ? root.originalModel.requestReviewFeeBump(root.txid, 1) : 0
         if (!root.ownedAttemptId) root.close()
     }
 
@@ -196,20 +197,37 @@ Popup {
 
             ContinueButton {
                 objectName: "updateTransactionButton"
-                text: root.readyToPrepareAgain ? qsTr("Prepare again") : qsTr("Update transaction")
+                text: root.uncertainOutcome ? qsTr("Check transaction status")
+                    : root.readyToPrepareAgain ? qsTr("Prepare again") : qsTr("Update transaction")
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
-                enabled: root.readyToConfirm || root.readyToPrepareAgain
+                enabled: root.uncertainOutcome ? root.originalModel.canRecheckOutcome : root.readyToConfirm || root.readyToPrepareAgain
                 onClicked: {
-                    if (!root.bumpModel) {
+                    if (!root.ownsAttempt) return
+                    if (root.uncertainOutcome) {
+                        root.originalModel.requestRecheckFeeBumpOutcome()
                         return
                     }
                     if (root.readyToPrepareAgain) {
-                        const nextAttempt = root.bumpModel.requestPrepareFeeBump(root.txid, 1)
+                        const nextAttempt = root.originalModel.requestPrepareFeeBump(root.txid, 1)
                         if (nextAttempt) root.ownedAttemptId = nextAttempt
                         return
                     }
-                    if (root.ownsAttempt) root.bumpModel.requestConfirmFeeBump()
+                    root.originalModel.requestConfirmFeeBump()
+                }
+            }
+            OutlineButton {
+                objectName: "viewObservedReplacementButton"
+                text: qsTr("View transaction")
+                visible: root.uncertainOutcome && root.originalModel.walletRecordState === BumpTransactionModel.WalletRecordRecorded
+                    && root.originalModel.newTxid.length > 0
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
+                onClicked: {
+                    if (!root.ownsAttempt) return
+                    const id = root.originalModel.newTxid
+                    root.close()
+                    root.viewNewTransaction(id)
                 }
             }
         }

@@ -43,6 +43,7 @@ public:
     Q_PROPERTY(QString errorText READ errorText NOTIFY resultChanged)
     Q_PROPERTY(QString unlockErrorText READ unlockErrorText NOTIFY resultChanged)
     Q_PROPERTY(bool needsUnlock READ needsUnlock NOTIFY needsUnlockChanged)
+    Q_PROPERTY(bool canRecheckOutcome READ canRecheckOutcome NOTIFY stateChanged)
 
     explicit BumpTransactionModel(interfaces::Wallet* wallet, QObject* parent = nullptr);
     void setOpening(std::shared_ptr<walletopening::Session> opening, execution::SnapshotServices services,
@@ -52,7 +53,8 @@ public:
     void retryPublications();
     void detachWallet() { closeAdmission(); m_wallet = nullptr; }
     State state() const { return m_state; }
-    bool busy() const { return m_preparing || m_committing; }
+    bool busy() const { return m_preparing || m_committing || m_rechecking; }
+    bool canRecheckOutcome() const;
     quint64 attemptId() const { return m_attempt_id; }
     quint64 commitId() const { return m_commit_id; }
     ActionType actionType() const { return SpeedUp; }
@@ -70,6 +72,9 @@ public:
     std::optional<walletbump::Commit> commitResult() const;
     std::shared_ptr<const execution::OwnedCommand<walletbump::Preparation>> preparationOperation() const { return m_prepare_operation; }
     std::shared_ptr<const execution::OwnedCommand<walletbump::Commit>> commitOperation() const { return m_commit_operation; }
+    std::shared_ptr<const execution::OwnedCommand<walletbump::Commit>> outcomeObservation() const { return m_observation_operation; }
+    Q_INVOKABLE quint64 requestReviewFeeBump(const QString& txid, unsigned int target_blocks);
+    Q_INVOKABLE quint64 requestRecheckFeeBumpOutcome();
     Q_INVOKABLE quint64 requestPrepareFeeBump(const QString& txid, unsigned int target_blocks);
     Q_INVOKABLE quint64 requestConfirmFeeBump();
     Q_INVOKABLE quint64 requestConfirmFeeBumpWithPassphrase(const QString& passphrase);
@@ -90,6 +95,7 @@ private:
     quint64 confirm(std::optional<SecureString> passphrase, secretinput::Captured captured = {});
     void publishPreparation(quint64 attempt, quint64 revision);
     void publishCommit(quint64 attempt, quint64 commit);
+    void publishObservation(quint64 attempt, quint64 commit, quint64 observation);
     void applyAttempt(transactionattempt::Snapshot snapshot, quint64 attempt, quint64 revision, bool preparation);
     transactionattempt::CurrentFacts attemptFacts() const;
     static State ProjectState(transactionattempt::Phase phase);
@@ -106,11 +112,15 @@ private:
     std::shared_ptr<const walletbump::Prepared> m_review;
     std::shared_ptr<execution::OwnedCommand<walletbump::Preparation>> m_prepare_operation;
     std::shared_ptr<execution::OwnedCommand<walletbump::Commit>> m_commit_operation;
+    std::shared_ptr<execution::OwnedCommand<walletbump::Commit>> m_observation_operation;
+    std::optional<walletbump::Commit> m_observed_outcome;
     std::function<void()> m_security_state_changed;
     State m_state{Idle};
     int m_display_unit{0};
     QString m_old_fee, m_new_fee, m_increase, m_old_txid, m_new_txid, m_error, m_unlock_error;
     bool m_needs_unlock{false}, m_closed{false}, m_preparing{false}, m_committing{false};
+    bool m_rechecking{false};
+    quint64 m_observation_id{0};
     quint64 m_attempt_id{0}, m_commit_id{0}, m_view_revision{0}, m_preparation_revision{0};
 };
 

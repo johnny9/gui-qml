@@ -5329,6 +5329,8 @@ class MockBumpTransactionModel : public QObject
     Q_PROPERTY(QString unlockErrorText MEMBER m_unlock_error_text NOTIFY resultChanged)
     Q_PROPERTY(bool needsUnlock MEMBER m_needs_unlock NOTIFY needsUnlockChanged)
     Q_PROPERTY(int preparationCount READ preparationCount NOTIFY stateChanged)
+    Q_PROPERTY(int observationCount READ observationCount NOTIFY stateChanged)
+    Q_PROPERTY(bool canRecheckOutcome READ canRecheckOutcome NOTIFY stateChanged)
 
 public:
     enum State { Idle, Preparing, NeedsConfirmation, Committing, Succeeded, Failed, Discarding, Uncertain, Closed, NeedsRevalidation };
@@ -5365,6 +5367,20 @@ public:
         Q_EMIT resultChanged();
     }
 
+    int observationCount() const { return m_observation_count; }
+    bool canRecheckOutcome() const { return m_state == Uncertain && !busy(); }
+    Q_INVOKABLE quint64 requestReviewFeeBump(const QString& txid, unsigned int targetBlocks)
+    {
+        if (m_state == Uncertain) return m_old_txid == txid ? m_attempt_id : 0;
+        return requestPrepareFeeBump(txid, targetBlocks);
+    }
+    Q_INVOKABLE quint64 requestRecheckFeeBumpOutcome()
+    {
+        if (!canRecheckOutcome()) return 0;
+        ++m_observation_count;
+        Q_EMIT stateChanged();
+        return static_cast<quint64>(m_observation_count);
+    }
     Q_INVOKABLE quint64 requestPrepareFeeBump(const QString& txid, unsigned int targetBlocks)
     {
         Q_UNUSED(targetBlocks);
@@ -5456,6 +5472,7 @@ Q_SIGNALS:
 
 private:
     int m_state{Idle};
+    int m_observation_count{0};
     quint64 m_attempt_id{0}, m_commit_id{0}, m_revision{0};
     bool m_preparing{false}, m_committing{false};
     QString m_old_fee;

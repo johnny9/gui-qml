@@ -124,6 +124,26 @@ TestCase {
         compare(second.preparationCount, originalCount)
     }
 
+    function test_uncertain_replacement_offers_a_query_without_preparing_again() {
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "opened", true)
+        tryCompare(overlay, "readyToConfirm", true)
+        const prepared = testBumpModel.preparationCount
+        const observations = testBumpModel.observationCount
+        testBumpModel.state = BumpTransactionModel.Uncertain
+        const button = findChild(overlay, "updateTransactionButton")
+        compare(button.text, "Check transaction status")
+        verify(button.enabled)
+        button.clicked()
+        compare(testBumpModel.observationCount, observations + 1)
+        compare(testBumpModel.preparationCount, prepared)
+        compare(testBumpModel.state, BumpTransactionModel.Uncertain)
+        overlay.close()
+        tryCompare(overlay, "visible", false)
+    }
+
     function createDetail(data, properties) {
         const value = data || transaction()
         if (value.flow) value.flow = testSetup.prepareTransactionFlow(value.flow)

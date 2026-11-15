@@ -25,7 +25,7 @@ QString ErrorMessage(walletbump::Error error)
     case walletbump::Error::InvalidSignature: return BumpTransactionModel::tr("The replacement transaction has invalid or unverified signatures.");
     case walletbump::Error::Policy: return BumpTransactionModel::tr("The reviewed replacement no longer meets current node policy. Prepare it again before confirming.");
     case walletbump::Error::RelockFailed: return BumpTransactionModel::tr("The wallet lock could not be restored. Check its security state before retrying.");
-    case walletbump::Error::Commit: return BumpTransactionModel::tr("Failed to commit transaction.");
+    case walletbump::Error::Commit: return BumpTransactionModel::tr("The replacement result is uncertain. Check the transaction before retrying.");
     case walletbump::Error::Uncertain: return BumpTransactionModel::tr("The fee-bump outcome could not be confirmed. Check the wallet before retrying.");
     }
     return {};
@@ -72,7 +72,8 @@ void BumpTransactionModel::closeAdmission()
     if (m_attempt_owner) m_attempt_owner->close({});
     m_attempt_owner.reset(); m_prepare_operation.reset(); m_commit_operation.reset(); m_review.reset();
     m_attempt_snapshot = {};
-    m_preparing = m_committing = false;
+    m_observation_operation.reset(); m_observed_outcome.reset();
+    m_preparing = m_committing = m_rechecking = false;
 }
 void BumpTransactionModel::retryPublications()
 {
@@ -81,6 +82,8 @@ void BumpTransactionModel::retryPublications()
     if (m_preparing) publishPreparation(m_attempt_id, m_preparation_revision);
     if (!guard || m_closed) return;
     if (m_committing) publishCommit(m_attempt_id, m_commit_id);
+    if (!guard || m_closed) return;
+    if (m_rechecking) publishObservation(m_attempt_id, m_commit_id, m_observation_id);
 }
 void BumpTransactionModel::setSecurityStateChangedFn(std::function<void()> fn) { m_security_state_changed = std::move(fn); }
 bool BumpTransactionModel::publish()
@@ -113,6 +116,12 @@ void BumpTransactionModel::refreshFeePresentation()
     m_new_fee = format(m_review->new_fee);
     m_increase = format(m_review->new_fee - m_review->old_fee);
 }
+quint64 BumpTransactionModel::requestReviewFeeBump(const QString& txid, unsigned int target_blocks)
+{
+    if (m_closed || !m_opening || !m_opening->available()) return 0;
+    if (m_state == Uncertain) return txid == m_old_txid ? m_attempt_id : 0;
+    return requestPrepareFeeBump(txid, target_blocks);
+}
 quint64 BumpTransactionModel::requestPrepareFeeBump(const QString& txid, unsigned int target_blocks)
 {
     if (m_closed || busy()) return 0;
@@ -137,6 +146,7 @@ quint64 BumpTransactionModel::requestPrepareFeeBump(const QString& txid, unsigne
         [post = m_services.post, observer, attempt, revision] { post([observer, attempt, revision] { if (observer) observer->publishPreparation(attempt, revision); }); });
     m_attempt_id = attempt; m_view_revision = revision; m_preparation_revision = revision;
     m_prepare_operation = std::move(operation); m_commit_operation.reset(); m_review.reset();
+    m_observation_operation.reset(); m_observed_outcome.reset();
     clearPresentation(); m_preparing = true; m_state = Preparing;
     if (!publish()) return 0;
     const transactionattempt::ReplacementStart input{attempt, revision, facts, txid};
@@ -324,7 +334,7 @@ void BumpTransactionModel::publishCommit(quint64 attempt, quint64 commit)
     const auto outcome = value.committed ? transactionattempt::Phase::Settled
         : value.error == walletbump::Error::NeedsUnlock || value.error == walletbump::Error::IncorrectPassphrase ? transactionattempt::Phase::NeedsUnlock
         : value.error == walletbump::Error::Ineligible || value.error == walletbump::Error::Unavailable || value.error == walletbump::Error::Policy ? transactionattempt::Phase::NeedsRevalidation
-        : value.error == walletbump::Error::Uncertain || value.error == walletbump::Error::RelockFailed || result->error ? transactionattempt::Phase::Uncertain
+        : value.error == walletbump::Error::Uncertain || value.error == walletbump::Error::Commit || value.error == walletbump::Error::RelockFailed || result->error ? transactionattempt::Phase::Uncertain
         : transactionattempt::Phase::Failed;
     const auto owner = m_attempt_owner;
     if (!owner) { m_state = Uncertain; m_committing = false; publish(); return; }
@@ -362,9 +372,62 @@ void BumpTransactionModel::publishCommit(quint64 attempt, quint64 commit)
 }
 std::optional<walletbump::Commit> BumpTransactionModel::commitResult() const
 {
+    if (m_observed_outcome) return m_observed_outcome;
     if (!m_commit_operation) return {};
     const auto result = m_commit_operation->result();
     return result ? result->value : std::nullopt;
+}
+bool BumpTransactionModel::canRecheckOutcome() const
+{
+    const auto result = commitResult();
+    return !m_closed && m_state == Uncertain && !busy() && m_opening && m_opening->available()
+        && result && result->commit_attempted && result->candidate_txid != Txid{};
+}
+quint64 BumpTransactionModel::requestRecheckFeeBumpOutcome()
+{
+    if (!canRecheckOutcome()) return 0;
+    const auto original = *commitResult();
+    const auto opening = m_opening;
+    const auto action = opening->startAction();
+    if (!action) return 0;
+    const auto attempt = m_attempt_id, commit = m_commit_id, observation = ++m_observation_id;
+    const QPointer<BumpTransactionModel> observer{this};
+    auto operation = std::make_shared<execution::OwnedCommand<walletbump::Commit>>(m_services.scheduler,
+        [post = m_services.post, observer, attempt, commit, observation] {
+            post([observer, attempt, commit, observation] { if (observer) observer->publishObservation(attempt, commit, observation); });
+        });
+    m_observation_operation = operation;
+    m_rechecking = true;
+    const auto admission = operation->startWith([opening, action, original](auto done, auto failed) {
+        return opening->perform(action, [original](interfaces::Wallet& wallet) { return walletbump::ObserveOutcome(wallet, original); },
+            std::move(done), std::move(failed));
+    });
+    if (!observer || m_closed) return admission ? observation : 0;
+    if (!admission) {
+        m_rechecking = false;
+        m_error = tr("The transaction status could not be queued. The outcome remains uncertain.");
+        publish(); return 0;
+    }
+    publish(); return observation;
+}
+void BumpTransactionModel::publishObservation(quint64 attempt, quint64 commit, quint64 observation)
+{
+    if (m_closed || !m_rechecking || m_attempt_id != attempt || m_commit_id != commit || m_observation_id != observation || !m_observation_operation) return;
+    const auto result = m_observation_operation->result();
+    if (!result) return;
+    m_rechecking = false;
+    if (result->error || !result->value) {
+        m_error = tr("The transaction status could not be checked. The outcome remains uncertain.");
+    } else {
+        m_observed_outcome = *result->value;
+        if (result->value->record == walletbump::Record::Recorded) {
+            m_new_txid = QString::fromStdString(result->value->txid.GetHex());
+            m_error = tr("The replacement is recorded in the wallet. Check its status before taking further action.");
+        } else {
+            m_error = tr("The replacement could not be confirmed in the wallet. No transaction was resubmitted.");
+        }
+    }
+    publish();
 }
 BumpTransactionModel::WalletRecordState BumpTransactionModel::walletRecordState() const
 {
@@ -398,7 +461,7 @@ void BumpTransactionModel::reset()
     ++m_view_revision;
     // A view close invalidates presentation; an accepted commit keeps its
     // original review and must finish exactly once before another attempt.
-    if (m_committing) return;
+    if (m_committing || m_rechecking || m_state == Uncertain) return;
     if (m_attempt_owner) m_attempt_owner->close({});
     m_attempt_owner.reset();
     m_attempt_ticket = {};

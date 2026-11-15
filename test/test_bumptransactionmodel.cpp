@@ -96,6 +96,86 @@ class BumpTransactionModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void uncertainReplacementCanOnlyObserveItsExactCandidate_data() {
+        QTest::addColumn<int>("mode");
+        const char* names[] = {"false-after-record", "false-without-record", "throw-after-record", "foreign-record", "different-witness", "read-throws"};
+        for (int mode = 0; mode < 6; ++mode) QTest::newRow(names[mode]) << mode;
+    }
+    void uncertainReplacementCanOnlyObserveItsExactCandidate() {
+        QFETCH(int, mode);
+        struct OutcomeWallet : MockWallet {
+            CTransactionRef recorded;
+            bool throw_read{false}; int reads{0};
+            interfaces::WalletTx getWalletTxDetails(const Txid&, interfaces::WalletTxStatus& status,
+                std::vector<std::string>&, std::vector<std::string>&, bool& mempool, int&) override {
+                ++reads;
+                if (throw_read) throw std::runtime_error("observation failed");
+                status = {}; mempool = true;
+                interfaces::WalletTx result{}; result.tx = recorded; return result;
+            }
+        };
+        auto wallet = std::make_shared<OutcomeWallet>(); ConfigureBumpableWallet(*wallet);
+        wallet->sign_bump_transaction_fn = [](CMutableTransaction& tx) { for (auto& in : tx.vin) in.scriptSig = CScript{} << OP_0; return true; };
+        wallet->commit_bump_transaction_fn = [wallet, mode](const Txid&, CMutableTransaction&& tx, std::vector<bilingual_str>&, Txid&) {
+            if (mode != 1) {
+                if (mode == 3) ++tx.vout.front().nValue;
+                if (mode == 4) tx.vin.front().scriptWitness.stack.push_back({1});
+                wallet->recorded = MakeTransactionRef(std::move(tx));
+            }
+            if (mode == 2) throw std::runtime_error("commit returned no receipt");
+            return false;
+        };
+        Fixture fixture{wallet};
+        QVERIFY(fixture.model->requestPrepareFeeBump(TEST_TXID, 1)); fixture.finish();
+        QVERIFY(fixture.model->requestConfirmFeeBump()); fixture.finish();
+        QCOMPARE(fixture.model->state(), BumpTransactionModel::Uncertain);
+        const auto attempt = fixture.model->attemptId();
+        QVERIFY(fixture.model->commitResult()->commit_attempted);
+        fixture.model->reset();
+        QCOMPARE(fixture.model->state(), BumpTransactionModel::Uncertain);
+        QVERIFY(!fixture.model->requestPrepareFeeBump(TEST_TXID, 1));
+        QCOMPARE(fixture.model->requestReviewFeeBump(TEST_TXID, 1), attempt);
+        QVERIFY(!fixture.model->requestReviewFeeBump(QStringLiteral("another-transaction"), 1));
+        wallet->throw_read = mode == 5;
+        QVERIFY(fixture.model->canRecheckOutcome());
+        QVERIFY(fixture.model->requestRecheckFeeBumpOutcome());
+        QVERIFY(!fixture.model->requestRecheckFeeBumpOutcome());
+        auto observation = fixture.model->outcomeObservation(); QVERIFY(observation);
+        QCOMPARE(wallet->reads, 0);
+        QVERIFY(fixture.commands.step(execution::Lane::Core));
+        QCOMPARE(wallet->reads, 1); QVERIFY(!observation->result());
+        for (int turn = 0; turn < 8 && !observation->result(); ++turn) QVERIFY(fixture.commands.step(execution::Lane::Domain));
+        QVERIFY(observation->result()); QVERIFY(fixture.model->busy());
+        fixture.finish();
+        QCOMPARE(fixture.model->state(), BumpTransactionModel::Uncertain);
+        const bool found = mode == 0 || mode == 2;
+        QCOMPARE(fixture.model->walletRecordState() == BumpTransactionModel::WalletRecordRecorded, found);
+        QCOMPARE(fixture.model->newTxid().isEmpty(), !found);
+        QVERIFY(!fixture.model->commitResult()->committed); // A read cannot invent the missing mutation receipt.
+        QVERIFY(!fixture.model->requestConfirmFeeBump());
+        QCOMPARE(wallet->calls.createBumpTransaction.load(), 1);
+        QCOMPARE(wallet->calls.signBumpTransaction.load(), 1);
+        QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);
+        wallet->commit_bump_transaction_fn = {}; // Do not retain the fixture through its injected callback.
+    }
+    void admittedOutcomeObservationSurvivesQuietClose() {
+        auto wallet = MakeBumpableWallet();
+        wallet->sign_bump_transaction_fn = [](CMutableTransaction&) { return true; };
+        wallet->commit_bump_transaction_fn = [](const Txid&, CMutableTransaction&&, std::vector<bilingual_str>&, Txid&) { return false; };
+        Fixture fixture{wallet};
+        QVERIFY(fixture.model->requestPrepareFeeBump(TEST_TXID, 1)); fixture.finish();
+        QVERIFY(fixture.model->requestConfirmFeeBump()); fixture.finish();
+        QVERIFY(fixture.model->requestRecheckFeeBumpOutcome());
+        auto observation = fixture.model->outcomeObservation(); QVERIFY(observation);
+        fixture.model->closeAdmission(); fixture.model.reset(); fixture.opening->retire();
+        fixture.commands.drain(); fixture.retirement.drain(); fixture.commands.drain(); fixture.publish();
+        QVERIFY(observation->result()); QVERIFY(observation->result()->value);
+        QVERIFY(!observation->result()->value->committed);
+        QCOMPARE(wallet->calls.createBumpTransaction.load(), 1);
+        QCOMPARE(wallet->calls.signBumpTransaction.load(), 1);
+        QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);
+        QVERIFY(fixture.commands.quiescent()); QVERIFY(fixture.retirement.quiescent());
+    }
     void originalTimingIsPassedToThePublicBumpBuilder_data() {
         QTest::addColumn<uint32_t>("sequence");
         QTest::newRow("absolute-lock") << uint32_t{0xfffffffd};
@@ -802,8 +882,10 @@ private Q_SLOTS:
         model.prepareFeeBump(TEST_TXID, 1);
         fixture.finish();
         QVERIFY(!fixture.confirm());
-        QCOMPARE(model.state(), BumpTransactionModel::Failed);
-        QCOMPARE(model.errorText(), explicit_error ? QString("commit refused") : QString("Failed to commit transaction."));
+        QCOMPARE(model.state(), BumpTransactionModel::Uncertain);
+        QCOMPARE(model.errorText(), explicit_error ? QString("commit refused") : QString("The replacement result is uncertain. Check the transaction before retrying."));
+        model.reset();
+        QVERIFY(!model.requestPrepareFeeBump(TEST_TXID, 1));
         QVERIFY(model.newTxid().isEmpty());
         QCOMPARE(wallet->calls.signBumpTransaction.load(), 1);
         QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);

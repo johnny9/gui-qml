@@ -42,6 +42,11 @@ struct Commit {
     Submission submission{Submission::Unknown};
     Relay relay{Relay::Unknown};
     Txid original, txid;
+    // Captured before invoking commit. A false return or exception can follow
+    // partial effects; rechecking these identities never repeats the write.
+    Txid candidate_txid;
+    Wtxid candidate_wtxid;
+    bool commit_attempted{false};
 };
 struct Services {
     // Advisory exact-candidate admission observation. Unknown does not replace
@@ -52,6 +57,7 @@ Preparation Prepare(interfaces::Wallet& wallet, const QString& txid, unsigned in
                     const std::shared_ptr<walletopening::Session>& opening);
 Commit Execute(interfaces::Wallet& wallet, const Prepared& review, std::optional<SecureString> passphrase,
                secretinput::Captured captured = {}, const Services& services = {});
+Commit ObserveOutcome(interfaces::Wallet& wallet, const Commit& original);
 } // namespace walletbump
 
 #endif // BITCOIN_QML_WALLETBUMP_H
