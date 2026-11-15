@@ -171,6 +171,29 @@ QtObject {
         self.assertEqual(sum(entry["kind"] == "qml-type-annotation" for entry in tool.metadata), 2)
         self.run_qml(source, transformed, "for (const value of [0, 8, -1]) compare(measured.typed(value), original.typed(value));")
 
+    def test_native_list_roles_preserve_values_and_remain_unmeasured(self):
+        source = '''import QtQuick
+QtObject {
+    property ListModel choices: ListModel {
+        ListElement { label: qsTr("High"); target: 1 }
+        ListElement { label: qsTr("Low"); target: -1 }
+    }
+    function snapshot() { return JSON.stringify([choices.count, choices.get(0).label, choices.get(0).target, choices.get(1).label, choices.get(1).target]); }
+}
+'''
+        tool, transformed = self.map(source)
+        self.assertEqual(len(tool.native_initializers), 4)
+        for entry in tool.native_initializers:
+            self.assertIn("unmeasured", entry["measurement"])
+            self.assertFalse(any(entry["start_utf16"] <= point["start_utf16"] < entry["end_utf16"] for point in tool.points))
+        self.assertIn('ListElement { label: qsTr("High"); target: 1 }', transformed)
+        oracle = 'compare(measured.snapshot(), original.snapshot()); compare(measured.choices.get(0).label, "High");'
+        self.run_qml(source, transformed, oracle)
+        self.run_qml(source, transformed.replace('qsTr("High")', 'qsTr("Wrong")'), oracle, expected_success=False)
+        for value in ["condition ? 1 : 2", "qsTr(variable)"]:
+            with self.subTest(value=value), self.assertRaises(instrument.MappingError):
+                self.map(source.replace('qsTr("High")', value))
+
     def test_explicit_metadata_disposition_has_structural_proof(self):
         for relative in ["qml/pages/wallet/WalletNavigationTab.qml", "qml/compat/qt65/AppSettings.qml"]:
             source = (Path(__file__).resolve().parents[2] / relative).read_text()

@@ -218,6 +218,7 @@ class Instrumenter:
         self.first_id = first_id
         self.points = []
         self.metadata = []
+        self.native_initializers = []
         self.completion_blocks = []
         self.function_bindings = []
         self.function_binding_probes = defaultdict(list)
@@ -418,6 +419,55 @@ class Instrumenter:
         self.insertions[offset].append(f";if(arguments[{index}]!==void 0){{" +
                                        self.probe_statement(f"{HOOK}.truth({identifier},false)") + "}")
 
+    def native_list_roles(self):
+        """Preserve native ListElement grammar and retain its measurement gap.
+
+        Qt's ListModel custom parser accepts literal/translation AST roots, not
+        arbitrary JavaScript comma wrappers. These are native initialization
+        spans, not proved executed sites or a complete-line coverage exemption.
+        """
+        opaque = set()
+        for binding in walk(self.tree):
+            if binding.kind != "UiScriptBinding":
+                continue
+            owner = parent(binding)
+            while owner and owner.kind not in {"UiObjectDefinition", "UiObjectBinding"}:
+                owner = parent(owner)
+            if owner is None:
+                continue
+            names = [node for node in children(owner) if node.kind == "UiQualifiedId"]
+            if not 1 <= len(names) <= 2 or self.slice(names[-1].span) != "ListElement":
+                continue
+            list_owner = parent(owner)
+            while list_owner and list_owner.kind not in {"UiObjectDefinition", "UiObjectBinding"}:
+                list_owner = parent(list_owner)
+            list_names = [node for node in children(list_owner) if node.kind == "UiQualifiedId"] if list_owner else []
+            require(1 <= len(list_names) <= 2 and self.slice(list_names[-1].span) == "ListModel",
+                    "Native ListElement outside a reviewed ListModel context")
+            parts = children(binding)
+            require(len(parts) == 2 and parts[0].kind == "UiQualifiedId" and parts[1].kind == "ExpressionStatement",
+                    "Unreviewed native ListElement role declaration")
+            values = children(parts[1])
+            require(len(values) == 1, "Unmapped native ListElement value")
+            value = values[0]
+            literal = value.kind in {"StringLiteral", "NumericLiteral", "TrueLiteral", "FalseLiteral", "NullExpression"}
+            if value.kind in {"UnaryMinusExpression", "UnaryPlusExpression"}:
+                operands = children(value)
+                literal = len(operands) == 1 and operands[0].kind == "NumericLiteral"
+            translated = False
+            if value.kind == "CallExpression":
+                call = children(value)
+                if len(call) == 2 and call[0].kind == "IdentifierExpression" and call[0].attrs.get("name") == "qsTr" and call[1].kind == "ArgumentList":
+                    arguments = children(call[1])
+                    translated = len(arguments) == 1 and arguments[0].kind == "StringLiteral"
+            require(literal or translated, "Unreviewed native ListElement initializer; cannot claim its JavaScript decisions")
+            opaque.update(id(node) for node in walk(binding))
+            self.native_initializers.append({"kind": "native-ListElement-role-initialization",
+                                             "start_utf16": value.span[0], "end_utf16": value.span[1],
+                                             "role": self.slice(parts[0].span), "source": self.slice(value.span),
+                                             "measurement": "unmeasured native initialization; no executed-line or branch claim"})
+        return opaque
+
     def directives(self):
         result = set()
         for node in walk(self.tree):
@@ -458,6 +508,7 @@ class Instrumenter:
                                   "end_utf16": len(self.data) // 2, "source_sha256": digest(self.original.encode("utf-8"))})
             return self.original
         self.check_binding_completions()
+        native_roles = self.native_list_roles()
         directives = self.directives()
         contexts, concise_returns = {}, set()
         for node in walk(self.tree):
@@ -467,6 +518,8 @@ class Instrumenter:
             elif node.kind == "TryStatement" and any(child.kind == "Catch" for child in children(node)):
                 contexts[id(node)] = self.point("caught", node.span, "try-catch")
         for node in walk(self.tree):
+            if id(node) in native_roles:
+                continue
             kind, parts, ancestor = node.kind, children(node), parent(node)
             if kind == "IdentifierExpression":
                 require(node.attrs.get("name") not in {"eval", "Function"}, "Runtime-generated JavaScript needs an independent source map")
@@ -862,6 +915,7 @@ def main():
                             "instrumented_sha256": digest(destination.read_bytes()),
                             "length_utf16": len(text.encode("utf-16-le")) // 2,
                             "non_executable_metadata": tool.metadata,
+                            "unmeasured_native_initializers": tool.native_initializers,
                             "binding_completion_contexts": tool.completion_blocks,
                             "syntax_preserved_function_bindings": tool.function_bindings,
                             "ast_nodes": dict(sorted(tool.histogram.items())), "point_count": len(tool.points)})
@@ -893,6 +947,7 @@ def main():
                                    "Textual lines without AST entry sites", "Implicit exception edges",
                                    "Pinned-Qt nested for-in/of and empty try/catch binding completion contexts (rejected)",
                                    "Arrow, nontrailing/multiple, reflective/complex or destructuring parameter defaults (rejected)",
+                                   "Native ListElement literal/translation initialization (preserved without JavaScript probes)",
                                    "Qt/native/generated implementation", "Native component internals"]}
         (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({"sources": len(sources), "points": len(points), "aliases": len(aliases),
