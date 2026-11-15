@@ -260,12 +260,13 @@ public:
     interfaces::WalletTx getWalletTxDetails(const Txid& id, interfaces::WalletTxStatus& status,
         std::vector<std::string>&, std::vector<std::string>&, bool& in_mempool, int& height) override
     {
-        auto value = getWalletTx(id);
+        blockingRead();
+        const auto transaction = transactions.find(id);
         const auto found = statuses.find(id);
         if (found != statuses.end()) status = found->second;
         in_mempool = found != statuses.end() && status.depth_in_main_chain == 0;
         height = 100;
-        return value;
+        return transaction == transactions.end() ? interfaces::WalletTx{} : transaction->second;
     }
     bool transactionCanBeBumped(const Txid&) override
     {
