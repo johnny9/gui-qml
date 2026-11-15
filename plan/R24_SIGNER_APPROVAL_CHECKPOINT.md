@@ -4,8 +4,9 @@ The immutable approval owner is integrated at
 `0224c4c0f2fa919990a21f723da589a6bef87803`, with unchanged Core
 `44901d8f64cb617714707bd025ecd83f108353c2`. Exact composed test source is
 `e3373af66b2aa05430bdf162e36ce96994dd6c4d`; the worker candidate is
-`c8e3d5fff4ad64c549e716b6ed4abb6eae499dee`. Final order acceptance waits for
-the reopened R22 retirement prerequisite. This checkpoint does not close R42.
+`c8e3d5fff4ad64c549e716b6ed4abb6eae499dee`. R22 is now restored. Final R24
+acceptance awaits the bounded contributed-partial-signature audit below.
+This checkpoint does not close R42.
 
 `walletsigning::ApprovalOwner` owns Domain transitions and the original opening,
 review, view and immutable request. Native signing authenticates reviewed input
@@ -51,3 +52,11 @@ Core's wallet lock across it. Background execution and stale-result fencing do
 not claim those stronger guarantees. Physical devices were not tested. These
 inherited limits, exhaustive coverage, all configurations/platforms and
 sanitizers remain explicit pending obligations under the approved cadence.
+
+Source review found that `VerifyFinalizedInputs(false)` skips unfinalized
+`partial_sigs` and Taproot signature maps. The existing tests cover valid
+partial outcomes and invalid finalized scripts, but do not establish that
+every newly contributed unfinalized signature is authenticated. The signing
+worker is checking an independent counterexample and pinned public Core/value
+helpers. Keep this as an open acceptance audit, preserve supported multisig
+PSBT retention, and do not infer a Core API requirement before that check.
