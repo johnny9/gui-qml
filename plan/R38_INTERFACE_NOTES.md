@@ -1,7 +1,9 @@
 # R38 interface and validation boundaries
 
-This is a focused implementation candidate. R36 composition and runtime gates
-remain pending. Core44901d8f64cb617714707bd025ecd83f108353c2 is unchanged.
+Focused implementation and composition gates passed at application
+56812dd840ad34a5451539f7b5fd47142029bd90 on accepted R27/R36/R37/R39 code.
+Core44901d8f64cb617714707bd025ecd83f108353c2 is unchanged. Exhaustive coverage,
+sanitizers and the full platform/configuration matrix remain R42 obligations.
 
 The console owns an immutable accepted command identity, named RPC endpoint and
 terminal receipt independently of its output generation or a view. Clear removes

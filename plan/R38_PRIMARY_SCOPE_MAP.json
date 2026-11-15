@@ -1,0 +1,473 @@
+{
+  "contract": [
+    "M22",
+    "M27"
+  ],
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "primary_count": 17,
+  "primary": [
+    {
+      "scope": "draft-053-D053",
+      "requirement_and_caveat": "No active standalone fix priority for this stated scope Fixed: missing-debug-log error is visible on merged-head retest. Fixed: missing-debug-log error is visible on merged-head retest.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "DebugLogModelTests::logAvailableTracksReadFailures",
+        "DebugLogModelTests::openMissingFileIsLeftToTheReader",
+        "DebugLogModelTests::openErrorPersistsAcrossSuccessfulRead"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Prior fixed scope remains baseline parity; no new original defect promoted.",
+      "actual_positive_identities": [
+        "native|DebugLogModelTests|logAvailableTracksReadFailures|",
+        "native|DebugLogModelTests|openErrorPersistsAcrossSuccessfulRead|",
+        "native|DebugLogModelTests|openMissingFileIsLeftToTheReader|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017"
+      ]
+    },
+    {
+      "scope": "draft-054-RC65",
+      "requirement_and_caveat": "Explicitly define selected suggestion and Enter behavior, with no unintended command replacement during busy state. Separate hovered/selected completion, typed command and execution state; Enter has a defined transition and may not accidentally replace input during execution. Substituted command in 54 is a bare sibling name without arguments; destructive command execution was not demonstrated.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "ConsoleIntegrationTests::enterUsesTypedInputUnlessKeyboardSelected",
+        "ConsoleIntegrationTests::busyEnterKeepsDraftAndClearKeepsActualOutcome"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "",
+      "actual_positive_identities": [
+        "integration|IntegrationTests|run|console.disabled.busyEnterKeepsDraftAndClearKeepsActualOutcome",
+        "integration|IntegrationTests|run|console.disabled.enterUsesTypedInputUnlessKeyboardSelected:hover-only",
+        "integration|IntegrationTests|run|console.disabled.enterUsesTypedInputUnlessKeyboardSelected:keyboard-selection",
+        "integration|IntegrationTests|run|console.enabled.busyEnterKeepsDraftAndClearKeepsActualOutcome",
+        "integration|IntegrationTests|run|console.enabled.enterUsesTypedInputUnlessKeyboardSelected:hover-only",
+        "integration|IntegrationTests|run|console.enabled.enterUsesTypedInputUnlessKeyboardSelected:keyboard-selection"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017",
+        "6af537b987d231a0bceddb031d6b0fb365c05c23",
+        "86017ae38aed762f6f462e2c6c5dcb7134326fa8"
+      ]
+    },
+    {
+      "scope": "draft-063-D063",
+      "requirement_and_caveat": "No active standalone fix priority for this stated scope Fixed: configured/disabled log handling passed merged-head retest. Fixed: configured/disabled log handling passed merged-head retest.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "DebugLogModelTests::fileLoggingOff_readsNothingAndSaysWhy",
+        "DebugLogModelTests::rotation_fallsBackToFullSnapshot"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Prior fixed scope remains baseline parity; no new original defect promoted.",
+      "actual_positive_identities": [
+        "native|DebugLogModelTests|fileLoggingOff_readsNothingAndSaysWhy|",
+        "native|DebugLogModelTests|rotation_fallsBackToFullSnapshot|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017"
+      ]
+    },
+    {
+      "scope": "draft-079-D079",
+      "requirement_and_caveat": "Retest affected current scope, then fix or follow existing issue Repair exit-status/platform-preference/notification/readback wiring. A modeled transition cannot supply an observation or status that is never propagated. Earlier evidence retained; current-head reproduction not established by this prioritization",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "NodeModelTests::manualRewindUsesCurrentHeaderReadback",
+        "NodeModelTests::manualBlockRowsRejectOlderStatusRead",
+        "NodeIntegrationTests::invalidatedHeaderReadbackMatchesCore"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Original publicCore02 actually reproduces header200 while Core activeheight180/170 (both fails); reconsider and distinctnewblock controls allfour pass. Candidate corrected2Core rows pass. Original01 duplicate-invalid-block mining exception retained without impact credit. No peer-dependent99.9% wording claimed from no-peers fixture.",
+      "actual_positive_identities": [
+        "integration|IntegrationTests|run|node.disabled.invalidatedHeaderReadbackMatchesCore:deep-30",
+        "integration|IntegrationTests|run|node.disabled.invalidatedHeaderReadbackMatchesCore:shallow-20",
+        "native|NodeModelTests|manualBlockRowsRejectOlderStatusRead|notification-before-old-result",
+        "native|NodeModelTests|manualBlockRowsRejectOlderStatusRead|old-result-before-notification",
+        "native|NodeModelTests|manualRewindUsesCurrentHeaderReadback|deep-invalidation",
+        "native|NodeModelTests|manualRewindUsesCurrentHeaderReadback|shallow-invalidation",
+        "native|NodeModelTests|manualRewindUsesCurrentHeaderReadback|unavailable-header-control",
+        "native|NodeModelTests|manualRewindUsesCurrentHeaderReadback|valid-header-rewind-control"
+      ],
+      "actual_receipt_sources": [
+        "86017ae38aed762f6f462e2c6c5dcb7134326fa8",
+        "fe793d2f48f5d90c82bbc8bd4b5cfe793a21ca68"
+      ]
+    },
+    {
+      "scope": "draft-099-RC72",
+      "requirement_and_caveat": "Bound bytes as well as rows or virtualize output. Primary remedy is bounded/incremental work, allocation budgets, virtualization or scheduling progress. State labels alone do not change the algorithmic/resource envelope. Draft 99 additionally contains input-length/row-budget validation subscopes. No end-to-end OOM; 208 is covered by this component scope.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcConsoleModelTests::aggregateOutputAndRowsStayBounded",
+        "RpcConsoleModelTests::publicOutputAppendCannotExceedBudgets",
+        "DebugLogModelTests::hugeUnfinishedSuffixHasBoundedReadAndRecovery"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Bounds and virtualization; no end-to-end OOM reproduction or whole-series coverage claim.",
+      "actual_positive_identities": [
+        "native|DebugLogModelTests|hugeUnfinishedSuffixHasBoundedReadAndRecovery|",
+        "native|RpcConsoleModelTests|aggregateOutputAndRowsStayBounded|",
+        "native|RpcConsoleModelTests|publicOutputAppendCannotExceedBudgets|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017"
+      ]
+    },
+    {
+      "scope": "draft-200-RC65",
+      "requirement_and_caveat": "Explicitly define selected suggestion and Enter behavior, with no unintended command replacement during busy state. Separate hovered/selected completion, typed command and execution state; Enter has a defined transition and may not accidentally replace input during execution. Substituted command in 54 is a bare sibling name without arguments; destructive command execution was not demonstrated.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "ConsoleIntegrationTests::enterUsesTypedInputUnlessKeyboardSelected",
+        "ConsoleIntegrationTests::busyEnterKeepsDraftAndClearKeepsActualOutcome"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "",
+      "actual_positive_identities": [
+        "integration|IntegrationTests|run|console.disabled.busyEnterKeepsDraftAndClearKeepsActualOutcome",
+        "integration|IntegrationTests|run|console.disabled.enterUsesTypedInputUnlessKeyboardSelected:hover-only",
+        "integration|IntegrationTests|run|console.disabled.enterUsesTypedInputUnlessKeyboardSelected:keyboard-selection",
+        "integration|IntegrationTests|run|console.enabled.busyEnterKeepsDraftAndClearKeepsActualOutcome",
+        "integration|IntegrationTests|run|console.enabled.enterUsesTypedInputUnlessKeyboardSelected:hover-only",
+        "integration|IntegrationTests|run|console.enabled.enterUsesTypedInputUnlessKeyboardSelected:keyboard-selection"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017",
+        "6af537b987d231a0bceddb031d6b0fb365c05c23",
+        "86017ae38aed762f6f462e2c6c5dcb7134326fa8"
+      ]
+    },
+    {
+      "scope": "draft-201-RC66",
+      "requirement_and_caveat": "Define output-clear versus command-history/context behavior explicitly and reject stale presentation effects as needed. Define what Clear means for an in-flight operation, output generation, wallet context and history cursor; retain or suppress subsequent effects consistently. Not every retained field is a bug; fresh normal-user impact must be demonstrated.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcConsoleModelTests::clearDuringExecuteKeepsAcceptedOutcome",
+        "ConsoleIntegrationTests::busyEnterKeepsDraftAndClearKeepsActualOutcome"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "",
+      "actual_positive_identities": [
+        "integration|IntegrationTests|run|console.disabled.busyEnterKeepsDraftAndClearKeepsActualOutcome",
+        "integration|IntegrationTests|run|console.enabled.busyEnterKeepsDraftAndClearKeepsActualOutcome",
+        "native|RpcConsoleModelTests|clearDuringExecuteKeepsAcceptedOutcome|before-effect",
+        "native|RpcConsoleModelTests|clearDuringExecuteKeepsAcceptedOutcome|domain-before-gui",
+        "native|RpcConsoleModelTests|clearDuringExecuteKeepsAcceptedOutcome|effect-before-domain"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017",
+        "6af537b987d231a0bceddb031d6b0fb365c05c23",
+        "86017ae38aed762f6f462e2c6c5dcb7134326fa8"
+      ]
+    },
+    {
+      "scope": "draft-202-RC66",
+      "requirement_and_caveat": "Define output-clear versus command-history/context behavior explicitly and reject stale presentation effects as needed. Define what Clear means for an in-flight operation, output generation, wallet context and history cursor; retain or suppress subsequent effects consistently. Not every retained field is a bug; fresh normal-user impact must be demonstrated.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcConsoleModelTests::clearResetsWalletBannerAndHistoryCursor",
+        "RpcConsoleModelTests::clearAfterPartialProjectionDoesNotStrandBusy"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "",
+      "actual_positive_identities": [
+        "native|RpcConsoleModelTests|clearAfterPartialProjectionDoesNotStrandBusy|",
+        "native|RpcConsoleModelTests|clearResetsWalletBannerAndHistoryCursor|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017"
+      ]
+    },
+    {
+      "scope": "draft-203-RC67",
+      "requirement_and_caveat": "Decide/document wallet-target semantics and bind long-lived operations to explicit session context. Clarify the intended UX/command/selection/capability contract first. The recorded observation does not by itself establish that another workflow machine is needed. Chunk 3 explicitly defers wallet-scoped console; active-wallet recall alone is expected and does not establish wrong-wallet execution.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcCommandExecutorTests::preparedNestedCallsKeepArgumentsAndTarget",
+        "RpcConsoleModelTests::explicitContextDistinguishesDefaultWalletFromNode"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Original record does not demonstrate wrong-wallet execution. Preserve named endpoint/explicit unavailable semantics; instance-bound capability is an upstream opportunity if required, not an invented current guarantee.",
+      "actual_positive_identities": [
+        "native|RpcCommandExecutorTests|preparedNestedCallsKeepArgumentsAndTarget|",
+        "native|RpcConsoleModelTests|explicitContextDistinguishesDefaultWalletFromNode|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017"
+      ]
+    },
+    {
+      "scope": "draft-204-RC67",
+      "requirement_and_caveat": "Decide/document wallet-target semantics and bind long-lived operations to explicit session context. Clarify the intended UX/command/selection/capability contract first. The recorded observation does not by itself establish that another workflow machine is needed. Chunk 3 explicitly defers wallet-scoped console; active-wallet recall alone is expected and does not establish wrong-wallet execution.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcConsoleModelTests::walletNameScopesRpcToWalletUri",
+        "ConsoleIntegrationTests::defaultWalletRpcContextIsExplicitWithMultipleWallets"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Original record does not demonstrate wrong-wallet execution. Preserve named endpoint/explicit unavailable semantics; instance-bound capability is an upstream opportunity if required, not an invented current guarantee.",
+      "actual_positive_identities": [
+        "integration|IntegrationTests|run|console.enabled.defaultWalletRpcContextIsExplicitWithMultipleWallets",
+        "native|RpcConsoleModelTests|walletNameScopesRpcToWalletUri|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017",
+        "6af537b987d231a0bceddb031d6b0fb365c05c23",
+        "86017ae38aed762f6f462e2c6c5dcb7134326fa8"
+      ]
+    },
+    {
+      "scope": "draft-205-D205",
+      "requirement_and_caveat": "No active standalone fix priority for this stated scope Expected redaction behavior: secret arguments require re-entry; do not preserve original secrets to fix recall. Expected redaction behavior: secret arguments require re-entry; do not preserve original secrets to fix recall.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcCommandExecutorTests::secretCommandMatrix",
+        "RpcConsoleModelTests::secretRequestsAreNotRetained",
+        "RpcConsoleModelTests::argumentConversionDiagnosticsFollowRequestRedaction"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "",
+      "actual_positive_identities": [
+        "native|RpcCommandExecutorTests|secretCommandMatrix|addhdkey-functional",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|addhdkey-nested",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|addhdkey-space",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|addhdkey-uppercase",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|createwallet-functional",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|createwallet-nested",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|createwallet-space",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|createwallet-uppercase",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|createwalletdescriptor-functional",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|createwalletdescriptor-nested",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|createwalletdescriptor-space",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|createwalletdescriptor-uppercase",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|encryptwallet-functional",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|encryptwallet-nested",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|encryptwallet-space",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|encryptwallet-uppercase",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|migratewallet-functional",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|migratewallet-nested",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|migratewallet-space",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|migratewallet-uppercase",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|signmessagewithprivkey-functional",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|signmessagewithprivkey-nested",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|signmessagewithprivkey-space",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|signmessagewithprivkey-uppercase",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|signrawtransactionwithkey-functional",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|signrawtransactionwithkey-nested",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|signrawtransactionwithkey-space",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|signrawtransactionwithkey-uppercase",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|walletpassphrase-functional",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|walletpassphrase-nested",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|walletpassphrase-space",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|walletpassphrase-uppercase",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|walletpassphrasechange-functional",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|walletpassphrasechange-nested",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|walletpassphrasechange-space",
+        "native|RpcCommandExecutorTests|secretCommandMatrix|walletpassphrasechange-uppercase",
+        "native|RpcConsoleModelTests|argumentConversionDiagnosticsFollowRequestRedaction|ordinary-conversion-control",
+        "native|RpcConsoleModelTests|argumentConversionDiagnosticsFollowRequestRedaction|sensitive-direct",
+        "native|RpcConsoleModelTests|argumentConversionDiagnosticsFollowRequestRedaction|sensitive-nested",
+        "native|RpcConsoleModelTests|secretRequestsAreNotRetained|addhdkey-private-key",
+        "native|RpcConsoleModelTests|secretRequestsAreNotRetained|createwallet-passphrase",
+        "native|RpcConsoleModelTests|secretRequestsAreNotRetained|migratewallet-passphrase",
+        "native|RpcConsoleModelTests|secretRequestsAreNotRetained|walletpassphrase-control"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017"
+      ]
+    },
+    {
+      "scope": "draft-206-D206",
+      "requirement_and_caveat": "Verify reachable user-visible impact before promoting Clarify the intended UX/command/selection/capability contract first. The recorded observation does not by itself establish that another workflow machine is needed. Source/inventory candidate; separate runtime reproduction required",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcConsoleModelTests::historyNavigationRestoresPendingText",
+        "RpcConsoleModelTests::clearResetsWalletBannerAndHistoryCursor"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Original record does not demonstrate wrong-wallet execution. Preserve named endpoint/explicit unavailable semantics; instance-bound capability is an upstream opportunity if required, not an invented current guarantee.",
+      "actual_positive_identities": [
+        "native|RpcConsoleModelTests|clearResetsWalletBannerAndHistoryCursor|",
+        "native|RpcConsoleModelTests|historyNavigationRestoresPendingText|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017"
+      ]
+    },
+    {
+      "scope": "draft-207-RC66",
+      "requirement_and_caveat": "Define output-clear versus command-history/context behavior explicitly and reject stale presentation effects as needed. Define what Clear means for an in-flight operation, output generation, wallet context and history cursor; retain or suppress subsequent effects consistently. Not every retained field is a bug; fresh normal-user impact must be demonstrated.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcConsoleModelTests::clearDuringExecuteKeepsAcceptedOutcome",
+        "RpcConsoleModelTests::commandOutcomeSurvivesObserverLoss"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "",
+      "actual_positive_identities": [
+        "native|RpcConsoleModelTests|clearDuringExecuteKeepsAcceptedOutcome|before-effect",
+        "native|RpcConsoleModelTests|clearDuringExecuteKeepsAcceptedOutcome|domain-before-gui",
+        "native|RpcConsoleModelTests|clearDuringExecuteKeepsAcceptedOutcome|effect-before-domain",
+        "native|RpcConsoleModelTests|commandOutcomeSurvivesObserverLoss|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017",
+        "86017ae38aed762f6f462e2c6c5dcb7134326fa8"
+      ]
+    },
+    {
+      "scope": "draft-208-RC68",
+      "requirement_and_caveat": "Use per-component memory budgets/virtualization and avoid repeated copied payloads. Primary remedy is bounded/incremental work, allocation budgets, virtualization or scheduling progress. State labels alone do not change the algorithmic/resource envelope. Draft 99 additionally contains input-length/row-budget validation subscopes. 99 is not one bug. Model/delegate memory was measured; no end-to-end OOM was attempted. 208 repeats console scope 99-F1.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcConsoleModelTests::aggregateOutputAndRowsStayBounded",
+        "RpcConsoleModelTests::publicOutputAppendCannotExceedBudgets"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Bounds and virtualization; no end-to-end OOM reproduction or whole-series coverage claim.",
+      "actual_positive_identities": [
+        "native|RpcConsoleModelTests|aggregateOutputAndRowsStayBounded|",
+        "native|RpcConsoleModelTests|publicOutputAppendCannotExceedBudgets|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017"
+      ]
+    },
+    {
+      "scope": "draft-208-RC72",
+      "requirement_and_caveat": "Bound bytes as well as rows or virtualize output. Primary remedy is bounded/incremental work, allocation budgets, virtualization or scheduling progress. State labels alone do not change the algorithmic/resource envelope. Draft 99 additionally contains input-length/row-budget validation subscopes. No end-to-end OOM; 208 is covered by this component scope.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcConsoleModelTests::aggregateOutputAndRowsStayBounded",
+        "RpcConsoleModelTests::publicOutputAppendCannotExceedBudgets"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Bounds and virtualization; no end-to-end OOM reproduction or whole-series coverage claim.",
+      "actual_positive_identities": [
+        "native|RpcConsoleModelTests|aggregateOutputAndRowsStayBounded|",
+        "native|RpcConsoleModelTests|publicOutputAppendCannotExceedBudgets|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017"
+      ]
+    },
+    {
+      "scope": "draft-244-D244",
+      "requirement_and_caveat": "Verify reachable user-visible impact before promoting Repair the projection, formatting, notification, derived range or visible error/result mapping; no new workflow phase is required for the recorded scope. Source/inventory candidate; separate runtime reproduction required",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "NodeModelTests::manualReadbackDoesNotReplayPendingTip",
+        "NodeModelTests::manualReadbackPreservesPresync",
+        "NodeModelTests::manualHeaderProjectionCannotOverwriteReentrantBlockTip",
+        "NodeIntegrationTests::invalidatedHeaderReadbackMatchesCore"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Original publicCore02 actually reproduces header200 while Core activeheight180/170 (both fails); reconsider and distinctnewblock controls allfour pass. Candidate corrected2Core rows pass. Original01 duplicate-invalid-block mining exception retained without impact credit. No peer-dependent99.9% wording claimed from no-peers fixture.",
+      "actual_positive_identities": [
+        "integration|IntegrationTests|run|node.disabled.invalidatedHeaderReadbackMatchesCore:deep-30",
+        "integration|IntegrationTests|run|node.disabled.invalidatedHeaderReadbackMatchesCore:shallow-20",
+        "native|NodeModelTests|manualHeaderProjectionCannotOverwriteReentrantBlockTip|",
+        "native|NodeModelTests|manualReadbackDoesNotReplayPendingTip|",
+        "native|NodeModelTests|manualReadbackPreservesPresync|"
+      ],
+      "actual_receipt_sources": [
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017",
+        "86017ae38aed762f6f462e2c6c5dcb7134326fa8",
+        "fe793d2f48f5d90c82bbc8bd4b5cfe793a21ca68"
+      ]
+    },
+    {
+      "scope": "draft-293-RC67",
+      "requirement_and_caveat": "Decide/document wallet-target semantics and bind long-lived operations to explicit session context. Validate the actual wallet/model/signing capability or supported descriptor shape at the existing entry/projection boundary, rather than inferring it from lock state or one broad flag. Chunk 3 explicitly defers wallet-scoped console; active-wallet recall alone is expected and does not establish wrong-wallet execution.",
+      "integration_owner": "test/integration/node_tools/test_console.cpp",
+      "selectors": [
+        "RpcConsoleModelTests::unavailableWalletNeverUsesNodeEndpoint",
+        "RpcConsoleModelTests::unavailableInputKeepsIndependentStop",
+        "SettingsNavigation::test_unavailable_rpc_wallet_never_becomes_a_node_request"
+      ],
+      "status": "Focused implementation/contract or retained parity qualified; exhaustive coverage/matrices/sanitizers deferredR42",
+      "caveat": "Original record does not demonstrate wrong-wallet execution. Preserve named endpoint/explicit unavailable semantics; instance-bound capability is an upstream opportunity if required, not an invented current guarantee.",
+      "actual_positive_identities": [
+        "native|RpcConsoleModelTests|unavailableInputKeepsIndependentStop|",
+        "native|RpcConsoleModelTests|unavailableWalletNeverUsesNodeEndpoint|",
+        "qml|bitcoinqml_qmltests|SettingsNavigation::test_unavailable_rpc_wallet_never_becomes_a_node_request|"
+      ],
+      "actual_receipt_sources": [
+        "56812dd840ad34a5451539f7b5fd47142029bd90",
+        "6894b87b275e27fa50c0be5ba4f614acd22f8017",
+        "6af537b987d231a0bceddb031d6b0fb365c05c23",
+        "86017ae38aed762f6f462e2c6c5dcb7134326fa8"
+      ]
+    }
+  ],
+  "cross_consumer": {
+    "scope": "draft-092-RC05",
+    "owner": "R06",
+    "R38_followup": "Bounded/incremental output and log activation behavior; do not reclose upstream R06 solely from this map."
+  },
+  "runtime_status": "Not accepted. Immutable01 failures retained; corrected original2 and repaired current17+2process packets ready for root-owned dispatch. Final composition only has strict syntax qualification.",
+  "limits": [
+    "Coverage/platforms/sanitizers and default full suite deferred R42",
+    "Log file identity is not atomic/adversarial snapshot protection; nativeWindows/macOS identity branches remain finalmatrix",
+    "Public RPC named endpoint is not a stable wallet-instance capability",
+    "Exact-source interface adapters and retirement conditions recorded plan/R38_INTERFACE_NOTES.md"
+  ],
+  "worker_gate": "WORKER_ACCEPTANCE.json",
+  "composition": "gameboy/composed-01/READY.json",
+  "tested_worker": "44c7217205e855206a57520600213d7741f4580f",
+  "tested_composition": "56812dd840ad34a5451539f7b5fd47142029bd90",
+  "accepted_code_base": "2718d5981b6775992873187dbbd1737a934e9180",
+  "code_equivalent_parent_notes_head": "5ca18bd843a",
+  "current_gate": {
+    "Native": 38,
+    "QML": 59,
+    "Core": 5,
+    "Qt_bodies": 102,
+    "actual_GUI": 2,
+    "pinned_entries": 9
+  },
+  "composition_scope": {
+    "current": 102,
+    "explicit_prior_positive": 86,
+    "distinct": 188,
+    "Native": 91,
+    "QML": 76,
+    "Core": 21
+  },
+  "worker_historical_distinct": {
+    "native": 225,
+    "qml": 42,
+    "integration": 29,
+    "Qt_bodies": 296,
+    "counting": "Distinct identity union from source01/02/03/04/05; current2 and explicit prior294 positives, not a same-ELF fullsuite. No failed/skipped/duplicate body counted."
+  },
+  "counting": "Worker296 and composed188 overlap; never add. Current102 and explicit86 have unique XML identities; earlier failed/skipped/diagnostic-only executions not passing evidence.",
+  "upstream_notes": "R38_INTERFACE_NOTES.md",
+  "settings_budget_followup": {
+    "order_owner": "R33",
+    "implemented_and_qualified_with": "R38",
+    "formal_new_catalog_ID": null,
+    "problem": "Inline review2MiB/write2MiB overlap under4MiB ordinary budget with1KiB unrelatedwork",
+    "original_production": "8d633af88b1a061a9c68d77c8e7d1e765d8a0b75",
+    "test_only_original_red": "6aa5e7caf721215fb9d71f98a225566382842933",
+    "original_actual": "2executed: pressureFAIL, unchangedcontrolPASS; noinfra",
+    "gate_current": "SettingsEditorModelTests full38 incl5 newmanual +59QML +5publicCore, allpass; actualGUI2/pinned9/QMLlintpass",
+    "new_controls": [
+      "originalWriteFollowsReleasedReviewBudgetUnderUnrelatedPressure",
+      "originalHandoffCannotConsumeASuccessorEdit",
+      "originalHandoffSurvivesParentCloseAndFacadeRetirement",
+      "refusedHandoffOwnsAKnownNoWriteOutcomeWithoutRetry",
+      "cancelledAcceptedHandoffSettlesItsOriginalNoWriteReceipt"
+    ],
+    "change": "One backgroundDomain continuation onoriginalactionScope with immutableacceptedSave held inexistingState/session; unchanged task/queue budgets, explicit knownNoWrite forunstarted/refusedhandoff, Unknown forother failures, no retry orGUI dependency.",
+    "Core_API_change_needed": false
+  },
+  "deferred": [
+    "Exhaustive line/branch coverage and full regression matrixR42",
+    "Pinned ASAN/LSAN/UBSAN/integer and concurrency sanitizersR42",
+    "Qt/platform matrix including log native identity Windows/macOSR42",
+    "Existing independent Core lock/API limitations and named endpoint vs stable wallet-instance semantics as documented, no stronger promise inferred"
+  ],
+  "artifact_root": ".validation/qt6-r11-r40-20261114/R38/"
+}
