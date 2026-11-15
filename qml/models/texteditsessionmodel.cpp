@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/models/texteditsessionmodel.h>
+#include <qml/atomicsharedptr.h>
 #include <qml/guipresentation.h>
 #include <qml/retainedsnapshot.h>
 #include <QPointer>
@@ -49,7 +50,7 @@ struct TextEditSessionModel::State : std::enable_shared_from_this<State> {
           scope(this->ports.execution.scheduler->openActionScope()), key(this->ports.execution.scheduler->allocateKey()), notify(std::move(notify)), mailbox(std::move(mailbox)) {}
     Reducer editor;
     const Ports ports;
-    std::shared_ptr<execution::Scheduler> scope;
+    ownership::AtomicSharedPtr<execution::Scheduler> scope;
     const execution::ResourceKey key;
     const std::function<void()> notify;
     TextEditError error;
@@ -73,7 +74,7 @@ struct TextEditSessionModel::State : std::enable_shared_from_this<State> {
         }, [] {}, {},
             {execution::Lane::Domain, 131072, key, execution::WorkClass::Action});
     }
-    execution::Admission post(std::function<void(State&)> command) { return postUsing(scope, std::move(command)); }
+    execution::Admission post(std::function<void(State&)> command) { return postUsing(scope.load(), std::move(command)); }
     execution::Admission ingress(std::function<void(State&)> command) { return postUsing(ports.execution.scheduler, std::move(command)); }
     bool evaluate() const
     {
@@ -208,7 +209,7 @@ struct TextEditSessionModel::State : std::enable_shared_from_this<State> {
         if (pending_save) seen_request = std::max(seen_request, pending_save->request);
         pending_save.reset(); pending_input.reset();
         error = {TextEditError::Closed, tr("This editor is closed.")};
-        editor.retire(); scope.reset(); publish();
+        editor.retire(); scope.store({}); publish();
     }
     void reconcile()
     {
@@ -244,7 +245,12 @@ TextEditSessionModel::TextEditSessionModel(QString entity, Ports ports, QObject*
                 }); } catch (...) { mailbox->notice_pending.store(false); throw; }
             }));
         });
-    if (m_state_owner) { m_state = *m_state_owner; m_mailbox = (*m_state_owner)->mailbox; }
+    if (m_state_owner) {
+        // Frontend locks borrow the reserved cleanup lease, never the actor's
+        // shared_from_this counter. Their last release cannot destroy State on GUI.
+        m_state = std::shared_ptr<State>{m_state_owner, m_state_owner->get()};
+        m_mailbox = (*m_state_owner)->mailbox;
+    }
     else { m_retired = true; m_immediate_error = {TextEditError::Refused, tr("The editor could not be opened. Try again.")}; }
     connect(&m_text, &TextEditInput::edited, this, [this](const QString& value) {
         if (m_retired || m_input_sequence == UINT64_MAX) return;
@@ -274,10 +280,15 @@ TextEditSessionModel::~TextEditSessionModel()
 
 bool TextEditSessionModel::submit(std::function<void(State&)> command, const QString& name)
 {
-    const auto state = m_state.lock();
-    if (available() && state && state->ingress(std::move(command))) { m_immediate_error = {}; return true; }
-    m_immediate_error = {m_retired ? TextEditError::Closed : TextEditError::Refused, tr("This editor command could not be scheduled.")};
     const QPointer<TextEditSessionModel> guard{this};
+    bool admitted{false};
+    {
+        const auto state = m_state.lock();
+        admitted = available() && state && bool(state->ingress(std::move(command)));
+    }
+    if (!guard) return false;
+    if (admitted) { m_immediate_error = {}; return true; }
+    m_immediate_error = {m_retired ? TextEditError::Closed : TextEditError::Refused, tr("This editor command could not be scheduled.")};
     Q_EMIT changed();
     if (guard) Q_EMIT commandRejected(name, m_immediate_error);
     return false;
@@ -349,20 +360,28 @@ void TextEditSessionModel::save() { saveCommand(); }
 void TextEditSessionModel::saveCommand(std::optional<uint64_t> close_token)
 {
     if (refuseBusy(QStringLiteral("save"))) return;
-    const auto state = m_state.lock();
     const auto action = available() && !m_input_invalid && m_next_save_sequence != UINT64_MAX ? m_execution.scheduler->openActionScope() : nullptr;
-    Writer writer;
-    try { if (action && state) writer = state->ports.admitWrite ? state->ports.admitWrite() : state->ports.write; }
-    catch (...) {}
     const auto request = m_next_save_sequence == UINT64_MAX ? 0 : m_next_save_sequence + 1;
-    if (action && writer && state->postUsing(action, [writer = std::move(writer), action, close_token, value = m_text.text(), sequence = m_input_sequence, request](State& state) {
-        state.edit(value, sequence);
-        if (close_token && !state.editor.answerClose(*close_token, persistentedit::CloseChoice::Save)) {
-            state.seen_request = std::max(state.seen_request, request);
-            state.reject({TextEditError::Changed, tr("The close question changed. Review the current edit before answering.")}); state.publish(); return;
-        }
-        state.save(writer, action, request);
-    })) {
+    const auto value = m_text.text(); const auto sequence = m_input_sequence;
+    const QPointer<TextEditSessionModel> observer{this};
+    bool admitted{false};
+    {
+        const auto state = m_state.lock();
+        Writer writer;
+        try { if (action && state) writer = state->ports.admitWrite ? state->ports.admitWrite() : state->ports.write; }
+        catch (...) {}
+        if (!observer) return;
+        admitted = action && writer && state && bool(state->postUsing(action, [writer = std::move(writer), action, close_token, value, sequence, request](State& state) {
+            state.edit(value, sequence);
+            if (close_token && !state.editor.answerClose(*close_token, persistentedit::CloseChoice::Save)) {
+                state.seen_request = std::max(state.seen_request, request);
+                state.reject({TextEditError::Changed, tr("The close question changed. Review the current edit before answering.")}); state.publish(); return;
+            }
+            state.save(writer, action, request);
+        }));
+    }
+    if (!observer) return;
+    if (admitted) {
         m_next_save_sequence = request; m_pending_save_sequence = request;
         m_immediate_error = {}; Q_EMIT changed(); return;
     }

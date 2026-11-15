@@ -15,6 +15,11 @@
 namespace {
 using Model = TextEditSessionModel;
 using execution::Lane;
+struct ReleaseNotice {
+    explicit ReleaseNotice(std::function<void()> release) : release(std::move(release)) {}
+    ~ReleaseNotice() { release(); }
+    const std::function<void()> release;
+};
 struct Fixture {
     ManualRoutedExecution execution;
     std::deque<std::function<void()>> gui;
@@ -23,11 +28,13 @@ struct Fixture {
     bool fail{false}, unknown{false}, throw_after_admission{false};
     Model::Write actual;
     std::unique_ptr<Model> editor;
-    Fixture()
+    explicit Fixture(std::function<void()> release = {})
     {
         Model::Ports ports;
         ports.execution = {execution.scheduler, [this](auto turn) { gui.push_back(std::move(turn)); }};
-        ports.validate = [this](const QString& value) { ++validations; return value.size() <= 20; };
+        ports.validate = [this, owner = release ? std::make_shared<ReleaseNotice>(std::move(release)) : nullptr](const QString& value) {
+            (void)owner; ++validations; return value.size() <= 20;
+        };
         ports.read = [this](auto done) { return execution::Submit(*execution.scheduler, [this] {
             ++reads; return Model::Read{persisted, {}};
         }, std::move(done), {}, {Lane::Core, 256}); };
@@ -273,6 +280,23 @@ private Q_SLOTS:
         QCOMPARE(f.writes, 1); QCOMPARE(f.persisted, QString{"accepted"});
         QVERIFY(f.editor->saveResult().persisted); QCOMPARE(f.editor->saveResult().value, QString{"accepted"});
         QVERIFY(!f.editor->dirty());
+    }
+    void reentrantObserverDestructionCannotBecomeTheLastGuiActorOwner()
+    {
+        bool worker_turn{false}, released_on_worker{false}; int released{0}, rejected{0};
+        Fixture f{[&] { ++released; released_on_worker = worker_turn; }}; f.drain();
+        QObject::connect(f.editor.get(), &Model::commandRejected, qApp, [&] {
+            ++rejected; f.editor.reset();
+            for (;;) {
+                worker_turn = true; const bool stepped = f.execution.stepNext(); worker_turn = false;
+                if (!stepped) break;
+            }
+            // Hold every queued GUI publication inside this original signal.
+            QCOMPARE(released, 1); QVERIFY(released_on_worker); QVERIFY(f.execution.quiescent());
+        });
+        f.execution.rejectLane(Lane::Domain); f.editor->refresh();
+        QCOMPARE(rejected, 1); QCOMPARE(released, 1); QVERIFY(released_on_worker);
+        QVERIFY(!f.gui.empty()); f.publish(); QVERIFY(f.execution.quiescent());
     }
     void realWorkersSeparateValidationPersistenceAndProjection()
     {
