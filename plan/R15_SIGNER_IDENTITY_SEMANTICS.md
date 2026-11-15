@@ -7,6 +7,15 @@ process. Physical-device binding is outside this program's current scope.
 Preserve the pinned Core version's sole-connected-signer constraint; this does
 not promise automatic selection among multiple connected signers.
 
+Mid-flow device changes must preserve the original operation. Once wallet
+descriptors or a reviewed transaction exist, a replacement must service those
+same keys; incompatible keys must fail clearly without retargeting another
+wallet, descriptor set, document or review. Same-key replacement is permitted.
+R15 tests stale discovery/configuration and creation/Core-HWI handoffs; R19
+keeps the candidate/review immutable; R23 covers the signing handoff. Use
+manual executors and controlled process fixtures. Notify the user before
+accepting a required guarantee that public Core interfaces cannot establish.
+
 The external-signer protocol's fingerprint identifies a master key origin. It
 is a short matching hint, not a physical-device identifier, a unique wallet ID
 or a cryptographic proof of identity. Devices holding the same seed share it.
