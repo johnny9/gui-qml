@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/psbtfeeservices.h>
+#include <qml/psbtwork.h>
+#include <test/mocks/psbtfeefixture.h>
 #include <test/mocks/mocknode.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/qt_test_registry.h>
@@ -113,6 +115,39 @@ private Q_SLOTS:
         document.inputs[1].time_locktime = 500000001;
         QVERIFY(!psbtfee::MatchesReview(document, proof, CAmount{1000}));
     }
+    void resolvedProofOwnsTheMatchingAssessmentAndRawCandidate_data()
+    {
+        QTest::addColumn<int>("scenario");
+        QTest::newRow("verified-legacy") << 0;
+        QTest::newRow("invalid-finalized-key") << 1;
+        QTest::newRow("unavailable-output-proof") << 2;
+    }
+    void resolvedProofOwnsTheMatchingAssessmentAndRawCandidate()
+    {
+        QFETCH(int, scenario);
+        auto source = psbtfeefixture::Legacy(2, false);
+        auto expected = source;
+        CMutableTransaction transaction; QVERIFY(FinalizeAndExtractPSBT(expected, transaction));
+        psbtfee::Outputs outputs;
+        for (auto& input : source.inputs) {
+            outputs.emplace(input.GetOutPoint(), input.non_witness_utxo->vout[input.prev_out]);
+            input.non_witness_utxo = nullptr; input.witness_utxo.SetNull();
+        }
+        if (scenario == 1) source.inputs[0].final_script_sig = psbtfeefixture::Legacy(2, false).inputs[0].final_script_sig;
+        const auto raw = psbtwork::SerializeRaw(source);
+        const auto result = psbtfee::Resolve(source, {}, [&](const COutPoint& outpoint) -> std::optional<CTxOut> {
+            return scenario == 2 ? std::nullopt : std::optional<CTxOut>{outputs.at(outpoint)};
+        });
+        QVERIFY(result.analysis); QVERIFY(result.analysis->assessment);
+        QCOMPARE(result.proof->amount.has_value(), scenario != 2);
+        QCOMPARE(result.analysis->signature_state, scenario == 0 ? psbtwork::SignatureState::Verified
+            : scenario == 1 ? psbtwork::SignatureState::Invalid : psbtwork::SignatureState::Unverified);
+        QCOMPARE(result.analysis->can_broadcast, scenario == 0);
+        QCOMPARE(bool(result.transaction), scenario == 0);
+        if (scenario == 0) QCOMPARE(result.transaction->GetWitnessHash(), MakeTransactionRef(transaction)->GetWitnessHash());
+        QCOMPARE(psbtwork::SerializeRaw(source), raw);
+    }
+
     void readerReusesIndependentProofAndSkipsUnnecessaryLookups()
     {
         const auto document = Amounts({2000, 2000}, {3000});

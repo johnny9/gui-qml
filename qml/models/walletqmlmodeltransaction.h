@@ -67,8 +67,9 @@ public:
     bool reviewUsesFallback() const { return m_review_fee_source == static_cast<int>(feeestimate::Provenance::Fallback); }
     const QMap<QString, QString>& recipientLabels() const { return m_recipient_labels; }
     const QSet<QString>& reviewedAddresses() const { return m_reviewed_addresses; }
-    bool nodePolicyBlocked() const { return m_review_lifetime && m_review_lifetime->node_policy_blocked; }
-    QString nodePolicyStatus() const { return m_review_lifetime ? m_review_lifetime->node_policy_status : QString{}; }
+    bool nodePolicyBlocked() const { return m_node_policy_blocked; }
+    QString nodePolicyStatus() const { return m_node_policy_status; }
+    void setNodePolicyStatus(QString status, bool blocked) { m_node_policy_status = std::move(status); m_node_policy_blocked = blocked; }
     std::shared_ptr<const void> retainedValues() const { return m_review_lifetime; }
     std::shared_ptr<const PartiallySignedTransaction> assessedPsbt() const { return m_assessed_psbt; }
     // The producer retains Native cleanup for this immutable analysis value.
@@ -112,6 +113,8 @@ private:
     // Declared before cached aliases so they release before the cleanup lease.
     std::shared_ptr<const walletreview::Snapshot> m_review_lifetime;
     std::shared_ptr<const PartiallySignedTransaction> m_assessed_psbt;
+    QString m_node_policy_status;
+    bool m_node_policy_blocked{false};
     std::shared_ptr<const void> m_presentation_lifetime;
     bool m_presentation_pending{false};
     bool m_closed{false};

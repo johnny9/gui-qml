@@ -677,7 +677,7 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         review->transaction = snapshot->signature_state == SignatureState::Verified ? MakeTransactionRef(finalized) : MakeTransactionRef(*tx);
         review->assessment = assessment;
         review->node_policy_blocked = snapshot->node_state == psbtpolicy::State::Blocked;
-        if (snapshot->complete) review->node_policy_status = psbtpolicy::Evaluate(snapshot->node_facts).explanation;
+        if (snapshot->signature_state == SignatureState::Verified) review->node_policy_status = psbtpolicy::Evaluate(snapshot->node_facts).explanation;
         review->proof = snapshot->proof;
         review->fee = snapshot->proof->amount.value_or(0);
         review->display_unit = display_unit;

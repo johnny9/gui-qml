@@ -57,6 +57,7 @@ WalletQmlModelTransaction::WalletQmlModelTransaction(std::shared_ptr<const walle
       m_requested_display_unit(m_review_lifetime->display_unit)
 {
     const auto& snapshot = *m_review_lifetime;
+    m_node_policy_status = snapshot.node_policy_status; m_node_policy_blocked = snapshot.node_policy_blocked;
     if (snapshot.assessment) m_assessed_psbt = std::shared_ptr<const PartiallySignedTransaction>{m_review_lifetime, snapshot.assessment.get()};
     const auto unit = static_cast<BitcoinAmount::Unit>(static_cast<int>(QmlBitcoinUnits::fromDisplayUnit(snapshot.display_unit)));
     // Every transaction copy, including flow/request identity captures, must
@@ -98,6 +99,7 @@ WalletQmlModelTransaction::WalletQmlModelTransaction(const WalletQmlModelTransac
       m_requested_display_unit(reviewed.m_requested_display_unit)
 {
     m_assessed_psbt = reviewed.m_assessed_psbt;
+    m_node_policy_status = reviewed.m_node_policy_status; m_node_policy_blocked = reviewed.m_node_policy_blocked;
     const auto unit = reviewed.m_amount_amount->unit();
     m_amount_amount->setUnit(unit);
     m_amount_amount->setSatoshi(m_amount);

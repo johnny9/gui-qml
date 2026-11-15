@@ -970,14 +970,21 @@ void WalletQmlModel::applyPsbtFeeProof(const std::shared_ptr<const psbtfee::Requ
         // Publish a complete value projection. Observers of the old document
         // cannot close or replace it halfway through fee-amount notifications.
         auto* authenticated = new WalletQmlModelTransaction(*m_current_transaction, *m_psbt_fee_proof->amount, this);
+        if (result.analysis) {
+            authenticated->setAssessedPsbt(std::shared_ptr<const PartiallySignedTransaction>{result.analysis, result.analysis->assessment.get()});
+            authenticated->setNodePolicyStatus(result.node_policy_status, result.analysis->node_state == psbtpolicy::State::Blocked);
+        }
+        if (result.transaction) authenticated->setWtx(result.transaction);
         previous = m_current_transaction;
         attempt_changed = setCurrentTransaction(authenticated);
     }
-    const bool node_blocked = m_current_transaction->nodePolicyBlocked() || m_psbt_requires_recheck;
+    const bool invalid_analysis = !result.analysis || result.analysis->metadata_failed;
+    const bool node_blocked = m_current_transaction->nodePolicyBlocked() || m_psbt_requires_recheck || invalid_analysis;
     m_current_transaction_can_send = known && !node_blocked && (m_psbt_key_can_send || (result.complete && m_psbt_can_commit_complete));
-    m_current_transaction_can_broadcast = known && result.complete && !node_blocked;
+    m_current_transaction_can_broadcast = known && result.analysis && result.analysis->can_broadcast && !node_blocked;
     m_current_transaction_review_message = !known
         ? tr("The transaction fee is missing or invalid. Add valid input information before broadcasting.")
+        : invalid_analysis && result.analysis ? result.analysis->error
         : node_blocked ? m_current_transaction->nodePolicyStatus()
         : m_current_transaction_can_send || m_current_transaction_can_broadcast ? QString{}
         : tr("This wallet does not have the keys to sign this transaction.");
