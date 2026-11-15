@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/bitcoinqmlapplication.h>
 #include <qml/models/settings_keys.h>
+#include <qml/guiconstants.h>
 #include <QtTest/QtTest>
 #include <QDir>
 #include <QFile>
@@ -80,7 +81,12 @@ int RunStartupProfileProbe(const QString& mode)
         expected=QStringLiteral("Settings file could not be written");
     }else{
         arguments.removeLast();
-        QSettings preferences{QSettings::IniFormat,QSettings::UserScope,QStringLiteral("BitcoinCore"),QStringLiteral("BitcoinCore-App-regtest")};
+#ifdef Q_OS_MACOS
+        const auto organization = QStringLiteral(QAPP_ORG_DOMAIN);
+#else
+        const auto organization = QStringLiteral(QAPP_ORG_NAME);
+#endif
+        QSettings preferences{QSettings::IniFormat,QSettings::UserScope,organization,QStringLiteral(QAPP_APP_NAME_REGTEST)};
         const auto stored=mode==QStringLiteral("saved-empty")?QVariant{QStringLiteral("")}:mode==QStringLiteral("saved-wrong-type")?QVariant{42}:QVariant{root.filePath(QStringLiteral("unmounted-profile"))};
         preferences.setValue(SettingsKeys::DATA_DIR,stored);preferences.sync();
         if(preferences.status()!=QSettings::NoError)return 86;

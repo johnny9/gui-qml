@@ -103,7 +103,9 @@ private Q_SLOTS:
         QVERIFY(execution::Submit(*runner.scheduler,[&]{return startup::ReadProfileIdentity(args);},
             [&](auto value){result=std::move(value);}));
         runner.drain(); QVERIFY(result); QCOMPARE(result->network,QString{"regtest"});
-        QCOMPARE(result->directory,QDir::cleanPath(network));
+        // Core resolves the existing base directory physically; on macOS
+        // /tmp is an alias of /private/tmp, even before regtest exists.
+        QCOMPARE(result->directory,QDir(directory.path()).canonicalPath()+QStringLiteral("/regtest"));
         QVERIFY(!QFile::exists(directory.filePath("wallets")));
         QVERIFY(!QFile::exists(network+"/wallets"));
         QCOMPARE(QFile::exists(network),existing_settings);

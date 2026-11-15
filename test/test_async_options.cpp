@@ -407,8 +407,12 @@ private Q_SLOTS:
         current.remove(SettingsKeys::LANGUAGE);
         if (gui_language.isValid()) current.setValue(SettingsKeys::LANGUAGE, gui_language);
         current.sync();
-        QSettings legacy_chain(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("Bitcoin"), QStringLiteral("Bitcoin-Qt-regtest"));
-        QSettings legacy_default(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("Bitcoin"), QStringLiteral("Bitcoin-Qt"));
+        QString legacy_organization = QStringLiteral("Bitcoin");
+#ifdef Q_OS_MACOS
+        if (QSettings::defaultFormat() == QSettings::NativeFormat) legacy_organization = QStringLiteral("bitcoin.org");
+#endif
+        QSettings legacy_chain(QSettings::defaultFormat(), QSettings::UserScope, legacy_organization, QStringLiteral("Bitcoin-Qt-regtest"));
+        QSettings legacy_default(QSettings::defaultFormat(), QSettings::UserScope, legacy_organization, QStringLiteral("Bitcoin-Qt"));
         const QVariant old_chain = legacy_chain.value(SettingsKeys::LANGUAGE);
         const QVariant old_default = legacy_default.value(SettingsKeys::LANGUAGE);
         const auto restore_legacy = qScopeGuard([&] {

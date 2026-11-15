@@ -388,6 +388,9 @@ private Q_SLOTS:
         effects.interrupt = [captured] {};
         effects.shutdown = [captured] { return 0; };
         auto driver = std::make_unique<Driver>(execution::SnapshotServices{execution.scheduler, {}}, std::move(effects), Driver::Publish{});
+        // std::function's moved-from small target may retain its captures on
+        // libc++. Release the caller's port aliases before testing retirement.
+        effects = {};
         captured.reset();
         QVERIFY(driver->initialize()); QVERIFY(execution.step(execution::Lane::Domain));
         const auto held = execution.dispatchNext(execution::Lane::Core); QVERIFY(held);

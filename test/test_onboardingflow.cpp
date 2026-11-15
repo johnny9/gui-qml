@@ -532,6 +532,7 @@ private Q_SLOTS:
             {execution::Lane::Core,128,key,execution::WorkClass::Action});};
         ports.transport_retired=[trace]{return trace->endpoint_retired.load();};
         auto preparation=std::make_shared<startup::preparation::Coordinator>(execution::SnapshotServices{stable.scheduler(),{}},std::move(ports));
+        ports = {}; // Drop caller-held moved-from std::function scope aliases.
         auto owner=std::make_unique<onboarding::Coordinator>(execution::SnapshotServices{transient.scheduler(),{}},[trace,gui](const auto& projection){
             if(QThread::currentThread()==gui)trace->off_gui=false;trace->flow_domain=QThread::currentThread();trace->phase=int(projection.phase);
             trace->profile_complete=projection.profile_complete;if(projection.preparation_disposition)trace->outcome=int(*projection.preparation_disposition);
@@ -544,6 +545,7 @@ private Q_SLOTS:
             [preparation,trace](auto context,auto done){trace->saved_seen=context.saved_profile&&context.saved_profile->completed;return preparation->start(std::move(context),std::move(done));},
             [preparation]{preparation->close();}};
         QVERIFY(owner->finishAndPrepareAsync(1,Request(),std::move(save),std::move(async)));
+        save = {}; async = {}; // Native drain must not depend on caller aliases.
         QTRY_COMPARE(trace->outcome.load(),int(startup::preparation::Disposition::Ready));
         QCOMPARE(trace->phase.load(),int(onboarding::Phase::Completed));QVERIFY(trace->profile_complete.load());QVERIFY(trace->saved_seen.load());
         QCOMPARE(trace->writes.load(),1);QCOMPARE(trace->reads.load(),1);QCOMPARE(trace->preparations.load(),1);QCOMPARE(trace->transport_callbacks.load(),1);QVERIFY(trace->off_gui.load());
