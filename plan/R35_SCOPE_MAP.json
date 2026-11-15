@@ -1,5 +1,5 @@
 {
-  "status": "focused runtime/static progress gate; exact head app lint/acceptance receipt in R35/FOCUSED_ACCEPTANCE.json",
+  "status": "focused progress gate passed; public-wallet-directory boundary resolved by public helper; source15/checkpoint/evidence in R35_PUBLIC_BOUNDARY_CHECKPOINT.json and R35/PUBLIC_HELPER_ACCEPTANCE_15.json; coordinator integration pending",
   "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
   "scope": [
     {
@@ -69,5 +69,11 @@
       "selectors": "OptionsModelTests::capturedResetRejectsChangedLegacySource; captured reset receipt/process controls"
     }
   ],
-  "R42": "full suite, exhaustive100coverage, sanitizers and platform/configuration matrices deferred by user; no qualification pass inferred"
+  "R42": "full suite, exhaustive100coverage, sanitizers and platform/configuration matrices deferred by user; no qualification pass inferred",
+  "public_wallet_boundary": {
+    "adapter": "read-only fresh public Init/Node/WalletLoader process",
+    "private_access_or_Core_change": false,
+    "upstream_note": "R35_PUBLIC_DIRECTORY_ADAPTER_UPSTREAM.md",
+    "implementation": "ffd8da03f4bb255f607d587ed3ea1bd80f30bf1e"
+  }
 }
