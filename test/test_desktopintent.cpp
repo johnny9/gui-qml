@@ -272,6 +272,32 @@ private Q_SLOTS:
         model.closeAdmission(); factory.closeAdmission(); drain();
         QCOMPARE(commands.scheduler->pending(), size_t{0});
     }
+    void presentationReleaseSurvivesOrdinaryDomainRejection()
+    {
+        ManualRoutedExecution commands;
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel factory; factory.setServices({commands.scheduler, post});
+        DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
+        QVERIFY(model.owner()->admit({Input(1), Input(2)}, {})); model.setReady(true); drain();
+        QVERIFY(model.inspection()); QCOMPARE(model.inspection()->requestId(), quint64{1});
+        QCOMPARE(model.pendingCount(), 1);
+        QObject original_recipient;
+        commands.rejectLane(execution::Lane::Domain);
+        auto* original = model.takeInspection(&original_recipient);
+        QVERIFY(original); QCOMPARE(original->requestId(), quint64{1});
+        drain();
+        QVERIFY(model.inspection()); QCOMPARE(model.inspection()->requestId(), quint64{2});
+        QCOMPARE(model.pendingCount(), 0);
+        model.closeAdmission(); factory.closeAdmission(); delete original; drain();
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
 #endif
     void failedBatchHasNoAcceptedPrefixOrConsumedIdentity()
     {
