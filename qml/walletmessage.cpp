@@ -32,6 +32,11 @@ SignResult Sign(interfaces::Wallet& wallet, SignRequest request)
         request.captured_passphrase.reset();
         if (!IsLegacy(request.address)) { result.error = Error::InvalidAddress; return finish(); }
         const auto destination = DecodeDestination(request.address.trimmed().toStdString());
+        if (wallet.privateKeysDisabled()) {
+            result.error = Error::Signing;
+            result.message = QObject::tr("This wallet has no private keys for signing messages.");
+            return finish();
+        }
         if (wallet.isCrypted() && wallet.isLocked()) {
             if (!request.passphrase) { result.error = Error::NeedsUnlock; return finish(); }
             // A throwing unlock may already have changed the wallet state.

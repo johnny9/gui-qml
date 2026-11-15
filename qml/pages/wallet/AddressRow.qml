@@ -26,6 +26,9 @@ AbstractButton {
 
     property bool showDivider: true
     property string pendingLabel: root.label
+    property AddressListModel addressModel: null
+    property TextEditSessionModel editor: addressModel ? addressModel.labelEditor(address) : null
+    property string editorError: ""
 
     signal noteDraftEdited(string address, string label)
     signal noteDraftDiscarded(string address)
@@ -40,7 +43,7 @@ AbstractButton {
     hoverEnabled: AppMode.isDesktop
     focusPolicy: Qt.TabFocus
     padding: 0
-    implicitHeight: 76
+    implicitHeight: noteError.visible ? 96 : 76
     height: implicitHeight
     Accessible.name: root.label.length > 0 ? root.label : qsTr("Address details")
     Accessible.description: root.address
@@ -48,7 +51,7 @@ AbstractButton {
 
     onClicked: root.openDetails()
     onPendingLabelChanged: {
-        if (!noteField.activeFocus) noteField.text = root.pendingLabel
+        if (!root.editor && !noteField.activeFocus) noteField.text = root.pendingLabel
     }
 
     HoverHandler {
@@ -85,7 +88,7 @@ AbstractButton {
                 property string submittedText: root.label
                 width: Math.min(350, parent.width)
                 implicitHeight: 30
-                text: root.pendingLabel
+                text: root.editor && root.editor.phase !== TextEditSessionModel.Loading ? root.editor.text.text : root.pendingLabel
                 placeholderText: root.canEditLabel
                     //: Placeholder shown when an address has no label yet.
                     ? qsTr("Add label...")
@@ -120,11 +123,21 @@ AbstractButton {
                 }
 
                 onActiveFocusChanged: {
-                    if (noteField.activeFocus) noteField.submittedText = root.label
+                    if (noteField.activeFocus) {
+                        noteField.submittedText = root.label
+                        if (root.addressModel && (!root.editor || root.editor.phase === TextEditSessionModel.Closed)) {
+                            root.editor = root.addressModel.editLabel(root.address)
+                            root.editorError = root.editor ? "" : qsTr("The note editor could not be opened. Close another note editor and try again.")
+                        }
+                    }
                 }
-                onTextEdited: root.noteDraftEdited(root.address, noteField.text)
+                onTextEdited: {
+                    if (root.editor) root.editor.text.edit(noteField.text)
+                    else root.noteDraftEdited(root.address, noteField.text)
+                }
                 onAccepted: noteField.focus = false
                 onEditingFinished: {
+                    if (root.editor) { root.editor.save(); return }
                     if (noteField.text !== root.label
                             && noteField.text !== noteField.submittedText) {
                         noteField.submittedText = noteField.text
@@ -132,12 +145,25 @@ AbstractButton {
                     }
                 }
                 Keys.onEscapePressed: function(event) {
-                    root.noteDraftDiscarded(root.address)
-                    noteField.text = root.label
+                    if (root.editor) root.editor.discard()
+                    else { root.noteDraftDiscarded(root.address); noteField.text = root.label }
                     noteField.focus = false
                     event.accepted = true
                 }
             }
+        }
+
+        CoreText {
+            id: noteError
+            objectName: "addressRowNoteError"
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 4
+            text: root.editor ? root.editor.error.message : root.editorError
+            visible: text.length > 0
+            color: Theme.color.red
+            font: Theme.text.caption.font
         }
 
         AbstractButton {

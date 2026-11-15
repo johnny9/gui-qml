@@ -40,6 +40,8 @@ set_tests_properties(bitcoinqml_bootstrap_tests PROPERTIES TIMEOUT 30)
 
 add_executable(bitcoinqml_unit_tests
   test_unit_tests_main.cpp
+  test_persistenteditor.cpp
+  test_texteditsessionmodel.cpp
   test_amountparse.cpp
   test_appmode.cpp
   test_backendexecutor.cpp
@@ -231,6 +233,11 @@ endif()
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
   qmlcoverage.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/messagesigningprompt.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/exacttextdocument.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/exacttextdocument.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/texteditsessionmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/texteditsessionmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/signerdiscovery.cpp

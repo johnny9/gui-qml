@@ -56,6 +56,9 @@ public:
 
     QString noteSelf() const;
     void setNoteSelf(const QString& note);
+    void setNoteSelfBaseline(const QString& note, bool address_prefill = false);
+    bool notePrefilled() const { return m_note_prefilled; }
+    bool noteDirty() const { return m_noteSelf != m_note_baseline; }
 
     BitcoinAmount* amount() const;
     QString amountError() const;
@@ -130,6 +133,8 @@ private:
     QString m_message;
     QString m_address_type;
     QString m_noteSelf;
+    QString m_note_baseline;
+    bool m_note_prefilled{false};
     QString m_amountError;
     BitcoinAmount* m_amount;
     QString m_id;

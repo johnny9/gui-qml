@@ -30,6 +30,10 @@ struct Command {
     uint64_t revision{0};
     Draft draft;
     QString address, label;
+    // App editor precondition, checked again through the public Wallet API
+    // immediately before its write. This is not atomic with external RPC.
+    std::optional<QString> expected_label;
+    bool preserve_current_note{false};
     Txid sent_transaction;
     QMap<QString, QString> sent_labels;
     bool require_unused{false};
@@ -45,7 +49,9 @@ struct Result {
     Error error{Error::None};
     int64_t id{0};
     bool request_saved{false}, request_loaded{false}, erased{false}, label_saved{false};
+    std::optional<QString> current_label;
     bool reservation_released{false};
+    bool publication_failed{false};
     size_t records_saved{0}, records_total{0};
     std::shared_ptr<const Record> record;
     std::optional<ReservedAddress> address;
@@ -59,8 +65,8 @@ class Operation
 {
 public:
     Operation(walletopening::Opening opening, uint64_t token, Kind kind, std::function<void()> notify,
-              std::shared_ptr<const AddressIntent> intent = {})
-        : opening(std::move(opening)), token(token), kind(kind), address_intent(std::move(intent)), m_notify(std::move(notify)) {}
+              std::shared_ptr<const AddressIntent> intent = {}, std::function<void(const Result&)> result_notify = {})
+        : opening(std::move(opening)), token(token), kind(kind), address_intent(std::move(intent)), m_notify(std::move(notify)), m_result_notify(std::move(result_notify)) {}
     const walletopening::Opening opening;
     const uint64_t token;
     const Kind kind;
@@ -70,6 +76,7 @@ private:
     friend class Store;
     void complete(Result result);
     const std::function<void()> m_notify;
+    const std::function<void(const Result&)> m_result_notify;
     mutable std::mutex m_mutex;
     std::optional<Result> m_result;
 };
@@ -105,6 +112,7 @@ public:
           ReservationStorage storage = {}, Encoder encoder = Encode, Decoder decoder = DecodeOne, Prepare prepare = FreezeRecord);
     ~Store();
     Admission submit(Command command, Notify complete = {});
+    Admission submitResult(Command command, std::function<void(const Result&)> complete, std::shared_ptr<const walletopening::Session::Action> action = {});
     // An already-admitted original-opening capability, captured before the
     // transaction commit, lets its metadata drain even if that opening closes.
     Admission submitSentLabels(std::shared_ptr<const walletopening::Session::Action> action, const Txid& transaction,
@@ -134,7 +142,7 @@ private:
     struct Loading;
     struct Observation;
     struct SentLabels;
-    Admission submitImpl(Command command, Notify complete, std::shared_ptr<const walletopening::Session::Action> action);
+    Admission submitImpl(Command command, Notify complete, std::shared_ptr<const walletopening::Session::Action> action, std::function<void(const Result&)> result_notify = {});
     void advanceSentLabels(const std::shared_ptr<SentLabels>& work);
     void scheduleSentLabels(const std::shared_ptr<SentLabels>& work);
     execution::Admission schedule(const std::shared_ptr<const walletopening::Session::Action>& action);

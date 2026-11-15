@@ -7,12 +7,14 @@
 
 #include <consensus/amount.h>
 #include <qml/models/receiverequestoperation.h>
+#include <qml/models/texteditsessionmodel.h>
 #include <qml/snapshotquery.h>
 #include <qml/walletopening.h>
 
 #include <QAbstractListModel>
 #include <QString>
 #include <QVariantList>
+#include <QPointer>
 
 #include <exception>
 #include <vector>
@@ -74,7 +76,9 @@ public:
 
     Q_INVOKABLE void refresh();
     void refreshLabels();
-    Q_INVOKABLE ReceiveRequestOperation* setAddressLabel(const QString& address, const QString& label);
+    ReceiveRequestOperation* setAddressLabel(const QString& address, const QString& label);
+    Q_INVOKABLE TextEditSessionModel* editLabel(const QString& address);
+    Q_INVOKABLE TextEditSessionModel* labelEditor(const QString& address) const;
     Q_INVOKABLE QString addressAt(int row) const;
 
 Q_SIGNALS:
@@ -125,6 +129,7 @@ private:
     QString m_read_error;
     bool m_stopping{false}, m_dirty{true}, m_labels_dirty{false}, m_pending_labels{false}, m_refresh_pending{false}, m_inventory_failed{false}, m_notifying{false};
     WalletQmlModel* m_wallet_model{nullptr};
+    QHash<QString, QPointer<TextEditSessionModel>> m_label_editors;
     Category m_category{SingleUse};
     bool m_show_used{false};
     int m_display_unit{0};

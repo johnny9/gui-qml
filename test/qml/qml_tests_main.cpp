@@ -2,6 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <qml/models/texteditsessionmodel.h>
+#include <qml/models/exacttextdocument.h>
+#include <qml/models/messagesigningprompt.h>
+#include <qml/guipresentation.h>
 #include <QtQuickTest/quicktest.h>
 #include <test/qmlcoverage.h>
 #include <qml/models/monospaceoutputmodel.h>
@@ -340,7 +344,45 @@ public:
 
     MockAddressListModel()
     {
+        const auto bridge = presentation::MakeGuiObject();
+        m_label_scheduler = std::make_shared<execution::TaskQueue>([bridge](execution::Lane, execution::Phase, execution::TaskId, std::function<void()> turn) {
+            return QMetaObject::invokeMethod(bridge.get(), std::move(turn), Qt::QueuedConnection);
+        }, execution::Limits::Bounded(), 1);
         populateRows();
+    }
+    Q_INVOKABLE TextEditSessionModel* labelEditor(const QString& address) const { return m_editors.value(address); }
+    Q_INVOKABLE TextEditSessionModel* editLabel(const QString& address) {
+        if (auto* held = labelEditor(address); held && held->phase() != TextEditSessionModel::Closed) return held;
+        if (!m_notes->contains(address)) return nullptr;
+        TextEditSessionModel::Ports ports; ports.execution.scheduler = m_label_scheduler;
+        ports.validate = [](const QString& value) { return value.size() <= 16384; };
+        ports.read = [notes = m_notes, scheduler = m_label_scheduler, address](auto done) {
+            return execution::Submit(*scheduler, [notes, address] { return TextEditSessionModel::Read{notes->value(address), {}}; }, done, {}, {execution::Lane::Core, 256});
+        };
+        const QPointer<MockAddressListModel> observer{this};
+        ports.write = [notes = m_notes, address, observer](const auto& attempt, auto done, const auto& action) {
+            return execution::Submit(*action, [notes, address, attempt, observer] {
+                TextEditSessionModel::Write value; value.value = attempt.values[0];
+                if (!observer || !observer->m_set_address_label_succeeds) {
+                    value.error = {TextEditError::Persistence, "The address note could not be saved."}; return value;
+                }
+                if (notes->value(address) != attempt.base[0]) {
+                    value.error = {TextEditError::Changed, "The note changed."}; value.current = TextEditSessionModel::Read{notes->value(address), {}}; return value;
+                }
+                notes->insert(address, value.value); value.persisted = true; value.outcome = persistentedit::Outcome::Saved;
+                return value;
+            }, [observer, address, done](auto value) {
+                if (observer && value.persisted) observer->projectNote(address, value.value);
+                done(std::move(value));
+            }, {}, {execution::Lane::Core, 512});
+        };
+        auto* editor = new TextEditSessionModel(address, std::move(ports), this);
+        m_editors.insert(address, editor); return editor;
+    }
+    void projectNote(const QString& address, const QString& label) {
+        for (int row{0}; row < rowCount(); ++row) if (m_rows[row].address == address) {
+            m_rows[row].label = label; Q_EMIT dataChanged(index(row), index(row), {LabelRole}); break;
+        }
     }
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override
@@ -420,7 +462,7 @@ public:
 
     Q_PROPERTY(int refreshCalls READ refreshCalls NOTIFY refreshCallsChanged)
     int refreshCalls() const { return m_refresh_calls; }
-    Q_INVOKABLE void refresh() { ++m_refresh_calls; Q_EMIT refreshCallsChanged(); }
+    Q_INVOKABLE void refresh() { ++m_refresh_calls; for (const auto& editor : m_editors) if (editor) editor->refresh(); Q_EMIT refreshCallsChanged(); }
     Q_INVOKABLE MockReceiveRequestOperation* setAddressLabel(const QString& address, const QString& label)
     {
         if (!m_set_address_label_succeeds) return nullptr;
@@ -428,6 +470,7 @@ public:
             Entry& entry{m_rows.at(row)};
             if (entry.address != address) continue;
             entry.label = label;
+            m_notes->insert(address, label);
             Q_EMIT dataChanged(index(row), index(row), {LabelRole});
             break;
         }
@@ -444,8 +487,11 @@ public:
     }
     Q_INVOKABLE void resetForTest()
     {
+        for (const auto& editor : m_editors) if (editor) { editor->retire(); editor->deleteLater(); }
+        m_editors.clear();
         beginResetModel();
         m_rows.clear();
+        m_notes->clear();
         populateRows();
         endResetModel();
         Q_EMIT countChanged();
@@ -470,10 +516,14 @@ private:
                 QStringLiteral("bcrt1qtestaddress%1").arg(row, 2, 10, QLatin1Char('0')),
                 QStringLiteral("Original note %1").arg(row),
             });
+            m_notes->insert(m_rows.back().address, m_rows.back().label);
         }
     }
 
     std::vector<Entry> m_rows;
+    std::shared_ptr<execution::Scheduler> m_label_scheduler;
+    const std::shared_ptr<QMap<QString, QString>> m_notes{std::make_shared<QMap<QString, QString>>()};
+    QHash<QString, QPointer<TextEditSessionModel>> m_editors;
     int m_refresh_calls{0};
     Category m_category{SingleUse};
     bool m_show_used{false};
@@ -1372,9 +1422,17 @@ Q_SIGNALS:
 class MockSignVerifyMessageModel : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(QString signature MEMBER m_signature NOTIFY signatureChanged)
-    Q_PROPERTY(QString signingError MEMBER m_signing_error NOTIFY signingStateChanged)
-    Q_PROPERTY(bool signingNeedsUnlock MEMBER m_needs_unlock NOTIFY signingStateChanged)
+    Q_PROPERTY(bool canSign READ canSign NOTIFY signingStateChanged)
+    Q_PROPERTY(bool canVerify READ canVerify NOTIFY verificationChanged)
+    Q_PROPERTY(TextEditInput* address READ address CONSTANT)
+    Q_PROPERTY(TextEditInput* message READ message CONSTANT)
+    Q_PROPERTY(TextEditInput* verificationAddressInput READ verificationAddressInput CONSTANT)
+    Q_PROPERTY(TextEditInput* verificationMessageInput READ verificationMessageInput CONSTANT)
+    Q_PROPERTY(TextEditInput* candidateSignature READ candidateSignature CONSTANT)
+    Q_PROPERTY(QString signature READ signature WRITE setSignature NOTIFY signatureChanged)
+    Q_PROPERTY(QString signingError READ signingError WRITE setSigningError NOTIFY signingStateChanged)
+    Q_PROPERTY(bool signingNeedsUnlock READ signingNeedsUnlock WRITE setNeedsUnlock NOTIFY signingStateChanged)
+    Q_PROPERTY(MessageSigningPrompt* signingPrompt READ signingPrompt NOTIFY signingStateChanged)
     Q_PROPERTY(bool signingBusy MEMBER m_sign_busy NOTIFY signingStateChanged)
     Q_PROPERTY(bool signingSucceeded READ signingSucceeded NOTIFY signingStateChanged)
     Q_PROPERTY(quint64 signingId MEMBER m_sign_id NOTIFY signingStateChanged)
@@ -1390,66 +1448,140 @@ class MockSignVerifyMessageModel : public QObject
     Q_PROPERTY(bool verificationValid MEMBER m_verify_valid NOTIFY verificationChanged)
     Q_PROPERTY(QString verificationText MEMBER m_verify_text NOTIFY verificationChanged)
     Q_PROPERTY(quint64 verificationId MEMBER m_verify_id NOTIFY verificationChanged)
+    Q_PROPERTY(bool manualCompletion MEMBER m_manual)
+    Q_PROPERTY(int signCalls MEMBER m_sign_calls NOTIFY fixtureChanged)
+    Q_PROPERTY(int passphraseCalls MEMBER m_passphrase_calls NOTIFY fixtureChanged)
+    Q_PROPERTY(int verifyCalls MEMBER m_verify_calls NOTIFY fixtureChanged)
+    Q_PROPERTY(QString lastSigningAddress MEMBER m_last_address NOTIFY fixtureChanged)
+    Q_PROPERTY(QString lastSigningMessage MEMBER m_last_message NOTIFY fixtureChanged)
+    Q_PROPERTY(QString lastPassphrase MEMBER m_last_passphrase NOTIFY fixtureChanged)
 public:
+    explicit MockSignVerifyMessageModel(QObject* parent = nullptr) : QObject(parent) {
+        connect(&m_address_text, &TextEditInput::edited, this, &MockSignVerifyMessageModel::setSigningAddress);
+        connect(&m_message_text, &TextEditInput::edited, this, &MockSignVerifyMessageModel::setSigningMessage);
+        connect(&m_verify_address_text, &TextEditInput::edited, this, &MockSignVerifyMessageModel::setVerificationAddress);
+        connect(&m_verify_message_text, &TextEditInput::edited, this, &MockSignVerifyMessageModel::setVerificationMessage);
+        connect(&m_verify_signature_text, &TextEditInput::edited, this, &MockSignVerifyMessageModel::setVerificationSignature);
+    }
+    TextEditInput* address() { return &m_address_text; }
+    TextEditInput* message() { return &m_message_text; }
+    TextEditInput* verificationAddressInput() { return &m_verify_address_text; }
+    TextEditInput* verificationMessageInput() { return &m_verify_message_text; }
+    TextEditInput* candidateSignature() { return &m_verify_signature_text; }
+    bool canSign() const { return signingAddressValid() && !m_sign_busy; }
+    bool canVerify() const { return verificationAddressValid() && !m_verify_busy; }
+    Q_INVOKABLE QString sign() { const auto id = requestSignMessage(m_address_text.text(), m_message_text.text()); return id ? QString::number(id) : QString{}; }
+    Q_INVOKABLE QString verify(const QString& signature) { const auto id = requestVerifyMessage(m_verify_address_text.text(), m_verify_message_text.text(), signature); return id ? QString::number(id) : QString{}; }
+    QString signature() const { return m_signature; }
+    QString signingError() const { return m_signing_error; }
+    bool signingNeedsUnlock() const { return m_needs_unlock; }
+    MessageSigningPrompt* signingPrompt() const { return m_prompt; }
     QString signingAddress() const { return m_sign_address; }
     QString signingMessage() const { return m_sign_message; }
     QString verificationAddress() const { return m_verify_address; }
     QString verificationMessage() const { return m_verify_message; }
     QString verificationSignature() const { return m_verify_signature; }
-    bool signingSucceeded() const { return !m_signature.isEmpty(); }
-    bool signingAddressValid() const { return !m_sign_address.isEmpty(); }
-    bool verificationAddressValid() const { return !m_verify_address.isEmpty(); }
+    bool signingSucceeded() const { return !m_sign_busy && !m_needs_unlock && !m_signature.isEmpty(); }
+    bool signingAddressValid() const { return m_sign_address == QStringLiteral("1ValidLegacyAddress"); }
+    bool verificationAddressValid() const { return m_verify_address == QStringLiteral("1ValidLegacyAddress"); }
     bool addressValidationPending() const { return false; }
-    void setSigningAddress(const QString& value) { if (m_sign_address == value) return; m_sign_address = value; clearSigningStatus(); Q_EMIT inputsChanged(); }
-    void setSigningMessage(const QString& value) { if (m_sign_message == value) return; m_sign_message = value; clearSigningStatus(); Q_EMIT inputsChanged(); }
-    void setVerificationAddress(const QString& value) { if (m_verify_address == value) return; m_verify_address = value; clearVerification(); Q_EMIT inputsChanged(); }
-    void setVerificationMessage(const QString& value) { if (m_verify_message == value) return; m_verify_message = value; clearVerification(); Q_EMIT inputsChanged(); }
-    void setVerificationSignature(const QString& value) { if (m_verify_signature == value) return; m_verify_signature = value; clearVerification(); Q_EMIT inputsChanged(); }
+    void setSignature(const QString& value) { m_signature = value; Q_EMIT signatureChanged(); Q_EMIT signingStateChanged(); }
+    void setSigningError(const QString& value) { m_signing_error = value; updatePrompt(); Q_EMIT signingStateChanged(); }
+    void setNeedsUnlock(bool value) { m_needs_unlock = value; updatePrompt(); Q_EMIT signingStateChanged(); }
+    void setSigningAddress(const QString& value) { if (m_sign_address == value) return; m_sign_address = value; m_address_text.project(value); invalidateSign(); Q_EMIT inputsChanged(); }
+    void setSigningMessage(const QString& value) { if (m_sign_message == value) return; m_sign_message = value; m_message_text.project(value); invalidateSign(); Q_EMIT inputsChanged(); }
+    void setVerificationAddress(const QString& value) { if (m_verify_address == value) return; m_verify_address = value; m_verify_address_text.project(value); clearVerification(); Q_EMIT inputsChanged(); }
+    void setVerificationMessage(const QString& value) { if (m_verify_message == value) return; m_verify_message = value; m_verify_message_text.project(value); clearVerification(); Q_EMIT inputsChanged(); }
+    void setVerificationSignature(const QString& value) { if (m_verify_signature == value) return; m_verify_signature = value; m_verify_signature_text.project(value); clearVerification(); Q_EMIT inputsChanged(); }
     Q_INVOKABLE void clear() { clearSigningStatus(); clearVerification(); }
-    Q_INVOKABLE void clearSigningStatus() { ++m_sign_revision; m_signature.clear(); m_signing_error.clear(); m_needs_unlock = false; Q_EMIT signatureChanged(); Q_EMIT signingStateChanged(); }
+    Q_INVOKABLE void clearSigningStatus() { if (!m_sign_busy) invalidateSign(); }
     Q_INVOKABLE void clearVerification() { ++m_verify_revision; m_verify_valid = false; m_verify_text.clear(); Q_EMIT verificationChanged(); }
-    Q_INVOKABLE quint64 requestSignMessage(const QString& address, const QString& message)
-    {
-        if (m_sign_busy) return 0;
-        setSigningAddress(address); setSigningMessage(message);
-        const auto id = ++m_sign_id, revision = m_sign_revision;
-        m_sign_busy = true; Q_EMIT signingStateChanged();
-        QTimer::singleShot(0, this, [this, id, revision] {
-            if (id != m_sign_id) return;
-            m_sign_busy = false;
-            if (revision == m_sign_revision) m_signature = QStringLiteral("test-signature");
-            Q_EMIT signatureChanged(); Q_EMIT signingStateChanged();
-        });
+    Q_INVOKABLE void resetForTest() {
+        m_manual = false; m_pending_sign.reset(); m_pending_verify.reset(); m_sign_busy = false; m_verify_busy = false;
+        setSigningAddress({}); setSigningMessage({}); setVerificationAddress({}); setVerificationMessage({}); setVerificationSignature({});
+        clear(); m_sign_calls = m_passphrase_calls = m_verify_calls = 0; m_last_address.clear(); m_last_message.clear(); m_last_passphrase.clear();
+        Q_EMIT fixtureChanged();
+    }
+    Q_INVOKABLE quint64 requestSignMessage(const QString& address, const QString& message) { ++m_sign_calls; Q_EMIT fixtureChanged(); return queueSign(address, message); }
+    Q_INVOKABLE quint64 requestSignMessageWithPassphrase(const QString& address, const QString& message, const QString& secret) {
+        ++m_passphrase_calls; m_last_passphrase = secret; Q_EMIT fixtureChanged(); return queueSign(address, message);
+    }
+    Q_INVOKABLE bool completeSigningForTest(const QString& outcome, const QString& error) {
+        if (!m_pending_sign || (outcome != "success" && outcome != "unlock" && outcome != "error")) return false;
+        const auto pending = std::exchange(m_pending_sign, {});
+        if (pending->id != m_sign_id) return false;
+        m_sign_busy = false;
+        if (pending->revision == m_sign_revision) {
+            if (outcome == "success") m_signature = pending->address == "1ValidLegacyAddress" && !pending->message.isEmpty() ? QStringLiteral("test-signature") : QString{};
+            m_needs_unlock = outcome == "unlock"; m_signing_error = error;
+        }
+        updatePrompt(); Q_EMIT signatureChanged(); Q_EMIT signingStateChanged(); return true;
+    }
+    Q_INVOKABLE quint64 requestVerifyMessage(const QString& address, const QString& message, const QString& signature) {
+        ++m_verify_calls; Q_EMIT fixtureChanged(); if (m_verify_busy) return 0;
+        setVerificationAddress(address); setVerificationMessage(message); setVerificationSignature(signature);
+        const auto id = ++m_verify_id; m_pending_verify = Pending{id, m_verify_revision, address, message, signature};
+        m_verify_busy = true; Q_EMIT verificationChanged();
+        if (!m_manual) QTimer::singleShot(0, this, [this, id] { if (m_pending_verify && m_pending_verify->id == id) completeVerificationForTest(); });
         return id;
     }
-    Q_INVOKABLE quint64 requestSignMessageWithPassphrase(const QString& address, const QString& message, const QString&)
-    { return requestSignMessage(address, message); }
-    Q_INVOKABLE quint64 requestVerifyMessage(const QString& address, const QString& message, const QString& signature)
-    {
-        if (m_verify_busy) return 0;
-        setVerificationAddress(address); setVerificationMessage(message); setVerificationSignature(signature);
-        const auto id = ++m_verify_id, revision = m_verify_revision;
-        m_verify_busy = true; Q_EMIT verificationChanged();
-        QTimer::singleShot(0, this, [this, id, revision, signature] {
-            if (id != m_verify_id) return;
-            m_verify_busy = false;
-            if (revision == m_verify_revision) {
-                m_verify_valid = signature == QStringLiteral("test-signature");
-                m_verify_text = m_verify_valid ? QStringLiteral("Message verified successfully.") : QStringLiteral("Message verification failed.");
-            }
-            Q_EMIT verificationChanged();
-        });
-        return id;
+    Q_INVOKABLE bool completeVerificationForTest() {
+        if (!m_pending_verify) return false;
+        const auto pending = std::exchange(m_pending_verify, {}); if (pending->id != m_verify_id) return false;
+        if (pending->revision == m_verify_revision) {
+            m_verify_valid = pending->address == "1ValidLegacyAddress" && pending->message == "Signed statement" && pending->signature == "test-signature";
+            m_verify_text = m_verify_valid ? "Message verified successfully." : "Message verification failed.";
+        }
+        m_verify_busy = false; Q_EMIT verificationChanged(); return true;
     }
 Q_SIGNALS:
     void signatureChanged();
     void signingStateChanged();
     void verificationChanged();
     void inputsChanged();
+    void fixtureChanged();
 private:
+    struct Pending { quint64 id, revision; QString address, message, signature; };
+    void retirePrompt() {
+        auto* prompt = std::exchange(m_prompt, nullptr); if (!prompt) return;
+        prompt->project(false, false, {}); prompt->deleteLater();
+    }
+    void updatePrompt() {
+        if (m_prompt && (m_prompt_revision != m_sign_revision || (!m_needs_unlock && !m_sign_busy))) { retirePrompt(); return; }
+        if (!m_prompt && m_needs_unlock) {
+            const auto revision = m_sign_revision;
+            const auto address = m_sign_address, message = m_sign_message;
+            m_prompt = new MessageSigningPrompt([this, revision, address, message](const QString& secret) {
+                return revision == m_sign_revision ? requestSignMessageWithPassphrase(address, message, secret) : 0;
+            }, [this, revision] {
+                if (revision != m_sign_revision) return;
+                ++m_sign_revision; m_needs_unlock = false; m_signing_error.clear(); retirePrompt(); Q_EMIT signingStateChanged();
+            }, this);
+            m_prompt_revision = revision;
+        }
+        if (m_prompt) m_prompt->project(true, m_sign_busy, m_signing_error);
+    }
+    void invalidateSign() {
+        ++m_sign_revision; m_signature.clear(); m_signing_error.clear(); m_needs_unlock = false;
+        updatePrompt(); Q_EMIT signatureChanged(); Q_EMIT signingStateChanged();
+    }
+    quint64 queueSign(const QString& address, const QString& message) {
+        if (m_sign_busy) return 0;
+        setSigningAddress(address); setSigningMessage(message);
+        const auto id = ++m_sign_id; m_pending_sign = Pending{id, m_sign_revision, address, message, {}};
+        m_last_address = address; m_last_message = message; m_needs_unlock = false; m_signing_error.clear(); m_sign_busy = true;
+        updatePrompt(); Q_EMIT fixtureChanged(); Q_EMIT signingStateChanged();
+        if (!m_manual) QTimer::singleShot(0, this, [this, id] { if (m_pending_sign && m_pending_sign->id == id) completeSigningForTest("success", {}); });
+        return id;
+    }
     QString m_signature, m_signing_error, m_sign_address, m_sign_message, m_verify_address, m_verify_message, m_verify_signature, m_verify_text;
-    bool m_needs_unlock{false}, m_sign_busy{false}, m_verify_busy{false}, m_verify_valid{false};
-    quint64 m_sign_id{0}, m_verify_id{0}, m_sign_revision{0}, m_verify_revision{0};
+    QString m_last_address, m_last_message, m_last_passphrase;
+    bool m_needs_unlock{false}, m_sign_busy{false}, m_verify_busy{false}, m_verify_valid{false}, m_manual{false};
+    int m_sign_calls{0}, m_passphrase_calls{0}, m_verify_calls{0};
+    quint64 m_sign_id{0}, m_verify_id{0}, m_sign_revision{0}, m_verify_revision{0}, m_prompt_revision{0};
+    std::optional<Pending> m_pending_sign, m_pending_verify;
+    TextEditInput m_address_text{this}, m_message_text{this}, m_verify_address_text{this}, m_verify_message_text{this}, m_verify_signature_text{this};
+    MessageSigningPrompt* m_prompt{nullptr};
 };
 
 // Presentation fixture only. Native executor/ownership behavior is exercised by
@@ -1636,7 +1768,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool balanceKnown MEMBER m_balance_known NOTIFY balanceChanged)
     Q_PROPERTY(QObject* transactionActivityModel READ transactionActivityModel CONSTANT)
     Q_PROPERTY(QObject* bumpModel READ bumpModel CONSTANT)
-    Q_PROPERTY(QObject* signVerifyMessageModel READ signVerifyMessageModel CONSTANT)
+    Q_PROPERTY(MockSignVerifyMessageModel* signVerifyMessageModel READ signVerifyMessageModel CONSTANT)
     Q_PROPERTY(QObject* recipients READ recipients CONSTANT)
     Q_PROPERTY(QObject* coinsListModel READ coinsListModel CONSTANT)
     Q_PROPERTY(QObject* currentTransaction READ currentTransaction NOTIFY currentTransactionChanged)
@@ -1977,7 +2109,7 @@ public:
     quint64 m_close_sequence{0};
     QObject* m_transaction_activity_model{nullptr};
     QObject* m_bump_model{nullptr};
-    QObject* m_sign_verify_model{nullptr};
+    MockSignVerifyMessageModel* m_sign_verify_model{nullptr};
     QObject* m_recipients{nullptr};
     QObject* m_maximum_recipient{nullptr};
     QMetaObject::Connection m_maximum_amount_connection;
@@ -2016,7 +2148,7 @@ public:
 
     QObject* transactionActivityModel() const { return m_transaction_activity_model; }
     QObject* bumpModel() const { return m_bump_model; }
-    QObject* signVerifyMessageModel() const { return m_sign_verify_model; }
+    MockSignVerifyMessageModel* signVerifyMessageModel() const { return m_sign_verify_model; }
     QObject* recipients() const { return m_recipients; }
     QObject* coinsListModel() const { return m_coins_list_model; }
     QObject* currentTransaction() const { return m_current_transaction; }
@@ -2233,7 +2365,7 @@ public:
     }
     void setTransactionActivityModel(QObject* model) { m_transaction_activity_model = model; }
     void setBumpModel(QObject* model) { m_bump_model = model; }
-    void setSignVerifyMessageModel(QObject* model) { m_sign_verify_model = model; }
+    void setSignVerifyMessageModel(MockSignVerifyMessageModel* model) { m_sign_verify_model = model; }
     void setRecipients(QObject* model) { m_recipients = model; }
     void setCoinsListModel(QObject* model)
     {
@@ -6606,6 +6738,14 @@ public Q_SLOTS:
         qmlRegisterUncreatableType<MockCoreSettingsModel>("org.bitcoincore.qt",1,0,"CoreSettingsModel","Test fixture");
         qmlRegisterUncreatableType<MockCoreProxyDraft>("org.bitcoincore.qt",1,0,"CoreProxyDraft","Test fixture");
         qmlRegisterUncreatableType<MockOptionsTransactionLinks>("org.bitcoincore.qt", 1, 0, "OptionsTransactionLinks", "Test fixture");
+        qmlRegisterType<MockSignVerifyMessageModel>("org.bitcoincore.qt", 1, 0, "SignVerifyMessageModel");
+        qmlRegisterUncreatableType<MessageSigningPrompt>("org.bitcoincore.qt", 1, 0, "MessageSigningPrompt", "Owned by signing attempt");
+        qmlRegisterType<ExactTextDocument>("org.bitcoincore.qt", 1, 0, "ExactTextDocument");
+        qmlRegisterUncreatableType<TextEditSessionModel>("org.bitcoincore.qt", 1, 0, "TextEditSessionModel", "Owned by editor factory");
+        qmlRegisterUncreatableType<TextEditInput>("org.bitcoincore.qt", 1, 0, "TextEditInput", "Owned by editor");
+        qmlRegisterUncreatableType<TextEditClosePrompt>("org.bitcoincore.qt", 1, 0, "TextEditClosePrompt", "Owned by editor");
+        qRegisterMetaType<TextEditError>(); qRegisterMetaType<TextEditSaveResult>(); qRegisterMetaType<TextEditConflict>(); qRegisterMetaType<QList<TextEditConflict>>();
+        qRegisterMetaType<MessageSigningError>(); qRegisterMetaType<MessageVerificationResult>();
         qmlRegisterUncreatableType<MockAddressListModel>("org.bitcoincore.qt", 1, 0, "AddressListModel", "Test stub type");
         qmlRegisterType<MockPaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
         qmlRegisterUncreatableType<MockImageExportOperation>("org.bitcoincore.qt", 1, 0, "ImageExportOperation", "Test fixture");

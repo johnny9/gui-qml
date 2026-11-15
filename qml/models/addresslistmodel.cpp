@@ -53,17 +53,7 @@ QString ScriptTypeName(const CTxDestination& destination)
 QString DisplayAmount(CAmount amount, int display_unit)
 {
     const QmlBitcoinUnits::Unit unit{QmlBitcoinUnits::fromDisplayUnit(display_unit)};
-    QString value{QmlBitcoinUnits::format(unit, amount)};
-    if (value.contains(QLatin1Char('.'))) {
-        while (value.endsWith(QLatin1Char('0'))) value.chop(1);
-        if (value.endsWith(QLatin1Char('.'))) value.chop(1);
-    }
-
-    const QString label{QmlBitcoinUnits::displayLabel(unit, amount)};
-    if (unit == QmlBitcoinUnits::Unit::BTC) {
-        return label + QStringLiteral(" ") + value;
-    }
-    return value + QStringLiteral(" ") + label;
+    return QmlBitcoinUnits::formatForDisplay(unit, amount) + QStringLiteral(" ") + QmlBitcoinUnits::label(unit, amount);
 }
 } // namespace
 
@@ -510,6 +500,33 @@ ReceiveRequestOperation* AddressListModel::setAddressLabel(const QString& addres
     return m_wallet_model->setAddressLabel(address, label);
 }
 
+TextEditSessionModel* AddressListModel::labelEditor(const QString& address) const
+{
+    return m_label_editors.value(address);
+}
+TextEditSessionModel* AddressListModel::editLabel(const QString& address)
+{
+    if (m_stopping || !m_wallet_model || address.isEmpty() || address.size() > 128) return nullptr;
+    if (auto* held = labelEditor(address); held && held->phase() != TextEditSessionModel::Closed) return held;
+    // addressId is the exact canonical identity published by this reader.
+    // Lookup is bounded by the balanced tree height and never parses Core data.
+    const Node* found = m_root;
+    while (found && found->row.entry->address != address)
+        found = address < found->row.entry->address ? found->left : found->right;
+    if (!found || !found->row.entry->can_edit_label) return nullptr;
+    for (auto it = m_label_editors.begin(); it != m_label_editors.end();) {
+        if (!it.value() || it.value()->phase() == TextEditSessionModel::Closed) {
+            if (it.value()) it.value()->deleteLater();
+            it = m_label_editors.erase(it);
+        } else ++it;
+    }
+    // Keep dirty drafts instead of evicting them to admit another editor.
+    if (m_label_editors.size() >= 32) return nullptr;
+    auto* editor = m_wallet_model->editAddressLabel(address, this);
+    if (editor) m_label_editors.insert(address, editor);
+    return editor;
+}
+
 QString AddressListModel::addressAt(int row) const
 {
     const auto* node = row < 0 || row >= count() ? nullptr : Projection::At(m_root, row);
@@ -539,6 +556,7 @@ void AddressListModel::closeAdmission()
 void AddressListModel::closeAdmissionImpl(bool notify)
 {
     if (std::exchange(m_stopping, true)) return;
+    for (const auto& editor : m_label_editors) if (editor) editor->retire();
     ++m_query_generation;
     if (m_query) m_query->close();
     cancelLabelJob(); m_dirty = false; m_labels_dirty = false; m_pending_labels = false;

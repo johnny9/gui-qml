@@ -18,12 +18,13 @@
 namespace {
 QString Address() { return QString::fromStdString(EncodeDestination(PKHash{uint160{std::vector<unsigned char>(20, 1)}})); }
 struct MessageWallet : StubWallet {
-    bool encrypted{false}, locked{true}, throw_sign{false}, throw_unlock{false}, fail_lock{false};
+    bool encrypted{false}, locked{true}, throw_sign{false}, throw_unlock{false}, fail_lock{false}, watch_only{false};
     int signs{0}, unlocks{0}, locks{0}, internals{0};
     QString last_message;
     size_t long_secret_chars{0};
     wallet::CWallet* wallet() override { ++internals; throw std::runtime_error{"Private access forbidden"}; }
     bool isCrypted() override { return encrypted; }
+    bool privateKeysDisabled() override { return watch_only; }
     bool isLocked() override { return locked; }
     util::Expected<void, wallet::WalletError> unlock(const SecureString& passphrase) override {
         ++unlocks;
@@ -313,6 +314,77 @@ private Q_SLOTS:
         f.publish();
         QCOMPARE(f.model->verificationState(), SignVerifyMessageModel::VerificationIdle);
         QVERIFY(!f.model->verificationValid()); QVERIFY(f.model->verificationText().isEmpty());
+    }
+    void watchOnlySigningRefusesWithoutAskingForCredentials()
+    {
+        Fixture f; f.wallet->watch_only = true; f.setInput("statement");
+        QVERIFY(f.model->requestSignMessage(Address(), "statement")); f.finish();
+        QCOMPARE(f.model->signingResult()->error, walletmessage::Error::Signing);
+        QVERIFY(!f.model->signingPrompt()); QVERIFY(!f.model->signingNeedsUnlock());
+        QCOMPARE(f.wallet->signs, 0); QCOMPARE(f.wallet->unlocks, 0); QCOMPARE(f.wallet->locks, 0);
+        QCOMPARE(f.model->error().code, MessageSigningError::Signing); QVERIFY(!f.model->error().message.isEmpty());
+    }
+    void cancellingAuthorizationRetiresOnlyItsObsoleteError_data()
+    {
+        QTest::addColumn<bool>("wrong_password");
+        QTest::newRow("initial-question") << false; QTest::newRow("incorrect-password") << true;
+    }
+    void cancellingAuthorizationRetiresOnlyItsObsoleteError()
+    {
+        QFETCH(bool, wrong_password); Fixture f; f.wallet->encrypted = true; f.setInput("statement");
+        QVERIFY(f.model->requestSignMessage(Address(), "statement")); f.finish();
+        QPointer<MessageSigningPrompt> prompt = f.model->signingPrompt(); QVERIFY(prompt); QVERIFY(prompt->pending());
+        if (wrong_password) { QVERIFY(!prompt->submit("wrong").isEmpty()); f.finish(); QVERIFY(!prompt->error().isEmpty()); }
+        const auto actual = f.model->signingResult(); QVERIFY(actual);
+        QVERIFY(prompt->cancel()); f.finish();
+        QVERIFY(!f.model->signingNeedsUnlock()); QVERIFY(f.model->signingError().isEmpty()); QVERIFY(!f.model->signingPrompt());
+        QCOMPARE(f.model->signingResult()->error, actual->error); QCOMPARE(f.wallet->signs, 0); QVERIFY(f.wallet->locked);
+        if (prompt) QVERIFY(prompt->submit("stale secret").isEmpty());
+        QVERIFY(f.model->requestSignMessage(Address(), "statement")); f.finish();
+        QVERIFY(f.model->signingPrompt()); QVERIFY(f.model->signingPrompt()->error().isEmpty());
+        QCOMPARE(f.wallet->unlocks, wrong_password ? 1 : 0);
+    }
+    void cancelledReauthorizationPreservesTheOriginalValidSignature()
+    {
+        Fixture f; f.wallet->encrypted = true; f.setInput("statement");
+        QVERIFY(f.model->requestSignMessageWithPassphrase(Address(), "statement", "secret")); f.finish();
+        const auto signature = f.model->signature(); QVERIFY(!signature.isEmpty()); QVERIFY(f.wallet->locked);
+        QVERIFY(f.model->requestSignMessage(Address(), "statement")); f.finish();
+        QPointer<MessageSigningPrompt> prompt = f.model->signingPrompt(); QVERIFY(prompt); QVERIFY(!f.model->signingSucceeded());
+        QVERIFY(prompt->cancel()); f.finish();
+        QCOMPARE(f.model->signature(), signature); QVERIFY(f.model->signingSucceeded());
+        QCOMPARE(f.wallet->signs, 1); QCOMPARE(f.wallet->unlocks, 1); QCOMPARE(f.wallet->locks, 1);
+    }
+    void editedInputRejectsTheOriginalPromptCapability()
+    {
+        Fixture f; f.wallet->encrypted = true; f.setInput("original");
+        QVERIFY(f.model->requestSignMessage(Address(), "original")); f.finish();
+        QPointer<MessageSigningPrompt> prompt = f.model->signingPrompt(); QVERIFY(prompt);
+        f.model->setSigningMessage("successor");
+        QVERIFY(!prompt || !prompt->pending()); if (prompt) QVERIFY(prompt->submit("secret").isEmpty()); f.finish();
+        QVERIFY(!f.model->signingPrompt()); QCOMPARE(f.wallet->unlocks, 0); QCOMPARE(f.wallet->signs, 0);
+        QVERIFY(!f.model->signingNeedsUnlock()); QVERIFY(f.model->signingError().isEmpty());
+    }
+    void retiringAViewDrainsItsOriginalAuthorizationWithoutInstallingIt()
+    {
+        Fixture f; f.wallet->encrypted = true; f.setInput("statement");
+        QVERIFY(f.model->requestSignMessage(Address(), "statement")); f.finish();
+        QPointer<MessageSigningPrompt> prompt = f.model->signingPrompt(); QVERIFY(prompt); QVERIFY(!prompt->submit("secret").isEmpty());
+        QVERIFY(f.model->signingBusy()); QVERIFY(!prompt->cancel());
+        prompt->retire(); QVERIFY(!prompt->pending()); QVERIFY(f.model->signingBusy());
+        QVERIFY(prompt->submit("late").isEmpty()); f.finish();
+        QVERIFY(!f.model->signingBusy()); QVERIFY(f.model->signature().isEmpty());
+        QVERIFY(f.model->signingResult()); QCOMPARE(f.model->signingResult()->signature, QStringLiteral("owned-signature"));
+        QCOMPARE(f.wallet->unlocks, 1); QCOMPARE(f.wallet->signs, 1); QCOMPARE(f.wallet->locks, 1); QVERIFY(f.wallet->locked);
+    }
+    void clearDuringSigningDoesNotEraseOrReplaceTheAcceptedInput()
+    {
+        Fixture f; f.setInput("original");
+        QVERIFY(f.model->requestSignMessage(Address(), "original")); QVERIFY(f.model->signingBusy());
+        f.model->clearSigningStatus();
+        QCOMPARE(f.model->signingMessage(), QStringLiteral("original")); QVERIFY(f.model->signingBusy());
+        f.finish(); QVERIFY(f.model->signingSucceeded()); QCOMPARE(f.wallet->last_message, QStringLiteral("original"));
+        QCOMPARE(f.wallet->signs, 1);
     }
     void realThreadSigningNeverCallsCoreOnGui()
     {

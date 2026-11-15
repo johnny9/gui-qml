@@ -4,10 +4,12 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import org.bitcoincore.qt 1.0
 
 FormRow {
     id: root
 
+    property TextEditInput textInput: null
     property string fieldObjectName: ""
     property string text: ""
     property string placeholderText: ""
@@ -37,7 +39,7 @@ FormRow {
         implicitHeight: 32
         enabled: root.enabled
         readOnly: root.readOnly
-        text: root.text
+        text: root.textInput ? root.textInput.text : root.text
         placeholderText: root.placeholderText
         placeholderTextColor: root.placeholderColor
         validator: root.validator
@@ -65,9 +67,12 @@ FormRow {
         }
 
         onTextChanged: {
-            if (root.text !== text) root.text = text
+            if (!root.textInput && root.text !== text) root.text = text
         }
-        onTextEdited: root.textEdited(text)
+        onTextEdited: {
+            if (root.textInput) root.textInput.edit(text)
+            root.textEdited(text)
+        }
         onEditingFinished: root.editingFinished()
         onAccepted: {
             root.accepted()

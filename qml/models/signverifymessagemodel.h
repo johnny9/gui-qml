@@ -6,6 +6,8 @@
 #define BITCOIN_QML_MODELS_SIGNVERIFYMESSAGEMODEL_H
 
 #include <qml/walletmessage.h>
+#include <qml/models/messagesigningprompt.h>
+#include <qml/models/texteditsessionmodel.h>
 #include <qml/walletopening.h>
 #include <qml/snapshotquery.h>
 #include <QObject>
@@ -16,6 +18,17 @@ class SignVerifyMessageModel : public QObject
     Q_OBJECT
     Q_PROPERTY(QString signingError READ signingError NOTIFY signingErrorChanged)
     Q_PROPERTY(bool signingNeedsUnlock READ signingNeedsUnlock NOTIFY signingNeedsUnlockChanged)
+    Q_PROPERTY(MessageSigningPrompt* signingPrompt READ signingPrompt NOTIFY signingPromptChanged)
+    Q_PROPERTY(TextEditInput* address READ address CONSTANT)
+    Q_PROPERTY(TextEditInput* message READ message CONSTANT)
+    Q_PROPERTY(TextEditInput* verificationAddressInput READ verificationAddressInput CONSTANT)
+    Q_PROPERTY(TextEditInput* verificationMessageInput READ verificationMessageInput CONSTANT)
+    Q_PROPERTY(TextEditInput* candidateSignature READ candidateSignature CONSTANT)
+    Q_PROPERTY(SigningState phase READ signingState NOTIFY signingStateChanged)
+    Q_PROPERTY(bool canSign READ canSign NOTIFY capabilitiesChanged)
+    Q_PROPERTY(bool canVerify READ canVerify NOTIFY capabilitiesChanged)
+    Q_PROPERTY(MessageSigningError error READ error NOTIFY signingStateChanged)
+    Q_PROPERTY(MessageVerificationSnapshot verification READ verification NOTIFY verificationChanged)
     Q_PROPERTY(QString signature READ signature NOTIFY signatureChanged)
     Q_PROPERTY(SigningState signingState READ signingState NOTIFY signingStateChanged)
     Q_PROPERTY(bool signingBusy READ signingBusy NOTIFY signingStateChanged)
@@ -50,6 +63,19 @@ public:
 
     QString signingError() const { return m_signing_error; }
     bool signingNeedsUnlock() const { return m_signing_needs_unlock; }
+    MessageSigningPrompt* signingPrompt() const { return m_prompt; }
+    TextEditInput* address() { return &m_address_input_text; }
+    TextEditInput* message() { return &m_message_input_text; }
+    TextEditInput* verificationAddressInput() { return &m_verify_address_input_text; }
+    TextEditInput* verificationMessageInput() { return &m_verify_message_input_text; }
+    TextEditInput* candidateSignature() { return &m_verify_signature_input_text; }
+    bool canSign() const { return !m_closed && !m_sign_active && !m_address_pending && m_sign_address_valid; }
+    bool canVerify() const { return !m_closed && !m_verify_active && !m_address_pending && m_verify_address_valid; }
+    MessageSigningError error() const;
+    MessageVerificationSnapshot verification() const;
+    Q_INVOKABLE QString sign() { const auto id = requestSignMessage(m_address_input_text.text(), m_message_input_text.text()); return id ? QString::number(id) : QString{}; }
+    Q_INVOKABLE QString verify(const QString& signature) { const auto id = requestVerifyMessage(m_verify_address_input_text.text(), m_verify_message_input_text.text(), signature); return id ? QString::number(id) : QString{}; }
+    Q_INVOKABLE void cancel();
     QString signature() const { return m_signature; }
     SigningState signingState() const { return m_signing_state; }
     bool signingBusy() const { return m_sign_active; }
@@ -87,15 +113,19 @@ public:
     Q_INVOKABLE void clear();
     Q_INVOKABLE void clearSigningStatus();
     Q_INVOKABLE void clearVerification();
+    Q_INVOKABLE void cancelSigningPrompt();
 
 Q_SIGNALS:
     void signingErrorChanged();
     void signingNeedsUnlockChanged();
+    void signingPromptChanged();
     void signatureChanged();
     void signingStateChanged();
     void verificationChanged();
     void inputsChanged();
     void addressValidationChanged();
+    void capabilitiesChanged();
+    void commandRejected(const QString& command_id, const MessageSigningError& error);
 
 private:
     struct AddressInput;
@@ -108,6 +138,9 @@ private:
     void invalidateSigning();
     void invalidateVerification();
     bool notifySigning();
+    bool notifyVerification();
+    void updateSigningPrompt();
+    void retireSigningPrompt();
 
     interfaces::Wallet* m_wallet{nullptr}; // GUI association only; never transported.
     std::shared_ptr<walletopening::Session> m_opening;
@@ -116,13 +149,17 @@ private:
     std::shared_ptr<execution::SnapshotQuery<AddressChecks>> m_address_query;
     std::shared_ptr<execution::OwnedCommand<walletmessage::SignResult>> m_sign_operation;
     std::shared_ptr<execution::OwnedCommand<walletmessage::VerifyResult>> m_verify_operation;
+    MessageSigningPrompt* m_prompt{nullptr};
+    TextEditInput m_address_input_text{this}, m_message_input_text{this}, m_verify_address_input_text{this},
+        m_verify_message_input_text{this}, m_verify_signature_input_text{this};
     SecurityStateChangedFn m_security_state_changed;
     QString m_signing_error, m_signature;
     QString m_sign_address, m_sign_message, m_verify_address, m_verify_message, m_verify_signature;
     bool m_signing_needs_unlock{false}, m_closed{false}, m_sign_active{false}, m_verify_active{false};
     bool m_sign_address_valid{false}, m_verify_address_valid{false}, m_address_pending{false};
-    quint64 m_sign_id{0}, m_verify_id{0}, m_sign_revision{0}, m_verify_revision{0}, m_address_revision{0};
+    quint64 m_prompt_revision{0}, m_sign_id{0}, m_verify_id{0}, m_sign_revision{0}, m_verify_revision{0}, m_address_revision{0};
     quint64 m_sign_operation_revision{0}, m_verify_operation_revision{0};
+    MessageSigningError m_error;
     SigningState m_signing_state{SigningIdle};
     VerificationState m_verification_state{VerificationIdle};
 };
