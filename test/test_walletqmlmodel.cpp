@@ -2727,7 +2727,10 @@ private Q_SLOTS:
         QCOMPARE(model->psbtActionId(), ticket);
         QCOMPARE(model->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtImported);
         QVERIFY(model->currentTransaction());
-        QCOMPARE(model->currentTransaction()->getWtx()->GetHash(), replacement.GetUnsignedTx()->GetHash());
+        auto expected_successor = replacement;
+        CMutableTransaction finalized_successor;
+        QVERIFY(FinalizeAndExtractPSBT(expected_successor, finalized_successor));
+        QCOMPARE(model->currentTransaction()->getWtx()->GetWitnessHash(), MakeTransactionRef(finalized_successor)->GetWitnessHash());
         fixture.close(); receipts->drain(); receipts->publishAll(); env->publishAll();
         QVERIFY(env->quiescent());
     }
@@ -2823,7 +2826,10 @@ private Q_SLOTS:
             else QCOMPARE(original->psbtActionState(), broadcast ? WalletQmlModel::PsbtActionState::PsbtSubmitted : WalletQmlModel::PsbtActionState::PsbtSaved);
             QVERIFY(original->requestImportPsbtFromFile(successor_path)); fixture.settle();
             QVERIFY(original->currentTransaction());
-            QCOMPARE(original->currentTransaction()->getWtx()->GetHash(), replacement.GetUnsignedTx()->GetHash());
+            auto expected_successor = replacement;
+            CMutableTransaction finalized_successor;
+            QVERIFY(FinalizeAndExtractPSBT(expected_successor, finalized_successor));
+            QCOMPARE(original->currentTransaction()->getWtx()->GetWitnessHash(), MakeTransactionRef(finalized_successor)->GetWitnessHash());
         }
         fixture.close();
         QVERIFY(environment.quiescent());
@@ -2903,7 +2909,10 @@ private Q_SLOTS:
             QCOMPARE(original->signerApprovalState(), WalletQmlModel::ApprovalState::ApprovalInitial);
             QVERIFY(original->requestImportPsbtFromFile(successor_path)); fixture.settle();
             QVERIFY(original->currentTransaction());
-            QCOMPARE(original->currentTransaction()->getWtx()->GetHash(), replacement.GetUnsignedTx()->GetHash());
+            auto expected_successor = replacement;
+            CMutableTransaction finalized_successor;
+            QVERIFY(FinalizeAndExtractPSBT(expected_successor, finalized_successor));
+            QCOMPARE(original->currentTransaction()->getWtx()->GetWitnessHash(), MakeTransactionRef(finalized_successor)->GetWitnessHash());
         }
         fixture.close();
         QVERIFY(environment.quiescent());

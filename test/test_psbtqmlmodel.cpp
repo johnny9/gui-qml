@@ -983,6 +983,37 @@ private Q_SLOTS:
         QCOMPARE(observations, 2);
         model.reset(); transport.drain(); publish(); transport.drain(); QVERIFY(transport.quiescent());
     }
+    void acceptedRawResultIsReleasedOnNative()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        MockNode node;
+        std::weak_ptr<const CTransaction> native_transaction;
+        node.broadcast_transaction_fn = [&](CTransactionRef transaction, CAmount, CFeeRate, std::string&) {
+            native_transaction = transaction;
+            return node::TransactionError::OK;
+        };
+        auto model = std::make_unique<PsbtQmlModel>(nullptr, &node);
+        model->setFeeServices({transport.scheduler, {}, [&](auto turn) { publications.push_back(std::move(turn)); }});
+        const auto publish = [&] { while (!publications.empty()) { auto turn = std::exchange(publications.front(), {}); publications.pop_front(); turn(); } };
+        const auto cleanup = qScopeGuard([&] { model.reset(); transport.drain(); publish(); transport.drain(); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("retained-result.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model->requestLoadFromFile(path)); transport.drain(); publish(); transport.drain();
+        QVERIFY(model->canBroadcast());
+        QVERIFY(model->requestBroadcast());
+        QVERIFY(transport.step(execution::Lane::Core)); QVERIFY(!native_transaction.expired());
+        QVERIFY(transport.step(execution::Lane::Domain)); QVERIFY(model->submitted());
+        publish();
+        // GUI projection releases only the cleanup lease. Actual transaction
+        // destruction stays queued until the controlled Native cleanup turn.
+        QVERIFY(!native_transaction.expired());
+        for (int step = 0; step < 8 && !native_transaction.expired(); ++step) QVERIFY(transport.step(execution::Lane::Cleanup));
+        QVERIFY(native_transaction.expired());
+        transport.drain(); model.reset(); transport.drain(); publish(); transport.drain();
+        QVERIFY(transport.quiescent());
+    }
     void acceptedBroadcastAndDrainDoNotRequireGuiPublication()
     {
         ManualRoutedExecution transport;

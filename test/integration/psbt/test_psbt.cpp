@@ -336,7 +336,10 @@ private Q_SLOTS:
             QVERIFY(AwaitPsbtBroadcast(*wallet));
             QVERIFY(!wallet->currentTransactionIsImportedPsbt());
             QVERIFY(!wallet->currentTransactionCanBroadcast()); QVERIFY(!wallet->currentTransactionCanSend());
-            QVERIFY(!wallet->requestBroadcastCurrentTransaction());
+            // Unavailable facade commands return a terminal error receipt;
+            // a nonzero receipt does not imply dispatch to Native.
+            QVERIFY(AwaitPsbtAction(*wallet, wallet->requestBroadcastCurrentTransaction()));
+            QCOMPARE(wallet->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtFailed);
             const auto submitted = qmltest::Rpc(m_app, "getrawmempool");
             QCOMPARE(submitted.size(), 1U);
             QCOMPARE(submitted[0].get_str(), wallet->currentTransaction()->txid().toStdString());

@@ -535,7 +535,7 @@ Page {
                 wrap: true
             }
 
-            CoreButton {
+            NeutralButton {
                 objectName: "sendReviewRecheck"
                 visible: root.importedPsbt
                 enabled: root.wallet !== null && root.wallet.available && root.transaction !== null && !root.sendBusy

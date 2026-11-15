@@ -493,6 +493,7 @@ void WalletQmlModel::setNode(interfaces::Node* node)
         (!m_psbt_fee_proof || !m_psbt_fee_proof->amount.has_value()));
     m_psbt_fee_request.reset();
     m_psbt_fee_pending = false;
+    if (m_node != node) m_psbt_fee_services.policy = {};
     m_node = node;
     if (!m_custom_psbt_lookup) m_psbt_fee_services.lookup = psbtfee::NodeLookup(node);
     if (m_imported_psbt_model) {

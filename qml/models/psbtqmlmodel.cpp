@@ -109,6 +109,7 @@ void PsbtQmlModel::setNode(interfaces::Node* node)
 {
     if (m_node == node) return;
     m_node = node;
+    m_services.policy = {}; // A replacement Node needs a newly composed read port.
     retireDocumentOwner();
     ++m_generation; // Late results from the old public Node context cannot publish.
     if (!busy() && m_snapshot && !m_closed) refreshState();
@@ -358,10 +359,9 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
     m_receipt = receipt;
     if (input->kind == psbtwork::Kind::Broadcast) m_submission_receipt = receipt;
     if (input->kind == psbtwork::Kind::Save) m_save_receipt = receipt;
-    const bool structural = input->kind == psbtwork::Kind::Load || input->kind == psbtwork::Kind::Inspect || input->kind == psbtwork::Kind::Sign;
-    if (structural) {
-        // Reserve native value release before any structural result can reach
-        // GUI. Rejection retains no PSBT and is reported as a real failure.
+    {
+        // Every action result retains Native destruction, including an accepted
+        // raw transaction or a large clipboard value. Reserve before dispatch.
         auto owner = std::make_shared<std::shared_ptr<Operation>>(operation);
         const auto key = m_services.scheduler->allocateKey();
         const auto cleanup = execution::Submit(*m_services.scheduler, [owner] { owner->reset(); }, [] {}, {},
