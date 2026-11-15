@@ -667,6 +667,16 @@ struct StartupPreparationSummary {
     QString error;
     std::optional<desktopintent::transport::StartResult> transport;
 };
+struct StartupProbeSummary {
+    desktopintent::transport::ProbeStatus status{desktopintent::transport::ProbeStatus::Rejected};
+    desktopintent::transport::StartResult transfer;
+    bool request_dropped{false};
+};
+bool DroppedTransfer(const desktopintent::transport::StartResult& result)
+{
+    return std::any_of(result.receipts.begin(),result.receipts.end(),
+        [](const auto& receipt){return receipt.disposition==desktopintent::Disposition::DroppedOnStop;});
+}
 #ifdef ENABLE_TEST_AUTOMATION
 bool PrintStartupTransfer(const desktopintent::transport::StartResult& result)
 {
@@ -915,6 +925,65 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
 
         const auto command_line_args=std::move(command_line.options);
 
+        // Forward to an existing peer before a reset wizard, without binding
+        // a Primary listener for a profile the user may still change.
+        const auto role_profile=startup::Run(startup_services,[&]{
+            return QmlOnboardingSettings::ResolveOnboardingStartupStatus(command_line_args,can_listen_ipc,nullptr,
+                QmlOnboardingSettings::StartupReadMode::ProfileOnly);
+        });
+        if(!role_profile.ok){
+            startup::Run(startup_services,[error=role_profile.error]{return InitError(Untranslated(error.toStdString()));});
+            return EXIT_FAILURE;
+        }
+        if(quit_handler.isQuitRequested())return EXIT_SUCCESS;
+        desktop_service=desktopintent::transport::Service::Create(startup_services.scheduler,desktop_intent_model.owner());
+        if(!desktop_service){
+            startup::Run(startup_services,[]{return InitError(Untranslated("Desktop request startup could not reserve its background owner."));});
+            return EXIT_FAILURE;
+        }
+        if(role_profile.probe_eligible){
+            QEventLoop probe_loop;const QPointer<QEventLoop> probe_observer{&probe_loop};
+            auto probe=std::make_shared<execution::OwnedCommand<StartupProbeSummary>>(startup_services.scheduler,
+                [post=presentation::ReliablePost(startup_services.post),probe_observer]{
+                    post([probe_observer]{if(probe_observer)probe_observer->quit();});
+                });
+            probe->startWith([service=desktop_service,&role_profile,&command_line](auto done,auto){
+                try{
+                    const auto admitted=service->probeExisting(role_profile.network_data_dir,role_profile.network,
+                        command_line.parsed.intents,[done](desktopintent::transport::ProbeResult actual){
+                            const bool dropped=DroppedTransfer(actual.transfer);
+                            done(StartupProbeSummary{actual.status,std::move(actual.transfer),dropped});
+                        });
+                    if(!admitted)done(StartupProbeSummary{desktopintent::transport::ProbeStatus::Rejected,
+                        {desktopintent::transport::StartStatus::Rejected,QStringLiteral("The existing-instance check was not admitted."),{}},false});
+                    return admitted;
+                }catch(...){
+                    done(StartupProbeSummary{desktopintent::transport::ProbeStatus::Unknown,
+                        {desktopintent::transport::StartStatus::Unknown,QStringLiteral("The original desktop handoff is uncertain. Check the running application before trying again."),{}},false});
+                    return execution::Admission{};
+                }
+            });
+            auto actual=probe->result();
+            while(!actual){probe_loop.exec();actual=probe->result();}
+            if(!actual->value)return EXIT_FAILURE;
+            const auto outcome=std::move(*actual->value);
+            if(outcome.status!=desktopintent::transport::ProbeStatus::Missing){
+                desktop_service->closeAdmission();desktop_intent_model.closeAdmission();
+#ifdef ENABLE_TEST_AUTOMATION
+                if(!startup::Run(startup_services,[transfer=outcome.transfer]{
+                    return !gArgs.IsArgSet("-test-automation")||PrintStartupTransfer(transfer);
+                }))*lifecycle_failed=true;
+#endif
+                if(outcome.status==desktopintent::transport::ProbeStatus::Forwarded&&!outcome.request_dropped)return EXIT_SUCCESS;
+                const QString error=outcome.request_dropped
+                    ?QStringLiteral("The running application stopped before processing a desktop request. Check that application before trying again.")
+                    :outcome.transfer.error.isEmpty()?QStringLiteral("The original desktop handoff could not be confirmed. Check the running application before trying again."):outcome.transfer.error;
+                if(!quit_handler.isQuitRequested())startup::Run(startup_services,[error]{return InitError(Untranslated(error.toStdString()));});
+                return EXIT_FAILURE;
+            }
+            if(quit_handler.isQuitRequested())return EXIT_SUCCESS;
+        }
+
         PreInitOnboardingContext pre_init_onboarding_context;
         const PreInitOnboardingStatus pre_init_onboarding_status{
             RunPreInitOnboarding(pre_init_onboarding_context, command_line_args, can_listen_ipc, quit_handler, startup_services,
@@ -991,11 +1060,6 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             }
             return EXIT_SUCCESS; // No preparation request was submitted.
         }
-        desktop_service=desktopintent::transport::Service::Create(startup_services.scheduler,desktop_intent_model.owner());
-        if(!desktop_service){
-            startup::Run(startup_services,[]{return InitError(Untranslated("Desktop request startup could not reserve its background owner."));});
-            return EXIT_FAILURE;
-        }
         startup::preparation::Ports preparation_ports;
         preparation_ports.read_profile=[]{
             auto profile=startup::ReadProfileIdentity(gArgs);
@@ -1020,8 +1084,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             return summary->startWith([owner,startup_error_reported,context=std::move(context),complete=std::move(complete)](auto done,auto)mutable{
                 try{
                     const auto admitted=owner->start(std::move(context),[done,startup_error_reported,complete=std::move(complete)](auto actual){
-                        const bool dropped=actual->transport&&std::any_of(actual->transport->receipts.begin(),actual->transport->receipts.end(),
-                            [](const auto& receipt){return receipt.disposition==desktopintent::Disposition::DroppedOnStop;});
+                        const bool dropped=actual->transport&&DroppedTransfer(*actual->transport);
                         done(StartupPreparationSummary{actual->disposition,actual->closing,actual->cancelled,dropped,startup_error_reported->load(),actual->error,actual->transport});
                         if(complete)complete(std::move(actual));
                     });

@@ -86,10 +86,18 @@ struct OnboardingStartupStatus {
     bool settings_enabled{true};
     bool qml_onboarded{false};
     bool should_show_onboarding{true};
+    // Read-only identity for an existing-instance probe. The network path is
+    // canonical even when its final directory does not exist yet.
+    QString network{}, network_data_dir{};
+    bool probe_eligible{false};
 };
 
+enum class StartupReadMode { Onboarding, ProfileOnly };
 bool PrepareArgs(ArgsManager& args, const std::vector<std::string>& argv, bool can_listen_ipc, std::string& error);
-OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc, const UiPreferencesNamespace* identity = nullptr);
+// ProfileOnly resolves the identity without reading dynamic settings or the
+// completion marker. Its onboarding flags retain their conservative defaults.
+OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc, const UiPreferencesNamespace* identity = nullptr,
+    StartupReadMode mode = StartupReadMode::Onboarding);
 PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir, const ApplyRequest* intent = nullptr,
     const profileinspection::Port& inspect = {}, const profileinspection::Cancellation& cancelled = {});
 PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir,
