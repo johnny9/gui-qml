@@ -330,11 +330,14 @@ steps or authorize Core internals/subtree changes. Other focused gates remain.
 
 ## R23 read-only transaction observations
 
-The [PSBT checkpoint](R23_PSBT_ELIGIBILITY_CHECKPOINT.md) records the missing
-atomic public mempool admission/conflict/replacement/relative-lock observation.
-Existing typed Node/Chain reads support advisory checks; actual submission still
-owns acceptance. A future revisioned read-only observation would simplify the
-app adapter. No atomic-admission guarantee or Core edit is implied.
+The [PSBT checkpoint](R23_PSBT_ELIGIBILITY_CHECKPOINT.md) records the typed
+Node/Chain observations. Public `Node::executeRpc("testmempoolaccept", ...)`
+also supplies a current read-only consensus/policy verdict for the finalized
+transaction, including conflicts/replacement/relative locks. The Native adapter
+follow-up is authorized and pending; this capability does not require Core
+changes. Keep existing reviewed fee limits and actual submission ownership.
+A future typed observation would simplify RPC adaptation, but cannot reserve
+later admission against independent changes. It is an optional improvement.
 
 ## R35 proposed wallet-directory inspection — decision pending
 
