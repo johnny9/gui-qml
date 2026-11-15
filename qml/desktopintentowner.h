@@ -57,7 +57,7 @@ private:
     enum class ReplyKind { Inspect, Query };
     Owner(Services services, std::shared_ptr<execution::Scheduler> scope,
           std::shared_ptr<State> state, Notify notify);
-    execution::Admission submit(std::function<void()> decision);
+    execution::Admission submit(std::function<void()> decision, size_t payload_bytes = 1024);
     std::shared_ptr<ReplyCell> reserve(ReplyKind kind, Ticket ticket);
     void received(uint64_t reply, ReplyKind kind, Ticket ticket, InspectionReceipt receipt);
     void query();

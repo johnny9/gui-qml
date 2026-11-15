@@ -52,11 +52,11 @@ std::shared_ptr<Owner> Owner::Create(Services services, Notify notify)
     return std::shared_ptr<Owner>{new Owner(std::move(services), std::move(scope), std::move(state), std::move(notify))};
 }
 
-execution::Admission Owner::submit(std::function<void()> decision)
+execution::Admission Owner::submit(std::function<void()> decision, size_t payload_bytes)
 {
     return execution::Submit(*m_scope, [self = shared_from_this(), decision = std::move(decision)] {
         decision(); self->retireObsolete(); self->publish();
-    }, [] {}, {}, {execution::Lane::Domain, 1024, m_key});
+    }, [] {}, {}, {execution::Lane::Domain, payload_bytes, m_key});
 }
 
 void Owner::publish()
@@ -68,9 +68,11 @@ execution::Admission Owner::admit(std::vector<Input> inputs, std::function<void(
 {
     if (m_closed->load()) return {{}, execution::Rejection::Closed};
     if (inputs.empty() || inputs.size() > Queue::MAX_PENDING) return {{}, execution::Rejection::Invalid};
+    size_t payload_bytes{sizeof(inputs) + inputs.size() * sizeof(Input)};
     for (const auto& input : inputs) {
         if (input.value.size() > Queue::MAX_INPUT_CHARS || input.producer_key.size() > Queue::MAX_KEY_CHARS)
             return {{}, execution::Rejection::Capacity};
+        payload_bytes += static_cast<size_t>(input.value.size() + input.producer_key.size()) * sizeof(QChar);
     }
     auto retained = execution::RetainValues<std::vector<Input>>(m_scope, [&] { return std::make_unique<std::vector<Input>>(std::move(inputs)); });
     if (!retained) return {{}, execution::Rejection::Capacity};
@@ -78,7 +80,7 @@ execution::Admission Owner::admit(std::vector<Input> inputs, std::function<void(
         if (self->m_closed->load()) self->m_state->queue.stop();
         auto receipt = self->m_state->queue.admit(*retained);
         try { if (done) done(std::move(receipt)); } catch (...) {}
-    });
+    }, payload_bytes);
 }
 
 execution::Admission Owner::readiness(uint64_t revision, bool ready)
