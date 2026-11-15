@@ -682,8 +682,8 @@ void ActivityFilterProxyModelTests::searchMatchesLabelAddressAndTxid()
 
 void ActivityFilterProxyModelTests::filtersByDateBuckets()
 {
-    const QDate today = QDate::currentDate();
-    const QDate start_of_week = today.addDays(-(today.dayOfWeek() - 1));
+    const QDate today{2026, 11, 15};
+    const QDate start_of_week{2026, 11, 9}; // Monday for the captured German locale.
     const QDate start_of_month{today.year(), today.month(), 1};
     const QDate start_of_year{today.year(), 1, 1};
     const QDate start_of_next_week = start_of_week.addDays(7);
@@ -706,7 +706,11 @@ void ActivityFilterProxyModelTests::filtersByDateBuckets()
         MakeRow("Next year", Transaction::RecvWithAddress, TimestampForLocalDate(start_of_next_year)),
     });
 
-    ActivityFilterProxyModel proxy;
+    ActivityFilterProxyModel::Services services;
+    services.today = [today] { return today; };
+    services.locale = [] { return QLocale{QLocale::German, QLocale::Germany}; };
+    services.automaticDateRefresh = false;
+    ActivityFilterProxyModel proxy{std::move(services)};
     proxy.setSourceModel(&source);
 
     proxy.setDateFilter(ActivityFilterProxyModel::Today);
