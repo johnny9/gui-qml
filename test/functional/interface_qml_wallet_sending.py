@@ -14,6 +14,7 @@ from qml_scenarios import run_scenarios
 from qml_smoke_lib import (
     create_wallet,
     save_review_psbt,
+    select_wallet,
     stop_gui_checked,
     wait_until,
     wallet_scenario,
@@ -154,7 +155,8 @@ def replacement_smoke(harness, checkpoint):
     rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": "receiver"})
     address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="receiver")
     rpc_call(harness.gui_rpc_port, "createwallet", {"wallet_name": "sender", "passphrase": "replacement password"})
-    gui.wait_for_property("walletBadge", "text", "sender", timeout_ms=30000)
+    # RPC loading publishes a catalog entry; selection is a separate user intent.
+    select_wallet(gui, "sender")
     mining_address = rpc_call(harness.gui_rpc_port, "getnewaddress", wallet="sender")
     rpc_call(harness.gui_rpc_port, "generatetoaddress", [101, mining_address])
     rpc_call(harness.gui_rpc_port, "walletpassphrase", ["replacement password", 60], wallet="sender")
