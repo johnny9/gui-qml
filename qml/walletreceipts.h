@@ -74,6 +74,7 @@ struct Snapshot {
     std::map<QString, CAmount> totals;
     std::set<QString> observed;
     uint64_t native_revision{0};
+    QSet<QString> addresses{};
 };
 struct Publication {
     std::shared_ptr<const Snapshot> snapshot;

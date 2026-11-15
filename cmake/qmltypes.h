@@ -246,6 +246,8 @@ struct TextEditErrorForeign { Q_GADGET QML_FOREIGN(TextEditError) QML_ANONYMOUS 
 struct TextEditConflictForeign { Q_GADGET QML_FOREIGN(TextEditConflict) QML_ANONYMOUS };
 struct TextEditSaveResultForeign { Q_GADGET QML_FOREIGN(TextEditSaveResult) QML_ANONYMOUS };
 struct WalletReceiveModelForeign { Q_GADGET QML_FOREIGN(WalletReceiveModel) QML_NAMED_ELEMENT(WalletReceiveModel) QML_UNCREATABLE("Owned by a wallet opening") };
+struct ReceiptReconciliationModelForeign { Q_GADGET QML_FOREIGN(ReceiptReconciliationModel) QML_NAMED_ELEMENT(ReceiptReconciliationModel) QML_UNCREATABLE("Owned by a wallet opening") };
+struct RequestReceiptModelForeign { Q_GADGET QML_FOREIGN(RequestReceiptModel) QML_NAMED_ELEMENT(RequestReceiptModel) QML_UNCREATABLE("Owned by an original request") };
 struct PaymentRequestEditorModelForeign { Q_GADGET QML_FOREIGN(PaymentRequestEditorModel) QML_NAMED_ELEMENT(PaymentRequestEditorModel) QML_UNCREATABLE("Owned by the receive editor factory") };
 struct ReceiveReservationModelForeign { Q_GADGET QML_FOREIGN(ReceiveReservationModel) QML_NAMED_ELEMENT(ReceiveReservationModel) QML_UNCREATABLE("Owned by a receiving context") };
 struct ReceiveAuthorizationPromptForeign { Q_GADGET QML_FOREIGN(ReceiveAuthorizationPrompt) QML_NAMED_ELEMENT(ReceiveAuthorizationPrompt) QML_UNCREATABLE("Owned by an original receiving intent") };

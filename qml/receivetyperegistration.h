@@ -11,6 +11,8 @@ inline void RegisterReceiveTypes()
     constexpr auto uri = "org.bitcoincore.qt";
     qmlRegisterUncreatableType<WalletReceiveModel>(uri, 1, 0, "WalletReceiveModel", "Owned by a wallet opening");
     qmlRegisterUncreatableType<PaymentRequestEditorModel>(uri, 1, 0, "PaymentRequestEditorModel", "Owned by the receive editor factory");
+    qmlRegisterUncreatableType<RequestReceiptModel>(uri, 1, 0, "RequestReceiptModel", "Owned by an original request editor");
+    qmlRegisterUncreatableType<ReceiptReconciliationModel>(uri, 1, 0, "ReceiptReconciliationModel", "Owned by an opening");
     qmlRegisterUncreatableType<ReceiveReservationModel>(uri, 1, 0, "ReceiveReservationModel", "Owned by a receiving context");
     qmlRegisterUncreatableType<ReceiveAuthorizationPrompt>(uri, 1, 0, "ReceiveAuthorizationPrompt", "Owned by an original receiving intent");
     qmlRegisterUncreatableType<RequestSharingModel>(uri, 1, 0, "RequestSharingModel", "Owned by a request view");

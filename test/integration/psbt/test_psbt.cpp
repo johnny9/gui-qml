@@ -298,6 +298,7 @@ private Q_SLOTS:
         QTest::newRow("below-advertised-relay-fee") << 2;
         QTest::newRow("mempool-replacement-rejection") << 3;
         QTest::newRow("confirmed-spend-after-review") << 4;
+        QTest::newRow("relative-lock-matures-after-review") << 5;
     }
     void nodeReadinessAndIndependentSpend()
     {
@@ -306,12 +307,34 @@ private Q_SLOTS:
         QVERIFY(qmltest::FundWallet(m_app, *wallet));
         const auto mining = qmltest::NewAddress(m_app, wallet->name());
         const auto destination = qmltest::NewAddress(m_app, wallet->name());
-        const auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name());
+        auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name());
         QVERIFY(!coins.empty());
-        const auto& coin = coins[0];
+        std::string fresh_funding_txid;
+        if (scenario == 5) {
+            // Spend a freshly confirmed non-coinbase output so a two-block
+            // relative height lock is known to be non-final for the next block.
+            const auto fresh_address = qmltest::NewAddress(m_app, wallet->name());
+            fresh_funding_txid = qmltest::Rpc(m_app, "sendtoaddress",
+                qmltest::Json("[\"" + fresh_address.toStdString() + "\",0.01]"), wallet->name()).get_str();
+            qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
+            QVERIFY(QTest::qWaitFor([&] {
+                coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name());
+                return std::any_of(coins.getValues().begin(), coins.getValues().end(), [&](const UniValue& item) {
+                    return item.find_value("txid").get_str() == fresh_funding_txid;
+                });
+            }, 5'000));
+        }
+        const auto selected = scenario == 5
+            ? std::find_if(coins.getValues().begin(), coins.getValues().end(), [&](const UniValue& item) {
+                return item.find_value("txid").get_str() == fresh_funding_txid;
+            })
+            : coins.getValues().begin();
+        QVERIFY(selected != coins.getValues().end());
+        const auto& coin = *selected;
         const auto value = ParseMoney(coin.find_value("amount").getValStr()); QVERIFY(value);
+        const auto sequence = scenario == 5 ? "2" : "4294967293";
         const auto input = "[{\"txid\":\"" + coin.find_value("txid").get_str() + "\",\"vout\":"
-            + coin.find_value("vout").getValStr() + ",\"sequence\":4294967293}]";
+            + coin.find_value("vout").getValStr() + ",\"sequence\":" + sequence + "}]";
         const auto make_signed = [&](CAmount fee, int locktime) {
             const auto outputs = "[{\"" + destination.toStdString() + "\":" + FormatMoney(*value - fee) + "}]";
             const auto created = qmltest::Rpc(m_app, "createpsbt", qmltest::Json("[" + input + "," + outputs + "," + util::ToString(locktime) + "]"));
@@ -342,17 +365,24 @@ private Q_SLOTS:
         QVERIFY(model->requestLoadFromFile(path));
         QVERIFY(QTest::qWaitFor([&] { return !model->busy(); }, 5'000));
         QVERIFY(model->loaded()); QVERIFY(model->complete()); QVERIFY(model->signaturesVerified());
-        if (scenario < 3) {
+        if (scenario < 3 || scenario == 5) {
             QVERIFY(!model->canBroadcast());
             const auto status = model->status().toLower();
-            QVERIFY2(status.contains(scenario == 0 ? "spent" : scenario == 1 ? "lock time" : "minimum"), qPrintable(status));
+            QVERIFY2(status.contains(scenario == 0 ? "spent" : scenario == 1 ? "lock time"
+                : scenario == 2 ? "minimum" : "non-bip68-final"), qPrintable(status));
         } else {
-            QVERIFY(model->canBroadcast());
-            if (scenario == 4) independent_spend(true);
-            QVERIFY(model->requestBroadcast());
-            QVERIFY(QTest::qWaitFor([&] { return !model->busy(); }, 5'000));
-            QVERIFY(!model->submitted()); QVERIFY(!model->error().isEmpty());
-            QVERIFY(!model->canBroadcast()); QVERIFY(!model->requestBroadcast());
+            if (scenario == 3) {
+                QVERIFY(!model->canBroadcast());
+                QVERIFY(!model->requestBroadcast());
+                QVERIFY(!model->submitted());
+            } else {
+                QVERIFY(model->canBroadcast());
+                independent_spend(true);
+                QVERIFY(model->requestBroadcast());
+                QVERIFY(QTest::qWaitFor([&] { return !model->busy(); }, 5'000));
+                QVERIFY(!model->submitted()); QVERIFY(!model->error().isEmpty());
+                QVERIFY(!model->canBroadcast()); QVERIFY(!model->requestBroadcast());
+            }
         }
         const auto verdict = qmltest::Rpc(m_app, "testmempoolaccept", qmltest::Json("[[\"" + raw + "\"]]"))[0];
         QVERIFY(!verdict.find_value("allowed").get_bool());
@@ -360,6 +390,12 @@ private Q_SLOTS:
         QVERIFY2(!reason.empty(), verdict.write().c_str());
         if (scenario == 1) QVERIFY2(reason.find("non-final") != std::string::npos, reason.c_str());
         if (scenario == 2) QVERIFY2(reason.find("fee") != std::string::npos, reason.c_str());
+        if (scenario == 3) {
+            QVERIFY2(reason.find("conflict") != std::string::npos || reason.find("replacement") != std::string::npos
+                    || reason.find("insufficient fee") != std::string::npos, reason.c_str());
+            QVERIFY(model->status().contains(QString::fromStdString(reason)));
+        }
+        if (scenario == 5) QVERIFY2(reason.find("non-BIP68-final") != std::string::npos, reason.c_str());
         const auto pool = qmltest::Rpc(m_app, "getrawmempool");
         QCOMPARE(pool.size(), scenario == 3 ? 1U : 0U);
         if (scenario == 3) QCOMPARE(pool[0].get_str(), competing);
@@ -385,6 +421,20 @@ private Q_SLOTS:
             QCOMPARE(submitted.size(), 1U);
             QCOMPARE(submitted[0].get_str(), wallet->currentTransaction()->txid().toStdString());
             QCOMPARE(AwaitPsbtImport(*wallet, path), WalletQmlModel::PsbtImportResult::TransactionAlreadyKnown);
+        }
+        if (scenario == 5) {
+            QCOMPARE(AwaitPsbtImport(*wallet, path), WalletQmlModel::PsbtImportResult::ReviewPending);
+            QVERIFY(wallet->currentTransactionIsImportedPsbt());
+            QVERIFY(!wallet->currentTransactionCanBroadcast());
+            const auto reviewed = wallet->currentTransaction()->getWtx()->GetWitnessHash();
+            qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
+            QVERIFY(AwaitPsbtAction(*wallet, wallet->requestRecheckCurrentTransaction()));
+            QVERIFY(wallet->currentTransactionCanBroadcast());
+            QCOMPARE(wallet->currentTransaction()->getWtx()->GetWitnessHash(), reviewed);
+            QVERIFY(AwaitPsbtBroadcast(*wallet));
+            const auto pool_after = qmltest::Rpc(m_app, "getrawmempool");
+            QCOMPARE(pool_after.size(), 1U);
+            QCOMPARE(pool_after[0].get_str(), wallet->currentTransaction()->txid().toStdString());
         }
     }
     void watchOnlySignedScriptsSurviveOriginalExport_data()

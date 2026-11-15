@@ -254,6 +254,8 @@ add_executable(bitcoinqml_qmltests
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/texteditsessionmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/paymentrequesteditormodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/paymentrequesteditormodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/receiptreconciliationmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/receiptreconciliationmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/receivereservationmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/receivereservationmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/walletreceivemodel.cpp

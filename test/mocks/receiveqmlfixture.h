@@ -18,11 +18,12 @@ class ReceiveQmlFixture : public QObject {
     Q_PROPERTY(QString persistedMessage READ persistedMessage NOTIFY changed)
     Q_PROPERTY(QString persistedNote READ persistedNote NOTIFY changed)
 public:
-    explicit ReceiveQmlFixture(QObject* parent = nullptr) : QObject(parent), m_receive(std::make_unique<WalletReceiveModel>(2, m_ports.all()))
+    explicit ReceiveQmlFixture(QObject* parent = nullptr) : QObject(parent), m_receipts(std::make_unique<ReceiptReconciliationModel>(receiptPorts())), m_receive(std::make_unique<WalletReceiveModel>(2, receivePorts()))
     {
         connect(m_receive.get(), &WalletReceiveModel::requestOpened, this, [this](auto* editor) { m_saved = editor; Q_EMIT changed(); });
+        publishCredit(0, false);
     }
-    ~ReceiveQmlFixture() override { m_receive.reset(); m_ports.drain(); }
+    ~ReceiveQmlFixture() override { m_receive.reset(); m_receipts.reset(); m_ports.drain(); }
     WalletReceiveModel* receive() { return m_receive.get(); }
     PaymentRequestEditorModel* savedEditor() const { return m_saved; }
     int writes() const { return m_ports.writes; }
@@ -41,12 +42,44 @@ public:
     Q_INVOKABLE void setNextWriteError(ReceiveError::Code error) { m_ports.next_write = error; }
     Q_INVOKABLE void markDraftUsed() { m_ports.useDraft(); m_receive->refresh(); }
     Q_INVOKABLE void markSavedUsed() { m_ports.useSaved(17); m_receive->refresh(); }
+    Q_INVOKABLE void publishCredit(qint64 amount, bool used) {
+        if (used && !m_ports.records.at(17).used) { m_ports.useSaved(17); m_receive->refresh(); }
+        auto snapshot = std::make_shared<walletreceipts::Snapshot>();
+        snapshot->opening = m_ports.opening;
+        snapshot->native_revision = m_native_revision;
+        const auto address = m_ports.records.at(17).address;
+        snapshot->addresses.insert(address);
+        if (amount > 0) snapshot->totals.emplace(address, amount);
+        if (used) snapshot->observed.insert(address);
+        m_latest = walletreceipts::Publication{std::move(snapshot), {}, walletreceipts::Status::Ready, false, false, ++m_revision};
+        m_current = true; m_receipts->consume();
+    }
+    Q_INVOKABLE void invalidateCredit() { m_current = false; ++m_native_revision; m_receipts->invalidate(); }
+    Q_INVOKABLE void failCredit() { m_current = false; m_latest = walletreceipts::Publication{{}, {}, walletreceipts::Status::Failed}; m_receipts->consume(); }
     Q_INVOKABLE bool openSaved() { return m_receive->openRequest(QStringLiteral("17")); }
 Q_SIGNALS:
     void changed();
 private:
     const requestedit::Source& persisted() const { return m_ports.records.at(m_ports.records.contains(47) ? 47 : 17); }
+    ReceiptReconciliationModel::Ports receiptPorts() {
+        ReceiptReconciliationModel::Ports ports;
+        ports.opening = m_ports.opening;
+        ports.take = [this] { return std::exchange(m_latest, {}); };
+        ports.current = [this] { return m_current; };
+        ports.nativeRevision = [this] { return m_native_revision; };
+        ports.retire = [this](auto snapshot) {
+            const auto admitted = execution::Submit(*m_ports.execution.scheduler,
+                [snapshot = std::move(snapshot)]() mutable { snapshot.reset(); }, [] {}, {}, {execution::Lane::Domain, 256});
+            Q_ASSERT(admitted);
+        };
+        return ports;
+    }
+    WalletReceiveModel::Ports receivePorts() { auto ports = m_ports.all(); ports.receipts = m_receipts.get(); return ports; }
     ReceiveEditorPorts m_ports;
+    std::optional<walletreceipts::Publication> m_latest;
+    uint64_t m_revision{0}, m_native_revision{0};
+    bool m_current{false};
+    std::unique_ptr<ReceiptReconciliationModel> m_receipts;
     std::unique_ptr<WalletReceiveModel> m_receive;
     QPointer<PaymentRequestEditorModel> m_saved;
 };

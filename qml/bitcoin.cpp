@@ -609,6 +609,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
     const auto finish_logging_on_exception = qScopeGuard(finish_qt_logging);
     const auto startup_failed=std::make_shared<std::atomic_bool>(false);
     const auto setup_record_failed=std::make_shared<std::atomic_bool>(false);
+    const auto core_exit_status=std::make_shared<std::atomic_int>(EXIT_SUCCESS);
     const auto run_gui = [&]() -> int {
         noui_connect();
         Q_INIT_RESOURCE(bitcoin_qml);
@@ -880,7 +881,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                 *setup_record_failed=true;
                 InitWarning(Untranslated(QString{QStringLiteral("The startup outcome could not be saved. Setup will need review once settings storage is writable. ")+error}.toStdString()));
             }
-        }};
+        }, [core_exit_status](int status) { core_exit_status->store(status); }};
         QmlShutdownCoordinator shutdown_coordinator{init_executor};
         QPointer<QQuickWindow> main_window;
         bool shutdown_requested{false};
@@ -1237,7 +1238,9 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         return exit_code;
     };
     const auto gui_exit_code = run_gui();
-    const auto exit_code=startup_failed->load()||setup_record_failed->load()?EXIT_FAILURE:gui_exit_code;
+    const int native_exit_code=core_exit_status->load();
+    const int exit_code=native_exit_code!=EXIT_SUCCESS?native_exit_code
+        : startup_failed->load()||setup_record_failed->load()?EXIT_FAILURE:gui_exit_code;
     // QApplication and every GUI owner have been destroyed. Flush and join the
     // process writer before deciding the actual externally visible exit status.
     finish_qt_logging();
