@@ -30,7 +30,6 @@
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signverifymessagemodel.h>
-#include <qml/models/walletunlock.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/models/transactionflow.h>
 #include <qml/util.h>
@@ -54,7 +53,6 @@
 #include <psbt.h>
 #include <qml/bitcoinunits.h>
 #include <script/solver.h>
-#include <support/allocators/secure.h>
 #include <univalue.h>
 #include <util/result.h>
 #include <util/rbf.h>
@@ -68,7 +66,6 @@
 #include <QMetaObject>
 #include <QScopedValueRollback>
 #include <QScopeGuard>
-#include <QSettings>
 #include <QQmlEngine>
 #include <QVariantList>
 #include <QVariantMap>
@@ -1025,12 +1022,6 @@ void WalletQmlModel::initializePsbtFeeReader()
     m_imported_psbt_model->setFeeServices(m_psbt_fee_services);
 }
 
-bool WalletQmlModel::matchesReviewedPsbtFee(const PartiallySignedTransaction& psbt) const
-{
-    return m_current_transaction && m_psbt_fee_proof
-        && psbtfee::MatchesReview(psbt, *m_psbt_fee_proof, m_current_transaction->reviewedFee());
-}
-
 bool WalletQmlModel::requestPsbtFeeProof()
 {
     const auto token = std::make_shared<const psbtfee::RequestIdentity>();
@@ -1261,13 +1252,6 @@ void WalletQmlModel::projectMaximumRecipient()
         m_maximum_recipient.clear(); Q_EMIT maximumRecipientChanged();
     });
     Q_EMIT maximumRecipientChanged();
-}
-
-void WalletQmlModel::updateMaximumAmount()
-{
-    const auto preview = selectedFeePreview();
-    if (!m_maximum_recipient || !preview || !preview->maximum_amount) return;
-    publishAutomaticMaximum(*preview->maximum_amount);
 }
 
 void WalletQmlModel::setCustomFeeTarget(unsigned int target)
@@ -2051,11 +2035,6 @@ void WalletQmlModel::refreshReceiveRequestPayments()
 void WalletQmlModel::publishReceipts()
 {
     if (observationsAllowed() && !m_admission_closed && available() && m_receipt_projection) m_receipt_projection->consume();
-}
-
-void WalletQmlModel::pollUnconfirmedReceiveRequestPayments()
-{
-    if (observationsAllowed() && m_receipt_projection) m_receipt_projection->poll();
 }
 
 CAmount WalletQmlModel::receivedPaymentRequestAmount(const QString& address) const
@@ -4289,8 +4268,6 @@ void WalletQmlModel::setCustomFeeEnabled(bool enabled) { if (observationsAllowed
 
 void WalletQmlModel::setCustomFeeRate(const QString& rate) { if (observationsAllowed() && m_fees) m_fees->editRate(rate); }
 
-void WalletQmlModel::setCustomFeeRateInternal(const QString& rate, bool) { setCustomFeeRate(rate); }
-
 void WalletQmlModel::setDisplayUnit(int unit)
 {
     if (unit != m_display_unit) {
@@ -4315,39 +4292,6 @@ void WalletQmlModel::refreshSecurityState()
     if (m_opening) m_opening->refreshMetadata();
 }
 
-
-bool WalletQmlModel::unlockForAction(std::optional<SecureString>& passphrase, bool& relock)
-{
-    relock = false;
-    if (!m_wallet) {
-        if (passphrase.has_value()) {
-            QmlUtil::ClearSecureString(*passphrase);
-            passphrase.reset();
-        }
-        return true;
-    }
-    if (!passphrase.has_value()) {
-        // Either the wallet is unlocked already (action proceeds), or it isn't
-        // and the caller asked for an unlock-less attempt — let the action fail
-        // downstream rather than blocking here.
-        return true;
-    }
-
-    const auto result{TryUnlockWithPassphrase(*m_wallet, *passphrase)};
-    passphrase.reset();
-    switch (result) {
-    case WalletUnlockResult::IncorrectPassphrase:
-        setTransactionStatus(tr("The wallet password you entered was incorrect."));
-        return false;
-    case WalletUnlockResult::AlreadyUnlocked:
-        return true;
-    case WalletUnlockResult::UnlockedNowRelockRequired:
-        relock = true;
-        refreshSecurityState();
-        return true;
-    }
-    return false;
-}
 
 void WalletQmlModel::clearTransactionStatus()
 {
@@ -4374,9 +4318,4 @@ void WalletQmlModel::setSettingsError(const QString& error)
         m_settings_error = error;
         Q_EMIT settingsErrorChanged();
     }
-}
-
-QString WalletQmlModel::persistedReceiveAddressTypeKey() const
-{
-    return QStringLiteral("receiveAddressTypes/%1").arg(name());
 }

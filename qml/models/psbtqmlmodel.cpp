@@ -55,7 +55,6 @@ QByteArray PsbtQmlModel::SerializePsbtRaw(const PartiallySignedTransaction& docu
 QString PsbtQmlModel::SavePsbtToFile(const PartiallySignedTransaction& document, const QString& path) { return psbtwork::SaveFile(document, path); }
 QString PsbtQmlModel::PsbtErrorText(common::PSBTError error) { return psbtwork::ErrorText(error); }
 bool PsbtQmlModel::IsMultisigPsbtInput(const PartiallySignedTransaction& document, size_t index) { return psbtwork::Multisig(document, index).has_value(); }
-std::optional<std::pair<int, int>> PsbtQmlModel::MultisigPsbtInputSigInfo(const PartiallySignedTransaction& document, size_t index) { return psbtwork::Multisig(document, index); }
 
 PsbtQmlModel::PsbtQmlModel(interfaces::Wallet* wallet, interfaces::Node* node, QObject* parent)
     : QObject(parent), m_node(node), m_wallet_expected(wallet != nullptr) {}

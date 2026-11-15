@@ -111,7 +111,6 @@ public:
     static QString SavePsbtToFile(const PartiallySignedTransaction& psbt, const QString& path);
     static QString PsbtErrorText(common::PSBTError error);
     static bool IsMultisigPsbtInput(const PartiallySignedTransaction& psbt, std::size_t index);
-    static std::optional<std::pair<int, int>> MultisigPsbtInputSigInfo(const PartiallySignedTransaction& psbt, std::size_t index);
 Q_SIGNALS:
     void changed();
     void finished(quint64 operation_id, quint64 document_generation);

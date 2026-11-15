@@ -542,7 +542,6 @@ private:
     void publishPreparationProjection(transactionattempt::Snapshot snapshot);
     void setMaximumRecipient(SendRecipient* recipient);
     void projectMaximumRecipient();
-    void updateMaximumAmount();
     void requestFeeEstimatesNow();
     void invalidateFeeRead(bool close = false, bool scheduled = false);
     void publishFeeEstimates();
@@ -562,13 +561,11 @@ private:
     void invalidatePreparation();
     bool setCurrentTransaction(WalletQmlModelTransaction* transaction, bool from_preparation = false);
     transactionattempt::CurrentFacts preparationFacts() const;
-    void setCustomFeeRateInternal(const QString& fee_rate, bool infer_target);
     ReceiveRequestOperation* savePaymentRequest(PaymentRequest* request, bool consume_address = false);
     ReceiveRequestOperation* submitRequest(walletrequests::Command command, PaymentRequest* draft = nullptr, bool consume_address = false);
     void publishRequestHistory();
     bool applyRequest(PaymentRequest* target, walletrequests::PreparedRequest data, bool as_template = false);
     void refreshReceiveRequestPayments();
-    void pollUnconfirmedReceiveRequestPayments();
     CAmount receivedPaymentRequestAmount(const QString& address) const;
     void updateReceivedPaymentRequestAmounts();
     quint64 requestSendTransactionInternal(std::optional<QString> passphrase = std::nullopt,
@@ -594,11 +591,9 @@ private:
     const std::shared_ptr<std::atomic_bool> m_sending_commit{std::make_shared<std::atomic_bool>(false)};
     quint64 m_send_request_id{0};
     quint64 m_send_review_id{0};
-    bool unlockForAction(std::optional<SecureString>& passphrase, bool& relock);
     void clearTransactionStatus();
     void setTransactionStatus(const QString& error, bool needs_unlock = false);
     void setSettingsError(const QString& error);
-    QString persistedReceiveAddressTypeKey() const;
     enum class PsbtActionKind { Import, Recheck, Save, Broadcast };
     struct PsbtReceipt { std::mutex mutex; QString path, txid; bool saved{false}, submitted{false}; };
     struct PsbtActionValue {
@@ -709,7 +704,6 @@ private:
     void initializePsbtFeeReader();
     bool requestPsbtFeeProof();
     void applyPsbtFeeProof(const std::shared_ptr<const psbtfee::RequestIdentity>& token, psbtfee::Resolution result, bool publish = true);
-    bool matchesReviewedPsbtFee(const PartiallySignedTransaction& psbt) const;
     backup::Services m_backup_services;
     QPointer<BackupFileOperation> m_backup_operation;
     QPointer<FileExportOperationModel> m_file_export_operation;
