@@ -132,6 +132,39 @@ private Q_SLOTS:
         qInfo() << "048 accepted preview limitation; authoritative displayed review" << address_type << preview << actual << expected_display;
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
     }
+    void uppercaseBech32RecipientRemainsRecipientOutput()
+    {
+        auto* wallet = qmltest::LoadFundedWallet(m_app, "sender"); QVERIFY(wallet);
+        const auto address = qmltest::NewAddress(m_app, wallet->name());
+        const auto uppercase_address = address.toUpper();
+        QVERIFY(address != uppercase_address);
+
+        QVERIFY(qmltest::Click(m_app, "sendTabButton"));
+        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", uppercase_address));
+        QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "0.01"));
+        QTRY_VERIFY(!wallet->sendRecipientList()->validationPending() && wallet->sendRecipientList()->allValid());
+        auto* review_button = qmltest::Find(m_app, "sendReviewButton"); QVERIFY(review_button);
+        QVERIFY(QMetaObject::invokeMethod(review_button, "forceActiveFocus"));
+        QTRY_VERIFY(!qmltest::Find(m_app, "sendAddressInput")->property("activeFocus").toBool());
+        QTRY_VERIFY(!wallet->sendRecipientList()->validationPending() && wallet->sendRecipientList()->allValid());
+        QTRY_VERIFY(!wallet->feeEstimatePending() && !wallet->fees()->policyPending());
+        QTRY_VERIFY_WITH_TIMEOUT(review_button->property("enabled").toBool(), 30'000);
+        QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
+        QCOMPARE(wallet->preparationState(), WalletQmlModel::PreparationState::PreparationReady);
+        auto* review = wallet->currentTransaction(); QVERIFY(review && review->getWtx());
+
+        const auto outputs = wallet->currentTransactionFlow().value("outputs").toList();
+        bool found_recipient{false};
+        for (const auto& value : outputs) {
+            const auto output = value.toMap();
+            if (output.value("address").toString() != address) continue;
+            found_recipient = true;
+            QVERIFY(!output.value("isChange").toBool());
+        }
+        QVERIFY(found_recipient);
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
     void explicitPublicChangePolicyMatchesThePreview_data()
     {
         QTest::addColumn<QString>("address_type"); QTest::addColumn<qint64>("expected_fee");
@@ -327,7 +360,9 @@ private Q_SLOTS:
         QTRY_VERIFY(first->amount()->satoshi() > 0);
         QVERIFY(qmltest::Click(m_app, "sendAddRecipientButton"));
         auto* second = wallet->sendRecipientList()->currentRecipient(); QVERIFY(second != first);
-        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", qmltest::NewAddress(m_app, setup->destination_wallet->name())));
+        const auto second_address = qmltest::NewAddress(m_app, setup->destination_wallet->name());
+        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", second_address));
+        QTRY_VERIFY(!second->address()->normalizationPending() && second->address()->address() == second_address);
         QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton")); QTRY_COMPARE(wallet->maximumRecipient(), second);
         QTRY_VERIFY(!first->amount()->isSet()); QCOMPARE(first->amount()->satoshi(), CAmount{0});
         QVERIFY(!wallet->sendRecipientList()->allValid());
@@ -665,6 +700,8 @@ private Q_SLOTS:
         QTRY_COMPARE(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), 100 * COIN);
         QVERIFY(!qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
+        QTRY_VERIFY(!wallet->sendRecipientList()->currentRecipient()->validationPending() &&
+                    wallet->sendRecipientList()->currentRecipient()->isValid());
         QTRY_COMPARE_WITH_TIMEOUT(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), setup->expected_amount, 30'000);
         QCOMPARE(qmltest::Find(m_app, "sendCoinControlPicker")->property("currentIndex").toInt(), manual ? 1 : 0);
         QCOMPARE(qmltest::Find(m_app, "sendUseMaximumButton")->property("text").toString(),
@@ -1157,6 +1194,7 @@ QString SendPreparedWallet(const QString& selector)
     if (function == "customFeesRespectRelayMinimum") return "custom_fee";
     if (function == "coinSelectionCancelApplyAndLockReachTheWallet") return "integration";
     for (const auto* name : {"localizedTypedSendPreparesExactOutput",
+                             "uppercaseBech32RecipientRemainsRecipientOutput",
                              "feePreviewLimitationKeepsCoreReviewAuthoritative",
                              "explicitPublicChangePolicyMatchesThePreview",
                              "presetFeesHonorRaisedCoreRequirements",

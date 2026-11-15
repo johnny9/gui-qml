@@ -48,6 +48,7 @@ TestCase {
         testWalletModel.prepareTransactionResult = true
         testWalletModel.sendAmountExhaustsBalance = false
         testWalletModel.currentTransactionCanSend = true
+        testWalletModel.currentTransactionNeedsRevalidation = false
         testWalletModel.transactionFeePending = false
         testWalletModel.currentTransactionCanBroadcast = false
         testWalletModel.currentTransactionIsImportedPsbt = false
@@ -158,6 +159,26 @@ TestCase {
         tryCompare(testWalletModel.fees, "policyPending", false)
         compare(findChild(page, "sendReviewFallbackFeeWarning").visible, true)
         compare(testWalletTransaction.reviewFeeRate, "2.5")
+    }
+
+    function test_send_button_requires_the_current_draft_review() {
+        const review = createTemporaryObject(reviewComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        const sendButton = findChild(review, "sendTransactionReviewSendButton")
+        verify(sendButton !== null)
+        compare(sendButton.enabled, true)
+
+        testWalletModel.setCurrentTransactionNeedsRevalidationForTest(true)
+        tryCompare(sendButton, "visible", false)
+        tryCompare(sendButton, "enabled", false)
+        const warning = findChild(review, "sendTransactionReviewWarning")
+        verify(warning !== null)
+        tryCompare(warning, "visible", true)
+        compare(warning.message, "The draft changed after review. Prepare it again before sending.")
+        compare(testWalletModel.sendTransactionCalls, 0)
+
+        testWalletModel.setCurrentTransactionNeedsRevalidationForTest(false)
+        tryCompare(sendButton, "visible", true)
+        tryCompare(sendButton, "enabled", true)
     }
 
     function test_equal_amount_intent_uses_the_typed_fixed_mode() {

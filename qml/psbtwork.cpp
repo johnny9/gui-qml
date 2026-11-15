@@ -476,6 +476,12 @@ QVariantMap CollectReviewFlow(interfaces::Wallet& wallet, CTransactionRef transa
     const QMap<QString, QString>& reviewed_notes)
 {
     if (!transaction) return {};
+    std::vector<CScript> recipient_scripts;
+    recipient_scripts.reserve(static_cast<size_t>(recipients.size()));
+    for (const auto& address : recipients) {
+        const auto destination = DecodeDestination(address.toStdString());
+        if (IsValidDestination(destination)) recipient_scripts.push_back(GetScriptForDestination(destination));
+    }
     interfaces::WalletTx preview{}; preview.tx = transaction;
     std::vector<std::optional<CTxOut>> prevouts;
     prevouts.reserve(transaction->vin.size());
@@ -497,9 +503,8 @@ QVariantMap CollectReviewFlow(interfaces::Wallet& wallet, CTransactionRef transa
     for (const auto& output : transaction->vout) {
         const bool owned = wallet.txoutIsMine(output);
         preview.txout_is_mine.push_back(owned);
-        CTxDestination destination;
-        const auto address = ExtractDestination(output.scriptPubKey, destination) ? QString::fromStdString(EncodeDestination(destination)) : QString{};
-        preview.txout_is_change.push_back(owned && !recipients.contains(address));
+        const bool recipient_output = std::find(recipient_scripts.begin(), recipient_scripts.end(), output.scriptPubKey) != recipient_scripts.end();
+        preview.txout_is_change.push_back(owned && !recipient_output);
     }
     auto flow = BuildTransactionFlow(preview, prevouts);
     if (flow.isEmpty()) return flow;

@@ -133,6 +133,7 @@ if(ENABLE_WALLET)
     test_walletsecurity.cpp
     test_walletsend.cpp
     test_walletprepare.cpp
+    test_transactionattempt.cpp
     test_wallettransaction.cpp
     test_walletreceipts.cpp
     test_walletrequests.cpp

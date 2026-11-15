@@ -1645,6 +1645,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QVariantMap currentTransactionFlow READ currentTransactionFlow WRITE setCurrentTransactionFlow NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionIsImportedPsbt MEMBER m_current_transaction_is_imported_psbt NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanSend MEMBER m_current_transaction_can_send NOTIFY currentTransactionChanged)
+    Q_PROPERTY(bool currentTransactionNeedsRevalidation MEMBER m_current_transaction_needs_revalidation NOTIFY preparationChanged)
     Q_PROPERTY(bool transactionFeePending MEMBER m_transaction_fee_pending NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanBroadcast MEMBER m_current_transaction_can_broadcast NOTIFY currentTransactionChanged)
     Q_PROPERTY(QString currentTransactionReviewMessage MEMBER m_current_transaction_review_message NOTIFY currentTransactionChanged)
@@ -1793,6 +1794,12 @@ public:
     QString recipientLabelsError() const { return m_recipient_labels_error; }
     QString recipientLabelsTransactionId() const { return {}; }
     Q_INVOKABLE void setRecipientLabelsErrorForTest(const QString& error) { m_recipient_labels_error = error; Q_EMIT recipientLabelsChanged(); }
+    Q_INVOKABLE void setCurrentTransactionNeedsRevalidationForTest(bool value)
+    {
+        if (m_current_transaction_needs_revalidation == value) return;
+        m_current_transaction_needs_revalidation = value;
+        Q_EMIT preparationChanged();
+    }
 
     bool m_receiving_ready{true}, m_receiving_pending{false}, m_ensure_needs_unlock{false};
     quint64 m_address_operation_sequence{0};
@@ -2007,6 +2014,7 @@ public:
     int m_target_blocks{2};
     bool m_prepare_transaction_result{true};
     bool m_current_transaction_can_send{true};
+    bool m_current_transaction_needs_revalidation{false};
     QVariantMap m_current_transaction_flow;
     bool m_current_transaction_is_imported_psbt{false};
     bool m_current_transaction_can_broadcast{false};

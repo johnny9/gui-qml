@@ -13,6 +13,7 @@
 #include <qml/walletopening.h>
 #include <qml/senddraft.h>
 #include <qml/models/walletsecuritymodel.h>
+#include <qml/transactionattempt.h>
 #include <qml/walletreceipts.h>
 #include <qml/psbtwork.h>
 #include <qml/models/feereadservices.h>
@@ -66,7 +67,7 @@ class Node;
 
 namespace walletsend { class Operation; class CommitConsent; }
 namespace walletsigning { struct Result; }
-namespace walletprepare { struct Result; }
+namespace walletprepare { struct Request; struct Result; }
 
 class PsbtQmlModel;
 
@@ -207,6 +208,7 @@ private:
     Q_PROPERTY(SendSubmission sendSubmission READ sendSubmission NOTIFY sendOperationChanged)
     Q_PROPERTY(bool transactionNeedsUnlock READ transactionNeedsUnlock NOTIFY transactionNeedsUnlockChanged)
     Q_PROPERTY(bool currentTransactionCanSend READ currentTransactionCanSend NOTIFY currentTransactionChanged)
+    Q_PROPERTY(bool currentTransactionNeedsRevalidation READ currentTransactionNeedsRevalidation NOTIFY preparationChanged)
     Q_PROPERTY(bool transactionFeePending READ transactionFeePending NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanBroadcast READ currentTransactionCanBroadcast NOTIFY currentTransactionChanged)
     Q_PROPERTY(QString currentTransactionReviewMessage READ currentTransactionReviewMessage NOTIFY currentTransactionChanged)
@@ -324,9 +326,9 @@ public:
     Q_INVOKABLE quint64 requestPrepareTransaction();
     Q_INVOKABLE quint64 approveExternalSignerTransaction();
     Q_INVOKABLE quint64 requestPrepareTransactionWithPassphrase(const QString& passphrase);
-    quint64 preparationId() const { return m_preparation_id; }
-    PreparationState preparationState() const { return m_preparation_state; }
-    bool preparationBusy() const { return m_preparation_state == PreparationState::PreparationPending; }
+    quint64 preparationId() const;
+    PreparationState preparationState() const;
+    bool preparationBusy() const;
     Q_INVOKABLE quint64 requestSendTransaction();
     Q_INVOKABLE quint64 requestSendTransactionWithPassphrase(const QString& passphrase);
     quint64 sendOperationId() const { return m_send_request_id; }
@@ -424,6 +426,7 @@ public:
     QString transactionError() const { return m_transaction_error; }
     bool transactionNeedsUnlock() const { return m_transaction_needs_unlock; }
     bool currentTransactionCanSend() const { return m_current_transaction && m_current_transaction_can_send; }
+    bool currentTransactionNeedsRevalidation() const;
     bool transactionFeePending() const { return m_psbt_fee_pending; }
     bool currentTransactionCanBroadcast() const { return m_current_transaction && m_current_transaction_can_broadcast; }
     QString currentTransactionReviewMessage() const { return m_current_transaction_review_message; }
@@ -496,6 +499,8 @@ private:
     void checkShutdownFinished();
     void publishBalance();
     void initializeFeeEstimator();
+    void initializePreparationOwner();
+    void publishPreparationProjection(transactionattempt::Snapshot snapshot);
     void setMaximumRecipient(SendRecipient* recipient);
     void projectMaximumRecipient();
     void updateMaximumAmount();
@@ -507,8 +512,17 @@ private:
     void clearFeeEstimates();
     void refreshSecurityState();
     quint64 requestPrepareTransactionInternal(std::optional<QString> passphrase = {});
+    void startPreparation(transactionattempt::Result admission, std::shared_ptr<walletprepare::Request> request,
+                          std::optional<QString> passphrase, std::shared_ptr<walletopening::Session> opening,
+                          QString draft_error);
+    void applyPreparationResolution(transactionattempt::Result resolution, walletprepare::Result effect,
+                                    transactionattempt::Ticket ticket, transactionattempt::CurrentFacts original_facts,
+                                    std::shared_ptr<walletopening::Session> opening,
+                                    std::shared_ptr<execution::OwnedCommand<walletprepare::Result>> command);
     void publishPreparation();
     void invalidatePreparation();
+    bool setCurrentTransaction(WalletQmlModelTransaction* transaction, bool from_preparation = false);
+    transactionattempt::CurrentFacts preparationFacts() const;
     void setCustomFeeRateInternal(const QString& fee_rate, bool infer_target);
     ReceiveRequestOperation* savePaymentRequest(PaymentRequest* request, bool consume_address = false);
     ReceiveRequestOperation* submitRequest(walletrequests::Command command, PaymentRequest* draft = nullptr, bool consume_address = false);
@@ -653,11 +667,12 @@ private:
     bool m_approval_signer_not_found{false};
     std::shared_ptr<execution::OwnedCommand<walletsigning::Result>> m_approval;
     std::shared_ptr<execution::OwnedCommand<walletprepare::Result>> m_preparation;
-    PreparationState m_preparation_state{PreparationState::PreparationIdle};
-    quint64 m_preparation_revision{0}, m_preparation_requested_revision{0};
-    quint64 m_preparation_id{0};
-    QPointer<WalletQmlModelTransaction> m_preparation_previous_review;
-    bool m_preparation_had_previous_review{false};
+    std::shared_ptr<transactionattempt::Owner> m_transaction_attempt;
+    transactionattempt::Snapshot m_preparation_projection;
+    quint64 m_preparation_projection_sequence{0};
+    quint64 m_next_preparation_id{0};
+    quint64 m_gui_preparation_intent_revision{0};
+    quint64 m_current_review_identity{0};
     QPointer<WalletQmlModelTransaction> m_approval_review;
     CTransactionRef m_approval_transaction;
     void publishApproval();

@@ -1286,6 +1286,29 @@ private Q_SLOTS:
         QVERIFY(!flow.value(QStringLiteral("presentation")).toMap().empty());
     }
 
+    void uppercaseCanonicalRecipientIsNotClassifiedAsChange()
+    {
+        const CTxDestination destination{WitnessV0KeyHash{uint160{std::vector<unsigned char>(20, 1)}}};
+        const QString address = QString::fromStdString(EncodeDestination(destination));
+        const QString uppercase_address = address.toUpper();
+        QVERIFY(address != uppercase_address);
+
+        auto document = Document();
+        document.outputs[0].script = GetScriptForDestination(destination);
+        const auto transaction = MakeTransactionRef(*document.GetUnsignedTx());
+        WorkWallet wallet;
+        wallet.owned_outputs = true;
+        const auto proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(document));
+
+        const auto flow = psbtwork::CollectReviewFlow(wallet, transaction, {}, proof,
+            QSet<QString>{uppercase_address}, 0, {});
+
+        const auto outputs = flow.value(QStringLiteral("outputs")).toList();
+        QCOMPARE(outputs.size(), 1);
+        QCOMPARE(outputs.front().toMap().value(QStringLiteral("address")).toString(), address);
+        QVERIFY(!outputs.front().toMap().value(QStringLiteral("isChange")).toBool());
+    }
+
     void nodeBroadcastOwnsPublicOutcome_data()
     {
         QTest::addColumn<int>("mode");

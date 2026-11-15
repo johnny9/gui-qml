@@ -25,13 +25,16 @@ Page {
     readonly property bool detailsReady: detailsContextValid && !flowDetails.pending && flowDetails.error.length === 0
     readonly property bool importedPsbt: wallet && wallet.currentTransactionIsImportedPsbt === true
     readonly property bool canSend: wallet && wallet.currentTransactionCanSend
+        && !wallet.currentTransactionNeedsRevalidation
     readonly property bool feePending: wallet && wallet.transactionFeePending
     readonly property bool canBroadcast: wallet && wallet.currentTransactionCanBroadcast
     readonly property bool showBroadcast: importedPsbt && canBroadcast
     readonly property bool showSend: !showBroadcast && canSend
-    readonly property string reviewMessage: wallet ? wallet.currentTransactionReviewMessage : ""
-    readonly property bool showWarning: reviewMessage.length > 0
-        || (wallet && wallet.keySchemeKind === WalletQmlModel.WatchOnly && !canBroadcast)
+    readonly property string reviewMessage: wallet && wallet.currentTransactionNeedsRevalidation
+        ? qsTr("The draft changed after review. Prepare it again before sending.")
+        : wallet ? wallet.currentTransactionReviewMessage : ""
+    readonly property bool showWarning: (wallet && wallet.currentTransactionNeedsRevalidation)
+        || reviewMessage.length > 0 || (wallet && wallet.keySchemeKind === WalletQmlModel.WatchOnly && !canBroadcast)
     readonly property real sidePadding: width < 640 ? 16 : 40
     readonly property real reviewContentWidth: Math.max(0, Math.min(1100, width - sidePadding * 2))
     readonly property bool sendBusy: wallet !== null && (wallet.sendBusy || wallet.psbtActionBusy)
@@ -439,7 +442,7 @@ Page {
                 ContinueButton {
                     objectName: "sendTransactionReviewSendButton"
                     visible: (root.showSend && !externalSignerActions.visible) || root.showBroadcast
-                    enabled: root.detailsReady && !root.sending && !root.sendBusy
+                    enabled: root.detailsReady && !root.sending && !root.sendBusy && (root.showBroadcast || root.canSend)
                     width: parent.width < 540 ? parent.width : (parent.width - 12) / 2
                     height: 46
                     text: root.showBroadcast ? qsTr("Broadcast transaction") : qsTr("Send transaction")
