@@ -398,6 +398,8 @@ TestCase {
         const completePage = findChild(reviewStack, "sendCompletePage")
         verify(completePage !== null)
         compare(completePage.targetBlocks, 0)
+        compare(completePage.submissionState, WalletQmlModel.SubmissionAccepted)
+        compare(completePage.recordState, WalletQmlModel.SendRecordUnknown)
         verify(completePage.descriptionText.indexOf("fee rate") >= 0)
         tryCompare(testWalletModel, "broadcastCurrentTransactionCalls", broadcastCallsBefore + 1)
         findChild(reviewStack, "sendResultDoneButton").clicked()
@@ -2421,7 +2423,7 @@ TestCase {
             compare(testWalletModel.psbtActionId, original)
             compare(testSecondWalletModel.psbtActionId, replacement)
             if (data.action === "accept") {
-                compare(captured.selectedPath, "file:///original%20opening.psbt")
+                compare(captured.selectedPath, "file:///original opening.psbt") // Qt hands over the decoded QUrl display form; Native owns path interpretation.
                 verify(!captured.requestFile("successor.psbt"))
                 compare(findChild(page, "transactionReviewPopup").visible, false)
                 BitcoinUri.releasePublications()
@@ -2682,6 +2684,7 @@ TestCase {
     }
     function test_overwrite_confirmation_rejects_unavailable_opening() {
         testSendRecipient.label = "original private note"
+        testSendRecipient.amount.satoshi = 10000
         const page = createControlledSendPage()
         const form = findChild(page, "walletSendPage")
         const editor = controlledSendEditor(form)
@@ -2694,11 +2697,11 @@ TestCase {
         tryCompare(popup, "opened", true)
         try {
             testWalletModel.available = false
-            mouseClick(findChild(popup.contentItem, "sendPaymentUriOverwriteConfirmButton"))
+            findChild(popup.contentItem, "sendPaymentUriOverwriteConfirmButton").clicked() // A queued old confirmation cannot revive the retired Source.
             tryCompare(popup, "visible", false)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications)
             compare(testSendRecipient.address.address, address)
-            compare(testSendRecipient.amount.satoshi, 0)
+            compare(testSendRecipient.amount.satoshi, 10000)
             compare(testSendRecipient.label, "original private note")
             compare(testWalletModel.prepareTransactionCalls, prepareCalls)
             compare(form.uriActionPending, false)

@@ -21,6 +21,18 @@ class PaymentImportIntegrationTests : public QObject
     BitcoinQmlApplication& m_app;
     WalletQmlModel* m_wallet{nullptr};
     QString m_address;
+    QString importDiagnostic(QObject* original) const {
+        auto* page = qmltest::Find(m_app, "walletSendPage");
+        QStringList facts{QStringLiteral("Import diagnostic:")};
+        if (page) {
+            facts << QStringLiteral("active=") + QString::number(page->property("m_importOperation").value<QObject*>() != nullptr)
+                  << QStringLiteral("draft=") + m_wallet->sendRecipientList()->revision()
+                  << QStringLiteral("importPending=") + QString::number(m_wallet->sendRecipientList()->importPending());
+        }
+        if (original) for (const auto* name : {"state", "pending", "canApply", "promptToken", "outcome", "error"})
+            facts << QString::fromLatin1(name) + QLatin1Char('=') + original->property(name).toString();
+        return facts.join(QLatin1Char(' '));
+    }
 
 public:
     explicit PaymentImportIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
@@ -68,7 +80,8 @@ private Q_SLOTS:
         const QString uri = "bitcoin:" + m_address + "?amount=0.01234567&label=Public%20invoice&message=Merchant%20message";
         auto* page = qmltest::Find(m_app, "walletSendPage"); QVERIFY(page);
         QVERIFY(QMetaObject::invokeMethod(page, "applyPaymentRequestFromText", Q_ARG(QVariant, uri), Q_ARG(QVariant, "explicit request")));
-        QTRY_COMPARE(recipient->amount()->satoshi(), 1'234'567);
+        auto* source = page->property("m_importOperation").value<QObject*>(); QVERIFY(source);
+        QVERIFY2(QTest::qWaitFor([&] { return recipient->amount()->satoshi() == 1'234'567; }, 5000), qPrintable(importDiagnostic(source)));
         QCOMPARE(recipient->label(), QStringLiteral("Private bookkeeping"));
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Public invoice"));
         QCOMPARE(recipient->message(), QStringLiteral("Merchant message"));
@@ -131,7 +144,8 @@ private Q_SLOTS:
         QTRY_VERIFY(popup->property("opened").toBool());
         QVERIFY(qmltest::Click(m_app, "sendPaymentUriOverwriteConfirmButton"));
         QTRY_VERIFY(!popup->property("opened").toBool());
-        QCOMPARE(recipient->amount()->satoshi(), 1'234'567);
+        auto* source = qmltest::Find(m_app, "walletSendPage")->property("m_importOperation").value<QObject*>();
+        QVERIFY2(QTest::qWaitFor([&] { return recipient->amount()->satoshi() == 1'234'567; }, 5000), qPrintable(importDiagnostic(source)));
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Alice"));
         QCOMPARE(recipient->message(), QStringLiteral("Lunch"));
         QCOMPARE(recipient->label(), QStringLiteral("My private note"));
@@ -231,7 +245,8 @@ private Q_SLOTS:
         QGuiApplication::clipboard()->setText("bitcoin:" + m_address + "?amount=0.007&label=Public&message=Locked%20draft");
         auto* input = qmltest::Find(m_app, "sendAddressInput"); QVERIFY(input);
         QVERIFY(QMetaObject::invokeMethod(input, "forceActiveFocus")); QVERIFY(QMetaObject::invokeMethod(input, "paste"));
-        QTRY_COMPARE(recipient->amount()->satoshi(), 700'000);
+        auto* source = qmltest::Find(m_app, "walletSendPage")->property("m_importOperation").value<QObject*>();
+        QVERIFY2(QTest::qWaitFor([&] { return recipient->amount()->satoshi() == 700'000; }, 5000), qPrintable(importDiagnostic(source)));
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Public")); QCOMPARE(recipient->message(), QStringLiteral("Locked draft"));
         QCOMPARE(recipient->label(), QStringLiteral("Private locked note")); QVERIFY(m_wallet->isLocked());
         QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, m_wallet->name()).find_value("unlocked_until").getInt<int64_t>(), 0);

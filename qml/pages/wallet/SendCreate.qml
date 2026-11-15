@@ -150,6 +150,7 @@ PageStack {
             sendPage.cancelUriIntents()
         root.preparingReview = false
         reviewSweepAlert.close()
+        sendPage.checkClipboard()
     }
 
     // Counts how often this page was hidden. A deferred open is dropped if
@@ -284,6 +285,7 @@ PageStack {
         target: root.wallet
         function onCurrentTransactionChanged() { reviewSweepAlert.close(); sendPage.presentImportedReview() }
         function onPreparationChanged() { root.handlePreparationOutcome() }
+        function onAvailableChanged() { if (!root.wallet.available) sendPage.cancelUriIntents() }
         function onPsbtActionChanged() { root.handlePsbtOutcome() }
         function onMaximumRecipientChanged() { root.draftChanged() }
         function onCustomFeeEnabledChanged() {
@@ -603,16 +605,19 @@ PageStack {
         }
         function clearPendingPaymentUriPaste() { finishPasteOwner(true) }
         function cancelUriAction() {
-            if (m_importOperation) m_importOperation.cancel()
+            const operation = m_importOperation
+            const pasteOwner = m_uriPasteOwner
+            const payload = m_uriPayload
             m_importOperation = null
             m_importWallet = null
             m_importPresentedResult = ""
-            finishPasteOwner(true)
             m_uriPasteOwner = null
             m_uriPayload = null
             m_uriHadPasteOwner = false
             m_nativeHandoffHandled = ""
             paymentUriOverwritePopup.close()
+            if (pasteOwner && payload && pasteOwner.intent === payload) pasteOwner.cancel()
+            if (operation) operation.cancel()
         }
         function cancelUriIntents() {
             cancelUriAction()
