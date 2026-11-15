@@ -69,6 +69,7 @@ std::shared_ptr<const TargetPort> WithReviewFactory(std::shared_ptr<const Target
         auto call = execution::RetainValues<ReviewCall>(services.scheduler, [] { return std::make_unique<ReviewCall>(); });
         auto output = execution::RetainValues<psbtwork::ImportResult>(services.scheduler, [] { return std::make_unique<psbtwork::ImportResult>(); });
         if (!call || !output) return execution::Admission{{}, execution::Rejection::Capacity};
+        if (source->presentation_allowed) call->presentation_allowed = source->presentation_allowed;
         call->scope = services.scheduler->openActionScope(512); call->child = child;
         if (!call->scope) return execution::Admission{{}, execution::Rejection::Capacity};
         const auto cleanup = execution::Submit(*call->scope, [] {}, [routes, key, weak = std::weak_ptr<ReviewCall>{call}] {

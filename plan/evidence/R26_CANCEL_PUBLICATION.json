@@ -1,0 +1,55 @@
+{
+  "app_tested": "829279acf55a0282fe264298fc65aa1fad6dfd51",
+  "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "baseline_test_only": "41ebd813a6f58f13a85f0d2cbb36ce1a07239dd8",
+  "baseline_red": {
+    "bodies": 2,
+    "failed": 2,
+    "skipped": 0,
+    "path": "cancel-red-01/actual/report.json"
+  },
+  "focused_green": {
+    "bodies": 194,
+    "selections": {
+      "r26-owner": 39,
+      "uri-parser-carry": 31,
+      "recipient-target": 60,
+      "recipient-list-target": 28,
+      "original-review-import-gate": 4,
+      "qml-explicit-source": 26,
+      "core-explicit-uri": 1,
+      "core-file-source": 2,
+      "core-private-note": 1,
+      "core-maximum-consent": 1,
+      "core-typed-psbt": 1
+    },
+    "failed": 0,
+    "skipped": 0,
+    "incomplete": 0,
+    "path": "cancel-green-01/actual/report.json"
+  },
+  "static": {
+    "passed": 10,
+    "scope": "3 changed CPP plus 7 freshly generated MOC TUs",
+    "path": "cancel-static-01/tidy",
+    "unchanged_scope_carry": "R26 owner-static-02/03 qualified remaining unchanged CPP; cancellation headers recompiled in focused build"
+  },
+  "lint": {
+    "exit": 0,
+    "path": "cancel-lint-01",
+    "head_and_core_rechecked": true
+  },
+  "process": {
+    "passed": 2,
+    "scope": [
+      "bridge-protocol normal exit0/stderr inspected",
+      "runtime-block-write-failure-exit-status fatal exit1/exact failure stderr inspected"
+    ],
+    "path": "cancel-static-01/lifecycle.stdout",
+    "ipc": true,
+    "wallet_behavior": "actual Core6 in focused manifest; lifecycle controls use -disablewallet"
+  },
+  "qml_carry": "No QML edits: byte-identical R26 full259-file lint for both compatibility configurations under Qt6.10.2. No fresh full lint or actual Qt6.2 runtime claim.",
+  "requirements": "Only GUI presentation authority is revoked synchronously. Native creation/Apply effects and exact known child outcome/token survive close; no false rollback or replay. No Core/Qt changes or new Wallet capability adapter.",
+  "limitations": "Focused ordinary Linux wallet+IPC Clang23 checks; exhaustive coverage/platform/configuration/sanitizers and Windows remain R42 obligations. R27/R40 not accepted by this correction."
+}

@@ -226,8 +226,9 @@ void Owner::read(uint64_t source)
         }
         self->cancelObsolete(); self->publish();
     };
-    const auto admission = execution::Submit(*m_scope, [output, input, original, services = m_services] {
+    const auto admission = execution::Submit(*m_scope, [output, input, original, services = m_services, presentation_allowed = m_presentation_allowed] {
         *output = Analysis ? services.analyze(*original) : services.read(*input);
+        output->presentation_allowed = presentation_allowed;
     }, [completed] { completed({}); }, completed, {execution::Lane::Core, 2048});
     if (!admission) completed(std::make_exception_ptr(execution::NotStarted{execution::NotStarted::Cause::Transport}));
 }
@@ -423,6 +424,7 @@ execution::Admission Owner::tick() { return submit([self = shared_from_this()] {
 execution::Admission Owner::reconcile() { return submit([self = shared_from_this()] { self->query(); }); }
 execution::Admission Owner::close()
 {
+    m_presentation_allowed->store(false);
     return submit([self = shared_from_this()] {
         auto& state = *self->m_state;
         state.closing = true;
