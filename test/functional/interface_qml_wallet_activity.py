@@ -189,7 +189,27 @@ def typed_receipt_restart(harness, checkpoint):
     gui.wait_for_property("walletBadge", "text", "receipt-restart", timeout_ms=30000)
     gui.click("activityTabButton")
     gui.wait_for_property(f"activityRequest_{request_id}", "visible", True, timeout_ms=30000)
-    gui.click(f"activityRequest_{request_id}")
+    gui.wait_for_property("activityFilterProxyModel", "busy", False)
+    gui.wait_for_property("activityStack", "walletViewActive", True)
+    inventory = gui.get_model_row("activityListView", "model")
+    original_row = gui.get_model_row("activityListView", "model", 0, "requestId",
+                                     model_id=inventory["modelId"], expected_rows=inventory["rowCount"])
+    assert original_row["value"] == request_id, "The original pending request must own the first Activity row"
+    assert gui.get_property(f"activityRequest_{request_id}", "requestId") == request_id
+    if os.getenv("QML_TEST_ARTIFACTS"):
+        output = Path(os.environ["QML_TEST_ARTIFACTS"]) / "typed-current-receipt-reorg-restart"
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "restart-row-intent.json").write_text(json.dumps({
+            "inventory": inventory, "original_row": original_row, "request_id": request_id,
+            "address": address, "target": "activityListView[0].activityRowOpenButton",
+            "row_geometry": {key: gui.get_property(f"activityRequest_{request_id}", key)
+                             for key in ("x", "y", "width", "height", "visible")},
+            "content_y": gui.get_property("activityListView", "contentY"),
+        }, indent=2) + "\n", encoding="utf-8")
+    # Target the actual row's AbstractButton, as the existing Activity restart
+    # journey does. Clicking the passive Item can report a sent mouse event
+    # without an activated signal when its center is clipped or intercepted.
+    gui.click_list_item("activityListView", 0, "activityRowOpenButton")
     gui.wait_for_property("paymentRequestModal", "opened", True, timeout_ms=30000)
     gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
     assert gui.get_property("paymentRequestModal", "openedEditor.requestId") == request_id
