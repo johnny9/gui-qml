@@ -9,6 +9,7 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 #ifdef ENABLE_WALLET
 #include <qml/models/paymentimportoperation.h>
+#include <qml/paymentimportcreation.h>
 #endif
 #include <QObject>
 #include <QVariantMap>
@@ -74,13 +75,15 @@ public:
     Q_INVOKABLE PaymentImportOperation* captureImport(WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
     Q_INVOKABLE PaymentImportOperation* requestImportDrop(int urlCount, const QUrl& firstUrl, const QString& text, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
     Q_INVOKABLE PaymentImportOperation* requestImportPaste(const QString& text, InputField field, bool edited, const QString& previous, const QString& current, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
-    PaymentImportOperation* requestImport(paymentimport::Input input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner);
+    PaymentImportOperation* requestImport(paymentimport::Input input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner,
+                                          std::shared_ptr<paymentimport::CreationReceipt> creation = {});
 #endif
 Q_SIGNALS:
     void requestRejected(BitcoinUriModel::Rejection reason);
 private:
 #ifdef ENABLE_WALLET
-    PaymentImportOperation* createImport(std::optional<paymentimport::Input> input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner);
+    PaymentImportOperation* createImport(std::optional<paymentimport::Input> input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner,
+                                         std::shared_ptr<paymentimport::CreationReceipt> creation = {});
 #endif
     BitcoinUriParseOperation* start(const QString& input, bool file, QObject* owner, BitcoinUriParseOperation* replace, const QVariantMap& context = {});
     execution::SnapshotServices m_services;

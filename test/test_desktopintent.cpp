@@ -2,6 +2,12 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/desktopintentowner.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+#include <qml/desktopintentargs.h>
+#include <qml/models/desktopintentmodel.h>
+#ifdef ENABLE_WALLET
+#include <qml/models/bitcoinurimodel.h>
+#endif
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/qt_test_registry.h>
 #include <QtTest/QtTest>
@@ -15,6 +21,101 @@ desktopintent::Input Input(int id, QString value = QStringLiteral("bitcoin:reque
 class DesktopIntentTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void actualArgumentsKeepCoreOptionsBeforeRequestsOnly()
+    {
+        QByteArray executable{"bitcoin-core-app"}, option{"-regtest"}, uri{"bitcoin:request"}, injected{"-platform"};
+        char* valid[]{executable.data(), option.data(), uri.data()};
+        const auto parsed = desktopintent::ParseArguments(3, valid, QStringLiteral("process"), QStringLiteral("/captured"));
+        QVERIFY(parsed.error.isEmpty()); QCOMPARE(parsed.options_argc, 2);
+        QCOMPARE(parsed.intents.size(), size_t{1}); QCOMPARE(parsed.intents.front().value, QStringLiteral("bitcoin:request"));
+        char* invalid[]{executable.data(), option.data(), uri.data(), injected.data()};
+        const auto refused = desktopintent::ParseArguments(4, invalid, QStringLiteral("process"), QStringLiteral("/captured"));
+        QVERIFY(!refused.error.isEmpty()); QVERIFY(refused.intents.empty());
+    }
+    void argumentFilesUseCapturedDirectoryAndRejectRemoteAndInvalidUtf8()
+    {
+        QByteArray executable{"bitcoin-core-app"}, path{"draft.psbt"}, remote{"file://other-host/draft.psbt"}, invalid{1, static_cast<char>(0xff)};
+        char* arguments[]{executable.data(), path.data()};
+        const auto parsed = desktopintent::ParseArguments(2, arguments, QStringLiteral("process"), QStringLiteral("/captured"));
+        QVERIFY(parsed.error.isEmpty()); QVERIFY(parsed.intents.front().kind == desktopintent::Kind::File);
+        QCOMPARE(parsed.intents.front().value, QStringLiteral("/captured/draft.psbt"));
+        arguments[1] = remote.data();
+        QVERIFY(!desktopintent::ParseArguments(2, arguments, QStringLiteral("process"), QStringLiteral("/captured")).error.isEmpty());
+        arguments[1] = invalid.data();
+        QVERIFY(!desktopintent::ParseArguments(2, arguments, QStringLiteral("process"), QStringLiteral("/captured")).error.isEmpty());
+    }
+#ifdef ENABLE_WALLET
+    void retainedFacadeDoesNotHoldPhysicalShutdownAfterStop()
+    {
+        ManualRoutedExecution commands;
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel factory; factory.setServices({commands.scheduler, post});
+        DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
+        QVERIFY(model.owner()->admit({Input(1)}, {})); model.setReady(true); drain();
+        model.inspectNext(); drain(); QVERIFY(model.inspection());
+        const QPointer<PaymentImportOperation> inspection{model.inspection()};
+        QSignalSpy changed{&model, &DesktopIntentModel::changed};
+        QSignalSpy inspection_changed{inspection.data(), &PaymentImportOperation::changed};
+        model.closeAdmission();
+        QCOMPARE(changed.count(), 0); QCOMPARE(inspection_changed.count(), 0);
+        factory.closeAdmission(); drain();
+        QVERIFY(inspection); // The cached presentation deliberately remains alive.
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
+    void creationReceiptSurvivesProjectionLossAndCannotCreateTwice()
+    {
+        ManualRoutedExecution commands;
+        BitcoinUriModel factory; factory.setServices({commands.scheduler, {}});
+        QObject presentation;
+        const auto receipt = std::make_shared<paymentimport::CreationReceipt>();
+        auto* operation = factory.requestImport({paymentimport::Input::Kind::Text, QStringLiteral("bitcoin:invalid")}, {}, &presentation, receipt);
+        QVERIFY(operation); const auto original = operation->requestId();
+        QVERIFY(receipt->state() == paymentimport::CreationReceipt::State::Accepted); QCOMPARE(receipt->source(), original);
+        QVERIFY(!factory.requestImport({paymentimport::Input::Kind::Text, QStringLiteral("bitcoin:another")}, {}, &presentation, receipt));
+        delete operation;
+        commands.drain();
+        QVERIFY(receipt->state() == paymentimport::CreationReceipt::State::Accepted); QCOMPARE(receipt->source(), original);
+        const auto unused = std::make_shared<paymentimport::CreationReceipt>(); unused->withdraw();
+        QVERIFY(!factory.requestImport({paymentimport::Input::Kind::Text, QStringLiteral("bitcoin:unused")}, {}, &presentation, unused));
+        QVERIFY(unused->state() == paymentimport::CreationReceipt::State::NotAccepted);
+        factory.closeAdmission(); commands.drain();
+    }
+    void facadeDefersInspectionUntilReadyAndRetainsOriginalFactoryReceipt()
+    {
+        ManualRoutedExecution commands;
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel factory; factory.setServices({commands.scheduler, post});
+        DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
+        QVERIFY(model.owner()->admit({Input(1)}, {})); drain();
+        QCOMPARE(model.pendingCount(), 1); QVERIFY(!model.canInspect()); model.inspectNext(); drain();
+        QVERIFY(!model.inspection());
+        model.setReady(true); drain(); QVERIFY(model.canInspect());
+        model.inspectNext(); drain(); QVERIFY(model.inspection()); QCOMPARE(model.pendingCount(), 0);
+        const auto original = model.inspection()->requestId();
+        QObject recipient_view;
+        auto* operation = model.takeInspection(&recipient_view); QVERIFY(operation); QCOMPARE(operation->requestId(), original);
+        QVERIFY(!model.inspection());
+        const auto original_owner = model.owner();
+        model.closeAdmission(); factory.closeAdmission(); delete operation; drain();
+        std::optional<desktopintent::Receipt> receipt;
+        QVERIFY(original_owner->lookup(QStringLiteral("1"), [&](auto value) { receipt = value; })); drain();
+        QVERIFY(receipt); QCOMPARE(receipt->inspection, static_cast<uint64_t>(original));
+    }
+#endif
     void failedBatchHasNoAcceptedPrefixOrConsumedIdentity()
     {
         desktopintent::Queue queue;

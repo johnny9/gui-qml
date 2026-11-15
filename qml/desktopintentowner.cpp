@@ -32,7 +32,7 @@ struct Owner::State {
     Queue queue;
     std::shared_ptr<const Sink> sink;
     std::map<uint64_t, std::shared_ptr<ReplyCell>> replies;
-    uint64_t sequence{0}, query_reply{0};
+    uint64_t sequence{0}, query_reply{0}, publication{0};
     bool wake_pending{false};
 };
 
@@ -61,7 +61,10 @@ execution::Admission Owner::submit(std::function<void()> decision, size_t payloa
 
 void Owner::publish()
 {
-    try { if (m_notify) m_notify(m_state->queue.snapshot()); } catch (...) {}
+    if (m_state->publication == std::numeric_limits<uint64_t>::max()) return;
+    auto snapshot = m_state->queue.snapshot();
+    snapshot.sequence = ++m_state->publication;
+    try { if (m_notify) m_notify(std::move(snapshot)); } catch (...) {}
 }
 
 execution::Admission Owner::admit(std::vector<Input> inputs, std::function<void(Admission)> done)

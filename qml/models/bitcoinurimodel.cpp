@@ -15,6 +15,7 @@
 #include <QCryptographicHash>
 #include <QPointer>
 #include <QUrl>
+#include <QtCore/qscopeguard.h>
 #include <algorithm>
 #include <atomic>
 #include <mutex>
@@ -191,9 +192,10 @@ PaymentImportOperation* BitcoinUriModel::requestImportFile(const QString& path, 
     const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
     return self && original_owner ? self->requestImport({paymentimport::Input::Kind::File, path}, target, original_owner) : nullptr;
 }
-PaymentImportOperation* BitcoinUriModel::requestImport(paymentimport::Input input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner)
+PaymentImportOperation* BitcoinUriModel::requestImport(paymentimport::Input input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner,
+                                                      std::shared_ptr<paymentimport::CreationReceipt> creation)
 {
-    return createImport(std::move(input), std::move(target), owner);
+    return createImport(std::move(input), std::move(target), owner, std::move(creation));
 }
 PaymentImportOperation* BitcoinUriModel::captureImport(WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
 {
@@ -212,22 +214,25 @@ PaymentImportOperation* BitcoinUriModel::requestImportPaste(const QString& text,
                                                          WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
 {
     paymentimport::Input input{paymentimport::Input::Kind::Text, text}; input.paste = true;
+    if (field != InputField::AddressField && field != InputField::AmountField && field != InputField::PrivateNoteField) return nullptr;
     switch (field) {
     case InputField::AddressField: input.field = paymentimport::SourceField::Address; break;
     case InputField::AmountField: input.field = paymentimport::SourceField::Amount; break;
     case InputField::PrivateNoteField: input.field = paymentimport::SourceField::PrivateNote; break;
-    default: return nullptr;
     }
     input.edited = edited; input.previous = previous; input.current = current;
     const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
     const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
     return self && original_owner ? self->requestImport(std::move(input), target, original_owner) : nullptr;
 }
-PaymentImportOperation* BitcoinUriModel::createImport(std::optional<paymentimport::Input> input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner)
+PaymentImportOperation* BitcoinUriModel::createImport(std::optional<paymentimport::Input> input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner,
+                                                     std::shared_ptr<paymentimport::CreationReceipt> creation)
 {
+    if (creation && !creation->begin()) return nullptr;
+    const auto finish_creation = qScopeGuard([creation] { if (creation) creation->notAccepted(); });
     if (m_closed || !owner || !m_services.scheduler || (input && (input->value.size() > 1024 * 1024 ||
         input->previous.size() > 1024 * 1024 || input->current.size() > 1024 * 1024)) ||
-        m_sequence == std::numeric_limits<quint64>::max()) return nullptr;
+        m_sequence == std::numeric_limits<quint64>::max() || (creation && creation->withdrawn())) return nullptr;
     bool capacity;
     { std::lock_guard lock{m_operations->import_mutex}; capacity = m_operations->imports.size() >= MAX_OPERATIONS; }
     if (capacity) { Q_EMIT requestRejected(Rejection::Capacity); return nullptr; }
@@ -252,7 +257,18 @@ PaymentImportOperation* BitcoinUriModel::createImport(std::optional<paymentimpor
     operation->m_snapshot.phase = input ? paymentimport::Phase::Reading : paymentimport::Phase::Empty; operation->m_snapshot.pending = input.has_value();
     operation->m_export_services.scheduler = m_services.scheduler; operation->m_export_services.post = post;
     { std::lock_guard lock{registry->import_mutex}; registry->imports.emplace(operation->requestId(), actor); }
-    if ((input && !actor->inspect(std::move(*input))) || !actor->chooseTarget(std::move(target)) || !observer || admission->load()) {
+    if (creation && creation->withdrawn()) {
+        actor->close(); if (observer) delete observer.data(); return nullptr;
+    }
+    if (input) {
+        if (!actor->inspect(std::move(*input))) {
+            actor->close(); if (observer) delete observer.data(); return nullptr;
+        }
+        // Admission is the authoritative creation event. A reentrant observer
+        // loss or later target rejection cannot erase this original identity.
+        if (creation) creation->accepted(identity);
+    }
+    if (!actor->chooseTarget(std::move(target)) || !observer || admission->load() || (creation && creation->withdrawn())) {
         actor->close(); if (observer) delete observer.data(); return nullptr;
     }
     return observer;
