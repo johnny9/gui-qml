@@ -60,6 +60,13 @@ struct Fixture {
     }
     ~Fixture() { if (model) model->closeAdmission(); commands.drain(); model.reset(); opening->retire(); commands.drain(); retirement.drain(); }
     void publish() { while (!publications.empty()) { auto turn = std::move(publications.front()); publications.pop_front(); turn(); } }
+    void admitCommitNative() {
+        // M04 authorizes the exact review on Domain before admitting the
+        // Native command. Hold that effect and its receipt independently.
+        for (int turn = 0; turn < 16 && commands.nextLane() == execution::Lane::Domain; ++turn)
+            QVERIFY(commands.step(execution::Lane::Domain));
+        QCOMPARE(commands.nextLane(), std::optional{execution::Lane::Core});
+    }
     void finish() {
         for (int turn = 0; turn < 16; ++turn) {
             commands.drain();
@@ -136,6 +143,7 @@ private Q_SLOTS:
         const auto owner = fixture.model->commitOperation(); password = "changed editor";
         QCOMPARE(wallet->unlocks, 0); QCOMPARE(wallet->calls.commitBumpTransaction.load(), 0);
         if (close_first) fixture.model->closeAdmission();
+        fixture.admitCommitNative();
         QVERIFY(fixture.commands.step(execution::Lane::Core));
         QCOMPARE(wallet->unlocks, 1); QCOMPARE(wallet->locks, 1); QVERIFY(committed_locked);
         QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1); QVERIFY(!owner->result());
@@ -160,6 +168,7 @@ private Q_SLOTS:
         QVERIFY(fixture.commands.step(execution::Lane::Domain)); // Admit its captured Core effect.
         QCOMPARE(wallet->calls.createBumpTransaction.load(), 0);
         QVERIFY(fixture.publications.empty());
+        fixture.admitCommitNative();
         QVERIFY(fixture.commands.step(execution::Lane::Core));
         QCOMPARE(wallet->calls.createBumpTransaction.load(), 1);
         QCOMPARE(model.state(), BumpTransactionModel::Preparing);
@@ -234,6 +243,7 @@ private Q_SLOTS:
         QVERIFY(owner->result()); QVERIFY(owner->result()->publication_failed); QVERIFY(owner->result()->value->committed);
         QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);
         fixture.model->retryPublications();
+        fixture.finish();
         QCOMPARE(fixture.model->state(), BumpTransactionModel::Succeeded);
         fixture.model->retryPublications(); fixture.publish();
         QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);
@@ -422,6 +432,7 @@ private Q_SLOTS:
     void knownReplacementPolicyConflictRequiresExplicitReprepare()
     {
         auto wallet = MakeBumpableWallet();
+        wallet->sign_bump_transaction_fn = [](CMutableTransaction&) { return true; };
         int reads{0};
         Txid inspected_hash;
         CAmount inspected_fee{0};

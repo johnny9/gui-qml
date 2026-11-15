@@ -303,7 +303,7 @@ void BumpTransactionModel::publishCommit(quint64 attempt, quint64 commit)
     if (result->error) value.error = walletbump::Error::Uncertain;
     const auto outcome = value.committed ? transactionattempt::Phase::Settled
         : value.error == walletbump::Error::NeedsUnlock || value.error == walletbump::Error::IncorrectPassphrase ? transactionattempt::Phase::NeedsUnlock
-        : value.error == walletbump::Error::Ineligible || value.error == walletbump::Error::Changed || value.error == walletbump::Error::Policy ? transactionattempt::Phase::NeedsRevalidation
+        : value.error == walletbump::Error::Ineligible || value.error == walletbump::Error::Policy ? transactionattempt::Phase::NeedsRevalidation
         : value.error == walletbump::Error::Uncertain || value.error == walletbump::Error::RelockFailed || result->error ? transactionattempt::Phase::Uncertain
         : transactionattempt::Phase::Failed;
     const auto owner = m_attempt_owner;
@@ -384,6 +384,7 @@ void BumpTransactionModel::reset()
     m_attempt_ticket = {};
     m_prepare_operation.reset();
     m_review.reset();
+    m_attempt_snapshot = {};
     clearPresentation();
     m_state = m_preparing ? Discarding : Idle;
     publish();
