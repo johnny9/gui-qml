@@ -38,6 +38,8 @@ std::string Encode(const QmlRecentRequestEntry& entry);
  * decode serialized request strings on a GUI consumer. */
 struct PreparedRequest {
     QString id, date, date_iso, address, address_short, address_type, label, message, note, amount, uri;
+    // Bounded history/detail summaries, never editable persistence values.
+    QString label_preview, message_preview, note_preview;
     int64_t numeric_id{0};
     uint64_t revision{0};
     CAmount amount_sats{0};

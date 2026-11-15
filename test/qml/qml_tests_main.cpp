@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/texteditsessionmodel.h>
+#include <qml/receivetyperegistration.h>
+#include <qml/components/ownedqrimage.h>
 #include <qml/models/exacttextdocument.h>
 #include <qml/models/messagesigningprompt.h>
 #include <qml/guipresentation.h>
@@ -16,6 +18,7 @@
 #include <qml/models/signerdiscoverymodel.h>
 #include <QCryptographicHash>
 #include <test/mocks/manualexecutionenvironment.h>
+#include <test/mocks/receiveqmlfixture.h>
 #include <QDir>
 
 #include <QAbstractListModel>
@@ -1849,6 +1852,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool canManagePassphrase MEMBER m_can_manage_passphrase NOTIFY walletInfoChanged)
     Q_PROPERTY(QString settingsError MEMBER m_settings_error NOTIFY settingsErrorChanged)
     Q_PROPERTY(MockWalletSecurity* security READ security CONSTANT)
+    Q_PROPERTY(WalletReceiveModel* receive READ receive NOTIFY receiveChanged)
     Q_PROPERTY(int securityState MEMBER m_security_state NOTIFY securityOperationChanged)
     Q_PROPERTY(bool securityBusy READ securityBusy NOTIFY securityOperationChanged)
     Q_PROPERTY(QString securityError MEMBER m_settings_error NOTIFY securityOperationChanged)
@@ -1916,8 +1920,15 @@ public:
         });
     }
 
+    WalletReceiveModel* receive() const { return m_receive; }
+    Q_INVOKABLE void setReceive(WalletReceiveModel* value) { if (m_receive != value) { m_receive = value; Q_EMIT receiveChanged(); } }
     QObject* currentTransactionFlowDetails() { return &m_flow_details; }
     quint64 currentTransactionFlowRevision() const { return m_flow_revision; }
+
+Q_SIGNALS:
+    void receiveChanged();
+public:
+    QPointer<WalletReceiveModel> m_receive;
 
     QVariantMap currentTransactionFlow() const { return {{"presentation", PrepareTransactionFlowPresentation(m_current_transaction_flow)}}; }
     void setCurrentTransactionFlow(const QVariantMap& flow) { m_current_transaction_flow = flow; Q_EMIT currentTransactionChanged(); }
@@ -6738,6 +6749,9 @@ public Q_SLOTS:
         );
         qmlRegisterUncreatableType<MockNodeModel>("org.bitcoincore.qt", 1, 0, "NodeModel", "Provided by ApplicationModels");
         qmlRegisterType<BitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
+        RegisterReceiveTypes();
+        qmlRegisterType<ReceiveQmlFixture>("org.bitcoincore.qt", 1, 0, "ControlledReceiveFixture");
+        qmlRegisterType<OwnedQrImage>("org.bitcoincore.qt", 1, 0, "OwnedQrImage");
         qmlRegisterType<MockBitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
         qmlRegisterType<MockActivityFilterProxyModel>("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel");
         qmlRegisterUncreatableType<MockTransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Test fixture");

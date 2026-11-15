@@ -141,6 +141,44 @@ class WalletReservationTests : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void initTestCase() { SelectBaseParams(ChainType::MAIN); SelectParams(ChainType::MAIN); }
+    void aggregateKeypoolUnavailabilityIsNotATypeSupportFailure()
+    {
+        Fixture f; f.wallet->encrypted = true; f.wallet->locked = true; f.wallet->can_generate = false;
+        const auto original = f.settle(Reserve());
+        QCOMPARE(original->result()->error, Error::LockedAttemptFailed); QCOMPARE(f.wallet->generated, 1);
+        const auto resumed = f.settle(f.Resume(original, "correct"));
+        QCOMPARE(resumed->result()->error, Error::None); QVERIFY(resumed->result()->address->persisted);
+        QCOMPARE(f.wallet->unlocked, 1); QCOMPARE(f.wallet->relocked, 1); QVERIFY(f.wallet->locked);
+    }
+    void successfulAuthorizationKeepsALaterGenerationFailureSeparate()
+    {
+        Fixture f; f.wallet->encrypted = true; f.wallet->locked = true;
+        const auto original = f.settle(Reserve()); QCOMPARE(original->result()->error, Error::LockedAttemptFailed);
+        f.wallet->fail_generate = true;
+        const auto resumed = f.settle(f.Resume(original, "correct"));
+        QCOMPARE(resumed->result()->error, Error::AddressCreation);
+        QVERIFY(!resumed->result()->address); QCOMPARE(f.wallet->unlocked, 1); QCOMPARE(f.wallet->relocked, 1); QVERIFY(f.wallet->locked);
+    }
+    void preferenceFailureRetainsTheGeneratedAddressAndRetryDoesNotAllocateAgain()
+    {
+        Fixture f; auto command = Reserve(); command.remember_type = true;
+        const auto original = f.settle(command);
+        QCOMPARE(original->result()->error, Error::PreferencePersistence); QVERIFY(original->result()->address->persisted);
+        QVERIFY(original->result()->preference_requested); QVERIFY(!original->result()->preference_saved);
+        const auto address = original->result()->address->address;
+        const auto retry = f.settle(f.Resume(original, ""));
+        QCOMPARE(retry->result()->error, Error::PreferencePersistence); QCOMPARE(retry->result()->address->address, address);
+        QCOMPARE(f.wallet->generated, 1); QCOMPARE(f.wallet->unlocked, 0);
+    }
+    void revokedReservationCannotBeConsumedEvenBeforeItsGuiReplacementArrives()
+    {
+        Fixture f; const auto reserved = f.settle(Reserve()); const auto address = reserved->result()->address->address;
+        RevokeAddressIntent(reserved->address_intent);
+        Command create; create.kind = Kind::Create; create.consume_address = true; create.require_unused = true;
+        create.reservation = reserved->address_intent; create.draft.address = address;
+        const auto refused = f.settle(create); QCOMPARE(refused->result()->error, Error::Changed);
+        QVERIFY(!refused->result()->request_saved); QCOMPARE(f.wallet->writes, 0); QCOMPARE(f.wallet->generated, 1);
+    }
     void persistedReservationsKeepExactWalletIdentity_data()
     {
         QTest::addColumn<QString>("parent_name");
@@ -433,7 +471,7 @@ private Q_SLOTS:
     void resettingInvalidatesTheOriginalPasswordQuestion()
     {
         Fixture f; f.wallet->encrypted = true; f.wallet->locked = true;
-        const auto question = f.settle(Reserve()); QCOMPARE(question->result()->error, Error::NeedsUnlock);
+        const auto question = f.settle(Reserve()); QCOMPARE(question->result()->error, Error::LockedAttemptFailed);
         Command reset; reset.kind = Kind::ForgetAddress; reset.clear_reservation = true;
         QCOMPARE(f.settle(reset)->result()->error, Error::None);
         const auto resumed = f.settle(f.Resume(question, "correct"));
@@ -467,7 +505,7 @@ private Q_SLOTS:
     void passwordQuestionRetainsItsOriginalAttemptAndRelocks()
     {
         Fixture f; f.wallet->encrypted = true; f.wallet->locked = true;
-        const auto question = f.settle(Reserve()); QCOMPARE(question->result()->error, Error::NeedsUnlock);
+        const auto question = f.settle(Reserve()); QCOMPARE(question->result()->error, Error::LockedAttemptFailed);
         const auto retry = f.Resume(question, "correct"); const auto secret = retry.secret;
         const auto ready = f.settle(retry);
         QCOMPARE(ready->address_intent, question->address_intent);
@@ -549,7 +587,7 @@ private Q_SLOTS:
     void aQuestionDoesNotPinPhysicalOpeningDrain()
     {
         Fixture f; f.wallet->encrypted = true; f.wallet->locked = true;
-        const auto question = f.settle(Reserve()); QCOMPARE(question->result()->error, Error::NeedsUnlock);
+        const auto question = f.settle(Reserve()); QCOMPARE(question->result()->error, Error::LockedAttemptFailed);
         f.store->close(); f.opening->retire(); f.client.reset(); f.commands.drain(); f.cleanup.drain();
         const auto closed = f.opening->take();
         QVERIFY(closed && closed->phase == walletopening::Phase::Closed); QVERIFY(question->address_intent);

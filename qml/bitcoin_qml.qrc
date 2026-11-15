@@ -58,6 +58,12 @@
         <file>components/QRCodePopup.qml</file>
         <file>components/PaymentRequestCard.qml</file>
         <file>components/PaymentRequestModal.qml</file>
+        <file>components/RequestDetailsHost.qml</file>
+        <file>components/ReceiveRequestModal.qml</file>
+        <file>components/ReceiveRequestEditorCard.qml</file>
+        <file>components/ReceiveEditorFields.qml</file>
+        <file>components/ReceiveEditorCloseQuestion.qml</file>
+        <file>components/SavedRequestSharing.qml</file>
         <file>components/OnboardingSettingsPopup.qml</file>
         <file>components/WalletCreationModal.qml</file>
         <file>components/WalletCreationHost.qml</file>
@@ -231,6 +237,8 @@
         <file>pages/wallet/WalletSettingsStack.qml</file>
         <file>pages/wallet/WalletView.qml</file>
         <file>pages/wallet/ReceivePage.qml</file>
+        <file>pages/wallet/ReceiveWorkspace.qml</file>
+        <file>pages/wallet/ReceiveViewHost.qml</file>
         <file>pages/wallet/SendTransactionReview.qml</file>
         <file>pages/wallet/SpeedUpOverlay.qml</file>
         <file>pages/wallet/SignVerifyMessage.qml</file>

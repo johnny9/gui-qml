@@ -20,7 +20,9 @@ using Producer = std::function<bool(const std::string&)>;
 struct FileVersion { std::string digest; Error error{Error::None}; };
 FileVersion ReadVersion(QIODevice& device);
 Proposal Inspect(const std::string& raw, const std::string& wallet_name);
-WriteResult Write(const Proposal& approved, bool destination_approved, const Producer& producer, InstallCoordinator& coordinator);
+Proposal InspectPng(const std::string& raw);
+WriteResult Write(const Proposal& approved, bool destination_approved, const Producer& producer, InstallCoordinator& coordinator,
+                  std::function<bool()> admission = {});
 } // namespace backup
 
 #endif // BITCOIN_QML_MODELS_BACKUPPOLICYIO_H

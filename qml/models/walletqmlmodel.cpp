@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/walletqmlmodel.h>
+#include <qml/walletreceiveadapter.h>
 #include <qml/walletidentity.h>
 #include <qml/walletsend.h>
 #include <qml/wallettransaction.h>
@@ -366,6 +367,15 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
         m_opening->onTransactions([weak = std::weak_ptr<walletreceipts::Reader>{m_receipts}](uint64_t revision, std::map<Txid, ChangeType> changes, bool rescan) {
             if (const auto owner = weak.lock()) owner->notice(revision, std::move(changes), rescan);
         });
+        if (!m_backup_services.coordinator) m_backup_services.coordinator = std::make_shared<backup::InstallCoordinator>();
+        m_receive = new WalletReceiveModel(2, MakeReceivePorts(m_opening, m_request_store,
+            {m_opening->scheduler(), m_fee_read_services.post}, m_backup_services.coordinator), this);
+        connect(m_receive->reservation(), &ReceiveReservationModel::changed, this, [this] {
+            if (!m_receive->reservation()->generationPersisted()) return;
+            const auto type = m_receive->reservation()->lastGeneratedAddressType();
+            if ((type != QStringLiteral("legacy") && type != QStringLiteral("p2sh-segwit") && type != QStringLiteral("bech32") && type != QStringLiteral("bech32m")) || m_proven_receive_types.contains(type)) return;
+            m_proven_receive_types.insert(type); Q_EMIT openingMetadataChanged();
+        });
     }
     connect(m_receiving_address, &PaymentRequest::addressChanged, this, &WalletQmlModel::refreshReceiveRequestPayments);
     reloadReceiveRequests();
@@ -569,6 +579,7 @@ void WalletQmlModel::publishOpening()
         m_security->observe(metadata); if (!guard || m_stopping) return;
         if (name_changed) { Q_EMIT nameChanged(); if (!guard || m_stopping) return; }
         Q_EMIT openingMetadataChanged(); if (!guard || m_stopping) return;
+        if (m_receive) m_receive->refresh(); if (!guard || m_stopping) return;
     }
     if (update->preference_saved && update->preference_revision == m_opening->preferenceRevision()) {
         m_receive_preference_pending = false;
@@ -672,6 +683,7 @@ void WalletQmlModel::checkShutdownFinished()
 void WalletQmlModel::closeAdmission()
 {
     const bool admission_changed = !std::exchange(m_admission_closed, true);
+    if (m_receive) m_receive->retire();
     if (m_transaction_attempt) m_transaction_attempt->close({});
     m_preparation_projection.phase = transactionattempt::Phase::Closed;
     m_preparation_projection.candidate.reset();
@@ -1411,7 +1423,7 @@ ImageExportOperation* WalletQmlModel::savePaymentRequestImage(PaymentRequest* re
         !request || (request != m_current_payment_request && request != m_detail_payment_request && request != m_receiving_address) ||
         request->paymentReceived() || request->qrPayload().isEmpty()) return nullptr;
     const auto* record = m_receive_requests->preparedEntry(request->id());
-    if (!record || record->entry.payment_received || record->display.uri != request->qrPayload()) return nullptr;
+    if (!record || record->entry.payment_received || !request->matchesStoredRevision(record->revision)) return nullptr;
     const auto publication = m_receive_requests->snapshot();
     if (!publication || !m_request_store->presentationCurrent() || publication->revision != m_request_store->revision()) return nullptr;
     imageexport::Identity identity{m_opening->identity(), request->id(), request->qrPayload(), request->generation(), request->revision()};
@@ -1449,7 +1461,7 @@ void WalletQmlModel::clearSettingsError()
 
 QVariantList WalletQmlModel::availableReceiveAddressTypes() const
 {
-    if (!available() || !m_metadata_known || !m_can_get_addresses) {
+    if (!available() || !m_metadata_known) {
         return {};
     }
 
@@ -1469,6 +1481,10 @@ QVariantList WalletQmlModel::availableReceiveAddressTypes() const
         item.insert(QStringLiteral("id"), OutputTypeId(type));
         item.insert(QStringLiteral("label"), OutputTypeLabel(type));
         item.insert(QStringLiteral("description"), OutputTypeDescription(type));
+        const bool proven = m_proven_receive_types.contains(OutputTypeId(type)) || (type == OutputType::BECH32M && m_taproot);
+        item.insert(QStringLiteral("capability"), static_cast<int>(proven ? ReceiveTypeStatus::Support::Proven : ReceiveTypeStatus::Support::Unknown));
+        item.insert(QStringLiteral("generationAvailability"), static_cast<int>(m_can_get_addresses ? ReceiveTypeStatus::Availability::Unknown : ReceiveTypeStatus::Availability::Unavailable));
+        if (!proven) item.insert(QStringLiteral("description"), QString{OutputTypeDescription(type) + QLatin1Char(' ') + tr("Support for this type will be checked when generating an address.")});
         types.append(item);
     }
     return types;
@@ -1646,7 +1662,7 @@ ReceiveRequestOperation* WalletQmlModel::submitRequest(walletrequests::Command c
             }
         }
         if (apply && intent) {
-            target->setNeedsUnlock(result.error == walletrequests::Error::NeedsUnlock || result.error == walletrequests::Error::IncorrectPassphrase);
+            target->setNeedsUnlock(result.error == walletrequests::Error::NeedsUnlock || result.error == walletrequests::Error::LockedAttemptFailed || result.error == walletrequests::Error::IncorrectPassphrase);
             if (!observer || !target || observer->m_stopping) return;
             target->setUnlockError(result.error == walletrequests::Error::IncorrectPassphrase ? error_text : QString{});
             if (!observer || !target || observer->m_stopping) return;
@@ -1798,7 +1814,9 @@ bool WalletQmlModel::applyRequest(PaymentRequest* target, walletrequests::Prepar
     if (!update(0, [&] { target->setNeedsUnlock(false); })) return false;
     if (!update(0, [&] { target->setUnlockError({}); })) return false;
     if (!update(0, [&] { target->setIsEditing(false); })) return false;
-    return update(0, [&] { target->setPreparedPayload(data.uri); });
+    if (!update(0, [&] { target->setPreparedPayload(data.uri); })) return false;
+    target->setStoredRevision(data.revision);
+    return true;
 }
 
 bool WalletQmlModel::receiveRequestReconciliationPending() const
@@ -1820,6 +1838,7 @@ void WalletQmlModel::publishRequestHistory()
     m_request_storage_loaded = update->loaded;
     m_request_storage_busy = update->busy;
     m_request_storage_error = ReceiveRequestOperation::ErrorText(update->error);
+    if (m_receive) m_receive->refresh();
     Q_EMIT receiveRequestReconciliationPendingChanged();
     if (!observer || m_stopping) return;
     if (!update->snapshot) { Q_EMIT receiveRequestStorageChanged(); return; }

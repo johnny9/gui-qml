@@ -251,7 +251,14 @@ void ReceiveRequestHistoryModelTests::modelRolesMatchEntry()
     QCOMPARE(model.data(idx, ReceiveRequestHistoryModel::MessageRole).toString(), QString{"lunch"});
     QCOMPARE(model.data(idx, ReceiveRequestHistoryModel::NoteSelfRole).toString(), QString{"self"});
     QCOMPARE(model.data(idx, ReceiveRequestHistoryModel::AmountSatRole).toLongLong(), qlonglong{10000});
-    QVERIFY(model.data(idx, ReceiveRequestHistoryModel::UriRole).toString().startsWith("bitcoin:"));
+    QVERIFY(model.data(idx, ReceiveRequestHistoryModel::UriRole).toString().isEmpty());
+    const auto selected_payload = ReceiveRequestHistoryModel::BuildBitcoinUri(
+        model.data(idx, ReceiveRequestHistoryModel::AddressRole).toString(),
+        model.data(idx, ReceiveRequestHistoryModel::AmountSatRole).toLongLong(),
+        model.data(idx, ReceiveRequestHistoryModel::LabelRole).toString(),
+        model.data(idx, ReceiveRequestHistoryModel::MessageRole).toString());
+    QCOMPARE(selected_payload, QStringLiteral("bitcoin:1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2?amount=0.00010000&label=Alice&message=lunch"));
+    QVERIFY(!selected_payload.contains(QStringLiteral("self")));
 }
 
 void ReceiveRequestHistoryModelTests::setEntriesOrdersSameSecondRequestsById()
