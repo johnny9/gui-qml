@@ -406,7 +406,7 @@ private Q_SLOTS:
         QCOMPARE(f.node.calls.getNodesStats.load(), reads);
         QCOMPARE(f.ban_writes, legacy ? 1 : 0); QCOMPARE(f.address_disconnects, legacy ? 1 : 0);
         QCOMPARE(f.commands->lastResult().mutationAttempted, legacy);
-        QCOMPARE(f.commands->lastResult().outcome, legacy ? PeerCommandOperation::Succeeded : PeerCommandOperation::Rejected);
+        QCOMPARE(f.commands->lastResult().outcome, legacy ? PeerCommandOperation::Outcome::Succeeded : PeerCommandOperation::Outcome::Rejected);
         if (legacy) { QCOMPARE(received_seconds, seconds); QCOMPARE(received_address, QStringLiteral("10.0.0.7")); }
         else { QVERIFY(!operation->pending()); QVERIFY(!operation->errorText().isEmpty()); }
     }
