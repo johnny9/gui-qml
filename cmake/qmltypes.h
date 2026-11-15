@@ -5,6 +5,8 @@
 #ifndef BITCOIN_CMAKE_QMLTYPES_H
 #define BITCOIN_CMAKE_QMLTYPES_H
 
+
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <qml/appmode.h>
 #include <qml/applicationmodels.h>
 #include <qml/bitcoinamount.h>
@@ -551,4 +553,14 @@ struct OnboardingOptionsModelForeign {
     QML_ANONYMOUS
 };
 
+
+#ifdef ENABLE_WALLET
+struct PaymentImportOperationForeign {
+    Q_GADGET
+    QML_FOREIGN(PaymentImportOperation)
+    QML_NAMED_ELEMENT(PaymentImportOperation)
+    QML_UNCREATABLE("Owned by an import request")
+};
+
+#endif
 #endif // BITCOIN_CMAKE_QMLTYPES_H

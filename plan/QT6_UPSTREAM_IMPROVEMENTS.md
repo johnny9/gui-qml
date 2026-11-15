@@ -472,3 +472,14 @@ counts; quiet-close and blocked real-worker/GUI-pulse tests cover lifetime and
 delivery. These are controlled app returns; real Core/RPC invalidation and
 successful replacement keep separate evidence. No Core edit or external issue
 submission is authorized.
+
+## R26 typed read-only PSBT review adapter
+
+[R26 upstream notes](R26_UPSTREAM_NOTES.md) record the missing single typed,
+immutable public review result and documented observation boundary. The app
+uses existing public Wallet reads through `psbtwork::PrepareReview`, exact
+unsigned commitments, a Native-retained per-child outcome and original
+opening/review/view guards. This API improvement is optional for M26: no Core
+edit is required for independent source inspection or atomic local draft
+replacement. Later signing/submission retains its separate protected checks.
+The [focused R26 receipt](evidence/R26_FOCUSED.json) qualifies the Source/target/explicit consumer component; R27 and R42 remain separate.

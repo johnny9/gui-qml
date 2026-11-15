@@ -92,6 +92,8 @@ file(GLOB_RECURSE QML_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/qml/*.cpp" "${CMAKE_C
 list(FILTER QML_SOURCES EXCLUDE REGEX "androidnotifier\\.(cpp|h)$")
 # Wallet implementations and their moc objects must not enter a node-only link.
 if(NOT ENABLE_WALLET)
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/paymentimport[^/]*\\.(cpp|h)$")
+  list(FILTER QML_SOURCES EXCLUDE REGEX "qml/models/paymentimportoperation\\.(cpp|h)$")
   list(FILTER QML_SOURCES EXCLUDE REGEX "qml/walletqmlcontroller\\.(cpp|h)$")
   list(FILTER QML_SOURCES EXCLUDE REGEX "qml/walletlifecycle\\.(cpp|h)$")
   list(FILTER QML_SOURCES EXCLUDE REGEX "qml/walletopening\\.(cpp|h)$")

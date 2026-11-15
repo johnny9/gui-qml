@@ -56,6 +56,9 @@ public:
     void setOpening(std::shared_ptr<walletopening::Session> opening, execution::SnapshotServices services);
     void closeAdmission();
     void setOwnerAdmissionGate(std::shared_ptr<std::atomic_bool> gate) { m_owner_closed = std::move(gate); m_address->setOwnerAdmissionGate(m_owner_closed); m_amount->setOwnerAdmissionGate(m_owner_closed); }
+    void setInputAdmissionGate(std::shared_ptr<std::atomic_bool> gate) { m_edit_gate = std::move(gate); m_address->setInputAdmissionGate(m_edit_gate); m_amount->setInputAdmissionGate(m_edit_gate); }
+    void projectImportedPayment(const senddraft::Recipient& value, const QString& formatted_address,
+                                bool amount_changed, bool private_note_changed);
     void retryPublications();
     quint64 identity() const { return m_identity; }
     bool validationPending() const { return !admissionClosed() && (m_pending || m_address->normalizationPending()); }
@@ -105,6 +108,8 @@ Q_SIGNALS:
 
 private:
     bool admissionClosed() const { return m_closed || (m_owner_closed && m_owner_closed->load()); }
+    bool inputAdmissionClosed() const { return admissionClosed() || (m_edit_gate && m_edit_gate->load()); }
+    std::shared_ptr<std::atomic_bool> m_edit_gate;
     struct Retired;
     std::shared_ptr<Retired> m_retired;
     std::shared_ptr<std::atomic_bool> m_owner_closed;
