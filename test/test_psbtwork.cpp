@@ -1250,6 +1250,7 @@ private Q_SLOTS:
             QVERIFY(result.snapshot);
             QCOMPARE(result.snapshot->can_broadcast, compatible);
             QCOMPARE(result.snapshot->complete, compatible);
+            QCOMPARE(result.snapshot->signature_state, compatible ? psbtwork::SignatureState::Verified : psbtwork::SignatureState::Invalid);
             if (!compatible) QVERIFY(!result.snapshot->error.isEmpty());
         } else {
             QCOMPARE(result.code, compatible ? psbtwork::Error::None : psbtwork::Error::Invalid);
@@ -1377,7 +1378,7 @@ private Q_SLOTS:
             QCOMPARE(result.review->can_send, mode == 10 || mode == 14 || mode == 16);
             QCOMPARE(result.key_can_send, mode == 14);
             QCOMPARE(result.can_commit_complete, mode == 10 || mode == 14 || mode == 15 || mode == 16 || mode == 19);
-            QCOMPARE(result.key_can_broadcast, mode == 6 || mode == 9 || mode == 10 || mode == 16);
+            QCOMPARE(result.key_can_broadcast, mode == 9 || mode == 10 || mode == 16);
             if (mode == 6) {
                 QVERIFY(!result.review->can_send); QVERIFY(!result.key_can_send); QVERIFY(!result.can_commit_complete);
                 QCOMPARE(result.review->proof->state, psbtfee::State::Invalid);

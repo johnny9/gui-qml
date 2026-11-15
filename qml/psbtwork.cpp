@@ -579,7 +579,7 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         const bool signer = !wallet.privateKeysDisabled() || wallet.hasExternalSigner();
         result.key_can_send = !multisig && owned_inputs && signer && snapshot->unsigned_inputs > 0 && snapshot->could_sign >= snapshot->unsigned_inputs;
         result.can_commit_complete = !multisig && owned_inputs;
-        result.key_can_broadcast = snapshot->complete;
+        result.key_can_broadcast = snapshot->can_broadcast;
         const bool may_send = result.can_commit_complete && (snapshot->complete || result.key_can_send);
         auto review = std::make_shared<walletreview::Snapshot>();
         review->transaction = MakeTransactionRef(*tx);

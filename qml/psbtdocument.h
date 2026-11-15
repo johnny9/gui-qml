@@ -5,7 +5,7 @@
 #ifndef BITCOIN_QML_PSBTDOCUMENT_H
 #define BITCOIN_QML_PSBTDOCUMENT_H
 
-#include <qml/psbtwork.h>
+#include <qml/psbtworktypes.h>
 
 #include <atomic>
 #include <cstdint>

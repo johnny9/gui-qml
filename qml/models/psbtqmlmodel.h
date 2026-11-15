@@ -29,6 +29,7 @@ class PsbtQmlModel : public QObject
     Q_PROPERTY(bool canSign READ canSign NOTIFY changed)
     Q_PROPERTY(bool canBroadcast READ canBroadcast NOTIFY changed)
     Q_PROPERTY(bool complete READ complete NOTIFY changed)
+    Q_PROPERTY(bool signaturesVerified READ signaturesVerified NOTIFY changed)
     Q_PROPERTY(int unsignedInputCount READ unsignedInputCount NOTIFY changed)
     Q_PROPERTY(int couldSignInputCount READ couldSignInputCount NOTIFY changed)
     Q_PROPERTY(QString matchedTxid READ matchedTxid NOTIFY changed)
@@ -62,6 +63,7 @@ public:
     bool canSign() const { return !busy() && !m_closed && m_phase != Phase::Uncertain && !m_signing_blocked && m_snapshot && m_snapshot->can_sign; }
     bool canBroadcast() const { return !busy() && !m_closed && m_snapshot && m_snapshot->can_broadcast && !m_broadcast_blocked; }
     bool complete() const { return m_snapshot && m_snapshot->complete; }
+    bool signaturesVerified() const { return m_snapshot && m_snapshot->signature_state == psbtwork::SignatureState::Verified; }
     int unsignedInputCount() const { return m_snapshot ? m_snapshot->unsigned_inputs : 0; }
     int couldSignInputCount() const { return m_snapshot ? m_snapshot->could_sign : 0; }
     QString matchedTxid() const { return m_matched_txid; }

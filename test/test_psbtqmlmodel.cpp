@@ -922,6 +922,7 @@ private Q_SLOTS:
         QCOMPARE(PsbtQmlModel::SavePsbtToFile(psbt, path), QString{});
         QCOMPARE(AwaitLoad(model, path), QString{});
         QVERIFY(model.complete());
+        QCOMPARE(model.signaturesVerified(), !forged);
         const bool can_broadcast = model.canBroadcast();
         model.broadcast(); QVERIFY(AwaitIdle(model));
         if (forged) {

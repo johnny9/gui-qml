@@ -14,6 +14,10 @@ Closing an alive facade releases its owner and structural aliases without
 requiring a queued GUI notification to run. Accepted work retains its original
 owner until the physical effect and Domain outcome finish.
 
+The shared value types live in `psbtworktypes.h`; the Domain owner does not
+include the Native effect API. App lint caught the initial mutual include;
+separating the values removes it without changing the cycle allowlist.
+
 The imported document and the metadata/finalization assessment are separate
 immutable values. Copy/save preserve the original bytes. Inspection may use a
 captured assessment to verify signatures and explain eligibility. It must not
@@ -46,6 +50,13 @@ prevouts before reporting completion, retaining finalized signer results or
 broadcasting. Valid partial results remain possible; an invalid finalized input
 does not become signing authority. A different physical device is acceptable
 only when its result satisfies the original keys and immutable reviewed terms.
+
+`SignatureState` distinguishes Unverified, Incomplete, Invalid and Verified.
+The compatibility `complete` fact can still describe finalized fields when
+input evidence is unavailable. `signaturesVerified` and action permissions
+derive from the explicit state; unverified evidence cannot grant broadcast.
+A localized empty metadata error cannot grant authority or be mislabeled as
+a missing fee when the fee is actually known.
 
 The standalone guard is implemented but remains unqualified. Full R24 held-device,
 timeout, stale-publication and partial-result obligations remain open; no physical
@@ -91,6 +102,12 @@ Artifacts are under `.validation/qt6-r11-r40-20261114/R21/` in the workspace:
   declaration because the pinned Core type is a `class`. Zero bodies executed;
   the declaration is corrected in the next candidate. No application failure
   or passing test is attributed to this compile error.
+- Source04 `cf1c99c6393`: 261 bodies executed, 257 passed and four older
+  finalization/translation expectations failed. All eleven actual Core/UI
+  bodies and all six compatible/incompatible-key cases passed. QML lint passed
+  247 files in each compatibility variant. The next candidate separates
+  verified signatures from finalized fields and preserves the typed metadata
+  error guard. App lint also found the new include cycle, fixed as above.
 
 Final app lint, pinned Clang23/Bitcoin-plugin tidy including fresh MOCs, affected
 ordinary behavior/Core/UI checks and a precise final scope report are still

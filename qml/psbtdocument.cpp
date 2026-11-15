@@ -26,14 +26,16 @@ void psbtdocument::Qualify(psbtwork::Snapshot& snapshot)
         && assessed && psbtfee::MatchesReview(*assessed, *snapshot.proof, snapshot.proof->amount);
     if (amounts_verified && !psbtsignatures::VerifyFinalizedInputs(*assessed, snapshot.complete)) {
         snapshot.complete = false;
+        snapshot.signature_state = psbtwork::SignatureState::Invalid;
         snapshot.metadata_failed = true;
         snapshot.error = Tr("The PSBT contains invalid signatures.");
-    } else if (!amounts_verified) snapshot.complete = false;
+    } else snapshot.signature_state = !amounts_verified ? psbtwork::SignatureState::Unverified
+        : snapshot.complete ? psbtwork::SignatureState::Verified : psbtwork::SignatureState::Incomplete;
     const bool authorized = amounts_verified && !snapshot.metadata_failed;
     snapshot.can_sign = authorized && !snapshot.complete && snapshot.facts.signer_available && snapshot.could_sign > 0;
-    snapshot.can_broadcast = authorized && snapshot.complete;
+    snapshot.can_broadcast = authorized && snapshot.signature_state == psbtwork::SignatureState::Verified;
     if (!authorized) {
-        if (snapshot.error.isEmpty()) snapshot.error = Tr("The transaction fee is missing or invalid.");
+        if (!amounts_verified && snapshot.error.isEmpty()) snapshot.error = Tr("The transaction fee is missing or invalid.");
         snapshot.status = snapshot.error;
     } else if (!snapshot.facts.requested_status.isEmpty()) snapshot.status = snapshot.facts.requested_status;
     else if (snapshot.complete) snapshot.status = Tr("Transaction is fully signed and ready for broadcast.");

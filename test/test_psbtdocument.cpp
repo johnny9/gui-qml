@@ -4,6 +4,7 @@
 
 #include <qml/backendexecutor.h>
 #include <qml/psbtdocument.h>
+#include <qml/psbtwork.h>
 #include <qml/retainedvalue.h>
 
 #include <QSemaphore>
@@ -68,6 +69,7 @@ private Q_SLOTS:
         QCOMPARE(facts->can_sign, authorized);
         QVERIFY(!facts->can_broadcast);
         QCOMPARE(facts->proof->amount.has_value(), authorized);
+        QCOMPARE(facts->signature_state, authorized ? psbtwork::SignatureState::Incomplete : psbtwork::SignatureState::Unverified);
         if (authorized) QCOMPARE(*facts->proof->amount, CAmount{2'000 - output});
         else QVERIFY(!facts->error.isEmpty());
         QCOMPARE(psbtwork::SerializeRaw(*facts->document), original);
