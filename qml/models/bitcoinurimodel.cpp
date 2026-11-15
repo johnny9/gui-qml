@@ -69,13 +69,14 @@ QVariantMap ContextResult(QVariantMap result, const QString& text, const QVarian
 {
     const auto address = context.value("address").toString(), note = context.value("note").toString();
     const auto amount = context.value("amount").toLongLong();
+    const bool fixed_replaces_maximum = context.value("maximum").toBool() && result.value("hasAmount").toBool();
     const auto field = context.value("sourceField").toString();
     const auto private_note = result.value("privateNote").toString();
-    result.insert(QStringLiteral("conflicts"), result.value("success").toBool() && (
+    result.insert(QStringLiteral("conflicts"), result.value("success").toBool() && (fixed_replaces_maximum ||
         (field != "address" && !address.isEmpty() && address != result.value("address").toString()) ||
         (field != "amount" && result.value("hasAmount").toBool() && amount != 0 && amount != result.value("amountSats").toLongLong()) ||
         (field != "label" && !note.isEmpty() && !private_note.isEmpty() && note != private_note)));
-    result.insert(QStringLiteral("matchesExistingRequest"), result.value("success").toBool() &&
+    result.insert(QStringLiteral("matchesExistingRequest"), result.value("success").toBool() && !fixed_replaces_maximum &&
         address == result.value("address").toString() && (!result.value("hasAmount").toBool() || amount == result.value("amountSats").toLongLong()) &&
         (!result.value("hasLabel").toBool() || context.value("requestLabel").toString() == result.value("label").toString()));
     if (context.value("edited").toBool()) {

@@ -578,6 +578,7 @@ PageStack {
         }
         function probeContext(recipient, field, payload) {
             return {address: recipient ? recipient.address.address : "", amount: recipient ? recipient.amount.satoshi : 0,
+                maximum: recipient ? recipient.amountMode === SendRecipient.Maximum : false,
                 note: recipient ? recipient.label : "", requestLabel: recipient ? recipient.paymentRequestLabel : "",
                 sourceField: field || "", edited: !!(payload && payload.edited),
                 previousText: payload && payload.edited ? payload.previous : "",
