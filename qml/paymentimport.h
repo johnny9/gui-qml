@@ -77,7 +77,7 @@ private:
           Notify notify, Retired retired, std::shared_ptr<State> state);
     execution::Admission submit(std::function<void()> decision);
     void publish();
-    void read(uint64_t source, bool analysis);
+    template <bool Analysis> void read(uint64_t source);
     void observe();
     void useReady();
     void dispatch(Child child);

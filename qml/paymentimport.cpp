@@ -183,7 +183,7 @@ execution::Admission Owner::inspect(Input input)
         const auto source = state.flow.inspect();
         if (!source || state.closing || state.native_jobs) return;
         state.input = retained; state.inspection.reset(); state.result.reset(); state.error.clear();
-        self->cancelObsolete(); self->read(*source, false);
+        self->cancelObsolete(); self->read<false>(*source);
     });
 }
 
@@ -195,18 +195,19 @@ execution::Admission Owner::retry()
         const auto source = state.flow.inspect();
         if (!source) return;
         state.use_requested = false; state.inspection.reset(); state.result.reset(); state.error.clear();
-        self->cancelObsolete(); self->read(*source, false);
+        self->cancelObsolete(); self->read<false>(*source);
     });
 }
 
-void Owner::read(uint64_t source, bool analysis)
+template <bool Analysis>
+void Owner::read(uint64_t source)
 {
     auto output = execution::RetainValues<Inspection>(m_scope, [] { return std::make_unique<Inspection>(); });
     if (!output) { m_state->flow.inspectionFailed(source); m_state->error = QStringLiteral("Import result capacity is unavailable."); return; }
     const auto input = m_state->input;
     const auto original = m_state->inspection;
     ++m_state->native_jobs;
-    const auto completed = [self = shared_from_this(), output, source, analysis](std::exception_ptr error) {
+    const auto completed = [self = shared_from_this(), output, source](std::exception_ptr error) {
         auto& state = *self->m_state;
         --state.native_jobs;
         if (source == state.flow.source()) {
@@ -215,16 +216,18 @@ void Owner::read(uint64_t source, bool analysis)
                 state.flow.inspectionFailed(source);
             } else {
                 state.inspection = output;
-                if (analysis) state.flow.analyzed(source);
+                if constexpr (Analysis) state.flow.analyzed(source);
                 else state.flow.parsed(source, output->kind);
-                if (!state.closing && !analysis && output->kind == Kind::Psbt) self->read(source, true);
-                else if (!state.closing) self->observe();
+                if constexpr (!Analysis) {
+                    if (!state.closing && output->kind == Kind::Psbt) self->read<true>(source);
+                    else if (!state.closing) self->observe();
+                } else if (!state.closing) self->observe();
             }
         }
         self->cancelObsolete(); self->publish();
     };
-    const auto admission = execution::Submit(*m_scope, [output, input, original, analysis, services = m_services] {
-        *output = analysis ? services.analyze(*original) : services.read(*input);
+    const auto admission = execution::Submit(*m_scope, [output, input, original, services = m_services] {
+        *output = Analysis ? services.analyze(*original) : services.read(*input);
     }, [completed] { completed({}); }, completed, {execution::Lane::Core, 2048});
     if (!admission) completed(std::make_exception_ptr(execution::NotStarted{execution::NotStarted::Cause::Transport}));
 }
