@@ -62,3 +62,31 @@ address-use bit remains authoritative for reuse protection. This is not an
 atomic guarantee against a payment arriving after final sharing admission.
 Exhaustive coverage, platform/configuration matrices and sanitizer validation
 remain deferred to R42 under the user's recorded cadence.
+
+
+Focused checkpoint, 2026-11-15: code `3bd03717f408cc36d3da5136b850256e3960536f`,
+Core `44901d8f64cb617714707bd025ecd83f108353c2` unchanged. The coherent b3ce02
+candidate passed 114 native, 77 QML and 5 public Core bodies (196), strict
+QML lint on 259 files for each compatibility variant and all 15 affected pinned
+Clang23 tidy entries. Final03 differs only in the process test's exact
+original-row control target; its real reorg/restart/reconsider journey passed
+with both GUI processes exiting 0 and standard stderr checks. Exact-head app
+lint passed. 52 unchanged editor/sharing native bodies carry explicitly from
+f545 independent validation, with matching source/fixture hashes. These are
+separate evidence identities, not a new full-suite or single-ELF count.
+
+The original test-only parent e08 executed two universal rows: active receipt
+control passed, and the original zero-credit reorg failed its Awaiting label
+oracle. The identical current oracle passed both rows. Earlier failed candidate
+and validation invocation results remain retained. One real new defect was
+found and corrected: a collapsed deletion notification must reread actual
+public Wallet state, rather than erase a still-live receipt. The corresponding
+actual-absence negative control also passed. The first isolated QML link issue,
+missing tooling type metadata and two process-test targeting premises were
+corrected with all original state/effect assertions preserved.
+
+See [scope receipts](R31_SCOPE_MAP.json) and task evidence under
+`.validation/qt6-r11-r40-20261114/R31/ACCEPTANCE.json`. The R31 focused
+checkpoint is satisfied; exhaustive coverage, full matrices and sanitizers
+remain pending R42. R24's separate Activity delegate-reuse workaround remains
+root-owned combined-integration work, not a claimed change in this slice.
