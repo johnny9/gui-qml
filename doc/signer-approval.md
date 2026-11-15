@@ -31,3 +31,14 @@ migration to background effects remains R24; existing synchronous signer/Core
 calls are not represented as migrated here. R03 owns authenticated fee metadata.
 Neither broader signature validation nor the complete M05 workflow is claimed
 by the unsigned-terms comparator alone.
+
+
+External approval distinguishes verified signatures from recoverable bytes. A
+partial response with enough authenticated script information is verified before
+installation. When information needed to verify contributions is missing, the
+original reviewed PSBT remains unchanged. The separate unverified result can be
+exported explicitly for reconciliation. It cannot enable Send, verified partial
+success or an automatic signer retry. The export chooser captures the original
+approval/review/view token; a late answer cannot export a successor result.
+Known-invalid contributions are rejected. The public-interface limitation and
+future verification/outcome API are recorded in `plan/QT6_UPSTREAM_IMPROVEMENTS.md`.

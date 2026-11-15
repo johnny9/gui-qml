@@ -1859,6 +1859,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool sendSignOnly MEMBER m_send_sign_only NOTIFY sendOperationChanged)
     Q_PROPERTY(quint64 sendOperationId MEMBER m_send_operation_id NOTIFY sendOperationChanged)
     Q_PROPERTY(int signerApprovalState MEMBER m_approval_state NOTIFY signerApprovalChanged)
+    Q_PROPERTY(QString signerUnverifiedResultToken MEMBER m_unverified_signer_token NOTIFY signerApprovalChanged)
     Q_PROPERTY(QString signerApprovalError MEMBER m_approval_error NOTIFY signerApprovalChanged)
     Q_PROPERTY(bool signerApprovalSignerNotFound MEMBER m_approval_signer_not_found NOTIFY signerApprovalChanged)
     Q_PROPERTY(bool sendBusy READ sendBusy NOTIFY sendOperationChanged)
@@ -2037,10 +2038,11 @@ public:
             : m_transaction_needs_unlock ? PreparationNeedsUnlock : PreparationFailed;
         Q_EMIT preparationChanged();
     }
-    enum ApprovalState { ApprovalInitial, ApprovalWaiting, ApprovalSigned, ApprovalPartiallySigned, ApprovalFailed, ApprovalClosed, ApprovalOtherReview, ApprovalUncertain };
+    enum ApprovalState { ApprovalInitial, ApprovalWaiting, ApprovalSigned, ApprovalPartiallySigned, ApprovalFailed, ApprovalClosed, ApprovalOtherReview, ApprovalUncertain, ApprovalUnverified };
     Q_ENUM(ApprovalState)
     int m_approval_state{ApprovalInitial};
     QString m_approval_error;
+    QString m_unverified_signer_token;
     bool m_approval_signer_not_found{false};
     Q_INVOKABLE void approveExternalSignerTransaction()
     {
@@ -2134,6 +2136,9 @@ public:
     QObject* importedPsbt(){return &m_imported_psbt;}
     Q_INVOKABLE quint64 requestImportPsbtFromFile(const QString& path){return requestPsbtAction(PsbtKind::Import,path);}
     Q_INVOKABLE quint64 requestSaveCurrentTransactionAsPsbt(const QString& path){return requestPsbtAction(PsbtKind::Save,path);}
+    Q_INVOKABLE quint64 requestSaveUnverifiedSignerResult(const QString& token, const QString& path) {
+        return !token.isEmpty() && token == m_unverified_signer_token ? requestPsbtAction(PsbtKind::Save, path) : 0;
+    }
     Q_INVOKABLE quint64 requestBroadcastCurrentTransaction(){return requestPsbtAction(PsbtKind::Broadcast,{});}
     Q_INVOKABLE void completePsbtWorkForTest(){if(m_psbt_operation)completePsbtPacket(m_psbt_operation);}
     Q_INVOKABLE void finishPsbtPublicationForTest(){if(m_psbt_operation&&m_psbt_operation->ready)publishPsbtPacket(m_psbt_operation);}

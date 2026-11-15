@@ -85,7 +85,7 @@ public:
     enum class SendRecord { SendRecordUnknown, SendRecordAbsentAtObservation, SendRecordRecorded };
     Q_ENUM(SendRecord)
     enum class SendState { SendIdle, SendPending, SendNeedsConfirmation, SendNeedsUnlock, SendFailed, SendCommitted, SendSignedOnly, SendPartiallySigned, SendUncertain, SendClosed };
-    enum class ApprovalState { ApprovalInitial, ApprovalWaiting, ApprovalSigned, ApprovalPartiallySigned, ApprovalFailed, ApprovalClosed, ApprovalOtherReview, ApprovalUncertain };
+    enum class ApprovalState { ApprovalInitial, ApprovalWaiting, ApprovalSigned, ApprovalPartiallySigned, ApprovalFailed, ApprovalClosed, ApprovalOtherReview, ApprovalUncertain, ApprovalUnverified };
     Q_ENUM(ApprovalState)
     Q_ENUM(SendState)
     enum class PreparationState { PreparationIdle, PreparationPending, PreparationNeedsUnlock, PreparationReady, PreparationFailed, PreparationStale, PreparationClosed, PreparationUncertain };
@@ -206,6 +206,7 @@ private:
     Q_PROPERTY(quint64 preparationId READ preparationId NOTIFY preparationChanged)
     Q_PROPERTY(bool preparationBusy READ preparationBusy NOTIFY preparationChanged)
     Q_PROPERTY(ApprovalState signerApprovalState READ signerApprovalState NOTIFY signerApprovalChanged)
+    Q_PROPERTY(QString signerUnverifiedResultToken READ signerUnverifiedResultToken NOTIFY signerApprovalChanged)
     Q_PROPERTY(quint64 signerApprovalId READ signerApprovalId NOTIFY signerApprovalChanged)
     Q_PROPERTY(QString signerApprovalError READ signerApprovalError NOTIFY signerApprovalChanged)
     Q_PROPERTY(bool signerApprovalSignerNotFound READ signerApprovalSignerNotFound NOTIFY signerApprovalChanged)
@@ -372,6 +373,7 @@ public:
     Q_INVOKABLE quint64 requestImportPsbtFromFile(const QString& path);
     std::shared_ptr<backup::InstallCoordinator> fileInstallCoordinator() const { return m_backup_services.coordinator; }
     Q_INVOKABLE quint64 requestSaveCurrentTransactionAsPsbt(const QString& path);
+    Q_INVOKABLE quint64 requestSaveUnverifiedSignerResult(const QString& token, const QString& path);
     PsbtActionState psbtActionState() const { return m_psbt_action_state; }
     quint64 psbtActionId() const { return m_psbt_action_id; }
     bool psbtActionBusy() const { return m_psbt_action_state == PsbtActionState::PsbtPending; }
@@ -392,6 +394,7 @@ public:
     bool observationsAllowed() const { return !m_stopping && !m_admission_closed; }
     bool available() const { return m_wallet && !m_admission_closed && !m_unload_requested->load() && (!m_opening_native_events.unloaded || !m_opening_native_events.unloaded->load()); }
     ApprovalState signerApprovalState() const;
+    QString signerUnverifiedResultToken() const;
     bool signerApprovalBusy() const;
     quint64 signerApprovalId() const { return m_approval_id; }
     QString signerApprovalError() const;
@@ -597,7 +600,8 @@ private:
         QString error;
     };
     using PsbtAction = execution::OwnedCommand<PsbtActionValue>;
-    quint64 startPsbtAction(PsbtActionKind kind, const QString& path = {});
+    quint64 startPsbtAction(PsbtActionKind kind, const QString& path = {},
+                            std::shared_ptr<const PartiallySignedTransaction> export_document = {});
     std::shared_ptr<FileExportRequest> preparePsbtFileExport(quint64 action_id, const QString& path,
                                                              const std::shared_ptr<PsbtReceipt>& receipt);
     void startPsbtFileExport(quint64 action_id, const QString& path,

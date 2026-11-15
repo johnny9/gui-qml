@@ -727,6 +727,34 @@ TestCase {
         popup.close()
     }
 
+    function test_unverified_signer_export_keeps_the_review_and_captured_result() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
+        page.width = testCase.width
+        page.height = testCase.height
+        page.visible = true
+        page.openTransactionReview()
+        const popup = findChild(page, "transactionReviewPopup")
+        tryCompare(popup, "opened", true)
+        const original = testWalletModel.currentTransaction
+        testWalletModel.signerUnverifiedResultToken = "original-approval:review:view"
+        try {
+            const review = popup.contentItem
+            const path = findChild(review, "sendTransactionReviewSavePsbtPathField")
+            const button = findChild(review, "sendTransactionReviewExportUnverifiedSignerButton")
+            verify(button !== null)
+            tryCompare(button, "visible", true)
+            path.text = "file:///tmp/unverified-signer-test.psbt"
+            button.clicked()
+            tryCompare(testWalletModel, "psbtActionBusy", false)
+            compare(testWalletModel.lastSavedPsbtPath, "file:///tmp/unverified-signer-test.psbt")
+            compare(testWalletModel.currentTransaction, original)
+            compare(popup.opened, true)
+        } finally {
+            testWalletModel.signerUnverifiedResultToken = ""
+            popup.close()
+        }
+    }
+
     function test_psbt_save_error_remains_visible_in_review() {
         const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
         verify(page !== null)
