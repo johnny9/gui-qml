@@ -578,13 +578,18 @@ def run_first_reset_onboarding(tmpdir, custom_datadir):
             dump_qml_tree(gui)
         raise
     finally:
-        harness.stop(cleanup=False)
-        if harness.process is not None:
-            stdout, stderr = harness.process.communicate(timeout=5)
-            print(f"First reset GUI exit: {harness.process.returncode}", flush=True)
-            print("First reset GUI stdout:\n" + stdout.decode("utf8", errors="replace"), flush=True)
-            print("First reset GUI stderr:\n" + stderr.decode("utf8", errors="replace"), flush=True)
-            check_gui_exit(harness.process.returncode, stderr.decode("utf8", errors="replace"), socket_path=harness.socket_path)
+        try:
+            if harness.process is not None and harness.process.poll() is None and harness.driver is not None:
+                harness.driver.request_quit()
+                harness.process.wait(timeout=10)
+        finally:
+            harness.stop(cleanup=False)
+            if harness.process is not None:
+                stdout, stderr = harness.process.communicate(timeout=5)
+                print(f"First reset GUI exit: {harness.process.returncode}", flush=True)
+                print("First reset GUI stdout:\n" + stdout.decode("utf8", errors="replace"), flush=True)
+                print("First reset GUI stderr:\n" + stderr.decode("utf8", errors="replace"), flush=True)
+                check_gui_exit(harness.process.returncode, stderr.decode("utf8", errors="replace"), socket_path=harness.socket_path)
 
 
 def run_second_reset_onboarding(tmpdir, custom_datadir):
@@ -615,13 +620,18 @@ def run_second_reset_onboarding(tmpdir, custom_datadir):
             dump_qml_tree(gui)
         raise
     finally:
-        harness.stop(cleanup=False)
-        if harness.process is not None:
-            stdout, stderr = harness.process.communicate(timeout=5)
-            print(f"Second reset GUI exit: {harness.process.returncode}", flush=True)
-            print("Second reset GUI stdout:\n" + stdout.decode("utf8", errors="replace"), flush=True)
-            print("Second reset GUI stderr:\n" + stderr.decode("utf8", errors="replace"), flush=True)
-            check_gui_exit(harness.process.returncode, stderr.decode("utf8", errors="replace"), socket_path=harness.socket_path)
+        try:
+            if harness.process is not None and harness.process.poll() is None and harness.driver is not None:
+                harness.driver.request_quit()
+                harness.process.wait(timeout=10)
+        finally:
+            harness.stop(cleanup=False)
+            if harness.process is not None:
+                stdout, stderr = harness.process.communicate(timeout=5)
+                print(f"Second reset GUI exit: {harness.process.returncode}", flush=True)
+                print("Second reset GUI stdout:\n" + stdout.decode("utf8", errors="replace"), flush=True)
+                print("Second reset GUI stderr:\n" + stderr.decode("utf8", errors="replace"), flush=True)
+                check_gui_exit(harness.process.returncode, stderr.decode("utf8", errors="replace"), socket_path=harness.socket_path)
 
 
 def reset_onboarding_connection():
