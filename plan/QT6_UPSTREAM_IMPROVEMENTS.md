@@ -348,3 +348,46 @@ enumeration reads global configuration and cannot inspect that proposed path.
 A typed explicit-path read-only public inspector would preserve the existing
 wallet-versus-junk distinction without changing global state. The affected
 piece is held pending user input; no temporary exception is assumed.
+
+
+## R25 replacement signing and commit observations
+
+**Status and boundary:** Application adapters use the unchanged public Wallet and
+Node APIs in Core `44901d8f64cb617714707bd025ecd83f108353c2`. No Core edit or
+private-wallet exception is authorized. The proposed improvements below are
+optional simplifications of the implemented checks; they do not establish an
+atomic cross-client reservation.
+
+**Missing contracts and workaround:** `Wallet::signBumpTransaction` returns a
+boolean and a mutable transaction. The pinned external-signer implementation
+finalizes the returned PSBT without cryptographically verifying every finalized
+input. The application compares the exact reviewed unsigned terms, then reuses
+its public-wallet prevout/script verifier before committing an external result.
+The original opening owns this Native work and its cleanup. It does not infer
+validity from the device identity or the completion flag.
+
+`transactionCanBeBumped`, `getTx`, `getCoins` and Node's read-only
+`testmempoolaccept` are separate observations. The application captures the
+original and replacement input sets, checks newly added inputs before and after
+signing, and observes the exact finalized candidate without rebuilding it.
+Core's commit rechecks the original's preconditions. Independent RPC/mempool
+changes can still occur between observations and commit; the adapter does not
+claim atomic input reservation or guaranteed mempool admission. The resulting
+wallet record, observed submission status and unknown relay remain separate.
+
+**Upstream improvement:** A typed signing result should bind the original review
+and exact unsigned commitment to a verified complete/partial signature outcome.
+A typed replacement command could accept the original ID and exact candidate,
+recheck the original plus all candidate inputs/conflicts at the authoritative
+boundary, and return separate persistence/admission/uncertainty receipts.
+Retain existing public callers' behavior when adding stronger contracts.
+
+**Evidence and retirement:** See [the R25 checkpoint](R25_REPLACEMENT_CHECKPOINT.md).
+The controlled invalid-signature row fails on `186e21b4b3c` while the matching
+valid control passes; this is an app-level public-wallet return test, not a
+physical-device or independently reproduced upstream exploit. Retire the
+verification/observation adapters only when the pinned public API supplies the
+same guarantees and its regression tests cover invalid signatures, unchanged
+terms, added-input spends, original confirmation/abandonment, independent RPC
+writers and explicit failure/uncertainty. R42 platform/sanitizer qualification
+remains pending.
