@@ -4148,6 +4148,7 @@ private Q_SLOTS:
     }
     void signerApprovalRetainsValidPartialSignatures();
     void signerUnverifiedResultIsSeparateAndExportUsesOriginalToken();
+    void localUnverifiedResultKeepsTheReviewAndExportsOriginalBytes();
     void signerSubstitutionIsRejected();
     void initTestCase();
     void coreApiFeePreviews_data();
@@ -8318,6 +8319,47 @@ void WalletQmlModelTests::signerUnverifiedResultIsSeparateAndExportUsesOriginalT
     QVERIFY(model->signerUnverifiedResultToken().isEmpty());
     QVERIFY(!model->requestSaveUnverifiedSignerResult(token, rejected_path));
     QVERIFY(!QFile::exists(rejected_path));
+    QCOMPARE(calls, 1);
+    QCOMPARE(wallet->commit_calls, 0);
+}
+
+void WalletQmlModelTests::localUnverifiedResultKeepsTheReviewAndExportsOriginalBytes()
+{
+    auto [wallet, model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) { original.locked = false; });
+    wallet->txin_is_mine_fn = [](const CTxIn&) { return true; };
+    const auto fixture = psbtfeefixture::Contribution(false, false);
+    int calls{0};
+    wallet->fill_psbt_fn = [returned = fixture.returned, &calls](const common::PSBTFillOptions& options, size_t* count,
+                                                               PartiallySignedTransaction& document, bool& complete) {
+        if (count) *count = 1;
+        complete = false;
+        if (options.sign) { ++calls; document = returned; }
+        return std::optional<common::PSBTError>{};
+    };
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto original_path = WritePsbt(fixture.original, directory, "local-original.psbt");
+    QCOMPARE(AwaitPsbtImport(*model, original_path), WalletQmlModel::PsbtImportResult::WalletCanSign);
+    const auto original_review = model->currentTransaction();
+    QVERIFY(model->requestSignOnlyTransaction());
+    QTRY_VERIFY(!model->sendBusy());
+    QCOMPARE(model->sendState(), WalletQmlModel::SendState::SendUnverified);
+    QCOMPARE(model->currentTransaction(), original_review);
+    QVERIFY(!model->currentTransactionCanSend());
+    QVERIFY(!model->currentTransactionCanBroadcast());
+    QVERIFY(!model->requestSignOnlyTransaction());
+    const auto token = model->signerUnverifiedResultToken();
+    QVERIFY(token.startsWith("local:"));
+    const auto exported_path = directory.filePath("local-unverified.psbt");
+    QVERIFY(model->requestSaveUnverifiedSignerResult(token, exported_path));
+    QTRY_VERIFY(!model->psbtActionBusy());
+    QCOMPARE(model->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtSaved);
+    PartiallySignedTransaction exported{CMutableTransaction{}, 2};
+    QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(exported_path, exported), QString{});
+    QCOMPARE(psbtwork::SerializeRaw(exported), psbtwork::SerializeRaw(fixture.returned));
+    QCOMPARE(AwaitPsbtImport(*model, original_path), WalletQmlModel::PsbtImportResult::WalletCanSign);
+    QVERIFY(model->signerUnverifiedResultToken().isEmpty());
+    QVERIFY(!model->requestSaveUnverifiedSignerResult(token, directory.filePath("stale.psbt")));
     QCOMPARE(calls, 1);
     QCOMPARE(wallet->commit_calls, 0);
 }

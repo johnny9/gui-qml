@@ -254,6 +254,7 @@ Result ExecuteSignOnly(interfaces::Wallet& wallet, Request request,
         const auto authenticated = AuthenticatedInputs(wallet, document, *request.proof);
         if (!authenticated) { result.error = Error::InvalidFee; return result; }
         psbtfee::FillMissing(document, *authenticated);
+        const auto approved = document;
 
         if (wallet.isCrypted() && wallet.isLocked()) {
             if (!request.passphrase) { result.error = Error::NeedsUnlock; return result; }
@@ -283,6 +284,20 @@ Result ExecuteSignOnly(interfaces::Wallet& wallet, Request request,
         complete = FinalizePSBT(document);
         if (!psbtsignatures::VerifyFinalizedInputs(document, complete)) {
             restore(); result.error = Error::InvalidSignature; return result;
+        }
+        result.signature_status = complete ? psbtsignatures::Status::Valid
+            : psbtsignatures::VerifyContributions(approved, document);
+        if (result.signature_status != psbtsignatures::Status::Valid) {
+            if (result.signature_status == psbtsignatures::Status::Unknown) {
+                *document_owner = std::move(document);
+                result.quarantined_document = std::shared_ptr<const PartiallySignedTransaction>{document_owner, document_owner.get()};
+            }
+            restore();
+            result.error = result.relock_failed || signer_threw ? Error::Uncertain
+                : result.signature_status == psbtsignatures::Status::Invalid ? Error::InvalidSignature
+                : Error::UnverifiedSignatures;
+            result.signer_error = signer_error;
+            return result;
         }
         if (complete) {
             auto analyzed = document;
@@ -631,7 +646,7 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
                 psbtfee::MatchesReview(document, *authenticated, request.approved_fee) &&
                 psbtsignatures::VerifyFinalizedInputs(document, /*require_all=*/false)) {
-                result.signature_status = psbtsignatures::VerifyPartialInputs(document);
+                result.signature_status = psbtsignatures::VerifyContributions(*approved, document);
                 if (result.signature_status == psbtsignatures::Status::Valid) {
                     result.document = std::make_shared<const PartiallySignedTransaction>(document);
                     result.partial = true;
@@ -664,7 +679,7 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
             }
             result.signature_status = psbtsignatures::Status::Valid;
         } else {
-            result.signature_status = psbtsignatures::VerifyPartialInputs(document);
+            result.signature_status = psbtsignatures::VerifyContributions(*approved, document);
             if (result.signature_status != psbtsignatures::Status::Valid) {
                 result.document = approved;
                 result.error = result.signature_status == psbtsignatures::Status::Invalid
@@ -684,7 +699,7 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
                 psbtfee::MatchesReview(document, *authenticated, request.approved_fee) &&
                 psbtsignatures::VerifyFinalizedInputs(document, /*require_all=*/false)) {
-                result.signature_status = psbtsignatures::VerifyPartialInputs(document);
+                result.signature_status = psbtsignatures::VerifyContributions(*approved, document);
                 if (result.signature_status == psbtsignatures::Status::Valid) {
                     result.document = std::make_shared<const PartiallySignedTransaction>(document);
                     result.partial = true;

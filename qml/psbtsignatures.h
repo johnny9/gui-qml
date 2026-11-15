@@ -14,6 +14,9 @@ bool VerifyFinalizedInputs(const PartiallySignedTransaction& document, bool requ
 // Unknown means required script/execution context is unavailable. It never
 // grants permission to install signatures or submit a transaction.
 Status VerifyPartialInputs(const PartiallySignedTransaction& document);
+// Existing imported fields are preserved without acquiring new authority.
+// Validate additions/replacements while always checking finalized scripts.
+Status VerifyContributions(const PartiallySignedTransaction& original, const PartiallySignedTransaction& returned);
 } // namespace psbtsignatures
 
 #endif // BITCOIN_QML_PSBTSIGNATURES_H

@@ -45,8 +45,9 @@ class PsbtQmlModel : public QObject
     Q_PROPERTY(QString submittedTxid READ submittedTxid NOTIFY changed)
     Q_PROPERTY(bool submitted READ submitted NOTIFY changed)
     Q_PROPERTY(bool saved READ saved NOTIFY changed)
+    Q_PROPERTY(QString unverifiedResultToken READ unverifiedResultToken NOTIFY changed)
 public:
-    enum class Phase { Idle, Pending, Ready, Failed, NeedsUnlock, Uncertain, Stale, Closed };
+    enum class Phase { Idle, Pending, Ready, Failed, NeedsUnlock, Uncertain, Stale, Closed, Unverified };
     Q_ENUM(Phase)
     enum class NodeReadiness { Unknown, NoKnownObstacle, Blocked };
     Q_ENUM(NodeReadiness)
@@ -86,6 +87,8 @@ public:
     bool saved() const;
     Q_INVOKABLE quint64 requestLoadFromFile(const QString& path);
     Q_INVOKABLE quint64 requestSaveToFile(const QString& path);
+    Q_INVOKABLE quint64 requestSaveUnverifiedResult(const QString& token, const QString& path);
+    QString unverifiedResultToken() const;
     Q_INVOKABLE quint64 requestSign();
     Q_INVOKABLE quint64 requestSignWithPassphrase(const QString& passphrase);
     Q_INVOKABLE quint64 requestBroadcast();
@@ -116,6 +119,7 @@ private:
     quint64 start(psbtwork::Request request);
     void publish(quint64 operation, quint64 generation);
     void releaseSnapshot();
+    void releaseQuarantine();
     void retireDocumentOwner();
     void ensureServices();
     void prepareSummaryPaging();
@@ -142,6 +146,9 @@ private:
     bool m_wallet_expected{false}, m_closed{false};
     std::shared_ptr<Operation> m_active;
     std::optional<execution::ResourceLease> m_active_lease, m_snapshot_lease;
+    std::optional<execution::ResourceLease> m_quarantine_lease;
+    std::shared_ptr<const PartiallySignedTransaction> m_quarantined_document;
+    quint64 m_quarantined_operation{0}, m_quarantined_generation{0};
     std::shared_ptr<const psbtwork::Snapshot> m_snapshot;
     std::shared_ptr<SummaryRequestState> m_summary_request_state;
     std::shared_ptr<execution::SnapshotQuery<psbtwork::SummaryPage>> m_summary_query;
