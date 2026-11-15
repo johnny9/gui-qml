@@ -60,7 +60,6 @@ Popup {
         const window = root.contentItem.Window.window
         if (prompt !== null && window !== null) {
             window.show()
-            window.raise()
             window.requestActivate()
         } else if (prompt !== null) {
             prompt.unavailable()
@@ -72,7 +71,6 @@ Popup {
         const window = root.contentItem.Window.window
         if (prompt !== null && window !== null) {
             window.show()
-            window.raise()
             window.requestActivate()
             prompt.presented()
         } else if (prompt !== null) {
