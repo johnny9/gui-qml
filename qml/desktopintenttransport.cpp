@@ -3,11 +3,11 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/desktopintenttransport.h>
 #include <qml/retainedvalue.h>
+#include <util/fs.h>
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
-#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -20,6 +20,7 @@
 #include <QStringList>
 #include <QThread>
 #include <QTimer>
+#include <QUuid>
 #include <QVariant>
 
 #include <algorithm>
@@ -28,6 +29,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <system_error>
 #include <utility>
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -41,9 +43,20 @@ namespace desktopintent::transport {
 namespace {
 constexpr qsizetype MAX_FRAME{128 * 1024};
 constexpr size_t MAX_CLIENTS{4}, MAX_REPLIES{64};
-constexpr int CLIENT_TIMEOUT{3000}, START_TIMEOUT{5000};
 StartResult Rejected(const QString& error) { return {StartStatus::Rejected, error, {}}; }
 StartResult Unknown() { return {StartStatus::Unknown, QStringLiteral("Delivery to the running GUI could not be confirmed. Check that GUI before trying again."), {}}; }
+QString NormalizeProfile(const QString& directory)
+{
+    const auto input = fs::PathFromString(directory.toStdString());
+    if (!input.is_absolute()) return {};
+    std::error_code error;
+    const fs::path normalized = fs::weakly_canonical(input, error);
+    if (error) return {};
+    const bool exists = fs::exists(normalized, error);
+    if (error) return {};
+    if (exists) { const bool is_directory = fs::is_directory(normalized, error); if (error || !is_directory) return {}; }
+    return QString::fromStdString(fs::PathToString(normalized));
+}
 QJsonObject ReceiptJson(const Receipt& receipt, const QString& key)
 {
     return {{"key", key}, {"delivery", QString::number(receipt.delivery)}, {"inspection", QString::number(receipt.inspection)},
@@ -106,46 +119,73 @@ bool SameUser(QLocalSocket& socket)
     return true;
 #endif
 }
-int Remaining(const QElapsedTimer& timer, int cap)
+int Remaining(const Limits& limits, Limits::Time start, std::chrono::milliseconds budget, int cap)
 {
-    return static_cast<int>(std::clamp<qint64>(START_TIMEOUT - timer.elapsed(), 0, cap));
+    const auto now = limits.now();
+    if (now < start) return 0;
+    const auto deadline = start > Limits::Time::max() - budget ? Limits::Time::max() : start + budget;
+    if (now >= deadline) return 0;
+    return static_cast<int>(std::min<int64_t>(std::chrono::ceil<std::chrono::milliseconds>(deadline - now).count(), cap));
 }
-std::optional<QJsonObject> Exchange(const QString& endpoint, const QByteArray& frame, QElapsedTimer& timer, int reply_budget)
+std::optional<QJsonObject> Exchange(const QString& endpoint, const QByteArray& frame, const Limits& limits, Limits::Time start,
+                                  std::chrono::milliseconds reply_budget, const std::atomic_bool& stopping)
 {
-    if (frame.size() > MAX_FRAME || Remaining(timer, 1) == 0) return {};
+    const auto left = [&](int cap) { return Remaining(limits, start, limits.startup, cap); };
+    if (stopping || frame.size() > MAX_FRAME || left(1) == 0) return {};
     QLocalSocket socket; socket.setReadBufferSize(MAX_FRAME + 1); socket.connectToServer(endpoint);
-    if (!socket.waitForConnected(Remaining(timer, 1000)) || !SameUser(socket)) return {};
+    if (!socket.waitForConnected(left(static_cast<int>(limits.connect.count()))) || !SameUser(socket)) return {};
     if (socket.write(frame) != frame.size()) return {};
-    while (socket.bytesToWrite() && Remaining(timer, 1))
-        if (!socket.waitForBytesWritten(Remaining(timer, 1000))) break;
-    QElapsedTimer reply; reply.start();
-    while (!socket.canReadLine() && socket.bytesAvailable() <= MAX_FRAME && Remaining(timer, 1) && reply.elapsed() < reply_budget) {
-        const auto wait = std::min(Remaining(timer, reply_budget), static_cast<int>(reply_budget - reply.elapsed()));
-        if (wait <= 0 || !socket.waitForReadyRead(wait)) break;
+    while (socket.bytesToWrite() && !stopping && left(1)) {
+        if (socket.state() != QLocalSocket::ConnectedState) return {};
+        (void)socket.waitForBytesWritten(left(static_cast<int>(limits.slice.count())));
     }
-    if (!socket.canReadLine() || socket.bytesAvailable() > MAX_FRAME) return {};
+    const auto reply_start = limits.now();
+    while (!socket.canReadLine() && socket.bytesAvailable() <= MAX_FRAME && !stopping && left(1)) {
+        const auto wait = std::min(left(static_cast<int>(limits.slice.count())), Remaining(limits, reply_start, reply_budget, static_cast<int>(limits.slice.count())));
+        if (wait <= 0 || socket.state() != QLocalSocket::ConnectedState) break;
+        (void)socket.waitForReadyRead(wait);
+    }
+    if (stopping || !left(1) || !Remaining(limits, reply_start, reply_budget, 1) || !socket.canReadLine() || socket.bytesAvailable() > MAX_FRAME) return {};
     QJsonParseError error; const auto document = QJsonDocument::fromJson(socket.readLine(MAX_FRAME + 1), &error);
     if (error.error != QJsonParseError::NoError || !document.isObject() || !Version(document.object())) return {};
     return document.object();
 }
-StartResult Forward(const QString& endpoint, const std::vector<Input>& inputs)
+StartResult Forward(const QString& endpoint, std::vector<Input> inputs, const Limits& limits, const std::atomic_bool& stopping)
 {
     if (inputs.empty()) return Rejected(QStringLiteral("Another GUI is already using this data directory."));
-    QElapsedTimer timer; timer.start(); QJsonArray items, keys;
+    for (const auto& input : inputs)
+        if (QString::fromUtf8(input.producer_key.toUtf8()) != input.producer_key || QString::fromUtf8(input.value.toUtf8()) != input.value)
+            return Rejected(QStringLiteral("The payment requests could not be encoded without changing their values."));
+    // Local FileOpen keys can contain a reused PID. One Native-generated
+    // service nonce namespaces the immutable batch, and both ACK and query use
+    // this same mapping. Hashing keeps even maximal original keys bounded.
+    const auto nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    std::vector<QString> producer_keys;
+    for (const auto& input : inputs) producer_keys.push_back(input.producer_key);
+    for (auto& input : inputs)
+        input.producer_key = nonce + QLatin1Char(':') + QString::fromLatin1(QCryptographicHash::hash(input.producer_key.toUtf8(), QCryptographicHash::Sha256).toHex());
+    const auto start = limits.now(); QJsonArray items, keys;
     for (const auto& input : inputs) {
         items.append(QJsonObject{{"key", input.producer_key}, {"kind", input.kind == Kind::File ? "file" : "text"}, {"value", input.value}});
         keys.append(input.producer_key);
     }
-    auto response = Exchange(endpoint, Frame({{"command", "admit"}, {"items", items}}), timer, 2500);
+    const auto admission_frame = Frame({{"command", "admit"}, {"items", items}});
+    if (admission_frame.size() > MAX_FRAME) return Rejected(QStringLiteral("The payment requests are too large for delivery."));
+    auto response = Exchange(endpoint, admission_frame, limits, start, limits.acknowledge, stopping);
     if (response && response->value("status").toString() == "rejected")
         return Rejected(QStringLiteral("The running GUI could not accept these requests."));
-    if (auto known = Known(response, inputs)) return {StartStatus::Forwarded, {}, std::move(*known)};
+    if (auto known = Known(response, inputs)) return {StartStatus::Forwarded, {}, std::move(*known), producer_keys};
     // Sending is attempted only once. Missing, malformed or evicted receipts
     // authorize only an original-key query, including across peer restart.
-    response = Exchange(endpoint, Frame({{"command", "query"}, {"keys", keys}}), timer, 1500);
-    if (auto known = Known(response, inputs)) return {StartStatus::Forwarded, {}, std::move(*known)};
+    response = Exchange(endpoint, Frame({{"command", "query"}, {"keys", keys}}), limits, start, limits.query, stopping);
+    if (auto known = Known(response, inputs)) return {StartStatus::Forwarded, {}, std::move(*known), producer_keys};
     return Unknown();
 }
+struct Discovery {
+    StartResult result;
+    QString endpoint;
+    Discovery(StartResult value, QString target = {}) : result(std::move(value)), endpoint(std::move(target)) {}
+};
 } // namespace
 
 struct Service::Flags {
@@ -158,6 +198,7 @@ struct Service::State {
     struct Native;
     std::shared_ptr<execution::Scheduler> scope;
     std::shared_ptr<Owner> owner;
+    Limits limits;
     execution::ResourceKey key;
     const std::shared_ptr<Flags> flags{std::make_shared<Flags>()};
     std::shared_ptr<execution::ResourceLease> native_lifetime;
@@ -185,7 +226,8 @@ struct Service::State::Native final : QObject {
     const std::shared_ptr<State> state;
     QLocalServer server;
     std::unique_ptr<QLockFile> instance_lock;
-    std::map<uint64_t, QLocalSocket*> clients;
+    struct Client { QLocalSocket* socket; Limits::Time admitted; };
+    std::map<uint64_t, Client> clients;
     std::map<uint64_t, Pending> replies;
     uint64_t sequence{0};
 
@@ -200,14 +242,16 @@ struct Service::State::Native final : QObject {
     }
     void disconnected(uint64_t id) {
         const auto found = clients.find(id); if (found == clients.end()) return;
-        auto* socket = found->second; clients.erase(found); socket->deleteLater();
+        auto* socket = found->second.socket; clients.erase(found); socket->deleteLater();
         std::vector<uint64_t> expired;
         for (const auto& [key, pending] : replies) if (pending.connection == id) expired.push_back(key);
         for (const auto key : expired) clearReply(key);
     }
     void send(uint64_t id, QJsonObject reply) {
         const auto found = clients.find(id); if (found == clients.end()) return;
-        (void)found->second->write(Frame(std::move(reply))); found->second->disconnectFromServer();
+        auto* socket = found->second.socket;
+        if (socket->state() != QLocalSocket::ConnectedState) return;
+        (void)socket->write(Frame(std::move(reply))); socket->disconnectFromServer();
     }
     std::shared_ptr<Cell> reserve(uint64_t connection, std::shared_ptr<Query> query = {}, qsizetype index = 0, QStringList keys = {}) {
         if (replies.size() == MAX_REPLIES || sequence == std::numeric_limits<uint64_t>::max()) return {};
@@ -235,9 +279,9 @@ struct Service::State::Native final : QObject {
     }
     void receive(uint64_t id) {
         const auto found = clients.find(id); if (found == clients.end()) return;
-        auto* socket = found->second;
+        auto* socket = found->second.socket;
         if (socket->property("handled").toBool()) return;
-        if (state->flags->admission_closed || socket->bytesAvailable() > MAX_FRAME) { socket->abort(); return; }
+        if (state->flags->admission_closed || !Remaining(state->limits, found->second.admitted, state->limits.client, 1) || socket->bytesAvailable() > MAX_FRAME) { socket->abort(); return; }
         if (!socket->canReadLine()) return;
         socket->setProperty("handled", true);
         QJsonParseError error; const auto document = QJsonDocument::fromJson(socket->readLine(MAX_FRAME + 1), &error);
@@ -274,10 +318,17 @@ struct Service::State::Native final : QObject {
         while (auto* socket = server.nextPendingConnection()) {
             socket->setParent(this);
             if (state->flags->admission_closed || clients.size() == MAX_CLIENTS || sequence == std::numeric_limits<uint64_t>::max()) { socket->deleteLater(); continue; }
-            const auto id = ++sequence; clients.emplace(id, socket); socket->setReadBufferSize(MAX_FRAME + 1);
+            const auto id = ++sequence; clients.emplace(id, Client{socket, state->limits.now()}); socket->setReadBufferSize(MAX_FRAME + 1);
             connect(socket, &QLocalSocket::disconnected, this, [this, id] { disconnected(id); });
             connect(socket, &QLocalSocket::readyRead, this, [this, id] { ingress(id); });
-            QTimer::singleShot(CLIENT_TIMEOUT, socket, &QLocalSocket::abort); ingress(id);
+            auto* deadline = new QTimer{socket}; deadline->setInterval(static_cast<int>(state->limits.slice.count()));
+            connect(deadline, &QTimer::timeout, this, [this, id] {
+                const auto found = clients.find(id);
+                if (found == clients.end()) return;
+                try { if (!Remaining(state->limits, found->second.admitted, state->limits.client, 1)) found->second.socket->abort(); }
+                catch (...) { found->second.socket->abort(); }
+            });
+            deadline->start(); ingress(id);
         }
     }
     void ingress(uint64_t id) {
@@ -285,22 +336,22 @@ struct Service::State::Native final : QObject {
         catch (...) {
             // Any already admitted queue mutation keeps its original receipt.
             // An unacknowledged caller can query; no exception becomes replay.
-            const auto found = clients.find(id); if (found != clients.end()) found->second->abort();
+            const auto found = clients.find(id); if (found != clients.end()) found->second.socket->abort();
         }
     }
     void retire() {
         server.close();
         while (!replies.empty()) clearReply(replies.begin()->first);
         const auto sockets = std::exchange(clients, {});
-        for (const auto& [id, socket] : sockets) { socket->abort(); delete socket; }
+        for (const auto& [id, client] : sockets) { client.socket->abort(); delete client.socket; }
         instance_lock.reset();
         std::shared_ptr<execution::ResourceLease> lifetime;
         { std::lock_guard lock{state->mutex}; state->native = nullptr; lifetime = std::move(state->native_lifetime); }
         delete this;
         lifetime.reset(); // Only now may the original Native event loop drain.
     }
-    StartResult initialize(const QString& directory, const QString& network, const std::vector<Input>& inputs) {
-        const auto canonical = QFileInfo{directory}.canonicalFilePath();
+    Discovery initialize(const QString& directory, const QString& network) {
+        const auto canonical = NormalizeProfile(directory);
         if (canonical.isEmpty()) return Rejected(QStringLiteral("Could not resolve the payment-request data directory."));
         QString private_directory;
 #ifndef Q_OS_WIN
@@ -333,26 +384,35 @@ struct Service::State::Native final : QObject {
                 if (reclaimable) reclaimable = QLocalServer::removeServer(endpoint);
             }
 #endif
-            if (reclaimable && !state->flags->admission_closed && server.listen(endpoint)) return {StartStatus::Primary, {}, {}};
+            if (NormalizeProfile(directory) != canonical) return Rejected(QStringLiteral("The payment-request data directory changed during startup."));
+            if (reclaimable && !state->flags->admission_closed && server.listen(endpoint)) return StartResult{StartStatus::Primary, {}, {}};
         }
         instance_lock.reset();
+        if (NormalizeProfile(directory) != canonical) return Rejected(QStringLiteral("The payment-request data directory changed during startup."));
 #ifndef Q_OS_WIN
         const auto path = QFile::encodeName(endpoint); struct stat peer{};
         if (lstat(path.constData(), &peer) || !S_ISSOCK(peer.st_mode) || peer.st_uid != getuid())
             return Rejected(QStringLiteral("The running GUI's payment-delivery endpoint is unavailable or unsafe."));
 #endif
-        return state->flags->admission_closed ? Rejected(QStringLiteral("Payment delivery is closing.")) : Forward(endpoint, inputs);
+        if (state->flags->admission_closed) return Rejected(QStringLiteral("Payment delivery is closing."));
+        return {StartResult{}, endpoint};
     }
 };
 
 Service::Service(std::shared_ptr<State> state) : m_state(state), m_flags(state->flags) {}
 Service::~Service() { stop(); }
-std::shared_ptr<Service> Service::Create(std::shared_ptr<execution::Scheduler> scheduler, std::shared_ptr<Owner> owner)
+std::shared_ptr<Service> Service::Create(std::shared_ptr<execution::Scheduler> scheduler, std::shared_ptr<Owner> owner, Limits limits)
 {
-    if (!scheduler || !owner) return {};
+    const auto maximum = std::chrono::seconds{30};
+    if (!scheduler || !owner || !limits.now || limits.startup <= std::chrono::milliseconds::zero() || limits.startup > maximum ||
+        limits.connect <= std::chrono::milliseconds::zero() || limits.connect > limits.startup ||
+        limits.acknowledge <= std::chrono::milliseconds::zero() || limits.acknowledge > limits.startup ||
+        limits.query <= std::chrono::milliseconds::zero() || limits.query > limits.startup ||
+        limits.client <= std::chrono::milliseconds::zero() || limits.client > maximum ||
+        limits.slice <= std::chrono::milliseconds::zero() || limits.slice > std::chrono::milliseconds{100}) return {};
     auto scope = scheduler->openActionScope(1024); if (!scope) return {};
     auto state = execution::RetainValues<State>(scope, [] { return std::make_unique<State>(); }); if (!state) return {};
-    state->scope = scope; state->owner = std::move(owner); state->key = scope->allocateKey();
+    state->scope = scope; state->owner = std::move(owner); state->limits = std::move(limits); state->key = scope->allocateKey();
     const auto retired = execution::Submit(*scope, [] {}, [state] {
         std::function<void()> done;
         { std::lock_guard lock{state->mutex}; state->owner.reset(); }
@@ -369,7 +429,7 @@ execution::Admission Service::start(QString directory, QString network, std::vec
 {
     const auto state = m_state.load();
     if (!state || m_flags->admission_closed || m_flags->started.exchange(true)) return {{}, execution::Rejection::Closed};
-    if (directory.size() > 4096 || network.isEmpty() || network.size() > 128 || directory.contains(QChar{u'\0'}) || network.contains(QChar{u'\0'}) || network.contains(QChar{u'\n'}) || inputs.size() > Queue::MAX_PENDING)
+    if (directory.size() > 4096 || QString::fromUtf8(directory.toUtf8()) != directory || network.isEmpty() || network.size() > 128 || directory.contains(QChar{u'\0'}) || network.contains(QChar{u'\0'}) || network.contains(QChar{u'\n'}) || inputs.size() > Queue::MAX_PENDING)
         return {{}, execution::Rejection::Invalid};
     size_t bytes{1024};
     for (const auto& input : inputs) {
@@ -382,28 +442,62 @@ execution::Admission Service::start(QString directory, QString network, std::vec
     { std::lock_guard lock{state->mutex}; owner = state->owner; }
     const auto payload = execution::RetainValues<std::vector<Input>>(state->scope, [&] { return std::make_unique<std::vector<Input>>(std::move(inputs)); });
     if (!payload) return {{}, execution::Rejection::Capacity};
-    const auto finish = std::move(completed);
+    const auto finish = [done = std::move(completed), claimed = std::make_shared<std::atomic_bool>(false)](StartResult result) {
+        if (!claimed->exchange(true) && done) done(std::move(result));
+    };
     return execution::Submit(*state->scope, [state, directory = std::move(directory), network = std::move(network), payload, lifetime] {
         if (state->flags->admission_closed || (QCoreApplication::instance() && QThread::currentThread() == QCoreApplication::instance()->thread()))
-            return Rejected(QStringLiteral("Payment delivery could not start on its background worker."));
+            return Discovery{Rejected(QStringLiteral("Payment delivery could not start on its background worker."))};
         auto native = std::make_unique<State::Native>(state);
-        auto result = native->initialize(directory, network, *payload);
-        if (result.status == StartStatus::Primary) {
+        auto discovery = native->initialize(directory, network);
+        if (discovery.result.status == StartStatus::Primary) {
             std::lock_guard lock{state->mutex};
             if (!state->flags->stopping) state->native = native.release();
-            else result = Rejected(QStringLiteral("Payment delivery is closing."));
+            else discovery.result = Rejected(QStringLiteral("Payment delivery is closing."));
         }
-        return result;
-    }, [state, owner, payload, finish, lifetime](StartResult result) {
-        if (result.status != StartStatus::Primary || payload->empty()) { if (finish) finish(std::move(result)); return; }
-        if (state->flags->admission_closed) { if (finish) finish(Rejected(QStringLiteral("Payment delivery is closing."))); return; }
-        const auto admitted = owner->admit(*payload, [finish, result = std::move(result)](auto admission) mutable {
-            if (!admission) result = Rejected(QStringLiteral("The GUI could not accept these requests."));
-            else result.receipts = std::move(admission.receipts);
-            if (finish) finish(std::move(result));
-        });
-        if (!admitted && finish) finish(Rejected(QStringLiteral("The GUI could not accept these requests.")));
-    }, [finish](std::exception_ptr) { if (finish) finish(Rejected(QStringLiteral("Payment delivery could not start."))); },
+        return discovery;
+    }, [state, owner, payload, finish, lifetime](Discovery discovery) {
+        if (!discovery.endpoint.isEmpty()) {
+            if (state->flags->admission_closed) { finish(Rejected(QStringLiteral("Payment delivery is closing."))); return; }
+            try {
+                const auto admitted = owner->prepareForwarding(*payload, [state, endpoint = std::move(discovery.endpoint), finish, lifetime](ForwardingSnapshot snapshot) {
+                    if (snapshot.error != Error::None || state->flags->admission_closed) {
+                        finish(Rejected(QStringLiteral("The GUI could not transfer its pending requests."))); return;
+                    }
+                    const auto forward_payload = execution::RetainValues<std::vector<Input>>(state->scope, [&] { return std::make_unique<std::vector<Input>>(std::move(snapshot.inputs)); });
+                    if (!forward_payload) { finish(Rejected(QStringLiteral("The GUI could not retain its pending requests."))); return; }
+                    const auto forwarded = execution::Submit(*state->scope, [state, endpoint, forward_payload, lifetime] {
+                        if (state->flags->stopping) return Rejected(QStringLiteral("Payment delivery is closing."));
+                        // Once a frame may have left this process, an exception
+                        // is an unknown outcome, never permission to replay.
+                        try { return Forward(endpoint, *forward_payload, state->limits, state->flags->stopping); }
+                        catch (...) { return Unknown(); }
+                    }, [finish, lifetime, forward_payload](StartResult result) {
+                        if (result.producer_keys.empty()) for (const auto& input : *forward_payload) result.producer_keys.push_back(input.producer_key);
+                        finish(std::move(result));
+                    }, [finish, lifetime, forward_payload](std::exception_ptr) {
+                        auto result = Unknown(); for (const auto& input : *forward_payload) result.producer_keys.push_back(input.producer_key);
+                        finish(std::move(result));
+                    },
+                        {execution::Lane::Core, 1024 + Queue::MAX_PENDING_BYTES, state->key});
+                    if (!forwarded) finish(Rejected(QStringLiteral("The GUI could not start payment delivery.")));
+                });
+                if (!admitted) finish(Rejected(QStringLiteral("The GUI could not retain its pending requests.")));
+            } catch (...) { finish(Rejected(QStringLiteral("The GUI could not prepare payment delivery."))); }
+            return;
+        }
+        auto result = std::move(discovery.result);
+        if (result.status != StartStatus::Primary || payload->empty()) { finish(std::move(result)); return; }
+        if (state->flags->admission_closed) { finish(Rejected(QStringLiteral("Payment delivery is closing."))); return; }
+        try {
+            const auto admitted = owner->admit(*payload, [finish, payload, result = std::move(result)](auto admission) mutable {
+                if (!admission) result = Rejected(QStringLiteral("The GUI could not accept these requests."));
+                else { result.receipts = std::move(admission.receipts); for (const auto& input : *payload) result.producer_keys.push_back(input.producer_key); }
+                finish(std::move(result));
+            });
+            if (!admitted) finish(Rejected(QStringLiteral("The GUI could not accept these requests.")));
+        } catch (...) { finish(Unknown()); }
+    }, [finish](std::exception_ptr) { finish(Rejected(QStringLiteral("Payment delivery could not start."))); },
         {execution::Lane::Core, bytes, state->key});
 }
 void Service::closeAdmission() { m_flags->admission_closed = true; }

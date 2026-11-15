@@ -4,10 +4,11 @@
 #ifndef BITCOIN_QML_DESKTOPINTENTTRANSPORT_H
 #define BITCOIN_QML_DESKTOPINTENTTRANSPORT_H
 
+#include <qml/atomicsharedptr.h>
 #include <qml/desktopintentowner.h>
 
+#include <chrono>
 #include <functional>
-#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -17,6 +18,14 @@ struct StartResult {
     StartStatus status{StartStatus::Rejected};
     QString error;
     std::vector<Receipt> receipts;
+    // Original local keys for the immutable transfer batch. Known receipts
+    // correspond positionally; Unknown keeps keys without inventing receipts.
+    std::vector<QString> producer_keys{};
+};
+struct Limits {
+    using Time = std::chrono::steady_clock::time_point;
+    std::function<Time()> now{std::chrono::steady_clock::now};
+    std::chrono::milliseconds startup{5000}, connect{1000}, acknowledge{2500}, query{1500}, client{3000}, slice{10};
 };
 
 /** One process-lifetime native endpoint. Filesystem, local sockets, locks and
@@ -28,7 +37,7 @@ struct StartResult {
  */
 class Service final {
 public:
-    static std::shared_ptr<Service> Create(std::shared_ptr<execution::Scheduler> scheduler, std::shared_ptr<Owner> owner);
+    static std::shared_ptr<Service> Create(std::shared_ptr<execution::Scheduler> scheduler, std::shared_ptr<Owner> owner, Limits limits = {});
     ~Service();
     execution::Admission start(QString profile_directory, QString network, std::vector<Input> inputs,
                                std::function<void(StartResult)> completed);
@@ -42,7 +51,7 @@ private:
     struct State;
     struct Flags;
     explicit Service(std::shared_ptr<State> state);
-    std::atomic<std::shared_ptr<State>> m_state;
+    ownership::AtomicSharedPtr<State> m_state;
     const std::shared_ptr<Flags> m_flags;
 };
 } // namespace desktopintent::transport
