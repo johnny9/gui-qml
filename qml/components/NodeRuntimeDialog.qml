@@ -16,6 +16,7 @@ Popup {
     readonly property int contentMargin: 28
     property bool showCompleteDiagnostics: false
     property RuntimePromptModel prompt: ApplicationModels.nodeModel.runtimePrompt
+    readonly property Window presentationWindow: parent !== null ? parent.Window.window : null
 
     function runtimeButtonSpecs() {
         return [
@@ -57,7 +58,7 @@ Popup {
     // Native visibility is a bounded presentation handoff. It precedes the
     // popup enter transition, which may not advance while the window is hidden.
     Component.onCompleted: {
-        const window = root.contentItem.Window.window
+        const window = root.presentationWindow
         if (prompt !== null && window !== null) {
             window.show()
             window.requestActivate()
@@ -68,7 +69,7 @@ Popup {
     visible: prompt !== null
     onOpened: {
         Qt.callLater(function() { root.tagRuntimeButtons() })
-        const window = root.contentItem.Window.window
+        const window = root.presentationWindow
         if (prompt !== null && window !== null) {
             window.show()
             window.requestActivate()
@@ -79,9 +80,9 @@ Popup {
     }
     Component.onDestruction: if (prompt !== null) prompt.unavailable()
     Connections {
-        target: root.contentItem.Window.window
+        target: root.presentationWindow
         function onVisibleChanged() {
-            if (!target.visible && root.prompt !== null) root.prompt.unavailable()
+            if (root.presentationWindow !== null && !root.presentationWindow.visible && root.prompt !== null) root.prompt.unavailable()
         }
     }
 
