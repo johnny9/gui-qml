@@ -10,6 +10,7 @@
 #include <wallet/wallet.h> // Public CRecipient value required by interfaces::Wallet.
 #include <qt/bitcoinunits.h>
 
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
@@ -276,12 +277,19 @@ private Q_SLOTS:
         auto* source = qmltest::LoadFundedWallet(m_app, "sender"); QVERIFY(source);
         const auto mining = qmltest::NewAddress(m_app, source->name());
         auto* wallet = qmltest::CreateWallet(m_app, "many-coins"); QVERIFY(wallet);
+        QElapsedTimer setup_time; setup_time.start();
+        QVERIFY(!qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("avoid_reuse").get_bool());
+        // The oversize condition requires 1600 distinct outpoints. Reuse
+        // 100 real recipients across 16 funding transactions to bound setup
+        // round trips while retaining every input in the original oracle.
+        UniValue amounts{UniValue::VOBJ};
+        for (int coin{0}; coin < 100; ++coin)
+            amounts.pushKV(qmltest::NewAddress(m_app, wallet->name()).toStdString(), UniValue{UniValue::VNUM, "0.001"});
         for (int batch{0}; batch < 16; ++batch) {
-            UniValue amounts{UniValue::VOBJ};
-            for (int coin{0}; coin < 100; ++coin) amounts.pushKV(qmltest::NewAddress(m_app, wallet->name()).toStdString(), UniValue{UniValue::VNUM, "0.001"});
             UniValue params{UniValue::VOBJ}; params.pushKV("dummy", ""); params.pushKV("amounts", amounts); params.pushKV("fee_rate", 2);
             qmltest::Rpc(m_app, "sendmany", params, source->name());
             qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
+            qInfo() << "Oversized maximum funded batch" << batch + 1 << "elapsed ms" << setup_time.elapsed();
         }
         const auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name()); QCOMPARE(coins.size(), size_t{1600});
         QTRY_COMPARE(wallet->balanceSatoshi(), CAmount{160'000'000});
@@ -1156,16 +1164,19 @@ private Q_SLOTS:
         QVERIFY(wallet);
 
         const auto reused_address = qmltest::NewAddress(m_app, wallet_name);
-        // Coinbase outputs need 100 confirmations before listunspent returns
-        // them. Mine 201 blocks to keep the intended 101 spendable outputs.
-        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[201,\"" + reused_address.toStdString() + "\"]"));
-        QTRY_COMPARE(qmltest::Rpc(m_app, "listunspent", {}, wallet_name).size(), 101U);
+        // Mine two mature outputs at this address: spending one dirties the
+        // other, while its confirmed change remains clean. This establishes
+        // the original dirty-only policy and independent clean-input lock.
+        QElapsedTimer setup_time; setup_time.start();
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[102,\"" + reused_address.toStdString() + "\"]"));
+        QTRY_COMPARE(qmltest::Rpc(m_app, "listunspent", {}, wallet_name).size(), 2U);
+        qInfo() << "Avoid reuse mature outputs ready; elapsed ms" << setup_time.elapsed();
 
         // Spend from the repeated address once. Every remaining output at that
         // address is now dirty; the wallet's change output remains clean.
         qmltest::Rpc(m_app, "sendtoaddress", qmltest::Json("{\"address\":\"" + destination_address.toStdString() + "\",\"amount\":1,\"fee_rate\":1}"), wallet_name);
         qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + reused_address.toStdString() + "\"]"));
-        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[101,\"" + reused_address.toStdString() + "\"]"));
+        qInfo() << "Avoid reuse spend confirmed; elapsed ms" << setup_time.elapsed();
         const auto wallet_info = qmltest::Rpc(m_app, "getwalletinfo", {}, wallet_name);
         QCOMPARE(wallet_info.find_value("avoid_reuse").get_bool(), avoid_reuse);
 
@@ -1197,12 +1208,12 @@ private Q_SLOTS:
         const auto* review = qmltest::Find(m_app, "sendReviewButton");
         QVERIFY(review);
         if (avoid_reuse) {
-            QCOMPARE(wallet->availableSendBalanceSatoshi(), qint64{0});
-            QVERIFY(!review->property("enabled").toBool());
+            QTRY_COMPARE(wallet->availableSendBalanceSatoshi(), qint64{0});
+            QTRY_VERIFY(!review->property("enabled").toBool());
             QVERIFY(qmltest::Rpc(m_app, "getrawmempool").empty());
         } else {
-            QVERIFY(wallet->availableSendBalanceSatoshi() > 0);
-            QVERIFY(review->property("enabled").toBool());
+            QTRY_VERIFY(wallet->availableSendBalanceSatoshi() > 0);
+            QTRY_VERIFY(review->property("enabled").toBool());
         }
     }
 };
