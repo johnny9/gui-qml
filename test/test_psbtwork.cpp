@@ -1167,12 +1167,12 @@ private Q_SLOTS:
         QVERIFY(PSBTInputSignedAndVerified(document, 0, &*signed_data));
         opcodetype opcode;
         std::vector<unsigned char> signature;
-        auto cursor = document.inputs[0].final_script_sig.begin();
+        auto cursor = document.inputs[0].final_script_sig.cbegin();
         QVERIFY(document.inputs[0].final_script_sig.GetOp(cursor, opcode, signature));
         QVERIFY(!signature.empty());
         QCOMPARE(int(signature.back()), sighash); // Actual signature byte, not PSBT metadata.
         auto changed = document;
-        --*changed.outputs[size_t(changed_output)].amount;
+        --changed.outputs[size_t(changed_output)].amount;
         const auto changed_data = PrecomputePSBTData(changed); QVERIFY(changed_data);
         QCOMPARE(PSBTInputSignedAndVerified(changed, 0, &*changed_data), signature_remains_valid);
         const auto source = std::make_shared<const PartiallySignedTransaction>(std::move(document));
@@ -1198,6 +1198,62 @@ private Q_SLOTS:
         QVERIFY(accepted.submitted); QCOMPARE(submissions, 1); QVERIFY(submitted);
         QCOMPARE(submitted->vout, transaction.vout);
         QCOMPARE(Bytes(*source), original);
+    }
+
+    void standaloneRejectsIncompatibleFinalizedSignatures_data()
+    {
+        QTest::addColumn<int>("kind");
+        QTest::addColumn<bool>("compatible");
+        for (const auto kind : {psbtwork::Kind::Inspect, psbtwork::Kind::Sign, psbtwork::Kind::Broadcast}) {
+            for (const bool compatible : {false, true}) {
+                const auto name = QByteArray::number(int(kind)) + (compatible ? "-compatible-keys" : "-incompatible-keys");
+                QTest::newRow(name.constData()) << int(kind) << compatible;
+            }
+        }
+    }
+    void standaloneRejectsIncompatibleFinalizedSignatures()
+    {
+        QFETCH(int, kind);
+        QFETCH(bool, compatible);
+        auto original = psbtfeefixture::Legacy(2, false);
+        const auto signer_result = compatible ? original : psbtfeefixture::Legacy(2, false);
+        auto candidate = original;
+        for (size_t i = 0; i < candidate.inputs.size(); ++i) {
+            candidate.inputs[i].final_script_sig = signer_result.inputs[i].final_script_sig;
+        }
+        const auto data = PrecomputePSBTData(candidate); QVERIFY(data);
+        QCOMPARE(PSBTInputSignedAndVerified(candidate, 0, &*data), compatible);
+        if (psbtwork::Kind(kind) == psbtwork::Kind::Sign) {
+            for (auto& input : original.inputs) input.final_script_sig.clear();
+        } else original = std::move(candidate);
+        const auto source = std::make_shared<const PartiallySignedTransaction>(std::move(original));
+        const auto bytes = Bytes(*source);
+        psbtwork::Request request;
+        request.kind = psbtwork::Kind(kind); request.document = source;
+        request.proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(*source));
+        request.approved_fee = request.proof->amount;
+        WorkWallet wallet;
+        wallet.keys_disabled = true; wallet.external_signer = true;
+        wallet.signed_inputs = wallet.inspect_signable = 2;
+        wallet.sign_effect = [signer_result](auto& document) {
+            for (size_t i = 0; i < document.inputs.size(); ++i) document.inputs[i].final_script_sig = signer_result.inputs[i].final_script_sig;
+        };
+        int submissions{0};
+        psbtwork::Context context;
+        context.broadcast = [&](CTransactionRef) { ++submissions; return psbtwork::BroadcastResult{true, {}}; };
+        const auto result = psbtwork::Execute(&wallet, request, context);
+        QCOMPARE(Bytes(*source), bytes);
+        QCOMPARE(wallet.sign_calls, psbtwork::Kind(kind) == psbtwork::Kind::Sign ? 1 : 0);
+        QCOMPARE(submissions, psbtwork::Kind(kind) == psbtwork::Kind::Broadcast && compatible ? 1 : 0);
+        if (psbtwork::Kind(kind) == psbtwork::Kind::Inspect) {
+            QVERIFY(result.snapshot);
+            QCOMPARE(result.snapshot->can_broadcast, compatible);
+            QCOMPARE(result.snapshot->complete, compatible);
+            if (!compatible) QVERIFY(!result.snapshot->error.isEmpty());
+        } else {
+            QCOMPARE(result.code, compatible ? psbtwork::Error::None : psbtwork::Error::Invalid);
+            if (!compatible) { QVERIFY(!result.snapshot); QVERIFY(!result.error.isEmpty()); }
+        }
     }
 
     void ownedOutputReviewDoesNotDependOnSigning()
