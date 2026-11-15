@@ -16,8 +16,10 @@ Popup {
 
     property string txid: ""
     property BumpTransactionModel bumpModel: null
+    property BumpTransactionModel originalModel: null
     property double ownedAttemptId: 0
-    readonly property bool ownsAttempt: ownedAttemptId !== 0 && bumpModel && bumpModel.attemptId === ownedAttemptId
+    readonly property bool ownsAttempt: ownedAttemptId !== 0 && originalModel !== null
+        && bumpModel === originalModel && originalModel.attemptId === ownedAttemptId
     property int bumpState: root.bumpModel ? root.bumpModel.state : BumpTransactionModel.Idle
     property string bumpErrorText: root.bumpModel ? root.bumpModel.errorText : ""
     property string newTxid: ""
@@ -60,13 +62,17 @@ Popup {
 
     onOpened: {
         root.newTxid = ""
-        root.ownedAttemptId = root.bumpModel ? root.bumpModel.requestPrepareFeeBump(root.txid, 1) : 0
+        root.originalModel = root.bumpModel
+        root.ownedAttemptId = root.originalModel ? root.originalModel.requestPrepareFeeBump(root.txid, 1) : 0
         if (!root.ownedAttemptId) root.close()
     }
 
+    onBumpModelChanged: if (root.opened && root.originalModel && root.bumpModel !== root.originalModel) root.close()
+
     onClosed: {
-        if (root.ownsAttempt) root.bumpModel.reset()
+        if (root.originalModel && root.originalModel.attemptId === root.ownedAttemptId) root.originalModel.reset()
         root.ownedAttemptId = 0
+        root.originalModel = null
     }
 
     background: Rectangle {
@@ -84,7 +90,7 @@ Popup {
     signal bumpSucceeded(string newTxid, int walletRecordState, int walletSubmissionState)
 
     Connections {
-        target: root.bumpModel
+        target: root.originalModel
         function onStateChanged() {
             if (root.opened && root.ownsAttempt && root.bumpModel.state === BumpTransactionModel.Succeeded) {
                 root.newTxid = root.bumpModel.newTxid
