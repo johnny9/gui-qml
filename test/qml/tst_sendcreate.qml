@@ -1202,6 +1202,32 @@ TestCase {
         compare(popup.opened, false)
     }
 
+    function test_uri_fixed_amount_replacing_equal_maximum_requires_consent_data() {
+        return [{tag: "keep-maximum", confirm: false}, {tag: "replace-with-fixed", confirm: true}]
+    }
+    function test_uri_fixed_amount_replacing_equal_maximum_requires_consent(data) {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
+        const sendPage = findChild(page, "walletSendPage")
+        const address = "bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4"
+        testSendRecipient.address.setAddress(address)
+        testSendRecipient.amount.satoshi = 12345
+        testSendRecipient.label = ""
+        findChild(page, "sendUseMaximumButton").clicked()
+        compare(testSendRecipient.amountMode, SendRecipient.Maximum)
+        Clipboard.currentText = "bitcoin:" + address + "?amount=0.00012345"
+        sendPage.handleClipboardPaste("address")
+        const prompt = findChild(page, "sendPaymentUriOverwritePopup")
+        tryCompare(prompt, "opened", true)
+        compare(testSendRecipient.amount.satoshi, 12345)
+        compare(testSendRecipient.amountMode, SendRecipient.Maximum)
+        findChild(prompt.contentItem, data.confirm ? "sendPaymentUriOverwriteConfirmButton" : "sendPaymentUriOverwriteCancelButton").clicked()
+        tryCompare(prompt, "opened", false)
+        tryCompare(sendPage, "uriActionPending", false)
+        compare(testSendRecipient.amount.satoshi, 12345)
+        compare(testSendRecipient.amountMode, data.confirm ? SendRecipient.Fixed : SendRecipient.Maximum)
+    }
+
     function test_send_payment_uri_paste_confirms_overwriting_other_fields() {
         testSendRecipient.amount.satoshi = 100000000
         testSendRecipient.label = "existing label"
