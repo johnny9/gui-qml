@@ -398,6 +398,8 @@ TestCase {
         const completePage = findChild(reviewStack, "sendCompletePage")
         verify(completePage !== null)
         compare(completePage.targetBlocks, 0)
+        compare(completePage.submissionState, WalletQmlModel.SubmissionAccepted)
+        compare(completePage.recordState, WalletQmlModel.SendRecordUnknown)
         verify(completePage.descriptionText.indexOf("fee rate") >= 0)
         tryCompare(testWalletModel, "broadcastCurrentTransactionCalls", broadcastCallsBefore + 1)
         findChild(reviewStack, "sendResultDoneButton").clicked()
@@ -1147,8 +1149,8 @@ TestCase {
         tryCompare(testSendRecipient.address, "address", address)
         compare(testSendRecipient.amount.satoshi, 10000000000)
         compare(testSendRecipient.paymentRequestLabel, "Alice")
-        compare(testSendRecipient.label, "Pay me - Alice")
-        compare(findChild(page, "sendNoteInput").text, "Pay me - Alice")
+        compare(testSendRecipient.label, "")
+        compare(findChild(page, "sendNoteInput").text, "")
         compare(sendPage.paymentRequestMessage, "Pay me")
         compare(sendPage.paymentRequestStatus, "Payment request imported from clipboard")
         compare(sendPage.paymentRequestIsError, false)
@@ -1160,10 +1162,10 @@ TestCase {
             { tag: "amount-only", params: "?amount=0.02", note: "Existing note", payTo: "", message: "" },
             { tag: "empty-details", params: "?label=&message=", note: "Existing note", payTo: "", message: "" },
             { tag: "label-only", params: "?label=Tully", note: "Existing note", payTo: "Tully", message: "" },
-            { tag: "message-only", params: "?message=River%20Crossing", note: "River Crossing", payTo: "", message: "River Crossing" },
-            { tag: "message-empty-label", params: "?label=&message=River%20Crossing", note: "River Crossing", payTo: "", message: "River Crossing" },
+            { tag: "message-only", params: "?message=River%20Crossing", note: "Existing note", payTo: "", message: "River Crossing" },
+            { tag: "message-empty-label", params: "?label=&message=River%20Crossing", note: "Existing note", payTo: "", message: "River Crossing" },
             { tag: "label-empty-message", params: "?label=Tully&message=", note: "Existing note", payTo: "Tully", message: "" },
-            { tag: "both-details", params: "?label=Tully&message=River%20Crossing", note: "River Crossing - Tully", payTo: "Tully", message: "River Crossing" },
+            { tag: "both-details", params: "?label=Tully&message=River%20Crossing", note: "Existing note", payTo: "Tully", message: "River Crossing" },
         ]
     }
 
@@ -1177,14 +1179,10 @@ TestCase {
         verify(section !== null)
         compare(section.visible, false)
 
-        sendPage.handlePaymentUriPaste("bitcoin:bcrt1qreplacement" + data.params, "address")
+        sendPage.handlePaymentUriPaste("bitcoin:bcrt1qreplacement" + data.params, BitcoinUri.AddressField)
         const overwrite = findChild(page, "sendPaymentUriOverwritePopup")
-        tryCompare(overwrite, "opened", data.message.length > 0)
-        if (data.message.length > 0) {
-            compare(testSendRecipient.label, "Existing note")
-            findChild(overwrite.contentItem, "sendPaymentUriOverwriteConfirmButton").clicked()
-            tryCompare(overwrite, "visible", false)
-        }
+        tryCompare(sendPage, "uriActionPending", false)
+        compare(overwrite.opened, false)
         tryCompare(sendPage, "uriActionPending", false)
         compare(testSendRecipient.hasPaymentRequest, true)
         compare(testSendRecipient.label, data.note)
@@ -1215,33 +1213,24 @@ TestCase {
         compare(testSendRecipient.label, "My edited note")
     }
 
-    function test_send_payment_uri_paste_confirms_overwriting_note() {
+    function test_send_payment_uri_paste_preserves_private_note_independently() {
         testSendRecipient.label = "My private note"
         const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
             {width: testCase.width, height: testCase.height, visible: true})
-        verify(page !== null)
-        const sendPage = findChild(page, "walletSendPage")
+        const form = findChild(page, "walletSendPage")
         const popup = findChild(page, "sendPaymentUriOverwritePopup")
         const uri = "bitcoin:bcrt1qsendtoaddress?label=Tully&message=River%20Crossing"
-
-        sendPage.handlePaymentUriPaste(uri, "address")
-        tryCompare(popup, "opened", true)
-        compare(testSendRecipient.label, "My private note")
-        findChild(popup.contentItem, "sendPaymentUriOverwriteCancelButton").clicked()
-        tryCompare(popup, "opened", false)
-        compare(testSendRecipient.label, "My private note")
-
-        sendPage.handlePaymentUriPaste(uri, "address")
-        tryCompare(popup, "opened", true)
-        findChild(popup.contentItem, "sendPaymentUriOverwriteConfirmButton").clicked()
-        tryCompare(popup, "opened", false)
-        compare(testSendRecipient.label, "River Crossing - Tully")
-        compare(findChild(page, "sendNoteInput").text, "River Crossing - Tully")
-
-        // Pasting the same details again does not prompt for a matching note.
-        sendPage.handlePaymentUriPaste(uri, "address")
-        tryCompare(sendPage, "uriActionPending", false)
+        form.handlePaymentUriPaste(uri, BitcoinUri.AddressField)
+        tryCompare(form, "uriActionPending", false)
         compare(popup.opened, false)
+        compare(testSendRecipient.label, "My private note")
+        compare(findChild(page, "sendNoteInput").text, "My private note")
+        compare(testSendRecipient.paymentRequestLabel, "Tully")
+        compare(testSendRecipient.message, "River Crossing")
+        form.handlePaymentUriPaste(uri, BitcoinUri.AddressField)
+        tryCompare(form, "uriActionPending", false)
+        compare(popup.opened, false)
+        compare(testSendRecipient.label, "My private note")
     }
 
     function test_uri_fixed_amount_replacing_equal_maximum_requires_consent_data() {
@@ -1258,7 +1247,7 @@ TestCase {
         findChild(page, "sendUseMaximumButton").clicked()
         compare(testSendRecipient.amountMode, SendRecipient.Maximum)
         Clipboard.currentText = "bitcoin:" + address + "?amount=0.00012345"
-        sendPage.handleClipboardPaste("address")
+        sendPage.handleClipboardPaste(BitcoinUri.AddressField)
         const prompt = findChild(page, "sendPaymentUriOverwritePopup")
         tryCompare(prompt, "opened", true)
         compare(testSendRecipient.amount.satoshi, 12345)
@@ -1289,7 +1278,7 @@ TestCase {
 
         const uri = "bitcoin:bcrt1qreplacement?amount=0.02000000&label=replacement-label"
         Clipboard.currentText = uri
-        sendPage.handleClipboardPaste("address")
+        sendPage.handleClipboardPaste(BitcoinUri.AddressField)
         tryCompare(overwritePopup, "opened", true)
 
         verify(addressInput.text !== uri)
@@ -1305,7 +1294,7 @@ TestCase {
         compare(testSendRecipient.amount.satoshi, 100000000)
         compare(testSendRecipient.label, "existing label")
 
-        sendPage.handleClipboardPaste("address")
+        sendPage.handleClipboardPaste(BitcoinUri.AddressField)
         tryCompare(overwritePopup, "opened", true)
         const confirmButton = findChild(overwritePopup.contentItem, "sendPaymentUriOverwriteConfirmButton")
         verify(confirmButton !== null)
@@ -1354,7 +1343,7 @@ TestCase {
         verify(sendPage !== null)
         verify(overwritePopup !== null)
 
-        sendPage.handlePaymentUriPaste("bitcoin:bcrt1qreplacement", "address")
+        sendPage.handlePaymentUriPaste("bitcoin:bcrt1qreplacement", BitcoinUri.AddressField)
 
         tryCompare(sendPage, "uriActionPending", false)
         compare(overwritePopup.opened, false)
@@ -2141,7 +2130,7 @@ TestCase {
         else testWalletModel.available = false
         const calls = BitcoinUri.requestCallsForTest
         try {
-            form.handleClipboardPaste("address", editor, payload)
+            form.handleClipboardPaste(BitcoinUri.AddressField, editor, payload)
             compare(BitcoinUri.requestCallsForTest, calls)
             compare(cancelled.count, 1)
             compare(field.pastePending, false)
@@ -2198,7 +2187,7 @@ TestCase {
         Clipboard.currentText = data.text
         const applications = testSendRecipient.appliedPaymentRequestCalls
         try {
-            form.handleClipboardPaste(data.name, editor)
+            form.handleClipboardPaste(data.name === "address" ? BitcoinUri.AddressField : data.name === "amount" ? BitcoinUri.AmountField : BitcoinUri.PrivateNoteField, editor)
             verify(field.pastePending)
             Clipboard.currentText = "replacement must not win"
             BitcoinUri.releasePublications()
@@ -2360,50 +2349,136 @@ TestCase {
         }
         fail("Expected a scrollable ancestor for the review control")
     }
+    function test_validation_echo_preserves_original_import_intent_data() {
+        return [{tag: "explicit-derived-total", paste: false}, {tag: "paste-validation-revision", paste: true}]
+    }
+    function test_validation_echo_preserves_original_import_intent(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const editor = controlledSendEditor(form)
+        const uri = "bitcoin:bcrt1qsendtoaddress?amount=0.07&message=Original"
+        const revision = page.draftRevision
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        BitcoinUri.holdPublications = true
+        try {
+            if (data.paste) { Clipboard.currentText = uri; editor.addressField.paste() }
+            else form.applyPaymentRequestFromText(uri, "original request")
+            const original = form.m_importOperation
+            verify(original !== null)
+            if (data.paste) {
+                testSendRecipient.validationRevision++
+                testSendRecipient.address.formattedAddressChanged()
+                testSendRecipient.amount.inputChanged()
+            } else testRecipientsModel.totalAmountChanged() // Repeated cached projection, same semantic revision.
+            compare(page.draftRevision, revision)
+            compare(form.m_importOperation, original)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            BitcoinUri.releasePublications()
+            tryCompare(form, "uriActionPending", false)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + 1)
+            compare(testSendRecipient.amount.satoshi, 7000000)
+            compare(testSendRecipient.message, "Original")
+        } finally { BitcoinUri.releasePublications() }
+    }
+
+    function test_clipboard_offer_tracks_public_message_but_ignores_private_note_and_formatting() {
+        testSendRecipient.address.setAddress("bcrt1qsendtoaddress")
+        testSendRecipient.amount.satoshi = 700000
+        testSendRecipient.paymentRequestLabel = "Invoice"
+        testSendRecipient.message = "Original"
+        testSendRecipient.label = "Private bookkeeping"
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        Clipboard.currentText = "BITCOIN:bcrt1qsendtoaddress?message=%4Friginal&amount=0.00700000&label=Invoice"
+        tryVerify(function() { return form.m_clipboardOperation && !form.m_clipboardOperation.pending })
+        compare(form.showClipboardUriBanner, false)
+        testSendRecipient.label = "Changed private bookkeeping"
+        tryVerify(function() { return form.m_clipboardOperation && !form.m_clipboardOperation.pending })
+        compare(form.showClipboardUriBanner, false)
+        Clipboard.currentText = "bitcoin:bcrt1qsendtoaddress?amount=0.007&label=Invoice&message=Changed"
+        tryCompare(form, "showClipboardUriBanner", true)
+        Clipboard.currentText = "bitcoin:bcrt1qsendtoaddress?amount=0.007&label=Invoice"
+        tryCompare(form, "showClipboardUriBanner", true)
+        testSendRecipient.message = ""
+        tryCompare(form, "showClipboardUriBanner", false)
+        compare(testSendRecipient.label, "Changed private bookkeeping")
+    }
+
+    function test_locked_wallet_allows_local_draft_import_without_unlocking() {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        testWalletModel.isEncrypted = true
+        testWalletModel.isLocked = true
+        try {
+            testSendRecipient.label = "Private locked note"
+            form.handlePaymentUriPaste("bitcoin:bcrt1qsendtoaddress?amount=0.007&message=Public", BitcoinUri.AddressField)
+            tryCompare(form, "uriActionPending", false)
+            compare(testSendRecipient.amount.satoshi, 700000)
+            compare(testSendRecipient.message, "Public")
+            compare(testSendRecipient.label, "Private locked note")
+            compare(testWalletModel.isLocked, true)
+            compare(testWalletModel.sendTransactionCalls, 0)
+        } finally { testWalletModel.isEncrypted = false; testWalletModel.isLocked = false }
+    }
+
     function test_native_psbt_picker_keeps_original_opening_data() {
         return [{tag: "accepted", action: "accept"}, {tag: "replaced-opening", action: "replace"},
-                {tag: "cancelled", action: "cancel"}]
+                {tag: "cancelled", action: "cancel"}, {tag: "edited-draft", action: "draft"},
+                {tag: "changed-recipient", action: "recipient"}, {tag: "hidden-view", action: "hide"}]
     }
     function test_native_psbt_picker_keeps_original_opening(data) {
         const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
         const picker = findChild(page, "sendPsbtOpenDialog")
         const menu = findChild(page, "sendOptionsPopup")
         const options = findChild(page, "sendOptionsButton")
         const original = testWalletModel.psbtActionId
         const replacement = testSecondWalletModel.psbtActionId
-        testWalletModel.holdPsbtPublicationForTest = true
+        BitcoinUri.holdPublications = true
         try {
             revealSendControl(page, options)
             mouseClick(options)
             tryCompare(menu, "opened", true)
             mouseClick(findChild(menu, "sendImportPsbtFromFileButton"))
             tryCompare(picker, "visible", true)
+            const captured = picker.contextObject
+            verify(captured !== null)
+            compare(captured.state, PaymentImportOperation.Empty)
             compare(picker.openCalls, 1)
-            compare(testWalletModel.psbtActionId, original)
             if (data.action === "replace") page.wallet = testSecondWalletModel
+            else if (data.action === "draft") testSendRecipient.label = "Changed while chooser open"
+            else if (data.action === "recipient") testRecipientsModel.add()
+            else if (data.action === "hide") page.visible = false
             if (data.action === "cancel") { picker.close(); picker.rejected() }
             else picker.selectAndAccept("file:///original%20opening.psbt")
             compare(picker.visible, false)
+            compare(testWalletModel.psbtActionId, original)
             compare(testSecondWalletModel.psbtActionId, replacement)
-            compare(testWalletModel.psbtActionId, original + (data.action === "accept" ? 1 : 0))
             if (data.action === "accept") {
-                compare(testWalletModel.psbtActionBusy, true)
+                compare(captured.selectedPath, "file:///original opening.psbt") // Qt hands over the decoded QUrl display form; Native owns path interpretation.
+                verify(!captured.requestFile("successor.psbt"))
                 compare(findChild(page, "transactionReviewPopup").visible, false)
-                testWalletModel.completePsbtWorkForTest()
-                testWalletModel.finishPsbtPublicationForTest()
+                BitcoinUri.releasePublications()
                 const review = findChild(page, "transactionReviewPopup")
                 tryCompare(review, "opened", true)
                 compare(review.reviewWallet, testWalletModel)
                 compare(review.importedReview, true)
-            } else compare(findChild(page, "transactionReviewPopup").visible, false)
+            } else {
+                compare(captured.selectedPath, "")
+                BitcoinUri.releasePublications()
+                compare(findChild(page, "transactionReviewPopup").visible, false)
+                if (data.action !== "cancel") verify(!captured.requestFile("stale.psbt"))
+            }
         } finally {
             picker.close()
-            testWalletModel.resetPsbtForTest()
+            BitcoinUri.releasePublications()
+            form.cancelUriIntents()
             const review = findChild(page, "transactionReviewPopup")
             review.close()
             tryCompare(review, "visible", false)
         }
     }
+
     function test_password_preparation_submission_owns_one_outcome_data() {
         return [{tag: "ready", result: "ready"}, {tag: "failed", result: "failed"},
                 {tag: "admission-refused", result: "refused"}]
@@ -2641,6 +2716,7 @@ TestCase {
     }
     function test_overwrite_confirmation_rejects_unavailable_opening() {
         testSendRecipient.label = "original private note"
+        testSendRecipient.amount.satoshi = 10000
         const page = createControlledSendPage()
         const form = findChild(page, "walletSendPage")
         const editor = controlledSendEditor(form)
@@ -2653,11 +2729,11 @@ TestCase {
         tryCompare(popup, "opened", true)
         try {
             testWalletModel.available = false
-            mouseClick(findChild(popup.contentItem, "sendPaymentUriOverwriteConfirmButton"))
+            findChild(popup.contentItem, "sendPaymentUriOverwriteConfirmButton").clicked() // A queued old confirmation cannot revive the retired Source.
             tryCompare(popup, "visible", false)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications)
             compare(testSendRecipient.address.address, address)
-            compare(testSendRecipient.amount.satoshi, 0)
+            compare(testSendRecipient.amount.satoshi, 10000)
             compare(testSendRecipient.label, "original private note")
             compare(testWalletModel.prepareTransactionCalls, prepareCalls)
             compare(form.uriActionPending, false)

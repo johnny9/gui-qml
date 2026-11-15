@@ -276,6 +276,7 @@ std::shared_ptr<const paymentimport::TargetPort> SendRecipientsListModel::import
             paymentimport::PaymentBatch batch{token, found->second.revision, found->second.amount_intent_revision,
                 source->payment, source->field, false};
             current.conflicts = paymentimport::PreparePaymentBatch(found->second, batch).status == paymentimport::BatchStatus::ReplacementRequired;
+            current.matches_request = paymentimport::MatchesPaymentRequest(found->second, source->payment);
         }
         return current;
     };

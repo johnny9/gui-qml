@@ -17,12 +17,15 @@
 
 namespace psbtwork { struct ImportResult; }
 namespace paymentimport {
+enum class NativeHandoff { None, LiteralPaste, RestoreOnly, RestoreImport };
 struct Inspection {
     Kind kind{Kind::Unknown};
     senddraft::PaymentRequest payment;
     SourceField field{SourceField::WholeRequest};
     std::shared_ptr<const psbtwork::Snapshot> psbt;
     QString error, source_identity;
+    QString payment_identity;
+    NativeHandoff native_handoff{NativeHandoff::None};
     // Source view lifetime only. Revocation never changes an admitted child
     // effect or its retained outcome.
     std::shared_ptr<std::atomic_bool> presentation_allowed{};

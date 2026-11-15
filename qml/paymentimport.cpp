@@ -11,9 +11,11 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QUrl>
+#include <key_io.h>
 #include <psbt.h>
 
 #include <atomic>
+#include <algorithm>
 #include <limits>
 #include <map>
 #include <mutex>
@@ -26,42 +28,88 @@ namespace {
 constexpr qsizetype MAX_TEXT{1024 * 1024}, MAX_FILE{4 * 1024 * 1024};
 constexpr auto RETRY{std::chrono::milliseconds{100}};
 Inspection Invalid(const QString& error) { Inspection result; result.error = error.left(4096); return result; }
+bool PasteProvenance(const QString& previous, const QString& current, const QString& clipboard)
+{
+    if (clipboard.isEmpty() || previous == current || current.size() < clipboard.size()) return false;
+    const auto unchanged = current.size() - clipboard.size();
+    if (unchanged > previous.size()) return false;
+    qsizetype prefix{0}, suffix{0};
+    while (prefix < std::min(previous.size(), current.size()) && previous[prefix] == current[prefix]) ++prefix;
+    while (suffix < std::min(previous.size(), current.size()) && previous[previous.size() - suffix - 1] == current[current.size() - suffix - 1]) ++suffix;
+    const auto lower = std::max<qsizetype>(0, unchanged - suffix), upper = std::min(prefix, unchanged);
+    const auto found = current.indexOf(clipboard, lower);
+    return lower <= upper && found >= 0 && found <= upper;
+}
+QString PaymentIdentity(const senddraft::PaymentRequest& payment)
+{
+    const auto destination = DecodeDestination(payment.address.toStdString());
+    const auto address = IsValidDestination(destination) ? QString::fromStdString(EncodeDestination(destination)) : payment.address;
+    QByteArray bytes;
+    for (const auto& field : {address, payment.amount ? QString::number(*payment.amount) : QStringLiteral("absent"), payment.label, payment.message}) {
+        const auto encoded = field.toUtf8(); bytes += QByteArray::number(encoded.size()) + ':' + encoded;
+    }
+    return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+}
 }
 
 Inspection ReadSource(const Input& input)
 {
+    auto kind = input.kind;
+    QString value = input.value;
+    if (kind == Input::Kind::Drop) {
+        if (input.url_count < 0 || input.url_count > 1) return Invalid(QStringLiteral("Drop one payment request or PSBT at a time."));
+        if (input.url_count == 1) value = input.url.toString();
+        kind = input.url_count == 1 && input.url.isLocalFile() ? Input::Kind::File : Input::Kind::Text;
+    } else if (kind == Input::Kind::File && !input.url.isEmpty()) {
+        value = input.url.toString();
+    }
+    NativeHandoff handoff{NativeHandoff::None};
+    const auto invalid = [&](const QString& error) { auto result = Invalid(error); result.native_handoff = handoff; return result; };
+    if (input.paste) {
+        handoff = NativeHandoff::RestoreOnly;
+        if (value.size() > MAX_TEXT || input.previous.size() > MAX_TEXT || input.current.size() > MAX_TEXT)
+            return invalid(QStringLiteral("The pasted source is too large."));
+        const bool uri = value.trimmed().startsWith(QStringLiteral("bitcoin:"), Qt::CaseInsensitive);
+        const bool provenance = !input.edited || PasteProvenance(input.previous, input.current, value);
+        handoff = !uri || !provenance ?
+            (input.edited && input.field == SourceField::Amount && input.current.contains(QStringLiteral("bitcoin:"), Qt::CaseInsensitive)
+                ? NativeHandoff::RestoreOnly : NativeHandoff::LiteralPaste) : NativeHandoff::RestoreImport;
+        if (handoff != NativeHandoff::RestoreImport) { Inspection result; result.native_handoff = handoff; return result; }
+    }
     QByteArray bytes;
     QString identity_path;
-    if (input.kind == Input::Kind::File) {
-        const auto path = psbtwork::LocalFilePath(input.value);
-        if (path.isEmpty() || path.size() > 4096) return Invalid(QStringLiteral("The import path is invalid."));
-        if (!QFileInfo(path).isFile()) return Invalid(QStringLiteral("The import source must be a regular local file."));
+    if (kind == Input::Kind::File) {
+        const auto path = psbtwork::LocalFilePath(value);
+        if (path.isEmpty() || path.size() > 4096) return invalid(QStringLiteral("The import path is invalid."));
+        if (!QFileInfo(path).isFile()) return invalid(QStringLiteral("The import source must be a regular local file."));
         QFile file{path};
-        if (!file.open(QIODevice::ReadOnly)) return Invalid(QStringLiteral("The import source could not be opened."));
+        if (!file.open(QIODevice::ReadOnly)) return invalid(QStringLiteral("The import source could not be opened."));
         identity_path = QFileInfo(file).canonicalFilePath();
-        if (identity_path.isEmpty()) return Invalid(QStringLiteral("The original import path could not be resolved."));
+        if (identity_path.isEmpty()) return invalid(QStringLiteral("The original import path could not be resolved."));
         bytes = file.read(MAX_FILE + 1);
         if (file.error() != QFileDevice::NoError || bytes.size() > MAX_FILE || !file.atEnd())
-            return Invalid(QStringLiteral("The import source is too large or could not be read."));
+            return invalid(QStringLiteral("The import source is too large or could not be read."));
     } else {
-        if (input.value.size() > MAX_TEXT) return Invalid(QStringLiteral("The import source is too large."));
-        bytes = input.value.toUtf8();
+        if (value.size() > MAX_TEXT) return invalid(QStringLiteral("The import source is too large."));
+        bytes = value.toUtf8();
     }
     Inspection result;
     result.field = input.field;
+    result.native_handoff = handoff;
     result.source_identity = QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex()) + QLatin1Char(':') +
         QString::fromLatin1(QCryptographicHash::hash(identity_path.toUtf8(), QCryptographicHash::Sha256).toHex());
     const auto text = QString::fromUtf8(bytes).trimmed();
     if (text.startsWith(QStringLiteral("bitcoin:"), Qt::CaseInsensitive)) {
         const auto payment = BitcoinUri::Parse(text);
-        if (!payment.success) return Invalid(payment.error);
+        if (!payment.success) return invalid(payment.error);
         if (payment.address.size() > 1024 || payment.label.size() > senddraft::Limits::note ||
-            payment.message.size() > senddraft::Limits::message) return Invalid(QStringLiteral("The payment request metadata is too large."));
+            payment.message.size() > senddraft::Limits::message) return invalid(QStringLiteral("The payment request metadata is too large."));
         result.kind = Kind::Payment;
         result.payment.address = payment.address;
         result.payment.label = payment.label;
         result.payment.message = payment.message;
         if (payment.has_amount) result.payment.amount = payment.amount_sats;
+        result.payment_identity = PaymentIdentity(result.payment);
         // Public URI fields never manufacture a user-authored private note.
         return result;
     }
@@ -71,11 +119,11 @@ Inspection ReadSource(const Input& input)
         const auto decoded = DecodeBase64PSBT(text.toStdString());
         if (decoded) document = *decoded;
     }
-    if (!document) return Invalid(QStringLiteral("The source is not a supported payment request or PSBT."));
+    if (!document) return invalid(QStringLiteral("The source is not a supported payment request or PSBT."));
     const auto transaction = document->GetUnsignedTx();
     if (!transaction || transaction->vin.empty() || transaction->vout.empty() ||
         document->inputs.size() != transaction->vin.size() || document->outputs.size() != transaction->vout.size())
-        return Invalid(QStringLiteral("The PSBT is malformed."));
+        return invalid(QStringLiteral("The PSBT is malformed."));
     auto parsed = std::make_shared<psbtwork::Snapshot>();
     parsed->document = std::make_shared<const PartiallySignedTransaction>(std::move(*document));
     result.kind = Kind::Psbt;
@@ -125,7 +173,7 @@ struct Owner::State {
     uint64_t sequence{0}, target_sequence{0}, delivery_sequence{0}, query_delivery{0};
     size_t native_jobs{0};
     QString error;
-    bool closing{false}, retired{false}, wake_pending{false}, use_requested{false};
+    bool closing{false}, retired{false}, wake_pending{false}, use_requested{false}, native_handoff_completed{false};
     std::chrono::steady_clock::time_point retry_at{};
 };
 
@@ -175,14 +223,15 @@ void Owner::publish()
 
 execution::Admission Owner::inspect(Input input)
 {
-    if (input.value.size() > MAX_TEXT) return {{}, execution::Rejection::Capacity};
+    if (input.value.size() > MAX_TEXT || input.previous.size() > MAX_TEXT || input.current.size() > MAX_TEXT)
+        return {{}, execution::Rejection::Capacity};
     auto retained = execution::RetainValues<Input>(m_scope, [&] { return std::make_unique<Input>(std::move(input)); });
     if (!retained) return {{}, execution::Rejection::Capacity};
     return submit([self = shared_from_this(), retained] {
         auto& state = *self->m_state;
         const auto source = state.flow.inspect();
         if (!source || state.closing || state.native_jobs) return;
-        state.input = retained; state.inspection.reset(); state.result.reset(); state.error.clear();
+        state.input = retained; state.inspection.reset(); state.result.reset(); state.error.clear(); state.native_handoff_completed = false;
         self->cancelObsolete(); self->read<false>(*source);
     });
 }
@@ -194,8 +243,47 @@ execution::Admission Owner::retry()
         if (state.flow.phase() != Phase::Failed || state.closing || !state.input || state.native_jobs) return;
         const auto source = state.flow.inspect();
         if (!source) return;
-        state.use_requested = false; state.inspection.reset(); state.result.reset(); state.error.clear();
+        state.use_requested = false; state.inspection.reset(); state.result.reset(); state.error.clear(); state.native_handoff_completed = false;
         self->cancelObsolete(); self->read<false>(*source);
+    });
+}
+
+template <bool Analysis>
+void Owner::consumed(uint64_t source, std::shared_ptr<const Inspection> output, std::exception_ptr error)
+{
+    auto& state = *m_state;
+    if (source != state.flow.source()) return;
+    if constexpr (!Analysis) {
+        if (!error && !state.closing && !state.native_handoff_completed && output->native_handoff != NativeHandoff::None &&
+            state.flow.awaitNativeHandoff(source)) {
+            state.inspection = std::move(output);
+            return;
+        }
+    }
+    if (error || output->kind == Kind::Unknown || !output->error.isEmpty()) {
+        state.error = error ? QStringLiteral("The import source could not be inspected.") : output->error;
+        state.flow.inspectionFailed(source);
+    } else {
+        state.inspection = std::move(output);
+        if constexpr (Analysis) state.flow.analyzed(source);
+        else state.flow.parsed(source, state.inspection->kind);
+        if constexpr (!Analysis) {
+            if (!state.closing && state.inspection->kind == Kind::Psbt) read<true>(source);
+            else if (!state.closing) observe();
+        } else if (!state.closing) observe();
+    }
+}
+
+execution::Admission Owner::nativeHandoff(uint64_t source)
+{
+    return submit([self = shared_from_this(), source] {
+        auto& state = *self->m_state;
+        if (!state.inspection || !state.flow.nativeHandoffCompleted(source)) return;
+        state.native_handoff_completed = true;
+        if (state.inspection->native_handoff != NativeHandoff::RestoreImport && state.inspection->error.isEmpty()) {
+            state.closing = true; state.flow.nativeOnlyCompleted(source);
+        } else self->consumed<false>(source, state.inspection);
+        self->cancelObsolete();
     });
 }
 
@@ -208,22 +296,8 @@ void Owner::read(uint64_t source)
     const auto original = m_state->inspection;
     ++m_state->native_jobs;
     const auto completed = [self = shared_from_this(), output, source](std::exception_ptr error) {
-        auto& state = *self->m_state;
-        --state.native_jobs;
-        if (source == state.flow.source()) {
-            if (error || output->kind == Kind::Unknown || !output->error.isEmpty()) {
-                state.error = error ? QStringLiteral("The import source could not be inspected.") : output->error;
-                state.flow.inspectionFailed(source);
-            } else {
-                state.inspection = output;
-                if constexpr (Analysis) state.flow.analyzed(source);
-                else state.flow.parsed(source, output->kind);
-                if constexpr (!Analysis) {
-                    if (!state.closing && output->kind == Kind::Psbt) self->read<true>(source);
-                    else if (!state.closing) self->observe();
-                } else if (!state.closing) self->observe();
-            }
-        }
+        --self->m_state->native_jobs;
+        self->consumed<Analysis>(source, output, error);
         self->cancelObsolete(); self->publish();
     };
     const auto admission = execution::Submit(*m_scope, [output, input, original, services = m_services, presentation_allowed = m_presentation_allowed] {

@@ -1924,6 +1924,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(quint64 currentTransactionFlowRevision READ currentTransactionFlowRevision NOTIFY currentTransactionChanged)
     Q_PROPERTY(QVariantMap currentTransactionFlow READ currentTransactionFlow WRITE setCurrentTransactionFlow NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionIsImportedPsbt MEMBER m_current_transaction_is_imported_psbt NOTIFY currentTransactionChanged)
+    Q_PROPERTY(QString importedReviewToken MEMBER m_imported_review_token NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanSend MEMBER m_current_transaction_can_send NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanSignOnly MEMBER m_current_transaction_can_sign_only NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionNeedsRevalidation MEMBER m_current_transaction_needs_revalidation NOTIFY preparationChanged)
@@ -2168,7 +2169,7 @@ public:
     int sendState() const { return m_send_state; }
     bool sendBusy() const { return m_send_state == SendPending || m_send_state == SendNeedsConfirmation; }
     QString sendResultTxid() const { return m_current_transaction ? m_current_transaction->property("txid").toString() : QString{}; }
-    Q_INVOKABLE void resetSendForTest() { resetPsbtForTest();m_hold_send = false; m_send_sign_only = false; m_sign_only_transaction_calls = 0; m_send_state = SendIdle; m_send_submission = SubmissionMempool; m_send_review.clear(); Q_EMIT sendOperationChanged(); }
+    Q_INVOKABLE void resetSendForTest() { resetPsbtForTest();m_hold_send = false; m_send_sign_only = false; m_send_transaction_calls = 0; m_sign_only_transaction_calls = 0; m_send_state = SendIdle; m_send_submission = SubmissionMempool; m_send_review.clear(); Q_EMIT sendOperationChanged(); }
     Q_INVOKABLE void finishSendForTest() {
         if (!sendBusy()) return;
         m_send_state = m_send_review != m_current_transaction ? SendClosed : m_send_sign_only ? SendSignedOnly : m_send_transaction_result ? SendCommitted : m_transaction_needs_unlock ? SendNeedsUnlock : SendFailed;
@@ -2242,6 +2243,11 @@ public:
     QString psbtSavedPath()const{return m_saved_psbt_receipt&&m_saved_psbt_receipt->saved?m_saved_psbt_receipt->path:QString{};}
     QString psbtSubmittedTxid()const{return m_submitted_psbt_receipt&&m_submitted_psbt_receipt->submitted?m_submitted_psbt_receipt->txid:QString{};}
     QObject* importedPsbt(){return &m_imported_psbt;}
+    Q_INVOKABLE void adoptImportReviewForTest(quint64 owner, quint64 child) {
+        m_imported_review_token = QString::number(owner) + QLatin1Char(':') + QString::number(child);
+        m_current_transaction_is_imported_psbt = true;
+        Q_EMIT currentTransactionChanged();
+    }
     Q_INVOKABLE quint64 requestImportPsbtFromFile(const QString& path){return requestPsbtAction(PsbtKind::Import,path);}
     Q_INVOKABLE quint64 requestSaveCurrentTransactionAsPsbt(const QString& path){return requestPsbtAction(PsbtKind::Save,path);}
     Q_INVOKABLE quint64 requestSaveUnverifiedSignerResult(const QString& token, const QString& path) {
@@ -2253,7 +2259,7 @@ public:
     Q_INVOKABLE void resetPsbtForTest(){
         m_hold_psbt_publication=false;m_psbt_operation.reset();m_saved_psbt_receipt.reset();m_submitted_psbt_receipt.reset();
         m_psbt_action_state=PsbtActionState::PsbtIdle;m_psbt_import_result=PsbtImportResult::PsbtUnsupported;m_next_psbt_import_result=PsbtImportResult::WalletCanSign;
-        m_psbt_action_error.clear();m_imported_psbt.clear();Q_EMIT psbtActionChanged();
+        m_psbt_action_error.clear();m_imported_review_token.clear();m_imported_psbt.clear();Q_EMIT psbtActionChanged();
     }
     static void completePsbtPacket(const std::shared_ptr<PsbtPacket>& packet){
         if(packet->ready)return;packet->ready=true;
@@ -2351,6 +2357,7 @@ public:
     bool m_current_transaction_needs_revalidation{false};
     QVariantMap m_current_transaction_flow;
     bool m_current_transaction_is_imported_psbt{false};
+    QString m_imported_review_token;
     bool m_current_transaction_can_broadcast{false};
     bool m_transaction_fee_pending{false};
     QString m_current_transaction_review_message;

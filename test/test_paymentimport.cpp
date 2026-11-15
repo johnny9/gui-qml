@@ -90,6 +90,93 @@ class PaymentImportTests : public QObject
 private Q_SLOTS:
     void initTestCase() { m_ecc = std::make_unique<ECC_Context>(); }
     void cleanupTestCase() { m_ecc.reset(); }
+    void nativePasteDispositionIsIndependentOfGuiTiming_data() {
+        QTest::addColumn<QString>("clipboard"); QTest::addColumn<QString>("previous"); QTest::addColumn<QString>("current");
+        QTest::addColumn<int>("field"); QTest::addColumn<int>("expected"); QTest::addColumn<bool>("edited");
+        const auto row = [](const char* name, const QString& clipboard, const QString& previous, const QString& current,
+                            paymentimport::SourceField field, paymentimport::NativeHandoff handoff, bool edited = true) {
+            QTest::newRow(name) << clipboard << previous << current << int(field) << int(handoff) << edited;
+        };
+        using Field = paymentimport::SourceField; using Handoff = paymentimport::NativeHandoff;
+        row("captured-address", Uri(), {}, {}, Field::Address, Handoff::RestoreImport, false);
+        row("native-address", Uri(), "old", Uri(), Field::Address, Handoff::RestoreImport);
+        row("native-private-note", Uri(), "private", "private" + Uri(), Field::PrivateNote, Handoff::RestoreImport);
+        row("native-amount", Uri(), "12", "12" + Uri(), Field::Amount, Handoff::RestoreImport);
+        row("ambiguous-amount", Uri(), "12", "12extra" + Uri(), Field::Amount, Handoff::RestoreOnly);
+        row("typed-amount-uri", "unrelated", "12", "12bitcoin:typed", Field::Amount, Handoff::RestoreOnly);
+        row("literal-note", "ordinary", "private", "privateordinary", Field::PrivateNote, Handoff::LiteralPaste);
+        row("unrelated-current-note", Uri(), "private", "privateordinary", Field::PrivateNote, Handoff::LiteralPaste);
+        row("long-native-note", Uri(), QString(2048, 'x'), QString(2048, 'x') + Uri(), Field::PrivateNote, Handoff::RestoreImport);
+    }
+    void nativePasteDispositionIsIndependentOfGuiTiming() {
+        QFETCH(QString, clipboard); QFETCH(QString, previous); QFETCH(QString, current); QFETCH(int, field); QFETCH(int, expected); QFETCH(bool, edited);
+        paymentimport::Input input{paymentimport::Input::Kind::Text, clipboard}; input.paste = true; input.edited = edited;
+        input.field = static_cast<paymentimport::SourceField>(field); input.previous = previous; input.current = current;
+        const auto result = paymentimport::ReadSource(input);
+        QCOMPARE(int(result.native_handoff), expected); QVERIFY(result.error.isEmpty());
+        QCOMPARE(result.kind, expected == int(paymentimport::NativeHandoff::RestoreImport) ? paymentimport::Kind::Payment : paymentimport::Kind::Unknown);
+        QVERIFY(result.payment.private_note.isEmpty());
+    }
+    void sourceWaitsForExactOriginalNativeHandoffBeforeAnyApply_data() {
+        QTest::addColumn<bool>("close"); QTest::newRow("complete") << false; QTest::newRow("cancel-before-ack") << true;
+    }
+    void sourceWaitsForExactOriginalNativeHandoffBeforeAnyApply() {
+        QFETCH(bool, close); Fixture f;
+        paymentimport::Input input{paymentimport::Input::Kind::Text, Uri()}; input.paste = true; input.field = paymentimport::SourceField::Address;
+        QVERIFY(f.owner->inspect(input)); QVERIFY(f.owner->chooseTarget(f.port)); QVERIFY(f.owner->use()); f.drain();
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::AwaitingNativeHandoff); QVERIFY(f.snapshot.pending);
+        QVERIFY(!f.snapshot.can_apply); QCOMPARE(f.dispatches, 0); const auto token = f.snapshot.source;
+        QVERIFY(f.owner->nativeHandoff(token + 1)); f.drain(); QCOMPARE(f.dispatches, 0);
+        if (close) { f.owner->close(); f.source.drain(); QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closed); }
+        QVERIFY(f.owner->nativeHandoff(token)); f.drain(); QCOMPARE(f.dispatches, close ? 0 : 1);
+        QVERIFY(f.owner->nativeHandoff(token)); f.drain(); QCOMPARE(f.dispatches, close ? 0 : 1);
+        QCOMPARE(f.snapshot.phase, close ? paymentimport::Phase::Closed : paymentimport::Phase::Applied);
+    }
+    void literalNativeHandoffClosesWithoutImportAuthority() {
+        Fixture f; paymentimport::Input input{paymentimport::Input::Kind::Text, "ordinary"}; input.paste = true;
+        QVERIFY(f.owner->inspect(input)); QVERIFY(f.owner->chooseTarget(f.port)); QVERIFY(f.owner->use()); f.drain();
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::AwaitingNativeHandoff); QCOMPARE(f.writes, 0);
+        QVERIFY(f.owner->nativeHandoff(f.snapshot.source)); f.drain();
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closed); QCOMPARE(f.snapshot.error_code, paymentimport::Error::None);
+        QVERIFY(f.snapshot.error.isEmpty()); QVERIFY(!f.snapshot.result); QCOMPARE(f.writes, 0);
+    }
+    void multipleDroppedUrlsAreRejectedBeforeOpeningAnyPrefix() {
+        paymentimport::Input input{paymentimport::Input::Kind::Drop, "file:///does-not-exist.psbt"}; input.url_count = 2;
+        const auto rejected = paymentimport::ReadSource(input); QCOMPARE(rejected.kind, paymentimport::Kind::Unknown);
+        QCOMPARE(rejected.error, QStringLiteral("Drop one payment request or PSBT at a time."));
+        Fixture f; QVERIFY(f.owner->inspect(input)); QVERIFY(f.owner->chooseTarget(f.port)); QVERIFY(f.owner->use()); f.drain();
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::Failed); QCOMPARE(f.dispatches, 0); QCOMPARE(f.writes, 0);
+    }
+    void publicSemanticIdentityAndMatchingIncludeMessageButNeverPrivateNote() {
+        const auto original = paymentimport::ReadSource({paymentimport::Input::Kind::Text, Uri()});
+        const auto reordered = paymentimport::ReadSource({paymentimport::Input::Kind::Text,
+            "BITCOIN:" + Address() + "?message=%4Dessage&label=Public&amount=0.12345678"});
+        QCOMPARE(original.payment_identity, reordered.payment_identity); QVERIFY(original.source_identity != reordered.source_identity);
+        const auto changed = paymentimport::ReadSource({paymentimport::Input::Kind::Text, Uri() + "2"});
+        QVERIFY(original.payment_identity != changed.payment_identity);
+        senddraft::Recipient current; current.address = Address(); current.amount_set = true; current.amount = *original.payment.amount;
+        current.request_label = original.payment.label; current.message = original.payment.message; current.label = "Private bookkeeping";
+        QVERIFY(paymentimport::MatchesPaymentRequest(current, original.payment));
+        current.label = "Edited private note"; QVERIFY(paymentimport::MatchesPaymentRequest(current, original.payment));
+        QVERIFY(!paymentimport::MatchesPaymentRequest(current, changed.payment));
+        current.message.clear(); QVERIFY(!paymentimport::MatchesPaymentRequest(current, original.payment));
+        current.message = original.payment.message; current.mode = senddraft::AmountMode::Maximum;
+        QVERIFY(!paymentimport::MatchesPaymentRequest(current, original.payment));
+        auto omitted = original.payment; omitted.amount.reset(); QVERIFY(paymentimport::MatchesPaymentRequest(current, omitted));
+    }
+    void capturedFileSourceCannotBeReusedOrRevived() {
+        ManualRoutedExecution commands; BitcoinUriModel importer; QObject view; importer.setServices({commands.scheduler, {}});
+        QTemporaryDir dir; QVERIFY(dir.isValid()); const auto path = dir.filePath("request-without-extension");
+        { QFile file{path}; QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(Uri().toUtf8()), Uri().toUtf8().size()); }
+        auto* source = importer.captureImport(nullptr, nullptr, &view); QVERIFY(source); commands.drain();
+        QCOMPARE(source->state(), PaymentImportOperation::State::Empty);
+        QVERIFY(source->requestFile(QUrl::fromLocalFile(path))); QVERIFY(!source->requestFile(QUrl::fromLocalFile(path))); commands.drain();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall); QCOMPARE(source->sourceKind(), PaymentImportOperation::SourceKind::PaymentSource);
+        source->cancel(); QVERIFY(!source->requestFile(QUrl::fromLocalFile(path))); commands.drain(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        auto* cancelled = importer.captureImport(nullptr, nullptr, &view); QVERIFY(cancelled); cancelled->cancel();
+        QVERIFY(!cancelled->requestFile(QUrl::fromLocalFile(path))); commands.drain(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        importer.closeAdmission(); commands.drain();
+    }
     void readerKeepsPublicMetadataSeparateFromPrivateNote() {
         const auto result = paymentimport::ReadSource({paymentimport::Input::Kind::Text, Uri()});
         QCOMPARE(result.kind, paymentimport::Kind::Payment); QCOMPARE(result.payment.address, Address());
