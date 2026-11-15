@@ -790,6 +790,90 @@ private Q_SLOTS:
         model.reset(); opening->retire(); transport.drain(); publish_all(); transport.drain();
         QVERIFY(transport.quiescent());
     }
+    void assessedBroadcastUsesTheReviewedRevision_data()
+    {
+        QTest::addColumn<bool>("nested");
+        QTest::addColumn<bool>("close_before_effect");
+        for (bool nested : {false, true}) for (bool close : {false, true})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(nested ? "nested" : "witness").arg(close ? "closed" : "live"))) << nested << close;
+    }
+    void assessedBroadcastUsesTheReviewedRevision()
+    {
+        QFETCH(bool, nested);
+        QFETCH(bool, close_before_effect);
+        const auto original = psbtfeefixture::SignedWithoutScripts(nested);
+        const auto raw = psbtwork::SerializeRaw(original.document);
+        auto expected_document = original.document;
+        expected_document.inputs[0].witness_script = original.witness;
+        expected_document.inputs[0].redeem_script = original.redeem;
+        CMutableTransaction expected;
+        QVERIFY(FinalizeAndExtractPSBT(expected_document, expected));
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        auto wallet = std::make_shared<PsbtTestWallet>();
+        wallet->private_keys_disabled = true;
+        wallet->encrypted = true; wallet->locked = true;
+        wallet->on_inspect = [original](PartiallySignedTransaction& document) {
+            document.inputs[0].witness_script = original.witness;
+            document.inputs[0].redeem_script = original.redeem;
+        };
+        MockNode node;
+        CTransactionRef submitted;
+        node.broadcast_transaction_fn = [&](CTransactionRef transaction, CAmount, CFeeRate, std::string&) {
+            submitted = std::move(transaction);
+            return node::TransactionError::OK;
+        };
+        auto opening = std::make_shared<walletopening::Session>(transport.scheduler, transport.scheduler,
+            std::make_shared<std::atomic_bool>(false), [] {});
+        QVERIFY(opening->start(wallet)); transport.drain(); opening->take();
+        auto model = std::make_unique<PsbtQmlModel>(wallet.get(), &node);
+        model->configureSession(opening, {transport.scheduler, {}, [&](auto turn) { publications.push_back(std::move(turn)); }});
+        const auto publish_all = [&] {
+            while (!publications.empty()) {
+                auto turn = std::exchange(publications.front(), {});
+                publications.pop_front(); turn();
+            }
+        };
+        const auto cleanup = qScopeGuard([&] {
+            model.reset(); opening->retire(); transport.drain(); publish_all(); transport.drain();
+        });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto source_path = directory.filePath("original.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(original.document, source_path), QString{});
+        QVERIFY(model->requestLoadFromFile(source_path));
+        QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(wallet->sign_args, std::vector<bool>{false});
+        QVERIFY(!model->loaded());
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(!model->loaded());
+        publish_all(); transport.drain();
+        QVERIFY(model->complete()); QVERIFY(model->canBroadcast()); QVERIFY(!model->canSign());
+        QVERIFY(model->psbt());
+        QCOMPARE(psbtwork::SerializeRaw(*model->psbt()), raw);
+        QCOMPARE(model->psbt()->inputs[0].partial_sigs.size(), size_t{2});
+        const auto saved_path = directory.filePath("saved.psbt");
+        QVERIFY(model->requestSaveToFile(saved_path)); transport.drain(); publish_all(); transport.drain();
+        QVERIFY(model->saved());
+        QFile saved{saved_path}; QVERIFY(saved.open(QIODevice::ReadOnly)); QCOMPARE(saved.readAll(), raw);
+        // A later metadata read may fail. The already-reviewed candidate
+        // must not depend on repeating that read at the submit boundary.
+        wallet->on_inspect = [](PartiallySignedTransaction&) { throw std::runtime_error("metadata unavailable after review"); };
+        QVERIFY(model->requestBroadcast());
+        if (close_before_effect) { model->closeAdmission(); opening->retire(); }
+        QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(node.calls.broadcastTransaction.load(), 1);
+        QVERIFY(submitted);
+        QCOMPARE(submitted->GetWitnessHash(), MakeTransactionRef(expected)->GetWitnessHash());
+        QCOMPARE(wallet->sign_args, (std::vector<bool>{false}));
+        QCOMPARE(wallet->derivation_args, (std::vector<bool>{false}));
+        QCOMPARE(wallet->unlock_calls, 0); QCOMPARE(wallet->lock_calls, 0); QVERIFY(wallet->locked);
+        QVERIFY(!model->submitted());
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(model->submitted()); // Receipt survives observer close and held GUI.
+        QCOMPARE(psbtwork::SerializeRaw(original.document), raw);
+        model.reset(); opening->retire(); transport.drain(); publish_all(); transport.drain();
+        QVERIFY(transport.quiescent());
+    }
     void authenticatedIncompleteDocumentStillNeedsSigningAuthority_data()
     {
         QTest::addColumn<int>("authority");
