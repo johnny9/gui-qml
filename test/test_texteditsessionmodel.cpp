@@ -283,6 +283,16 @@ private Q_SLOTS:
     }
     void reentrantObserverDestructionCannotBecomeTheLastGuiActorOwner()
     {
+        {
+            Fixture original; original.drain();
+            QObject::connect(original.editor.get(), &Model::commandRejected, qApp, [&] { original.editor->discard(); });
+            QSignalSpy receipt{original.editor.get(), &Model::commandRejected};
+            original.execution.rejectLane(Lane::Domain); original.editor->refresh();
+            QCOMPARE(receipt.size(), 1);
+            QCOMPARE(receipt.front().at(1).value<TextEditError>().code, TextEditError::Refused);
+            QCOMPARE(original.editor->error().code, TextEditError::None);
+            original.drain(); QCOMPARE(original.writes, 0);
+        }
         bool worker_turn{false}, released_on_worker{false}; int released{0}, rejected{0};
         Fixture f{[&] { ++released; released_on_worker = worker_turn; }}; f.drain();
         QObject::connect(f.editor.get(), &Model::commandRejected, qApp, [&] {

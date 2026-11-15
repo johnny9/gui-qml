@@ -262,9 +262,10 @@ TextEditSessionModel::TextEditSessionModel(QString entity, Ports ports, QObject*
         m_input_invalid = true;
         m_immediate_error = {available() ? TextEditError::Invalid : TextEditError::Closed,
             available() ? tr("This text is too long.") : tr("This editor is closed.")};
+        const auto rejected = m_immediate_error;
         const QPointer<TextEditSessionModel> guard{this};
         Q_EMIT changed();
-        if (guard) Q_EMIT commandRejected(QStringLiteral("edit"), m_immediate_error);
+        if (guard) Q_EMIT commandRejected(QStringLiteral("edit"), rejected);
     });
     if (m_retired) m_text.setAvailable(false);
     else refresh();
@@ -289,8 +290,9 @@ bool TextEditSessionModel::submit(std::function<void(State&)> command, const QSt
     if (!guard) return false;
     if (admitted) { m_immediate_error = {}; return true; }
     m_immediate_error = {m_retired ? TextEditError::Closed : TextEditError::Refused, tr("This editor command could not be scheduled.")};
+    const auto rejected = m_immediate_error;
     Q_EMIT changed();
-    if (guard) Q_EMIT commandRejected(name, m_immediate_error);
+    if (guard) Q_EMIT commandRejected(name, rejected);
     return false;
 }
 void TextEditSessionModel::publish()
@@ -387,8 +389,9 @@ void TextEditSessionModel::saveCommand(std::optional<uint64_t> close_token)
     }
     m_immediate_error = {!available() ? TextEditError::Closed : m_input_invalid ? TextEditError::Invalid : TextEditError::Refused,
         !available() ? tr("This editor is closed.") : m_input_invalid ? tr("Correct the rejected text before saving.") : tr("The save could not be admitted.")};
+    const auto rejected = m_immediate_error;
     const QPointer<TextEditSessionModel> guard{this};
-    Q_EMIT changed(); if (guard) Q_EMIT commandRejected(QStringLiteral("save"), m_immediate_error);
+    Q_EMIT changed(); if (guard) Q_EMIT commandRejected(QStringLiteral("save"), rejected);
 }
 void TextEditSessionModel::discard() { if (refuseBusy(QStringLiteral("discard"))) return; m_input_invalid = false; submit([sequence = m_input_sequence](State& state) {
     state.input = std::max(state.input, sequence);
