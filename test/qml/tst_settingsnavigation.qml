@@ -930,12 +930,15 @@ TestCase {
     }
 
     function test_clear_shortcut_preserves_draft_with_native_autocomplete(data) {
-        const console = createTemporaryObject(shortcutConsole, host)
+        const window = testCase.Window.window
+        const console = createTemporaryObject(shortcutConsole, window.contentItem)
         verify(console !== null)
+        compare(console.Window.window, window)
+        verify(console.visible)
         const input = findChild(console, "consoleInput")
         const popup = findChild(console, "consoleAutocompletePopup")
         verify(input !== null); verify(popup !== null)
-        const window = testCase.Window.window
+        verify(input.visible)
         window.requestActivate()
         tryCompare(window, "active", true)
         verify(testSetup.replaceText(input, "getblock"))

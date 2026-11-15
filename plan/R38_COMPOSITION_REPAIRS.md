@@ -32,3 +32,14 @@ All prior failures remain retained, with no source snapshot overwritten.
 
 R36/R39 composition is isolated and must receive its final focused runtime gate.
 Exhaustive coverage, platform matrices and sanitizers remain R42 obligations.
+
+The third immutable worker run passed all eight Core rows and both actual GUI
+privacy scenarios, along with seven of nine selected QML rows and all static
+checks. Only the new two shortcut QML rows failed: their console was parented
+under the invisible TestCase item. [Qt6.10.2 TestCase itself defaults to hidden](https://raw.githubusercontent.com/qt/qtdeclarative/v6.10.2/src/qmltest/TestCase.qml).
+Parent the temporary console to the actual test window content item and assert
+its window and effective visibility before physical input. This changes the
+fixture premise only; production code, exact Clear counts/draft/no-RPC assertions,
+animations, key events and watchdogs remain unchanged. The actual Core Clear
+cases already pass. The reduced next check runs these two rows only; positive
+Core/process/static results retain their exact source/ELF receipts.
