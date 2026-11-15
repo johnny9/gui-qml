@@ -22,9 +22,6 @@
 #include <univalue.h>
 #include <util/fs.h>
 #include <util/fs_helpers.h>
-#ifdef ENABLE_WALLET
-#include <wallet/db.h>
-#endif
 
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -249,15 +246,26 @@ std::optional<fs::path> EffectiveWalletDirNoCreate(const ArgsManager& args)
     return wallet_dir;
 }
 
-bool HasExistingWalletData(const ArgsManager& args)
+profileinspection::Result ExistingWalletData(const ArgsManager& args, const profileinspection::Port& inspect,
+                                            const profileinspection::Cancellation& cancelled)
 {
     const std::optional<fs::path> wallet_dir{EffectiveWalletDirNoCreate(args)};
-    return wallet_dir && !wallet::ListDatabases(*wallet_dir).empty();
+    if (!wallet_dir) {
+        profileinspection::Result result;
+        result.outcome = profileinspection::Outcome::Succeeded;
+        return result;
+    }
+    profileinspection::Request request{QString::fromStdString(fs::PathToString(*wallet_dir)), args.GetChainType(), {}};
+    if (request.network == ChainType::SIGNET) {
+        if (const auto challenge = args.GetArg("-signetchallenge")) request.signet_challenge = QString::fromStdString(*challenge);
+    }
+    return inspect ? inspect(request, cancelled) : profileinspection::Run(request, cancelled);
 }
 
 #endif // ENABLE_WALLET
 
-QmlOnboardingSettings::ProfileSummary BuildProfileSummary(const ArgsManager& args, bool config_file_path_available)
+std::optional<QmlOnboardingSettings::ProfileSummary> BuildProfileSummary(const ArgsManager& args, bool config_file_path_available,
+    const profileinspection::Port& inspect, const profileinspection::Cancellation& cancelled, QString& error)
 {
     QmlOnboardingSettings::ProfileSummary summary;
     const auto settings_path = PreviewSettingsPath(args);
@@ -265,7 +273,16 @@ QmlOnboardingSettings::ProfileSummary BuildProfileSummary(const ArgsManager& arg
     summary.has_config_file = config_file_path_available && PathExists(args.GetConfigFilePath());
     summary.has_chain_data = HasExistingChainData(args);
 #ifdef ENABLE_WALLET
-    summary.has_wallet_data = HasExistingWalletData(args);
+    const auto wallet = ExistingWalletData(args, inspect, cancelled);
+    if (wallet.outcome != profileinspection::Outcome::Succeeded) {
+        error = wallet.error.isEmpty() ? QStringLiteral("The wallet directory could not be checked. Retry the profile check.") : wallet.error;
+        return {};
+    }
+    summary.has_wallet_data = wallet.has_wallet_data;
+#else
+    Q_UNUSED(inspect);
+    Q_UNUSED(cancelled);
+    Q_UNUSED(error);
 #endif
     summary.existing_profile = summary.has_settings_file ||
                                summary.has_config_file ||
@@ -441,9 +458,14 @@ OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::st
     return status;
 }
 
-PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir_selection, const ApplyRequest* intent)
+PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir_selection, const ApplyRequest* intent,
+                      const profileinspection::Port& inspect, const profileinspection::Cancellation& cancelled)
 {
     PreviewResult result;
+    if (cancelled && cancelled->load()) {
+        result.error = QStringLiteral("The original profile check was cancelled.");
+        return result;
+    }
 
     const QString data_dir = NormalizedDataDirPath(data_dir_selection);
     const QString validation_error = QmlDataDir::ValidateCustomDataDir(data_dir);
@@ -526,7 +548,9 @@ PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc,
     const auto chain_params = CreateChainParams(preview_args, preview_args.GetChainType());
     result.assumed_blockchain_size = static_cast<int>(chain_params->AssumedBlockchainSize());
     result.assumed_chainstate_size = static_cast<int>(chain_params->AssumedChainStateSize());
-    result.profile = BuildProfileSummary(preview_args, config_file_path_available);
+    const auto profile = BuildProfileSummary(preview_args, config_file_path_available, inspect, cancelled, result.error);
+    if (!profile) return result;
+    result.profile = *profile;
     result.core_setting_statuses = QmlCoreSettings::BuildCoreSettingStatuses(preview_args, QmlCoreSettings::OnboardingCoreSettingNames());
     result.core_setting_statuses_bytes=QmlCoreSettings::CaptureStatuses(result.core_setting_statuses).payload_bytes;
     result.values = QmlCoreSettings::LoadEffectiveValues(preview_args);
@@ -534,9 +558,10 @@ PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc,
     return result;
 }
 
-PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir)
+PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir,
+                      const profileinspection::Port& inspect, const profileinspection::Cancellation& cancelled)
 {
-    return Preview(argv, can_listen_ipc, DataDirSelection{data_dir, DataDirSource::UserSelection});
+    return Preview(argv, can_listen_ipc, DataDirSelection{data_dir, DataDirSource::UserSelection}, nullptr, inspect, cancelled);
 }
 
 bool SetQmlOnboarded(ArgsManager& args,bool completed,QString* error)
