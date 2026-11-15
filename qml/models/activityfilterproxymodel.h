@@ -31,6 +31,7 @@ class ActivityFilterProxyModel : public QAbstractProxyModel
     Q_PROPERTY(QString error READ error NOTIFY stateChanged)
     Q_PROPERTY(ActivityExportOperation* exportOperation READ exportOperation NOTIFY exportChanged)
     Q_PROPERTY(ActivityExportResult exportResult READ exportResult NOTIFY exportChanged)
+    Q_PROPERTY(bool exportChoosing READ exportChoosing NOTIFY exportChanged)
     Q_PROPERTY(bool exportBusy READ exportBusy NOTIFY exportChanged)
     Q_PROPERTY(bool exportRejected READ exportRejected NOTIFY exportChanged)
     Q_PROPERTY(QString exportError READ exportError NOTIFY exportChanged)
@@ -96,7 +97,8 @@ public:
     ~ActivityFilterProxyModel() override;
     bool busy() const { return m_scheduled || bool(m_job) || m_source_loading; }
     QString error() const { return m_error.isEmpty() ? m_source_error : m_error; }
-    bool exportBusy() const { return bool(m_export) || (m_export_operation && (m_export_operation->pending() || m_export_operation->confirmationRequired())); }
+    bool exportChoosing() const { return bool(m_chooser_snapshot); }
+    bool exportBusy() const { return exportChoosing() || bool(m_export) || (m_export_operation && (m_export_operation->pending() || m_export_operation->confirmationRequired())); }
     ActivityExportOperation* exportOperation() const { return m_export_operation; }
     ActivityExportResult exportResult() const { return m_export_result; }
     bool exportRejected() const { return m_export_rejected; }
@@ -162,6 +164,9 @@ public:
     GroupBy groupBy() const { return m_group_by; }
     void setGroupBy(GroupBy group_by);
 
+    Q_INVOKABLE QString captureExport();
+    Q_INVOKABLE void cancelExport(const QString& token);
+    Q_INVOKABLE quint64 requestCapturedExportCsv(const QString& token, const QString& path);
     Q_INVOKABLE quint64 requestExportCsv(const QString& path);
     Q_INVOKABLE quint64 captureRowContext(int row);
     Q_INVOKABLE void releaseRowContext(quint64 token);
@@ -191,6 +196,7 @@ private:
     struct Owner;
     struct Job;
     struct Mailbox;
+    quint64 startExport(const QString& path, std::shared_ptr<const activityview::Hold> snapshot, int unit, bool captured);
     void reload();
     void start();
     void receive();
@@ -217,7 +223,7 @@ private:
     WorkReport m_last_work;
     QPointer<QAbstractItemModel> m_deferred_source;
     bool m_source_deferred{false};
-    quint64 m_generation{0}, m_settings_generation{0}, m_applied_settings{0};
+    quint64 m_generation{0}, m_settings_generation{0}, m_applied_settings{0}, m_source_intent{0};
     bool m_scheduled{false}, m_closed{false}, m_source_loading{false}, m_in_update{false};
     QString m_error, m_source_error;
     size_t m_patch_position{0};
@@ -230,6 +236,11 @@ private:
     QString m_export_error, m_exported_path;
     bool m_export_rejected{false};
     ActivityExportResult m_export_result;
+    std::shared_ptr<const activityview::Hold> m_chooser_snapshot;
+    QPointer<QAbstractItemModel> m_chooser_source;
+    QString m_chooser_token;
+    quint64 m_chooser_sequence{0};
+    int m_chooser_unit{0};
     std::shared_ptr<const activityview::Hold> m_context;
     QString m_context_txid;
     quint64 m_context_token{0};

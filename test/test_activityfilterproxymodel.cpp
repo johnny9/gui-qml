@@ -289,6 +289,10 @@ private Q_SLOTS:
     void groupedAddressSearchPreservesOrdinaryNoteWhitespace();
     void clearDateLeavesSearchTypesAndAmountsUntouched();
     void terminalExportReceiptSurvivesReentrantObserverDeletionAndSuccessorAdmission();
+    void chooserCaptureKeepsTheOriginalSnapshotAndUnitAcrossLiveChanges();
+    void oldChooserCompletionCannotRetargetANewSourceOrCancelItsSuccessor();
+    void chooserCaptureDoesNotKeepActionAdmissionOpenAfterRootClosure();
+    void cancellingAnOldChooserCannotOverwriteAReentrantNewerSource();
     void sourceDestructionRetiresCachedSnapshot();
     void reentrantSourceSwitchPreservesModelTransactions();
     void manualPublicationAndStaleFilterDecisions();
@@ -447,6 +451,56 @@ void ActivityFilterProxyModelTests::terminalExportReceiptSurvivesReentrantObserv
     env.drain(); env.publishAll(); QCOMPARE(terminal.size(), size_t{2}); QCOMPARE(terminal.back().first, successor); QCOMPARE(terminal.back().second, QStringLiteral("successor.csv"));
     QCOMPARE(effects, 2); QCOMPARE(outcomes, 2); QCOMPARE(proxy.exportResult().finalPath, QStringLiteral("successor.csv"));
     proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+
+void ActivityFilterProxyModelTests::chooserCaptureKeepsTheOriginalSnapshotAndUnitAcrossLiveChanges()
+{
+    ManualExecutionEnvironment env; TestActivityModel source; source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "old")});
+    int effects{0}, unit{-1}; QString label;
+    ActivityFilterProxyModel::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    services.write = [&](const auto& request) { ++effects; unit = request.unit; label = request.snapshot->snapshot->rows.begin()->second->value(TransactionActivityModel::LabelRole).toString(); return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; };
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); QVERIFY(!proxy.busy());
+    const auto intent = proxy.captureExport(); QVERIFY(!intent.isEmpty()); QVERIFY(proxy.exportChoosing()); QCOMPARE(effects, 0); QVERIFY(env.turnsIdle());
+    source.setRows({MakeRow("Successor", Transaction::RecvWithAddress, 2, "new")}); proxy.setDisplayUnit(3); proxy.setSearchText("Successor"); QCoreApplication::processEvents(); QVERIFY(proxy.busy());
+    const auto ticket = proxy.requestCapturedExportCsv(intent, QStringLiteral("original.csv")); QVERIFY(ticket); QVERIFY(!proxy.exportChoosing());
+    env.drain(); env.publishAll(); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents();
+    QCOMPARE(effects, 1); QCOMPARE(unit, 0); QCOMPARE(label, QStringLiteral("Original")); QVERIFY(!proxy.exportBusy()); QCOMPARE(proxy.exportedPath(), QStringLiteral("original.csv"));
+    QCOMPARE(proxy.index(0).data(TransactionActivityModel::LabelRole).toString(), QStringLiteral("Successor"));
+    proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+void ActivityFilterProxyModelTests::oldChooserCompletionCannotRetargetANewSourceOrCancelItsSuccessor()
+{
+    ManualExecutionEnvironment env; TestActivityModel first, second; first.setRows({MakeRow("A", Transaction::RecvWithAddress, 1, "a")}); second.setRows({MakeRow("B", Transaction::RecvWithAddress, 2, "b")});
+    int effects{0}; QString label; ActivityFilterProxyModel::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    services.write = [&](const auto& request) { ++effects; label = request.snapshot->snapshot->rows.begin()->second->value(TransactionActivityModel::LabelRole).toString(); return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; };
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&first); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents();
+    const auto old = proxy.captureExport(); QVERIFY(!old.isEmpty()); proxy.setSourceModel(&second); QVERIFY(!proxy.exportChoosing());
+    QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); const auto next = proxy.captureExport(); QVERIFY(!next.isEmpty()); QVERIFY(next != old);
+    proxy.cancelExport(old); QVERIFY(proxy.exportChoosing()); QCOMPARE(proxy.requestCapturedExportCsv(old, "wrong.csv"), quint64{0}); QVERIFY(proxy.exportChoosing()); QCOMPARE(effects, 0);
+    QVERIFY(proxy.requestCapturedExportCsv(next, "current.csv")); env.drain(); env.publishAll(); QCOMPARE(effects, 1); QCOMPARE(label, QStringLiteral("B")); QCOMPARE(proxy.exportedPath(), QStringLiteral("current.csv"));
+    proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+void ActivityFilterProxyModelTests::chooserCaptureDoesNotKeepActionAdmissionOpenAfterRootClosure()
+{
+    ManualExecutionEnvironment env; TestActivityModel source; source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "old")}); int effects{0};
+    ActivityFilterProxyModel::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    services.write = [&](const auto& request) { ++effects; return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; };
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents();
+    const auto intent = proxy.captureExport(); QVERIFY(!intent.isEmpty()); env.scheduler->closeOrdinaryAdmission();
+    QCOMPARE(proxy.requestCapturedExportCsv(intent, "closed.csv"), quint64{0}); env.drain(); env.publishAll(); QCOMPARE(effects, 0); QVERIFY(proxy.exportRejected()); QVERIFY(!proxy.exportChoosing());
+    proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+
+void ActivityFilterProxyModelTests::cancellingAnOldChooserCannotOverwriteAReentrantNewerSource()
+{
+    TestActivityModel first, second, newest; first.setRows({MakeRow("A", Transaction::RecvWithAddress, 1, "a")}); second.setRows({MakeRow("B", Transaction::RecvWithAddress, 2, "b")}); newest.setRows({MakeRow("C", Transaction::RecvWithAddress, 3, "c")});
+    ActivityFilterProxyModel proxy; proxy.setSourceModel(&first); QVERIFY(WaitForProxy(proxy)); const auto original = proxy.captureExport(); QVERIFY(!original.isEmpty());
+    bool reentered{false}; connect(&proxy, &ActivityFilterProxyModel::exportChanged, &proxy, [&] {
+        if (reentered || proxy.exportChoosing()) return;
+        reentered = true; proxy.setSourceModel(&newest);
+    });
+    proxy.setSourceModel(&second); QVERIFY(WaitForProxy(proxy)); QVERIFY(reentered); QCOMPARE(proxy.sourceModel(), &newest); QCOMPARE(proxy.rowCount(), 1); QCOMPARE(proxy.index(0).data(TransactionActivityModel::LabelRole).toString(), QStringLiteral("C"));
+    QCOMPARE(proxy.requestCapturedExportCsv(original, "stale.csv"), quint64{0}); QVERIFY(!proxy.exportChoosing());
 }
 
 void ActivityFilterProxyModelTests::sourceDestructionRetiresCachedSnapshot()

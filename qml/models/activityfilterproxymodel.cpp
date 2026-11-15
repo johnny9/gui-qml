@@ -124,7 +124,8 @@ void ActivityFilterProxyModel::finishClose()
 {
     m_root.reset(); m_current.reset(); m_input.reset(); m_applied_input.reset(); m_context.reset(); m_context_txid.clear(); m_job.reset();
     // OwnedCommand retains accepted file effects and their actual outcomes.
-    m_export.reset(); if (m_export_operation) m_export_operation->retire();
+    m_export.reset(); m_chooser_snapshot.reset(); m_chooser_source.clear(); m_chooser_token.clear();
+    if (m_export_operation) m_export_operation->retire();
 }
 int ActivityFilterProxyModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : activityview::Size(m_root); }
 QModelIndex ActivityFilterProxyModel::index(int row, int column, const QModelIndex& parent) const {
@@ -155,6 +156,10 @@ QModelIndex ActivityFilterProxyModel::mapFromSource(const QModelIndex& source) c
 void ActivityFilterProxyModel::setSourceModel(QAbstractItemModel* model)
 {
     if (m_closed) return;
+    if (m_source_intent == std::numeric_limits<quint64>::max()) { closeAdmission(); return; }
+    const auto source_intent = ++m_source_intent;
+    const bool target_requested = model != nullptr;
+    const QPointer<QAbstractItemModel> target{model};
     if (m_in_update) {
         m_deferred_source = model;
         if (!std::exchange(m_source_deferred, true)) {
@@ -164,6 +169,8 @@ void ActivityFilterProxyModel::setSourceModel(QAbstractItemModel* model)
         return;
     }
     if (sourceModel() == model) return;
+    const QPointer<ActivityFilterProxyModel> alive{this}; cancelExport(m_chooser_token);
+    if (!alive || m_closed || m_source_intent != source_intent || (target_requested && !target)) return;
     for (const auto& connection : m_source_connections) disconnect(connection);
     m_source_connections.clear();
     ++m_generation; if (m_job) m_job->cancelled->store(true);
@@ -172,14 +179,14 @@ void ActivityFilterProxyModel::setSourceModel(QAbstractItemModel* model)
     m_in_update = true; beginResetModel(); if (!observer) return;
     m_root.reset(); m_current.reset(); m_input.reset(); m_applied_input.reset(); m_context.reset(); m_context_txid.clear(); ++m_context_token;
     m_transactions = m_requests = 0; m_pending_total = m_available_max_amount = 0; m_pending_text.clear();
-    QAbstractProxyModel::setSourceModel(model);
-    m_roles = model ? model->roleNames() : QHash<int, QByteArray>{};
+    QAbstractProxyModel::setSourceModel(target);
+    m_roles = target ? target->roleNames() : QHash<int, QByteArray>{};
     m_roles.insert(SectionKeyRole, "sectionKey"); m_roles.insert(SectionLabelRole, "sectionLabel"); m_roles.insert(DateTimeLabelRole, "dateTimeLabel");
     endResetModel(); if (!observer) return; m_in_update = false;
     if (m_closed) { finishClose(); return; }
-    if (auto* provider = qobject_cast<activityview::Source*>(model)) {
+    if (auto* provider = qobject_cast<activityview::Source*>(target.data())) {
         m_source_connections = provider->observeActivity(this, [this] { sourceChanged(); });
-        m_source_connections << connect(model, &QObject::destroyed, this, [this] { sourceChanged(); });
+        m_source_connections << connect(target, &QObject::destroyed, this, [this] { sourceChanged(); });
     }
     sourceChanged(); if (!observer || m_closed) return;
     Q_EMIT countChanged(); if (!observer || m_closed) return;
@@ -189,6 +196,9 @@ void ActivityFilterProxyModel::setSourceModel(QAbstractItemModel* model)
 void ActivityFilterProxyModel::sourceChanged()
 {
     if (m_closed) return;
+    const QPointer<ActivityFilterProxyModel> alive{this};
+    if (exportChoosing() && (!m_chooser_source || m_chooser_source != sourceModel())) cancelExport(m_chooser_token);
+    if (!alive || m_closed) return;
     auto* provider = qobject_cast<activityview::Source*>(sourceModel());
     if (!provider && (m_current || m_job || m_input)) {
         if (m_in_update) {
@@ -652,10 +662,43 @@ ActivityFilterProxyModel::CsvResult ActivityFilterProxyModel::WriteCsv(const Csv
     if (!file.commit()) return {false, filename, file.errorString()};
     return {true, filename, {}};
 }
+QString ActivityFilterProxyModel::captureExport()
+{
+    refreshDate();
+    auto* provider = qobject_cast<activityview::Source*>(sourceModel());
+    if (m_closed || exportBusy() || busy() || m_source_deferred || !sourceModel() || !m_current || !m_execution.scheduler ||
+        (provider && provider->opening() && !provider->opening()->available()) || m_chooser_sequence == std::numeric_limits<quint64>::max()) {
+        m_export_rejected = true; m_export_error = tr("The activity snapshot is not ready for export."); Q_EMIT exportChanged(); return {};
+    }
+    m_chooser_snapshot = m_current; m_chooser_source = sourceModel(); m_chooser_unit = m_display_unit;
+    m_chooser_token = QString::number(++m_chooser_sequence); m_export_rejected = false; m_export_error.clear();
+    const auto token = m_chooser_token; const QPointer<ActivityFilterProxyModel> guard{this};
+    Q_EMIT exportChanged(); return guard && m_chooser_token == token ? token : QString{};
+}
+void ActivityFilterProxyModel::cancelExport(const QString& token)
+{
+    if (token.isEmpty() || token != m_chooser_token) return;
+    m_chooser_snapshot.reset(); m_chooser_source.clear(); m_chooser_token.clear(); Q_EMIT exportChanged();
+}
+quint64 ActivityFilterProxyModel::requestCapturedExportCsv(const QString& token, const QString& path)
+{
+    if (token.isEmpty() || token != m_chooser_token || !m_chooser_snapshot || !m_chooser_source || m_chooser_source != sourceModel() ||
+        (m_source_deferred && m_deferred_source != m_chooser_source)) {
+        m_export_rejected = true; m_export_error = tr("This export selection is no longer current."); Q_EMIT exportChanged(); return 0;
+    }
+    auto original = std::move(m_chooser_snapshot); const auto unit = m_chooser_unit;
+    m_chooser_source.clear(); m_chooser_token.clear();
+    return startExport(path, std::move(original), unit, true);
+}
 quint64 ActivityFilterProxyModel::requestExportCsv(const QString& path)
 {
     refreshDate(); // A file command may arrive before the next clock wakeup.
-    if (m_closed || exportBusy() || busy() || !m_current || !m_execution.scheduler || path.isEmpty() || path.size() > 4096) {
+    if (exportChoosing()) { m_export_rejected = true; m_export_error = tr("Finish or cancel the current export selection first."); Q_EMIT exportChanged(); return 0; }
+    return startExport(path, m_current, m_display_unit, false);
+}
+quint64 ActivityFilterProxyModel::startExport(const QString& path, std::shared_ptr<const activityview::Hold> snapshot, int unit, bool captured)
+{
+    if (m_closed || exportBusy() || (!captured && busy()) || !snapshot || !m_execution.scheduler || path.isEmpty() || path.size() > 4096 || m_export_ticket == std::numeric_limits<quint64>::max()) {
         m_export_rejected = true; m_export_error = tr("The activity snapshot is not ready for export."); Q_EMIT exportChanged(); return 0;
     }
     auto* provider = qobject_cast<activityview::Source*>(sourceModel());
@@ -665,7 +708,7 @@ quint64 ActivityFilterProxyModel::requestExportCsv(const QString& path)
     const auto files = provider ? provider->activityFiles() : activityexport::Files{};
     if (files.inspect && files.install) {
         if (m_export_operation) m_export_operation->deleteLater();
-        auto* operation = new ActivityExportOperation({path, m_current, m_display_unit}, files,
+        auto* operation = new ActivityExportOperation({path, snapshot, unit}, files,
             {m_execution.scheduler, m_services.execution.post}, m_services.write, this);
         m_export_operation = operation; m_export_error.clear(); m_exported_path.clear();
         auto finished = std::make_shared<bool>(false);
@@ -679,7 +722,7 @@ quint64 ActivityFilterProxyModel::requestExportCsv(const QString& path)
                 Q_EMIT observer->exportFinished(ticket, receipt.saved, receipt.finalPath, receipt.errorText);
             } else Q_EMIT observer->exportChanged();
         });
-        const bool admitted = operation->start(); Q_EMIT exportChanged(); return admitted ? ticket : 0;
+        const bool admitted = operation->start(); if (observer && !observer->m_closed) Q_EMIT observer->exportChanged(); return admitted ? ticket : 0;
     }
     auto command = std::make_shared<execution::OwnedCommand<CsvResult>>(m_execution.scheduler, [observer, post = m_services.execution.post, ticket] {
         post([observer, ticket] {
@@ -692,7 +735,7 @@ quint64 ActivityFilterProxyModel::requestExportCsv(const QString& path)
         });
     });
     m_export = command; m_export_error.clear(); m_exported_path.clear();
-    const CsvRequest request{path, m_current, m_display_unit};
+    const CsvRequest request{path, std::move(snapshot), unit};
     const auto admission = command->start([request, write = m_services.write] { return write(request); }, {execution::Lane::Core, 512, m_execution.scheduler->allocateKey(), execution::WorkClass::Action});
     if (!admission) { m_export.reset(); m_export_rejected = true; m_export_error = tr("The activity export could not be scheduled."); Q_EMIT exportChanged(); return 0; }
     Q_EMIT exportChanged(); return ticket;

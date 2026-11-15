@@ -31,8 +31,9 @@ Page {
     background: Rectangle { color: Theme.color.neutral0 }
     padding: 0
     Component.onCompleted: ready = true
-    onVisibleChanged: if (!visible) activityRowMenu.close()
+    onVisibleChanged: if (!visible && ready) { activityRowMenu.close(); cancelExportSelection() }
     onWalletChanged: if (ready) {
+        cancelExportSelection()
         activityRowMenu.close()
         clearFilters()
         activityFilterProxy.searchText = ""
@@ -85,6 +86,23 @@ Page {
             : activityFilterProxy.exportResult.present ? activityFilterProxy.exportResult.errorText : activityFilterProxy.exportError || qsTr("The Activity CSV could not be saved. Check the file path and try again.")
     }
 
+    function cancelExportSelection() {
+        activityFilterProxy.cancelExport(exportDialog.intentToken)
+        exportDialog.intentToken = ""
+        exportDialog.close()
+    }
+    function beginExportSelection() {
+        const token = activityFilterProxy.captureExport()
+        if (!token.length) return
+        exportDialog.intentToken = token
+        exportDialog.open()
+    }
+    function completeExportSelection(token, path) {
+        if (activityFilterProxy.requestCapturedExportCsv(token, String(path)) === 0) {
+            exportSucceeded = false
+            exportResultPopup.open()
+        }
+    }
     function exportActivity(path) {
         if (activityFilterProxy.requestExportCsv(String(path)) === 0) {
             exportSucceeded = false
@@ -168,7 +186,16 @@ Page {
         confirmOverwrite: false
         fileMode: AppFileDialog.SaveFile
         nameFilters: [qsTr("Comma separated file (*.csv)")]
-        onAccepted: root.exportActivity(exportDialog.selectedFile.toString())
+        property string intentToken: ""
+        onAccepted: {
+            const original = intentToken
+            intentToken = ""
+            root.completeExportSelection(original, exportDialog.selectedFile.toString())
+        }
+        onRejected: {
+            activityFilterProxy.cancelExport(intentToken)
+            intentToken = ""
+        }
     }
     TextField {
         id: automationExportPathField
@@ -668,7 +695,7 @@ Page {
                     const path = automationExportPathField.text
                     automationExportPathField.text = ""
                     root.exportActivity(path)
-                } else exportDialog.open()
+                } else root.beginExportSelection()
             }
         }
     }

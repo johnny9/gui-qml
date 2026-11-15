@@ -5628,6 +5628,7 @@ class MockActivityFilterProxyModel : public QSortFilterProxyModel
     Q_PROPERTY(QString error READ error NOTIFY sourceStateChanged)
     Q_PROPERTY(ActivityExportOperation* exportOperation READ exportOperation NOTIFY exportChanged)
     Q_PROPERTY(ActivityExportResult exportResult READ exportResult NOTIFY exportChanged)
+    Q_PROPERTY(bool exportChoosing READ exportChoosing NOTIFY exportChanged)
     Q_PROPERTY(bool exportBusy READ exportBusy NOTIFY exportChanged)
     Q_PROPERTY(bool exportRejected READ exportRejected NOTIFY exportChanged)
     Q_PROPERTY(QString exportError READ exportError NOTIFY exportChanged)
@@ -5903,7 +5904,20 @@ public:
     }
     ActivityExportOperation* exportOperation() const { return nullptr; }
     Q_INVOKABLE void clearDateFilter() { setDateFilter(DateAll); }
-    bool exportBusy() const { return m_export_busy; }
+    bool exportChoosing() const { return !m_chooser_token.isEmpty(); }
+    bool exportBusy() const { return m_export_busy || exportChoosing(); }
+    Q_INVOKABLE QString captureExport() {
+        if (exportBusy() || busy() || !sourceModel()) return {};
+        m_chooser_token = QString::number(++m_chooser_sequence); m_chooser_source = sourceModel(); Q_EMIT exportChanged(); return m_chooser_token;
+    }
+    Q_INVOKABLE void cancelExport(const QString& token) {
+        if (token.isEmpty() || token != m_chooser_token) return;
+        m_chooser_token.clear(); m_chooser_source.clear(); Q_EMIT exportChanged();
+    }
+    Q_INVOKABLE quint64 requestCapturedExportCsv(const QString& token, const QString& path) {
+        if (token.isEmpty() || token != m_chooser_token || m_chooser_source != sourceModel()) return 0;
+        m_chooser_token.clear(); m_chooser_source.clear(); return requestExportCsv(path);
+    }
     ActivityExportResult exportResult() const { return {}; }
     bool exportRejected() const { return false; }
     QString exportError() const { return {}; }
@@ -5984,6 +5998,7 @@ Q_SIGNALS:
     void pendingBalanceChanged();
 
 private:
+    QString m_chooser_token; quint64 m_chooser_sequence{0}; QPointer<QAbstractItemModel> m_chooser_source;
     bool m_export_busy{false};
     quint64 m_ticket{0}, m_context{0};
     QString m_export_path, m_context_txid;
