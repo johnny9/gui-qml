@@ -212,11 +212,11 @@ PaymentImportOperation* BitcoinUriModel::requestImportPaste(const QString& text,
                                                          WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
 {
     paymentimport::Input input{paymentimport::Input::Kind::Text, text}; input.paste = true;
+    if (field != InputField::AddressField && field != InputField::AmountField && field != InputField::PrivateNoteField) return nullptr;
     switch (field) {
     case InputField::AddressField: input.field = paymentimport::SourceField::Address; break;
     case InputField::AmountField: input.field = paymentimport::SourceField::Amount; break;
     case InputField::PrivateNoteField: input.field = paymentimport::SourceField::PrivateNote; break;
-    default: return nullptr;
     }
     input.edited = edited; input.previous = previous; input.current = current;
     const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
