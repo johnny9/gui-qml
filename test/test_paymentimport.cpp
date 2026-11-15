@@ -158,6 +158,42 @@ private Q_SLOTS:
         QVERIFY(flow.acknowledgmentLost(*child)); QVERIFY(flow.acknowledged(*child));
         QCOMPARE(flow.phase(), paymentimport::Phase::Failed); QCOMPARE(flow.error(), paymentimport::Error::Rejected);
     }
+    void batchProtectsPrivateNoteAndPreservesOmittedMaximumIntent() {
+        senddraft::Recipient current; current.token = 3; current.revision = 10; current.amount_intent_revision = 4;
+        current.address = Address(); current.label = QStringLiteral("My private note");
+        current.mode = senddraft::AmountMode::Maximum; current.amount = 1000; current.amount_set = true;
+        paymentimport::PaymentBatch batch{3, 10, 4, {Address(), "public", "message", {}, {}, false}};
+        auto prepared = paymentimport::PreparePaymentBatch(current, batch);
+        QCOMPARE(prepared.status, paymentimport::BatchStatus::Prepared); QVERIFY(prepared.recipient);
+        QCOMPARE(prepared.recipient->label, current.label); QCOMPARE(prepared.recipient->mode, senddraft::AmountMode::Maximum);
+        QCOMPARE(prepared.recipient->amount, CAmount{1000}); QVERIFY(!prepared.amount_changed); QVERIFY(!prepared.private_note_changed);
+        batch.payment.amount = 1000; prepared = paymentimport::PreparePaymentBatch(current, batch);
+        QCOMPARE(prepared.status, paymentimport::BatchStatus::ReplacementRequired);
+        batch.replace_existing = true; prepared = paymentimport::PreparePaymentBatch(current, batch);
+        QCOMPARE(prepared.status, paymentimport::BatchStatus::Prepared); QCOMPARE(prepared.recipient->mode, senddraft::AmountMode::Fixed);
+        QCOMPARE(prepared.recipient->label, current.label); QVERIFY(prepared.amount_changed);
+        batch.payment.private_note = "explicit note"; prepared = paymentimport::PreparePaymentBatch(current, batch);
+        QCOMPARE(prepared.recipient->label, current.label); QVERIFY(!prepared.private_note_changed);
+        batch.payment.replace_private_note = true; prepared = paymentimport::PreparePaymentBatch(current, batch);
+        QCOMPARE(prepared.recipient->label, QStringLiteral("explicit note")); QVERIFY(prepared.private_note_changed);
+    }
+    void draftLedgerCommitsCompleteBatchOnceAndRetainsOriginalReceipt() {
+        senddraft::Draft draft; senddraft::Recipient current; current.token = 3; current.revision = 10; current.amount_intent_revision = 4;
+        current.address = Address(); current.label = "private"; current.amount = 1000; current.amount_set = true; QVERIFY(draft.update(current));
+        QVERIFY(draft.choose(3, senddraft::AmountMode::Maximum, 4, {}));
+        paymentimport::DraftTarget ledger; const auto target = Target();
+        const paymentimport::Child child{1, 1, paymentimport::ChildKind::Apply, target, true};
+        paymentimport::PaymentBatch batch{3, 10, 4, {Address(), "public", "message", {}, CAmount{1000}, false}, paymentimport::SourceField::WholeRequest, true};
+        const auto receipt = ledger.apply({42, 1}, child, batch, target, draft); QVERIFY(receipt);
+        QCOMPARE(receipt->receipt.outcome, paymentimport::Outcome::Applied); QCOMPARE(draft.maximum(), quint64{0});
+        QCOMPARE(draft.recipients().at(3).label, QStringLiteral("private"));
+        QCOMPARE(draft.recipients().at(3).message, QStringLiteral("message"));
+        QCOMPARE(draft.recipients().at(3).amount_intent_revision, quint64{5});
+        batch.payment.message = "different retry";
+        const auto duplicate = ledger.apply({42, 1}, child, batch, target, draft); QVERIFY(duplicate);
+        QCOMPARE(duplicate->receipt.result, receipt->receipt.result); QCOMPARE(draft.recipients().at(3).message, QStringLiteral("message"));
+        QVERIFY(ledger.query({42, 1})); QVERIFY(ledger.acknowledge({42, 1}, child)); QVERIFY(!ledger.query({42, 1}));
+    }
     void reviewFactoryQueriesOriginalOutcomeWithoutRecreating() {
         ManualRoutedExecution commands; auto base = std::make_shared<paymentimport::TargetPort>();
         base->opening = Target().opening; base->draft = 2; base->recipient = 3;
