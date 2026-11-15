@@ -593,6 +593,8 @@ private:
     };
     using PsbtAction = execution::OwnedCommand<PsbtActionValue>;
     quint64 startPsbtAction(PsbtActionKind kind, const QString& path = {});
+    std::shared_ptr<FileExportRequest> preparePsbtFileExport(quint64 action_id, const QString& path,
+                                                             const std::shared_ptr<PsbtReceipt>& receipt);
     void startPsbtFileExport(quint64 action_id, const QString& path,
                              std::shared_ptr<const PartiallySignedTransaction> document,
                              const std::shared_ptr<PsbtReceipt>& receipt);
@@ -604,6 +606,7 @@ private:
     PsbtActionKind m_psbt_action_kind{PsbtActionKind::Import};
     PsbtImportResult m_psbt_import_result{PsbtImportResult::PsbtUnsupported};
     quint64 m_psbt_action_id{0};
+    quint64 m_psbt_file_export_action_id{0};
     quint64 m_psbt_view_epoch{0}, m_psbt_action_view_epoch{0};
     std::weak_ptr<const PartiallySignedTransaction> m_psbt_action_document;
     bool m_psbt_action_had_document{false};

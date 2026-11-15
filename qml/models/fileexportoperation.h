@@ -11,7 +11,10 @@
 #include <QObject>
 #include <QString>
 
+#include <functional>
 #include <memory>
+
+class FileExportRequest;
 
 /** One captured PSBT value exported through the shared M24 destination policy. */
 class FileExportOperationModel final : public QObject
@@ -24,6 +27,7 @@ class FileExportOperationModel final : public QObject
     Q_PROPERTY(QString finalPath READ finalPath NOTIFY changed)
     Q_PROPERTY(QString errorText READ errorText NOTIFY changed)
 public:
+    FileExportOperationModel(QString rawPath, backup::Services services, QObject* parent = nullptr);
     FileExportOperationModel(QString rawPath, const std::shared_ptr<const PartiallySignedTransaction>& document,
                              backup::Services services, QObject* parent = nullptr);
     ~FileExportOperationModel() override;
@@ -36,6 +40,8 @@ public:
     QString errorText() const;
 
     bool start();
+    /** Backend continuation for an accepted Save whose PSBT is still being prepared. */
+    std::shared_ptr<FileExportRequest> requestForAcceptedContinuation();
     Q_INVOKABLE bool approve();
     Q_INVOKABLE bool refuse();
     Q_INVOKABLE void retire();
@@ -45,10 +51,29 @@ Q_SIGNALS:
 
 private:
     struct Source;
+    std::shared_ptr<FileExportRequest> m_request;
     BackupFileOperation* m_operation{nullptr};
-    std::shared_ptr<Source> m_source;
     QString m_start_error;
     bool m_started{false};
+};
+
+/** Non-QObject continuation retained independently of the QML projection. */
+class FileExportRequest final
+{
+public:
+    ~FileExportRequest();
+    bool start(std::shared_ptr<const PartiallySignedTransaction> document);
+    void abandon();
+
+private:
+    friend class FileExportOperationModel;
+    struct State;
+    explicit FileExportRequest(std::shared_ptr<State> state);
+    bool prepare(std::shared_ptr<const PartiallySignedTransaction> document);
+    bool startPrepared();
+    void retainAcceptedContinuation();
+    void retireFromProjection();
+    std::shared_ptr<State> m_state;
 };
 
 #endif // BITCOIN_QML_MODELS_FILEEXPORTOPERATION_H
