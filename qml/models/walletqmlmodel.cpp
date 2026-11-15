@@ -381,6 +381,12 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
         receipt_ports.poll = [weak_reader] { if (const auto reader = weak_reader.lock()) reader->poll(); };
         receipt_ports.retry = [weak_reader] { if (const auto reader = weak_reader.lock()) reader->retry(); };
         receipt_ports.acknowledge = [weak_opening] { if (const auto opening = weak_opening.lock()) opening->acknowledgeTransactions(); };
+        receipt_ports.transactions = [receipt_observer](const auto& changes) {
+            for (const auto& [id, change] : changes) {
+                if (!receipt_observer || !receipt_observer->observationsAllowed()) return;
+                Q_EMIT receipt_observer->transactionChanged(QString::fromStdString(id.ToString()), int(change));
+            }
+        };
         m_receipt_projection = new ReceiptReconciliationModel(std::move(receipt_ports), this);
         connect(m_receipt_projection, &ReceiptReconciliationModel::changed, this, [this] {
             if (!observationsAllowed()) return;
@@ -391,7 +397,6 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
             updateReceivedPaymentRequestAmounts(); if (!guard || m_stopping) return;
         });
         connect(m_receipt_projection, &ReceiptReconciliationModel::committed, this, &WalletQmlModel::receiveRequestReconciliationPendingChanged);
-        connect(m_receipt_projection, &ReceiptReconciliationModel::transactionChanged, this, &WalletQmlModel::transactionChanged);
         connect(m_receipt_projection, &ReceiptReconciliationModel::rescanRequested, this, [this] {
             if (observationsAllowed() && m_transaction_activity_model) m_transaction_activity_model->reload();
         });

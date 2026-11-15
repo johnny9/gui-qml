@@ -174,7 +174,11 @@ private Q_SLOTS:
     }
     void changedNoticeReconcilesActualLiveStateEvenWhenLastNoticeSaysDeleted()
     {
-        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
+        Fixture f; QStringList notified; auto ports = f.projectionPorts();
+        ports.transactions = [&](const auto& changes) {
+            for (const auto& [id, change] : changes) { Q_UNUSED(change); notified.push_back(QString::fromStdString(id.ToString())); }
+        };
+        ReceiptReconciliationModel model{std::move(ports)}; RequestReceiptModel request;
         request.setReader(&model); request.setSource("17", ADDRESS, false, true);
         const auto id = f.add(1, 1000); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
         f.reader->changed({{id, CT_UPDATED}}, ADDRESSES);
@@ -182,6 +186,19 @@ private Q_SLOTS:
         f.commands.drain(); model.consume();
         QVERIFY(request.fresh()); QCOMPARE(request.receivedAmountSatoshi(), qint64{1000});
         QCOMPARE(request.receiptState(), RequestReceiptModel::Received); QCOMPARE(f.wallet->scans, 1);
+        QCOMPARE(notified, QStringList{QString::fromStdString(id.ToString())});
+    }
+    void deletedNoticeRemovesCreditOnlyWhenOriginalWalletReadConfirmsAbsence()
+    {
+        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        const auto id = f.add(1, 1000); f.reader->reload(ADDRESSES); f.commands.drain(); model.consume();
+        QCOMPARE(request.receivedAmountSatoshi(), qint64{1000}); QVERIFY(request.historicallyUsed());
+        f.wallet->transactions.erase(id); const int before = f.wallet->reads;
+        f.reader->changed({{id, CT_DELETED}}, ADDRESSES); f.commands.drain(); model.consume();
+        QVERIFY(f.wallet->reads > before); QVERIFY(request.fresh());
+        QCOMPARE(request.receivedAmountSatoshi(), qint64{0}); QCOMPARE(request.receiptState(), RequestReceiptModel::Awaiting);
+        QVERIFY(request.historicallyUsed()); QCOMPARE(f.wallet->scans, 1);
     }
     void pendingObservationPreservesCreditWithoutClaimingCurrentReadiness()
     {
@@ -234,12 +251,13 @@ private Q_SLOTS:
     }
     void projectionCloseDuringChangedStopsOriginalTransactionPublication()
     {
-        Fixture f; ReceiptReconciliationModel model{f.projectionPorts()};
-        QSignalSpy transactions{&model, &ReceiptReconciliationModel::transactionChanged};
+        Fixture f; int transactions{0}; auto ports = f.projectionPorts();
+        ports.transactions = [&](const auto& changes) { transactions += int(changes.size()); };
+        ReceiptReconciliationModel model{std::move(ports)};
         const auto id = f.add(1, 100); f.reader->changed({{id, CT_NEW}}, ADDRESSES); f.commands.drain();
         connect(&model, &ReceiptReconciliationModel::changed, &model, [&] { model.close(); });
         model.consume(); QCOMPARE(model.phase(), ReceiptReconciliationModel::Closed);
-        QCOMPARE(transactions.count(), 0); QVERIFY(!model.applying()); f.commands.drain();
+        QCOMPARE(transactions, 0); QVERIFY(!model.applying()); f.commands.drain();
     }
     void destroyedReceiptOwnerLeavesTheOriginalRequestExplicitlyStale()
     {

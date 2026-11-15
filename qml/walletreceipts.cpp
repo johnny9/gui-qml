@@ -531,9 +531,12 @@ void Reader::readChanges(Work work)
     // recheck (128) limits, including when a full scan has just completed.
     const auto admission = m_opening->read([work = std::move(work)](interfaces::Wallet& wallet) {
         std::vector<Receipt> receipts;
+        // A coalesced notification is a reconciliation hint, not a current
+        // state receipt. In particular a delayed deletion can precede a later
+        // reappearance in the same original wallet opening.
         for (const auto& [id, change] : work.changes) {
-            if (change == CT_DELETED) receipts.push_back({id, {}, false, false});
-            else receipts.push_back(Read(wallet, id));
+            Q_UNUSED(change);
+            receipts.push_back(Read(wallet, id));
         }
         for (const auto& id : work.statuses) if (!work.changes.contains(id)) receipts.push_back(Read(wallet, id));
         return receipts;

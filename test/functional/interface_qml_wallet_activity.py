@@ -185,7 +185,7 @@ def typed_receipt_restart(harness, checkpoint):
     harness.start_gui()
     gui = harness.driver
     open_wallet_selector(gui)
-    gui.click("walletSelectItem_receipt-restart")
+    gui.click("walletSelectItem_receipt_restart")
     gui.wait_for_property("walletBadge", "text", "receipt-restart", timeout_ms=30000)
     gui.click("activityTabButton")
     gui.wait_for_property(f"activityRequest_{request_id}", "visible", True, timeout_ms=30000)

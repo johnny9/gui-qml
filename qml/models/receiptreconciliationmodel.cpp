@@ -70,10 +70,11 @@ void ReceiptReconciliationModel::consume()
     if (fresh() && m_ports.acknowledge) m_ports.acknowledge();
     const QPointer<ReceiptReconciliationModel> guard{this};
     Q_EMIT changed(); if (!guard || m_closed) return;
-    for (const auto& [id, change] : update->transactions) {
-        Q_EMIT transactionChanged(QString::fromStdString(id.ToString()), int(change));
-        if (!guard || m_closed) return;
-    }
+    // The compatibility adapter owns its bounded string formatting. Keeping
+    // this value callback local also permits reentrant owner destruction.
+    const auto transactions = m_ports.transactions;
+    if (transactions && !update->transactions.empty()) transactions(update->transactions);
+    if (!guard || m_closed) return;
     if (update->rescan) { Q_EMIT rescanRequested(); if (!guard || m_closed) return; }
     m_applying = false;
     Q_EMIT committed(); if (!guard || m_closed) return;

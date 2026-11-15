@@ -26,6 +26,7 @@ public:
         std::function<bool()> current;
         std::function<uint64_t()> nativeRevision;
         std::function<void()> poll, retry, acknowledge;
+        std::function<void(const std::map<Txid, ChangeType>&)> transactions;
     };
     explicit ReceiptReconciliationModel(Ports ports, QObject* parent = nullptr);
     ~ReceiptReconciliationModel() override;
@@ -46,7 +47,6 @@ public:
 Q_SIGNALS:
     void changed();
     void committed();
-    void transactionChanged(const QString& txid, int change);
     void rescanRequested();
 private:
     bool configured() const { return m_ports.take && m_ports.retire && m_ports.current && m_ports.nativeRevision; }
