@@ -244,6 +244,209 @@ TestCase {
             "Use an existing wallet backup file.")
     }
 
+    function test_modal_creation_keeps_file_navigation_on_the_original_page() {
+        const window = createMain(true)
+        const actions = findChild(window, "desktopMenuActions")
+        const send = selectedSend(window)
+        const originalView = findChild(window, "desktopWalletsPage").activeView
+        const originalWallet = walletController.selectedWallet
+        const note = findChild(send, "sendNoteInput")
+        note.text = "Original Send context"
+        actions.createWallet.trigger()
+        const modal = findChild(window, "walletCreationModal")
+        tryCompare(modal, "opened", true)
+        findChild(modal, "walletTypeRegular").clicked()
+        tryVerify(function() { return findChild(modal, "createWalletFormPage") !== null })
+        const form = findChild(modal, "createWalletFormPage")
+        const name = findChild(form, "createWalletNameInput")
+        testSetup.replaceText(name, "Unsubmitted modal draft")
+        const creations = walletController.creationCalls
+        const closes = walletController.closeWalletCalls
+
+        // This is the same command a native File-menu item delivers. The
+        // popup blocks pointer input, but a native menu is outside its scene.
+        actions.settings.trigger()
+        compare(findChild(window, "sendTabButton").checked, true)
+        compare(findChild(window, "desktopWalletSettingsTabButton").checked, false)
+        actions.nodeView.trigger()
+        actions.closeWallet.trigger()
+        compare(findChild(window, "sendTabButton").checked, true)
+        compare(findChild(window, "desktopWalletsPage").activeView, originalView)
+        compare(walletController.selectedWallet, originalWallet)
+        compare(walletController.creationCalls, creations)
+        compare(walletController.closeWalletCalls, closes)
+        compare(findChild(modal, "createWalletFormPage"), form)
+        compare(name.text, "Unsubmitted modal draft")
+        compare(note.text, "Original Send context")
+        compare(modal.visible, true)
+        compare(actions.settings.enabled, false)
+        compare(actions.createWallet.enabled, false)
+        compare(actions.exit.enabled, true)
+    }
+
+    function test_modal_creation_rejects_a_delayed_direct_route_then_restores_admission() {
+        const window = createMain(true)
+        const actions = findChild(window, "desktopMenuActions")
+        selectedSend(window)
+        actions.createWallet.trigger()
+        const modal = findChild(window, "walletCreationModal")
+        tryCompare(modal, "opened", true)
+        window.openSettings("display")
+        compare(findChild(window, "sendTabButton").checked, true)
+        compare(findChild(window, "desktopWalletSettingsTabButton").checked, false)
+        const close = findChild(modal, "onboardingCloseButton")
+        verify(close !== null)
+        clickVisible(close)
+        tryCompare(modal, "visible", false)
+        tryCompare(actions.settings, "enabled", true)
+        actions.settings.trigger()
+        compare(findChild(window, "desktopWalletSettingsTabButton").checked, true)
+    }
+
+    function test_owned_runtime_question_blocks_navigation_without_blocking_its_answer() {
+        const window = createMain(true)
+        const actions = findChild(window, "desktopMenuActions")
+        selectedSend(window)
+        try {
+        nodeModel.setRuntimeDialogForTest("Original runtime question", "Continue?", DialogButtonBox.Ok, true)
+        tryCompare(findChild(window, "nodeRuntimeDialog"), "opened", true)
+        actions.settings.trigger()
+        compare(findChild(window, "sendTabButton").checked, true)
+        compare(actions.settings.enabled, false)
+        tryVerify(function() { return findChild(window, "nodeRuntimeDialogButtonOk") !== null })
+        clickVisible(findChild(window, "nodeRuntimeDialogButtonOk"))
+        tryCompare(nodeModel, "runtimeDialogVisible", false)
+        tryCompare(actions.settings, "enabled", true)
+        actions.settings.trigger()
+        compare(findChild(window, "desktopWalletSettingsTabButton").checked, true)
+        } finally {
+            if (nodeModel.runtimeDialogVisible) nodeModel.answerRuntimeDialog(DialogButtonBox.Cancel)
+        }
+    }
+
+    function test_settings_close_question_keeps_its_original_route_data() {
+        return [{tag: "wallet-shell", wallet: true}, {tag: "node-shell", wallet: false}]
+    }
+    function test_settings_close_question_keeps_its_original_route(data) {
+        optionsModel.resetSettingsEditorsForTest()
+        const window = createMain(data.wallet)
+        const actions = findChild(window, "desktopMenuActions")
+        actions.settings.trigger()
+        tryVerify(function() { return findChild(window, "settingsView") !== null })
+        const settings = findChild(window, "settingsView")
+        settings.selectSection("connection")
+        tryCompare(settings.settingsEditor, "fresh", true)
+        settings.settingsEditor.entry("proxy").editText("127.0.0.1:9250")
+        tryCompare(settings.settingsEditor, "dirty", true)
+        settings.requestSettingsNavigation("storage", false)
+        // The public request already owns the disposition before its Domain
+        // answer is projected. A native menu must not use that interval.
+        actions.nodeView.trigger()
+        compare(settings.visible, true)
+        tryCompare(settings.settingsEditor, "closeQuestion", true)
+        const original = settings.settingsEditor
+        const consent = original.closeToken
+        actions.nodeView.trigger()
+        window.openSettings("about")
+        compare(settings.visible, true)
+        compare(settings.selectedSectionId, "connection")
+        compare(settings.pendingSettingsSection, "storage")
+        compare(settings.settingsEditor, original)
+        compare(original.closeToken, consent)
+        compare(original.entry("proxy").text, "127.0.0.1:9250")
+        compare(optionsModel.settingsWritesForTest(), 0)
+        compare(actions.nodeView.enabled, false)
+        original.answerClose(consent, SettingsEditorModel.KeepEditing)
+        tryCompare(original, "closeQuestion", false)
+        tryCompare(actions.nodeView, "enabled", true)
+        actions.nodeView.trigger()
+        if (data.wallet) compare(findChild(window, "blockClockTabButton").checked, true)
+        else tryVerify(function() { return findChild(window, "nodeRunner").visible })
+        compare(optionsModel.settingsWritesForTest(), 0)
+    }
+
+    function test_shutdown_invalidates_the_deferred_onboarding_modal() {
+        const window = createMain(true, true, true, false, false)
+        walletController.setInitialized(true)
+        walletListModel.setWalletDirLoaded(true)
+        // Catalog publication requests the zero-delay presentation; shutdown
+        // is delivered before that presentation turn, with no timer sleep.
+        nodeModel.requestShutdown()
+        wait(0)
+        compare(window.shutdownInProgress, true)
+        compare(findChild(window, "walletCreationModal").visible, false)
+        compare(findChild(window, "desktopMenuActions").settings.enabled, false)
+        compare(findChild(window, "createWalletWizard"), null)
+    }
+
+    function test_onboarding_wallet_presentation_waits_for_the_original_runtime_prompt() {
+        const window = createMain(true, true, true, false, false)
+        nodeModel.setRuntimeDialogForTest("Original runtime prompt", "Continue?", DialogButtonBox.Ok, true)
+        tryCompare(findChild(window, "nodeRuntimeDialog"), "opened", true)
+        walletController.setInitialized(true)
+        walletListModel.setWalletDirLoaded(true)
+        tryCompare(window, "postOnboardingWalletRouteResolved", true)
+        wait(0)
+        compare(findChild(window, "walletCreationModal").visible, false)
+        compare(walletController.creationCalls, 0)
+        nodeModel.answerRuntimeDialog(DialogButtonBox.Ok)
+        tryCompare(nodeModel, "runtimeDialogVisible", false)
+        tryCompare(findChild(window, "walletCreationModal"), "opened", true)
+        compare(findChild(window, "blockClockTabButton").checked, true)
+        compare(walletController.creationCalls, 0)
+    }
+
+    function test_a_new_catalog_fact_cancels_the_original_deferred_wallet_presentation() {
+        const window = createMain(true, true, true, false, false)
+        nodeModel.setRuntimeDialogForTest("Original runtime prompt", "Continue?", DialogButtonBox.Ok, true)
+        tryCompare(findChild(window, "nodeRuntimeDialog"), "opened", true)
+        walletController.setInitialized(true)
+        walletListModel.setWalletDirLoaded(true)
+        tryCompare(window, "postOnboardingWalletRouteResolved", true)
+        walletController.setNoWalletsFound(false)
+        nodeModel.answerRuntimeDialog(DialogButtonBox.Ok)
+        tryCompare(nodeModel, "runtimeDialogVisible", false)
+        wait(0)
+        compare(findChild(window, "walletCreationModal").visible, false)
+        // Returning to an empty catalog is a successor observation, not a
+        // replay of the completed onboarding presentation request.
+        walletController.setNoWalletsFound(true)
+        wait(0)
+        compare(findChild(window, "walletCreationModal").visible, false)
+        compare(walletController.creationCalls, 0)
+    }
+
+    function test_shell_round_trip_retains_the_original_dirty_settings_context_data() {
+        return [{tag: "wallet-shell", wallet: true}, {tag: "node-shell", wallet: false}]
+    }
+    function test_shell_round_trip_retains_the_original_dirty_settings_context(data) {
+        optionsModel.resetSettingsEditorsForTest()
+        const window = createMain(data.wallet)
+        const actions = findChild(window, "desktopMenuActions")
+        actions.settings.trigger()
+        tryVerify(function() { return findChild(window, "settingsView") !== null })
+        const original = findChild(window, "settingsView")
+        original.selectSection("connection")
+        tryCompare(original.settingsEditor, "fresh", true)
+        const editor = original.settingsEditor
+        editor.entry("proxy").editText("127.0.0.1:9251")
+        tryCompare(editor, "dirty", true)
+        actions.nodeView.trigger()
+        if (data.wallet) compare(findChild(window, "blockClockTabButton").checked, true)
+        else tryVerify(function() { return findChild(window, "nodeRunner").visible })
+        actions.settings.trigger()
+        tryVerify(function() {
+            const page = findChild(window, "settingsView")
+            return page !== null && page.visible
+        })
+        const returned = findChild(window, "settingsView")
+        compare(returned, original)
+        compare(returned.settingsEditor, editor)
+        compare(editor.entry("proxy").text, "127.0.0.1:9251")
+        compare(editor.dirty, true)
+        compare(optionsModel.settingsWritesForTest(), 0)
+    }
+
     function test_add_wallet_completion_returns_to_activity() {
         const window = createMain(true)
         findChild(window, "desktopMenuActions").createWallet.trigger()

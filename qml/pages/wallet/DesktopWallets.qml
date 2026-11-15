@@ -32,6 +32,10 @@ Page {
     readonly property bool walletTabSelected: navigationTabs.checkedButton !== null
         && (navigationTabs.checkedButton as WalletNavigationTab).index <= 2
     readonly property Item walletSettingsHost: settingsLoader.item ? (settingsLoader.item as SettingsView).walletSettingsHost : null
+    readonly property SettingsView settingsView: settingsLoader.item as SettingsView
+    readonly property bool modalNavigationBlocked: settingsView !== null
+        && (settingsView.settingsNavigationPending
+            || (settingsView.settingsEditor !== null && settingsView.settingsEditor.closeQuestion))
     readonly property alias walletViews: walletViews
 
     ButtonGroup { id: navigationTabs }
@@ -183,7 +187,7 @@ Page {
     function showSettingsSection(section) {
         settingsLoader.pendingRoute = section
         settingsTabButton.checked = true
-        Qt.callLater(settingsLoader.applyPendingRoute)
+        settingsLoader.applyPendingRoute()
     }
 
     Connections {
@@ -446,8 +450,9 @@ Page {
 
                     function applyPendingRoute() {
                         if (!item || pendingRoute.length === 0) return
-                        (item as SettingsView).selectSection(pendingRoute)
+                        const route = pendingRoute
                         pendingRoute = ""
+                        if (settingsTabButton.checked) (item as SettingsView).selectSection(route)
                     }
 
                     // Create Settings on first use, then retain its navigation
@@ -455,7 +460,7 @@ Page {
                     active: settingsTabButton.checked || retainItem
                     onLoaded: {
                         retainItem = true
-                        Qt.callLater(applyPendingRoute)
+                        applyPendingRoute()
                     }
                     sourceComponent: SettingsView {
                         showDoneButton: false
