@@ -614,7 +614,7 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         for (auto& value : output_rows) {
             auto row = value.toMap();
             row.insert(QStringLiteral("changeKnown"), false);
-            value = std::move(row);
+            value = row;
         }
         review->flow.insert(QStringLiteral("outputs"), output_rows);
         review->flow.insert(QStringLiteral("presentation"), PrepareTransactionFlowPresentation(review->flow));
