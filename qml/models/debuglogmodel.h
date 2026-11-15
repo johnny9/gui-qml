@@ -22,6 +22,9 @@
 #include <mutex>
 #include <memory>
 #include <utility>
+#include <array>
+#include <optional>
+#include <cstdint>
 
 //! List model for the in-app debug.log viewer.
 //!
@@ -171,6 +174,7 @@ private:
     //! not touch any QObject state on the model — everything it discovers
     //! (including open errors) is returned here for the main thread to apply.
     struct ReadResult {
+        std::optional<std::array<uint64_t, 4>> file_identity;
         bool file_opened{false};
         bool memory_limited{false};
         QString error_message;
@@ -198,6 +202,7 @@ private:
                                     const QByteArray& previous_partial,
                                     bool previous_discarding_oversized_line,
                                     const QByteArray& previous_anchor,
+                                    const std::optional<std::array<uint64_t, 4>>& previous_identity,
                                     const std::atomic_bool& cancelled);
 
     //! Read a bounded tail snapshot by scanning backward in fixed-size blocks.

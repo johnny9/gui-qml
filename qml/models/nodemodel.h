@@ -273,8 +273,7 @@ private:
     PeerCommandModel* m_peer_actions{nullptr};
     QString m_information_local_addresses;
     QString m_information_data_dir, m_information_blocks_dir, m_information_network;
-    int m_information_header_height{0}, m_information_block_height{0};
-    int64_t m_information_header_time{0}, m_information_block_time{0};
+    uint64_t m_chain_read_generation{0};
     NetworkModel* m_network_model{nullptr};
     bool m_network_available{false};
     nodelifecycle::Phase m_lifecycle_phase{nodelifecycle::Phase::Constructed};

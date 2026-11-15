@@ -27,8 +27,16 @@ Page {
     property bool pendingSettingsDone: false
     property bool settingsNavigationPending: false
     property bool settingsQuestionObserved: false
+    readonly property bool settingsNavigationAllowed: !root.settingsNavigationPending
+        && (!root.settingsEditor || (root.settingsEditor.phase !== SettingsEditorModel.Checking
+            && root.settingsEditor.phase !== SettingsEditorModel.Saving
+            && root.settingsEditor.phase !== SettingsEditorModel.Retiring))
+    readonly property bool settingsDoneEnabled: root.settingsNavigationAllowed
+        && (!root.settingsEditor || !root.settingsEditor.busy
+            || (root.settingsEditor.phase === SettingsEditorModel.Loading
+                && !root.settingsEditor.dirty && !root.settingsEditor.inputPending))
     function requestSettingsNavigation(section, done) {
-        if (root.settingsNavigationPending || (root.settingsEditor && (root.settingsEditor.phase === SettingsEditorModel.Checking || root.settingsEditor.phase === SettingsEditorModel.Saving || root.settingsEditor.phase === SettingsEditorModel.Retiring))) return
+        if (!root.settingsNavigationAllowed) return
         if (root.settingsEditor && root.settingsEditor.dirty) {
             root.pendingSettingsSection = section
             root.pendingSettingsDone = done
@@ -63,6 +71,7 @@ Page {
     property bool walletSettingsProvided: false
     readonly property Item walletSettingsHost: internal.walletSettingsHost
     property string activeWalletName: wallet !== null ? wallet.name : ""
+    property bool activeWalletRpcContext: wallet !== null
     property string activeWalletRpcName: wallet !== null ? wallet.rpcName : activeWalletName
     property bool activeWalletRpcReady: wallet !== null ? wallet.capabilitiesKnown : activeWalletAvailable
     property bool activeWalletAvailable: wallet !== null && wallet.available
@@ -284,7 +293,7 @@ Page {
                     objectName: "settingsDoneButton"
                     visible: root.showDoneButton
                     text: qsTr("Done")
-                    enabled: !root.settingsEditor || !root.settingsEditor.busy
+                    enabled: root.settingsDoneEnabled
                     Layout.alignment: Qt.AlignHCenter
                     Layout.bottomMargin: 20
                     onClicked: root.requestSettingsNavigation("", true)
@@ -402,7 +411,8 @@ Page {
 
         SettingsPages.SettingsRpcConsoleView {
             walletName: root.activeWalletRpcName
-            walletContext: root.activeWalletAvailable && root.activeWalletRpcReady
+            walletContext: root.activeWalletRpcContext
+            targetAvailable: !root.activeWalletRpcContext || (root.activeWalletAvailable && root.activeWalletRpcReady)
         }
     }
 

@@ -3482,6 +3482,10 @@ public:
     signerdiscovery::Configuration signerConfigurationForTest()const{return m_signer_facts->configuration;}
     void settingsSignerSavedForTest(const QString& command){++m_signer_facts->writes;const auto old=m_signer_facts->configuration;m_signer_facts->configuration={command,QString::fromLatin1(QCryptographicHash::hash(command.toUtf8(),QCryptographicHash::Sha256).toHex()),old.editable,old.source};m_signers->refresh();}
     Q_INVOKABLE QString signerExecutableForTest() const { return QCoreApplication::applicationFilePath(); }
+    Q_INVOKABLE QString alternateSignerExecutableForTest() const {
+        const QFileInfo executable{QCoreApplication::applicationFilePath()};
+        return executable.path() + QStringLiteral("/./") + executable.fileName();
+    }
     Q_INVOKABLE void setSignerFixtureForTest(const QString& command, const QString& fingerprint, const QString& name, const QString& error, bool read_only = false, bool refresh = true) {
         m_signer_facts->configuration = {command, QString::fromLatin1(QCryptographicHash::hash(command.toUtf8(), QCryptographicHash::Sha256).toHex()), !read_only, read_only ? QStringLiteral("CommandLine") : QStringLiteral("Persistent")};
         m_signer_facts->fingerprint = fingerprint; m_signer_facts->name = name; m_signer_facts->error = error;
@@ -4276,6 +4280,10 @@ private:
 };
 
 namespace {
+struct ControlledSettings {
+    ManualRoutedExecution transport;
+    std::deque<std::function<void()>> gui;
+};
 struct MockSettingsStore {
     std::mutex mutex;
     effectivesettings::Snapshot snapshot;
@@ -4421,6 +4429,8 @@ public:
     QString pruneTargetError()const{return m_core_settings.pruneTargetError();}
     Q_INVOKABLE void editPruneTarget(const QString& text){m_core_settings.stagePruneLiteral(text);}
     std::shared_ptr<MockSettingsStore> m_settings_store;
+    std::shared_ptr<ControlledSettings> m_controlled_settings;
+    std::vector<QPointer<SettingsEditorModel>> m_controlled_settings_owners;
     MockWalletController* m_settings_signer{nullptr};
     void setSettingsSignerForTest(MockWalletController* signer){m_settings_signer=signer;}
     Q_PROPERTY(bool setupCommitPending READ setupCommitPending NOTIFY setupCommitChanged)
@@ -4454,18 +4464,76 @@ public:
     Q_INVOKABLE void confirmUnpruning(const QString&){}
     Q_INVOKABLE void commitSettings(){if(!canFinish()||m_setup_pending||m_setup_committed)return;m_setup_pending=true;Q_EMIT setupCommitChanged();QTimer::singleShot(0,this,[this]{m_setup_pending=false;m_setup_committed=true;Q_EMIT setupCommitChanged();Q_EMIT settingsCommitted();});}
     Q_INVOKABLE void resetSettingsEditorsForTest(){for(const auto& editor:MockSettingsOwners())if(editor)editor->close();m_settings_store.reset();m_setup_pending=m_setup_committed=m_setup_partial=m_setup_uncertain=false;m_setup_queries=m_setup_completions=m_setup_rechecks=0;m_setup_error={};Q_EMIT setupCommitChanged();}
+    Q_INVOKABLE bool beginControlledSettingsForTest() {
+        if (m_controlled_settings) return false;
+        m_controlled_settings = std::make_shared<ControlledSettings>();
+        return true;
+    }
+    Q_INVOKABLE bool stepControlledSettingsDomainForTest() {
+        return m_controlled_settings && m_controlled_settings->transport.step(execution::Lane::Domain);
+    }
+    Q_INVOKABLE bool publishControlledSettingsForTest() {
+        if (!m_controlled_settings) return false;
+        auto& gui = m_controlled_settings->gui;
+        for (int turn = 0; turn < 4096 && !gui.empty(); ++turn) {
+            auto callback = std::move(gui.front()); gui.pop_front(); callback();
+        }
+        return gui.empty();
+    }
+    Q_INVOKABLE bool settleControlledSettingsForTest() {
+        if (!m_controlled_settings) return false;
+        auto& state = *m_controlled_settings;
+        for (int turn = 0; turn < 4096; ++turn) {
+            if (!state.transport.queuedIdle()) { if (!state.transport.stepNext()) return false; continue; }
+            if (!state.gui.empty()) { auto callback = std::move(state.gui.front()); state.gui.pop_front(); callback(); continue; }
+            return state.transport.transportIdle();
+        }
+        return false;
+    }
+    Q_INVOKABLE bool endControlledSettingsForTest() {
+        if (!m_controlled_settings) return true;
+        const auto owners = m_controlled_settings_owners;
+        for (const auto& editor : owners) if (editor) editor->close();
+        const bool settled = settleControlledSettingsForTest();
+        const bool drained = m_controlled_settings->transport.quiescent() && m_controlled_settings->gui.empty();
+        m_controlled_settings_owners.clear(); m_controlled_settings.reset();
+        return settled && drained;
+    }
     Q_INVOKABLE int settingsWritesForTest()const{if(!m_settings_store)return 0;std::lock_guard lock{m_settings_store->mutex};return m_settings_store->writes;}
     Q_INVOKABLE void rejectSettingsForTest(const QString& error){if(!m_settings_store)m_settings_store=std::make_shared<MockSettingsStore>();std::lock_guard lock{m_settings_store->mutex};m_settings_store->rejected=error;}
     Q_INVOKABLE SettingsEditorModel* createSettingsEditor(){
         using namespace effectivesettings;if(!m_settings_store)m_settings_store=std::make_shared<MockSettingsStore>();const auto store=m_settings_store;
         if(m_settings_signer){const auto config=m_settings_signer->signerConfigurationForTest();std::lock_guard lock{store->mutex};auto& field=store->snapshot.fields[size_t(Key::Signer)];field.committed=field.effective=field.next_start=config.command;field.editable=config.editable;field.provenance=config.editable?Provenance::Persistent:Provenance::CommandLine;}
         SettingsEditorModel::Ports ports;ports.execution=MockFeeServices();
+        if (const auto controlled = m_controlled_settings) ports.execution = {controlled->transport.scheduler, [controlled](auto turn) { controlled->gui.push_back(std::move(turn)); }};
+        const auto signer = QPointer<MockWalletController>{m_settings_signer};
+        const auto notify = ports.execution.post;
         ports.read=[store]{std::lock_guard lock{store->mutex};return store->snapshot;};
         ports.review=[store](const settingsedit::Save& save){std::lock_guard lock{store->mutex};const bool current=save.original.revision==store->snapshot.revision;QString error=store->rejected;for(const auto& edit:save.batch.edits)if(edit.key==Key::Signer&&edit.intent==Intent::ExplicitOverride)if(const auto path_error=signerdiscovery::PathError(std::get<QString>(edit.value));!path_error.isEmpty())error=path_error;return Check{current&&error.isEmpty(),{},{},current?error:QStringLiteral("Configuration changed")};};
-        ports.write=[store](const settingsedit::Save& save){std::lock_guard lock{store->mutex};Result result;if(save.original.revision!=store->snapshot.revision){result.outcome=Outcome::Conflict;result.error=QStringLiteral("Configuration changed");return result;}++store->writes;for(const auto& edit:save.batch.edits){auto& field=store->snapshot.fields[size_t(edit.key)];field.has_override=edit.intent==Intent::ExplicitOverride;field.committed=field.has_override?edit.value:store->configured[size_t(edit.key)];field.next_start=field.committed;field.provenance=field.has_override?Provenance::Persistent:Provenance::Default;result.persisted_values[edit.key]=field.has_override?std::make_optional(field.committed):std::nullopt;}store->snapshot.revision=QStringLiteral("settings-")+QString::number(store->writes);result.snapshot=store->snapshot;result.outcome=Outcome::Applied;result.persisted=result.write_completed=result.runtime_confirmed=true;return result;};
+        ports.write=[store, signer, notify](const settingsedit::Save& save) {
+            Result result; std::optional<QString> applied_signer;
+            {
+                std::lock_guard lock{store->mutex};
+                if (save.original.revision != store->snapshot.revision) { result.outcome=Outcome::Conflict; result.error=QStringLiteral("Configuration changed"); return result; }
+                ++store->writes;
+                for (const auto& edit : save.batch.edits) {
+                    auto& field=store->snapshot.fields[size_t(edit.key)]; field.has_override=edit.intent==Intent::ExplicitOverride;
+                    field.committed=field.has_override?edit.value:store->configured[size_t(edit.key)]; field.next_start=field.committed;
+                    if (field.applicability == Applicability::Live) field.effective=field.committed;
+                    field.provenance=field.has_override?Provenance::Persistent:Provenance::Default;
+                    result.persisted_values[edit.key]=field.has_override?std::make_optional(field.committed):std::nullopt;
+                    if (edit.key == Key::Signer) applied_signer=std::get<QString>(field.committed);
+                }
+                store->snapshot.revision=QStringLiteral("settings-")+QString::number(store->writes); result.snapshot=store->snapshot;
+                result.outcome=Outcome::Applied; result.persisted=result.write_completed=result.runtime_confirmed=true;
+            }
+            // Mirror the actual original write/forceSetting notification. A
+            // later GUI draft or reconciliation cannot retarget this effect.
+            if (applied_signer) notify([signer, command=std::move(*applied_signer)] { if (signer) signer->settingsSignerSavedForTest(command); });
+            return result;
+        };
         auto* editor=new SettingsEditorModel(std::move(ports),this);
-        const auto signer=QPointer<MockWalletController>{m_settings_signer};const auto saved_operation=std::make_shared<QString>();
-        connect(editor,&SettingsEditorModel::changed,editor,[editor,signer,saved_operation]{const auto result=editor->saveResult();if(!signer||!result.persisted||!result.outcomeKnown||*saved_operation==result.operationId)return;*saved_operation=result.operationId;const auto entry=editor->entry(QStringLiteral("signer"));if(entry&&entry->text()!=signer->signerConfigurationForTest().command)signer->settingsSignerSavedForTest(entry->text());});
+        if (m_controlled_settings) m_controlled_settings_owners.emplace_back(editor);
         MockSettingsOwners().removeIf([](const auto& item){return !item;});MockSettingsOwners().push_back(editor);connect(editor,&SettingsEditorModel::closed,editor,[editor]{editor->close();editor->deleteLater();});return editor;
     }
 Q_SIGNALS:
@@ -6881,10 +6949,12 @@ public:
 class MockRpcConsoleModel : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(int commandCount READ commandCount NOTIFY commandSubmitted)
     Q_PROPERTY(QString lastTarget READ lastTarget NOTIFY commandSubmitted)
     Q_PROPERTY(QString lastWalletName READ lastWalletName NOTIFY commandSubmitted)
     Q_PROPERTY(QString completionPrefix MEMBER m_completion_prefix)
-    Q_PROPERTY(QStringList completionSuggestions READ completionSuggestions CONSTANT)
+    Q_PROPERTY(QStringList completionSuggestions READ completionSuggestions NOTIFY completionChanged)
+    Q_PROPERTY(int clearCount READ clearCount NOTIFY outputCleared)
     Q_PROPERTY(bool completionBusy READ completionBusy CONSTANT)
     Q_PROPERTY(QString completionError READ completionError CONSTANT)
     Q_PROPERTY(bool executing READ executing CONSTANT)
@@ -6896,25 +6966,37 @@ class MockRpcConsoleModel : public QObject
     Q_PROPERTY(QColor keyColor MEMBER m_key_color)
 
 public:
+    int commandCount() const { return m_command_count; }
     QString lastTarget() const { return m_last_target; }
     QString lastWalletName() const { return m_last_wallet_name; }
     bool executing() const { return false; }
     QStringList availableCommands() const { return {}; }
-    QStringList completionSuggestions() const { return {}; }
+    QStringList completionSuggestions() const { return m_suggestions; }
+    int clearCount() const { return m_clear_count; }
+    Q_INVOKABLE void setCompletionSuggestionsForTest(const QStringList& suggestions) { m_suggestions = suggestions; Q_EMIT completionChanged(); }
     bool completionBusy() const { return false; }
     QString completionError() const { return {}; }
     QObject* outputModel() { return &m_output; }
     Q_INVOKABLE bool submitCommand(const QString&, const QString&) { return false; }
-    Q_INVOKABLE bool submitNodeCommand(const QString&) { m_last_target = QStringLiteral("node"); m_last_wallet_name.clear(); Q_EMIT commandSubmitted(); return false; }
-    Q_INVOKABLE bool submitWalletCommand(const QString&, const QString& name) { m_last_target = QStringLiteral("wallet"); m_last_wallet_name = name; Q_EMIT commandSubmitted(); return false; }
+    Q_INVOKABLE bool submitInput(const QString& command, bool wallet, const QString& name, bool available) {
+        if (command.trimmed() == QLatin1String("stop")) return submitNodeCommand(command);
+        if (!available) return false;
+        return wallet ? submitWalletCommand(command, name) : submitNodeCommand(command);
+    }
+    Q_INVOKABLE bool submitNodeCommand(const QString&) { ++m_command_count; m_last_target = QStringLiteral("node"); m_last_wallet_name.clear(); Q_EMIT commandSubmitted(); return false; }
+    Q_INVOKABLE bool submitWalletCommand(const QString&, const QString& name) { ++m_command_count; m_last_target = QStringLiteral("wallet"); m_last_wallet_name = name; Q_EMIT commandSubmitted(); return false; }
     Q_INVOKABLE QString browseHistory(int, const QString& current) { return current; }
     Q_INVOKABLE void resetHistoryNavigation() {}
-    Q_INVOKABLE void clear() {}
+    Q_INVOKABLE void clear() { ++m_clear_count; Q_EMIT outputCleared(); }
 
 Q_SIGNALS:
     void commandSubmitted();
+    void completionChanged();
+    void outputCleared();
 
 private:
+    int m_command_count{0}, m_clear_count{0};
+    QStringList m_suggestions;
     QString m_last_target, m_last_wallet_name;
     MockRpcOutputModel m_output;
     QString m_completion_prefix;

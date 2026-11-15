@@ -7,11 +7,15 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QFile>
+#include <QFileInfo>
 #include <QPersistentModelIndex>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
 #include <qml/models/debuglogmodel.h>
+#include <qml/models/rpcconsolemodel.h>
+#include <test/mocks/stubnode.h>
+#include <univalue.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/mocks/admissionhookscheduler.h>
 #include <stdexcept>
@@ -135,6 +139,11 @@ private Q_SLOTS:
     void widerTailRequest_survivesRacesAndDeactivation();
     void filter_updatesIncrementallyAndWhileInactive();
     void rotation_fallsBackToFullSnapshot();
+    void replacementWithMatchingSuffixUsesFileIdentity_data();
+    void replacementWithMatchingSuffixUsesFileIdentity();
+    void staleActivationCannotPublishOrLoseRetainedRows();
+    void hiddenReadDoesNotCancelIndependentCommand();
+    void hugeUnfinishedSuffixHasBoundedReadAndRecovery();
     void loadLimit_changesKeepRetainedCacheBounded();
     void openErrorEmptyByDefault();
     void openErrorPersistsAcrossSuccessfulRead();
@@ -1566,6 +1575,103 @@ void DebugLogModelTests::rotation_fallsBackToFullSnapshot()
     QCOMPARE(ContentAt(model, 0), QStringLiteral("rotated one"));
     QCOMPARE(ContentAt(model, 1), QStringLiteral("rotated two"));
     QCOMPARE(reset_spy.count(), 1);
+}
+
+void DebugLogModelTests::replacementWithMatchingSuffixUsesFileIdentity_data()
+{
+    QTest::addColumn<bool>("replace");
+    QTest::newRow("replacement-file") << true;
+    QTest::newRow("rewrite-same-file") << false;
+}
+
+void DebugLogModelTests::replacementWithMatchingSuffixUsesFileIdentity()
+{
+    QFETCH(bool, replace);
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    const auto path = dir.filePath("debug.log");
+    const auto suffix = NumberedRecords(0, 20); QVERIFY(suffix.size() > 256);
+    QVERIFY(WriteBytes(path, Record("original first") + suffix));
+    ManualExecutionEnvironment env;
+    DebugLogModel model{fs::PathFromString(path.toStdString()), true, {env.scheduler, [&](auto turn) { env.post(std::move(turn)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    model.setActive(true);
+    QTRY_VERIFY(([&] { env.drain(); env.publishAll(); return !model.busy(); })());
+    QCOMPARE(model.rowCount(), 21); QCOMPARE(ContentAt(model, 0), QStringLiteral("original first"));
+    QSignalSpy reset{&model, &QAbstractItemModel::modelReset};
+    if (replace) QVERIFY(QFile::rename(path, dir.filePath("debug.log.1")));
+    const auto modified = QFileInfo{path}.lastModified();
+    QVERIFY(WriteBytes(path, Record("replaced first") + suffix)); // Same byte length and same 256-byte suffix.
+    if (!replace) {
+        QFile rewritten{path}; QVERIFY(rewritten.open(QIODevice::ReadWrite));
+        QVERIFY(rewritten.setFileTime(modified.addSecs(1), QFileDevice::FileModificationTime));
+    }
+    model.refresh();
+    QTRY_VERIFY(([&] { env.drain(); env.publishAll(); return !model.busy(); })());
+    QCOMPARE(model.rowCount(), 21); QCOMPARE(ContentAt(model, 0), QStringLiteral("replaced first"));
+    QCOMPARE(reset.size(), 1); QVERIFY(model.openError().isEmpty());
+}
+
+void DebugLogModelTests::staleActivationCannotPublishOrLoseRetainedRows()
+{
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    const auto path = dir.filePath("debug.log"); QVERIFY(WriteBytes(path, Record("old activation")));
+    ManualExecutionEnvironment env;
+    DebugLogModel model{fs::PathFromString(path.toStdString()), true, {env.scheduler, [&](auto turn) { env.post(std::move(turn)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    model.setActive(true); QVERIFY(env.step()); // Native owns an old snapshot; no GUI adoption.
+    model.setActive(false);
+    QVERIFY(env.step()); env.publishAll();
+    QVERIFY(!model.busy()); QCOMPARE(model.rowCount(), 0);
+    QVERIFY(WriteBytes(path, Record("new activation"), QIODevice::WriteOnly | QIODevice::Append));
+    model.setActive(true);
+    QTRY_VERIFY(([&] { env.drain(); env.publishAll(); return !model.busy(); })());
+    QCOMPARE(model.rowCount(), 2); QCOMPARE(ContentAt(model, 0), QStringLiteral("old activation"));
+    QCOMPARE(ContentAt(model, 1), QStringLiteral("new activation"));
+    QVERIFY(model.openError().isEmpty());
+    // Hold another read across a complete deactivate/reactivate cycle. Its
+    // superseded availability/error facts cannot publish into the new visit.
+    model.refresh(); QVERIFY(env.step()); model.setActive(false); model.setActive(true);
+    QVERIFY(WriteBytes(path, Record("latest activation"), QIODevice::WriteOnly | QIODevice::Append));
+    QVERIFY(env.step()); env.publishAll();
+    QCOMPARE(model.rowCount(), 2); QVERIFY(model.busy());
+    QTRY_VERIFY(([&] { env.drain(); env.publishAll(); return !model.busy(); })());
+    QCOMPARE(model.rowCount(), 3); QCOMPARE(ContentAt(model, 2), QStringLiteral("latest activation"));
+}
+
+void DebugLogModelTests::hiddenReadDoesNotCancelIndependentCommand()
+{
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    const auto path = dir.filePath("debug.log"); QVERIFY(WriteBytes(path, Record("diagnostic")));
+    struct Node final : StubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return UniValue{3}; }
+    } node;
+    ManualExecutionEnvironment env;
+    const execution::SnapshotServices services{env.scheduler, [&](auto turn) { env.post(std::move(turn)); }};
+    DebugLogModel log{fs::PathFromString(path.toStdString()), true, services};
+    RpcConsoleModel console{node, services};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    log.setActive(true); QVERIFY(console.submitNodeCommand("getblockcount"));
+    const auto receipt = console.commandReceipt(); log.setActive(false);
+    env.drain(); env.publishAll();
+    QCOMPARE(log.rowCount(), 0); QVERIFY(!log.busy());
+    QCOMPARE(node.effects, 1); QVERIFY(!console.executing());
+    QVERIFY(receipt->result()); QVERIFY(receipt->result()->value); QVERIFY(receipt->result()->value->attempted);
+}
+
+void DebugLogModelTests::hugeUnfinishedSuffixHasBoundedReadAndRecovery()
+{
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    const auto path = dir.filePath("debug.log");
+    QVERIFY(WriteBytes(path, QByteArray(9 * 1024 * 1024, 'x')));
+    DebugLogModel model{fs::PathFromString(path.toStdString())};
+    model.setActive(true); QTRY_VERIFY(!model.busy());
+    QCOMPARE(model.rowCount(), 1);
+    QVERIFY(ContentAt(model, 0).contains("omitted"));
+    QVERIFY(model.logAvailable());
+    QVERIFY(WriteBytes(path, QByteArray{"\n"} + Record("framing recovered"), QIODevice::WriteOnly | QIODevice::Append));
+    model.refresh(); QTRY_VERIFY(!model.busy());
+    QCOMPARE(ContentAt(model, model.rowCount() - 1), QStringLiteral("framing recovered"));
 }
 
 void DebugLogModelTests::loadLimit_changesKeepRetainedCacheBounded()

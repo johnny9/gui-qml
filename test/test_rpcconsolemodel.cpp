@@ -214,6 +214,19 @@ private Q_SLOTS:
     void explicitContextDistinguishesDefaultWalletFromNode();
     void outputRowsExposeCategoryAndRawTimestamp();
     void clearRemovesOutput();
+    void clearDuringExecuteKeepsAcceptedOutcome_data();
+    void clearDuringExecuteKeepsAcceptedOutcome();
+    void clearResetsWalletBannerAndHistoryCursor();
+    void clearAfterPartialProjectionDoesNotStrandBusy();
+    void commandOutcomeSurvivesObserverLoss();
+    void rejectedAndDuplicateInputsHaveNoEffect();
+    void acceptedAdmissionKeepsOriginalOwner_data();
+    void acceptedAdmissionKeepsOriginalOwner();
+    void unknownEffectIsNotReplayed();
+    void acceptedCancellationStaysKnownNotStarted();
+    void unavailableWalletNeverUsesNodeEndpoint();
+    void unavailableInputKeepsIndependentStop();
+    void publicOutputAppendCannotExceedBudgets();
     void outputTruncatedWhenResultTooLong();
     void jsonReplyKeyColoringSkipsStringsContainingColons();
     void jsonReplyPreservesNestedFormatting_data();
@@ -225,6 +238,8 @@ private Q_SLOTS:
     void autocompleteRejectsStaleManualResults();
     void secretRequestsAreNotRetained_data();
     void secretRequestsAreNotRetained();
+    void argumentConversionDiagnosticsFollowRequestRedaction_data();
+    void argumentConversionDiagnosticsFollowRequestRedaction();
 };
 
 void RpcConsoleModelTests::constructorReservationKeepsOriginalParentLifetime()
@@ -584,6 +599,255 @@ void RpcConsoleModelTests::clearRemovesOutput()
     QCOMPARE(out->rowCount(), 0);
 }
 
+void RpcConsoleModelTests::clearDuringExecuteKeepsAcceptedOutcome_data()
+{
+    QTest::addColumn<int>("stage");
+    QTest::newRow("before-effect") << 0;
+    QTest::newRow("effect-before-domain") << 1;
+    QTest::newRow("domain-before-gui") << 2;
+}
+
+void RpcConsoleModelTests::clearDuringExecuteKeepsAcceptedOutcome()
+{
+    QFETCH(int, stage);
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string& uri) override {
+            ++effects; if (uri != "/wallet/old") throw std::runtime_error("Wrong target"); return UniValue{9};
+        }
+    } node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { env.post(std::move(turn)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    QVERIFY(model.submitWalletCommand("getbalance", "old"));
+    const auto id = model.commandId(), generation = model.outputGeneration();
+    const auto receipt = model.commandReceipt(); QVERIFY(receipt);
+    for (int i = 0; i < stage; ++i) QVERIFY(env.step());
+    model.clear();
+    QCOMPARE(model.outputGeneration(), generation + 1);
+    QVERIFY(model.executing()); QCOMPARE(model.commandId(), id);
+    env.drain(); env.publishAll();
+    QCOMPARE(node.effects, 1); QVERIFY(!model.executing()); QCOMPARE(model.outputModel()->rowCount(), 0);
+    const auto result = receipt->result(); QVERIFY(result); QVERIFY(result->value); QVERIFY(!result->error);
+    QCOMPARE(result->value->command_id, id); QCOMPARE(result->value->generation, generation);
+    QVERIFY(result->value->context == RpcCommandContext::ForWallet("old"));
+    QVERIFY(result->value->attempted); QCOMPARE(result->value->outcome, RpcCommandResult::Outcome::Succeeded);
+    QCOMPARE(model.browseHistory(1, ""), QStringLiteral("getbalance"));
+}
+
+void RpcConsoleModelTests::clearResetsWalletBannerAndHistoryCursor()
+{
+    UriCapturingNode node;
+    RpcConsoleModel model{node};
+    QVERIFY(model.submitWalletCommand("help one", "named")); QTRY_VERIFY(!model.executing());
+    QVERIFY(model.submitWalletCommand("help two", "named")); QTRY_VERIFY(!model.executing());
+    QCOMPARE(model.browseHistory(1, "unsent"), QStringLiteral("help two"));
+    QCOMPARE(model.browseHistory(1, "help two"), QStringLiteral("help one"));
+    model.clear();
+    QCOMPARE(model.browseHistory(1, "fresh draft"), QStringLiteral("help two"));
+    QCOMPARE(model.browseHistory(-1, "help two"), QStringLiteral("fresh draft"));
+    QVERIFY(model.submitWalletCommand("getwalletinfo", "named")); QTRY_VERIFY(!model.executing());
+    auto* out = model.outputModel(); QCOMPARE(out->rowCount(), 3);
+    QVERIFY(out->data(out->index(0), RpcOutputListModel::ContentRole).toString().contains("named"));
+    for (int row = 0; row < out->rowCount(); ++row) {
+        QCOMPARE(out->data(out->index(row), RpcOutputListModel::CommandIdRole).toULongLong(), model.commandId());
+        QCOMPARE(out->data(out->index(row), RpcOutputListModel::GenerationRole).toULongLong(), model.outputGeneration());
+        QVERIFY(out->data(out->index(row), RpcOutputListModel::WalletContextRole).toBool());
+        QCOMPARE(out->data(out->index(row), RpcOutputListModel::WalletNameRole).toString(), QStringLiteral("named"));
+    }
+}
+
+void RpcConsoleModelTests::clearAfterPartialProjectionDoesNotStrandBusy()
+{
+    LargeResultNode node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { env.post(std::move(turn)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    QVERIFY(model.submitNodeCommand("getblockcount"));
+    env.drain(); QVERIFY(env.publishNext());
+    QVERIFY(model.commandReceipt()->result());
+    QVERIFY(model.outputModel()->rowCount() > 0); QVERIFY(model.executing());
+    model.clear();
+    QCOMPARE(model.outputModel()->rowCount(), 0); QVERIFY(!model.executing());
+}
+
+void RpcConsoleModelTests::commandOutcomeSurvivesObserverLoss()
+{
+    UriCapturingNode node;
+    ManualExecutionEnvironment env;
+    auto model = std::make_unique<RpcConsoleModel>(node, execution::SnapshotServices{env.scheduler, [&](auto turn) { env.post(std::move(turn)); }});
+    QVERIFY(model->submitWalletCommand("getwalletinfo", "original"));
+    const auto receipt = model->commandReceipt(); QVERIFY(receipt); QVERIFY(!receipt->result());
+    const auto id = model->commandId(); model.reset();
+    env.drain(); env.publishAll(); QVERIFY(env.quiescent());
+    QCOMPARE(node.lastUri(), QStringLiteral("/wallet/original"));
+    const auto result = receipt->result(); QVERIFY(result); QVERIFY(result->value);
+    QCOMPARE(result->value->command_id, id); QVERIFY(result->value->attempted);
+    QVERIFY(result->value->context == RpcCommandContext::ForWallet("original"));
+}
+
+void RpcConsoleModelTests::rejectedAndDuplicateInputsHaveNoEffect()
+{
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
+    } node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { env.post(std::move(turn)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    QVERIFY(!model.submitNodeCommand(QString(RpcConsoleModel::kMaxInputCharacters + 1, 'x')));
+    QVERIFY(!model.executing()); QCOMPARE(node.effects, 0);
+    QVERIFY(model.submitNodeCommand("getblockcount"));
+    const auto id = model.commandId();
+    QVERIFY(!model.submitNodeCommand("getblockcount")); QCOMPARE(model.commandId(), id);
+    env.drain(); env.publishAll(); QCOMPARE(node.effects, 1); QVERIFY(!model.executing());
+    env.scheduler->closeOrdinaryAdmission();
+    QVERIFY(!model.submitNodeCommand("getblockcount"));
+    QVERIFY(!model.executing()); QVERIFY(!model.completionError().isEmpty()); QCOMPARE(node.effects, 1);
+}
+
+void RpcConsoleModelTests::acceptedAdmissionKeepsOriginalOwner_data()
+{
+    QTest::addColumn<int>("mode");
+    QTest::newRow("clear") << 0;
+    QTest::newRow("shutdown") << 1;
+    QTest::newRow("delete") << 2;
+}
+
+void RpcConsoleModelTests::acceptedAdmissionKeepsOriginalOwner()
+{
+    QFETCH(int, mode);
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
+    } node;
+    ManualExecutionEnvironment env;
+    auto hooks = std::make_shared<AdmissionHookScheduler>(env.scheduler);
+    auto model = std::make_unique<RpcConsoleModel>(node, execution::SnapshotServices{hooks, [&](auto callback) { env.post(std::move(callback)); }});
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    std::shared_ptr<const RpcCommandReceipt> original;
+    bool duplicate_accepted{true};
+    const auto trigger = hooks->armSubmit(execution::Lane::Core, 1, [&] {
+        original = model->commandReceipt();
+        duplicate_accepted = model->submitNodeCommand("getblockcount");
+        if (mode == 0) model->clear();
+        else if (mode == 1) model->beginShutdown();
+        else model.reset();
+    });
+    auto* const observer = model.get();
+    QVERIFY(observer->submitNodeCommand("getblockcount"));
+    QCOMPARE(trigger->calls.load(), size_t{1}); QVERIFY(!duplicate_accepted); QVERIFY(original);
+    env.drain(); env.publishAll();
+    QCOMPARE(node.effects, 1); QVERIFY(original->result()); QVERIFY(original->result()->value);
+    QVERIFY(original->result()->value->attempted);
+    if (model) { QCOMPARE(model->outputModel()->rowCount(), 0); if (!mode) QVERIFY(!model->executing()); }
+}
+
+void RpcConsoleModelTests::unknownEffectIsNotReplayed()
+{
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override {
+            ++effects; throw std::runtime_error("Reply lost after effect");
+        }
+    } node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { env.post(std::move(turn)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    QVERIFY(model.submitNodeCommand("getblockcount"));
+    const auto receipt = model.commandReceipt();
+    env.drain(); env.publishAll(); QVERIFY(!model.executing()); QCOMPARE(node.effects, 1);
+    const auto result = receipt->result(); QVERIFY(result); QVERIFY(result->value);
+    QVERIFY(result->value->attempted); QCOMPARE(result->value->outcome, RpcCommandResult::Outcome::Uncertain);
+    model.clear(); model.setCompletionPrefix("get"); env.drain(); env.publishAll();
+    QCOMPARE(node.effects, 1); // Clear, observations and publication cannot replay an arbitrary RPC.
+}
+
+void RpcConsoleModelTests::acceptedCancellationStaysKnownNotStarted()
+{
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
+    } node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    QVERIFY(model.submitWalletCommand("getwalletinfo", "original"));
+    const auto receipt = model.commandReceipt();
+    auto turn = env.takeTurnFront(); QVERIFY(turn); QCOMPARE(turn->phase, execution::Phase::Queued);
+    QVERIFY(env.scheduler->cancelQueued(turn->id));
+    turn->turn(); turn.reset();
+    env.drain(); env.publishAll();
+    QCOMPARE(node.effects, 0); QVERIFY(!model.executing());
+    const auto result = receipt->result(); QVERIFY(result); QVERIFY(result->error); QVERIFY(!result->value);
+    QVERIFY_THROWS_EXCEPTION(execution::NotStarted, std::rethrow_exception(result->error));
+    auto* output = model.outputModel(); QCOMPARE(output->rowCount(), 1);
+    QVERIFY(output->data(output->index(0), RpcOutputListModel::WalletContextRole).toBool());
+    QCOMPARE(output->data(output->index(0), RpcOutputListModel::WalletNameRole).toString(), QStringLiteral("original"));
+    model.clear(); env.drain(); env.publishAll(); QCOMPARE(node.effects, 0);
+}
+
+void RpcConsoleModelTests::unavailableWalletNeverUsesNodeEndpoint()
+{
+    struct Node final : RpcTestStubNode {
+        std::vector<std::string> uris;
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string& uri) override {
+            uris.push_back(uri);
+            UniValue error{UniValue::VOBJ}; error.pushKV("code", -18); error.pushKV("message", "Requested wallet does not exist"); throw error;
+        }
+    } node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { env.post(std::move(turn)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
+    QVERIFY(model.submitWalletCommand("getwalletinfo", "unloaded"));
+    env.drain(); env.publishAll(); QVERIFY(!model.executing());
+    QCOMPARE(node.uris, std::vector<std::string>{"/wallet/unloaded"});
+    const auto result = model.commandReceipt()->result(); QVERIFY(result); QVERIFY(result->value);
+    QCOMPARE(result->value->outcome, RpcCommandResult::Outcome::KnownError); QVERIFY(result->value->attempted);
+}
+
+void RpcConsoleModelTests::unavailableInputKeepsIndependentStop()
+{
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        std::vector<std::string> methods, uris;
+        UniValue executeRpc(const std::string& method, const UniValue&, const std::string& uri) override {
+            ++effects; methods.push_back(method); uris.push_back(uri); return {};
+        }
+    } node;
+    ManualRoutedExecution env;
+    std::deque<std::function<void()>> gui;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { gui.push_back(std::move(turn)); }}};
+    const auto settle = qScopeGuard([&] { env.drain(); while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); } });
+    QVERIFY(!model.submitInput("getwalletinfo", true, "unavailable", false));
+    QCOMPARE(node.effects, 0); QVERIFY(!model.executing());
+    QVERIFY(model.submitNodeCommand("getblockcount"));
+    QVERIFY(model.submitInput("stop", true, "unavailable", false));
+    QVERIFY(env.step(execution::Lane::Control));
+    QCOMPARE(node.effects, 1); QCOMPARE(node.methods.front(), std::string{"stop"});
+    QCOMPARE(node.uris.front(), std::string{}); QVERIFY(model.executing());
+    env.drain(); while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+    QCOMPARE(node.effects, 2); QVERIFY(!model.executing());
+    model.beginShutdown(); env.drain();
+    while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+}
+
+void RpcConsoleModelTests::publicOutputAppendCannotExceedBudgets()
+{
+    RpcOutputListModel out;
+    out.appendRow("00:00:00", QString(RpcOutputListModel::kMaxCharacters + 1, 'x'), RpcConsoleModel::CMD_REPLY);
+    QCOMPARE(out.rowCount(), 1);
+    QVERIFY(out.data(out.index(0), RpcOutputListModel::ContentRole).toString().size() < 8192);
+    RpcOutputListModel::Batch batch;
+    for (int i = 0; i < RpcOutputListModel::kMaxRows + 1; ++i) batch.append({"00:00:00", QString(1024, 'y'), RpcConsoleModel::CMD_REPLY});
+    out.appendRows(batch, 0, batch.size());
+    QVERIFY(out.rowCount() > 1000); QVERIFY(out.rowCount() <= RpcOutputListModel::kMaxRows);
+    qsizetype characters{0};
+    for (int i = 0; i < out.rowCount(); ++i) characters += out.data(out.index(i), RpcOutputListModel::ContentRole).toString().size();
+    QVERIFY(characters <= RpcOutputListModel::kMaxCharacters);
+    const auto count = out.rowCount(); out.appendRows(batch, -1, 4); QCOMPARE(out.rowCount(), count);
+}
+
 void RpcConsoleModelTests::outputTruncatedWhenResultTooLong()
 {
     LargeResultNode mock;
@@ -829,6 +1093,43 @@ void RpcConsoleModelTests::secretRequestsAreNotRetained()
     QCOMPARE(model.browseHistory(-1, pending), pending);
     QVERIFY(requests_safe); QVERIFY(history_safe);
     QCOMPARE(recalled, method + QString::fromUtf8("(…)"));
+}
+
+void RpcConsoleModelTests::argumentConversionDiagnosticsFollowRequestRedaction_data()
+{
+    QTest::addColumn<QString>("command"); QTest::addColumn<bool>("sensitive");
+    QTest::newRow("sensitive-direct") << "signrawtransactionwithkey deadbeef unique-rpc-secret-92" << true;
+    QTest::newRow("sensitive-nested") << "echo(signrawtransactionwithkey(deadbeef unique-rpc-secret-92))" << true;
+    QTest::newRow("ordinary-conversion-control") << "getblockhash ordinary-parse-control" << false;
+}
+
+void RpcConsoleModelTests::argumentConversionDiagnosticsFollowRequestRedaction()
+{
+    QFETCH(QString, command); QFETCH(bool, sensitive);
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
+    } node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { env.post(std::move(turn)); }}};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    QVERIFY(model.submitNodeCommand(command)); env.drain(); env.publishAll();
+    QCOMPARE(node.effects, 0); QVERIFY(!model.executing());
+    bool request{false}, error{false};
+    auto* output = model.outputModel(); QVERIFY(output->rowCount() >= 2);
+    for (int row = 0; row < output->rowCount(); ++row) {
+        const auto index = output->index(row, 0);
+        const auto text = output->data(index, RpcOutputListModel::ContentRole).toString();
+        QVERIFY(!text.contains("unique-rpc-secret-92"));
+        const int category = output->data(index, RpcOutputListModel::CategoryRole).toInt();
+        if (category == RpcConsoleModel::CMD_REQUEST) request |= text.contains(sensitive ? QString::fromUtf8("(…)") : QStringLiteral("ordinary-parse-control"));
+        if (category == RpcConsoleModel::CMD_ERROR) error |= text.contains(sensitive ? QStringLiteral("Invalid RPC arguments.") : QStringLiteral("Error parsing JSON: ordinary-parse-control"));
+    }
+    QVERIFY(request); QVERIFY(error);
+    model.clear(); QCOMPARE(output->rowCount(), 0);
+    const auto recalled = model.browseHistory(1, {});
+    QVERIFY(!recalled.contains("unique-rpc-secret-92"));
+    QVERIFY(recalled.contains(sensitive ? QString::fromUtf8("(…)") : QStringLiteral("ordinary-parse-control")));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

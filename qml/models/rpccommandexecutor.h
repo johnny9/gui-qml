@@ -7,6 +7,8 @@
 
 #include <string>
 #include <utility>
+#include <memory>
+#include <optional>
 
 #include <QString>
 
@@ -43,6 +45,23 @@ struct RpcCommandContext {
 class RpcCommandExecutor
 {
 public:
+    struct Plan;
+    /** Transient worker-owned syntax tree. Never store this secret-bearing value
+     * in history, output, a GUI publication, or a diagnostic. */
+    class Prepared
+    {
+    public:
+        const std::string& filtered() const;
+    private:
+        friend class RpcCommandExecutor;
+        explicit Prepared(std::shared_ptr<const Plan> plan) : m_plan(std::move(plan)) {}
+        std::shared_ptr<const Plan> m_plan;
+    };
+    static std::optional<Prepared> Prepare(const std::string& command);
+    /** Evaluate the prepared syntax exactly once, with the captured endpoint.
+     * attempted becomes true immediately before the first public RPC call. */
+    static std::string Execute(interfaces::Node& node, const Prepared& command,
+                               const RpcCommandContext& context, bool& attempted);
     /**
      * Split and optionally execute a shell-like command line.
      *

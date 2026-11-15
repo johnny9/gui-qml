@@ -11,6 +11,10 @@
 #include <QRegularExpression>
 
 #include <qml/models/rpccommandexecutor.h>
+#include <test/mocks/stubnode.h>
+#include <univalue.h>
+#include <vector>
+#include <stdexcept>
 #include <util/translation.h>
 
 #include <string>
@@ -24,6 +28,9 @@ class RpcCommandExecutorTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void preparedNestedCallsKeepArgumentsAndTarget();
+    void preparedValidationPrecedesAnyNestedEffect();
+    void preparedEmptyAndMalformedInputsHaveNoEffect();
     void parseSpaceSeparated();
     void parseFunctionalNotation();
     void parseNestedCommands();
@@ -40,6 +47,54 @@ private Q_SLOTS:
     void secretCommandMatrix();
     void pinnedCoreRedactionPolicy();
 };
+
+void RpcCommandExecutorTests::preparedNestedCallsKeepArgumentsAndTarget()
+{
+    struct Node final : StubNode {
+        std::vector<std::string> methods, parameters, uris;
+        UniValue executeRpc(const std::string& method, const UniValue& params, const std::string& uri) override {
+            methods.push_back(method); parameters.push_back(params.write()); uris.push_back(uri);
+            if (method == "getblockhash") return UniValue{"captured-hash"};
+            UniValue result{UniValue::VOBJ}, transactions{UniValue::VARR};
+            transactions.push_back("selected-result"); result.pushKV("tx", transactions); return result;
+        }
+    } node;
+    const auto prepared = RpcCommandExecutor::Prepare("getblock(getblockhash(0),1)[tx][0]");
+    QVERIFY(prepared); QCOMPARE(QString::fromStdString(prepared->filtered()), QStringLiteral("getblock(getblockhash(0),1)[tx][0]"));
+    bool attempted{false};
+    QCOMPARE(RpcCommandExecutor::Execute(node, *prepared, RpcCommandContext::ForWallet("my wallet"), attempted), std::string{"selected-result"});
+    QVERIFY(attempted); QCOMPARE(node.methods.size(), size_t{2});
+    QCOMPARE(node.methods[0], std::string{"getblockhash"}); QCOMPARE(node.parameters[0], std::string{"[0]"});
+    QCOMPARE(node.methods[1], std::string{"getblock"}); QCOMPARE(node.parameters[1], std::string{R"(["captured-hash",1])"});
+    QCOMPARE(node.uris[0], std::string{"/wallet/my%20wallet"}); QCOMPARE(node.uris[1], node.uris[0]);
+}
+
+void RpcCommandExecutorTests::preparedValidationPrecedesAnyNestedEffect()
+{
+    struct Node final : StubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
+    } node;
+    std::string result;
+    QVERIFY_THROWS_EXCEPTION(std::runtime_error, RpcCommandExecutor::RPCExecuteCommandLine(node, result, "getblockcount() getblockcount()"));
+    QCOMPARE(node.effects, 0);
+}
+
+void RpcCommandExecutorTests::preparedEmptyAndMalformedInputsHaveNoEffect()
+{
+    struct Node final : StubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
+    } node;
+    for (const std::string command : {"", " ", ")", "()"}) {
+        const auto prepared = RpcCommandExecutor::Prepare(command); QVERIFY(prepared);
+        bool attempted{false};
+        QCOMPARE(RpcCommandExecutor::Execute(node, *prepared, RpcCommandContext::ForNode(), attempted), std::string{});
+        QVERIFY(!attempted);
+    }
+    QVERIFY(!RpcCommandExecutor::Prepare("getblockhash 'unfinished"));
+    QCOMPARE(node.effects, 0);
+}
 
 void RpcCommandExecutorTests::parseSpaceSeparated()
 {
