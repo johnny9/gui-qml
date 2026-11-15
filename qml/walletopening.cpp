@@ -5,6 +5,8 @@
 #include <qml/walletopening.h>
 
 #include <interfaces/chain.h>
+#include <addresstype.h>
+#include <outputtype.h>
 #include <univalue.h>
 
 #include <algorithm>
@@ -120,6 +122,7 @@ void Session::closeAdmission()
 {
     std::lock_guard lock{m_mutex};
     m_admission_closed.store(true);
+    m_source_epoch->closed.store(true);
 }
 
 bool Session::admitAction()
@@ -167,6 +170,15 @@ uint64_t Session::transactionRevision() const
 {
     std::lock_guard lock{m_mutex};
     return m_transaction_revision;
+}
+
+std::function<bool()> Session::observationGuard() const
+{
+    const auto epoch = m_source_epoch;
+    const auto expected = epoch->value.load();
+    return [epoch, expected, admitted = available(), closed = m_closed, shutdown = m_shutdown_gate, unloaded = m_native_events.unloaded] {
+        return admitted && epoch->current(expected) && !closed->load() && (!shutdown || !shutdown->load()) && (!unloaded || !unloaded->load());
+    };
 }
 
 std::shared_ptr<const Session::Action> Session::startAction()
@@ -265,6 +277,7 @@ bool Session::cleanup()
 
 void Session::ingress(int kind, const Txid& txid, ChangeType change)
 {
+    m_source_epoch->advance();
     if (kind == 3) m_native_events.observeUnload();
     auto callback_lifetime = m_retirement->borrow(m_retirement_key);
     if (kind == 3) {
@@ -338,26 +351,41 @@ void Session::refreshFailed(bool transactions)
     Update update; update.failed = true; publish(std::move(update));
 }
 
-execution::Admission Session::setReceivePreference(std::string type)
+OutputType Session::preferredReceiveType(interfaces::Wallet& wallet) const
+{
+    const auto saved = m_preferences.read ? m_preferences.read(wallet.getWalletName()) : std::string{};
+    const auto parsed = ParseOutputType(saved);
+    return parsed ? *parsed : wallet.getDefaultAddressType();
+}
+
+execution::Admission Session::setReceivePreference(std::string type, std::shared_ptr<const Action> original, std::function<void(bool)> done)
 {
     if (type != "bech32m" && type != "bech32" && type != "p2sh-segwit" && type != "legacy") return {{}, execution::Rejection::Invalid};
+    if (original && original->identity() != identity()) return {{}, execution::Rejection::Invalid};
     const auto revision = ++m_preference_revision;
     const auto self = shared_from_this();
-    const auto admission = read([self, type](interfaces::Wallet& wallet) {
-        const bool supported = wallet.canGetAddresses() && (type != "bech32m" || wallet.taprootEnabled());
+    const auto work = [self, type](interfaces::Wallet& wallet) {
+        const bool supported = type != "bech32m" || wallet.taprootEnabled();
         const bool persisted = supported && self->m_preferences.write && self->m_preferences.write(wallet.getWalletName(), type);
         auto metadata = ReadMetadata(wallet, self->m_preferences);
         const bool saved = persisted && metadata.receive_preference == type;
         return std::pair{std::move(metadata), saved};
-    }, [self, revision](std::pair<Metadata, bool> result) {
+    };
+    const auto complete = [self, revision, done](std::pair<Metadata, bool> result) {
+        const bool saved = result.second;
         Update update; update.metadata = std::move(result.first); update.preference_saved = result.second; update.preference_revision = revision;
         update.phase = self->m_state.phase(); update.question = self->m_state.question();
         self->publish(std::move(update));
-    }, [self, revision](std::exception_ptr) {
+        try { if (done) done(saved); } catch (...) { }
+    };
+    const auto failed = [self, revision, done](std::exception_ptr) {
         Update update; update.preference_saved = false; update.preference_revision = revision;
         update.phase = self->m_state.phase(); update.question = self->m_state.question();
         self->publish(std::move(update));
-    }, execution::WorkClass::Action, 128);
+        try { if (done) done(false); } catch (...) { }
+    };
+    const auto admission = original ? perform(original, work, complete, failed, 128)
+                                    : read(work, complete, failed, execution::WorkClass::Action, 128);
     if (!admission) {
         Update update; update.preference_saved = false; update.preference_revision = revision;
         publish(std::move(update));

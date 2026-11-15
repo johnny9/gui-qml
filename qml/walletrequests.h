@@ -7,6 +7,7 @@
 
 #include <qml/walletopening.h>
 #include <qml/walletrequestdata.h>
+#include <qml/walletrequesterror.h>
 #include <qml/walletreservationdata.h>
 #include <qml/observationretirement.h>
 #include <qml/secretinput.h>
@@ -21,9 +22,7 @@ namespace walletreceipts { struct Snapshot; }
 
 namespace walletrequests {
 enum class Kind { Reload, Create, Edit, Erase, Label, ReserveAddress, ResumeAddress, SelectAddress, ForgetAddress, SentLabels };
-enum class Error { None, Loading, Checking, Invalid, Missing, Changed, Paid, IdExhausted, NeedsUnlock,
-                   Rejected, Closed, Persistence, LabelPersistence, Partial, Uncertain, Unsupported, AlreadySaved,
-                   IncorrectPassphrase, AddressCreation, ReservationPersistence };
+
 struct Command {
     Kind kind{Kind::Reload};
     int64_t id{0};
@@ -39,7 +38,7 @@ struct Command {
     bool require_unused{false};
     bool consume_address{false};
     uint64_t view{1}, view_revision{0};
-    bool next{false}, explicit_type{false}, clear_reservation{false};
+    bool next{false}, explicit_type{false}, clear_reservation{false}, remember_type{false};
     std::shared_ptr<const AddressIntent> resume, reservation;
     std::shared_ptr<SecureString> secret;
     secretinput::Captured captured_secret;
@@ -52,6 +51,7 @@ struct Result {
     std::optional<QString> current_label;
     bool reservation_released{false};
     bool publication_failed{false};
+    bool preference_requested{false}, preference_saved{false};
     size_t records_saved{0}, records_total{0};
     std::shared_ptr<const Record> record;
     std::optional<ReservedAddress> address;
@@ -90,6 +90,16 @@ struct Publication {
     Error error{Error::None};
     bool loaded{false}, busy{false};
 };
+struct Inspection {
+    Error error{Error::None};
+    SharedRecord record;
+    std::shared_ptr<const AddressIntent> reservation;
+    std::optional<ReservedAddress> address;
+    std::optional<QString> current_label;
+    bool loaded{false}, current{false}, closed{false}, used{false};
+    uint64_t revision{0}, receipt_epoch{0}, native_revision{0};
+    std::function<bool()> permission;
+};
 
 /** The sole local writer of receive-request records for an opening. Commands
  * are reduced on Domain and public Wallet effects run on the opening's Core
@@ -123,6 +133,9 @@ public:
     execution::Admission interest(uint64_t view, QString address);
     void close();
     std::optional<Publication> take();
+    // Domain-only inspection of the same authoritative writer state. No GUI
+    // reader consumes another view's publication or scans Core collections.
+    execution::Admission inspect(int64_t id, uint64_t view, std::function<void(Inspection)> done);
     uint64_t revision() const { return m_revision.load(); }
     bool presentationCurrent() const {
         return !m_closed.load() && !m_mutating.load() && !m_uncertain.load() && m_receipts_ready.load() && m_ready() && !m_observation_pending.load() && m_snapshot_ready.load() &&
@@ -191,6 +204,7 @@ private:
     const execution::ObservationRetirement<Loading> m_loading_retirement;
     const execution::ObservationRetirement<walletreceipts::Snapshot> m_observation_retirement;
     std::atomic_bool m_closed{false};
+    const std::shared_ptr<SourceEpoch> m_source_epoch{std::make_shared<SourceEpoch>()};
     std::atomic<uint64_t> m_checked_revision{0};
     std::atomic<uint64_t> m_receipt_epoch{0};
     std::mutex m_mutex; // bounded ingress/publication only; never held across effects

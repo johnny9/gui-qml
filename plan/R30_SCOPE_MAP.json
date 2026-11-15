@@ -1,0 +1,1277 @@
+{
+  "candidate": "32f36f054b18cc90df6efee92f02877f43724166",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "status": "FOCUSED GATE SATISFIED WITH USER-APPROVED UPSTREAM007 AND INHERITED139/153 LIMITATIONS; R42 exhaustive qualification pending",
+  "primary_scope_count": 34,
+  "scope007_decision": "SCOPE007_USER_DECISION.json; root plan/API_DEFERRALS_20261115.md",
+  "historical_evidence": "original-scopes/*.md preserved unchanged; no automatic conversion of inventory candidates into confirmed defects",
+  "rows": [
+    {
+      "scope": "007",
+      "disposition": "user-approved-upstream-deferral",
+      "selectors": [
+        "ReceiveIntegrationTests::typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed",
+        "WalletReservationTests::aggregateKeypoolUnavailabilityIsNotATypeSupportFailure"
+      ],
+      "contract_and_limits": "No public nonmutating per-output-type capability inventory. Proven/Unknown remains separate from current keypool/unlock availability; no probe or Core/private/RPC production escape.",
+      "actual_evidence": [
+        {
+          "selector": "ReceiveIntegrationTests::typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        },
+        {
+          "selector": "WalletReservationTests::aggregateKeypoolUnavailabilityIsNotATypeSupportFailure",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "aggregateKeypoolUnavailabilityIsNotATypeSupportFailure"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "014",
+      "disposition": "original-behavior-preserved",
+      "selectors": [
+        "WalletReceiveModelTests::delayedDeleteOfOriginalRequestDoesNotCloseANewerEditor",
+        "PaymentRequestEditorModelTests::oldCloseConsentCannotDiscardSuccessorInput"
+      ],
+      "contract_and_limits": "Delete/close captures exact editor/request/revision; completion cannot close successor B.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::delayedDeleteOfOriginalRequestDoesNotCloseANewerEditor",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "delayedDeleteOfOriginalRequestDoesNotCloseANewerEditor"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "PaymentRequestEditorModelTests::oldCloseConsentCannotDiscardSuccessorInput",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "oldCloseConsentCannotDiscardSuccessorInput"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "023",
+      "disposition": "migrated-action-ownership",
+      "selectors": [
+        "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen",
+        "ReceiveIntegrationTests::receivingUnlockCanBeCancelledRetriedAndRelocks"
+      ],
+      "contract_and_limits": "Cancellation clears this original attempt and requires explicit retry, retaining native admitted outcome separately.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::receivingUnlockCanBeCancelledRetriedAndRelocks",
+          "app": "b8fbe0190f85cf12f056279c0c87a2d292da8ff6",
+          "report": "gameboy/run-01/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.receivingUnlockCanBeCancelledRetriedAndRelocks"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "025",
+      "disposition": "independent-original-red-and-head-green",
+      "selectors": [
+        "ReceiveIntegrationTests::savedQrActionsRequireAnEncodableOriginalPayload",
+        "RequestSharingModelTests::qrRendererRejectsTheOriginal4250CharacterPayloadAndRecovers",
+        "ReceiveIntegrationTests::typedReceiveRejectsOversizeQrAndRecoversWithoutBlankExport",
+        "ReceiveIntegrationTests::typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload"
+      ],
+      "contract_and_limits": "Test-only accepted parenta2af/d4ab: exactshortcontrolpass/original4250fail; source02sameuniversal2rowsgreen. Actual plain/encrypted exported PNGs independently ZXing-decoded against exact literal URI. QRcontrols wrongexpected/blank fail as required.",
+      "actual_evidence": [
+        {
+          "selector": "ReceiveIntegrationTests::savedQrActionsRequireAnEncodableOriginalPayload",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/integration/report.json",
+          "passed_bodies": 2,
+          "body_identities": [
+            "receive.enabled.savedQrActionsRequireAnEncodableOriginalPayload:encodable-control",
+            "receive.enabled.savedQrActionsRequireAnEncodableOriginalPayload:original-4250-character-failure"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        },
+        {
+          "selector": "RequestSharingModelTests::qrRendererRejectsTheOriginal4250CharacterPayloadAndRecovers",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "qrRendererRejectsTheOriginal4250CharacterPayloadAndRecovers"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::typedReceiveRejectsOversizeQrAndRecoversWithoutBlankExport",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.typedReceiveRejectsOversizeQrAndRecoversWithoutBlankExport"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/integration/report.json",
+          "passed_bodies": 2,
+          "body_identities": [
+            "receive.enabled.typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload:plain-wallet",
+            "receive.enabled.typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload:encrypted-wallet"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "036",
+      "disposition": "existing-fix-plus-partial-outcome-migration",
+      "selectors": [
+        "ReceiveIntegrationTests::typedReceivePreferenceFailureRetainsTheGeneratedAddress",
+        "WalletReservationTests::preferenceFailureRetainsTheGeneratedAddressAndRetryDoesNotAllocateAgain"
+      ],
+      "contract_and_limits": "Existing crash fix retained; generated address fact remains usable if optional preference persistence fails. Disabled settings public-Core counterpart; readonly/environment matrix R42.",
+      "actual_evidence": [
+        {
+          "selector": "ReceiveIntegrationTests::typedReceivePreferenceFailureRetainsTheGeneratedAddress",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.typedReceivePreferenceFailureRetainsTheGeneratedAddress"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        },
+        {
+          "selector": "WalletReservationTests::preferenceFailureRetainsTheGeneratedAddressAndRetryDoesNotAllocateAgain",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "preferenceFailureRetainsTheGeneratedAddressAndRetryDoesNotAllocateAgain"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "042",
+      "disposition": "migrated-persistent-draft",
+      "selectors": [
+        "WalletReceiveModelTests::dirtyAddressNavigationCapturesOneOriginalTarget",
+        "WalletReceiveModelTests::requestAgainGuardsBothOriginalModalAndExistingCreationDraft",
+        "WalletReceiveModelTests::sameAddressNavigationPreservesTheExistingDraft"
+      ],
+      "contract_and_limits": "Saved-template/address navigation requires captured Save/Discard/Keep decision and preserves same-address input.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::dirtyAddressNavigationCapturesOneOriginalTarget",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "dirtyAddressNavigationCapturesOneOriginalTarget"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReceiveModelTests::requestAgainGuardsBothOriginalModalAndExistingCreationDraft",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "requestAgainGuardsBothOriginalModalAndExistingCreationDraft"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReceiveModelTests::sameAddressNavigationPreservesTheExistingDraft",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "sameAddressNavigationPreservesTheExistingDraft"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "099",
+      "disposition": "bounded-domain-values",
+      "selectors": [
+        "WalletRequestsTests::legacyHistoryPreviewsRemainBoundedWithoutTruncatingTheRecord",
+        "PaymentRequestEditorModelTests::sourceOversizeFailsClosedWithoutTruncatingSavedData",
+        "WalletRequestsTests::historyLoadingYieldsWithItsOriginalOutcomeAndAllData"
+      ],
+      "contract_and_limits": "Bounded live history previews, input/envelope/editor inventory; raw persisted metadata retained. URI encoded only for selected action/editor on Domain.",
+      "actual_evidence": [
+        {
+          "selector": "WalletRequestsTests::legacyHistoryPreviewsRemainBoundedWithoutTruncatingTheRecord",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "legacyHistoryPreviewsRemainBoundedWithoutTruncatingTheRecord"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "PaymentRequestEditorModelTests::sourceOversizeFailsClosedWithoutTruncatingSavedData",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "sourceOversizeFailsClosedWithoutTruncatingSavedData"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletRequestsTests::historyLoadingYieldsWithItsOriginalOutcomeAndAllData",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 3,
+          "body_identities": [
+            "historyLoadingYieldsWithItsOriginalOutcomeAndAllData:row-budget",
+            "historyLoadingYieldsWithItsOriginalOutcomeAndAllData:byte-budget",
+            "historyLoadingYieldsWithItsOriginalOutcomeAndAllData:legacy-oversized-record"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "124",
+      "disposition": "existing-single-writer-preserved",
+      "selectors": [
+        "WalletRequestsTests::consumedReceivingAddressCannotBeCreatedTwiceBeforeGuiPublication",
+        "WalletRequestsTests::consumedAddressStaysRetiredAfterEraseAndReload",
+        "WalletRequestsTests::failedCreateDoesNotConsumeAnUnusedReceivingAddress"
+      ],
+      "contract_and_limits": "Original durable consumed/unused address semantics remain in Store; no second reservation writer.",
+      "actual_evidence": [
+        {
+          "selector": "WalletRequestsTests::consumedReceivingAddressCannotBeCreatedTwiceBeforeGuiPublication",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "consumedReceivingAddressCannotBeCreatedTwiceBeforeGuiPublication"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletRequestsTests::consumedAddressStaysRetiredAfterEraseAndReload",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "consumedAddressStaysRetiredAfterEraseAndReload"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletRequestsTests::failedCreateDoesNotConsumeAnUnusedReceivingAddress",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "failedCreateDoesNotConsumeAnUnusedReceivingAddress"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "127",
+      "disposition": "historical-dead-surface-no-new-bug",
+      "selectors": [
+        "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen"
+      ],
+      "contract_and_limits": "New live typed facade owns prompt/error. Legacy QML-dead needsUnlock members alone are not a new reachable defect.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "128",
+      "disposition": "migrated-validation-state",
+      "selectors": [
+        "PaymentRequestEditorModelTests::invalidAmountCannotPersistThePreviousValidAmount",
+        "TypedReceive::test_invalid_amount_never_submits_the_previous_value"
+      ],
+      "contract_and_limits": "Invalid literal cannot persist previous canonical amount; explicit field/refusal states.",
+      "actual_evidence": [
+        {
+          "selector": "PaymentRequestEditorModelTests::invalidAmountCannotPersistThePreviousValidAmount",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "invalidAmountCannotPersistThePreviousValidAmount"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "TypedReceive::test_invalid_amount_never_submits_the_previous_value",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/qml/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "TypedReceive::test_invalid_amount_never_submits_the_previous_value"
+          ],
+          "source_basis": "explicit unchanged source02 carry"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "139",
+      "disposition": "inherited-upstream-interface-limit",
+      "selectors": [
+        "WalletReservationTests::alreadyUnlockedWalletStaysUnlocked",
+        "WalletReservationTests::realWorkersRelockAndRetainTheOutcomeAfterCloseWithoutGuiDelivery"
+      ],
+      "contract_and_limits": "Retain R09 conditional acceptance: public Core unlock/read/lock is not exclusive against independent RPC unlock. No claim of atomic Core/RPC authorization lease; upstream typed scoped ownership needed.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReservationTests::alreadyUnlockedWalletStaysUnlocked",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "alreadyUnlockedWalletStaysUnlocked"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReservationTests::realWorkersRelockAndRetainTheOutcomeAfterCloseWithoutGuiDelivery",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 2,
+          "body_identities": [
+            "realWorkersRelockAndRetainTheOutcomeAfterCloseWithoutGuiDelivery:native-secure-string",
+            "realWorkersRelockAndRetainTheOutcomeAfterCloseWithoutGuiDelivery:captured-40000-character-literal"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "145",
+      "disposition": "no-standalone-defect",
+      "selectors": [
+        "WalletReservationTests::alreadyUnlockedWalletStaysUnlocked"
+      ],
+      "contract_and_limits": "Already-unlocked redundant password is not authenticated. Do not relabel this as new password verification or claim to fix Core atomicity.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReservationTests::alreadyUnlockedWalletStaysUnlocked",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "alreadyUnlockedWalletStaysUnlocked"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "147",
+      "disposition": "typed-phase-errors",
+      "selectors": [
+        "WalletReservationTests::reservationFailuresOwnTheirExactNativeEffects",
+        "WalletReservationTests::successfulAuthorizationKeepsALaterGenerationFailureSeparate",
+        "ReceiveIntegrationTests::typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed"
+      ],
+      "contract_and_limits": "Invalid/unsupported type is not wrong password. Untyped failed locked attempt stays explicit ambiguity; actual incorrect passphrase only typed unlock result. Watch-only signing owned by accepted R29/R24.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReservationTests::reservationFailuresOwnTheirExactNativeEffects",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 14,
+          "body_identities": [
+            "reservationFailuresOwnTheirExactNativeEffects:invalid-type",
+            "reservationFailuresOwnTheirExactNativeEffects:aggregate-unavailable-but-generation-succeeds",
+            "reservationFailuresOwnTheirExactNativeEffects:taproot-unsupported",
+            "reservationFailuresOwnTheirExactNativeEffects:read-failed",
+            "reservationFailuresOwnTheirExactNativeEffects:read-threw",
+            "reservationFailuresOwnTheirExactNativeEffects:missing-read-port",
+            "reservationFailuresOwnTheirExactNativeEffects:missing-write-port",
+            "reservationFailuresOwnTheirExactNativeEffects:write-failed",
+            "reservationFailuresOwnTheirExactNativeEffects:write-threw",
+            "reservationFailuresOwnTheirExactNativeEffects:generation-failed",
+            "reservationFailuresOwnTheirExactNativeEffects:generation-threw",
+            "reservationFailuresOwnTheirExactNativeEffects:paid-retirement-failed",
+            "reservationFailuresOwnTheirExactNativeEffects:relock-threw",
+            "reservationFailuresOwnTheirExactNativeEffects:history-threw"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReservationTests::successfulAuthorizationKeepsALaterGenerationFailureSeparate",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "successfulAuthorizationKeepsALaterGenerationFailureSeparate"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "148",
+      "disposition": "typed-phase-errors",
+      "selectors": [
+        "WalletReservationTests::successfulAuthorizationKeepsALaterGenerationFailureSeparate",
+        "WalletReservationTests::unlockInfrastructureFailureIsNotReportedAsAWrongPassword"
+      ],
+      "contract_and_limits": "Generation/storage failure after successful authorization remains current phase failure.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReservationTests::successfulAuthorizationKeepsALaterGenerationFailureSeparate",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "successfulAuthorizationKeepsALaterGenerationFailureSeparate"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReservationTests::unlockInfrastructureFailureIsNotReportedAsAWrongPassword",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "unlockInfrastructureFailureIsNotReportedAsAWrongPassword"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "149",
+      "disposition": "original-prompt-ownership",
+      "selectors": [
+        "WalletReceiveModelTests::metadataReconciliationDoesNotRetireAnOriginalPasswordQuestion",
+        "WalletReservationTests::newerIntentRejectsAnOldPasswordBeforeCoreDispatch",
+        "WalletReservationTests::resettingInvalidatesTheOriginalPasswordQuestion"
+      ],
+      "contract_and_limits": "Transient metadata does not strand prompt; genuinely superseded/use/closed intent cannot unlock successor.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::metadataReconciliationDoesNotRetireAnOriginalPasswordQuestion",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "metadataReconciliationDoesNotRetireAnOriginalPasswordQuestion"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReservationTests::newerIntentRejectsAnOldPasswordBeforeCoreDispatch",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "newerIntentRejectsAnOldPasswordBeforeCoreDispatch"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReservationTests::resettingInvalidatesTheOriginalPasswordQuestion",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "resettingInvalidatesTheOriginalPasswordQuestion"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "150",
+      "disposition": "historical-dead-surface-no-new-bug",
+      "selectors": [
+        "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen"
+      ],
+      "contract_and_limits": "Write-only legacy isLocked property is not standalone defect. Live typed prompt/state replaces mutable UI authority; send-owned differences remain R20/R24.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "151",
+      "disposition": "typed-phase-errors",
+      "selectors": [
+        "WalletReservationTests::unlockInfrastructureFailureIsNotReportedAsAWrongPassword",
+        "WalletReservationTests::successfulAuthorizationKeepsALaterGenerationFailureSeparate"
+      ],
+      "contract_and_limits": "Operation-specific errors retained; no generic incorrect-password rewrite.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReservationTests::unlockInfrastructureFailureIsNotReportedAsAWrongPassword",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "unlockInfrastructureFailureIsNotReportedAsAWrongPassword"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReservationTests::successfulAuthorizationKeepsALaterGenerationFailureSeparate",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "successfulAuthorizationKeepsALaterGenerationFailureSeparate"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "153",
+      "disposition": "inherited-upstream-interface-limit",
+      "selectors": [
+        "WalletReservationTests::alreadyUnlockedWalletStaysUnlocked",
+        "ReceiveIntegrationTests::receivingUnlockCanBeCancelledRetriedAndRelocks"
+      ],
+      "contract_and_limits": "Public isLocked/unlock sequence is not atomic against RPC. Preserve R09 limit and exact relock tests; no Core/private escape.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReservationTests::alreadyUnlockedWalletStaysUnlocked",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "alreadyUnlockedWalletStaysUnlocked"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::receivingUnlockCanBeCancelledRetriedAndRelocks",
+          "app": "b8fbe0190f85cf12f056279c0c87a2d292da8ff6",
+          "report": "gameboy/run-01/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.receivingUnlockCanBeCancelledRetriedAndRelocks"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "182",
+      "disposition": "explicit-reservation-transition",
+      "selectors": [
+        "WalletReceiveModelTests::incomingPaymentDoesNotRotateOrRebindAComposedDraft",
+        "TypedReceive::test_used_reservation_keeps_composition_until_explicit_next"
+      ],
+      "contract_and_limits": "Payment disables original reservation without auto-rotating composed fields. Explicit Next owns new intent.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::incomingPaymentDoesNotRotateOrRebindAComposedDraft",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "incomingPaymentDoesNotRotateOrRebindAComposedDraft"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "TypedReceive::test_used_reservation_keeps_composition_until_explicit_next",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/qml/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "TypedReceive::test_used_reservation_keeps_composition_until_explicit_next"
+          ],
+          "source_basis": "explicit unchanged source02 carry"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "183",
+      "disposition": "existing-single-writer-preserved",
+      "selectors": [
+        "WalletRequestsTests::consumedAddressStaysRetiredAfterEraseAndReload",
+        "WalletReservationTests::persistedRetirementPreventsRestoreWithoutARequestRecord"
+      ],
+      "contract_and_limits": "Retirement survives erase/reload; request deletion does not resurrect an address reservation.",
+      "actual_evidence": [
+        {
+          "selector": "WalletRequestsTests::consumedAddressStaysRetiredAfterEraseAndReload",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "consumedAddressStaysRetiredAfterEraseAndReload"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReservationTests::persistedRetirementPreventsRestoreWithoutARequestRecord",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "persistedRetirementPreventsRestoreWithoutARequestRecord"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "184",
+      "disposition": "original-stale-reservation-guard",
+      "selectors": [
+        "WalletReceiveModelTests::rejectedTypeDisarmsThePreviouslyDisplayedReservationImmediately",
+        "WalletReservationTests::revokedReservationCannotBeConsumedEvenBeforeItsGuiReplacementArrives",
+        "ReceiveIntegrationTests::typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed"
+      ],
+      "contract_and_limits": "Rejected type generation disarms original immediately; displayed old address cannot silently create a request.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::rejectedTypeDisarmsThePreviouslyDisplayedReservationImmediately",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "rejectedTypeDisarmsThePreviouslyDisplayedReservationImmediately"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReservationTests::revokedReservationCannotBeConsumedEvenBeforeItsGuiReplacementArrives",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "revokedReservationCannotBeConsumedEvenBeforeItsGuiReplacementArrives"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "185",
+      "disposition": "original-context-ownership",
+      "selectors": [
+        "WalletReceiveModelTests::requestAgainGuardsBothOriginalModalAndExistingCreationDraft",
+        "WalletReceiveModelTests::cancelledOpenTokenCannotCancelASuccessorForTheSameRequest"
+      ],
+      "contract_and_limits": "Modal/open/fade references original wallet/editor, exact token and independent view interest; no global selection lookup.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::requestAgainGuardsBothOriginalModalAndExistingCreationDraft",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "requestAgainGuardsBothOriginalModalAndExistingCreationDraft"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReceiveModelTests::cancelledOpenTokenCannotCancelASuccessorForTheSameRequest",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "cancelledOpenTokenCannotCancelASuccessorForTheSameRequest"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "186",
+      "disposition": "explicit-reservation-transition",
+      "selectors": [
+        "WalletReceiveModelTests::incomingPaymentDoesNotRotateOrRebindAComposedDraft",
+        "TypedReceive::test_used_reservation_keeps_composition_until_explicit_next"
+      ],
+      "contract_and_limits": "Explicit Next stays same selected type, separates new generation from current composition.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::incomingPaymentDoesNotRotateOrRebindAComposedDraft",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "incomingPaymentDoesNotRotateOrRebindAComposedDraft"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "TypedReceive::test_used_reservation_keeps_composition_until_explicit_next",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/qml/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "TypedReceive::test_used_reservation_keeps_composition_until_explicit_next"
+          ],
+          "source_basis": "explicit unchanged source02 carry"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "226",
+      "disposition": "typed-native-effect-accounting",
+      "selectors": [
+        "RequestSharingModelTests::cancellationBeforePreparationHasAnExplicitNoEffectReceipt",
+        "RequestSharingModelTests::writerThrowAfterAdmissionRetainsUnknownWithoutReplay",
+        "RequestSharingModelTests::realThreadCancellationAfterInstallAdmissionPreservesActualWrite"
+      ],
+      "contract_and_limits": "Revocation before admission means no write; after admission actual known/unknown result retained and never automatically replayed.",
+      "actual_evidence": [
+        {
+          "selector": "RequestSharingModelTests::cancellationBeforePreparationHasAnExplicitNoEffectReceipt",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "cancellationBeforePreparationHasAnExplicitNoEffectReceipt"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "RequestSharingModelTests::writerThrowAfterAdmissionRetainsUnknownWithoutReplay",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "writerThrowAfterAdmissionRetainsUnknownWithoutReplay"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "RequestSharingModelTests::realThreadCancellationAfterInstallAdmissionPreservesActualWrite",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "realThreadCancellationAfterInstallAdmissionPreservesActualWrite"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "227",
+      "disposition": "near-action-error-projection",
+      "selectors": [
+        "ReceiveIntegrationTests::typedReceiveRejectsOversizeQrAndRecoversWithoutBlankExport",
+        "TypedReceive::test_persistence_error_keeps_the_original_field_intent_visible"
+      ],
+      "contract_and_limits": "Sharing errors beside image/actions, separate from write/draft error; no blank Image.Ready success.",
+      "actual_evidence": [
+        {
+          "selector": "ReceiveIntegrationTests::typedReceiveRejectsOversizeQrAndRecoversWithoutBlankExport",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.typedReceiveRejectsOversizeQrAndRecoversWithoutBlankExport"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        },
+        {
+          "selector": "TypedReceive::test_persistence_error_keeps_the_original_field_intent_visible",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/qml/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "TypedReceive::test_persistence_error_keeps_the_original_field_intent_visible"
+          ],
+          "source_basis": "explicit unchanged source02 carry"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "233",
+      "disposition": "merged-original-23-cancellation-trigger",
+      "selectors": [
+        "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen",
+        "ReceiveIntegrationTests::receivingUnlockCanBeCancelledRetriedAndRelocks"
+      ],
+      "contract_and_limits": "Same narrowed queued-state cancellation schedule as23/292, not counted as independent new defect.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::receivingUnlockCanBeCancelledRetriedAndRelocks",
+          "app": "b8fbe0190f85cf12f056279c0c87a2d292da8ff6",
+          "report": "gameboy/run-01/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.receivingUnlockCanBeCancelledRetriedAndRelocks"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "268",
+      "disposition": "canonical-unit-capture",
+      "selectors": [
+        "PaymentRequestEditorModelTests::canonicalAmountSurvivesUnitChangesBeforeNativeWrite",
+        "TypedReceive::test_unit_change_before_save_preserves_canonical_amount",
+        "ReceiveIntegrationTests::localizedTypedRequestPersistsExactAmount"
+      ],
+      "contract_and_limits": "Canonical satoshi captured from original physical literal; own/other consumer unit flips do not reinterpret amount.",
+      "actual_evidence": [
+        {
+          "selector": "PaymentRequestEditorModelTests::canonicalAmountSurvivesUnitChangesBeforeNativeWrite",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "canonicalAmountSurvivesUnitChangesBeforeNativeWrite"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::localizedTypedRequestPersistsExactAmount",
+          "app": "b8fbe0190f85cf12f056279c0c87a2d292da8ff6",
+          "report": "gameboy/run-01/artifacts/integration/report.json",
+          "passed_bodies": 7,
+          "body_identities": [
+            "receive.enabled.localizedTypedRequestPersistsExactAmount:german-comma",
+            "receive.enabled.localizedTypedRequestPersistsExactAmount:dot-control",
+            "receive.enabled.localizedTypedRequestPersistsExactAmount:native-clipboard-comma",
+            "receive.enabled.localizedTypedRequestPersistsExactAmount:ime-commit-comma",
+            "receive.enabled.localizedTypedRequestPersistsExactAmount:milli-unit",
+            "receive.enabled.localizedTypedRequestPersistsExactAmount:micro-unit",
+            "receive.enabled.localizedTypedRequestPersistsExactAmount:sat-unit"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        },
+        {
+          "selector": "TypedReceive::test_unit_change_before_save_preserves_canonical_amount",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/qml/report.json",
+          "passed_bodies": 2,
+          "body_identities": [
+            "TypedReceive::test_unit_change_before_save_preserves_canonical_amount:own-unit-button",
+            "TypedReceive::test_unit_change_before_save_preserves_canonical_amount:other-view-unit"
+          ],
+          "source_basis": "explicit unchanged source02 carry"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "269",
+      "disposition": "canonical-unit-capture",
+      "selectors": [
+        "TypedReceive::test_unit_change_before_save_preserves_canonical_amount",
+        "ReceiveIntegrationTests::typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload"
+      ],
+      "contract_and_limits": "Saved amount/URI independently checked through raw Core record and literal payload; unit is presentation only.",
+      "actual_evidence": [
+        {
+          "selector": "ReceiveIntegrationTests::typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/integration/report.json",
+          "passed_bodies": 2,
+          "body_identities": [
+            "receive.enabled.typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload:plain-wallet",
+            "receive.enabled.typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload:encrypted-wallet"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        },
+        {
+          "selector": "TypedReceive::test_unit_change_before_save_preserves_canonical_amount",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/qml/report.json",
+          "passed_bodies": 2,
+          "body_identities": [
+            "TypedReceive::test_unit_change_before_save_preserves_canonical_amount:own-unit-button",
+            "TypedReceive::test_unit_change_before_save_preserves_canonical_amount:other-view-unit"
+          ],
+          "source_basis": "explicit unchanged source02 carry"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "287",
+      "disposition": "original-context-ownership",
+      "selectors": [
+        "WalletReceiveModelTests::cancelledOpenTokenCannotCancelASuccessorForTheSameRequest",
+        "WalletReceiveModelTests::delayedDeleteOfOriginalRequestDoesNotCloseANewerEditor",
+        "RequestSharingModelTests::twoViewsHaveIndependentPresentationInterest"
+      ],
+      "contract_and_limits": "Deferred view/operation ownership captured, newer wallet/editor cannot consume original callback.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::cancelledOpenTokenCannotCancelASuccessorForTheSameRequest",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "cancelledOpenTokenCannotCancelASuccessorForTheSameRequest"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReceiveModelTests::delayedDeleteOfOriginalRequestDoesNotCloseANewerEditor",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "delayedDeleteOfOriginalRequestDoesNotCloseANewerEditor"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "RequestSharingModelTests::twoViewsHaveIndependentPresentationInterest",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "twoViewsHaveIndependentPresentationInterest"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "290",
+      "disposition": "failed-open-no-phantom-view",
+      "selectors": [
+        "WalletReceiveModelTests::failedOpenDoesNotPublishAPhantomEditor",
+        "WalletReceiveModelTests::cancelledOpenTokenCannotCancelASuccessorForTheSameRequest"
+      ],
+      "contract_and_limits": "Popup opens only exact successful view receipt, pending read follows producer notification, cancelled token cannot open successor.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::failedOpenDoesNotPublishAPhantomEditor",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "failedOpenDoesNotPublishAPhantomEditor"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletReceiveModelTests::cancelledOpenTokenCannotCancelASuccessorForTheSameRequest",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "cancelledOpenTokenCannotCancelASuccessorForTheSameRequest"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "291",
+      "disposition": "persistent-field-protocol",
+      "selectors": [
+        "PaymentRequestEditorModelTests::untouchedRefreshCannotBeOverwrittenByAnotherFieldIntent",
+        "PaymentRequestEditorModelTests::acknowledgementOfAnotherFieldDoesNotEraseEarlierRejectedInput",
+        "PaymentRequestEditorModelTests::historicalUseRequiresExplicitPublicResolutionAndKeepsPrivateNote",
+        "WalletRequestsTests::requestNoteConflictRetainsTheSavedRequestWithoutOverwritingTheAddress"
+      ],
+      "contract_and_limits": "Per-field base/dirty/conflicts; untouched fields not copied wholesale. Optional address-note side effect checks captured public label; late conflict preserves actual saved request. Not Core/RPC CAS.",
+      "actual_evidence": [
+        {
+          "selector": "PaymentRequestEditorModelTests::untouchedRefreshCannotBeOverwrittenByAnotherFieldIntent",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "untouchedRefreshCannotBeOverwrittenByAnotherFieldIntent"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "PaymentRequestEditorModelTests::acknowledgementOfAnotherFieldDoesNotEraseEarlierRejectedInput",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "acknowledgementOfAnotherFieldDoesNotEraseEarlierRejectedInput"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "PaymentRequestEditorModelTests::historicalUseRequiresExplicitPublicResolutionAndKeepsPrivateNote",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "historicalUseRequiresExplicitPublicResolutionAndKeepsPrivateNote"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "WalletRequestsTests::requestNoteConflictRetainsTheSavedRequestWithoutOverwritingTheAddress",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 2,
+          "body_identities": [
+            "requestNoteConflictRetainsTheSavedRequestWithoutOverwritingTheAddress:unchanged-label",
+            "requestNoteConflictRetainsTheSavedRequestWithoutOverwritingTheAddress:external-relabel"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "292",
+      "disposition": "merged-original-23-cancellation-trigger",
+      "selectors": [
+        "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen",
+        "ReceiveIntegrationTests::receivingUnlockCanBeCancelledRetriedAndRelocks"
+      ],
+      "contract_and_limits": "Same narrowed cancellation and error-state trigger as23/233; no duplicate standalone issue count.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "authorizationCancellationClearsErrorAndNeverReplaysOnViewReopen"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::receivingUnlockCanBeCancelledRetriedAndRelocks",
+          "app": "b8fbe0190f85cf12f056279c0c87a2d292da8ff6",
+          "report": "gameboy/run-01/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.receivingUnlockCanBeCancelledRetriedAndRelocks"
+          ],
+          "source_basis": "explicit earlier-head carry; unchanged relevant source/oracle per CARRIED receipts"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "311",
+      "disposition": "template-is-new-intent",
+      "selectors": [
+        "WalletReceiveModelTests::templateTypeNeverPersistsTheWalletPreferenceAndNewDraftUsesDefault",
+        "ReceiveIntegrationTests::typedReceiveTemplatePreservesTheWalletDefaultAndUsesAFreshAddress"
+      ],
+      "contract_and_limits": "Captured template type creates fresh address without changing default; next new draft uses wallet default.",
+      "actual_evidence": [
+        {
+          "selector": "WalletReceiveModelTests::templateTypeNeverPersistsTheWalletPreferenceAndNewDraftUsesDefault",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "templateTypeNeverPersistsTheWalletPreferenceAndNewDraftUsesDefault"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "ReceiveIntegrationTests::typedReceiveTemplatePreservesTheWalletDefaultAndUsesAFreshAddress",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/integration/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "receive.enabled.typedReceiveTemplatePreservesTheWalletDefaultAndUsesAFreshAddress"
+          ],
+          "source_basis": "current03"
+        }
+      ],
+      "focused_evidence_available": true
+    },
+    {
+      "scope": "314",
+      "disposition": "native-editor-identity",
+      "selectors": [
+        "TypedReceive::test_new_editor_does_not_inherit_the_previous_native_undo_context",
+        "PaymentRequestEditorModelTests::oldCloseConsentCannotDiscardSuccessorInput"
+      ],
+      "contract_and_limits": "New editor identity recreates native amount undo context; same editor preserves draft/native editing. Stale close token cannot authorize successor.",
+      "actual_evidence": [
+        {
+          "selector": "PaymentRequestEditorModelTests::oldCloseConsentCannotDiscardSuccessorInput",
+          "app": "32f36f054b18cc90df6efee92f02877f43724166",
+          "report": "gameboy/run-03/artifacts/native/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "oldCloseConsentCannotDiscardSuccessorInput"
+          ],
+          "source_basis": "current03"
+        },
+        {
+          "selector": "TypedReceive::test_new_editor_does_not_inherit_the_previous_native_undo_context",
+          "app": "4324471ab30f3ca99d31cadfa9510ab171b479fc",
+          "report": "gameboy/run-02/artifacts/qml/report.json",
+          "passed_bodies": 1,
+          "body_identities": [
+            "TypedReceive::test_new_editor_does_not_inherit_the_previous_native_undo_context"
+          ],
+          "source_basis": "explicit unchanged source02 carry"
+        }
+      ],
+      "focused_evidence_available": true
+    }
+  ],
+  "cross_consumers": {
+    "077": "R29 shared persistent editor kept identical",
+    "126": "R31 queued separately",
+    "295": "R07 injected executor contract retained",
+    "309": "R14 shared native chooser policy retained; no custom chooser/Qt edits"
+  },
+  "final_obligations": "R42 exhaustive coverage, sanitizer, platform/configuration/compatibility matrices explicitly deferred; ordinary focused tests/lint/tidy/QML static required now",
+  "unmapped_selectors": [],
+  "current_execution": {
+    "app": "32f36f054b18cc90df6efee92f02877f43724166",
+    "native": 314,
+    "QML": 2,
+    "Core": 1,
+    "total_current_bodies": 317,
+    "failures": 0,
+    "skips": 0
+  },
+  "carried_execution": {
+    "source02": {
+      "QML": 98,
+      "Core": 8
+    },
+    "source01": {
+      "QML": 131,
+      "Core": 16
+    },
+    "basis": "gameboy/run-02/CARRIED_01.json and gameboy/run-03/CARRIED_02.json; raw reports and per-selector source identity retained; not current-ELF replay or merged profiles"
+  },
+  "original_red": {
+    "source": "d4ab07f1d80892332770dcded681ab6135b047cf",
+    "production_parent": "a2af8d230547e1f333becf8e1a4ad2bc4cb5955a",
+    "report": "red-parent-01/artifacts/integration/report.json",
+    "body_count": 2,
+    "control_pass": 1,
+    "original_failure": 1,
+    "skips": 0,
+    "infrastructure_failures": 0,
+    "build_exit": 0,
+    "test_exit": 1
+  },
+  "R42": "Exhaustive coverage/full-platform/config/compatibility/sanitizer qualification deferred explicitly by user; no pass claimed."
+}

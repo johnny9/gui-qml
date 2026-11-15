@@ -114,7 +114,8 @@ Page {
         if (requestId) paymentRequestModal.openRequest(requestId)
     }
 
-    PaymentRequestModal { id: paymentRequestModal; objectName: "transactionPaymentRequestModal"; wallet: root.wallet }
+    property bool walletViewActive: true
+    RequestDetailsHost { id: paymentRequestModal; objectName: "transactionPaymentRequestModal"; wallet: root.wallet; contextActive: root.walletViewActive }
 
     function openExternalLink(link) {
         externalLinkPopup.link = link

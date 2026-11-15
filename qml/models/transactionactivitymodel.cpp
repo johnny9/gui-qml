@@ -49,8 +49,8 @@ QVariantMap RequestMap(const walletrequests::Record& record)
 {
     const auto& display = record.display;
     return {{"requestId", display.id}, {"date", display.date}, {"dateIso", display.date_iso},
-        {"address", display.address}, {"addressShort", display.address_short}, {"label", display.label},
-        {"message", display.message}, {"noteSelf", display.note}, {"amountSat", qint64(display.amount_sats)},
+        {"address", display.address}, {"addressShort", display.address_short}, {"label", display.label_preview},
+        {"message", display.message_preview}, {"noteSelf", display.note_preview}, {"amountSat", qint64(display.amount_sats)},
         {"amountDisplay", display.amount}, {"uri", display.uri}, {"paymentReceived", display.payment_received}};
 }
 QVariantList RequestsForAddress(const std::shared_ptr<const walletrequests::Snapshot>& history, const QString& address)

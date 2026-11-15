@@ -115,8 +115,15 @@ void PrepareRecord(Record& record)
     display.label = QString::fromStdString(entry.recipient.label);
     display.message = QString::fromStdString(entry.recipient.message);
     display.note = QString::fromStdString(entry.recipient.noteSelf);
+    const auto preview = [](const QString& text) {
+        return text.size() <= 512 ? text : QString{text.first(512) + QStringLiteral("…")};
+    };
+    display.label_preview = preview(display.label);
+    display.message_preview = preview(display.message);
+    display.note_preview = preview(display.note);
     display.amount = FormatAmountBtc(entry.recipient.amount);
-    display.uri = entry.payment_received ? QString{} : BuildBitcoinUri(address, entry.recipient.amount, display.label, display.message);
+    // History rows retain source fields only. Encode a URI for a selected
+    // editor/action on Domain, rather than for every historical row.
     record.display = std::move(display);
 }
 

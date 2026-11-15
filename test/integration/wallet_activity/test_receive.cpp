@@ -16,6 +16,8 @@
 #include <key_io.h>
 #include <util/string.h>
 #include <QFile>
+#include <QDir>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QSignalSpy>
@@ -109,6 +111,201 @@ public:
     explicit ReceiveIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void savedQrActionsRequireAnEncodableOriginalPayload_data()
+    {
+        QTest::addColumn<int>("characters");
+        QTest::newRow("encodable-control") << 20; QTest::newRow("original-4250-character-failure") << 4250;
+    }
+    void savedQrActionsRequireAnEncodableOriginalPayload()
+    {
+        QFETCH(int, characters);
+        auto* wallet = qmltest::CreateWallet(m_app, "qr-action-gate"); QVERIFY(wallet);
+        auto* request = wallet->currentPaymentRequest(); request->setMessage(QString(characters, QLatin1Char('x')));
+        QVERIFY(AwaitReceiveRequest(wallet->commitPaymentRequest())); QTRY_VERIFY(!wallet->receiveRequestReconciliationPending());
+        QVERIFY(qmltest::Click(m_app, "activityTabButton")); auto* activity = qmltest::Find(m_app, "activityStack"); QVERIFY(activity);
+        QVERIFY(QMetaObject::invokeMethod(activity, "openPaymentRequest", Q_ARG(QVariant, QVariant{request->id()})));
+        QVERIFY(qmltest::WaitForVisible(m_app, "paymentRequestModal"));
+        QObject* copy{nullptr}; QObject* save{nullptr};
+        QTRY_VERIFY((copy = qmltest::Find(m_app, "savedRequestCopyQrButton")) || (copy = qmltest::Find(m_app, "requestPaymentQRContextCopy")));
+        QTRY_VERIFY((save = qmltest::Find(m_app, "savedRequestExportQrButton")) || (save = qmltest::Find(m_app, "requestPaymentQRContextSave")));
+        const bool encodable = characters == 20;
+        if (encodable) { QTRY_VERIFY(copy->property("enabled").toBool()); QTRY_VERIFY(save->property("enabled").toBool()); }
+        else {
+            // The original provider returned a transparent Image.Ready result
+            // for this real saved payload. Neither QR action may admit it.
+            if (auto* error = qmltest::Find(m_app, "savedRequestSharingError")) QTRY_VERIFY(!error->property("text").toString().isEmpty());
+            else { auto* image = qmltest::Find(m_app, "requestPaymentQRImage"); QVERIFY(image); QTRY_COMPARE(image->property("status").toInt(), 1); }
+            QVERIFY(!copy->property("enabled").toBool()); QVERIFY(!save->property("enabled").toBool());
+        }
+        const auto stored = qmltest::Call(m_app, [name = wallet->name()](interfaces::Node* node) {
+            for (auto& handle : node->walletLoader().getWallets()) if (handle->getWalletName() == name.toStdString()) return handle->getAddressReceiveRequests();
+            return std::vector<std::string>{};
+        });
+        QCOMPARE(stored.size(), size_t{1}); const auto decoded = walletrequests::Decode(stored);
+        QCOMPARE(decoded.entries.size(), size_t{1}); QCOMPARE(decoded.entries.front().recipient.message, std::string(size_t(characters), 'x'));
+    }
+    void typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload_data()
+    {
+        QTest::addColumn<bool>("encrypted");
+        QTest::newRow("plain-wallet") << false; QTest::newRow("encrypted-wallet") << true;
+    }
+    void typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload()
+    {
+        QFETCH(bool, encrypted);
+        auto* wallet = encrypted ? qmltest::CreateLockedHardenedWallet(m_app, "typed-roundtrip", "roundtrip password")
+                                 : qmltest::CreateWallet(m_app, "typed-roundtrip");
+        QVERIFY(wallet); auto* receive = wallet->receive(); QVERIFY(receive);
+        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(0);
+        QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "receiveWorkspace"));
+        QTRY_VERIFY(receive->reservation()->available() && receive->editor()->canSave());
+        QVERIFY(enterText(qmltest::Find(m_app, "receiveAmountInput"), QStringLiteral("1.25")));
+        QVERIFY(enterText(qmltest::Find(m_app, "receivePublicLabelInput"), QStringLiteral("invoice & tea")));
+        QVERIFY(enterText(qmltest::Find(m_app, "receiveMessageInput"), QString::fromUtf8("caf\xc3\xa9 ? + &")));
+        QVERIFY(enterText(qmltest::Find(m_app, "receivePrivateNoteInput"), QStringLiteral("private-not-in-QR")));
+        options->setDisplayUnit(3); // A second consumer changes the global unit.
+        QCOMPARE(receive->editor()->amount()->satoshi(), CAmount{125'000'000});
+        QVERIFY(qmltest::Click(m_app, "receiveSaveRequestButton"));
+        QTRY_VERIFY(receive->editor()->saveResult().requestSaved);
+        QVERIFY(qmltest::WaitForVisible(m_app, "paymentRequestModal"));
+        const auto blobs = qmltest::Call(m_app, [name = wallet->name()](interfaces::Node* node) {
+            for (auto& handle : node->walletLoader().getWallets()) if (handle->getWalletName() == name.toStdString()) return handle->getAddressReceiveRequests();
+            return std::vector<std::string>{};
+        });
+        QCOMPARE(blobs.size(), size_t{1});
+        // Decode the Core bytes independently of the app's Decode/Prepare and
+        // URI formatter. Keep each original scalar and privacy oracle explicit.
+        std::vector<uint8_t> bytes(blobs[0].begin(), blobs[0].end()); DataStream stored{bytes};
+        int version, recipient_version; int64_t id; uint32_t time;
+        std::string address, label, message, payment, merchant, note; CAmount amount;
+        stored >> version >> id >> time >> recipient_version >> address >> label >> amount >> message >> payment >> merchant;
+        if (!stored.empty()) stored >> note;
+        QCOMPARE(version, 1); QCOMPARE(recipient_version, 1); QVERIFY(id > 0); QVERIFY(time > 0);
+        QCOMPARE(amount, CAmount{125'000'000}); QCOMPARE(label, std::string{"invoice & tea"});
+        QCOMPARE(message, std::string{"caf\xc3\xa9 ? + &"}); QCOMPARE(note, std::string{"private-not-in-QR"});
+        const auto info = qmltest::Rpc(m_app, "getaddressinfo", qmltest::Json("[\"" + address + "\"]"), wallet->name());
+        QVERIFY(info.find_value("ismine").get_bool()); QCOMPARE(info.find_value("labels")[0].get_str(), note);
+        const QString expected = QStringLiteral("bitcoin:") + QString::fromStdString(address) +
+            QStringLiteral("?amount=1.25000000&label=invoice%20%26%20tea&message=caf%C3%A9%20%3F%20%2B%20%26");
+        auto sharing = std::unique_ptr<RequestSharingModel>{receive->sharing(receive->editor())}; QVERIFY(sharing);
+        sharing->setActive(true); QTRY_VERIFY(sharing->canCopyQr()); QCOMPARE(sharing->paymentUri(), expected);
+        QGuiApplication::clipboard()->setText("prior clipboard");
+        auto copy = std::unique_ptr<ShareOperationModel>{sharing->copyUri()}; QTRY_VERIFY(!copy->busy());
+        QVERIFY(copy->result().performed); QCOMPARE(QGuiApplication::clipboard()->text(), expected);
+        QTemporaryDir temporary; QVERIFY(temporary.isValid());
+        const auto retained = qEnvironmentVariable("BITCOIN_QML_R30_QR_ARTIFACT_DIR");
+        const auto directory = retained.isEmpty() ? temporary.path() : retained;
+        QVERIFY(QDir{}.mkpath(directory));
+        const auto stem = encrypted ? QStringLiteral("roundtrip-encrypted") : QStringLiteral("roundtrip-plain");
+        const auto path = QDir{directory}.filePath(stem + QStringLiteral(".png")); QVERIFY(!QFileInfo::exists(path));
+        auto image = std::unique_ptr<RequestImageExportOperation>{sharing->beginQrExport()}; QTRY_VERIFY(image->choosing());
+        const QImage approved_image = sharing->image(); QVERIFY(!approved_image.isNull());
+        QVERIFY(image->choose(QUrl::fromLocalFile(path))); QTRY_VERIFY(image->result().present);
+        QVERIFY2(image->result().written, qPrintable(image->errorText()));
+        const QImage actual{path}; QVERIFY(!actual.isNull()); QCOMPARE(actual, approved_image);
+        QFile oracle{QDir{directory}.filePath(stem + QStringLiteral(".expected.txt"))}; QVERIFY(oracle.open(QIODevice::WriteOnly));
+        QCOMPARE(oracle.write(expected.toUtf8()), qint64(expected.toUtf8().size())); oracle.close();
+        // A retained task artifact is independently decoded by the focused gate
+        // helper, rather than treating a PNG signature as QR correctness.
+        QVERIFY(!expected.contains(QStringLiteral("private-not-in-QR")));
+        QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("private_keys_enabled").get_bool(), true);
+        if (encrypted) QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("unlocked_until").getInt<int64_t>(), 0);
+    }
+    void typedReceiveRejectsOversizeQrAndRecoversWithoutBlankExport()
+    {
+        auto* wallet = qmltest::CreateWallet(m_app, "typed-long-qr"); QVERIFY(wallet);
+        auto* receive = wallet->receive(); QVERIFY(receive); QTRY_VERIFY(wallet->property("receiveRequestsLoaded").toBool()); QVERIFY(receive->ensureAddress());
+        QTRY_VERIFY(receive->reservation()->available() && receive->editor()->canSave());
+        const auto long_message = QString(4250, QLatin1Char('x'));
+        receive->editor()->message()->edit(long_message); receive->editor()->save();
+        QTRY_VERIFY(receive->editor()->saveResult().requestSaved);
+        auto sharing = std::unique_ptr<RequestSharingModel>{receive->sharing(receive->editor())}; QVERIFY(sharing);
+        sharing->setActive(true); QTRY_COMPARE(sharing->error(), requestshare::Error::QrEncoding);
+        QVERIFY(sharing->canCopyUri()); QVERIFY(!sharing->canExportQr()); QVERIFY(sharing->image().isNull());
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("oversize.png");
+        auto failed = std::unique_ptr<RequestImageExportOperation>{sharing->beginQrExport()}; QTRY_VERIFY(failed->result().present);
+        QCOMPARE(failed->error(), RequestImageExportError::Source); QVERIFY(!failed->result().written);
+        QVERIFY(!failed->choose(QUrl::fromLocalFile(path))); QVERIFY(!QFileInfo::exists(path));
+        const auto blobs = qmltest::Call(m_app, [name = wallet->name()](interfaces::Node* node) {
+            for (auto& handle : node->walletLoader().getWallets()) if (handle->getWalletName() == name.toStdString()) return handle->getAddressReceiveRequests();
+            return std::vector<std::string>{};
+        });
+        QCOMPARE(blobs.size(), size_t{1}); const auto decoded = walletrequests::Decode(blobs);
+        QCOMPARE(decoded.entries.size(), size_t{1}); QCOMPARE(QString::fromStdString(decoded.entries[0].recipient.message), long_message);
+        const auto first_result = receive->editor()->saveResult().operationId;
+        receive->editor()->message()->edit("short recovery"); receive->editor()->save();
+        QTRY_VERIFY(receive->editor()->saveResult().operationId != first_result && receive->editor()->saveResult().requestSaved);
+        QTRY_VERIFY(sharing->canExportQr()); QVERIFY(!sharing->image().isNull());
+        QCOMPARE(failed->error(), RequestImageExportError::Source); QVERIFY(!failed->result().written);
+    }
+    void typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed()
+    {
+        const QString name{QStringLiteral("typed-imported")};
+        UniValue create{UniValue::VOBJ}; create.pushKV("wallet_name", name.toStdString()); create.pushKV("blank", true); create.pushKV("disable_private_keys", true);
+        qmltest::Rpc(m_app, "createwallet", create);
+        const std::string key{"tprv8ZgxMBicQKsPdYeeZbPSKd2KYLmeVKtcFA7kqCxDvDR13MQ6us8HopUR2wLcS2ZKPhLyKsqpDL2FtL73LMHcgoCL7DXsciA8eX8nbjCR2eG"};
+        UniValue describe{UniValue::VARR}; describe.push_back("pkh(" + key + "/0/*)");
+        const auto descriptor = qmltest::Rpc(m_app, "getdescriptorinfo", describe).find_value("descriptor").get_str();
+        UniValue item{UniValue::VOBJ}; item.pushKV("desc", descriptor); item.pushKV("timestamp", "now"); item.pushKV("active", true); item.pushKV("range", qmltest::Json("[0,4]"));
+        UniValue imports{UniValue::VARR}; imports.push_back(item); UniValue parameters{UniValue::VARR}; parameters.push_back(imports);
+        const auto imported = qmltest::Rpc(m_app, "importdescriptors", parameters, name); QVERIFY(imported[0].find_value("success").get_bool());
+        auto* wallet = qmltest::SelectOpenWalletForSetup(m_app, name); QVERIFY(wallet); QTRY_VERIFY(wallet->capabilitiesKnown() && wallet->property("receiveRequestsLoaded").toBool());
+        auto* receive = wallet->receive(); QVERIFY(receive); QVERIFY(receive->chooseAddressType("legacy")); QTRY_VERIFY(receive->reservation()->available());
+        const auto original = receive->reservation()->address(); QVERIFY(!original.isEmpty());
+        const auto types = wallet->availableReceiveAddressTypes(); bool saw_unknown{false}, saw_proven{false};
+        for (const auto& row : types) {
+            const auto type = row.toMap();
+            if (type.value("id").toString() == "bech32") saw_unknown = type.value("capability").toInt() == int(ReceiveTypeStatus::Support::Unknown);
+            if (type.value("id").toString() == "legacy") saw_proven = type.value("capability").toInt() == int(ReceiveTypeStatus::Support::Proven);
+        }
+        QVERIFY(saw_unknown); QVERIFY(saw_proven);
+        QVERIFY(receive->chooseAddressType("bech32")); QVERIFY(!receive->editor()->canSave());
+        QTRY_COMPARE(receive->reservation()->phase(), ReceiveReservationModel::Failed);
+        QVERIFY(!receive->reservation()->available()); QVERIFY(!receive->reservation()->prompt()); QCOMPARE(receive->reservation()->address(), original);
+        receive->editor()->save(); QTRY_VERIFY(!receive->editor()->busy());
+        const auto stored = qmltest::Call(m_app, [name](interfaces::Node* node) {
+            for (auto& handle : node->walletLoader().getWallets()) if (handle->getWalletName() == name.toStdString()) return handle->getAddressReceiveRequests();
+            return std::vector<std::string>{};
+        });
+        QVERIFY(stored.empty()); const auto address = qmltest::Rpc(m_app, "getaddressinfo", qmltest::Json("[\"" + original.toStdString() + "\"]"), name);
+        QVERIFY(!address.find_value("iswitness").get_bool()); QVERIFY(address.find_value("solvable").get_bool());
+    }
+    void typedReceivePreferenceFailureRetainsTheGeneratedAddress()
+    {
+        QVERIFY(!gArgs.GetSettingsPath());
+        auto* wallet = qmltest::CreateWallet(m_app, "typed-pref-disabled"); QVERIFY(wallet);
+        QTRY_VERIFY(wallet->property("receiveRequestsLoaded").toBool()); auto* receive = wallet->receive(); QVERIFY(receive);
+        QVERIFY(receive->chooseAddressType("legacy")); QTRY_VERIFY(receive->reservation()->available());
+        QVERIFY(receive->reservation()->generationPersisted()); QVERIFY(receive->reservation()->preferenceRequested()); QVERIFY(!receive->reservation()->preferenceSaved());
+        QCOMPARE(receive->reservation()->generationError(), walletrequests::Error::PreferencePersistence);
+        const auto original = receive->reservation()->address(); QVERIFY(!original.isEmpty());
+        QTRY_VERIFY(receive->editor()->canSave()); receive->editor()->message()->edit("request survives preference failure"); receive->editor()->save();
+        QTRY_VERIFY(receive->editor()->saveResult().requestSaved); QCOMPARE(receive->editor()->address(), original);
+        const auto info = qmltest::Rpc(m_app, "getaddressinfo", qmltest::Json("[\"" + original.toStdString() + "\"]"), wallet->name());
+        QVERIFY(info.find_value("ismine").get_bool()); QVERIFY(!info.find_value("iswitness").get_bool());
+    }
+    void typedReceiveTemplatePreservesTheWalletDefaultAndUsesAFreshAddress()
+    {
+        auto* wallet = qmltest::CreateWallet(m_app, "typed-template-default"); QVERIFY(wallet);
+        auto* receive = wallet->receive(); QVERIFY(receive); QTRY_VERIFY(wallet->property("receiveRequestsLoaded").toBool());
+        QVERIFY(receive->chooseAddressType("legacy")); QTRY_VERIFY(receive->reservation()->available() && receive->editor()->canSave());
+        auto* saved = receive->editor(); saved->publicLabel()->edit("repeat invoice"); saved->message()->edit("public template terms");
+        saved->privateNote()->edit("private template context"); saved->amount()->setSatoshi(12'345); saved->save();
+        QTRY_VERIFY(saved->saveResult().requestSaved); const auto id = saved->requestId(), original = saved->address();
+        QVERIFY(wallet->setDefaultReceiveAddressType("bech32")); QTRY_COMPARE(wallet->defaultReceiveAddressType(), QStringLiteral("bech32"));
+        QVERIFY(receive->useTemplate(id)); QTRY_VERIFY(receive->editor() != saved && receive->reservation()->available() && receive->editor()->canSave());
+        auto* repeated = receive->editor(); QCOMPARE(repeated->requestId(), QString{}); QVERIFY(repeated->address() != original);
+        QCOMPARE(repeated->addressType(), QStringLiteral("legacy")); QCOMPARE(repeated->publicLabel()->text(), QStringLiteral("repeat invoice"));
+        QCOMPARE(repeated->message()->text(), QStringLiteral("public template terms")); QCOMPARE(repeated->privateNote()->text(), QStringLiteral("private template context"));
+        QCOMPARE(repeated->amount()->satoshi(), CAmount{12'345}); QCOMPARE(wallet->defaultReceiveAddressType(), QStringLiteral("bech32"));
+        const auto repeated_address = repeated->address(); const auto info = qmltest::Rpc(m_app, "getaddressinfo", qmltest::Json("[\"" + repeated_address.toStdString() + "\"]"), wallet->name());
+        QVERIFY(info.find_value("ismine").get_bool()); QVERIFY(!info.find_value("iswitness").get_bool()); QCOMPARE(wallet->receiveRequests()->count(), 1);
+        QVERIFY(receive->newRequest()); QTRY_VERIFY(repeated->closePrompt());
+        repeated->closePrompt()->answer(TextEditClosePrompt::Discard);
+        QTRY_VERIFY(receive->editor() != repeated && receive->reservation()->available() && receive->editor()->canSave());
+        QCOMPARE(receive->editor()->addressType(), QStringLiteral("bech32")); QVERIFY(receive->editor()->address() != original && receive->editor()->address() != repeated_address);
+        QCOMPARE(wallet->defaultReceiveAddressType(), QStringLiteral("bech32")); QCOMPARE(wallet->receiveRequests()->count(), 1);
+    }
     void sentNotesPreserveReceivingPurposeAndPublicInvoiceAfterRealCommit()
     {
         auto* wallet = qmltest::CreateWallet(m_app, "sent-notes"); QVERIFY(wallet);
@@ -453,19 +650,20 @@ private Q_SLOTS:
         auto* wallet = qmltest::CreateWallet(m_app); QVERIFY(wallet);
         auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
         QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
-        QVERIFY(qmltest::WaitForVisible(m_app, "requestPaymentPage"));
-        QVERIFY(qmltest::SetText(m_app, "requestPaymentAmountInput", ""));
-        auto* input = qmltest::Find(m_app, "requestPaymentAmountInput"); QVERIFY(input);
+        QVERIFY(qmltest::WaitForVisible(m_app, "receiveWorkspace"));
+        QTRY_VERIFY(wallet->receive()->reservation()->available());
+        QVERIFY(qmltest::SetText(m_app, "receiveAmountInput", ""));
+        auto* input = qmltest::Find(m_app, "receiveAmountInput"); QVERIFY(input);
         QVERIFY(QMetaObject::invokeMethod(input, "forceActiveFocus"));
         if (producer == 1) {
             QGuiApplication::clipboard()->setText(text);
             QTest::keyClick(m_app.window(), Qt::Key_V, Qt::ControlModifier, 1);
         } else if (producer == 2) {
-            const auto before_preedit = wallet->currentPaymentRequest()->amount()->satoshi();
+            const auto before_preedit = wallet->receive()->editor()->amount()->satoshi();
             QInputMethodEvent preedit(QStringLiteral("0,"), {});
             QCoreApplication::sendEvent(input, &preedit);
             QCOMPARE(input->property("preeditText").toString(), QString("0,"));
-            QCOMPARE(wallet->currentPaymentRequest()->amount()->satoshi(), before_preedit);
+            QCOMPARE(wallet->receive()->editor()->amount()->satoshi(), before_preedit);
             QInputMethodEvent committed;
             committed.setCommitString(text);
             QCoreApplication::sendEvent(input, &committed);
@@ -474,16 +672,17 @@ private Q_SLOTS:
             for (QChar key : text) QTest::keyClick(m_app.window(), static_cast<Qt::Key>(key.unicode()), Qt::NoModifier, 1);
         }
         const QString entered = input->property("text").toString();
-        QVERIFY(qmltest::Click(m_app, "requestPaymentGenerateButton"));
+        QVERIFY(qmltest::Click(m_app, "receiveSaveRequestButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "paymentRequestModal"));
         const auto blobs = qmltest::Call(m_app, [backend = wallet->wallet()](interfaces::Node*) { return backend->getAddressReceiveRequests(); }); QCOMPARE(blobs.size(), size_t{1});
         std::vector<uint8_t> bytes(blobs[0].begin(), blobs[0].end()); DataStream record{bytes};
         int version, recipient_version; int64_t id; uint32_t timestamp; std::string address, label; CAmount persisted;
         record >> version >> id >> timestamp >> recipient_version >> address >> label >> persisted;
         QCOMPARE(version, 1); QCOMPARE(recipient_version, 1); QVERIFY(id > 0); QVERIFY(timestamp > 0); QVERIFY(!address.empty());
-        const QString uri = qmltest::Find(m_app, "requestPaymentQRImage")->property("code").toString();
+        QTRY_VERIFY(wallet->receive()->editor()->paymentUri().contains("amount=0.02000000"));
+        const QString uri = wallet->receive()->editor()->paymentUri();
         qInfo() << "Typed Receive amount oracle" << text << "accepted text" << entered << "Core stored sats" << persisted << "QR payload" << uri;
-        QVERIFY(qmltest::Click(m_app, "paymentRequestModalClose"));
+        QVERIFY(qmltest::Click(m_app, "savedRequestCloseButton"));
         wallet->reloadReceiveRequests(); QCOMPARE(wallet->receiveRequests()->count(), 1);
         QCOMPARE(persisted, CAmount{2'000'000});
         QVERIFY(uri.contains("amount=0.02000000"));
@@ -501,6 +700,7 @@ private Q_SLOTS:
         QVERIFY(AwaitReceiveRequest(wallet->commitPaymentRequest()));
         const auto id = request->id();
         const auto address = request->address();
+        QTRY_VERIFY(!request->qrPayload().isEmpty());
         const auto uri = request->qrPayload();
         QVERIFY(!id.isEmpty());
         QVERIFY(!address.isEmpty());
@@ -531,7 +731,7 @@ private Q_SLOTS:
         QCOMPARE(wallet->detailPaymentRequest()->noteSelf(), QStringLiteral("Renamed on Addresses page"));
         QCOMPARE(wallet->detailPaymentRequest()->label(), QStringLiteral("Alice"));
         QCOMPARE(wallet->detailPaymentRequest()->message(), QStringLiteral("pizza"));
-        QCOMPARE(wallet->detailPaymentRequest()->qrPayload(), uri);
+        QTRY_COMPARE(wallet->detailPaymentRequest()->qrPayload(), uri);
         QVERIFY(qmltest::Click(m_app, "activityTabButton"));
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", "Renamed on Addresses page"));
         auto* filter = qobject_cast<ActivityFilterProxyModel*>(qmltest::Find(m_app, "activityFilterProxyModel"));
@@ -542,7 +742,7 @@ private Q_SLOTS:
         QTRY_VERIFY(!wallet->property("receiveRequestsBusy").toBool());
         QVERIFY(wallet->loadPaymentRequestDetail(id));
         QCOMPARE(wallet->detailPaymentRequest()->noteSelf(), QStringLiteral("Renamed on Addresses page"));
-        QCOMPARE(wallet->detailPaymentRequest()->qrPayload(), uri);
+        QTRY_COMPARE(wallet->detailPaymentRequest()->qrPayload(), uri);
         QVERIFY(AwaitReceiveRequest(wallet->removeReceiveRequest(id)));
         QCOMPARE(wallet->receiveRequests()->count(), 0);
         QVERIFY(!wallet->loadPaymentRequestDetail(id));
@@ -573,6 +773,7 @@ private Q_SLOTS:
         draft->setLabel("export identity"); draft->setMessage("public QR terms"); draft->amount()->setSatoshi(123);
         QVERIFY(AwaitReceiveRequest(wallet->commitPaymentRequest()));
         QTRY_VERIFY(!wallet->receiveRequestReconciliationPending());
+        QTRY_VERIFY(!draft->qrPayload().isEmpty());
         const auto request_id = draft->id(); const auto payload = draft->qrPayload(); const auto name = wallet->name();
         QTemporaryDir directory; QVERIFY(directory.isValid());
         const QString path = directory.path() + QStringLiteral("/original request.png");
@@ -914,7 +1115,7 @@ private Q_SLOTS:
         const auto cached_keys = info.find_value("keypoolsize").getInt<int>();
         for (int i{0}; i < cached_keys; ++i) qmltest::NewAddress(m_app, wallet->name());
         QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("keypoolsize").getInt<int>(), 0);
-        QVERIFY(wallet->receivingAddress()->address().isEmpty());
+        QVERIFY(wallet->receive()->reservation()->address().isEmpty());
 
         // Cancelling address creation must leave both Core and request history unchanged.
         QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
@@ -925,14 +1126,18 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "receivePassphraseCancelButton"));
         QTRY_VERIFY(!popup->property("visible").toBool());
         QCOMPARE(qmltest::Find(m_app, "receivePassphraseField")->property("text").toString(), QString{});
-        QVERIFY(wallet->receivingAddress()->address().isEmpty());
+        QVERIFY(wallet->receive()->reservation()->address().isEmpty());
         QCOMPARE(wallet->receiveRequests()->count(), 0);
         QVERIFY(wallet->isLocked());
         QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("unlocked_until").getInt<int64_t>(), 0);
 
-        // Reopening Receive retries the exhausted keypool, with a visible password error.
+        // Reopening does not replay cancelled authorization. An explicit retry
+        // captures a fresh attempt, retaining the genuine wrong-password oracle.
         QVERIFY(qmltest::Click(m_app, "activityTabButton"));
         QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
+        QVERIFY(!popup->property("opened").toBool());
+        QCOMPARE(wallet->receive()->reservation()->phase(), ReceiveReservationModel::Cancelled);
+        QVERIFY(qmltest::Click(m_app, "receiveRetryAddressButton"));
         QTRY_VERIFY(popup->property("opened").toBool());
         QVERIFY(qmltest::SetText(m_app, "receivePassphraseField", "wrong password"));
         QVERIFY(qmltest::Click(m_app, "receivePassphraseConfirmButton"));
@@ -941,7 +1146,7 @@ private Q_SLOTS:
         QVERIFY(error->property("text").toString().contains("incorrect"));
         QVERIFY(popup->property("opened").toBool());
         QCOMPARE(qmltest::Find(m_app, "receivePassphraseField")->property("text").toString(), QString{});
-        QVERIFY(wallet->receivingAddress()->address().isEmpty());
+        QVERIFY(wallet->receive()->reservation()->address().isEmpty());
         QVERIFY(wallet->isLocked());
         QCOMPARE(wallet->receiveRequests()->count(), 0);
         QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("unlocked_until").getInt<int64_t>(), 0);
@@ -950,26 +1155,25 @@ private Q_SLOTS:
         QVERIFY(qmltest::SetText(m_app, "receivePassphraseField", "receiving password"));
         QVERIFY(qmltest::Click(m_app, "receivePassphraseConfirmButton"));
         QTRY_VERIFY(!popup->property("visible").toBool());
-        const auto address = wallet->receivingAddress()->address();
+        const auto address = wallet->receive()->reservation()->address();
         QVERIFY(!address.isEmpty());
-        QTRY_VERIFY(qmltest::Find(m_app, "requestPaymentGenerateButton")->property("enabled").toBool());
+        QTRY_VERIFY(qmltest::Find(m_app, "receiveSaveRequestButton")->property("enabled").toBool());
         const auto address_info = qmltest::Rpc(m_app, "getaddressinfo", qmltest::Json("[\"" + address.toStdString() + "\"]"), wallet->name());
         QVERIFY(address_info.find_value("ismine").get_bool());
         QCOMPARE(address_info.find_value("witness_version").getInt<int>(), 0);
         QVERIFY(wallet->isLocked());
         QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("unlocked_until").getInt<int64_t>(), 0);
         QCOMPARE(wallet->receiveRequests()->count(), 0);
-        QVERIFY(wallet->currentPaymentRequest()->id().isEmpty());
+        QVERIFY(wallet->receive()->editor()->requestId().isEmpty());
 
         // The next-address request must survive another unlock, without reusing this address.
-        QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "requestPaymentPage"), "ensureReceivingAddress",
-                                         Q_ARG(QVariant, true), Q_ARG(QVariant, QStringLiteral("bech32"))));
+        QVERIFY(wallet->receive()->nextAddress());
         QTRY_VERIFY(popup->property("opened").toBool());
         QVERIFY(qmltest::SetText(m_app, "receivePassphraseField", "receiving password"));
         QVERIFY(qmltest::Click(m_app, "receivePassphraseConfirmButton"));
         QTRY_VERIFY(!popup->property("visible").toBool());
-        QVERIFY(!wallet->receivingAddress()->address().isEmpty());
-        QVERIFY(wallet->receivingAddress()->address() != address);
+        QVERIFY(!wallet->receive()->reservation()->address().isEmpty());
+        QVERIFY(wallet->receive()->reservation()->address() != address);
         QVERIFY(wallet->isLocked());
         QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("unlocked_until").getInt<int64_t>(), 0);
         QCOMPARE(wallet->receiveRequests()->count(), 0);
@@ -989,19 +1193,17 @@ private Q_SLOTS:
         auto* page = qmltest::Find(m_app, "addressListPage"); QVERIFY(page);
         QSignalSpy receive_requested{page, SIGNAL(receiveRequested())};
         QVERIFY(qmltest::Click(m_app, "addressDetailsCreatePaymentRequestButton"));
-        QTRY_VERIFY(page->property("receiveOperation").value<QObject*>());
-        auto* operation = page->property("receiveOperation").value<QObject*>();
-        QTRY_VERIFY(!operation->property("pending").toBool());
         QTRY_COMPARE(receive_requested.count(), 1);
-        QVERIFY(qmltest::WaitForVisible(m_app, "requestPaymentPage"));
-        QCOMPARE(wallet->receivingAddress()->address(), address);
-        QCOMPARE(qmltest::Find(m_app, "requestPaymentNoteRow")->property("value").toString(), QStringLiteral("invoice 1024"));
-        QVERIFY(qmltest::SetText(m_app, "requestPaymentAmountInput", "0.25"));
-        QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "requestPaymentAmountInput"), "editingFinished"));
-        QVERIFY(qmltest::Click(m_app, "requestPaymentGenerateButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "receiveWorkspace"));
+        QTRY_COMPARE(wallet->receive()->reservation()->address(), address);
+        QTRY_VERIFY(wallet->receive()->reservation()->available());
+        QTRY_COMPARE(wallet->receive()->editor()->privateNote()->text(), QStringLiteral("invoice 1024"));
+        QVERIFY(qmltest::SetText(m_app, "receiveAmountInput", "0.25"));
+        QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "receiveAmountInput"), "editingFinished"));
+        QVERIFY(qmltest::Click(m_app, "receiveSaveRequestButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "paymentRequestModal"));
         QCOMPARE(wallet->receiveRequests()->count(), 1);
-        QVERIFY(qmltest::Click(m_app, "paymentRequestModalClose"));
+        QVERIFY(qmltest::Click(m_app, "savedRequestCloseButton"));
 
         // The Addresses stack is retained, and its action now views the saved request.
         QVERIFY(qmltest::Click(m_app, "desktopWalletSettingsTabButton"));
@@ -1013,14 +1215,14 @@ private Q_SLOTS:
         QCOMPARE(action->property("text").toString(), QStringLiteral("View payment request"));
         QVERIFY(qmltest::Click(action));
         QVERIFY(qmltest::WaitForVisible(m_app, "paymentRequestModal"));
-        QVERIFY(qmltest::SetText(m_app, "requestPaymentAmountInput", "0.5"));
-        QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "requestPaymentAmountInput"), "editingFinished"));
+        QVERIFY(qmltest::SetText(m_app, "receiveAmountInput", "0.5"));
+        QVERIFY(QMetaObject::invokeMethod(qmltest::Find(m_app, "receiveAmountInput"), "editingFinished"));
         QCOMPARE(wallet->receiveRequests()->count(), 1);
-        QVERIFY(qmltest::Click(m_app, "requestPaymentUpdateButton"));
-        QVERIFY(qmltest::WaitForVisible(m_app, "requestPaymentCopyButton"));
+        QVERIFY(qmltest::Click(m_app, "receiveSaveRequestButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "savedRequestCopyUriButton"));
         QCOMPARE(wallet->receiveRequests()->count(), 1);
-        QCOMPARE(qmltest::Find(m_app, "requestPaymentAddressText")->property("address").toString(), address);
-        QVERIFY(qmltest::Click(m_app, "paymentRequestModalClose"));
+        QCOMPARE(wallet->receive()->editor()->address(), address);
+        QVERIFY(qmltest::Click(m_app, "savedRequestCloseButton"));
         QVERIFY(qmltest::Click(m_app, "desktopWalletSettingsTabButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "addressListPage"));
     }
@@ -1086,7 +1288,7 @@ std::unique_ptr<QObject> CreateReceiveTests(BitcoinQmlApplication& app, WalletMo
 QStringList ReceiveTestArguments(const QString& selector)
 {
     if (selector == "sendOutcomeReportsObservationOrRejectsStaleReview:broadcast-disabled") return {"-walletbroadcast=0"};
-    if (selector == "addressPreferenceWriteReportsDisabledSettings") return {"-nosettings"};
+    if (selector == "addressPreferenceWriteReportsDisabledSettings" || selector == "typedReceivePreferenceFailureRetainsTheGeneratedAddress") return {"-nosettings"};
     return selector == "receivingUnlockCanBeCancelledRetriedAndRelocks" ? QStringList{"-keypool=1"} : QStringList{};
 }
 
