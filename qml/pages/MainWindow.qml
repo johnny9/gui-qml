@@ -118,17 +118,18 @@ ApplicationWindow {
     property bool preferenceGeometryRestored: false
     function restorePreferenceGeometry() {
         if (preferenceGeometryRestored || !windowSettings.ready) return
-        if (windowSettings.windowWidth > 0 && windowSettings.windowHeight > 0) {
-            width = windowSettings.windowWidth
-            height = windowSettings.windowHeight
-            x = windowSettings.windowX
-            y = windowSettings.windowY
-        }
+        windowSettings.restoreWindow(appWindow)
         preferenceGeometryRestored = true
+        if (visibility === Window.Windowed) windowSettings.requestGeometry(x, y, width, height)
     }
     AppPreferences { id: windowSettings; onChanged: appWindow.restorePreferenceGeometry() }
     // Geometry is a bounded native GUI handoff; storage is owned by the shared
     // background store and always captures the original full rectangle.
+    onActiveChanged: if (active) {
+        windowSettings.refresh()
+        ApplicationModels.optionsModel.refreshDisplaySettings()
+        ApplicationModels.desktopWindowBehaviorModel.refreshSettings()
+    }
     onXChanged: if (visibility === Window.Windowed && preferenceGeometryRestored && windowSettings.ready) windowSettings.requestGeometry(x, y, width, height)
     onYChanged: if (visibility === Window.Windowed && preferenceGeometryRestored && windowSettings.ready) windowSettings.requestGeometry(x, y, width, height)
     onWidthChanged: if (visibility === Window.Windowed && preferenceGeometryRestored && windowSettings.ready) windowSettings.requestGeometry(x, y, width, height)

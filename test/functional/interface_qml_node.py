@@ -5,6 +5,7 @@
 """Persist node settings and block-clock history across one shared GUI restart."""
 
 import time
+import configparser
 from pathlib import Path
 from qml_scenarios import run_scenarios
 from qml_smoke_lib import (
@@ -178,8 +179,46 @@ def wallet_shell_geometry(harness, checkpoint):
     checkpoint("wallet shell started with saved geometry")
 
 
+def clamped_geometry_restart(harness, checkpoint, *, wallet):
+    """Original 044 tiny/removed-display rectangle, in both real shells."""
+    settings = Path(harness.config_home) / "BitcoinCore"
+    settings.mkdir(parents=True)
+    (settings / "BitcoinCore-App-regtest.ini").write_text(
+        "[General]\nwindowWidth=200\nwindowHeight=100\nwindowX=20000\nwindowY=-20000\n", encoding="utf8")
+    arguments = [] if wallet else ["-disablewallet"]
+    harness.start_gui(extra_args=arguments)
+    gui = harness.driver
+    gui.wait_for_property("appWindow", "preferenceGeometryRestored", True)
+    gui.wait_for_property("appWindow", "width", 800)
+    gui.wait_for_property("appWindow", "height", 665)
+    rectangle = {key: gui.get_property("appWindow", key) for key in ("x", "y", "width", "height")}
+    assert rectangle["x"] != 20000 and rectangle["y"] != -20000, rectangle
+    checkpoint("untrusted saved rectangle restored at the supported minimum on an available display")
+    stop_gui_checked(harness)
+    persisted = configparser.ConfigParser()
+    persisted.read(settings / "BitcoinCore-App-regtest.ini", encoding="utf8")
+    for key, value in rectangle.items():
+        assert int(persisted["General"]["window" + key.capitalize()]) == value, (key, value, dict(persisted["General"]))
+    harness.start_gui(extra_args=arguments)
+    gui = harness.driver
+    gui.wait_for_property("appWindow", "preferenceGeometryRestored", True)
+    for key, value in rectangle.items():
+        gui.wait_for_property("appWindow", key, value)
+    checkpoint("clamped native rectangle persisted and restored across process restart")
+
+
+def wallet_clamped_geometry_restart(harness, checkpoint):
+    clamped_geometry_restart(harness, checkpoint, wallet=True)
+
+
+def node_clamped_geometry_restart(harness, checkpoint):
+    clamped_geometry_restart(harness, checkpoint, wallet=False)
+
+
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('Node settings and history restart', [
         wallet_scenario("settings-and-history-restart", 2, node_smoke),
         wallet_scenario("wallet-shell-geometry", 4, wallet_shell_geometry),
+        wallet_scenario("wallet-clamped-geometry-restart", 6, wallet_clamped_geometry_restart),
+        wallet_scenario("node-clamped-geometry-restart", 6, node_clamped_geometry_restart),
     ]))

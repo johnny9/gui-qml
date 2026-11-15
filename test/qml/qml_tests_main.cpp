@@ -4205,6 +4205,8 @@ class MockOptionsModel : public QObject
     Q_PROPERTY(QFont moneyFont READ moneyFont NOTIFY moneyFontChanged)
 
 public:
+    Q_INVOKABLE void refreshDisplaySettings() {}
+
     bool m_settings_ready{true};
     bool m_settings_pending{false};
     bool m_validation_pending{false};
@@ -4230,7 +4232,7 @@ public:
     bool m_server{false};
     int m_dbcache_size_mib{450};
     int m_min_dbcache_size_mib{4};
-    int m_max_dbcache_size_mib{1024};
+    int m_max_dbcache_size_mib{std::numeric_limits<int>::max()};
     int m_script_threads{0};
     int m_min_script_threads{-8};
     int m_max_script_threads{15};
@@ -5972,6 +5974,8 @@ class MockDesktopWindowBehaviorModel : public QObject
     Q_PROPERTY(bool minimizeOnClose READ minimizeOnClose WRITE setMinimizeOnClose NOTIFY minimizeOnCloseChanged)
 
 public:
+    Q_INVOKABLE void refreshSettings() {}
+
     bool settingsReady() const { return true; }
     bool persistencePending() const { return false; }
     QString persistenceError() const { return {}; }

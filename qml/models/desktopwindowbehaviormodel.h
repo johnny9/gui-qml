@@ -6,8 +6,10 @@
 #define BITCOIN_QML_MODELS_DESKTOPWINDOWBEHAVIORMODEL_H
 
 #include <QObject>
+#include <qml/preferenceswatch.h>
 #include <qml/snapshotquery.h>
 #include <map>
+#include <utility>
 
 class BackendExecutor;
 
@@ -32,11 +34,18 @@ public:
     struct Store {
         std::function<Values()> read;
         std::function<void(Values)> write;
+        std::function<Values(Values, unsigned)> write_fields;
+        std::function<preferences::WatchPaths()> watch_paths;
+        Store(std::function<Values()> read = {}, std::function<void(Values)> write = {},
+              std::function<Values(Values, unsigned)> write_fields = {},
+              std::function<preferences::WatchPaths()> watch_paths = {})
+            : read(std::move(read)), write(std::move(write)), write_fields(std::move(write_fields)), watch_paths(std::move(watch_paths)) {}
     };
     DesktopWindowBehaviorModel(bool desktop_platform, execution::SnapshotServices services, Store store = {}, QObject* parent = nullptr);
     ~DesktopWindowBehaviorModel() override;
     void closeAdmission();
     Q_INVOKABLE void retryPersistence();
+    Q_INVOKABLE void refreshSettings();
     bool settingsReady() const { return m_ready; }
     bool persistencePending() const { return !m_operations.empty(); }
     QString persistenceError() const { return m_error; }
@@ -67,18 +76,21 @@ private:
     static constexpr const char* KEY_MINIMIZE_TO_TRAY{"fMinimizeToTray"};
     static constexpr const char* KEY_MINIMIZE_ON_CLOSE{"fMinimizeOnClose"};
 
-    bool submit(Values values, bool load);
+    bool submit(Values values, bool load, unsigned fields = 7);
+    void finishRefresh();
     void publish(quint64 id, bool load);
     void apply(Values values);
     execution::SnapshotServices m_services;
     Store m_store;
     std::unique_ptr<BackendExecutor> m_executor;
     execution::ResourceKey m_key;
-    struct Pending { bool load; std::shared_ptr<execution::OwnedCommand<Values>> command; };
+    struct Result { Values values; preferences::WatchPaths watch; };
+    struct Pending { bool load; std::shared_ptr<execution::OwnedCommand<Result>> command; };
     std::map<quint64, Pending> m_operations;
     quint64 m_next_id{0}, m_state_id{0};
     QString m_error;
-    bool m_ready{false}, m_stopping{false};
+    bool m_ready{false}, m_stopping{false}, m_refresh_requested{false};
+    preferences::Watch m_watch{[this] { refreshSettings(); }};
 
     bool m_desktop_platform{false};
     bool m_show_tray_icon{true};

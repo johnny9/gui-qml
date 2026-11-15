@@ -14,6 +14,7 @@ SettingsPage {
     showBackButton: false
 
     property var windowBehaviorModel: ApplicationModels.desktopWindowBehaviorModel
+    onVisibleChanged: if (visible) windowBehaviorModel.refreshSettings()
 
     FormSection {
         Layout.fillWidth: true
