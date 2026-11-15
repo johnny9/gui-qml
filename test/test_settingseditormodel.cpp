@@ -96,6 +96,18 @@ private Q_SLOTS:
         QVERIFY(!f.model->busy());QVERIFY(f.model->dirty());QCOMPARE(f.entry("maxmempool")->text(),QStringLiteral("400"));
         f.model->reconcile();QVERIFY(f.settle());QCOMPARE(f.writes,0);QCOMPARE(f.checks,1);
     }
+    void cancelledAcceptedHandoffSettlesItsOriginalNoWriteReceipt(){
+        Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());
+        f.model->save();f.domain();QVERIFY(f.execution.step(Lane::Core));
+        QVERIFY(f.execution.step(Lane::Domain));while(f.publish()){}
+        QCOMPARE(f.model->phase(),SettingsEditorModel::Saving);QCOMPARE(f.writes,0);
+        const auto held=f.execution.dispatchNext(Lane::Domain);QVERIFY(held);
+        QVERIFY(f.execution.scheduler->cancelQueued(*held));QVERIFY(f.execution.finishWork(*held));
+        QVERIFY(f.settle());QCOMPARE(f.checks,1);QCOMPARE(f.writes,0);
+        QVERIFY(f.model->lastSavePresent());QVERIFY(f.model->lastSaveKnown());QVERIFY(!f.model->lastSavePersisted());
+        QVERIFY(!f.model->busy());QVERIFY(f.model->dirty());QCOMPARE(f.entry("maxmempool")->text(),QStringLiteral("400"));
+        f.model->reconcile();QVERIFY(f.settle());QCOMPARE(f.writes,0);QCOMPARE(f.checks,1);
+    }
     void validationFailureWritesNothingAndRetainsTheEdit(){Fixture f;QVERIFY(f.settle());f.reject=true;f.entry("listen")->editBoolean(false);QVERIFY(f.settle());f.model->save();QVERIFY(f.settle());QCOMPARE(f.checks,1);QCOMPARE(f.writes,0);QVERIFY(f.model->dirty());QVERIFY(f.model->canSave());QCOMPARE(f.model->error(),QStringLiteral("Rejected whole batch"));}
     void editHeldAgainstValidationPreventsTheOldWrite(){Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());f.model->save();f.domain();const auto held=f.execution.dispatchNext(Lane::Core);QVERIFY(held);f.entry("maxmempool")->editText("500");f.domain();QVERIFY(f.execution.finishWork(*held));QVERIFY(f.settle());QCOMPARE(f.writes,0);QVERIFY(f.model->dirty());QCOMPARE(f.entry("maxmempool")->text(),QStringLiteral("500"));}
     void cancelledWriteIsKnownNotStartedAndCanBeRetried(){Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());f.model->save();f.domain();QVERIFY(f.execution.step(Lane::Core));f.domain();const auto held=f.execution.dispatchNext(Lane::Core);QVERIFY(held);QVERIFY(f.execution.scheduler->cancelQueued(*held));f.domain();QVERIFY(f.execution.finishWork(*held));QVERIFY(f.settle());QCOMPARE(f.writes,0);QVERIFY(f.model->lastSaveKnown());QVERIFY(!f.model->lastSavePersisted());QVERIFY(f.model->canSave());f.model->save();QVERIFY(f.settle());QCOMPARE(f.writes,1);QVERIFY(f.model->lastSavePersisted());}

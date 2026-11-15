@@ -135,9 +135,10 @@ after the completed review releases its charge. Existing payload charges and
 executor limits are unchanged; this is no retry, GUI wait or new capability.
 
 A genuinely rejected handoff records known no-write outcome and preserves the
-original draft. Four manual controls cover a held unrelated one-KiB Core task,
-later edit, parent close/facade retirement with GUI publication held, and actual
-handoff transport rejection with no retry. Existing real-thread and independent
+original draft. Five manual controls cover a held unrelated one-KiB Core task,
+later edit, parent close/facade retirement with GUI publication held, actual
+handoff transport rejection, and cancellation of an accepted but unstarted
+handoff with its original known-no-write receipt, all with no retry. Existing real-thread and independent
 Core settings/UI consumers remain part of the focused gate. Diagnostic-only
 logging sources remain separate, immutable and unqualified; the final candidate
 contains none of those probes. This is an app scheduler composition issue and

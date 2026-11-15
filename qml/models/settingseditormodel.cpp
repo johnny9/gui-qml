@@ -44,7 +44,7 @@ struct SettingsEditorModel::State:std::enable_shared_from_this<State> {
     const std::shared_ptr<Mailbox> mailbox;
     uint64_t finished_save{0},rejection{0};
     ~State(){mailbox->drained.store(true);if(ports.retired)ports.retired();notify();}
-    execution::Admission post(const std::shared_ptr<execution::Scheduler>& target,std::function<void(State&)> command){if(!target)return {{},execution::Rejection::Closed};const auto self=shared_from_this();return execution::Submit(*target,[self,command=std::move(command)]{if(self->mailbox->retired.load())self->retire();command(*self);},[]{},{},{execution::Lane::Domain,393216,key,execution::WorkClass::Action});}
+    execution::Admission post(const std::shared_ptr<execution::Scheduler>& target,std::function<void(State&)> command,std::function<void(std::exception_ptr)> failed={}){if(!target)return {{},execution::Rejection::Closed};const auto self=shared_from_this();return execution::Submit(*target,[self,command=std::move(command)]{if(self->mailbox->retired.load())self->retire();command(*self);},[]{},std::move(failed),{execution::Lane::Domain,393216,key,execution::WorkClass::Action});}
     QString restartSet()const {
         QString result;
         if(!initialized)return result;
@@ -89,12 +89,14 @@ struct SettingsEditorModel::State:std::enable_shared_from_this<State> {
             // it into another queued packet or waiting for GUI publication.
             const auto token=attempt.attempt.token;
             const bool redownload=attempt.batch.accept_redownload;
-            if(!self->post(action,[action,token,redownload,owner](State& state){state.write(action,token,redownload,owner);})){
+            const auto rejected=[self,token,owner](std::exception_ptr error){
+                if(!self->session.active()||self->session.active()->attempt.token!=token)return;
                 const auto accepted=*self->session.active();
-                Result rejected;rejected.outcome=Outcome::Rejected;rejected.error=Failure();
-                self->receipt=rejected;
-                self->finish(accepted,std::move(rejected),false,owner);
-            }
+                Result result;result.outcome=Outcome::Rejected;result.error=Failure();
+                if(error)try{std::rethrow_exception(error);}catch(const execution::NotStarted&){}catch(...){result.outcome=Outcome::Uncertain;}
+                self->receipt=result;self->finish(accepted,std::move(result),false,owner);
+            };
+            if(!self->post(action,[action,token,redownload,owner](State& state){state.write(action,token,redownload,owner);},rejected))rejected({});
         };
         const auto failed=[done](std::exception_ptr){Check checked;checked.error=Failure();done(std::move(checked));};
         if(!ports.review||!execution::Submit(*action,[review=ports.review,attempt=*attempt]{return review(attempt);},done,failed,{execution::Lane::Core,2*1024*1024,io,execution::WorkClass::Action})){Check checked;checked.error=Failure();done(std::move(checked));}
