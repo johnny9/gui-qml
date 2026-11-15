@@ -26,7 +26,7 @@ paymentimport::Inspection Psbt()
     auto snapshot = std::make_shared<psbtwork::Snapshot>(); snapshot->document = Document(); source.psbt = snapshot; return source;
 }
 paymentimport::Target Target(uint64_t revision = 7, bool conflict = false)
-{ return {{1, 1}, 2, revision, 3, true, true, conflict}; }
+{ static const auto opening = std::make_shared<const walletopening::Identity>(); return {opening, 2, revision, 3, true, true, conflict}; }
 struct Fixture {
     ManualRoutedExecution source, target;
     paymentimport::Snapshot snapshot;
@@ -75,7 +75,7 @@ private Q_SLOTS:
         QCOMPARE(result.kind, paymentimport::Kind::Payment); QCOMPARE(result.payment.address, Address());
         QCOMPARE(result.payment.amount, std::optional<CAmount>{12'345'678});
         QCOMPARE(result.payment.label, QStringLiteral("Public")); QCOMPARE(result.payment.message, QStringLiteral("Message"));
-        QVERIFY(!result.payment.private_note.has_value());
+        QVERIFY(result.payment.private_note.isEmpty());
     }
     void sourceIdentityIncludesMessageAndCanonicalPath() {
         const auto first = paymentimport::ReadSource({paymentimport::Input::Kind::Text, Uri()});
