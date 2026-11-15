@@ -4,6 +4,7 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQml.Models 2.15
 import org.bitcoincore.qt 1.0
 import "../components"
 import "../controls"
@@ -327,8 +328,13 @@ ApplicationWindow {
         }
     }
 
-    NodeRuntimeDialog {
-        parent: Overlay.overlay
+    Instantiator {
+        model: ApplicationModels.nodeModel.runtimePrompts
+        delegate: NodeRuntimeDialog {
+            required property RuntimePromptModel modelData
+            prompt: modelData
+            parent: appWindow.Overlay.overlay
+        }
     }
 
     NodeFatalErrorPopup {

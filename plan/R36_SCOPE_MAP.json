@@ -1,0 +1,204 @@
+{
+  "status": "Focused progress gate satisfied; canonical coordinator integration pending; R42 qualification pending",
+  "app": "bfefe696aa269facde1b26b29ab31df624c15631",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "rows": [
+    {
+      "scope": "draft-071-D071",
+      "original": {
+        "path": ".validation/issue-prioritization-20261109/source-issue-drafts.md",
+        "line": 3676,
+        "end_line": 3701,
+        "heading": "## [P3] 71. A failed node start, or a fatal error at runtime, exits with status 0",
+        "section_sha256": "715b7127afb66f85d1b559da5a0d4ada76e2394cb3f6849e69a2a02e276c7161"
+      },
+      "disposition": "confirmed_fixed",
+      "reason": "Actual Core block-write failure parent exits0, required1. Public final Core getExitStatus now retained on Native with actual normal/failure process receipts.",
+      "evidence": "exit-status/FOCUSED_ACCEPTANCE.json",
+      "focused_selectors": [
+        "QmlInitExecutorApiTests::nativeStartupOutcomePrecedesGuiDelivery",
+        "interface_qml_startup.py::runtime-block-write-failure-exit-status"
+      ],
+      "final_gate_pending": false
+    },
+    {
+      "scope": "draft-234-D234",
+      "original": {
+        "path": ".validation/issue-prioritization-20261109/source-issue-drafts.md",
+        "line": 7429,
+        "end_line": 7436,
+        "heading": "## [P2] 234. A blocking startup modal is invisible while the window is hidden to tray or minimized, and tray Quit cannot finish",
+        "section_sha256": "20a095e198652ff7512d47c49c17820e856f759890b1e8eea81820b3b049dc84"
+      },
+      "disposition": "confirmed_hidden_window_variant_fixed",
+      "reason": "Original old shutdown queue claim was superseded. Actual parent hidden-window question oracle failed; active prompt now reveals original native window and actual MainWindow overlay.",
+      "evidence": "bazzite-06/artifacts/red/results/report.json",
+      "focused_selectors": [
+        "node.disabled.runtimeQuestionMakesTheHiddenNativeWindowReachable",
+        "MainRouting::test_owned_runtime_prompt_reveals_the_actual_main_window_overlay"
+      ],
+      "final_gate_pending": false
+    },
+    {
+      "scope": "draft-237-D237",
+      "original": {
+        "path": ".validation/issue-prioritization-20261109/source-issue-drafts.md",
+        "line": 7453,
+        "end_line": 7460,
+        "heading": "## [P2] 237. A shutdown exception leaves no exit and a dead button",
+        "section_sha256": "7f8d4a5f61168b2f072ceb245c5d72241a467a778daf20cd16135e4fa0d78782"
+      },
+      "disposition": "candidate_not_promoted_explicit_fatal_policy_verified",
+      "reason": "No current hang reproduced; fatal native failure has explicit receipt/one process exit path and no unsafe Core drain. Existing exact fatal process cases pass.",
+      "evidence": "bazzite-08/artifacts/green/shutdown.stdout",
+      "focused_selectors": [
+        "QmlInitExecutorApiTests::fatalInitializationRejectsPendingAndLaterShutdown",
+        "MainRouting::test_fatal_exception_during_shutdown_shows_dialog",
+        "interface_qml_shutdown.py::fatal-initialize-button",
+        "interface_qml_shutdown.py::fatal-interrupt-button",
+        "interface_qml_shutdown.py::fatal-shutdown-button"
+      ],
+      "final_gate_pending": false
+    },
+    {
+      "scope": "draft-238-D238",
+      "original": {
+        "path": ".validation/issue-prioritization-20261109/source-issue-drafts.md",
+        "line": 7461,
+        "end_line": 7468,
+        "heading": "## [P3] 238. NodeFatalErrorPopup only ever opens",
+        "section_sha256": "7057c3fb2c4f0ea6253980572fb92693521c0396a0749894df053752be8bee5c"
+      },
+      "disposition": "candidate_not_promoted_original_branch_present",
+      "reason": "Original missing-close branch exists. Retain current stopping presentation and fatal close/no-tray-minimize oracles; no new defect claim.",
+      "evidence": "macos-08/artifacts/green/focused/report.json",
+      "focused_selectors": [
+        "MainRouting::test_shutdown_retains_existing_presentation",
+        "MainRouting::test_closing_fatal_exception_requests_exit_even_with_minimize_on_close"
+      ],
+      "final_gate_pending": false
+    },
+    {
+      "scope": "draft-239-D239",
+      "original": {
+        "path": ".validation/issue-prioritization-20261109/source-issue-drafts.md",
+        "line": 7469,
+        "end_line": 7476,
+        "heading": "## [P3] 239. A pause applied before connman exists is dropped while the UI latches Paused, and no later notification corrects it",
+        "section_sha256": "36be10a4a69bd2779389b74435439cfdb2725de6a7ba4dc35b087f9a69db44f8"
+      },
+      "disposition": "original_latch_candidate_not_promoted_confirmed_queued_intent_variants_fixed",
+      "reason": "Pre-connman optimistic latch already guarded. Actual original queued intent/current-read/no-op/retirement and captured-notification regressions fail on exact parent and pass current owner. Backend observation remains authoritative; app fence does not invent an atomic Core conditional setter.",
+      "evidence": "bazzite-06/artifacts/red/results/report.json; bazzite-07/artifacts/red/results/report.json; bazzite-08/artifacts/red/results/report.json",
+      "focused_selectors": [
+        "NodeModelTests::manualQueuedNetworkIntentYieldsToLaterBackendObservation",
+        "NetworkCommandTests::cachedNoOpCannotSkipTheCurrentNativeValue",
+        "NetworkCommandTests::capturedExternalObservationOwnsAnIntentBeforeItsGuiProjection",
+        "node.disabled.networkActionsAndCoreNotificationsAgree"
+      ],
+      "final_gate_pending": false
+    },
+    {
+      "scope": "draft-240-D240",
+      "original": {
+        "path": ".validation/issue-prioritization-20261109/source-issue-drafts.md",
+        "line": 7477,
+        "end_line": 7484,
+        "heading": "## [P3] 240. answerRuntimeDialog treats only BTN_OK as affirmative, so Yes/Apply/Retry would answer false",
+        "section_sha256": "49720c6eda53f7d64099aa7812e5746ac6283ba319db642f0e066a0026633073"
+      },
+      "disposition": "candidate_nondefect_for_boolean_mapping_confirmed_invalid_answer_guard_fixed",
+      "reason": "Pinned Widgets/Core use BTN_OK as affirmative. Full button-mask presentation preserves that mapping. Separate actual parent invalid-answer oracle failed; unsupported answer cannot consume original prompt.",
+      "evidence": "bazzite-06/artifacts/red/results/report.json",
+      "focused_selectors": [
+        "NodeModelTests::runtimeQuestionUnsupportedAnswerCannotConsumeThePendingQuestion",
+        "node.disabled.runtimeDialogsRoundTripCoreQuestions",
+        "RuntimePromptTests"
+      ],
+      "final_gate_pending": false
+    },
+    {
+      "scope": "draft-241-D241",
+      "original": {
+        "path": ".validation/issue-prioritization-20261109/source-issue-drafts.md",
+        "line": 7485,
+        "end_line": 7492,
+        "heading": "## [P3] 241. m_startup_failure_dialog_shown is sticky per attempt",
+        "section_sha256": "ea243b27288c9bc2686536659d9467b327dd1533a39f44112e38ca8e6cba6366"
+      },
+      "disposition": "candidate_not_promoted_single_attempt_guard_retained",
+      "reason": "No established second/silent-failure producer. Keep single actual initialization attempt and original failure ownership; late/reentrant terminal ingress cannot fabricate a fatal receipt.",
+      "evidence": "bazzite-08/artifacts/green/results/report.json",
+      "focused_selectors": [
+        "NodeModelTests::initGuardBlocksSecondEmission",
+        "QmlInitExecutorApiTests::terminalShutdownRejectsLateControlIngress",
+        "NodeModelTests::manualStartupCallbacksKeepTheirPresentationPhase"
+      ],
+      "final_gate_pending": false
+    },
+    {
+      "scope": "draft-242-D242",
+      "original": {
+        "path": ".validation/issue-prioritization-20261109/source-issue-drafts.md",
+        "line": 7493,
+        "end_line": 7500,
+        "heading": "## [P3] 242. Send and Receive are fully live during IBD/behind-tip with no sync notice",
+        "section_sha256": "c4adc448ac671a279f455ab8a7d4db7c4aeafe13ac1c6df84cf6d7dcb6e8b47c"
+      },
+      "disposition": "candidate_not_promoted_product_policy_not_invented",
+      "reason": "Draft does not establish a blanket send-ban during IBD. Existing explicit warning/catch-up semantics retained; no new capability policy inferred from verification progress.",
+      "evidence": "bazzite-08/artifacts/green/results/report.json",
+      "focused_selectors": [
+        "NodeModelTests::initialSyncCompletionIgnoresVerificationEstimateForGenesis",
+        "NodeModelTests::initialSyncCompletionWaitsForStartupCatchUpAndLatches",
+        "NodeModelTests::coalescedTipsDoNotLatchCompletionFromIntermediateHeights",
+        "NodeFeedback::test_warning_action_visibility_follows_warning_state"
+      ],
+      "final_gate_pending": false
+    },
+    {
+      "scope": "draft-243-D243",
+      "original": {
+        "path": ".validation/issue-prioritization-20261109/source-issue-drafts.md",
+        "line": 7501,
+        "end_line": 7508,
+        "heading": "## [P3] 243. Qt::Key_Back shuts the node down with no confirmation and bypasses minimize-to-tray",
+        "section_sha256": "72b78a68b7a11f8eddcf8ae17448cb9672068866046fa08f5e6116025b19ad1f"
+      },
+      "disposition": "candidate_not_promoted_existing_Back_and_native_close_policy_retained",
+      "reason": "Back already requests shutdown; preserve menu/native-close/Back presentation and tray-minimize-with-original-Send-context behavior. Final inherited Item.enabled cleanup rerun passed with original Send context, amount-disable and address-capture controls.",
+      "evidence": "macos-08/artifacts/green/focused/report.json; macos-09/read-only-collection/green/focused/report.json",
+      "focused_selectors": [
+        "MainRouting::test_shutdown_retains_existing_presentation",
+        "MainRouting::test_native_close_minimizes_with_tray_policy"
+      ],
+      "final_gate_pending": false
+    }
+  ],
+  "contract_owners": {
+    "M19": "nodelifecycle + Driver, typed QmlInitExecutor adapter, retained Native init/exit receipt and physical worker shutdown",
+    "M20": "RuntimePrompt Queue/Service, original immutable prompt and allowed exact-once answer",
+    "M21": "NetworkCommand observed Unknown/Active/Paused independent of pending/action/outcome"
+  },
+  "schedules": [
+    {
+      "id": "O20",
+      "path": "plan/tracking/schedule-ownership.csv",
+      "line": 21,
+      "requirement": "Two blocked questions; answer first; stop before second answer; late answer; exact once and responsive control"
+    },
+    {
+      "id": "O21",
+      "path": "plan/tracking/schedule-ownership.csv",
+      "line": 22,
+      "requirement": "RPC observation during idle/pending command; no stale desire replay; console Clear does not cancel accepted command; stop independent"
+    },
+    {
+      "id": "O36",
+      "path": "plan/tracking/schedule-ownership.csv",
+      "line": 37,
+      "requirement": "Lost handoff/presentation/result and rejected admission retain original recovery/drain outcomes without repeated mutation"
+    }
+  ],
+  "R42": "Full coverage, broad suites, supported platform/Qt/config matrices, sanitizer qualification pending."
+}

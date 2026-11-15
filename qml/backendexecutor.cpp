@@ -158,10 +158,10 @@ struct BackendExecutor::ExecutorState {
     }
 };
 
-BackendExecutor::BackendExecutor(QObject* parent) : BackendExecutor(std::nullopt, parent) {}
-BackendExecutor::BackendExecutor(execution::Limits limits, QObject* parent) : BackendExecutor(std::make_optional(limits), parent) {}
+BackendExecutor::BackendExecutor(QObject* parent) : BackendExecutor(std::nullopt, parent, CleanupAffinity::Independent) {}
+BackendExecutor::BackendExecutor(execution::Limits limits, QObject* parent, CleanupAffinity cleanup_affinity) : BackendExecutor(std::make_optional(limits), parent, cleanup_affinity) {}
 
-BackendExecutor::BackendExecutor(std::optional<execution::Limits> limits, QObject* parent)
+BackendExecutor::BackendExecutor(std::optional<execution::Limits> limits, QObject* parent, CleanupAffinity cleanup_affinity)
     : QObject(parent), m_state(std::make_shared<ExecutorState>()), m_worker(new BackendExecutorWorker), m_thread(new QThread)
 {
     Q_ASSERT(QCoreApplication::instance());
@@ -179,13 +179,13 @@ BackendExecutor::BackendExecutor(std::optional<execution::Limits> limits, QObjec
             worker->ready_for_group_shutdown = [group = m_group](QThread* ready_thread) { group->workerReady(ready_thread); };
         }
         m_scheduler = std::make_shared<execution::TaskQueue>(
-            [group = m_group](execution::Lane lane, execution::Phase, execution::TaskId, std::function<void()> turn) {
+            [group = m_group, cleanup_affinity](execution::Lane lane, execution::Phase, execution::TaskId, std::function<void()> turn) {
                 size_t index{0};
                 switch (lane) {
                 case execution::Lane::Core: index = 1; break;
                 case execution::Lane::Domain: index = 2; break;
                 case execution::Lane::Control: index = 3; break;
-                case execution::Lane::Cleanup: index = 4; break;
+                case execution::Lane::Cleanup: index = cleanup_affinity == CleanupAffinity::Core ? 1 : 4; break;
                 }
                 return QMetaObject::invokeMethod(group->workers[index].first, [group, turn = std::move(turn)] {
                     turn();
