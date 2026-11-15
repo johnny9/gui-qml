@@ -79,18 +79,18 @@ void BitcoinAmount::assignCanonical(qint64 value, bool is_set, bool reset_input)
 
 void BitcoinAmount::setSatoshi(qint64 value)
 {
-    if (admissionClosed()) return;
+    if (inputAdmissionClosed()) return;
     const QPointer<BitcoinAmount> observer{this};
     const auto revision = m_input_revision; Q_EMIT valueEdited();
-    if (observer && !admissionClosed() && m_input_revision == revision) assignCanonical(value, true, true);
+    if (observer && !inputAdmissionClosed() && m_input_revision == revision) assignCanonical(value, true, true);
 }
 
 void BitcoinAmount::clear()
 {
-    if (admissionClosed()) return;
+    if (inputAdmissionClosed()) return;
     const QPointer<BitcoinAmount> observer{this};
     const auto revision = m_input_revision; Q_EMIT valueEdited();
-    if (observer && !admissionClosed() && m_input_revision == revision) assignCanonical(0, false, true);
+    if (observer && !inputAdmissionClosed() && m_input_revision == revision) assignCanonical(0, false, true);
 }
 
 BitcoinAmount::Unit BitcoinAmount::unit() const
@@ -181,7 +181,7 @@ QString BitcoinAmount::formattedInput() const
 
 void BitcoinAmount::resetInput()
 {
-    if (admissionClosed()) return;
+    if (inputAdmissionClosed()) return;
     ++m_input_revision;
     const QPointer<BitcoinAmount> observer{this};
     const bool was_dirty = m_input_dirty;
@@ -190,7 +190,7 @@ void BitcoinAmount::resetInput()
     m_input_state = m_input_text.isEmpty() ? InputState::Empty : InputState::Valid;
     m_input_dirty = false;
     if (was_dirty) Q_EMIT inputDirtyChanged();
-    if (!observer || admissionClosed()) return;
+    if (!observer || inputAdmissionClosed()) return;
     Q_EMIT inputChanged();
 }
 
@@ -215,10 +215,10 @@ QString BitcoinAmount::inputError() const
 
 void BitcoinAmount::fromDisplay(const QString& text)
 {
-    if (admissionClosed()) return;
+    if (inputAdmissionClosed()) return;
     const QPointer<BitcoinAmount> observer{this};
     const auto revision = m_input_revision; Q_EMIT valueEdited();
-    if (!observer || admissionClosed() || m_input_revision != revision) return;
+    if (!observer || inputAdmissionClosed() || m_input_revision != revision) return;
     ++m_input_revision;
     const auto parsed = amountinput::Parse(text, UnitDecimals(m_unit), QLocale().decimalPoint().at(0));
     static_assert(static_cast<int>(InputState::Empty) == static_cast<int>(amountinput::State::Empty));
@@ -231,15 +231,15 @@ void BitcoinAmount::fromDisplay(const QString& text)
     m_input_dirty = m_input_text != m_baseline_text;
     if (parsed.state == amountinput::State::Valid) assignCanonical(parsed.satoshi, true);
     else if (parsed.state == amountinput::State::Empty) assignCanonical(0, false);
-    if (!observer || admissionClosed()) return;
+    if (!observer || inputAdmissionClosed()) return;
     if (was_dirty != m_input_dirty) Q_EMIT inputDirtyChanged();
-    if (!observer || admissionClosed()) return;
+    if (!observer || inputAdmissionClosed()) return;
     Q_EMIT inputChanged();
 }
 
 quint64 BitcoinAmount::beginInputRequest(qint64 expected_revision)
 {
-    if (admissionClosed()) return 0;
+    if (inputAdmissionClosed()) return 0;
     const auto ticket = ++m_input_operation_id;
     m_input_operation_error.clear(); m_input_operation_state = InputOperationState::InputIdle;
     if (expected_revision >= 0 && static_cast<quint64>(expected_revision) != m_input_revision) {
@@ -251,7 +251,7 @@ quint64 BitcoinAmount::beginInputRequest(qint64 expected_revision)
 }
 quint64 BitcoinAmount::applyInputRequest(const QString& text, bool over_budget, int cursor, quint64 ticket)
 {
-    if (admissionClosed()) return 0;
+    if (inputAdmissionClosed()) return 0;
     const auto parsed = over_budget ? amountinput::Result{amountinput::State::Invalid}
         : amountinput::Parse(text, UnitDecimals(m_unit), QLocale().decimalPoint().at(0));
     m_input_operation_state = parsed.state == amountinput::State::Valid || parsed.state == amountinput::State::Empty
@@ -262,7 +262,7 @@ quint64 BitcoinAmount::applyInputRequest(const QString& text, bool over_budget, 
     m_input_cursor = std::clamp(cursor, 0, static_cast<int>(text.size()));
     const QPointer<BitcoinAmount> observer{this};
     fromDisplay(text);
-    if (observer && !admissionClosed() && m_input_operation_id == ticket) Q_EMIT inputOperationChanged();
+    if (observer && !inputAdmissionClosed() && m_input_operation_id == ticket) Q_EMIT inputOperationChanged();
     return ticket;
 }
 quint64 BitcoinAmount::requestEditInput(const QString& text, qint64 expected_revision, int cursor)
@@ -313,13 +313,13 @@ void BitcoinAmount::closeAdmission()
 
 bool BitcoinAmount::commitTo(BitcoinAmount* target)
 {
-    if (admissionClosed() || !target || target->admissionClosed() || !inputAcceptable() || !MoneyRange(m_satoshi)) return false;
+    if (inputAdmissionClosed() || !target || target->inputAdmissionClosed() || !inputAcceptable() || !MoneyRange(m_satoshi)) return false;
     const QPointer<BitcoinAmount> observer{this}, receiver{target};
     if (m_input_state == InputState::Empty) target->clear();
     else target->setSatoshi(m_satoshi);
-    if (!observer || !receiver || admissionClosed() || target->admissionClosed()) return false;
+    if (!observer || !receiver || inputAdmissionClosed() || target->inputAdmissionClosed()) return false;
     resetInput();
-    return observer && receiver && !admissionClosed() && !target->admissionClosed();
+    return observer && receiver && !inputAdmissionClosed() && !target->inputAdmissionClosed();
 }
 
 void BitcoinAmount::format()
