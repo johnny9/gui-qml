@@ -33,3 +33,5 @@ preferences already resolve original299; their live-view and persisted-key
 controls remain in the focused batch. Exhaustive coverage, full matrices and
 sanitizers remain pending R42. Original source findings and all preflight failures
 are retained under `.validation/qt6-r11-r40-20261114/R32/`.
+
+The native chooser now starts from a model-owned capture token. It retains the original immutable source and unit before path selection, without reserving a mutation scope during the chooser wait. Source retirement cancels only its exact token; stale completions cannot consume a successor, and an existing root admission fence still refuses a new write. Four deterministic public-command schedules cover filter/unit changes, source replacement, root closure, and reentrant source cancellation.
