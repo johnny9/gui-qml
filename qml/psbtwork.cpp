@@ -600,6 +600,14 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         if (review->amount <= 0) { result.message = Tr("The PSBT does not send a positive amount."); return result; }
         review->presentation = walletreview::FormatRecipients(review->recipients, display_unit);
         review->flow = CollectReviewFlow(wallet, review->transaction, assessment, snapshot->proof, review->destinations, display_unit, review->notes);
+        auto output_rows = review->flow.value(QStringLiteral("outputs")).toList();
+        for (auto& value : output_rows) {
+            auto row = value.toMap();
+            row.insert(QStringLiteral("changeKnown"), false);
+            value = std::move(row);
+        }
+        review->flow.insert(QStringLiteral("outputs"), output_rows);
+        review->flow.insert(QStringLiteral("presentation"), PrepareTransactionFlowPresentation(review->flow));
         if (!snapshot->proof->amount) result.message = Tr("The transaction fee is missing or invalid. Add valid input information before broadcasting.");
         else if (multisig) result.message = Tr("This transaction requires %1 of %2 signatures.").arg(multisig->first).arg(multisig->second);
         else if (!review->can_send && !snapshot->complete) result.message = Tr("This wallet does not have the keys to sign this transaction.");

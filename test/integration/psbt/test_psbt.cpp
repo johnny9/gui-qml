@@ -18,6 +18,7 @@
 
 #include <QFile>
 #include <QTemporaryDir>
+#include <algorithm>
 #include <array>
 
 class PsbtIntegrationTests : public QObject
@@ -29,6 +30,104 @@ public:
     explicit PsbtIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void legacySelfTransferReviewAndFinalizedKnownIdentity()
+    {
+        auto* miner = qmltest::CreateWallet(m_app, "identity-miner"); QVERIFY(miner);
+        auto* wallet = qmltest::CreateWallet(m_app, "identity-reviewer"); QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *miner));
+        const auto funding_address = qmltest::NewAddress(m_app, wallet->name(), "legacy");
+        const auto destination = qmltest::NewAddress(m_app, wallet->name(), "legacy");
+        const auto funding = qmltest::Rpc(m_app, "sendtoaddress",
+            qmltest::Json("[\"" + funding_address.toStdString() + "\",0.01]"), miner->name()).get_str();
+        const auto mining = qmltest::NewAddress(m_app, miner->name());
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
+        QVERIFY(QTest::qWaitFor([&] {
+            try { return qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + funding + "\"]"), wallet->name()).isObject(); }
+            catch (...) { return false; }
+        }, 5'000));
+        const auto raw = qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + funding + "\"]"), miner->name()).find_value("hex").get_str();
+        const auto original = qmltest::Call(m_app, [raw, funding_address, destination](interfaces::Node*) {
+            CMutableTransaction funding_tx;
+            if (!DecodeHexTx(funding_tx, raw)) throw std::runtime_error("funding decode");
+            const auto previous = MakeTransactionRef(funding_tx);
+            const auto script = GetScriptForDestination(DecodeDestination(funding_address.toStdString()));
+            const auto found = std::find_if(previous->vout.begin(), previous->vout.end(), [&](const CTxOut& output) { return output.scriptPubKey == script; });
+            if (found == previous->vout.end() || found->nValue != 1'000'000) throw std::runtime_error("independent funding output");
+            CMutableTransaction transaction;
+            transaction.vin.emplace_back(COutPoint{previous->GetHash(), uint32_t(found - previous->vout.begin())});
+            transaction.vout.emplace_back(990'000, GetScriptForDestination(DecodeDestination(destination.toStdString())));
+            PartiallySignedTransaction document{transaction, 2};
+            document.inputs[0].non_witness_utxo = previous;
+            return std::pair{PsbtQmlModel::SerializePsbtRaw(document), transaction.GetHash().ToString()};
+        });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto original_path = directory.filePath("self-transfer.psbt");
+        QFile source{original_path}; QVERIFY(source.open(QIODevice::WriteOnly));
+        QCOMPARE(source.write(original.first), original.first.size()); source.close();
+        {
+            // The same real-Core document can be inspected and exported with
+            // no selected wallet. Production background composition owns both
+            // the parsed document and its analysis throughout these commands.
+            PsbtQmlModel standalone{nullptr, nullptr};
+            QVERIFY(standalone.requestLoadFromFile(original_path));
+            QTRY_VERIFY(!standalone.busy());
+            QVERIFY(standalone.loaded());
+            QCOMPARE(standalone.phase(), PsbtQmlModel::Phase::Ready);
+            QVERIFY(!standalone.canSign()); QVERIFY(!standalone.canBroadcast());
+            QCOMPARE(PsbtQmlModel::SerializePsbtRaw(*standalone.document()), original.first);
+            const auto standalone_path = directory.filePath("standalone-original.psbt");
+            QVERIFY(standalone.requestSaveToFile(standalone_path));
+            QTRY_VERIFY(!standalone.busy());
+            QVERIFY(standalone.saved());
+            QFile saved{standalone_path}; QVERIFY(saved.open(QIODevice::ReadOnly));
+            QCOMPARE(saved.readAll(), original.first);
+            standalone.closeAdmission();
+        }
+        QCOMPARE(qmltest::SelectOpenWalletForSetup(m_app, wallet->name()), wallet);
+        QVERIFY(qmltest::Click(m_app, "sendTabButton"));
+        auto* import_path = qmltest::Find(m_app, "psbtImportPathField"); QVERIFY(import_path);
+        QVERIFY(import_path->setProperty("text", original_path));
+        QVERIFY(qmltest::Click(m_app, "sendOptionsButton"));
+        QVERIFY(qmltest::Click(m_app, "sendImportPsbtFromFileButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "sendTransactionReviewPage"));
+        QTRY_VERIFY(wallet->currentTransactionIsImportedPsbt());
+        QVERIFY(wallet->currentTransaction());
+        const auto* notice = qmltest::WaitForVisible(m_app, "sendReviewImportedOutputsNotice"); QVERIFY(notice);
+        QCOMPARE(qmltest::Find(m_app, "sendTransactionReviewRecipients")->property("title").toString(), QStringLiteral("Outputs"));
+        QCOMPARE(qmltest::Find(m_app, "sendTransactionReviewTotal")->property("title").toString(), QStringLiteral("Outputs plus fee"));
+        QCOMPARE(wallet->currentTransaction()->amountAmount()->satoshi(), qint64{990'000});
+        QCOMPARE(wallet->currentTransaction()->getTransactionFee(), CAmount{10'000});
+        const auto outputs = wallet->currentTransactionFlow().value("outputs").toList();
+        QCOMPARE(outputs.size(), 1);
+        QCOMPARE(outputs.front().toMap().value("ownership").toString(), QStringLiteral("wallet"));
+        QVERIFY(!outputs.front().toMap().value("changeKnown").toBool());
+        QCOMPARE(wallet->currentTransaction()->reviewedRecipients().size(), 1);
+        QVERIFY(wallet->currentTransactionCanSend());
+        QVERIFY(!wallet->currentTransactionCanBroadcast());
+        const auto signed_result = qmltest::Rpc(m_app, "walletprocesspsbt",
+            qmltest::Json("[\"" + original.first.toBase64().toStdString() + "\",true,\"ALL\",true,true]"), wallet->name());
+        QVERIFY(signed_result.find_value("complete").get_bool());
+        const auto encoded = signed_result.find_value("psbt").get_str();
+        const auto finalized = qmltest::Rpc(m_app, "finalizepsbt", qmltest::Json("[\"" + encoded + "\"]"));
+        QVERIFY(finalized.find_value("complete").get_bool());
+        const auto hex = finalized.find_value("hex").get_str();
+        const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + hex + "\"]"));
+        const auto final_txid = decoded.find_value("txid").get_str();
+        QVERIFY(final_txid != original.second);
+        QCOMPARE(qmltest::Rpc(m_app, "sendrawtransaction", qmltest::Json("[\"" + hex + "\"]")).get_str(), final_txid);
+        QVERIFY(QTest::qWaitFor([&] {
+            try { return qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + final_txid + "\"]"), wallet->name()).isObject(); }
+            catch (...) { return false; }
+        }, 5'000));
+        const auto finalized_bytes = QByteArray::fromBase64(QByteArray::fromStdString(encoded));
+        const auto signed_path = directory.filePath("recorded-finalized.psbt");
+        QFile signed_file{signed_path}; QVERIFY(signed_file.open(QIODevice::WriteOnly));
+        QCOMPARE(signed_file.write(finalized_bytes), finalized_bytes.size()); signed_file.close();
+        QCOMPARE(AwaitPsbtImport(*wallet, signed_path), WalletQmlModel::PsbtImportResult::TransactionAlreadyKnown);
+        QCOMPARE(wallet->importedPsbt()->matchedTxid(), QString::fromStdString(final_txid));
+        QCOMPARE(qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + final_txid + "\"]"), wallet->name()).find_value("fee").getValStr(), std::string{"-0.00010000"});
+    }
+
     void watchOnlySignedScriptsSurviveOriginalExport_data()
     {
         QTest::addColumn<bool>("nested"); QTest::addColumn<bool>("send");

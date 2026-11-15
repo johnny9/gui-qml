@@ -271,7 +271,15 @@ Page {
             FormSection {
                 objectName: "sendTransactionReviewRecipients"
                 Layout.fillWidth: true
-                title: qsTr("Recipients")
+                title: root.importedPsbt ? qsTr("Outputs") : qsTr("Recipients")
+                CoreText {
+                    objectName: "sendReviewImportedOutputsNotice"
+                    Layout.fillWidth: true
+                    visible: root.importedPsbt
+                    text: qsTr("All transaction outputs are shown. Wallet-owned outputs may include change.")
+                    wrapMode: Text.WordWrap
+                    color: Theme.color.neutral7
+                }
                 ListView {
                     id: recipientRows
                     objectName: "sendTransactionReviewRecipientRows"
@@ -378,7 +386,7 @@ Page {
                     objectName: "sendTransactionReviewTotal"
                     amountValue: true
                     Layout.fillWidth: true
-                    title: qsTr("Total amount")
+                    title: root.importedPsbt ? qsTr("Outputs plus fee") : qsTr("Total amount")
                     value: root.transaction ? root.transaction.total : ""
                     showDivider: false
                 }
