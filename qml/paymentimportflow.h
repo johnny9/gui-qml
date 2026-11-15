@@ -17,6 +17,7 @@ enum class Phase { Empty, Reading, Analyzing, Inspecting, AwaitingReplacement, A
 enum class Error { None, Source, Target, Rejected, Stale, Query, IdentityExhausted };
 enum class ChildKind { Apply, CreateReview };
 enum class Outcome { Applied, ReviewOpened, Rejected, Stale, Unknown };
+enum class PromptReason { ConflictingIntent, ChangedRevision };
 
 /** Facts supplied by the original target actor, independently of source reads.
  * A revision identifies intent, including same-value amount-mode changes. */
@@ -29,11 +30,13 @@ struct Child {
     uint64_t id{0}, source{0};
     ChildKind kind{ChildKind::Apply};
     Target target;
+    bool replace_existing{false};
     bool operator==(const Child&) const = default;
 };
 struct Prompt {
     uint64_t id{0}, source{0};
     Target target;
+    PromptReason reason{PromptReason::ConflictingIntent};
     bool operator==(const Prompt&) const = default;
 };
 struct Receipt {
@@ -124,7 +127,7 @@ public:
     std::optional<Child> replace(uint64_t prompt) {
         if (m_phase != Phase::AwaitingReplacement || !m_prompt || m_prompt->id != prompt ||
             m_prompt->source != m_source || !m_target || m_prompt->target != *m_target || !usableTarget()) return {};
-        return beginChild(ChildKind::Apply);
+        return beginChild(ChildKind::Apply, true);
     }
     bool keepDraft(uint64_t prompt) {
         if (m_phase != Phase::AwaitingReplacement || !m_prompt || m_prompt->id != prompt) return false;
@@ -174,7 +177,7 @@ public:
             if (revised_target && revised_target->opening == original.target.opening &&
                 revised_target->draft == original.target.draft && revised_target->recipient == original.target.recipient) {
                 m_target = std::move(revised_target);
-                if (m_kind == Kind::Payment && usableTarget()) requireReplacement();
+                if (m_kind == Kind::Payment && usableTarget()) requireReplacement(PromptReason::ChangedRevision);
             } else if (m_target) m_target->available = false;
             break;
         case Outcome::Unknown: break;
@@ -195,13 +198,13 @@ private:
         }
         return ++m_sequence;
     }
-    void requireReplacement() {
+    void requireReplacement(PromptReason reason = PromptReason::ConflictingIntent) {
         const auto token = next(); if (!token || !m_target) return;
-        m_prompt = Prompt{*token, m_source, *m_target}; m_phase = Phase::AwaitingReplacement;
+        m_prompt = Prompt{*token, m_source, *m_target, reason}; m_phase = Phase::AwaitingReplacement;
     }
-    std::optional<Child> beginChild(ChildKind kind) {
+    std::optional<Child> beginChild(ChildKind kind, bool replace_existing = false) {
         const auto token = next(); if (!token || !m_target) return {};
-        m_child = Child{*token, m_source, kind, *m_target}; m_prompt.reset(); m_result.reset();
+        m_child = Child{*token, m_source, kind, *m_target, replace_existing}; m_prompt.reset(); m_result.reset();
         m_phase = kind == ChildKind::Apply ? Phase::Applying : Phase::CreatingReview;
         return m_child;
     }
