@@ -9,6 +9,7 @@
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <util/translation.h>
+#include <univalue.h>
 
 #include <QCoreApplication>
 #include <QJsonDocument>
