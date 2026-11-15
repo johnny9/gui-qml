@@ -46,10 +46,25 @@ ApplicationWindow {
     property bool shutdownInProgress: false
     readonly property var menuEditTarget: appWindow.editTarget(appWindow.activeFocusItem)
     readonly property var menuWalletController: appWindow.desktopWalletMode ? ApplicationModels.walletController : null
+    readonly property DesktopWallets desktopShell: main.currentItem as DesktopWallets
+    readonly property NodeShell nodeShell: main.currentItem as NodeShell
+    // Native menus do not participate in Qt Quick's popup pointer grab. The
+    // same bounded presentation gate also rejects a delayed direct route.
+    readonly property bool modalNavigationBlocked: (walletCreationModal.item !== null
+            && (walletCreationModal.item as WalletCreationHost).modalVisible)
+        || ApplicationModels.nodeModel.runtimeDialogVisible
+        || (appWindow.desktopShell !== null && appWindow.desktopShell.modalNavigationBlocked)
+        || (appWindow.nodeShell !== null && appWindow.nodeShell.modalNavigationBlocked)
+        || (appWindow.menuWalletController !== null
+            && appWindow.menuWalletController.closeTarget !== null
+            && appWindow.menuWalletController.closeTarget.closeQuestionToken.length > 0)
     readonly property bool menuNavigationEnabled: main.depth === 1
         && (!appWindow.waitForPostOnboardingWalletRoute || appWindow.postOnboardingWalletRouteResolved)
+        && !appWindow.modalNavigationBlocked
+        && !appWindow.shutdownInProgress && !ApplicationModels.nodeModel.fatalException
 
     function routeToShell(method, argument) {
+        if (!appWindow.menuNavigationEnabled) return
         const shell = main.depth === 1 ? main.currentItem : null
         if (shell && typeof shell[method] === "function") {
             if (argument === undefined) {
@@ -98,6 +113,14 @@ ApplicationWindow {
         walletCreationModal.open()
     }
 
+    // This consumes the exact retained operation result. Popup exit animation
+    // is presentation only and cannot turn its completion into a fresh route.
+    function presentCreatedWallet(wallet) {
+        if (appWindow.shutdownInProgress || ApplicationModels.nodeModel.fatalException) return
+        const shell = main.depth === 1 ? main.currentItem as DesktopWallets : null
+        if (shell !== null) shell.openWallet(wallet)
+    }
+
     function resolvePostOnboardingWalletRoute() {
         if (appWindow.postOnboardingWalletRouteResolved) {
             return
@@ -111,7 +134,24 @@ ApplicationWindow {
         appWindow.postOnboardingWalletRouteResolved = true
         if (ApplicationModels.walletController.noWalletsFound) {
             appWindow.routeToShell("openNode")
-            Qt.callLater(function() { walletCreationModal.openForOnboarding() })
+            onboardingWalletPresentation.restart()
+        }
+    }
+
+    Timer {
+        id: onboardingWalletResolution
+        interval: 0
+        repeat: false
+        onTriggered: appWindow.resolvePostOnboardingWalletRoute()
+    }
+
+    Timer {
+        id: onboardingWalletPresentation
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (appWindow.desktopWalletMode && appWindow.menuNavigationEnabled
+                    && ApplicationModels.walletController.noWalletsFound) walletCreationModal.openForOnboarding()
         }
     }
 
@@ -360,7 +400,7 @@ ApplicationWindow {
     Connections {
         target: appWindow.desktopWalletMode && !appWindow.shutdownInProgress && main.depth === 1
             ? main.currentItem : null
-        function onAddWallet() { walletCreationModal.open() }
+        function onAddWallet() { appWindow.openWalletCreation() }
     }
 
     Loader {
@@ -374,7 +414,7 @@ ApplicationWindow {
     Connections {
         target: walletCreationModal.item
         function onFinished(openActivity, wallet) {
-            if (openActivity) appWindow.routeToShell("openWallet", wallet)
+            if (openActivity) appWindow.presentCreatedWallet(wallet)
         }
     }
 
@@ -404,78 +444,76 @@ ApplicationWindow {
         if (appWindow.desktopWalletMode) {
             ApplicationModels.nodeModel.startNodeInitializionThread()
             if (appWindow.waitForPostOnboardingWalletRoute) {
-                Qt.callLater(appWindow.resolvePostOnboardingWalletRoute)
+                onboardingWalletResolution.restart()
             }
         }
     }
 
-    Component {
-        id: node
-        PageStack {
-            id: nodeStack
-            vertical: true
-            initialItem: node
+    Component { id: node; NodeShell {} }
 
-            function resetToRoot() {
-                ApplicationModels.peerTableModel.stopAutoRefresh()
-                if (nodeStack.depth > 1) {
-                    nodeStack.pop(null, StackView.Immediate)
-                }
-            }
+    component NodeShell: PageStack {
+        id: nodeStack
+        vertical: true
+        readonly property SettingsView settingsView: currentItem as SettingsView
+        readonly property bool modalNavigationBlocked: settingsView !== null
+            && (settingsView.settingsNavigationPending
+                || (settingsView.settingsEditor !== null && settingsView.settingsEditor.closeQuestion))
+        initialItem: node
 
-            function openSettings(section) {
-                nodeStack.resetToRoot()
-                const page = nodeStack.push(settingsPage, {}, StackView.Immediate)
-                if (section && page) {
-                    page.selectSection(section)
-                }
+        function resetToRoot() {
+            ApplicationModels.peerTableModel.stopAutoRefresh()
+            if (nodeStack.depth > 1) {
+                nodeStack.pop(null, StackView.Immediate)
             }
+        }
 
-            function openNode() {
-                nodeStack.resetToRoot()
+        function openSettings(section) {
+            nodeStack.resetToRoot()
+            const page = nodeStack.push(settingsPage, {}, StackView.Immediate)
+            if (section && page) {
+                page.selectSection(section)
             }
+        }
 
-            function openPeers() {
-                nodeStack.resetToRoot()
-                ApplicationModels.peerTableModel.startAutoRefresh()
-                nodeStack.push(peersPage, {}, StackView.Immediate)
-            }
+        function openNode() {
+            nodeStack.resetToRoot()
+        }
 
-            function openConsole() {
-                nodeStack.openSettings("rpc-console")
-            }
+        function openPeers() {
+            nodeStack.resetToRoot()
+            ApplicationModels.peerTableModel.startAutoRefresh()
+            nodeStack.push(peersPage, {}, StackView.Immediate)
+        }
 
-            function openNetworkTraffic() {
-                nodeStack.openSettings("network-traffic")
+        function openConsole() {
+            nodeStack.openSettings("rpc-console")
+        }
+
+        function openNetworkTraffic() {
+            nodeStack.openSettings("network-traffic")
+        }
+        Component {
+            id: node
+            NodeRunner {
+                onSettingsClicked: appWindow.openSettings("")
+                onPeersClicked: appWindow.routeToShell("openPeers")
             }
-            Component {
-                id: node
-                NodeRunner {
-                    onSettingsClicked: {
-                        nodeStack.push(settingsPage)
-                    }
-                    onPeersClicked: {
-                        ApplicationModels.peerTableModel.startAutoRefresh()
-                        nodeStack.push(peersPage)
-                    }
-                }
+        }
+        Component {
+            id: settingsPage
+            SettingsView {
+                wallet: typeof walletController !== "undefined" && ApplicationModels.walletController.isWalletLoaded
+                    ? ApplicationModels.walletController.selectedWallet : null
+                activeWalletName: wallet ? wallet.name : ""
+                onDoneClicked: nodeStack.pop()
             }
-            Component {
-                id: settingsPage
-                SettingsView {
-                    wallet: typeof walletController !== "undefined" && ApplicationModels.walletController.isWalletLoaded
-                        ? ApplicationModels.walletController.selectedWallet : null
-                    activeWalletName: wallet ? wallet.name : ""
-                    onDoneClicked: nodeStack.pop()
-                }
-            }
-            Component {
-                id: peersPage
-                PeersView {
-                    onBack: {
-                        nodeStack.pop()
-                        ApplicationModels.peerTableModel.stopAutoRefresh()
-                    }
+        }
+        Component {
+            id: peersPage
+            PeersView {
+                onBack: {
+                    nodeStack.pop()
+                    ApplicationModels.peerTableModel.stopAutoRefresh()
                 }
             }
         }

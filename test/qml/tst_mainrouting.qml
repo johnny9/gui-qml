@@ -304,6 +304,61 @@ TestCase {
         }
     }
 
+    function test_settings_close_question_keeps_its_original_route_data() {
+        return [{tag: "wallet-shell", wallet: true}, {tag: "node-shell", wallet: false}]
+    }
+    function test_settings_close_question_keeps_its_original_route(data) {
+        optionsModel.resetSettingsEditorsForTest()
+        const window = createMain(data.wallet)
+        const actions = findChild(window, "desktopMenuActions")
+        actions.settings.trigger()
+        tryVerify(function() { return findChild(window, "settingsView") !== null })
+        const settings = findChild(window, "settingsView")
+        settings.selectSection("connection")
+        tryCompare(settings.settingsEditor, "fresh", true)
+        settings.settingsEditor.entry("proxy").editText("127.0.0.1:9250")
+        tryCompare(settings.settingsEditor, "dirty", true)
+        settings.requestSettingsNavigation("storage", false)
+        // The public request already owns the disposition before its Domain
+        // answer is projected. A native menu must not use that interval.
+        actions.nodeView.trigger()
+        compare(settings.visible, true)
+        tryCompare(settings.settingsEditor, "closeQuestion", true)
+        const original = settings.settingsEditor
+        const consent = original.closeToken
+        actions.nodeView.trigger()
+        window.openSettings("about")
+        compare(settings.visible, true)
+        compare(settings.selectedSectionId, "connection")
+        compare(settings.pendingSettingsSection, "storage")
+        compare(settings.settingsEditor, original)
+        compare(original.closeToken, consent)
+        compare(original.entry("proxy").text, "127.0.0.1:9250")
+        compare(optionsModel.settingsWritesForTest(), 0)
+        compare(actions.nodeView.enabled, false)
+        original.answerClose(consent, SettingsEditorModel.KeepEditing)
+        tryCompare(original, "closeQuestion", false)
+        tryCompare(actions.nodeView, "enabled", true)
+        actions.nodeView.trigger()
+        if (data.wallet) compare(findChild(window, "blockClockTabButton").checked, true)
+        else tryVerify(function() { return findChild(window, "nodeRunner").visible })
+        compare(optionsModel.settingsWritesForTest(), 0)
+    }
+
+    function test_shutdown_invalidates_the_deferred_onboarding_modal() {
+        const window = createMain(true, true, true, false, false)
+        walletController.setInitialized(true)
+        walletListModel.setWalletDirLoaded(true)
+        // Catalog publication requests the zero-delay presentation; shutdown
+        // is delivered before that presentation turn, with no timer sleep.
+        nodeModel.requestShutdown()
+        wait(0)
+        compare(window.shutdownInProgress, true)
+        compare(findChild(window, "walletCreationModal").visible, false)
+        compare(findChild(window, "desktopMenuActions").settings.enabled, false)
+        compare(findChild(window, "createWalletWizard"), null)
+    }
+
     function test_add_wallet_completion_returns_to_activity() {
         const window = createMain(true)
         findChild(window, "desktopMenuActions").createWallet.trigger()

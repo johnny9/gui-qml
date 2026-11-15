@@ -32,6 +32,10 @@ Page {
     readonly property bool walletTabSelected: navigationTabs.checkedButton !== null
         && (navigationTabs.checkedButton as WalletNavigationTab).index <= 2
     readonly property Item walletSettingsHost: settingsLoader.item ? (settingsLoader.item as SettingsView).walletSettingsHost : null
+    readonly property SettingsView settingsView: settingsLoader.item as SettingsView
+    readonly property bool modalNavigationBlocked: settingsView !== null
+        && (settingsView.settingsNavigationPending
+            || (settingsView.settingsEditor !== null && settingsView.settingsEditor.closeQuestion))
     readonly property alias walletViews: walletViews
 
     ButtonGroup { id: navigationTabs }
