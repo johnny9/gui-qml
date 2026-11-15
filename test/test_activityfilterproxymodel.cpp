@@ -296,6 +296,7 @@ private Q_SLOTS:
     void oldChooserCompletionCannotRetargetANewSourceOrCancelItsSuccessor();
     void chooserCaptureDoesNotKeepActionAdmissionOpenAfterRootClosure();
     void cancellingAnOldChooserCannotOverwriteAReentrantNewerSource();
+    void heldPatchRetirementKeepsOwnerCleanupReservedAfterObserverLoss();
     void sourceDestructionRetiresCachedSnapshot();
     void reentrantSourceSwitchPreservesModelTransactions();
     void manualPublicationAndStaleFilterDecisions();
@@ -548,6 +549,46 @@ void ActivityFilterProxyModelTests::cancellingAnOldChooserCannotOverwriteAReentr
     });
     proxy.setSourceModel(&second); QVERIFY(WaitForProxy(proxy)); QVERIFY(reentered); QCOMPARE(proxy.sourceModel(), &newest); QCOMPARE(proxy.rowCount(), 1); QCOMPARE(proxy.index(0).data(TransactionActivityModel::LabelRole).toString(), QStringLiteral("C"));
     QCOMPARE(proxy.requestCapturedExportCsv(original, "stale.csv"), quint64{0}); QVERIFY(!proxy.exportChoosing());
+}
+
+void ActivityFilterProxyModelTests::heldPatchRetirementKeepsOwnerCleanupReservedAfterObserverLoss()
+{
+    TestActivityModel source;
+    source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "original")});
+    ManualExecutionEnvironment env;
+    ActivityFilterProxyModel::Services services;
+    services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
+    services.automaticDateRefresh = false;
+    auto proxy = std::make_unique<ActivityFilterProxyModel>(services);
+    proxy->setSourceModel(&source);
+    QCoreApplication::processEvents();
+    env.drain();
+    env.publishAll();
+    QCoreApplication::processEvents();
+    QVERIFY(!proxy->busy());
+    QCOMPARE(proxy->rowCount(), 1);
+    QCOMPARE(proxy->index(0).data(TransactionActivityModel::LabelRole).toString(), QStringLiteral("Original"));
+
+    // Applying the final patch schedules disposal of its transient roots.
+    // Hold that task while the GUI drops its last committed snapshot lease.
+    auto retirement = env.takeTurnFront();
+    QVERIFY(retirement);
+    QCOMPARE(retirement->phase, execution::Phase::Queued);
+    const auto drain = qScopeGuard([&] {
+        if (retirement) { retirement->turn(); retirement.reset(); }
+        env.drain();
+        env.publishAll();
+    });
+    proxy.reset();
+    QCOMPARE(env.queuedTurnCount(), size_t{0}); // Owner cleanup must not run alongside the held disposal.
+    QVERIFY(env.scheduler->pending() > 0);
+
+    retirement->turn();
+    retirement.reset();
+    env.drain();
+    env.publishAll();
+    QCOMPARE(env.scheduler->pending(), size_t{0});
+    QVERIFY(env.transportIdle());
 }
 
 void ActivityFilterProxyModelTests::sourceDestructionRetiresCachedSnapshot()
