@@ -200,7 +200,42 @@ bool WalletEnabledFromArgs()
 #endif
 }
 
-AppMode SetupAppMode()
+struct AutomationConfig {
+    bool enabled{false};
+    QString socket,settings_directory,error;
+};
+// Native-only capture; GUI receives bounded presentation/native-handoff data.
+AutomationConfig ReadAutomationConfig(bool resolve_default_socket)
+{
+    AutomationConfig result;
+#ifdef ENABLE_TEST_AUTOMATION
+    result.enabled=gArgs.IsArgSet("-test-automation");
+    result.socket=QString::fromStdString(gArgs.GetArg("-test-automation",""));
+    result.settings_directory=QString::fromStdString(gArgs.GetArg("-test-settings-dir",""));
+    if(result.enabled&&result.socket.isEmpty()&&resolve_default_socket)
+        result.socket=QString::fromStdString((gArgs.GetDataDirNet()/"test_bridge.sock").utf8string());
+    if(result.socket.size()>32768||result.settings_directory.size()>32768){
+        result.socket.clear();result.settings_directory.clear();
+        result.error=QStringLiteral("The startup automation path exceeds its supported size.");
+    }
+#else
+    (void)resolve_default_socket;
+#endif
+    return result;
+}
+struct BootstrapPresentation {
+    bool wallet_enabled{false};
+    QString chain,language,error;
+    AutomationConfig automation;
+};
+struct RuntimePresentation {
+    bool wallet_enabled{false},log_enabled{false};
+    QString chain,error;
+    ChainType network{ChainType::MAIN};
+    fs::path log_file;
+    AutomationConfig automation;
+};
+AppMode SetupAppMode(bool wallet_enabled)
 {
     AppMode::Mode mode;
     #ifdef __ANDROID__
@@ -209,7 +244,7 @@ AppMode SetupAppMode()
         mode = AppMode::DESKTOP;
     #endif // __ANDROID__
 
-    return AppMode(mode, WalletEnabledFromArgs());
+    return AppMode(mode, wallet_enabled);
 }
 
 void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipboard, UrlOpener& url_opener, BitcoinUriModel& bitcoin_uri_model);
@@ -220,9 +255,10 @@ bool InitErrorMessageBox(
     QmlQuitHandler& quit_handler,
     const std::function<void(QQmlApplicationEngine&)>& engine_created,
     StartupDiagnosticsModel* existing_details = nullptr,
-    std::shared_ptr<std::atomic_bool> diagnostic_loss = {})
+    std::shared_ptr<std::atomic_bool> diagnostic_loss = {},bool wallet_enabled=false)
 {
-    static AppMode error_app_mode = SetupAppMode();
+    static AppMode error_app_mode = SetupAppMode(wallet_enabled);
+    error_app_mode.setWalletEnabled(wallet_enabled);
     static BuildInfo error_build_info;
     static Clipboard error_clipboard;
     static UrlOpener error_url_opener;
@@ -302,15 +338,14 @@ void LoadFontResource(const QString& path)
 }
 
 #ifdef ENABLE_TEST_AUTOMATION
-void ApplyTestSettingsDir()
+void ApplyTestSettingsDir(const QString& settings_dir)
 {
-    const std::string settings_dir{gArgs.GetArg("-test-settings-dir", "")};
-    if (settings_dir.empty()) {
+    if (settings_dir.isEmpty()) {
         return;
     }
 
     QSettings::setDefaultFormat(QSettings::IniFormat);
-    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QString::fromStdString(settings_dir));
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings_dir);
 }
 #endif
 
@@ -510,7 +545,7 @@ struct PreInitOnboardingContext {
 PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, const std::vector<std::string>& argv, bool can_listen_ipc, QmlQuitHandler& quit_handler,
     const execution::SnapshotServices& services,
     const std::function<void(QQmlApplicationEngine&)>& engine_created,
-    const std::function<void(QQmlApplicationEngine&)>& window_created)
+    const std::function<void(QQmlApplicationEngine&)>& window_created,const AutomationConfig& automation)
 {
     const auto status = startup::Run(services, [argv, can_listen_ipc] { return QmlOnboardingSettings::ResolveOnboardingStartupStatus(argv, can_listen_ipc); });
     if (quit_handler.isQuitRequested()) return PreInitOnboardingStatus::CANCELED;
@@ -524,8 +559,9 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
         return quit_handler.isQuitRequested() ? PreInitOnboardingStatus::CANCELED : PreInitOnboardingStatus::NOT_SHOWN;
     }
 
+    ChainType onboarding_chain{ChainType::MAIN};
     try {
-        startup::Run(services, [] { SelectParams(gArgs.GetChainType()); return true; });
+        onboarding_chain=startup::Run(services, [] { SelectParams(gArgs.GetChainType()); return Params().GetChainType(); });
     } catch (const std::exception& e) {
         const std::string error{e.what()};
         startup::Run(services, [error] { return InitError(Untranslated(error)); });
@@ -535,7 +571,7 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
     context.onboarding_options_model = std::make_unique<OnboardingOptionsModel>(argv, can_listen_ipc, nullptr, services);
     context.onboarding_options_model->configureSettingsCommit(gArgs);
 
-    context.network_style.reset(NetworkStyle::instantiate(Params().GetChainType()));
+    context.network_style.reset(NetworkStyle::instantiate(onboarding_chain));
     assert(!context.network_style.isNull());
 
     context.engine = std::make_unique<QQmlApplicationEngine>();
@@ -551,12 +587,14 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
     }
 
 #ifdef ENABLE_TEST_AUTOMATION
-    if (gArgs.IsArgSet("-test-automation")) {
-        const QString socket_path = QString::fromStdString(gArgs.GetArg("-test-automation", ""));
-        if (!socket_path.isEmpty()) {
-            context.test_bridge = std::make_unique<TestBridge>(context.engine.get(), socket_path);
+    if (automation.enabled) {
+        if (!automation.socket.isEmpty()) {
+            context.test_bridge = std::make_unique<TestBridge>(context.engine.get(), automation.socket);
         }
     }
+#endif
+#ifndef ENABLE_TEST_AUTOMATION
+    (void)automation;
 #endif
 
     context.window = qobject_cast<QQuickWindow*>(context.engine->rootObjects().first());
@@ -677,7 +715,6 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
     const auto core_exit_status=std::make_shared<std::atomic_int>(EXIT_SUCCESS);
     const auto lifecycle_failed=std::make_shared<std::atomic_bool>(false);
     const auto run_gui = [&]() -> int {
-        noui_connect();
         Q_INIT_RESOURCE(bitcoin_qml);
         Q_INIT_RESOURCE(bitcoin_compat);
         qRegisterMetaType<interfaces::BlockAndHeaderTipInfo>("interfaces::BlockAndHeaderTipInfo");
@@ -731,9 +768,11 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         });
         BlockClockModel::setDefaultServices(startup_services);
         const auto reset_block_clock_services = qScopeGuard([] { BlockClockModel::setDefaultServices({}); });
+        startup::Run(startup_services,[]{noui_connect();SetupEnvironment();return true;});
         auto startup_warnings = startupdiagnostics::Create(startup_services.scheduler);
         if (!startup_warnings) { qCritical("Startup diagnostic retention capacity is unavailable"); return EXIT_FAILURE; }
         const auto startup_error_reported=std::make_shared<std::atomic_bool>(false);
+        const auto wallet_presentation=std::make_shared<std::atomic_bool>(AppMode::walletCompiled());
         bool startup_canceled{false};
         btcsignals::scoped_connection gui_startup_message_handler{::uiInterface.ThreadSafeMessageBox.connect(
             [&](const bilingual_str& message, unsigned int style) {
@@ -750,7 +789,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                 const auto handle_message = [&] {
                     result = startup::DeliverError(startup_canceled, quit_handler.isQuitRequested(), [&] {
                         return InitErrorMessageBox(error.summary, startup_services, error.details, quit_handler,
-                            [this](QQmlApplicationEngine& engine) { qmlEngineCreated(engine); }, nullptr, diagnostic_loss);
+                            [this](QQmlApplicationEngine& engine) { qmlEngineCreated(engine); }, nullptr, diagnostic_loss,wallet_presentation->load());
                     });
                 };
                 if (origin == startup::DiagnosticOrigin::Gui) handle_message();
@@ -758,7 +797,6 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                 return result;
             })};
 
-        SetupEnvironment();
         util::ThreadSetInternalName("main");
 
         // must be set before parsing command-line options; otherwise,
@@ -830,19 +868,26 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             });
             return EXIT_FAILURE;
         }
-#ifdef ENABLE_TEST_AUTOMATION
-        ApplyTestSettingsDir();
-#endif
-
-        const auto early_chain = startup::Run(startup_services, [] {
-            try { return std::pair{QString::fromStdString(gArgs.GetChainTypeString()).toUpper(), QString{}}; }
-            catch (const std::exception& e) { return std::pair{QString{}, QString::fromUtf8(e.what())}; }
+        const auto bootstrap = startup::Run(startup_services, [] {
+            BootstrapPresentation captured;
+            captured.wallet_enabled=WalletEnabledFromArgs();
+            captured.automation=ReadAutomationConfig(false);
+            captured.error=captured.automation.error;
+            try {captured.chain=QString::fromStdString(gArgs.GetChainTypeString()).toUpper();}
+            catch(const std::exception& error){captured.error=QString::fromUtf8(error.what()).left(16384);}
+            captured.language=QString::fromStdString(gArgs.GetArg("-lang",""));
+            if(captured.language.size()>4096){captured.language.clear();captured.error=QStringLiteral("The startup language setting exceeds its supported size.");}
+            return captured;
         });
-        if (!early_chain.second.isEmpty()) {
-            startup::Run(startup_services, [&] { return InitError(Untranslated(early_chain.second.toStdString())); });
+        wallet_presentation->store(bootstrap.wallet_enabled);
+        if (!bootstrap.error.isEmpty()) {
+            startup::Run(startup_services, [&] { return InitError(Untranslated(bootstrap.error.toStdString())); });
             return EXIT_FAILURE;
         }
-        setupChainQSettings(&app, early_chain.first);
+#ifdef ENABLE_TEST_AUTOMATION
+        ApplyTestSettingsDir(bootstrap.automation.settings_directory);
+#endif
+        setupChainQSettings(&app, bootstrap.chain);
         // A reset is one captured onboarding mutation after final profile/path
         // resolution. Do not empty settings or overwrite its backup at startup.
 
@@ -850,19 +895,23 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         LoadFontResource(":/fonts/bitcoincoresans/semibold");
         LoadFontResource(":/fonts/robotomono/regular");
 
-        AppMode app_mode = SetupAppMode();
+        AppMode app_mode = SetupAppMode(bootstrap.wallet_enabled);
         BuildInfo build_info;
         Clipboard clipboard;
         UrlOpener url_opener;
         BitcoinUriModel bitcoin_uri_model;
         RegisterQmlTypes(app_mode, build_info, clipboard, url_opener, bitcoin_uri_model);
 
-        const QString cli_lang = QString::fromStdString(gArgs.GetArg("-lang", ""));
-        const QString startup_language = cli_lang.isEmpty()
-            ? startup::Run(startup_services, [] { return QSettings().value(SettingsKeys::LANGUAGE, QmlLegacySettings::ReadLegacyGuiLanguage(QString::fromStdString(gArgs.GetChainTypeString()))).toString(); })
-            : cli_lang;
+        const auto language=startup::Run(startup_services,[cli=bootstrap.language]{
+            const QString value=cli.isEmpty()?QSettings().value(SettingsKeys::LANGUAGE,
+                QmlLegacySettings::ReadLegacyGuiLanguage(QString::fromStdString(gArgs.GetChainTypeString()))).toString():cli;
+            return value.size()<=4096?std::pair{value,QString{}}:std::pair{QString{},QStringLiteral("The startup language setting exceeds its supported size.")};
+        });
+        if(!language.second.isEmpty()){
+            startup::Run(startup_services,[error=language.second]{return InitError(Untranslated(error.toStdString()));});return EXIT_FAILURE;
+        }
         if (quit_handler.isQuitRequested()) return EXIT_SUCCESS;
-        install_language(startup_language);
+        install_language(language.first);
 
         const auto command_line_args=std::move(command_line.options);
 
@@ -870,7 +919,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         const PreInitOnboardingStatus pre_init_onboarding_status{
             RunPreInitOnboarding(pre_init_onboarding_context, command_line_args, can_listen_ipc, quit_handler, startup_services,
                                 [this](QQmlApplicationEngine& engine) { qmlEngineCreated(engine); },
-                                [this](QQmlApplicationEngine& engine) { onboardingCreated(engine); })
+                                [this](QQmlApplicationEngine& engine) { onboardingCreated(engine); },bootstrap.automation)
         };
         switch (pre_init_onboarding_status) {
         case PreInitOnboardingStatus::COMPLETED:
@@ -994,11 +1043,13 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                              &preparation_loop, [&](OnboardingOptionsModel::PreparationState outcome, const QString& error) {
                 // Rejection before the Flow reserves its external receiver
                 // legitimately never calls the stable preparation owner.
+                const auto saved=context.onboarding_options_model->setupCommitReceipt()->load();
+                const bool save_failed=saved==OnboardingOptionsModel::SetupFailed||saved==OnboardingOptionsModel::SetupUncertain;
                 unstarted_preparation=StartupPreparationSummary{
-                    outcome==OnboardingOptionsModel::PreparationUncertain?startup::preparation::Disposition::Uncertain
+                    outcome==OnboardingOptionsModel::PreparationUncertain||saved==OnboardingOptionsModel::SetupUncertain?startup::preparation::Disposition::Uncertain
                         :startup::preparation::Disposition::Failed,
                     startup_canceled||quit_handler.isQuitRequested(),
-                    outcome==OnboardingOptionsModel::PreparationFailed&&(startup_canceled||quit_handler.isQuitRequested()),false,startup_error_reported->load(),error,{}};
+                    !save_failed&&outcome==OnboardingOptionsModel::PreparationFailed&&(startup_canceled||quit_handler.isQuitRequested()),false,startup_error_reported->load(),error,{}};
                 preparation_finished = true;
                 preparation_loop.quit();
             });
@@ -1015,8 +1066,10 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         if(prepared&&!prepared->value)return EXIT_FAILURE;
         const auto preparation=prepared?std::move(*prepared->value):std::move(*unstarted_preparation);
 #ifdef ENABLE_TEST_AUTOMATION
-        if(preparation.transport&&gArgs.IsArgSet("-test-automation")){
-            if(!startup::Run(startup_services,[transfer=*preparation.transport]{return PrintStartupTransfer(transfer);})) *lifecycle_failed=true;
+        if(preparation.transport){
+            if(!startup::Run(startup_services,[transfer=*preparation.transport]{
+                return !gArgs.IsArgSet("-test-automation")||PrintStartupTransfer(transfer);
+            })) *lifecycle_failed=true;
         }
 #endif
         if(preparation.disposition==startup::preparation::Disposition::Forwarded){
@@ -1032,10 +1085,27 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             return EXIT_FAILURE;
         }
         if(preparation.closing||startup_canceled||quit_handler.isQuitRequested())return EXIT_SUCCESS;
+        const auto runtime=startup::Run(startup_services,[]{
+            RuntimePresentation captured;
+            captured.wallet_enabled=WalletEnabledFromArgs();
+            captured.chain=QString::fromStdString(gArgs.GetChainTypeString());
+            captured.network=Params().GetChainType();
+            captured.log_file=LogInstance().m_file_path;
+            captured.log_enabled=LogInstance().m_print_to_file;
+            captured.automation=ReadAutomationConfig(true);captured.error=captured.automation.error;
+            if(fs::PathToString(captured.log_file).size()>32768){
+                captured.log_file.clear();captured.error=QStringLiteral("The debug log path exceeds its supported size.");
+            }
+            return captured;
+        });
+        wallet_presentation->store(runtime.wallet_enabled);
+        if(!runtime.error.isEmpty()){
+            startup::Run(startup_services,[error=runtime.error]{return InitError(Untranslated(error.toStdString()));});return EXIT_FAILURE;
+        }
         gui_startup_message_handler.disconnect();
         startup::Run(startup_services, [startup_warnings] { startup_warnings->seal(); return true; });
 
-        const bool wallet_enabled = WalletEnabledFromArgs();
+        const bool wallet_enabled = runtime.wallet_enabled;
         app_mode.setWalletEnabled(wallet_enabled);
         desktop_intent_model.setWalletEnabled(wallet_enabled);
 
@@ -1083,10 +1153,16 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         QObject::connect(&desktop_intent_model,&DesktopIntentModel::requestAttention,&app,[&]{
             if(main_window&&!shutdown_requested){main_window->show();main_window->raise();main_window->requestActivate();}
         });
+        const auto detach_desktop_presentation=qScopeGuard([&]{
+            // These cached window/lifecycle locals die before the earlier
+            // executor and mailbox; no later destructor signal may read them.
+            QObject::disconnect(&init_executor,nullptr,&desktop_intent_model,nullptr);
+            QObject::disconnect(&desktop_intent_model,nullptr,&app,nullptr);
+        });
         QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::finished, &app, [&] { shutdown_finished = true; });
         // Read the file the node actually writes, so -debuglogfile=<file> and
         // -nodebuglogfile are honoured rather than assuming <datadir>/debug.log.
-        DebugLogModel debug_log_model{LogInstance().m_file_path, LogInstance().m_print_to_file,
+        DebugLogModel debug_log_model{runtime.log_file, runtime.log_enabled,
             {node_model.queryScheduler(), presentation_post}};
 #ifdef ENABLE_WALLET
         std::unique_ptr<WalletQmlController> wallet_controller;
@@ -1154,7 +1230,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             if (!main_window) {
                 InitErrorMessageBox(QObject::tr("A fatal node error occurred."), {node_model.queryScheduler(), presentation_post}, {}, quit_handler,
                                     [this](QQmlApplicationEngine& engine) { qmlEngineCreated(engine); },
-                                    static_cast<StartupDiagnosticsModel*>(node_model.startupDiagnostics()), diagnostic_loss);
+                                    static_cast<StartupDiagnosticsModel*>(node_model.startupDiagnostics()), diagnostic_loss,wallet_enabled);
                 node_model.requestShutdown();
             }
         });
@@ -1170,7 +1246,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         AndroidNotifier android_notifier{node_model};
 #endif
 
-        ChainModel chain_model{QString::fromStdString(gArgs.GetChainTypeString())};
+        ChainModel chain_model{runtime.chain};
         BlockClockModel block_clock_model{block_clock_history,
             execution::SnapshotServices{node_model.queryScheduler(), presentation_post}};
         shutdown_coordinator.addAdmissionFence([&] { block_clock_model.closeAdmission(); });
@@ -1252,7 +1328,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             ui_preferences->whenDrained(std::move(done));
         });
 
-        QScopedPointer<const NetworkStyle> network_style{NetworkStyle::instantiate(Params().GetChainType())};
+        QScopedPointer<const NetworkStyle> network_style{NetworkStyle::instantiate(runtime.network)};
         assert(!network_style.isNull());
         engine->addImageProvider(QStringLiteral("images"), new ImageProvider{network_style.data()});
         engine->addImageProvider(QStringLiteral("qr"), new QRImageProvider{std::move(qr_scheduler), QRImageProvider::RenderImage, engine.get()});
@@ -1417,14 +1493,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
 
 #ifdef ENABLE_TEST_AUTOMATION
         std::unique_ptr<TestBridge> test_bridge;
-        if (gArgs.IsArgSet("-test-automation")) {
-            QString socket_path = QString::fromStdString(gArgs.GetArg("-test-automation", ""));
-            if (socket_path.isEmpty()) {
-                // Default to a socket in the data directory.
-                socket_path = QString::fromStdString(
-                    (gArgs.GetDataDirNet() / "test_bridge.sock").utf8string());
-            }
-            test_bridge = std::make_unique<TestBridge>(engine.get(), socket_path);
+        if (runtime.automation.enabled) {
+            test_bridge = std::make_unique<TestBridge>(engine.get(), runtime.automation.socket);
         }
 #endif
 
