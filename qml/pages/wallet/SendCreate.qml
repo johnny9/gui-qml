@@ -245,6 +245,11 @@ PageStack {
             root.clearPrepareTransactionError()
             root.scheduleFeeEstimates()
         }
+        function onTotalAmountChanged() {
+            // Only the bounded warning presentation follows this observation.
+            // A validation echo does not retire the original import intent.
+            if (root.wallet && !root.wallet.maximumRecipient) reviewSweepAlert.close()
+        }
         function onCurrentRecipientChanged() {
             if (sendPage.m_importOperation) sendPage.cancelUriAction()
             root.draftChanged()
