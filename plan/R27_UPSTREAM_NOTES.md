@@ -1,0 +1,9 @@
+# R27 upstream boundary notes
+
+Core44901d8f64cb617714707bd025ecd83f108353c2 and Qt remain unchanged. Paste provenance, semantic application intent revisions, atomic local draft edits, Source/chooser ownership, exact native handoff tokens and bounded drop admission are app responsibilities. They need no Wallet internals or new capability.
+
+R27 reuses the public PSBT review adapter in R26_UPSTREAM_NOTES.md. Wallet still lacks one immutable typed non-mutating review result with a documented snapshot boundary. Existing Native composition, exact original opening/review guard, per-child receipt and independent final protected command stay; no stronger snapshot guarantee is claimed. Optional improvement and retirement condition remain: replace the composition only after a pinned public typed contract gives equivalent facts/consistency and independent Core/RPC tests pass. Source/view fences stay app-owned.
+
+The PSBT broadcast signal repair is application-only. Public node admission does not establish a per-wallet record; the app reports SendRecordUnknown rather than borrowing a prior Send's state. Existing R20/R30 upstream typed outcome/receipt improvements could give stronger separate wallet observations. They are optional for correct completion presentation: later wallet activity/RPC can resolve status, and Unknown grants no new broadcast or wallet write. Evidence: baseline-composed-01 reproduces the missing argument; the completed-broadcast regression checks all three fields. Retire the Unknown observation only when an original-transaction wallet observation or future public receipt establishes it; never infer it from node admission.
+
+Native Qt chooser internals remain a dependency boundary. Existing Qt-only race notes/deferred sanitizer qualification stay explicit. The app constrains original request ownership and keeps the native component.

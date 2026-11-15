@@ -483,3 +483,8 @@ opening/review/view guards. This API improvement is optional for M26: no Core
 edit is required for independent source inspection or atomic local draft
 replacement. Later signing/submission retains its separate protected checks.
 The [focused R26 receipt](evidence/R26_FOCUSED.json) qualifies the Source/target/explicit consumer component; R27 and R42 remain separate.
+
+
+## R27 native import consumers and broadcast record observation
+
+R27 adds no Wallet-internals exception. The existing public review adapter and optional typed immutable snapshot improvement remain in [R27 notes](R27_UPSTREAM_NOTES.md), with guarantees, limits, evidence and retirement. Node broadcast admission carries unknown wallet record until a separate original-transaction observation or future public receipt establishes it. This reuses the R20/R30 distinction and does not block correct completion presentation. Core/Qt stay unchanged; Qt-only picker internals stay documented/deferred.

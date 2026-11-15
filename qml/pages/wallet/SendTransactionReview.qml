@@ -166,7 +166,7 @@ Page {
             saveStatus = saveError ? wallet.psbtActionError : qsTr("Saved.")
         } else if (wallet.psbtActionState === WalletQmlModel.PsbtSubmitted && !sending) {
             sending = true
-            transactionSent(wallet.psbtSubmittedTxid, WalletQmlModel.SubmissionAccepted)
+            transactionSent(wallet.psbtSubmittedTxid, WalletQmlModel.SubmissionAccepted, WalletQmlModel.SendRecordUnknown)
         }
     }
     function commitBroadcast() {

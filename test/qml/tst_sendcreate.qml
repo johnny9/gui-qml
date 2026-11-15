@@ -398,6 +398,8 @@ TestCase {
         const completePage = findChild(reviewStack, "sendCompletePage")
         verify(completePage !== null)
         compare(completePage.targetBlocks, 0)
+        compare(completePage.submissionState, WalletQmlModel.SubmissionAccepted)
+        compare(completePage.recordState, WalletQmlModel.SendRecordUnknown)
         verify(completePage.descriptionText.indexOf("fee rate") >= 0)
         tryCompare(testWalletModel, "broadcastCurrentTransactionCalls", broadcastCallsBefore + 1)
         findChild(reviewStack, "sendResultDoneButton").clicked()
@@ -2347,6 +2349,38 @@ TestCase {
         }
         fail("Expected a scrollable ancestor for the review control")
     }
+    function test_validation_echo_preserves_original_import_intent_data() {
+        return [{tag: "explicit-derived-total", paste: false}, {tag: "paste-validation-revision", paste: true}]
+    }
+    function test_validation_echo_preserves_original_import_intent(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const editor = controlledSendEditor(form)
+        const uri = "bitcoin:bcrt1qsendtoaddress?amount=0.07&message=Original"
+        const revision = page.draftRevision
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        BitcoinUri.holdPublications = true
+        try {
+            if (data.paste) { Clipboard.currentText = uri; editor.addressField.paste() }
+            else form.applyPaymentRequestFromText(uri, "original request")
+            const original = form.m_importOperation
+            verify(original !== null)
+            if (data.paste) {
+                testSendRecipient.validationRevision++
+                testSendRecipient.address.formattedAddressChanged()
+                testSendRecipient.amount.inputChanged()
+            } else testRecipientsModel.totalAmountChanged() // Repeated cached projection, same semantic revision.
+            compare(page.draftRevision, revision)
+            compare(form.m_importOperation, original)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            BitcoinUri.releasePublications()
+            tryCompare(form, "uriActionPending", false)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + 1)
+            compare(testSendRecipient.amount.satoshi, 7000000)
+            compare(testSendRecipient.message, "Original")
+        } finally { BitcoinUri.releasePublications() }
+    }
+
     function test_clipboard_offer_tracks_public_message_but_ignores_private_note_and_formatting() {
         testSendRecipient.address.setAddress("bcrt1qsendtoaddress")
         testSendRecipient.amount.satoshi = 700000
@@ -2421,7 +2455,7 @@ TestCase {
             compare(testWalletModel.psbtActionId, original)
             compare(testSecondWalletModel.psbtActionId, replacement)
             if (data.action === "accept") {
-                compare(captured.selectedPath, "file:///original%20opening.psbt")
+                compare(captured.selectedPath, "file:///original opening.psbt") // Qt hands over the decoded QUrl display form; Native owns path interpretation.
                 verify(!captured.requestFile("successor.psbt"))
                 compare(findChild(page, "transactionReviewPopup").visible, false)
                 BitcoinUri.releasePublications()
@@ -2682,6 +2716,7 @@ TestCase {
     }
     function test_overwrite_confirmation_rejects_unavailable_opening() {
         testSendRecipient.label = "original private note"
+        testSendRecipient.amount.satoshi = 10000
         const page = createControlledSendPage()
         const form = findChild(page, "walletSendPage")
         const editor = controlledSendEditor(form)
@@ -2694,11 +2729,11 @@ TestCase {
         tryCompare(popup, "opened", true)
         try {
             testWalletModel.available = false
-            mouseClick(findChild(popup.contentItem, "sendPaymentUriOverwriteConfirmButton"))
+            findChild(popup.contentItem, "sendPaymentUriOverwriteConfirmButton").clicked() // A queued old confirmation cannot revive the retired Source.
             tryCompare(popup, "visible", false)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications)
             compare(testSendRecipient.address.address, address)
-            compare(testSendRecipient.amount.satoshi, 0)
+            compare(testSendRecipient.amount.satoshi, 10000)
             compare(testSendRecipient.label, "original private note")
             compare(testWalletModel.prepareTransactionCalls, prepareCalls)
             compare(form.uriActionPending, false)
