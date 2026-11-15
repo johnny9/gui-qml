@@ -69,13 +69,13 @@ and test obligations, not acceptance claims.
 
 | Assigned scope | Current treatment |
 | --- | --- |
-| 029 | Existing typed `feeKnown`/optional fee and `Unknown` presentation distinguish unknown from zero. Domain qualification retests known-positive, known-zero, missing and invalid amounts. Actual Core/UI forged-fee control remains in the final focused batch. |
-| 039 | Parent test reproduces lookup under the unsigned legacy txid. Lookup now uses the extracted finalized identity when available, without mutating the imported document. An independent Core legacy self-transfer/known-record/UI scenario is added and not yet executed. |
-| 093 | Retain checked `psbtfee::Analyze` accumulation and authenticated prevouts. Review accumulation checks `value <= MAX_MONEY - total` before adding. Shape, fee and amount controls remain required. |
+| 029 | Existing typed `feeKnown`/optional fee and `Unknown` presentation distinguish unknown from zero. Focused Domain tests cover known-positive, known-zero, missing and invalid amounts; the Core authenticated legacy-fee control and forged-fee rows passed in the final focused run. |
+| 039 | Parent test reproduces lookup under the unsigned legacy txid. Lookup now uses the extracted finalized identity when available, without mutating the imported document. The independent Core legacy self-transfer/known-record/UI scenario passed in the final focused run. |
+| 093 | Retain checked `psbtfee::Analyze` accumulation and authenticated prevouts. Review accumulation checks `value <= MAX_MONEY - total` before adding. Shape, fee and amount controls passed in the final focused unit/Core selections. |
 | 095 | Held claim, reconciled for the current command boundary. Four controls passed on the unguarded parent: actual signature bytes/Core verification show which outputs ALL/NONE/SINGLE commit, and immutable review prevents changed-output submission even where the signature remains valid. The historical unconditional P1 remains unestablished; no repaired defect is claimed for this held row. |
-| 102, 106 | Parent reproduces lost owned outputs for signable and complete watch-only self-transfers, with two passing controls. All imported outputs are now shown, with change intent explicitly unknown. Four fixed unit rows passed in the first checkpoint; final UI/Core check remains pending. |
-| 104, 252 | The Domain owner commits/clears one analysis tuple and rejects older/withdrawn structural outcomes while retaining actual scalar receipts. Existing Wallet import projection fences remain; failed-import draft preservation and coherent retry must also be retested. |
-| 250, 280 | Original document and captured assessment/proof remain separate immutable values. Read/copy/save preserve original bytes; metadata refresh is explicit. Retain export-parity, stale-read and held-publication controls. |
+| 102, 106 | Parent reproduces lost owned outputs for signable and complete watch-only self-transfers, with two passing controls. All imported outputs are now shown, with change intent explicitly unknown. Final focused unit/Core/UI cases passed. |
+| 104, 252 | The Domain owner commits/clears one analysis tuple and rejects older/withdrawn structural outcomes while retaining actual scalar receipts. Existing Wallet import projection fences remain; failed-import draft preservation, coherent retry and the post-decode tuple-preservation rows passed in the final focused run. |
+| 250, 280 | Original document and captured assessment/proof remain separate immutable values. Read/copy/save preserve original bytes; metadata refresh is explicit. Export-parity, stale-read and held-publication controls passed in the final focused unit/Core selections. |
 | 266 | Preserve canonical satoshi values and checked accumulation. Cross-consumer amount parsing remains covered by its original send-model owner; do not confuse it with the separate rate-parser scope265. |
 
 Cross-consumer scopes016/021/229 retain R14's original credential/action lifetime;
@@ -109,7 +109,29 @@ Artifacts are under `.validation/qt6-r11-r40-20261114/R21/` in the workspace:
   verified signatures from finalized fields and preserves the typed metadata
   error guard. App lint also found the new include cycle, fixed as above.
 
-Final app lint, pinned Clang23/Bitcoin-plugin tidy including fresh MOCs, affected
-ordinary behavior/Core/UI checks and a precise final scope report are still
-required. Exhaustive coverage, sanitizers and the full configuration/platform
-matrix remain deferred to R42 under the user's validation policy.
+## Final focused checkpoint
+
+On the combined R21 candidate `61002115b2bf0df2392b6359648d40ac5f8e7d6f`
+(app parent `7b1ab0eb2fd1492a3a6553090512b9cafeab4bb4`, Core
+`44901d8f64cb617714707bd025ecd83f108353c2`), the focused R21 manifest passed
+347/347 bodies. This includes all 14 selected PSBT Core/RPC bodies: the prior
+11 rows and three decoded-review failure rows. An additional 45/45 R29
+composition bodies passed, bringing the distinct combined focused count to
+392; repeated runs are not added to that count. The R21 model class was then
+requalified at 78/78 with the same-generation refresh/page race row included.
+
+The bounded summary source retains the immutable assessment/proof and one
+ownership bit per output, not a fully formatted output list. Initial and
+requested formatted pages are capped at 128 rows, with a separate total count.
+Manual tests cover superseded Native work, a held GUI publication, replacement
+by a same-generation refresh, failed admission/retry and cleanup while the
+facade remains alive. A 4,096-output document verifies bounded page payloads
+and full count/content parity. The 100 MiB PSBT file cap and existing single
+bounded read remain unchanged; no new cardinality cap was added.
+
+Exact-head app lint passed with the pinned Core 449 linter. Exact-head QML lint
+passed in both recorded compatibility variants (Qt 6.2 and 6.5). The pinned
+Clang23/Bitcoin-plugin tidy selection, including fresh MOCs for the changed
+C++ files, is the remaining focused static gate. Exhaustive coverage,
+sanitizers and the full configuration/platform matrix remain deferred to R42
+under the user's validation policy.
