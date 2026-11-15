@@ -35,6 +35,20 @@ from qml_test_harness import (
 DESKTOP_PAYMENT_ADDRESS = "bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9"
 
 
+def unicode_startup_profile():
+    """The real process argv and Core profile retain non-ASCII path identity."""
+    with tempfile.TemporaryDirectory(prefix="u8-") as temporary:
+        profile = Path(temporary) / "caf\u00e9-\u94b1\u5305-\U0001f600"
+        profile.mkdir()
+        with gui_process(tmpdir=str(profile), no_listen_arg=False,
+                         extra_args=["-nolisten", f"-rpcuser={RPC_USER}", f"-rpcpassword={RPC_PASS}"]) as harness:
+            wait_for_rpc(harness.rpc_port)
+            actual = Path(rpc_call(harness.rpc_port, "getwalletdir")["walletdir"]).resolve()
+            assert actual.is_relative_to(Path(harness.datadir).resolve()), actual
+            assert profile.name in actual.parts, actual
+            assert rpc_call(harness.rpc_port, "getblockchaininfo")["chain"] == "regtest"
+
+
 def desktop_payment(label, amount="0.01000000"):
     return f"bitcoin:{DESKTOP_PAYMENT_ADDRESS}?amount={amount}&label={label}&message=explicit-inspection-only"
 
@@ -645,6 +659,7 @@ def reset_onboarding_connection():
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('GUI startup and configuration process scenarios', [
         scenario("bridge-protocol", 1, bridge_smoke),
+        scenario("unicode-startup-profile", 1, unicode_startup_profile),
         scenario("desktop-intent-primary-arguments", 8, desktop_intent_primary_arguments),
         scenario("desktop-intent-secondary-forwarding", 8, desktop_intent_secondary_forwarding),
         scenario("desktop-intent-secondary-forwarding-wallet-enabled", 8, desktop_intent_secondary_forwarding, wallet_enabled=True),

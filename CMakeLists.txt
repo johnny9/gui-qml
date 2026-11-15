@@ -323,3 +323,4 @@ if(BUILD_APP_TESTS)
 endif()
 
 include(cmake/Sanitizers.cmake)
+include(cmake/AppWindowsManifest.cmake)

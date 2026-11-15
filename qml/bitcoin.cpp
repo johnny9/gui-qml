@@ -121,7 +121,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <tuple>
 #include <vector>
 
 #include <QApplication>
@@ -635,11 +634,8 @@ int QmlGuiMain(int argc, char* argv[])
 
 int BitcoinQmlApplication::runFromCommandLine(int argc, char* argv[])
 {
-#ifdef WIN32
-    common::WinCmdLineArgs winArgs;
-    std::tie(argc, argv) = winArgs.get();
-#endif // WIN32
-
+    // The Windows executable uses Core's UTF-8 application manifest. Its CRT
+    // arguments already have the same UTF-8 encoding as Core's entry points.
     return run(argc, argv);
 }
 
