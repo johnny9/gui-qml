@@ -2149,6 +2149,15 @@ void NodeModelTests::manualInitializationStopsAfterPublicReentrancy()
     }
     env.drain(); env.publishAll();
     env.drain(); env.publishAll(); // Consume work admitted before the public invalidation.
+    if(boundary==19&&invalidation==4){
+        // This callback was captured after the initialization receipt. It is
+        // an original Runtime prompt ahead of the startup summary, so its
+        // continuation must be acknowledged before that summary can publish.
+        QVERIFY(model->runtimeDialogVisible());
+        QCOMPARE(model->runtimeDialogMessage(),QStringLiteral("Original runtime dialog"));
+        model->answerRuntimeDialog(CClientUIInterface::BTN_OK);
+        env.drain();env.publishAll();
+    }
     QVERIFY(reached);
     QCOMPARE(late_chain_ready, 0);
     if (invalidation == 4) {
