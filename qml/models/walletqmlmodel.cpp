@@ -3400,6 +3400,10 @@ void WalletQmlModel::startPsbtFileExport(quint64 action_id, const QString& path,
     const bool had_review = m_psbt_action_had_review;
     const bool had_document = m_psbt_action_had_document;
     const auto request = preparePsbtFileExport(action_id, path, receipt);
+    if (!observer) {
+        if (request) request->abandon();
+        return;
+    }
     if (!request) {
         if (observationsAllowed() && action_id == m_psbt_action_id && m_psbt_action_state == PsbtActionState::PsbtPending) {
             m_psbt_action_state = PsbtActionState::PsbtFailed;
