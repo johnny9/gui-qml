@@ -218,6 +218,8 @@ Popup {
         property double contextAttempt: 0
         readonly property bool contextValid: contextModel !== null && root.opened && root.ownsAttempt
             && root.bumpModel === contextModel && root.ownedAttemptId === contextAttempt
+            && (contextModel.state === BumpTransactionModel.NeedsConfirmation
+                || contextModel.state === BumpTransactionModel.Committing)
         onAboutToShow: {
             contextModel = root.bumpModel
             contextAttempt = root.ownedAttemptId
