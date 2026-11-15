@@ -455,11 +455,15 @@ private Q_SLOTS:
         const auto fulfilling_txid = mineBlockToAddress(m_request_address);
         QVERIFY(SelectActivityTypes(m_app, {"activityTypeMined"}));
         QVERIFY(qmltest::SetText(m_app, "activitySearchField", m_request_address));
+        QTRY_VERIFY(!m_filter->busy() && m_filter->searchText() == m_request_address);
         QTRY_COMPARE(m_filter->rowCount(), 1);
-        QCOMPARE(m_filter->index(0, 0).data(TransactionActivityModel::TxidRole).toString(), fulfilling_txid);
+        // The old mining row can already make rowCount equal one while the
+        // new source/search observation is pending. Await this exact payment.
+        QTRY_COMPARE(m_filter->index(0, 0).data(TransactionActivityModel::TxidRole).toString(), fulfilling_txid);
 
         // The request filter finds its transaction instead of a second pending row.
         QVERIFY(SelectActivityTypes(m_app, {"activityTypePaymentRequest"}));
+        QTRY_VERIFY(!m_filter->busy());
         QTRY_COMPARE(m_filter->rowCount(), 1);
         QCOMPARE(m_filter->requestCount(), 0);
         QCOMPARE(m_filter->transactionCount(), 1);

@@ -1406,7 +1406,9 @@ QStringList ReceiveTestArguments(const QString& selector)
 {
     if (selector == "sendOutcomeReportsObservationOrRejectsStaleReview:broadcast-disabled") return {"-walletbroadcast=0"};
     if (selector == "addressPreferenceWriteReportsDisabledSettings" || selector == "typedReceivePreferenceFailureRetainsTheGeneratedAddress") return {"-nosettings"};
-    return selector == "receivingUnlockCanBeCancelledRetriedAndRelocks" ? QStringList{"-keypool=1"} : QStringList{};
+    if (selector == "receivingUnlockCanBeCancelledRetriedAndRelocks" ||
+        selector == "typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload:encrypted-wallet") return {"-keypool=1"};
+    return {};
 }
 
 #include <test_receive.moc>
