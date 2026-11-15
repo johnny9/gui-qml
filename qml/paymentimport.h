@@ -8,6 +8,7 @@
 #include <qml/paymentimportports.h>
 #include <qml/models/psbtfeeservices.h>
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -77,6 +78,7 @@ public:
 private:
     struct State;
     struct Delivery;
+    struct Close;
     enum class ReplyKind { Observe, Dispatch, Query };
     struct Reply;
     Owner(uint64_t identity, Services services, std::shared_ptr<execution::Scheduler> scope,
@@ -95,6 +97,7 @@ private:
     void cancelObsolete();
     void wake();
     void poll();
+    void closeOnDomain();
     const uint64_t m_identity;
     const Services m_services;
     const std::shared_ptr<execution::Scheduler> m_scope;
@@ -102,6 +105,9 @@ private:
     const Notify m_notify;
     const Retired m_retired;
     const std::shared_ptr<State> m_state;
+    const std::shared_ptr<Close> m_close;
+    execution::TaskId m_close_task;
+    std::atomic_bool m_close_requested{false};
     // close() revokes this before queuing the Domain lifecycle decision. A
     // queued target GUI handoff must not outlive its Source view.
     const std::shared_ptr<std::atomic_bool> m_presentation_allowed{std::make_shared<std::atomic_bool>(true)};
