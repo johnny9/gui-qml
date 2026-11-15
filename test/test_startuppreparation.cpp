@@ -112,7 +112,7 @@ struct Fixture {
             if (post_summary) {
                 const auto disposition = result->disposition;
                 const bool attempted = result->native_started;
-                gui.push_back([this, disposition, attempted] { summary = disposition; summary_native_started = attempted; ++summary_deliveries; });
+                gui.emplace_back([this, disposition, attempted] { summary = disposition; summary_native_started = attempted; ++summary_deliveries; });
             }
             received = std::move(result);
         });

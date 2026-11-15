@@ -433,6 +433,48 @@ private Q_SLOTS:
         f.publish();QCOMPARE(f.gui_frames.back().phase,onboarding::Phase::Forwarded);
         f.cleanup();QVERIFY(f.execution.quiescent());QVERIFY(f.startup.execution.quiescent());
     }
+    void asyncDuplicatePreparationPreservesTheOriginalPendingAndTerminalOutcome() {
+        AsyncConsumer f;f.ready();f.finish();f.startup.execution.drain();
+        QCOMPARE(f.startup.starts,1);QCOMPARE(f.startup.closes,0);QCOMPARE(f.writes,1);
+        QVERIFY(f.owner->prepareAsync(f.startup.port()));f.execution.drain();
+        QCOMPARE(f.startup.closes,0);QCOMPARE(f.startup.starts,1);QVERIFY(f.frames.back().pending);
+        f.startup.deliver(desktopintent::transport::StartStatus::Forwarded);f.settle();
+        QCOMPARE(f.frames.back().phase,onboarding::Phase::Forwarded);QCOMPARE(f.finished_frames,1);
+        QVERIFY(f.frames.back().preparation_disposition);
+        QCOMPARE(*f.frames.back().preparation_disposition,startup::preparation::Disposition::Forwarded);
+        const auto error=f.frames.back().error;
+        QVERIFY(f.owner->prepareAsync(f.startup.port()));f.execution.drain();
+        QCOMPARE(f.startup.closes,0);QCOMPARE(f.startup.starts,1);QCOMPARE(f.writes,1);
+        QCOMPARE(f.frames.back().phase,onboarding::Phase::Forwarded);
+        QCOMPARE(*f.frames.back().preparation_disposition,startup::preparation::Disposition::Forwarded);
+        QCOMPARE(f.frames.back().error,error);QVERIFY(f.frames.back().profile_complete);
+        f.cleanup();QVERIFY(f.execution.quiescent());QVERIFY(f.startup.execution.quiescent());
+    }
+    void asyncDuplicateFinishCannotReplaceTheOriginalPreparationPort() {
+        AsyncConsumer f;f.ready();
+        QVERIFY(f.owner->finishAndPrepareAsync(1,Request(),f.savePort(),f.startup.port()));
+        while(f.execution.step(execution::Lane::Domain)){}
+        QCOMPARE(f.writes,0);QVERIFY(f.frames.back().pending);
+        int replacement_starts{0},replacement_closes{0},replacement_writes{0};
+        onboarding::AsyncPreparation replacement{
+            [&](auto,auto){++replacement_starts;return execution::Admission{{},execution::Rejection::Closed};},
+            [&]{++replacement_closes;}};
+        onboarding::Ports wrong_ports;wrong_ports.write=[&](const auto&){++replacement_writes;return Saved();};
+        auto wrong_request=Request();wrong_request.data_dir.path=QStringLiteral("/replacement/profile");
+        QVERIFY(f.owner->finishAndPrepareAsync(1,wrong_request,wrong_ports,replacement));
+        f.execution.drain();f.startup.execution.drain();
+        QCOMPARE(f.writes,1);QVERIFY(f.original_write);QCOMPARE(f.startup.starts,1);
+        QCOMPARE(replacement_starts,0);QCOMPARE(replacement_closes,0);QCOMPARE(replacement_writes,0);
+        f.startup.deliver(desktopintent::transport::StartStatus::Forwarded);f.settle();
+        QCOMPARE(f.frames.back().phase,onboarding::Phase::Forwarded);QCOMPARE(f.finished_frames,1);
+        const auto error=f.frames.back().error;
+        QVERIFY(f.owner->finishAndPrepareAsync(1,wrong_request,wrong_ports,replacement));f.execution.drain();
+        QCOMPARE(f.writes,1);QCOMPARE(f.startup.starts,1);QCOMPARE(replacement_starts,0);QCOMPARE(replacement_closes,0);QCOMPARE(replacement_writes,0);
+        QCOMPARE(f.frames.back().phase,onboarding::Phase::Forwarded);
+        QCOMPARE(*f.frames.back().preparation_disposition,startup::preparation::Disposition::Forwarded);
+        QCOMPARE(f.frames.back().error,error);
+        f.cleanup();QVERIFY(f.execution.quiescent());QVERIFY(f.startup.execution.quiescent());
+    }
     void asyncCompletionReservationRejectsBeforeExternalStart() {
         auto limits=execution::Limits::Bounded();limits.cleanup_reservations.tasks=1;
         AsyncConsumer f{limits};f.ready();f.finish();f.settle();
