@@ -76,7 +76,7 @@ void RpcCommandExecutorTests::preparedValidationPrecedesAnyNestedEffect()
         UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
     } node;
     std::string result;
-    QVERIFY_EXCEPTION_THROWN(RpcCommandExecutor::RPCExecuteCommandLine(node, result, "getblockcount() getblockcount()"), std::runtime_error);
+    QVERIFY_THROWS_EXCEPTION(std::runtime_error, RpcCommandExecutor::RPCExecuteCommandLine(node, result, "getblockcount() getblockcount()"));
     QCOMPARE(node.effects, 0);
 }
 
