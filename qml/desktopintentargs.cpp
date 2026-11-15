@@ -49,6 +49,7 @@ Arguments ParseArguments(int argc, char* const argv[], const QString& producer, 
             }
             input.kind = Kind::File;
             input.value = QDir::cleanPath(path);
+            if (input.value.size() > Queue::MAX_INPUT_CHARS) return fail();
         }
         result.intents.push_back(std::move(input));
     }

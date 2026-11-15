@@ -43,6 +43,7 @@ struct Snapshot {
     Error error{Error::None};
     size_t pending{0};
     std::optional<Ticket> active;
+    uint64_t sequence{0};
 };
 
 /** Domain-owned delivery protocol. Native adapters acknowledge only retained
