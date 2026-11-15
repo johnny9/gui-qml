@@ -121,7 +121,7 @@ private Q_SLOTS:
         const auto value = fixture.driver->projection();
         QCOMPARE(fixture.initializes, 0); QCOMPARE(fixture.interrupts, 1); QCOMPARE(fixture.shutdowns, 1);
         QCOMPARE(value.phase, Phase::Stopped); QCOMPARE(value.event, Event::Shutdown);
-        QCOMPARE(value.core_exit_status, std::optional<int>{7});
+        QVERIFY(value.core_exit_status); QCOMPARE(*value.core_exit_status, 7);
         QCOMPARE(fixture.events(Event::Interrupted), 1); QCOMPARE(fixture.events(Event::Shutdown), 1);
     }
 
@@ -182,7 +182,7 @@ private Q_SLOTS:
         QVERIFY(!fixture.driver->initialize());
         QVERIFY(fixture.driver->shutdown()); fixture.settle();
         QCOMPARE(fixture.initializes, 0); QCOMPARE(fixture.interrupts, 1); QCOMPARE(fixture.shutdowns, 1);
-        QCOMPARE(fixture.driver->projection().core_exit_status, std::optional<int>{7});
+        const auto status=fixture.driver->projection().core_exit_status;QVERIFY(status);QCOMPARE(*status,7);
     }
 
     void stopIngressFencesLateSuccessBeforeDomainControlReceipt()
@@ -222,7 +222,7 @@ private Q_SLOTS:
         fixture.throw_publish = true;
         QVERIFY(fixture.driver->shutdown()); fixture.settle();
         auto value = fixture.driver->projection();
-        QCOMPARE(value.phase, Phase::Stopped); QCOMPARE(value.core_exit_status, std::optional<int>{7});
+        QCOMPARE(value.phase, Phase::Stopped); QVERIFY(value.core_exit_status); QCOMPARE(*value.core_exit_status, 7);
         QVERIFY(value.publication_failed); QCOMPARE(fixture.shutdowns, 1);
         fixture.throw_publish = false;
         QVERIFY(fixture.driver->retryPublish()); fixture.settle();
@@ -346,7 +346,7 @@ private Q_SLOTS:
         QVERIFY(fixture.execution.finishWork(*held)); fixture.settle();
         const auto value = fixture.driver->projection();
         QCOMPARE(fixture.shutdowns, 1); QCOMPARE(value.phase, Phase::Stopped);
-        QCOMPARE(value.core_exit_status, std::optional<int>{7});
+        QVERIFY(value.core_exit_status); QCOMPARE(*value.core_exit_status, 7);
         QVERIFY(fixture.execution.quiescent());
     }
 
