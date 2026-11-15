@@ -158,6 +158,9 @@ def uri_smoke(harness, checkpoint):
     gui.wait_for_property("sendUriImportPopup", "opened", True)
     gui.set_text("sendUriImportInput", f"bitcoin:{address}?amount=0.02&label=Manual")
     gui.click("sendUriImportApplyButton")
+    gui.wait_for_property("sendPaymentUriOverwritePopup", "opened", True)
+    gui.click("sendPaymentUriOverwriteConfirmButton")
+    gui.wait_for_property("sendPaymentUriOverwritePopup", "visible", False)
     gui.wait_for_property("sendPaymentRequestPayTo", "value", "Manual")
     checkpoint("manual payment request imported")
 
@@ -165,6 +168,9 @@ def uri_smoke(harness, checkpoint):
     path.write_text(f"bitcoin:{address}?amount=0.03&label=File", encoding="utf8")
     gui.set_text("sendImportPaymentRequestFilePathInput", str(path))
     gui.click("sendApplyPaymentRequestFilePathButton")
+    gui.wait_for_property("sendPaymentUriOverwritePopup", "opened", True)
+    gui.click("sendPaymentUriOverwriteConfirmButton")
+    gui.wait_for_property("sendPaymentUriOverwritePopup", "visible", False)
     gui.wait_for_property("sendPaymentRequestPayTo", "value", "File")
     checkpoint("payment request file imported")
 

@@ -305,7 +305,9 @@ def legacy_fee_matrix(harness, checkpoint, version, confirmed=True):
                 assert gui.get_property("sendTransactionReviewPage", "wallet.psbtActionError")
                 assert gui.get_property("sendTransactionReviewPage", "wallet.psbtSubmittedTxid") in (None, "")
                 assert expected_txid not in rpc_call(harness.gui_rpc_port, "getrawmempool")
-                exported = Path(harness.tmpdir) / "rejected-document.psbt"
+                # Each ownership row retains its own rejected document. Reusing
+                # a destination would require a separate overwrite approval.
+                exported = Path(harness.tmpdir) / f"rejected-v{version}-owned{owned}.psbt"
                 save_review_psbt(gui, exported)
                 retained = base64.b64encode(exported.read_bytes()).decode("ascii")
                 assert rpc_call(harness.gui_rpc_port, "finalizepsbt", [retained])["hex"] == control_hex

@@ -21,7 +21,6 @@ from qml_smoke_lib import (
     wallet_scenario,
 )
 from qml_wallet_test_lib import (
-    open_wallet_selector,
     rpc_call,
 )
 from urllib.parse import urlparse
@@ -124,9 +123,7 @@ def receive_smoke(harness, checkpoint):
     harness.start_gui()
     gui = harness.driver
     gui.wait_for_property("walletBadge", "loading", False, timeout_ms=30000)
-    open_wallet_selector(gui)
-    gui.click("walletSelectItem_receiver")
-    gui.wait_for_property("walletBadge", "text", "receiver", timeout_ms=30000)
+    select_wallet(gui, "receiver")
     gui.click("activityTabButton")
     gui.set_text("activitySearchField", txid)
     gui.wait_for_property(f"activityItem_{txid}", "visible", True, timeout_ms=30000)
@@ -201,9 +198,7 @@ def typed_receipt_restart(harness, checkpoint):
     checked_stop("before-restart")
     harness.start_gui()
     gui = harness.driver
-    open_wallet_selector(gui)
-    gui.click("walletSelectItem_receipt_restart")
-    gui.wait_for_property("walletBadge", "text", "receipt-restart", timeout_ms=30000)
+    select_wallet(gui, "receipt-restart")
     gui.click("activityTabButton")
     gui.wait_for_property(f"activityRequest_{request_id}", "visible", True, timeout_ms=30000)
     gui.wait_for_property("activityFilterProxyModel", "busy", False)
