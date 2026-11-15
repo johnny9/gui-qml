@@ -20,7 +20,7 @@ struct Services {
     std::shared_ptr<execution::Scheduler> scheduler;
     Lookup lookup;
     std::function<void(std::function<void()>)> post;
-    psbtpolicy::Read policy;
+    psbtpolicy::Read policy{};
 };
 struct Resolution {
     std::shared_ptr<const Analysis> proof;

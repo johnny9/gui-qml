@@ -48,7 +48,7 @@ struct Context {
     Broadcast broadcast;
     Materialize materialize{secretinput::Materialize};
     Save save{SaveFile};
-    psbtpolicy::Read policy;
+    psbtpolicy::Read policy{};
 };
 struct Request {
     Kind kind{Kind::Inspect};
