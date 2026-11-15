@@ -296,6 +296,20 @@ struct BumpTransactionModelForeign {
     QML_UNCREATABLE("Owned by the application")
 };
 
+struct WalletSecurityModelForeign {
+    Q_GADGET
+    QML_FOREIGN(WalletSecurityModel)
+    QML_NAMED_ELEMENT(WalletSecurityModel)
+    QML_UNCREATABLE("Owned by a wallet opening")
+};
+
+struct SecurityOperationModelForeign {
+    Q_GADGET
+    QML_FOREIGN(SecurityOperationModel)
+    QML_NAMED_ELEMENT(SecurityOperationModel)
+    QML_UNCREATABLE("Owned by a security command")
+};
+
 struct WalletQmlModelForeign {
     Q_GADGET
     QML_FOREIGN(WalletQmlModel)

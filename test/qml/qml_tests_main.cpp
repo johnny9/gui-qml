@@ -41,6 +41,7 @@
 #include <QTest>
 #include <QTimer>
 #include <QUrl>
+#include <QUuid>
 #include <QVariantList>
 #include <QVariantMap>
 #include <qqml.h>
@@ -478,6 +479,7 @@ class MockFileDialog : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QString title MEMBER m_title NOTIFY titleChanged)
+    Q_PROPERTY(QString suggestedName MEMBER m_suggested_name NOTIFY suggestedNameChanged)
     Q_PROPERTY(int fileMode MEMBER m_file_mode NOTIFY fileModeChanged)
     Q_PROPERTY(QString defaultSuffix MEMBER m_default_suffix NOTIFY defaultSuffixChanged)
     Q_PROPERTY(bool confirmOverwrite MEMBER m_confirm_overwrite NOTIFY confirmOverwriteChanged)
@@ -486,6 +488,8 @@ class MockFileDialog : public QObject
     Q_PROPERTY(QUrl currentFile MEMBER m_current_file NOTIFY currentFileChanged)
     Q_PROPERTY(QUrl selectedFile MEMBER m_selected_file NOTIFY selectedFileChanged)
     Q_PROPERTY(bool visible MEMBER m_visible NOTIFY visibleChanged)
+    Q_PROPERTY(QObject* contextObject READ contextObject WRITE setContextObject NOTIFY contextObjectChanged)
+    Q_PROPERTY(bool enabled READ isEnabled WRITE setEnabled NOTIFY enabledChanged)
     Q_PROPERTY(int openCalls MEMBER m_open_calls NOTIFY openCallsChanged)
 
 public:
@@ -493,6 +497,7 @@ public:
     Q_ENUM(FileMode)
 
     QString m_title;
+    QString m_suggested_name;
     int m_file_mode{OpenFile};
     QString m_default_suffix;
     bool m_confirm_overwrite{true};
@@ -502,33 +507,70 @@ public:
     QUrl m_selected_file;
     bool m_visible{false};
     int m_open_calls{0};
+    QPointer<QObject> m_context, m_request_context;
+    QMetaObject::Connection m_context_destroyed;
+    bool m_enabled{true};
+    bool m_completing{false};
+    inline static QPointer<MockFileDialog> s_active;
 
-    Q_INVOKABLE void open()
+    QObject* contextObject() const { return m_context; }
+    bool isEnabled() const { return m_enabled; }
+    void setContextObject(QObject* context)
     {
+        if (m_context == context) return;
+        disconnect(m_context_destroyed);
+        m_context = context;
+        if (context) m_context_destroyed = connect(context, &QObject::destroyed, this, [this] { close(); Q_EMIT contextObjectChanged(); });
+        close(); Q_EMIT contextObjectChanged();
+    }
+    void setEnabled(bool enabled)
+    {
+        if (m_enabled == enabled) return;
+        m_enabled = enabled;
+        if (!enabled) close();
+        Q_EMIT enabledChanged();
+    }
+
+    Q_INVOKABLE bool open()
+    {
+        if (!m_enabled || m_visible || m_completing || s_active) return false;
+        s_active = this;
+        m_request_context = m_context;
         ++m_open_calls;
         m_visible = true;
         Q_EMIT openCallsChanged();
         Q_EMIT visibleChanged();
+        return true;
     }
 
     Q_INVOKABLE void close()
     {
+        if (!m_visible) return;
         m_visible = false;
+        if (s_active == this) s_active.clear();
         Q_EMIT visibleChanged();
+        Q_EMIT rejected();
     }
 
     /** Stand in for the user picking a file. */
     Q_INVOKABLE void selectAndAccept(const QUrl& file)
     {
+        if (!m_visible || !m_enabled || m_completing) return;
+        m_completing = true;
+        const QPointer<MockFileDialog> guard{this};
+        const auto restore = qScopeGuard([guard] { if (guard) guard->m_completing = false; });
         m_selected_file = file;
-        m_visible = false;
         Q_EMIT selectedFileChanged();
+        if (!guard || !m_visible || !m_enabled) return;
+        m_visible = false;
+        if (s_active == this) s_active.clear();
         Q_EMIT visibleChanged();
-        Q_EMIT accepted();
+        if (guard && m_enabled) { Q_EMIT chosen(m_request_context, m_selected_file); if (guard) Q_EMIT accepted(); }
     }
 
 Q_SIGNALS:
     void titleChanged();
+    void suggestedNameChanged();
     void fileModeChanged();
     void defaultSuffixChanged();
     void confirmOverwriteChanged();
@@ -537,8 +579,11 @@ Q_SIGNALS:
     void currentFileChanged();
     void selectedFileChanged();
     void visibleChanged();
+    void contextObjectChanged();
+    void enabledChanged();
     void openCallsChanged();
     void accepted();
+    void chosen(QObject* context, const QUrl& file);
     void rejected();
 };
 
@@ -1481,10 +1526,91 @@ namespace {
 execution::SnapshotServices& MockFeeServices() { static execution::SnapshotServices value; return value; }
 std::vector<QPointer<FeeSelectionModel>>& MockFeeOwners() { static std::vector<QPointer<FeeSelectionModel>> value; return value; }
 }
+class MockSecurityOperation : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString operationId MEMBER m_id CONSTANT)
+    Q_PROPERTY(QString promptId MEMBER m_id CONSTANT)
+    Q_PROPERTY(Kind kind MEMBER m_kind CONSTANT)
+    Q_PROPERTY(Phase phase MEMBER m_phase NOTIFY changed)
+    Q_PROPERTY(bool busy READ busy NOTIFY changed)
+    Q_PROPERTY(bool canSubmit READ canSubmit NOTIFY changed)
+    Q_PROPERTY(bool canCancel READ canSubmit NOTIFY changed)
+    Q_PROPERTY(QString error MEMBER m_error NOTIFY changed)
+public:
+    enum Kind { Encrypt, ChangePassphrase };
+    Q_ENUM(Kind)
+    enum Phase { AwaitingCredentials, Pending, Succeeded, Failed, Uncertain, Cancelled };
+    Q_ENUM(Phase)
+    MockSecurityOperation(Kind kind, std::function<bool()> submit, QObject* parent)
+        : QObject(parent), m_kind(kind), m_submit(std::move(submit)) {}
+    bool busy() const { return m_phase == Pending; }
+    bool canSubmit() const { return m_phase == AwaitingCredentials; }
+    Q_INVOKABLE bool submitCredentials(const QString& prompt, const QString&, const QString& replacement, const QString& confirmation)
+    {
+        if (prompt != m_id || !canSubmit() || !m_submit()) return false;
+        m_phase = Pending;
+        if (replacement != confirmation) { m_phase = Failed; m_error = QStringLiteral("The new passwords do not match."); }
+        Q_EMIT changed();
+        return true;
+    }
+    Q_INVOKABLE bool cancel()
+    {
+        if (!canSubmit()) return false;
+        m_phase = Cancelled; Q_EMIT changed(); return true;
+    }
+    void finish(bool success)
+    {
+        if (!busy()) return;
+        m_phase = success ? Succeeded : Failed;
+        m_error = success ? QString{} : QStringLiteral("Security operation failed");
+        Q_EMIT changed();
+    }
+    const QString m_id{QUuid::createUuid().toString(QUuid::WithoutBraces)};
+    const Kind m_kind;
+    Phase m_phase{AwaitingCredentials};
+    QString m_error;
+Q_SIGNALS:
+    void changed();
+private:
+    const std::function<bool()> m_submit;
+};
+
+class MockWalletSecurity : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(MockSecurityOperation* activeOperation MEMBER m_active NOTIFY changed)
+    Q_PROPERTY(bool canEncrypt READ canBegin NOTIFY changed)
+    Q_PROPERTY(bool canChangePassphrase READ canBegin NOTIFY changed)
+public:
+    MockWalletSecurity(QObject* parent, std::function<bool()> available, std::function<bool()> submit)
+        : QObject(parent), m_available(std::move(available)), m_submit(std::move(submit)) {}
+    Q_INVOKABLE MockSecurityOperation* beginEncryption() { return begin(MockSecurityOperation::Encrypt); }
+    Q_INVOKABLE MockSecurityOperation* beginPassphraseChange() { return begin(MockSecurityOperation::ChangePassphrase); }
+    bool canBegin() const { return m_available() && (!m_active || (!m_active->busy() && !m_active->canSubmit())); }
+    MockSecurityOperation* begin(MockSecurityOperation::Kind kind)
+    {
+        if (!m_available() || (m_active && (m_active->busy() || m_active->canSubmit()))) return nullptr;
+        if (m_active) m_active->deleteLater();
+        m_active = new MockSecurityOperation(kind, m_submit, this);
+        connect(m_active, &MockSecurityOperation::changed, this, &MockWalletSecurity::changed);
+        Q_EMIT changed();
+        return m_active;
+    }
+    void finish(bool success) { if (m_active) m_active->finish(success); }
+    void reset() { if (m_active) m_active->deleteLater(); m_active = nullptr; Q_EMIT changed(); }
+    MockSecurityOperation* m_active{nullptr};
+Q_SIGNALS:
+    void changed();
+private:
+    const std::function<bool()> m_available, m_submit;
+};
+
 class MockWalletQmlModel : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(FeeSelectionModel* fees READ fees CONSTANT)
+    Q_PROPERTY(QString backupFileName READ backupFileName NOTIFY nameChanged)
     Q_PROPERTY(bool recipientLabelsPending READ recipientLabelsPending NOTIFY recipientLabelsChanged)
     Q_PROPERTY(QString recipientLabelsError READ recipientLabelsError NOTIFY recipientLabelsChanged)
     Q_PROPERTY(QString recipientLabelsTransactionId READ recipientLabelsTransactionId NOTIFY recipientLabelsChanged)
@@ -1583,6 +1709,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QVariantList receiveAddressTypes READ availableReceiveAddressTypes NOTIFY walletInfoChanged)
     Q_PROPERTY(bool canManagePassphrase MEMBER m_can_manage_passphrase NOTIFY walletInfoChanged)
     Q_PROPERTY(QString settingsError MEMBER m_settings_error NOTIFY settingsErrorChanged)
+    Q_PROPERTY(MockWalletSecurity* security READ security CONSTANT)
     Q_PROPERTY(int securityState MEMBER m_security_state NOTIFY securityOperationChanged)
     Q_PROPERTY(bool securityBusy READ securityBusy NOTIFY securityOperationChanged)
     Q_PROPERTY(QString securityError MEMBER m_settings_error NOTIFY securityOperationChanged)
@@ -1605,6 +1732,8 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool receivingAddressPending MEMBER m_receiving_pending NOTIFY receivingAddressStateChanged)
     Q_PROPERTY(bool ensureReceivingAddressNeedsUnlock MEMBER m_ensure_needs_unlock)
 public:
+    QString backupFileName() const { auto value = m_name.isEmpty() ? QStringLiteral("wallet") : m_name; value.replace(QLatin1Char{'/'}, QLatin1Char{'_'}); value.replace(QLatin1Char{'\\'}, QLatin1Char{'_'}); return value + QStringLiteral(".bak"); }
+
     QString m_rpc_namespace;
     QString rpcName() const { return m_rpc_namespace.isNull() ? m_name : m_rpc_namespace; }
     Q_INVOKABLE void setRpcNamespace(const QString& value) { m_rpc_namespace = value; Q_EMIT nameChanged(); }
@@ -2183,6 +2312,7 @@ public:
         }
         return m_prepare_transaction_result;
     }
+    MockWalletSecurity* security() { return &m_security; }
     bool securityBusy() const { return m_security_state == SecurityPending; }
     Q_INVOKABLE bool encryptWallet(const QString&) { return startSecurityForTest(); }
     Q_INVOKABLE bool changeWalletPassphrase(const QString&, const QString&) { return startSecurityForTest(); }
@@ -2198,6 +2328,7 @@ public:
         if (!securityBusy()) return;
         m_security_state = success ? SecuritySucceeded : SecurityFailed;
         m_settings_error = success ? QString{} : QStringLiteral("Security operation failed");
+        m_security.finish(success);
         Q_EMIT settingsErrorChanged();
         Q_EMIT securityOperationChanged();
     }
@@ -2360,6 +2491,7 @@ public:
     Q_INVOKABLE void resetWalletSettingsTestState()
     {
         m_security_state = SecurityIdle;
+        m_security.reset();
         m_available = true;
         Q_EMIT securityOperationChanged();
         Q_EMIT availableChanged();
@@ -2469,6 +2601,7 @@ Q_SIGNALS:
 
 private:
     FeeSelectionModel* m_fees;
+    MockWalletSecurity m_security{this, [this] { return m_available && !securityBusy(); }, [this] { return startSecurityForTest(); }};
     MockPsbtDocument m_imported_psbt{this};
     PsbtActionState m_psbt_action_state{PsbtActionState::PsbtIdle};
     PsbtImportResult m_psbt_import_result{PsbtImportResult::PsbtUnsupported},m_next_psbt_import_result{PsbtImportResult::WalletCanSign};
@@ -2935,6 +3068,8 @@ public:
     QString walletImportErrorDescription() const { return m_wallet_load_error; }
     QString walletImportErrorHelpText() const { return QString{}; }
     Q_INVOKABLE QString homePath() const { return QStringLiteral("/tmp"); }
+    Q_PROPERTY(QUrl homeUrl READ homeUrl CONSTANT)
+    QUrl homeUrl() const { return QUrl::fromLocalFile(QStringLiteral("/tmp")); }
     Q_PROPERTY(int externalSignerRefreshCalls MEMBER m_external_signer_refresh_calls NOTIFY externalSignerStatusChanged)
     int m_external_signer_refresh_calls{0};
     Q_INVOKABLE void refreshExternalSignerStatus() { ++m_external_signer_refresh_calls; Q_EMIT externalSignerStatusChanged(); }
@@ -6259,6 +6394,8 @@ public Q_SLOTS:
         qmlRegisterUncreatableType<MockSendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "Test stub type");
         qmlRegisterUncreatableType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Test stub type");
         qmlRegisterUncreatableType<MockBackupFileOperation>("org.bitcoincore.qt", 1, 0, "BackupFileOperation", "Test stub type");
+        qmlRegisterUncreatableType<MockWalletSecurity>("org.bitcoincore.qt", 1, 0, "WalletSecurityModel", "Test fixture");
+        qmlRegisterUncreatableType<MockSecurityOperation>("org.bitcoincore.qt", 1, 0, "SecurityOperationModel", "Test fixture");
         qmlRegisterUncreatableType<MockWalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletCreationModel>("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Test creation editor");
         qmlRegisterUncreatableType<MockWalletCreationText>("org.bitcoincore.qt", 1, 0, "WalletCreationText", "Test creation input");

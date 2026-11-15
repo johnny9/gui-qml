@@ -17,11 +17,12 @@
 namespace walletsecurity {
 struct Identity {};
 enum class Kind { Encrypt, ChangePassphrase };
-enum class Error { None, MissingCurrent, MissingNew, NoPrivateKeys, EncryptionFailed, IncorrectCurrent, ChangeFailed, Uncertain, Rejected };
+enum class Error { None, MissingCurrent, MissingNew, NoPrivateKeys, EncryptionFailed, IncorrectCurrent, ChangeFailed, Uncertain, Rejected, ConfirmationMismatch };
 struct Request {
     Kind kind;
     SecureString current, replacement;
     secretinput::Captured captured_current{}, captured_replacement{};
+    secretinput::Captured captured_confirmation{};
 };
 struct Result {
     Error error{Error::None};

@@ -357,7 +357,8 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
                 if (const auto reader = weak_reader.lock()) reader->reload(std::move(addresses));
             }, QDateTime::currentDateTimeUtc, [weak_reader] {
                 const auto reader = weak_reader.lock(); return reader && reader->settled();
-            }, walletrequests::SettingsReservationStorage().clear, walletrequests::SettingsReservationStorage());
+            }, walletrequests::SettingsReservationStorage(m_canonical_identity ? std::optional<QString>{m_name} : std::nullopt).clear,
+            walletrequests::SettingsReservationStorage(m_canonical_identity ? std::optional<QString>{m_name} : std::nullopt));
         m_receipts->onSnapshot([weak = std::weak_ptr<walletrequests::Store>{m_request_store}](auto snapshot) {
             if (const auto store = weak.lock()) store->observed(snapshot);
         });
@@ -520,6 +521,9 @@ void WalletQmlModel::initializeOpening()
         [bridge = m_notification_bridge, observer] {
             QMetaObject::invokeMethod(bridge.get(), [observer] { if (observer) observer->publishOpening(); }, Qt::QueuedConnection);
         }, std::move(preferences), std::chrono::steady_clock::now, m_admission_closed.shared(), m_opening_native_events);
+    m_security->bind(m_opening, m_notification_bridge, [this] {
+        return available() && !preparationBusy() && !sendBusy() && !m_approval;
+    });
     auto started = m_opening->start(m_wallet);
     if (started.borrower) m_wallet = std::move(started.borrower);
     if (!started) m_opening->retire();
@@ -553,20 +557,17 @@ void WalletQmlModel::publishOpening()
         auto metadata = std::move(*update->metadata);
         const QString name = QString::fromStdString(metadata.name);
         const bool name_changed = !m_canonical_identity && m_name != name;
-        const bool security_changed = m_is_encrypted != metadata.encrypted || m_is_locked != metadata.locked;
         if (!m_canonical_identity) m_name = name;
         m_rpc_name = name;
         m_metadata_known = true;
         m_private_keys_disabled = metadata.private_keys_disabled;
         m_external_signer = metadata.external_signer;
-        m_is_encrypted = metadata.encrypted;
-        m_is_locked = metadata.locked;
         m_can_get_addresses = metadata.can_get_addresses;
         m_taproot = metadata.taproot;
         m_receive_preference = QString::fromStdString(metadata.receive_preference);
+        m_security->observe(metadata); if (!guard || m_stopping) return;
         if (name_changed) { Q_EMIT nameChanged(); if (!guard || m_stopping) return; }
         Q_EMIT openingMetadataChanged(); if (!guard || m_stopping) return;
-        if (security_changed) { Q_EMIT securityStateChanged(); if (!guard || m_stopping) return; }
     }
     if (update->preference_saved && update->preference_revision == m_opening->preferenceRevision()) {
         m_receive_preference_pending = false;
@@ -615,6 +616,19 @@ void WalletQmlModel::publishOpening()
 
 void WalletQmlModel::initializeBackend()
 {
+    connect(m_security, &WalletSecurityModel::observedChanged, this, &WalletQmlModel::securityStateChanged);
+    connect(this, &WalletQmlModel::preparationChanged, m_security, &WalletSecurityModel::capabilitiesChanged);
+    connect(this, &WalletQmlModel::sendOperationChanged, m_security, &WalletSecurityModel::capabilitiesChanged);
+    connect(this, &WalletQmlModel::signerApprovalChanged, m_security, &WalletSecurityModel::capabilitiesChanged);
+    connect(m_security, &WalletSecurityModel::operationChanged, this, [this] {
+        if (!observationsAllowed()) return;
+        const QPointer<WalletQmlModel> observer{this};
+        const auto error = securityError();
+        const bool changed = m_settings_error != error;
+        m_settings_error = error;
+        if (changed) { Q_EMIT settingsErrorChanged(); if (!observer || m_stopping) return; }
+        Q_EMIT securityOperationChanged();
+    });
     connect(this, &WalletQmlModel::currentTransactionChanged, this, &WalletQmlModel::requestCurrentFlow);
     connect(this, &WalletQmlModel::displayUnitChanged, this, &WalletQmlModel::requestCurrentFlow);
     connect(m_send_recipients, &QAbstractItemModel::dataChanged, this, [this] { invalidatePreparation(); });
@@ -737,6 +751,7 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
     backend->shutdown();
     if (!observer) return;
     if (m_transaction_activity_model) { m_transaction_activity_model->stop(); if (!observer) return; }
+    m_security->close(); if (!observer) return;
     if (was_available) { Q_EMIT availableChanged(); if (!observer) return; }
     Q_EMIT balanceObservationChanged();
     if (observer) observer->checkShutdownFinished();
@@ -1214,6 +1229,16 @@ void WalletQmlModel::setDisplayName(const QString& display_name)
     }
 }
 
+QString WalletQmlModel::backupFileName() const
+{
+    // Bounded presentation of an observed identity; the Native operation
+    // validates the actual final path. This reads neither Core nor the disk.
+    auto name = m_name.isEmpty() ? QStringLiteral("wallet") : m_name;
+    name.replace(QLatin1Char{'/'}, QLatin1Char{'_'});
+    name.replace(QLatin1Char{'\\'}, QLatin1Char{'_'});
+    return name + QStringLiteral(".bak");
+}
+
 QString WalletQmlModel::keyScheme() const
 {
     return keySchemeDisplayText(keySchemeKind());
@@ -1257,26 +1282,34 @@ QString WalletQmlModel::externalSignerStatus() const
 
 bool WalletQmlModel::canManagePassphrase() const
 {
-    return available() && m_metadata_known && !m_private_keys_disabled;
+    return m_security->canManagePassphrase();
 }
 
-namespace {
-QString SecurityErrorText(walletsecurity::Error error)
+WalletQmlModel::SecurityState WalletQmlModel::securityState() const
 {
-    using Error = walletsecurity::Error;
-    switch (error) {
-    case Error::None: return {};
-    case Error::MissingCurrent: return QObject::tr("Enter the current wallet password.");
-    case Error::MissingNew: return QObject::tr("Enter a new wallet password.");
-    case Error::NoPrivateKeys: return QObject::tr("This wallet cannot manage a local password.");
-    case Error::EncryptionFailed: return QObject::tr("The wallet password could not be set.");
-    case Error::IncorrectCurrent: return QObject::tr("The current wallet password was incorrect.");
-    case Error::ChangeFailed: return QObject::tr("The wallet password could not be changed.");
-    case Error::Uncertain: return QObject::tr("The wallet operation outcome could not be confirmed. Check the wallet before retrying.");
-    case Error::Rejected: return QObject::tr("The wallet operation could not be started.");
+    const auto* operation = m_security->activeOperation();
+    if (!operation) return SecurityState::SecurityIdle;
+    switch (operation->phase()) {
+    case SecurityOperationModel::Phase::AwaitingCredentials:
+    case SecurityOperationModel::Phase::Cancelled: return SecurityState::SecurityIdle;
+    case SecurityOperationModel::Phase::Pending: return SecurityState::SecurityPending;
+    case SecurityOperationModel::Phase::Succeeded: return SecurityState::SecuritySucceeded;
+    case SecurityOperationModel::Phase::Failed: return SecurityState::SecurityFailed;
+    case SecurityOperationModel::Phase::Uncertain: return SecurityState::SecurityUncertain;
     }
-    return QObject::tr("The wallet operation could not be started.");
+    return SecurityState::SecurityIdle;
 }
+
+bool WalletQmlModel::securityBusy() const
+{
+    const auto* operation = m_security->activeOperation();
+    return operation && operation->busy();
+}
+
+QString WalletQmlModel::securityError() const
+{
+    const auto* operation = m_security->activeOperation();
+    return operation ? operation->error() : QString{};
 }
 
 WalletQmlModel::ApprovalState WalletQmlModel::signerApprovalState() const
@@ -1287,59 +1320,8 @@ WalletQmlModel::ApprovalState WalletQmlModel::signerApprovalState() const
 
 bool WalletQmlModel::startSecurity(walletsecurity::Kind kind, const QString& current, const QString& replacement)
 {
-    if (!available() || !m_opening || securityBusy() || preparationBusy() || sendBusy() || m_approval) return false;
-    // The original Native owner retains the immutable editor input. Encoding
-    // and secure-buffer work happens inside the accepted security action.
-    auto current_input = secretinput::Capture(m_opening->scheduler(), current);
-    auto replacement_input = secretinput::Capture(m_opening->scheduler(), replacement);
-    if (!current_input || !replacement_input) {
-        m_security_state = SecurityState::SecurityFailed;
-        m_security_error = tr("The password input could not be queued. No wallet password was changed.");
-        Q_EMIT securityOperationChanged();
-        return false;
-    }
-    const auto ticket = std::make_shared<const walletsecurity::Identity>();
-    const QPointer<WalletQmlModel> observer{this};
-    auto operation = std::make_shared<walletsecurity::Operation>(m_opening, kind,
-        [bridge = m_notification_bridge, observer, ticket] {
-            QMetaObject::invokeMethod(bridge.get(), [observer, ticket] {
-                if (observer && observer->observationsAllowed() && observer->m_security_ticket == ticket) observer->publishSecurityOperation();
-            }, Qt::QueuedConnection);
-        });
-    m_security_ticket = ticket;
-    m_security_operation = operation;
-    m_security_state = SecurityState::SecurityPending;
-    m_security_error.clear();
-    const bool had_settings_error = !m_settings_error.isEmpty();
-    m_settings_error.clear();
-    const auto admission = operation->start({kind, {}, {}, std::move(current_input.input), std::move(replacement_input.input)});
-    if (had_settings_error) {
-        Q_EMIT settingsErrorChanged();
-        if (!observer || m_stopping || m_security_ticket != ticket) return bool(admission);
-    }
-    Q_EMIT securityOperationChanged();
-    return bool(admission);
-}
-
-void WalletQmlModel::publishSecurityOperation()
-{
-    if (!observationsAllowed()) return;
-    if (m_admission_closed) return;
-    const auto ticket = m_security_ticket;
-    const auto result = m_security_operation->result();
-    if (!result) return;
-    const QString error = SecurityErrorText(result->error);
-    const bool security_changed = result->state_known && (m_is_encrypted != result->encrypted || m_is_locked != result->locked);
-    m_security_state = result->error == walletsecurity::Error::None ? SecurityState::SecuritySucceeded
-        : result->error == walletsecurity::Error::Uncertain ? SecurityState::SecurityUncertain : SecurityState::SecurityFailed;
-    m_security_error = error;
-    m_settings_error = error;
-    if (result->state_known) { m_is_encrypted = result->encrypted; m_is_locked = result->locked; }
-    const QPointer<WalletQmlModel> observer{this};
-    if (security_changed) { Q_EMIT securityStateChanged(); if (!observer || m_stopping || m_security_ticket != ticket) return; }
-    Q_EMIT settingsErrorChanged(); if (!observer || m_stopping || m_security_ticket != ticket) return;
-    if (result->error == walletsecurity::Error::Uncertain) m_opening->refreshMetadata();
-    Q_EMIT securityOperationChanged();
+    auto* operation = kind == walletsecurity::Kind::Encrypt ? m_security->beginEncryption() : m_security->beginPassphraseChange();
+    return operation && operation->submitCredentials(operation->operationId(), current, replacement, replacement);
 }
 
 bool WalletQmlModel::encryptWallet(const QString& passphrase)
@@ -1373,14 +1355,25 @@ bool WalletQmlModel::backupWallet(const QString& path)
         return false;
     }
     auto services = m_backup_services;
-    const auto wallet_lane = m_backend_executor->scheduler();
     if (services.scheduler && (!services.wallet_name || !services.write)) {
         setSettingsError(tr("The backup service has no owned wallet adapter."));
         return false;
     }
-    if (!services.scheduler) services.scheduler = wallet_lane;
+    if (!services.scheduler) {
+        if (!m_opening) { setSettingsError(tr("This wallet is closing.")); return false; }
+        services.scheduler = m_opening->scheduler();
+        services.available = [weak = std::weak_ptr<walletopening::Session>{m_opening}] {
+            const auto opening = weak.lock(); return opening && opening->available();
+        };
+        services.submit = [weak = std::weak_ptr<walletopening::Session>{m_opening}](std::function<void()> work) {
+            const auto opening = weak.lock();
+            const auto action = opening ? opening->startAction() : nullptr;
+            if (!action) return execution::Admission{{}, execution::Rejection::Closed};
+            return opening->perform(action, [work = std::move(work)](interfaces::Wallet&) { work(); return true; }, [](bool) {});
+        };
+    }
     if (!services.post) services.post = m_fee_read_services.post;
-    if (!services.wallet_name) services.wallet_name = [wallet = m_wallet.get()] { return wallet->getWalletName(); };
+    if (!services.wallet_name) services.wallet_name = [name = m_name] { return name.toStdString(); };
     if (!services.inspect) services.inspect = backup::Inspect;
     if (!m_backup_services.coordinator) m_backup_services.coordinator = std::make_shared<backup::InstallCoordinator>();
     if (!services.write) {
@@ -2111,7 +2104,7 @@ void WalletQmlModel::publishSendFacts()
 quint8 WalletQmlModel::automaticMaximumCapabilities() const
 {
     return quint8((m_metadata_known ? 1 : 0) | (m_private_keys_disabled ? 2 : 0) | (m_external_signer ? 4 : 0) |
-                  (m_is_encrypted ? 8 : 0) | (m_is_locked ? 16 : 0) | (m_can_get_addresses ? 32 : 0) | (m_taproot ? 64 : 0));
+                  (isEncrypted() ? 8 : 0) | (isLocked() ? 16 : 0) | (m_can_get_addresses ? 32 : 0) | (m_taproot ? 64 : 0));
 }
 void WalletQmlModel::invalidateAutomaticMaximum()
 {

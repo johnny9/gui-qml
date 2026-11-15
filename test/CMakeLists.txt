@@ -136,6 +136,7 @@ if(ENABLE_WALLET)
     test_walletreceipts.cpp
     test_walletrequests.cpp
     test_walletreservations.cpp
+    test_walletsettings.cpp
     test_walletbalanceadapter.cpp
     test_walletbalancereader.cpp
   )

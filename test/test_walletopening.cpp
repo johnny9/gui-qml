@@ -649,6 +649,9 @@ private Q_SLOTS:
         QCOMPARE(model.securityState(), WalletQmlModel::SecurityState::SecurityPending);
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         QCOMPARE(model.securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        // Only Session metadata can update observed security; consume its
+        // fresh Native read after the operation's historical outcome.
+        commands.drain(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         QVERIFY(model.isEncrypted()); QVERIFY(model.isLocked());
         commands.drain();
     }

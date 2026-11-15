@@ -956,10 +956,7 @@ void WalletQmlController::refreshDisplayAliases()
             [scheduler = backgroundScheduler()] {
                 auto aliases = execution::RetainSnapshot<DisplayAliases>(scheduler, [] {
                     auto result = std::make_unique<DisplayAliases>(); QSettings settings;
-                    settings.beginGroup(QStringLiteral("walletDisplayNames"));
-                    for (const auto& key : settings.allKeys()) {
-                        const auto alias = settings.value(key).toString().trimmed(); if (!alias.isEmpty()) result->names.emplace(key, alias);
-                    }
+                    result->names = walletidentity::ReadAliases(settings);
                     if (settings.status() != QSettings::NoError) throw std::runtime_error("Wallet aliases could not be read");
                     result->home = QDir::homePath(); return result;
                 });

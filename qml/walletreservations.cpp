@@ -3,18 +3,49 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/walletrequests.h>
+#include <qml/walletidentity.h>
+#include <qml/walletsettings.h>
 
 #include <key_io.h>
 #include <outputtype.h>
 #include <wallet/types.h>
 #include <QScopeGuard>
 #include <QSettings>
+#include <QStringList>
+#include <stdexcept>
 
 namespace walletrequests {
 namespace {
-QString SettingsKey(interfaces::Wallet& wallet)
+QString LegacyKey(const QString& name)
 {
-    return QStringLiteral("receiveAddressTypes/%1/").arg(QString::fromStdString(wallet.getWalletName()));
+    return QStringLiteral("receiveAddressTypes/%1/").arg(name);
+}
+struct Reservation {
+    QString address;
+    QStringList retired;
+};
+Reservation ReadReservation(QSettings& settings, const QString& id, const QString& legacy_name)
+{
+    if (const auto value = walletsettings::Read(settings, walletsettings::Area::Reservations, id)) {
+        const auto address = value->value(QStringLiteral("address"));
+        const auto retired = value->value(QStringLiteral("retired"));
+        if (address.metaType().id() != QMetaType::QString || retired.metaType().id() != QMetaType::QStringList) {
+            throw std::runtime_error("The receive reservation entry is incomplete");
+        }
+        return {address.toString(), retired.toStringList()};
+    }
+    Reservation value{settings.value(LegacyKey(legacy_name) + QStringLiteral("address")).toString(), {}};
+    settings.beginGroup(LegacyKey(legacy_name) + QStringLiteral("retired"));
+    const auto leave = qScopeGuard([&] { settings.endGroup(); });
+    for (const auto& address : settings.childKeys()) if (settings.value(address, false).toBool()) value.retired.push_back(address);
+    return value;
+}
+bool SaveReservation(QSettings& settings, const QString& id, const Reservation& value)
+{
+    walletsettings::Stage(settings, walletsettings::Area::Reservations, id,
+        {{QStringLiteral("address"), value.address}, {QStringLiteral("retired"), value.retired}});
+    settings.sync();
+    return settings.status() == QSettings::NoError;
 }
 std::optional<OutputType> DestinationType(const CTxDestination& destination)
 {
@@ -30,31 +61,53 @@ Error TransportError(std::exception_ptr error)
 }
 }
 
-ReservationStorage SettingsReservationStorage()
+ReservationStorage SettingsReservationStorage(std::optional<QString> canonical_identity)
 {
     return {
-        [](interfaces::Wallet& wallet, const QString& candidate) {
+        [canonical_identity](interfaces::Wallet& wallet, const QString& candidate) {
             QSettings settings;
             settings.sync();
-            const auto key = SettingsKey(wallet);
-            const auto address = candidate.isEmpty() ? settings.value(key + QStringLiteral("address")).toString() : candidate;
-            return StoredAddress{address, settings.value(key + QStringLiteral("retired/") + address, false).toBool(), settings.status() == QSettings::NoError};
+            try {
+                const auto name = QString::fromStdString(wallet.getWalletName());
+                const auto value = ReadReservation(settings, canonical_identity.value_or(walletidentity::Canonical(name)), name);
+                const auto address = candidate.isEmpty() ? value.address : candidate;
+                return StoredAddress{address, value.retired.contains(address), settings.status() == QSettings::NoError};
+            } catch (const std::runtime_error&) { return StoredAddress{{}, false, false}; }
         },
-        [](interfaces::Wallet& wallet, const QString& address) {
+        [canonical_identity](interfaces::Wallet& wallet, const QString& address) {
             QSettings settings;
-            settings.setValue(SettingsKey(wallet) + QStringLiteral("address"), address);
-            settings.sync(); return settings.status() == QSettings::NoError;
+            try {
+                const auto name = QString::fromStdString(wallet.getWalletName());
+                const auto id = canonical_identity.value_or(walletidentity::Canonical(name));
+                auto value = ReadReservation(settings, id, name);
+                value.address = address;
+                settings.setValue(LegacyKey(name) + QStringLiteral("address"), address);
+                return SaveReservation(settings, id, value);
+            } catch (const std::runtime_error&) { return false; }
         },
-        [](interfaces::Wallet& wallet, const QString& address) {
+        [canonical_identity](interfaces::Wallet& wallet, const QString& address) {
             QSettings settings;
-            settings.setValue(SettingsKey(wallet) + QStringLiteral("retired/") + address, true);
-            settings.sync(); return settings.status() == QSettings::NoError;
+            try {
+                const auto name = QString::fromStdString(wallet.getWalletName());
+                const auto id = canonical_identity.value_or(walletidentity::Canonical(name));
+                auto value = ReadReservation(settings, id, name);
+                if (!value.retired.contains(address)) value.retired.push_back(address);
+                settings.setValue(LegacyKey(name) + QStringLiteral("retired/") + address, true);
+                return SaveReservation(settings, id, value);
+            } catch (const std::runtime_error&) { return false; }
         },
-        [](interfaces::Wallet& wallet, const QString& address) {
+        [canonical_identity](interfaces::Wallet& wallet, const QString& address) {
             QSettings settings;
-            const QString key = SettingsKey(wallet) + QStringLiteral("address");
-            if (address.isEmpty() || settings.value(key).toString() == address) settings.remove(key);
-            settings.sync(); return settings.status() == QSettings::NoError;
+            try {
+                const auto name = QString::fromStdString(wallet.getWalletName());
+                const auto id = canonical_identity.value_or(walletidentity::Canonical(name));
+                auto value = ReadReservation(settings, id, name);
+                if (address.isEmpty() || value.address == address) {
+                    value.address.clear();
+                    settings.setValue(LegacyKey(name) + QStringLiteral("address"), QString{});
+                }
+                return SaveReservation(settings, id, value);
+            } catch (const std::runtime_error&) { return false; }
         },
     };
 }

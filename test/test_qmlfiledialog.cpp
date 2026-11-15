@@ -39,7 +39,96 @@ private Q_SLOTS:
     void acceptedCarriesTheSelectedFile();
     void overwritePolicyIsExplicitAndRetained();
     void closingChooserDoesNotCloseTheApplication();
+    void chooserAdmissionRejectsOverlapAndReentry();
+    void retiredNativeCallbackCannotChooseForANewContext();
+    void contextChangeDuringFilePublicationRejectsAcceptance();
+    void disablingDuringCompletionRejectsAcceptance();
 };
+
+void QmlFileDialogTests::chooserAdmissionRejectsOverlapAndReentry()
+{
+    QmlFileDialog first, second;
+    QVERIFY(first.open());
+    QVERIFY(!first.open());
+    QVERIFY(!second.open());
+    bool reentered{true}, overlapped{true};
+    connect(&first, &QmlFileDialog::rejected, this, [&] { reentered = first.open(); overlapped = second.open(); });
+    first.close();
+    QVERIFY(!reentered);
+    QVERIFY(!overlapped);
+    QVERIFY(!first.isVisible());
+    QVERIFY(second.open());
+    second.close();
+}
+
+void QmlFileDialogTests::retiredNativeCallbackCannotChooseForANewContext()
+{
+    QObject original, replacement;
+    QmlFileDialog chooser;
+    chooser.setContextObject(&original);
+    QVERIFY(chooser.open());
+    const QPointer<QFileDialog> old = VisibleFileDialog();
+    QVERIFY(old);
+    QSignalSpy accepted{&chooser, &QmlFileDialog::accepted};
+    QSignalSpy rejected{&chooser, &QmlFileDialog::rejected};
+    QVERIFY(QMetaObject::invokeMethod(old, "accepted", Qt::QueuedConnection));
+    chooser.setContextObject(&replacement);
+    QCOMPARE(rejected.count(), 1);
+    QVERIFY(!chooser.isVisible());
+    QVERIFY(chooser.open());
+    const QPointer<QFileDialog> current = VisibleFileDialog();
+    QVERIFY(current);
+    QVERIFY(current != old);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+    QCOMPARE(accepted.count(), 0);
+    QCOMPARE(rejected.count(), 1);
+    QVERIFY(chooser.isVisible());
+    chooser.close();
+    QCOMPARE(rejected.count(), 2);
+}
+
+void QmlFileDialogTests::contextChangeDuringFilePublicationRejectsAcceptance()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QObject original, replacement;
+    QmlFileDialog chooser;
+    chooser.setFileMode(QmlFileDialog::SaveFile);
+    chooser.setContextObject(&original);
+    chooser.setCurrentFile(QUrl::fromLocalFile(directory.filePath("backup.bak")));
+    QVERIFY(chooser.open());
+    const QPointer<QFileDialog> native = VisibleFileDialog();
+    QVERIFY(native);
+    QSignalSpy accepted{&chooser, &QmlFileDialog::accepted};
+    QSignalSpy rejected{&chooser, &QmlFileDialog::rejected};
+    connect(&chooser, &QmlFileDialog::selectedFileChanged, this, [&] { chooser.setContextObject(&replacement); });
+    QVERIFY(QMetaObject::invokeMethod(native, "accepted", Qt::DirectConnection));
+    QCOMPARE(accepted.count(), 0);
+    QCOMPARE(rejected.count(), 1);
+    QVERIFY(!chooser.isVisible());
+}
+
+void QmlFileDialogTests::disablingDuringCompletionRejectsAcceptance()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QmlFileDialog chooser;
+    chooser.setFileMode(QmlFileDialog::SaveFile);
+    chooser.setCurrentFile(QUrl::fromLocalFile(directory.filePath("backup.bak")));
+    QVERIFY(chooser.open());
+    const QPointer<QFileDialog> native = VisibleFileDialog();
+    QVERIFY(native);
+    QSignalSpy accepted{&chooser, &QmlFileDialog::accepted};
+    QSignalSpy rejected{&chooser, &QmlFileDialog::rejected};
+    connect(&chooser, &QmlFileDialog::visibleChanged, this, [&] { if (!chooser.isVisible()) chooser.setEnabled(false); });
+    QVERIFY(QMetaObject::invokeMethod(native, "accepted", Qt::DirectConnection));
+    QCOMPARE(accepted.count(), 0);
+    QCOMPARE(rejected.count(), 1);
+    QVERIFY(!chooser.open());
+    chooser.setEnabled(true);
+    QVERIFY(chooser.open());
+    chooser.close();
+}
 
 void QmlFileDialogTests::saveModeAsksToSaveNotToOpen()
 {

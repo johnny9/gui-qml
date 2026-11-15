@@ -9,6 +9,7 @@
 #include <util/moneystr.h>
 #include <interfaces/handler.h>
 #include <interfaces/wallet.h>
+#include <rpc/protocol.h>
 
 #include <QApplication>
 #include <QEvent>
@@ -27,6 +28,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -447,6 +449,66 @@ private Q_SLOTS:
         QTRY_VERIFY(!wallet->isLocked());
         qmltest::Rpc(m_app, "walletlock", {}, wallet->name());
         QTRY_VERIFY(wallet->isLocked());
+    }
+
+    void passwordOutcomeReconcilesRpcChangesWhileGuiPublicationIsHeld_data()
+    {
+        QTest::addColumn<bool>("relock");
+        QTest::newRow("rpc-unlocks") << false;
+        QTest::newRow("rpc-unlocks-and-relocks") << true;
+    }
+
+    void passwordOutcomeReconcilesRpcChangesWhileGuiPublicationIsHeld()
+    {
+        QFETCH(bool, relock);
+        auto* wallet = qmltest::CreateWallet(m_app, "security_rpc_interleaving");
+        QVERIFY(wallet); QVERIFY(wallet->encryptWallet("before"));
+        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_VERIFY(wallet->isLocked());
+        QVERIFY(wallet->changeWalletPassphrase("before", "after"));
+        QCOMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecurityPending);
+        auto* node = &m_app.node();
+        const std::string uri = "/wallet/" + wallet->name().toStdString();
+        std::exception_ptr failure;
+        QSemaphore completed;
+        std::thread rpc{[node, uri, relock, &failure, &completed] {
+            try {
+                UniValue unlock{UniValue::VARR}; unlock.push_back("after"); unlock.push_back(60);
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+                for (;;) {
+                    try { node->executeRpc("walletpassphrase", unlock, uri); break; }
+                    catch (const UniValue& error) {
+                        // Only the known old-password window is retryable.
+                        // Success proves the independent RPC observed the new
+                        // password; no GUI processing is used as its barrier.
+                        if (error.find_value("code").getInt<int>() != RPC_WALLET_PASSPHRASE_INCORRECT || std::chrono::steady_clock::now() >= deadline) throw;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+                }
+                if (relock) node->executeRpc("walletlock", UniValue{UniValue::VARR}, uri);
+            } catch (...) { failure = std::current_exception(); }
+            completed.release();
+        }};
+        const auto join = qScopeGuard([&] { if (rpc.joinable()) rpc.join(); });
+        // Intentional test-only GUI hold: Core/RPC and Domain must progress
+        // independently. The normal test process watchdog owns a stuck RPC.
+        const bool without_gui = completed.tryAcquire(1, 10'000);
+        if (!without_gui) {
+            const bool after_gui = QTest::qWaitFor([&] { return completed.available() > 0; }, 10'000);
+            QVERIFY2(after_gui, "Independent wallet RPC did not drain after GUI publication resumed");
+        }
+        rpc.join();
+        QVERIFY2(without_gui, "Public Core/RPC could not finish while GUI publication was held");
+        QVERIFY2(!failure, "Independent wallet RPC failed");
+        QCOMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecurityPending);
+        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE(wallet->isLocked(), relock);
+        const auto expected = relock ? WalletSecurityModel::ObservedState::Locked : WalletSecurityModel::ObservedState::Unlocked;
+        QCOMPARE(wallet->security()->observedState(), expected);
+        if (!relock) {
+            qmltest::Rpc(m_app, "walletlock", {}, wallet->name());
+            QTRY_VERIFY(wallet->isLocked());
+        }
     }
 
     void settingsExposeReadOnlyNameAndBackUpToTheChosenDirectory()

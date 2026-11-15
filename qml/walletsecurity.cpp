@@ -16,12 +16,18 @@ std::optional<Error> Validate(Kind kind, bool current_empty, bool replacement_em
 
 Result Execute(interfaces::Wallet& wallet, Request request)
 {
+    SecureString confirmation;
+    const bool confirmation_required = bool(request.captured_confirmation);
     try {
         if (request.captured_current) request.current = secretinput::Materialize(request.captured_current);
         if (request.captured_replacement) request.replacement = secretinput::Materialize(request.captured_replacement);
+        if (request.captured_confirmation) confirmation = secretinput::Materialize(request.captured_confirmation);
         request.captured_current.reset(); request.captured_replacement.reset();
+        request.captured_confirmation.reset();
     } catch (const secretinput::Failure&) { return {Error::Rejected}; }
     if (const auto error = Validate(request.kind, request.current.empty(), request.replacement.empty())) return {*error};
+    if (confirmation_required && confirmation != request.replacement) return {Error::ConfirmationMismatch};
+    confirmation.clear();
     if (wallet.privateKeysDisabled()) return {Error::NoPrivateKeys};
     Error error{Error::None};
     if (request.kind == Kind::Encrypt) {
@@ -44,7 +50,8 @@ execution::Admission Operation::start(Request request)
         if (std::exchange(m_started, true) || request.kind != m_kind) return {{}, execution::Rejection::Invalid};
     }
     const size_t bytes = request.current.capacity() + request.replacement.capacity() + sizeof(Request)
-        + secretinput::Bytes(request.captured_current) + secretinput::Bytes(request.captured_replacement);
+        + secretinput::Bytes(request.captured_current) + secretinput::Bytes(request.captured_replacement)
+        + secretinput::Bytes(request.captured_confirmation);
     const auto self = shared_from_this();
     const auto admission = m_opening->read([request = std::move(request)](interfaces::Wallet& wallet) mutable {
         return Execute(wallet, std::move(request));

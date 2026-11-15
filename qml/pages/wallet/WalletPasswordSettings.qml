@@ -17,11 +17,16 @@ SettingsPage {
 
     required property bool updating
     property WalletQmlModel wallet: null
-    property string errorText: ""
-    property string successText: ""
-    property WalletQmlModel actionWallet: null
-    property bool waitingForSave: false
-    property bool saveWasUpdate: false
+    readonly property WalletSecurityModel security: wallet ? wallet.security : null
+    property SecurityOperationModel actionOperation: null
+    property string admissionError: ""
+    readonly property bool waitingForSave: actionOperation !== null && actionOperation.busy
+    readonly property bool securityBusy: security !== null && security.activeOperation !== null && security.activeOperation.busy
+    readonly property string errorText: admissionError.length > 0 ? admissionError
+        : actionOperation && (actionOperation.phase === SecurityOperationModel.Failed || actionOperation.phase === SecurityOperationModel.Uncertain)
+            ? actionOperation.error : ""
+    readonly property string successText: actionOperation && actionOperation.phase === SecurityOperationModel.Succeeded
+        && actionOperation.kind === SecurityOperationModel.ChangePassphrase ? qsTr("Password updated successfully.") : ""
     readonly property string resultText: successText.length > 0 ? successText : errorText
     readonly property bool resultSuccess: successText.length > 0
 
@@ -45,48 +50,18 @@ SettingsPage {
     }
 
     function clearResult() {
-        root.errorText = ""
-        root.successText = ""
+        admissionError = ""
+        if (actionOperation && !actionOperation.busy) actionOperation = null
     }
 
-    function handleSaveResult(ok, changing, uncertain) {
-        const updating = changing === undefined ? root.updating : changing
-        if (ok) {
-            root.errorText = ""
-            root.clearPasswordFields()
-            if (updating) {
-                root.successText = qsTr("Password updated successfully.")
-            } else {
-                if (acknowledgement.loadedTrailingItem) {
-                    (acknowledgement.loadedTrailingItem as OptionSwitch).checked = false
-                }
-                root.saved()
-            }
-        } else {
-            root.successText = ""
-            root.errorText = root.actionWallet ? root.actionWallet.securityError : ""
-            if (!updating && !uncertain) {
-                root.clearPasswordFields()
-            }
-        }
-    }
-
-    function finishSaveIfReady() {
-        if (!waitingForSave || !actionWallet || actionWallet !== wallet || !visible || actionWallet.securityBusy) return
-        if (actionWallet.securityState === WalletQmlModel.SecuritySucceeded || actionWallet.securityState === WalletQmlModel.SecurityFailed
-            || actionWallet.securityState === WalletQmlModel.SecurityUncertain) {
-            waitingForSave = false
-            handleSaveResult(actionWallet.securityState === WalletQmlModel.SecuritySucceeded, saveWasUpdate,
-                actionWallet.securityState === WalletQmlModel.SecurityUncertain)
-        }
-    }
-
-    onWalletChanged: {
-        waitingForSave = false
-        actionWallet = null
+    function detachOperation() {
+        if (actionOperation && actionOperation.canCancel) actionOperation.cancel()
+        actionOperation = null
+        admissionError = ""
         clearPasswordFields()
-        clearResult()
     }
+
+    onWalletChanged: root.detachOperation()
 
     function focusInitialPasswordField() {
         const entry = root.updating ? currentPassword : newPassword
@@ -94,32 +69,29 @@ SettingsPage {
     }
 
     Component.onCompleted: {
-        if (root.wallet) root.wallet.clearSettingsError()
         root.clearResult()
         Qt.callLater(root.focusInitialPasswordField)
     }
     StackView.onActivated: Qt.callLater(root.focusInitialPasswordField)
-    Component.onDestruction: root.clearPasswordFields()
+    Component.onDestruction: root.detachOperation()
     onVisibleChanged: {
-        if (!visible) {
-            root.waitingForSave = false
-            root.actionWallet = null
-            root.clearPasswordFields()
-        } else {
-            root.finishSaveIfReady()
-            Qt.callLater(root.focusInitialPasswordField)
+        if (!visible) root.detachOperation()
+        else Qt.callLater(root.focusInitialPasswordField)
+    }
+
+    Connections {
+        target: root.wallet
+        function onAvailableChanged() {
+            if (!root.wallet || !root.wallet.available) root.detachOperation()
         }
     }
 
     Connections {
-        target: root.actionWallet
-        function onSecurityOperationChanged() { root.finishSaveIfReady() }
-        function onAvailableChanged() {
-            if (root.actionWallet && !root.actionWallet.available) {
-                root.clearPasswordFields()
-                root.waitingForSave = false
-                root.actionWallet = null
-            }
+        target: root.actionOperation
+        function onChanged() {
+            if (!root.actionOperation || root.actionOperation.phase !== SecurityOperationModel.Succeeded) return
+            root.clearPasswordFields()
+            if (root.actionOperation.kind === SecurityOperationModel.Encrypt) root.saved()
         }
     }
 
@@ -132,7 +104,7 @@ SettingsPage {
     }
 
     FormSection {
-        enabled: root.wallet !== null && root.wallet.available && !root.wallet.securityBusy
+        enabled: root.wallet !== null && root.wallet.available && !root.securityBusy
         objectName: "walletPasswordFormSection"
         Layout.fillWidth: true
 
@@ -215,7 +187,8 @@ SettingsPage {
                 text: root.updating ? qsTr("Update password") : qsTr("Set password")
                 enabled: ApplicationModels.walletController.initialized
                     && root.wallet !== null && root.wallet.available && root.wallet.canManagePassphrase
-                    && !root.wallet.securityBusy
+                    && root.security !== null && (root.updating ? root.security.canChangePassphrase : root.security.canEncrypt)
+                    && !root.securityBusy
                     && newPassword.text !== ""
                     && confirmPassword.text !== ""
                     && newPassword.text === confirmPassword.text
@@ -224,16 +197,17 @@ SettingsPage {
                         : acknowledgement.loadedTrailingItem && (acknowledgement.loadedTrailingItem as OptionSwitch).checked)
                 onClicked: {
                     root.clearResult()
-                    root.actionWallet = root.wallet
-                    root.saveWasUpdate = root.updating
-                    root.waitingForSave = true
-                    const admitted = root.updating
-                        ? root.actionWallet.changeWalletPassphrase(currentPassword.text, newPassword.text)
-                        : root.actionWallet.encryptWallet(newPassword.text)
-                    if (!admitted) {
-                        root.waitingForSave = false
-                        root.errorText = qsTr("The wallet operation could not be started.")
-                    } else root.finishSaveIfReady()
+                    root.actionOperation = root.updating ? root.security.beginPassphraseChange() : root.security.beginEncryption()
+                    if (!root.actionOperation) {
+                        root.admissionError = qsTr("The wallet operation could not be started.")
+                        return
+                    }
+                    const admitted = root.actionOperation.submitCredentials(root.actionOperation.promptId,
+                        currentPassword.text, newPassword.text, confirmPassword.text)
+                    if (!admitted && root.actionOperation.canSubmit) {
+                        root.actionOperation.cancel()
+                        root.admissionError = qsTr("The wallet operation could not be started.")
+                    }
                 }
             }
         }

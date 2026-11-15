@@ -521,7 +521,7 @@ TestCase {
             compare(originalView.currentTab, WalletView.Send)
             const picker = findChild(originalView.sendPage, "sendPsbtOpenDialog")
             tryCompare(picker, "visible", true)
-            compare(picker.targetWallet, testWalletModel)
+            compare(picker.contextObject, testWalletModel)
             picker.selectAndAccept("file:///selected-opening.psbt")
             compare(testWalletModel.psbtActionId, original + 1)
             compare(testWalletModel.psbtActionBusy, true)

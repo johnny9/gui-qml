@@ -25,6 +25,10 @@ struct Services {
     std::shared_ptr<InstallCoordinator> coordinator;
     // Consumed on the backend lane, even if the GUI observer has disappeared.
     std::function<void(Snapshot)> outcome;
+    // Optional original-opening admission; the production adapter uses the
+    // shared Session action lane and checks Native unload independently of GUI.
+    std::function<execution::Admission(std::function<void()>)> submit;
+    std::function<bool()> available;
 };
 struct OperationState;
 } // namespace backup

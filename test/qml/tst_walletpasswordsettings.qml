@@ -228,7 +228,7 @@ TestCase {
         save.clicked()
         compare(testWalletModel.securityBusy, true)
         compare(page.waitingForSave, true)
-        compare(page.actionWallet, testWalletModel)
+        compare(page.actionOperation, testWalletModel.security.activeOperation)
         compare(save.enabled, false)
         compare(findChild(page, "walletPasswordCurrentField").enabled, false)
         compare(page.successText, "")
@@ -290,14 +290,19 @@ TestCase {
         let savedCount = 0
         page.saved.connect(function() { savedCount += 1 })
 
-        page.errorText = "The current password is incorrect."
+        findChild(page, "walletPasswordCurrentField").text = "current secret"
+        findChild(page, "walletPasswordNewField").text = "replacement secret"
+        findChild(page, "walletPasswordConfirmField").text = "replacement secret"
+        findChild(page, "walletPasswordSaveButton").clicked()
+        testWalletModel.finishSecurityForTest(false)
         tryCompare(banner, "visible", true)
-        compare(resultText.text, "The current password is incorrect.")
+        compare(resultText.text, "Security operation failed")
         compare(banner.iconSource.toString(), "image://images/info-filled")
         compare(banner.textColor, Theme.color.red)
 
         page.clearResult()
-        page.handleSaveResult(true)
+        findChild(page, "walletPasswordSaveButton").clicked()
+        testWalletModel.finishSecurityForTest(true)
         compare(savedCount, 0)
         compare(page.successText, "Password updated successfully.")
         tryCompare(banner, "visible", true)

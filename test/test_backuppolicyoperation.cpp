@@ -60,6 +60,46 @@ class BackupPolicyOperationTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void nativeOpeningCloseDoesNotWaitForGuiPublication_data()
+    {
+        QTest::addColumn<int>("moment");
+        QTest::newRow("before-inspection") << 0;
+        QTest::newRow("inside-inspection") << 1;
+        QTest::newRow("awaiting-confirmation") << 2;
+        QTest::newRow("approval-queued") << 3;
+        QTest::newRow("before-write-admission") << 4;
+        QTest::newRow("after-write-admission-retains-actual-result") << 5;
+    }
+    void nativeOpeningCloseDoesNotWaitForGuiPublication()
+    {
+        QFETCH(int, moment);
+        Fixture f;
+        bool available{moment != 0};
+        auto ports = f.services();
+        ports.available = [&] { return available; };
+        if (moment == 1) ports.inspect = [&](const auto&, const auto&) { ++f.inspected; available = false; return f.proposal; };
+        if (moment == 4 || moment == 5) f.proposal.exists = false;
+        int publications{0};
+        if (moment == 4) ports.post = [&](auto publication) {
+            f.environment.post(std::move(publication));
+            if (++publications == 2) available = false;
+        };
+        if (moment == 5) ports.write = [&](const auto&, bool) { ++f.written; available = false; return backup::WriteResult{}; };
+        BackupFileOperation operation{"/selected", ports};
+        QVERIFY(operation.start());
+        f.environment.drain(); // Hold all GUI notifications while Native observes closure.
+        if (moment == 2 || moment == 3) {
+            if (moment == 2) available = false;
+            QVERIFY(operation.approve());
+            available = false;
+            f.environment.drain();
+        }
+        QCOMPARE(f.written, moment == 5 ? 1 : 0);
+        QCOMPARE(f.outcomes.size(), size_t{1});
+        QCOMPARE(f.outcomes.front().phase, moment == 5 ? backup::Phase::Succeeded : backup::Phase::Retired);
+        f.environment.publishAll();
+        QCOMPARE(operation.phase(), moment == 5 ? BackupFileOperation::Phase::Succeeded : BackupFileOperation::Phase::Retired);
+    }
     void refusalHasNoWriteEffect()
     {
         Fixture f; BackupFileOperation operation{"/selected.v1", f.services()};

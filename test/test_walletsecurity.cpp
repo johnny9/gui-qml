@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/backendexecutor.h>
+#include <qml/guipresentation.h>
+#include <qml/models/walletsecuritymodel.h>
 #include <qml/walletsecurity.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/mocks/mockwallet.h>
@@ -55,6 +57,138 @@ class WalletSecurityTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void typedPromptRejectsStaleAnswersAndDuplicateMutation()
+    {
+        Fixture f;
+        WalletSecurityModel model;
+        model.bind(f.session, presentation::MakeGuiObject(), [] { return true; });
+        model.observe(walletopening::Metadata{});
+        QCOMPARE(model.observedState(), WalletSecurityModel::ObservedState::Unencrypted);
+        auto* cancelled = model.beginEncryption(); QVERIFY(cancelled);
+        const auto old_prompt = cancelled->operationId();
+        QVERIFY(cancelled->canSubmit()); QVERIFY(cancelled->cancel());
+        QVERIFY(cancelled->terminal()); QVERIFY(cancelled->outcomeKnown());
+        auto* operation = model.beginEncryption(); QVERIFY(operation);
+        QVERIFY(operation->operationId() != old_prompt);
+        QVERIFY(!operation->submitCredentials(old_prompt, {}, "replacement", "replacement"));
+        QCOMPARE(f.wallet->encryptions, 0);
+        QVERIFY(operation->submitCredentials(operation->operationId(), {}, "replacement", "replacement"));
+        QVERIFY(operation->busy()); QVERIFY(!operation->outcomeKnown());
+        QVERIFY(!operation->cancel()); QVERIFY(!model.beginEncryption());
+        QVERIFY(!operation->submitCredentials(operation->operationId(), {}, "replacement", "replacement"));
+        QCOMPARE(f.wallet->encryptions, 0);
+        f.commands.drain();
+        QCOMPARE(f.wallet->encryptions, 1);
+        QVERIFY(operation->busy()); // GUI has not consumed the actual outcome.
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(operation->phase(), SecurityOperationModel::Phase::Succeeded);
+        QVERIFY(operation->outcomeKnown()); QVERIFY(operation->backupRecommended());
+        QVERIFY(!model.isEncrypted()); // Mutation result is not the observation stream.
+        f.commands.drain();
+        const auto update = f.session->take(); QVERIFY(update && update->metadata);
+        model.observe(*update->metadata);
+        QVERIFY(model.isEncrypted()); QVERIFY(model.isLocked());
+    }
+    void credentialConfirmationIsCheckedOnNativeBeforeMutation_data()
+    {
+        QTest::addColumn<QString>("replacement"); QTest::addColumn<QString>("confirmation");
+        QTest::newRow("different") << QString{"replacement"} << QString{"other"};
+        QTest::newRow("empty-confirmation") << QString{"replacement"} << QString{};
+        QTest::newRow("unicode") << QString::fromUtf8("password\xC3\xA9") << QString{"passworde"};
+    }
+    void credentialConfirmationIsCheckedOnNativeBeforeMutation()
+    {
+        QFETCH(QString, replacement); QFETCH(QString, confirmation);
+        Fixture f;
+        WalletSecurityModel model;
+        model.bind(f.session, presentation::MakeGuiObject(), [] { return true; });
+        auto* operation = model.beginEncryption(); QVERIFY(operation);
+        QVERIFY(operation->submitCredentials(operation->operationId(), {}, replacement, confirmation));
+        QCOMPARE(operation->phase(), SecurityOperationModel::Phase::Pending);
+        f.commands.drain();
+        QCOMPARE(f.wallet->encryptions, 0);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(operation->phase(), SecurityOperationModel::Phase::Failed);
+        QCOMPARE(operation->error(), QStringLiteral("The new passwords do not match."));
+        QVERIFY(operation->outcomeKnown()); QVERIFY(!operation->backupRecommended());
+    }
+    void delayedMutationResultCannotOverwriteNewerObservedRpcLock()
+    {
+        Fixture f;
+        f.wallet->encrypted = true; f.wallet->locked = false;
+        WalletSecurityModel model;
+        model.bind(f.session, presentation::MakeGuiObject(), [] { return true; });
+        walletopening::Metadata observed; observed.encrypted = true;
+        model.observe(observed);
+        auto* operation = model.beginPassphraseChange(); QVERIFY(operation);
+        QVERIFY(operation->submitCredentials(operation->operationId(), "current", "replacement", "replacement"));
+        f.commands.drain();
+        QCOMPARE(f.wallet->changes, 1);
+        QVERIFY(operation->busy());
+        // Public-wallet status ingress can overtake a queued operation result.
+        f.wallet->locked = true;
+        f.session->refreshMetadata(); f.commands.drain();
+        const auto update = f.session->take(); QVERIFY(update && update->metadata);
+        model.observe(*update->metadata);
+        QVERIFY(model.isLocked());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(operation->phase(), SecurityOperationModel::Phase::Succeeded);
+        QVERIFY(model.isLocked());
+        f.commands.drain();
+    }
+    void promptClosureRejectsCredentialsButRetainsAdmittedOutcome()
+    {
+        Fixture f;
+        WalletSecurityModel model;
+        model.bind(f.session, presentation::MakeGuiObject(), [] { return true; });
+        auto* operation = model.beginEncryption(); QVERIFY(operation);
+        QVERIFY(operation->submitCredentials(operation->operationId(), {}, "replacement", "replacement"));
+        model.close(); f.session->retire();
+        QVERIFY(!model.beginEncryption()); QVERIFY(!operation->canSubmit());
+        f.commands.drain(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(f.wallet->encryptions, 1);
+        QCOMPARE(operation->phase(), SecurityOperationModel::Phase::Succeeded);
+        QCOMPARE(model.observedState(), WalletSecurityModel::ObservedState::Closed);
+        QVERIFY(!model.canManagePassphrase());
+    }
+    void abandonedPromptCannotMutateAfterSessionCloses()
+    {
+        Fixture f;
+        WalletSecurityModel model;
+        model.bind(f.session, presentation::MakeGuiObject(), [] { return true; });
+        auto* operation = model.beginEncryption(); QVERIFY(operation);
+        f.session->closeAdmission();
+        QVERIFY(!operation->submitCredentials(operation->operationId(), {}, "replacement", "replacement"));
+        QVERIFY(operation->cancel());
+        f.commands.drain(); QCOMPARE(f.wallet->encryptions, 0);
+    }
+    void promptInventoryIsBoundedUntilDeferredDeletion()
+    {
+        Fixture f;
+        WalletSecurityModel model;
+        model.bind(f.session, presentation::MakeGuiObject(), [] { return true; });
+        for (int i = 0; i < 128; ++i) {
+            auto* operation = model.beginEncryption(); QVERIFY(operation); QVERIFY(operation->cancel());
+        }
+        QVERIFY(!model.beginEncryption());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        auto* next = model.beginEncryption(); QVERIFY(next); QVERIFY(next->cancel());
+        QCOMPARE(f.wallet->encryptions, 0);
+    }
+    void uncertainMutationCannotBeRetriedThroughANewPrompt()
+    {
+        Fixture f; f.wallet->throw_after_effect = true;
+        WalletSecurityModel model;
+        model.bind(f.session, presentation::MakeGuiObject(), [] { return true; });
+        auto* operation = model.beginEncryption(); QVERIFY(operation);
+        QVERIFY(operation->submitCredentials(operation->operationId(), {}, "replacement", "replacement"));
+        f.commands.drain(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCOMPARE(operation->phase(), SecurityOperationModel::Phase::Uncertain);
+        QVERIFY(operation->terminal()); QVERIFY(!operation->outcomeKnown());
+        QVERIFY(!operation->canSubmit()); QVERIFY(!model.beginEncryption());
+        QVERIFY(!model.beginPassphraseChange());
+        f.commands.drain(); QCOMPARE(f.wallet->encryptions, 1);
+    }
     void realWorkerKeepsGuiResponsiveAndReleasesInterfaceOffGui()
     {
         struct State {

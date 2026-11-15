@@ -12,7 +12,7 @@
 #include <qml/reviewowner.h>
 #include <qml/walletopening.h>
 #include <qml/senddraft.h>
-#include <qml/walletsecurity.h>
+#include <qml/models/walletsecuritymodel.h>
 #include <qml/walletreceipts.h>
 #include <qml/psbtwork.h>
 #include <qml/models/feereadservices.h>
@@ -118,6 +118,7 @@ private:
     Q_PROPERTY(QString name READ name NOTIFY nameChanged)
     Q_PROPERTY(QString rpcName READ rpcName NOTIFY openingMetadataChanged)
     Q_PROPERTY(QString displayName READ displayName NOTIFY displayNameChanged)
+    Q_PROPERTY(QString backupFileName READ backupFileName NOTIFY nameChanged)
     Q_PROPERTY(QString balance READ balance NOTIFY balanceChanged)
     Q_PROPERTY(qint64 balanceSatoshi READ displayedBalanceSatoshi NOTIFY balanceChanged)
     Q_PROPERTY(bool balanceKnown READ balanceKnown NOTIFY balanceObservationChanged)
@@ -210,6 +211,7 @@ private:
     Q_PROPERTY(QString currentTransactionReviewMessage READ currentTransactionReviewMessage NOTIFY currentTransactionChanged)
     Q_PROPERTY(BackupFileOperation* backupOperation READ backupOperation NOTIFY backupOperationChanged)
     Q_PROPERTY(QString settingsError READ settingsError NOTIFY settingsErrorChanged)
+    Q_PROPERTY(WalletSecurityModel* security READ security CONSTANT)
     Q_PROPERTY(SecurityState securityState READ securityState NOTIFY securityOperationChanged)
     Q_PROPERTY(bool securityBusy READ securityBusy NOTIFY securityOperationChanged)
     Q_PROPERTY(QString securityError READ securityError NOTIFY securityOperationChanged)
@@ -245,6 +247,7 @@ public:
     QString name() const;
     QString rpcName() const { return m_rpc_name; }
     QString displayName() const;
+    QString backupFileName() const;
     void setDisplayName(const QString& display_name);
     QString balance() const;
     qint64 displayedBalanceSatoshi() const { return m_wallet ? m_balance : 0; }
@@ -334,9 +337,10 @@ public:
     Q_INVOKABLE int feeTargetIndex(unsigned int target_blocks) const;
     Q_INVOKABLE void scheduleFeeEstimates();
     Q_INVOKABLE ReceiveRequestOperation* setCurrentPaymentRequestAddress(const QString& address);
-    SecurityState securityState() const { return m_security_state; }
-    bool securityBusy() const { return m_security_state == SecurityState::SecurityPending; }
-    QString securityError() const { return m_security_error; }
+    WalletSecurityModel* security() const { return m_security; }
+    SecurityState securityState() const;
+    bool securityBusy() const;
+    QString securityError() const;
     Q_INVOKABLE bool encryptWallet(const QString& passphrase);
     Q_INVOKABLE bool changeWalletPassphrase(const QString& old_passphrase, const QString& new_passphrase);
     // Returns admission, not write success. Observe the owned operation outcome.
@@ -399,8 +403,8 @@ public:
     void setWalletLoaded(bool loaded);
     int displayUnit() const { return m_display_unit; }
     void setDisplayUnit(int unit);
-    bool isEncrypted() const { return m_is_encrypted; }
-    bool isLocked() const { return m_is_locked; }
+    bool isEncrypted() const { return m_security->isEncrypted(); }
+    bool isLocked() const { return m_security->isLocked(); }
     QString keyScheme() const;
     KeyScheme keySchemeKind() const;
     static KeyScheme keySchemeForWallet(interfaces::Wallet& wallet);
@@ -557,11 +561,7 @@ private:
 
 
     bool startSecurity(walletsecurity::Kind kind, const QString& current, const QString& replacement);
-    void publishSecurityOperation();
-    std::shared_ptr<const walletsecurity::Identity> m_security_ticket;
-    std::shared_ptr<walletsecurity::Operation> m_security_operation;
-    SecurityState m_security_state{SecurityState::SecurityIdle};
-    QString m_security_error;
+    WalletSecurityModel* const m_security{new WalletSecurityModel(this)};
     void initializeOpening();
     void publishOpening();
     struct ReviewRetirement;
@@ -731,8 +731,6 @@ private:
     std::string m_fee_observed_block;
     quint64 m_fee_backend_revision{0};
     bool m_is_wallet_loaded{false};
-    bool m_is_encrypted{false};
-    bool m_is_locked{false};
     QString m_transaction_error;
     quint64 m_transaction_status_revision{0};
     bool m_transaction_needs_unlock{false};

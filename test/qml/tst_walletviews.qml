@@ -129,7 +129,7 @@ TestCase {
 
     // Popups, menus and native file dialogs of the first wallet, opened
     // while it is shown. Each must close when another wallet is shown.
-    function openFirstWalletPopups(page, first) {
+    function openFirstWalletPopups(page, first, dialogName) {
         findChild(page, "sendTabButton").checked = true
         const popups = {
             review: findChild(first.sendPage, "transactionReviewPopup"),
@@ -150,8 +150,11 @@ TestCase {
         }
         for (const name in dialogs) {
             verify(dialogs[name] !== null, name)
-            dialogs[name].open()
-            compare(dialogs[name].visible, true, name)
+            if (name === dialogName) {
+                if (name === "backup") page.openSettingsRoute("wallet")
+                verify(dialogs[name].open(), name)
+                compare(dialogs[name].visible, true, name)
+            } else compare(dialogs[name].visible, false, name)
         }
         return { popups: popups, dialogs: dialogs }
     }
@@ -207,17 +210,21 @@ TestCase {
         compare(reviewPopup.visible, false)
     }
 
-    function test_switching_wallet_hides_view_and_closes_its_popups() {
+    function test_switching_wallet_hides_view_and_closes_its_popups_data() {
+        return ["exportCsv", "psbtOpen", "psbtSave", "requestQrSave", "backup"].map(function(name) { return {tag: name, dialogName: name} })
+    }
+    function test_switching_wallet_hides_view_and_closes_its_popups(data) {
         const page = createShell()
         const first = page.viewForWallet(testWalletModel)
         const second = page.viewForWallet(testSecondWalletModel)
-        const opened = openFirstWalletPopups(page, first)
+        const opened = openFirstWalletPopups(page, first, data.dialogName)
 
         walletController.setSelectedWalletObject(testSecondWalletModel)
         compare(page.activeView, second)
         compare(first.active, false)
         compare(first.visible, false)
-        compare(second.visible, true)
+        compare(second.visible, data.dialogName !== "backup")
+        if (data.dialogName === "backup") compare(second.settingsStack.visible, true)
         for (const name in opened.popups) tryCompare(opened.popups[name], "visible", false, 5000, name)
         for (const name in opened.dialogs) compare(opened.dialogs[name].visible, false, name)
     }
@@ -416,8 +423,10 @@ TestCase {
         const reviewPopup = findChild(second.sendPage, "transactionReviewPopup")
         let reviewDestroyed = false
         reviewPopup.Component.destruction.connect(function() { reviewDestroyed = true })
+        walletController.setSelectedWalletObject(testSecondWalletModel)
+        findChild(page, "sendTabButton").checked = true
         const psbtOpen = findChild(second.sendPage, "sendPsbtOpenDialog")
-        psbtOpen.open()
+        verify(psbtOpen.open())
         compare(psbtOpen.visible, true)
 
         walletController.setOpenWallets([testWalletModel])
@@ -425,6 +434,9 @@ TestCase {
         verify(destroyed)
         verify(reviewDestroyed)
         compare(page.viewForWallet(testSecondWalletModel), null)
+        // The controller owns fallback selection; this view fixture supplies
+        // the resulting selection after removing the selected opening.
+        walletController.setSelectedWalletObject(testWalletModel)
         compare(page.activeView.wallet, testWalletModel)
 
         walletController.setOpenWallets([testWalletModel, testSecondWalletModel])

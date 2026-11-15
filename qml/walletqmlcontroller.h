@@ -32,6 +32,7 @@
 #include <QObject>
 #include <QThread>
 #include <QSet>
+#include <QUrl>
 
 namespace walletlife { class LoadSubscription; struct Update; }
 
@@ -156,6 +157,8 @@ public:
     Q_INVOKABLE void clearWalletMigrationStatus();
     Q_INVOKABLE WalletProvisioningCheck* createProvisioningCheck();
     Q_INVOKABLE QString homePath() const;
+    Q_PROPERTY(QUrl homeUrl READ homeUrl NOTIFY walletDisplayNamesChanged)
+    QUrl homeUrl() const { return QUrl::fromLocalFile(m_home_path); }
     Q_INVOKABLE bool openWalletLocation(WalletQmlModel* wallet);
     Q_INVOKABLE void clearWalletLocationOpenError();
     Q_INVOKABLE void requestOpenWalletSettings(WalletQmlModel* wallet);

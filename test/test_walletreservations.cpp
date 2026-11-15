@@ -18,6 +18,10 @@
 #include <QtTest/QtTest>
 #include <QScopeGuard>
 #include <QSemaphore>
+#include <QFile>
+#include <QFileInfo>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <array>
 #include <functional>
 #include <stdexcept>
@@ -137,6 +141,65 @@ class WalletReservationTests : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void initTestCase() { SelectBaseParams(ChainType::MAIN); SelectParams(ChainType::MAIN); }
+    void persistedReservationsKeepExactWalletIdentity_data()
+    {
+        QTest::addColumn<QString>("parent_name");
+        QTest::addColumn<QString>("child_name");
+        QTest::newRow("original-address-component") << QStringLiteral("Ledger") << QStringLiteral("Ledger/address");
+        QTest::newRow("noncolliding-matched-control") << QStringLiteral("Ledger") << QStringLiteral("Ledger/invoices");
+        QTest::newRow("unnamed-wallet") << QString{} << QStringLiteral("address");
+        QTest::newRow("unicode-wallet") << QString::fromUtf8("Caf\xc3\xa9") << QString::fromUtf8("Caf\xc3\xa9/address");
+    }
+    void persistedReservationsKeepExactWalletIdentity()
+    {
+        QFETCH(QString, parent_name);
+        QFETCH(QString, child_name);
+        QTemporaryDir identity;
+        QVERIFY(identity.isValid());
+        const auto previous_format = QSettings::defaultFormat();
+        const auto previous_organization = QCoreApplication::organizationName();
+        const auto previous_application = QCoreApplication::applicationName();
+        QString owned_file;
+        // Each body owns a unique INI namespace. Do not clear shared settings,
+        // or alter the global search paths used by another test class.
+        const auto restore = qScopeGuard([&] {
+            if (!owned_file.isEmpty()) QFile::remove(owned_file);
+            QSettings::setDefaultFormat(previous_format);
+            QCoreApplication::setOrganizationName(previous_organization);
+            QCoreApplication::setApplicationName(previous_application);
+        });
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QCoreApplication::setOrganizationName(QStringLiteral("BitcoinCoreGuiQmlR14"));
+        QCoreApplication::setApplicationName(QStringLiteral("reservation-") + QFileInfo(identity.path()).fileName());
+        {
+            QSettings settings;
+            owned_file = settings.fileName();
+        }
+        struct NamedWallet final : StubWallet {
+            explicit NamedWallet(const QString& value) : name(value.toStdString()) {}
+            std::string getWalletName() override { return name; }
+            const std::string name;
+        };
+        NamedWallet parent{parent_name}, child{child_name};
+        const auto storage = SettingsReservationStorage();
+        const auto parent_address = Address(71);
+        const auto child_address = Address(72);
+        const auto retired_address = Address(73);
+        QVERIFY(storage.write(parent, parent_address));
+        QVERIFY(storage.write(child, child_address));
+        QVERIFY(storage.retire(child, retired_address));
+        QCOMPARE(storage.read(parent, {}).address, parent_address);
+        QCOMPARE(storage.read(child, {}).address, child_address);
+
+        // Exercise the production adapter, rather than duplicating its key
+        // construction or inferring isolation from an injected map fixture.
+        QVERIFY(storage.clear(parent, parent_address));
+        const auto child_after_parent_clear = storage.read(child, {});
+        QVERIFY(child_after_parent_clear.ok);
+        QCOMPARE(child_after_parent_clear.address, child_address);
+        QVERIFY(storage.read(child, retired_address).retired);
+        QVERIFY(storage.read(parent, {}).address.isEmpty());
+    }
     void capturedPasswordRetainsOriginalReceiveIntent_data()
     {
         QTest::addColumn<int>("scenario");QTest::newRow("held-result")<<0;QTest::newRow("quiet-close-after-generation")<<1;QTest::newRow("native-admission-refused")<<2;QTest::newRow("capture-budget-refused")<<3;

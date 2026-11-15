@@ -31,6 +31,10 @@ struct OperationState {
     void consume(Event event)
     {
         try {
+            if (current.phase != Phase::Writing && services.available && !services.available()) {
+                auto expected = Admission::Open;
+                admission.compare_exchange_strong(expected, Admission::Retired);
+            }
             if (admission.load() == Admission::Retired && Pending(current.phase)) {
                 advance(Event::Retire);
                 return;
@@ -39,10 +43,19 @@ struct OperationState {
             if (!decision.accepted) return;
             if (decision.effect == Effect::Inspect) {
                 auto proposal = services.inspect(RawUtf8(), services.wallet_name());
-                if (admission.load() == Admission::Retired) { advance(Event::Retire); return; }
+                if (admission.load() == Admission::Retired || (services.available && !services.available())) {
+                    admission.store(Admission::Retired);
+                    advance(Event::Retire);
+                    return;
+                }
                 advance(Event::Inspected, proposal);
             }
             if (current.phase == Phase::Ready) {
+                if (services.available && !services.available()) {
+                    admission.store(Admission::Retired);
+                    advance(Event::Retire);
+                    return;
+                }
                 auto expected = Admission::Open;
                 if (!admission.compare_exchange_strong(expected, Admission::Writing)) { advance(Event::Retire); return; }
                 decision = advance(Event::AdmitWrite);
@@ -102,8 +115,9 @@ bool BackupFileOperation::start()
 bool BackupFileOperation::submit(backup::Event event)
 {
     const auto state = m_backend;
-    const auto admission = execution::Submit(*state->services.scheduler,
-        [state, event] { state->consume(event); }, [] {});
+    const auto work = [state, event] { state->consume(event); };
+    const auto admission = state->services.submit ? state->services.submit(work)
+        : execution::Submit(*state->services.scheduler, work, [] {});
     if (event == backup::Event::Start && admission) m_admitted = true;
     if (!admission && event == backup::Event::Start) {
         m_projection.phase = backup::Phase::Failed;
@@ -130,6 +144,8 @@ void BackupFileOperation::retire()
     auto expected = backup::OperationState::Admission::Open;
     if (!state->admission.compare_exchange_strong(expected, backup::OperationState::Admission::Retired)
         || !m_admitted) return;
+    // Logical retirement is visible to an already queued Native task. Do not
+    // require new action admission from an opening that is already closing.
     execution::Submit(*state->services.scheduler, [state] { state->consume(backup::Event::Retire); }, [] {});
 }
 

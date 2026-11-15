@@ -14,6 +14,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace interfaces { class Wallet; }
 namespace walletrequests {
@@ -45,7 +46,7 @@ struct ReservationStorage {
     std::function<bool(interfaces::Wallet&, const QString&)> retire;
     std::function<bool(interfaces::Wallet&, const QString&)> clear;
 };
-ReservationStorage SettingsReservationStorage();
+ReservationStorage SettingsReservationStorage(std::optional<QString> canonical_identity = {});
 } // namespace walletrequests
 
 #endif // BITCOIN_QML_WALLETRESERVATIONDATA_H

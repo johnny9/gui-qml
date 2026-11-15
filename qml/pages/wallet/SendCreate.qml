@@ -345,7 +345,6 @@ PageStack {
 
         function openPsbtFileImport() {
             sendOptionsPopup.close()
-            psbtOpenDialog.targetWallet = root.wallet
             psbtOpenDialog.open()
         }
 
@@ -473,15 +472,9 @@ PageStack {
             title: qsTr("Import PSBT")
             fileMode: AppFileDialog.OpenFile
             nameFilters: [qsTr("Partially Signed Bitcoin Transactions (*.psbt)"), qsTr("All files (*)")]
-            property WalletQmlModel targetWallet: null
-            onAccepted: {
-                const wallet = targetWallet
-                targetWallet = null
-                if (wallet && wallet === root.wallet) {
-                    root.requestPsbtImport(selectedFile.toString())
-                }
-            }
-            onRejected: targetWallet = null
+            contextObject: root.wallet
+            enabled: root.visible && root.wallet !== null && root.wallet.available && !root.wallet.psbtActionBusy
+            onChosen: (context, file) => { if (context === root.wallet) root.requestPsbtImport(file.toString()) }
         }
 
         // Kept hidden so functional tests can inject a PSBT path until the

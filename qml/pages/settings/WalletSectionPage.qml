@@ -17,7 +17,7 @@ SettingsPage {
     title: qsTr("Wallet settings")
     showBackButton: false
 
-    property var wallet: null
+    property WalletQmlModel wallet: null
     readonly property string errorText: root.wallet
         ? (root.wallet.settingsError.length > 0 ? root.wallet.settingsError
             : root.wallet.backupOperation ? root.wallet.backupOperation.error : "")
@@ -32,17 +32,6 @@ SettingsPage {
     signal addressesRequested()
     signal coinsRequested()
 
-    function backupFileName() {
-        const walletName = root.wallet && root.wallet.name.length > 0
-            ? root.wallet.name.replace(/[\\/]/g, "_")
-            : "wallet"
-        return walletName + ".bak"
-    }
-
-    function backupDefaultFileUrl() {
-        return "file://" + ApplicationModels.walletController.homePath() + "/" + root.backupFileName()
-    }
-
     function startBackup() {
         if (!root.wallet) return
         root.wallet.clearSettingsError()
@@ -52,7 +41,6 @@ SettingsPage {
             root.wallet.backupWallet(automatedPath)
             return
         }
-        backupDialog.targetWallet = root.wallet
         backupDialog.open()
     }
 
@@ -60,19 +48,14 @@ SettingsPage {
         id: backupDialog
         objectName: "walletSettingsBackupDialog"
         fileMode: AppFileDialog.SaveFile
-        currentFolder: "file://" + ApplicationModels.walletController.homePath()
-        currentFile: root.backupDefaultFileUrl()
+        currentFolder: ApplicationModels.walletController.homeUrl
+        suggestedName: root.wallet ? root.wallet.backupFileName : "wallet.bak"
         defaultSuffix: "bak"
         confirmOverwrite: false // The operation confirms the resolved final path.
         nameFilters: [qsTr("Wallet backup files (*.bak *.dat)"), qsTr("All files (*)")]
-        property var targetWallet: null
-        onAccepted: {
-            const wallet = targetWallet
-            targetWallet = null
-            if (!wallet || wallet !== root.wallet || backupDialog.selectedFile.toString().length === 0) return
-            wallet.backupWallet(backupDialog.selectedFile.toString())
-        }
-        onRejected: targetWallet = null
+        contextObject: root.wallet
+        enabled: root.visible && root.wallet !== null && root.wallet.available
+        onChosen: (context, file) => { if (context === root.wallet) root.wallet.backupWallet(file.toString()) }
     }
 
     TextField {

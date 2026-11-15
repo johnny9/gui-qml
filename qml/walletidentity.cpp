@@ -2,13 +2,21 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/walletidentity.h>
+#include <qml/walletsettings.h>
 #include <QCoreApplication>
 #include <QDir>
 #include <QSettings>
+#include <stdexcept>
 
 namespace walletidentity {
 namespace {
 QString Text(const char* text) { return QCoreApplication::translate("WalletCreationModel", text); }
+QString Alias(const QVariantMap& payload)
+{
+    const auto value = payload.value(QStringLiteral("alias"));
+    if (value.metaType().id() != QMetaType::QString) throw std::runtime_error("The wallet alias entry is incomplete");
+    return value.toString().trimmed();
+}
 }
 QString Canonical(const QString& backend_name, const QString& wallet_directory)
 {
@@ -40,21 +48,27 @@ QString CreationError(const QString& name)
 QString AliasKey(const QString& id) { return QStringLiteral("walletDisplayNames/%1").arg(id); }
 QString ReadAlias(QSettings& settings, const QString& id)
 {
-    // Keep the persisted format, including exact significant whitespace. Never
-    // borrow another wallet's alias by trimming its backend identity.
+    if (const auto value = walletsettings::Read(settings, walletsettings::Area::Aliases, id)) return Alias(*value);
+    // Legacy entries remain readable until this identity is first written by
+    // v2. A committed v2 tombstone prevents a stale legacy alias resurfacing.
     return settings.value(AliasKey(id)).toString().trimmed();
 }
 std::map<QString, QString> ReadAliases(QSettings& settings)
 {
     std::map<QString, QString> aliases;
+    if (settings.contains(AliasKey({}))) aliases.emplace(QString{}, settings.value(AliasKey({})).toString().trimmed());
     settings.beginGroup(QStringLiteral("walletDisplayNames"));
     for (const auto& id : settings.allKeys()) aliases.emplace(id, settings.value(id).toString().trimmed());
     settings.endGroup();
+    for (const auto& [id, payload] : walletsettings::ReadAll(settings, walletsettings::Area::Aliases)) aliases[id] = Alias(payload);
     return aliases;
 }
 void WriteAlias(QSettings& settings, const QString& id, const QString& alias)
 {
-    if (alias.isEmpty() || alias == id) settings.remove(AliasKey(id));
-    else settings.setValue(AliasKey(id), alias.trimmed());
+    const auto value = alias.isEmpty() || alias.trimmed() == id ? QString{} : alias.trimmed();
+    walletsettings::Stage(settings, walletsettings::Area::Aliases, id, {{QStringLiteral("alias"), value}});
+    // QSettings::remove also deletes descendant wallet identities. An empty
+    // legacy string clears this alias without erasing another wallet's value.
+    settings.setValue(AliasKey(id), value);
 }
 } // namespace walletidentity

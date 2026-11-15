@@ -12,6 +12,7 @@
 #include <outputtype.h>
 #include <qml/walletqmlcontroller.h>
 #include <qml/walletidentity.h>
+#include <qml/walletsettings.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/models/walletselectionmodel.h>
 #include <scheduler.h>
@@ -5607,13 +5608,19 @@ void WalletQmlControllerTests::walletDisplayNameWriteOwnsOutcome()
     const QString wallet_name{QStringLiteral("r10-display-name-manual-wallet")};
     const QString key{QStringLiteral("walletDisplayNames/%1").arg(wallet_name)};
     QSettings settings;
+    const auto v2_key = walletsettings::EntryKey(walletsettings::Area::Aliases, wallet_name);
+    const bool had_v2 = settings.contains(v2_key);
+    const auto previous_v2 = settings.value(v2_key);
     const bool had_previous_value = settings.contains(key);
     const QVariant previous_value = settings.value(key);
     const auto restore_settings = qScopeGuard([&] {
+        if (had_v2) settings.setValue(v2_key, previous_v2);
+        else settings.remove(v2_key);
         if (had_previous_value) settings.setValue(key, previous_value);
         else settings.remove(key);
         settings.sync();
     });
+    settings.remove(v2_key);
     settings.setValue(key, QStringLiteral("Prior alias"));
     settings.sync();
     QCOMPARE(settings.status(), QSettings::NoError);
@@ -5649,7 +5656,7 @@ void WalletQmlControllerTests::walletDisplayNameWriteOwnsOutcome()
     QVERIFY(graph.posts.empty());
     settings.sync();
     if (expected_alias == wallet_name) {
-        QVERIFY(!settings.contains(key));
+        QVERIFY(settings.value(key).toString().isEmpty());
     } else {
         QCOMPARE(settings.value(key).toString(), expected_alias);
     }
