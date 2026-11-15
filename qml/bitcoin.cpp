@@ -984,6 +984,13 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             return startup::PrepareNode(ports);
         };
 
+        if(startup_canceled||quit_handler.isQuitRequested()){
+            if(pre_init_onboarding_context.onboarding_options_model){
+                const auto saved=pre_init_onboarding_context.onboarding_options_model->setupCommitReceipt()->load();
+                if(saved==OnboardingOptionsModel::SetupFailed||saved==OnboardingOptionsModel::SetupUncertain)return EXIT_FAILURE;
+            }
+            return EXIT_SUCCESS; // No preparation request was submitted.
+        }
         desktop_service=desktopintent::transport::Service::Create(startup_services.scheduler,desktop_intent_model.owner());
         if(!desktop_service){
             startup::Run(startup_services,[]{return InitError(Untranslated("Desktop request startup could not reserve its background owner."));});
@@ -1018,7 +1025,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                         done(StartupPreparationSummary{actual->disposition,actual->closing,actual->cancelled,dropped,startup_error_reported->load(),actual->error,actual->transport});
                         if(complete)complete(std::move(actual));
                     });
-                    if(!admitted)done(StartupPreparationSummary{startup::preparation::Disposition::Failed,false,admitted.rejection==execution::Rejection::Closed,false,startup_error_reported->load(),
+                    if(!admitted)done(StartupPreparationSummary{startup::preparation::Disposition::Failed,false,false,false,startup_error_reported->load(),
                         QStringLiteral("Startup preparation was not admitted. No preparation was repeated."),{}});
                     return admitted;
                 }catch(...){
@@ -1044,12 +1051,11 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                 // Rejection before the Flow reserves its external receiver
                 // legitimately never calls the stable preparation owner.
                 const auto saved=context.onboarding_options_model->setupCommitReceipt()->load();
-                const bool save_failed=saved==OnboardingOptionsModel::SetupFailed||saved==OnboardingOptionsModel::SetupUncertain;
                 unstarted_preparation=StartupPreparationSummary{
                     outcome==OnboardingOptionsModel::PreparationUncertain||saved==OnboardingOptionsModel::SetupUncertain?startup::preparation::Disposition::Uncertain
                         :startup::preparation::Disposition::Failed,
                     startup_canceled||quit_handler.isQuitRequested(),
-                    !save_failed&&outcome==OnboardingOptionsModel::PreparationFailed&&(startup_canceled||quit_handler.isQuitRequested()),false,startup_error_reported->load(),error,{}};
+                    false,false,startup_error_reported->load(),error,{}};
                 preparation_finished = true;
                 preparation_loop.quit();
             });
