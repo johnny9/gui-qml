@@ -357,7 +357,7 @@ upstream improvement, not a required Core change or a private-access exception.
 
 ## R24 verified partial signing outcomes — app verification and quarantine
 
-**Status:** App-only public-value verification and explicit quarantine are being implemented; no Core change or external submission is authorized. This note satisfies `wallet-adapter-upstream-notes-20261115`. Qualification is pending until the linked focused receipt exists.
+**Status:** App-only public-value verification and explicit quarantine are being implemented; no Core change or external submission is authorized. This note satisfies `wallet-adapter-upstream-notes-20261115`. Focused qualification is recorded in [R24 partial verification](evidence/R24_PARTIAL_VERIFICATION.json) at `4c3d01e6e631265ebab4328a6719759910906fc1`; full integration and sibling-path follow-ups remain separately tracked.
 
 **Missing contract:** Stock Core `44901d8f64cb617714707bd025ecd83f108353c2` exposes mutable `Wallet::fillPSBT` plus an optional error and completion flag. It does not return a typed per-contribution verification result or all script/execution context needed to authenticate every incomplete PSBT contribution. `PSBTInputSignedAndVerified` validates finalized scripts. `SignPSBTInput` checks supplied sighash types but reuses unfinished signature maps; it is not a generic verifier of those maps. This is an interface/verification-contract gap, not a claim that every wallet producer yields invalid signatures.
 
