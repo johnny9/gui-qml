@@ -1936,13 +1936,19 @@ void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement()
     QFETCH(bool, destroy_owner);
     QFETCH(int, signal_index);
     FakeWallet::State state;
-    std::atomic<int> signer_reads{0}, signer_gui_reads{0}, unexpected_settings{0}, gui_metadata_reads{0};
+    std::atomic<int> signer_reads{0}, signer_policy_reads{0}, signer_gui_reads{0}, unexpected_settings{0}, gui_metadata_reads{0};
     StrictMockNode node;
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     FakeWalletLoader loader;
     if (!initial) ConfigureExpectedControllerInitialization(node, loader);
     else {
         node.wallet_loader_fn = [&loader]() -> interfaces::WalletLoader& { return loader; };
+        node.is_setting_ignored_fn = [&](const std::string& name) {
+            if (name == "signer") ++signer_policy_reads;
+            else ++unexpected_settings;
+            if (QThread::currentThread() == qApp->thread()) ++signer_gui_reads;
+            return false;
+        };
         node.get_persistent_setting_fn = [&](const std::string& name) {
             if (name == "signer") {
                 ++signer_reads;
@@ -1983,10 +1989,11 @@ void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement()
         QTRY_VERIFY(drained);
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         if (initial) {
-            // R15 independently admits the configuration read before device
-            // discovery. A read already running may finish after retirement;
-            // the injected discovery turn itself remains held and never runs.
+            // R15 independently admits the effective configuration read. Its
+            // public signer-policy/persisted-value pair may finish after
+            // retirement; the discovery request never reaches Core work.
             QVERIFY(signer_reads.load() <= (signal_index >= 6 ? 1 : 0));
+            QCOMPARE(signer_policy_reads.load(), signer_reads.load());
             QCOMPARE(signer_gui_reads.load(), 0);
             QCOMPARE(unexpected_settings.load(), 0);
             QCOMPARE(gui_metadata_reads.load(), 0);
@@ -2048,7 +2055,17 @@ void WalletQmlControllerTests::lifecyclePublicationSurvivesReentrantRetirement()
         controller->selectWallet(controller->walletForName("notified-wallet"));
     }
     QTRY_VERIFY(interrupted);
-    if (initial && signal_index >= 6) QVERIFY(original_signer_observation_held);
+    if (initial && signal_index >= 6) {
+        QVERIFY(original_signer_observation_held);
+        if (!destroy_owner) QCOMPARE(retired.size(), 0);
+        // The close fences this admitted planning turn; it still owns an
+        // outcome and drain acknowledgment. Release that original transport
+        // before asking for complete physical retirement, without ever
+        // dispatching a signer process or a replacement observation.
+        signer_environment.drain();
+        QVERIFY(signer_environment.quiescent());
+        QCOMPARE(signer_environment.coreSubmissions(), size_t{0});
+    }
     if (!destroy_owner) {
         QTRY_COMPARE(retired.size(), 1);
         QVERIFY(!controller->initialized());
