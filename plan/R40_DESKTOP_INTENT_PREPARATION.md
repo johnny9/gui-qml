@@ -1,6 +1,6 @@
 # R40 desktop intent owner — component checkpoint
 
-Component implementation `30fe15f7e44165661c08baca18060f1a924c4573`, unchanged Core
+Component implementation `69406815c90174d5cda351e2182e33a78f9d5270`, unchanged Core
 `44901d8f64cb617714707bd025ecd83f108353c2`. This is private component
 development, not R40 acceptance or completed production ingress wiring.
 
@@ -24,7 +24,7 @@ requests with explicit receipts and accounts for an original in-flight handoff.
 The Qt model exposes cached state and narrow commands. Its admission fence
 releases Native owners independently of view destruction and emits no UI signal.
 
-Thirty-six current ordinary bodies pass: 16 owner/facade rows, ten Native
+Thirty-eight current ordinary bodies pass: 18 owner/facade rows, ten Native
 transport rows and ten QML consumer rows. They cover bounded admission, stale
 tickets, manual lost-acknowledgment schedules, argument boundaries, actual Qt
 file-open events, captured paths, real Source-factory receipts, one presentation
@@ -32,9 +32,15 @@ at a time, early reentrant close, and physical drain with retained facades.
 The Native admission fence is checked both by Domain and at the queued GUI
 factory handoff. The new held-handoff timing row failed before the repair;
 its original earlier-closure control still passed. Full focused rerun and
-exact app lint pass. Logs, commands, XML and actual body counts are retained in
-`.validation/qt6-r11-r40-20261114/R40/gui-focused-12`, `gui-fence-red-12` and
-`gui-lint-12`. Current pinned analysis is recorded separately in `gui-static-12`.
+exact app lint pass. Original-ticket presentation release and application
+mailbox stop now reserve Cleanup before effects, so ordinary admission
+exhaustion cannot strand either operation. The complete rerun includes actual
+ordinary-budget saturation and retained presentation controls. Logs, commands,
+XML and actual body counts are retained in
+`.validation/qt6-r11-r40-20261114/R40/GUI_COMPONENT_CHECKPOINT_14.json`,
+`gui-focused-14`, `gui-fence-red-12`, `release-red-13`, `stop-red-14` and
+`gui-lint-14`. Pinned analysis passes four C++ units and seven fresh MOC
+aggregates in `gui-static-14`.
 Earlier zero-body compiler failures and actual shutdown counterexamples remain
 retained with their original source revisions.
 
@@ -43,7 +49,9 @@ controls, original-key receipt queries and physical socket retirement. Early
 Qt file-open capture and declarative inspection/continuation are implemented.
 Remaining acceptance work is actual startup composition before Core
 configuration writes, direct/onboarding continuation, and actual application
-argument/two-process ingress evidence. Startup distinguishes Primary,
+argument/two-process ingress evidence. A separately identified Source-owner
+close under full ordinary admission is being repaired before composition.
+Startup distinguishes Primary,
 Forwarded, Rejected and Unknown;
 Forwarded cannot be presented as a locally initialized node. A synchronous
 startup-Core callback cannot post to the same lane and wait for its own result.
