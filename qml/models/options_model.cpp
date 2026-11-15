@@ -381,6 +381,13 @@ void OptionsQmlModel::setError(const QString& error)
     Q_EMIT settingsErrorChanged();
 }
 
+void OptionsQmlModel::setObservationError(const QString& error)
+{
+    if (m_observation_error == error) return;
+    m_observation_error = error;
+    Q_EMIT settingsErrorChanged();
+}
+
 void OptionsQmlModel::setPending(bool pending)
 {
     if (m_pending == pending) return;
@@ -488,41 +495,55 @@ void OptionsQmlModel::finishPreferenceRefresh()
 {
     if (m_stopping || m_pending_commands || m_submitting_commands || m_core_settings.pending() || !m_preference_refresh_requested) return;
     m_preference_refresh_requested = false;
-    runCommand([](interfaces::Node&, ArgsManager&) { return QString{}; });
+    runCommand([](interfaces::Node&, ArgsManager&) { return QString{}; },256,/*observation=*/true);
 }
 
-void OptionsQmlModel::runCommand(std::function<QString(interfaces::Node&, ArgsManager&)> command,size_t payload_bytes)
+void OptionsQmlModel::runCommand(std::function<QString(interfaces::Node&, ArgsManager&)> command,size_t payload_bytes,bool observation)
 {
     if(m_stopping)return;
     const QPointer<OptionsQmlModel> observer{this};
     ++m_submitting_commands;
     const auto submitting=qScopeGuard([observer]{if(observer)--observer->m_submitting_commands;});
-    auto receipt=std::make_shared<std::atomic<int>>(SettingsPending);m_operation_state=receipt;
-    const quint64 revision=++m_command_revision;
-    const bool clear_error=m_pending_commands++==0&&!m_error.isEmpty();
-    const bool was_pending=m_pending; m_pending=true; if(clear_error)m_error.clear();
+    auto receipt=std::make_shared<std::atomic<int>>(SettingsPending);
+    if(!observation)m_operation_state=receipt;
+    const quint64 revision=observation?m_command_revision:++m_command_revision;
+    // Refreshing files is an observation, not a new user operation. Retain the
+    // original effect's identity, terminal receipt and diagnostic.
+    ++m_pending_commands;
+    const bool clear_error=!observation&&(!m_error.isEmpty()||!m_observation_error.isEmpty());
+    const bool was_pending=m_pending; m_pending=true;
+    if(clear_error){m_error.clear();m_observation_error.clear();}
     const bool admitted=m_work->submit([node=&m_node,args=&m_args,command=std::move(command),receipt] {
         QString error;
         try {error=command(*node,*args);} catch (...) {receipt->store(SettingsUncertain);throw;}
         receipt->store(error.isEmpty()?SettingsApplied:SettingsFailed);
         return std::make_pair(readSnapshot(*node,*args),error);
-    },[observer,revision](auto result) {
+    },[observer,revision,observation](auto result) {
         if(!observer||observer->m_stopping)return;
-        if(revision==observer->m_command_revision)observer->applySnapshot(std::move(result.first));
+        if(revision==observer->m_command_revision) {
+            if(observation)observer->setObservationError({});
+            if(!observer||observer->m_stopping)return;
+            observer->applySnapshot(std::move(result.first));
+        }
         if(!observer||observer->m_stopping)return;
-        if(!result.second.isEmpty())observer->setError(result.second);
+        if(revision==observer->m_command_revision&&!result.second.isEmpty())observer->setError(result.second);
         if(!observer||observer->m_stopping)return;
         if(--observer->m_pending_commands==0)observer->setPending(false);
-        if(observer&&!observer->m_stopping)Q_EMIT observer->settingsOperationChanged();
+        if(observer&&!observer->m_stopping&&!observation&&revision==observer->m_command_revision)Q_EMIT observer->settingsOperationChanged();
         if(observer&&!observer->m_stopping)observer->finishPreferenceRefresh();
-    },[observer,receipt](std::exception_ptr exception) {
+    },[observer,receipt,revision,observation](std::exception_ptr exception) {
         if(receipt->load()==SettingsPending)receipt->store(SettingsFailed);
         if(!observer||observer->m_stopping)return;
         QString error;try{std::rethrow_exception(exception);}catch(const std::exception& e){error=QString::fromUtf8(e.what());}
         catch(...){error=tr("Unable to load or save settings.");}
-        observer->setError(error);if(!observer||observer->m_stopping)return;
+        if(observation) {
+            if(revision==observer->m_command_revision)observer->setObservationError(error);
+        } else if(revision==observer->m_command_revision) {
+            observer->setError(error);
+        }
+        if(!observer||observer->m_stopping)return;
         if(--observer->m_pending_commands==0)observer->setPending(false);
-        if(observer&&!observer->m_stopping)Q_EMIT observer->settingsOperationChanged();
+        if(observer&&!observer->m_stopping&&!observation&&revision==observer->m_command_revision)Q_EMIT observer->settingsOperationChanged();
     },{execution::Lane::Core,payload_bytes,{},execution::WorkClass::Action});
     if(!admitted)receipt->store(SettingsFailed);
     if(!observer||m_stopping)return;
@@ -531,7 +552,7 @@ void OptionsQmlModel::runCommand(std::function<QString(interfaces::Node&, ArgsMa
     refreshCoreSettingStatuses();if(!observer||m_stopping)return;
     if(!was_pending&&m_pending)Q_EMIT settingsPendingChanged();
     if(!observer||m_stopping)return;
-    Q_EMIT settingsOperationChanged();
+    if(!observation)Q_EMIT settingsOperationChanged();
 }
 
 bool OptionsQmlModel::connectionSettingsDirty() const

@@ -148,7 +148,12 @@ public:
     bool settingsReady() const { return m_ready; }
     bool settingsPending() const { return m_pending||m_core_settings.pending()||m_forwarded_signer_pending; }
     void setSignerDiscoveryModel(SignerDiscoveryModel* model);
-    QString settingsError() const { return m_error.isEmpty()?m_core_settings.error():m_error; }
+    QString settingsError() const {
+        QString original = m_error.isEmpty() ? m_core_settings.error() : m_error;
+        if (original.isEmpty()) return m_observation_error;
+        if (m_observation_error.isEmpty()) return original;
+        return original + QLatin1Char('\n') + m_observation_error;
+    }
     bool validationPending() const { return m_validation_pending; }
     bool signerPathValidationPending() const { return m_signer_validation_pending; }
     QString signerPathError() const { return m_signer_validation_error; }
@@ -310,9 +315,10 @@ private:
     struct Snapshot;
     static Snapshot readSnapshot(interfaces::Node& node, ArgsManager& args);
     void applySnapshot(Snapshot snapshot,bool core_adopted=false);
-    void runCommand(std::function<QString(interfaces::Node&, ArgsManager&)> command,size_t payload_bytes=256);
+    void runCommand(std::function<QString(interfaces::Node&, ArgsManager&)> command,size_t payload_bytes=256,bool observation=false);
     void setPending(bool pending);
     void setError(const QString& error);
+    void setObservationError(const QString& error);
     void persistGuiSetting(const QString& key, const QVariant& value);
     void queueSignerValidation();
     void startSignerValidation();
@@ -332,7 +338,7 @@ private:
     bool m_signer_validation_in_flight{false};
     QString m_requested_signer_path;
     quint64 m_signer_validation_revision{0};
-    QString m_error;
+    QString m_error, m_observation_error;
     QString m_default_data_dir;
     QUrl m_default_data_directory;
     QString m_validated_data_dir;

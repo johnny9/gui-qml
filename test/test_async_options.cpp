@@ -25,6 +25,7 @@
 #include <QtTest/QtTest>
 
 #include <atomic>
+#include <stdexcept>
 
 #ifndef BITCOINQML_NO_TEST_MAIN
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -163,6 +164,178 @@ private Q_SLOTS:
         QCOMPARE(mempool_changed.size(), 2); // Optimistic edit followed by rollback.
         QCOMPARE(mempool_changed.last().first().toInt(), initial);
         QVERIFY(language_changed.empty());
+    }
+
+    void observationRetainsTheOriginalFailedSettingsOperation()
+    {
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> gui;
+        Fixture fixture;
+        OptionsQmlModel model{fixture.node, fixture.args,
+            {transport.scheduler, [&](auto turn) { gui.push_back(std::move(turn)); }}};
+        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); SettleManualOptions(transport, gui); });
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(model.settingsReady());
+        model.setExternalSignerPath(QStringLiteral("this-signer-does-not-exist-original-receipt"));
+        QVERIFY(model.settingsPending());
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(!model.settingsPending());
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsFailed);
+        const auto original_id = model.settingsOperationId();
+        const auto original_error = model.settingsError();
+        QVERIFY(!original_error.isEmpty());
+        QVERIFY(model.externalSignerPath().isEmpty());
+        QVERIFY(fixture.args.GetPersistentSetting("signer").isNull());
+
+        // An observation can load a fresh snapshot, but is not a successor
+        // user intent and must not replace this known failed write receipt.
+        QSignalSpy operations{&model, &OptionsQmlModel::settingsOperationChanged};
+        const auto forced_before_refresh = fixture.node.calls.forceSetting.load();
+        model.refreshDisplaySettings();
+        QCOMPARE(model.settingsOperationId(), original_id);
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsFailed);
+        QCOMPARE(model.settingsError(), original_error);
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(!model.settingsPending());
+        QCOMPARE(model.settingsOperationId(), original_id);
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsFailed);
+        QCOMPARE(model.settingsError(), original_error);
+        QCOMPARE(operations.size(), 0);
+        QCOMPARE(fixture.node.calls.forceSetting.load(), forced_before_refresh);
+        QVERIFY(fixture.args.GetPersistentSetting("signer").isNull());
+    }
+
+    void observationFailureKeepsUserOutcomeAndPublishesItsOwnReadError_data()
+    {
+        QTest::addColumn<bool>("reject_transport");
+        QTest::newRow("read-throws") << false;
+        QTest::newRow("transport-rejects") << true;
+    }
+
+    void observationFailureKeepsUserOutcomeAndPublishesItsOwnReadError()
+    {
+        QFETCH(bool, reject_transport);
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> gui;
+        Fixture fixture;
+        const auto reads = std::make_shared<std::atomic<int>>(0);
+        const auto throw_read = std::make_shared<std::atomic_bool>(!reject_transport);
+        OptionsQmlModel model{fixture.node, fixture.args,
+            {transport.scheduler, [&](auto turn) { gui.push_back(std::move(turn)); }}};
+        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); SettleManualOptions(transport, gui); });
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(model.settingsReady());
+        model.setExternalSignerPath(QStringLiteral("original-failed-signer-intent-does-not-exist"));
+        QVERIFY(SettleManualOptions(transport, gui));
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsFailed);
+        const auto original_id = model.settingsOperationId();
+        const auto original_error = model.settingsError();
+        QVERIFY(!original_error.isEmpty());
+        const auto original_writes = fixture.node.calls.forceSetting.load();
+        fixture.node.get_persistent_setting_fn = [&fixture, reads, throw_read](const std::string& name) {
+            ++*reads;
+            if (throw_read->load()) throw std::runtime_error("Observed settings read failed");
+            return fixture.args.GetPersistentSetting(name);
+        };
+        if (reject_transport) transport.rejectLane(execution::Lane::Core);
+        QSignalSpy operations{&model, &OptionsQmlModel::settingsOperationChanged};
+        QSignalSpy errors{&model, &OptionsQmlModel::settingsErrorChanged};
+        model.refreshDisplaySettings();
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(!model.settingsPending());
+        QCOMPARE(model.settingsOperationId(), original_id);
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsFailed);
+        QVERIFY(model.settingsError().startsWith(original_error + QLatin1Char('\n')));
+        if (reject_transport) {
+            QCOMPARE(reads->load(), 0);
+        } else {
+            QCOMPARE(reads->load(), 1);
+            QVERIFY(model.settingsError().contains(QStringLiteral("Observed settings read failed")));
+        }
+        QCOMPARE(operations.size(), 0);
+        QVERIFY(!errors.empty());
+        QCOMPARE(fixture.node.calls.forceSetting.load(), original_writes);
+
+        // A successful fresh read resolves only its own observation diagnostic.
+        throw_read->store(false);
+        model.refreshDisplaySettings();
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(reads->load() > 0);
+        QCOMPARE(model.settingsOperationId(), original_id);
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsFailed);
+        QCOMPARE(model.settingsError(), original_error);
+        QCOMPARE(operations.size(), 0);
+        QCOMPARE(fixture.node.calls.forceSetting.load(), original_writes);
+        QVERIFY(fixture.args.GetPersistentSetting("signer").isNull());
+    }
+
+    void successorIntentOwnsItsErrorWhileEarlierPublicationIsHeld_data()
+    {
+        QTest::addColumn<int>("earlier");
+        QTest::newRow("successful-read") << 0;
+        QTest::newRow("throwing-read") << 1;
+        QTest::newRow("rejected-read") << 2;
+        QTest::newRow("older-user-failure") << 3;
+    }
+
+    void successorIntentOwnsItsErrorWhileEarlierPublicationIsHeld()
+    {
+        QFETCH(int, earlier);
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> gui;
+        Fixture fixture;
+        OptionsQmlModel model{fixture.node, fixture.args,
+            {transport.scheduler, [&](auto turn) { gui.push_back(std::move(turn)); }}};
+        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); SettleManualOptions(transport, gui); });
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(model.settingsReady());
+        model.setExternalSignerPath(QStringLiteral("original-failure-with-a-held-successor-read"));
+        QVERIFY(SettleManualOptions(transport, gui));
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsFailed);
+        QVERIFY(!model.settingsError().isEmpty());
+        const auto original_id = model.settingsOperationId();
+        if (earlier == 1) fixture.node.get_persistent_setting_fn = [](const std::string&) -> common::SettingsValue {
+            throw std::runtime_error("Old observation failure must not replace its successor");
+        };
+        if (earlier == 2) transport.rejectLane(execution::Lane::Core);
+        if (earlier == 3) {
+            model.setExternalSignerPath(QStringLiteral("older-user-operation-also-fails-before-save"));
+        } else {
+            model.refreshDisplaySettings();
+        }
+        if (earlier != 2) {
+            QVERIFY(transport.step(execution::Lane::Core));
+            QVERIFY(transport.step(execution::Lane::Domain));
+        }
+        QVERIFY(!gui.empty());
+        QVERIFY(model.settingsPending());
+        fixture.node.get_persistent_setting_fn = [&fixture](const std::string& name) { return fixture.args.GetPersistentSetting(name); };
+        const auto before_successor = model.settingsOperationId();
+        const auto amount = model.maxMempoolSizeMB() + 10;
+        QSignalSpy operations{&model, &OptionsQmlModel::settingsOperationChanged};
+        model.setMaxMempoolSizeMB(amount);
+        QCOMPARE(model.settingsOperationId(), before_successor + 1);
+        QVERIFY(model.settingsOperationId() > original_id);
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsPending);
+        QVERIFY(model.settingsError().isEmpty());
+        QCOMPARE(operations.size(), 1);
+
+        // Release the old GUI packet before the successor's result. Neither
+        // its old snapshot nor its error owns the newer operation projection.
+        auto old_publication = std::move(gui.front());
+        gui.pop_front();
+        old_publication();
+        QCOMPARE(model.settingsOperationId(), before_successor + 1);
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsPending);
+        QVERIFY(model.settingsError().isEmpty());
+        QCOMPARE(operations.size(), 1);
+        QVERIFY(SettleManualOptions(transport, gui));
+        QVERIFY(!model.settingsPending());
+        QCOMPARE(model.settingsOperationState(), OptionsQmlModel::SettingsApplied);
+        QVERIFY(model.settingsError().isEmpty());
+        QCOMPARE(model.maxMempoolSizeMB(), amount);
+        QCOMPARE(fixture.args.GetPersistentSetting("maxmempool").getInt<int>(), amount);
+        QCOMPARE(operations.size(), 2);
     }
 
     void savingSettingsOnlyNotifiesChangedValues()
