@@ -5,6 +5,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Window 2.15
 import org.bitcoincore.qt 1.0
 
 import "../controls"
@@ -14,6 +15,7 @@ Popup {
     objectName: "nodeRuntimeDialog"
     readonly property int contentMargin: 28
     property bool showCompleteDiagnostics: false
+    property RuntimePromptModel prompt: ApplicationModels.nodeModel.runtimePrompt
 
     function runtimeButtonSpecs() {
         return [
@@ -30,14 +32,6 @@ Popup {
             { id: DialogButtonBox.Apply, name: "Apply" },
             { id: DialogButtonBox.Reset, name: "Reset" }
         ]
-    }
-
-    function syncOpenState() {
-        if (ApplicationModels.nodeModel.runtimeDialogVisible && !opened) {
-            open()
-        } else if (!ApplicationModels.nodeModel.runtimeDialogVisible && opened) {
-            close()
-        }
     }
 
     function standardButtonId(button) {
@@ -60,16 +54,38 @@ Popup {
         }
     }
 
-    Connections {
-        target: ApplicationModels.nodeModel
-        function onRuntimeDialogChanged() {
-            root.syncOpenState()
-            Qt.callLater(function() { root.tagRuntimeButtons() })
+    // Native visibility is a bounded presentation handoff. It precedes the
+    // popup enter transition, which may not advance while the window is hidden.
+    Component.onCompleted: {
+        const window = root.contentItem.Window.window
+        if (prompt !== null && window !== null) {
+            window.show()
+            window.raise()
+            window.requestActivate()
+        } else if (prompt !== null) {
+            prompt.unavailable()
         }
     }
-
-    Component.onCompleted: syncOpenState()
-    onOpened: Qt.callLater(function() { root.tagRuntimeButtons() })
+    visible: prompt !== null
+    onOpened: {
+        Qt.callLater(function() { root.tagRuntimeButtons() })
+        const window = root.contentItem.Window.window
+        if (prompt !== null && window !== null) {
+            window.show()
+            window.raise()
+            window.requestActivate()
+            prompt.presented()
+        } else if (prompt !== null) {
+            prompt.unavailable()
+        }
+    }
+    Component.onDestruction: if (prompt !== null) prompt.unavailable()
+    Connections {
+        target: root.contentItem.Window.window
+        function onVisibleChanged() {
+            if (!target.visible && root.prompt !== null) root.prompt.unavailable()
+        }
+    }
 
     modal: true
     closePolicy: Popup.NoAutoClose
@@ -107,7 +123,7 @@ Popup {
             Icon {
                 Layout.preferredWidth: 24
                 Layout.preferredHeight: 24
-                source: ApplicationModels.nodeModel.runtimeDialogIcon
+                source: root.prompt !== null ? root.prompt.icon : ""
                 color: Theme.color.orange
                 size: 24
             }
@@ -115,7 +131,7 @@ Popup {
             CoreText {
                 objectName: "nodeRuntimeDialogTitle"
                 Layout.fillWidth: true
-                text: ApplicationModels.nodeModel.runtimeDialogTitle
+                text: root.prompt !== null ? root.prompt.title : ""
                 bold: true
                 font.pixelSize: 20
                 horizontalAlignment: Text.AlignLeft
@@ -136,7 +152,7 @@ Popup {
             CoreText {
                 objectName: "nodeRuntimeDialogMessage"
                 width: runtimeMessageScroll.availableWidth
-                text: ApplicationModels.nodeModel.runtimeDialogMessage
+                text: root.prompt !== null ? root.prompt.message : ""
                 color: Theme.color.neutral8
                 font.pixelSize: 15
                 wrapMode: Text.WordWrap
@@ -150,14 +166,14 @@ Popup {
             Layout.fillHeight: true
             Layout.margins: root.contentMargin
             visible: root.showCompleteDiagnostics
-            listModel: ApplicationModels.nodeModel.runtimeDialogDiagnostics
+            listModel: root.prompt !== null ? root.prompt.diagnostics : null
             autoScrollToBottom: false
         }
 
         OutlineButton {
             objectName: "nodeRuntimeDetailsButton"
             Layout.alignment: Qt.AlignHCenter
-            visible: ApplicationModels.nodeModel.runtimeDialogDiagnostics !== null
+            visible: root.prompt !== null && root.prompt.diagnostics !== null
             text: root.showCompleteDiagnostics ? qsTr("Show summary") : qsTr("Show complete diagnostics")
             onClicked: root.showCompleteDiagnostics = !root.showCompleteDiagnostics
         }
@@ -171,14 +187,14 @@ Popup {
             Layout.topMargin: 0
             padding: 0
             spacing: 12
-            standardButtons: ApplicationModels.nodeModel.runtimeDialogButtons
+            standardButtons: root.prompt !== null ? root.prompt.buttons : DialogButtonBox.NoButton
             background: Item {}
 
             onCountChanged: Qt.callLater(function() { root.tagRuntimeButtons() })
             onStandardButtonsChanged: Qt.callLater(function() { root.tagRuntimeButtons() })
             Component.onCompleted: Qt.callLater(function() { root.tagRuntimeButtons() })
             onClicked: function(button) {
-                ApplicationModels.nodeModel.answerRuntimeDialog(root.standardButtonId(button))
+                if (root.prompt !== null) root.prompt.answer(root.standardButtonId(button))
             }
 
             delegate: Button {

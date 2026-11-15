@@ -157,7 +157,12 @@ private Q_SLOTS:
         const auto settle=[&]{for(int turn=0;turn<1024;++turn){if(transport.stepNext())continue;if(!gui.empty()){auto next=std::move(gui.front());gui.pop_front();next();continue;}return true;}return false;};
         const auto cleanup=qScopeGuard([&]{if(model)model->beginShutdown();model.reset();settle();});
         QVERIFY(settle());QVERIFY(model->networkActionReady());QVERIFY(network_changed);QVERIFY(!model->pause());
-        model->setPause(true);QVERIFY(transport.step(execution::Lane::Core));
+        model->setPause(true);
+        // Wait only for Native dispatch, accommodating the extracted Domain
+        // ingress without consuming its effect/outcome or any GUI completion.
+        for(int turn=0;turn<8&&transport.queuedCountIf([](const auto& queued){return queued.lane==execution::Lane::Core;})==0;++turn)
+            QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(transport.step(execution::Lane::Core));
         QCOMPARE(writes,std::vector<bool>{false});QVERIFY(model->networkActionPending());
         // Resume is a new GUI intent while the first Domain/GUI outcome is held.
         model->setPause(false);
@@ -321,6 +326,7 @@ private Q_SLOTS:
     void manualInitializationStopsAfterPublicReentrancy();
     void runtimeMessageHandlerOpensAfterInitialization();
     void runtimeQuestionHandlerBlocksForAnswerAndReturnsResult();
+    void runtimeQuestionUnsupportedAnswerCannotConsumeThePendingQuestion();
     void runtimeStartupQuestionFailureLetsInitializeResultRequestShutdown();
     void runtimeStartupErrorDialogLetsInitializeResultRequestShutdown();
     void runtimeDialogDefaultsToOkWhenNoButtonsAreSpecified();
@@ -2080,6 +2086,27 @@ void NodeModelTests::runtimeMessageHandlerOpensAfterInitialization()
 
     QCOMPARE(prompt_count, 1);
     QVERIFY(!model.runtimeDialogVisible());
+}
+
+void NodeModelTests::runtimeQuestionUnsupportedAnswerCannotConsumeThePendingQuestion()
+{
+    MockNode node;MempoolState mempool;ConfigureNodeModelDefaults(node);ConfigureMempoolGetters(node,mempool);
+    interfaces::Node::QuestionFn question;
+    node.handle_question_fn=[&](auto callback){question=std::move(callback);return MakeNoopHandler();};
+    ManualExecutionEnvironment env;NodeModel::Services services;services.execution={env.scheduler,[&](auto turn){env.post(std::move(turn));}};
+    NodeModel model{node,false,std::move(services)};
+    const auto pump=[&]{for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}};
+    pump();QVERIFY(model.notificationsReady());model.initializeResult(true,{},false,false);pump();QVERIFY(question);
+    std::atomic_bool returned{false},answer{false};
+    std::thread native{[&]{answer=question(Untranslated("Original OK-only question"),"",CClientUIInterface::MSG_ERROR);returned=true;}};
+    const auto cleanup=qScopeGuard([&]{model.beginShutdown();pump();native.join();pump();});
+    QTRY_VERIFY_WITH_TIMEOUT(([&]{pump();return model.runtimeDialogVisible();})(),ASYNC_TIMEOUT_MS);
+    QCOMPARE(model.runtimeDialogButtons(),static_cast<unsigned int>(CClientUIInterface::BTN_OK));
+    model.answerRuntimeDialog(CClientUIInterface::BTN_YES);pump();
+    QVERIFY(model.runtimeDialogVisible());QVERIFY(!returned.load()); // Independent unchanged public-action oracle.
+    model.answerRuntimeDialog(CClientUIInterface::BTN_OK);pump();
+    QTRY_VERIFY_WITH_TIMEOUT(([&]{pump();return returned.load();})(),ASYNC_TIMEOUT_MS);QVERIFY(answer.load());
+    QTRY_VERIFY_WITH_TIMEOUT(([&]{pump();return !model.runtimeDialogVisible();})(),ASYNC_TIMEOUT_MS);
 }
 
 void NodeModelTests::runtimeQuestionHandlerBlocksForAnswerAndReturnsResult()

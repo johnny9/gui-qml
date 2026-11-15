@@ -18,7 +18,8 @@
 namespace runtimeprompt {
 
 using Id = uint64_t;
-inline constexpr size_t MAX_SUMMARY_CHARACTERS{16'384};
+// Existing presentation prefix plus bounded truncation/capacity annotations.
+inline constexpr size_t MAX_SUMMARY_CHARACTERS{16'384 + 256};
 
 enum class Origin { Startup, Runtime, StartupSummary };
 enum class State { Idle, Presenting, AwaitingAnswer, Completing, Stopping, Stopped };
@@ -107,7 +108,10 @@ struct Limits {
     size_t prompts{32};
     // QString characters, including summaries and retained details. The
     // ingress/diagnostic owner separately bounds work awaiting Domain intake.
-    size_t diagnostic_characters{4 * 1024 * 1024};
+    // Native full text retains the existing 4M-character shared TextBudget. Account
+    // separately for each bounded presentation prefix rather than rejecting
+    // a valid full-capacity original message because its summary repeats it.
+    size_t diagnostic_characters{4 * 1024 * 1024 + 32 * MAX_SUMMARY_CHARACTERS};
 };
 struct Admission {
     Disposition disposition{Disposition::InvalidRequest};
@@ -116,8 +120,10 @@ struct Admission {
 };
 
 /** Single Domain-owned FIFO. No QObject, executor or callbacks are accessed.
- * Every method and destruction belongs to that owner; only AnswerCell is
- * shared across threads. Close cancels unanswered cells but retains original
+ * Every decision belongs to that owner; only AnswerCell is
+ * shared across threads. Destruction of a nonempty queue also belongs to
+ * Domain. After all continuations acknowledge and the queue is empty, its
+ * allocation may retire on Cleanup without another decision. Close cancels unanswered cells but retains original
  * requests until delivered(id) accounts for each continuation. A presentation
  * disappearance never serves as a continuation/drain acknowledgment.
  */

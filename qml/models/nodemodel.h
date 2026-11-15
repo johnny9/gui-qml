@@ -10,6 +10,9 @@
 #include <clientversion.h>
 #include <qml/models/syncprogresstracker.h>
 #include <qml/backendexecutor.h>
+#include <qml/models/networkmodel.h>
+#include <qml/models/runtimepromptmodel.h>
+#include <qml/nodelifecycle.h>
 #include <qml/snapshotquery.h>
 
 #include <deque>
@@ -59,6 +62,8 @@ class NodeModel : public QObject
     Q_PROPERTY(double headerSyncProgress READ headerSyncProgress NOTIFY headerSyncChanged)
     Q_PROPERTY(bool notificationsReady READ notificationsReady NOTIFY notificationsReadyChanged)
     Q_PROPERTY(QString observationError READ observationError NOTIFY observationErrorChanged)
+    Q_PROPERTY(NetworkModel* networkModel READ networkModel CONSTANT)
+    Q_PROPERTY(nodelifecycle::Phase lifecyclePhase READ lifecyclePhase NOTIFY lifecyclePhaseChanged)
     Q_PROPERTY(bool networkActionReady READ networkActionReady NOTIFY networkActionReadyChanged)
     Q_PROPERTY(bool networkActionPending READ networkActionPending NOTIFY networkActionPendingChanged)
     Q_PROPERTY(bool peerActionPending READ peerActionPending NOTIFY peerActionChanged)
@@ -74,6 +79,8 @@ class NodeModel : public QObject
     Q_PROPERTY(QVariantList informationRows READ nodeInformationRows NOTIFY nodeInformationChanged)
     Q_PROPERTY(QStringList warningList READ warningList NOTIFY warningsChanged)
     Q_PROPERTY(bool hasWarnings READ hasWarnings NOTIFY warningsChanged)
+    Q_PROPERTY(QVariantList runtimePrompts READ runtimePrompts NOTIFY runtimeDialogChanged)
+    Q_PROPERTY(RuntimePromptModel* runtimePrompt READ runtimePrompt NOTIFY runtimeDialogChanged)
     Q_PROPERTY(bool runtimeDialogVisible READ runtimeDialogVisible NOTIFY runtimeDialogChanged)
     Q_PROPERTY(QString runtimeDialogTitle READ runtimeDialogTitle NOTIFY runtimeDialogChanged)
     Q_PROPERTY(QString runtimeDialogMessage READ runtimeDialogMessage NOTIFY runtimeDialogChanged)
@@ -111,7 +118,12 @@ public:
     bool isDrained() const { return m_drained; }
     bool notificationsReady() const { return m_subscriptions_ready; }
     QString observationError() const;
-    bool networkActionReady() const { return m_backend_queries_ready && m_subscriptions_ready && !m_admission_closed && !m_shutdown_requested && !m_workers_stopping; }
+    NetworkModel* networkModel() const { return m_network_model; }
+    nodelifecycle::Phase lifecyclePhase() const { return m_lifecycle_phase; }
+    void setLifecyclePhase(nodelifecycle::Phase phase);
+    // Compatibility capability: backend/subscription availability. The typed
+    // command owner additionally requires a current observation before effects.
+    bool networkActionReady() const { return networkBackendAvailable(); }
     bool peerActionPending() const { return bool(m_peer_command); }
     enum class PeerActionOutcome { Succeeded, Rejected, PartiallyApplied, Uncertain };
     Q_ENUM(PeerActionOutcome)
@@ -158,6 +170,8 @@ public:
     QString warnings() const { return m_warnings; }
     QStringList warningList() const { return m_warning_list; }
     bool hasWarnings() const { return !m_warning_list.empty(); }
+    RuntimePromptModel* runtimePrompt()const{return m_runtime_prompt;}
+    QVariantList runtimePrompts()const;
     bool runtimeDialogVisible() const { return m_runtime_dialog_visible; }
     QString runtimeDialogTitle() const { return m_runtime_dialog_title; }
     QString runtimeDialogMessage() const { return m_runtime_dialog_message; }
@@ -198,6 +212,7 @@ Q_SIGNALS:
     void notificationsReadyChanged();
     void nodeInformationChanged();
     void networkActionReadyChanged();
+    void lifecyclePhaseChanged();
     void networkActionPendingChanged();
     void networkActionErrorChanged();
     void blockTipHeightChanged();
@@ -259,12 +274,14 @@ private:
     QString m_information_data_dir, m_information_blocks_dir, m_information_network;
     int m_information_header_height{0}, m_information_block_height{0};
     int64_t m_information_header_time{0}, m_information_block_time{0};
-    struct NetworkActionResult { bool paused; uint64_t generation; bool requested; };
-    std::shared_ptr<execution::OwnedCommand<NetworkActionResult>> m_network_command;
+    NetworkModel* m_network_model{nullptr};
+    bool m_network_available{false};
+    nodelifecycle::Phase m_lifecycle_phase{nodelifecycle::Phase::Constructed};
+    bool networkBackendAvailable() const { return m_backend_queries_ready && m_subscriptions_ready && !m_admission_closed && !m_shutdown_requested && !m_workers_stopping; }
+    void updateNetworkAvailability();
     void publishNetworkAction();
     bool m_network_known{false};
     bool m_network_action_pending{false};
-    bool m_network_desired_pause{false};
     QString m_network_action_error;
     bool m_drained{false};
     bool m_destroying{false};
@@ -280,7 +297,6 @@ private:
     void initializeSubscriptions();
     void schedulePoll(Poll poll);
     void finishDrain();
-    void submitNetworkAction();
 
     struct MempoolInfo {
         int transaction_count{0};
@@ -291,15 +307,12 @@ private:
     struct RuntimeDialogRequest {
         QString message;
         std::shared_ptr<const QString> full_message;
-        bool startup_summary{false};
         unsigned int style{0};
-        bool question{false};
-        bool answer{false};
-        bool answered{false};
-        unsigned int button{0};
-        std::mutex mutex;
-        std::condition_variable condition;
     };
+    std::shared_ptr<runtimeprompt::Service> m_prompt_service;
+    RuntimePromptModel* m_runtime_prompt{nullptr};
+    uint64_t m_prompt_rejections{0};
+    void publishRuntimePrompt();
 
     // Properties that are exposed to QML.
     int m_block_tip_height{0};
@@ -350,8 +363,6 @@ private:
     QString m_runtime_dialog_message;
     QString m_runtime_dialog_icon;
     unsigned int m_runtime_dialog_buttons{0};
-    std::shared_ptr<RuntimeDialogRequest> m_runtime_dialog_active;
-    std::deque<std::shared_ptr<RuntimeDialogRequest>> m_runtime_dialog_queue;
 
     bool m_shutdown_polling{false};
     QTimer* m_shutdown_timer{nullptr};
@@ -374,7 +385,6 @@ private:
     void setHeaderSyncState(int height, int64_t block_time, bool presync);
     void updateSyncCompletion();
     bool showRuntimeDialogOnGuiThread(const QString& message, unsigned int style, bool question, bool startup_summary = false);
-    void showRuntimeDialogRequest(const std::shared_ptr<RuntimeDialogRequest>& request);
     void clearRuntimeDialogs(bool notify);
     void requestMempoolInfoRefresh();
     void applyMempoolInfo(const MempoolInfo& info);

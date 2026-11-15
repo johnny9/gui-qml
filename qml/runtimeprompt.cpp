@@ -90,7 +90,7 @@ Request::Request(Origin request_origin, uint32_t request_style, bool request_que
 }
 
 Queue::Queue(Limits limits) : m_limits(limits) {}
-Queue::~Queue() { close(); }
+Queue::~Queue() { if(!m_entries.empty())close(); }
 
 bool Queue::closed() const
 {

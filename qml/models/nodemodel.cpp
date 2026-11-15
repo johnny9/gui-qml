@@ -60,39 +60,6 @@ QStringList SplitWarnings(const QString& warnings)
     return result;
 }
 
-QString RuntimeDialogTitle(unsigned int style)
-{
-    if (style & CClientUIInterface::ICON_ERROR) {
-        return QObject::tr("Error");
-    }
-    if (style & CClientUIInterface::ICON_WARNING) {
-        return QObject::tr("Warning");
-    }
-    return QObject::tr("Information");
-}
-
-QString RuntimeDialogIcon(unsigned int style)
-{
-    if (style & CClientUIInterface::ICON_ERROR) {
-        return QStringLiteral("image://images/error");
-    }
-    if (style & CClientUIInterface::ICON_WARNING) {
-        return QStringLiteral("image://images/alert-filled");
-    }
-    return QStringLiteral("image://images/info-filled");
-}
-
-unsigned int RuntimeDialogButtons(unsigned int style)
-{
-    const unsigned int buttons{style & CClientUIInterface::BTN_MASK};
-    return buttons ? buttons : CClientUIInterface::BTN_OK;
-}
-
-bool HasMultipleRuntimeDialogButtons(unsigned int buttons)
-{
-    return (buttons & (buttons - 1)) != 0;
-}
-
 QVariant InformationRow(const QString& label, const QString& value)
 {
     QVariantMap row;
@@ -119,34 +86,34 @@ struct NodeModel::Notifications : std::enable_shared_from_this<Notifications> {
     QString subscription_error;
     int64_t header_spacing{600};
     std::deque<std::shared_ptr<RuntimeDialogRequest>> dialogs;
-    std::vector<std::weak_ptr<RuntimeDialogRequest>> runtime_owned;
+    std::shared_ptr<runtimeprompt::Service> prompts;
     bool runtime_overflow{false};
     bool request(QString message, unsigned int style, bool question) {
-        const bool gui = QThread::currentThread() == QCoreApplication::instance()->thread();
-        // A synchronous Core answer cannot be awaited on GUI. Production Core
-        // work belongs to a background lane; accidental GUI questions reject.
-        if (gui && question) return false;
-        { std::lock_guard lock{mutex}; if (!receiver) return false; }
-        auto request = std::make_shared<RuntimeDialogRequest>();
-        request->message = message.left(16384);
-        if (message.size() > 16384) request->message += QStringLiteral(" ") + QObject::tr("[additional message text omitted]");
-        request->full_message = startupdiagnostics::RetainText(scheduler, text_budget, std::move(message));
-        if (!request->full_message) {
-            { std::lock_guard lock{mutex}; if (receiver && diagnostic_loss) *diagnostic_loss = true; }
-            request->message += QStringLiteral(" ") + QObject::tr("[complete message unavailable: diagnostic capacity exhausted]");
+        const bool gui=QThread::currentThread()==QCoreApplication::instance()->thread();
+        if(gui&&question)return false;
+        bool runtime;
+        {std::lock_guard lock{mutex};if(!receiver)return false;runtime=ready;}
+        auto details=startupdiagnostics::RetainText(scheduler,text_budget,message);
+        QString summary=message.left(16'384);
+        if(message.size()>16'384)summary+=QStringLiteral(" ")+QObject::tr("[additional message text omitted]");
+        if(!details){if(diagnostic_loss)*diagnostic_loss=true;summary+=QStringLiteral(" ")+QObject::tr("[complete message unavailable: diagnostic capacity exhausted]");}
+        // Capture the producer phase. Startup diagnostics do not become runtime
+        // dialogs just because their GUI delivery is delayed past readiness.
+        if(!runtime&&!question&&((style&CClientUIInterface::ICON_WARNING)||!(style&CClientUIInterface::MODAL))){
+            auto diagnostic=std::make_shared<RuntimeDialogRequest>();
+            diagnostic->message=std::move(summary);diagnostic->full_message=std::move(details);diagnostic->style=style;
+            std::lock_guard lock{mutex};if(!receiver)return false;
+            if(dialogs.size()>=32){runtime_overflow=true;schedule();return false;}
+            dialogs.push_back(std::move(diagnostic));schedule();return false;
         }
-        request->style = style; request->question = question;
-        {
-            std::lock_guard lock{mutex};
-            if (!receiver) return false;
-            std::erase_if(runtime_owned, [](const auto& value) { return value.expired(); });
-            if (runtime_owned.size() >= 32) { runtime_overflow = true; schedule(); return false; }
-            runtime_owned.emplace_back(request); dialogs.push_back(request); schedule();
+        const auto request=std::make_shared<const runtimeprompt::Request>(runtime?runtimeprompt::Origin::Runtime:runtimeprompt::Origin::Startup,
+            style,question,std::move(summary),std::move(details));
+        const bool blocking=!gui&&(question||(style&CClientUIInterface::MODAL));
+        std::shared_ptr<runtimeprompt::Continuation> continuation;
+        if(!prompts||!prompts->enqueue(request,blocking,continuation)){
+            std::lock_guard lock{mutex};if(receiver){runtime_overflow=true;schedule();}return false;
         }
-        if (gui || (!(style & CClientUIInterface::MODAL) && !question)) return false;
-        std::unique_lock lock{request->mutex};
-        request->condition.wait(lock, [&] { return request->answered; });
-        return request->answer;
+        return continuation?continuation->wait().affirmative():false;
     }
     std::optional<Block> block;
     std::optional<Header> header;
@@ -294,6 +261,23 @@ NodeModel::NodeModel(interfaces::Node& node, bool backend_ready, Services servic
     m_startup_diagnostics = new StartupDiagnosticsModel({m_query_scheduler, post}, this);
     connect(m_startup_diagnostics, &StartupDiagnosticsModel::changed, this, &NodeModel::startupDiagnosticsChanged);
     connect(m_startup_diagnostics, &StartupDiagnosticsModel::finished, this, &NodeModel::finishStartupDiagnostics);
+    m_prompt_service=std::make_shared<runtimeprompt::Service>(execution::SnapshotServices{m_query_scheduler,post},
+        [observer,post]{post([observer]{if(observer)observer->publishRuntimePrompt();});},
+        [observer,post]{post([observer]{if(observer)observer->finishDrain();});});
+    m_notifications->prompts=m_prompt_service;
+    NetworkModel::Ports network_ports;
+    network_ports.execution={m_query_scheduler,post};
+    network_ports.observe=[node=&m_node,state=m_notifications]{
+        // The public read is atomic/bounded. Pair it with callback ingress;
+        // this is an observation, not an atomic Core/RPC compare-and-set.
+        std::lock_guard lock{state->mutex};
+        return networkcommand::Observation{node->getNetworkActive(),state->network_generation};
+    };
+    network_ports.set_active=[node=&m_node](bool active){node->setNetworkActive(active);};
+    network_ports.generation=[state=m_notifications]{std::lock_guard lock{state->mutex};return state->network_generation;};
+    m_network_model=new NetworkModel(std::move(network_ports),this);
+    connect(m_network_model,&NetworkModel::changed,this,&NodeModel::publishNetworkAction);
+    connect(this,&NodeModel::networkActionReadyChanged,this,&NodeModel::updateNetworkAvailability);
     initializeMempoolInfoPolling();
     initializeSubscriptions();
     if (m_snapshots) connect(m_snapshots.get(), &BackendExecutor::drained, this, &NodeModel::finishDrain);
@@ -309,10 +293,14 @@ NodeModel::~NodeModel()
 
 void NodeModel::closeAdmission()
 {
+    const QPointer<NodeModel> observer{this};
     m_admission_closed = true;
-    setNodeReady(false);
+    updateNetworkAvailability();if(!observer)return;
+    setNodeReady(false);if(!observer)return;
     if (m_startup_diagnostics) m_startup_diagnostics->closeAdmission();
+    if(!observer)return;
     if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->closeAdmission();
+    if(!observer)return;
     if (m_query_scheduler) m_query_scheduler->closeOrdinaryAdmission();
 }
 
@@ -321,10 +309,14 @@ void NodeModel::beginShutdown()
     if (m_workers_stopping) return;
     const QPointer<NodeModel> observer{this};
     m_workers_stopping = true;
+    if(m_network_model)m_network_model->close();
+    if(!observer)return;
     m_query_scheduler->closeOrdinaryAdmission();
     m_retirement_scheduler->closeOrdinaryAdmission();
     if (m_startup_diagnostics) m_startup_diagnostics->closeAdmission();
+    if(!observer)return;
     if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->closeAdmission();
+    if(!observer)return;
     m_initialization_result.reset();
     detachNotifications();
     clearRuntimeDialogs(false);
@@ -359,17 +351,8 @@ void NodeModel::finishDrain()
 
 void NodeModel::detachNotifications()
 {
-    std::vector<std::shared_ptr<RuntimeDialogRequest>> requests;
-    { std::lock_guard lock{m_notifications->mutex};
-      m_notifications->receiver = nullptr;
-      for (const auto& weak : m_notifications->runtime_owned) if (auto request = weak.lock()) requests.push_back(std::move(request));
-      m_notifications->dialogs.clear();
-    }
-    // Do not wait for Core callbacks while a question is awaiting the user.
-    for (const auto& request : requests) {
-        { std::lock_guard lock{request->mutex}; request->answered = true; request->answer = false; }
-        request->condition.notify_all();
-    }
+    {std::lock_guard lock{m_notifications->mutex};m_notifications->receiver=nullptr;m_notifications->dialogs.clear();}
+    if(m_prompt_service)m_prompt_service->close();
 }
 
 void NodeModel::publishNotifications()
@@ -381,6 +364,7 @@ void NodeModel::publishNotifications()
     std::optional<Notifications::Header> header;
     std::optional<int> peers;
     std::optional<bool> network_active;
+    uint64_t network_generation{0};
     bool warnings;
     bool bans;
     std::optional<bool> subscribed;
@@ -393,6 +377,7 @@ void NodeModel::publishNotifications()
         header = std::exchange(m_notifications->header, {});
         peers = std::exchange(m_notifications->peers, {});
         network_active = std::exchange(m_notifications->network_active, {});
+        network_generation=m_notifications->network_generation;
         warnings = std::exchange(m_notifications->warnings, false);
         bans = std::exchange(m_notifications->bans, false);
     }
@@ -444,45 +429,17 @@ void NodeModel::publishNotifications()
     }
     if (runtime_overflow) { m_status_error = tr("Some node messages exceeded the dialog queue limit."); Q_EMIT observationErrorChanged(); }
     if (!current()) return;
-    for (const auto& request : dialogs) {
-        bool answered;
-        { std::lock_guard lock{request->mutex}; answered = request->answered; }
-        if (answered) continue;
-        if (!m_runtime_dialogs_enabled && !request->question) {
-            if (request->style & CClientUIInterface::ICON_WARNING) {
-                recordStartupWarningMessage(request->full_message ? *request->full_message : request->message);
-                if (!current()) return;
-                { std::lock_guard lock{request->mutex}; request->answered = true; request->answer = false; }
-                request->condition.notify_all(); continue;
-            } else if (!(request->style & CClientUIInterface::MODAL)) {
-                if (request->style & CClientUIInterface::ICON_ERROR) recordStartupErrorMessage(request->full_message ? *request->full_message : request->message);
-                if (!current()) return;
-                continue;
-            }
-            if (!(request->style & CClientUIInterface::MODAL)) continue;
-        }
-        if (!m_runtime_dialogs_enabled && (request->question || (request->style & CClientUIInterface::ICON_ERROR))) m_startup_failure_dialog_shown = true;
-        if (m_runtime_dialog_active && m_runtime_dialog_queue.size() >= 31) {
-            { std::lock_guard lock{request->mutex}; request->answered = true; request->answer = false; }
-            request->condition.notify_all();
-            m_status_error = tr("A node dialog could not be shown because the dialog queue is full.");
-            Q_EMIT observationErrorChanged(); if (!current()) return; continue;
-        }
-        if (m_runtime_dialog_active) m_runtime_dialog_queue.push_back(request);
-        else showRuntimeDialogRequest(request);
-        if (!current()) return;
+    for(const auto& request:dialogs){
+        if(request->style&CClientUIInterface::ICON_WARNING)
+            recordStartupWarningMessage(request->full_message?*request->full_message:request->message);
+        else if(request->style&CClientUIInterface::ICON_ERROR)
+            recordStartupErrorMessage(request->full_message?*request->full_message:request->message);
+        if(!current())return;
     }
     updateSyncCompletion();
     if (!current()) return;
     if (block || header || peers || warnings || network_active) refreshStatus();
-    if (network_active) {
-        m_network_known = true;
-        if (m_pause != !*network_active) {
-            m_pause = !*network_active;
-            Q_EMIT pauseChanged(m_pause);
-            if (!current()) return;
-        }
-    }
+    if (network_active && m_network_model) m_network_model->observe(*network_active,network_generation);
     if (bans) Q_EMIT bannedListChanged();
     if (!current()) return;
     if (block || header || peers || warnings || network_active) Q_EMIT nodeInformationChanged();
@@ -559,10 +516,8 @@ void NodeModel::publishStatus()
     if (m_warnings != snapshot.warnings || m_warning_list != snapshot.warning_list) {
         m_warnings = snapshot.warnings; m_warning_list = snapshot.warning_list; Q_EMIT warningsChanged();
     }
-    if (snapshot.network_active && network_current) {
-        m_network_known = true;
-        if (m_pause != !*snapshot.network_active) { m_pause = !*snapshot.network_active; Q_EMIT pauseChanged(m_pause); }
-    }
+    if (snapshot.network_active && network_current && m_network_model)
+        m_network_model->observe(*snapshot.network_active,snapshot.network_generation);
     if (m_mempool_information_available != snapshot.mempool_available) {
         m_mempool_information_available = snapshot.mempool_available; Q_EMIT mempoolInfoChanged();
     }
@@ -798,59 +753,33 @@ void NodeModel::updateSyncCompletion()
 
 void NodeModel::setPause(bool new_pause)
 {
-    if (!networkActionReady()) return;
-    m_network_desired_pause = new_pause;
-    if (m_network_action_pending || m_pause == new_pause) return;
-    m_network_action_pending = true;
-    m_network_action_error.clear();
-    Q_EMIT networkActionErrorChanged();
-    Q_EMIT networkActionPendingChanged();
-    submitNetworkAction();
+    if(networkActionReady())m_network_model->requestActive(!new_pause);
 }
-
-void NodeModel::submitNetworkAction()
+void NodeModel::updateNetworkAvailability()
 {
-    const bool requested = m_network_desired_pause;
-    const QPointer<NodeModel> observer{this};
-    auto operation = std::make_shared<execution::OwnedCommand<NetworkActionResult>>(m_query_scheduler,
-        [observer, post = m_services.execution.post] { post([observer] { if (observer) observer->publishNetworkAction(); }); });
-    m_network_command = operation;
-    const auto admission = operation->start([node = &m_node, state = m_notifications, requested] {
-        node->setNetworkActive(!requested);
-        uint64_t generation;
-        { std::lock_guard lock{state->mutex}; generation = state->network_generation; }
-        return NetworkActionResult{!node->getNetworkActive(), generation, requested};
-    });
-    if (!admission) {
-        m_network_command.reset(); m_network_action_pending = false;
-        m_network_action_error = tr("The network action could not be started.");
-        Q_EMIT networkActionPendingChanged(); Q_EMIT networkActionErrorChanged();
-    }
+    const bool available=networkBackendAvailable();
+    if(!m_network_model||available==m_network_available)return;
+    m_network_available=available;
+    m_network_model->setAvailable(available);
 }
-
 void NodeModel::publishNetworkAction()
 {
-    if (!m_network_command) return;
-    const auto result = m_network_command->result();
-    if (!result) return;
-    m_network_command.reset();
-    if (m_shutdown_requested || m_workers_stopping || m_admission_closed) return;
-    if (!result->value) {
-        m_network_action_pending = false;
-        m_network_action_error = tr("The network action has no confirmed outcome. Refresh node information before retrying.");
-        Q_EMIT networkActionPendingChanged(); Q_EMIT networkActionErrorChanged(); refreshStatus(); return;
+    if(!m_network_model||m_destroying)return;
+    const QPointer<NodeModel> observer{this};
+    const bool pending=m_network_model->pending();
+    const auto error=m_network_model->error();
+    m_network_known=m_network_model->known();
+    if(m_network_known && m_pause==m_network_model->observedActive()){
+        m_pause=!m_network_model->observedActive();Q_EMIT pauseChanged(m_pause);if(!observer)return;
     }
-    const auto& outcome = *result->value;
-    bool current;
-    { std::lock_guard lock{m_notifications->mutex}; current = outcome.generation == m_notifications->network_generation; }
-    if (current) {
-        m_network_known = true;
-        if (m_pause != outcome.paused) { m_pause = outcome.paused; Q_EMIT pauseChanged(m_pause); }
-    } else { publishNotifications(); refreshStatus(); }
-    if (m_network_desired_pause != outcome.requested) { submitNetworkAction(); return; }
-    m_network_action_pending = false;
-    if (current && outcome.paused != outcome.requested) m_network_action_error = tr("Unable to change network activity.");
-    Q_EMIT networkActionPendingChanged(); Q_EMIT networkActionErrorChanged(); Q_EMIT nodeInformationChanged();
+    if(m_network_action_pending!=pending){m_network_action_pending=pending;Q_EMIT networkActionPendingChanged();if(!observer)return;}
+    if(m_network_action_error!=error){m_network_action_error=error;Q_EMIT networkActionErrorChanged();if(!observer)return;}
+    Q_EMIT nodeInformationChanged();
+}
+void NodeModel::setLifecyclePhase(nodelifecycle::Phase phase)
+{
+    if(m_lifecycle_phase==phase)return;
+    m_lifecycle_phase=phase;Q_EMIT lifecyclePhaseChanged();
 }
 
 void NodeModel::setErrorState(bool faulted)
@@ -1263,141 +1192,80 @@ QVariantList NodeModel::nodeInformationRows()
     return rows;
 }
 
-bool NodeModel::showRuntimeDialogOnGuiThread(const QString& message, unsigned int style, bool question, bool startup_summary)
+bool NodeModel::showRuntimeDialogOnGuiThread(const QString& message,unsigned int style,bool question,bool startup_summary)
 {
-    if (m_shutdown_requested || m_workers_stopping) return false;
-    if (!m_runtime_dialogs_enabled && !question) {
-        if (style & CClientUIInterface::ICON_WARNING) {
-            recordStartupWarningMessage(message);
-            return false;
-        }
-        if (!(style & CClientUIInterface::MODAL)) {
-            if (style & CClientUIInterface::ICON_ERROR) {
-                recordStartupErrorMessage(message);
-            }
-            return false;
-        }
+    if(m_shutdown_requested||m_workers_stopping)return false;
+    if(!m_runtime_dialogs_enabled&&!question&&!startup_summary){
+        if(style&CClientUIInterface::ICON_WARNING){recordStartupWarningMessage(message);return false;}
+        if(!(style&CClientUIInterface::MODAL)){if(style&CClientUIInterface::ICON_ERROR)recordStartupErrorMessage(message);return false;}
     }
-
-    if (m_runtime_dialog_active && m_runtime_dialog_queue.size() >= 31) {
-        m_status_error = tr("A node dialog could not be shown because the dialog queue is full.");
-        Q_EMIT observationErrorChanged(); return false;
+    auto details=startupdiagnostics::RetainText(m_query_scheduler,m_dialog_text_budget,message);
+    QString summary=message.left(16'384);
+    if(!details){if(m_services.diagnostic_loss)*m_services.diagnostic_loss=true;summary+=QStringLiteral(" ")+tr("[complete message unavailable: diagnostic capacity exhausted]");}
+    const auto request=std::make_shared<const runtimeprompt::Request>(startup_summary?runtimeprompt::Origin::StartupSummary:
+        m_runtime_dialogs_enabled?runtimeprompt::Origin::Runtime:runtimeprompt::Origin::Startup,style,question,std::move(summary),std::move(details));
+    std::shared_ptr<runtimeprompt::Continuation> unused;
+    if(!m_prompt_service->enqueue(request,false,unused)){
+        m_status_error=tr("A node dialog could not be shown because the dialog queue is full.");Q_EMIT observationErrorChanged();
     }
-    auto request{std::make_shared<RuntimeDialogRequest>()};
-    request->message = message.left(16384);
-    request->full_message = startupdiagnostics::RetainText(m_query_scheduler, m_dialog_text_budget, message);
-    if (!request->full_message) {
-        if (m_services.diagnostic_loss) *m_services.diagnostic_loss = true;
-        request->message += QStringLiteral(" ") + tr("[complete message unavailable: diagnostic capacity exhausted]");
-    }
-    request->startup_summary = startup_summary;
-    request->style = style;
-    request->question = question;
-    if (!m_runtime_dialogs_enabled && (question || (style & CClientUIInterface::ICON_ERROR))) {
-        m_startup_failure_dialog_shown = true;
-    }
-
-    if (m_runtime_dialog_active) m_runtime_dialog_queue.push_back(request);
-    else showRuntimeDialogRequest(request);
-    return false; // Presentation never waits for an answer on GUI.
-
+    return false;
 }
-
-void NodeModel::showRuntimeDialogRequest(const std::shared_ptr<RuntimeDialogRequest>& request)
+QVariantList NodeModel::runtimePrompts()const
 {
-    if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) {
-        m_runtime_diagnostics->closeAdmission(); m_runtime_diagnostics->deleteLater();
+    return m_runtime_prompt?QVariantList{QVariant::fromValue(m_runtime_prompt)}:QVariantList{};
+}
+void NodeModel::publishRuntimePrompt()
+{
+    if(m_shutdown_requested||m_workers_stopping)return;
+    const auto projection=m_prompt_service->projection();
+    const QPointer<NodeModel> observer{this};
+    if(projection.rejected>m_prompt_rejections){
+        m_prompt_rejections=projection.rejected;
+        m_status_error=tr("A node dialog could not be shown because its queue or diagnostic capacity was exhausted.");
+        Q_EMIT observationErrorChanged();if(!observer||m_shutdown_requested||m_workers_stopping)return;
     }
-    if (request->startup_summary) m_runtime_diagnostics = m_startup_diagnostics;
-    else {
-        m_runtime_diagnostics = new StartupDiagnosticsModel({m_query_scheduler, m_services.execution.post}, this);
-        m_runtime_diagnostics->append(request->full_message ? *request->full_message : request->message, false);
-        if (!m_runtime_diagnostics->project(false, {}, {}, {}, /*normalize=*/false)) {
-            if (m_services.diagnostic_loss) *m_services.diagnostic_loss = true;
-            request->message += QStringLiteral(" ") + tr("[complete diagnostics unavailable: capacity exhausted]");
+    const auto active=projection.state==runtimeprompt::State::Presenting||projection.state==runtimeprompt::State::AwaitingAnswer?projection.active:nullptr;
+    if(m_runtime_prompt&&active&&m_runtime_prompt->id()==active->descriptor.id)return;
+    clearRuntimeDialogs(false);if(!observer||m_shutdown_requested||m_workers_stopping)return;
+    if(active){
+        const auto& request=*active->request;
+        if(request.origin==runtimeprompt::Origin::StartupSummary)m_runtime_diagnostics=m_startup_diagnostics;
+        else{
+            m_runtime_diagnostics=new StartupDiagnosticsModel({m_query_scheduler,m_services.execution.post},this);
+            m_runtime_diagnostics->append(request.details?*request.details:request.summary,false);
+            if(!m_runtime_diagnostics->project(false,{},{},{},false)&&m_services.diagnostic_loss)*m_services.diagnostic_loss=true;
         }
-        const QPointer<NodeModel> observer{this};
-        const QPointer<StartupDiagnosticsModel> details{m_runtime_diagnostics};
-        connect(m_runtime_diagnostics, &StartupDiagnosticsModel::finished, this,
-            [observer, details, original = std::weak_ptr<RuntimeDialogRequest>{request}] {
-            if (!observer || !details || observer->m_runtime_dialog_active != original.lock() || details->error().isEmpty()) return;
-            if (observer->m_services.diagnostic_loss) *observer->m_services.diagnostic_loss = true;
-            observer->m_runtime_dialog_message += QStringLiteral(" ") + QObject::tr("[complete diagnostics unavailable]");
-            Q_EMIT observer->runtimeDialogChanged();
-        });
+        m_runtime_prompt=new RuntimePromptModel(active,m_prompt_service,m_runtime_diagnostics,this);
+        m_runtime_dialog_title=m_runtime_prompt->title();m_runtime_dialog_message=m_runtime_prompt->message();
+        m_runtime_dialog_icon=m_runtime_prompt->icon();m_runtime_dialog_buttons=m_runtime_prompt->buttons();m_runtime_dialog_question=m_runtime_prompt->question();
+        if(request.origin==runtimeprompt::Origin::Startup&&(request.question||(request.style&CClientUIInterface::ICON_ERROR)))m_startup_failure_dialog_shown=true;
+        m_runtime_dialog_visible=true;
     }
-    m_runtime_dialog_active = request;
-    m_runtime_dialog_title = RuntimeDialogTitle(request->style);
-    m_runtime_dialog_message = request->message;
-    m_runtime_dialog_icon = RuntimeDialogIcon(request->style);
-    m_runtime_dialog_buttons = RuntimeDialogButtons(request->style);
-    m_runtime_dialog_question = request->question || HasMultipleRuntimeDialogButtons(m_runtime_dialog_buttons);
-    m_runtime_dialog_visible = true;
     Q_EMIT runtimeDialogChanged();
 }
-
 void NodeModel::clearRuntimeDialogs(bool notify)
 {
-    // The queue is capped32. Only the necessary answer handoff runs on GUI;
-    // retained full message and prepared row storage retire on Cleanup.
-    const auto reject = [](const std::shared_ptr<RuntimeDialogRequest>& request) {
-        if (!request) return;
-        { std::lock_guard lock{request->mutex}; request->answered = true; request->answer = false; request->button = CClientUIInterface::BTN_CANCEL; }
-        request->condition.notify_all();
-    };
-    reject(m_runtime_dialog_active);
-    for (const auto& request : m_runtime_dialog_queue) reject(request);
-    m_runtime_dialog_active.reset(); m_runtime_dialog_queue.clear();
-    if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) {
-        m_runtime_diagnostics->closeAdmission(); m_runtime_diagnostics->deleteLater();
-    }
-    m_runtime_diagnostics = nullptr;
-    const bool visible = std::exchange(m_runtime_dialog_visible, false);
-    if (notify && visible) Q_EMIT runtimeDialogChanged();
+    const QPointer<NodeModel> observer{this};
+    auto* prompt=std::exchange(m_runtime_prompt,nullptr);
+    const QPointer<StartupDiagnosticsModel> details{std::exchange(m_runtime_diagnostics,nullptr)};
+    const bool retire=details&&details!=m_startup_diagnostics;
+    const bool visible=std::exchange(m_runtime_dialog_visible,false);
+    if(prompt)prompt->deleteLater();
+    if(retire){details->closeAdmission();if(details)details->deleteLater();}
+    if(observer&&notify&&visible)Q_EMIT runtimeDialogChanged();
 }
-
 void NodeModel::answerRuntimeDialog(unsigned int button)
 {
-    if (!m_runtime_dialog_active) {
-        return;
-    }
-
-    auto answered_dialog{std::move(m_runtime_dialog_active)};
-    {
-        std::lock_guard lock{answered_dialog->mutex};
-        answered_dialog->button = button;
-        answered_dialog->answer = button == CClientUIInterface::BTN_OK;
-        answered_dialog->answered = true;
-    }
-    answered_dialog->condition.notify_all();
-
-    if (!m_runtime_dialog_queue.empty()) {
-        auto next_dialog{m_runtime_dialog_queue.front()};
-        m_runtime_dialog_queue.pop_front();
-        showRuntimeDialogRequest(next_dialog);
-        return;
-    }
-
-    if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) {
-        m_runtime_diagnostics->closeAdmission(); m_runtime_diagnostics->deleteLater();
-    }
-    m_runtime_diagnostics = nullptr;
-    m_runtime_dialog_visible = false;
-    Q_EMIT runtimeDialogChanged();
+    // Compatibility/native automation boundary. Real QML carries the immutable
+    // per-prompt QObject and cannot retarget a delayed click to its successor.
+    if(m_runtime_prompt){m_runtime_prompt->presented();m_runtime_prompt->answer(button);}
 }
 
 #ifdef ENABLE_TEST_AUTOMATION
-void NodeModel::showRuntimeDialogForTest(const QString& message, unsigned int style, bool question)
+void NodeModel::showRuntimeDialogForTest(const QString& message,unsigned int style,bool question)
 {
-    auto request{std::make_shared<RuntimeDialogRequest>()};
-    request->message = message;
-    request->style = style;
-    request->question = question;
-
-    if (m_runtime_dialog_active) {
-        m_runtime_dialog_queue.push_back(request);
-    } else {
-        showRuntimeDialogRequest(request);
-    }
+    auto details=startupdiagnostics::RetainText(m_query_scheduler,m_dialog_text_budget,message);
+    const auto request=std::make_shared<const runtimeprompt::Request>(runtimeprompt::Origin::Runtime,style,question,message.left(16384),std::move(details));
+    std::shared_ptr<runtimeprompt::Continuation> unused;m_prompt_service->enqueue(request,false,unused);
 }
 #endif

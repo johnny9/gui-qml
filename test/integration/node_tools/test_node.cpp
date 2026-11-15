@@ -57,6 +57,32 @@ private Q_SLOTS:
         QCOMPARE(model->numPeers(), static_cast<int>(qmltest::Call(m_app, &interfaces::Node::getNodeCount, ConnectionDirection::Both)));
     }
 
+    void rpcObservationDoesNotReplayAnEarlierGuiDesire()
+    {
+        auto* model=&m_app.nodeModel();QTRY_VERIFY(model->networkActionReady());
+        model->setPause(true);QTRY_VERIFY(!model->networkActionPending());QTRY_VERIFY(model->pause());
+        const auto set_rpc=[&](bool active){UniValue params{UniValue::VARR};params.push_back(active);qmltest::Call(m_app,&interfaces::Node::executeRpc,"setnetworkactive",params,"");};
+        set_rpc(true);QTRY_VERIFY(!model->pause());
+        set_rpc(false);QTRY_VERIFY(model->pause());
+        QVERIFY(!model->networkActionPending());
+        QCOMPARE(qmltest::Call(m_app,&interfaces::Node::getNetworkActive),false);
+        model->setPause(false);QTRY_VERIFY(!model->networkActionPending());QTRY_VERIFY(!model->pause());
+        QCOMPARE(qmltest::Call(m_app,&interfaces::Node::getNetworkActive),true);
+    }
+
+    void runtimeQuestionMakesTheHiddenNativeWindowReachable()
+    {
+        auto* window=m_app.window();QVERIFY(window);window->hide();QVERIFY(!window->isVisible());
+        auto answer=std::async(std::launch::async,[]{return uiInterface.ThreadSafeQuestion(Untranslated("Original hidden-window question"),"",CClientUIInterface::MSG_ERROR|CClientUIInterface::BTN_ABORT);});
+        const auto release=qScopeGuard([&]{m_app.nodeModel().answerRuntimeDialog(CClientUIInterface::BTN_OK);window->show();});
+        QTRY_VERIFY(window->isVisible());
+        QVERIFY(qmltest::WaitForVisible(m_app,"nodeRuntimeDialogButtonOk"));
+        QCOMPARE(m_app.nodeModel().runtimeDialogMessage(),QStringLiteral("Original hidden-window question"));
+        QVERIFY(qmltest::Click(m_app,"nodeRuntimeDialogButtonOk"));
+        QTRY_VERIFY(answer.wait_for(std::chrono::milliseconds{0})==std::future_status::ready);
+        QVERIFY(answer.get());QTRY_VERIFY(!m_app.nodeModel().runtimeDialogVisible());
+    }
+
     void navigationStaysResponsiveDuringRpc()
     {
         auto* model = &m_app.nodeModel();
