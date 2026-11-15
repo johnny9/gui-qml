@@ -276,6 +276,7 @@ public:
     Q_INVOKABLE void requestClose();
     Q_INVOKABLE void answerClose(const QString& token, bool accept);
     std::shared_ptr<walletopening::Session> opening() const { return m_opening; }
+    std::shared_ptr<const paymentimport::TargetPort> importTarget(SendRecipient* recipient);
     WalletReceiveModel* receive() const { return m_receive; }
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequest();
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequestWithPassphrase(const QString& passphrase);
@@ -618,6 +619,8 @@ private:
     quint64 m_psbt_action_id{0};
     quint64 m_psbt_file_export_action_id{0};
     quint64 m_psbt_view_epoch{0}, m_psbt_action_view_epoch{0};
+    std::shared_ptr<std::atomic_bool> m_import_review_current{std::make_shared<std::atomic_bool>(true)};
+    void invalidateImportReview();
     std::weak_ptr<const PartiallySignedTransaction> m_psbt_action_document;
     bool m_psbt_action_had_document{false};
     QPointer<WalletQmlModelTransaction> m_psbt_action_review;

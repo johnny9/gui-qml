@@ -124,6 +124,7 @@ if(ENABLE_WALLET)
     test_psbtfee.cpp
     test_psbtqmlmodel.cpp
     test_psbtwork.cpp
+    test_paymentimport.cpp
     test_psbtdocument.cpp
     test_receiverequesthistorymodel.cpp
     test_receiverequestoperation.cpp

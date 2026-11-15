@@ -551,4 +551,14 @@ struct OnboardingOptionsModelForeign {
     QML_ANONYMOUS
 };
 
+
+#ifdef ENABLE_WALLET
+struct PaymentImportOperationForeign {
+    Q_GADGET
+    QML_FOREIGN(PaymentImportOperation)
+    QML_NAMED_ELEMENT(PaymentImportOperation)
+    QML_UNCREATABLE("Owned by an import request")
+};
+
+#endif
 #endif // BITCOIN_CMAKE_QMLTYPES_H

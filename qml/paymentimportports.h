@@ -43,6 +43,8 @@ struct TargetPort {
     std::function<execution::Admission(CommandKey, Child, std::shared_ptr<const Inspection>, Completed, Failed)> dispatch;
     std::function<execution::Admission(CommandKey, Child, Completed, Failed)> query;
     std::function<execution::Admission(CommandKey, Child)> acknowledge;
+    // Revoke unused presentation only; an accepted local edit is not rolled back.
+    std::function<void(CommandKey, Child)> retire;
 };
 } // namespace paymentimport
 #endif // BITCOIN_QML_PAYMENTIMPORTPORTS_H

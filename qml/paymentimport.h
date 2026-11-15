@@ -34,7 +34,7 @@ Inspection ReadSource(const Input& input);
 Inspection AnalyzeSource(const Inspection& source, const psbtfee::Lookup& lookup = {});
 
 struct Snapshot {
-    uint64_t sequence{0}, owner{0};
+    uint64_t sequence{0}, owner{0}, source{0};
     Phase phase{Phase::Empty};
     Kind kind{Kind::Unknown};
     Error error_code{Error::None};
@@ -59,6 +59,7 @@ public:
     execution::Admission inspect(Input input);
     execution::Admission chooseTarget(std::shared_ptr<const TargetPort> target);
     execution::Admission apply();
+    execution::Admission use();
     execution::Admission replace(uint64_t prompt);
     execution::Admission keepDraft(uint64_t prompt);
     execution::Admission openReview();
@@ -77,6 +78,7 @@ private:
     void publish();
     void read(uint64_t source, bool analysis);
     void observe();
+    void useReady();
     void dispatch(Child child);
     void query();
     void account();

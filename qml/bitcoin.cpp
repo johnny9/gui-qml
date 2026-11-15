@@ -362,6 +362,11 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterType<MonospaceOutputModel>("org.bitcoincore.qt", 1, 0, "MonospaceOutputModel");
     qmlRegisterType<BitcoinAmount>("org.bitcoincore.qt", 1, 0, "BitcoinAmount");
     qmlRegisterType<BitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
+#ifdef ENABLE_WALLET
+    qmlRegisterUncreatableType<PaymentImportOperation>("org.bitcoincore.qt", 1, 0, "PaymentImportOperation", "Owned by an import request");
+#else
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "PaymentImportOperation", "Wallet support is not compiled");
+#endif
     qmlRegisterUncreatableType<BitcoinUriParseOperation>("org.bitcoincore.qt", 1, 0, "BitcoinUriParseOperation", "Owned by a payment URI request");
     qmlRegisterType<ExactTextDocument>("org.bitcoincore.qt", 1, 0, "ExactTextDocument");
     qmlRegisterUncreatableType<TextEditSessionModel>("org.bitcoincore.qt", 1, 0, "TextEditSessionModel", "Owned by an editor factory");

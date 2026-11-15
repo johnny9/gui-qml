@@ -536,6 +536,8 @@ PageStack {
         property double m_pendingClipboardCounter: -1
         property string m_filledUri: ""
         property string m_dismissedUri: ""
+        property PaymentImportOperation m_importOperation: null
+        readonly property string importError: m_importOperation ? m_importOperation.error : ""
         property BitcoinUriParseOperation m_uriOperation: null
         property BitcoinUriParseOperation m_clipboardOperation: null
         property var m_uriHandled: null
@@ -563,7 +565,7 @@ PageStack {
         property bool m_applyingUri: false
         property var m_pendingPastedPaymentRequest: null
         property string m_pendingPastedPaymentRequestText: ""
-        readonly property bool uriActionPending: m_uriApplying
+        readonly property bool uriActionPending: (m_importOperation !== null && m_importOperation.pending) || m_uriApplying
             || (m_uriOperation !== null && m_uriHandled !== m_uriOperation)
             || m_pendingPastedPaymentRequest !== null
             || (m_uriPasteOwner !== null && m_uriPasteOwner.pending)
@@ -575,6 +577,12 @@ PageStack {
         Connections {
             target: sendPage.m_clipboardOperation
             function onFinished() { sendPage.finishClipboardCheck() }
+        }
+        Connections {
+            target: sendPage.m_importOperation
+            function onChanged() {
+                if (sendPage.m_importOperation && sendPage.m_importOperation.promptToken) paymentUriOverwritePopup.open()
+            }
         }
         function probeContext(recipient, field, payload) {
             return {address: recipient ? recipient.address.address : "", amount: recipient ? recipient.amount.satoshi : 0,
@@ -594,6 +602,8 @@ PageStack {
             m_pendingPastedPaymentRequestText = ""
         }
         function cancelUriAction() {
+            if (m_importOperation) m_importOperation.cancel()
+            m_importOperation = null
             if (m_uriOperation) m_uriOperation.cancel()
             m_uriOperation = null
             if (m_uriPasteOwner && m_uriPayload && m_uriPasteOwner.intent === m_uriPayload) m_uriPasteOwner.cancel()
@@ -769,19 +779,24 @@ PageStack {
 
         // Parse a URI from text and apply to form.
         function applyPaymentRequestFromText(text, source) {
-            requestUriAction(text, "text", source, "")
+            cancelUriAction()
+            m_importOperation = BitcoinUri.requestImportText(text, root.wallet, root.recipient, sendPage)
+            if (m_importOperation) m_importOperation.use()
         }
 
         function applyPaymentRequestFromFile(path) {
-            requestUriAction(path, "file", qsTr("file"), "")
+            cancelUriAction()
+            m_importOperation = BitcoinUri.requestImportFile(path, root.wallet, root.recipient, sendPage)
+            if (m_importOperation) m_importOperation.use()
         }
 
         AlertPopup {
             id: paymentUriOverwritePopup
             objectName: "sendPaymentUriOverwritePopup"
             parent: Overlay.overlay
-            title: qsTr("Confirm paste?")
-            message: qsTr("The payment request from the clipboard contains information that differs from the currently populated values. Pasting will replace the values.")
+            title: sendPage.m_importOperation ? qsTr("Replace payment details?") : qsTr("Confirm paste?")
+            message: sendPage.m_importOperation ? qsTr("The payment request differs from the current draft. Replace the payment details?")
+                : qsTr("The payment request from the clipboard contains information that differs from the currently populated values. Pasting will replace the values.")
             messageObjectName: "sendPaymentUriOverwriteMessage"
 
             AlertAction {
@@ -799,6 +814,11 @@ PageStack {
                 buttonObjectName: "sendPaymentUriOverwriteConfirmButton"
                 closesPopup: false
                 onTriggered: {
+                    if (sendPage.m_importOperation) {
+                        sendPage.m_importOperation.replace(sendPage.m_importOperation.promptToken)
+                        paymentUriOverwritePopup.close()
+                        return
+                    }
                     if (!sendPage.uriContextValid()) { sendPage.cancelUriAction(); return }
                     const result = sendPage.m_pendingPastedPaymentRequest
                     const text = sendPage.m_pendingPastedPaymentRequestText
@@ -1101,9 +1121,9 @@ PageStack {
                             }
                             CoreText {
                                 objectName: "sendPaymentRequestStatusText"
-                                visible: sendPage.paymentRequestIsError && sendPage.paymentRequestStatus.length > 0
+                                visible: sendPage.importError.length > 0 || (sendPage.paymentRequestIsError && sendPage.paymentRequestStatus.length > 0)
                                 Layout.leftMargin: 16; Layout.rightMargin: 16
-                                Layout.fillWidth: true; text: sendPage.paymentRequestStatus; horizontalAlignment: Text.AlignLeft; color: Theme.color.red; font: Theme.text.description.font
+                                Layout.fillWidth: true; text: sendPage.importError.length > 0 ? sendPage.importError : sendPage.paymentRequestStatus; horizontalAlignment: Text.AlignLeft; color: Theme.color.red; font: Theme.text.description.font
                             }
 
                             NeutralButton {

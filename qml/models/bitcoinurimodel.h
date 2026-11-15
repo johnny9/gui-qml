@@ -6,6 +6,10 @@
 #define BITCOIN_QML_MODELS_BITCOINURIMODEL_H
 
 #include <qml/snapshotquery.h>
+#include <bitcoin-build-config.h>
+#ifdef ENABLE_WALLET
+#include <qml/models/paymentimportoperation.h>
+#endif
 #include <QObject>
 #include <QVariantMap>
 #include <atomic>
@@ -14,6 +18,8 @@
 struct BitcoinUriParseWork;
 struct BitcoinUriOperations;
 class BitcoinUriModel;
+class WalletQmlModel;
+class SendRecipient;
 
 /** One original text/file intent. Cancellation hides presentation only; an
  * already executing filesystem read retains its own background lifetime. */
@@ -60,6 +66,11 @@ public:
     Q_INVOKABLE BitcoinUriParseOperation* requestParse(const QString& text, QObject* owner, BitcoinUriParseOperation* replace = nullptr);
     Q_INVOKABLE BitcoinUriParseOperation* requestProbe(const QString& text, const QVariantMap& context, QObject* owner, BitcoinUriParseOperation* replace = nullptr);
     Q_INVOKABLE BitcoinUriParseOperation* requestParseFile(const QString& path, QObject* owner, BitcoinUriParseOperation* replace = nullptr);
+#ifdef ENABLE_WALLET
+    Q_INVOKABLE PaymentImportOperation* requestImportText(const QString& text, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
+    Q_INVOKABLE PaymentImportOperation* requestImportFile(const QString& path, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner);
+    PaymentImportOperation* requestImport(paymentimport::Input input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner);
+#endif
 Q_SIGNALS:
     void requestRejected(BitcoinUriModel::Rejection reason);
 private:

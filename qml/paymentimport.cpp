@@ -123,7 +123,7 @@ struct Owner::State {
     uint64_t sequence{0}, target_sequence{0}, delivery_sequence{0}, query_delivery{0};
     size_t native_jobs{0};
     QString error;
-    bool closing{false}, retired{false}, wake_pending{false};
+    bool closing{false}, retired{false}, wake_pending{false}, use_requested{false};
     std::chrono::steady_clock::time_point retry_at{};
 };
 
@@ -156,7 +156,7 @@ void Owner::publish()
 {
     auto& state = *m_state;
     Snapshot snapshot;
-    snapshot.sequence = ++state.sequence; snapshot.owner = m_identity;
+    snapshot.sequence = ++state.sequence; snapshot.owner = m_identity; snapshot.source = state.flow.source();
     snapshot.phase = state.flow.phase(); snapshot.kind = state.flow.kind(); snapshot.error_code = state.flow.error();
     snapshot.error = state.error; snapshot.target = state.flow.target(); snapshot.prompt = state.flow.prompt();
     snapshot.result = state.flow.result(); snapshot.inspection = state.inspection; snapshot.child_result = state.result;
@@ -260,6 +260,19 @@ void Owner::observe()
     catch (...) { failed(std::current_exception()); }
 }
 
+execution::Admission Owner::use()
+{
+    return submit([self = shared_from_this()] { self->m_state->use_requested = true; self->useReady(); });
+}
+void Owner::useReady()
+{
+    auto& state = *m_state;
+    if (!state.use_requested || state.closing || state.flow.phase() != Phase::Inspecting ||
+        !state.flow.target() || !state.flow.target()->available || !state.flow.target()->compatible) return;
+    state.use_requested = false;
+    const auto child = state.flow.kind() == Kind::Payment ? state.flow.apply() : state.flow.openReview();
+    if (child) dispatch(*child);
+}
 execution::Admission Owner::apply() { return submit([self = shared_from_this()] { if (const auto child = self->m_state->flow.apply()) self->dispatch(*child); }); }
 execution::Admission Owner::replace(uint64_t prompt) { return submit([self = shared_from_this(), prompt] { if (const auto child = self->m_state->flow.replace(prompt)) self->dispatch(*child); }); }
 execution::Admission Owner::keepDraft(uint64_t prompt) { return submit([self = shared_from_this(), prompt] { self->m_state->flow.keepDraft(prompt); }); }
@@ -317,7 +330,7 @@ void Owner::finish(Reply reply, ReplyKind kind, uint64_t source, uint64_t target
             }
         }
     }
-    account(); cancelObsolete(); publish();
+    useReady(); account(); cancelObsolete(); publish();
 }
 
 void Owner::account()
@@ -392,7 +405,10 @@ execution::Admission Owner::close()
 {
     return submit([self = shared_from_this()] {
         auto& state = *self->m_state;
-        state.closing = true; state.flow.close();
+        state.closing = true;
+        if (state.flow.child() && state.target && state.target->retire)
+            state.target->retire({self->m_identity, state.flow.child()->id}, *state.flow.child());
+        state.flow.close();
         if (state.flow.child()) { state.flow.acknowledgmentLost(*state.flow.child()); self->query(); }
         self->cancelObsolete();
     });

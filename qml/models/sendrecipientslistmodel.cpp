@@ -249,7 +249,7 @@ std::shared_ptr<const paymentimport::TargetPort> SendRecipientsListModel::import
     if (m_closed || !m_query || !m_opening || m_initializing || m_clearing || recipientRow(recipient) < 0) return {};
     struct Call { std::shared_ptr<execution::Scheduler> scope; execution::TaskId acknowledge;
                   std::shared_ptr<const int> tag; std::shared_ptr<std::atomic_bool> settled;
-                  paymentimport::Child child; };
+                  paymentimport::Child child; std::shared_ptr<std::optional<paymentimport::ChildReply>> outcome; };
     struct Routes { std::mutex mutex; std::map<paymentimport::CommandKey, Call> calls; };
     const QPointer<SendRecipientsListModel> observer{this};
     const auto backend = m_backend;
@@ -283,10 +283,12 @@ std::shared_ptr<const paymentimport::TargetPort> SendRecipientsListModel::import
                                                paymentimport::TargetPort::Completed done,
                                                paymentimport::TargetPort::Failed failed) {
         std::shared_ptr<execution::Scheduler> scope;
+        std::shared_ptr<std::optional<paymentimport::ChildReply>> outcome;
         { std::lock_guard lock{routes->mutex}; const auto found = routes->calls.find(key);
-          if (found != routes->calls.end()) scope = found->second.scope; }
+          if (found != routes->calls.end() && found->second.child == child) { scope = found->second.scope; outcome = found->second.outcome; } }
         if (!scope) return execution::Admission{{}, execution::Rejection::Invalid};
-        return execution::Submit(*scope, [backend, child, key] {
+        return execution::Submit(*scope, [backend, child, key, outcome] {
+            if (outcome && *outcome) return **outcome;
             paymentimport::ChildReply reply{paymentimport::Receipt{child, paymentimport::Outcome::Unknown, 0, 0}, {}, {}, {}};
             if (const auto receipt = backend->imports.query(key)) {
                 reply.receipt = receipt->receipt;
@@ -325,6 +327,7 @@ std::shared_ptr<const paymentimport::TargetPort> SendRecipientsListModel::import
         if (!scope) return execution::Admission{{}, execution::Rejection::Capacity};
         const auto tag = std::make_shared<const int>(0);
         const auto settled = std::make_shared<std::atomic_bool>(false);
+        const auto outcome = std::make_shared<std::optional<paymentimport::ChildReply>>();
         const auto cleanup = execution::Submit(*scope, [] {}, [backend, routes, key, child, tag] {
             { std::lock_guard lock{routes->mutex}; const auto found = routes->calls.find(key);
               if (found == routes->calls.end() || found->second.tag != tag) return;
@@ -336,7 +339,7 @@ std::shared_ptr<const paymentimport::TargetPort> SendRecipientsListModel::import
         try {
             std::lock_guard lock{routes->mutex};
             if (routes->calls.size() < paymentimport::DraftTarget::CAPACITY)
-                inserted = routes->calls.emplace(key, Call{scope, cleanup.id, tag, settled, child}).second;
+                inserted = routes->calls.emplace(key, Call{scope, cleanup.id, tag, settled, child, outcome}).second;
         } catch (...) { scope->activateCleanup(cleanup.id); throw; }
         if (!inserted || closed->load() || edit_gate->exchange(true)) {
             scope->activateCleanup(cleanup.id);
@@ -344,7 +347,7 @@ std::shared_ptr<const paymentimport::TargetPort> SendRecipientsListModel::import
         }
         notify();
         const auto admission = execution::Submit(*scope,
-            [backend, scheduler, facts, edit_gate, closed, source, child, key, query, notify, settled] {
+            [backend, scheduler, facts, edit_gate, closed, source, child, key, query, notify, settled, outcome] {
                 const auto completed = qScopeGuard([settled] { settled->store(true); });
                 // Reserve all publication storage before the atomic local edit.
                 auto projection = execution::RetainValues<senddraft::AppliedImport>(scheduler,
@@ -355,6 +358,7 @@ std::shared_ptr<const paymentimport::TargetPort> SendRecipientsListModel::import
                 current.compatible = current.available && !closed->load() &&
                     backend->draft.recipients().contains(child.target.recipient);
                 paymentimport::ChildReply reply{paymentimport::Receipt{child, paymentimport::Outcome::Rejected, 0, current.revision}, current, {}, {}};
+                const auto retain_outcome = qScopeGuard([&] { *outcome = reply; });
                 bool exhausted;
                 { std::lock_guard lock{backend->mutex}; exhausted = backend->requested_revision == std::numeric_limits<quint64>::max(); }
                 if (!projection || !retained || exhausted) { edit_gate->store(false); notify(); return reply; }
