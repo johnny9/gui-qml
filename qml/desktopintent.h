@@ -15,7 +15,7 @@
 namespace desktopintent {
 enum class Kind { Text, File };
 enum class Origin { Arguments, FileOpen, Forwarded };
-enum class Phase { WaitingReady, Ready, Delivering, ReconcilingDelivery, Stopping, Stopped };
+enum class Phase { WaitingReady, Ready, Delivering, ReconcilingDelivery, Stopping, Stopped, Forwarding };
 enum class Error { None, Invalid, Capacity, Closed, UnknownDelivery, TargetUnavailable };
 enum class Disposition { Queued, Accepted, Dismissed, DroppedOnStop };
 struct Input {
@@ -37,6 +37,11 @@ struct Admission {
     std::vector<Receipt> receipts;
     explicit operator bool() const { return error == Error::None; }
 };
+struct ForwardingSnapshot {
+    Error error{Error::None};
+    std::vector<Input> inputs;
+    explicit operator bool() const { return error == Error::None; }
+};
 struct Delivery { Ticket ticket; Input input; };
 struct Snapshot {
     Phase phase{Phase::WaitingReady};
@@ -55,6 +60,7 @@ public:
     static constexpr qsizetype MAX_INPUT_CHARS{16 * 1024}, MAX_KEY_CHARS{128};
     static constexpr size_t MAX_PENDING_BYTES{128 * 1024};
     Admission admit(const std::vector<Input>& inputs);
+    ForwardingSnapshot prepareForwarding(const std::vector<Input>& arguments);
     void readiness(uint64_t revision, bool ready);
     std::optional<Delivery> deliver(uint64_t target);
     bool accepted(Ticket ticket, uint64_t inspection);
@@ -76,7 +82,7 @@ private:
     uint64_t m_delivery_sequence{0}, m_route_sequence{0}, m_readiness_revision{0};
     Phase m_phase{Phase::WaitingReady};
     Error m_error{Error::None};
-    bool m_ready{false}, m_stopping{false}, m_unknown{false};
+    bool m_ready{false}, m_stopping{false}, m_unknown{false}, m_forwarding{false};
 };
 } // namespace desktopintent
 #endif // BITCOIN_QML_DESKTOPINTENT_H

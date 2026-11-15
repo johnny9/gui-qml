@@ -6,7 +6,7 @@ import QtQuick 2.15
 // Presentation fixture. The production owner/factory and Native timing are
 // exercised separately through the existing C++ unit/integration runners.
 QtObject {
-    enum State { WaitingReady, Ready, Delivering, ReconcilingDelivery, Stopping, Stopped }
+    enum State { WaitingReady, Ready, Delivering, ReconcilingDelivery, Stopping, Stopped, Forwarding }
     property int state: DesktopIntentModel.WaitingReady
     property int pendingCount: 0
     property bool canInspect: false

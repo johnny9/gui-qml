@@ -50,7 +50,7 @@ Error Queue::admitOne(const Input& input, Receipt& receipt)
 
 Admission Queue::admit(const std::vector<Input>& inputs)
 {
-    if (m_stopping) return {Error::Closed, {}};
+    if (m_stopping || m_forwarding) return {Error::Closed, {}};
     if (inputs.empty() || inputs.size() > MAX_PENDING) return {Error::Invalid, {}};
     // Forwarded frames are atomic bounded admissions. A rejected suffix cannot
     // leave an accepted prefix or consume the original queue's identities.
@@ -68,9 +68,27 @@ Admission Queue::admit(const std::vector<Input>& inputs)
     return result;
 }
 
+ForwardingSnapshot Queue::prepareForwarding(const std::vector<Input>& arguments)
+{
+    if (m_stopping || m_forwarding) return {Error::Closed, {}};
+    if (m_ready || m_active) return {Error::Invalid, {}};
+    Queue trial{*this};
+    const auto admitted = arguments.empty() ? Admission{} : trial.admit(arguments);
+    if (!admitted) {
+        m_forwarding = true; m_error = admitted.error; updatePhase();
+        return {admitted.error, {}};
+    }
+    ForwardingSnapshot snapshot;
+    snapshot.inputs.reserve(trial.m_pending.size());
+    for (const auto id : trial.m_pending) snapshot.inputs.push_back(trial.find(id)->input);
+    trial.m_forwarding = true; trial.updatePhase();
+    *this = std::move(trial);
+    return snapshot;
+}
+
 void Queue::readiness(uint64_t revision, bool ready)
 {
-    if (m_stopping || revision <= m_readiness_revision) return;
+    if (m_stopping || m_forwarding || revision <= m_readiness_revision) return;
     m_readiness_revision = revision;
     m_ready = ready;
     updatePhase();
@@ -150,6 +168,7 @@ void Queue::stop()
 void Queue::updatePhase()
 {
     if (m_stopping) m_phase = m_active ? Phase::Stopping : Phase::Stopped;
+    else if (m_forwarding) m_phase = Phase::Forwarding;
     else if (m_active) m_phase = m_unknown ? Phase::ReconcilingDelivery : Phase::Delivering;
     else m_phase = m_ready ? Phase::Ready : Phase::WaitingReady;
 }

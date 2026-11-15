@@ -22,6 +22,50 @@ desktopintent::Input Input(int id, QString value = QStringLiteral("bitcoin:reque
 class DesktopIntentTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void forwardingSnapshotMergesEarlyInputsWithoutAnAcceptedPrefix()
+    {
+        desktopintent::Queue queue;
+        QVERIFY(queue.admit({Input(1)}));
+        const auto snapshot = queue.prepareForwarding({Input(2), Input(1)});
+        QVERIFY(snapshot); QCOMPARE(snapshot.inputs.size(), size_t{2});
+        QCOMPARE(snapshot.inputs[0].producer_key, QStringLiteral("1"));
+        QCOMPARE(snapshot.inputs[1].producer_key, QStringLiteral("2"));
+        QVERIFY(queue.snapshot().phase == desktopintent::Phase::Forwarding);
+        queue.readiness(1, true); QVERIFY(!queue.deliver(10));
+        QVERIFY(queue.admit({Input(3)}).error == desktopintent::Error::Closed);
+        QCOMPARE(queue.lookup(QStringLiteral("1"))->inspection, uint64_t{0});
+        desktopintent::Queue full;
+        std::vector<desktopintent::Input> before;
+        for (int id = 1; id <= 15; ++id) before.push_back(Input(id));
+        QVERIFY(full.admit(before));
+        const auto rejected = full.prepareForwarding({Input(16), Input(17)});
+        QVERIFY(rejected.error == desktopintent::Error::Capacity); QVERIFY(rejected.inputs.empty());
+        QCOMPARE(full.snapshot().pending, size_t{15}); QVERIFY(!full.lookup(QStringLiteral("16")));
+        full.stop(); QVERIFY(full.snapshot().phase == desktopintent::Phase::Stopped);
+        desktopintent::Queue active;
+        QVERIFY(active.admit({Input(1)})); active.readiness(1, true);
+        const auto original = active.deliver(5); QVERIFY(original);
+        QVERIFY(active.prepareForwarding({Input(2)}).error == desktopintent::Error::Invalid);
+        QVERIFY(active.accepted(original->ticket, 99));
+    }
+    void forwardingFenceOrdersEarlierAdmissionsAndRefusesLateCapture()
+    {
+        ManualRoutedExecution transport;
+        desktopintent::Services services; services.scheduler = transport.scheduler;
+        auto owner = desktopintent::Owner::Create(std::move(services), {}); QVERIFY(owner);
+        bool early_admitted{false};
+        QVERIFY(owner->admit({Input(1)}, [&](auto admitted) { early_admitted = static_cast<bool>(admitted); }));
+        desktopintent::ForwardingSnapshot captured;
+        QVERIFY(owner->prepareForwarding({Input(2)}, [&](auto snapshot) { captured = std::move(snapshot); }));
+        QVERIFY(!owner->admit({Input(3)}, {}));
+        QVERIFY(!owner->readiness(1, true));
+        transport.drain(); QVERIFY(early_admitted); QVERIFY(captured);
+        QCOMPARE(captured.inputs.size(), size_t{2});
+        QCOMPARE(captured.inputs.front().producer_key, QStringLiteral("1"));
+        QCOMPARE(captured.inputs.back().producer_key, QStringLiteral("2"));
+        QVERIFY(owner->stop()); transport.drain(); owner.reset(); transport.drain();
+        QVERIFY(transport.quiescent());
+    }
     void actualQtFileOpenQueuesBeforeReadinessAndFencesLateEvents()
     {
         ManualRoutedExecution commands;

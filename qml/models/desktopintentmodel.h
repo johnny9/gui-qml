@@ -32,7 +32,7 @@ class DesktopIntentModel final : public QObject {
     Q_PROPERTY(PaymentImportOperation* inspection READ inspection NOTIFY inspectionChanged)
 #endif
 public:
-    enum class State { WaitingReady, Ready, Delivering, ReconcilingDelivery, Stopping, Stopped };
+    enum class State { WaitingReady, Ready, Delivering, ReconcilingDelivery, Stopping, Stopped, Forwarding };
     Q_ENUM(State)
     explicit DesktopIntentModel(execution::SnapshotServices services, bool wallet_enabled, QObject* parent = nullptr);
     ~DesktopIntentModel() override;
