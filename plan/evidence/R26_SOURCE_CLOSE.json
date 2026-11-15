@@ -1,0 +1,100 @@
+{
+  "component": "Shared R26 Source close correction required by R40 retained-facade review",
+  "tested_app": "c5b9cdfb28304617e7d418ac089098c2a5897559",
+  "base": "d89ac2fad0367ad11bee9a0afb50378967604371",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "source": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-source",
+  "changed": [
+    "qml/paymentimport.cpp",
+    "qml/paymentimport.h",
+    "test/test_paymentimport.cpp"
+  ],
+  "red": {
+    "artifact": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-red-01",
+    "bodies": 3,
+    "failed": 3,
+    "skipped": 0,
+    "timed_out": false
+  },
+  "ordinary": {
+    "artifact": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-family-04",
+    "manifest": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-manifest-family-04.json",
+    "unit_actual": 59,
+    "unit_previous": 54,
+    "unit_new": 5,
+    "integration_actual": 2,
+    "passed": 61,
+    "failed": 0,
+    "skipped": 0,
+    "incomplete": 0,
+    "compiled_unit_classes": [
+      "PaymentImportTests",
+      "StartupProfileTests"
+    ],
+    "earlier": "green02 4/4; family03 58unit+2Core=60/60 before final throwing-retire guard"
+  },
+  "static": {
+    "artifact": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-static-05",
+    "pinned": "Clang23.1.6 and unchanged Core449 Bitcoin tidy plugin/checks",
+    "CPP": 2,
+    "fresh_MOC": 7,
+    "passed": 9,
+    "app_build_exit": 0,
+    "IPC_build_process_cases": 2,
+    "normal_exit": 0,
+    "injected_fatal_exit": 1,
+    "stderr_inspected": true,
+    "note": "Existing lifecycle controls; no completed R40 runtime/OS forwarding claim."
+  },
+  "lint": {
+    "artifact": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-lint-05",
+    "exit": 0,
+    "command": "COMMIT_RANGE=d89ac2fad0367ad11bee9a0afb50378967604371..HEAD python3 ci/lint.py --scope app --no-build --image qt6-r17-linter-core449:20261114"
+  },
+  "commands": {
+    "ordinary": "QT6_VALIDATION_BUILD_ROOT=/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R14 QT6_VALIDATION_BUILD_PROFILE=native python3 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R14/run_red.py /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-source /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-family-04 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-manifest-family-04.json",
+    "static": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-static-05/docker-command.json"
+  },
+  "guarantees": [
+    "Close reserves original Cleanup relay before Owner publication; initial failure exposes no Actor/effect.",
+    "Immediate presentation revocation remains; one pure cell retains original Owner only after close until Domain retirement.",
+    "Repeated close uses same task identity, no pre-close strong ownership cycle.",
+    "Existing Native jobs/admitted children retain original query/accounting; throwing presentation retire cannot redispatch or erase effect.",
+    "Both retained Qt facade close orders drain after actual full ordinary budget."
+  ],
+  "fixture_change": "Held Native read timing control now executes reserved Cleanup relay and Domain outcome while keeping Core read held; original no-read/no-observation/Closing assertions retained.",
+  "no_core_qt_changes": true,
+  "no_new_wallet_adapter": true,
+  "pending": [
+    "Parent combined R40 receiver/startup wiring/process acceptance.",
+    "R42 exhaustive coverage/platform/configurations/sanitizers/native Windows."
+  ],
+  "input_receipt_sha256": "f853c8a3292ed048b9a00f233de4afa28e275dcd82f658a6307dcd88afb2953e",
+  "input_receipt": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/source-close-family-04/lease-input-state.json",
+  "ELFs": {
+    "bitcoin-core-app": {
+      "sha256": "05ea044a0d228df06fd963c87eb8a4fc647ecf9da767d9cdc6b9714a18495107",
+      "bytes": 95254656
+    },
+    "bitcoinqml_unit_tests": {
+      "sha256": "e14bebd78dd14dc150cf56505100d9f3341160a77afa757d6c55cd6e8ffd2207",
+      "bytes": 96698080
+    },
+    "bitcoinqml_integration_tests": {
+      "sha256": "68dc56c02ebf08e0ab389a9ace98850de759038b499c55282dab71e49681cf0a",
+      "bytes": 112142048
+    },
+    "bitcoinqml_qmltests": {
+      "sha256": "75a781d0c47ca3982652b2f90907213b9a4c66811b038b08dd985ce9d414d41c",
+      "bytes": 14439808
+    },
+    "bitcoind": {
+      "sha256": "2c63d5daeb8ef9e71396a3263090fd2e903a8fa60dd884f7b8e7c5f332c701e6",
+      "bytes": 37699968
+    },
+    "bitcoin-cli": {
+      "sha256": "a3958556fd90a6a7d8368d75c7e3009cfea13a4c8f3320ee1b7c4361e3c8fb41",
+      "bytes": 21122312
+    }
+  }
+}
