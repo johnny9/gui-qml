@@ -37,6 +37,12 @@ struct Owner::State {
     uint64_t sequence{0}, query_reply{0}, publication{0};
     bool wake_pending{false};
 };
+struct Owner::StopCell {
+    std::mutex mutex;
+    execution::TaskId cleanup;
+    std::shared_ptr<Owner> owner;
+    bool requested{false};
+};
 
 Owner::Owner(Services services, std::shared_ptr<execution::Scheduler> scope,
              std::shared_ptr<State> state, Notify notify)
@@ -51,7 +57,21 @@ std::shared_ptr<Owner> Owner::Create(Services services, Notify notify)
     if (!scope) return {};
     auto state = execution::RetainValues<State>(scope, [] { return std::make_unique<State>(); });
     if (!state) return {};
-    return std::shared_ptr<Owner>{new Owner(std::move(services), std::move(scope), std::move(state), std::move(notify))};
+    auto owner = std::shared_ptr<Owner>{new Owner(std::move(services), std::move(scope), std::move(state), std::move(notify))};
+    return owner->reserveStop() ? owner : nullptr;
+}
+
+bool Owner::reserveStop()
+{
+    const auto cell = std::make_shared<StopCell>();
+    const auto reserved = execution::Submit(*m_scope, [] {}, [cell] {
+        std::shared_ptr<Owner> owner;
+        { std::lock_guard lock{cell->mutex}; owner = std::exchange(cell->owner, {}); }
+        if (owner) owner->stopped();
+    }, {}, {execution::Lane::Cleanup, sizeof(StopCell), m_scope->allocateKey()}, true);
+    if (!reserved) return false;
+    cell->cleanup = reserved.id; m_stop = cell;
+    return true;
 }
 
 execution::Admission Owner::submit(std::function<void()> decision, size_t payload_bytes)
@@ -157,12 +177,39 @@ execution::Admission Owner::registerReceiver(std::shared_ptr<const Sink> sink)
 }
 execution::Admission Owner::releasePresentation(Ticket ticket)
 {
-    return submit([self = shared_from_this(), ticket] {
-        if (self->m_state->presented != ticket) return;
-        self->m_state->presented.reset();
-        self->m_state->queue.receiverCapacity(true);
-        if (self->m_state->queue.snapshot().active != ticket) self->m_state->sink.reset();
-    });
+    execution::TaskId cleanup;
+    {
+        std::lock_guard lock{m_presentation_mutex};
+        if (!m_presentation_release || m_presentation_release->first != ticket) return {{}, execution::Rejection::Invalid};
+        cleanup = m_presentation_release->second;
+    }
+    // This original-ticket cleanup was reserved before the Source handoff.
+    // GUI retirement must not compete for ordinary Domain admission.
+    m_scope->activateCleanup(cleanup);
+    return {cleanup, execution::Rejection::None};
+}
+bool Owner::reservePresentation(Ticket ticket)
+{
+    const auto reserved = execution::Submit(*m_scope, [] {},
+        [self = shared_from_this(), ticket] { self->presentationReleased(ticket); }, {},
+        {execution::Lane::Cleanup, sizeof(Ticket), m_scope->allocateKey()}, true);
+    if (!reserved) return false;
+    std::lock_guard lock{m_presentation_mutex};
+    m_presentation_release = std::pair{ticket, reserved.id};
+    return true;
+}
+void Owner::presentationReleased(Ticket ticket)
+{
+    {
+        std::lock_guard lock{m_presentation_mutex};
+        if (m_presentation_release && m_presentation_release->first == ticket) m_presentation_release.reset();
+    }
+    if (m_state->presented == ticket) {
+        m_state->presented.reset();
+        m_state->queue.receiverCapacity(true);
+        if (m_state->queue.snapshot().active != ticket) m_state->sink.reset();
+    }
+    pump(); publish();
 }
 void Owner::pump()
 {
@@ -183,8 +230,13 @@ void Owner::deliver(std::shared_ptr<const Sink> sink)
     std::shared_ptr<ReplyCell> cell;
     try { cell = reserve(ReplyKind::Inspect, delivery->ticket); } catch (...) {}
     if (!cell) { state.queue.rejected(delivery->ticket); return; }
+    if (state.receiver && state.receiver->identity == sink->identity) {
+        bool reserved{false};
+        try { reserved = reservePresentation(delivery->ticket); } catch (...) {}
+        if (!reserved) { cell->complete({Knowledge::NotAccepted, 0}); state.queue.rejected(delivery->ticket); return; }
+        state.presented = delivery->ticket; state.queue.receiverCapacity(false);
+    }
     state.sink = sink;
-    if (state.receiver && state.receiver->identity == sink->identity) { state.presented = delivery->ticket; state.queue.receiverCapacity(false); }
     try {
         if (!sink->inspect(*delivery, [cell](InspectionReceipt reply) { cell->complete(reply); }))
             cell->complete({Knowledge::NotAccepted, 0});
@@ -204,7 +256,7 @@ void Owner::received(uint64_t reply, ReplyKind kind, Ticket ticket, InspectionRe
         break;
     case Knowledge::NotAccepted:
         state.queue.rejected(ticket); state.sink.reset();
-        if (state.presented == ticket) { state.presented.reset(); state.queue.receiverCapacity(true); }
+        if (state.presented == ticket) releasePresentation(ticket);
         break;
     case Knowledge::Unknown:
         state.queue.unknown(ticket);
@@ -278,18 +330,26 @@ execution::Admission Owner::lookup(QString producer_key, std::function<void(std:
 execution::Admission Owner::stop()
 {
     m_closed->store(true);
-    return submit([self = shared_from_this()] {
-        auto& state = *self->m_state;
-        const auto active = state.queue.snapshot().active;
-        const auto presented = state.presented;
-        state.queue.stop();
-        const auto retire = active ? active : presented;
-        state.presented.reset(); state.receiver.reset();
-        if (retire && state.sink && state.sink->retire) {
-            try { state.sink->retire(*retire); } catch (...) {}
-        }
-        if (!active) state.sink.reset();
-        self->query();
-    });
+    {
+        std::lock_guard lock{m_stop->mutex};
+        if (!m_stop->requested) { m_stop->requested = true; m_stop->owner = shared_from_this(); }
+    }
+    m_scope->activateCleanup(m_stop->cleanup);
+    return {m_stop->cleanup, execution::Rejection::None};
+}
+void Owner::stopped()
+{
+    auto& state = *m_state;
+    const auto active = state.queue.snapshot().active;
+    const auto presented = state.presented;
+    state.queue.stop();
+    const auto retire = active ? active : presented;
+    if (presented) releasePresentation(*presented);
+    state.presented.reset(); state.receiver.reset();
+    if (retire && state.sink && state.sink->retire) {
+        try { state.sink->retire(*retire); } catch (...) {}
+    }
+    if (!active) state.sink.reset();
+    query(); retireObsolete(); publish();
 }
 } // namespace desktopintent

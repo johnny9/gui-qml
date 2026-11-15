@@ -66,6 +66,29 @@ private Q_SLOTS:
         QVERIFY(owner->stop()); transport.drain(); owner.reset(); transport.drain();
         QVERIFY(transport.quiescent());
     }
+    void stopUsesReservedCleanupWhenOrdinaryAdmissionIsFull()
+    {
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 1;
+        ManualRoutedExecution commands{limits};
+        desktopintent::Services services; services.scheduler = commands.scheduler;
+        desktopintent::Snapshot latest;
+        auto owner = desktopintent::Owner::Create(std::move(services), [&](auto snapshot) { latest = snapshot; });
+        QVERIFY(owner);
+        int retired{0};
+        auto sink = std::make_shared<desktopintent::Sink>(); sink->identity = 1;
+        sink->inspect = [](auto, auto done) { done({desktopintent::Knowledge::Accepted, 99}); return execution::Admission{}; };
+        sink->query = [](auto, auto done) { done({desktopintent::Knowledge::Accepted, 99}); return execution::Admission{}; };
+        sink->retire = [&](auto) { ++retired; };
+        QVERIFY(owner->registerReceiver(sink)); commands.drain();
+        QVERIFY(owner->readiness(1, true)); commands.drain();
+        QVERIFY(owner->admit({Input(1), Input(2)}, {})); commands.drain();
+        QCOMPARE(latest.pending, size_t{1});
+        QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 0, {}}));
+        QVERIFY(owner->stop()); commands.drain();
+        QVERIFY(latest.phase == desktopintent::Phase::Stopped); QCOMPARE(latest.pending, size_t{0});
+        QCOMPARE(retired, 1);
+        owner.reset(); commands.drain(); QVERIFY(commands.quiescent());
+    }
     void actualQtFileOpenQueuesBeforeReadinessAndFencesLateEvents()
     {
         ManualRoutedExecution commands;
@@ -123,8 +146,15 @@ private Q_SLOTS:
         QVERIFY(!desktopintent::ParseArguments(2, arguments, QStringLiteral("process"), QStringLiteral("/captured")).error.isEmpty());
     }
 #ifdef ENABLE_WALLET
+    void nativeAdmissionFenceBeatsAHeldReadyProjection_data()
+    {
+        QTest::addColumn<bool>("hold_factory");
+        QTest::newRow("before-domain-handoff") << false;
+        QTest::newRow("after-domain-before-gui-factory") << true;
+    }
     void nativeAdmissionFenceBeatsAHeldReadyProjection()
     {
+        QFETCH(bool, hold_factory);
         ManualRoutedExecution commands;
         std::deque<std::function<void()>> gui;
         const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
@@ -140,8 +170,14 @@ private Q_SLOTS:
         model.setAdmissionGate(native_closed);
         model.setReady(true); drain();
         QVERIFY(model.state() == DesktopIntentModel::State::Ready);
+        if (hold_factory) {
+            QVERIFY(model.owner()->admit({Input(1)}, {}));
+            commands.drain(); // Domain has posted the factory handoff; GUI remains held.
+            QVERIFY(!model.hasInspection()); QVERIFY(!gui.empty());
+        }
         native_closed->store(true); // The terminal phase's GUI notification is deliberately held.
-        QVERIFY(model.owner()->admit({Input(1)}, {})); drain();
+        if (!hold_factory) QVERIFY(model.owner()->admit({Input(1)}, {}));
+        drain();
         QVERIFY(!model.hasInspection()); QCOMPARE(model.pendingCount(), 1);
         QVERIFY(model.state() == DesktopIntentModel::State::WaitingReady);
         model.inspectNext(); drain(); // An explicit retry still cannot bypass Native admission.
@@ -257,6 +293,35 @@ private Q_SLOTS:
         QCOMPARE(first, quint64{1}); QVERIFY(model.inspection());
         QCOMPARE(model.inspection()->requestId(), quint64{2}); QCOMPARE(model.pendingCount(), 0);
         model.closeAdmission(); factory.closeAdmission(); drain();
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
+    void presentationReleaseSurvivesOrdinaryDomainRejection()
+    {
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 8;
+        ManualRoutedExecution commands{limits};
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel factory; factory.setServices({commands.scheduler, post});
+        DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
+        drain(); model.setReady(true); drain();
+        QVERIFY(model.owner()->admit({Input(1), Input(2)}, {})); drain();
+        QVERIFY(model.inspection()); QCOMPARE(model.inspection()->requestId(), quint64{1});
+        QCOMPARE(model.pendingCount(), 1);
+        QObject original_recipient;
+        for (size_t i = 0; i < limits.ordinary.tasks; ++i)
+            QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 0, {}}));
+        auto* original = model.takeInspection(&original_recipient);
+        QVERIFY(original); QCOMPARE(original->requestId(), quint64{1});
+        drain();
+        QVERIFY(model.inspection()); QCOMPARE(model.inspection()->requestId(), quint64{2});
+        QCOMPARE(model.pendingCount(), 0);
+        model.closeAdmission(); factory.closeAdmission(); delete original; drain();
         QCOMPARE(commands.scheduler->pending(), size_t{0});
     }
 #endif

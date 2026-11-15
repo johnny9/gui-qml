@@ -200,9 +200,13 @@ void DesktopIntentModel::setFactory(BitcoinUriModel* factory)
     const auto records = std::make_shared<Creations>();
     const auto post = m_services.post;
     const auto closed = m_closed_gate;
+    const auto available = [closed, gate = m_parent_admission] {
+        const auto parent = gate->load();
+        return !closed->load() && (!parent || !parent->load());
+    };
     const auto weak_owner = std::weak_ptr<desktopintent::Owner>{m_owner};
     auto sink = std::make_shared<desktopintent::Sink>(); sink->identity = 1;
-    sink->inspect = [self, original, records, post, closed, weak_owner](auto delivery, auto done) {
+    sink->inspect = [self, original, records, post, available, weak_owner](auto delivery, auto done) {
         std::shared_ptr<Creation> creation;
         {
             std::lock_guard lock{records->mutex};
@@ -219,15 +223,17 @@ void DesktopIntentModel::setFactory(BitcoinUriModel* factory)
                 records->records.emplace(delivery.ticket, creation);
             }
         }
-        post([self, original, creation, delivery = std::move(delivery), done = std::move(done), closed, weak_owner]() mutable {
-            if (closed->load() || !self || !original) creation->receipt->withdraw();
+        post([self, original, creation, delivery = std::move(delivery), done = std::move(done), available, weak_owner]() mutable {
+            // Native admission may close after Domain posts this handoff while
+            // the terminal GUI projection is still queued.
+            if (!available() || !self || !original) creation->receipt->withdraw();
             if (creation->receipt->state() == paymentimport::CreationReceipt::State::Reserved) {
                 try {
                     const paymentimport::Input input{delivery.input.kind == desktopintent::Kind::File
                         ? paymentimport::Input::Kind::File : paymentimport::Input::Kind::Text, delivery.input.value};
                     creation->operation = original->requestImport(input, {}, self, creation->receipt);
                 } catch (...) { creation->receipt->notAccepted(); }
-                if (self && creation->operation && !closed->load()) {
+                if (self && creation->operation && available()) {
                     self->m_inspection = creation->operation;
                     self->m_inspection_ticket = delivery.ticket;
                     QObject::connect(creation->operation, &PaymentImportOperation::changed, self, &DesktopIntentModel::inspectionChanged);
@@ -241,7 +247,7 @@ void DesktopIntentModel::setFactory(BitcoinUriModel* factory)
                     if (self) Q_EMIT self->changed();
                 }
             }
-            if ((!self || !creation->operation || closed->load()) && ReadCreation(*creation).knowledge == desktopintent::Knowledge::Accepted) {
+            if ((!self || !creation->operation || !available()) && ReadCreation(*creation).knowledge == desktopintent::Knowledge::Accepted) {
                 if (const auto owner = weak_owner.lock()) owner->releasePresentation(delivery.ticket);
             }
             done(ReadCreation(*creation));

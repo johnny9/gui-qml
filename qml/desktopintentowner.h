@@ -60,12 +60,17 @@ public:
 private:
     struct State;
     struct ReplyCell;
+    struct StopCell;
     enum class ReplyKind { Inspect, Query };
     Owner(Services services, std::shared_ptr<execution::Scheduler> scope,
           std::shared_ptr<State> state, Notify notify);
     execution::Admission submit(std::function<void()> decision, size_t payload_bytes = 1024);
     std::shared_ptr<ReplyCell> reserve(ReplyKind kind, Ticket ticket);
     void received(uint64_t reply, ReplyKind kind, Ticket ticket, InspectionReceipt receipt);
+    bool reservePresentation(Ticket ticket);
+    void presentationReleased(Ticket ticket);
+    bool reserveStop();
+    void stopped();
     void query();
     void deliver(std::shared_ptr<const Sink> sink);
     void pump();
@@ -80,6 +85,9 @@ private:
     const std::shared_ptr<std::atomic_bool> m_closed{std::make_shared<std::atomic_bool>(false)};
     std::mutex m_admission_mutex; // Bounded submission only; never held across Native work or callbacks.
     std::atomic_bool m_forwarding_closed{false};
+    std::mutex m_presentation_mutex;
+    std::optional<std::pair<Ticket, execution::TaskId>> m_presentation_release;
+    std::shared_ptr<StopCell> m_stop;
 };
 } // namespace desktopintent
 #endif // BITCOIN_QML_DESKTOPINTENTOWNER_H
