@@ -245,12 +245,6 @@ PageStack {
             root.clearPrepareTransactionError()
             root.scheduleFeeEstimates()
         }
-        function onTotalAmountChanged() {
-            // With Use maximum the amount follows fee estimates; only a
-            // fixed amount changing is an edit. Replacing the maximum
-            // amount clears the maximum recipient, handled below.
-            if (root.wallet && !root.wallet.maximumRecipient) root.draftChanged()
-        }
         function onCurrentRecipientChanged() {
             if (sendPage.m_importOperation) sendPage.cancelUriAction()
             root.draftChanged()
@@ -263,13 +257,6 @@ PageStack {
             sendPage.checkClipboard()
             sendPage.clearPendingPaymentUriPaste()
             paymentUriOverwritePopup.close()
-        }
-    }
-
-    Connections {
-        target: root.recipient ? root.recipient.address : null
-        function onFormattedAddressChanged() {
-            root.draftChanged()
         }
     }
 
@@ -564,7 +551,6 @@ PageStack {
         property CapturedPaste m_uriPasteOwner: null
         property bool m_uriHadPasteOwner: false
         property var m_uriPayload: null
-        property double m_uriRecipientRevision: -1
         property string m_uriRevision: ""
         property int m_uriHidden: -1
         property bool m_uriApplying: false
@@ -626,7 +612,7 @@ PageStack {
         }
         function uriContextValid() {
             return root.visible && m_uriWallet && m_uriWallet.available && root.wallet === m_uriWallet
-                && m_uriRecipient && m_uriRecipient.validationRevision === m_uriRecipientRevision && root.recipient === m_uriCurrentRecipient
+                && m_uriRecipient && root.recipient === m_uriCurrentRecipient
                 && root.draftRevision === m_uriRevision && root.hiddenCount === m_uriHidden
                 && (!m_uriHadPasteOwner || (m_uriPasteOwner && m_uriPasteOwner.owns(m_uriPayload)))
         }
@@ -639,7 +625,6 @@ PageStack {
             m_uriWallet = root.wallet
             m_uriCurrentRecipient = root.recipient
             m_uriRecipient = recipient || root.recipient
-            m_uriRecipientRevision = m_uriRecipient.validationRevision
             m_uriRevision = root.draftRevision
             m_uriHidden = root.hiddenCount
             m_uriPayload = payload || null
@@ -771,17 +756,13 @@ PageStack {
         }
         Connections {
             target: root.recipient.amount
-            function onInputChanged() { root.draftChanged() }
             function onAmountChanged() {
                 if (!sendPage.m_applyingUri) sendPage.checkClipboard()
             }
         }
         Connections {
             target: root.recipient
-            function onLabelChanged() {
-                root.draftChanged()
-                if (!sendPage.m_applyingUri) sendPage.checkClipboard()
-            }
+            function onLabelChanged() { if (!sendPage.m_applyingUri) sendPage.checkClipboard() }
             function onMessageChanged() { if (!sendPage.m_applyingUri) sendPage.checkClipboard() }
             function onPaymentRequestChanged() { if (!sendPage.m_applyingUri) sendPage.checkClipboard() }
         }
