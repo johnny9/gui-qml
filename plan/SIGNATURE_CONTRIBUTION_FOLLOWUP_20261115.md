@@ -15,7 +15,7 @@ six passing valid controls and 12 failures for invalid or unverifiable returned
 contributions on normal/error/exception paths. No submission occurs. Raw evidence:
 `.validation/qt6-r11-r40-20261114/R24/contribution-red-01/actual/report.json`.
 
-Reopen the affected R21/R22 signing-result components. Propagate the shared
+The affected R21/R22 signing-result components were reopened and are now repaired. The repair propagates the shared
 public-value verification and typed validity result; unknown context retains
 exact recovery bytes separately and cannot acquire verified merge or submission
 authority. Preserve the approved review, previously held signatures, independent
@@ -24,3 +24,5 @@ work, not an R42 sanitizer/coverage deferral. Prior file/admission receipts stay
 historical and are not overwritten. No Core/Qt change or private interface
 exception is authorized. Record any missing Wallet-interface capability and
 adapter in the upstream notes under the mandatory adapter-note amendment.
+
+Composition at `a218208883ee409bfd648bab98ba598ffdf24c9a` passes229 actual focused bodies,14 pinned static entries, app/QML lint and3 actual GUI/Core process scenarios. [Exact receipt](evidence/R21_R25_COMPOSED.json). R21/R22 focused acceptance is restored and R24 focused acceptance is satisfied within the explicit R09 limits; original failure evidence remains historical.
