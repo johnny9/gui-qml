@@ -22,6 +22,7 @@ struct OperationState {
     std::atomic_bool retire_if_confirmation_requested{false};
     std::atomic<uint64_t> prompt_retirement_task{0};
     std::atomic_bool prompt_retirement_activated{false};
+    std::atomic_bool prompt_retirement_submitted{false};
     std::function<void(Snapshot)> publish;
 
     void activatePromptRetirement() noexcept
@@ -103,6 +104,29 @@ struct OperationState {
         return {bytes.constData(), static_cast<size_t>(bytes.size())};
     }
 };
+
+namespace {
+void RequestPromptRetirement(const std::shared_ptr<OperationState>& state)
+{
+    state->retire_if_confirmation_requested.store(true);
+    if (state->prompt_retirement_task.load()) {
+        state->activatePromptRetirement();
+        return;
+    }
+    // Older backup consumers use the generic operation without the reserved
+    // continuation receipt. Preserve their existing best-effort retirement
+    // path; the PSBT continuation adapter supplies the reservation below.
+    if (!state->admitted.load() || !state->services.scheduler ||
+        state->prompt_retirement_submitted.exchange(true)) return;
+    const auto retire_prompt = [state] {
+        if (state->current.phase == Phase::AwaitingConfirmation) state->advance(Event::Retire);
+    };
+    try {
+        if (state->services.submit) state->services.submit(retire_prompt);
+        else execution::Submit(*state->services.scheduler, retire_prompt, [] {});
+    } catch (...) { }
+}
+} // namespace
 } // namespace backup
 
 backup::Operation::Operation(QString raw, Services services, Publish publish)
@@ -124,20 +148,19 @@ bool backup::Operation::start()
         failBeforeStart(Error::Transport);
         return false;
     }
-    if (bool(services.reserve_prompt_retirement) != bool(services.activate_prompt_retirement) ||
-        (services.submit && !services.reserve_prompt_retirement)) {
+    if (bool(services.reserve_prompt_retirement) != bool(services.activate_prompt_retirement)) {
         failBeforeStart(Error::Transport);
         return false;
     }
+    // The generic backup adapter predates accepted continuations and only
+    // supplies submit(). Reserve this receipt only for callers that opt in.
+    if (!services.reserve_prompt_retirement) return submit(Event::Start);
     const auto retirement = [state] {
         if (state->current.phase == Phase::AwaitingConfirmation) state->advance(Event::Retire);
     };
     execution::Admission reservation;
     try {
-        reservation = services.reserve_prompt_retirement
-            ? services.reserve_prompt_retirement(retirement)
-            : execution::Submit(*services.scheduler, retirement, [] {}, {},
-                {execution::Lane::Cleanup, 256, {}, execution::WorkClass::Action}, true);
+        reservation = services.reserve_prompt_retirement(retirement);
     } catch (...) {
         failBeforeStart(Error::Transport);
         return false;
@@ -160,6 +183,7 @@ bool backup::Operation::submit(Event event)
     if (event == Event::Start) {
         state->admitted.store(bool(admission));
         if (!admission) failBeforeStart(Error::Transport);
+        else if (state->retire_if_confirmation_requested.load()) RequestPromptRetirement(state);
     }
     return bool(admission);
 }
@@ -190,9 +214,8 @@ void backup::Operation::retire()
 void backup::Operation::retireIfAwaitingConfirmation()
 {
     const auto state = m_state;
-    if (!state || !state->admitted.load() || !state->services.scheduler) return;
-    state->retire_if_confirmation_requested.store(true);
-    state->activatePromptRetirement();
+    if (!state || !state->started.load() || !state->services.scheduler) return;
+    RequestPromptRetirement(state);
 }
 
 void backup::Operation::failBeforeStart(Error error)

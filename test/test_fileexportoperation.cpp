@@ -11,12 +11,16 @@
 #include <test/qt_test_registry.h>
 
 #include <QFile>
+#include <QPointer>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QtTest/QtTest>
 
 #include <atomic>
 #include <deque>
+#include <functional>
+#include <memory>
+#include <utility>
 
 namespace {
 struct Fixture {
@@ -42,6 +46,30 @@ struct Fixture {
         }
     }
 };
+void UseSerialPromptRetirement(backup::Services& services, std::function<void()> after_first_admission = {})
+{
+    const auto scheduler = services.scheduler;
+    const auto action_key = scheduler->allocateKey();
+    auto after_admission = std::make_shared<std::function<void()>>(std::move(after_first_admission));
+    services.submit = [scheduler, action_key, after_admission](std::function<void()> work) {
+        auto admission = execution::Submit(*scheduler, std::move(work), [] {}, {},
+            {execution::Lane::Core, 256, action_key, execution::WorkClass::Action});
+        // Model an accepted enqueue whose caller is synchronously closed
+        // before submit() returns the admission receipt.
+        if (admission && *after_admission) {
+            auto hook = std::exchange(*after_admission, {});
+            hook();
+        }
+        return admission;
+    };
+    services.reserve_prompt_retirement = [scheduler, action_key](std::function<void()> work) {
+        return execution::Submit(*scheduler, std::move(work), [] {}, {},
+            {execution::Lane::Cleanup, 256, action_key, execution::WorkClass::Action}, true);
+    };
+    services.activate_prompt_retirement = [scheduler](execution::TaskId id) {
+        return scheduler->activateCleanup(id);
+    };
+}
 struct DeletionState {
     std::atomic<bool> destroyed{false};
     std::atomic<bool> destroyed_on_gui{false};
@@ -226,13 +254,10 @@ private Q_SLOTS:
         QVERIFY(!operation.pending());
         QVERIFY(operation.errorText().contains(QStringLiteral("scheduled"), Qt::CaseInsensitive));
         QVERIFY(!state->destroyed);
-        // The request's PSBT release and the operation's pre-admitted prompt
-        // receipt are separate Cleanup turns.
+        // The rejected request releases its retained PSBT through Cleanup.
         QCOMPARE(fixture.execution.queuedCountIf([](const auto& turn) {
             return turn.lane == execution::Lane::Cleanup && turn.phase == execution::Phase::Queued;
-        }), 2);
-        QVERIFY(fixture.execution.step(execution::Lane::Cleanup));
-        QVERIFY(!state->destroyed);
+        }), 1);
         QVERIFY(fixture.execution.step(execution::Lane::Cleanup));
         QVERIFY(state->destroyed);
         fixture.execution.drain();
@@ -372,6 +397,7 @@ private Q_SLOTS:
         std::atomic_int outcomes{0};
         std::atomic_int terminal_phase{-1};
         auto services = fixture.services();
+        UseSerialPromptRetirement(services);
         services.outcome = [&](backup::Snapshot snapshot) {
             ++outcomes;
             terminal_phase = static_cast<int>(snapshot.phase);
@@ -552,6 +578,138 @@ private Q_SLOTS:
         QVERIFY(fixture.execution.quiescent());
     }
 
+    void acceptedContinuationCloseDuringStartAdmission_data()
+    {
+        QTest::addColumn<bool>("existing_target");
+        QTest::newRow("existing-destination-retires") << true;
+        QTest::newRow("fresh-destination-keeps-accepted-write") << false;
+    }
+
+    void acceptedContinuationCloseDuringStartAdmission()
+    {
+        QFETCH(bool, existing_target);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto path = directory.filePath(QStringLiteral("captured.psbt"));
+        const QByteArray original{"preserve the existing reviewed destination"};
+        if (existing_target) {
+            QFile file{path};
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(original), qint64(original.size()));
+        }
+        auto deletion = std::make_shared<DeletionState>();
+        auto document = TrackedDocument(deletion);
+        const auto expected = psbtwork::SerializeRaw(*document);
+        Fixture fixture;
+        FileExportOperationModel* projection{nullptr};
+        auto services = fixture.services();
+        UseSerialPromptRetirement(services, [&] {
+            if (projection) projection->retire();
+        });
+        std::atomic_int outcomes{0};
+        std::atomic_int terminal_phase{-1};
+        services.outcome = [&](backup::Snapshot snapshot) {
+            ++outcomes;
+            terminal_phase = static_cast<int>(snapshot.phase);
+        };
+        auto operation = std::make_unique<FileExportOperationModel>(
+            path, document, std::move(services));
+        projection = operation.get();
+        document.reset();
+        auto request = operation->requestForAcceptedContinuation();
+        QVERIFY(request);
+
+        // Close after the Start work was accepted but before submit() has
+        // returned and recorded admission. An existing target must settle
+        // Retired; a fresh accepted save still writes.
+        QVERIFY(operation->start());
+        fixture.execution.drain();
+        QCOMPARE(outcomes.load(), 1);
+        QCOMPARE(terminal_phase.load(), static_cast<int>(existing_target
+            ? backup::Phase::Retired : backup::Phase::Succeeded));
+        if (existing_target) QCOMPARE(ReadFile(path), original);
+        else QCOMPARE(ReadFile(path), expected);
+
+        operation.reset();
+        request.reset();
+        fixture.execution.drain();
+        QVERIFY(deletion->destroyed.load());
+        QVERIFY(fixture.execution.quiescent());
+    }
+
+    void acceptedContinuationDeleteAfterInspection_data()
+    {
+        QTest::addColumn<bool>("existing_target");
+        QTest::newRow("existing-target-retires") << true;
+        QTest::newRow("fresh-target-keeps-accepted-write") << false;
+    }
+
+    void acceptedContinuationDeleteAfterInspection()
+    {
+        QFETCH(bool, existing_target);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto path = directory.filePath(QStringLiteral("captured.psbt"));
+        const QByteArray original{"retain unresolved existing output"};
+        if (existing_target) {
+            QFile file{path};
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(original), qint64(original.size()));
+        }
+
+        auto deletion = std::make_shared<DeletionState>();
+        auto document = TrackedDocument(deletion);
+        const auto expected = psbtwork::SerializeRaw(*document);
+        Fixture fixture;
+        int published_phases{0};
+        std::atomic_int outcomes{0};
+        std::atomic_int terminal_phase{-1};
+        auto services = fixture.services();
+        // Deliver the bounded presentation callback synchronously so the
+        // test can remove the projection at the inspected decision boundary.
+        services.post = [&](std::function<void()> publication) {
+            ++published_phases;
+            publication();
+        };
+        services.outcome = [&](backup::Snapshot result) {
+            ++outcomes;
+            terminal_phase = static_cast<int>(result.phase);
+        };
+
+        auto projection = std::make_unique<FileExportOperationModel>(path, std::move(services));
+        QPointer<FileExportOperationModel> observer{projection.get()};
+        bool removed_after_inspection{false};
+        connect(projection.get(), &FileExportOperationModel::changed, [&] {
+            if (published_phases != 2 || !projection) return;
+            removed_after_inspection = existing_target ? projection->confirmationRequired() : projection->pending();
+            projection.reset();
+        });
+        auto request = projection->requestForAcceptedContinuation();
+        QVERIFY(request);
+
+        // This is the production continuation entry point. Its Start has
+        // returned before the test executor runs inspection. Deleting the Qt
+        // projection on the inspected publication must retire a pending
+        // overwrite, while a fresh accepted destination still gets written.
+        QVERIFY(request->start(document));
+        document.reset();
+        QVERIFY(projection);
+        fixture.execution.drain();
+
+        QVERIFY(!observer);
+        QVERIFY(removed_after_inspection);
+        QCOMPARE(outcomes.load(), 1);
+        QCOMPARE(terminal_phase.load(), static_cast<int>(existing_target
+            ? backup::Phase::Retired : backup::Phase::Succeeded));
+        if (existing_target) QCOMPARE(ReadFile(path), original);
+        else QCOMPARE(ReadFile(path), expected);
+
+        request.reset();
+        fixture.execution.drain();
+        QVERIFY(deletion->destroyed.load());
+        QVERIFY(fixture.execution.quiescent());
+    }
+
     void overwritePromptRetirementSurvivesRejectedCoreAdmission()
     {
         QTemporaryDir directory;
@@ -565,19 +723,7 @@ private Q_SLOTS:
         }
         Fixture fixture;
         auto services = fixture.services();
-        const auto scheduler = services.scheduler;
-        const auto action_key = scheduler->allocateKey();
-        services.submit = [scheduler, action_key](std::function<void()> work) {
-            return execution::Submit(*scheduler, std::move(work), [] {}, {},
-                {execution::Lane::Core, 256, action_key, execution::WorkClass::Action});
-        };
-        services.reserve_prompt_retirement = [scheduler, action_key](std::function<void()> work) {
-            return execution::Submit(*scheduler, std::move(work), [] {}, {},
-                {execution::Lane::Cleanup, 256, action_key, execution::WorkClass::Action}, true);
-        };
-        services.activate_prompt_retirement = [scheduler](execution::TaskId id) {
-            return scheduler->activateCleanup(id);
-        };
+        UseSerialPromptRetirement(services);
         std::atomic_int outcomes{0};
         std::atomic_int terminal_phase{-1};
         services.outcome = [&](backup::Snapshot snapshot) {
@@ -593,15 +739,14 @@ private Q_SLOTS:
         fixture.deliverGui();
         QVERIFY(operation->confirmationRequired());
 
-        // The operation's action scope remains live, but a dependent Core
-        // submission can still be rejected for queue capacity/transport.
-        // Retirement must own a previously reserved continuation instead.
-        fixture.execution.rejectCoreNumber(2);
+        // Retirement remains admitted through Cleanup even when all later
+        // Core submissions reject.
+        fixture.execution.rejectLane(execution::Lane::Core);
         operation->retire();
         fixture.execution.drain();
         const auto outcomes_after_close_admission = outcomes.load();
         if (outcomes_after_close_admission != 1) {
-            // Keep the pre-fix red run bounded and fully cleaned up.
+            // Keep failure evidence bounded and fully cleaned up.
             operation->retire();
             fixture.execution.drain();
         }

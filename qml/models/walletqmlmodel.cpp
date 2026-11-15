@@ -3387,6 +3387,33 @@ std::shared_ptr<FileExportRequest> WalletQmlModel::preparePsbtFileExport(
             const auto action = action_slot->get();
             return session && action && session->activateActionCleanup(action, id);
         };
+    } else if (services.scheduler) {
+        // A detached PSBT export still needs a private serialization key for
+        // its close receipt; unkeyed Core and Cleanup turns could race while
+        // inspecting an existing destination.
+        const auto scheduler = services.scheduler;
+        try {
+            const auto action_key = scheduler->allocateKey();
+            services.submit = [scheduler, action_key](std::function<void()> work) {
+                return execution::Submit(*scheduler, std::move(work), [] {}, {},
+                    {execution::Lane::Core, 256, action_key, execution::WorkClass::Action});
+            };
+            services.reserve_prompt_retirement = [scheduler, action_key](std::function<void()> work) {
+                return execution::Submit(*scheduler, std::move(work), [] {}, {},
+                    {execution::Lane::Cleanup, 256, action_key, execution::WorkClass::Action}, true);
+            };
+            services.activate_prompt_retirement = [scheduler](execution::TaskId id) {
+                return scheduler->activateCleanup(id);
+            };
+        } catch (...) {
+            services.submit = [](std::function<void()>) {
+                return execution::Admission{{}, execution::Rejection::Transport};
+            };
+            services.reserve_prompt_retirement = [](std::function<void()>) {
+                return execution::Admission{{}, execution::Rejection::Transport};
+            };
+            services.activate_prompt_retirement = [](execution::TaskId) { return false; };
+        }
     }
     const auto previous_outcome = std::move(services.outcome);
     services.outcome = [receipt, action_slot, previous_outcome](backup::Snapshot snapshot) {
