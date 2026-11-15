@@ -33,7 +33,15 @@ bool ReceiptReconciliationModel::observed(const QString& address) const
 }
 void ReceiptReconciliationModel::consume()
 {
-    if (m_closed || !m_ports.take) return;
+    if (m_closed) return;
+    if (!configured()) {
+        if (m_phase != Rejected) {
+            m_phase = Rejected;
+            const QPointer<ReceiptReconciliationModel> guard{this};
+            Q_EMIT changed(); if (guard) Q_EMIT committed();
+        }
+        return;
+    }
     if (m_applying) { m_again = true; return; }
     auto update = m_ports.take();
     if (!update) return;
@@ -79,10 +87,10 @@ void ReceiptReconciliationModel::invalidate()
     const QPointer<ReceiptReconciliationModel> guard{this};
     Q_EMIT changed(); if (guard) Q_EMIT committed();
 }
-void ReceiptReconciliationModel::poll() { if (!m_closed && m_ports.poll) m_ports.poll(); }
+void ReceiptReconciliationModel::poll() { if (!m_closed && configured() && m_ports.poll) m_ports.poll(); }
 void ReceiptReconciliationModel::retry()
 {
-    if (m_closed || !m_ports.retry) return;
+    if (m_closed || !configured() || !m_ports.retry) return;
     m_ports.retry();
     invalidate();
 }
@@ -99,10 +107,14 @@ void ReceiptReconciliationModel::close()
 void RequestReceiptModel::setReader(ReceiptReconciliationModel* reader)
 {
     if (m_reader == reader) return;
+    // A facade belongs to its original opening, including after that owner
+    // disappears. A later wallet with the same request/address cannot adopt it.
+    if (m_bound) return;
     disconnect(m_connection); disconnect(m_destroyed); m_reader = reader;
     if (reader) {
+        m_bound = true;
         m_connection = connect(reader, &ReceiptReconciliationModel::changed, this, &RequestReceiptModel::refresh);
-        m_destroyed = connect(reader, &QObject::destroyed, this, &RequestReceiptModel::refresh);
+        m_destroyed = connect(reader, &QObject::destroyed, this, [this] { m_reader_closed = true; refresh(); });
     }
     refresh();
 }

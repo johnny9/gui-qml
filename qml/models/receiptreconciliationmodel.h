@@ -49,6 +49,7 @@ Q_SIGNALS:
     void transactionChanged(const QString& txid, int change);
     void rescanRequested();
 private:
+    bool configured() const { return m_ports.take && m_ports.retire && m_ports.current && m_ports.nativeRevision; }
     Ports m_ports;
     std::shared_ptr<const walletreceipts::Snapshot> m_snapshot;
     QTimer m_poll;
@@ -81,7 +82,7 @@ public:
     ReceiptState receiptState() const { return fresh() ? m_amount > 0 ? Received : Awaiting : Unknown; }
     bool historicallyUsed() const { return m_used; }
     bool fresh() const { return m_available && m_reader && m_reader->fresh() && m_reader->knows(m_address); }
-    ReceiptReconciliationModel::Phase phase() const { return !m_available ? ReceiptReconciliationModel::Closed : m_reader ? m_reader->phase() : ReceiptReconciliationModel::Loading; }
+    ReceiptReconciliationModel::Phase phase() const { return !m_available || m_reader_closed ? ReceiptReconciliationModel::Closed : m_reader ? m_reader->phase() : ReceiptReconciliationModel::Loading; }
     QString errorText() const { return m_reader && m_available ? m_reader->errorText() : QString{}; }
     void setReader(ReceiptReconciliationModel* reader);
     void setSource(QString request, QString address, bool used, bool available);
@@ -94,6 +95,6 @@ private:
     QMetaObject::Connection m_connection, m_destroyed;
     QString m_request, m_address;
     CAmount m_amount{0};
-    bool m_used{false}, m_source_used{false}, m_available{false};
+    bool m_used{false}, m_source_used{false}, m_available{false}, m_bound{false}, m_reader_closed{false};
 };
 #endif // BITCOIN_QML_MODELS_RECEIPTRECONCILIATIONMODEL_H

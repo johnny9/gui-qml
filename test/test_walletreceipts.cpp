@@ -136,6 +136,18 @@ class WalletReceiptsTests : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void initTestCase() { SelectParams(ChainType::MAIN); }
+    void missingRetirementPortRefusesReceiptConstructionAndFurtherReads()
+    {
+        Fixture f; auto ports = f.projectionPorts(); int captures{0};
+        ports.retire = {};
+        ports.take = [&]() -> std::optional<Publication> { ++captures; return {}; };
+        ReceiptReconciliationModel model{std::move(ports)}; RequestReceiptModel request;
+        request.setReader(&model); request.setSource("17", ADDRESS, false, true);
+        model.consume(); model.poll(); model.retry(); f.commands.drain();
+        QCOMPARE(model.phase(), ReceiptReconciliationModel::Rejected); QVERIFY(!model.errorText().isEmpty());
+        QVERIFY(!request.fresh()); QCOMPARE(request.receiptState(), RequestReceiptModel::Unknown);
+        QCOMPARE(captures, 0); QCOMPARE(f.wallet->reads, 0); QCOMPARE(f.wallet->scans, 0);
+    }
     void currentCreditProjectionKeepsPositiveUnderpaymentSeparateFromHistoricalUse()
     {
         Fixture f; ReceiptReconciliationModel model{f.projectionPorts()}; RequestReceiptModel request;
@@ -236,8 +248,24 @@ private Q_SLOTS:
         request.setReader(model.get()); request.setSource("17", ADDRESS, true, true);
         f.add(1, 100); f.reader->reload(ADDRESSES); f.commands.drain(); model->consume();
         QVERIFY(request.fresh()); model.reset(); QVERIFY(!request.fresh());
+        QCOMPARE(request.phase(), ReceiptReconciliationModel::Closed);
         QCOMPARE(request.receiptState(), RequestReceiptModel::Unknown); QVERIFY(request.historicallyUsed());
         QCOMPARE(request.requestId(), QStringLiteral("17")); f.commands.drain();
+    }
+    void sameAddressInAnotherOpeningCannotRetargetAnOriginalReceiptFacade()
+    {
+        Fixture first, successor;
+        ReceiptReconciliationModel original{first.projectionPorts()}, newer{successor.projectionPorts()};
+        RequestReceiptModel request;
+        request.setReader(&original); request.setSource("17", ADDRESS, false, true);
+        first.add(1, 100); successor.add(2, 999);
+        first.reader->reload(ADDRESSES); successor.reader->reload(ADDRESSES);
+        first.commands.drain(); successor.commands.drain(); original.consume(); newer.consume();
+        QVERIFY(request.fresh()); QCOMPARE(request.receivedAmountSatoshi(), qint64{100});
+        request.setReader(&newer); QCOMPARE(request.receivedAmountSatoshi(), qint64{100});
+        original.close(); request.setReader(&newer); QVERIFY(!request.fresh());
+        QCOMPARE(request.phase(), ReceiptReconciliationModel::Closed); QCOMPARE(request.requestId(), QStringLiteral("17"));
+        QVERIFY(newer.fresh()); QCOMPARE(newer.amount(ADDRESS), CAmount{999});
     }
     void realWorkersReconcileAndDrainIndependentlyOfAClosedReceiptView()
     {
