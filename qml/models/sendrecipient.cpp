@@ -255,7 +255,8 @@ void SendRecipient::setMessage(const QString& message)
     m_budget_error.clear(); if (SameText(m_message, message)) { requestValidation(); return; }
     m_message = message; const QPointer<SendRecipient> guard{this};
     if (!m_batching) Q_EMIT inputIntentSubmitted();
-    if (!guard || inputAdmissionClosed()) return; Q_EMIT messageChanged();
+    if (!guard || inputAdmissionClosed()) return;
+    Q_EMIT messageChanged();
     if (guard && !inputAdmissionClosed()) requestValidation();
 }
 CAmount SendRecipient::cAmount() const { return m_amount->satoshi(); }
@@ -285,7 +286,8 @@ void SendRecipient::clearImportedMetadata()
     if (inputAdmissionClosed()) return;
     m_request_normalization = 0; m_request_address.clear(); m_request_label.clear(); m_message.clear();
     const QPointer<SendRecipient> guard{this}; Q_EMIT inputIntentSubmitted();
-    if (!guard || inputAdmissionClosed()) return; Q_EMIT paymentRequestChanged();
+    if (!guard || inputAdmissionClosed()) return;
+    Q_EMIT paymentRequestChanged();
     if (!guard || inputAdmissionClosed()) return;
     Q_EMIT messageChanged(); if (guard && !inputAdmissionClosed()) requestValidation();
 }

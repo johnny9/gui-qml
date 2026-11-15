@@ -40,11 +40,13 @@ bool PeerSelectionModel::select(PeerDetailsModel* details)
     detach(); m_selected = details; m_target = details->commandTarget(); m_phase = Phase::Connected; ++m_revision;
     m_detail_connections.push_back(connect(details, &PeerDetailsModel::dataChanged, this, [this, original = QPointer<PeerDetailsModel>{details}] {
         if (m_selected != original || !original || original->connected() || m_phase == Phase::Disconnected) return;
-        m_phase = Phase::Disconnected; if (m_revision < std::numeric_limits<quint64>::max()) ++m_revision; Q_EMIT changed();
+        m_phase = Phase::Disconnected; if (m_revision < std::numeric_limits<quint64>::max()) ++m_revision;
+        Q_EMIT changed();
     }));
     m_detail_connections.push_back(connect(details, &QObject::destroyed, this, [this] {
         m_selected.clear(); if (m_phase != Phase::Stopped) m_phase = Phase::Disconnected;
-        if (m_revision < std::numeric_limits<quint64>::max()) ++m_revision; Q_EMIT changed();
+        if (m_revision < std::numeric_limits<quint64>::max()) ++m_revision;
+        Q_EMIT changed();
     }));
     Q_EMIT changed(); return true;
 }
@@ -52,7 +54,8 @@ void PeerSelectionModel::clear()
 {
     if (m_phase == Phase::Stopped || (!m_selected && m_phase == Phase::NoSelection)) return;
     detach(); m_target = {}; m_phase = Phase::NoSelection;
-    if (m_revision < std::numeric_limits<quint64>::max()) ++m_revision; Q_EMIT changed();
+    if (m_revision < std::numeric_limits<quint64>::max()) ++m_revision;
+    Q_EMIT changed();
 }
 void PeerSelectionModel::reconcile()
 {
@@ -70,5 +73,6 @@ void PeerSelectionModel::stop()
 {
     if (m_phase == Phase::Stopped) return;
     detach(); m_target = {}; m_phase = Phase::Stopped;
-    if (m_revision < std::numeric_limits<quint64>::max()) ++m_revision; Q_EMIT changed();
+    if (m_revision < std::numeric_limits<quint64>::max()) ++m_revision;
+    Q_EMIT changed();
 }

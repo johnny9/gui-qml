@@ -449,7 +449,8 @@ void TransactionActivityModel::project(const std::shared_ptr<Job>& job)
             --budget;
         } else if (owner.phase == 2) {
             if (owner.next_record == owner.result->records.cend()) { owner.request_position = 0; owner.phase = 3; continue; }
-            const auto& record = (owner.next_record++).value();
+            const auto& record = owner.next_record.value();
+            ++owner.next_record;
             const QString id = QStringLiteral("tx:") + record.activity.txid;
             const auto cached = owner.building->rows.find(id);
             const auto basis = owner.previous && owner.previous->snapshot->detail_source

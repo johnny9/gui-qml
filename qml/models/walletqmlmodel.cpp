@@ -649,7 +649,8 @@ void WalletQmlModel::publishOpening()
         m_security->observe(metadata); if (!guard || m_stopping) return;
         if (name_changed) { Q_EMIT nameChanged(); if (!guard || m_stopping) return; }
         Q_EMIT openingMetadataChanged(); if (!guard || m_stopping) return;
-        if (m_receive) m_receive->refresh(); if (!guard || m_stopping) return;
+        if (m_receive) m_receive->refresh();
+        if (!guard || m_stopping) return;
         if (m_current_transaction) { Q_EMIT currentTransactionChanged(); if (!guard || m_stopping) return; }
     }
     if (update->preference_saved && update->preference_revision == m_opening->preferenceRevision()) {

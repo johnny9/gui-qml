@@ -185,7 +185,9 @@ void Owner::notify() { if (!m_detached.load()) m_notify(); }
 void Owner::update(Phase phase) { { std::lock_guard lock{m_mutex}; m_frame.phase = phase; ++m_frame.revision; } notify(); }
 void Owner::start()
 {
-    if (m_started) return; m_started = true; m_keep_alive = shared_from_this();
+    if (m_started) return;
+    m_started = true;
+    m_keep_alive = shared_from_this();
     if (m_request.kind == Kind::Migrate && !m_confirmed) {
         const auto self = shared_from_this();
         if (!execution::Submit(*m_services.execution.scheduler, [self] { self->prompt(Phase::AwaitingConfirmation); }, [] {}, {}, {execution::Lane::Domain, 256, m_services.execution.scheduler->allocateKey()})) complete(Phase::Rejected, Failure::Backend, Text("The migration prompt could not be queued. No wallet was changed."));
@@ -399,7 +401,8 @@ void Owner::publicationsConsumed(std::vector<walletpublication::Availability> va
 {
     const auto self = shared_from_this();
     if (!execution::Submit(*m_services.execution.scheduler, [self, values = std::move(values), error = std::move(error)] {
-            if (!self->m_awaited) return; self->m_awaited = false;
+            if (!self->m_awaited) return;
+            self->m_awaited = false;
             bool available{true};
             { std::lock_guard lock{self->m_mutex};
                 for (size_t i = 0; i < self->m_actual.count; ++i) {

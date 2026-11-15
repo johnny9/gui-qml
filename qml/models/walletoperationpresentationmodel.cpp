@@ -23,7 +23,8 @@ QVariant WalletOperationPresentationModel::data(const QModelIndex& index, int ro
 QHash<int, QByteArray> WalletOperationPresentationModel::roleNames() const { return {{OperationRole, "operation"}, {ActiveRole, "active"}}; }
 void WalletOperationPresentationModel::setShowTerminalResults(bool value)
 {
-    if (m_terminals == value) return; m_terminals = value;
+    if (m_terminals == value) return;
+    m_terminals = value;
     const QPointer<WalletOperationPresentationModel> guard{this}; Q_EMIT showTerminalResultsChanged(); if (guard) refresh();
 }
 bool WalletOperationPresentationModel::refuse(const QString& id, const QString& reason)

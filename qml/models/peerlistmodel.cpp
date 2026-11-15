@@ -115,7 +115,9 @@ void PeerListModel::backendInitialized() { if (stopping() || m_backend_ready) re
 void PeerListModel::beginShutdown() { closeAdmission(); }
 void PeerListModel::closeAdmission() {
     if (stopping()) return;
-    if (m_timer) m_timer->stop(); m_details.reset(); NativeListModel::closeAdmission();
+    if (m_timer) m_timer->stop();
+    m_details.reset();
+    NativeListModel::closeAdmission();
     if (!m_destroying) Q_EMIT commandsChanged();
 }
 void PeerListModel::refresh() { if (m_backend_ready) refreshNative(); }

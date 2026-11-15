@@ -25,7 +25,8 @@ WalletReceiveModel::WalletReceiveModel(uint64_t view, Ports ports, QObject* pare
     if (m_editor) m_editor->setParent(this);
     connect(&m_reservation, &ReceiveReservationModel::changed, this, [this] {
         const QPointer<WalletReceiveModel> guard{this};
-        if (m_editor) m_editor->reservationChanged(); if (!guard) return;
+        if (m_editor) m_editor->reservationChanged();
+        if (!guard) return;
         refresh(); if (!guard) return;
         if (m_pending && m_pending->cancelling) {
             if (m_reservation.phase() == ReceiveReservationModel::Cancelled) { applyReplacement(); return; }

@@ -250,7 +250,8 @@ void WalletOperationModel::publish()
         if (phase() == AwaitingPassphrase) m_passphrase_prompt = m_prompt; else m_confirmation_prompt = m_prompt;
         m_prompts.push_back(m_prompt); Q_EMIT promptsChanged(); if (!guard) return;
     }
-    if (m_prompt) m_prompt->refresh(); if (!guard) return;
+    if (m_prompt) m_prompt->refresh();
+    if (!guard) return;
     if (terminal()) {
         m_errors.refresh(); if (!guard) return;
         m_warnings.refresh(); if (!guard) return;
