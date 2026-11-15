@@ -1,5 +1,9 @@
 # R22 save continuation reopened
 
+Resolved at the [merged focused checkpoint](R22_R30_MERGED_CHECKPOINT.md).
+The original21 timing cases pass after the background continuation, withdrawal
+and immediate lifetime guards. The historical diagnosis below remains evidence.
+
 The earlier focused checkpoint remains valid evidence for its selected198worker
 and387merged cases. It missed the existing `psbtAdmissionKeepsOriginalEffectAndView`
 schedules. Expanding those during R23 qualification found an application ownership
