@@ -4892,6 +4892,7 @@ private Q_SLOTS:
     void importPsbtFromFile_returnsTransactionAlreadyKnownWhenTxIsInWallet();
     void sendTransactionWithPrivateKeysDisabledDoesNotCommit();
     void bumpTransactionOnLockedWalletRequiresPassword();
+    void bumpFeePresentationTracksUnitWithoutRepreparing();
     void bumpTransactionWithPassphraseUnlocksCommitsAndRelocks();
     void bumpTransactionWithWrongPassphraseDoesNotSign();
     void displayNameDefaultsToWalletName();
@@ -8738,6 +8739,34 @@ void WalletQmlModelTests::importPsbtFromFile_returnsTransactionAlreadyKnownWhenT
     QVERIFY(model->currentTransaction() == nullptr);
     QCOMPARE(model->sendRecipientList()->count(), 1);
     QVERIFY(model->sendRecipientList()->currentRecipient()->address()->address().isEmpty());
+}
+
+void WalletQmlModelTests::bumpFeePresentationTracksUnitWithoutRepreparing()
+{
+    const QLocale previous_locale;
+    QLocale::setDefault(QLocale::c());
+    const auto restore_locale = qScopeGuard([previous_locale] { QLocale::setDefault(previous_locale); });
+    auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = wallet->addBumpableTestTransaction();
+    model->setDisplayUnit(1);
+    auto* bump = model->bumpModel();
+    QVERIFY(AwaitBumpPreparation(*bump, QString::fromStdString(original.GetHex()), 1));
+    QCOMPARE(bump->oldFee(), QStringLiteral("0.00100 mBTC"));
+    QCOMPARE(bump->newFee(), QStringLiteral("0.00200 mBTC"));
+    const auto attempt = bump->attemptId();
+    model->setDisplayUnit(2);
+    QCOMPARE(bump->oldFee(), QStringLiteral("1.00 bits"));
+    QCOMPARE(bump->newFee(), QStringLiteral("2.00 bits"));
+    model->setDisplayUnit(3);
+    QCOMPARE(bump->oldFee(), QStringLiteral("100 sats"));
+    QCOMPARE(bump->newFee(), QStringLiteral("200 sats"));
+    model->setDisplayUnit(1);
+    QCOMPARE(bump->oldFee(), QStringLiteral("0.00100 mBTC"));
+    QCOMPARE(model->displayUnit(), 1);
+    QCOMPARE(bump->attemptId(), attempt);
+    QCOMPARE(wallet->create_bump_calls, 1);
+    QCOMPARE(wallet->sign_bump_calls, 0);
+    QCOMPARE(wallet->commit_bump_calls, 0);
 }
 
 void WalletQmlModelTests::bumpTransactionOnLockedWalletRequiresPassword()
