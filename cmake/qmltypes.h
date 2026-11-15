@@ -37,6 +37,7 @@
 #include <qml/models/monospaceoutputmodel.h>
 #include <qml/models/onboardingoptionsmodel.h>
 #include <qml/models/options_model.h>
+#include <qml/models/settingseditormodel.h>
 #include <qml/models/uipreferences.h>
 #include <qml/models/paymentrequest.h>
 #include <qml/models/peerdetailsmodel.h>
@@ -451,6 +452,24 @@ struct OptionsQmlModelForeign {
     QML_ANONYMOUS
 };
 
+struct SettingsSaveResultForeign {
+    Q_GADGET
+    QML_FOREIGN(SettingsSaveResult)
+    QML_NAMED_ELEMENT(SettingsSaveResult)
+    QML_UNCREATABLE("Retained settings outcome")
+};
+struct SettingsEditorModelForeign {
+    Q_GADGET
+    QML_FOREIGN(SettingsEditorModel)
+    QML_NAMED_ELEMENT(SettingsEditorModel)
+    QML_UNCREATABLE("Owned by the settings form")
+};
+struct SettingsEntryModelForeign {
+    Q_GADGET
+    QML_FOREIGN(SettingsEntryModel)
+    QML_NAMED_ELEMENT(SettingsEntryModel)
+    QML_UNCREATABLE("Owned by a settings editor")
+};
 struct CoreSettingsModelForeign {
     Q_GADGET
     QML_FOREIGN(CoreSettingsModel)

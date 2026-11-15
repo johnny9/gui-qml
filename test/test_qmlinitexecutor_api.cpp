@@ -4,6 +4,7 @@
 
 #include <interfaces/handler.h>
 #include <net_processing.h>
+#include <node/interface_ui.h>
 #include <qml/initexecutor.h>
 #include <qml/shutdowncoordinator.h>
 #include <test/mocks/mocknode.h>
@@ -53,6 +54,20 @@ class QmlInitExecutorApiTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void nativeStartupOutcomePrecedesGuiDelivery_data(){QTest::addColumn<int>("scenario");QTest::newRow("ready")<<0;QTest::newRow("failed")<<1;QTest::newRow("user-cancelled")<<2;QTest::newRow("error-and-cancel")<<3;QTest::newRow("uncertain")<<4;}
+    void nativeStartupOutcomePrecedesGuiDelivery(){
+        QFETCH(int,scenario);StrictMockNode node;interfaces::Node::MessageBoxFn message;std::atomic<int> recorded{-1};std::atomic<bool> gui_record{false};
+        node.handle_message_box_fn=[&](auto callback){message=std::move(callback);return interfaces::MakeCleanupHandler([&]{message={};});};
+        node.app_init_main_fn=[&](interfaces::BlockAndHeaderTipInfo*){if(scenario==3)message(Untranslated("Original startup failure"),CClientUIInterface::ICON_ERROR);if(scenario==4)throw std::runtime_error("Original native startup exception");return scenario==0;};
+        node.is_initial_block_download_fn=[] {return false;};node.shutdown_requested_fn=[scenario]{return scenario==2||scenario==3;};
+        const auto drain_retired=qScopeGuard([]{DrainRetiredExecutors();});
+        QmlInitExecutor executor{node,{}, {},[&](QmlInitExecutor::StartupOutcome value){gui_record=QThread::currentThread()==QCoreApplication::instance()->thread();recorded=int(value);}};
+        QSignalSpy initialized{&executor,&QmlInitExecutor::initializeResult},fatal{&executor,&QmlInitExecutor::runawayException};
+        executor.initialize();QTRY_VERIFY(recorded.load()!=-1);
+        const auto expected=scenario==0?QmlInitExecutor::StartupOutcome::Ready:scenario==2?QmlInitExecutor::StartupOutcome::Cancelled:scenario==4?QmlInitExecutor::StartupOutcome::Uncertain:QmlInitExecutor::StartupOutcome::Failed;
+        QCOMPARE(recorded.load(),int(expected));QVERIFY(!gui_record.load());
+        if(scenario==4){QTRY_COMPARE(fatal.count(),1);QCOMPARE(initialized.count(),0);}else{QTRY_COMPARE(initialized.count(),1);QCOMPARE(initialized.front().front().toBool(),scenario==0);}
+    }
     void runawayExtractionAndExceptionRetirementStayNative_data() {
         QTest::addColumn<int>("phase");
         QTest::newRow("initialize") << 0; QTest::newRow("interrupt") << 1; QTest::newRow("shutdown") << 2;

@@ -343,6 +343,10 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");
     qmlRegisterUncreatableType<NodeModel>("org.bitcoincore.qt", 1, 0, "NodeModel", "Provided by ApplicationModels");
     qmlRegisterAnonymousType<NativeListModel>("org.bitcoincore.qt", 1);
+    qmlRegisterUncreatableMetaObject(SettingsSaveResult::staticMetaObject,"org.bitcoincore.qt",1,0,"SettingsSaveResult","Retained settings outcome");
+    qRegisterMetaType<SettingsSaveResult>();
+    qmlRegisterUncreatableType<SettingsEditorModel>("org.bitcoincore.qt",1,0,"SettingsEditorModel","Owned by the settings form");
+    qmlRegisterUncreatableType<SettingsEntryModel>("org.bitcoincore.qt",1,0,"SettingsEntryModel","Owned by a settings editor");
     qmlRegisterUncreatableType<CoreSettingsModel>("org.bitcoincore.qt",1,0,"CoreSettingsModel","Owned by settings");
     qmlRegisterUncreatableType<CoreProxyDraft>("org.bitcoincore.qt",1,0,"CoreProxyDraft","Owned by a settings form");
     qmlRegisterUncreatableType<OptionsTransactionLinks>("org.bitcoincore.qt", 1, 0, "OptionsTransactionLinks", "Owned by options");
@@ -489,6 +493,7 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
     }
 
     context.onboarding_options_model = std::make_unique<OnboardingOptionsModel>(argv, can_listen_ipc, nullptr, services);
+    context.onboarding_options_model->configureSettingsCommit(gArgs);
 
     context.network_style.reset(NetworkStyle::instantiate(Params().GetChainType()));
     assert(!context.network_style.isNull());
@@ -528,8 +533,14 @@ PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, 
 
     const bool completed = context.engine->rootObjects().first()->property("completed").toBool();
     if (!completed || quit_handler.isQuitRequested()) {
+        const auto receipt=context.onboarding_options_model->setupCommitReceipt();
+        QEventLoop drain;bool drained{false};
+        QObject::connect(context.onboarding_options_model.get(),&OnboardingOptionsModel::shutdownFinished,&drain,[&]{drained=true;drain.quit();});
+        context.onboarding_options_model->beginShutdown();
+        while(!drained)drain.exec();
+        const auto outcome=receipt->load();
         context.close();
-        return PreInitOnboardingStatus::CANCELED;
+        return outcome==OnboardingOptionsModel::SetupFailed||outcome==OnboardingOptionsModel::SetupUncertain?PreInitOnboardingStatus::FAILED:PreInitOnboardingStatus::CANCELED;
     }
 
     if (context.window) context.window->contentItem()->setEnabled(false);
@@ -584,6 +595,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         qt_log_sink.finishAfterGui();
     };
     const auto finish_logging_on_exception = qScopeGuard(finish_qt_logging);
+    const auto startup_failed=std::make_shared<std::atomic_bool>(false);
+    const auto setup_record_failed=std::make_shared<std::atomic_bool>(false);
     const auto run_gui = [&]() -> int {
         noui_connect();
         Q_INIT_RESOURCE(bitcoin_qml);
@@ -817,6 +830,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             });
             context.onboarding_options_model->prepareNode(gArgs, prepare_node);
             while (!preparation_finished) preparation_loop.exec();
+            if (!prepared) return EXIT_FAILURE;
             if (startup_canceled || quit_handler.isQuitRequested()) return EXIT_SUCCESS;
         } else {
             prepared = startup::Run(startup_services, prepare_node);
@@ -842,7 +856,19 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         auto block_clock_history{std::make_shared<BlockClockHistory>()};
         QmlInitExecutor init_executor{*node, [history = block_clock_history, node = node.get(), chain = chain.get()] {
             return SubscribeBlockClockHistory(*node, *chain, history);
-        }, diagnostic_loss};
+        }, diagnostic_loss,[complete_setup=pre_init_onboarding_status==PreInitOnboardingStatus::COMPLETED,startup_failed,setup_record_failed](QmlInitExecutor::StartupOutcome outcome){
+            if(outcome==QmlInitExecutor::StartupOutcome::Cancelled)return;
+            // A runaway exception permits no further Core/settings effects.
+            if(outcome==QmlInitExecutor::StartupOutcome::Uncertain){*startup_failed=true;return;}
+            const bool ready=outcome==QmlInitExecutor::StartupOutcome::Ready;
+            if(!ready)*startup_failed=true;
+            if((ready&&!complete_setup)||!gArgs.GetSettingsPath(nullptr))return;
+            QString error;
+            if(!QmlOnboardingSettings::SetQmlOnboarded(gArgs,ready,&error)){
+                *setup_record_failed=true;
+                InitWarning(Untranslated(QString{QStringLiteral("The startup outcome could not be saved. Setup will need review once settings storage is writable. ")+error}.toStdString()));
+            }
+        }};
         QmlShutdownCoordinator shutdown_coordinator{init_executor};
         QPointer<QQuickWindow> main_window;
         bool shutdown_requested{false};
@@ -1197,7 +1223,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         engine.reset();
         return exit_code;
     };
-    const auto exit_code = run_gui();
+    const auto gui_exit_code = run_gui();
+    const auto exit_code=startup_failed->load()||setup_record_failed->load()?EXIT_FAILURE:gui_exit_code;
     // QApplication and every GUI owner have been destroyed. Flush and join the
     // process writer before deciding the actual externally visible exit status.
     finish_qt_logging();

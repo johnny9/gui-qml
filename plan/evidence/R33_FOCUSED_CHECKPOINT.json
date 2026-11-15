@@ -1,0 +1,66 @@
+{
+  "stage": "R33",
+  "gate": "focused progress accepted; final R42 qualification pending",
+  "accepted_prerequisite": "a8c29d435092e6eb4f7f7ffdb4ce91b56d185784",
+  "tested_application_parent": "c26de2164cd6e88d7eb4f3d0cd8dcc380d7f48af with exact SNAPSHOT_15 overlay",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "current_runs": [
+    {
+      "source": "source14",
+      "kind": "ordinary native/Core",
+      "bodies": 135,
+      "passed": 135,
+      "report": "bazzite/editor-14/artifacts/green/results/report.json"
+    },
+    {
+      "source": "source15",
+      "kind": "focused QML",
+      "bodies": 6,
+      "passed": 6,
+      "report": "macos-10/artifacts/green/focused/report.json"
+    }
+  ],
+  "carry": {
+    "additionalNative": 54,
+    "additionalQML": 77,
+    "uniqueQt": 272,
+    "unit": 181,
+    "Core_integration": 8,
+    "QML": 83,
+    "shared_prerequisite_controls": 19,
+    "functional_scenarios": 2,
+    "ledger": "FOCUSED_BODY_LEDGER.json",
+    "explanation": "Original09 has119Native outside its28actor rows. Current14 reruns46worker+18settingsconsumer+1live from those119. Only54remaining bodies are added here. Current shared19 are distinct prerequisite controls. No repeated count added."
+  },
+  "static": {
+    "source": "source15",
+    "app_lint_exit": 0,
+    "app_lint_report": "lint-06/RESULT.json",
+    "Clang23_tidy_exit": 0,
+    "handwritten_units": 8,
+    "fresh_MOCs": 7,
+    "QML_lint_both_variants_exit": 0,
+    "report": "local-03/QUALIFICATION.json"
+  },
+  "toolchains": {
+    "ordinaryLinux": "Bazzite Qt6.4.2/GCC13 pinned c30 image",
+    "QMLmacOS": "ARM Qt6.11.2/AppleClang21",
+    "requiredCIstatic": "Linux Qt6.10.2/Clang23 + pinned Bitcoin plugin/imagea4"
+  },
+  "negative_controls": "Original baseline preservation/policy and exact-parent frame/fatal/input/navigation/proxy/signer controls retain intended assertion failures; raw failures are never converted to passes. See task HANDOFF.md and raw directories.",
+  "upstream_limits": [
+    "foreign Core/RPC/file writers lack shared expected-version atomic persistence/receipt API",
+    "preinit lacks typed pruned-history capability; warning remains conservative",
+    "structured proxy forms stay read-only; documented Native grammar adapter retains complete routes"
+  ],
+  "unclaimed": [
+    "exhaustive100percent coverage/function/profile/macro qualification",
+    "full suites",
+    "ASan/LSan/UBSan/integer/TSan/MSan final combined series",
+    "Qt/platform/config matrices including nativeWindows"
+  ],
+  "scope_count": 30,
+  "scope_map": "plan/R33_SCOPE_MAP.json",
+  "canonical_main": "parent integrates separately; no current main combined smoke claimed",
+  "artifacts_root": ".validation/qt6-r11-r40-20261114/R33/"
+}

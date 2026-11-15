@@ -46,6 +46,9 @@
         <file>components/SettingsRestartNotice.qml</file>
         <file>components/SettingsSidebar.qml</file>
         <file>components/SettingsView.qml</file>
+        <file>components/SettingsEditorBar.qml</file>
+        <file>components/EffectiveSettingRow.qml</file>
+        <file>pages/settings/EffectiveSettingsPage.qml</file>
         <file>components/StorageLocations.qml</file>
         <file>components/Separator.qml</file>
         <file>components/StorageOptions.qml</file>

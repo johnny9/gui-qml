@@ -133,6 +133,7 @@ TestCase {
         tryCompare(Theme, "dark", true)
         Theme.blockclocksize = 5 / 12
         tryCompare(Theme, "blockclocksize", 5 / 12)
+        optionsModel.resetSettingsEditorsForTest()
         optionsModel.settingsReady = true
         optionsModel.settingsPending = false
         optionsModel.settingsError = ""
@@ -159,6 +160,10 @@ TestCase {
         testNetworkTrafficTower.active = false
         testDebugLogModel.active = false
     }
+
+    function readyEditor(view) { tryCompare(view.settingsEditor, "fresh", true) }
+    function editSetting(view, key, value) { const input = findChild(view, key + "SettingInput"); verify(input !== null); input.text = value; input.textEdited(); tryCompare(view.settingsEditor.entry(key), "text", value); tryCompare(view.settingsEditor, "inputPending", false) }
+    function saveSettings(view) { tryCompare(view.settingsEditor, "canSave", true); const before = view.settingsEditor.saveResult.operationId; findChild(view, "settingsSaveBatchButton").clicked(); tryVerify(() => view.settingsEditor.saveResult.persisted && view.settingsEditor.saveResult.operationId !== before); tryCompare(view.settingsEditor, "busy", false) }
 
     function test_pendingSettingsAndSaveErrorRemainVisible() {
         const view = createTemporaryObject(settingsViewComponent, host)
@@ -194,7 +199,7 @@ TestCase {
         for (const section of ["wallet", "network-traffic", "mempool", "rpc-console", "debug-log", "about"]) {
             view.selectSection(section)
             compare(view.pageContainer.currentItem.enabled, true, section)
-            if (section === "mempool") compare(findChild(view, "mempoolSizeLimitInput").enabled, false)
+            if (section === "mempool") compare(findChild(view, "maxmempoolSettingInput").enabled, false)
         }
         view.selectSection("wallet")
         const walletStack = findChild(view, "walletSettingsStack")
@@ -213,58 +218,38 @@ TestCase {
     }
 
     function test_pendingSavePreservesPushedProxyDraft() {
-        const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem,
-            { "wallet": testWalletModel })
-        view.selectSection("connection")
-        findChild(view, "proxySettingsRow").clicked()
-        tryCompare(view.pageContainer, "depth", 2)
-        const proxyPage = view.pageContainer.currentItem
-        const save = findChild(proxyPage, "proxySettingsSaveButton")
-        settingsWindow.requestActivate()
-        tryCompare(settingsWindow, "active", true)
-        tryCompare(view.pageContainer.stack, "busy", false)
-        mouseClick(findChild(proxyPage, "proxyEnableSwitch"))
-        tryCompare(proxyPage, "draftProxyEnabled", true)
-        const input = findChild(proxyPage, "proxyAddressInput")
-        input.forceActiveFocus()
-        tryCompare(input, "activeFocus", true)
-        input.selectAll()
-        keyClick(Qt.Key_Backspace)
+        const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem, {wallet: testWalletModel})
+        view.selectSection("connection"); readyEditor(view)
+        const page = view.pageContainer.currentItem
+        const input = findChild(page, "proxySettingInput")
+        settingsWindow.requestActivate(); tryCompare(settingsWindow, "active", true)
+        input.forceActiveFocus(); tryCompare(input, "activeFocus", true)
+        input.selectAll(); keyClick(Qt.Key_Backspace)
         const address = "10.0.0.1:9050"
-        for (let index = 0; index < address.length; ++index) keyClick(address.charAt(index))
-        compare(input.text, address)
-        compare(proxyPage.draftProxyAddress, address)
-        tryCompare(proxyPage.proxyDraft, "pending", false)
-        verify(proxyPage.proxyDraftDirty)
-        verify(save.enabled)
-        view.selectSection("display")
-        findChild(view, "displayLanguageRow").clicked()
-        tryCompare(view.pageContainer, "depth", 2)
+        for (let i = 0; i < address.length; ++i) keyClick(address.charAt(i))
+        tryCompare(view.settingsEditor.entry("proxy"), "text", address)
+        tryCompare(view.settingsEditor, "dirty", true)
+        view.selectSection("display"); tryCompare(view.settingsEditor, "closeQuestion", true)
+        compare(view.selectedSectionId, "connection")
+        findChild(view, "settingsCloseKeep").clicked(); tryCompare(view.settingsEditor, "closeQuestion", false)
         optionsModel.settingsPending = true
-        compare(view.pageContainer.currentItem.enabled, false)
-        view.selectSection("connection")
-        compare(view.pageContainer.currentItem, proxyPage)
-        compare(save.enabled, false)
-        compare(proxyPage.draftProxyAddress, "10.0.0.1:9050")
-        tryCompare(proxyPage.proxyDraft, "pending", false)
-        verify(proxyPage.proxyDraftDirty)
+        tryCompare(page, "enabled", false)
+        compare(view.settingsEditor.entry("proxy").text, address)
+        compare(findChild(view, "settingsSaveBatchButton").enabled, false)
+        optionsModel.settingsPending = false; tryCompare(page, "enabled", true)
+        compare(view.pageContainer.currentItem, page)
+        compare(view.settingsEditor.entry("proxy").text, address)
+        saveSettings(view)
+        compare(view.settingsEditor.entry("proxy").nextStartText, address)
+        compare(optionsModel.settingsWritesForTest(), 1)
         view.selectSection("wallet")
         const walletStack = findChild(view, "walletSettingsStack")
-        verify(walletStack !== null)
-        findChild(walletStack, "walletPasswordRow").clicked()
+        verify(walletStack !== null); walletStack.openPassword(false)
         tryCompare(walletStack, "depth", 2)
         compare(walletStack.currentItem.enabled, true)
         view.selectSection("connection")
-        optionsModel.settingsPending = false
-        tryCompare(save, "enabled", true)
-        compare(view.pageContainer.currentItem, proxyPage)
-        compare(view.pageContainer.depth, 2)
-        compare(proxyPage.draftProxyAddress, address)
-        tryCompare(proxyPage.proxyDraft, "pending", false)
-        verify(proxyPage.proxyDraftDirty)
-        mouseClick(save)
-        tryCompare(view.pageContainer, "depth", 1)
-        compare(optionsModel.coreSettings.entry("proxy").address, "10.0.0.1:9050")
+        compare(view.pageContainer.currentItem, page)
+        compare(view.settingsEditor.entry("proxy").text, address)
     }
 
     function finishSignerDiscovery() {
@@ -277,6 +262,7 @@ TestCase {
         finishSignerDiscovery()
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
         view.selectSection("external-signer")
+        readyEditor(view)
         const page = view.pageContainer.currentItem
         const input = findChild(page, "externalSignerPathInput")
         const indicator = findChild(page, "externalSignerStatusIndicator")
@@ -290,9 +276,10 @@ TestCase {
         compare(walletController.signers.effectivePath, executable)
         verify(page.signerConnected)
         compare(walletController.signerEnumerationCalls, initialScans)
-        compare(check.text, "Save and check")
+        tryCompare(check, "text", "Save and check")
         check.clicked()
-        verify(walletController.signers.saving)
+        tryVerify(() => view.settingsEditor.saveResult.persisted)
+        tryVerify(() => walletController.signers.pending)
         compare(page.signerConnected, false)
         tryCompare(indicator, "color", Theme.color.neutral7)
         finishSignerDiscovery()
@@ -303,26 +290,53 @@ TestCase {
         compare(check.text, "Check device")
     }
 
+    function test_pendingSignerInputCannotRefreshTheEffectiveDevice() {
+        const executable = walletController.signerExecutableForTest()
+        walletController.setSignerFixtureForTest(executable, "00000001", "Original device", "")
+        finishSignerDiscovery()
+        const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
+        view.selectSection("external-signer"); readyEditor(view); finishSignerDiscovery()
+        const page = view.pageContainer.currentItem
+        const input = findChild(page, "externalSignerPathInput")
+        const check = findChild(page, "externalSignerCheckDeviceButton")
+        const scans = walletController.signerEnumerationCalls
+        input.text = executable + " --pending-edit"; input.textEdited()
+        verify(view.settingsEditor.inputPending)
+        compare(check.enabled, false)
+        check.clicked()
+        tryCompare(view.settingsEditor, "inputPending", false)
+        finishSignerDiscovery()
+        compare(check.text, "Save and check")
+        compare(walletController.signerEnumerationCalls, scans)
+        compare(walletController.signerConfigurationWrites, 0)
+        compare(walletController.signers.effectivePath, executable)
+        compare(optionsModel.settingsWritesForTest(), 0)
+    }
+
     function test_invalidSignerValidationAndFailedSaveDoNotRescan() {
         const executable = walletController.signerExecutableForTest()
         walletController.setSignerFixtureForTest(executable, "00000001", "Old device", "")
         finishSignerDiscovery()
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
         view.selectSection("external-signer")
+        readyEditor(view)
         const page = view.pageContainer.currentItem
         const input = findChild(page, "externalSignerPathInput")
         const check = findChild(page, "externalSignerCheckDeviceButton")
         finishSignerDiscovery()
         const initialScans = walletController.signerEnumerationCalls
-        input.text = "/missing/r15/hwi"; input.textEdited(); check.clicked()
+        input.text = "/missing/r15/hwi"; input.textEdited(); tryCompare(check, "text", "Save and check"); check.clicked()
         finishSignerDiscovery()
-        compare(walletController.signers.editError.code, SignerDiscoveryError.InvalidPath)
+        tryVerify(() => view.settingsEditor.error.length > 0)
         verify(findChild(page, "externalSignerEditErrorText").text.indexOf("does not exist") >= 0)
         compare(walletController.signers.effectivePath, executable)
         compare(walletController.signerEnumerationCalls, initialScans)
         input.text = executable + " --different"; input.textEdited()
-        walletController.setSignerSaveErrorForTest("Save failed.")
-        check.clicked(); finishSignerDiscovery()
+        optionsModel.rejectSettingsForTest("Save failed.")
+        tryCompare(view.settingsEditor.entry("signer"), "text", executable + " --different")
+        tryCompare(view.settingsEditor, "inputPending", false)
+        tryCompare(check, "text", "Save and check")
+        check.clicked(); tryCompare(view.settingsEditor, "error", "Save failed."); finishSignerDiscovery()
         compare(findChild(page, "externalSignerEditErrorText").text, "Save failed.")
         compare(walletController.signers.effectivePath, executable)
         compare(walletController.signerEnumerationCalls, initialScans)
@@ -333,7 +347,7 @@ TestCase {
         walletController.setSignerFixtureForTest(executable, "00000001", "CLI device", "", true)
         finishSignerDiscovery()
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
-        view.selectSection("external-signer"); finishSignerDiscovery()
+        view.selectSection("external-signer"); readyEditor(view); finishSignerDiscovery()
         const page = view.pageContainer.currentItem
         verify(findChild(page, "externalSignerPathInput").readOnly)
         verify(page.signerConnected)
@@ -351,7 +365,7 @@ TestCase {
         walletController.setSignerFixtureForTest(executable, "00000001", "Device", "")
         finishSignerDiscovery()
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
-        view.selectSection("external-signer"); finishSignerDiscovery()
+        view.selectSection("external-signer"); readyEditor(view); finishSignerDiscovery()
         const page = view.pageContainer.currentItem
         verify(page.signerConnected)
         const scans = walletController.signerEnumerationCalls
@@ -370,7 +384,7 @@ TestCase {
         const executable = walletController.signerExecutableForTest()
         walletController.setSignerFixtureForTest(executable, "00000001", "Device", "Unlock using promptpin and sendpin.")
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
-        view.selectSection("external-signer"); finishSignerDiscovery()
+        view.selectSection("external-signer"); readyEditor(view); finishSignerDiscovery()
         const page = view.pageContainer.currentItem
         compare(page.signerConnected, false)
         compare(page.signerStatusText, "Unlock using promptpin and sendpin.")
@@ -1057,142 +1071,69 @@ TestCase {
 
     function test_mempoolPageUsesStandardFormRows() {
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
-        verify(view !== null)
-        view.selectSection("mempool")
-
-        const transactionsRow = findChild(view, "mempoolTransactionsRow")
-        const memoryUsedRow = findChild(view, "mempoolMemoryUsedRow")
-        const sizeLimitRow = findChild(view, "mempoolSizeLimitRow")
-        const sizeLimitInput = findChild(view, "mempoolSizeLimitInput")
-
-        verify(transactionsRow !== null)
-        verify(memoryUsedRow !== null)
-        verify(sizeLimitRow !== null)
-        verify(sizeLimitInput !== null)
-        compare(transactionsRow.titleTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
-        compare(transactionsRow.valueTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
-        compare(memoryUsedRow.valueTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
-
-        sizeLimitRow.text = "512"
-        sizeLimitRow.editingFinished()
-        compare(optionsModel.maxMempoolSizeMB, 512)
-        compare(sizeLimitRow.errorText, "")
-
-        sizeLimitRow.text = "0"
-        sizeLimitRow.editingFinished()
-        compare(optionsModel.maxMempoolSizeMB, 512)
-        verify(sizeLimitRow.errorText.length > 0)
+        verify(view !== null); view.selectSection("mempool"); readyEditor(view)
+        const transactions = findChild(view, "mempoolTransactionsRow")
+        const memory = findChild(view, "mempoolMemoryUsedRow")
+        const limit = findChild(view, "effectiveSetting_maxmempool")
+        verify(transactions !== null); verify(memory !== null); verify(limit !== null)
+        compare(transactions.titleTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
+        compare(transactions.valueTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
+        compare(memory.valueTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
+        compare(limit.titleTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
+        editSetting(view, "maxmempool", "512")
+        compare(optionsModel.settingsWritesForTest(), 0)
+        saveSettings(view)
+        compare(view.settingsEditor.entry("maxmempool").nextStartText, "512")
+        editSetting(view, "maxmempool", "0")
+        tryCompare(view.settingsEditor, "canSave", true)
+        compare(view.settingsEditor.entry("maxmempool").error, "")
+        // Core's documented zero value means no memory limit.
+        saveSettings(view); compare(view.settingsEditor.entry("maxmempool").nextStartText, "0")
+        editSetting(view, "maxmempool", "0x")
+        compare(view.settingsEditor.canSave, false)
+        verify(view.settingsEditor.entry("maxmempool").error.length > 0)
+        compare(optionsModel.settingsWritesForTest(), 2)
     }
 
     function test_mempoolPollingAndRestartNoticeFollowVisibility() {
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
-        verify(view !== null)
-        compare(nodeModel.mempoolInfoPollingActive, false)
-
-        view.selectSection("mempool")
-        const mempoolPage = findChild(view, "mempoolSettingsPage")
-        const restartNotice = findChild(view, "mempoolRestartNotice")
-        verify(mempoolPage !== null)
-        verify(restartNotice !== null)
-        tryCompare(nodeModel, "mempoolInfoPollingActive", true)
-        compare(restartNotice.visible, false)
-
-        optionsModel.mempoolSettingsDirty = true
-        tryCompare(restartNotice, "visible", true)
-
-        view.selectSection("display")
-        tryCompare(nodeModel, "mempoolInfoPollingActive", false)
-        compare(findChild(view, "mempoolSettingsPage"), mempoolPage)
-
-        view.selectSection("mempool")
-        tryCompare(nodeModel, "mempoolInfoPollingActive", true)
-        view.visible = false
-        tryCompare(nodeModel, "mempoolInfoPollingActive", false)
-        view.visible = true
-        tryCompare(nodeModel, "mempoolInfoPollingActive", true)
-
-        view.destroy()
-        wait(0)
-        compare(nodeModel.mempoolInfoPollingActive, false)
+        verify(view !== null); compare(nodeModel.mempoolInfoPollingActive, false)
+        view.selectSection("mempool"); readyEditor(view)
+        const page = findChild(view, "mempoolSettingsPage")
+        const notice = findChild(view, "settingsRestartNotice")
+        verify(page !== null); verify(notice !== null)
+        tryCompare(nodeModel, "mempoolInfoPollingActive", true); compare(notice.visible, false)
+        editSetting(view, "maxmempool", "512"); saveSettings(view)
+        tryCompare(notice, "visible", true)
+        view.selectSection("display"); tryCompare(nodeModel, "mempoolInfoPollingActive", false)
+        compare(findChild(view, "mempoolSettingsPage"), page)
+        compare(notice.visible, true) // Required restart is global, not tab-local.
+        view.selectSection("mempool"); tryCompare(nodeModel, "mempoolInfoPollingActive", true)
+        view.visible = false; tryCompare(nodeModel, "mempoolInfoPollingActive", false)
+        view.visible = true; tryCompare(nodeModel, "mempoolInfoPollingActive", true)
+        view.destroy(); wait(0); compare(nodeModel.mempoolInfoPollingActive, false)
     }
 
     function test_connectionProxyPageUsesRedesignedFormAndDraftCommit() {
         const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
-        verify(view !== null)
-        view.selectSection("connection")
-
-        const proxySettingsRow = findChild(view, "proxySettingsRow")
-        verify(proxySettingsRow !== null)
-        proxySettingsRow.clicked()
-        tryCompare(view.pageContainer, "depth", 2)
-
-        const proxyPage = findChild(view, "proxySettingsPage")
-        const defaultProxySection = findChild(view, "defaultProxySection")
-        const torProxySection = findChild(view, "torProxySection")
-        const proxySwitch = findChild(view, "proxyEnableSwitch")
-        const proxyAddressRow = findChild(view, "proxyAddressRow")
-        const saveButton = findChild(view, "proxySettingsSaveButton")
-
-        verify(proxyPage !== null)
-        verify(defaultProxySection !== null)
-        verify(torProxySection !== null)
-        verify(proxySwitch !== null)
-        verify(proxyAddressRow !== null)
-        verify(saveButton !== null)
-        compare(saveButton.text, "Save")
-        compare(saveButton.enabled, false)
-        compare(saveButton.parent, torProxySection.parent)
-        verify(saveButton.y >= torProxySection.y + torProxySection.height)
-        compare(proxyAddressRow.titleTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
-        compare(proxyAddressRow.enabled, false)
-
-        tryCompare(proxyPage.proxyDraft, "ready", true)
-        proxySwitch.checked = true
-        proxySwitch.toggled()
-        compare(proxyPage.draftProxyEnabled, true)
-        compare(proxyAddressRow.enabled, true)
-
-        proxySwitch.checked = false
-        proxySwitch.toggled()
-        tryCompare(proxyPage.proxyDraft, "pending", false)
-        compare(proxyPage.proxyDraftDirty, false)
-        compare(saveButton.enabled, false)
-
-        tryCompare(proxyPage.proxyDraft, "ready", true)
-        proxySwitch.checked = true
-        proxySwitch.toggled()
-        tryCompare(proxyPage.proxyDraft, "pending", false)
-        compare(proxyPage.proxyDraftDirty, true)
-        compare(saveButton.enabled, true)
-
-        proxyAddressRow.text = ""
-        proxyAddressRow.textEdited(proxyAddressRow.text)
-        tryVerify(function() { return !proxyPage.proxyDraft.pending && proxyPage.draftProxyValidationError.length > 0 })
-        compare(saveButton.enabled, false)
-
-        proxyAddressRow.text = "10.0.0.1:9050"
-        proxyAddressRow.textEdited(proxyAddressRow.text)
-        tryCompare(proxyPage.proxyDraft, "pending", false)
-        compare(proxyPage.proxyDraftDirty, true)
-        tryCompare(proxyPage.proxyDraft, "pending", false)
-        compare(proxyPage.draftProxyValidationError, "")
-        compare(saveButton.enabled, true)
-
-        proxyPage.back()
-        tryCompare(view.pageContainer, "depth", 2)
-        const discardPopup = findChild(settingsWindow.contentItem, "discardProxyChangesPopup")
-        verify(discardPopup !== null)
-        tryCompare(discardPopup, "opened", true)
-        const cancelButton = findChild(settingsWindow.contentItem, "discardProxyChangesCancelButton")
-        verify(cancelButton !== null)
-        cancelButton.clicked()
-        tryCompare(discardPopup, "opened", false)
-
-        saveButton.clicked()
-        tryCompare(view.pageContainer, "depth", 1)
-        const proxySetting = optionsModel.coreSettings.entry("proxy")
-        compare(proxySetting.enabled, true)
-        compare(proxySetting.address, "10.0.0.1:9050")
+        verify(view !== null); view.selectSection("connection"); readyEditor(view)
+        const page = findChild(view, "connectionSettingsPage")
+        const row = findChild(page, "effectiveSetting_proxy")
+        const input = findChild(page, "proxySettingInput")
+        const save = findChild(view, "settingsSaveBatchButton")
+        verify(page !== null); verify(row !== null); verify(input !== null); verify(save !== null)
+        compare(row.titleTextStyle.font.pixelSize, Theme.text.description.font.pixelSize)
+        compare(save.enabled, false)
+        editSetting(view, "proxy", "10.0.0.1:9050")
+        tryCompare(view.settingsEditor, "canSave", true)
+        compare(optionsModel.settingsWritesForTest(), 0)
+        view.selectSection("display"); tryCompare(view.settingsEditor, "closeQuestion", true)
+        compare(view.selectedSectionId, "connection")
+        findChild(view, "settingsCloseKeep").clicked(); tryCompare(view.settingsEditor, "closeQuestion", false)
+        compare(input.text, "10.0.0.1:9050")
+        saveSettings(view)
+        compare(view.settingsEditor.entry("proxy").nextStartText, "10.0.0.1:9050")
+        compare(optionsModel.settingsWritesForTest(), 1)
     }
 
     function test_settingsViewCanInstantiateEveryVisibleTopLevelDestination() {
@@ -1257,7 +1198,8 @@ TestCase {
                 compare(signerPathRow.bottomPadding, 16)
                 compare(signerFooter.text,
                     "The add wallet flow can offer external wallets when exactly one supported signer is connected.")
-                compare(signerStatusIndicator.color, Theme.color.red)
+                finishSignerDiscovery()
+                tryCompare(signerStatusIndicator, "color", Theme.color.green)
                 compare(checkDeviceButton.text, "Check device")
                 compare(signerPathInput.implicitHeight, 37)
                 compare(signerPathInput.leftPadding, 15)

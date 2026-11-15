@@ -294,10 +294,35 @@ OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, ArgsManager& args, exec
         if(observer&&!observer->m_stopping)Q_EMIT observer->settingsOperationChanged();
     },[](CoreSettingsModel::EffectContext opaque){const auto context=std::static_pointer_cast<const NativeSettingsWrite>(opaque);
         if(context&&context->receipt->load()==SettingsPending)context->receipt->store(SettingsFailed);});
-    connect(&m_core_settings,&CoreSettingsModel::operationChanged,this,[this]{if(m_stopping)return;const QPointer<OptionsQmlModel> guard{this};Q_EMIT settingsPendingChanged();if(guard&&!m_stopping)Q_EMIT settingsErrorChanged();});
+    connect(&m_core_settings,&CoreSettingsModel::operationChanged,this,[this]{if(m_stopping)return;const QPointer<OptionsQmlModel> guard{this};Q_EMIT settingsPendingChanged();if(guard&&!m_stopping)Q_EMIT settingsErrorChanged();if(guard&&!m_stopping)Q_EMIT pruneTargetInputChanged();});
     runCommand([](interfaces::Node&, ArgsManager&) { return QString{}; });
 }
 
+SettingsEditorModel* OptionsQmlModel::createSettingsEditor()
+{
+    if(m_stopping)return nullptr;
+    m_editors.removeIf([](const auto& editor){return !editor;});
+    if(m_editors.size()>=16){setError(tr("Close another settings editor before opening a new one."));return nullptr;}
+    SettingsEditorModel* editor{nullptr};
+    const bool admitted=m_work->submitAsync<bool>([&](auto done,auto){
+        auto ports=SettingsEditorModel::PublicPorts(m_node,m_args,m_services);
+        ports.retired=[done]{done(true);};
+        editor=new SettingsEditorModel(std::move(ports),this);
+        return true;
+    },[](bool){},[](std::exception_ptr){});
+    if(!admitted)return nullptr;
+    m_editors.push_back(editor);
+    const auto previous=std::make_shared<QString>();
+    connect(editor,&SettingsEditorModel::changed,this,[this,editor,previous]{
+        if(m_stopping||!editor->lastSavePresent()||!editor->lastSavePersisted()||*previous==editor->lastSaveId())return;
+        *previous=editor->lastSaveId();
+        const QPointer<OptionsQmlModel> guard{this};
+        runCommand([](interfaces::Node&,ArgsManager&){return QString{};});
+        if(guard&&m_signer_model)m_signer_model->refresh();
+    });
+    connect(editor,&SettingsEditorModel::closed,editor,[editor]{const QPointer<SettingsEditorModel> guard{editor};editor->retire([guard]{if(guard)guard->deleteLater();});});
+    return editor;
+}
 OptionsQmlModel::~OptionsQmlModel()
 {
     closeAdmission();
@@ -307,6 +332,7 @@ void OptionsQmlModel::closeAdmission()
 {
     m_stopping=true; m_pending=false; m_forwarded_signer_pending=false; m_validation_pending=false;m_signer_validation_pending=false; ++m_signer_validation_revision;
     m_work->close();m_links.reset();m_core_settings.closeAdmission();
+    for(const auto& editor:m_editors)if(editor)editor->retire();
 }
 void OptionsQmlModel::beginShutdown()
 {
@@ -477,8 +503,7 @@ bool OptionsQmlModel::connectionSettingsDirty() const
 bool OptionsQmlModel::storageSettingsDirty() const
 {
     const QmlCoreSettings::Values& values = m_core_settings.values();
-    if (values.prune != m_initial_core_values.prune) return true;
-    return values.prune && values.prune_size_gb != m_initial_core_values.prune_size_gb;
+    return !QmlCoreSettings::CoreSettingValuesEqual(QStringLiteral("prune"), QmlCoreSettings::PruneSetting(values), QmlCoreSettings::PruneSetting(m_initial_core_values));
 }
 
 bool OptionsQmlModel::developerSettingsDirty() const
@@ -493,8 +518,7 @@ bool OptionsQmlModel::restartRequired() const
            storageSettingsDirty() ||
            developerSettingsDirty() ||
            mempoolSettingsDirty() ||
-           proxySettingsDirty() ||
-           walletSettingsDirty();
+           proxySettingsDirty();
 }
 
 QVariantMap OptionsQmlModel::coreSettingStatuses() const

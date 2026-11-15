@@ -12,6 +12,19 @@ Popup {
     property string closeButtonObjectName: "onboardingSettingsCloseButton"
     property real verticalOffset: 0
     readonly property alias pageStack: pages
+    readonly property SettingsPage currentSettingsPage: pages.currentItem as SettingsPage
+    property bool exitPending: false
+    function requestClose() {
+        if (root.exitPending) return
+        root.exitPending = true
+        if (root.currentSettingsPage) root.currentSettingsPage.requestExit()
+        else root.close()
+    }
+    Connections {
+        target: root.currentSettingsPage
+        function onExitAllowed() { if (root.exitPending) root.close() }
+        function onExitCancelled() { root.exitPending = false }
+    }
 
     parent: Overlay.overlay
     width: Math.min(532, parent ? parent.width - 32 : 532)
@@ -23,7 +36,7 @@ Popup {
     modal: true
     dim: true
     focus: true
-    closePolicy: Popup.CloseOnEscape
+    closePolicy: Popup.NoAutoClose
 
     background: Rectangle {
         radius: 16
@@ -92,6 +105,8 @@ Popup {
 
     contentItem: Item {
         clip: true
+        focus: true
+        Keys.onEscapePressed: function(event) { event.accepted = true; root.requestClose() }
 
         PageStack {
             id: pages
@@ -107,9 +122,13 @@ Popup {
             z: 2
             buttonSize: CloseButton.Medium
             backgroundColor: Theme.color.neutral2
-            onClicked: root.close()
+            onClicked: root.requestClose()
         }
     }
 
-    onClosed: if (pages.depth > 1) pages.pop(null, StackView.Immediate)
+    onOpened: root.exitPending = false
+    onClosed: {
+        root.exitPending = false
+        if (pages.depth > 1) pages.pop(null, StackView.Immediate)
+    }
 }

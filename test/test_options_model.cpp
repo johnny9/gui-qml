@@ -864,6 +864,7 @@ void OptionsModelTests::walletSettingsDirtyTracksExternalSignerPath()
     model.setExternalSignerPath(QCoreApplication::applicationFilePath());
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(model.walletSettingsDirty());
+    QVERIFY2(!model.restartRequired(), "A confirmed live signer-path application must not request a restart.");
 
     model.setExternalSignerPath("");
     QTRY_VERIFY(!model.settingsPending());

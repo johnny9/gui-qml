@@ -27,6 +27,10 @@ Page {
     readonly property alias scrollView: scrollView
     readonly property alias contentLayout: contentLayout
 
+    signal exitAllowed()
+    signal exitCancelled()
+    function requestExit() { root.exitAllowed() }
+
     signal back
 
     background: null

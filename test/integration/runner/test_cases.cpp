@@ -18,7 +18,7 @@ std::span<const IntegrationTestModule> IntegrationTestModules()
         {"lifecycle", node_modes, CreateLifecycleTests, 1},
         {"navigation", node_modes, CreateNavigationTests, 2},
         {"blockclock", node_modes, CreateBlockClockTests, 2},
-        {"settings", node_modes, CreateSettingsTests, 2},
+        {"settings", node_modes, CreateSettingsTests, 2, SettingsTestArguments},
         {"node", node_modes, CreateNodeTests, 3},
         {"debug-log", node_modes, CreateDebugLogTests, 3, DebugLogTestArguments},
         {"console", node_modes, CreateConsoleTests, 3},

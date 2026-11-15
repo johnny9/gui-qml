@@ -15,10 +15,14 @@ SettingsPage {
     title: qsTr("External signer")
     showBackButton: false
 
+    property SettingsEditorModel editor: null
+    readonly property SettingsEntryModel signerEntry: editor ? editor.entry("signer") : null
+    readonly property bool savingConfiguration: editor ? editor.phase === SettingsEditorModel.Checking || editor.phase === SettingsEditorModel.Saving : discovery && discovery.saving
+    readonly property bool canApplyConfiguration: editor ? editor.canSave : discovery && discovery.canApply
     readonly property SignerDiscoveryModel discovery: ApplicationModels.signers
-    readonly property bool signerConnected: discovery && discovery.fresh && discovery.uniqueSignerId.length > 0
+    readonly property bool signerConnected: discovery && !savingConfiguration && discovery.fresh && discovery.uniqueSignerId.length > 0
     readonly property string signerStatusText: !discovery ? qsTr("Signer discovery is unavailable.")
-        : discovery.saving ? qsTr("Saving signer configuration…")
+        : savingConfiguration ? qsTr("Saving signer configuration…")
         : discovery.pending ? qsTr("Checking external signer…")
         : discovery.error.message.length > 0 ? discovery.error.message
         : signerConnected ? qsTr("Detected external signer: %1").arg(discovery.uniqueSignerName)
@@ -59,9 +63,9 @@ SettingsPage {
                         objectName: "externalSignerPathInput"
                         Layout.fillWidth: true
                         implicitHeight: 37
-                        text: root.discovery ? root.discovery.editedPath : ""
+                        text: root.signerEntry ? root.signerEntry.text : root.discovery ? root.discovery.editedPath : ""
                         maximumLength: 32769
-                        readOnly: !root.discovery || !root.discovery.configurationKnown || !root.discovery.editable || root.discovery.saving
+                        readOnly: root.editor ? !root.signerEntry || !root.signerEntry.editable : !root.discovery || !root.discovery.configurationKnown || !root.discovery.editable || root.discovery.saving
                         placeholderText: qsTr("Enter external signer path")
                         placeholderTextColor: Theme.color.neutral7
                         color: Theme.color.neutral9
@@ -87,7 +91,7 @@ SettingsPage {
                                 rightMargin: -2
                             }
                         }
-                        onTextEdited: if (root.discovery) root.discovery.editPath(text)
+                        onTextEdited: if (root.signerEntry) root.signerEntry.editText(text); else if (root.discovery) root.discovery.editPath(text)
                         onAccepted: focus = false
                     }
 
@@ -102,7 +106,7 @@ SettingsPage {
                             Layout.alignment: Qt.AlignTop
                             Layout.topMargin: 4
                             radius: width / 2
-                            color: !root.discovery || !root.discovery.fresh ? Theme.color.neutral7
+                            color: !root.discovery || root.savingConfiguration || !root.discovery.fresh ? Theme.color.neutral7
                                 : root.signerConnected ? Theme.color.green : Theme.color.red
 
                             Behavior on color {
@@ -129,10 +133,14 @@ SettingsPage {
                     Layout.preferredWidth: 140
                     Layout.preferredHeight: 40
                     Layout.alignment: Qt.AlignVCenter
-                    text: root.discovery && root.discovery.canApply ? qsTr("Save and check") : qsTr("Check device")
+                    text: root.editor && root.editor.inputPending ? qsTr("Checking edited path…") : root.canApplyConfiguration ? qsTr("Save and check") : qsTr("Check device")
                     textStyle: Theme.text.subheading
-                    enabled: root.discovery && (root.discovery.canApply || root.discovery.canRefresh)
-                    onClicked: if (root.discovery.canApply) root.discovery.apply(); else root.discovery.refresh()
+                    enabled: root.discovery && (!root.editor || !root.editor.inputPending) && !root.savingConfiguration && (root.canApplyConfiguration || root.discovery.canRefresh)
+                    onClicked: {
+                        if (!enabled) return
+                        if (root.canApplyConfiguration) { if (root.editor) root.editor.save(); else root.discovery.apply(); }
+                        else root.discovery.refresh()
+                    }
                 }
             }
         }
@@ -141,7 +149,7 @@ SettingsPage {
     CoreText {
         objectName: "externalSignerEditErrorText"
         Layout.fillWidth: true
-        text: root.discovery ? root.discovery.editError.message : ""
+        text: root.editor ? root.signerEntry.error || root.editor.error : root.discovery ? root.discovery.editError.message : ""
         visible: text.length > 0
         color: Theme.color.red
         wrap: true
@@ -150,7 +158,7 @@ SettingsPage {
         objectName: "externalSignerEffectiveConfigurationText"
         Layout.fillWidth: true
         text: root.discovery && root.discovery.configurationSource === "CommandLine" ? qsTr("Set by command line. Remove the override to edit it here.")
-            : root.discovery && root.discovery.editedPath !== root.discovery.effectivePath ? qsTr("The edited path has not been applied. Device status refers to the effective configuration.") : ""
+            : root.discovery && (root.signerEntry ? root.signerEntry.text : root.discovery.editedPath) !== root.discovery.effectivePath ? qsTr("The edited path has not been applied. Device status refers to the effective configuration.") : ""
         visible: text.length > 0
         wrap: true
     }

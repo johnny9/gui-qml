@@ -15,6 +15,7 @@
 #include <mapport.h>
 #include <net.h>
 #include <qml/core_settings.h>
+#include <qml/effectivesettings.h>
 #include <qml/datadir.h>
 #include <qml/guiargs.h>
 #include <qml/legacy_settings_migration.h>
@@ -26,6 +27,7 @@
 #endif
 
 #include <QFileInfo>
+#include <QScopeGuard>
 
 #include <map>
 #include <optional>
@@ -265,22 +267,7 @@ bool EnsureSettingsDirectory(ArgsManager& args, const fs::path& settings_path, Q
     return true;
 }
 
-bool WriteSettingsFile(ArgsManager& args, QString* error)
-{
-    fs::path settings_path;
-    if (!args.GetSettingsPath(&settings_path)) {
-        if (error) error->clear();
-        return true;
-    }
-    if (!EnsureSettingsDirectory(args, settings_path, error)) return false;
-    std::vector<std::string> settings_errors;
-    if (!args.WriteSettingsFile(&settings_errors)) {
-        if (error) *error = QString::fromStdString(settings_errors.empty() ? std::string{"Settings file could not be written."} : settings_errors.front());
-        return false;
-    }
-    if (error) error->clear();
-    return true;
-}
+
 
 std::optional<bool> CommandLineBoolArg(ArgsManager& args, const std::string& name)
 {
@@ -505,13 +492,15 @@ PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc,
     return Preview(argv, can_listen_ipc, DataDirSelection{data_dir, DataDirSource::UserSelection});
 }
 
-bool MarkQmlOnboarded(ArgsManager& args, QString* error)
+bool SetQmlOnboarded(ArgsManager& args,bool completed,QString* error)
 {
-    QmlCoreSettings::SetRwSetting(args, QString::fromLatin1(QML_ONBOARDED_KEY), common::SettingsValue{true});
-    return WriteSettingsFile(args, error);
+    fs::path path;if(args.GetSettingsPath(&path)&&!EnsureSettingsDirectory(args,path,error))return false;
+    return QmlCoreSettings::PersistSettings(args,{QString::fromLatin1(QML_ONBOARDED_KEY)},[&]{QmlCoreSettings::SetRwSetting(args,QString::fromLatin1(QML_ONBOARDED_KEY),common::SettingsValue{completed});return true;},error);
 }
 
-bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir_selection, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error)
+bool MarkQmlOnboarded(ArgsManager& args,QString* error){return SetQmlOnboarded(args,true,error);}
+
+bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir_selection, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error, bool accept_redownload, bool mark_completed)
 {
     if (error) error->clear();
 
@@ -576,39 +565,56 @@ bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir_selection, 
     args.LockSettings([&](common::Settings& settings) {
         original_forced_settings = settings.forced_settings;
     });
+    auto restore_forced=qScopeGuard([&]{args.LockSettings([&](common::Settings& settings){settings.forced_settings=std::move(original_forced_settings);});});
     InitParameterInteraction(args);
 
     QmlCoreSettings::Session core_settings{values, QmlCoreSettings::BuildCoreSettingStatuses(args, QmlCoreSettings::OnboardingCoreSettingNames())};
     core_settings.setTouchedSettings(touched_settings);
-    const bool touched_settings_written = core_settings.writeTouchedToArgs(args);
-    args.LockSettings([&](common::Settings& settings) {
-        settings.forced_settings = std::move(original_forced_settings);
-    });
-    if (!touched_settings_written) {
-        if (error) *error = QStringLiteral("One or more startup settings could not be written.");
-        return false;
+    // Validate the whole next-start policy before either durable setup marker
+    // or a user-selected directory is reported as committed.
+    fs::path settings_path;if(args.GetSettingsPath(&settings_path)&&!EnsureSettingsDirectory(args,settings_path,error))return false;
+    const auto original=effectivesettings::Read(args);
+    effectivesettings::Batch batch;batch.base_revision=original.revision;batch.accept_redownload=accept_redownload;
+    for(const auto key:{effectivesettings::Key::Listen,effectivesettings::Key::Natpmp,effectivesettings::Key::Server,effectivesettings::Key::Prune,effectivesettings::Key::Proxy,effectivesettings::Key::Onion}){
+        const auto name=effectivesettings::Name(key);if(!touched_settings.contains(name))continue;
+        effectivesettings::Value value;
+        if(key==effectivesettings::Key::Listen)value=values.listen;
+        else if(key==effectivesettings::Key::Natpmp)value=values.natpmp;
+        else if(key==effectivesettings::Key::Server)value=values.server;
+        else if(key==effectivesettings::Key::Prune)value=SettingTo<int64_t>(QmlCoreSettings::PruneSetting(values)).value_or(0);
+        else if(key==effectivesettings::Key::Proxy)value=values.proxy_enabled?values.proxy_address:QStringLiteral("0");
+        else value=values.tor_enabled?values.tor_address:QStringLiteral("0");
+        batch.edits.push_back({key,std::move(value)});
     }
-
-    QmlCoreSettings::SetRwSetting(args, QString::fromLatin1(QML_ONBOARDED_KEY), common::SettingsValue{true});
-    if (!WriteSettingsFile(args, error)) return false;
-
-    if (ShouldPersistGuiDataDirSelection(data_dir_selection.source, explicit_datadir)) {
-        if (QmlDataDir::IsDefaultDataDir(data_dir)) {
-            if (!QmlDataDir::PersistDefaultDataDirSelection(&data_dir_error)) {
-                if (error) *error = data_dir_error;
-                return false;
-            }
-        } else if (!QmlDataDir::PersistGuiDataDirSelection(data_dir, &data_dir_error)) {
-            if (error) *error = data_dir_error;
-            return false;
+    const auto checked=batch.edits.empty()?effectivesettings::ReviewCurrent(args):effectivesettings::Review(args,original,batch);
+    args.LockSettings([&](common::Settings& settings) {settings.forced_settings=std::move(original_forced_settings);});
+    restore_forced.dismiss();
+    if(!checked.valid){if(error)*error=checked.error;return false;}
+    QStringList keys{QString::fromLatin1(QML_ONBOARDED_KEY)};
+    for(const auto& name:touched_settings){keys.push_back(name);keys.push_back(name+QStringLiteral("-prev"));}
+    bool directory_saved{false};
+    const auto persistence=QmlCoreSettings::PersistTransaction(args,keys,[&]{
+        if(ShouldPersistGuiDataDirSelection(data_dir_selection.source,explicit_datadir)){
+            const bool saved=QmlDataDir::IsDefaultDataDir(data_dir)?QmlDataDir::PersistDefaultDataDirSelection(&data_dir_error):QmlDataDir::PersistGuiDataDirSelection(data_dir,&data_dir_error);
+            if(!saved)return false;
+            directory_saved=true;
         }
+        if(!core_settings.writeTouchedToArgs(args))return false;
+        QmlCoreSettings::SetRwSetting(args,QString::fromLatin1(QML_ONBOARDED_KEY),common::SettingsValue{mark_completed});
+        return true;
+    });
+    if(!persistence.completed){
+        if(error)*error=!data_dir_error.isEmpty()?data_dir_error:persistence.error;
+        if(error&&error->isEmpty())*error=QStringLiteral("The setup settings could not be saved.");
+        if(error&&directory_saved)*error=QStringLiteral("The selected directory was saved, but setup is incomplete. Review the retained answers and retry. ")+*error;
+        return false;
     }
     return true;
 }
 
-bool ApplyToArgs(ArgsManager& args, const QString& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error)
+bool ApplyToArgs(ArgsManager& args, const QString& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error, bool accept_redownload, bool mark_completed)
 {
-    return ApplyToArgs(args, DataDirSelection{data_dir, DataDirSource::UserSelection}, touched_settings, values, error);
+    return ApplyToArgs(args, DataDirSelection{data_dir, DataDirSource::UserSelection}, touched_settings, values, error, accept_redownload, mark_completed);
 }
 
 } // namespace QmlOnboardingSettings

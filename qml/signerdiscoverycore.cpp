@@ -4,6 +4,7 @@
 #include <qml/signerdiscovery.h>
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <qml/core_settings.h>
+#include <qml/effectivesettings.h>
 #include <common/args.h>
 #include <common/settings.h>
 #include <interfaces/node.h>
@@ -87,22 +88,26 @@ Ports PublicPorts(interfaces::Node& node, ArgsManager& args)
         const auto command = NormalizeCommand(input);
         if (const auto error = PathError(command); !error.isEmpty()) return Failure(Error::InvalidPath, error, current);
         const common::SettingsValue value = command.isEmpty() ? common::SettingsValue{} : common::SettingsValue{command.toStdString()};
-        QString error;
         QString persisted;
         try { persisted = Command(node.getPersistentSetting("signer")); } catch (...) { return Failure(Error::Unavailable, Text("The saved signer configuration could not be read. No setting was changed."), current); }
-        // A retry after confirmed persistence may need only the runtime
-        // override. Do not rewrite an already observed persistent value.
-        if (persisted != command &&
-            !QmlCoreSettings::PersistSettings(args, {QStringLiteral("signer")}, [&] { return QmlCoreSettings::WriteCoreSettingOverride(args, QStringLiteral("signer"), value); }, &error)) return Failure(Error::Persistence, error, configuration());
-        try {
-            node.forceSetting("signer", value);
-            return {configuration(), {}, Error::None, {}, true, true};
-        } catch (...) {
-            auto result = Failure(Error::Persistence, Text("The signer setting was saved, but its runtime update could not be confirmed. Refresh the effective configuration before retrying."), current);
-            result.persisted = true; result.configuration_known = false;
-            try { result.configuration = configuration(); result.configuration_known = true; } catch (...) {}
-            return result;
+        // Share the app writer reservation through runtime handoff/readback.
+        // A newer settings batch cannot be followed by this older handoff.
+        const auto snapshot=effectivesettings::Read(args);
+        if(!snapshot.ready||!snapshot.persistence_available)return Failure(Error::Persistence,snapshot.error.isEmpty()?Text("The saved settings are unavailable or disabled."):snapshot.error,current);
+        bool changed{false};Configuration applied;
+        const auto transaction=QmlCoreSettings::PersistTransaction(args,{QStringLiteral("signer")},[&]{
+            if(configuration().id!=current.id){changed=true;return false;}
+            return QmlCoreSettings::WriteCoreSettingOverride(args,QStringLiteral("signer"),value);
+        },[&]{node.forceSetting("signer",value);applied=configuration();},persisted==command);
+        if(transaction.completed)return {applied,{},Error::None,{},true,true};
+        auto result=Failure(changed?Error::ConfigurationChanged:Error::Persistence,transaction.error,current);
+        result.persisted=transaction.persisted;
+        if(transaction.persisted){
+            result.message=Text("The signer setting was saved, but its runtime update could not be confirmed. Refresh the effective configuration before retrying.")+QLatin1Char(' ')+transaction.error;
+            result.configuration_known=false;
         }
+        try{result.configuration=configuration();result.configuration_known=true;}catch(...){}
+        return result;
     };
     return ports;
 }

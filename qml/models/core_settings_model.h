@@ -80,9 +80,14 @@ class CoreSettingsModel : public QObject
     Q_PROPERTY(QVariantMap statuses READ statuses NOTIFY statusesChanged)
     Q_PROPERTY(bool pending READ pending NOTIFY operationChanged)
     Q_PROPERTY(QString error READ error NOTIFY operationChanged)
+    Q_PROPERTY(StorageChoice storageChoice READ storageChoice NOTIFY operationChanged)
+    Q_PROPERTY(bool showCustomStorage READ showCustomStorage NOTIFY operationChanged)
+    Q_PROPERTY(QString customStorageDescription READ customStorageDescription NOTIFY operationChanged)
+    Q_PROPERTY(int customStorageSizeGB READ customStorageSizeGB NOTIFY operationChanged)
     Q_PROPERTY(quint64 operationId READ operationId NOTIFY operationChanged)
     Q_PROPERTY(OperationState operationState READ operationState NOTIFY operationChanged)
 public:
+    enum StorageChoice {FullStorage,ReducedStorage,CustomStorage};Q_ENUM(StorageChoice)
     enum class ChangeOrigin {User,Preview,Recommendation};
     enum OperationState {Idle,Pending,Applied,Rejected,Stale,Failed,Closed};
     Q_ENUM(OperationState)
@@ -127,11 +132,21 @@ public:
     void setTouchedSettings(const QSet<QString>& touched);
     void setStatuses(const QmlCoreSettings::StatusProjection& statuses);
     QString defaultProxyAddress() const;
+    QString pruneTargetText()const;
+    QString pruneTargetError()const;
+    StorageChoice storageChoice()const;
+    bool showCustomStorage()const;
+    QString customStorageDescription()const;
+    int64_t customStorageTarget()const;
+    int customStorageSizeGB()const;
+    Q_INVOKABLE void chooseStorage(StorageChoice choice);
+    Q_INVOKABLE void discardPruneInput();
     quint64 changeListen(bool value);
     quint64 changeNatpmp(bool value);
     quint64 changeServer(bool value);
     quint64 changePrune(bool value);
     quint64 changePruneSizeGB(int value);
+    quint64 changePruneTargetText(const QString& text);
     quint64 changeProxyEnabled(bool value);
     quint64 changeTorEnabled(bool value);
     quint64 changeProxyLocation(const QString& value);
