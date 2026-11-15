@@ -7591,7 +7591,7 @@ public Q_SLOTS:
         engine->rootContext()->setContextProperty(QStringLiteral("testPaymentRequest"), &payment_request);
         engine->rootContext()->setContextProperty(QStringLiteral("testTransactionActivityModel"), &transaction_activity_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testSendRecipient"), &send_recipient);
-        engine->rootContext()->setContextProperty(QStringLiteral("testAutomationEnabled"), false);
+        engine->rootContext()->setContextProperty(QStringLiteral("testAutomationEnabled"), QVariant{false});
         engine->rootContext()->setContextProperty(QStringLiteral("testRecipientsModel"), &recipients_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testCoinsListModel"), &coins_list_model);
         engine->rootContext()->setContextProperty(QStringLiteral("testBumpModel"), &bump_model);

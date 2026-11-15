@@ -343,6 +343,7 @@ target_compile_definitions(bitcoinqml_qmltests
 
 target_link_libraries(bitcoinqml_qmltests
   PRIVATE
+    core_interface
     Qt6::Core
     Qt6::Qml
     Qt6::Quick
