@@ -431,6 +431,76 @@ private Q_SLOTS:
         for (auto& input : committed->vin) { input.scriptSig.clear(); input.scriptWitness.SetNull(); }
         QCOMPARE(committed->GetHash(), approved.GetHash());
     }
+    void committedFeeBumpSeparatesWalletRecordFromMempoolObservation_data()
+    {
+        QTest::addColumn<int>("scenario");
+        const char* names[] = {"mempool", "confirmed", "not-in-mempool", "conflicted", "abandoned", "missing", "foreign-record", "read-error"};
+        for (int scenario = 0; scenario < 8; ++scenario) QTest::newRow(names[scenario]) << scenario;
+    }
+    void committedFeeBumpSeparatesWalletRecordFromMempoolObservation()
+    {
+        QFETCH(int, scenario);
+        struct Wallet final : MockWallet {
+            int observation{0};
+            CTransactionRef replacement;
+            interfaces::WalletTx getWalletTxDetails(const Txid&, interfaces::WalletTxStatus& status,
+                std::vector<std::string>&, std::vector<std::string>&, bool& in_mempool, int&) override
+            {
+                if (observation == 7) throw std::runtime_error{"wallet status unavailable"};
+                status = {}; in_mempool = observation == 0;
+                status.depth_in_main_chain = observation == 1 ? 2 : observation == 3 ? -1 : 0;
+                status.is_abandoned = observation == 4;
+                interfaces::WalletTx record{};
+                if (observation == 5) return record;
+                record.tx = replacement;
+                if (observation == 6) {
+                    CMutableTransaction foreign{*replacement}; ++foreign.vout[0].nValue;
+                    record.tx = MakeTransactionRef(std::move(foreign));
+                }
+                return record;
+            }
+        };
+        const auto wallet = std::make_shared<Wallet>();
+        wallet->observation = scenario;
+        wallet->transaction_can_be_bumped_fn = [](const Txid&) { return true; };
+        wallet->create_bump_transaction_fn = [](const Txid&, const wallet::CCoinControl&, std::vector<bilingual_str>&,
+            CAmount& old_fee, CAmount& new_fee, CMutableTransaction& tx) {
+            old_fee = 500; new_fee = 1000; tx = *signerfixture::Review().GetUnsignedTx(); return true;
+        };
+        wallet->sign_bump_transaction_fn = [](CMutableTransaction&) { return true; };
+        wallet->commit_bump_transaction_fn = [wallet_ptr = wallet.get()](const Txid&, CMutableTransaction&& tx,
+            std::vector<bilingual_str>&, Txid& txid) {
+            wallet_ptr->replacement = MakeTransactionRef(std::move(tx));
+            txid = wallet_ptr->replacement->GetHash();
+            return true;
+        };
+
+        Fixture fixture{wallet};
+        QVERIFY(fixture.model->requestPrepareFeeBump(TEST_TXID, 1));
+        fixture.finish();
+        QVERIFY(fixture.confirm());
+        QCOMPARE(fixture.model->state(), BumpTransactionModel::Succeeded);
+        const auto result = fixture.model->commitResult(); QVERIFY(result);
+        const walletbump::Record expected_record[] = {walletbump::Record::Recorded, walletbump::Record::Recorded,
+            walletbump::Record::Recorded, walletbump::Record::Recorded, walletbump::Record::Recorded,
+            walletbump::Record::AbsentAtObservation, walletbump::Record::AbsentAtObservation, walletbump::Record::Unknown};
+        const walletbump::Submission expected_submission[] = {walletbump::Submission::Mempool, walletbump::Submission::Confirmed,
+            walletbump::Submission::NotInMempool, walletbump::Submission::Conflicted, walletbump::Submission::Abandoned,
+            walletbump::Submission::Unknown, walletbump::Submission::Unknown, walletbump::Submission::Unknown};
+        QCOMPARE(result->record, expected_record[scenario]);
+        QCOMPARE(result->submission, expected_submission[scenario]);
+        QCOMPARE(result->relay, walletbump::Relay::Unknown);
+        QCOMPARE(fixture.model->walletRecordState(), static_cast<BumpTransactionModel::WalletRecordState>(expected_record[scenario]));
+        QCOMPARE(fixture.model->walletSubmissionState(), static_cast<BumpTransactionModel::WalletSubmissionState>(expected_submission[scenario]));
+        QCOMPARE(fixture.model->relayState(), BumpTransactionModel::RelayUnknown);
+        QCOMPARE(result->original.GetHex(), TEST_TXID.toStdString());
+        QCOMPARE(result->txid, wallet->replacement->GetHash());
+
+        fixture.model->reset();
+        QVERIFY(fixture.model->requestPrepareFeeBump(TEST_TXID, 1));
+        QCOMPARE(fixture.model->walletRecordState(), BumpTransactionModel::WalletRecordUnknown);
+        QCOMPARE(fixture.model->walletSubmissionState(), BumpTransactionModel::WalletSubmissionUnknown);
+    }
     void confirmFeeBumpReportsCommitFailure_data()
     {
         QTest::addColumn<bool>("explicit_error");

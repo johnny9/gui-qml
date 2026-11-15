@@ -80,7 +80,9 @@ class WalletQmlModel : public QObject, public ReviewOwner
 public:
     enum class SendSubmission { SubmissionUnknown, SubmissionMempool, SubmissionConfirmed, SubmissionNotInMempool, SubmissionConflicted, SubmissionAbandoned, SubmissionAccepted };
     Q_ENUM(SendSubmission)
-    enum class SendState { SendIdle, SendPending, SendNeedsUnlock, SendFailed, SendCommitted, SendUncertain, SendClosed };
+    enum class SendRecord { SendRecordUnknown, SendRecordAbsentAtObservation, SendRecordRecorded };
+    Q_ENUM(SendRecord)
+    enum class SendState { SendIdle, SendPending, SendNeedsConfirmation, SendNeedsUnlock, SendFailed, SendCommitted, SendUncertain, SendClosed };
     enum class ApprovalState { ApprovalInitial, ApprovalWaiting, ApprovalSigned, ApprovalPartiallySigned, ApprovalFailed, ApprovalClosed, ApprovalOtherReview, ApprovalUncertain };
     Q_ENUM(ApprovalState)
     Q_ENUM(SendState)
@@ -207,6 +209,7 @@ private:
     Q_PROPERTY(bool sendBusy READ sendBusy NOTIFY sendOperationChanged)
     Q_PROPERTY(QString sendResultTxid READ sendResultTxid NOTIFY sendOperationChanged)
     Q_PROPERTY(SendSubmission sendSubmission READ sendSubmission NOTIFY sendOperationChanged)
+    Q_PROPERTY(SendRecord sendRecordState READ sendRecordState NOTIFY sendOperationChanged)
     Q_PROPERTY(bool transactionNeedsUnlock READ transactionNeedsUnlock NOTIFY transactionNeedsUnlockChanged)
     Q_PROPERTY(bool currentTransactionCanSend READ currentTransactionCanSend NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionNeedsRevalidation READ currentTransactionNeedsRevalidation NOTIFY preparationChanged)
@@ -332,6 +335,8 @@ public:
     bool preparationBusy() const;
     Q_INVOKABLE quint64 requestSendTransaction();
     Q_INVOKABLE quint64 requestSendTransactionWithPassphrase(const QString& passphrase);
+    Q_INVOKABLE quint64 confirmSendTransaction(quint64 request_id);
+    Q_INVOKABLE quint64 cancelSendTransaction(quint64 request_id);
     quint64 sendOperationId() const { return m_send_request_id; }
     std::shared_ptr<walletsend::Operation> sendOperation() const { return m_send_operation; }
     Q_INVOKABLE quint64 requestBroadcastCurrentTransaction();
@@ -422,9 +427,10 @@ public:
     QString recipientLabelsError() const { return m_sent_labels_error; }
     QString recipientLabelsTransactionId() const { return m_sent_labels_txid; }
     SendState sendState() const { return m_send_state; }
-    bool sendBusy() const { return m_send_state == SendState::SendPending; }
+    bool sendBusy() const { return m_send_state == SendState::SendPending || m_send_state == SendState::SendNeedsConfirmation; }
     QString sendResultTxid() const { return m_send_result_txid; }
     SendSubmission sendSubmission() const { return m_send_submission; }
+    SendRecord sendRecordState() const { return m_send_record; }
     QString transactionError() const { return m_transaction_error; }
     bool transactionNeedsUnlock() const { return m_transaction_needs_unlock; }
     bool currentTransactionCanSend() const { return m_current_transaction && m_current_transaction_can_send; }
@@ -535,6 +541,7 @@ private:
     CAmount receivedPaymentRequestAmount(const QString& address) const;
     void updateReceivedPaymentRequestAmounts();
     quint64 requestSendTransactionInternal(std::optional<QString> passphrase = std::nullopt);
+    void publishSendPrompt();
     void publishSendOperation();
     std::shared_ptr<walletsend::Operation> m_send_operation;
     std::shared_ptr<walletsend::CommitConsent> m_send_consent;
@@ -543,6 +550,7 @@ private:
     SendState m_send_state{SendState::SendIdle};
     QString m_send_result_txid;
     SendSubmission m_send_submission{SendSubmission::SubmissionUnknown};
+    SendRecord m_send_record{SendRecord::SendRecordUnknown};
     struct SentLabelCapture;
     SentLabelCapture captureSentRecipientLabels(const std::shared_ptr<const walletopening::Session::Action>& action);
     void publishSentRecipientLabels();
@@ -552,6 +560,7 @@ private:
     QString m_sent_labels_error, m_sent_labels_txid;
     const std::shared_ptr<std::atomic_bool> m_sending_commit{std::make_shared<std::atomic_bool>(false)};
     quint64 m_send_request_id{0};
+    quint64 m_send_review_id{0};
     bool unlockForAction(std::optional<SecureString>& passphrase, bool& relock);
     void clearTransactionStatus();
     void setTransactionStatus(const QString& error, bool needs_unlock = false);

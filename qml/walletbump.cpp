@@ -19,6 +19,26 @@ QString Message(const std::vector<bilingual_str>& errors)
     return QString::fromStdString(errors.front().translated.empty() ? errors.front().original : errors.front().translated).left(4096);
 }
 QString Fee(CAmount amount) { return QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::BTC, amount, false, QmlBitcoinUnits::SeparatorStyle::NEVER) + QStringLiteral(" BTC"); }
+void Observe(interfaces::Wallet& wallet, Commit& result)
+{
+    try {
+        interfaces::WalletTxStatus status{}; bool in_mempool{false}; int num_blocks{0};
+        std::vector<std::string> messages, payment_requests;
+        const auto record = wallet.getWalletTxDetails(result.txid, status, messages, payment_requests, in_mempool, num_blocks);
+        if (!record.tx || record.tx->GetHash() != result.txid) {
+            result.record = Record::AbsentAtObservation;
+            return;
+        }
+        result.record = Record::Recorded;
+        if (status.depth_in_main_chain > 0) result.submission = Submission::Confirmed;
+        else if (status.depth_in_main_chain < 0) result.submission = Submission::Conflicted;
+        else if (status.is_abandoned) result.submission = Submission::Abandoned;
+        else result.submission = in_mempool ? Submission::Mempool : Submission::NotInMempool;
+    } catch (...) {
+        result.record = Record::Unknown;
+        result.submission = Submission::Unknown;
+    }
+}
 } // namespace
 
 Preparation Prepare(interfaces::Wallet& wallet, const QString& txid, unsigned int target,
@@ -96,6 +116,7 @@ Commit Execute(interfaces::Wallet& wallet, const Prepared& review, std::optional
         }
         result.txid = txid;
         result.committed = true;
+        Observe(wallet, result);
     } catch (const secretinput::Failure&) {
         result.error = Error::Invalid; result.message = QObject::tr("The wallet password could not be prepared. No fee bump was submitted.");
     } catch (...) { result.error = Error::Uncertain; }

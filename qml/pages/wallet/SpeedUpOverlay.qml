@@ -20,6 +20,9 @@ Popup {
     readonly property bool ownsAttempt: ownedAttemptId !== 0 && bumpModel && bumpModel.attemptId === ownedAttemptId
     property int bumpState: root.bumpModel ? root.bumpModel.state : BumpTransactionModel.Idle
     property string bumpErrorText: root.bumpModel ? root.bumpModel.errorText : ""
+    property string newTxid: ""
+    property int walletRecordState: BumpTransactionModel.WalletRecordUnknown
+    property int walletSubmissionState: BumpTransactionModel.WalletSubmissionUnknown
     property bool readyToConfirm: root.ownsAttempt && root.bumpModel
         && root.bumpModel.state === BumpTransactionModel.NeedsConfirmation
 
@@ -76,17 +79,17 @@ Popup {
         }
     }
 
-    property string newTxid: ""
-
-    signal bumpSucceeded()
+    signal bumpSucceeded(string newTxid, int walletRecordState, int walletSubmissionState)
 
     Connections {
         target: root.bumpModel
         function onStateChanged() {
             if (root.opened && root.ownsAttempt && root.bumpModel.state === BumpTransactionModel.Succeeded) {
                 root.newTxid = root.bumpModel.newTxid
+                root.walletRecordState = root.bumpModel.walletRecordState
+                root.walletSubmissionState = root.bumpModel.walletSubmissionState
                 root.close()
-                root.bumpSucceeded()
+                root.bumpSucceeded(root.newTxid, root.walletRecordState, root.walletSubmissionState)
             } else if (root.opened && root.ownsAttempt && root.bumpModel.needsUnlock && !root.bumpModel.busy) {
                 speedUpPassphrasePopup.open()
             }
