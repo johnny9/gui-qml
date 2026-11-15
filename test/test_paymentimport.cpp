@@ -12,6 +12,9 @@
 #include <test/mocks/psbtfeefixture.h>
 #include <key_io.h>
 #include <QFile>
+#include <QEvent>
+#include <QScopeGuard>
+#include <QUrl>
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
 namespace {
@@ -134,6 +137,12 @@ private Q_SLOTS:
         Fixture f; f.lose_reply = true; f.inspect(); f.owner->apply(); f.drain(); QCOMPARE(f.writes, 1);
         QCOMPARE(f.snapshot.phase, paymentimport::Phase::Applying); f.advance();
         QCOMPARE(f.snapshot.phase, paymentimport::Phase::Applied); QCOMPARE(f.queries, 1); QCOMPARE(f.writes, 1); QCOMPARE(f.acks, 1);
+    }
+    void rejectedOutcomeQueryCanRetryWithoutRepeatingApply() {
+        Fixture f; f.lose_reply = true; f.inspect(); f.owner->apply(); f.drain();
+        f.target.rejectLane(execution::Lane::Domain); f.advance();
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::Reconciling); QVERIFY(f.snapshot.can_reconcile); QCOMPARE(f.writes, 1);
+        f.advance(); QCOMPARE(f.snapshot.phase, paymentimport::Phase::Applied); QCOMPARE(f.writes, 1); QCOMPARE(f.queries, 1);
     }
     void knownOutcomeRetainedUntilAcknowledgeAdmission() {
         Fixture f; f.reject_ack = true; f.inspect(); f.owner->apply(); f.drain();
