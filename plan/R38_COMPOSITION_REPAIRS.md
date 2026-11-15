@@ -43,3 +43,23 @@ fixture premise only; production code, exact Clear counts/draft/no-RPC assertion
 animations, key events and watchdogs remain unchanged. The actual Core Clear
 cases already pass. The reduced next check runs these two rows only; positive
 Core/process/static results retain their exact source/ELF receipts.
+
+
+## Retained-draft Escape routing
+
+Worker04 established both physical Clear paths after the visible-parent fixture
+repair: ordinary passed, and autocomplete reached the exact first Clear effect
+with unchanged draft and command count. Its additional Escape continuation then
+failed because the native popup stayed visible. This is an application focus
+configuration mismatch: autocomplete deliberately has `focus: false` so typing
+continues in the draft, while Qt's `Popup.CloseOnEscape` requires active popup
+focus ([official Popup contract](https://doc.qt.io/qt-6/qml-qtquick-controls-popup.html#closePolicy-prop)).
+
+The focused field now routes Escape to its existing popup's `close()` command,
+only while it is visible. Otherwise the event remains unaccepted. No Qt/native
+component replacement, popup focus transfer, RPC effect, animation, watchdog or
+warning-policy change is involved. The original physical Escape/closed-popup/
+second Clear oracles remain, strengthened with unchanged draft, retained input
+focus and no RPC after Escape. Worker04's actual failed row remains evidence;
+it is not reclassified as a pass. This presentation issue does not require a
+new public Core capability.

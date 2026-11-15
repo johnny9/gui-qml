@@ -956,6 +956,9 @@ TestCase {
             if (data.popup) {
                 keyClick(Qt.Key_Escape)
                 tryCompare(popup, "visible", false)
+                compare(input.activeFocus, true)
+                compare(input.text, "getblock")
+                compare(rpcConsoleModel.commandCount, beforeCommands)
                 keyClick(Qt.Key_L, modifier)
                 tryCompare(rpcConsoleModel, "clearCount", beforeClear + 2)
                 compare(rpcConsoleModel.commandCount, beforeCommands)

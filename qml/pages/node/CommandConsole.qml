@@ -349,6 +349,16 @@ Page {
                     }
                 }
 
+                // Autocomplete keeps focus in the draft. Popup.CloseOnEscape
+                // only handles Escape with popup focus, so route this local
+                // presentation intent from the focused field as well.
+                Keys.onEscapePressed: (event) => {
+                    if (autocompletePopup.visible)
+                        autocompletePopup.close()
+                    else
+                        event.accepted = false
+                }
+
                 // Tab key: accept the top autocomplete suggestion.
                 Keys.onTabPressed: (event) => {
                     if (autocompletePopup.visible && root.filteredCommands.length > 0) {
