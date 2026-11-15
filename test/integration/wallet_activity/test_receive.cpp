@@ -23,7 +23,6 @@
 #include <QScopeGuard>
 #include <QClipboard>
 #include <QGuiApplication>
-#include <QQuickItem>
 #include <QInputMethodEvent>
 #include <QPersistentModelIndex>
 #include <QQmlEngine>
