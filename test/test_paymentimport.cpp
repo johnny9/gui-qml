@@ -398,7 +398,9 @@ private Q_SLOTS:
         Fixture f; f.owner->inspect({paymentimport::Input::Kind::Text, Uri()});
         QVERIFY(f.source.step(execution::Lane::Domain));
         f.owner->chooseTarget(f.port); f.owner->close();
-        while (f.source.step(execution::Lane::Domain)) {}
+        // Deliver reserved close through Cleanup while the original Core read
+        // stays held. Its lifecycle decision still runs only on Domain.
+        while (f.source.step(execution::Lane::Cleanup) || f.source.step(execution::Lane::Domain)) {}
         QCOMPARE(f.reads, 0); QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closing); QCOMPARE(f.retired, 0);
         f.drain(); QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closed); QCOMPARE(f.retired, 1);
         QCOMPARE(f.writes, 0); QVERIFY(!f.snapshot.can_apply);
