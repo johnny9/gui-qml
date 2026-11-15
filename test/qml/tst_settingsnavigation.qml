@@ -11,6 +11,7 @@ import org.bitcoincore.qt 1.0
 import "../../qml/components"
 import "../../qml/controls"
 import "../../qml/pages/wallet" as WalletPages
+import "../../qml/pages/node" as NodePages
 
 TestCase {
     id: testCase
@@ -39,6 +40,7 @@ TestCase {
     }
 
     Component { id: displayAmount; BitcoinAmount { unit: optionsModel.displayUnit } }
+    Component { id: shortcutConsole; NodePages.CommandConsole { width: 700; height: 600; tabActive: true } }
 
     Component {
         id: containerComponent
@@ -122,6 +124,7 @@ TestCase {
 
     function init() {
         testSetup.failOnWarnings()
+        rpcConsoleModel.setCompletionSuggestionsForTest([])
         firstCreated = 0
         firstDestroyed = 0
         pushedCreated = 0
@@ -166,6 +169,104 @@ TestCase {
     function readyEditor(view) { tryCompare(view.settingsEditor, "fresh", true) }
     function editSetting(view, key, value) { const input = findChild(view, key + "SettingInput"); verify(input !== null); input.text = value; input.textEdited(); tryCompare(view.settingsEditor.entry(key), "text", value); tryCompare(view.settingsEditor, "inputPending", false) }
     function saveSettings(view) { tryCompare(view.settingsEditor, "canSave", true); const before = view.settingsEditor.saveResult.operationId; findChild(view, "settingsSaveBatchButton").clicked(); tryVerify(() => view.settingsEditor.saveResult.persisted && view.settingsEditor.saveResult.operationId !== before); tryCompare(view.settingsEditor, "busy", false) }
+
+    function publishSettingsDomain() {
+        for (let turn = 0; turn < 128; ++turn) {
+            if (!optionsModel.stepControlledSettingsDomainForTest()) {
+                verify(optionsModel.publishControlledSettingsForTest())
+                return
+            }
+        }
+        fail("Controlled settings Domain did not become idle")
+    }
+
+    function clickSettingsControl(button, enabled) {
+        verify(button !== null)
+        tryVerify(() => button.width > 0 && button.height > 0)
+        compare(button.enabled, enabled)
+        settingsWindow.requestActivate()
+        tryCompare(settingsWindow, "active", true)
+        for (let item = button; item !== null; item = item.parent) {
+            verify(item.visible)
+            if (item.clip) {
+                const center = button.mapToItem(item, button.width / 2, button.height / 2)
+                verify(center.x >= 0 && center.y >= 0 && center.x < item.width && center.y < item.height)
+            }
+        }
+        mouseClick(button, button.width / 2, button.height / 2)
+    }
+
+    function clickDoneControl(view, enabled) {
+        clickSettingsControl(findChild(view, "settingsDoneButton"), enabled)
+    }
+
+    function test_settingsDoneCapturesOnlySafeNavigation_data() {
+        return [{ tag: "held-initial-read", state: "loading" },
+                { tag: "dirty-consent", state: "dirty" },
+                { tag: "held-save-review", state: "saving" }]
+    }
+
+    function test_settingsDoneCapturesOnlySafeNavigation(data) {
+        verify(optionsModel.beginControlledSettingsForTest())
+        let view = null
+        let doneCalls = 0
+        try {
+            view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
+            verify(view !== null)
+            view.doneClicked.connect(() => { doneCalls += 1 })
+            publishSettingsDomain() // Actual initial read is queued but held.
+            const editor = view.settingsEditor
+            compare(editor.phase, SettingsEditorModel.Loading)
+            compare(editor.busy, true)
+            compare(editor.dirty, false)
+            compare(optionsModel.settingsWritesForTest(), 0)
+            if (data.state === "loading") {
+                clickDoneControl(view, true)
+                compare(doneCalls, 1)
+                compare(editor.busy, true) // Navigation did not cancel/finish the read.
+                compare(optionsModel.settingsWritesForTest(), 0)
+                verify(optionsModel.settleControlledSettingsForTest())
+                compare(editor.fresh, true)
+            } else {
+                verify(optionsModel.settleControlledSettingsForTest())
+                compare(editor.fresh, true)
+                editor.entry("dbcache").editText("512")
+                publishSettingsDomain()
+                compare(editor.entry("dbcache").text, "512")
+                compare(editor.dirty, true)
+                compare(editor.canSave, true)
+                if (data.state === "dirty") {
+                    clickDoneControl(view, true)
+                    publishSettingsDomain()
+                    compare(doneCalls, 0)
+                    compare(editor.closeQuestion, true)
+                    compare(optionsModel.settingsWritesForTest(), 0)
+                    editor.answerClose(editor.closeToken, SettingsEditorModel.KeepEditing)
+                    publishSettingsDomain()
+                    compare(editor.closeQuestion, false)
+                    compare(editor.entry("dbcache").text, "512")
+                    compare(editor.dirty, true)
+                    compare(view.settingsNavigationPending, false)
+                } else {
+                    editor.save()
+                    compare(findChild(view, "settingsDoneButton").enabled, false) // Busy ingress, before Domain.
+                    publishSettingsDomain() // Hold the original Core review.
+                    compare(editor.phase, SettingsEditorModel.Checking)
+                    clickDoneControl(view, false)
+                    compare(doneCalls, 0)
+                    compare(editor.busy, true)
+                    compare(optionsModel.settingsWritesForTest(), 0)
+                    verify(optionsModel.settleControlledSettingsForTest())
+                    compare(editor.saveResult.persisted, true)
+                    compare(editor.saveResult.outcomeKnown, true)
+                    compare(optionsModel.settingsWritesForTest(), 1)
+                    compare(editor.entry("dbcache").committedText, "512")
+                }
+            }
+        } finally {
+            verify(optionsModel.endControlledSettingsForTest())
+        }
+    }
 
     function test_displayUnitCommandKeepsCanonicalAmount_data() {
         return [{tag: "BTC", unit: 0}, {tag: "mBTC", unit: 1}, {tag: "bits", unit: 2}, {tag: "sat", unit: 3}]
@@ -309,22 +410,28 @@ TestCase {
         finishSignerDiscovery()
         verify(page.signerConnected)
         const initialScans = walletController.signerEnumerationCalls
-        input.text = executable + " --new-configuration"
+        const successor = walletController.alternateSignerExecutableForTest()
+        verify(successor !== executable)
+        input.text = successor
         input.textEdited()
         // Uncommitted text does not replace the effective configuration/device.
         compare(walletController.signers.effectivePath, executable)
         verify(page.signerConnected)
         compare(walletController.signerEnumerationCalls, initialScans)
         tryCompare(check, "text", "Save and check")
-        check.clicked()
+        tryCompare(check, "enabled", true)
+        clickSettingsControl(check, true)
         tryVerify(() => view.settingsEditor.saveResult.persisted)
+        tryVerify(() => view.settingsEditor.saveResult.outcomeKnown)
+        compare(optionsModel.settingsWritesForTest(), 1)
+        compare(view.settingsEditor.entry("signer").committedText, successor)
         tryVerify(() => walletController.signers.pending)
         compare(page.signerConnected, false)
         tryCompare(indicator, "color", Theme.color.neutral7)
         finishSignerDiscovery()
         compare(walletController.signerConfigurationWrites, 1)
         compare(walletController.signerEnumerationCalls, initialScans + 1)
-        compare(walletController.signers.effectivePath, executable + " --new-configuration")
+        compare(walletController.signers.effectivePath, successor)
         verify(page.signerConnected)
         compare(check.text, "Check device")
     }
@@ -846,6 +953,122 @@ TestCase {
         } finally {
             testWalletModel.name = oldName
             testWalletModel.available = oldAvailable
+        }
+    }
+
+    function test_unavailable_rpc_wallet_never_becomes_a_node_request() {
+        const oldAvailable = testWalletModel.available
+        try {
+            testWalletModel.available = true
+            const view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem,
+                { wallet: testWalletModel })
+            view.selectSection("rpc-console")
+            const page = findChild(view, "rpcConsoleSettingsPage")
+            verify(page !== null)
+            const input = findChild(page, "consoleInput")
+            verify(input !== null)
+            input.text = "getwalletinfo"
+            const before = rpcConsoleModel.commandCount
+            testWalletModel.available = false
+            compare(page.walletContext, true)
+            compare(page.targetAvailable, false)
+            page.consoleItem.submitCommand()
+            compare(rpcConsoleModel.commandCount, before)
+            compare(input.text, "getwalletinfo")
+            testWalletModel.available = true
+            compare(page.targetAvailable, true)
+            page.consoleItem.submitCommand()
+            compare(rpcConsoleModel.commandCount, before + 1)
+            compare(rpcConsoleModel.lastTarget, "wallet")
+        } finally {
+            testWalletModel.available = oldAvailable
+        }
+    }
+
+    function test_desktop_rpc_endpoint_kind_is_explicit_data() {
+        return [
+            { tag: "named", label: "Friendly wallet", rpc: "original/", available: true },
+            { tag: "default", label: "", rpc: "", available: true },
+            { tag: "unavailable", label: "Original wallet", rpc: "original/", available: false }
+        ]
+    }
+
+    function test_desktop_rpc_endpoint_kind_is_explicit(data) {
+        // DesktopWallets supplies scalar endpoint facts while its wallet
+        // settings stack is hosted separately. No name can encode endpoint kind.
+        const view = createTemporaryObject(settingsViewComponent, host, {
+            activeWalletName: data.label, activeWalletRpcName: data.rpc,
+            activeWalletRpcContext: true, activeWalletRpcReady: true,
+            activeWalletAvailable: data.available
+        })
+        compare(view.wallet, null)
+        view.selectSection("rpc-console")
+        const page = findChild(view, "rpcConsoleSettingsPage")
+        verify(page !== null)
+        compare(page.walletContext, true)
+        compare(page.walletName, data.rpc)
+        compare(page.targetAvailable, data.available)
+        const input = findChild(page, "consoleInput")
+        const before = rpcConsoleModel.commandCount
+        input.text = "getwalletinfo"
+        page.consoleItem.submitCommand()
+        compare(rpcConsoleModel.commandCount, before + (data.available ? 1 : 0))
+        if (data.available) {
+            compare(rpcConsoleModel.lastTarget, "wallet")
+            compare(rpcConsoleModel.lastWalletName, data.rpc)
+        } else {
+            compare(input.text, "getwalletinfo")
+            input.text = "stop"
+            page.consoleItem.submitCommand()
+            compare(rpcConsoleModel.commandCount, before + 1)
+            compare(rpcConsoleModel.lastTarget, "node")
+            compare(page.walletContext, true)
+            compare(page.walletName, data.rpc)
+        }
+    }
+
+    function test_clear_shortcut_preserves_draft_with_native_autocomplete_data() {
+        return [ { tag: "ordinary", popup: false }, { tag: "autocomplete", popup: true } ]
+    }
+
+    function test_clear_shortcut_preserves_draft_with_native_autocomplete(data) {
+        const window = testCase.Window.window
+        const console = createTemporaryObject(shortcutConsole, window.contentItem)
+        verify(console !== null)
+        compare(console.Window.window, window)
+        verify(console.visible)
+        const input = findChild(console, "consoleInput")
+        const popup = findChild(console, "consoleAutocompletePopup")
+        verify(input !== null); verify(popup !== null)
+        verify(input.visible)
+        window.requestActivate()
+        tryCompare(window, "active", true)
+        verify(testSetup.replaceText(input, "getblock"))
+        tryCompare(input, "activeFocus", true)
+        const beforeCommands = rpcConsoleModel.commandCount
+        const beforeClear = rpcConsoleModel.clearCount
+        const modifier = Qt.platform.os === "osx" ? Qt.MetaModifier : Qt.ControlModifier
+        try {
+            rpcConsoleModel.setCompletionSuggestionsForTest(data.popup ? ["getblockcount", "getblockhash"] : [])
+            tryCompare(popup, "opened", data.popup)
+            keyClick(Qt.Key_L, modifier)
+            tryCompare(rpcConsoleModel, "clearCount", beforeClear + 1)
+            compare(rpcConsoleModel.commandCount, beforeCommands)
+            compare(input.text, "getblock")
+            if (data.popup) {
+                keyClick(Qt.Key_Escape)
+                tryCompare(popup, "visible", false)
+                compare(input.activeFocus, true)
+                compare(input.text, "getblock")
+                compare(rpcConsoleModel.commandCount, beforeCommands)
+                keyClick(Qt.Key_L, modifier)
+                tryCompare(rpcConsoleModel, "clearCount", beforeClear + 2)
+                compare(rpcConsoleModel.commandCount, beforeCommands)
+                compare(input.text, "getblock")
+            }
+        } finally {
+            rpcConsoleModel.setCompletionSuggestionsForTest([])
+            popup.close()
         }
     }
 

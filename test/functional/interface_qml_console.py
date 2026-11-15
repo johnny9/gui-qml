@@ -22,8 +22,7 @@ def assert_complete_output_matches(gui, text, expected, *, expected_context="", 
     assert gui.get_property(output, "model.error") in (None, "")
     assert gui.get_property(output, "model.truncated") is False
     # SplitRows marks each original logical message with a timestamp. Only
-    # the first enabled query adds the exact wallet context banner; Clear
-    # deliberately preserves the last wallet context.
+    # a wallet command after Clear adds its exact context banner again.
     source = "model.sourceModel"
     original = gui.get_model_row(output, source)
     rows = original["rowCount"]
@@ -89,13 +88,13 @@ def console_privacy(harness, checkpoint, wallet_enabled):
         f"addhdkey {secret}",
         f"walletpassphrase {secret} 10",
     ]
-    for index, command in enumerate(commands):
+    for command in commands:
         gui.set_text("consoleInput", command)
-        gui.invoke("rpcConsole", "submitCommand")
+        gui.invoke("rpcConsole", "submitCommand", [command])
         gui.wait_for_property("rpcConsole", "executing", False, timeout_ms=30000)
         # Positive anchors certify the new request AND its completed reply
         # before a zero-match privacy assertion can be considered meaningful.
-        context = f'Executing command using "{name}" wallet' if wallet_enabled and index == 0 else ""
+        context = f'Executing command using "{name}" wallet' if wallet_enabled else ""
         assert_complete_output_matches(gui, command.split()[0] + "(…)", 1, expected_context=context)
         assert_complete_output_matches(gui, "(code ", 1, expected_context=context)
         assert_complete_output_matches(gui, secret, 0, expected_context=context)
@@ -103,14 +102,28 @@ def console_privacy(harness, checkpoint, wallet_enabled):
         gui.invoke("rpcConsole", "clearInputOrOutput")
         gui.wait_for_property("rpcConsole", "outputCount", 0)
     checkpoint("secret-bearing requests and failures remain redacted")
+    for command in [f"signrawtransactionwithkey deadbeef {secret}",
+                    f"echo(signrawtransactionwithkey(deadbeef {secret}))"]:
+        gui.set_text("consoleInput", command)
+        gui.invoke("rpcConsole", "submitCommand", [command])
+        gui.wait_for_property("rpcConsole", "executing", False, timeout_ms=30000)
+        context = f'Executing command using "{name}" wallet' if wallet_enabled else ""
+        assert_complete_output_matches(gui, "signrawtransactionwithkey(…)", 1, expected_context=context)
+        assert_complete_output_matches(gui, "Invalid RPC arguments.", 1, expected_context=context)
+        assert_complete_output_matches(gui, secret, 0, expected_context=context)
+        gui.set_property("rpcConsole", "searchText", "")
+        gui.invoke("rpcConsole", "clearInputOrOutput")
+        gui.wait_for_property("rpcConsole", "outputCount", 0)
+    checkpoint("malformed sensitive JSON never reaches Core RPC or exposes original input")
     gui.set_text("consoleInput", "help getblockcount")
-    gui.invoke("rpcConsole", "submitCommand")
+    gui.invoke("rpcConsole", "submitCommand", ["help getblockcount"])
     gui.wait_for_property("rpcConsole", "executing", False, timeout_ms=30000)
     # One original request and one reply may span many bounded display rows.
     # Exact search matches establish both messages without assuming their
     # physical row count or instantiating every virtual delegate.
-    assert_complete_output_matches(gui, "help getblockcount", 1, reply_category=CMD_REPLY)
-    assert_complete_output_matches(gui, "Returns the height", 1, reply_category=CMD_REPLY)
+    context = f'Executing command using "{name}" wallet' if wallet_enabled else ""
+    assert_complete_output_matches(gui, "help getblockcount", 1, expected_context=context, reply_category=CMD_REPLY)
+    assert_complete_output_matches(gui, "Returns the height", 1, expected_context=context, reply_category=CMD_REPLY)
     if wallet_enabled:
         assert rpc_call(harness.gui_rpc_port, "listwallets") == before
         assert rpc_call(harness.gui_rpc_port, "getwalletinfo", wallet=name)["unlocked_until"] == 0

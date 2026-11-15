@@ -73,9 +73,10 @@ Page {
         Qt.callLater(function() { if (root.visible) root.focusInput() })
     }
 
+    readonly property string clearOutputShortcut: Qt.platform.os === "osx" ? "Meta+L" : "Ctrl+L"
     Shortcut {
-        enabled: root.visible
-        sequence: Qt.platform.os === "osx" ? "Meta+L" : "Ctrl+L"
+        enabled: root.visible && !autocompletePopup.visible
+        sequence: root.clearOutputShortcut
         onActivated: ApplicationModels.rpcConsoleModel.clear()
     }
 
@@ -104,6 +105,7 @@ Page {
     // The default wallet has an empty name. Endpoint kind is a separate fact.
     property string walletName: ""
     property bool walletContext: false
+    property bool targetAvailable: true
 
     header: NavigationBar2 {
         visible: root.showHeader
@@ -139,7 +141,7 @@ Page {
 
         header: Component {
             Text {
-                text: ApplicationModels.rpcConsoleModel.completionError
+                text: root.targetAvailable ? ApplicationModels.rpcConsoleModel.completionError : qsTr("The selected wallet is not ready for RPC commands.")
                 visible: text.length > 0
                 height: visible ? implicitHeight : 0
                 color: Theme.color.red
@@ -201,6 +203,15 @@ Page {
         closePolicy: Popup.CloseOnEscape
         onClosed: if (root.filteredCommands.length > 0) root.completionDismissed = true
 
+        // Qt's CloseOnEscape popup blocks WindowShortcuts outside its content,
+        // even with focus:false. Keep this one intent inside the active menu;
+        // the mutually exclusive outer shortcut owns the ordinary view case.
+        Shortcut {
+            enabled: root.visible && autocompletePopup.visible
+            sequence: root.clearOutputShortcut
+            onActivated: ApplicationModels.rpcConsoleModel.clear()
+        }
+
         ListView {
             id: autocompleteList
             objectName: "consoleAutocompleteList"
@@ -217,9 +228,8 @@ Page {
                 width: autocompleteList.width
                 text: modelData
                 autoClose: false
-                selected: index === root.autocompleteIndex
+                selected: root.completionSelected && index === root.autocompleteIndex
                 focusPolicy: Qt.NoFocus
-                onHoveredChanged: if (hovered) root.autocompleteIndex = index
                 // Apply the suggestion without stealing focus from the
                 // input field — per MarnixCroes PR #540 feedback.
                 onTriggered: root.applySuggestion(modelData)
@@ -306,10 +316,9 @@ Page {
                     border.color: Theme.color.orange
                 }
 
-                // Enter accepts the highlighted autocomplete suggestion when the
-                // popup is open; otherwise it submits the command. This mirrors the
-                // Tab behaviour and avoids submitting the raw half-typed text while a
-                // completion is highlighted.
+                maximumLength: 65536
+                // Only keyboard navigation selects a completion for Enter.
+                // Hover changes its appearance; Tab/click explicitly fill input.
                 Keys.onReturnPressed: (event) => root.acceptHighlightedOrSubmit(event)
                 Keys.onEnterPressed: (event) => root.acceptHighlightedOrSubmit(event)
 
@@ -317,7 +326,8 @@ Page {
                 // otherwise browse command history.
                 Keys.onUpPressed: {
                     if (autocompletePopup.visible && root.filteredCommands.length > 0) {
-                        root.autocompleteIndex = Math.max(0, root.autocompleteIndex - 1)
+                        root.autocompleteIndex = root.completionSelected ? Math.max(0, root.autocompleteIndex - 1) : 0
+                        root.completionSelected = true
                     } else {
                         internal.navigatingHistory = true
                         var result = ApplicationModels.rpcConsoleModel.browseHistory(1, inputField.text)
@@ -328,7 +338,8 @@ Page {
                 }
                 Keys.onDownPressed: {
                     if (autocompletePopup.visible && root.filteredCommands.length > 0) {
-                        root.autocompleteIndex = Math.min(root.filteredCommands.length - 1, root.autocompleteIndex + 1)
+                        root.autocompleteIndex = root.completionSelected ? Math.min(root.filteredCommands.length - 1, root.autocompleteIndex + 1) : 0
+                        root.completionSelected = true
                     } else {
                         internal.navigatingHistory = true
                         var result = ApplicationModels.rpcConsoleModel.browseHistory(-1, inputField.text)
@@ -336,6 +347,16 @@ Page {
                         inputField.cursorPosition = result.length
                         internal.navigatingHistory = false
                     }
+                }
+
+                // Autocomplete keeps focus in the draft. Popup.CloseOnEscape
+                // only handles Escape with popup focus, so route this local
+                // presentation intent from the focused field as well.
+                Keys.onEscapePressed: (event) => {
+                    if (autocompletePopup.visible)
+                        autocompletePopup.close()
+                    else
+                        event.accepted = false
                 }
 
                 // Tab key: accept the top autocomplete suggestion.
@@ -373,6 +394,7 @@ Page {
     readonly property var filteredCommands: completionDismissed || ApplicationModels.rpcConsoleModel.completionBusy
         ? [] : ApplicationModels.rpcConsoleModel.completionSuggestions
     property int autocompleteIndex: 0
+    property bool completionSelected: false
     Binding {
         target: ApplicationModels.rpcConsoleModel
         property: "completionPrefix"
@@ -380,6 +402,7 @@ Page {
     }
     onFilteredCommandsChanged: {
         autocompleteIndex = 0
+        completionSelected = false
         if (filteredCommands.length > 0 && !internal.navigatingHistory && tabActive && inputField.activeFocus)
             autocompletePopup.open()
         else autocompletePopup.close()
@@ -417,16 +440,12 @@ Page {
         inputField.forceActiveFocus()
     }
 
-    // Run the highlighted autocomplete suggestion when the popup is open,
-    // otherwise submit whatever is typed. Shared by Enter and test automation;
-    // Tab only fills the suggestion in (for adding arguments). To run a different
-    // command, dismiss the menu first (click away or type past the matches).
+    // Resolve an explicit keyboard selection without changing the draft before
+    // admission. A busy/refused Enter preserves exactly what the user typed.
     function runHighlightedOrSubmit() {
-        if (autocompletePopup.visible && filteredCommands.length > 0) {
-            inputField.text = filteredCommands[root.autocompleteIndex]
-            autocompletePopup.close()
-        }
-        submitCommand()
+        const command = autocompletePopup.visible && completionSelected && filteredCommands.length > 0
+            ? filteredCommands[root.autocompleteIndex] : inputField.text
+        submitCommand(command)
     }
 
     function acceptHighlightedOrSubmit(event) {
@@ -434,15 +453,13 @@ Page {
         event.accepted = true
     }
 
-    function submitCommand() {
-        const cmd = inputField.text
+    function submitCommand(cmd = inputField.text) {
         if (cmd.length === 0) return
         // Only clear the input if the command was accepted. submitCommand()
         // returns false when another command is still executing, so a refused
         // command stays in the field instead of silently vanishing.
-        const accepted = root.walletContext
-            ? ApplicationModels.rpcConsoleModel.submitWalletCommand(cmd, root.walletName)
-            : ApplicationModels.rpcConsoleModel.submitNodeCommand(cmd)
+        const accepted = ApplicationModels.rpcConsoleModel.submitInput(cmd, root.walletContext,
+                                                                       root.walletName, root.targetAvailable)
         if (accepted) {
             inputField.text = ""
             completionDismissed = true

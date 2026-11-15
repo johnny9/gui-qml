@@ -56,6 +56,58 @@ private Q_SLOTS:
     void admittedInputCannotSkipTheOriginalCloseConsent(){Fixture f;QVERIFY(f.settle());f.entry("proxy")->editText("127.0.0.1:9050");QVERIFY(f.model->dirty());QVERIFY(f.model->busy());QVERIFY(!f.model->canSave());f.model->requestClose();QVERIFY(f.settle());QVERIFY(f.model->closeQuestion());QCOMPARE(f.entry("proxy")->text(),QStringLiteral("127.0.0.1:9050"));QCOMPARE(f.writes,0);f.model->answerClose(f.model->closeToken(),SettingsEditorModel::KeepEditing);QVERIFY(f.settle());QVERIFY(f.model->dirty());QVERIFY(!f.model->closeQuestion());}
     void pendingSuccessorCannotSaveThePreviousValidInput(){Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("450");QVERIFY(f.settle());QVERIFY(f.model->canSave());f.entry("maxmempool")->editText("450x");QVERIFY(!f.model->canSave());QVERIFY(f.model->busy());f.model->save();QVERIFY(f.settle());QCOMPARE(f.writes,0);QCOMPARE(f.checks,0);QCOMPARE(f.entry("maxmempool")->text(),QStringLiteral("450x"));QVERIFY(!f.entry("maxmempool")->error().isEmpty());QVERIFY(!f.model->canSave());}
     void saveIsValidationThenCoreThenDomainThenPresentation(){Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");f.domain();QVERIFY(f.model->canSave());f.model->save();f.domain();QCOMPARE(f.model->phase(),SettingsEditorModel::Checking);QCOMPARE(f.checks,0);QCOMPARE(f.writes,0);QVERIFY(f.execution.step(Lane::Core));QCOMPARE(f.checks,1);QCOMPARE(f.writes,0);f.domain();QCOMPARE(f.model->phase(),SettingsEditorModel::Saving);QVERIFY(f.execution.step(Lane::Core));QCOMPARE(f.writes,1);QVERIFY(!f.model->lastSavePresent());QVERIFY(f.settle());QVERIFY(f.model->lastSavePersisted());QVERIFY(!f.model->dirty());QCOMPARE(f.entry("maxmempool")->effectiveText(),QStringLiteral("300"));QCOMPARE(f.entry("maxmempool")->nextStartText(),QStringLiteral("400"));QVERIFY(f.model->restartRequired());}
+    void originalWriteFollowsReleasedReviewBudgetUnderUnrelatedPressure(){
+        int unrelated{0};Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());
+        f.model->save();f.domain();QVERIFY(f.execution.step(Lane::Core));QCOMPARE(f.checks,1);
+        const auto background=execution::Submit(*f.execution.scheduler,[&]{++unrelated;},[]{},{},{Lane::Core,1024,{},execution::WorkClass::Action});
+        QVERIFY(background);f.domain();QCOMPARE(f.model->phase(),SettingsEditorModel::Saving);
+        QCOMPARE(f.writes,0);QCOMPARE(unrelated,0);QVERIFY(f.model->error().isEmpty());
+        QVERIFY(f.execution.step(Lane::Core));QCOMPARE(unrelated,1);f.domain();
+        QVERIFY(f.execution.step(Lane::Core));QCOMPARE(f.writes,1);QVERIFY(f.settle());
+        QVERIFY(f.model->lastSavePersisted());QVERIFY(f.model->lastSaveKnown());
+        QCOMPARE(std::get<int64_t>(f.source.fields[size_t(Key::Mempool)].committed),400);
+    }
+    void originalHandoffCannotConsumeASuccessorEdit(){
+        Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());
+        f.model->save();f.domain();QVERIFY(f.execution.step(Lane::Core));
+        QVERIFY(f.execution.step(Lane::Domain));while(f.publish()){}
+        QCOMPARE(f.model->phase(),SettingsEditorModel::Saving);QCOMPARE(f.writes,0);
+        f.entry("maxmempool")->editText("500");f.domain();
+        QCOMPARE(f.entry("maxmempool")->text(),QStringLiteral("500"));QCOMPARE(f.writes,0);
+        QVERIFY(f.settle());QCOMPARE(f.writes,1);QVERIFY(f.model->lastSavePersisted());
+        QCOMPARE(std::get<int64_t>(f.source.fields[size_t(Key::Mempool)].committed),400);
+        QCOMPARE(f.entry("maxmempool")->text(),QStringLiteral("500"));QVERIFY(f.model->dirty());
+    }
+    void originalHandoffSurvivesParentCloseAndFacadeRetirement(){
+        Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());
+        f.model->save();f.domain();QVERIFY(f.execution.step(Lane::Core));
+        QVERIFY(f.execution.step(Lane::Domain));while(f.publish()){}
+        QCOMPARE(f.model->phase(),SettingsEditorModel::Saving);QCOMPARE(f.writes,0);
+        f.execution.scheduler->closeOrdinaryAdmission();f.model->retire();
+        f.execution.drain();QCOMPARE(f.writes,1);QVERIFY(f.native_released);QVERIFY(f.execution.quiescent());
+        QVERIFY(f.model);QVERIFY(f.settle());QVERIFY(f.model->lastSavePersisted());
+        QCOMPARE(f.model->phase(),SettingsEditorModel::Closed);
+    }
+    void refusedHandoffOwnsAKnownNoWriteOutcomeWithoutRetry(){
+        Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());
+        f.model->save();f.domain();QVERIFY(f.execution.step(Lane::Core));
+        f.execution.rejectLane(Lane::Domain);QVERIFY(f.execution.step(Lane::Domain));QVERIFY(f.settle());
+        QCOMPARE(f.checks,1);QCOMPARE(f.writes,0);QVERIFY(f.model->lastSaveKnown());QVERIFY(!f.model->lastSavePersisted());
+        QVERIFY(!f.model->busy());QVERIFY(f.model->dirty());QCOMPARE(f.entry("maxmempool")->text(),QStringLiteral("400"));
+        f.model->reconcile();QVERIFY(f.settle());QCOMPARE(f.writes,0);QCOMPARE(f.checks,1);
+    }
+    void cancelledAcceptedHandoffSettlesItsOriginalNoWriteReceipt(){
+        Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());
+        f.model->save();f.domain();QVERIFY(f.execution.step(Lane::Core));
+        QVERIFY(f.execution.step(Lane::Domain));while(f.publish()){}
+        QCOMPARE(f.model->phase(),SettingsEditorModel::Saving);QCOMPARE(f.writes,0);
+        const auto held=f.execution.dispatchNext(Lane::Domain);QVERIFY(held);
+        QVERIFY(f.execution.scheduler->cancelQueued(*held));QVERIFY(f.execution.finishWork(*held));
+        QVERIFY(f.settle());QCOMPARE(f.checks,1);QCOMPARE(f.writes,0);
+        QVERIFY(f.model->lastSavePresent());QVERIFY(f.model->lastSaveKnown());QVERIFY(!f.model->lastSavePersisted());
+        QVERIFY(!f.model->busy());QVERIFY(f.model->dirty());QCOMPARE(f.entry("maxmempool")->text(),QStringLiteral("400"));
+        f.model->reconcile();QVERIFY(f.settle());QCOMPARE(f.writes,0);QCOMPARE(f.checks,1);
+    }
     void validationFailureWritesNothingAndRetainsTheEdit(){Fixture f;QVERIFY(f.settle());f.reject=true;f.entry("listen")->editBoolean(false);QVERIFY(f.settle());f.model->save();QVERIFY(f.settle());QCOMPARE(f.checks,1);QCOMPARE(f.writes,0);QVERIFY(f.model->dirty());QVERIFY(f.model->canSave());QCOMPARE(f.model->error(),QStringLiteral("Rejected whole batch"));}
     void editHeldAgainstValidationPreventsTheOldWrite(){Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());f.model->save();f.domain();const auto held=f.execution.dispatchNext(Lane::Core);QVERIFY(held);f.entry("maxmempool")->editText("500");f.domain();QVERIFY(f.execution.finishWork(*held));QVERIFY(f.settle());QCOMPARE(f.writes,0);QVERIFY(f.model->dirty());QCOMPARE(f.entry("maxmempool")->text(),QStringLiteral("500"));}
     void cancelledWriteIsKnownNotStartedAndCanBeRetried(){Fixture f;QVERIFY(f.settle());f.entry("maxmempool")->editText("400");QVERIFY(f.settle());f.model->save();f.domain();QVERIFY(f.execution.step(Lane::Core));f.domain();const auto held=f.execution.dispatchNext(Lane::Core);QVERIFY(held);QVERIFY(f.execution.scheduler->cancelQueued(*held));f.domain();QVERIFY(f.execution.finishWork(*held));QVERIFY(f.settle());QCOMPARE(f.writes,0);QVERIFY(f.model->lastSaveKnown());QVERIFY(!f.model->lastSavePersisted());QVERIFY(f.model->canSave());f.model->save();QVERIFY(f.settle());QCOMPARE(f.writes,1);QVERIFY(f.model->lastSavePersisted());}
