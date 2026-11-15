@@ -43,6 +43,11 @@ private Q_SLOTS:
         QFileOpenEvent relative{QStringLiteral("relative-to-a-later-directory.psbt")};
         QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &relative));
         drain(); QCOMPARE(model.pendingCount(), 1); // Never reinterpret an OS path against a later working directory.
+        model.dismiss(); drain(); QCOMPARE(model.pendingCount(), 0);
+        QFileOpenEvent invalid{QUrl{}};
+        QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &invalid));
+        drain(); QVERIFY(!model.error().isEmpty()); QVERIFY(model.canDismiss());
+        model.dismiss(); drain(); QVERIFY(model.error().isEmpty());
         model.closeAdmission();
         QFileOpenEvent late{QUrl{QStringLiteral("bitcoin:late")}};
         QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &late));

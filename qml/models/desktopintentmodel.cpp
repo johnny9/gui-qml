@@ -98,14 +98,9 @@ bool DesktopIntentModel::eventFilter(QObject*, QEvent* event)
         input.value = open.url().toString(QUrl::FullyEncoded);
         if (input.value.startsWith(QLatin1String{"bitcoin:"}, Qt::CaseInsensitive)) input.kind = desktopintent::Kind::Text;
     }
-    const QPointer<DesktopIntentModel> self{this}; const auto post = m_services.post;
-    const auto admitted = m_owner->admit({std::move(input)}, [self, post](auto receipt) {
-        post([self, accepted = static_cast<bool>(receipt)] {
-            if (!self || self->m_closed) return;
-            self->m_ingress_error = accepted ? QString{} : tr("The desktop request could not be queued. The request queue may be full.");
-            Q_EMIT self->changed();
-        });
-    });
+    const QPointer<DesktopIntentModel> self{this};
+    m_ingress_error.clear();
+    const auto admitted = m_owner->admit({std::move(input)}, {});
     if (!admitted && self && !self->m_closed) {
         self->m_ingress_error = tr("The desktop request could not be queued. Try opening it again.");
         Q_EMIT self->changed();
@@ -161,7 +156,12 @@ void DesktopIntentModel::closeAdmission()
 #endif
 }
 void DesktopIntentModel::inspectNext() { if (canInspect() && m_owner) m_owner->review(m_sink); }
-void DesktopIntentModel::dismiss() { if (canDismiss() && m_owner) m_owner->dismiss(); }
+void DesktopIntentModel::dismiss()
+{
+    if (!canDismiss() || !m_owner) return;
+    m_ingress_error.clear();
+    m_owner->dismiss();
+}
 void DesktopIntentModel::reconcile() { if (canReconcile() && m_owner) m_owner->reconcile(); }
 
 #ifdef ENABLE_WALLET

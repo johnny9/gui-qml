@@ -135,7 +135,7 @@ PageStack {
         root.openWhileShown(sendPage.openPaymentRequestImport)
     }
 
-    function acceptDesktopImport(mailbox) {
+    function acceptDesktopImport(mailbox: DesktopIntentModel): bool {
         if (!mailbox || !root.visible || !root.wallet || !root.wallet.available || !root.recipient
                 || root.wallet.recipients.importPending) return false
         const originalWallet = root.wallet

@@ -129,7 +129,8 @@ bool Queue::unknown(Ticket ticket)
 
 bool Queue::dismiss()
 {
-    if (m_stopping || m_active || m_pending.empty()) return false;
+    if (m_stopping || m_active) return false;
+    if (m_pending.empty()) { m_error = Error::None; return true; }
     settle(Disposition::Dismissed);
     return true;
 }

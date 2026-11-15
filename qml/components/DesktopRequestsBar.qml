@@ -55,7 +55,7 @@ Pane {
             }
             Button {
                 objectName: "desktopRequestDismiss"
-                text: qsTr("Dismiss queued request")
+                text: root.mailbox && root.mailbox.pendingCount > 0 ? qsTr("Dismiss queued request") : qsTr("Dismiss message")
                 enabled: root.mailbox !== null && root.mailbox.canDismiss
                 onClicked: root.mailbox.dismiss()
             }

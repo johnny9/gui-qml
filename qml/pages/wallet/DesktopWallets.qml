@@ -137,7 +137,7 @@ Page {
         if (root.activeView) root.showWalletTab(WalletView.Send)
     }
 
-    function continueDesktopImport(mailbox) {
+    function continueDesktopImport(mailbox: DesktopIntentModel): bool {
         const original = root.activeView
         if (!original || !original.wallet || !original.wallet.available) return false
         root.showWalletTab(WalletView.Send)

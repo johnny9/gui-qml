@@ -39,7 +39,7 @@ public:
     State state() const { return static_cast<State>(m_snapshot.phase); }
     int pendingCount() const { return static_cast<int>(m_snapshot.pending); }
     bool canInspect() const { return !m_closed && m_wallet_enabled && m_sink && m_snapshot.phase == desktopintent::Phase::Ready && !hasInspection(); }
-    bool canDismiss() const { return !m_closed && m_snapshot.pending && !m_snapshot.active; }
+    bool canDismiss() const { return !m_closed && !m_snapshot.active && (m_snapshot.pending || m_snapshot.error != desktopintent::Error::None || !m_ingress_error.isEmpty()); }
     bool canReconcile() const { return m_snapshot.phase == desktopintent::Phase::ReconcilingDelivery; }
     QString error() const;
     bool hasInspection() const;
