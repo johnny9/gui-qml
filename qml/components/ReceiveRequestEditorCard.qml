@@ -17,11 +17,43 @@ Pane {
     signal closeRequested()
     signal requestAgain(string id)
     signal deleted(string id)
+    BitcoinAmount {
+        id: receivedAmount
+        satoshi: root.editor ? root.editor.receipts.receivedAmountSatoshi : 0
+        unit: ApplicationModels.optionsModel.displayUnit
+    }
     padding: 16
     implicitWidth: 560
     implicitHeight: contentItem.implicitHeight + topPadding + bottomPadding
     contentItem: ColumnLayout {
         spacing: 20
+        CoreText {
+            objectName: "savedRequestReceiptStatus"
+            Layout.fillWidth: true
+            visible: root.editor !== null && root.editor.requestId.length > 0
+            text: !root.editor ? "" : !root.editor.receipts.fresh
+                ? root.editor.receipts.phase === ReceiptReconciliationModel.Closed ? qsTr("Wallet closed")
+                    : root.editor.receipts.errorText.length > 0 ? root.editor.receipts.errorText : qsTr("Checking payments…")
+                : root.editor.receipts.receiptState === RequestReceiptModel.Received ? qsTr("Payment received") : qsTr("Awaiting payment")
+        }
+        CoreText {
+            objectName: "savedRequestReceivedAmount"
+            Layout.fillWidth: true
+            visible: root.editor !== null && root.editor.receipts.fresh && root.editor.receipts.receiptState === RequestReceiptModel.Received
+            text: qsTr("%1 received").arg(receivedAmount.displayWithUnit)
+        }
+        CoreText {
+            objectName: "savedRequestHistoricalUseNotice"
+            Layout.fillWidth: true
+            visible: root.editor !== null && root.editor.receipts.fresh && root.editor.receipts.historicallyUsed && root.editor.receipts.receiptState === RequestReceiptModel.Awaiting
+            text: qsTr("No payment is currently credited. This address remains used; request again to share a fresh address.")
+        }
+        NeutralButton {
+            objectName: "savedRequestRetryPaymentsButton"
+            text: qsTr("Check payments again")
+            visible: root.editor !== null && root.editor.receipts.errorText.length > 0
+            onClicked: root.editor.receipts.retry()
+        }
         // A different editor identity destroys the old native text/undo
         // context. Amount canonical state remains in that editor's model.
         Repeater {

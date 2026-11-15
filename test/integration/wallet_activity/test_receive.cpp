@@ -1227,6 +1227,116 @@ private Q_SLOTS:
         QVERIFY(qmltest::WaitForVisible(m_app, "addressListPage"));
     }
 
+    void originalReorgRepaintsTheOpenRequestFromActualCurrentCredit_data()
+    {
+        QTest::addColumn<bool>("invalidate");
+        QTest::newRow("active-receipt-control") << false;
+        QTest::newRow("original-reorg-to-zero") << true;
+    }
+    void originalReorgRepaintsTheOpenRequestFromActualCurrentCredit()
+    {
+        QFETCH(bool, invalidate);
+        auto* wallet = qmltest::CreateWallet(m_app, "original-reorg"); QVERIFY(wallet);
+        auto* request = wallet->currentPaymentRequest();
+        request->amount()->setSatoshi(100'000'000); request->setMessage("Original reorg receipt");
+        QVERIFY(AwaitReceiveRequest(wallet->commitPaymentRequest()));
+        const auto id = request->id(), address = request->address();
+        QVERIFY(wallet->loadPaymentRequestDetail(id));
+        auto* detail = wallet->detailPaymentRequest();
+        QVERIFY(qmltest::Click(m_app, "activityTabButton"));
+        const auto row_name = QStringLiteral("activityRequest_") + id;
+        auto* row = qmltest::WaitForVisible(m_app, row_name.toUtf8().constData()); QVERIFY(row);
+        QVERIFY(qmltest::Click(row)); QVERIFY(qmltest::WaitForVisible(m_app, "paymentRequestModal"));
+        // The original public UI oracle spans the pre-extraction card and the
+        // typed consumer. Both must render actual reconciled credit, while
+        // their independent immutable address-use guard remains set.
+        QPointer<QObject> status = qmltest::Find(m_app, "savedRequestReceiptStatus");
+        if (!status) status = qmltest::Find(m_app, "paymentRequestStatus");
+        QVERIFY(status);
+        const auto status_text = [&] { return status ? status->property("text").toString() : QString{}; };
+        UniValue mine{UniValue::VARR}; mine.push_back(1); mine.push_back(address.toStdString());
+        const auto blocks = qmltest::Rpc(m_app, "generatetoaddress", mine);
+        UniValue block{UniValue::VARR}; block.push_back(blocks[0].get_str());
+        qmltest::Rpc(m_app, "syncwithvalidationinterfacequeue");
+        QTRY_COMPARE_WITH_TIMEOUT(detail->receivedAmountSatoshi(), qint64{50 * COIN}, 30'000);
+        QTRY_COMPARE_WITH_TIMEOUT(status_text(), QStringLiteral("Payment received"), 30'000);
+        if (invalidate) {
+            qmltest::Rpc(m_app, "invalidateblock", block); qmltest::Rpc(m_app, "syncwithvalidationinterfacequeue");
+            QTRY_COMPARE_WITH_TIMEOUT(detail->receivedAmountSatoshi(), qint64{0}, 30'000);
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(!wallet->receiveRequestReconciliationPending(), 30'000);
+        QVERIFY(detail->paymentReceived()); QVERIFY(detail->qrPayload().isEmpty());
+        QTRY_COMPARE_WITH_TIMEOUT(status_text(), invalidate ? QStringLiteral("Awaiting payment") : QStringLiteral("Payment received"), 30'000);
+        QCOMPARE(detail->id(), id); QCOMPARE(detail->address(), address);
+        QVERIFY(qmltest::Find(m_app, "paymentRequestModal")->property("visible").toBool());
+    }
+    void typedCurrentCreditSurvivesReorgAndWalletReload_data()
+    {
+        QTest::addColumn<bool>("restore_block");
+        QTest::newRow("zero-credit-reload") << false;
+        QTest::newRow("reconsidered-credit-reload") << true;
+    }
+    void typedCurrentCreditSurvivesReorgAndWalletReload()
+    {
+        QFETCH(bool, restore_block);
+        auto* wallet = qmltest::CreateWallet(m_app, "receipt-reorg"); QVERIFY(wallet);
+        const auto name = wallet->name(); const auto original_opening = wallet->opening()->identity();
+        auto* draft = wallet->currentPaymentRequest();
+        draft->amount()->setSatoshi(100'000'000); draft->setMessage("Current credit is not invoice fulfillment");
+        draft->setNoteSelf("Private receipt note"); QVERIFY(AwaitReceiveRequest(wallet->commitPaymentRequest()));
+        const auto id = draft->id(), address = draft->address();
+        const auto open = [&](WalletQmlModel* original) -> PaymentRequestEditorModel* {
+            QSignalSpy ready{original->receive(), &WalletReceiveModel::requestViewReady};
+            const auto token = original->receive()->beginOpenRequest(id);
+            if (token.isEmpty() || !QTest::qWaitFor([&] { return ready.size() == 1; }, 30'000)) return nullptr;
+            if (ready.at(0).at(0).toString() != token) return nullptr;
+            return qvariant_cast<PaymentRequestEditorModel*>(ready.at(0).at(1));
+        };
+        QPointer<PaymentRequestEditorModel> editor = open(wallet); QVERIFY(editor);
+        QTRY_VERIFY_WITH_TIMEOUT(editor->receipts()->fresh(), 30'000);
+        QCOMPARE(editor->receipts()->receiptState(), RequestReceiptModel::Awaiting);
+        QObject view;
+        auto* sharing = wallet->receive()->sharingRequest(id, &view); QVERIFY(sharing); sharing->setActive(true);
+        QTRY_VERIFY_WITH_TIMEOUT(sharing->canCopyUri(), 30'000);
+        UniValue mine{UniValue::VARR}; mine.push_back(1); mine.push_back(address.toStdString());
+        const auto blocks = qmltest::Rpc(m_app, "generatetoaddress", mine);
+        const auto block = blocks[0].get_str();
+        qmltest::Rpc(m_app, "syncwithvalidationinterfacequeue");
+        QTRY_VERIFY_WITH_TIMEOUT(editor->receipts()->fresh() && editor->receipts()->receivedAmountSatoshi() == 50 * COIN, 30'000);
+        QCOMPARE(editor->receipts()->receiptState(), RequestReceiptModel::Received);
+        QTRY_VERIFY(editor->historicallyUsed()); QTRY_VERIFY(!sharing->canCopyUri());
+        UniValue original_block{UniValue::VARR}; original_block.push_back(block);
+        qmltest::Rpc(m_app, "invalidateblock", original_block);
+        qmltest::Rpc(m_app, "syncwithvalidationinterfacequeue");
+        QTRY_VERIFY_WITH_TIMEOUT(editor->receipts()->fresh() && editor->receipts()->receivedAmountSatoshi() == 0, 30'000);
+        QCOMPARE(editor->receipts()->receiptState(), RequestReceiptModel::Awaiting);
+        QVERIFY(editor->receipts()->historicallyUsed()); QVERIFY(editor->historicallyUsed());
+        QVERIFY(!sharing->canCopyUri()); QVERIFY(!sharing->canCopyQr());
+        QCOMPARE(editor->requestId(), id); QCOMPARE(editor->address(), address);
+        QCOMPARE(editor->privateNote()->text(), QStringLiteral("Private receipt note"));
+        if (restore_block) {
+            qmltest::Rpc(m_app, "reconsiderblock", original_block);
+            qmltest::Rpc(m_app, "syncwithvalidationinterfacequeue");
+            QTRY_VERIFY_WITH_TIMEOUT(editor->receipts()->fresh() && editor->receipts()->receivedAmountSatoshi() == 50 * COIN, 30'000);
+        }
+        UniValue unload{UniValue::VARR}; unload.push_back(name.toStdString());
+        qmltest::Rpc(m_app, "unloadwallet", unload);
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        QTRY_VERIFY(!controller->walletForName(name));
+        // Reload is a real persisted Wallet boundary, not a new fake ledger.
+        // Process restart is independently exercised by the functional case.
+        qmltest::Rpc(m_app, "loadwallet", unload);
+        wallet = qmltest::SelectOpenWalletForSetup(m_app, name); QVERIFY(wallet);
+        QVERIFY(wallet->opening()->identity() != original_opening);
+        editor = open(wallet); QVERIFY(editor);
+        const auto expected = restore_block ? 50 * COIN : 0;
+        QTRY_VERIFY_WITH_TIMEOUT(editor->receipts()->fresh() && editor->receipts()->receivedAmountSatoshi() == expected, 30'000);
+        QCOMPARE(editor->receipts()->receiptState(), restore_block ? RequestReceiptModel::Received : RequestReceiptModel::Awaiting);
+        QVERIFY(editor->receipts()->historicallyUsed()); QVERIFY(editor->historicallyUsed());
+        QCOMPARE(editor->requestId(), id); QCOMPARE(editor->privateNote()->text(), QStringLiteral("Private receipt note"));
+        auto* after = wallet->receive()->sharingRequest(id, &view); QVERIFY(after); after->setActive(true);
+        QTRY_VERIFY(!after->canCopyUri()); QVERIFY(!after->canCopyQr());
+    }
     void replacementAndConfirmedPaymentsDoNotDoubleCountReceipts()
     {
         auto* payer = qmltest::CreateWallet(m_app, "payer");
@@ -1243,6 +1353,11 @@ private Q_SLOTS:
         const auto address = request->address();
         QVERIFY(receiver->loadPaymentRequestDetail(id));
         auto* detail = receiver->detailPaymentRequest();
+        QSignalSpy opened{receiver->receive(), &WalletReceiveModel::requestViewReady};
+        const auto token = receiver->receive()->beginOpenRequest(id); QVERIFY(!token.isEmpty());
+        QTRY_COMPARE(opened.count(), 1);
+        auto* typed = qvariant_cast<PaymentRequestEditorModel*>(opened.at(0).at(1)); QVERIFY(typed);
+        QCOMPARE(typed->requestId(), id);
 
         const auto original = qmltest::Rpc(m_app, "sendtoaddress", qmltest::Json("{\"address\":\"" + address.toStdString() + "\",\"amount\":0.00001,\"fee_rate\":1}"), payer->name()).get_str();
         QTRY_VERIFY_WITH_TIMEOUT(detail->paymentReceived(), 30'000);
@@ -1266,6 +1381,8 @@ private Q_SLOTS:
         const auto second = QString::fromStdString(qmltest::Rpc(m_app, "sendtoaddress", qmltest::Json("{\"address\":\"" + address.toStdString() + "\",\"amount\":0.00002,\"fee_rate\":1}"), payer->name()).get_str());
         QTRY_VERIFY_WITH_TIMEOUT(hasTransaction(*receiver, second), 30'000);
         QTRY_COMPARE(detail->receivedAmountSatoshi(), 3'000);
+        QTRY_VERIFY(typed->receipts()->fresh()); QCOMPARE(typed->receipts()->receivedAmountSatoshi(), qint64{3'000});
+        QCOMPARE(typed->receipts()->receiptState(), RequestReceiptModel::Received); QVERIFY(typed->receipts()->historicallyUsed());
         mine();
         QTRY_VERIFY_WITH_TIMEOUT(!receiver->receiveRequestReconciliationPending(), 30'000);
         QCOMPARE(detail->receivedAmountSatoshi(), 3'000);
