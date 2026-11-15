@@ -12,7 +12,7 @@ descriptors or a reviewed transaction exist, a replacement must service those
 same keys; incompatible keys must fail clearly without retargeting another
 wallet, descriptor set, document or review. Same-key replacement is permitted.
 R15 tests stale discovery/configuration and creation/Core-HWI handoffs; R19
-keeps the candidate/review immutable; R23 covers the signing handoff. Use
+keeps the candidate/review immutable; R24 covers the signing handoff. Use
 manual executors and controlled process fixtures. Notify the user before
 accepting a required guarantee that public Core interfaces cannot establish.
 
@@ -25,7 +25,7 @@ discovery result must not replace the operation's result or selected wallet.
 Signing must preserve the exact reviewed transaction and authenticate the
 returned signatures against its keys; a matching short fingerprint is not
 sufficient. Creation/process controls belong to R15, immutable review to R19,
-and signing/device-change controls to R23. These are required focused gates,
+and signing/device-change controls to R24. These are required focused gates,
 not a claim that physical hardware or all signing cases are already tested.
 
 The external-signer protocol's fingerprint identifies a master key origin. It
