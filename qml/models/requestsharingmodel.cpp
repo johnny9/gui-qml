@@ -111,8 +111,9 @@ struct ShareOperationModel::Work : std::enable_shared_from_this<Work> {
             if (self->kind == requestshare::Kind::Uri) { self->prepared(std::move(source), {}, std::move(scope)); return; }
             { std::lock_guard lock{self->cell->mutex}; self->cell->phase = requestshare::Phase::Preparing; }
             self->cell->notify();
+            const auto payload = source.payload;
             const auto admission = execution::Submit(*scope,
-                [render = self->services.render, payload = source.payload] { return render(payload); },
+                [render = self->services.render, payload] { return render(payload); },
                 [self, scope, source = std::move(source)](QImage image) mutable {
                     if (image.isNull() || image.width() <= 1 || image.width() != image.height() || image.width() > 736) {
                         self->fail(requestshare::Error::QrEncoding); return;

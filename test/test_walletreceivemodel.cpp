@@ -23,6 +23,29 @@ struct Fixture {
 class WalletReceiveModelTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void openReceiptWaitsForTheActualEditorsOriginalSourceProjection()
+    {
+        Fixture f; QSignalSpy ready{f.receive.get(), &WalletReceiveModel::requestViewReady};
+        const auto token = f.receive->beginOpenRequest("17"); QVERIFY(!token.isEmpty());
+        f.ports.execution.drain(); f.ports.publish();
+        // The source read is known, but the newly created facade has not yet
+        // consumed its own Domain projection. A modal cannot consume it yet.
+        QCOMPARE(ready.count(), 0); f.ports.drain(); QCOMPARE(ready.count(), 1);
+        QCOMPARE(ready.at(0).at(0).toString(), token);
+        auto* editor = qvariant_cast<PaymentRequestEditorModel*>(ready.at(0).at(1)); QVERIFY(editor);
+        QCOMPARE(editor->requestId(), QStringLiteral("17")); QCOMPARE(editor->phase(), PaymentRequestEditorModel::Editing);
+        QCOMPARE(editor->message()->text(), QStringLiteral("original message")); QCOMPARE(f.ports.writes, 0);
+    }
+    void producerNoticeDuringAHeldOpenReadIsNotLost()
+    {
+        Fixture f; f.ports.records.at(17).current = false;
+        QSignalSpy ready{f.receive.get(), &WalletReceiveModel::requestViewReady};
+        const auto token = f.receive->beginOpenRequest("17"); QVERIFY(!token.isEmpty());
+        f.ports.execution.drain(); // Hold the old source's GUI delivery.
+        f.ports.records.at(17).current = true; f.ports.epoch->advance(); f.receive->refresh();
+        f.ports.drain(); QCOMPARE(ready.count(), 1); QCOMPARE(ready.at(0).at(0).toString(), token);
+        QCOMPARE(f.ports.writes, 0); QCOMPARE(f.ports.generations, 0);
+    }
     void blankDraftReplacementDoesNotInventAnUnsavedFieldsQuestion()
     {
         Fixture f; f.ready(); QVERIFY(!f.receive->editor()->dirty());

@@ -33,6 +33,17 @@ struct Fixture {
 class RequestSharingModelTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void qrCopyRendersAndDeliversTheExactOriginalOwnedPayload()
+    {
+        ReceiveEditorPorts ports; auto services = ports.sharing(); QStringList rendered;
+        services.render = [&rendered](const QString& payload) { rendered.push_back(payload); return requestshare::RenderQr(payload); };
+        RequestSharingModel context{17, services}; context.setActive(true); ports.drain(); QVERIFY(context.canCopyQr());
+        auto operation = std::unique_ptr<ShareOperationModel>{context.copyQr()}; ports.drain();
+        const QString expected{QStringLiteral("bitcoin:bcrt1q-original?amount=0.000001&message=original%20message")};
+        QCOMPARE(rendered, QStringList({expected, expected})); QCOMPARE(ports.clipboard, 1);
+        QVERIFY(operation->result().performed); QCOMPARE(ports.clipboard_image, context.image());
+        QVERIFY(ports.clipboard_image.width() > 1); context.retire(); ports.drain();
+    }
     void freshSavedPayloadCopiesOnlyAfterTheNativeGuiHandoff()
     {
         Fixture f; QVERIFY(f.context->canCopyUri());

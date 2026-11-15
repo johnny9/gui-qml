@@ -7,6 +7,7 @@ import QtQuick.Window 2.15
 import QtTest 1.2
 import org.bitcoincore.qt 1.0
 import "../../qml/components"
+import "../../qml/pages/wallet"
 
 TestCase {
     id: testCase
@@ -15,8 +16,9 @@ TestCase {
     width: 840
     height: 820
     property var views: []
-    function init() { testSetup.failOnWarnings(); optionsModel.displayUnit = BitcoinAmount.BTC; Clipboard.currentText = "unchanged external clipboard" }
+    function init() { testSetup.failOnWarnings(); testWalletModel.setReceive(null); optionsModel.displayUnit = BitcoinAmount.BTC; Clipboard.currentText = "unchanged external clipboard" }
     function cleanup() {
+        testWalletModel.setReceive(null)
         for (let index = 0; index < views.length; ++index) {
             const receipt = testSetup.watchDestruction(views[index])
             views[index].destroy()
@@ -26,6 +28,16 @@ TestCase {
         views = []
         optionsModel.displayUnit = BitcoinAmount.BTC
         Clipboard.currentText = ""
+    }
+    Component {
+        id: workspaceComponent
+        ReceiveWorkspace {
+            width: 700
+            height: 700
+            wallet: testWalletModel
+            property int navigationEffects: 0
+            onPaymentRequestCreated: navigationEffects++
+        }
     }
     Component {
         id: viewComponent
@@ -86,7 +98,7 @@ TestCase {
                 }
             }
             return true
-        }, name + " center must be visible through every clip")
+        }, 5000, name + " center must be visible through every clip")
         mouseClick(item, item.width / 2, item.height / 2)
     }
     function edit(view, name, text) { verify(testSetup.replaceText(field(view, name), text)); view.control.settle() }
@@ -103,6 +115,26 @@ TestCase {
         compare(view.control.persistedMessage, "a public message")
         compare(view.control.persistedNote, "a private note")
         verify(view.card.editor.saveResult.requestSaved)
+    }
+    function test_detached_creation_keeps_its_actual_save_without_navigation_data() {
+        return [{tag: "hidden-page", deactivate: false}, {tag: "inactive-wallet-view", deactivate: true}]
+    }
+    function test_detached_creation_keeps_its_actual_save_without_navigation(data) {
+        const view = makeView(false)
+        testWalletModel.setReceive(view.control.receive)
+        const workspace = createTemporaryObject(workspaceComponent, testCase.Window.window.contentItem)
+        verify(workspace !== null)
+        views.push(workspace)
+        view.control.settle()
+        view.card.editor.message.edit("accepted by the original visible view")
+        view.card.editor.save()
+        if (data.deactivate) workspace.walletViewActive = false
+        else workspace.visible = false
+        view.control.settle()
+        compare(view.control.writes, 1)
+        verify(view.card.editor.saveResult.requestSaved)
+        compare(view.control.persistedMessage, "accepted by the original visible view")
+        compare(workspace.navigationEffects, 0)
     }
     function test_unit_change_before_save_preserves_canonical_amount_data() { return [{tag: "own-unit-button", physical: true}, {tag: "other-view-unit", physical: false}] }
     function test_unit_change_before_save_preserves_canonical_amount(data) {

@@ -8,14 +8,19 @@ Item {
     id: root
     property WalletQmlModel wallet: null
     property bool contextActive: true
-    readonly property bool opened: loader.item ? loader.item.opened : false
-    visible: loader.item ? loader.item.visible : false
+    readonly property ReceiveRequestModal owned: loader.item as ReceiveRequestModal
+    readonly property PaymentRequestModal compatibility: loader.item as PaymentRequestModal
+    readonly property bool opened: owned ? owned.opened : compatibility ? compatibility.opened : false
+    visible: owned ? owned.visible : compatibility ? compatibility.visible : false
     signal closed()
-    function openRequest(id, origin) { return loader.item ? loader.item.openRequest(id, origin) : false }
+    function openRequest(id, origin) {
+        if (owned) return owned.openRequest(id, origin)
+        if (compatibility) return compatibility.openRequest(id, origin)
+        return false
+    }
     function close() {
-        if (!loader.item) return
-        if (root.wallet && root.wallet.receive) loader.item.cancelPending()
-        loader.item.close()
+        if (owned) { owned.cancelPending(); owned.close() }
+        if (compatibility) compatibility.close()
     }
     Loader {
         id: loader

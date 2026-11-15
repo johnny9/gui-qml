@@ -22,6 +22,23 @@ struct Fixture {
 class PaymentRequestEditorModelTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void producerRefreshDuringAnInitialReadIsCoalescedWithoutPolling()
+    {
+        ReceiveEditorPorts ports; auto services = ports.editors(); auto original = services.read;
+        std::function<void(requestedit::Source)> held; int reads{0};
+        services.read = [&](int64_t id, uint64_t view, auto done) {
+            ++reads;
+            if (reads == 1) { held = std::move(done); return execution::Admission{{}, execution::Rejection::None}; }
+            return original(id, view, std::move(done));
+        };
+        Model editor{17, 2, false, std::move(services)}; ports.drain(); QCOMPARE(reads, 1); QVERIFY(held);
+        auto older = ports.snapshot(17, 2); older.current = false;
+        editor.refresh(); ports.drain(); QCOMPARE(reads, 1);
+        QVERIFY(execution::Submit(*ports.execution.scheduler, [done = std::move(held), older] { done(older); }, [] {}, {}, {Lane::Domain, 1024}));
+        ports.drain(); QCOMPARE(reads, 2); QCOMPARE(editor.phase(), Model::Editing);
+        QCOMPARE(editor.message()->text(), QStringLiteral("original message")); QCOMPARE(ports.writes, 0);
+        editor.retire(); ports.drain(); QVERIFY(ports.execution.quiescent());
+    }
     void saveCapturesEachOriginalFieldAndRetainsSuccessorInput()
     {
         Fixture f;
@@ -105,14 +122,24 @@ private Q_SLOTS:
         QCOMPARE(f.ports.records.at(17).values[requestedit::Message].text, QStringLiteral("original message"));
         QCOMPARE(f.ports.records.at(17).values[requestedit::Note].text, QStringLiteral("private edit"));
     }
+    void partialWriteKeepsTheActualRequestAndSeparateLabelFailure_data()
+    {
+        QTest::addColumn<int>("error");
+        QTest::newRow("label-write-failed") << int(walletrequests::Error::LabelPersistence);
+        QTest::newRow("address-label-changed-after-request-write") << int(walletrequests::Error::Changed);
+    }
     void partialWriteKeepsTheActualRequestAndSeparateLabelFailure()
     {
-        Fixture f; f.ports.next_write = walletrequests::Error::LabelPersistence; f.ports.save_label = false;
+        QFETCH(int, error); const auto failure = static_cast<walletrequests::Error>(error);
+        Fixture f; f.ports.next_write = failure; f.ports.save_label = false;
+        f.ports.label_conflict_after_write = failure == walletrequests::Error::Changed;
         f.editor->privateNote()->edit("saved in request"); f.editor->save(); f.ports.drain();
         const auto actual = f.editor->saveResult();
         QVERIFY(actual.present); QVERIFY(actual.requestSaved); QVERIFY(!actual.labelSaved); QVERIFY(actual.outcomeKnown);
-        QCOMPARE(actual.error, walletrequests::Error::LabelPersistence); QCOMPARE(actual.requestId, QStringLiteral("17"));
+        QCOMPARE(actual.error, failure); QCOMPARE(actual.requestId, QStringLiteral("17"));
         QCOMPARE(f.ports.records.at(17).values[requestedit::Note].text, QStringLiteral("saved in request"));
+        QVERIFY(f.editor->error().code != TextEditError::None); QCOMPARE(f.editor->error().message, actual.errorText);
+        f.editor->refresh(); f.ports.drain(); QCOMPARE(f.editor->error().message, actual.errorText); QCOMPARE(f.ports.writes, 1);
     }
     void unknownOutcomeNeverReplaysTheOriginalWrite()
     {
@@ -218,7 +245,10 @@ private Q_SLOTS:
         };
         auto editor = std::make_unique<Model>(17, 2, false, std::move(ports)); QTRY_COMPARE(editor->phase(), Model::Editing);
         editor->message()->edit("threaded write"); editor->save(); QTRY_VERIFY(editor->saveResult().requestSaved);
-        QCOMPARE(writes.load(), 1); QVERIFY(read_thread.load() != gui); QVERIFY(write_thread.load() != gui); QVERIFY(read_thread.load() != write_thread.load());
+        // Lanes own separate queued effects; the worker pool may legally reuse
+        // one physical thread once its previous effect has finished.
+        QCOMPARE(writes.load(), 1); QVERIFY(read_thread.load()); QVERIFY(write_thread.load());
+        QVERIFY(read_thread.load() != gui); QVERIFY(write_thread.load() != gui);
         QCOMPARE(editor->thread(), gui); editor.reset(); executor.shutdown(); QTRY_VERIFY(executor.isDrained());
     }
 };

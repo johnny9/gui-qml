@@ -56,16 +56,17 @@ ColumnLayout {
     Repeater {
         model: root.editor ? root.editor.conflicts : []
         delegate: RowLayout {
+            id: conflictRow
             required property var modelData
-            CoreText { Layout.fillWidth: true; text: modelData.fieldId + ": " + modelData.committedText }
+            CoreText { Layout.fillWidth: true; text: conflictRow.modelData.fieldId + ": " + conflictRow.modelData.committedText }
             NeutralButton {
                 text: qsTr("Use current")
-                onClicked: root.editor.resolveConflict(modelData.fieldId, TextEditSessionModel.UseCurrent)
+                onClicked: root.editor.resolveConflict(conflictRow.modelData.fieldId, TextEditSessionModel.UseCurrent)
             }
             NeutralButton {
                 text: qsTr("Keep edit")
-                enabled: root.editor !== null && (root.editor.publicFieldsEditable || modelData.fieldId === "note")
-                onClicked: root.editor.resolveConflict(modelData.fieldId, TextEditSessionModel.KeepEdit)
+                enabled: root.editor !== null && (root.editor.publicFieldsEditable || conflictRow.modelData.fieldId === "note")
+                onClicked: root.editor.resolveConflict(conflictRow.modelData.fieldId, TextEditSessionModel.KeepEdit)
             }
         }
     }

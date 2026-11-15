@@ -157,6 +157,7 @@ private Q_SLOTS:
         const auto loaded = f.settle(Intent(Kind::Reload)); QCOMPARE(loaded->result()->error, Error::None); f.observe();
         const auto snapshot = f.store->take()->snapshot; QVERIFY(snapshot); QCOMPARE(snapshot->records.size(), size_t{1});
         ReceiveRequestHistoryModel model; model.setSnapshot(snapshot);
+        QVERIFY(model.data(model.index(0), ReceiveRequestHistoryModel::UriRole).toString().isEmpty());
         for (const auto role : {ReceiveRequestHistoryModel::LabelRole, ReceiveRequestHistoryModel::MessageRole, ReceiveRequestHistoryModel::NoteSelfRole}) {
             const auto preview = model.data(model.index(0), role).toString();
             QCOMPARE(preview.size(), 513); QVERIFY(preview.endsWith(QChar{0x2026}));

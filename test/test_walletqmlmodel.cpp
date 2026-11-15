@@ -29,6 +29,8 @@
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signertransaction.h>
 #include <qml/models/walletqmlmodel.h>
+#include <qml/walletidentity.h>
+#include <qml/walletsettings.h>
 #include <qml/bitcoinunits.h>
 #include <qml/walletsend.h>
 #include <test/mocks/receiverequesttest.h>
@@ -1099,6 +1101,16 @@ private:
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void init()
+    {
+        // These independent cases reuse one synthetic wallet identity. Keep
+        // its legacy and canonical reservation stores isolated between cases;
+        // intentional reopen scenarios stay within their original test body.
+        QSettings settings;
+        settings.remove(QStringLiteral("receiveAddressTypes/fake-wallet"));
+        settings.remove(walletsettings::EntryKey(walletsettings::Area::Reservations, walletidentity::Canonical(QStringLiteral("fake-wallet"))));
+        settings.sync(); QCOMPARE(settings.status(), QSettings::NoError);
+    }
     void reviewRetirementSurvivesThrowingPost_data()
     {
         QTest::addColumn<int>("mode");
@@ -5215,8 +5227,7 @@ void WalletQmlModelTests::receivingAddressCreationAndRequestPersistenceAreSepara
     QCOMPARE(model->receiveRequests()->count(), 0);
     // Reopening the wallet restores its unused receiving address without
     // consuming another key or saving a payment request.
-    auto [restored_wallet, restored_model] = MakePasswordWalletModel();
-    restored_wallet->get_address_result = true;
+    auto [restored_wallet, restored_model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) { original.get_address_result = true; });
     QVERIFY(AwaitReceiveRequest(restored_model->ensureReceivingAddress()));
     QCOMPARE(restored_model->receivingAddress()->address(), address);
     QCOMPARE(restored_wallet->get_new_destination_calls, 0);
@@ -5236,7 +5247,9 @@ void WalletQmlModelTests::receivingAddressCreationAndRequestPersistenceAreSepara
     QCOMPARE(model->currentPaymentRequest()->noteSelf(), note);
     QVERIFY(!AwaitReceiveRequest(model->commitReceivingPaymentRequest()));
     QVERIFY(model->receivingAddress()->address().isEmpty());
-    QVERIFY(!settings.contains("receiveAddressTypes/fake-wallet/address"));
+    // R14's accepted canonical store keeps an empty legacy tombstone to stop
+    // an older alias from resurrecting this consumed reservation.
+    QCOMPARE(settings.value("receiveAddressTypes/fake-wallet/address").toString(), QString{});
     model->currentPaymentRequest()->clear();
     QVERIFY(AwaitReceiveRequest(model->ensureReceivingAddress()));
     QCOMPARE(wallet->get_new_destination_calls, 2);

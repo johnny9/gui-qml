@@ -140,6 +140,16 @@ class WalletReservationTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void inspectionRetainsTheNewAddressLabelWithoutAnEagerHistoryReload()
+    {
+        Fixture f; const auto reserved = f.settle(Reserve()); QVERIFY(reserved->result()->address);
+        std::optional<Inspection> source;
+        QVERIFY(f.store->inspect(0, reserved->address_intent->view, [&](Inspection value) { source = std::move(value); }));
+        f.commands.drain(); QVERIFY(source); QVERIFY(source->current_label);
+        QCOMPARE(*source->current_label, reserved->result()->address->label);
+        QCOMPARE(source->address->address, reserved->result()->address->address);
+        QCOMPARE(f.wallet->generated, 1); QCOMPARE(f.wallet->writes, 0);
+    }
     void initTestCase() { SelectBaseParams(ChainType::MAIN); SelectParams(ChainType::MAIN); }
     void aggregateKeypoolUnavailabilityIsNotATypeSupportFailure()
     {
@@ -282,7 +292,7 @@ private Q_SLOTS:
     void reservationFailuresOwnTheirExactNativeEffects_data()
     {
         QTest::addColumn<int>("mode");
-        const std::array names{"invalid-type", "generation-unsupported", "taproot-unsupported", "read-failed",
+        const std::array names{"invalid-type", "aggregate-unavailable-but-generation-succeeds", "taproot-unsupported", "read-failed",
             "read-threw", "missing-read-port", "missing-write-port", "write-failed", "write-threw",
             "generation-failed", "generation-threw", "paid-retirement-failed", "relock-threw", "history-threw"};
         for(int mode=0;mode<int(names.size());++mode)QTest::newRow(names[mode])<<mode;
@@ -308,17 +318,18 @@ private Q_SLOTS:
         if(mode==12){f.wallet->encrypted=f.wallet->locked=true;f.wallet->throw_lock=true;command.secret=std::make_shared<SecureString>("correct");}
         const auto secret=command.secret;
         const auto operation=f.settle(command);QVERIFY(operation&&operation->result());
-        const Error expected[]={Error::Invalid,Error::Unsupported,Error::Unsupported,Error::ReservationPersistence,
+        const Error expected[]={Error::Invalid,Error::None,Error::Unsupported,Error::ReservationPersistence,
             Error::Uncertain,Error::Unsupported,Error::ReservationPersistence,Error::ReservationPersistence,
             Error::Uncertain,Error::AddressCreation,Error::Uncertain,Error::ReservationPersistence,Error::Uncertain,Error::Uncertain};
         QCOMPARE(operation->result()->error,expected[mode]);
-        const bool generated=mode==6||mode==7||mode==8||mode==9||mode==10||mode==12;
+        const bool generated=mode==1||mode==6||mode==7||mode==8||mode==9||mode==10||mode==12;
         QCOMPARE(f.wallet->generated,generated?1:0);QCOMPARE(f.wallet->writes,0);
-        QCOMPARE(f.storage.reads,mode==0||mode==1||mode==2||mode==5?0:1);
-        QCOMPARE(f.storage.writes,mode==7||mode==8?1:0);QCOMPARE(f.storage.marks,mode==11?1:0);
-        const bool retained_address=mode==6||mode==7||mode==8||mode==12;
+        QCOMPARE(f.storage.reads,mode==0||mode==2||mode==5?0:1);
+        QCOMPARE(f.storage.writes,mode==1||mode==7||mode==8?1:0);QCOMPARE(f.storage.marks,mode==11?1:0);
+        const bool retained_address=mode==1||mode==6||mode==7||mode==8||mode==12;
         QCOMPARE(bool(operation->result()->address),retained_address);
-        if(retained_address){QCOMPARE(operation->result()->address->address,Address(1));QVERIFY(!operation->result()->address->persisted);}
+        if(retained_address){QCOMPARE(operation->result()->address->address,Address(1));QCOMPARE(operation->result()->address->persisted,mode==1);}
+        if(mode==1)QCOMPARE(f.storage.current,Address(1));
         if(mode==12){QCOMPARE(f.wallet->unlocked,1);QCOMPARE(f.wallet->relocked,1);QVERIFY(secret&&secret->empty());}
         else{QCOMPARE(f.wallet->unlocked,0);QCOMPARE(f.wallet->relocked,0);}
         if(expected[mode]==Error::Uncertain){

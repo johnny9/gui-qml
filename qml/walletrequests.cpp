@@ -407,6 +407,8 @@ execution::Admission Store::inspect(int64_t id, uint64_t view, std::function<voi
         const auto address = result.record ? result.record->display.address : result.address ? result.address->address : QString{};
         if (const auto label = self->m_labels.find(address); label != self->m_labels.end() && label->second.size() <= 16'384)
             result.current_label = label->second;
+        else if (result.address && result.address->address == address && result.address->label.size() <= 16'384)
+            result.current_label = result.address->label;
         return result;
     }, done, [done](std::exception_ptr) { Inspection failure; failure.error = Error::Rejected; done(std::move(failure)); },
         {execution::Lane::Domain, 512, {}, execution::WorkClass::Observation});

@@ -72,6 +72,7 @@ private:
     void observeReservation();
     void clearRepeat();
     void readOpenRequest();
+    void completeOpenRequest(uint64_t token, PaymentRequestEditorModel* editor);
     bool refuse(const QString& command, TextEditError error);
     bool owns(PaymentRequestEditorModel* editor) const;
     const uint64_t m_view;
@@ -91,6 +92,9 @@ private:
     bool m_open_waiting{false};
     int64_t m_open_id{0};
     uint64_t m_open_token{0};
+    QPointer<PaymentRequestEditorModel> m_open_editor;
+    QMetaObject::Connection m_open_ready;
+    bool m_open_refresh_pending{false};
     bool m_observing{false}, m_observe_again{false};
     TextEditError m_error;
 };

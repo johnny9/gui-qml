@@ -630,6 +630,16 @@ public:
         if (guard && m_enabled) { Q_EMIT chosen(m_request_context, m_selected_file); if (guard) Q_EMIT accepted(); }
     }
 
+    /** Exercise a consumer's stale-result guard independently of this mock's
+     * normal chooser adapter, which correctly drops a closed dialog result. */
+    Q_INVOKABLE void deliverLateAcceptedForTest(const QUrl& file)
+    {
+        const QPointer<MockFileDialog> guard{this};
+        m_selected_file = file;
+        Q_EMIT selectedFileChanged();
+        if (guard) Q_EMIT accepted();
+    }
+
 Q_SIGNALS:
     void titleChanged();
     void suggestedNameChanged();

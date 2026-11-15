@@ -200,7 +200,7 @@ QString WalletReceiveModel::beginOpenRequest(const QString& id)
     if (!parsed || m_closed || m_open_pending || !m_ports.editor.read || m_token == UINT64_MAX) {
         refuse(QStringLiteral("open"), {TextEditError::Refused, tr("This request view could not be admitted.")}); return {};
     }
-    m_open_pending = true; m_open_waiting = false; m_open_id = *parsed; m_open_token = ++m_token;
+    m_open_pending = true; m_open_waiting = m_open_refresh_pending = false; m_open_id = *parsed; m_open_token = ++m_token;
     const auto token = QString::number(m_open_token);
     const QPointer<WalletReceiveModel> guard{this};
     readOpenRequest(); return guard && guard->m_open_pending ? token : QString{};
@@ -209,11 +209,13 @@ void WalletReceiveModel::cancelOpenRequest(const QString& token)
 {
     if (!m_open_pending || token != QString::number(m_open_token)) return;
     m_open_pending = m_open_waiting = false; m_open_id = 0;
+    m_open_refresh_pending = false; m_open_editor = nullptr; disconnect(m_open_ready);
 }
 void WalletReceiveModel::readOpenRequest()
 {
     if (!m_open_pending || m_closed) return;
     m_open_waiting = false;
+    m_open_refresh_pending = false;
     const auto id = m_open_id; const auto token = m_open_token;
     const QPointer<WalletReceiveModel> observer{this}; const auto post = m_ports.editor.execution.post;
     const auto complete = [observer, post, id, token](requestedit::Source source) {
@@ -222,14 +224,16 @@ void WalletReceiveModel::readOpenRequest()
             if (!source.closed && source.error == walletrequests::Error::None && (!source.loaded || !source.current || (source.permission && !source.permission()))) {
                 // Await a producer's next observation; never poll or repeat a
                 // Core action. The exact original view token remains captured.
-                observer->m_open_waiting = true; return;
+                observer->m_open_waiting = true;
+                if (observer->m_open_refresh_pending) observer->readOpenRequest();
+                return;
             }
-            observer->m_open_pending = false; observer->m_open_id = 0;
             if (!source.exists || source.closed || source.error != walletrequests::Error::None) {
                 const TextEditError error{source.closed ? TextEditError::Closed : source.error == walletrequests::Error::Uncertain ? TextEditError::Unknown :
                     source.error == walletrequests::Error::Rejected ? TextEditError::Refused : TextEditError::Changed,
                     source.error == walletrequests::Error::None ? tr("This saved request is no longer available.") : walletrequests::ErrorText(source.error)};
-                const QPointer<WalletReceiveModel> guard{observer};
+                const auto& guard = observer;
+                observer->cancelOpenRequest(QString::number(token));
                 Q_EMIT observer->requestViewFailed(QString::number(token), error);
                 if (guard) Q_EMIT guard->requestOpenFailed(error);
                 return;
@@ -240,26 +244,49 @@ void WalletReceiveModel::readOpenRequest()
             if (!editor) editor = observer->makeEditor(id);
             if (!editor) {
                 if (!observer) return;
-                const auto error = observer->m_error; const QPointer<WalletReceiveModel> guard{observer};
+                const auto error = observer->m_error; const auto& guard = observer;
+                observer->cancelOpenRequest(QString::number(token));
                 Q_EMIT observer->requestViewFailed(QString::number(token), error);
                 if (guard) Q_EMIT guard->requestOpenFailed(error);
                 return;
             }
-            const QPointer<WalletReceiveModel> guard{observer};
+            const auto& guard = observer;
             const QPointer<PaymentRequestEditorModel> original{editor};
+            observer->m_open_editor = editor;
+            observer->m_open_ready = connect(editor, &PaymentRequestEditorModel::changed, observer, [observer, original, token] {
+                if (observer && original) observer->completeOpenRequest(token, original);
+            });
             editor->refresh(); if (!guard || !original) return;
-            Q_EMIT observer->requestViewReady(QString::number(token), editor);
-            if (guard) Q_EMIT guard->requestOpened(editor);
+            observer->completeOpenRequest(token, editor);
         });
     };
     if (!m_ports.editor.read(id, m_view, complete)) {
-        m_open_pending = false; m_open_id = 0;
+        cancelOpenRequest(QString::number(token));
         const TextEditError error{TextEditError::Refused, tr("The saved request could not be read.")};
         m_error = error;
         const QPointer<WalletReceiveModel> guard{this};
         Q_EMIT requestViewFailed(QString::number(token), error);
         if (guard) Q_EMIT requestOpenFailed(error);
     }
+}
+void WalletReceiveModel::completeOpenRequest(uint64_t token, PaymentRequestEditorModel* editor)
+{
+    if (!m_open_pending || m_closed || token != m_open_token || m_open_editor != editor) return;
+    if (editor->phase() == PaymentRequestEditorModel::Loading) return;
+    const QPointer<WalletReceiveModel> guard{this}; const QPointer<PaymentRequestEditorModel> original{editor};
+    const auto id = QString::number(m_open_id);
+    if (!editor->available() || editor->requestId() != id) {
+        const TextEditError error{TextEditError::Changed, tr("The original saved request is no longer available.")};
+        cancelOpenRequest(QString::number(token)); m_error = error;
+        Q_EMIT requestViewFailed(QString::number(token), error);
+        if (guard) Q_EMIT requestOpenFailed(error);
+        return;
+    }
+    // The real facade must own its exact source projection before its view
+    // receipt can be consumed. A new facade is initially still Loading.
+    cancelOpenRequest(QString::number(token));
+    Q_EMIT requestViewReady(QString::number(token), editor);
+    if (guard && original) Q_EMIT requestOpened(original);
 }
 PaymentRequestEditorModel* WalletReceiveModel::deleteRequest(const QString& id)
 {
@@ -287,7 +314,9 @@ RequestSharingModel* WalletReceiveModel::sharing(PaymentRequestEditorModel* edit
 void WalletReceiveModel::refresh()
 {
     if (m_closed) return;
-    if (m_open_pending && m_open_waiting) readOpenRequest();
+    if (m_open_pending && !m_open_editor) {
+        if (m_open_waiting) readOpenRequest(); else m_open_refresh_pending = true;
+    }
     observeReservation();
     for (const auto& editor : m_editors) if (editor) editor->refresh();
     for (const auto& context : m_sharing) if (context) context->refresh();
@@ -306,7 +335,7 @@ void WalletReceiveModel::observeReservation()
             const bool again = std::exchange(observer->m_observe_again, false);
             const bool same = observer->m_reservation.intent() == intent &&
                 (source.reservation == intent || source.address == observer->m_reservation.address());
-            const QPointer<WalletReceiveModel> guard{observer};
+            const auto& guard = observer;
             if (same) observer->m_reservation.observe(source.used, source.current && source.reservation == intent);
             if (guard && again) guard->observeReservation();
         });
@@ -316,7 +345,7 @@ void WalletReceiveModel::observeReservation()
 void WalletReceiveModel::retire()
 {
     if (std::exchange(m_closed, true)) return;
-    m_pending.reset(); clearRepeat(); m_open_pending = m_open_waiting = false; m_open_id = 0; m_reservation.retire();
+    m_pending.reset(); clearRepeat(); cancelOpenRequest(QString::number(m_open_token)); m_reservation.retire();
     const auto editors = m_editors; const auto contexts = m_sharing;
     for (const auto& editor : editors) if (editor) editor->retire();
     for (const auto& context : contexts) if (context) context->retire();

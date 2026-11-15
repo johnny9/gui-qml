@@ -6,6 +6,7 @@
 #include <qml/guipresentation.h>
 #include <qml/retainedsnapshot.h>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QUuid>
 #include <array>
 #include <algorithm>
@@ -90,7 +91,11 @@ struct PaymentRequestEditorModel::State : std::enable_shared_from_this<State> {
     TextEditError error, rejected_error;
     RequestSaveResult result;
     uint64_t observation{0}, input{0}, read_token{0}, seen_save{0}, rejection{0}, result_sequence{0};
-    bool reading{false}, initialized{false}, read_error{false};
+    bool reading{false}, read_again{false}, initialized{false}, read_error{false};
+    // Protect an original save's queued validation from an earlier ordinary
+    // edit/read noticing projection retirement. This is admission accounting,
+    // not a right to admit a new mutation after the parent fence closes.
+    std::atomic_bool validation_admitted{false};
     uint64_t keep_sequence{0};
     QString kept_token;
     requestedit::Inputs loading_input;
@@ -152,8 +157,9 @@ struct PaymentRequestEditorModel::State : std::enable_shared_from_this<State> {
     }
     void read()
     {
-        if (reading || editor.busy() || editor.phase() == persistentedit::Phase::Closed || read_token == UINT64_MAX) return;
-        reading = true; const auto token = ++read_token; const auto self = shared_from_this();
+        if (editor.busy() || editor.phase() == persistentedit::Phase::Closed || read_token == UINT64_MAX) return;
+        if (reading) { read_again = true; return; }
+        reading = true; read_again = false; const auto token = ++read_token; const auto self = shared_from_this();
         bool admitted{false};
         try { admitted = ports.read && bool(ports.read(id, view, [self, token](requestedit::Source value) { self->readDone(token, std::move(value)); })); }
         catch (...) {}
@@ -163,6 +169,7 @@ struct PaymentRequestEditorModel::State : std::enable_shared_from_this<State> {
     {
         if (token != read_token) return;
         reading = false;
+        const bool again = std::exchange(read_again, false);
         if (mailbox->retired.load()) { retire(); return; }
         if (value.closed) { source.closed = true; error = {TextEditError::Closed, tr("This wallet opening has closed.")}; retire(); return; }
         if (!value.loaded || !value.current || value.error != walletrequests::Error::None || (id > 0 && !value.exists)) {
@@ -172,10 +179,10 @@ struct PaymentRequestEditorModel::State : std::enable_shared_from_this<State> {
                 TextEditError{TextEditError::Changed, id > 0 && value.loaded && !value.exists ? tr("This request no longer exists.") : tr("Payment request state is being reconciled.")};
             if (value.error == walletrequests::Error::Invalid || value.error == walletrequests::Error::Missing || value.error == walletrequests::Error::Closed ||
                 (id > 0 && value.loaded && value.current && !value.exists)) { retire(); return; }
-            publish(); return;
+            publish(); if (again) read(); return;
         }
         source = std::move(value);
-        if (std::exchange(read_error, false)) error = {};
+        if (std::exchange(read_error, false)) error = result.present && result.requestSaved ? Failure(result.error, true) : TextEditError{};
         if (observation == UINT64_MAX) { refuse({TextEditError::Refused, tr("This editor has reached its revision limit.")}); publish(); return; }
         editor.observe(source.values, ++observation);
         if (!initialized) {
@@ -186,19 +193,29 @@ struct PaymentRequestEditorModel::State : std::enable_shared_from_this<State> {
             if (erase) editor.requestClose();
         }
         if (publicConflict()) error = {TextEditError::Changed, tr("This address was used. Discard changes to the public payment details; the private note can still be saved.")};
-        else if (error.code == TextEditError::Changed || error.code == TextEditError::Refused) error = {};
+        else if ((error.code == TextEditError::Changed || error.code == TextEditError::Refused) &&
+            !(result.present && result.requestSaved && result.error != walletrequests::Error::None)) error = {};
         publish();
+        if (again) read();
     }
     void save(requestedit::Inputs inputs, requestedit::Source captured, Writer writer,
               std::shared_ptr<execution::Scheduler> action, uint64_t request, std::optional<uint64_t> close_token);
     void finish(const requestedit::Intent& intent, requestedit::Write outcome, bool reconcile);
     void reconcile();
-    void retire() { loading_input = {}; initial.reset(); editor.retire(); scope.store({}); publish(); }
+    void retire()
+    {
+        if (validation_admitted.load()) return;
+        loading_input = {}; initial.reset(); editor.retire(); scope.store({}); publish();
+    }
 };
 
 void PaymentRequestEditorModel::State::save(requestedit::Inputs inputs, requestedit::Source captured,
     Writer writer, std::shared_ptr<execution::Scheduler> action, uint64_t request, std::optional<uint64_t> close_token)
 {
+    const auto consumed = qScopeGuard([this] {
+        validation_admitted.store(false);
+        if (mailbox->retired.load()) retire();
+    });
     seen_save = std::max(seen_save, request); apply(std::move(inputs));
     if (captured.id != source.id || captured.revision != source.revision || captured.reservation != source.reservation ||
         captured.address != source.address || !valid()) {
@@ -509,10 +526,13 @@ void PaymentRequestEditorModel::saveCommand(std::optional<uint64_t> close_token)
         const auto state = m_state.lock();
         try { if (action && state && state->ports.admitWrite) writer = state->ports.admitWrite(); } catch (...) {}
         if (!guard) return;
-        admitted = action && writer && state && bool(state->postUsing(action,
-            [inputs, captured, writer = std::move(writer), action, request, close_token](State& owner) mutable {
-                owner.save(inputs, captured, std::move(writer), action, request, close_token);
-            }, true));
+        if (action && writer && state && !state->validation_admitted.exchange(true)) {
+            admitted = bool(state->postUsing(action,
+                [inputs, captured, writer = std::move(writer), action, request, close_token](State& owner) mutable {
+                    owner.save(inputs, captured, std::move(writer), action, request, close_token);
+                }, true));
+            if (!admitted) state->validation_admitted.store(false);
+        }
     }
     if (!guard) return;
     if (admitted) { m_pending_save = m_next_save = request; m_immediate_error = {}; Q_EMIT changed(); }

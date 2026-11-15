@@ -28,6 +28,7 @@ struct ReceiveEditorPorts {
     int reads{0}, writes{0}, generations{0}, authorizations{0}, preferences{0}, clipboard{0}, file_writes{0}, inspections{0};
     Error next_write{Error::None}, next_generation{Error::None};
     bool save_request{true}, save_label{true}, preference_saves{true}, closed{false}, target_exists{false}, target_changed{false};
+    bool label_conflict_after_write{false};
     QString clipboard_text, written_path;
     QImage clipboard_image, written_image;
     requestshare::Delivery delivery{requestshare::Delivery::Accepted};
@@ -86,7 +87,8 @@ struct ReceiveEditorPorts {
                     requestedit::Write receipt;
                     receipt.actual.id = intent.source.id > 0 ? intent.source.id : 47;
                     receipt.actual.error = std::exchange(next_write, Error::None);
-                    if (receipt.actual.error == Error::None || receipt.actual.error == Error::LabelPersistence || receipt.actual.error == Error::Uncertain) {
+                    if (receipt.actual.error == Error::None || receipt.actual.error == Error::LabelPersistence || receipt.actual.error == Error::Uncertain ||
+                        (receipt.actual.error == Error::Changed && label_conflict_after_write)) {
                         receipt.actual.request_saved = save_request && !intent.erase;
                         receipt.actual.erased = save_request && intent.erase;
                         receipt.actual.label_saved = save_label && !intent.erase;

@@ -97,9 +97,9 @@ Page {
     }
     Connections {
         target: root.receive
-        function onExistingRequestRequested(id) { if (root.visible) createdRequest.openRequest(id) }
+        function onExistingRequestRequested(id) { if (root.visible && root.walletViewActive) createdRequest.openRequest(id) }
         function onRequestPersisted(result) {
-            if (!result.requestSaved || !root.receive || !root.receive.editor || root.receive.editor.editorId !== result.editorId) return
+            if (!root.visible || !root.walletViewActive || !result.requestSaved || !root.receive || !root.receive.editor || root.receive.editor.editorId !== result.editorId) return
             const original = root.wallet
             const owner = root.receive
             root.paymentRequestCreated()

@@ -376,8 +376,9 @@ void Store::addressReady(const std::shared_ptr<AddressWork>& work, ReservedAddre
         const auto self = shared_from_this();
         const auto admitted = m_opening->setReceivePreference(address.address_type.toStdString(), work->queued.action,
             [self, work, address](bool saved) { work->preference_saved = saved; self->addressReady(work, address, saved ? Error::None : Error::PreferencePersistence); });
-        if (!admitted) addressReady(work, std::move(address), Error::PreferencePersistence);
-        return;
+        if (admitted) return;
+        error = Error::PreferencePersistence;
+        m_address_questions[intent->view] = intent;
     }
     Result result; result.error = error;
     result.preference_requested = work->preference_attempted; result.preference_saved = work->preference_saved;
