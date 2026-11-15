@@ -122,7 +122,7 @@ public:
     std::atomic_bool blocking_read_on_gui{false};
     bool fail_history{false};
     std::atomic_bool fail_next_history{false};
-    std::shared_ptr<ReadGate> history_gate, try_status_gate, parent_gate, bump_gate;
+    std::shared_ptr<ReadGate> history_gate, try_status_gate, parent_gate, bump_gate, commit_gate;
     std::shared_ptr<RepeatingReadGate> repeated_status_gate;
     void blockingRead() { if (QThread::currentThread() == qApp->thread()) blocking_read_on_gui = true; }
     bool external_signer{false};
@@ -240,6 +240,7 @@ public:
     }
     void commitTransaction(CTransactionRef tx, const std::vector<std::string>&) override
     {
+        if (commit_gate) commit_gate->wait();
         ++commits;
         send_draft->tx = std::move(tx);
         put(*send_draft, 0);
@@ -261,6 +262,9 @@ public:
         std::vector<std::string>&, std::vector<std::string>&, bool& in_mempool, int& height) override
     {
         blockingRead();
+        // Existing Activity fixtures intentionally lack the optional blocking
+        // details port. Only this fixture's actual send has a recorded receipt.
+        if (!send_draft || !send_draft->tx || send_draft->tx->GetHash() != id) return {};
         const auto transaction = transactions.find(id);
         const auto found = statuses.find(id);
         if (found != statuses.end()) status = found->second;
@@ -1474,12 +1478,23 @@ void TransactionActivityModelTests::savesBatchRecipientNotesWhenSending()
         QVERIFY2(f.wallet->signerApprovalState() == WalletQmlModel::ApprovalState::ApprovalSigned, qPrintable(f.wallet->signerApprovalError()));
         QCOMPARE(approved.count(), 1);
     }
-    // The committed notes belong to the reviewed transaction, not a new draft.
-    recipients->clear();
-    QVERIFY2(AwaitCommittedSend(*f.wallet), qPrintable(f.wallet->transactionError()));
+    // A new intent must pass the current-review guard. Once admitted, its
+    // immutable transaction/notes belong to that receipt through live edits.
+    const auto gate = std::make_shared<ReadGate>(); f.state->commit_gate = gate;
+    const auto unblock = qScopeGuard([&] { gate->release.release(); });
+    const auto ticket = f.wallet->requestSendTransaction(); QVERIFY(ticket);
+    const auto original = f.wallet->sendOperation(); QVERIFY(original);
+    QTRY_VERIFY(gate->entered.available() > 0 || original->result().has_value() || f.wallet->sendState() == WalletQmlModel::SendState::SendNeedsConfirmation);
+    if (f.wallet->sendState() == WalletQmlModel::SendState::SendNeedsConfirmation) QVERIFY(f.wallet->confirmSendTransaction(ticket));
+    QTRY_VERIFY2(gate->entered.available() > 0, qPrintable(f.wallet->transactionError()));
+    QCOMPARE(f.state->commits, 0); QVERIFY(!original->result());
+    recipients->clear(); QCOMPARE(f.state->commits, 0); QVERIFY(!original->result());
+    gate->release.release();
+    QTRY_VERIFY(original->result().has_value());
+    QVERIFY2(bool(original->result()->committed), qPrintable(f.wallet->transactionError()));
     QCOMPARE(f.state->commits, 1);
     // Committing and saving the original reviewed notes have separate receipts.
-    const QString committed_txid = f.wallet->sendResultTxid();
+    const QString committed_txid = QString::fromStdString(original->result()->committed->GetHash().GetHex());
     QVERIFY(!committed_txid.isEmpty());
     QTRY_COMPARE(f.wallet->recipientLabelsTransactionId(), committed_txid);
     QTRY_VERIFY(!f.wallet->recipientLabelsPending());
