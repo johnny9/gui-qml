@@ -3073,7 +3073,18 @@ void OptionsModelTests::onboardingStorageProjectionCoalescesPublicPruneChoice()
         QCOMPARE(storage_changed.size(), statuses_before_old_publish);
         QCOMPARE(can_finish_changed.size(), finish_signals_before_old_publish);
         QCOMPARE(graph.posts.size(), size_t{1});
-        QVERIFY(graph.drainLive());
+        QVERIFY(graph.deliverOnePost()); // Admit the queued successor projection.
+        const auto successor_projection = graph.finishQueuedWork(execution::Lane::Domain);
+        QVERIFY(successor_projection);
+        QVERIFY(graph.deliverTaskOutcome(*successor_projection));
+        auto successor_publication = graph.takeTaskPost(*successor_projection);
+        QVERIFY(successor_publication);
+        const auto statuses_before_successor = storage_changed.size();
+        const auto finish_before_successor = can_finish_changed.size();
+        (*successor_publication)();
+        QCOMPARE(storage_changed.size(), statuses_before_successor + 1);
+        QCOMPARE(can_finish_changed.size(), finish_before_successor + 1);
+        QVERIFY(graph.drainLive()); // Independent flow/pending transitions may notify readiness.
 
         QCOMPARE(model.prune(), selected_prune_choice);
         QVERIFY(!model.storageCheckPending());
@@ -3083,7 +3094,6 @@ void OptionsModelTests::onboardingStorageProjectionCoalescesPublicPruneChoice()
             : model.fullStorageRequiredGB();
         QCOMPARE(model.selectedStorageRequiredGB(), expected_selected_storage_gb);
         QCOMPARE(storage_changed.size(), statuses_before_old_publish + 1);
-        QCOMPARE(can_finish_changed.size(), finish_signals_before_old_publish + 1);
         QVERIFY(graph.transport.transportIdle());
         QVERIFY(graph.transport.scheduler->pending() > 0);
         model.beginShutdown();
