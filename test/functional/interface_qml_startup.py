@@ -171,14 +171,23 @@ def desktop_intent_secondary_forwarding(wallet_enabled=False):
             secondary = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             try:
                 stdout, stderr = secondary.communicate(timeout=30)
+            except subprocess.TimeoutExpired as expired:
+                print(f"R40_SECONDARY_WATCHDOG pid={secondary.pid} timeout=30 exit={secondary.poll()}", flush=True)
+                print("Secondary watchdog stdout:\n" + (expired.output or b"").decode("utf8", errors="replace"), flush=True)
+                print("Secondary watchdog stderr:\n" + (expired.stderr or b"").decode("utf8", errors="replace"), flush=True)
+                print("Secondary watchdog paths: " + json.dumps({str(path): path.exists() for path in [bridge, *local_effects]}), flush=True)
+                raise
             finally:
                 if secondary.poll() is None:
                     secondary.terminate()
                     try:
-                        secondary.communicate(timeout=10)
+                        cleanup_stdout, cleanup_stderr = secondary.communicate(timeout=10)
                     except subprocess.TimeoutExpired:
                         secondary.kill()
-                        secondary.communicate(timeout=10)
+                        cleanup_stdout, cleanup_stderr = secondary.communicate(timeout=10)
+                    print(f"R40_SECONDARY_CLEANUP pid={secondary.pid} exit={secondary.returncode}", flush=True)
+                    print("Secondary cleanup stdout:\n" + cleanup_stdout.decode("utf8", errors="replace"), flush=True)
+                    print("Secondary cleanup stderr:\n" + cleanup_stderr.decode("utf8", errors="replace"), flush=True)
             text = stdout.decode("utf8", errors="replace")
             print("Secondary stdout:\n" + text, flush=True)
             print("Secondary stderr:\n" + stderr.decode("utf8", errors="replace"), flush=True)
