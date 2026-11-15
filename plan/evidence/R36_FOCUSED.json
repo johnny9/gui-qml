@@ -1,0 +1,113 @@
+{
+  "status": "focused_progress_gate_satisfied_ready_for_coordinator_integration",
+  "tested_head": "bfefe696aa269facde1b26b29ab31df624c15631",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "Core_or_Qt_changes": false,
+  "original_confirmed_parent_controls": {
+    "ordinary_Qt_bodies": 10,
+    "all_intended_failure": true,
+    "artifacts": [
+      "bazzite-06/artifacts/red/results/report.json",
+      "bazzite-07/artifacts/red/results/report.json",
+      "bazzite-08/artifacts/red/results/report.json"
+    ],
+    "independent_actual_Core_exit_parent": "exit-status/bazzite-01/artifacts/red: real block-write failure exits0, required1; current real failure exits1"
+  },
+  "successful_distinct_bodies": {
+    "unit": 367,
+    "integration": 9,
+    "qml": 18
+  },
+  "successful_body_total": 394,
+  "owner_counts": {
+    "NetworkCommandTests": 33,
+    "QmlInitExecutorApiTests": 43,
+    "NodeModelTests": 196,
+    "integration": 9,
+    "NodeLifecycleTests": 18,
+    "NodeLifecycleWorkerTests": 34,
+    "RuntimePromptTests": 32,
+    "RuntimePromptWorkerTests": 11,
+    "qml": 18
+  },
+  "counting": "source-hashed successful identity union; not one same-ELF full suite. No failed/skipped/empty selection counted. Complete identity ledger retained at task root FOCUSED_CASE_IDENTITY_UNION_09.json.",
+  "native_carry": {
+    "pure_unchanged_source06": 95,
+    "source08_current_consumers": 280,
+    "source09_repaired_fixture": 1,
+    "proof": "UNCHANGED_PURE_OWNER_CARRY_09.json and SNAPSHOT_09.json",
+    "source08_production_CPP_and_headers_equal_source09": true
+  },
+  "QML_carry": {
+    "source07": 10,
+    "source08": 4,
+    "source09": 4,
+    "distinct": 18,
+    "note": "Unchanged prompt/MainWindow producers and same original source oracles retained; two redundant app enabled declarations normalize inherited Item API and receive current affected-controls. Historical runtime-prompt test-only owned-timer wait repair documented, no relaxed warning policy."
+  },
+  "processes": {
+    "source08_distinct_passed": 8,
+    "source09_repeated_bridge_passed": 1,
+    "unique_count": 8,
+    "scenarios": [
+      "bridge-protocol",
+      "runtime-block-write-failure-exit-status",
+      "onboarding-close",
+      "wallet-loading-close",
+      "fatal-initialize-button",
+      "fatal-interrupt-button",
+      "fatal-shutdown-button",
+      "Core IPC interface_gui.py"
+    ],
+    "fatal_actual_app_exit": 1,
+    "normal_actual_app_exit": 0,
+    "outer_stderr_bytes": 0,
+    "fatal_companion_driver": "existing repository qml_test_fatal_exceptions.py passed over nonempty exact fatal data rows; one Python unittest, not inflated into ordinary Qt bodies",
+    "stderr_policy": "Outer harness stderr0; GUI stderr inspected under unchanged approved minimal-platform font/plugin policy, runtime fatal Core error retained explicitly; no claim all GUI raw stderr is empty."
+  },
+  "static": {
+    "source08_CPP": 21,
+    "source08_MOC": 7,
+    "source08_passed": 28,
+    "source09_CPP": 1,
+    "source09_MOC": 7,
+    "source09_passed": 8,
+    "ClangTidy": "pinned23 + Core Bitcoin plugin/checks",
+    "QML_files_per_variant": 259,
+    "variants": [
+      "qt62",
+      "qt65"
+    ],
+    "QML_warnings_errors": 0,
+    "QML_negative_gate_controls": 10,
+    "app_lint09_exit": 0,
+    "artifacts": [
+      "static-08",
+      "static-09",
+      "lint-09"
+    ],
+    "runtime_vs_static": "R14 local autogen/static did not change four runtime executable hashes; runtime positives are the actual remote ELFs in their retained receipts."
+  },
+  "ordinary_toolchains": {
+    "Linux": "Bazzite pinned c30 Clang23.1.6 Release/O3, Qt6.4; IPC/TestAutomation ON, CLI OFF preserved and unused; Python RPC",
+    "macOS": "ARM Qt6.11.2 QML focused lane",
+    "pinned_static": "a4 image Clang23/Qt6.10.2 + pinned Bitcoin plugin"
+  },
+  "raw_failure_retention": [
+    "source03 unknown bitcoin-cli target: zero bodies",
+    "source05 embedded receipt syntax error: zero bodies",
+    "source06 actual strict/terminal/timeout failures",
+    "source07 actual network/fixture and owned-timer failure",
+    "source08 one prompt-order fixture plus app-property shadow warnings",
+    "all private parent failures and first independent071 strict fixtures retained"
+  ],
+  "scope_policy": "Nine assigned issue records preserve candidate/nondefect classifications. Confirmed adjacent guard defects use actual original public/manual or Core oracles. No guessed IBD blanket policy, optimistic status, Core internals, new execution framework or native Qt replacement.",
+  "upstream_note": "plan/R36_NETWORK_OBSERVATION_ADAPTER.md records public interface observation/conditional-set limitations and retirement condition.",
+  "R42_pending": [
+    "exhaustive100% coverage/macro/profile qualification",
+    "full suites",
+    "supported Qt/platform/configuration matrices including native Windows",
+    "sanitizers"
+  ],
+  "no_push": true
+}
