@@ -112,6 +112,25 @@ Transition Preparation::discard(const Ticket& ticket, Phase outcome)
     return Transition::Accepted;
 }
 
+Transition Preparation::advance(const Ticket& ticket, CurrentFacts facts, Phase expected, Phase outcome)
+{
+    if (ticket.id == 0 || ticket != m_ticket || m_phase != expected
+        || facts.session != ticket.session || (expected != Phase::Submitting && !facts.session_open)
+        || facts.review != m_candidate_review) return Transition::Ignored;
+    const bool allowed =
+        (expected == Phase::Reviewing && (outcome == Phase::Submitting || outcome == Phase::NeedsRevalidation || outcome == Phase::Failed || outcome == Phase::Uncertain))
+        || (expected == Phase::NeedsUnlock && (outcome == Phase::Submitting || outcome == Phase::NeedsRevalidation || outcome == Phase::Failed))
+        || (expected == Phase::Submitting && (outcome == Phase::Settled || outcome == Phase::NeedsUnlock || outcome == Phase::NeedsRevalidation || outcome == Phase::Failed || outcome == Phase::Uncertain));
+    if (!allowed) return Transition::Ignored;
+    m_phase = outcome;
+    if (outcome == Phase::NeedsRevalidation || outcome == Phase::Failed) {
+        m_candidate.reset();
+        m_candidate_revision = 0;
+        m_candidate_review = 0;
+    }
+    return Transition::Accepted;
+}
+
 void Preparation::close()
 {
     m_candidate.reset();
@@ -135,6 +154,7 @@ Owner::Owner(std::shared_ptr<execution::Scheduler> scheduler)
 Snapshot Owner::project(State& state)
 {
     Snapshot result;
+    result.kind = state.kind;
     result.sequence = state.sequence;
     result.id = state.preparation.id();
     result.intent_revision = state.preparation.intentRevision();
@@ -144,6 +164,7 @@ Snapshot Owner::project(State& state)
     result.candidate_review = state.preparation.candidateReview();
     result.current_review = state.facts.review;
     result.candidate_current = state.preparation.candidateCurrent(state.facts.review);
+    result.original_txid = state.original_txid;
     return result;
 }
 
@@ -169,9 +190,11 @@ execution::Admission Owner::begin(StartInput input, Completion done)
             if (input.intent_revision < state.preparation.intentRevision()) {
                 return Result{Transition::Stale, {}, AdmissionError::StaleIntent};
             }
-            if (input.id == 0 || input.id <= state.preparation.id()) {
+            if (state.preparation.phase() == Phase::Closed || input.id == 0 || input.id <= state.preparation.id()) {
                 return Result{Transition::Ignored, {}, AdmissionError::Closed};
             }
+            state.kind = input.kind;
+            state.original_txid.clear();
             state.preparation.intentChanged(input.intent_revision);
             state.facts = input.facts;
             const auto ticket = state.preparation.begin(input.facts.session, input.facts.review, input.id);
@@ -189,6 +212,34 @@ execution::Admission Owner::begin(StartInput input, Completion done)
                 state.preparation.reject(ticket, phase);
             }
             return Result{Transition::Accepted, {}, error};
+        }, std::move(done));
+}
+
+execution::Admission Owner::beginReplacement(ReplacementStart input, Completion done)
+{
+    return submit(m_state, m_scheduler, m_key,
+        [input = std::move(input)](State& state) mutable {
+            if (input.intent_revision < state.preparation.intentRevision()) {
+                return Result{Transition::Stale, {}, AdmissionError::StaleIntent};
+            }
+            if (state.preparation.phase() == Phase::Closed || input.id == 0 || input.id <= state.preparation.id()) {
+                return Result{Transition::Ignored, {}, AdmissionError::Closed};
+            }
+            state.kind = Kind::Replacement;
+            state.original_txid = input.original_txid;
+            state.preparation.intentChanged(input.intent_revision);
+            state.facts = input.facts;
+            const auto ticket = state.preparation.begin(input.facts.session, input.facts.review, input.id);
+            if (ticket.id == 0) return Result{Transition::Ignored, {}, AdmissionError::Closed};
+            if (!input.facts.session_open) {
+                state.preparation.reject(ticket, Phase::Closed);
+                return Result{Transition::Accepted, {}, AdmissionError::Closed};
+            }
+            if (input.original_txid.size() != 64) {
+                state.preparation.reject(ticket, Phase::Failed);
+                return Result{Transition::Accepted, {}, AdmissionError::InvalidDraft};
+            }
+            return Result{Transition::Accepted};
         }, std::move(done));
 }
 
@@ -284,6 +335,16 @@ execution::Admission Owner::discard(Ticket ticket, Phase outcome, Completion don
     return submit(m_state, m_scheduler, m_key,
         [ticket = std::move(ticket), outcome](State& state) {
             return Result{state.preparation.discard(ticket, outcome)};
+        }, std::move(done));
+}
+
+execution::Admission Owner::advance(Ticket ticket, CurrentFacts facts, Phase expected, Phase outcome, Completion done)
+{
+    return submit(m_state, m_scheduler, m_key,
+        [ticket = std::move(ticket), facts = std::move(facts), expected, outcome](State& state) mutable {
+            if (state.preparation.ticket() != ticket) return Result{Transition::Ignored};
+            state.facts = facts;
+            return Result{state.preparation.advance(ticket, facts, expected, outcome)};
         }, std::move(done));
 }
 

@@ -81,6 +81,7 @@ TestCase {
     }
 
     function cleanup() {
+        nodeModel.answerRuntimeDialog(DialogButtonBox.Ok)
         // The shared targets outlive temporary QtTest creation contexts.
         for (let i = 0; i < mainGapSpies.length; ++i) mainGapSpies[i].target = null
         mainGapSpies = []
@@ -144,6 +145,25 @@ TestCase {
         verify(windowUnderTest !== null)
         wait(0)
         return windowUnderTest
+    }
+
+    function test_owned_runtime_prompt_reveals_the_actual_main_window_overlay() {
+        const window = createMain(false)
+        window.hide()
+        compare(window.visible, false)
+        nodeModel.setRuntimeDialogForTest("Original", "Actual MainWindow question", DialogButtonBox.Ok, true)
+        const original = nodeModel.runtimePrompt
+        verify(original !== null)
+        tryCompare(window, "visible", true)
+        const popup = findChild(window.contentItem, "nodeRuntimeDialog")
+        verify(popup !== null)
+        tryCompare(popup, "opened", true)
+        compare(popup.prompt, original)
+        compare(popup.parent, window.Overlay.overlay)
+        const button = findChild(popup, "nodeRuntimeDialogButtonOk")
+        verify(button !== null)
+        clickVisible(button)
+        tryCompare(nodeModel, "runtimeDialogVisible", false)
     }
 
     function test_wallet_available_routes_to_desktop_wallets() {

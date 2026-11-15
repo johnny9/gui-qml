@@ -249,12 +249,12 @@ struct Prepared {
     std::string network;
     bool ready{false};
 };
-Prepared Prepare(ArgsManager& args,const Snapshot& original,const Batch& batch)
+Prepared Prepare(ArgsManager& args,const Snapshot& original,const Batch& batch,bool verify_disk=true)
 {
     Prepared prepared;
     if(!original.ready||batch.base_revision!=original.revision||batch.edits.empty()||batch.edits.size()>KEYS.size()){prepared.result.error=Text("The complete settings batch has no valid original snapshot.");return prepared;}
     const auto source=Capture(args);prepared.network=args.GetChainTypeString();const auto& network=prepared.network;
-    if (!SameSavedValues(source.rw_settings, Disk(args))) { prepared.result.outcome=Outcome::Conflict;prepared.result.error=Text("The settings file changed independently. Reload and review it before saving.");return prepared; }
+    if (verify_disk && !SameSavedValues(source.rw_settings, Disk(args))) { prepared.result.outcome=Outcome::Conflict;prepared.result.error=Text("The settings file changed independently. Reload and review it before saving.");return prepared; }
     if(Revision(source,network)!=original.revision){prepared.result.outcome=Outcome::Conflict;prepared.result.snapshot=Read(args);prepared.result.error=Text("The effective configuration changed. Review the settings before saving.");return prepared;}
     prepared.result.validation = Shape(original, batch);
     if (!prepared.result.validation.valid()) { prepared.result.snapshot = original; prepared.result.error = prepared.result.validation.errors.begin()->second; return prepared; }
@@ -286,6 +286,24 @@ Prepared Prepare(ArgsManager& args,const Snapshot& original,const Batch& batch)
     return prepared;
 }
 } // namespace
+Check ReviewStaged(ArgsManager& args,const Batch& input)
+{
+    try {
+        const auto source=Capture(args);const auto network=args.GetChainTypeString();auto current=CapturedArgs(source,network);
+        const auto original=Project(*current,source,network);
+        if(!original.persistence_available)return {false,original,{},Text("Persistent settings are disabled in this profile.")};
+        if(input.edits.empty()){
+            auto next=NextArgs(source,network);const auto candidate=Project(*next,source,network);
+            const auto checked=Policy(candidate,input,Inspect(*next));
+            return {checked.valid(),original,checked,checked.valid()?QString{}:checked.errors.begin()->second};
+        }
+        auto batch=input;batch.base_revision=original.revision;
+        const auto prepared=Prepare(args,original,batch,false);
+        return {prepared.ready,prepared.result.snapshot,prepared.result.validation,prepared.result.error};
+    }catch(const std::exception& error){return {false,{}, {},QString::fromUtf8(error.what()).left(4096)};}
+    catch(...){return {false,{}, {},Text("The staged startup configuration could not be checked.")};}
+}
+
 Check Review(ArgsManager& args,const Snapshot& original,const Batch& batch)
 {
     try {const auto prepared=Prepare(args,original,batch);return {prepared.ready,prepared.result.snapshot,prepared.result.validation,prepared.result.error};}

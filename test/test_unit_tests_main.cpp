@@ -31,8 +31,11 @@ void ConfiguredQtHandler(QtMsgType type, const QMessageLogContext& context, cons
 { qtlog::Forward(type, context, message, configured_log_stage, configured_fatal_policy, configured_log_queue); }
 }
 
+int RunStartupProfileProbe(const QString& mode);
+
 int main(int argc, char* argv[])
 {
+    if(qEnvironmentVariableIsSet("BITCOIN_QML_STARTUP_PROFILE_CASE"))return RunStartupProfileProbe(qEnvironmentVariable("BITCOIN_QML_STARTUP_PROFILE_CASE"));
     if (qEnvironmentVariableIsSet("BITCOIN_QML_QTLOG_SINK_CASE")) {
         const bool overflow = qgetenv("BITCOIN_QML_QTLOG_SINK_CASE") == "overflow";
         qtlog::NativeSink sink{[overflow](const qtlog::Record& record) {

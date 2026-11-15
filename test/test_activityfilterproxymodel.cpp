@@ -5,9 +5,14 @@
 #include <QtTest/QtTest>
 
 #include <qml/models/activityfilterproxymodel.h>
+#include <key_io.h>
+#include <QTimeZone>
+#include <map>
+#include <set>
 #include <qml/backendexecutor.h>
 #include <qml/guipresentation.h>
 #include <test/mocks/manualexecutionenvironment.h>
+#include <test/mocks/admissionhookscheduler.h>
 #include <QPersistentModelIndex>
 #include <atomic>
 #include <thread>
@@ -57,6 +62,8 @@ public:
     std::shared_ptr<walletopening::Session> opening() const override { return {}; }
     bool activityLoading() const override { return false; }
     QString activityError() const override { return {}; }
+    activityexport::Files activityFiles() const override { return m_files; }
+    void controlFiles(activityexport::Files files) { m_files = std::move(files); }
     int activityRowForId(const QString& id) const override {
         if (!m_snapshot) return -1;
         const auto found = m_snapshot->snapshot->source_positions.find(id);
@@ -169,11 +176,30 @@ private:
         auto admission = activityview::HoldValues(m_backend.scheduler(), [anchor] { anchor->reset(); });
         Q_ASSERT(admission);
         auto value = std::make_shared<activityview::Snapshot>();
+        if (m_snapshot) value->delta_base = m_snapshot->snapshot;
+        value->revision = ++m_revision;
+        value->statistics_valid = true;
+        value->canonical_address = [](const QString& search) {
+            auto compact = search; compact.remove(QLatin1Char(' '));
+            return IsValidDestination(DecodeDestination(compact.toStdString())) ? compact : search;
+        };
         for (int position = 0; position < m_rows.size(); ++position) {
             activityview::Row row;
             for (int role = TransactionActivityModel::AddressRole; role <= TransactionActivityModel::BlocksToMaturityRole; ++role) row[role] = data(index(position, 0), role);
             const auto id = row.value(TransactionActivityModel::IdRole).toString();
-            value->source_positions.emplace(id, position); value->rows.emplace(id, std::make_shared<const activityview::Row>(std::move(row)));
+            value->source_positions.emplace(id, position);
+            const auto previous = m_snapshot ? m_snapshot->snapshot->rows.find(id) : value->rows.end();
+            const bool changed = !m_snapshot || previous == m_snapshot->snapshot->rows.end() || *previous->second != row;
+            const auto prepared = changed ? std::make_shared<const activityview::Row>(std::move(row)) : previous->second;
+            value->rows.emplace(id, prepared);
+            if (changed) value->changed_ids.push_back(id);
+            const bool request = prepared->value(TransactionActivityModel::IsPendingRequestRole).toBool();
+            const auto amount = prepared->value(TransactionActivityModel::NetAmountSatRole).toLongLong();
+            value->presentation = activityview::Insert(value->presentation, id, prepared,
+                {request ? 0 : 1, request ? 1 : 0, !request && prepared->value(TransactionActivityModel::IsPendingRole).toBool() ? amount : 0, amount < 0 ? -amount : amount});
+        }
+        if (m_snapshot) for (const auto& [id, row] : m_snapshot->snapshot->rows) {
+            Q_UNUSED(row); if (!value->rows.contains(id)) value->changed_ids.push_back(id);
         }
         *anchor = value;
         auto hold = std::make_shared<activityview::Hold>(); hold->snapshot = std::move(value);
@@ -184,6 +210,8 @@ private:
     const presentation::Post m_post{presentation::QueuedPost()};
     std::shared_ptr<const activityview::Hold> m_snapshot;
     QList<ActivityRow> m_rows;
+    quint64 m_revision{0};
+    activityexport::Files m_files;
 };
 
 qint64 TimestampForLocalDate(const QDate& date)
@@ -252,6 +280,22 @@ private Q_SLOTS:
         BackendExecutor::shutdownAll(this, [&] { drained = true; });
         QTRY_VERIFY_WITH_TIMEOUT(drained, 5000);
     }
+    void persistentValuesShareUnchangedPathsAndPreserveIndependentSnapshots();
+    void incrementalSourceChangeVisitsOnlyExactChangedRows();
+    void staleDeltaBaseFallsBackWithoutLosingOriginalRows();
+    void relativeDateRefreshUsesManualClockAndRejectsYesterdayBeforePublish();
+    void localeWeekAndClockFormatUseOneCapturedPolicy();
+    void skippedCivilDayDoesNotExcludeValidInclusiveEnd_data();
+    void skippedCivilDayDoesNotExcludeValidInclusiveEnd();
+    void groupedAddressSearchPreservesOrdinaryNoteWhitespace();
+    void clearDateLeavesSearchTypesAndAmountsUntouched();
+    void terminalExportReceiptSurvivesReentrantObserverDeletionAndSuccessorAdmission();
+    void csvConstructorReservationCanRetireItsOriginalProxy();
+    void csvOwnershipRefusalPublishesItsOriginalFailure();
+    void chooserCaptureKeepsTheOriginalSnapshotAndUnitAcrossLiveChanges();
+    void oldChooserCompletionCannotRetargetANewSourceOrCancelItsSuccessor();
+    void chooserCaptureDoesNotKeepActionAdmissionOpenAfterRootClosure();
+    void cancellingAnOldChooserCannotOverwriteAReentrantNewerSource();
     void sourceDestructionRetiresCachedSnapshot();
     void reentrantSourceSwitchPreservesModelTransactions();
     void manualPublicationAndStaleFilterDecisions();
@@ -277,6 +321,234 @@ private Q_SLOTS:
     void exportsCsvEscapesSignedRowsAndHandlesFailures();
     void exportsCsvNeutralizesFormulaInjection();
 };
+
+void ActivityFilterProxyModelTests::persistentValuesShareUnchangedPathsAndPreserveIndependentSnapshots()
+{
+    activityview::Map<int> values;
+    std::map<QString, int> expected;
+    for (int i{0}; i < 1024; ++i) { const auto id = QString::number((i * 67) % 1024).rightJustified(5, u'0'); values.emplace(id, i); expected.emplace(id, i); }
+    const auto original = values;
+    std::set<const void*> old_nodes;
+    const auto collect = [](const activityview::Map<int>::Tree& root, std::set<const void*>& result) {
+        std::vector<activityview::Map<int>::Tree> pending{root};
+        while (!pending.empty()) {
+            const auto node = pending.back(); pending.pop_back();
+            if (!node) continue;
+            result.insert(node.get()); pending.push_back(node->left); pending.push_back(node->right);
+        }
+    };
+    collect(original.storage(), old_nodes);
+    values.insert_or_assign("00500", -17); expected.insert_or_assign("00500", -17);
+    std::set<const void*> changed_nodes; collect(values.storage(), changed_nodes);
+    size_t allocated{0}; for (const auto* node : changed_nodes) if (!old_nodes.contains(node)) ++allocated;
+    QVERIFY(allocated <= size_t{32}); QVERIFY(original.at("00500") != -17); QCOMPARE(values.at("00500"), -17);
+    for (int i{0}; i < 1024; i += 3) { const auto id = QString::number(i).rightJustified(5, u'0'); QCOMPARE(values.erase(id), expected.erase(id)); }
+    auto cursor = values.begin();
+    for (const auto& [id, value] : expected) { QVERIFY(cursor != values.end()); QCOMPARE(cursor->first, id); QCOMPARE(cursor->second, value); ++cursor; }
+    QVERIFY(cursor == values.end()); QCOMPARE(original.size(), size_t{1024});
+    values.clear(); QVERIFY(values.empty()); QVERIFY(original.contains("00500"));
+}
+void ActivityFilterProxyModelTests::incrementalSourceChangeVisitsOnlyExactChangedRows()
+{
+    TestActivityModel source; QList<ActivityRow> rows;
+    for (int i{0}; i < 2048; ++i) { auto row = MakeRow(QString::number(i), Transaction::RecvWithAddress, i + 1, QString::number(i)); row.net_amount_sat = i + 1; rows.append(row); }
+    source.setRows(rows); ActivityFilterProxyModel proxy; proxy.setSourceModel(&source); QVERIFY(WaitForProxy(proxy));
+    const auto retained = QPersistentModelIndex(proxy.index(2047)); const auto id = retained.data(TransactionActivityModel::IdRole).toString();
+    source.setAmount(1000, 99'999); QVERIFY(WaitForProxy(proxy));
+    const auto work = proxy.lastWork(); QVERIFY(work.delta); QCOMPARE(work.examined, size_t{1}); QCOMPARE(work.prepared, size_t{1}); QCOMPARE(work.patches, size_t{1}); QVERIFY(work.largestTurn <= size_t{128});
+    QCOMPARE(proxy.availableMaxAmount(), CAmount{99'999}); QCOMPARE(proxy.rowCount(), 2048); QVERIFY(retained.isValid()); QCOMPARE(retained.data(TransactionActivityModel::IdRole).toString(), id);
+    rows.removeAt(0); source.setRows(rows); QVERIFY(WaitForProxy(proxy));
+    QCOMPARE(proxy.rowCount(), 2047); QVERIFY(proxy.lastWork().delta); QCOMPARE(proxy.lastWork().examined, size_t{2}); // removed original + reverted edited row
+}
+void ActivityFilterProxyModelTests::staleDeltaBaseFallsBackWithoutLosingOriginalRows()
+{
+    TestActivityModel source; source.setRows({MakeRow("Alpha", Transaction::RecvWithAddress, 10, "a"), MakeRow("Beta", Transaction::RecvWithAddress, 20, "b")});
+    ManualExecutionEnvironment env; ActivityFilterProxyModel::Services services; services.automaticDateRefresh = false; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); QVERIFY(!proxy.busy());
+    source.setAmount(0, 111); QCoreApplication::processEvents(); env.drain(); // first changed frame's GUI publication held
+    source.setAmount(1, 222); env.publishAll(); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents();
+    QVERIFY(!proxy.busy()); QCOMPARE(proxy.rowCount(), 2); QVERIFY(!proxy.lastWork().delta); QCOMPARE(proxy.lastWork().examined, size_t{2});
+    QCOMPARE(proxy.index(0).data(TransactionActivityModel::NetAmountSatRole).toLongLong(), 222); QCOMPARE(proxy.index(1).data(TransactionActivityModel::NetAmountSatRole).toLongLong(), 111);
+    proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+void ActivityFilterProxyModelTests::relativeDateRefreshUsesManualClockAndRejectsYesterdayBeforePublish()
+{
+    const QTimeZone zone{QByteArrayLiteral("UTC")}; QDate today{2026, 1, 1};
+    TestActivityModel source; source.setRows({MakeRow("Yesterday", Transaction::RecvWithAddress, QDateTime(today, QTime{12, 0}, zone).toSecsSinceEpoch(), "a"), MakeRow("Successor", Transaction::RecvWithAddress, QDateTime(today.addDays(1), QTime{12, 0}, zone).toSecsSinceEpoch(), "b")});
+    ManualExecutionEnvironment env; int writes{0}; ActivityFilterProxyModel::Services services; services.write = [&](const auto& request) { ++writes; return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; }; services.automaticDateRefresh = false; services.today = [&] { return today; }; services.timezone = [zone] { return QTimeZone{zone}; }; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); proxy.setDateFilter(ActivityFilterProxyModel::Today); QCoreApplication::processEvents(); env.drain();
+    today = today.addDays(1); env.publishAll(); QCoreApplication::processEvents(); QCOMPARE(proxy.rowCount(), 0); // stale day never publishes
+    env.drain(); env.publishAll(); QCoreApplication::processEvents(); QVERIFY(!proxy.busy()); QCOMPARE(proxy.rowCount(), 1); QCOMPARE(proxy.index(0).data(TransactionActivityModel::LabelRole).toString(), QStringLiteral("Successor"));
+    today = today.addDays(1); QCOMPARE(proxy.requestExportCsv(QStringLiteral("unadmitted.csv")), quint64{0}); QVERIFY(proxy.busy());
+    proxy.setDateFilter(ActivityFilterProxyModel::Today); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); QCOMPARE(proxy.rowCount(), 0); QCOMPARE(writes, 0);
+    proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+void ActivityFilterProxyModelTests::localeWeekAndClockFormatUseOneCapturedPolicy()
+{
+    const QDate sunday{2026, 11, 15}; const QTimeZone zone{QByteArrayLiteral("UTC")};
+    TestActivityModel source; source.setRows({MakeRow("Sunday", Transaction::RecvWithAddress, QDateTime(sunday, QTime{18, 30}, zone).toSecsSinceEpoch(), "a"), MakeRow("Saturday", Transaction::RecvWithAddress, QDateTime(sunday.addDays(-1), QTime{18, 30}, zone).toSecsSinceEpoch(), "b")});
+    ActivityFilterProxyModel::Services services; services.automaticDateRefresh = false; services.today = [sunday] { return sunday; }; services.locale = [] { return QLocale{QLocale::English, QLocale::UnitedStates}; }; services.timezone = [zone] { return QTimeZone{zone}; };
+    ActivityFilterProxyModel us{services}; us.setSourceModel(&source); us.setDateFilter(ActivityFilterProxyModel::ThisWeek); QVERIFY(WaitForProxy(us)); QCOMPARE(us.rowCount(), 1);
+    services.locale = [] { return QLocale{QLocale::English, QLocale::UnitedKingdom}; };
+    ActivityFilterProxyModel uk{services}; uk.setSourceModel(&source); uk.setDateFilter(ActivityFilterProxyModel::ThisWeek); uk.setGroupBy(ActivityFilterProxyModel::Day); QVERIFY(WaitForProxy(uk)); QCOMPARE(uk.rowCount(), 2);
+    const auto expected = QLocale{QLocale::English, QLocale::UnitedKingdom}.toString(QTime{18, 30}, QLocale::ShortFormat);
+    QCOMPARE(uk.index(0).data(ActivityFilterProxyModel::DateTimeLabelRole).toString(), expected);
+}
+void ActivityFilterProxyModelTests::skippedCivilDayDoesNotExcludeValidInclusiveEnd_data()
+{
+    QTest::addColumn<QDate>("selected");
+    QTest::newRow("ordinary-successor-control") << QDate{2011, 12, 31};
+    QTest::newRow("original-skipped-next-civil-day") << QDate{2011, 12, 29};
+}
+void ActivityFilterProxyModelTests::skippedCivilDayDoesNotExcludeValidInclusiveEnd()
+{
+    QFETCH(QDate, selected);
+    const QByteArray previous = qgetenv("TZ"); qputenv("TZ", "Pacific/Apia"); TzSet();
+    const auto restore = qScopeGuard([&] { if (previous.isEmpty()) qunsetenv("TZ"); else qputenv("TZ", previous); TzSet(); });
+    const QTimeZone apia{QByteArrayLiteral("Pacific/Apia")}; QVERIFY(apia.isValid());
+    TestActivityModel source; source.setRows({MakeRow("Inclusive", Transaction::RecvWithAddress, QDateTime(QDate{2011, 12, 29}, QTime{12, 0}, apia).toSecsSinceEpoch(), "a"), MakeRow("Successor", Transaction::RecvWithAddress, QDateTime(QDate{2011, 12, 31}, QTime{0, 0}, apia).toSecsSinceEpoch(), "b")});
+    ActivityFilterProxyModel proxy; proxy.setSourceModel(&source);
+    const auto day = selected.toString(Qt::ISODate); QVERIFY(proxy.applyCustomRange(day, day)); QVERIFY(WaitForProxy(proxy));
+    QCOMPARE(proxy.rowCount(), 1); const QString expected = selected.day() == 29 ? QStringLiteral("Inclusive") : QStringLiteral("Successor");
+    QCOMPARE(proxy.index(0).data(TransactionActivityModel::LabelRole).toString(), expected);
+    QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("civil-date.csv"); QVERIFY(Export(proxy, path));
+    QFile file{path}; QVERIFY(file.open(QIODevice::ReadOnly)); const auto csv = file.readAll(); QVERIFY(csv.contains(expected.toUtf8()));
+    QVERIFY(!csv.contains(selected.day() == 29 ? QByteArray{"Successor"} : QByteArray{"Inclusive"}));
+}
+void ActivityFilterProxyModelTests::groupedAddressSearchPreservesOrdinaryNoteWhitespace()
+{
+    const QString address{QStringLiteral("mfcEyFDJECfxJf4rnRggoDTfJHUk1e256R")};
+    auto payment = MakeRow("Ordinary  spaced note", Transaction::RecvWithAddress, 1, "a"); payment.address = address;
+    TestActivityModel source; source.setRows({payment}); ActivityFilterProxyModel proxy; proxy.setSourceModel(&source);
+    proxy.setSearchText("mfcEyF DJECfx Jf4rnR ggoDTf JHUk1e 256R"); QVERIFY(WaitForProxy(proxy)); QCOMPARE(proxy.rowCount(), 1);
+    proxy.setSearchText("Ordinary spaced note"); QVERIFY(WaitForProxy(proxy)); QCOMPARE(proxy.rowCount(), 0);
+    proxy.setSearchText("Ordinary  spaced note"); QVERIFY(WaitForProxy(proxy)); QCOMPARE(proxy.rowCount(), 1);
+}
+void ActivityFilterProxyModelTests::clearDateLeavesSearchTypesAndAmountsUntouched()
+{
+    ActivityFilterProxyModel proxy; proxy.setSearchText("original"); proxy.setTypeFilter(ActivityFilterProxyModel::Received); QVERIFY(proxy.setAmountRange(10, 20)); QVERIFY(proxy.applyCustomRange("2026-01-01", "2026-01-03"));
+    QSignalSpy dates{&proxy, &ActivityFilterProxyModel::dateFilterChanged}; proxy.clearDateFilter();
+    QCOMPARE(proxy.dateFilter(), ActivityFilterProxyModel::DateAll); QCOMPARE(proxy.searchText(), QStringLiteral("original")); QCOMPARE(proxy.typeFilter(), ActivityFilterProxyModel::Received); QCOMPARE(proxy.minAmount(), CAmount{10}); QCOMPARE(proxy.maxAmount(), CAmount{20}); QCOMPARE(dates.count(), 1); proxy.clearDateFilter(); QCOMPARE(dates.count(), 1);
+}
+
+void ActivityFilterProxyModelTests::terminalExportReceiptSurvivesReentrantObserverDeletionAndSuccessorAdmission()
+{
+    ManualExecutionEnvironment env; int effects{0}, outcomes{0}; TestActivityModel source;
+    source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "original")});
+    activityexport::Files files;
+    files.inspect = [](const QString& path) { return backup::Proposal{path.toStdString(), {}, false, false, backup::Error::None}; };
+    files.install = [&](const auto&, bool, const auto& producer) { ++effects; return backup::WriteResult{producer("staged.csv") ? backup::Error::None : backup::Error::CoreBackup}; };
+    files.outcome = [&](const auto&) { ++outcomes; }; source.controlFiles(std::move(files));
+    ActivityFilterProxyModel::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    services.write = [](const auto& request) { return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; };
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); QVERIFY(!proxy.busy());
+    quint64 successor{0}; bool replaced{false};
+    connect(&proxy, &ActivityFilterProxyModel::exportChanged, &proxy, [&] {
+        if (replaced || !proxy.exportResult().present) return;
+        replaced = true; delete proxy.exportOperation();
+        successor = proxy.requestExportCsv(QStringLiteral("successor.csv"));
+    });
+    std::vector<std::pair<quint64, QString>> terminal;
+    connect(&proxy, &ActivityFilterProxyModel::exportFinished, &proxy, [&](quint64 ticket, bool saved, const QString& path, const QString& error) {
+        QVERIFY(saved); QVERIFY(error.isEmpty()); terminal.emplace_back(ticket, path);
+    });
+    const auto original = proxy.requestExportCsv(QStringLiteral("original.csv")); QVERIFY(original);
+    env.drain(); env.publishAll(); QVERIFY(replaced); QVERIFY(successor > original); QCOMPARE(terminal.size(), size_t{1});
+    QCOMPARE(terminal.front().first, original); QCOMPARE(terminal.front().second, QStringLiteral("original.csv"));
+    QCOMPARE(proxy.exportResult().finalPath, QStringLiteral("original.csv"));
+    env.drain(); env.publishAll(); QCOMPARE(terminal.size(), size_t{2}); QCOMPARE(terminal.back().first, successor); QCOMPARE(terminal.back().second, QStringLiteral("successor.csv"));
+    QCOMPARE(effects, 2); QCOMPARE(outcomes, 2); QCOMPARE(proxy.exportResult().finalPath, QStringLiteral("successor.csv"));
+    proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+
+void ActivityFilterProxyModelTests::csvConstructorReservationCanRetireItsOriginalProxy()
+{
+    ManualExecutionEnvironment env; auto hooks = std::make_shared<AdmissionHookScheduler>(env.scheduler);
+    TestActivityModel source; source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "original")});
+    int effects{0}; activityexport::Files files;
+    files.inspect = [&](const QString& path) { ++effects; return backup::Proposal{path.toStdString(), {}, false, false, backup::Error::None}; };
+    files.install = [&](const auto&, bool, const auto&) { ++effects; return backup::WriteResult{}; }; source.controlFiles(std::move(files));
+    ActivityFilterProxyModel::Services services; services.execution = {hooks, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    auto proxy = std::make_unique<ActivityFilterProxyModel>(services); proxy->setSourceModel(&source);
+    QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QVERIFY(!proxy->busy());
+    const QPointer<ActivityFilterProxyModel> original{proxy.get()};
+    const auto trigger = hooks->armCleanup(1, [&] { proxy.reset(); });
+    QCOMPARE(original->requestExportCsv(QStringLiteral("retired-constructor.csv")), quint64{0});
+    QVERIFY(!original); QVERIFY(!proxy); QCOMPARE(trigger->calls.load(), size_t{1});
+    env.drain(); env.publishAll(); QCOMPARE(effects, 0); QCOMPARE(env.scheduler->pending(), size_t{0});
+}
+
+void ActivityFilterProxyModelTests::csvOwnershipRefusalPublishesItsOriginalFailure()
+{
+    ManualExecutionEnvironment env; auto hooks = std::make_shared<AdmissionHookScheduler>(env.scheduler);
+    TestActivityModel source; source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "original")});
+    int effects{0}; activityexport::Files files;
+    files.inspect = [&](const QString& path) { ++effects; return backup::Proposal{path.toStdString(), {}, false, false, backup::Error::None}; };
+    files.install = [&](const auto&, bool, const auto&) { ++effects; return backup::WriteResult{}; }; source.controlFiles(std::move(files));
+    ActivityFilterProxyModel::Services services; services.execution = {hooks, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source);
+    QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QVERIFY(!proxy.busy());
+    QSignalSpy terminal{&proxy, &ActivityFilterProxyModel::exportFinished};
+    const auto trigger = hooks->armCleanup(1, [&] { env.scheduler->closeAdmission(); });
+    QCOMPARE(proxy.requestExportCsv(QStringLiteral("refused-constructor.csv")), quint64{0});
+    QCOMPARE(trigger->calls.load(), size_t{1}); QCOMPARE(effects, 0); QCOMPARE(terminal.count(), 1);
+    QVERIFY(proxy.exportOperation()); QVERIFY(proxy.exportResult().present); QVERIFY(!proxy.exportResult().saved);
+    QVERIFY(!proxy.exportResult().errorText.isEmpty()); QCOMPARE(proxy.exportResult().errorText, proxy.exportOperation()->error());
+    QCOMPARE(proxy.exportResult().operationId, proxy.exportOperation()->operationId()); QVERIFY(!proxy.exportResult().snapshotRevision.isEmpty());
+    proxy.closeAdmission(); env.drain(); env.publishAll(); QCOMPARE(effects, 0); QCOMPARE(env.scheduler->pending(), size_t{0});
+}
+
+void ActivityFilterProxyModelTests::chooserCaptureKeepsTheOriginalSnapshotAndUnitAcrossLiveChanges()
+{
+    ManualExecutionEnvironment env; TestActivityModel source; source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "old")});
+    int effects{0}, unit{-1}; QString label;
+    ActivityFilterProxyModel::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    services.write = [&](const auto& request) { ++effects; unit = request.unit; label = request.snapshot->snapshot->rows.begin()->second->value(TransactionActivityModel::LabelRole).toString(); return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; };
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); QVERIFY(!proxy.busy());
+    // Retire the previous filter turn before observing the chooser itself.
+    env.drain(); env.publishAll();
+    const auto intent = proxy.captureExport(); QVERIFY(!intent.isEmpty()); QVERIFY(proxy.exportChoosing()); QCOMPARE(effects, 0); QVERIFY(env.turnsIdle());
+    source.setRows({MakeRow("Successor", Transaction::RecvWithAddress, 2, "new")}); proxy.setDisplayUnit(3); proxy.setSearchText("Successor"); QCoreApplication::processEvents(); QVERIFY(proxy.busy());
+    const auto ticket = proxy.requestCapturedExportCsv(intent, QStringLiteral("original.csv")); QVERIFY(ticket); QVERIFY(!proxy.exportChoosing());
+    env.drain(); env.publishAll(); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents();
+    QCOMPARE(effects, 1); QCOMPARE(unit, 0); QCOMPARE(label, QStringLiteral("Original")); QVERIFY(!proxy.exportBusy()); QCOMPARE(proxy.exportedPath(), QStringLiteral("original.csv"));
+    QCOMPARE(proxy.index(0).data(TransactionActivityModel::LabelRole).toString(), QStringLiteral("Successor"));
+    proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+void ActivityFilterProxyModelTests::oldChooserCompletionCannotRetargetANewSourceOrCancelItsSuccessor()
+{
+    ManualExecutionEnvironment env; TestActivityModel first, second; first.setRows({MakeRow("A", Transaction::RecvWithAddress, 1, "a")}); second.setRows({MakeRow("B", Transaction::RecvWithAddress, 2, "b")});
+    int effects{0}; QString label; ActivityFilterProxyModel::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    services.write = [&](const auto& request) { ++effects; label = request.snapshot->snapshot->rows.begin()->second->value(TransactionActivityModel::LabelRole).toString(); return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; };
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&first); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents();
+    const auto old = proxy.captureExport(); QVERIFY(!old.isEmpty()); proxy.setSourceModel(&second); QVERIFY(!proxy.exportChoosing());
+    QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); const auto next = proxy.captureExport(); QVERIFY(!next.isEmpty()); QVERIFY(next != old);
+    proxy.cancelExport(old); QVERIFY(proxy.exportChoosing()); QCOMPARE(proxy.requestCapturedExportCsv(old, "wrong.csv"), quint64{0}); QVERIFY(proxy.exportChoosing()); QCOMPARE(effects, 0);
+    QVERIFY(proxy.requestCapturedExportCsv(next, "current.csv")); env.drain(); env.publishAll(); QCOMPARE(effects, 1); QCOMPARE(label, QStringLiteral("B")); QCOMPARE(proxy.exportedPath(), QStringLiteral("current.csv"));
+    proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+void ActivityFilterProxyModelTests::chooserCaptureDoesNotKeepActionAdmissionOpenAfterRootClosure()
+{
+    ManualExecutionEnvironment env; TestActivityModel source; source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "old")}); int effects{0};
+    ActivityFilterProxyModel::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    services.write = [&](const auto& request) { ++effects; return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; };
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents();
+    const auto intent = proxy.captureExport(); QVERIFY(!intent.isEmpty()); env.scheduler->closeOrdinaryAdmission();
+    QCOMPARE(proxy.requestCapturedExportCsv(intent, "closed.csv"), quint64{0}); env.drain(); env.publishAll(); QCOMPARE(effects, 0); QVERIFY(proxy.exportRejected()); QVERIFY(!proxy.exportChoosing());
+    proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+
+void ActivityFilterProxyModelTests::cancellingAnOldChooserCannotOverwriteAReentrantNewerSource()
+{
+    TestActivityModel first, second, newest; first.setRows({MakeRow("A", Transaction::RecvWithAddress, 1, "a")}); second.setRows({MakeRow("B", Transaction::RecvWithAddress, 2, "b")}); newest.setRows({MakeRow("C", Transaction::RecvWithAddress, 3, "c")});
+    ActivityFilterProxyModel proxy; proxy.setSourceModel(&first); QVERIFY(WaitForProxy(proxy)); const auto original = proxy.captureExport(); QVERIFY(!original.isEmpty());
+    bool reentered{false}; connect(&proxy, &ActivityFilterProxyModel::exportChanged, &proxy, [&] {
+        if (reentered || proxy.exportChoosing()) return;
+        reentered = true; proxy.setSourceModel(&newest);
+    });
+    proxy.setSourceModel(&second); QVERIFY(WaitForProxy(proxy)); QVERIFY(reentered); QCOMPARE(proxy.sourceModel(), &newest); QCOMPARE(proxy.rowCount(), 1); QCOMPARE(proxy.index(0).data(TransactionActivityModel::LabelRole).toString(), QStringLiteral("C"));
+    QCOMPARE(proxy.requestCapturedExportCsv(original, "stale.csv"), quint64{0}); QVERIFY(!proxy.exportChoosing());
+}
 
 void ActivityFilterProxyModelTests::sourceDestructionRetiresCachedSnapshot()
 {
@@ -1117,20 +1389,20 @@ void ActivityFilterProxyModelTests::availableMaximumUsesUnfilteredTransactionsAn
     ActivityFilterProxyModel proxy;
     proxy.setSourceModel(&source);
     QVERIFY(WaitForProxy(proxy));
-    QCOMPARE(proxy.availableMaxAmount(), 500);
+    QCOMPARE(proxy.availableMaxAmount(), 9000);
     proxy.setSearchText("Receive");
     QVERIFY(WaitForProxy(proxy));
     QVERIFY(proxy.setAmountRange(0, 300));
     QVERIFY(WaitForProxy(proxy));
     QCOMPARE(proxy.rowCount(), 1);
     QVERIFY(WaitForProxy(proxy));
-    QCOMPARE(proxy.availableMaxAmount(), 500);
+    QCOMPARE(proxy.availableMaxAmount(), 9000);
     source.setAmount(0, -700);
     QVERIFY(WaitForProxy(proxy));
-    QCOMPARE(proxy.availableMaxAmount(), 700);
+    QCOMPARE(proxy.availableMaxAmount(), 9000);
     source.setRows({receive, request});
     QVERIFY(WaitForProxy(proxy));
-    QCOMPARE(proxy.availableMaxAmount(), 200);
+    QCOMPARE(proxy.availableMaxAmount(), 9000);
     TestActivityModel other;
     proxy.setSourceModel(&other);
     QVERIFY(WaitForProxy(proxy));

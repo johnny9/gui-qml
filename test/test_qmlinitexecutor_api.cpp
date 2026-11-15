@@ -24,9 +24,22 @@ Q_DECLARE_METATYPE(interfaces::BlockAndHeaderTipInfo)
 namespace {
 constexpr auto SIGNAL_TIMEOUT{5'000};
 
+// Every original Native initialization observes passive startup diagnostics to
+// distinguish a Core failure from cancellation. This explicit fixture port is
+// separate from runtime question/answer handling and never supplies an answer.
+class PassiveStartupNode : public StrictMockNode {
+public:
+    PassiveStartupNode()
+    {
+        handle_message_box_fn = [](interfaces::Node::MessageBoxFn) {
+            return interfaces::MakeCleanupHandler([] {});
+        };
+    }
+};
+
 // These ordinary-shutdown fixtures explicitly supply the public final status.
 // Fault/status receipt rows below provide their own independent nonzero ports.
-class NormalExitNode : public StrictMockNode {
+class NormalExitNode : public PassiveStartupNode {
 public:
     std::atomic_int exit_reads{0};
     std::atomic_bool shutdown_returned{false},status_after_shutdown{true},status_off_gui{true};
@@ -72,6 +85,47 @@ class QmlInitExecutorApiTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void stopAdmissionFencesQueuedReadyPresentation_data(){
+        QTest::addColumn<bool>("at_ready_signal");QTest::newRow("Native-receipt-before-GUI")<<false;QTest::newRow("reentrant-ready-signal")<<true;
+    }
+    void stopAdmissionFencesQueuedReadyPresentation(){
+        QFETCH(bool,at_ready_signal);PassiveStartupNode node;QSemaphore native_receipt;
+        node.app_init_main_fn=[](interfaces::BlockAndHeaderTipInfo*){return true;};
+        node.is_initial_block_download_fn=[]{return false;};node.shutdown_requested_fn=[]{return false;};node.start_shutdown_fn=[]{};
+        const auto drain=qScopeGuard([]{DrainRetiredExecutors();});
+        QmlInitExecutor executor{node,{},{},[&](auto){native_receipt.release();}};
+        bool requested{false};int late_ready{0};
+        const auto disconnect=qScopeGuard([&]{QObject::disconnect(&executor,nullptr,this,nullptr);});
+        QSignalSpy admission{&executor,&QmlInitExecutor::admissionChanged};
+        QVERIFY(executor.admissionOpen());
+        connect(&executor,&QmlInitExecutor::phaseChanged,this,[&]{
+            if(executor.phase()!=nodelifecycle::Phase::Ready)return;
+            if(requested)++late_ready;
+            if(at_ready_signal&&!requested){requested=true;executor.interrupt();QVERIFY(!executor.admissionOpen());}
+        });
+        QSignalSpy initialized{&executor,&QmlInitExecutor::initializeResult};executor.initialize();
+        if(!at_ready_signal){QVERIFY(native_receipt.tryAcquire(1,SIGNAL_TIMEOUT));requested=true;executor.interrupt();QVERIFY(!executor.admissionOpen());}
+        QTRY_COMPARE(initialized.count(),1);QVERIFY(requested);QCOMPARE(late_ready,0);
+        QVERIFY(!initialized.front().front().toBool());QVERIFY(initialized.front().at(3).toBool());
+        QVERIFY(executor.initializationOutcome());QVERIFY(executor.initializationAttempted());QVERIFY(executor.initializationSucceeded());
+        QCOMPARE(node.calls.appInitMain.load(),1);QTRY_COMPARE(node.calls.startShutdown.load(),1);
+        QVERIFY(!executor.admissionOpen());QCOMPARE(admission.count(),1);
+    }
+    void admissionNotificationMayRetireTheObserver_data(){
+        QTest::addColumn<bool>("shutdown");QTest::newRow("interrupt")<<false;QTest::newRow("shutdown")<<true;
+    }
+    void admissionNotificationMayRetireTheObserver(){
+        QFETCH(bool,shutdown);PassiveStartupNode node;
+        const auto drain=qScopeGuard([]{DrainRetiredExecutors();});
+        auto executor=std::make_unique<QmlInitExecutor>(node);int notices{0};bool closed{false};
+        connect(executor.get(),&QmlInitExecutor::admissionChanged,this,[&]{
+            ++notices;closed=!executor->admissionOpen();executor.reset();
+        });
+        if(shutdown)executor->shutdown();else executor->interrupt();
+        QVERIFY(!executor);QVERIFY(closed);QCOMPARE(notices,1);
+        DrainRetiredExecutors();
+        QCOMPARE(node.calls.appInitMain.load(),0);QCOMPARE(node.calls.startShutdown.load(),0);QCOMPARE(node.calls.appShutdown.load(),0);
+    }
     void nativeCoreExitStatusPrecedesGuiDelivery_data() {
         QTest::addColumn<int>("status");QTest::addColumn<bool>("drop_observer");
         QTest::newRow("success-visible")<<0<<false;QTest::newRow("failure-visible")<<1<<false;
@@ -79,7 +133,7 @@ private Q_SLOTS:
     }
     void nativeCoreExitStatusPrecedesGuiDelivery() {
         QFETCH(int,status);QFETCH(bool,drop_observer);
-        struct StatusNode final : StrictMockNode {
+        struct StatusNode final : PassiveStartupNode {
             std::function<int()> exit_status;
             int getExitStatus() override { return exit_status(); }
         } node;
@@ -88,7 +142,7 @@ private Q_SLOTS:
         const auto gui=QThread::currentThread();
         node.app_init_main_fn=[](interfaces::BlockAndHeaderTipInfo*){return true;};
         node.is_initial_block_download_fn=[]{return false;};node.shutdown_requested_fn=[]{return false;};
-        node.app_shutdown_fn=[&]{shutdown_done=true;};
+        node.start_shutdown_fn=[]{};node.app_shutdown_fn=[&]{shutdown_done=true;};
         node.exit_status=[&]{++reads;read_after_shutdown=shutdown_done.load();if(QThread::currentThread()==gui)native_only=false;return status;};
         node.ExpectExactly(node.calls.appShutdown,1);[[maybe_unused]] const auto verify=node.VerifyOnExit();
         const auto drain_retired=qScopeGuard([]{DrainRetiredExecutors();});
@@ -97,16 +151,17 @@ private Q_SLOTS:
         });
         QSignalSpy initialized{executor.get(),&QmlInitExecutor::initializeResult},shutdown{executor.get(),&QmlInitExecutor::shutdownResult};
         executor->initialize();QTRY_COMPARE(initialized.count(),1);executor->shutdown();
+        QVERIFY(!executor->admissionOpen());
         // Hold queued GUI delivery while the actual Native receipt arrives.
         QVERIFY(captured.tryAcquire(1,SIGNAL_TIMEOUT));QCOMPARE(shutdown.count(),0);
         QCOMPARE(recorded.load(),status);QVERIFY(read_after_shutdown.load());QVERIFY(native_only.load());
-        if(drop_observer)executor.reset();else QTRY_COMPARE(shutdown.count(),1);
+        if(drop_observer)executor.reset();else {QTRY_COMPARE(shutdown.count(),1);QCOMPARE(executor->phase(),nodelifecycle::Phase::Stopped);QVERIFY(!executor->admissionOpen());}
         executor.reset();DrainRetiredExecutors();QCOMPARE(reads.load(),1);QCOMPARE(recorded.load(),status);
     }
     void nativeCoreExitReceiptFailureIsExplicit() {
-        struct StatusNode final : StrictMockNode { int getExitStatus() override { return 1; } } node;
+        struct StatusNode final : PassiveStartupNode { int getExitStatus() override { return 1; } } node;
         node.app_init_main_fn=[](interfaces::BlockAndHeaderTipInfo*){return true;};
-        node.is_initial_block_download_fn=[]{return false;};node.shutdown_requested_fn=[]{return false;};node.app_shutdown_fn=[]{};
+        node.is_initial_block_download_fn=[]{return false;};node.shutdown_requested_fn=[]{return false;};node.start_shutdown_fn=[]{};node.app_shutdown_fn=[]{};
         const auto loss=std::make_shared<std::atomic_bool>(false);
         const auto drain_retired=qScopeGuard([]{DrainRetiredExecutors();});
         QmlInitExecutor executor{node,{},loss,{},[](int){throw std::runtime_error("receipt observer failed");}};
@@ -116,7 +171,7 @@ private Q_SLOTS:
     }
     void nativeStartupOutcomePrecedesGuiDelivery_data(){QTest::addColumn<int>("scenario");QTest::newRow("ready")<<0;QTest::newRow("failed")<<1;QTest::newRow("user-cancelled")<<2;QTest::newRow("error-and-cancel")<<3;QTest::newRow("uncertain")<<4;}
     void nativeStartupOutcomePrecedesGuiDelivery(){
-        QFETCH(int,scenario);StrictMockNode node;interfaces::Node::MessageBoxFn message;std::atomic<int> recorded{-1};std::atomic<bool> gui_record{false};
+        QFETCH(int,scenario);PassiveStartupNode node;interfaces::Node::MessageBoxFn message;std::atomic<int> recorded{-1};std::atomic<bool> gui_record{false};
         node.handle_message_box_fn=[&](auto callback){message=std::move(callback);return interfaces::MakeCleanupHandler([&]{message={};});};
         node.app_init_main_fn=[&](interfaces::BlockAndHeaderTipInfo*){if(scenario==3)message(Untranslated("Original startup failure"),CClientUIInterface::ICON_ERROR);if(scenario==4)throw std::runtime_error("Original native startup exception");return scenario==0;};
         node.is_initial_block_download_fn=[] {return false;};node.shutdown_requested_fn=[scenario]{return scenario==2||scenario==3;};
@@ -127,6 +182,7 @@ private Q_SLOTS:
         const auto expected=scenario==0?QmlInitExecutor::StartupOutcome::Ready:scenario==2?QmlInitExecutor::StartupOutcome::Cancelled:scenario==4?QmlInitExecutor::StartupOutcome::Uncertain:QmlInitExecutor::StartupOutcome::Failed;
         QCOMPARE(recorded.load(),int(expected));QVERIFY(!gui_record.load());
         if(scenario==4){QTRY_COMPARE(fatal.count(),1);QCOMPARE(initialized.count(),0);}else{QTRY_COMPARE(initialized.count(),1);QCOMPARE(initialized.front().front().toBool(),scenario==0);}
+        QCOMPARE(executor.admissionOpen(),scenario==0);
     }
     void runawayExtractionAndExceptionRetirementStayNative_data() {
         QTest::addColumn<int>("phase");
@@ -149,7 +205,7 @@ private Q_SLOTS:
             }
         };
         auto trace = std::make_shared<Trace>();
-        StrictMockNode node;
+        PassiveStartupNode node;
         node.is_initial_block_download_fn = [] { return false; }; node.shutdown_requested_fn = [] { return false; };
         node.app_init_main_fn = [trace, phase](interfaces::BlockAndHeaderTipInfo*) {
             if (phase == 0) throw Tracked{trace};
@@ -203,7 +259,7 @@ void QmlInitExecutorApiTests::initTestCase()
 
 void QmlInitExecutorApiTests::initializeEmitsResultAndRunsOffMainThread()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return QThread::currentThread() != QCoreApplication::instance()->thread(); };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -250,7 +306,7 @@ void QmlInitExecutorApiTests::initializeEmitsResultAndRunsOffMainThread()
 
 void QmlInitExecutorApiTests::initializeEmitsUnsuccessfulResult()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -270,7 +326,7 @@ void QmlInitExecutorApiTests::initializeEmitsUnsuccessfulResult()
 
 void QmlInitExecutorApiTests::fatalInitializationRejectsPendingAndLaterShutdown()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
     QSemaphore release_init, release_interrupt;
     std::atomic_bool interrupted{false};
@@ -368,7 +424,7 @@ void QmlInitExecutorApiTests::queuedShutdownAfterInitialization()
 
 void QmlInitExecutorApiTests::initializeReportsShutdownRequest()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -386,13 +442,15 @@ void QmlInitExecutorApiTests::initializeReportsShutdownRequest()
     QVERIFY(!initialize_spy.isEmpty() || initialize_spy.wait(SIGNAL_TIMEOUT));
     QCOMPARE(node.calls.shutdownRequested.load(), 1);
     const auto result = initialize_spy.takeFirst();
-    QVERIFY(result.at(0).toBool());
+    QVERIFY(!result.at(0).toBool());
+    QVERIFY(executor.initializationOutcome());
+    QVERIFY(executor.initializationAttempted());QVERIFY(executor.initializationSucceeded());QVERIFY(executor.initializationCancelled());
     QVERIFY(result.at(3).toBool());
 }
 
 void QmlInitExecutorApiTests::initializeEmitsRunawayExceptionOnFailure()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -419,6 +477,7 @@ void QmlInitExecutorApiTests::initializeEmitsRunawayExceptionOnFailure()
 void QmlInitExecutorApiTests::shutdownEmitsResultAndRunsOffMainThread()
 {
     NormalExitNode node;
+    node.start_shutdown_fn = [] {};
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -443,6 +502,7 @@ void QmlInitExecutorApiTests::shutdownEmitsResultAndRunsOffMainThread()
     QVERIFY(!shutdown_spy.isEmpty() || shutdown_spy.wait(SIGNAL_TIMEOUT));
     QCOMPARE(shutdown_spy.count(), 1);
     QCOMPARE(runaway_spy.count(), 0);
+    QCOMPARE(executor.phase(),nodelifecycle::Phase::Stopped);QVERIFY(!executor.admissionOpen());
     QVERIFY(shutdown_thread.load() != QCoreApplication::instance()->thread());
     QVERIFY(SameThreadAddress(shutdown_thread.load(), initialization_thread.load()));
     QCOMPARE(node.calls.appShutdown.load(), 1);
@@ -453,7 +513,8 @@ void QmlInitExecutorApiTests::shutdownEmitsResultAndRunsOffMainThread()
 
 void QmlInitExecutorApiTests::shutdownEmitsRunawayExceptionOnFailure()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
+    node.start_shutdown_fn = [] {};
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -478,7 +539,7 @@ void QmlInitExecutorApiTests::shutdownEmitsRunawayExceptionOnFailure()
 
 void QmlInitExecutorApiTests::interruptionBypassesBlockedInitialization()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     QSemaphore release;
@@ -515,7 +576,7 @@ void QmlInitExecutorApiTests::interruptionBypassesBlockedInitialization()
 
 void QmlInitExecutorApiTests::asynchronousRetirementPrecedesInterrupt()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     node.start_shutdown_fn = [] {};
@@ -525,6 +586,7 @@ void QmlInitExecutorApiTests::asynchronousRetirementPrecedesInterrupt()
     QmlShutdownCoordinator coordinator{executor};
     bool fenced{false}, began{false};
     std::function<void()> acknowledge;
+    coordinator.addAdmissionFence([&] { executor.closeAdmission(); });
     coordinator.addAdmissionFence([&] { fenced = true; });
     coordinator.addBeforeInterruptTask([&](std::function<void()> done) {
         QVERIFY(fenced);
@@ -535,6 +597,7 @@ void QmlInitExecutorApiTests::asynchronousRetirementPrecedesInterrupt()
     coordinator.requestShutdown();
     coordinator.requestShutdown();
     QVERIFY(began);
+    QVERIFY(!executor.admissionOpen());
     QCoreApplication::processEvents();
     QCOMPARE(node.calls.startShutdown.load(), 0);
     QCOMPARE(node.calls.appShutdown.load(), 0);
@@ -547,7 +610,7 @@ void QmlInitExecutorApiTests::asynchronousRetirementPrecedesInterrupt()
 
 void QmlInitExecutorApiTests::shutdownWaitsForInterruptionAndEveryParticipant()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     QSemaphore release_hook;
@@ -568,6 +631,7 @@ void QmlInitExecutorApiTests::shutdownWaitsForInterruptionAndEveryParticipant()
     coordinator.requestShutdown();
     coordinator.requestShutdown();
     QTRY_VERIFY_WITH_TIMEOUT(hook_entered.load(), SIGNAL_TIMEOUT);
+    QVERIFY(!executor.admissionOpen());QVERIFY(executor.phase()!=nodelifecycle::Phase::Stopped);
     bool gui_progress{false};
     QTimer::singleShot(0, this, [&] { gui_progress = true; });
     QTRY_VERIFY_WITH_TIMEOUT(gui_progress, SIGNAL_TIMEOUT);
@@ -582,11 +646,12 @@ void QmlInitExecutorApiTests::shutdownWaitsForInterruptionAndEveryParticipant()
     QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, SIGNAL_TIMEOUT);
     QCOMPARE(node.calls.startShutdown.load(), 1);
     QCOMPARE(node.calls.appShutdown.load(), 1);
+    QCOMPARE(executor.phase(),nodelifecycle::Phase::Stopped);QVERIFY(!executor.admissionOpen());
 }
 
 void QmlInitExecutorApiTests::portMappingDrainsBeforeSingleInterruption()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     node.start_shutdown_fn = [] {};
@@ -624,7 +689,7 @@ void QmlInitExecutorApiTests::portMappingDrainsBeforeSingleInterruption()
 
 void QmlInitExecutorApiTests::destructorCleansUpOnWorker()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -655,7 +720,7 @@ void QmlInitExecutorApiTests::destructorCleansUpOnWorker()
 
 void QmlInitExecutorApiTests::initializeRegistersBeforeResultOnWorker()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -702,7 +767,7 @@ void QmlInitExecutorApiTests::initializeRegistersBeforeResultOnWorker()
 
 void QmlInitExecutorApiTests::unsuccessfulInitializationDoesNotRegister()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -727,7 +792,7 @@ void QmlInitExecutorApiTests::unsuccessfulInitializationDoesNotRegister()
 
 void QmlInitExecutorApiTests::cancelledInitializationDoesNotRegister()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -753,7 +818,7 @@ void QmlInitExecutorApiTests::cancelledInitializationDoesNotRegister()
 
 void QmlInitExecutorApiTests::registrationFailureCleansUpOnWorker()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -843,6 +908,7 @@ void QmlInitExecutorApiTests::subscriptionRetirementDoesNotBlockGuiOrInterruptio
 void QmlInitExecutorApiTests::subscriptionCleanupPrecedesShutdown()
 {
     NormalExitNode node;
+    node.start_shutdown_fn = [] {};
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();
@@ -892,7 +958,8 @@ void QmlInitExecutorApiTests::subscriptionCleanupPrecedesShutdown()
 
 void QmlInitExecutorApiTests::subscriptionCleanupPrecedesShutdownFailure()
 {
-    StrictMockNode node;
+    PassiveStartupNode node;
+    node.start_shutdown_fn = [] {};
     node.is_initial_block_download_fn = [] { return false; };
     node.shutdown_requested_fn = [] { return false; };
     [[maybe_unused]] auto verify_node = node.VerifyOnExit();

@@ -484,6 +484,16 @@ private:
     std::map<Txid, interfaces::WalletTx> m_transaction_details;
 
 public:
+    Txid addBumpableTestTransaction()
+    {
+        CMutableTransaction original{*signerfixture::Review().GetUnsignedTx()};
+        original.vout.front().nValue += 100;
+        const auto transaction = MakeTransactionRef(std::move(original));
+        const auto txid = transaction->GetHash();
+        known_transactions.emplace(txid, transaction);
+        return txid;
+    }
+
     void setWalletTxsFn(std::function<std::set<interfaces::WalletTx>()> fn)
     {
         std::lock_guard lock{m_transaction_mutex};
@@ -560,6 +570,10 @@ public:
     std::function<bool(const std::string&)> write_note_fn;
     std::atomic<QThread*> note_thread{nullptr};
     std::atomic<QThread*> commit_thread{nullptr};
+    std::atomic<QThread*> bump_check_thread{nullptr};
+    std::atomic<QThread*> bump_prepare_thread{nullptr};
+    std::atomic<QThread*> bump_sign_thread{nullptr};
+    std::atomic<QThread*> bump_commit_thread{nullptr};
     std::atomic_bool commit_on_gui{false};
     std::atomic_bool note_on_gui{false};
     int create_bump_calls{0};
@@ -785,7 +799,10 @@ public:
         const auto callback = commit_fn;
         if (callback) callback();
     }
-    bool transactionCanBeBumped(const Txid&) override { return can_bump_transaction; }
+    bool transactionCanBeBumped(const Txid&) override {
+        bump_check_thread = QThread::currentThread();
+        return can_bump_transaction;
+    }
     bool createBumpTransaction(const Txid& txid,
                                const wallet::CCoinControl&,
                                std::vector<bilingual_str>&,
@@ -793,19 +810,25 @@ public:
                                CAmount& new_fee,
                                CMutableTransaction& mtx) override
     {
+        bump_prepare_thread = QThread::currentThread();
         ++create_bump_calls;
         old_fee = 100;
         new_fee = 200;
-        mtx.vin.emplace_back(COutPoint{txid, 0});
+        const auto original = getTx(txid);
+        if (!original) return false;
+        mtx = CMutableTransaction{*original};
+        if (!mtx.vout.empty() && mtx.vout.front().nValue > 1) --mtx.vout.front().nValue;
         return true;
     }
     bool signBumpTransaction(CMutableTransaction&) override
     {
+        bump_sign_thread = QThread::currentThread();
         ++sign_bump_calls;
         return sign_bump_result;
     }
     bool commitBumpTransaction(const Txid&, CMutableTransaction&&, std::vector<bilingual_str>&, Txid& bumped_txid) override
     {
+        bump_commit_thread = QThread::currentThread();
         ++commit_bump_calls;
         bumped_txid = Txid::FromUint256(uint256::ONE);
         return commit_bump_result;
@@ -4147,6 +4170,8 @@ private Q_SLOTS:
         QTest::newRow("invalid-locktimes-direct-send") << -1 << true << true << false;
     }
     void signerApprovalRetainsValidPartialSignatures();
+    void signerUnverifiedResultIsSeparateAndExportUsesOriginalToken();
+    void localUnverifiedResultKeepsTheReviewAndExportsOriginalBytes();
     void signerSubstitutionIsRejected();
     void initTestCase();
     void coreApiFeePreviews_data();
@@ -4869,6 +4894,8 @@ private Q_SLOTS:
     void importPsbtFromFile_returnsTransactionAlreadyKnownWhenTxIsInWallet();
     void sendTransactionWithPrivateKeysDisabledDoesNotCommit();
     void bumpTransactionOnLockedWalletRequiresPassword();
+    void bumpFeePresentationTracksUnitWithoutRepreparing();
+    void replacementOutcomeQueryDoesNotBlockGuiOrRepeatTheMutation();
     void bumpTransactionWithPassphraseUnlocksCommitsAndRelocks();
     void bumpTransactionWithWrongPassphraseDoesNotSign();
     void displayNameDefaultsToWalletName();
@@ -8261,6 +8288,107 @@ void WalletQmlModelTests::signerSubstitutionIsRejected()
     QCOMPARE(saved_tx->GetHash(), original);
 }
 
+void WalletQmlModelTests::signerUnverifiedResultIsSeparateAndExportUsesOriginalToken()
+{
+    auto [wallet, model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) {
+        original.private_keys_disabled = true;
+        original.external_signer = true;
+    });
+    wallet->txin_is_mine_fn = [](const CTxIn&) { return true; };
+    const auto fixture = psbtfeefixture::SignedWithoutScripts(false);
+    auto reviewed = fixture.document;
+    reviewed.inputs[0].partial_sigs.clear();
+    auto unverified = fixture.document;
+    unverified.inputs[0].partial_sigs.erase(std::next(unverified.inputs[0].partial_sigs.begin()));
+    int calls{0};
+    wallet->fill_psbt_fn = [unverified, &calls](const common::PSBTFillOptions& options, size_t*,
+                                               PartiallySignedTransaction& result, bool& complete) {
+        complete = false;
+        if (options.sign) { ++calls; result = unverified; }
+        return std::optional<common::PSBTError>{};
+    };
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto original_path = WritePsbt(reviewed, directory, "original.psbt");
+    QCOMPARE(AwaitPsbtImport(*model, original_path), WalletQmlModel::PsbtImportResult::WalletCannotSign);
+    const auto original_review = model->currentTransaction();
+    QSignalSpy accepted{model.get(), &WalletQmlModel::externalSignerApprovalPartiallySucceeded};
+    QSignalSpy failed{model.get(), &WalletQmlModel::externalSignerApprovalFailed};
+    QVERIFY(AwaitSignerApprovalOutcome(*model));
+    QCOMPARE(model->signerApprovalState(), WalletQmlModel::ApprovalState::ApprovalUnverified);
+    QCOMPARE(accepted.count(), 0);
+    QCOMPARE(failed.count(), 1);
+    QCOMPARE(calls, 1);
+    QCOMPARE(model->currentTransaction(), original_review);
+    QVERIFY(!model->currentTransactionCanSend());
+    QVERIFY(!model->currentTransactionCanBroadcast());
+    QVERIFY(!model->approveExternalSignerTransaction());
+    const auto token = model->signerUnverifiedResultToken();
+    QVERIFY(!token.isEmpty());
+    const auto rejected_path = directory.filePath("stale.psbt");
+    QVERIFY(!model->requestSaveUnverifiedSignerResult(token + "-stale", rejected_path));
+    QVERIFY(!QFile::exists(rejected_path));
+    const auto exported_path = directory.filePath("unverified.psbt");
+    QVERIFY(model->requestSaveUnverifiedSignerResult(token, exported_path));
+    QTRY_VERIFY(!model->psbtActionBusy());
+    QCOMPARE(model->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtSaved);
+    PartiallySignedTransaction exported{CMutableTransaction{}, 2};
+    QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(exported_path, exported), QString{});
+    QCOMPARE(psbtwork::SerializeRaw(exported), psbtwork::SerializeRaw(unverified));
+    const auto reviewed_path = directory.filePath("approved-review.psbt");
+    QCOMPARE(AwaitPsbtSaveError(*model, reviewed_path), QString{});
+    PartiallySignedTransaction saved_review{CMutableTransaction{}, 2};
+    QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(reviewed_path, saved_review), QString{});
+    QCOMPARE(psbtwork::SerializeRaw(saved_review), psbtwork::SerializeRaw(reviewed));
+    QCOMPARE(AwaitPsbtImport(*model, original_path), WalletQmlModel::PsbtImportResult::WalletCannotSign);
+    QVERIFY(model->signerUnverifiedResultToken().isEmpty());
+    QVERIFY(!model->requestSaveUnverifiedSignerResult(token, rejected_path));
+    QVERIFY(!QFile::exists(rejected_path));
+    QCOMPARE(calls, 1);
+    QCOMPARE(wallet->commit_calls, 0);
+}
+
+void WalletQmlModelTests::localUnverifiedResultKeepsTheReviewAndExportsOriginalBytes()
+{
+    auto [wallet, model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) { original.locked = false; });
+    wallet->txin_is_mine_fn = [](const CTxIn&) { return true; };
+    const auto fixture = psbtfeefixture::Contribution(false, false);
+    int calls{0};
+    wallet->fill_psbt_fn = [returned = fixture.returned, &calls](const common::PSBTFillOptions& options, size_t* count,
+                                                               PartiallySignedTransaction& document, bool& complete) {
+        if (count) *count = 1;
+        complete = false;
+        if (options.sign) { ++calls; document = returned; }
+        return std::optional<common::PSBTError>{};
+    };
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto original_path = WritePsbt(fixture.original, directory, "local-original.psbt");
+    QCOMPARE(AwaitPsbtImport(*model, original_path), WalletQmlModel::PsbtImportResult::WalletCanSign);
+    const auto original_review = model->currentTransaction();
+    QVERIFY(model->requestSignOnlyTransaction());
+    QTRY_VERIFY(!model->sendBusy());
+    QCOMPARE(model->sendState(), WalletQmlModel::SendState::SendUnverified);
+    QCOMPARE(model->currentTransaction(), original_review);
+    QVERIFY(!model->currentTransactionCanSend());
+    QVERIFY(!model->currentTransactionCanBroadcast());
+    QVERIFY(!model->requestSignOnlyTransaction());
+    const auto token = model->signerUnverifiedResultToken();
+    QVERIFY(token.startsWith("local:"));
+    const auto exported_path = directory.filePath("local-unverified.psbt");
+    QVERIFY(model->requestSaveUnverifiedSignerResult(token, exported_path));
+    QTRY_VERIFY(!model->psbtActionBusy());
+    QCOMPARE(model->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtSaved);
+    PartiallySignedTransaction exported{CMutableTransaction{}, 2};
+    QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(exported_path, exported), QString{});
+    QCOMPARE(psbtwork::SerializeRaw(exported), psbtwork::SerializeRaw(fixture.returned));
+    QCOMPARE(AwaitPsbtImport(*model, original_path), WalletQmlModel::PsbtImportResult::WalletCanSign);
+    QVERIFY(model->signerUnverifiedResultToken().isEmpty());
+    QVERIFY(!model->requestSaveUnverifiedSignerResult(token, directory.filePath("stale.psbt")));
+    QCOMPARE(calls, 1);
+    QCOMPARE(wallet->commit_calls, 0);
+}
+
 void WalletQmlModelTests::signerApprovalRetainsValidPartialSignatures()
 {
     auto [wallet, model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) {
@@ -8717,12 +8845,87 @@ void WalletQmlModelTests::importPsbtFromFile_returnsTransactionAlreadyKnownWhenT
     QVERIFY(model->sendRecipientList()->currentRecipient()->address()->address().isEmpty());
 }
 
+void WalletQmlModelTests::replacementOutcomeQueryDoesNotBlockGuiOrRepeatTheMutation()
+{
+    auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = std::make_shared<Txid>();
+    QVERIFY(ConfigurePasswordWalletOnNative(*model, [original](FakePasswordWallet& native) {
+        *original = native.addBumpableTestTransaction();
+        native.commit_bump_result = false;
+    }));
+    auto* bump = model->bumpModel();
+    const auto id = QString::fromStdString(original->GetHex());
+    QVERIFY(AwaitBumpPreparation(*bump, id, 1));
+    const auto prepared = bump->preparationOperation()->result(); QVERIFY(prepared && prepared->value && prepared->value->review);
+    const auto expected = prepared->value->review->transaction.GetHash();
+    QVERIFY(!AwaitBumpCommit(*bump, QStringLiteral("secret")));
+    QCOMPARE(bump->state(), BumpTransactionModel::Uncertain);
+    const auto entered = std::make_shared<std::atomic_bool>(false);
+    const auto thread = std::make_shared<std::atomic<QThread*>>(nullptr);
+    const auto gate = std::make_shared<QSemaphore>();
+    const auto release = qScopeGuard([gate] { gate->release(); });
+    QVERIFY(ConfigurePasswordWalletOnNative(*model, [expected, entered, thread, gate](FakePasswordWallet& native) {
+        native.transaction_details_fn = [expected, entered, thread, gate](const Txid& txid, interfaces::WalletTxStatus& status, bool& mempool) {
+            if (txid == expected) {
+                thread->store(QThread::currentThread());
+                entered->store(true);
+                gate->acquire();
+            }
+            status = {}; mempool = false;
+            return interfaces::WalletTx{};
+        };
+    }));
+    QVERIFY(bump->requestRecheckFeeBumpOutcome());
+    QTRY_VERIFY(entered->load());
+    QVERIFY(thread->load() != QCoreApplication::instance()->thread());
+    const auto pulse = std::make_shared<std::atomic_bool>(false);
+    QTimer::singleShot(0, this, [pulse] { pulse->store(true); });
+    QTRY_VERIFY(pulse->load());
+    QVERIFY(bump->busy());
+    QVERIFY(!bump->requestConfirmFeeBump());
+    gate->release();
+    QTRY_VERIFY(!bump->busy());
+    QCOMPARE(bump->state(), BumpTransactionModel::Uncertain);
+    QCOMPARE(wallet->create_bump_calls, 1);
+    QCOMPARE(wallet->sign_bump_calls, 1);
+    QCOMPARE(wallet->commit_bump_calls, 1);
+}
+
+void WalletQmlModelTests::bumpFeePresentationTracksUnitWithoutRepreparing()
+{
+    const QLocale previous_locale;
+    QLocale::setDefault(QLocale::c());
+    const auto restore_locale = qScopeGuard([previous_locale] { QLocale::setDefault(previous_locale); });
+    auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = wallet->addBumpableTestTransaction();
+    model->setDisplayUnit(1);
+    auto* bump = model->bumpModel();
+    QVERIFY(AwaitBumpPreparation(*bump, QString::fromStdString(original.GetHex()), 1));
+    QCOMPARE(bump->oldFee(), QStringLiteral("0.00100 mBTC"));
+    QCOMPARE(bump->newFee(), QStringLiteral("0.00200 mBTC"));
+    const auto attempt = bump->attemptId();
+    model->setDisplayUnit(2);
+    QCOMPARE(bump->oldFee(), QStringLiteral("1.00 bits"));
+    QCOMPARE(bump->newFee(), QStringLiteral("2.00 bits"));
+    model->setDisplayUnit(3);
+    QCOMPARE(bump->oldFee(), QStringLiteral("100 sats"));
+    QCOMPARE(bump->newFee(), QStringLiteral("200 sats"));
+    model->setDisplayUnit(1);
+    QCOMPARE(bump->oldFee(), QStringLiteral("0.00100 mBTC"));
+    QCOMPARE(model->displayUnit(), 1);
+    QCOMPARE(bump->attemptId(), attempt);
+    QCOMPARE(wallet->create_bump_calls, 1);
+    QCOMPARE(wallet->sign_bump_calls, 0);
+    QCOMPARE(wallet->commit_bump_calls, 0);
+}
+
 void WalletQmlModelTests::bumpTransactionOnLockedWalletRequiresPassword()
 {
     auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = wallet->addBumpableTestTransaction();
     auto* bump_model = model->bumpModel();
 
-    AwaitBumpPreparation(*bump_model, QString::fromStdString(Txid::FromUint256(uint256::ONE).GetHex()), 1);
+    AwaitBumpPreparation(*bump_model, QString::fromStdString(original.GetHex()), 1);
     QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
 
     QVERIFY(!AwaitBumpCommit(*bump_model));
@@ -8737,9 +8940,10 @@ void WalletQmlModelTests::bumpTransactionOnLockedWalletRequiresPassword()
 void WalletQmlModelTests::bumpTransactionWithPassphraseUnlocksCommitsAndRelocks()
 {
     auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = wallet->addBumpableTestTransaction();
     auto* bump_model = model->bumpModel();
 
-    AwaitBumpPreparation(*bump_model, QString::fromStdString(Txid::FromUint256(uint256::ONE).GetHex()), 1);
+    AwaitBumpPreparation(*bump_model, QString::fromStdString(original.GetHex()), 1);
     QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
 
     QVERIFY(AwaitBumpCommit(*bump_model, QStringLiteral("secret")));
@@ -8753,11 +8957,17 @@ void WalletQmlModelTests::bumpTransactionWithPassphraseUnlocksCommitsAndRelocks(
     QCOMPARE(wallet->sign_bump_calls, 1);
     QCOMPARE(wallet->commit_bump_calls, 1);
     QVERIFY(wallet->locked);
+    const auto* const gui_thread = QCoreApplication::instance()->thread();
+    QVERIFY(wallet->bump_check_thread.load() != gui_thread);
+    QVERIFY(wallet->bump_prepare_thread.load() != gui_thread);
+    QVERIFY(wallet->bump_sign_thread.load() != gui_thread);
+    QVERIFY(wallet->bump_commit_thread.load() != gui_thread);
 }
 
 void WalletQmlModelTests::bumpTransactionWithWrongPassphraseDoesNotSign()
 {
     auto [wallet, model] = MakePasswordWalletModel();
+    const auto original = wallet->addBumpableTestTransaction();
     wallet->unlock_fn = [wallet](const SecureString& passphrase) {
         ++wallet->unlock_calls;
         wallet->unlock_passphrases.emplace_back(passphrase.begin(), passphrase.end());
@@ -8765,7 +8975,7 @@ void WalletQmlModelTests::bumpTransactionWithWrongPassphraseDoesNotSign()
     };
     auto* bump_model = model->bumpModel();
 
-    AwaitBumpPreparation(*bump_model, QString::fromStdString(Txid::FromUint256(uint256::ONE).GetHex()), 1);
+    AwaitBumpPreparation(*bump_model, QString::fromStdString(original.GetHex()), 1);
     QCOMPARE(bump_model->state(), BumpTransactionModel::NeedsConfirmation);
 
     QVERIFY(!AwaitBumpCommit(*bump_model, QStringLiteral("wrong")));

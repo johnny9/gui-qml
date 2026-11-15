@@ -91,6 +91,7 @@
 #include <qml/models/activitydetailmodel.h>
 #include <wallet/wallet.h>
 #include <qml/models/activityfilterproxymodel.h>
+#include <qml/models/activityexportoperation.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/paymentrequest.h>
@@ -347,6 +348,9 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
     qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");
     qmlRegisterUncreatableType<NodeModel>("org.bitcoincore.qt", 1, 0, "NodeModel", "Provided by ApplicationModels");
+    qmlRegisterUncreatableType<NetworkModel>("org.bitcoincore.qt",1,0,"NetworkModel","Owned by node");
+    qmlRegisterUncreatableType<RuntimePromptModel>("org.bitcoincore.qt",1,0,"RuntimePromptModel","Owned by original node prompt");
+    qmlRegisterUncreatableMetaObject(nodelifecycle::staticMetaObject,"org.bitcoincore.qt",1,0,"NodeLifecycle","Lifecycle phase");
     qmlRegisterAnonymousType<NativeListModel>("org.bitcoincore.qt", 1);
     qmlRegisterUncreatableMetaObject(SettingsSaveResult::staticMetaObject,"org.bitcoincore.qt",1,0,"SettingsSaveResult","Retained settings outcome");
     qRegisterMetaType<SettingsSaveResult>();
@@ -368,6 +372,8 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<TextEditClosePrompt>("org.bitcoincore.qt", 1, 0, "TextEditClosePrompt", "Owned by an editor");
     qRegisterMetaType<TextEditError>(); qRegisterMetaType<TextEditSaveResult>(); qRegisterMetaType<TextEditConflict>(); qRegisterMetaType<QList<TextEditConflict>>();
 #ifdef ENABLE_WALLET
+    qRegisterMetaType<ActivityExportResult>();
+    qmlRegisterUncreatableType<ActivityExportOperation>("org.bitcoincore.qt", 1, 0, "ActivityExportOperation", "Owned by the original export action");
     qmlRegisterType<ActivityFilterProxyModel>("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel");
     qmlRegisterUncreatableType<TransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Owned by WalletQmlModel");
     qmlRegisterUncreatableType<ActivityDetailModel>("org.bitcoincore.qt", 1, 0, "ActivityDetailModel", "Owned by an Activity view");
@@ -405,6 +411,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<WalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel",
                                                 "WalletListModel cannot be instantiated from QML");
 #else
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ActivityExportOperation", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ActivityDetailModel", "Wallet support is not compiled");
@@ -475,20 +482,19 @@ struct PreInitOnboardingContext {
     }
 };
 
-bool ShouldShowPreInitOnboarding(const std::vector<std::string>& argv, bool can_listen_ipc, const execution::SnapshotServices& services)
-{
-    const auto status = startup::Run(services, [argv, can_listen_ipc] { return QmlOnboardingSettings::ResolveOnboardingStartupStatus(argv, can_listen_ipc); });
-    return !status.ok || status.should_show_onboarding;
-}
-
 PreInitOnboardingStatus RunPreInitOnboarding(PreInitOnboardingContext& context, const std::vector<std::string>& argv, bool can_listen_ipc, QmlQuitHandler& quit_handler,
     const execution::SnapshotServices& services,
     const std::function<void(QQmlApplicationEngine&)>& engine_created,
     const std::function<void(QQmlApplicationEngine&)>& window_created)
 {
-    const bool show_onboarding = ShouldShowPreInitOnboarding(argv, can_listen_ipc, services);
+    const auto status = startup::Run(services, [argv, can_listen_ipc] { return QmlOnboardingSettings::ResolveOnboardingStartupStatus(argv, can_listen_ipc); });
     if (quit_handler.isQuitRequested()) return PreInitOnboardingStatus::CANCELED;
-    if (!show_onboarding) {
+    if (!status.ok) {
+        const auto error = status.error.toStdString();
+        startup::Run(services, [error] { return InitError(Untranslated(error)); });
+        return PreInitOnboardingStatus::FAILED;
+    }
+    if (!status.should_show_onboarding) {
         startup::Run(services, [] { QmlDataDir::ApplyGuiDataDirSetting(gArgs); return true; });
         return quit_handler.isQuitRequested() ? PreInitOnboardingStatus::CANCELED : PreInitOnboardingStatus::NOT_SHOWN;
     }
@@ -607,6 +613,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
     const auto startup_failed=std::make_shared<std::atomic_bool>(false);
     const auto setup_record_failed=std::make_shared<std::atomic_bool>(false);
     const auto core_exit_status=std::make_shared<std::atomic_int>(EXIT_SUCCESS);
+    const auto lifecycle_failed=std::make_shared<std::atomic_bool>(false);
     const auto run_gui = [&]() -> int {
         noui_connect();
         Q_INIT_RESOURCE(bitcoin_qml);
@@ -724,20 +731,17 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         ApplyTestSettingsDir();
 #endif
 
-        setupChainQSettings(&app, QString::fromStdString(gArgs.GetChainTypeString()).toUpper());
-        if (gArgs.GetBoolArg("-resetguisettings", false)) {
-            QString reset_error;
-            reset_error = startup::Run(startup_services, [] {
-                QString error;
-                if (!QmlDataDir::ResetGuiSettings(gArgs, &error) && error.isEmpty()) error = QObject::tr("Unable to reset settings.");
-                return error;
-            });
-            if (quit_handler.isQuitRequested()) return EXIT_SUCCESS;
-            if (!reset_error.isEmpty()) {
-                startup::Run(startup_services, [reset_error] { return InitError(Untranslated(reset_error.toStdString())); });
-                return EXIT_FAILURE;
-            }
+        const auto early_chain = startup::Run(startup_services, [] {
+            try { return std::pair{QString::fromStdString(gArgs.GetChainTypeString()).toUpper(), QString{}}; }
+            catch (const std::exception& e) { return std::pair{QString{}, QString::fromUtf8(e.what())}; }
+        });
+        if (!early_chain.second.isEmpty()) {
+            startup::Run(startup_services, [&] { return InitError(Untranslated(early_chain.second.toStdString())); });
+            return EXIT_FAILURE;
         }
+        setupChainQSettings(&app, early_chain.first);
+        // A reset is one captured onboarding mutation after final profile/path
+        // resolution. Do not empty settings or overwrite its backup at startup.
 
         LoadFontResource(":/fonts/bitcoincoresans/regular");
         LoadFontResource(":/fonts/bitcoincoresans/semibold");
@@ -786,13 +790,19 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         const auto prepare_node = [&, qt_info] {
             const startup::PreparationPorts ports{
                 [] {
-                    return !common::InitConfig(gArgs, [](const bilingual_str& message, const std::vector<std::string>& details) {
+                    const auto configured = common::InitConfig(gArgs, [](const bilingual_str& message, const std::vector<std::string>& details) {
                         return InitError(message, details);
                     });
+                    if (configured) InitError(configured->message, configured->details);
+                    return !configured;
                 },
                 [] {
                     const auto migrated = QmlLegacySettings::MigrateCoreSettings(gArgs, QmlLegacySettings::MigrationMode::Persist);
-                    return startup::Migration{migrated.settings_changed, migrated.error};
+                    return startup::Migration{migrated.settings_changed, migrated.error, [migrated] {
+                        QString error;
+                        const bool completed = QmlLegacySettings::CompleteCoreSettingsMigration(gArgs, migrated, &error);
+                        return startup::SettingsWrite{completed, error.isEmpty() ? std::vector<std::string>{} : std::vector<std::string>{error.toStdString()}};
+                    }};
                 },
                 [] {
                     startup::SettingsWrite result;
@@ -878,7 +888,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                 *setup_record_failed=true;
                 InitWarning(Untranslated(QString{QStringLiteral("The startup outcome could not be saved. Setup will need review once settings storage is writable. ")+error}.toStdString()));
             }
-        }, [core_exit_status](int status) { core_exit_status->store(status); }};
+        }, [core_exit_status](int status) { core_exit_status->store(status); }, lifecycle_failed};
+        QObject::connect(&init_executor,&QmlInitExecutor::phaseChanged,&node_model,[&]{node_model.setLifecyclePhase(init_executor.phase());});
         QmlShutdownCoordinator shutdown_coordinator{init_executor};
         QPointer<QQuickWindow> main_window;
         bool shutdown_requested{false};
@@ -907,6 +918,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
         QObject::connect(&node_model, &NodeModel::requestedShutdown,
                          &shutdown_coordinator, &QmlShutdownCoordinator::requestShutdown);
+        shutdown_coordinator.addAdmissionFence([&] { init_executor.closeAdmission(); });
         shutdown_coordinator.addAdmissionFence([&] { node_model.closeAdmission(); });
         shutdown_coordinator.addAdmissionFence([amount_admission] { *amount_admission = true; });
         shutdown_coordinator.addAdmissionFence([&] { bitcoin_uri_model.closeAdmission(); });
@@ -1237,7 +1249,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
     const auto gui_exit_code = run_gui();
     const int native_exit_code=core_exit_status->load();
     const int exit_code=native_exit_code!=EXIT_SUCCESS?native_exit_code
-        : startup_failed->load()||setup_record_failed->load()?EXIT_FAILURE:gui_exit_code;
+        : lifecycle_failed->load()||startup_failed->load()||setup_record_failed->load()?EXIT_FAILURE:gui_exit_code;
     // QApplication and every GUI owner have been destroyed. Flush and join the
     // process writer before deciding the actual externally visible exit status.
     finish_qt_logging();

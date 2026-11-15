@@ -64,6 +64,7 @@ add_executable(bitcoinqml_unit_tests
   test_flowdetailsmodel.cpp
   test_startupeffects.cpp
   test_startuppolicy.cpp
+  test_startupprofile.cpp
   test_qtlogsink.cpp
   test_bitcoinaddress.cpp
   test_blockclockdial.cpp
@@ -84,6 +85,11 @@ add_executable(bitcoinqml_unit_tests
   test_qrimageprovider.cpp
   test_imageexportoperation.cpp
   test_nodemodel.cpp
+  test_nodelifecycle.cpp
+  test_nodelifecycleworker.cpp
+  test_runtimeprompt.cpp
+  test_runtimepromptworker.cpp
+  test_networkcommand.cpp
   test_startupdiagnosticsmodel.cpp
   test_secretinput.cpp
   test_networkstyle.cpp
@@ -96,6 +102,9 @@ add_executable(bitcoinqml_unit_tests
   test_async_options.cpp
   test_onboarding_storage.cpp
   test_onboardingasync.cpp
+  test_onboardingflow.cpp
+  test_profileinspection.cpp
+  test_profileinspectionprocess.cpp
   test_banlistmodel.cpp
   test_display_settings.cpp
   test_qtinfolog.cpp
@@ -113,6 +122,8 @@ endif()
 
 if(ENABLE_WALLET)
   target_sources(bitcoinqml_unit_tests PRIVATE
+    test_activityexportoperation.cpp
+    test_profileinspectionowner.cpp
     test_activityfilterproxymodel.cpp
     test_addresslistmodel.cpp
     test_bumptransactionmodel.cpp
@@ -263,6 +274,10 @@ add_executable(bitcoinqml_qmltests
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestsharingmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestimageexportoperation.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestimageexportoperation.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/activityexportoperation.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/activityexportoperation.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/backuppolicyoperation.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/backuppolicyoperation.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/backuppolicy.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/walletrequesterror.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/walletrequesterror.h
@@ -403,3 +418,8 @@ if(qt_lib_type STREQUAL "STATIC_LIBRARY")
 endif()
 
 add_subdirectory(integration)
+
+if(TARGET bitcoin-core-profile-inspector)
+  add_dependencies(bitcoinqml_unit_tests bitcoin-core-profile-inspector)
+  add_dependencies(bitcoinqml_integration_tests bitcoin-core-profile-inspector)
+endif()

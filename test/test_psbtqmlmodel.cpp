@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <array>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -168,6 +169,63 @@ class PsbtQmlModelTests : public QObject
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void unverifiedSigningResultHasIndependentExportAndLifetime()
+    {
+        const auto fixture = psbtfeefixture::Contribution(false, false);
+        const auto wallet = std::make_shared<PsbtTestWallet>();
+        int signs{0};
+        wallet->on_sign = [returned = fixture.returned, &signs](auto& document) { ++signs; document = returned; };
+        ManualRoutedExecution transport;
+        auto opening = std::make_shared<walletopening::Session>(transport.scheduler, transport.scheduler,
+            std::make_shared<std::atomic_bool>(false), [] {});
+        QVERIFY(opening->start(wallet)); transport.drain(); opening->take();
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto original_path = directory.filePath("original.psbt");
+        const auto exported_path = directory.filePath("unverified.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(fixture.original, original_path), QString{});
+        std::deque<std::function<void()>> publications;
+        const auto publish = [&] {
+            while (!publications.empty()) { auto turn = std::move(publications.front()); publications.pop_front(); turn(); }
+        };
+        {
+            PsbtQmlModel model{wallet.get(), nullptr};
+            model.configureSession(opening, {transport.scheduler, {}, [&](auto turn) { publications.push_back(std::move(turn)); }});
+            QVERIFY(model.requestLoadFromFile(original_path)); transport.drain(); publish();
+            QVERIFY(model.loaded()); QVERIFY(model.canSign());
+            const auto generation = model.documentGeneration();
+            QVERIFY(model.requestSign());
+            QCOMPARE(signs, 0);
+            QVERIFY(transport.step(execution::Lane::Core));
+            QCOMPARE(signs, 1);
+            QVERIFY(model.busy());
+            QVERIFY(model.unverifiedResultToken().isEmpty());
+            transport.drain(); publish();
+            QCOMPARE(model.phase(), PsbtQmlModel::Phase::Unverified);
+            QCOMPARE(model.documentGeneration(), generation);
+            QVERIFY(!model.canSign()); QVERIFY(!model.canBroadcast()); QVERIFY(!model.signaturesVerified());
+            const auto token = model.unverifiedResultToken();
+            QVERIFY(!token.isEmpty());
+            QVERIFY(!model.requestSaveUnverifiedResult(token + "-stale", exported_path));
+            QVERIFY(!QFile::exists(exported_path));
+            QVERIFY(model.requestSaveUnverifiedResult(token, exported_path));
+            QVERIFY(!QFile::exists(exported_path));
+            QVERIFY(transport.step(execution::Lane::Core));
+            QVERIFY(QFile::exists(exported_path));
+            QVERIFY(model.busy());
+            transport.drain(); publish();
+            const auto exported = DecodeRawPsbt(exported_path);
+            QVERIFY(exported);
+            QCOMPARE(PsbtQmlModel::SerializePsbtRaw(*exported), PsbtQmlModel::SerializePsbtRaw(fixture.returned));
+            QVERIFY(!model.canSign()); QVERIFY(!model.canBroadcast());
+            model.clear();
+            QVERIFY(model.unverifiedResultToken().isEmpty());
+            QVERIFY(!model.requestSaveUnverifiedResult(token, directory.filePath("successor.psbt")));
+            QCOMPARE(signs, 1); QCOMPARE(wallet->private_accesses, 0);
+        }
+        opening->retire(); transport.drain();
+        QVERIFY(transport.quiescent());
+    }
     void documentOwnerRetiresWithoutGuiDelivery_data()
     {
         QTest::addColumn<int>("when");

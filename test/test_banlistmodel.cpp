@@ -5,6 +5,9 @@
 #include <QtTest/QtTest>
 
 #include <QSet>
+#include <QDateTime>
+#include <QLocale>
+#include <QScopeGuard>
 
 #include <test/mocks/mocknode.h>
 #include <test/mocks/manualexecutionenvironment.h>
@@ -44,6 +47,8 @@ class BanListModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void localizedBanExpiryUsesTheLocaleTimeConvention_data();
+    void localizedBanExpiryUsesTheLocaleTimeConvention();
     void refreshPopulatesRolesAndRows();
     void unbanAtTargetsSelectedSubnet();
     void unbanOutcomeReportsNodeRejection();
@@ -53,6 +58,23 @@ private Q_SLOTS:
     void manualUnbanKeepsOriginalSubnetAndAcceptedEffect();
     void realThreadReadsNeverRunOnGui();
 };
+
+void BanListModelTests::localizedBanExpiryUsesTheLocaleTimeConvention_data()
+{
+    QTest::addColumn<QString>("name"); QTest::newRow("de-DE-24-hour") << QStringLiteral("de_DE"); QTest::newRow("en-US-12-hour") << QStringLiteral("en_US");
+}
+void BanListModelTests::localizedBanExpiryUsesTheLocaleTimeConvention()
+{
+    QFETCH(QString, name); const QLocale previous; const QLocale locale{name}; QLocale::setDefault(locale);
+    const auto restore = qScopeGuard([&] { QLocale::setDefault(previous); });
+    MockNode node; const auto drain = DrainExecutorsBeforeNativeOwnerDestruction();
+    const auto timestamp = QDateTime(QDate{2026, 11, 15}, QTime{18, 30}).toSecsSinceEpoch();
+    node.get_banned_fn = [&](banmap_t& result) { result = {{ParseSubnet("10.0.0.0/8"), MakeBanEntry(timestamp)}}; return true; };
+    BanListModel model{node, nullptr}; model.refresh(); QTRY_COMPARE(model.rowCount(), 1);
+    const auto expected = locale.toString(QDateTime::fromSecsSinceEpoch(timestamp), QLocale::ShortFormat);
+    QCOMPARE(model.index(0).data(int(BanListModel::BanRoles::BanUntilRole)).toString(), expected);
+    QCOMPARE(node.calls.getBanned.load(), 1);
+}
 
 void BanListModelTests::refreshPopulatesRolesAndRows()
 {

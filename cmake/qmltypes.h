@@ -13,6 +13,7 @@
 #include <qml/components/blockclockdial.h>
 #include <qml/controls/linegraph.h>
 #include <qml/models/activityfilterproxymodel.h>
+#include <qml/models/activityexportoperation.h>
 #include <qml/models/activitydetailmodel.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/models/backuppolicyoperation.h>
@@ -37,6 +38,9 @@
 #include <qml/models/networkstatusmodel.h>
 #include <qml/models/networktraffictower.h>
 #include <qml/models/nodemodel.h>
+#include <qml/models/networkmodel.h>
+#include <qml/models/runtimepromptmodel.h>
+#include <qml/nodelifecycle.h>
 #include <qml/models/monospaceoutputmodel.h>
 #include <qml/models/onboardingoptionsmodel.h>
 #include <qml/models/options_model.h>
@@ -277,6 +281,8 @@ struct BitcoinAddressForeign {
     QML_NAMED_ELEMENT(BitcoinAddress)
 };
 
+struct ActivityExportResultForeign { Q_GADGET QML_FOREIGN(ActivityExportResult) QML_ANONYMOUS };
+struct ActivityExportOperationForeign { Q_GADGET QML_FOREIGN(ActivityExportOperation) QML_NAMED_ELEMENT(ActivityExportOperation) QML_UNCREATABLE("Owned by the original export action") };
 struct ActivityFilterProxyModelForeign {
     Q_GADGET
     QML_FOREIGN(ActivityFilterProxyModel)
@@ -422,6 +428,24 @@ struct PsbtQmlModelForeign {
     Q_GADGET
     QML_FOREIGN(PsbtQmlModel)
     QML_ANONYMOUS
+};
+
+namespace NodeLifecycleForeign {
+    Q_NAMESPACE
+    QML_FOREIGN_NAMESPACE(nodelifecycle)
+    QML_NAMED_ELEMENT(NodeLifecycle)
+}
+struct NetworkModelForeign {
+    Q_GADGET
+    QML_FOREIGN(NetworkModel)
+    QML_NAMED_ELEMENT(NetworkModel)
+    QML_UNCREATABLE("Owned by node")
+};
+struct RuntimePromptModelForeign {
+    Q_GADGET
+    QML_FOREIGN(RuntimePromptModel)
+    QML_NAMED_ELEMENT(RuntimePromptModel)
+    QML_UNCREATABLE("Owned by original node prompt")
 };
 
 struct NodeModelForeign {

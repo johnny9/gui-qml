@@ -21,7 +21,7 @@ from qml_scenarios import (
     run_scenarios,
 )
 from qml_test_harness import dump_qml_tree
-from qml_smoke_lib import save_review_psbt
+from qml_smoke_lib import save_review_psbt, select_wallet
 from qml_wallet_test_lib import (
     WalletFlowHarness,
     RPC_USER,
@@ -273,55 +273,6 @@ def open_add_wallet_flow(gui):
     except QmlDriverError:
         pass
     gui.wait_for_property("walletTypeExternalSigner", "visible", True, timeout_ms=10000)
-
-
-def select_wallet(gui, wallet_name):
-    gui.wait_for_property("walletBadge", "loading", False, timeout_ms=20000)
-    if gui.get_property("walletBadge", "text") == wallet_name:
-        return
-
-    gui.click("walletBadge")
-    gui.wait_for_property("walletSelectPopup", "opened", True, timeout_ms=5000)
-
-    def read_wallet_picker_rows():
-        wallet_count = gui.get_property("walletSelectList", "count")
-        rows = []
-        for row_index in range(wallet_count):
-            try:
-                rows.append(
-                    gui.get_list_item_property(
-                        view_object_name="walletSelectList",
-                        row_index=row_index,
-                        prop="name",
-                    )
-                )
-            except QmlDriverError:
-                return None
-        return rows
-
-    picker_state = {}
-
-    def wallet_picker_ready():
-        rows = read_wallet_picker_rows()
-        if rows is None:
-            return False
-        picker_state["rows"] = rows
-        return True
-
-    wait_until(wallet_picker_ready, timeout=10, description="wallet picker rows")
-
-    for row_index, row_wallet_name in enumerate(picker_state["rows"]):
-        if row_wallet_name == wallet_name:
-            gui.click_list_item(
-                view_object_name="walletSelectList",
-                row_index=row_index,
-            )
-            gui.wait_for_property("walletBadge", "text", wallet_name, timeout_ms=10000)
-            gui.wait_for_property("walletSelectPopup", "opened", False, timeout_ms=5000)
-            gui.settle(timeout_ms=5000)
-            return
-
-    raise AssertionError(f"Wallet {wallet_name!r} not found in wallet picker")
 
 
 def ensure_desktop_wallets_visible(gui):
