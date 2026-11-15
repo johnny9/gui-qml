@@ -15,7 +15,7 @@
 namespace paymentimport {
 enum class Kind { Unknown, Payment, Psbt };
 enum class Phase { Empty, Reading, Analyzing, Inspecting, AwaitingReplacement, Applying,
-                   CreatingReview, Reconciling, Applied, ReviewOpened, Failed, Closing, Closed };
+                   CreatingReview, Reconciling, Applied, ReviewOpened, Failed, Closing, Closed, AwaitingNativeHandoff };
 enum class Error { None, Source, Target, Rejected, Stale, Query, IdentityExhausted };
 enum class ChildKind { Apply, CreateReview };
 enum class Outcome { Applied, ReviewOpened, Rejected, Stale, Unknown };
@@ -27,6 +27,7 @@ struct Target {
     walletopening::Opening opening;
     uint64_t draft{0}, revision{0}, recipient{0};
     bool available{false}, compatible{false}, conflicts{false};
+    bool matches_request{false};
     bool operator==(const Target&) const = default;
 };
 struct Child {
@@ -95,6 +96,21 @@ public:
         m_phase = kind == Kind::Psbt ? Phase::Analyzing : Phase::Inspecting;
         m_read_pending = kind == Kind::Psbt;
         return true;
+    }
+    bool awaitNativeHandoff(uint64_t source) {
+        if (source != m_source || !m_read_pending || m_phase != Phase::Reading) return false;
+        m_phase = Phase::AwaitingNativeHandoff;
+        return true;
+    }
+    bool nativeHandoffCompleted(uint64_t source) {
+        if (source != m_source || !m_read_pending || m_phase != Phase::AwaitingNativeHandoff) return false;
+        m_phase = Phase::Reading;
+        return true;
+    }
+    void nativeOnlyCompleted(uint64_t source) {
+        if (source != m_source || !m_read_pending || m_phase != Phase::Reading) return;
+        m_read_pending = false;
+        close();
     }
     bool analyzed(uint64_t source) {
         if (source != m_source || !m_read_pending) return false;
@@ -205,6 +221,9 @@ public:
     }
     void close() {
         if (m_phase == Phase::Closed) return;
+        // This is a presentation handoff, not an admitted background effect.
+        // Closing revokes it and cannot wait for a vanished native editor.
+        if (m_phase == Phase::AwaitingNativeHandoff) m_read_pending = false;
         m_closing = true; m_prompt.reset(); m_phase = Phase::Closing;
         settleClose();
     }

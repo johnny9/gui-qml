@@ -1,0 +1,3142 @@
+{
+  "status": "Focused R27 component gates satisfied with explicit unchanged-scope carry; root owns composed canonical closure",
+  "tested_app": "f2753e76c38f2bf6b1c6851d9cedecca81ea1b5c",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "source": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R27/import-consumer-source",
+  "runtime": {
+    "unique_bodies": 423,
+    "passed": 423,
+    "failed": 0,
+    "skipped": 0,
+    "incomplete": 0,
+    "family": {
+      "app": "ecc39a8f62da6a87f41ba49caddb934c0e9cd3ec",
+      "path": "consumer-focused-05/actual/report.json",
+      "bodies": 423,
+      "passed": 422,
+      "failed": 1
+    },
+    "final_correction": {
+      "app": "f2753e76c38f2bf6b1c6851d9cedecca81ea1b5c",
+      "path": "echo-green-02/actual/report.json",
+      "bodies": 5,
+      "passed": 5,
+      "repeated_controls": 4
+    },
+    "carry": "Final delta only adds bounded sweep-warning close on derived fixed total. Corrected sweep, two held validation-echo and two affected actual Core import controls pass at final head. All C++/test source bytes are unchanged. This is not one423-body final replay.",
+    "bodies": [
+      {
+        "suite": "unit",
+        "identity": "nativePasteDispositionIsIndependentOfGuiTiming:captured-address",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "nativePasteDispositionIsIndependentOfGuiTiming:native-address",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "nativePasteDispositionIsIndependentOfGuiTiming:native-private-note",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "nativePasteDispositionIsIndependentOfGuiTiming:native-amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "nativePasteDispositionIsIndependentOfGuiTiming:ambiguous-amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "nativePasteDispositionIsIndependentOfGuiTiming:typed-amount-uri",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "nativePasteDispositionIsIndependentOfGuiTiming:literal-note",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "nativePasteDispositionIsIndependentOfGuiTiming:unrelated-current-note",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "nativePasteDispositionIsIndependentOfGuiTiming:long-native-note",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "sourceWaitsForExactOriginalNativeHandoffBeforeAnyApply:complete",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "sourceWaitsForExactOriginalNativeHandoffBeforeAnyApply:cancel-before-ack",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "literalNativeHandoffClosesWithoutImportAuthority",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "multipleDroppedUrlsAreRejectedBeforeOpeningAnyPrefix",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "publicSemanticIdentityAndMatchingIncludeMessageButNeverPrivateNote",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "capturedFileSourceCannotBeReusedOrRevived",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "readerKeepsPublicMetadataSeparateFromPrivateNote",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "sourceIdentityIncludesMessageAndCanonicalPath",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "boundedAndMalformedSourcesNeverBecomeCapabilities:malformed",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "boundedAndMalformedSourcesNeverBecomeCapabilities:required",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "boundedAndMalformedSourcesNeverBecomeCapabilities:amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "boundedAndMalformedSourcesNeverBecomeCapabilities:large",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "psbtInspectionIsStandaloneAndRetainsOriginalDocument",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "retryReadsFreshSourceWithoutCarryingOldApplyIntent",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "sourceAndTargetExecutorsKeepSeparateDecisions",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "explicitUseWaitsForInspectionAndOriginalTarget",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "replacementPromptIsOriginalSourceAndRevisionBound",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "changedTargetRetiresOldReplacementAndRequiresFreshConsent",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "lostReviewFactoryAcknowledgmentQueriesOriginalResultWithoutReplay",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "psbtTargetSwitchDuringAnalysisAndClosedTargetKeepsOriginalFactory",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "lostApplyAcknowledgmentQueriesWithoutRepeatingMutation",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "rejectedOutcomeQueryCanRetryWithoutRepeatingApply",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "knownOutcomeRetainedUntilAcknowledgeAdmission",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "unknownAfterCloseKeepsOriginalChildAndReadOnlyRecovery",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "unavailableTargetDoesNotInvalidateStandaloneSource",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "flowRetainsKnownRejectionAcrossAcknowledgmentFailure",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "batchProtectsPrivateNoteAndPreservesOmittedMaximumIntent",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "draftLedgerCommitsCompleteBatchOnceAndRetainsOriginalReceipt",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "reviewFactoryQueriesOriginalOutcomeWithoutRecreating",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "rejectedApplyAdmissionIsKnownNoEffect",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "closeWhileNativeReadIsHeldCannotResurrectTargetObservation",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "replacedTargetCannotReceiveOldObservation",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "reviewCloseRevokesOnlyUnusedPresentationAndRetainsLogicalOutcome",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "reviewFactoryRetainsKnownFailuresForLostAcknowledgment",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "originalExportRequiresMatchingSourceToken",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "closedTypedSourcesReleaseTheirActionScopes",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "realThreadSourceReadAndDomainDecisionsStayOutsideGui",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "realTypedConsumerUsesPublicReviewFactoryAndOriginalView:original",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "realTypedConsumerUsesPublicReviewFactoryAndOriginalView:discard-before-gui-adoption",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "realTypedConsumerUsesPublicReviewFactoryAndOriginalView:source-close-after-receipt-before-adoption",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "realTypedConsumerUsesPublicReviewFactoryAndOriginalView:target-close-before-native-read",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "realTypedConsumerUsesPublicReviewFactoryAndOriginalView:source-close-domain-held-after-receipt",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "realTypedConsumerUsesPublicReviewFactoryAndOriginalView:source-close-domain-held-before-receipt",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "actualDraftReceiptSurvivesSourceDismissalAndQuietTargetClose",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "typedFacadePublishesBoundedSourceWithoutTargetOrGuiParsing",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "r26-owner"
+      },
+      {
+        "suite": "unit",
+        "identity": "textHasSeparateDomainOutcomeAndGuiPublication",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeOwnsConflictsAndDerivedMetadataUntilMatchingPublication",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeMatchesAllPublicMetadataWithoutPrivateNoteOrFormatting:same-reordered-request",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeMatchesAllPublicMetadataWithoutPrivateNoteOrFormatting:message-changed",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeMatchesAllPublicMetadataWithoutPrivateNoteOrFormatting:message-omitted-clears-old",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeMatchesAllPublicMetadataWithoutPrivateNoteOrFormatting:label-omitted-clears-old",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeTreatsMaximumAsAnAmountIntent:fixed-same-amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeTreatsMaximumAsAnAmountIntent:maximum-same-numeric-amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeTreatsMaximumAsAnAmountIntent:maximum-without-amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeVerifiesExactNativePasteProvenance:replace-selection",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeVerifiesExactNativePasteProvenance:unrelated-prefix",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeVerifiesExactNativePasteProvenance:unchanged",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "probeVerifiesExactNativePasteProvenance:all-original-leading-space",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "explicitCancellationSuppressesHeldPublicationWithoutClosingSuccessor",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "fileUsesNativeLaneAndCannotPublishAheadOfOutcome",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "replacementQuietlyFencesHeldOriginalGuiTurn",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "replacementCannotCloseAnotherOwnersOriginalOperation",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "ownerDestructionAfterNativeReadRetiresPayloadWithoutGuiPublication",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseStopsAdmissionAndSuppressesOriginalPublication",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseRetiresUnexecutedAndReadyOperations:before-native-turn",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseRetiresUnexecutedAndReadyOperations:after-ready-publication",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseRetiresLargeInventoryInBoundedPresentationTurns",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "operationInventoryRejectsBeforeRetainingMoreInput",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "retirementPostFailureUsesIndependentFallback",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "rejectedTransportIsARealFailureOperation:domain-text",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "rejectedTransportIsARealFailureOperation:native-file",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupReservationRejectionDoesNotExecuteParser",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "missingServicesDoesNotCreateAnExecutorOrReportSuccess",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "failedGuiPostRetainsDomainResultForExplicitRetry",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "oversizedTextHasAnExplicitDomainFailure",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "fileByteLimitIsInclusive:exact-cap",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "fileByteLimitIsInclusive:one-byte-over",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "fileGrowingWhileQueuedIsReadAtDispatchAndRejectedAtTheCap",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "zeroSizeNativeStreamCannotEscapeTheReadCap",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "realFileReadRunsOutsideGuiOnTheInjectedExecutor",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "uri-parser-carry"
+      },
+      {
+        "suite": "unit",
+        "identity": "sameCanonicalAmountIsAFixedIntent:canonical-equal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "sameCanonicalAmountIsAFixedIntent:typed-equal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "sameCanonicalAmountIsAFixedIntent:imported-equal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "sameCanonicalAmountIsAFixedIntent:incomplete-edit",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "delayedImportedAddressNormalizationRetainsOnlyItsOwnedProvenance:original-normalization",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "delayedImportedAddressNormalizationRetainsOnlyItsOwnedProvenance:newer-address-before-publication",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "settledAddressFormattingCannotCreateAnUnownedPendingRevision",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "coupledModePublicationCannotExposeAnEarlierReadySnapshot",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "heldMaximumPublicationCannotOverrideNewerFixedText",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "movingMaximumClearsOnlyTheFormerComputedAmount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "explicitFixedEditBeforeHandoverPreservesItsAmount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "reselectedMaximumOwnsFreshObservationsAfterUnpublishedHandover",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "nonAmountEditDuringHandoverCannotReinstateComputedMoney",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "lateValidationCannotRestoreTheFormerRemainder",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "importBatchPreservesPrivateNoteAndOwnsProvenance",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "importProjectionRetainsNewerPublicIntentAndOwnerLoss:close-draft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "importProjectionRetainsNewerPublicIntentAndOwnerLoss:delete-draft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "importProjectionRetainsNewerPublicIntentAndOwnerLoss:newer-fixed-amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "importProjectionRetainsNewerPublicIntentAndOwnerLoss:newer-import",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "importProjectionRetainsNewerPublicIntentAndOwnerLoss:clear-draft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "rejectedImportNeverPartiallyReplacesARecipient:public-label-budget",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "rejectedImportNeverPartiallyReplacesARecipient:message-budget",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "rejectedImportNeverPartiallyReplacesARecipient:money-range",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "rowBudgetRefusesBeforeCreatingAnExtraProjection",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "recipientChurnHasABoundedAdmissionWindow",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "modeBackpressureCannotLoseAnExplicitFixedEdit",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "privateNoteBudgetRejectsTheWholeInputAndRecovers",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "draftStatesAndRetirementPreserveTheCapturedRevision",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "amountModeCannotTargetAForeignRecipient",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "formattingAndDisplayUnitNeverBecomeAmountIntent",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "validationAdmissionKeepsOriginalEditorIntent:quiet",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "validationAdmissionKeepsOriginalEditorIntent:delete",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "validationAdmissionKeepsOriginalEditorIntent:newer-input",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalValidationOwner:quiet",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalValidationOwner:delete",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalValidationOwner:same-port-successor",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseDuringQtMutation:0-ended",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseDuringQtMutation:0-about",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseDuringQtMutation:1-ended",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseDuringQtMutation:1-about",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseDuringQtMutation:2-ended",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseDuringQtMutation:2-about",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseFencesAllEditorsThenRetiresBoundedBatchesWithoutFacade",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "validationAndAggregateDoNotBecomeReadyBeforeTheirGuiPublication",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "interimAggregateRetainsPendingRowsUntilTheirOriginalValidationPublishes",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "staleDraftCannotAcquireAnEarlierValidDestination",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "dustAndAmountDecisionsAreOwnedByDomain:dust",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "dustAndAmountDecisionsAreOwnedByDomain:zero",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "dustAndAmountDecisionsAreOwnedByDomain:over-max",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "duplicateDestinationsAndTotalsUseTheImmutableDomainDraft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "changedEditorFieldsCannotReuseTheLastValidatedDraft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "aggregateRejectsMonetaryOverflowWithoutPublishingAZeroEstimate:monetary-range",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "aggregateRejectsMonetaryOverflowWithoutPublishingAZeroEstimate:signed-overflow",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "manyRecipientsHaveNoCleanupSlotCapAndNativePresentationYields",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "supersedingUnitIntentCannotBeReplacedByAnOlderQueuedChunk",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "removedRecipientHeldOutcomeCannotRejoinTheList",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "rejectedDomainWorkNeverAdmitsTheLastValidDraft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "lostGuiPublicationRetriesWithoutRepeatingFieldIntent",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "quietCloseAndObserverLossDoNotPublishAcceptedValidation",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "realValidationUsesSharedDomainThread",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "recipientBudgetIsEnforcedWithoutAQmlButton",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "childCleanupAdmissionCannotRetargetListIntent:add-0",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "childCleanupAdmissionCannotRetargetListIntent:add-1",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "childCleanupAdmissionCannotRetargetListIntent:add-2",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "childCleanupAdmissionCannotRetargetListIntent:initial-chunk-0",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "childCleanupAdmissionCannotRetargetListIntent:initial-chunk-1",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "childCleanupAdmissionCannotRetargetListIntent:initial-chunk-2",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalSetup:1-0",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalSetup:1-1",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalSetup:1-2",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalSetup:2-0",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalSetup:2-1",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalSetup:2-2",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalSetup:3-0",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalSetup:3-1",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "cleanupAdmissionKeepsOriginalSetup:3-2",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "clearCleanupAdmissionKeepsNewerIntent:1-0",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "clearCleanupAdmissionKeepsNewerIntent:1-1",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "clearCleanupAdmissionKeepsNewerIntent:1-2",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "clearCleanupAdmissionKeepsNewerIntent:2-0",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "clearCleanupAdmissionKeepsNewerIntent:2-1",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "clearCleanupAdmissionKeepsNewerIntent:2-2",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "invalidDraftAndAddressHaveIndependentAdmissionReasons",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "clearKeepsCurrentRecipientValidForQmlBindings",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "clearToFrontReportsRemovedRows",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "clearToFrontDetachesRecipientsBeforeDestroyingThem",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "unitChangesApplyToEveryRecipient",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "paymentRequestMetadataStaysSeparateFromPrivateNote",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "recipient-list-target"
+      },
+      {
+        "suite": "unit",
+        "identity": "heldAtomicImportCannotReuseTheEarlierReviewedSend",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "original-review-import-gate"
+      },
+      {
+        "suite": "unit",
+        "identity": "editedDraftCannotSendPreviouslyReviewedTransaction",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "original-review-import-gate"
+      },
+      {
+        "suite": "unit",
+        "identity": "heldMaximumEstimateCannotOverwriteANewerFixedIntent:ordinary-equal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "original-review-import-gate"
+      },
+      {
+        "suite": "unit",
+        "identity": "heldMaximumEstimateCannotOverwriteANewerFixedIntent:imported-equal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "original-review-import-gate"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_amount_clipboard_uri_provenance:empty-draft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_amount_clipboard_uri_provenance:replace-entire-draft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_amount_clipboard_uri_provenance:append",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_amount_clipboard_uri_provenance:prepend",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_amount_clipboard_uri_provenance:replace-selection",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_amount_clipboard_uri_provenance:different-prefix",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_amount_clipboard_uri_provenance:typed-other-uri",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_amount_clipboard_uri_provenance:unchanged",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_amount_clipboard_uri_provenance:numeric-clipboard",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_available_balance_keeps_caption_static",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_checked_custom_reselection_preserves_explicit_rate",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_clipboard_offer_tracks_public_message_but_ignores_private_note_and_formatting",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_clipboard_probe_cannot_retarget_unavailable_opening:late-original-result",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_clipboard_probe_cannot_retarget_unavailable_opening:new-clipboard-while-unavailable",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_closing_review_clears_form_only_after_send",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_coin_picker_clears_only_a_real_selection:no-inputs",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_coin_picker_clears_only_a_real_selection:selected-input",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_coin_selection_cancel_and_apply",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_committed_completion_keeps_original_draft_ownership:view-activity",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_committed_completion_keeps_original_draft_ownership:replacement-opening",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_competing_send_intent_keeps_original_admission:preparation-busy",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_competing_send_intent_keeps_original_admission:URI-pending",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_competing_send_intent_keeps_original_admission:opening-unavailable",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_competing_send_intent_keeps_original_admission:PSBT-busy",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_completion_retains_the_original_submission_outcome",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_preparation_drops_late_interest:hidden",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_preparation_drops_late_interest:hidden-then-returned",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_preparation_drops_late_interest:edited-draft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_preparation_drops_late_interest:replacement-opening",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_preparation_projects_one_owned_outcome:ready",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_preparation_projects_one_owned_outcome:unlock",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_preparation_projects_one_owned_outcome:explicit-failure",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_preparation_projects_one_owned_outcome:empty-failure-wallet",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_preparation_projects_one_owned_outcome:empty-failure-selection",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_psbt_import_routes_public_result:signable",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_psbt_import_routes_public_result:save-only",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_psbt_import_routes_public_result:review-pending",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_psbt_import_routes_public_result:already-known",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_psbt_import_routes_public_result:unsupported",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_psbt_result_keeps_original_opening:replaced",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_psbt_result_keeps_original_opening:closed",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_psbt_result_keeps_original_opening:hidden-returned",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_uri_projection_has_one_original_effect:message",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_uri_projection_has_one_original_effect:no-message",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_uri_projection_has_one_original_effect:invalid-text",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_controlled_uri_projection_has_one_original_effect:file-failure",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_custom_entry_waits_only_for_a_derived_default",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_custom_fee_send_uses_generic_confirmation_text",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_draft_revision_binds_to_the_owner_across_view_recreation",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_empty_clipboard_completes_paste_without_parser:address",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_empty_clipboard_completes_paste_without_parser:amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_empty_clipboard_completes_paste_without_parser:note",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_equal_amount_intent_uses_the_typed_fixed_mode",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_equal_fee_rates_preserve_actual_provenance:fallback",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_equal_fee_rates_preserve_actual_provenance:estimator",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_failed_maximum_exposes_original_cause_and_refresh",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_fast_send_completion_before_popup_open_gets_done_focus",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_fee_presets_and_custom_rate_validation",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_imported_psbt_without_signing_keys_only_offers_save",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_imported_review_explains_policy_and_rechecks_without_sending",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_large_review_recipients_virtualize_and_preserve_complete_late_entry",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_local_sign_only_is_a_separate_non_send_command",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_locked_coin_confirmation_uses_identity_after_refresh",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_locked_sign_only_prompt_says_transaction_will_not_be_sent",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_locked_wallet_allows_local_draft_import_without_unlocking",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_long_leading_space_uri_is_probed_without_prefix_truncation:keyboard",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_long_leading_space_uri_is_probed_without_prefix_truncation:context-menu",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_manual_empty_selection_is_explicit_and_blocks_review",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_maximum_fills_immediately_without_warning",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_maximum_label_tracks_selection_and_no_fee_checkbox",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_missing_manual_input_blocks_review_until_explicit_reset",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_amount_commit_preserves_original_provenance:matching-URI",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_amount_commit_preserves_original_provenance:different-native-URI",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_amount_commit_preserves_original_provenance:long-numeric-rejected",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_psbt_picker_keeps_original_opening:accepted",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_psbt_picker_keeps_original_opening:replaced-opening",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_psbt_picker_keeps_original_opening:cancelled",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_psbt_picker_keeps_original_opening:edited-draft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_psbt_picker_keeps_original_opening:changed-recipient",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_psbt_picker_keeps_original_opening:hidden-view",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_native_text_change_from_empty_draft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_old_send_completion_cannot_complete_a_replacement_review",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_optional_paste_payload_routes_the_original_editor:address",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_optional_paste_payload_routes_the_original_editor:amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_optional_paste_payload_routes_the_original_editor:note",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_overlong_ordinary_amount_paste_never_accepts_numeric_prefix",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_oversized_fee_paste_does_not_accept_a_valid_prefix",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_overwrite_confirmation_rejects_unavailable_opening",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_password_preparation_submission_owns_one_outcome:ready",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_password_preparation_submission_owns_one_outcome:failed",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_password_preparation_submission_owns_one_outcome:admission-refused",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_paste_uses_captured_literal_and_selection_while_clipboard_changes",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_pending_psbt_fee_uses_bound_capabilities:trusted",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_pending_psbt_fee_uses_bound_capabilities:unavailable",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_pending_psbt_import_keeps_its_intent:coin-refresh",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_pending_psbt_import_keeps_its_intent:coin-selection",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_pending_psbt_import_keeps_its_intent:coin-selection-pending",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_pending_psbt_import_keeps_its_intent:recipient-edit",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_pending_psbt_import_keeps_its_intent:hidden-page",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_plain_address_paste_into_send_field",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_preparation_refusal_preserves_pending_psbt_intent",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_prepare_password_closes_when_opening_context_ends:hidden",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_prepare_password_closes_when_opening_context_ends:changed-opening",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_prepare_password_closes_when_opening_context_ends:unloaded",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_private_note_transport_refusal_restores_the_owned_text",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_psbt_save_error_remains_visible_in_review",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_recipient_budget_binds_the_add_command",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_recipient_header_preserves_draft_when_expanded_and_collapsed",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_recipients_are_available_by_default_and_stack",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_reentrant_preparation_keeps_two_view_interests_separate",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_reentrant_uri_projection_cannot_finish_in_replacement_view:hidden",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_reentrant_uri_projection_cannot_finish_in_replacement_view:different-opening",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_replacement_intent_cancels_owned_paste_once:manual-import",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_replacement_intent_cancels_owned_paste_once:literal-note",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_content_width_matches_activity_detail",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_only_psbt_closes_and_discards_on_wallet_change",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_popup_keeps_keyboard_focus_off_send_form",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_provenance_is_immutable_presentation",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_recipient_card_handles_one_and_multiple_recipients",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_saves_psbt_without_leaving_modal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_send_pushes_complete_within_modal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_subset_sends_without_sweep_alert",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_sweep_alert_closes_when_draft_is_replaced",
+        "status": "pass",
+        "run": "echo-green-02",
+        "selection": "validation-is-not-intent"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_sweep_alert_closes_when_transaction_is_replaced",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_sweep_alert_closes_when_wallet_changes",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_review_sweep_requires_confirmation_and_keeps_draft_on_cancel",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_reviewing_partial_send_opens_review_directly",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_reviewing_sweep_requires_confirmation_regardless_of_maximum_action",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_admission_waits_for_the_committed_outcome",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_amount_allows_editing_whole_part_before_decimal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_amount_changes_schedule_live_fee_estimation",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_amount_rejects_extra_decimal_digits_while_editing",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_amount_rejects_extra_decimal_points_while_editing",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_button_requires_the_current_draft_review",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_continue_button_requires_fee_buffer",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_continue_button_tracks_recipient_validity",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_password_closes_when_opening_context_ends:hidden",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_password_closes_when_opening_context_ends:changed-opening",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_password_closes_when_opening_context_ends:unloaded",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_password_prompt_rejects_replaced_transaction",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_request_details:address-only",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_request_details:amount-only",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_request_details:empty-details",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_request_details:label-only",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_request_details:message-only",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_request_details:message-empty-label",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_request_details:label-empty-message",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_request_details:both-details",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_uri_model_label_is_not_reparsed",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_uri_paste_applies_from_each_recipient_field:address",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_uri_paste_applies_from_each_recipient_field:label",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_uri_paste_applies_from_each_recipient_field:amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_uri_paste_confirms_overwriting_other_fields",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_uri_paste_preserves_omitted_fields",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_payment_uri_paste_preserves_private_note_independently",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_prepare_transaction_success_and_failure_paths",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_shows_recipient_validation_error",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_send_uri_import_schedules_fee_estimate",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_stale_review_sweep_confirmation_is_ignored",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_successful_psbt_broadcast_pushes_send_complete",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_unverified_signer_export_keeps_the_review_and_captured_result",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_fixed_amount_replacing_equal_maximum_requires_consent:keep-maximum",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_fixed_amount_replacing_equal_maximum_requires_consent:replace-with-fixed",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_guard_cancels_original_paste_once:hidden",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_guard_cancels_original_paste_once:unavailable",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_probe_failure_releases_original_editor:address",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_probe_failure_releases_original_editor:amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_probe_failure_releases_original_editor:note",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_probe_is_fenced_by_draft_and_visibility:edited",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_probe_is_fenced_by_draft_and_visibility:hidden",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_probe_is_fenced_by_draft_and_visibility:opening-unavailable",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_service_admission_refusal_preserves_draft:text",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_uri_service_admission_refusal_preserves_draft:file",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "send-consumers"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_validation_echo_preserves_original_import_intent:explicit-derived-total",
+        "status": "pass",
+        "run": "echo-green-02",
+        "selection": "validation-is-not-intent"
+      },
+      {
+        "suite": "qml",
+        "identity": "SendCreate::test_validation_echo_preserves_original_import_intent:paste-validation-revision",
+        "status": "pass",
+        "run": "echo-green-02",
+        "selection": "validation-is-not-intent"
+      },
+      {
+        "suite": "qml",
+        "identity": "MainRouting::test_menu_psbt_completion_cannot_cross_selected_opening",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "picker-menu-composition"
+      },
+      {
+        "suite": "qml",
+        "identity": "WalletViews::test_deferred_opens_are_dropped_once_their_wallet_is_hidden",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "picker-view-retirement"
+      },
+      {
+        "suite": "qml",
+        "identity": "WalletViews::test_leaving_wallet_pages_closes_their_dialogs",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "picker-view-retirement"
+      },
+      {
+        "suite": "qml",
+        "identity": "WalletViews::test_unloading_a_wallet_destroys_its_view",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "picker-view-retirement"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_captured_paste_cancellation_keeps_original_ownership:explicit-cancel",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_captured_paste_cancellation_keeps_original_ownership:stale-then-successor",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_captured_paste_cancellation_keeps_original_ownership:model-replaced",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_captured_paste_cancellation_keeps_original_ownership:editor-hidden",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_captured_paste_cancellation_keeps_original_ownership:editor-readonly",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_keyboard_paste_keeps_original_capture_until_applied",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_model_absent_edit_finish_reports_local_literal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_numeric_key_with_interception_disabled_updates_real_amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_operation_refusal_precedence_and_revision_fallback",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:replace-entire-input",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:preserved-prefix",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:preserved-suffix",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:preserved-both",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:trimmed-case-preserved",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:unchanged-input",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:current-shorter-than-clipboard",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:altered-prefix",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:altered-suffix",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:previous-over-budget",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:current-over-budget",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:clipboard-over-budget",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:empty-clipboard",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:ordinary-numeric-clipboard",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_payment_uri_requires_short_exact_provenance:interception-disabled",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_pending_paste_defers_physical_edit_finish_until_cancel",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_physical_commit_uses_real_model_or_local_editor:numeric-with-model",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_physical_commit_uses_real_model_or_local_editor:numeric-without-model",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_physical_commit_uses_real_model_or_local_editor:typed-uri-with-model",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_physical_commit_uses_real_model_or_local_editor:typed-uri-without-model",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_physical_unit_toggle_preserves_satoshi:BTC-to-SAT",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_physical_unit_toggle_preserves_satoshi:SAT-to-BTC",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_provenance_rejects_unowned_surrounding_growth",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_reentrant_terminal_paste_keeps_applied_original_amount:hide-after-edit",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_reentrant_terminal_paste_keeps_applied_original_amount:replace-after-edit",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_sync_from_amount_respects_edit_focus:active-literal",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_sync_from_amount_respects_edit_focus:forced-active-reset",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_sync_from_amount_respects_edit_focus:inactive-reset",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_unavailable_capture_and_disabled_unit_have_no_effect:absent-model",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_unavailable_capture_and_disabled_unit_have_no_effect:disabled-editor",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_unintercepted_paste_applies_literal_once",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_unit_placeholder_and_label:BTC",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_unit_placeholder_and_label:mBTC",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_unit_placeholder_and_label:bits",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_unit_placeholder_and_label:sats",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "qml",
+        "identity": "BitcoinAmountInputField::test_unit_placeholder_and_label:absent-model",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "amount-native-routing"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.equalImportedAmountReplacesMaximumIntentWithoutChangingTheRequest",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.typedExplicitImportPreservesPrivateNoteAndPublicMetadata",
+        "status": "pass",
+        "run": "echo-green-02",
+        "selection": "core-typedExplicitImportPreservesPrivateNoteAndPublicMetadata"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.typedPsbtFileCreatesOriginalReviewWithoutSigningOrSubmission:psbt-extension",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.typedPsbtFileCreatesOriginalReviewWithoutSigningOrSubmission:text-extension",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.typedPsbtFileCreatesOriginalReviewWithoutSigningOrSubmission:no-extension",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.clipboardPasteRequiresConfirmationBeforeOverwriting",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.manualImportRejectsMalformedUriWithoutChangingTheDraft",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.localFilesAndFileUrlsReachTheSendModel:path",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.localFilesAndFileUrlsReachTheSendModel:file-url",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.nativePasteImportsUrisFromOtherRecipientFields:amount",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.nativePasteImportsUrisFromOtherRecipientFields:private-note",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.ordinaryPasteIntoThePrivateNoteKeepsNormalEditing",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.lockedWalletImportsOnlyLocalDraftValues",
+        "status": "pass",
+        "run": "echo-green-02",
+        "selection": "core-lockedWalletImportsOnlyLocalDraftValues"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.clipboardOfferComparesPublicMessageIndependentlyOfPrivateNote",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.droppedTextAndUrlsReachTheProductionDropArea:text",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.droppedTextAndUrlsReachTheProductionDropArea:bitcoin-url",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.droppedTextAndUrlsReachTheProductionDropArea:file-url",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      },
+      {
+        "suite": "integration",
+        "identity": "payment-import.enabled.droppedTextAndUrlsReachTheProductionDropArea:multiple-urls",
+        "status": "pass",
+        "run": "consumer-focused-05",
+        "selection": "core-import-consumers"
+      }
+    ]
+  },
+  "family_selections": [
+    {
+      "id": "r26-owner",
+      "suite": "unit",
+      "bodies": 54,
+      "passed": 54,
+      "failed": 0
+    },
+    {
+      "id": "uri-parser-carry",
+      "suite": "unit",
+      "bodies": 35,
+      "passed": 35,
+      "failed": 0
+    },
+    {
+      "id": "recipient-target",
+      "suite": "unit",
+      "bodies": 60,
+      "passed": 60,
+      "failed": 0
+    },
+    {
+      "id": "recipient-list-target",
+      "suite": "unit",
+      "bodies": 28,
+      "passed": 28,
+      "failed": 0
+    },
+    {
+      "id": "original-review-import-gate",
+      "suite": "unit",
+      "bodies": 4,
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "id": "send-consumers",
+      "suite": "qml",
+      "bodies": 175,
+      "passed": 174,
+      "failed": 1
+    },
+    {
+      "id": "picker-menu-composition",
+      "suite": "qml",
+      "bodies": 1,
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "id": "picker-view-retirement",
+      "suite": "qml",
+      "bodies": 3,
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "id": "amount-native-routing",
+      "suite": "qml",
+      "bodies": 45,
+      "passed": 45,
+      "failed": 0
+    },
+    {
+      "id": "core-import-consumers",
+      "suite": "integration",
+      "bodies": 18,
+      "passed": 18,
+      "failed": 0
+    }
+  ],
+  "red": [
+    {
+      "app": "b882f85db73f27e441973b1c210cb27f0e7365e3",
+      "path": "metadata-red-01/actual/report.json",
+      "bodies": 4,
+      "passed": 1,
+      "failed": 3
+    },
+    {
+      "app": "b882f85db73f27e441973b1c210cb27f0e7365e3",
+      "path": "baseline-composed-01/actual/report.json",
+      "bodies": 4,
+      "passed": 2,
+      "failed": 2
+    },
+    {
+      "app": "9837f57606986e08f9b730b8e793f3db4ca9a7b5",
+      "path": "echo-red-01/actual/report.json",
+      "bodies": 2,
+      "passed": 0,
+      "failed": 2
+    }
+  ],
+  "retained_nonpasses": [
+    "consumer-focused-01: pinned covered-switch-default,0bodies",
+    "consumer-focused-02: integration QStringBuilder/QVariant compiler error,0bodies",
+    "consumer-focused-03:181unit pass; Send162/173, amount44/45, Core15/18; failures retained",
+    "consumer-focused-04:173Send/45amount/181unit/4picker pass; Core16/18; validation-echo cancellation diagnosed",
+    "consumer-focused-05: only sweep presentation1/423 fails; final correction explicitly covers it"
+  ],
+  "static": {
+    "path": "consumer-static-01",
+    "toolchain": "pinned Clang23.1.6 + Bitcoin tidy plugin/Core checks",
+    "cpp": 9,
+    "changed_cpp": 8,
+    "unchanged_transitive_cpp": 1,
+    "fresh_moc": 7,
+    "passed": 16,
+    "failed": 0
+  },
+  "qml_static": [
+    {
+      "variant": "qt65",
+      "files": 259,
+      "warnings": 0,
+      "compatibility_notes": 1111,
+      "runtime": "Qt6.10.2",
+      "path": "echo-green-02/qml-lint/qt65/qmllint.json"
+    },
+    {
+      "variant": "qt62",
+      "files": 259,
+      "warnings": 0,
+      "compatibility_notes": 1111,
+      "runtime": "Qt6.10.2",
+      "path": "echo-green-02/qml-lint/qt62/qmllint.json"
+    }
+  ],
+  "process": {
+    "path": "consumer-static-01/lifecycle.stdout",
+    "cases": 2,
+    "normal_exit": 0,
+    "injected_fatal_exit": 1,
+    "stderr_inspected": true,
+    "scope": "wallet+IPC enabled build; lifecycle uses -disablewallet, wallet behavior independently covered by actual Core18"
+  },
+  "lint": {
+    "path": "consumer-lint-02",
+    "app": "ecc39a8f62da6a87f41ba49caddb934c0e9cd3ec",
+    "status": "pass",
+    "final_delivery": "consumer-lint-03 records final delivered HEAD/Core/status separately"
+  },
+  "limits": [
+    "Ordinary Linux wallet+IPC; no sanitizer/coverage qualification",
+    "Full platform/configuration/native Windows and exhaustive100% qualification remainR42",
+    "Qt-only native picker TSan issue stays explicitly unresolved/deferred; no replacement component",
+    "R40 OS/IPC Source creation/delivery is separately owned"
+  ],
+  "lease": "LEASE_RELEASE.json"
+}

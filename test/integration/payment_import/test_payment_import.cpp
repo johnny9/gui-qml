@@ -21,6 +21,18 @@ class PaymentImportIntegrationTests : public QObject
     BitcoinQmlApplication& m_app;
     WalletQmlModel* m_wallet{nullptr};
     QString m_address;
+    QString importDiagnostic(QObject* original) const {
+        auto* page = qmltest::Find(m_app, "walletSendPage");
+        QStringList facts{QStringLiteral("Import diagnostic:")};
+        if (page) {
+            facts << QStringLiteral("active=") + QString::number(page->property("m_importOperation").value<QObject*>() != nullptr)
+                  << QStringLiteral("draft=") + m_wallet->sendRecipientList()->revision()
+                  << QStringLiteral("importPending=") + QString::number(m_wallet->sendRecipientList()->importPending());
+        }
+        if (original) for (const auto* name : {"state", "pending", "canApply", "promptToken", "outcome", "error"})
+            facts << QString::fromLatin1(name) + QLatin1Char('=') + original->property(name).toString();
+        return facts.join(QLatin1Char(' '));
+    }
 
 public:
     explicit PaymentImportIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
@@ -68,18 +80,26 @@ private Q_SLOTS:
         const QString uri = "bitcoin:" + m_address + "?amount=0.01234567&label=Public%20invoice&message=Merchant%20message";
         auto* page = qmltest::Find(m_app, "walletSendPage"); QVERIFY(page);
         QVERIFY(QMetaObject::invokeMethod(page, "applyPaymentRequestFromText", Q_ARG(QVariant, uri), Q_ARG(QVariant, "explicit request")));
-        QTRY_COMPARE(recipient->amount()->satoshi(), 1'234'567);
+        auto* source = page->property("m_importOperation").value<QObject*>(); QVERIFY(source);
+        QVERIFY2(QTest::qWaitFor([&] { return recipient->amount()->satoshi() == 1'234'567; }, 5000), qPrintable(importDiagnostic(source)));
         QCOMPARE(recipient->label(), QStringLiteral("Private bookkeeping"));
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Public invoice"));
         QCOMPARE(recipient->message(), QStringLiteral("Merchant message"));
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
     }
 
+    void typedPsbtFileCreatesOriginalReviewWithoutSigningOrSubmission_data() {
+        QTest::addColumn<QString>("filename");
+        QTest::newRow("psbt-extension") << "original.psbt";
+        QTest::newRow("text-extension") << "original.txt";
+        QTest::newRow("no-extension") << "original";
+    }
     void typedPsbtFileCreatesOriginalReviewWithoutSigningOrSubmission() {
+        QFETCH(QString, filename);
         QVERIFY(qmltest::FundWallet(m_app, *m_wallet));
         const auto encoded = qmltest::Rpc(m_app, "walletcreatefundedpsbt",
             qmltest::Json("[[],[{\"" + m_address.toStdString() + "\":0.005}],0,{\"fee_rate\":2}]"), m_wallet->name()).find_value("psbt").get_str();
-        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("original.psbt");
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath(filename);
         { QFile file{path}; QVERIFY(file.open(QIODevice::WriteOnly)); const auto bytes = QByteArray::fromStdString(encoded); QCOMPARE(file.write(bytes), bytes.size()); }
         auto* page = qmltest::Find(m_app, "walletSendPage"); QVERIFY(page);
         QVERIFY(QMetaObject::invokeMethod(page, "applyPaymentRequestFromFile", Q_ARG(QVariant, path)));
@@ -103,9 +123,10 @@ private Q_SLOTS:
     void clipboardPasteRequiresConfirmationBeforeOverwriting()
     {
         QVERIFY(qmltest::SetText(m_app, "sendNoteInput", "My private note"));
+        auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
+        recipient->amount()->setSatoshi(10'000); // The explicit amount change needs consent; the private note is independent.
         const QString uri = "bitcoin:" + m_address + "?amount=0.01234567&label=Alice&message=Lunch";
         QGuiApplication::clipboard()->setText(uri);
-        auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
         QCOMPARE(recipient->label(), QStringLiteral("My private note"));
         QVERIFY(qmltest::Click(m_app, "sendAddressInput"));
         auto* field = qmltest::Find(m_app, "sendAddressInput");
@@ -123,10 +144,11 @@ private Q_SLOTS:
         QTRY_VERIFY(popup->property("opened").toBool());
         QVERIFY(qmltest::Click(m_app, "sendPaymentUriOverwriteConfirmButton"));
         QTRY_VERIFY(!popup->property("opened").toBool());
-        QCOMPARE(recipient->amount()->satoshi(), 1'234'567);
+        auto* source = qmltest::Find(m_app, "walletSendPage")->property("m_importOperation").value<QObject*>();
+        QVERIFY2(QTest::qWaitFor([&] { return recipient->amount()->satoshi() == 1'234'567; }, 5000), qPrintable(importDiagnostic(source)));
         QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Alice"));
         QCOMPARE(recipient->message(), QStringLiteral("Lunch"));
-        QCOMPARE(recipient->label(), QStringLiteral("Lunch - Alice"));
+        QCOMPARE(recipient->label(), QStringLiteral("My private note"));
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
     }
 
@@ -214,12 +236,50 @@ private Q_SLOTS:
         QVERIFY(m_wallet->sendRecipientList()->currentRecipient()->paymentRequestLabel().isEmpty());
     }
 
+    void lockedWalletImportsOnlyLocalDraftValues() {
+        QVERIFY(m_wallet->encryptWallet(QStringLiteral("local-import-only")));
+        QTRY_COMPARE(m_wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_VERIFY(m_wallet->isLocked());
+        auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
+        QVERIFY(recipient->editPrivateNote(QStringLiteral("Private locked note")));
+        QGuiApplication::clipboard()->setText("bitcoin:" + m_address + "?amount=0.007&label=Public&message=Locked%20draft");
+        auto* input = qmltest::Find(m_app, "sendAddressInput"); QVERIFY(input);
+        QVERIFY(QMetaObject::invokeMethod(input, "forceActiveFocus")); QVERIFY(QMetaObject::invokeMethod(input, "paste"));
+        auto* source = qmltest::Find(m_app, "walletSendPage")->property("m_importOperation").value<QObject*>();
+        QVERIFY2(QTest::qWaitFor([&] { return recipient->amount()->satoshi() == 700'000; }, 5000), qPrintable(importDiagnostic(source)));
+        QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Public")); QCOMPARE(recipient->message(), QStringLiteral("Locked draft"));
+        QCOMPARE(recipient->label(), QStringLiteral("Private locked note")); QVERIFY(m_wallet->isLocked());
+        QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, m_wallet->name()).find_value("unlocked_until").getInt<int64_t>(), 0);
+        QVERIFY(!m_wallet->currentTransaction()); QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
+    }
+
+    void clipboardOfferComparesPublicMessageIndependentlyOfPrivateNote() {
+        auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
+        const QString original = "bitcoin:" + m_address + "?amount=0.007&label=Public&message=Original";
+        auto* page = qmltest::Find(m_app, "walletSendPage"); QVERIFY(page);
+        QVERIFY(QMetaObject::invokeMethod(page, "applyPaymentRequestFromText", Q_ARG(QVariant, original), Q_ARG(QVariant, "explicit request")));
+        QTRY_COMPARE(recipient->message(), QStringLiteral("Original"));
+        QVERIFY(recipient->editPrivateNote(QStringLiteral("Private bookkeeping")));
+        const QString reordered = "BITCOIN:" + m_address + "?message=%4Friginal&label=Public&amount=0.00700000";
+        QGuiApplication::clipboard()->setText(reordered);
+        QTRY_VERIFY(page->property("m_clipboardOperation").value<QObject*>());
+        QTRY_VERIFY(!page->property("m_clipboardOperation").value<QObject*>()->property("pending").toBool());
+        auto* button = qmltest::Find(m_app, "clipboardUriPasteButton"); QVERIFY(button);
+        QVERIFY(!button->property("visible").toBool());
+        QGuiApplication::clipboard()->setText("bitcoin:" + m_address + "?amount=0.007&label=Public&message=Changed");
+        QTRY_VERIFY(button->property("visible").toBool()); QVERIFY(qmltest::Click(m_app, "clipboardUriPasteButton"));
+        QTRY_COMPARE(recipient->message(), QStringLiteral("Changed"));
+        QCOMPARE(recipient->label(), QStringLiteral("Private bookkeeping")); QCOMPARE(recipient->amount()->satoshi(), 700'000);
+        QVERIFY(!m_wallet->currentTransaction()); QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
+    }
+
     void droppedTextAndUrlsReachTheProductionDropArea_data()
     {
         QTest::addColumn<QString>("kind");
         QTest::newRow("text") << "text";
         QTest::newRow("bitcoin-url") << "bitcoin-url";
         QTest::newRow("file-url") << "file-url";
+        QTest::newRow("multiple-urls") << "multiple-urls";
     }
 
     void droppedTextAndUrlsReachTheProductionDropArea()
@@ -231,8 +291,10 @@ private Q_SLOTS:
         QMimeData mime;
         if (kind == "text") {
             mime.setText(uri);
-        } else if (kind == "bitcoin-url") {
-            mime.setUrls({QUrl{uri}});
+        } else if (kind == "bitcoin-url" || kind == "multiple-urls") {
+            auto urls = QList<QUrl>{QUrl{uri}};
+            if (kind == "multiple-urls") urls.push_back(QUrl{uri + "-second"});
+            mime.setUrls(urls);
         } else {
             QFile file{directory.filePath(QString::fromUtf8("dropped payment ü.txt"))};
             QVERIFY(file.open(QIODevice::WriteOnly));
@@ -251,8 +313,14 @@ private Q_SLOTS:
         QDropEvent drop{position, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
         QCoreApplication::sendEvent(m_app.window(), &drop);
         auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
-        QTRY_COMPARE(recipient->amount()->satoshi(), 4'000'000);
-        QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("dropped"));
+        if (kind == "multiple-urls") {
+            auto* status = qmltest::WaitForVisible(m_app, "sendPaymentRequestStatusText"); QVERIFY(status);
+            QTRY_COMPARE(status->property("text").toString(), QStringLiteral("Drop one payment request or PSBT at a time."));
+            QCOMPARE(recipient->amount()->satoshi(), 0); QVERIFY(!recipient->hasPaymentRequest());
+        } else {
+            QTRY_COMPARE(recipient->amount()->satoshi(), 4'000'000);
+            QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("dropped"));
+        }
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
     }
 };

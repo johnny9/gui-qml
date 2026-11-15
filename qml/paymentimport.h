@@ -11,13 +11,18 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <QUrl>
 
 namespace paymentimport {
 struct Input {
-    enum class Kind { Text, File };
+    enum class Kind { Text, File, Drop };
     Kind kind{Kind::Text};
     QString value;
     SourceField field{SourceField::WholeRequest};
+    int url_count{0};
+    bool paste{false}, edited{false};
+    QString previous{}, current{};
+    QUrl url{};
 };
 struct Services {
     using Clock = std::function<std::chrono::steady_clock::time_point()>;
@@ -65,6 +70,7 @@ public:
     execution::Admission keepDraft(uint64_t prompt);
     execution::Admission openReview();
     execution::Admission reconcile();
+    execution::Admission nativeHandoff(uint64_t source);
     execution::Admission close();
     execution::Admission tick();
 
@@ -78,6 +84,7 @@ private:
     execution::Admission submit(std::function<void()> decision);
     void publish();
     template <bool Analysis> void read(uint64_t source);
+    template <bool Analysis> void consumed(uint64_t source, std::shared_ptr<const Inspection> output, std::exception_ptr error = {});
     void observe();
     void useReady();
     void dispatch(Child child);

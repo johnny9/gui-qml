@@ -1,6 +1,6 @@
 # R36 focused checkpoint
 
-Tested implementation: `bfefe696aa269facde1b26b29ab31df624c15631`, unchanged Bitcoin Core `44901d8f64cb617714707bd025ecd83f108353c2`. Coordinator integration is the remaining handoff. This is a focused progress gate; R42 still owns exhaustive coverage, full suites, platform/Qt/configuration matrices and sanitizer qualification.
+Tested implementation: `bfefe696aa269facde1b26b29ab31df624c15631`, unchanged Bitcoin Core `44901d8f64cb617714707bd025ecd83f108353c2`. Integrated at `d48129bbf9908899b0bc2d28dee6fd988ecea045`; shared peer/lifecycle composition is qualified at `f6eee6c4459118459357448a565b781151872e84` and integrated byte-identically in application/test/build inputs at `2e85390ceadc6c8f9bd8a5a6ac2e04d56d65dbb9`. Its separate168-body,11-static and2-process receipt is [R39 composition](evidence/R39_COMPOSED.json); the counts are not added as unique identities. This is a focused progress gate; R42 still owns exhaustive coverage, full suites, platform/Qt/configuration matrices and sanitizer qualification.
 
 `NodeLifecycle` and its worker own initialization, interruption, physical drain, shutdown and truthful final Native receipts. `QmlInitExecutor` projects typed phase/admission and performs the necessary native handoffs. Closing admission immediately fences queued readiness; terminal state cannot admit new work or fabricate a late fatal result. Native failure status remains separate from GUI delivery. The existing ordered shutdown coordinator is retained.
 

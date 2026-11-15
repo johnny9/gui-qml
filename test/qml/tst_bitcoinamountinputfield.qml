@@ -394,7 +394,16 @@ TestCase {
         compare(original.inputPending, false)
         compare(editor.textEditCount, data.uri ? 0 : 1)
         compare(editor.inputChangeCount, data.uri ? 0 : 1)
-        compare(editor.pasteRequestCount, 0)
+        compare(editor.pasteRequestCount, data.present && data.uri ? 1 : 0)
+        if (data.present && data.uri) {
+            compare(editor.pastePending, true)
+            compare(editor.pasteReceipt.current, text)
+            compare(editor.pasteReceipt.text, "unrelated native clipboard")
+            // Native classification belongs to the consumer. This control
+            // hands over the original edit and performs only its restore.
+            editor.pasteReceipt.origin.restore(editor.pasteReceipt)
+            editor.pasteReceipt.origin.complete(editor.pasteReceipt)
+        }
         compare(editor.pastePending, false)
         compare(Clipboard.currentText, "unrelated native clipboard")
         compare(Clipboard.revision, clipboardRevision)

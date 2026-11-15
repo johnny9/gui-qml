@@ -32,16 +32,22 @@ class PaymentImportOperation final : public QObject
     Q_PROPERTY(QString message READ message NOTIFY changed)
     Q_PROPERTY(bool hasAmount READ hasAmount NOTIFY changed)
     Q_PROPERTY(qint64 amount READ amount NOTIFY changed)
+    Q_PROPERTY(QString paymentIdentity READ paymentIdentity NOTIFY changed)
+    Q_PROPERTY(bool matchesExistingRequest READ matchesExistingRequest NOTIFY changed)
+    Q_PROPERTY(NativeDisposition nativeDisposition READ nativeDisposition NOTIFY changed)
+    Q_PROPERTY(QString nativeHandoffToken READ nativeHandoffToken NOTIFY changed)
     Q_PROPERTY(QString exportToken READ exportToken NOTIFY changed)
     Q_PROPERTY(FileExportOperationModel* fileExportOperation READ fileExportOperation NOTIFY exportChanged)
 public:
     enum class State { Empty, Reading, Analyzing, Inspecting, AwaitingReplacement, Applying, CreatingReview,
-        Reconciling, Applied, ReviewOpened, Failed, Closing, Closed };
+        Reconciling, Applied, ReviewOpened, Failed, Closing, Closed, AwaitingNativeHandoff };
     Q_ENUM(State)
     enum class SourceKind { UnknownSource, PaymentSource, PsbtSource };
     Q_ENUM(SourceKind)
     enum class Outcome { NoOutcome, AppliedOutcome, ReviewOpenedOutcome, RejectedOutcome, StaleOutcome, UnknownOutcome };
     Q_ENUM(Outcome)
+    enum class NativeDisposition { NoHandoff, LiteralPaste, RestoreOnly, RestoreImport };
+    Q_ENUM(NativeDisposition)
     ~PaymentImportOperation() override;
     quint64 requestId() const { return m_identity; }
     State state() const { return static_cast<State>(m_snapshot.phase); }
@@ -61,6 +67,11 @@ public:
     QString message() const { return m_snapshot.inspection ? m_snapshot.inspection->payment.message : QString{}; }
     bool hasAmount() const { return m_snapshot.inspection && m_snapshot.inspection->payment.amount.has_value(); }
     qint64 amount() const { return hasAmount() ? *m_snapshot.inspection->payment.amount : 0; }
+    QString paymentIdentity() const { return m_snapshot.inspection ? m_snapshot.inspection->payment_identity : QString{}; }
+    bool matchesExistingRequest() const { return m_snapshot.target && m_snapshot.target->matches_request; }
+    NativeDisposition nativeDisposition() const { return m_snapshot.inspection ? static_cast<NativeDisposition>(m_snapshot.inspection->native_handoff) : NativeDisposition::NoHandoff; }
+    QString nativeHandoffToken() const { return !m_closed && state() == State::AwaitingNativeHandoff
+        ? QString::number(m_identity) + QLatin1Char(':') + QString::number(m_snapshot.source) : QString{}; }
     QString exportToken() const;
     FileExportOperationModel* fileExportOperation() const { return m_export; }
     Q_INVOKABLE bool requestSaveOriginal(const QString& token, const QString& path);
@@ -72,6 +83,8 @@ public:
     Q_INVOKABLE void replace(quint64 prompt);
     Q_INVOKABLE void keepDraft(quint64 prompt);
     Q_INVOKABLE void reconcile();
+    Q_INVOKABLE void completeNativeHandoff(const QString& token);
+    Q_INVOKABLE bool requestFile(const QUrl& file);
     Q_INVOKABLE void cancel();
 Q_SIGNALS:
     void changed();
@@ -81,7 +94,7 @@ private:
     PaymentImportOperation(quint64 identity, QObject* parent) : QObject(parent), m_identity(identity) {}
     void project(paymentimport::Snapshot snapshot);
     const quint64 m_identity;
-    bool m_closed{false};
+    bool m_closed{false}, m_input_started{false};
     QString m_transport_error;
     void command(const std::function<execution::Admission(paymentimport::Owner&)>& submit);
     backup::Services m_export_services;
