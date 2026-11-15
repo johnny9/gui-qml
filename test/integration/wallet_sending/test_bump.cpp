@@ -53,6 +53,29 @@ class FeeBumpIntegrationTests : public QObject
 public:
     explicit FeeBumpIntegrationTests(BitcoinQmlApplication& app) : m_app(app) {}
 private Q_SLOTS:
+    void counterpartySpendingThePaymentInvalidatesTheOpenReview()
+    {
+        auto* destination = qmltest::CreateWallet(m_app, "descendant_destination"); QVERIFY(destination);
+        auto* wallet = qmltest::CreateWallet(m_app, "descendant_sender"); QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        const auto address = qmltest::NewAddress(m_app, destination->name());
+        const auto original = SendReplaceable(m_app, *wallet, address);
+        auto* bump = wallet->bumpModel(); QVERIFY(bump);
+        QVERIFY2(AwaitBumpPreparation(*bump, original, 1), qPrintable(bump->errorText()));
+        const auto received = qmltest::Rpc(m_app, "listunspent", qmltest::Json("[0]"), destination->name());
+        UniValue payment;
+        for (const auto& coin : received.getValues())
+            if (coin.find_value("txid").get_str() == original.toStdString()) payment = coin;
+        QVERIFY(payment.isObject());
+        const auto child = SpendWholeCoin(m_app, destination->name(), payment, qmltest::NewAddress(m_app, destination->name()));
+        const auto before = Mempool(m_app); QVERIFY(before.contains(original.toStdString())); QVERIFY(before.contains(child.toStdString()));
+        QVERIFY(!AwaitBumpCommit(*bump));
+        QCOMPARE(bump->state(), BumpTransactionModel::NeedsRevalidation);
+        QVERIFY(!bump->errorText().isEmpty());
+        const auto outcome = bump->commitResult(); QVERIFY(outcome); QVERIFY(!outcome->committed);
+        QCOMPARE(outcome->error, walletbump::Error::Ineligible);
+        QCOMPARE(Mempool(m_app), before);
+    }
     void independentSpendOfAddedInputCannotReplaceTheUnrelatedPayment()
     {
         auto* destination = qmltest::CreateWallet(m_app, "added_input_destination"); QVERIFY(destination);
