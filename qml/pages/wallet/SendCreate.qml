@@ -198,9 +198,7 @@ PageStack {
         root.wallet.coinsListModel.update()
         root.clearPrepareTransactionError()
         sendPage.expandedRecipient = 0
-        sendPage.m_legacyPaymentRequestStatus = ""
-        sendPage.m_legacyPaymentRequestIsError = false
-        sendPage.m_legacyPaymentRequestMessage = ""
+        sendPage.m_importAdmissionError = ""
         sendPage.clearPendingPaymentUriPaste()
     }
 
@@ -242,9 +240,7 @@ PageStack {
         root.pop()
         // Clear URI import state so stale results from the previous wallet
         // are not shown when this page is pointed at another wallet.
-        sendPage.m_legacyPaymentRequestStatus = ""
-        sendPage.m_legacyPaymentRequestIsError = false
-        sendPage.m_legacyPaymentRequestMessage = ""
+        sendPage.m_importAdmissionError = ""
         sendPage.m_applyingUri = false
         sendPage.clearPendingPaymentUriPaste()
         paymentUriOverwritePopup.close()
@@ -276,9 +272,7 @@ PageStack {
             root.draftChanged()
             root.clearPrepareTransactionError()
             root.scheduleFeeEstimates()
-            sendPage.m_legacyPaymentRequestStatus = ""
-            sendPage.m_legacyPaymentRequestIsError = false
-            sendPage.m_legacyPaymentRequestMessage = ""
+            sendPage.m_importAdmissionError = ""
             sendPage.expandedRecipient = root.wallet.recipients.currentIndex - 1
             sendPage.checkClipboard()
             sendPage.clearPendingPaymentUriPaste()
@@ -541,16 +535,14 @@ PageStack {
         }
 
         // URI import state
-        property string m_legacyPaymentRequestStatus: ""
-        property bool m_legacyPaymentRequestIsError: false
-        property string m_legacyPaymentRequestMessage: ""
+        property string m_importAdmissionError: ""
         readonly property string paymentRequestStatus: m_importOperation
             ? (m_importOperation.error.length > 0 ? m_importOperation.error
                 : m_importOperation.state === PaymentImportOperation.Applied ? qsTr("Payment request imported from %1").arg(m_importSource) : "")
-            : m_legacyPaymentRequestStatus
-        readonly property bool paymentRequestIsError: m_importOperation ? m_importOperation.error.length > 0 : m_legacyPaymentRequestIsError
+            : m_importAdmissionError
+        readonly property bool paymentRequestIsError: m_importOperation ? m_importOperation.error.length > 0 : m_importAdmissionError.length > 0
         readonly property string paymentRequestMessage: m_importOperation
-            ? (m_importOperation.state === PaymentImportOperation.Applied ? m_importOperation.message : "") : m_legacyPaymentRequestMessage
+            ? (m_importOperation.state === PaymentImportOperation.Applied ? m_importOperation.message : "") : ""
 
         // Native clipboard capture and immutable Domain probe outcomes belong
         // to the original wallet, recipient, draft and editor selection.
@@ -662,8 +654,7 @@ PageStack {
                 payload && payload.edited ? payload.previous : "", payload && payload.edited ? payload.current : "",
                 m_uriWallet, m_uriRecipient, sendPage)
             if (!m_importOperation) {
-                m_legacyPaymentRequestStatus = qsTr("Payment URI services are unavailable. Try again.")
-                m_legacyPaymentRequestIsError = true
+                m_importAdmissionError = qsTr("Payment URI services are unavailable. Try again.")
                 finishPasteOwner(true)
                 return
             }
@@ -720,7 +711,7 @@ PageStack {
             m_importWallet = root.wallet; m_importSource = source
             m_importOperation = BitcoinUri.requestImportText(text, m_importWallet, root.recipient, sendPage)
             if (m_importOperation) m_importOperation.use()
-            else { m_legacyPaymentRequestStatus = qsTr("Payment URI services are unavailable. Try again."); m_legacyPaymentRequestIsError = true }
+            else { m_importAdmissionError = qsTr("Payment URI services are unavailable. Try again.") }
         }
 
         function applyPaymentRequestFromFile(path) {
@@ -728,7 +719,7 @@ PageStack {
             m_importWallet = root.wallet; m_importSource = qsTr("file")
             m_importOperation = BitcoinUri.requestImportFile(path, m_importWallet, root.recipient, sendPage)
             if (m_importOperation) m_importOperation.use()
-            else { m_legacyPaymentRequestStatus = qsTr("Payment URI services are unavailable. Try again."); m_legacyPaymentRequestIsError = true }
+            else { m_importAdmissionError = qsTr("Payment URI services are unavailable. Try again.") }
         }
 
         AlertPopup {
@@ -772,9 +763,7 @@ PageStack {
             function onAddressChanged() {
                 if (!sendPage.m_applyingUri) {
                     if (root.recipient.address.address === "") {
-                        sendPage.m_legacyPaymentRequestStatus = ""
-                        sendPage.m_legacyPaymentRequestIsError = false
-                        sendPage.m_legacyPaymentRequestMessage = ""
+                        sendPage.m_importAdmissionError = ""
                     }
                     sendPage.checkClipboard()
                 }

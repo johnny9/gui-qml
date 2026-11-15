@@ -2109,10 +2109,57 @@ TestCase {
             compare(form.uriActionPending, false)
             compare(form.paymentRequestIsError, true)
             compare(form.paymentRequestStatus, "Payment URI services are unavailable. Try again.")
+            compare(form.paymentRequestMessage, "")
             compare(testSendRecipient.address.address, address)
             compare(testSendRecipient.amount.satoshi, 0)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications)
         } finally { BitcoinUri.resetRequestControlsForTest() }
+    }
+    function test_owned_uri_successor_projects_its_own_result_after_admission_refusal_data() {
+        return [{tag: "applied", valid: true}, {tag: "rejected", valid: false}]
+    }
+    function test_owned_uri_successor_projects_its_own_result_after_admission_refusal(data) {
+        const page = createControlledSendPage()
+        const form = findChild(page, "walletSendPage")
+        const originalAddress = testSendRecipient.address.address
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        const text = "bitcoin:bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4?amount=0.07&message=Owned%20successor"
+        BitcoinUri.admitRequestsForTest = false
+        const calls = BitcoinUri.requestCallsForTest
+        try {
+            form.applyPaymentRequestFromText(text, "refused original")
+            compare(BitcoinUri.requestCallsForTest, calls + 1)
+            compare(form.uriActionPending, false)
+            compare(form.paymentRequestIsError, true)
+            compare(form.paymentRequestStatus, "Payment URI services are unavailable. Try again.")
+            compare(form.paymentRequestMessage, "")
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            BitcoinUri.admitRequestsForTest = true
+            BitcoinUri.holdPublications = true
+            form.applyPaymentRequestFromText(data.valid ? text : "ordinary text", "owned successor")
+            compare(BitcoinUri.requestCallsForTest, calls + 2)
+            verify(form.m_importOperation !== null)
+            compare(form.uriActionPending, true)
+            compare(form.paymentRequestIsError, false)
+            compare(form.paymentRequestStatus, "")
+            compare(form.paymentRequestMessage, "")
+            compare(testSendRecipient.address.address, originalAddress)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+            BitcoinUri.releasePublications()
+            confirmExplicitImport(form)
+            compare(form.uriActionPending, false)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.valid ? 1 : 0))
+            compare(form.paymentRequestIsError, !data.valid)
+            compare(form.paymentRequestStatus, data.valid ? "Payment request imported from owned successor" : "Not a valid Bitcoin payment URI.")
+            compare(form.paymentRequestMessage, data.valid ? "Owned successor" : "")
+            compare(testSendRecipient.address.address, data.valid ? "bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4" : originalAddress)
+            compare(testSendRecipient.amount.satoshi, data.valid ? 7000000 : 0)
+            BitcoinUri.releasePublications()
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.valid ? 1 : 0))
+        } finally {
+            BitcoinUri.resetRequestControlsForTest()
+            BitcoinUri.releasePublications()
+        }
     }
     function test_uri_guard_cancels_original_paste_once_data() {
         return [{tag: "hidden", hidden: true}, {tag: "unavailable", hidden: false}]

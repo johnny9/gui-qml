@@ -209,7 +209,6 @@
         <file>pages/settings/ConnectionSettingsPage.qml</file>
         <file>pages/settings/DisplaySettingsPage.qml</file>
         <file>pages/settings/ExternalSignerSettingsPage.qml</file>
-        <file>pages/settings/MempoolSettingsPage.qml</file>
         <file>pages/settings/NetworkTrafficSettingsPage.qml</file>
         <file>pages/settings/ProxySettingsPage.qml</file>
         <file>pages/settings/SettingsRpcConsoleView.qml</file>
