@@ -291,6 +291,7 @@ private Q_SLOTS:
     void clearDateLeavesSearchTypesAndAmountsUntouched();
     void terminalExportReceiptSurvivesReentrantObserverDeletionAndSuccessorAdmission();
     void csvConstructorReservationCanRetireItsOriginalProxy();
+    void csvOwnershipRefusalPublishesItsOriginalFailure();
     void chooserCaptureKeepsTheOriginalSnapshotAndUnitAcrossLiveChanges();
     void oldChooserCompletionCannotRetargetANewSourceOrCancelItsSuccessor();
     void chooserCaptureDoesNotKeepActionAdmissionOpenAfterRootClosure();
@@ -475,6 +476,26 @@ void ActivityFilterProxyModelTests::csvConstructorReservationCanRetireItsOrigina
     QCOMPARE(original->requestExportCsv(QStringLiteral("retired-constructor.csv")), quint64{0});
     QVERIFY(!original); QVERIFY(!proxy); QCOMPARE(trigger->calls.load(), size_t{1});
     env.drain(); env.publishAll(); QCOMPARE(effects, 0); QCOMPARE(env.scheduler->pending(), size_t{0});
+}
+
+void ActivityFilterProxyModelTests::csvOwnershipRefusalPublishesItsOriginalFailure()
+{
+    ManualExecutionEnvironment env; auto hooks = std::make_shared<AdmissionHookScheduler>(env.scheduler);
+    TestActivityModel source; source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "original")});
+    int effects{0}; activityexport::Files files;
+    files.inspect = [&](const QString& path) { ++effects; return backup::Proposal{path.toStdString(), {}, false, false, backup::Error::None}; };
+    files.install = [&](const auto&, bool, const auto&) { ++effects; return backup::WriteResult{}; }; source.controlFiles(std::move(files));
+    ActivityFilterProxyModel::Services services; services.execution = {hooks, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source);
+    QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QVERIFY(!proxy.busy());
+    QSignalSpy terminal{&proxy, &ActivityFilterProxyModel::exportFinished};
+    const auto trigger = hooks->armCleanup(1, [&] { env.scheduler->closeAdmission(); });
+    QCOMPARE(proxy.requestExportCsv(QStringLiteral("refused-constructor.csv")), quint64{0});
+    QCOMPARE(trigger->calls.load(), size_t{1}); QCOMPARE(effects, 0); QCOMPARE(terminal.count(), 1);
+    QVERIFY(proxy.exportOperation()); QVERIFY(proxy.exportResult().present); QVERIFY(!proxy.exportResult().saved);
+    QVERIFY(!proxy.exportResult().errorText.isEmpty()); QCOMPARE(proxy.exportResult().errorText, proxy.exportOperation()->error());
+    QCOMPARE(proxy.exportResult().operationId, proxy.exportOperation()->operationId()); QVERIFY(!proxy.exportResult().snapshotRevision.isEmpty());
+    proxy.closeAdmission(); env.drain(); env.publishAll(); QCOMPARE(effects, 0); QCOMPARE(env.scheduler->pending(), size_t{0});
 }
 
 void ActivityFilterProxyModelTests::chooserCaptureKeepsTheOriginalSnapshotAndUnitAcrossLiveChanges()

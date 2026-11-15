@@ -120,7 +120,8 @@ ActivityExportResult ActivityExportOperation::result() const
 }
 bool ActivityExportOperation::start()
 {
-    if (m_retired || std::exchange(m_started, true) || !m_policy) return false;
+    if (m_retired || std::exchange(m_started, true)) return false;
+    if (!m_policy) { Q_EMIT changed(); return false; }
     const QPointer<ActivityExportOperation> guard{this};
     const bool admitted = m_policy->start();
     if (guard && m_retired) retire(); // A reentrant close may precede start's admission acknowledgement.
