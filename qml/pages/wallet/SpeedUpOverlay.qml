@@ -15,9 +15,11 @@ Popup {
     objectName: "speedUpOverlay"
 
     property string txid: ""
-    property var bumpModel: null
+    property BumpTransactionModel bumpModel: null
+    property BumpTransactionModel originalModel: null
     property double ownedAttemptId: 0
-    readonly property bool ownsAttempt: ownedAttemptId !== 0 && bumpModel && bumpModel.attemptId === ownedAttemptId
+    readonly property bool ownsAttempt: ownedAttemptId !== 0 && originalModel !== null
+        && bumpModel === originalModel && originalModel.attemptId === ownedAttemptId
     property int bumpState: root.bumpModel ? root.bumpModel.state : BumpTransactionModel.Idle
     property string bumpErrorText: root.bumpModel ? root.bumpModel.errorText : ""
     property string newTxid: ""
@@ -25,6 +27,9 @@ Popup {
     property int walletSubmissionState: BumpTransactionModel.WalletSubmissionUnknown
     property bool readyToConfirm: root.ownsAttempt && root.bumpModel
         && root.bumpModel.state === BumpTransactionModel.NeedsConfirmation
+    readonly property bool readyToPrepareAgain: root.ownsAttempt && root.bumpModel
+        && root.bumpModel.state === BumpTransactionModel.NeedsRevalidation
+    readonly property bool uncertainOutcome: root.ownsAttempt && root.originalModel.state === BumpTransactionModel.Uncertain
 
     signal done()
     signal viewNewTransaction(string newTxid)
@@ -56,15 +61,21 @@ Popup {
         opacity: root.opacity
     }
 
-    onOpened: {
+    onAboutToShow: {
         root.newTxid = ""
-        root.ownedAttemptId = root.bumpModel ? root.bumpModel.requestPrepareFeeBump(root.txid, 1) : 0
+        root.originalModel = root.bumpModel
+        root.ownedAttemptId = root.originalModel ? root.originalModel.requestReviewFeeBump(root.txid, 1) : 0
         if (!root.ownedAttemptId) root.close()
     }
 
+    onBumpModelChanged: if (root.visible && root.originalModel && root.bumpModel !== root.originalModel) root.close()
+
+    onAboutToHide: {
+        if (root.originalModel && root.originalModel.attemptId === root.ownedAttemptId) root.originalModel.reset()
+    }
     onClosed: {
-        if (root.ownsAttempt) root.bumpModel.reset()
         root.ownedAttemptId = 0
+        root.originalModel = null
     }
 
     background: Rectangle {
@@ -81,18 +92,24 @@ Popup {
 
     signal bumpSucceeded(string newTxid, int walletRecordState, int walletSubmissionState)
 
+    function presentNativeState() {
+        if (!root.opened || !root.ownsAttempt) return
+        if (root.originalModel.state === BumpTransactionModel.Succeeded) {
+            root.newTxid = root.originalModel.newTxid
+            root.walletRecordState = root.originalModel.walletRecordState
+            root.walletSubmissionState = root.originalModel.walletSubmissionState
+            root.close()
+            root.bumpSucceeded(root.newTxid, root.walletRecordState, root.walletSubmissionState)
+        } else if (root.originalModel.needsUnlock && !root.originalModel.busy) {
+            speedUpPassphrasePopup.open()
+        }
+    }
+    onOpened: root.presentNativeState()
+
     Connections {
-        target: root.bumpModel
+        target: root.originalModel
         function onStateChanged() {
-            if (root.opened && root.ownsAttempt && root.bumpModel.state === BumpTransactionModel.Succeeded) {
-                root.newTxid = root.bumpModel.newTxid
-                root.walletRecordState = root.bumpModel.walletRecordState
-                root.walletSubmissionState = root.bumpModel.walletSubmissionState
-                root.close()
-                root.bumpSucceeded(root.newTxid, root.walletRecordState, root.walletSubmissionState)
-            } else if (root.opened && root.ownsAttempt && root.bumpModel.needsUnlock && !root.bumpModel.busy) {
-                speedUpPassphrasePopup.open()
-            }
+            root.presentNativeState()
         }
     }
 
@@ -153,7 +170,9 @@ Popup {
 
         CoreText {
             objectName: "speedUpErrorText"
-            visible: root.bumpModel && root.bumpModel.state === BumpTransactionModel.Failed
+            visible: root.bumpModel && (root.bumpModel.state === BumpTransactionModel.Failed
+                || root.bumpModel.state === BumpTransactionModel.NeedsRevalidation
+                || root.bumpModel.state === BumpTransactionModel.Uncertain)
             text: root.bumpModel ? root.bumpModel.errorText : ""
             font.pixelSize: 15
             color: Theme.color.red
@@ -178,15 +197,37 @@ Popup {
 
             ContinueButton {
                 objectName: "updateTransactionButton"
-                text: qsTr("Update transaction")
+                text: root.uncertainOutcome ? qsTr("Check transaction status")
+                    : root.readyToPrepareAgain ? qsTr("Prepare again") : qsTr("Update transaction")
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
-                enabled: root.readyToConfirm
+                enabled: root.uncertainOutcome ? root.originalModel.canRecheckOutcome : root.readyToConfirm || root.readyToPrepareAgain
                 onClicked: {
-                    if (!root.bumpModel) {
+                    if (!root.ownsAttempt) return
+                    if (root.uncertainOutcome) {
+                        root.originalModel.requestRecheckFeeBumpOutcome()
                         return
                     }
-                    if (root.ownsAttempt) root.bumpModel.requestConfirmFeeBump()
+                    if (root.readyToPrepareAgain) {
+                        const nextAttempt = root.originalModel.requestPrepareFeeBump(root.txid, 1)
+                        if (nextAttempt) root.ownedAttemptId = nextAttempt
+                        return
+                    }
+                    root.originalModel.requestConfirmFeeBump()
+                }
+            }
+            OutlineButton {
+                objectName: "viewObservedReplacementButton"
+                text: qsTr("View transaction")
+                visible: root.uncertainOutcome && root.originalModel.walletRecordState === BumpTransactionModel.WalletRecordRecorded
+                    && root.originalModel.newTxid.length > 0
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
+                onClicked: {
+                    if (!root.ownsAttempt) return
+                    const id = root.originalModel.newTxid
+                    root.close()
+                    root.viewNewTransaction(id)
                 }
             }
         }
@@ -205,16 +246,25 @@ Popup {
         descriptionText: qsTr("Enter your wallet password to update this transaction.")
         confirmText: qsTr("Unlock and update")
         busyConfirmText: qsTr("Unlocking...")
-        property var context: null
-        readonly property bool contextValid: context !== null && root.opened && root.ownsAttempt
-            && root.bumpModel === context.model && root.ownedAttemptId === context.attempt
-        onAboutToShow: context = { model: root.bumpModel, attempt: root.ownedAttemptId }
-        onClosed: context = null
+        property BumpTransactionModel contextModel: null
+        property double contextAttempt: 0
+        readonly property bool contextValid: contextModel !== null && root.opened && root.ownsAttempt
+            && root.bumpModel === contextModel && root.ownedAttemptId === contextAttempt
+            && (contextModel.state === BumpTransactionModel.NeedsConfirmation
+                || contextModel.state === BumpTransactionModel.Committing)
+        onAboutToShow: {
+            contextModel = root.bumpModel
+            contextAttempt = root.ownedAttemptId
+        }
+        onClosed: {
+            contextModel = null
+            contextAttempt = 0
+        }
         onContextValidChanged: if (!contextValid) close()
         busy: contextValid && root.bumpModel.busy
         errorText: contextValid ? root.bumpModel.unlockErrorText : ""
         onSubmitted: (passphrase) => {
-            if (contextValid && !root.bumpModel.busy) root.bumpModel.requestConfirmFeeBumpWithPassphrase(passphrase)
+            if (contextValid && !contextModel.busy) contextModel.requestConfirmFeeBumpWithPassphrase(passphrase)
         }
     }
 

@@ -15,11 +15,12 @@ BanListModel::BanListModel(interfaces::Node& node, QObject* parent, bool backend
     if (!scheduler()) configureServices({});
     setRead([node=&node,scheduler=scheduler()] {
         banmap_t banned; if (!node->getBanned(banned)) throw std::runtime_error("Ban list unavailable");
+        const QLocale locale;
         auto group=execution::RetainSnapshot<BanRows>(scheduler,[&] {
             auto result=std::make_unique<BanRows>(); result->rows.reserve(banned.size());
             for (const auto& [subnet,entry]:banned) {
                 NativeListRow row; row.key=QString::fromStdString(subnet.ToString()); row.payload=std::make_shared<BanListEntry>(BanListEntry{subnet,entry});
-                row.values={{int(BanRoles::AddressRole),row.key},{int(BanRoles::BanUntilRole),QLocale::system().toString(QDateTime::fromSecsSinceEpoch(entry.nBanUntil),QStringLiteral("MMMM d, yyyy h:mm AP"))}};
+                row.values={{int(BanRoles::AddressRole),row.key},{int(BanRoles::BanUntilRole),locale.toString(QDateTime::fromSecsSinceEpoch(entry.nBanUntil),QLocale::ShortFormat)}};
                 result->rows.push_back(std::move(row));
             } return result;
         });

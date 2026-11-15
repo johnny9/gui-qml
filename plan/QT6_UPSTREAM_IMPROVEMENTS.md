@@ -354,3 +354,127 @@ The user requested this app-side solution; production integration and its
 focused gate remain pending. A typed explicit-path inspector would remove the
 process workaround and provide bounded/structured scan diagnostics. It is an
 upstream improvement, not a required Core change or a private-access exception.
+
+## R24 verified partial signing outcomes — app verification and quarantine
+
+**Status:** App-only public-value verification and explicit quarantine are being implemented; no Core change or external submission is authorized. This note satisfies `wallet-adapter-upstream-notes-20261115`. Focused qualification is recorded in [R24 partial verification](evidence/R24_PARTIAL_VERIFICATION.json) at `4c3d01e6e631265ebab4328a6719759910906fc1`; full integration and sibling-path follow-ups remain separately tracked.
+
+**Missing contract:** Stock Core `44901d8f64cb617714707bd025ecd83f108353c2` exposes mutable `Wallet::fillPSBT` plus an optional error and completion flag. It does not return a typed per-contribution verification result or all script/execution context needed to authenticate every incomplete PSBT contribution. `PSBTInputSignedAndVerified` validates finalized scripts. `SignPSBTInput` checks supplied sighash types but reuses unfinished signature maps; it is not a generic verifier of those maps. This is an interface/verification-contract gap, not a claim that every wallet producer yields invalid signatures.
+
+**Confirmed app failure:** At application test snapshot `bbbb27f092b48795a1a7cc9367fe2121e72d9bd2` (production parent `6151996cc8e`), `WalletSendTests::approvalCannotInstallInvalidUnfinalizedContributions` executes three controlled normal/error/exception responses with unchanged reviewed terms and corrupted unfinished ECDSA signatures. All three retain the invalid map in the original review. Evidence: task-local `R24/partial-audit-red-02/actual/report.json` and its per-selection raw XML/stdout. No transaction submission occurs in these counterexamples; this proves incorrect review installation, not a broadcast exploit or independently observed Core defect.
+
+**Adapter and actual guarantee:** `qml/psbtsignatures.cpp` delegates signature mathematics, script hashes and Taproot commitments to Core public value/crypto APIs. Known legacy/witness ECDSA and Taproot key/script contexts are verified without Wallet internals. Missing witness/redeem/leaf context, separator-dependent unfinished scripts and incomplete MuSig2 protocol data remain Unknown. The app does not implement an interpreter or MuSig protocol. Known-invalid contributions are rejected; Unknown bytes remain in a separately Native-owned quarantine and never replace the approved review or grant verified-Partial/submit authority. Complete signatures retain full script verification. An explicit M24 export is bound to the original opening, approval, review and view token; late chooser results cannot select a successor. Valid supported multisig partials remain mergeable/exportable. Missing-context bytes remain exportable for reconciliation with the required script/signature information. Observer loss and result retirement retain the existing opening/executor cleanup ownership.
+
+**Costs and limits:** The application maintains context extraction and a third verification outcome, separate original/returned document ownership and a narrow export intent. Public value checks cannot establish transaction acceptance or wallet-wide authority; the final protected command and existing Core/RPC checks remain authoritative. Quarantine does not assert that unverified bytes are valid or safe to submit. Missing context is not silently classified as invalid. The ordinary app regression gate does not qualify physical hardware or the deferred R42 sanitizer/platform matrix.
+
+**Upstream improvement:** Consider a public read-only PSBT contribution-verification API with Valid/Invalid/Unknown, per-input/contribution context and diagnostics, plus a typed Wallet signing outcome that separates verified additions, unverified recoverable bytes, completion and failure. Preserve exact unsigned commitments, authenticated prevouts, existing partial signatures and error/exception semantics. A documented outcome must not imply atomicity against independent RPC writers or cancellation/lock-release guarantees absent from the backend. Required tests include valid/invalid unfinished ECDSA and Schnorr signatures, mixed inputs, missing scripts, separator-dependent script paths, MuSig2 partial protocols, partial returns with errors, incomplete foreign inputs and exact preservation of original/export bytes.
+
+**Retirement condition:** Replace the app context adapter only when the pinned public interface supplies equivalent independently tested verification/context/outcome guarantees. Preserve explicit Unknown/quarantine if the upstream API can still return incomplete information. R24 records focused app evidence separately; this note does not close canonical findings or authorize any Core pin/subtree edit.
+
+
+R21/R22 signing-contribution follow-up: the shared18-body counterexample at test-only `3d6efacd810` confirms the same installation gap in local SignOnly and standalone PSBT Sign (12 failures,6 valid controls). Their adapter uses the same typed validity/quarantine outcome. Unchanged imported fields are preserved without being promoted to new verified contributions. Supported policy relevance uses public Solver membership for ECDSA and an unambiguous single-key Taproot leaf; complex script/execution contexts remain Unknown. Valid does not mean sufficient keys, wallet authority or completion. Separate result cleanup leases and exact operation/generation tokens keep quarantined exports independent of the original review. The [component follow-up](SIGNING_CONTRIBUTION_FOLLOWUP.md) remains unvalidated until its focused receipt is linked; this does not authorize Core changes.
+
+
+R21/R22/R24 follow-up qualification: [374-body receipt](evidence/SIGNING_CONTRIBUTION_FOLLOWUP.json), tested app `55a054a367662d5af505d23458e9cd316799de2b`, unchanged Core449. A mathematically valid unrelated-key ECDSA contribution is rejected when public Solver proves it is outside the supported policy. An unused pushed-key Taproot leaf stays Unknown rather than inferring policy from key presence. Unknown exact values remain Native-owned and recoverable through original-token export. These app guarantees do not replace the proposed generic public contribution-verification/context/outcome API.
+
+## R25 replacement signing and commit observations
+
+**Status and boundary:** Application adapters use the unchanged public Wallet and
+Node APIs in Core `44901d8f64cb617714707bd025ecd83f108353c2`. No Core edit or
+private-wallet exception is authorized. The proposed improvements below are
+optional simplifications of the implemented checks; they do not establish an
+atomic cross-client reservation.
+
+**Missing contracts and workaround:** `Wallet::signBumpTransaction` returns a
+boolean and a mutable transaction. The pinned external-signer implementation
+finalizes the returned PSBT without cryptographically verifying every finalized
+input. The application compares the exact reviewed unsigned terms, then reuses
+its public-wallet prevout/script verifier before committing an external result.
+The original opening owns this Native work and its cleanup. It does not infer
+validity from the device identity or the completion flag.
+
+`transactionCanBeBumped`, `getTx`, `getCoins` and Node's read-only
+`testmempoolaccept` are separate observations. The application captures the
+original and replacement input sets, checks newly added inputs before and after
+signing, and observes the exact finalized candidate without rebuilding it.
+Core's commit rechecks the original's preconditions. Independent RPC/mempool
+changes can still occur between observations and commit; the adapter does not
+claim atomic input reservation or guaranteed mempool admission. The resulting
+wallet record, observed submission status and unknown relay remain separate.
+
+**Upstream improvement:** A typed signing result should bind the original review
+and exact unsigned commitment to a verified complete/partial signature outcome.
+A typed replacement command could accept the original ID and exact candidate,
+recheck the original plus all candidate inputs/conflicts at the authoritative
+boundary, and return separate persistence/admission/uncertainty receipts.
+Retain existing public callers' behavior when adding stronger contracts.
+
+**Evidence and retirement:** See [the R25 checkpoint](R25_REPLACEMENT_CHECKPOINT.md).
+The controlled invalid-signature row fails on `186e21b4b3c` while the matching
+valid control passes; this is an app-level public-wallet return test, not a
+physical-device or independently reproduced upstream exploit. Retire the
+verification/observation adapters only when the pinned public API supplies the
+same guarantees and its regression tests cover invalid signatures, unchanged
+terms, added-input spends, original confirmation/abandonment, independent RPC
+writers and explicit failure/uncertainty. R42 platform/sanitizer qualification
+remains pending.
+
+
+### R25 public timing controls and abandoned-original observation
+
+The R25 adapter passes the original version, locktime and every original input's
+sequence through public `CCoinControl`/`PreselectedInput` controls. This avoids
+reconstructing transaction timing in the app or changing Core. The public
+controls are sufficient; a future Core default that preserves original timing
+would remove this policy adaptation. Script-enforced timing remains subject to
+Core's script/eligibility validation; the unit controls do not claim exhaustive
+script timelock qualification.
+
+The pinned `transactionCanBeBumped` predicate checks depth, descendants, prior
+replacement and input ownership, but does not reject an abandoned original.
+The app additionally reads public `tryGetTxStatus` before and after signing.
+Abandoned/confirmed/conflicted originals require fresh preparation; unavailable
+status is explicitly unknown, with no commit attempted. An improved public
+predicate/typed eligibility result should include abandonment and document its
+observation time. Separate observations still cannot reserve a later commit
+against an independent RPC writer.
+
+Evidence: the four timing/abandonment unit controls fail on `e273df15d5d` and
+pass after `926dea96ca9`. Actual Core/RPC controls at `e817de97fbe` preserve a
+future lock in the prepared review, independently abandon the original, and
+independently spend the exact added input in another payment; both stale
+confirmations refuse commit. The separate unrelated payment remains in the
+mempool. These app-only adapters remain owned by the original opening and
+recorded in the R25 checkpoint; retire them only when the public Core behavior
+and its corresponding independent-writer/timing tests supply the same contract.
+
+
+### R25 unknown outcomes and read-only recovery
+
+The public commitBumpTransaction boolean is not a complete effect receipt.
+Pinned wallet/feebumper.cpp::CommitTransaction calls wallet.CommitTransaction
+before MarkReplaced; the latter can fail after a transaction was recorded.
+This is source-permitted behavior, not an independently reproduced Core database
+fault. False/exception cannot authorize blindly repeating the write or asserting
+that no transaction exists.
+
+The app captures signed txid/wtxid before commit, retains the uncertain attempt
+when its view resets, and offers explicit read-only observation through the
+original public Wallet. It checks exact record/witness identity and reports
+observed wallet/mempool facts without signing, rebuilding or submitting. A
+record cannot manufacture the missing original persistence/replacement-metadata
+receipt. Unknown completion stays explicit, with a link to the observed
+transaction. GUI closure does not cancel an admitted observation or retarget it
+to a selected wallet. Conditional R09/R20 limits remain; the app does not claim
+atomic or durable outcomes beyond those APIs.
+
+A typed mutation receipt, operation identity and queryable effect result from
+Core would retire this adapter and permit definitive completion where today's
+API is uncertain. Upstream tests must cover false/exception after recording,
+replacement-marker failure, unavailable/foreign records, exact witness matching,
+independent RPC changes and persistence uncertainty. Six app controls in
+uncertainReplacementCanOnlyObserveItsExactCandidate retain exact no-replay
+counts; quiet-close and blocked real-worker/GUI-pulse tests cover lifetime and
+delivery. These are controlled app returns; real Core/RPC invalidation and
+successful replacement keep separate evidence. No Core edit or external issue
+submission is authorized.

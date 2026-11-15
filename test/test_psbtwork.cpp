@@ -481,6 +481,35 @@ private Q_SLOTS:
         else QVERIFY(result.error.isEmpty());
     }
 
+    void standaloneSignDoesNotInstallUnverifiedContributions_data()
+    {
+        QTest::addColumn<int>("kind");
+        QTest::addColumn<int>("outcome");
+        for (int kind = 0; kind < 3; ++kind) for (int outcome = 0; outcome < 3; ++outcome)
+            QTest::newRow(qPrintable(QStringLiteral("kind-%1-outcome-%2").arg(kind).arg(outcome))) << kind << outcome;
+    }
+    void standaloneSignDoesNotInstallUnverifiedContributions()
+    {
+        QFETCH(int, kind);
+        QFETCH(int, outcome);
+        const auto fixture = psbtfeefixture::Contribution(kind != 2, kind == 1);
+        WorkWallet wallet;
+        wallet.sign_effect = [returned = fixture.returned, outcome](auto& document) {
+            document = returned;
+            if (outcome == 2) throw std::runtime_error("signing outcome unavailable after contribution");
+        };
+        if (outcome == 1) wallet.sign_error = common::PSBTError::EXTERNAL_SIGNER_FAILED;
+        const auto result = psbtwork::Execute(&wallet, Request(psbtwork::Kind::Sign, fixture.original), {});
+        QCOMPARE(wallet.sign_calls, 1);
+        QVERIFY(!result.submitted);
+        QVERIFY(!result.transaction);
+        if (kind == 0) {
+            QVERIFY(result.snapshot);
+            QCOMPARE(result.snapshot->document->inputs[0].partial_sigs, fixture.returned.inputs[0].partial_sigs);
+        } else {
+            QVERIFY(!result.snapshot || result.snapshot->document->inputs[0].partial_sigs.empty());
+        }
+    }
     void successfulSigningRetainsFinalizedDocument()
     {
         auto fixture = psbtfeefixture::SignedWithoutScripts(false);

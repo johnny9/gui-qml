@@ -7,6 +7,9 @@
 #include <qml/models/receiverequestoperation.h>
 #include <test/mocks/preparationtest.h>
 #include <qml/models/activityfilterproxymodel.h>
+#include <qml/models/activityexportoperation.h>
+#include <qml/models/walletreceivemodel.h>
+#include <qml/models/requestsharingmodel.h>
 #include <qml/walletrequestdata.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <QClipboard>
@@ -26,6 +29,7 @@
 
 #include <QAbstractItemModelTester>
 #include <QFile>
+#include <QEvent>
 #include <QPersistentModelIndex>
 #include <QScopeGuard>
 #include <QTemporaryDir>
@@ -118,7 +122,7 @@ public:
     std::atomic_bool blocking_read_on_gui{false};
     bool fail_history{false};
     std::atomic_bool fail_next_history{false};
-    std::shared_ptr<ReadGate> history_gate, try_status_gate, parent_gate, bump_gate;
+    std::shared_ptr<ReadGate> history_gate, try_status_gate, parent_gate, bump_gate, commit_gate;
     std::shared_ptr<RepeatingReadGate> repeated_status_gate;
     void blockingRead() { if (QThread::currentThread() == qApp->thread()) blocking_read_on_gui = true; }
     bool external_signer{false};
@@ -173,6 +177,7 @@ public:
         blockingRead();
         if (parent_gate) parent_gate->wait();
         ++parent_reads;
+        if (previous_tx && previous_tx->GetHash() == id) return previous_tx;
         const auto it = flow_parents.find(id);
         return it == flow_parents.end() ? CTransactionRef{} : it->second;
     }
@@ -222,9 +227,10 @@ public:
         if (!send_draft) return util::Error{Untranslated("No send draft")};
         return wallet::CreatedTransactionResult{send_draft->tx, 1'000, 3, FeeReason::FEE_RATE_ESTIMATOR};
     }
-    std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options, size_t*,
+    std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options, size_t* count,
                                             PartiallySignedTransaction& psbt, bool& complete) override
     {
+        if (count) *count = psbt.inputs.size();
         complete = options.sign;
         for (auto& input : psbt.inputs) {
             input.non_witness_utxo = previous_tx;
@@ -234,10 +240,37 @@ public:
     }
     void commitTransaction(CTransactionRef tx, const std::vector<std::string>&) override
     {
+        if (commit_gate) commit_gate->wait();
         ++commits;
         send_draft->tx = std::move(tx);
         put(*send_draft, 0);
         notify(*send_draft, CT_NEW);
+    }
+    std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) override
+    {
+        blockingRead();
+        std::vector<interfaces::WalletTxOut> result;
+        result.reserve(outputs.size());
+        for (const auto& output : outputs) {
+            if (previous_tx && output.hash == previous_tx->GetHash() && output.n < previous_tx->vout.size())
+                result.push_back({previous_tx->vout[output.n], 0, 6, false});
+            else result.emplace_back();
+        }
+        return result;
+    }
+    interfaces::WalletTx getWalletTxDetails(const Txid& id, interfaces::WalletTxStatus& status,
+        std::vector<std::string>&, std::vector<std::string>&, bool& in_mempool, int& height) override
+    {
+        blockingRead();
+        // Existing Activity fixtures intentionally lack the optional blocking
+        // details port. Only this fixture's actual send has a recorded receipt.
+        if (!send_draft || !send_draft->tx || send_draft->tx->GetHash() != id) return {};
+        const auto transaction = transactions.find(id);
+        const auto found = statuses.find(id);
+        if (found != statuses.end()) status = found->second;
+        in_mempool = found != statuses.end() && status.depth_in_main_chain == 0;
+        height = 100;
+        return transaction == transactions.end() ? interfaces::WalletTx{} : transaction->second;
     }
     bool transactionCanBeBumped(const Txid&) override
     {
@@ -275,7 +308,15 @@ void Wait(Model* model)
 }
 
 void WaitProxy(Proxy& proxy) { QVERIFY(QTest::qWaitFor([&] { return !proxy.busy(); }, 5000)); QVERIFY2(proxy.error().isEmpty(), qPrintable(proxy.error())); }
-bool Export(Proxy& proxy, const QString& path) { WaitProxy(proxy); const auto ticket = proxy.requestExportCsv(path); return ticket && QTest::qWaitFor([&] { return !proxy.exportBusy(); }, 5000) && proxy.exportError().isEmpty(); }
+bool Export(Proxy& proxy, const QString& path) {
+    WaitProxy(proxy);
+    const auto ticket = proxy.requestExportCsv(path);
+    if (!ticket || !QTest::qWaitFor([&] { return (proxy.exportOperation() && proxy.exportOperation()->confirmationRequired()) || !proxy.exportBusy(); }, 5000)) return false;
+    // This fixture explicitly requests replacement of its own previously
+    // exported path. Production still asks the user for that exact consent.
+    if (auto* original = proxy.exportOperation(); original && original->confirmationRequired() && !original->approve()) return false;
+    return QTest::qWaitFor([&] { return !proxy.exportBusy(); }, 5000) && proxy.exportError().isEmpty();
+}
 
 struct Fixture {
     ActivityWallet* state;
@@ -295,7 +336,12 @@ struct Fixture {
         if (!wallet) return;
         QSignalSpy drained{wallet.get(), &WalletQmlModel::shutdownFinished};
         wallet->beginShutdown();
-        if (!wallet->backendExecutor()->isDrained() && drained.empty()) QVERIFY(drained.wait(10000));
+        QVERIFY2(QTest::qWaitFor([&] {
+            // Deliver the existing review registry's deferred QObject retirements,
+            // just as the shared Wallet model harness does before waiting for drain.
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            return wallet->backendExecutor()->isDrained() && (wallet->shutdownComplete() || !drained.empty());
+        }, 10000), "Original Activity wallet did not physically drain");
     }
     Model* model() { auto* result = wallet->transactionActivityModel(); Wait(result); return result; }
     void requests(const std::vector<QmlRecentRequestEntry>& values, bool replace) {
@@ -307,7 +353,7 @@ struct Fixture {
         }, [done](bool) { done->store(true); }, [done](std::exception_ptr) { done->store(true); }, execution::WorkClass::Action);
         QVERIFY(admitted); QVERIFY(QTest::qWaitFor([done] { return done->load(); }, 5000));
         wallet->reloadReceiveRequests();
-        QVERIFY(QTest::qWaitFor([&] { const auto snapshot = wallet->receiveRequests()->snapshot(); if (!snapshot) return false; for (const auto& value : values) { const auto* row = snapshot->find(value.id); if (!row || row->entry.recipient.noteSelf != value.recipient.noteSelf || row->entry.recipient.label != value.recipient.label) return false; } return !wallet->property("receiveRequestsBusy").toBool(); }, 5000));
+        QVERIFY(QTest::qWaitFor([&] { const auto snapshot = wallet->receiveRequests()->snapshot(); if (!snapshot) return false; for (const auto& value : values) { const auto* row = snapshot->find(value.id); if (!row || row->entry.recipient.noteSelf != value.recipient.noteSelf || row->entry.recipient.label != value.recipient.label) return false; } return !wallet->property("receiveRequestsBusy").toBool() && !wallet->receiveRequestReconciliationPending(); }, 5000));
         if (auto* activity = wallet->findChild<Model*>()) Wait(activity);
     }
     void request(const QmlRecentRequestEntry& value) { requests({value}, false); }
@@ -396,6 +442,8 @@ class TransactionActivityModelTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void oneChangedStatusReusesLargeNativeRowsAndFiltersOnlyItsExactDelta();
+    void fullHiddenSearchChangesInvalidateTheDeltaWithoutAGuiPreviewChange();
     void manualProjectionWaitsForOutcomeAndGuiDelivery();
     void manualStatusSnapshotPublishesOnlyAtGuiBoundary();
     void oldGuiWakeupCannotResurrectDeletedRows();
@@ -448,6 +496,47 @@ private Q_SLOTS:
     void recognizesSelfSendToPaymentRequest();
     void loadsFlowLazilyAndRefreshesOutputAssociations();
 };
+
+void TransactionActivityModelTests::oneChangedStatusReusesLargeNativeRowsAndFiltersOnlyItsExactDelta()
+{
+    ManualExecutionEnvironment env; auto original = std::make_shared<ActivityWallet>(); std::vector<interfaces::WalletTx> values;
+    for (int i{0}; i < 512; ++i) { auto tx = MakeTx({{100'000 + i, false}}, {{50'000 + i, true}}, 1'789'200'000 + i); original->put(tx, 6); values.push_back(std::move(tx)); }
+    ManualActivityFixture fixture{env, original}; fixture.settle(); auto* model = fixture.activity.get();
+    Proxy::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    Proxy proxy{services}; proxy.setSourceModel(model);
+    QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy(); }, 5000)); QCOMPARE(proxy.rowCount(), 512);
+    auto previous = model->preparedSnapshot(); QVERIFY(previous); const std::weak_ptr<const activityview::Snapshot> retired = previous->snapshot;
+    const QPersistentModelIndex retained{Find(*model, Id(values[10]))}; QVERIFY(retained.isValid());
+    original->statuses[values[300].tx->GetHash()].depth_in_main_chain = 7; model->refreshStatuses();
+    QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy() && !model->loading(); }, 5000));
+    const auto current = model->preparedSnapshot(); QVERIFY(current); QCOMPARE(current->snapshot->transformed_rows, size_t{1}); QCOMPARE(current->snapshot->changed_ids.size(), size_t{1});
+    size_t shared{0}; for (const auto& [id, row] : previous->snapshot->rows) if (current->snapshot->rows.at(id) == row) ++shared;
+    QCOMPARE(shared, size_t{511}); QVERIFY(proxy.lastWork().delta); QCOMPARE(proxy.lastWork().examined, size_t{1}); QCOMPARE(proxy.lastWork().prepared, size_t{1}); QVERIFY(proxy.lastWork().largestTurn <= size_t{128});
+    QVERIFY(retained.isValid()); QCOMPARE(retained.data(Model::TxidRole).toString(), Id(values[10])); QCOMPARE(proxy.rowCount(), 512); QCOMPARE(proxy.pendingBalanceSat(), CAmount{0});
+    previous.reset(); fixture.settle(); QVERIFY(retired.expired());
+    proxy.closeAdmission(); fixture.settle();
+}
+void TransactionActivityModelTests::fullHiddenSearchChangesInvalidateTheDeltaWithoutAGuiPreviewChange()
+{
+    ManualExecutionEnvironment env; auto original = std::make_shared<ActivityWallet>();
+    const auto changed = MakeTx({{100'000, false}}, {{50'000, true}});
+    const auto kept = MakeTx({{100'001, false}}, {{50'001, true, false, 2}});
+    original->put(changed); original->put(kept);
+    original->labels[Address(changed).toStdString()] = std::string(2048, 'x') + "oldTail";
+    ManualActivityFixture fixture{env, original}; fixture.settle(); auto* model = fixture.activity.get();
+    Proxy::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    Proxy proxy{services}; proxy.setSourceModel(model); proxy.setSearchText("newTail");
+    QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy(); }, 5000)); QCOMPARE(proxy.rowCount(), 0);
+    QSignalSpy previews{model, &QAbstractItemModel::dataChanged}; const auto before = model->preparedSnapshot();
+    original->labels[Address(changed).toStdString()] = std::string(2048, 'x') + "newTail";
+    Q_EMIT fixture.wallet->addressListChanged();
+    QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy() && !model->loading(); }, 5000));
+    const auto after = model->preparedSnapshot(); QCOMPARE(after->snapshot->transformed_rows, size_t{1}); QCOMPARE(after->snapshot->changed_ids.size(), size_t{1});
+    QCOMPARE(after->snapshot->rows.at("tx:" + Id(kept)), before->snapshot->rows.at("tx:" + Id(kept)));
+    QCOMPARE(previews.count(), 0); QCOMPARE(proxy.rowCount(), 1); QCOMPARE(proxy.index(0).data(Model::TxidRole).toString(), Id(changed));
+    QVERIFY(proxy.lastWork().delta); QCOMPARE(proxy.lastWork().examined, size_t{1});
+    proxy.closeAdmission(); fixture.settle();
+}
 
 void TransactionActivityModelTests::manualProjectionWaitsForOutcomeAndGuiDelivery()
 {
@@ -1204,9 +1293,18 @@ void TransactionActivityModelTests::copiesRawTransactionAndPublicPaymentRequest(
     model->requestTransactionDetails(Id(tx)); Wait(model);
     QCOMPARE(model->rawTransaction(Id(tx)), QString::fromStdString(EncodeHexTx(*tx.tx)));
     QVERIFY(model->rawTransaction("missing").isEmpty());
-    const auto uri = model->paymentRequestUri("1");
+    // The prepared history intentionally has no cached URI. The original
+    // request's typed sharing owner performs and authorizes public encoding.
+    QObject view;
+    auto* sharing = f.wallet->receive()->sharingRequest("1", &view); QVERIFY(sharing);
+    sharing->setActive(true); QTRY_VERIFY(sharing->canCopyUri());
+    const auto uri = sharing->paymentUri();
     QCOMPARE(uri, ReceiveRequestHistoryModel::BuildBitcoinUri(Address(tx), 10'000, "Public label", "Public message"));
     QVERIFY(!uri.contains("Private"));
+    QGuiApplication::clipboard()->setText(QStringLiteral("before public request copy"));
+    auto copied = std::unique_ptr<ShareOperationModel>{sharing->copyUri()}; QVERIFY(copied); QTRY_VERIFY(!copied->busy()); QVERIFY(copied->result().performed);
+    QCOMPARE(QGuiApplication::clipboard()->text(), uri);
+    sharing->retire();
     QVERIFY(model->paymentRequestUri("missing").isEmpty());
 }
 
@@ -1377,15 +1475,26 @@ void TransactionActivityModelTests::savesBatchRecipientNotesWhenSending()
     if (externalSigner) {
         QSignalSpy approved(f.wallet.get(), &WalletQmlModel::externalSignerApprovalSucceeded);
         QVERIFY(AwaitSignerApprovalOutcome(*f.wallet));
-        QCOMPARE(f.wallet->signerApprovalState(), WalletQmlModel::ApprovalState::ApprovalSigned);
+        QVERIFY2(f.wallet->signerApprovalState() == WalletQmlModel::ApprovalState::ApprovalSigned, qPrintable(f.wallet->signerApprovalError()));
         QCOMPARE(approved.count(), 1);
     }
-    // The committed notes belong to the reviewed transaction, not a new draft.
-    recipients->clear();
-    QVERIFY(AwaitCommittedSend(*f.wallet));
+    // A new intent must pass the current-review guard. Once admitted, its
+    // immutable transaction/notes belong to that receipt through live edits.
+    const auto gate = std::make_shared<ReadGate>(); f.state->commit_gate = gate;
+    const auto unblock = qScopeGuard([&] { gate->release.release(); });
+    const auto ticket = f.wallet->requestSendTransaction(); QVERIFY(ticket);
+    const auto original = f.wallet->sendOperation(); QVERIFY(original);
+    QTRY_VERIFY(gate->entered.available() > 0 || original->result().has_value() || f.wallet->sendState() == WalletQmlModel::SendState::SendNeedsConfirmation);
+    if (f.wallet->sendState() == WalletQmlModel::SendState::SendNeedsConfirmation) QVERIFY(f.wallet->confirmSendTransaction(ticket));
+    QTRY_VERIFY2(gate->entered.available() > 0, qPrintable(f.wallet->transactionError()));
+    QCOMPARE(f.state->commits, 0); QVERIFY(!original->result());
+    recipients->clear(); QCOMPARE(f.state->commits, 0); QVERIFY(!original->result());
+    gate->release.release();
+    QTRY_VERIFY(original->result().has_value());
+    QVERIFY2(bool(original->result()->committed), qPrintable(f.wallet->transactionError()));
     QCOMPARE(f.state->commits, 1);
     // Committing and saving the original reviewed notes have separate receipts.
-    const QString committed_txid = f.wallet->sendResultTxid();
+    const QString committed_txid = QString::fromStdString(original->result()->committed->GetHash().GetHex());
     QVERIFY(!committed_txid.isEmpty());
     QTRY_COMPARE(f.wallet->recipientLabelsTransactionId(), committed_txid);
     QTRY_VERIFY(!f.wallet->recipientLabelsPending());
@@ -1606,7 +1715,7 @@ void TransactionActivityModelTests::groupsPendingMonthsAndDaysAndCountsParents()
     WaitProxy(proxy);
     QCOMPARE(Find(proxy, Id(august)).data(Proxy::SectionKeyRole).toString(), QString("2026-08-13"));
     WaitProxy(proxy);
-    QCOMPARE(Find(proxy, Id(august)).data(Proxy::DateTimeLabelRole).toString(), QLocale().toString(QDateTime::fromSecsSinceEpoch(august.time), "h:mm AP"));
+    QCOMPARE(Find(proxy, Id(august)).data(Proxy::DateTimeLabelRole).toString(), QLocale().toString(QDateTime::fromSecsSinceEpoch(august.time).time(), QLocale::ShortFormat));
     WaitProxy(proxy);
     QCOMPARE(Find(proxy, Id(incoming)).data(Proxy::SectionKeyRole).toString(), QString("pending"));
     WaitProxy(proxy);

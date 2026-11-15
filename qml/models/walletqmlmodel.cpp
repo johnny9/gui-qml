@@ -15,6 +15,7 @@
 #include <qml/psbtwork.h>
 #include <qml/models/signertransaction.h>
 #include <qml/models/psbtfee.h>
+#include <qml/psbtpolicy.h>
 #include <qml/backendexecutor.h>
 #include <qml/walletbalanceadapter.h>
 
@@ -326,6 +327,8 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
     , m_custom_psbt_lookup(bool(m_psbt_fee_services.lookup))
     , m_fee_read_services(std::move(fee_services))
 {
+    connect(this, &WalletQmlModel::signerApprovalChanged, this, &WalletQmlModel::unverifiedSigningResultChanged);
+    connect(this, &WalletQmlModel::currentTransactionChanged, this, &WalletQmlModel::unverifiedSigningResultChanged);
     m_receive_requests = new ReceiveRequestHistoryModel(this);
     m_address_list_model = new AddressListModel(this);
     m_bump_transaction_model = new BumpTransactionModel(m_wallet.get(), this);
@@ -435,7 +438,8 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
     initializePsbtFeeReader();
     initializeBalanceReader();
     m_sign_verify_message_model->setOpening(m_opening, {m_opening->scheduler(), m_fee_read_services.post});
-    m_bump_transaction_model->setOpening(m_opening, {m_opening->scheduler(), m_fee_read_services.post});
+    m_bump_transaction_model->setOpening(m_opening, {m_opening->scheduler(), m_fee_read_services.post},
+        {psbtpolicy::ReadNode(m_node, nullptr)});
     m_imported_psbt_model->configureSession(m_opening, m_psbt_fee_services);
 }
 
@@ -443,6 +447,8 @@ WalletQmlModel::WalletQmlModel(interfaces::Node* node, QObject* parent)
     : QObject(parent)
     , m_node(node)
 {
+    connect(this, &WalletQmlModel::signerApprovalChanged, this, &WalletQmlModel::unverifiedSigningResultChanged);
+    connect(this, &WalletQmlModel::currentTransactionChanged, this, &WalletQmlModel::unverifiedSigningResultChanged);
     m_address_list_model = new AddressListModel(this);
     m_bump_transaction_model = new BumpTransactionModel(nullptr, this);
     m_bump_transaction_model->setSecurityStateChangedFn([this]() { refreshSecurityState(); });
@@ -707,6 +713,8 @@ void WalletQmlModel::initializeBackend()
     });
     connect(this, &WalletQmlModel::currentTransactionChanged, this, &WalletQmlModel::requestCurrentFlow);
     connect(this, &WalletQmlModel::displayUnitChanged, this, &WalletQmlModel::requestCurrentFlow);
+    connect(this, &WalletQmlModel::displayUnitChanged, m_bump_transaction_model, &BumpTransactionModel::setDisplayUnit);
+    m_bump_transaction_model->setDisplayUnit(m_display_unit);
     connect(m_send_recipients, &QAbstractItemModel::dataChanged, this, [this] { invalidatePreparation(); });
     connect(m_send_recipients, &SendRecipientsListModel::recipientDraftChanged, this, &WalletQmlModel::invalidatePreparation);
     connect(m_send_recipients, &QAbstractItemModel::rowsInserted, this, [this] { invalidatePreparation(); });
@@ -1430,6 +1438,23 @@ WalletQmlModel::ApprovalState WalletQmlModel::signerApprovalState() const
 bool WalletQmlModel::signerApprovalBusy() const
 {
     return m_approval_local_pending || (m_approval_projection && m_approval_projection->in_flight);
+}
+
+QString WalletQmlModel::signerUnverifiedResultToken() const
+{
+    if (observationsAllowed() && available() && m_send_sign_only && m_send_operation &&
+        m_send_review && m_send_review == m_current_transaction && m_send_review_id == m_current_review_identity) {
+        const auto result = m_send_operation->result();
+        if (result && result->quarantined_document)
+            return QStringLiteral("local:") + QString::number(m_send_request_id) + QLatin1Char(':') + QString::number(m_send_review_id);
+    }
+    const auto& snapshot = m_approval_projection;
+    if (!observationsAllowed() || !available() || !snapshot || snapshot->in_flight || !snapshot->publishable ||
+        snapshot->attempt_id != m_approval_id || snapshot->attempt_review != m_current_review_identity ||
+        snapshot->attempt_view != m_psbt_view_epoch || snapshot->current_review != m_current_review_identity ||
+        snapshot->current_view != m_psbt_view_epoch || !snapshot->result || !snapshot->result->quarantined_document) return {};
+    return QStringLiteral("external:") + QString::number(snapshot->attempt_id) + QLatin1Char(':') + QString::number(snapshot->attempt_review) +
+        QLatin1Char(':') + QString::number(snapshot->attempt_view);
 }
 
 QString WalletQmlModel::signerApprovalError() const
@@ -2379,6 +2404,8 @@ WalletQmlModel::PreparationState WalletQmlModel::preparationState() const
     case transactionattempt::Phase::NeedsUnlock: return PreparationState::PreparationNeedsUnlock;
     case transactionattempt::Phase::Reviewing: return PreparationState::PreparationReady;
     case transactionattempt::Phase::NeedsRevalidation: return PreparationState::PreparationStale;
+    case transactionattempt::Phase::Submitting: return PreparationState::PreparationPending;
+    case transactionattempt::Phase::Settled: return PreparationState::PreparationReady;
     case transactionattempt::Phase::Failed: return PreparationState::PreparationFailed;
     case transactionattempt::Phase::Closed: return PreparationState::PreparationClosed;
     case transactionattempt::Phase::Uncertain: return PreparationState::PreparationUncertain;
@@ -2825,7 +2852,8 @@ void WalletQmlModel::applyPreparationResolution(transactionattempt::Result resol
 
 quint64 WalletQmlModel::approveExternalSignerTransaction()
 {
-    if (!observationsAllowed() || signerApprovalState() == ApprovalState::ApprovalUncertain || psbtActionBusy() || signerApprovalBusy() ||
+    if (!observationsAllowed() || signerApprovalState() == ApprovalState::ApprovalUncertain ||
+        signerApprovalState() == ApprovalState::ApprovalUnverified || psbtActionBusy() || signerApprovalBusy() ||
         preparationBusy() || sendBusy() || m_sending_commit->load() || !available() || !m_opening || !m_current_transaction ||
         !m_current_transaction->getWtx() || !m_signer_approval_operation || m_approval_id == std::numeric_limits<quint64>::max()) return 0;
     const QPointer<WalletQmlModel> observer{this};
@@ -2945,15 +2973,25 @@ void WalletQmlModel::publishApproval(walletsigning::ApprovalSnapshot snapshot)
     case walletsigning::Error::Uncertain: m_approval_error = tr("The signer outcome could not be confirmed. Reconcile the PSBT before retrying."); break;
     case walletsigning::Error::UnverifiedInputs: m_approval_error = tr("The transaction inputs could not be verified. Refresh the wallet before trying again."); break;
     case walletsigning::Error::InvalidSignature: m_approval_error = tr("The returned signatures could not be verified for the reviewed transaction. Check the signing device and try again."); break;
+    case walletsigning::Error::UnverifiedSignatures: m_approval_error = tr("The returned PSBT needs more verification information. The reviewed transaction is unchanged. Export the unverified result to reconcile it."); break;
     }
-    if (value.document) { m_current_psbt = value.document; m_current_transaction->setAssessedPsbt(value.document); }
+    // Unknown returned bytes remain owned by the approval result. They cannot
+    // replace the authenticated review, even when a failed call yielded bytes.
+    if (value.document && !value.quarantined_document) { m_current_psbt = value.document; m_current_transaction->setAssessedPsbt(value.document); }
+    if (value.quarantined_document) {
+        m_current_transaction_can_send = false;
+        m_current_transaction_can_broadcast = false;
+        if (value.error != walletsigning::Error::UnverifiedSignatures)
+            m_approval_error += QLatin1Char(' ') + tr("An unverified result is available for export. The reviewed transaction is unchanged.");
+    }
     const QPointer<WalletQmlModel> observer{this};
     if (!m_approval_error.isEmpty()) {
-        m_approval_state = value.error == walletsigning::Error::Uncertain ? ApprovalState::ApprovalUncertain : ApprovalState::ApprovalFailed;
+        m_approval_state = value.error == walletsigning::Error::Uncertain ? ApprovalState::ApprovalUncertain
+            : value.quarantined_document ? ApprovalState::ApprovalUnverified : ApprovalState::ApprovalFailed;
         const auto error = m_approval_error;
         Q_EMIT signerApprovalChanged();
         if (!observer || !available()) return;
-        if (value.document) { Q_EMIT currentTransactionChanged(); if (!observer || !available()) return; }
+        if (value.document || value.quarantined_document) { Q_EMIT currentTransactionChanged(); if (!observer || !available()) return; }
         Q_EMIT externalSignerApprovalFailed(error, value.error == walletsigning::Error::SignerNotFound);
         return;
     }
@@ -3058,7 +3096,7 @@ quint64 WalletQmlModel::requestSendTransactionInternal(std::optional<QString> pa
         return m_send_request_id;
     }
     if (psbtActionBusy() || signerApprovalBusy() || preparationBusy()) return 0;
-    if ((m_send_state == SendState::SendCommitted || m_send_state == SendState::SendUncertain) && m_send_review && m_send_review == m_current_transaction) return 0;
+    if ((m_send_state == SendState::SendCommitted || m_send_state == SendState::SendUncertain || m_send_state == SendState::SendUnverified) && m_send_review && m_send_review == m_current_transaction) return 0;
     if (sendBusy() || m_sending_commit->exchange(true)) return 0;
     if (m_send_request_id == std::numeric_limits<quint64>::max()) {
         m_sending_commit->store(false);
@@ -3072,7 +3110,7 @@ quint64 WalletQmlModel::requestSendTransactionInternal(std::optional<QString> pa
     const auto approved_revision = m_preparation_projection.intent_revision;
     clearTransactionStatus();
     if (!self || !observationsAllowed() || approved != m_current_transaction || approved_revision != m_preparation_projection.intent_revision || request_id != m_send_request_id) return request_id;
-    if (signerApprovalState() == ApprovalState::ApprovalUncertain) {
+    if (signerApprovalState() == ApprovalState::ApprovalUncertain || signerApprovalState() == ApprovalState::ApprovalUnverified) {
         m_send_state = SendState::SendUncertain;
         m_send_review = m_current_transaction;
         setTransactionStatus(tr("The signer outcome could not be confirmed. Reconcile the PSBT before retrying."));
@@ -3227,7 +3265,7 @@ void WalletQmlModel::publishSendOperation()
         if (result->notes && result->notes == m_sent_labels_operation) publishSentRecipientLabels();
         return;
     }
-    if (m_send_sign_only && result->document && m_send_review && m_send_review == m_current_transaction) {
+    if (m_send_sign_only && result->document && !result->quarantined_document && m_send_review && m_send_review == m_current_transaction) {
         // A sign-only result may contain new valid partial signatures even
         // when the wallet reported a terminal signing error. Preserve that
         // captured document, while allowing broadcast only after a clean,
@@ -3315,6 +3353,7 @@ void WalletQmlModel::publishSendOperation()
         case Error::Incomplete: message = tr("Only PSBTs this wallet can fully sign are supported right now."); break;
         case Error::NeedsSignerApproval: message = tr("Approve this transaction on the signing device before sending it."); break;
         case Error::InvalidSignature: message = tr("The returned signatures could not be verified for the reviewed transaction. Check the signing device and try again."); break;
+        case Error::UnverifiedSignatures: message = tr("The returned PSBT needs more verification information. The reviewed transaction is unchanged. Export the unverified result to reconcile it."); break;
         case Error::Signer: message = result->signer_error ? PsbtQmlModel::PsbtErrorText(*result->signer_error) : tr("Signing failed."); break;
         case Error::Uncertain: message = tr("The transaction result could not be confirmed. Check wallet activity before retrying."); break;
         case Error::Cancelled: message = tr("The transaction confirmation was cancelled."); break;
@@ -3323,11 +3362,18 @@ void WalletQmlModel::publishSendOperation()
         case Error::None: message = tr("The transaction was not committed."); break;
         }
         if (result->relock_failed) { m_send_state = SendState::SendUncertain; message = tr("The wallet could not be relocked. Check wallet status before retrying."); }
+        if (result->quarantined_document) {
+            if (m_send_state != SendState::SendUncertain) m_send_state = SendState::SendUnverified;
+            m_current_transaction_can_send = false;
+            m_current_transaction_can_broadcast = false;
+        }
         if (m_send_state == SendState::SendUncertain) m_current_transaction_can_send = false;
         setTransactionStatus(message, m_send_state == SendState::SendNeedsUnlock);
         if (!self) return;
-        if (m_send_sign_only && result->document) {
+        if (m_send_sign_only && (result->document || result->quarantined_document)) {
             Q_EMIT currentTransactionChanged();
+            if (!self) return;
+            Q_EMIT signerApprovalChanged();
             if (!self) return;
         }
     }
@@ -3340,6 +3386,13 @@ void WalletQmlModel::publishSendOperation()
 
 quint64 WalletQmlModel::requestImportPsbtFromFile(const QString& path) { return startPsbtAction(PsbtActionKind::Import, path); }
 quint64 WalletQmlModel::requestSaveCurrentTransactionAsPsbt(const QString& path) { return startPsbtAction(PsbtActionKind::Save, path); }
+quint64 WalletQmlModel::requestSaveUnverifiedSignerResult(const QString& token, const QString& path)
+{
+    if (token.isEmpty() || token != signerUnverifiedResultToken()) return 0;
+    const auto document = token.startsWith(QStringLiteral("local:"))
+        ? m_send_operation->result()->quarantined_document : m_approval_projection->result->quarantined_document;
+    return startPsbtAction(PsbtActionKind::Save, path, document);
+}
 quint64 WalletQmlModel::requestBroadcastCurrentTransaction() { return startPsbtAction(PsbtActionKind::Broadcast); }
 quint64 WalletQmlModel::requestRecheckCurrentTransaction()
 {
@@ -3504,7 +3557,7 @@ void WalletQmlModel::startPsbtFileExport(quint64 action_id, const QString& path,
         return;
     }
     const bool same_document = had_document && m_current_psbt &&
-        !document.owner_before(m_current_psbt) && !m_current_psbt.owner_before(document);
+        !m_psbt_action_document.owner_before(m_current_psbt) && !m_current_psbt.owner_before(m_psbt_action_document);
     const bool same_review = had_review ? review && m_current_transaction == review : !m_current_transaction;
     const bool still_pending = observer && observationsAllowed() && !m_admission_closed &&
         m_opening == opening && action_id == m_psbt_action_id &&
@@ -3544,7 +3597,8 @@ void WalletQmlModel::startPsbtFileExport(quint64 action_id, const QString& path,
     Q_EMIT fileExportOperationChanged();
     if (observer && action_id == m_psbt_action_id) Q_EMIT psbtActionChanged();
 }
-quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requested_path)
+quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requested_path,
+                                      std::shared_ptr<const PartiallySignedTransaction> export_document)
 {
     const bool replacing_import = kind == PsbtActionKind::Import && m_psbt_action_kind == PsbtActionKind::Import;
     if ((psbtActionBusy() && !replacing_import) || preparationBusy() || sendBusy() || securityBusy() || m_sending_commit->load() || signerApprovalBusy() || m_admission_closed || (m_wallet && !available())) return 0;
@@ -3555,7 +3609,8 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     const auto scheduler = opening ? opening->scheduler() : m_psbt_fee_services.scheduler;
     const auto post = presentation::ReliablePost(m_fee_read_services.post);
     const auto path = QString{requested_path};
-    const auto document = m_current_psbt;
+    const auto review_document = m_current_psbt;
+    const auto document = export_document ? export_document : review_document;
     const auto proof = m_psbt_fee_proof;
     const auto assessment = review ? review->assessedPsbt() : nullptr;
     const auto reviewed = review ? review->getWtx() : CTransactionRef{};
@@ -3582,12 +3637,12 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     const auto view = m_psbt_view_epoch;
     m_psbt_action_view_epoch = view;
     m_psbt_action_review = review; m_psbt_action_had_review = had_review;
-    m_psbt_action_document = document; m_psbt_action_had_document = bool(document);
+    m_psbt_action_document = review_document; m_psbt_action_had_document = bool(review_document);
     const auto owns_action = [observer, opening, id, kind] {
         return observer && observer->observationsAllowed() && observer->m_opening == opening &&
             observer->m_psbt_action_id == id && observer->m_psbt_action_kind == kind;
     };
-    const auto owns_pending = [owns_action, observer, view, document, review, had_review] {
+    const auto owns_pending = [owns_action, observer, view, document = review_document, review, had_review] {
         if (!owns_action() || observer->m_psbt_action_state != PsbtActionState::PsbtPending || observer->m_psbt_view_epoch != view) return false;
         if (document) return observer->m_current_transaction && observer->m_current_psbt &&
             !document.owner_before(observer->m_current_psbt) && !observer->m_current_psbt.owner_before(document);

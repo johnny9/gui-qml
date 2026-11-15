@@ -14,6 +14,8 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+namespace walletbump { struct Prepared; }
+
 namespace walletreview {
 struct Recipient {
     QString address, label;
@@ -22,6 +24,9 @@ struct Recipient {
 };
 struct Snapshot {
     CTransactionRef transaction;
+    // Replacement reviews keep their exact original/candidate facts with the
+    // same immutable attempt snapshot used by ordinary transaction reviews.
+    std::shared_ptr<const walletbump::Prepared> replacement;
     std::shared_ptr<const PartiallySignedTransaction> assessment;
     QList<Recipient> recipients;
     QMap<QString, QString> notes;

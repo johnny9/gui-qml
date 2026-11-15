@@ -14,7 +14,8 @@ inline bool AwaitSignerApprovalOutcome(WalletQmlModel& model)
         if (!guard) return true;
         const auto state = guard->signerApprovalState();
         return state == WalletQmlModel::ApprovalState::ApprovalSigned || state == WalletQmlModel::ApprovalState::ApprovalPartiallySigned ||
-            state == WalletQmlModel::ApprovalState::ApprovalFailed || state == WalletQmlModel::ApprovalState::ApprovalUncertain;
+            state == WalletQmlModel::ApprovalState::ApprovalFailed || state == WalletQmlModel::ApprovalState::ApprovalUncertain ||
+            state == WalletQmlModel::ApprovalState::ApprovalUnverified;
     }, 5000) && guard && guard->signerApprovalId() == id;
 }
 #endif // BITCOIN_QML_TEST_MOCKS_APPROVALTEST_H
