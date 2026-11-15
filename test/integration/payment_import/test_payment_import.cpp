@@ -89,7 +89,7 @@ private Q_SLOTS:
         const auto document = m_wallet->currentTransaction()->assessedPsbt(); QVERIFY(document);
         QVERIFY(qmltest::Call(m_app, [document](interfaces::Node*) {
             return std::all_of(document->inputs.begin(), document->inputs.end(), [](const auto& input) {
-                return input.partial_sigs.empty() && input.tap_key_sig.empty() && input.tap_script_sigs.empty() &&
+                return input.partial_sigs.empty() && input.m_tap_key_sig.empty() && input.m_tap_script_sigs.empty() && input.m_musig2_partial_sigs.empty() &&
                     input.final_script_sig.empty() && input.final_script_witness.IsNull();
             });
         }));
