@@ -1,0 +1,93 @@
+{
+  "status": "focused_progress_gate_satisfied_ready_for_coordinator_integration",
+  "tested_head": "8a680effa7bf34f44c89fbf7a34c778b7996abde",
+  "tested_base": "d48129bbf9908899b0bc2d28dee6fd988ecea045",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "Core_Qt_changes": false,
+  "successful_body_counts": {
+    "unit": 5,
+    "integration": 4,
+    "qml": 42
+  },
+  "distinct_successful_bodies": 51,
+  "source_qualified_carry": {
+    "source05_Native_Core_successes": 8,
+    "source07_remaining_Core_success": 1,
+    "source05_QML_unchanged_successes": 35,
+    "source07_affected_Node_QML": 7,
+    "not_single_ELF_full_suite": true,
+    "full_identity_ledger": "FOCUSED_CASE_IDENTITY_UNION_07.json"
+  },
+  "parent_oracles": {
+    "ordinary_bodies_executed": 10,
+    "intended_failed": 7,
+    "positive_controls": 3,
+    "evidence": [
+      "bazzite-01/artifacts/red/results/report.json",
+      "macos-01/artifacts/red/focused/report.json",
+      "macos-02/artifacts/red/focused/report.json",
+      "bazzite-03/artifacts/red/results/report.json"
+    ],
+    "last_original_production_baseline": "f999d865fe006797abc7a7f811c296ef1a4a8a48, exact unchanged productionbfefe, same disabled Settings Core/UI body1PASS"
+  },
+  "actual_processes": {
+    "bridge_protocol_unique": 1,
+    "final_current_exit": 0,
+    "outer_stderr_bytes": 0,
+    "IPC_enabled": true,
+    "note": "Normal Core startup/shutdown verified through shared actual app protocol, not a new full interface_gui or sanitizer claim."
+  },
+  "static": {
+    "Clang23_Bitcoin_plugin": {
+      "source04_CPP": 1,
+      "source04_MOC": 7,
+      "source04_pass": 8,
+      "final_diagnostic_CPP_source06": 1,
+      "final_fresh_MOC_source06": 7,
+      "final_source06_pass": 8,
+      "source07_CPP_headers_tests_byte_equal06": true
+    },
+    "final_QMLlint": {
+      "files_per_variant": 260,
+      "variants": [
+        "qt62",
+        "qt65"
+      ],
+      "warnings_errors": 0,
+      "negative_gate_controls": 10,
+      "artifact": "static-07"
+    },
+    "exact_implementation_app_lint": {
+      "exit": 0,
+      "seconds": 3.189118729031179,
+      "feature_test_bodies": 0,
+      "scope": "pinned app lint only"
+    },
+    "runtime_provenance": "R14 local static did not relink four executables; actual remote runtime ELF hashes/commands and nonempty XML retained per job."
+  },
+  "toolchains": {
+    "Linux_runtime": "pinnedc30 Clang23.1.6 Release/O3 Qt6.4.2 IPC/TestAutomation ON, CLI OFF preserved andunused",
+    "Mac_runtime": "Qt6.11.2 ARM",
+    "pinned_static": "a4 Clang23/Qt6.10.2 + unchanged Core Bitcoin plugin/check definitions"
+  },
+  "retained_failures": [
+    "source04 Native8/9 andMac39/40",
+    "source05 remaining disabledSettings Core/UI failure",
+    "source06 missing controls import (QMLlint plus secondary formatterKeyErrorline) and prematurely dispatched03 nonacceptance; corrected07",
+    "private intended parent failures and exact positive controls",
+    "local Core Git alternate-depth preparation failure, zero builds/tests; corrected direct canonical449 metadata"
+  ],
+  "boundaries": [
+    "Core/Qt unchanged; ordinary app NodeShell composition uses standard PageStack/Loader, not a custom native Qt replacement.",
+    "No domain/Core effects or outcome/cleanup completion depend on view animation/focus/owned zero-turn presentation timers.",
+    "No new execution framework, private Core access, silent configurations, empty/skipped passes or denominator changes.",
+    "Public menu/direct routing uses menuNavigationEnabled/modalNavigationBlocked; consumers must preserve that bounded GUI admission policy."
+  ],
+  "R42_pending": [
+    "exhaustive coverage/macro/profile qualification",
+    "full suites",
+    "supported Qt/platform/config matrices including native Windows and compile-time walletOFF",
+    "sanitizers"
+  ],
+  "no_push": true
+}
