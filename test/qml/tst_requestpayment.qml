@@ -115,8 +115,9 @@ TestCase {
             testPaymentRequest.id = "17"
             testPaymentRequest.createdIso = new Date(2026, 10, 15, 18, 30).toISOString()
             const card = createTemporaryObject(optionalContextCardComponent, testCase.Window.window.contentItem,
-                                               {wallet: null, request: testPaymentRequest})
+                                               {wallet: null, request: testPaymentRequest, modalView: true})
             verify(card !== null)
+            verify(waitForRendering(card))
             const text = findChild(card, "paymentRequestCreatedDate")
             verify(text !== null && text.visible)
             verify(text.text.indexOf(data.marker) >= 0, text.text)

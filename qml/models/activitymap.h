@@ -136,19 +136,51 @@ private:
         }
         return tree;
     }
+    struct Ancestor { const Node* node; bool left; };
+    static Tree rebuild(const std::vector<Ancestor>& path, Tree result) {
+        for (auto it = path.rbegin(); it != path.rend(); ++it) {
+            const auto* node = it->node;
+            result = balance(it->left ? make(node->entry.first, node->entry.second, std::move(result), node->right)
+                : make(node->entry.first, node->entry.second, node->left, std::move(result)));
+        }
+        return result;
+    }
     static Tree assign(const Tree& tree, const QString& key, Value value) {
-        if (!tree) return make(key, std::move(value));
-        if (key == tree->entry.first) return make(key, std::move(value), tree->left, tree->right);
-        if (key < tree->entry.first) return balance(make(tree->entry.first, tree->entry.second, assign(tree->left, key, std::move(value)), tree->right));
-        return balance(make(tree->entry.first, tree->entry.second, tree->left, assign(tree->right, key, std::move(value))));
+        std::vector<Ancestor> path;
+        path.reserve(height(tree));
+        auto* node = tree.get();
+        while (node && node->entry.first != key) {
+            const bool take_left = key < node->entry.first;
+            path.push_back({node, take_left});
+            node = (take_left ? node->left : node->right).get();
+        }
+        auto result = node ? make(key, std::move(value), node->left, node->right) : make(key, std::move(value));
+        return rebuild(path, std::move(result));
     }
     static Tree remove(const Tree& tree, const QString& key) {
-        if (key < tree->entry.first) return balance(make(tree->entry.first, tree->entry.second, remove(tree->left, key), tree->right));
-        if (key > tree->entry.first) return balance(make(tree->entry.first, tree->entry.second, tree->left, remove(tree->right, key)));
-        if (!tree->left) return tree->right;
-        if (!tree->right) return tree->left;
-        auto* successor = tree->right.get(); while (successor->left) successor = successor->left.get();
-        return balance(make(successor->entry.first, successor->entry.second, tree->left, remove(tree->right, successor->entry.first)));
+        std::vector<Ancestor> path;
+        path.reserve(height(tree));
+        auto* node = tree.get();
+        while (node && node->entry.first != key) {
+            const bool take_left = key < node->entry.first;
+            path.push_back({node, take_left});
+            node = (take_left ? node->left : node->right).get();
+        }
+        if (!node) return tree;
+        Tree result;
+        if (!node->left) result = node->right;
+        else if (!node->right) result = node->left;
+        else {
+            std::vector<Ancestor> successor_path;
+            successor_path.reserve(height(node->right));
+            auto* successor = node->right.get();
+            while (successor->left) {
+                successor_path.push_back({successor, true}); successor = successor->left.get();
+            }
+            auto remaining = rebuild(successor_path, successor->right);
+            result = balance(make(successor->entry.first, successor->entry.second, node->left, std::move(remaining)));
+        }
+        return rebuild(path, std::move(result));
     }
     Tree m_root;
 };

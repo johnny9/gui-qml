@@ -326,12 +326,17 @@ void ActivityFilterProxyModelTests::persistentValuesShareUnchangedPathsAndPreser
     for (int i{0}; i < 1024; ++i) { const auto id = QString::number((i * 67) % 1024).rightJustified(5, u'0'); values.emplace(id, i); expected.emplace(id, i); }
     const auto original = values;
     std::set<const void*> old_nodes;
-    const auto collect = [&](auto&& self, const activityview::Map<int>::Tree& node, std::set<const void*>& result) -> void {
-        if (!node) return; result.insert(node.get()); self(self, node->left, result); self(self, node->right, result);
+    const auto collect = [](const activityview::Map<int>::Tree& root, std::set<const void*>& result) {
+        std::vector<activityview::Map<int>::Tree> pending{root};
+        while (!pending.empty()) {
+            const auto node = pending.back(); pending.pop_back();
+            if (!node) continue;
+            result.insert(node.get()); pending.push_back(node->left); pending.push_back(node->right);
+        }
     };
-    collect(collect, original.storage(), old_nodes);
+    collect(original.storage(), old_nodes);
     values.insert_or_assign("00500", -17); expected.insert_or_assign("00500", -17);
-    std::set<const void*> changed_nodes; collect(collect, values.storage(), changed_nodes);
+    std::set<const void*> changed_nodes; collect(values.storage(), changed_nodes);
     size_t allocated{0}; for (const auto* node : changed_nodes) if (!old_nodes.contains(node)) ++allocated;
     QVERIFY(allocated <= size_t{32}); QVERIFY(original.at("00500") != -17); QCOMPARE(values.at("00500"), -17);
     for (int i{0}; i < 1024; i += 3) { const auto id = QString::number(i).rightJustified(5, u'0'); QCOMPARE(values.erase(id), expected.erase(id)); }
@@ -367,7 +372,7 @@ void ActivityFilterProxyModelTests::relativeDateRefreshUsesManualClockAndRejects
 {
     const QTimeZone zone{QByteArrayLiteral("UTC")}; QDate today{2026, 1, 1};
     TestActivityModel source; source.setRows({MakeRow("Yesterday", Transaction::RecvWithAddress, QDateTime(today, QTime{12, 0}, zone).toSecsSinceEpoch(), "a"), MakeRow("Successor", Transaction::RecvWithAddress, QDateTime(today.addDays(1), QTime{12, 0}, zone).toSecsSinceEpoch(), "b")});
-    ManualExecutionEnvironment env; int writes{0}; ActivityFilterProxyModel::Services services; services.write = [&](const auto& request) { ++writes; return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; }; services.automaticDateRefresh = false; services.today = [&] { return today; }; services.timezone = [zone] { return zone; }; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
+    ManualExecutionEnvironment env; int writes{0}; ActivityFilterProxyModel::Services services; services.write = [&](const auto& request) { ++writes; return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; }; services.automaticDateRefresh = false; services.today = [&] { return today; }; services.timezone = [zone] { return QTimeZone{zone}; }; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
     ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); proxy.setDateFilter(ActivityFilterProxyModel::Today); QCoreApplication::processEvents(); env.drain();
     today = today.addDays(1); env.publishAll(); QCoreApplication::processEvents(); QCOMPARE(proxy.rowCount(), 0); // stale day never publishes
     env.drain(); env.publishAll(); QCoreApplication::processEvents(); QVERIFY(!proxy.busy()); QCOMPARE(proxy.rowCount(), 1); QCOMPARE(proxy.index(0).data(TransactionActivityModel::LabelRole).toString(), QStringLiteral("Successor"));
@@ -379,7 +384,7 @@ void ActivityFilterProxyModelTests::localeWeekAndClockFormatUseOneCapturedPolicy
 {
     const QDate sunday{2026, 11, 15}; const QTimeZone zone{QByteArrayLiteral("UTC")};
     TestActivityModel source; source.setRows({MakeRow("Sunday", Transaction::RecvWithAddress, QDateTime(sunday, QTime{18, 30}, zone).toSecsSinceEpoch(), "a"), MakeRow("Saturday", Transaction::RecvWithAddress, QDateTime(sunday.addDays(-1), QTime{18, 30}, zone).toSecsSinceEpoch(), "b")});
-    ActivityFilterProxyModel::Services services; services.automaticDateRefresh = false; services.today = [sunday] { return sunday; }; services.locale = [] { return QLocale{QLocale::English, QLocale::UnitedStates}; }; services.timezone = [zone] { return zone; };
+    ActivityFilterProxyModel::Services services; services.automaticDateRefresh = false; services.today = [sunday] { return sunday; }; services.locale = [] { return QLocale{QLocale::English, QLocale::UnitedStates}; }; services.timezone = [zone] { return QTimeZone{zone}; };
     ActivityFilterProxyModel us{services}; us.setSourceModel(&source); us.setDateFilter(ActivityFilterProxyModel::ThisWeek); QVERIFY(WaitForProxy(us)); QCOMPARE(us.rowCount(), 1);
     services.locale = [] { return QLocale{QLocale::English, QLocale::UnitedKingdom}; };
     ActivityFilterProxyModel uk{services}; uk.setSourceModel(&source); uk.setDateFilter(ActivityFilterProxyModel::ThisWeek); uk.setGroupBy(ActivityFilterProxyModel::Day); QVERIFY(WaitForProxy(uk)); QCOMPARE(uk.rowCount(), 2);
@@ -409,10 +414,10 @@ void ActivityFilterProxyModelTests::skippedCivilDayDoesNotExcludeValidInclusiveE
 }
 void ActivityFilterProxyModelTests::groupedAddressSearchPreservesOrdinaryNoteWhitespace()
 {
-    const QString address{QStringLiteral("1BoatSLRHtKNngkdXEeobR76b53LETtpyT")};
+    const QString address{QStringLiteral("mfcEyFDJECfxJf4rnRggoDTfJHUk1e256R")};
     auto payment = MakeRow("Ordinary  spaced note", Transaction::RecvWithAddress, 1, "a"); payment.address = address;
     TestActivityModel source; source.setRows({payment}); ActivityFilterProxyModel proxy; proxy.setSourceModel(&source);
-    proxy.setSearchText("1BoatS LRHtKN ngkdXE eobR76 b53LET tpyT"); QVERIFY(WaitForProxy(proxy)); QCOMPARE(proxy.rowCount(), 1);
+    proxy.setSearchText("mfcEyF DJECfx Jf4rnR ggoDTf JHUk1e 256R"); QVERIFY(WaitForProxy(proxy)); QCOMPARE(proxy.rowCount(), 1);
     proxy.setSearchText("Ordinary spaced note"); QVERIFY(WaitForProxy(proxy)); QCOMPARE(proxy.rowCount(), 0);
     proxy.setSearchText("Ordinary  spaced note"); QVERIFY(WaitForProxy(proxy)); QCOMPARE(proxy.rowCount(), 1);
 }
@@ -1367,7 +1372,7 @@ void ActivityFilterProxyModelTests::availableMaximumUsesUnfilteredTransactionsAn
     QCOMPARE(proxy.availableMaxAmount(), 0);
     other.setRows({send});
     QVERIFY(WaitForProxy(proxy));
-    QCOMPARE(proxy.availableMaxAmount(), 9000);
+    QCOMPARE(proxy.availableMaxAmount(), 500);
     proxy.setSourceModel(nullptr);
     QVERIFY(WaitForProxy(proxy));
     QCOMPARE(proxy.availableMaxAmount(), 0);

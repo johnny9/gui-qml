@@ -461,7 +461,10 @@ void NodeModelTests::localizedInformationDatesUseTheCapturedSystemConvention()
     services.schedule = [](auto, auto, auto) {}; services.cancel = [](auto) {};
     NodeModel model{node, false, std::move(services)};
     const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
-    env.drain(); env.publishAll(); model.initializeResult(true, {}, false, false); env.drain(); env.publishAll();
+    env.drain(); env.publishAll(); model.initializeResult(true, {}, false, false);
+    // Diagnostics publication schedules the subsequent native status read.
+    for (int turn{0}; turn < 16 && (!env.turnsIdle() || !env.publicationsIdle()); ++turn) { env.drain(); env.publishAll(); }
+    QVERIFY(env.turnsIdle()); QVERIFY(env.publicationsIdle()); QVERIFY(node.calls.getHeaderTip.load() > 0);
     const auto expected = locale.toString(QDateTime::fromSecsSinceEpoch(timestamp), QLocale::ShortFormat);
     QCOMPARE(InformationValue(model, "Header time"), expected); QCOMPARE(InformationValue(model, "Last block time"), expected);
     const auto startup = InformationValue(model, "Startup time"); QVERIFY(!startup.isEmpty()); QVERIFY(locale.toDateTime(startup, QLocale::ShortFormat).isValid());

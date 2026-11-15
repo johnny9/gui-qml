@@ -1021,7 +1021,7 @@ TestCase {
         mouseClick(findChild(page, "activityDateFilterButton"))
         const popup = findChild(page, "activityDateFilterPopup")
         tryCompare(popup, "opened", true)
-        mouseClick(findChild(page, "activityDateCustomRange"))
+        mouseClick(findChild(popup.contentItem, "activityDateCustomRange"))
         const reset = findChild(page, "activityDateRangeReset")
         tryCompare(reset, "visible", true)
         verify(reset.enabled)
