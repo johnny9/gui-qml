@@ -25,6 +25,7 @@ class WalletQmlModel;
 class ActivityDetailModel;
 Q_MOC_INCLUDE("qml/models/activitydetailmodel.h")
 namespace walletrequests { struct Snapshot; }
+namespace backup { struct InstallCoordinator; }
 
 /** Virtualized views read one bounded, already-prepared entry at a time. */
 class ActivityValueListModel final : public QAbstractListModel
@@ -173,6 +174,7 @@ public:
     void setDisplayUnit(int unit);
     void stop();
     void closeAdmission();
+    activityexport::Files activityFiles() const override;
     // Pure Domain projection shared by immutable activity consumers.
     static activityview::Row presentationRow(const activityview::Row& row);
 
@@ -226,6 +228,7 @@ private:
     int m_display_unit{0};
     const std::shared_ptr<walletopening::Session> m_opening;
     Services m_services;
+    const std::shared_ptr<backup::InstallCoordinator> m_export_installs;
     std::shared_ptr<Mailbox> m_mailbox;
     std::shared_ptr<Job> m_active, m_entry_active;
     quint64 m_entry_ticket{0};

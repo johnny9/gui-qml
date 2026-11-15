@@ -183,12 +183,14 @@ Page {
             + Qt.formatDateTime(new Date(), "yyyy-MM-dd-HHmm") + ".psbt"
     }
 
-    function savePsbt(path) {
+    function savePsbt(path, signerResultToken) {
         if (!wallet || !String(path).length || wallet.psbtActionBusy) return
         psbtSaving = true
         psbtReview = transaction
         psbtTicket = 0
-        psbtTicket = wallet.requestSaveCurrentTransactionAsPsbt(String(path))
+        psbtTicket = signerResultToken
+            ? wallet.requestSaveUnverifiedSignerResult(signerResultToken, String(path))
+            : wallet.requestSaveCurrentTransactionAsPsbt(String(path))
         if (!psbtTicket) { saveStatus = qsTr("Another wallet action is still running."); saveError = true }
         else handlePsbtOutcome()
     }
@@ -203,6 +205,22 @@ Page {
         } else {
             savePsbtDialog.currentFile = defaultSavePsbtFileUrl()
             savePsbtDialog.targetWallet = wallet
+            savePsbtDialog.signerResultToken = ""
+            savePsbtDialog.open()
+        }
+    }
+
+    function startSaveUnverifiedSignerResult() {
+        if (!wallet || !wallet.signerUnverifiedResultToken.length) return
+        const token = wallet.signerUnverifiedResultToken
+        if (savePsbtAutomationPath.text.length) {
+            const path = savePsbtAutomationPath.text
+            savePsbtAutomationPath.text = ""
+            savePsbt(path, token)
+        } else {
+            savePsbtDialog.currentFile = defaultSavePsbtFileUrl()
+            savePsbtDialog.targetWallet = wallet
+            savePsbtDialog.signerResultToken = token
             savePsbtDialog.open()
         }
     }
@@ -231,18 +249,21 @@ Page {
     AppFileDialog {
         id: savePsbtDialog
         objectName: "sendTransactionReviewSaveDialog"
-        title: qsTr("Save transaction as PSBT")
+        title: signerResultToken.length ? qsTr("Export unverified signer result") : qsTr("Save transaction as PSBT")
         fileMode: AppFileDialog.SaveFile
         currentFolder: "file://" + ApplicationModels.walletController.homePath()
         defaultSuffix: "psbt"
         nameFilters: [qsTr("Partially Signed Bitcoin Transactions (*.psbt)"), qsTr("All files (*)")]
         property var targetWallet: null
+        property string signerResultToken: ""
         onAccepted: {
             const target = targetWallet
+            const token = signerResultToken
             targetWallet = null
-            if (target && target === root.wallet) root.savePsbt(selectedFile.toString())
+            signerResultToken = ""
+            if (target && target === root.wallet) root.savePsbt(selectedFile.toString(), token)
         }
-        onRejected: targetWallet = null
+        onRejected: { targetWallet = null; signerResultToken = "" }
     }
 
     Instantiator {
@@ -485,6 +506,16 @@ Page {
                     onClicked: root.startSavePsbt()
                 }
                 NeutralButton {
+                    objectName: "sendTransactionReviewExportUnverifiedSignerButton"
+                    visible: root.wallet && root.wallet.signerUnverifiedResultToken.length > 0
+                    enabled: root.wallet && !!root.transaction && !root.sending && !root.sendBusy && !root.wallet.psbtActionBusy
+                    buttonSize: NeutralButton.Large
+                    width: parent.width
+                    height: 46
+                    text: qsTr("Export unverified signer result")
+                    onClicked: root.startSaveUnverifiedSignerResult()
+                }
+                NeutralButton {
                     objectName: "sendTransactionReviewSignOnlyButton"
                     visible: root.wallet && root.wallet.currentTransactionCanSignOnly
                     buttonSize: NeutralButton.Large
@@ -524,6 +555,23 @@ Page {
                 color: Theme.color.red
                 font: Theme.text.description.font
                 wrap: true
+            }
+
+            CoreText {
+                objectName: "sendReviewNodePolicy"
+                visible: root.importedPsbt && text.length > 0
+                Layout.fillWidth: true
+                text: root.transaction ? root.transaction.nodePolicyStatus : ""
+                font: Theme.text.description.font
+                wrap: true
+            }
+
+            NeutralButton {
+                objectName: "sendReviewRecheck"
+                visible: root.importedPsbt
+                enabled: root.wallet !== null && root.wallet.available && root.transaction !== null && !root.sendBusy
+                text: qsTr("Recheck transaction")
+                onClicked: root.wallet.requestRecheckCurrentTransaction()
             }
 
             CoreText {

@@ -277,6 +277,11 @@ std::shared_ptr<const Snapshot> Inspect(interfaces::Wallet* wallet, std::shared_
     snapshot->summary_source = CaptureSummarySource(snapshot->assessment, snapshot->proof, wallet);
     snapshot->summary_count = snapshot->summary_source->row_count;
     snapshot->initial_summary_page = ProjectSummaryPage(snapshot->summary_source, 0, 128);
+    if (context.policy && complete && snapshot->proof->amount && !snapshot->metadata_failed) {
+        auto analyzed = *snapshot->assessment;
+        CMutableTransaction extracted;
+        if (FinalizeAndExtractPSBT(analyzed, extracted)) snapshot->node_facts = context.policy(MakeTransactionRef(std::move(extracted)), *snapshot->proof->amount);
+    }
     psbtdocument::Qualify(*snapshot);
     if (assessment) *assessment = snapshot->assessment;
     return snapshot;
@@ -466,6 +471,18 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
                 result.error = Tr("The signer returned invalid signatures for the reviewed transaction.");
                 return finish();
             }
+            result.signature_status = complete ? psbtsignatures::Status::Valid
+                : psbtsignatures::VerifyContributions(*request.document, candidate);
+            if (result.signature_status != psbtsignatures::Status::Valid) {
+                result.code = result.signature_status == psbtsignatures::Status::Invalid ? Error::Invalid
+                    : signer_threw ? Error::Uncertain : Error::UnverifiedSignatures;
+                result.error = result.signature_status == psbtsignatures::Status::Invalid
+                    ? Tr("The signer returned invalid signatures for the reviewed transaction.")
+                    : Tr("The returned PSBT needs more verification information. The original document is unchanged; export the unverified result to reconcile it.");
+                if (result.signature_status == psbtsignatures::Status::Unknown)
+                    result.quarantined_document = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
+                return finish();
+            }
             request.document = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
             // Retain legitimate partial signatures even when the signer reports
             // an error or a later presentation read fails. Never adopt changed
@@ -483,24 +500,20 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
         }
         if (request.kind == Kind::Broadcast) {
             if (!context.broadcast) { result.code = Error::Unavailable; result.error = Tr("The node interface is unavailable."); return finish(); }
-            auto candidate = *request.document;
-            psbtfee::FillMissing(candidate, *request.proof);
+            if (!request.assessment) {
+                result.code = Error::Changed; result.error = Tr("The analyzed transaction is unavailable. Review the PSBT again."); return finish();
+            }
+            auto candidate = *request.assessment;
+            const auto source_terms = request.document->GetUnsignedTx(), analyzed_terms = candidate.GetUnsignedTx();
+            if (!source_terms || !analyzed_terms || !MatchesUnsignedTransaction(*source_terms, *analyzed_terms)) {
+                result.code = Error::Changed; result.error = Tr("The analyzed transaction differs from the reviewed transaction."); return finish();
+            }
+            if (!psbtfee::MatchesReview(candidate, *request.proof, request.approved_fee)) {
+                result.code = Error::Fee; result.error = Tr("The analyzed transaction fee differs from the approved fee."); return finish();
+            }
             CMutableTransaction tx;
             if (!FinalizeAndExtractPSBT(candidate, tx)) {
-                if (wallet) {
-                    bool complete{false};
-                    if (const auto error = wallet->fillPSBT({.sign = false, .bip32_derivs = false}, nullptr, candidate, complete)) {
-                        result.code = Error::Core; result.error = ErrorText(*error); return finish();
-                    }
-                    const auto original = request.document->GetUnsignedTx(), returned = candidate.GetUnsignedTx();
-                    if (!original || !returned || !MatchesUnsignedTransaction(*original, *returned)) {
-                        result.code = Error::Changed; result.error = Tr("The reviewed transaction changed after review."); return finish();
-                    }
-                    if (!psbtfee::MatchesReview(candidate, *request.proof, request.approved_fee)) {
-                        result.code = Error::Fee; result.error = Tr("The transaction fee changed after review."); return finish();
-                    }
-                }
-                if (!FinalizeAndExtractPSBT(candidate, tx)) { result.code = Error::Invalid; result.error = Tr("PSBT is not complete and cannot be broadcast."); return finish(); }
+                result.code = Error::Invalid; result.error = Tr("The analyzed PSBT is not complete and cannot be broadcast."); return finish();
             }
             const auto reviewed = request.document->GetUnsignedTx();
             if (!reviewed || !MatchesUnsignedTransaction(*reviewed, tx) || !psbtfee::MatchesReview(candidate, *request.proof, request.approved_fee)) {
@@ -509,6 +522,12 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
             const auto transaction = MakeTransactionRef(std::move(tx));
             if (!psbtsignatures::VerifyFinalizedInputs(candidate, true)) {
                 result.code = Error::Invalid; result.error = Tr("The PSBT contains invalid signatures."); return finish();
+            }
+            if (context.policy) {
+                const auto decision = psbtpolicy::Evaluate(context.policy(transaction, *request.approved_fee));
+                if (decision.state == psbtpolicy::State::Blocked) {
+                    result.code = Error::Changed; result.error = decision.explanation; return finish();
+                }
             }
             result.txid = QString::fromStdString(transaction->GetHash().ToString());
             const auto submitted = context.broadcast(transaction);
@@ -652,7 +671,9 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         const auto tx = assessment->GetUnsignedTx();
         if (!tx || !MatchesUnsignedTransaction(*original, *tx)) { result.message = Tr("The wallet changed the reviewed transaction."); return result; }
         auto completed_assessment = *assessment;
-        if (FinalizeAndExtractPSBT(completed_assessment, finalized) && finalized.GetHash() != identity) {
+        const bool extracted = FinalizeAndExtractPSBT(completed_assessment, finalized);
+        if (snapshot->signature_state == SignatureState::Verified && !extracted) { result.message = Tr("The analyzed transaction could not be extracted."); return result; }
+        if (extracted && finalized.GetHash() != identity) {
             result.txid = QString::fromStdString(finalized.GetHash().ToString());
             if (wallet.getTx(finalized.GetHash())) { result.disposition = ImportResult::Disposition::Known; return result; }
         }
@@ -665,11 +686,15 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         result.key_can_broadcast = snapshot->can_broadcast;
         const bool may_send = result.can_commit_complete && (snapshot->complete || result.key_can_send);
         auto review = std::make_shared<walletreview::Snapshot>();
-        review->transaction = MakeTransactionRef(*tx);
+        review->transaction = snapshot->signature_state == SignatureState::Verified ? MakeTransactionRef(finalized) : MakeTransactionRef(*tx);
+        review->assessment = assessment;
+        review->node_policy_blocked = snapshot->node_state == psbtpolicy::State::Blocked;
+        if (snapshot->signature_state == SignatureState::Verified) review->node_policy_status = psbtpolicy::Evaluate(snapshot->node_facts).explanation;
         review->proof = snapshot->proof;
         review->fee = snapshot->proof->amount.value_or(0);
         review->display_unit = display_unit;
-        review->can_send = snapshot->proof->amount.has_value() && may_send;
+        review->can_send = snapshot->proof->amount.has_value() && may_send
+            && psbtpolicy::Evaluate(snapshot->node_facts).state != psbtpolicy::State::Blocked;
         for (const auto& output : tx->vout) {
             CTxDestination destination;
             if (!ExtractDestination(output.scriptPubKey, destination)) {

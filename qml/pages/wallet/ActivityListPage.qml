@@ -14,6 +14,7 @@ Page {
     objectName: "activityPage"
     property WalletQmlModel wallet: null
     property bool exportSucceeded: true
+    readonly property ActivityExportOperation csvExport: activityFilterProxy.exportOperation
     property bool ready: false
     readonly property bool activitySourceEmpty: !wallet || wallet.transactionActivityModel.count === 0
     readonly property bool typeFilterActive: activityFilterProxy.typeFilters.length > 0
@@ -30,7 +31,9 @@ Page {
     background: Rectangle { color: Theme.color.neutral0 }
     padding: 0
     Component.onCompleted: ready = true
+    onVisibleChanged: if (!visible && ready) { activityRowMenu.close(); cancelExportSelection() }
     onWalletChanged: if (ready) {
+        cancelExportSelection()
         activityRowMenu.close()
         clearFilters()
         activityFilterProxy.searchText = ""
@@ -77,10 +80,29 @@ Page {
     }
     function exportResultTitle() { return exportSucceeded ? qsTr("Export complete") : qsTr("Export failed") }
     function exportResultDescription() {
+        if (activityFilterProxy.exportRejected) return activityFilterProxy.exportError
+        if (activityFilterProxy.exportResult.present && !activityFilterProxy.exportResult.outcomeKnown) return qsTr("The export outcome is unknown. Check the original destination before trying again: %1").arg(activityFilterProxy.exportResult.finalPath)
         return exportSucceeded ? qsTr("Your Activity CSV has been saved.")
-            : activityFilterProxy.exportError || qsTr("The Activity CSV could not be saved. Check the file path and try again.")
+            : activityFilterProxy.exportResult.present ? activityFilterProxy.exportResult.errorText : activityFilterProxy.exportError || qsTr("The Activity CSV could not be saved. Check the file path and try again.")
     }
 
+    function cancelExportSelection() {
+        activityFilterProxy.cancelExport(exportDialog.intentToken)
+        exportDialog.intentToken = ""
+        exportDialog.close()
+    }
+    function beginExportSelection() {
+        const token = activityFilterProxy.captureExport()
+        if (!token.length) return
+        exportDialog.intentToken = token
+        exportDialog.open()
+    }
+    function completeExportSelection(token, path) {
+        if (activityFilterProxy.requestCapturedExportCsv(token, String(path)) === 0) {
+            exportSucceeded = false
+            exportResultPopup.open()
+        }
+    }
     function exportActivity(path) {
         if (activityFilterProxy.requestExportCsv(String(path)) === 0) {
             exportSucceeded = false
@@ -91,6 +113,7 @@ Page {
     Connections {
         target: activityFilterProxy
         function onExportFinished(ticket, saved, path, error) {
+            if (activityFilterProxy.exportResult.cancelled) return
             root.exportSucceeded = saved
             exportResultPopup.open()
         }
@@ -160,9 +183,19 @@ Page {
         id: exportDialog
         objectName: "activityExportDialog"
         defaultSuffix: "csv"
+        confirmOverwrite: false
         fileMode: AppFileDialog.SaveFile
         nameFilters: [qsTr("Comma separated file (*.csv)")]
-        onAccepted: root.exportActivity(exportDialog.selectedFile.toString())
+        property string intentToken: ""
+        onAccepted: {
+            const original = intentToken
+            intentToken = ""
+            root.completeExportSelection(original, exportDialog.selectedFile.toString())
+        }
+        onRejected: {
+            activityFilterProxy.cancelExport(intentToken)
+            intentToken = ""
+        }
     }
     TextField {
         id: automationExportPathField
@@ -345,7 +378,7 @@ Page {
                 anchors.topMargin: activityRefreshError.visible ? activityRefreshError.height + 8 : 0
                 clip: true
                 model: root.visible ? activityFilterProxy : null
-                reuseItems: true
+                reuseItems: false
                 boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
                 section.property: root.visible ? "sectionLabel" : ""
@@ -531,6 +564,8 @@ Page {
         property bool isRequest: false
         property string deleteError: ""
         property double contextToken: 0
+        readonly property RequestSharingModel requestSharing: root.wallet && root.wallet.receive && isRequest ? root.wallet.receive.sharingRequest(requestId, activityRowMenu) : null
+        Binding { target: activityRowMenu.requestSharing; property: "active"; value: root.visible && activityRowMenu.opened; when: activityRowMenu.requestSharing !== null }
         onClosed: activityFilterProxy.releaseRowContext(contextToken)
         onAboutToShow: deleteError = ""
         ContextMenuButton {
@@ -552,11 +587,28 @@ Page {
         ContextMenuButton {
             objectName: "activityCopyPaymentRequest"
             visible: activityRowMenu.isRequest
-            enabled: !!root.wallet && !root.wallet.receiveRequestReconciliationPending
+            enabled: activityRowMenu.requestSharing ? activityRowMenu.requestSharing.canCopyUri && (!activityRowMenu.requestSharing.lastOperation || !activityRowMenu.requestSharing.lastOperation.busy)
+                : !!root.wallet && !root.wallet.receiveRequestReconciliationPending
             text: qsTr("Copy payment request")
+            autoClose: false
             onTriggered: {
+                if (activityRowMenu.requestSharing) { activityRowMenu.requestSharing.copyUri(); return }
                 const uri = root.wallet ? root.wallet.transactionActivityModel.paymentRequestUri(activityRowMenu.requestId) : ""
                 if (uri.length > 0) Clipboard.setText(uri)
+                activityRowMenu.close()
+            }
+        }
+        CoreText {
+            width: parent ? parent.width : implicitWidth
+            text: activityRowMenu.requestSharing && activityRowMenu.requestSharing.lastOperation ? activityRowMenu.requestSharing.lastOperation.errorText : ""
+            visible: text.length > 0
+            color: Theme.color.red
+        }
+        Connections {
+            target: activityRowMenu.requestSharing ? activityRowMenu.requestSharing.lastOperation : null
+            function onChanged() {
+                const operation = activityRowMenu.requestSharing ? activityRowMenu.requestSharing.lastOperation : null
+                if (operation && operation.result.present && operation.result.performed) activityRowMenu.close()
             }
         }
         ContextMenuDivider {
@@ -643,7 +695,43 @@ Page {
                     const path = automationExportPathField.text
                     automationExportPathField.text = ""
                     root.exportActivity(path)
-                } else exportDialog.open()
+                } else root.beginExportSelection()
+            }
+        }
+    }
+
+    Popup {
+        objectName: "activityCsvDestinationConfirmation"
+        parent: Overlay.overlay
+        visible: root.csvExport !== null && root.csvExport.confirmationRequired
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+        width: parent ? Math.min(520, parent.width - 40) : 520
+        x: parent ? (parent.width - width) / 2 : 0
+        y: parent ? (parent.height - height) / 2 : 0
+        padding: 24
+        contentItem: ColumnLayout {
+            spacing: 16
+            CoreText { Layout.fillWidth: true; text: root.csvExport && root.csvExport.replacing ? qsTr("Replace Activity CSV?") : qsTr("Save Activity CSV?"); font: Theme.text.subtitle.font }
+            CoreText { objectName: "activityCsvFinalDestination"; Layout.fillWidth: true; text: root.csvExport ? root.csvExport.finalPath : ""; textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere }
+            RowLayout {
+                NeutralButton {
+                    objectName: "activityCsvRefuseDestination"
+                    text: qsTr("Cancel")
+                    property ActivityExportOperation pressedOperation: null
+                    onPressed: pressedOperation = root.csvExport
+                    onCanceled: pressedOperation = null
+                    onClicked: if (pressedOperation) pressedOperation.refuse()
+                }
+                NeutralButton {
+                    objectName: "activityCsvApproveDestination"
+                    text: root.csvExport && root.csvExport.replacing ? qsTr("Replace file") : qsTr("Save file")
+                    property ActivityExportOperation pressedOperation: null
+                    onPressed: pressedOperation = root.csvExport
+                    onCanceled: pressedOperation = null
+                    onClicked: if (pressedOperation) pressedOperation.approve()
+                }
             }
         }
     }
@@ -853,8 +941,7 @@ Page {
                     //: Button that clears the Activity custom date range.
                     text: qsTr("Reset")
                     textSize: 15
-                    // Nothing to reset until a date has been picked.
-                    enabled: calendar.hasSelection
+                    enabled: calendar.hasSelection || activityFilterProxy.dateFilter !== ActivityFilterProxyModel.DateAll
                     textColor: enabled ? Theme.color.neutral7 : Theme.color.neutral5
                     // A disabled control still receives hover, which would
                     // trigger the button's hover recolor; gate it on enabled.
@@ -863,7 +950,7 @@ Page {
                     // but stay in the calendar so a new range can be picked.
                     onClicked: {
                         calendar.reset()
-                        activityFilterProxy.dateFilter = ActivityFilterProxyModel.DateAll
+                        activityFilterProxy.clearDateFilter()
                     }
                 }
 
@@ -932,15 +1019,7 @@ Page {
         modal: true
         dim: false
 
-        function seedRange() {
-            const maximum = activityFilterProxy.availableMaxAmount
-            amountSlider.setValues(Math.min(Math.max(0, activityFilterProxy.minAmount), maximum),
-                activityFilterProxy.maxAmount < 0 ? maximum : Math.min(activityFilterProxy.maxAmount, maximum))
-        }
-        onAboutToShow: {
-            x = root.filterPopupX(amountFilterButton, amountPopup)
-            seedRange()
-        }
+        onAboutToShow: x = root.filterPopupX(amountFilterButton, amountPopup)
 
         ColumnLayout {
             Layout.fillWidth: true
@@ -959,7 +1038,10 @@ Page {
                 objectName: "activityAmountRangeSlider"
                 Layout.fillWidth: true
                 minValue: 0
-                maxValue: activityFilterProxy.availableMaxAmount
+                maxValue: Math.max(activityFilterProxy.availableMaxAmount,
+                                   activityFilterProxy.minAmount, activityFilterProxy.maxAmount)
+                selectedLower: Math.max(0, activityFilterProxy.minAmount)
+                selectedUpper: activityFilterProxy.maxAmount < 0 ? Math.max(activityFilterProxy.availableMaxAmount, activityFilterProxy.minAmount) : activityFilterProxy.maxAmount
                 Accessible.name: qsTr("Activity amount range")
                 first.onMoved: root.applyAmountRange()
                 second.onMoved: root.applyAmountRange()

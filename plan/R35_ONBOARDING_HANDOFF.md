@@ -1,12 +1,20 @@
 # R35 revisioned onboarding and durable profile handoff
 
-Implementation candidate: `52084a8faaa32b44d4764e4ad5a0cf6d38bf8ea4`, Core
-`44901d8f64cb617714707bd025ecd83f108353c2` unchanged. Base:
-`a2af8d230547e1f333becf8e1a4ad2bc4cb5955a` (R33/R09 prerequisites accepted).
-Final pinned static passes13/13 (6 changed CPP+all7 fresh MOCs); QMLlint passes.
-Exact delivery-head app lint is recorded in `R35/lint-final/RESULT.json`.
-Exhaustive coverage, full suites,
-sanitizers and platform/configuration matrices remain user-deferred to R42.
+Final implementation: `ffd8da03f4bb255f607d587ed3ea1bd80f30bf1e`; pinned Core
+`44901d8f64cb617714707bd025ecd83f108353c2` unchanged. The original bounded
+R35 delivery was `e12365c86cb0b1c5e8bf1381bbcf6dd263b05be2`; its raw receipts
+remain historical evidence. The inherited proposed-directory wallet boundary
+hold is resolved by the qualified public-process adapter, with no private
+exception or Core modification. Coordinator integration remains separate.
+
+Current focused checks are recorded in `R35/PUBLIC_HELPER_ACCEPTANCE_15.json`
+and `plan/R35_PUBLIC_BOUNDARY_CHECKPOINT.json`. Source13 passed10 changed CPP
+plus7 fresh MOCs; source15 reran the2 changed CPP plus all7 fresh MOCs, retaining
+8 unchanged CPP checks. Both QML variants passed13 and their source/header/type
+inputs are unchanged15. Exact implementation-head app lint passed in
+`helper-lint-15`; the docs-only delivery has its own final lint receipt.
+Exhaustive coverage, full suites, sanitizers and platform/configuration matrices
+remain explicitly deferred to R42.
 
 `onboarding::Flow` owns exact path/config revisions, positive preview/storage/
 effective checks, immutable attempts and actual outcomes on Domain. The existing
@@ -51,6 +59,49 @@ Exact commands/manifests are retained. Shared `test/run_focused.py` uses
 `native-07.json` (unchanged43), `native-09.json` (105),
 `configured-profile-11.json` (1), `qml-11.json` (8). No custom runner or empty passes.
 All failed07/08/09 runs remain intact. Macro/profile/full-suite qualification is R42.
+
+## Public wallet-directory boundary and final helper gate
+
+An inactive proposed profile needs existing-wallet recognition for onboarding
+storage/continuation guidance. The app helper uses public Init/Node/WalletLoader
+in a fresh headless child, with the exact directory/network/Signet override. It
+never initializes a node/network, loads a wallet, changes parent settings or
+parses a wallet format. Native owns process limits, cancellation and physical
+reaping; failure retains the prior summary and disables completion. The helper
+is included in the app build dependencies and both existing artifact uploads.
+See `R35_PUBLIC_DIRECTORY_ADAPTER_UPSTREAM.md` for guarantees, public API gaps,
+limits and the retirement condition.
+
+`bazzite-15/artifacts/green/results/report.json` and
+`macos-15/artifacts/green/focused/report.json` each passed27 actual bodies:
+9 helper-owner manual/real-thread cases and the18 existing onboarding path/
+preparation cases. The unchanged14 parent, with the same new test source,
+reproduced both eligibility/reentrant-directory failures; head15 passed both.
+Pending/revision ownership now precedes the first public settings notice and
+survives newer commands during path presentation.
+
+Source13 supplies unchanged52 request/process cases and18 existing preview
+cases. Together with head15 there are97 distinct Linux helper/consumer cases,
+including explicit CLI authority, owned cancellation, original target identity,
+failure/stale summary and physical cleanup. The original failed13 fixture had
+incorrectly expected a chooser to override immutable CLI `-datadir`;14 corrected
+that premise without changing precedence and added an independent CLI control.
+All7 corrected14 owner cases passed both hosts before the two new15 regressions.
+
+Actual source13 process controls recognized genuine public-Core-created wallets:
+named, empty/default identity, wrong network, junk/generic SQLite, custom Signet51
+and default-Signet mismatch. All6 children exited0 with empty stderr and unchanged
+targets. Source15 repeated both actual GUI root-wallet and explicit-walletdir
+discovery cases: process exit0 and empty outer stderr. Raw commands/results remain.
+
+`NATIVE_CASE_IDENTITY_UNION_15.json` records226 distinct successful Linux identities
+across the explicit retained R35 slices and helper checks; this is not a226-case
+same-ELF rerun. Earlier149-case receipts, original negatives and Mac8 QML/Native
+namespace evidence remain separately identified above. No historical result is
+silently relabeled a current broad qualification. The old boundary-pending
+`FOCUSED_ACCEPTANCE.json` is retained; `PUBLIC_HELPER_ACCEPTANCE_15.json` records
+this final focused checkpoint. Full `interface_gui.py`/sanitizer/matrix/coverage
+qualification is still R42.
 
 ## Scope map
 

@@ -105,6 +105,29 @@ TestCase {
         walletController.closePaymentRequestDetailRequests = 0
     }
 
+    function test_legacy_created_date_uses_the_locale_calendar_and_clock_data() {
+        return [{tag: "german-24-hour", locale: "de_DE", marker: "15.11."}, {tag: "us-12-hour", locale: "en_US", marker: "/15/"}]
+    }
+    function test_legacy_created_date_uses_the_locale_calendar_and_clock(data) {
+        const previous = testSetup.localeName()
+        testSetup.setLocale(data.locale)
+        try {
+            testPaymentRequest.id = "17"
+            testPaymentRequest.createdIso = new Date(2026, 10, 15, 18, 30).toISOString()
+            const card = createTemporaryObject(optionalContextCardComponent, testCase.Window.window.contentItem,
+                                               {wallet: null, request: testPaymentRequest, modalView: true})
+            verify(card !== null)
+            verify(waitForRendering(card))
+            const text = findChild(card, "paymentRequestCreatedDate")
+            verify(text !== null && text.visible)
+            verify(text.text.indexOf(data.marker) >= 0, text.text)
+            verify(text.text.indexOf(data.locale === "de_DE" ? "18:30" : "6:30") >= 0, text.text)
+            compare(/(?:AM|PM)/.test(text.text), data.locale === "en_US")
+            compare(card.pending, false)
+            compare(card.sharing, false)
+        } finally { testSetup.setLocale(previous) }
+    }
+
     function test_receive_waits_for_actual_capability_publication() {
         testWalletModel.capabilitiesKnown = false
         const before = testWalletModel.ensureReceivingAddressCalls
@@ -812,7 +835,7 @@ TestCase {
         else if (data.tag === "checking-before-notify") testWalletModel.checkBeforeReconciliationNotificationForTest()
         else compare(dialog.visible, false)
         // The platform may still deliver the old chooser's accept signal.
-        dialog.selectAndAccept("file:///tmp/request-qr-old-interest.png")
+        dialog.deliverLateAcceptedForTest("file:///tmp/request-qr-old-interest.png")
         compare(grabber.captures, 0)
         compare(card.actionErrorText, "The payment request changed before the QR code was saved.")
     }

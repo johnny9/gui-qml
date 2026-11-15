@@ -86,6 +86,8 @@ public:
     using PayloadPreparer = std::function<void(walletrequests::PayloadInput, std::function<void(QString)>)>;
     void setPayloadPreparer(PayloadPreparer prepare);
     void setPreparedPayload(QString payload);
+    void setStoredRevision(uint64_t revision);
+    bool matchesStoredRevision(uint64_t revision) const;
 
     QString createdIso() const;
     QDateTime created() const;
@@ -148,6 +150,7 @@ private:
     QString m_prepared_payload;
     uint64_t m_payload_revision{0};
     bool m_payload_pending{false}, m_payload_current{false};
+    uint64_t m_stored_revision{0}, m_stored_edit_revision{0}, m_stored_payload_revision{0};
 };
 
 #endif // BITCOIN_QML_MODELS_PAYMENTREQUEST_H

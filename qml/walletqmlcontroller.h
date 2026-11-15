@@ -140,6 +140,7 @@ public:
     WalletQmlController(interfaces::Node& node, walletopening::Session::Preferences preferences,
                         walletopening::FeePolicy fee_policy, QObject* parent = nullptr);
     ~WalletQmlController();
+    void setPsbtPolicyRead(psbtpolicy::Read read) { m_psbt_policy = std::move(read); }
 
     Q_INVOKABLE void setSelectedWallet(QString path, QString wallet_format = QString());
     Q_INVOKABLE bool isWalletOpen(const QString& path);
@@ -464,6 +465,8 @@ private:
     interfaces::Node& m_node;
     walletopening::Session::Preferences m_preferences;
     walletopening::FeePolicy m_fee_policy;
+    psbtpolicy::Read m_psbt_policy;
+    psbtfee::Services psbtServices() const { psbtfee::Services services; services.policy = m_psbt_policy; return services; }
     WalletQmlModel* m_empty_wallet;
     WalletSelectionModel* m_selection{nullptr};
     QPointer<WalletQmlModel> m_result_wallet;

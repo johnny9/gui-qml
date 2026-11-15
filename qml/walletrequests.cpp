@@ -61,6 +61,7 @@ struct Store::Effect {
     struct Write { Record record; std::string blob; };
     std::shared_ptr<Operation> operation;
     std::shared_ptr<const walletopening::Session::Action> action;
+    std::shared_ptr<const AddressIntent> reservation;
     Kind kind{Kind::Edit};
     std::vector<Write> writes;
     size_t offset{0};
@@ -128,7 +129,8 @@ Admission Store::submit(Command command, Notify complete)
 Admission Store::submitResult(Command command, std::function<void(const Result&)> complete, std::shared_ptr<const walletopening::Session::Action> action)
 {
     if (command.kind == Kind::SentLabels) return {{}, execution::Rejection::Invalid};
-    if (action && (command.kind != Kind::Label || action->identity() != m_opening->identity())) return {{}, execution::Rejection::Invalid};
+    if (action && ((command.kind != Kind::Label && command.kind != Kind::Create && command.kind != Kind::Edit && command.kind != Kind::Erase) ||
+                   action->identity() != m_opening->identity())) return {{}, execution::Rejection::Invalid};
     return submitImpl(std::move(command), {}, std::move(action), std::move(complete));
 }
 
@@ -166,12 +168,13 @@ Admission Store::submitImpl(Command command, Notify complete, std::shared_ptr<co
             (command.kind == Kind::Create && (command.draft.address.isEmpty() || command.secret || command.captured_secret))) {
             intent = std::make_shared<const AddressIntent>(AddressIntent{m_opening->identity(), token, command.view,
                 command.view_revision, command.draft, command.next, command.explicit_type,
-                command.kind == Kind::Create, command.kind == Kind::SelectAddress});
+                command.kind == Kind::Create, command.kind == Kind::SelectAddress, command.remember_type});
             m_latest_address_intent[command.view] = token;
         }
         operation = std::make_shared<Operation>(m_opening->identity(), token, command.kind, std::move(complete), std::move(intent), std::move(result_notify));
         m_queue.push_back({std::move(command), operation, action, bytes});
         m_bytes += bytes;
+        m_source_epoch->advance();
     }
     const auto admission = schedule(action);
     return {std::move(operation), admission.rejection};
@@ -288,7 +291,7 @@ void Store::planMutation(Queued queued)
         }
         if (m_storage.read) {
             const auto found = m_reservations.find(command.view);
-            if (!command.reservation || found == m_reservations.end() || found->second.intent != command.reservation ||
+            if (!command.reservation || command.reservation->revoked->load() || found == m_reservations.end() || found->second.intent != command.reservation ||
                 found->second.address.address != command.draft.address || !found->second.address.persisted) {
                 reject(Error::Changed); return;
             }
@@ -323,11 +326,12 @@ void Store::planMutation(Queued queued)
     effect->operation = queued.operation; effect->action = std::move(queued.action); effect->kind = command.kind;
     effect->result.address = std::move(queued.prepared_address);
     effect->receipt_epoch = m_receipt_epoch.load();
+    effect->reservation = command.reservation;
+    effect->expected_label = command.expected_label;
     if (command.kind == Kind::Label) {
         const auto destination = DecodeDestination(command.address.toStdString());
         if (!IsValidDestination(destination)) { reject(Error::Invalid); return; }
         effect->label = {destination, command.label};
-        effect->expected_label = command.expected_label;
         effect->label_stream = true; effect->label_address = command.address; effect->label_note = command.label.toStdString();
         m_mutating.store(true); publishMetadata(m_persistence_error);
         scheduleLabel(effect); return;
@@ -370,6 +374,44 @@ void Store::planMutation(Queued queued)
     }
     effect->result.records_total = effect->writes.size();
     execute(std::move(effect));
+}
+
+execution::Admission Store::inspect(int64_t id, uint64_t view, std::function<void(Inspection)> done)
+{
+    const auto self = shared_from_this();
+    return execution::Submit(*m_opening->scheduler(), [self, id, view] {
+        Inspection result;
+        result.closed = self->m_closed.load(); result.loaded = self->m_loaded;
+        result.error = self->m_uncertain.load() ? Error::Uncertain : self->m_preparation_error != Error::None ? self->m_preparation_error :
+            self->m_observation_error != Error::None ? self->m_observation_error : !self->m_loaded ? self->m_persistence_error : Error::None;
+        result.current = self->presentationCurrent();
+        { std::lock_guard lock{self->m_mutex}; result.current = result.current && !self->m_active && !self->m_scheduled && self->m_queue.empty(); }
+        result.revision = self->m_revision.load(); result.receipt_epoch = self->m_receipt_epoch.load();
+        result.native_revision = self->m_opening->transactionRevision();
+        const auto epoch = self->m_source_epoch;
+        const auto expected = epoch->value.load();
+        result.permission = [epoch, expected, opening = self->m_opening->observationGuard(), current = result.current] {
+            return current && epoch->current(expected) && opening();
+        };
+        if (const auto record = self->m_records.find(id); record != self->m_records.end()) {
+            result.record = record->second;
+            result.used = record->second->entry.payment_received;
+        }
+        if (const auto reserved = self->m_reservations.find(view); reserved != self->m_reservations.end()) {
+            result.address = reserved->second.address;
+            if (self->currentAddressIntent(reserved->second.intent)) {
+                result.reservation = reserved->second.intent;
+            }
+            result.used = result.used || self->m_observed.contains(reserved->second.address.address);
+        }
+        const auto address = result.record ? result.record->display.address : result.address ? result.address->address : QString{};
+        if (const auto label = self->m_labels.find(address); label != self->m_labels.end() && label->second.size() <= 16'384)
+            result.current_label = label->second;
+        else if (result.address && result.address->address == address && result.address->label.size() <= 16'384)
+            result.current_label = result.address->label;
+        return result;
+    }, done, [done](std::exception_ptr) { Inspection failure; failure.error = Error::Rejected; done(std::move(failure)); },
+        {execution::Lane::Domain, 512, {}, execution::WorkClass::Observation});
 }
 
 void Store::loaded(std::vector<std::string> blobs, std::vector<interfaces::WalletAddress> addresses,
@@ -634,6 +676,12 @@ void Store::execute(std::shared_ptr<Effect> effect)
             return true;
         };
         try {
+            // This is the original bind's Native admission point. Later view
+            // revocation cannot erase an effect already admitted here; its
+            // immutable result still accounts for every confirmed write.
+            if (effect->consume_address && effect->reservation && effect->reservation->revoked->load()) {
+                result.error = Error::Changed; return result;
+            }
             if (effect->consume_address && effect->offset == 0 && self->m_storage.retire &&
                 !self->m_storage.retire(wallet, QString::fromStdString(effect->writes.front().record.entry.recipient.address))) {
                 result.error = Error::ReservationPersistence; return result;
@@ -833,6 +881,7 @@ void Store::fail(const std::shared_ptr<Operation>& operation, Error error)
 
 void Store::noteNativePayment(const QString& address)
 {
+    m_source_epoch->advance();
     if (m_observed.insert(address).second) {
         ++m_receipt_epoch;
         if (m_records_by_address.contains(address)) {
@@ -849,6 +898,7 @@ void Store::observed(const std::shared_ptr<const walletreceipts::Snapshot>& snap
 {
     if (!snapshot) return;
     if (m_closed.load() || snapshot->opening != m_opening->identity()) return;
+    m_source_epoch->advance();
     m_observation_retirement.retry();
     // Reader snapshots are cumulative for one opening. Equal/smaller sets add
     // no new facts; retain the newest native revision without re-walking rows.
@@ -1051,6 +1101,7 @@ void Store::stopPreparation(Error error)
 
 void Store::publishMetadata(Error error)
 {
+    m_source_epoch->advance();
     if (error == Error::None) error = m_preparation_error;
     if (error == Error::None) error = m_observation_error;
     if (m_uncertain) error = Error::Uncertain;
@@ -1083,5 +1134,6 @@ void Store::close()
     // Accepted commands retain their original Action; no GUI acknowledgement
     // is needed to finish, release it or let the opening physically drain.
     m_closed.store(true);
+    m_source_epoch->closed.store(true);
 }
 } // namespace walletrequests

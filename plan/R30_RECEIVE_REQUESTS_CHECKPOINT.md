@@ -1,0 +1,29 @@
+# R30 receive/request focused checkpoint
+
+Code revision32f36f054b18cc90df6efee92f02877f43724166; accepted prerequisite maina2af8d230547e1f333becf8e1a4ad2bc4cb5955a; unchanged cleanCore44901d8f64cb617714707bd025ecd83f108353c2. This delivery note adds no application changes. The focused checkpoint is satisfied with the explicit upstream limits below. Exhaustive series qualification remains R42.
+
+## Behavior
+
+An opening owns one Store/reservation writer. Typed PaymentRequestEditorModel, ReceiveReservationModel and WalletReceiveModel capture original request/editor/view identities and use the shared versioned persistent-editor protocol. Validation, request transforms, public Wallet effects, QR preparation and file I/O use injected Domain/Core/Cleanup executors. GUI presents bounded state and performs the guarded native clipboard/chooser handoff. Saved metadata, successor drafts, original admitted outcomes and partial request/label/preference persistence remain distinct. Generation failure disarms the old reservation; selecting a template does not persist an address-type preference. New default-affinity drafts cannot relabel or reuse a cached address of another type.
+
+RequestSharingModel owns view interest/cache; every returned action retains its own immutable outcome. A bounded persistent script reference preserves the current action even when QML ignores its return; externally retained actions remain independent of context retirement. Final admission follows source/input/use/view checks; preparation alone is not admitted delivery. Native leases drain without held GUI delivery. PNG export uses the shared destination policy and exact original payload, not scene capture. Historical use does not silently grant a new sharing attempt.
+
+## Actual focused evidence
+
+Artifacts are under `.validation/qt6-r11-r40-20261114/R30/`. Commands, source/config/ELF hashes, XML/text/stdout/stderr, actual exits, exact nonempty row identities and manual traces are retained. The shared runner remains `test/run_focused.py`; no replacement binary or empty selector is counted.
+
+* Final source03 current execution:314 native +2 affected QML +1 independent public-Core template body =317 executed bodies, all pass, zero skips/infrastructure failures. Host exit0 in210.01s; clean source after. `gameboy/run-03/artifacts-worker-collection/{native,qml,integration}/report.json` and `RUN03_ACTUAL_COUNTS.json`.
+* Explicit earlier-head unchanged carries: source024324471 has98 other QML and8 other Core bodies; source01b8fbe019 has131 unchanged QML and16 other Core bodies. Dependency/oracle rationale: `gameboy/run-02/CARRIED_01.json` and `gameboy/run-03/CARRIED_02.json`. This is not a single-current-ELF replay, full-suite pass or merged coverage profile.
+* Actual plain/encrypted application-exported PNGs independently decode byte-exact to literal expected URIs with pinned ZXing-C++3.1.1/Pillow12.0.0: `qr-decoder/ACTUAL_EXPORT_02.json`. Positive, wrong-expected and blank-image controls qualify the decoder. Permission-only recollection preserves original0600, failure and unchanged SHA bytes.
+* Original025 test-only parentd4ab07 on productiona2af: build0; exactly2 bodies, short encodable controlPASS and original4250-character action-admissionFAIL, process1, no skips/infrastructure failure or stderr. Identical universal head oracle passes2/2 on source02. `red-parent-01/artifacts/integration/report.json`; no parent production changes.
+* Final source03 pinned app lint0; full production QML lint259 files per compatibility variant plus positive/negative probes0; pinned clang-tidy23 with Bitcoin plugin for6 affected C++ units and all7 app MOCs0. `lint-03/RESULT.json`, final `qml-lint.*`, `tidy/results.json`. Original01/02 failures and fixture/application causes remain in `REPAIRS_02_PENDING.json`, `REPAIRS_03.json` and raw run directories. No assertions, animations, watchdogs or warning policy weakened.
+
+The ordinary Gameboy profile uses pinned Clang23/Qt6.10.2, maxj6 and ccache32GiB/content. Optional app coverage alone is OFF under the user's R42 deferral. All370 Core target compiler commands remain exactly unchanged; no meaningful compiler flags are ignored by ccache. First new-input batch192/192 compiler calls cacheable,7 hits185 misses; cold application inputs are not misreported as cache failure. Prior qualified ELF/config artifacts remain on Gameboy. The last warm writer after the comparison is `R30/red-parent-01/source` atd4ab07, not source03.
+
+## Scope and remaining limits
+
+`R30_SCOPE_MAP.json` maps all34 primary scopes to actual selected rows and exact evidence revisions. Positive/held/nonbug/duplicate inventory cases retain their dispositions rather than becoming invented defect counts. Input/editor/preview/allocation bounds and exact original identities are tested; no exhaustive memory or coverage claim follows from state labels alone.
+
+Scope007 exact initial per-OutputType capability filtering needs an upstream typed nonmutating public Wallet query. The user explicitly approved deferral: proven/Unknown support facts remain separate from temporary keypool/unlock availability, without probes, private internals or production RPC. Inherited R09 scopes139/153 cannot offer a Core/RPC-exclusive unlock lease using separate public unlock/read/lock calls; background app ownership is retained, atomic backend authorization remains an upstream interface obligation. Already-unlocked redundant secrets are not authenticated as passwords. See `plan/API_DEFERRALS_20261115.md`.
+
+No Core/Qt subtree or persisted-format changes. Sanitizers, exhaustive coverage, platform/configuration and full compatibility matrices remain pending R42 by explicit user cadence; ordinary results do not establish those passes. R31 owns current-credit reconciliation extraction; positive partial payments stay intentional and historical-use protection remains separate.

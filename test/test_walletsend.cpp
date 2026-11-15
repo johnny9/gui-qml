@@ -13,11 +13,15 @@
 #include <test/qt_test_registry.h>
 
 #include <chainparams.h>
+#include <script/sign.h>
 #include <QSemaphore>
 #include <QScopeGuard>
 #include <QtTest/QtTest>
+#include <algorithm>
 #include <array>
+#include <mutex>
 #include <string_view>
+#include <vector>
 
 namespace {
 using walletsend::Error;
@@ -48,8 +52,9 @@ struct Wallet : StubWallet {
     int commits{0}, signs{0}, unlocks{0}, locks{0}, labels{0}, status_reads{0};
     CTransactionRef last_transaction;
     std::shared_ptr<const PartiallySignedTransaction> completed_document;
-    std::function<void()> after_unlock,before_commit;
+    std::function<void()> after_unlock,before_commit,before_sign;
     std::function<void(PartiallySignedTransaction&, bool&)> metadata;
+    std::function<std::optional<common::PSBTError>(PartiallySignedTransaction&, bool&)> signing_response;
     std::optional<common::PSBTError> metadata_error;
     std::vector<std::pair<bool, bool>> fill_options;
     int metadata_reads{0};
@@ -76,7 +81,9 @@ struct Wallet : StubWallet {
             metadata(psbt, complete);
             return metadata_error;
         }
+        if (before_sign) before_sign();
         ++signs;
+        if (signing_response) return signing_response(psbt, complete);
         if (report_sign_error || mutate_then_throw) {
             psbt.inputs[0].final_script_sig = CScript{} << OP_TRUE;
             if (mutate_then_throw) throw std::runtime_error{"unknown signer result after partial output"};
@@ -480,6 +487,220 @@ private Q_SLOTS:
         const std::array names{"signer-not-found", "signer-failed", "metadata-error", "error-after-terms-changed", "error-after-fee-changed", "throw-after-authenticated-output", "throw-after-terms-changed", "throw-after-fee-changed"};
         for (size_t i{0}; i < names.size(); ++i) QTest::newRow(names[i]) << int(i);
     }
+    void approvalCannotInstallInvalidUnfinalizedContributions_data()
+    {
+        QTest::addColumn<int>("outcome");
+        QTest::newRow("normal-return") << 0;
+        QTest::newRow("error-return") << 1;
+        QTest::newRow("exception-return") << 2;
+    }
+    void unfinishedSignatureValueVerification_data()
+    {
+        QTest::addColumn<bool>("nested");
+        QTest::addColumn<int>("kind");
+        for (bool nested : {false, true}) for (int kind = 0; kind < 5; ++kind)
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(nested ? "nested" : "witness").arg(kind))) << nested << kind;
+    }
+    void unfinishedSignatureValueVerification()
+    {
+        QFETCH(bool, nested);
+        QFETCH(int, kind);
+        ECC_Context ecc;
+        const auto fixture = psbtfeefixture::SignedWithoutScripts(nested);
+        auto partial = fixture.document;
+        partial.inputs[0].witness_script = fixture.witness;
+        partial.inputs[0].redeem_script = fixture.redeem;
+        partial.inputs[0].partial_sigs.erase(std::next(partial.inputs[0].partial_sigs.begin()));
+        if (kind == 1) partial.inputs[0].partial_sigs.begin()->second.second[5] ^= 1;
+        if (kind == 2) partial.inputs[0].witness_script.clear();
+        if (kind == 3) partial.inputs[0].partial_sigs.begin()->second.second.clear();
+        if (kind == 4) partial.inputs[0].m_musig2_partial_sigs[{}][{}] = uint256::ONE;
+        const auto bytes = psbtwork::SerializeRaw(partial);
+        QCOMPARE(psbtsignatures::VerifyPartialInputs(partial), kind == 0 ? psbtsignatures::Status::Valid
+            : kind == 1 || kind == 3 ? psbtsignatures::Status::Invalid : psbtsignatures::Status::Unknown);
+        QCOMPARE(psbtwork::SerializeRaw(partial), bytes);
+        if (kind == 0) {
+            CMutableTransaction extracted;
+            QVERIFY(!FinalizeAndExtractPSBT(partial, extracted));
+        }
+    }
+    void unfinishedLegacySignatureValueVerification_data()
+    {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("valid") << 0;
+        QTest::newRow("corrupt") << 1;
+        QTest::newRow("missing-prevout") << 2;
+    }
+    void unfinishedLegacySignatureValueVerification()
+    {
+        QFETCH(int, kind);
+        ECC_Context ecc;
+        auto document = psbtfeefixture::Legacy(2, false);
+        auto completed = document;
+        CMutableTransaction transaction;
+        QVERIFY(FinalizeAndExtractPSBT(completed, transaction));
+        for (size_t i = 0; i < document.inputs.size(); ++i) {
+            auto& input = document.inputs[i];
+            const auto data = DataFromTransaction(transaction, i, input.non_witness_utxo->vout[input.GetOutPoint().n]);
+            input.final_script_sig.clear();
+            input.partial_sigs = data.signatures;
+            QVERIFY(!input.partial_sigs.empty());
+        }
+        if (kind == 1) document.inputs[0].partial_sigs.begin()->second.second[5] ^= 1;
+        if (kind == 2) document.inputs[0].non_witness_utxo.reset();
+        QCOMPARE(psbtsignatures::VerifyPartialInputs(document), kind == 0 ? psbtsignatures::Status::Valid
+            : kind == 1 ? psbtsignatures::Status::Invalid : psbtsignatures::Status::Unknown);
+    }
+    void unfinishedTaprootSignatureValueVerification_data()
+    {
+        QTest::addColumn<bool>("script_path");
+        QTest::addColumn<int>("kind");
+        for (bool script_path : {false, true}) for (int kind = 0; kind < 3; ++kind)
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(script_path ? "script" : "key").arg(kind))) << script_path << kind;
+        QTest::newRow("script-unused-pushed-key") << true << 3;
+    }
+    void unfinishedTaprootSignatureValueVerification()
+    {
+        QFETCH(bool, script_path);
+        QFETCH(int, kind);
+        ECC_Context ecc;
+        CKey key;
+        key.MakeNewKey(true);
+        const XOnlyPubKey internal{key.GetPubKey()};
+        TaprootBuilder builder;
+        CScript script = CScript{} << std::vector<unsigned char>{internal.begin(), internal.end()} << (kind == 3 ? OP_DROP : OP_CHECKSIG);
+        if (kind == 3) script << OP_TRUE;
+        if (script_path) builder.Add(0, script, TAPROOT_LEAF_TAPSCRIPT);
+        builder.Finalize(internal);
+        CMutableTransaction parent;
+        parent.vin.resize(1);
+        parent.vout.emplace_back(2000, GetScriptForDestination(builder.GetOutput()));
+        const auto previous = MakeTransactionRef(parent);
+        CMutableTransaction transaction;
+        transaction.vin.emplace_back(COutPoint{previous->GetHash(), 0});
+        transaction.vout.emplace_back(1500, CScript{} << OP_TRUE);
+        PartiallySignedTransaction document{transaction, 2};
+        document.inputs[0].non_witness_utxo = previous;
+        document.inputs[0].m_tap_scripts = builder.GetSpendData().scripts;
+        const auto data = PrecomputePSBTData(document);
+        QVERIFY(data);
+        FillableSigningProvider provider;
+        QVERIFY(provider.AddKey(key));
+        MutableTransactionSignatureCreator creator{transaction, 0, 2000, &*data, {.sighash_type = SIGHASH_DEFAULT}};
+        const auto leaf = ComputeTapleafHash(TAPROOT_LEAF_TAPSCRIPT, script);
+        const uint256 no_script_root;
+        std::vector<unsigned char> signature;
+        QVERIFY(creator.CreateSchnorrSig(provider, signature, internal, script_path ? &leaf : nullptr,
+            script_path ? nullptr : &no_script_root, script_path ? SigVersion::TAPSCRIPT : SigVersion::TAPROOT));
+        if (kind == 1) signature[5] ^= 1;
+        if (script_path) document.inputs[0].m_tap_script_sigs[{internal, leaf}] = signature;
+        else document.inputs[0].m_tap_key_sig = signature;
+        if (kind == 2) {
+            if (script_path) document.inputs[0].m_tap_scripts.clear();
+            else document.inputs[0].non_witness_utxo.reset();
+        }
+        QCOMPARE(psbtsignatures::VerifyPartialInputs(document), kind == 0 ? psbtsignatures::Status::Valid
+            : kind == 1 ? psbtsignatures::Status::Invalid : psbtsignatures::Status::Unknown);
+    }
+    void mathematicallyValidUnrelatedKeyDoesNotVerifyPolicyContribution()
+    {
+        ECC_Context ecc;
+        const auto fixture = psbtfeefixture::SignedWithoutScripts(false);
+        auto document = fixture.document;
+        document.inputs[0].partial_sigs.clear();
+        document.inputs[0].witness_script = fixture.witness;
+        CKey unrelated;
+        unrelated.MakeNewKey(true);
+        FillableSigningProvider provider;
+        QVERIFY(provider.AddKey(unrelated));
+        const auto transaction = document.GetUnsignedTx();
+        const auto data = PrecomputePSBTData(document);
+        QVERIFY(transaction); QVERIFY(data);
+        MutableTransactionSignatureCreator creator{*transaction, 0, 2000, &*data, {.sighash_type = SIGHASH_ALL}};
+        std::vector<unsigned char> signature;
+        QVERIFY(creator.CreateSig(provider, signature, unrelated.GetPubKey().GetID(), fixture.witness, SigVersion::WITNESS_V0));
+        const auto key = unrelated.GetPubKey();
+        MutableTransactionSignatureChecker checker{&*transaction, 0, 2000, *data, MissingDataBehavior::FAIL};
+        QVERIFY(checker.CheckECDSASignature(signature, {key.begin(), key.end()}, fixture.witness, SigVersion::WITNESS_V0));
+        document.inputs[0].partial_sigs[key.GetID()] = {key, signature};
+        QCOMPARE(psbtsignatures::VerifyPartialInputs(document), psbtsignatures::Status::Invalid);
+    }
+    void approvalQuarantinesMissingSignatureContext_data()
+    {
+        QTest::addColumn<bool>("nested");
+        QTest::newRow("witness") << false;
+        QTest::newRow("nested") << true;
+    }
+    void approvalQuarantinesMissingSignatureContext()
+    {
+        QFETCH(bool, nested);
+        ECC_Context ecc;
+        const auto fixture = psbtfeefixture::SignedWithoutScripts(nested);
+        auto original = fixture.document;
+        original.inputs[0].partial_sigs.clear();
+        auto returned = fixture.document;
+        returned.inputs[0].partial_sigs.erase(std::next(returned.inputs[0].partial_sigs.begin()));
+        Fixture f;
+        f.wallet->signer = true;
+        f.wallet->metadata = [](PartiallySignedTransaction&, bool& complete) { complete = false; };
+        f.wallet->completed_document = std::make_shared<const PartiallySignedTransaction>(returned);
+        const walletsigning::Request request{MakeTransactionRef(*original.GetUnsignedTx()),
+            std::make_shared<const PartiallySignedTransaction>(original),
+            std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(original)), 500};
+        const auto result = walletsigning::Approve(*f.wallet, request, f.opening);
+        QCOMPARE(result.error, walletsigning::Error::UnverifiedSignatures);
+        QCOMPARE(result.signature_status, psbtsignatures::Status::Unknown);
+        QVERIFY(!result.partial);
+        QVERIFY(!result.signed_transaction);
+        QVERIFY(result.document);
+        QCOMPARE(psbtwork::SerializeRaw(*result.document), psbtwork::SerializeRaw(original));
+        QVERIFY(result.quarantined_document);
+        QCOMPARE(psbtwork::SerializeRaw(*result.quarantined_document), psbtwork::SerializeRaw(returned));
+        auto reconciled = *result.quarantined_document;
+        reconciled.inputs[0].witness_script = fixture.witness;
+        reconciled.inputs[0].redeem_script = fixture.redeem;
+        reconciled.inputs[0].partial_sigs.insert(*std::next(fixture.document.inputs[0].partial_sigs.begin()));
+        QVERIFY(FinalizePSBT(reconciled));
+        QVERIFY(psbtsignatures::VerifyFinalizedInputs(reconciled, true));
+        QCOMPARE(f.wallet->commits, 0);
+    }
+    void approvalCannotInstallInvalidUnfinalizedContributions()
+    {
+        QFETCH(int, outcome);
+        ECC_Context ecc;
+        const auto fixture = psbtfeefixture::SignedWithoutScripts(false);
+        auto original = fixture.document;
+        original.inputs[0].witness_script = fixture.witness;
+        original.inputs[0].partial_sigs.clear();
+        auto returned = original;
+        returned.inputs[0].partial_sigs.insert(*fixture.document.inputs[0].partial_sigs.begin());
+        returned.inputs[0].partial_sigs.begin()->second.second[5] ^= 1;
+        Fixture f;
+        f.wallet->signer = true;
+        f.wallet->metadata = [returned, outcome](PartiallySignedTransaction& document, bool& complete) {
+            document = returned;
+            complete = false;
+            if (outcome == 2) throw std::runtime_error("device failed after returning a partial signature");
+        };
+        if (outcome == 0) {
+            f.wallet->metadata = [original](PartiallySignedTransaction& document, bool& complete) {
+                document = original;
+                complete = false;
+            };
+            f.wallet->completed_document = std::make_shared<const PartiallySignedTransaction>(returned);
+        }
+        if (outcome == 1) f.wallet->metadata_error = common::PSBTError::EXTERNAL_SIGNER_FAILED;
+        const walletsigning::Request request{MakeTransactionRef(*original.GetUnsignedTx()),
+            std::make_shared<const PartiallySignedTransaction>(original),
+            std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(original)), 500};
+        const auto result = walletsigning::Approve(*f.wallet, request, f.opening);
+        QVERIFY(!result.signed_transaction);
+        QCOMPARE(f.wallet->commits, 0);
+        // No failed or uncertain device response may install a corrupted
+        // unfinished signature into the original recoverable review.
+        QVERIFY(!result.document || result.document->inputs[0].partial_sigs.empty());
+        QVERIFY(!result.partial);
+    }
     void approvalRetainsOnlyAuthenticatedMetadataAfterFailure()
     {
         QFETCH(int, mode);
@@ -558,7 +779,7 @@ private Q_SLOTS:
     {
         QTest::addColumn<bool>("nested");
         QTest::addColumn<int>("boundary");
-        for (bool nested : {false, true}) for (int boundary = 0; boundary < 4; ++boundary)
+        for (bool nested : {false, true}) for (int boundary = 0; boundary < 6; ++boundary)
             QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(nested ? "nested" : "witness").arg(boundary))) << nested << boundary;
     }
     void assessedCompleteScriptsDoNotRequireSigning()
@@ -579,29 +800,28 @@ private Q_SLOTS:
         Fixture f;
         f.wallet->no_keys = true;
         f.wallet->encrypted = true;
-        f.wallet->metadata = [original, boundary](PartiallySignedTransaction& document, bool& complete) {
-            document.inputs[0].witness_script = original.witness;
-            document.inputs[0].redeem_script = original.redeem;
-            if (boundary == 2) document.outputs[0].amount = 1'499;
-            complete = FinalizePSBT(document);
-            // Finalization restores the authenticated witness UTXO. Inject the
-            // hostile returned claim afterward so the action receives it.
-            if (boundary == 3) document.inputs[0].witness_utxo = CTxOut{1'999, original.document.inputs[0].non_witness_utxo->vout[0].scriptPubKey};
+        f.wallet->metadata = [](PartiallySignedTransaction&, bool&) {
+            throw std::runtime_error("The reviewed assessment must not be reconstructed");
         };
+        auto assessment = expected_document;
+        if (boundary == 2) assessment.outputs[0].amount = 1'499;
+        if (boundary == 3) assessment.inputs[0].witness_utxo.nValue = 1'999;
+        if (boundary == 5) assessment = original.document;
         walletsend::Request request;
-        request.reviewed = MakeTransactionRef(*original.document.GetUnsignedTx());
+        request.reviewed = MakeTransactionRef(expected);
         request.psbt = std::make_shared<const PartiallySignedTransaction>(original.document);
         request.proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(original.document));
         request.approved_fee = 500;
         request.assessed_complete = true;
+        if (boundary != 4) request.assessment = std::make_shared<const PartiallySignedTransaction>(std::move(assessment));
         auto operation = f.operation();
         QVERIFY(operation->start(std::move(request)));
         if (boundary == 1) f.opening->retire();
         QCOMPARE(f.wallet->metadata_reads, 0);
         QVERIFY(f.commands.step(Lane::Domain));
         QVERIFY(f.commands.step(Lane::Core));
-        QCOMPARE(f.wallet->metadata_reads, 1);
-        QCOMPARE(f.wallet->metadata_derivations, std::vector<bool>{false});
+        QCOMPARE(f.wallet->metadata_reads, 0);
+        QVERIFY(f.wallet->metadata_derivations.empty());
         QCOMPARE(f.wallet->signs, 0);
         QCOMPARE(f.wallet->unlocks, 0);
         QCOMPARE(f.wallet->locks, 0);
@@ -614,7 +834,7 @@ private Q_SLOTS:
         QVERIFY(f.commands.step(Lane::Domain));
         auto result = operation->result();
         QVERIFY(result);
-        QCOMPARE(result->error, boundary < 2 ? Error::None : boundary == 2 ? Error::ChangedTransaction : Error::InvalidFee);
+        QCOMPARE(result->error, boundary < 2 ? Error::None : boundary == 2 || boundary == 4 ? Error::ChangedTransaction : boundary == 3 ? Error::InvalidFee : Error::Incomplete);
         if (boundary < 2) {
             QVERIFY(result->committed);
             QCOMPARE(result->committed->GetWitnessHash(), MakeTransactionRef(expected)->GetWitnessHash());
@@ -778,6 +998,265 @@ private Q_SLOTS:
         command.reset(); output.reset(); action.reset();
         f.commands.drain();
     }
+    void approvalOwnerPreservesTheCapturedReviewAcrossManualTurns_data()
+    {
+        QTest::addColumn<bool>("review_changes_while_device_is_held");
+        QTest::addColumn<bool>("unverified");
+        QTest::newRow("current-review") << false << false;
+        QTest::newRow("replacement-review") << true << false;
+        QTest::newRow("unverified-current-review") << false << true;
+        QTest::newRow("unverified-replacement-review") << true << true;
+    }
+    void approvalOwnerPreservesTheCapturedReviewAcrossManualTurns()
+    {
+        QFETCH(bool, review_changes_while_device_is_held);
+        QFETCH(bool, unverified);
+        ECC_Context ecc;
+        Fixture f;
+        f.wallet->signer = true;
+        auto request = VerifiedApprovalRequest(*f.wallet);
+        if (unverified) {
+            const auto fixture = psbtfeefixture::SignedWithoutScripts(false);
+            auto original = fixture.document;
+            original.inputs[0].partial_sigs.clear();
+            auto returned = fixture.document;
+            returned.inputs[0].partial_sigs.erase(std::next(returned.inputs[0].partial_sigs.begin()));
+            f.wallet->metadata = [](PartiallySignedTransaction&, bool& complete) { complete = false; };
+            f.wallet->completed_document = std::make_shared<const PartiallySignedTransaction>(returned);
+            request = {MakeTransactionRef(*original.GetUnsignedTx()),
+                std::make_shared<const PartiallySignedTransaction>(original),
+                std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(original)), 500};
+        }
+        std::vector<walletsigning::ApprovalSnapshot> snapshots;
+        auto owner = std::make_shared<walletsigning::ApprovalOwner>(f.opening, [&snapshots](auto snapshot) {
+            snapshots.push_back(std::move(snapshot));
+        });
+
+        constexpr uint64_t review = 71, view = 4, attempt = 91;
+        QVERIFY(owner->reviewChanged(review, view));
+        QVERIFY(f.commands.step(Lane::Domain));
+        QCOMPARE(snapshots.back().current_review, review);
+        QCOMPARE(snapshots.back().current_view, view);
+        auto retained = walletopening::RetainValues<walletsigning::Request>(f.opening, [&] {
+            return std::make_unique<walletsigning::Request>(request);
+        });
+        QVERIFY(retained);
+        QVERIFY(owner->request(attempt, review, view, retained));
+        retained.reset();
+        for (int turn = 0; snapshots.back().phase != walletsigning::ApprovalPhase::WaitingDevice && turn < 8; ++turn)
+            QVERIFY(f.commands.step(Lane::Domain)); // Drain the owner command's Domain receipts, never the held Core effect.
+        QCOMPARE(snapshots.back().phase, walletsigning::ApprovalPhase::WaitingDevice);
+        QCOMPARE(snapshots.back().attempt_id, attempt);
+        QCOMPARE(snapshots.back().attempt_review, review);
+        QCOMPARE(snapshots.back().attempt_view, view);
+        QCOMPARE(f.wallet->signs, 0);
+        QCOMPARE(f.wallet->commits, 0);
+
+        if (review_changes_while_device_is_held) {
+            QVERIFY(owner->reviewChanged(review + 1, view + 1));
+            for (int turn = 0; snapshots.back().current_review != review + 1 && turn < 8; ++turn)
+                QVERIFY(f.commands.step(Lane::Domain));
+            QCOMPARE(snapshots.back().phase, walletsigning::ApprovalPhase::Cancelling);
+            QVERIFY(snapshots.back().in_flight);
+            QVERIFY(!snapshots.back().publishable);
+        }
+        QVERIFY(f.commands.step(Lane::Core)); // The captured signer request is the only device effect.
+        QCOMPARE(f.wallet->signs, 1);
+        QCOMPARE(f.wallet->commits, 0);
+        for (int turn = 0; snapshots.back().in_flight && turn < 8; ++turn)
+            QVERIFY(f.commands.step(Lane::Domain)); // Consume the exact native result on Domain.
+        QVERIFY(!snapshots.back().in_flight);
+        auto terminal = snapshots.back();
+        QCOMPARE(terminal.attempt_id, attempt);
+        QCOMPARE(terminal.attempt_review, review);
+        QCOMPARE(terminal.attempt_view, view);
+        QCOMPARE(terminal.current_review, review_changes_while_device_is_held ? review + 1 : review);
+        QCOMPARE(terminal.current_view, review_changes_while_device_is_held ? view + 1 : view);
+        QVERIFY(!terminal.in_flight);
+        QCOMPARE(terminal.publishable, !review_changes_while_device_is_held);
+        if (review_changes_while_device_is_held) {
+            QCOMPARE(terminal.phase, walletsigning::ApprovalPhase::Idle);
+            QVERIFY(!terminal.result);
+        } else if (unverified) {
+            QCOMPARE(terminal.phase, walletsigning::ApprovalPhase::Unverified);
+            QVERIFY(terminal.result);
+            QCOMPARE(terminal.result->error, walletsigning::Error::UnverifiedSignatures);
+            QVERIFY(terminal.result->quarantined_document);
+            QVERIFY(!terminal.result->partial);
+            QVERIFY(!terminal.result->signed_transaction);
+        } else {
+            QCOMPARE(terminal.phase, walletsigning::ApprovalPhase::Complete);
+            QVERIFY(terminal.result);
+            QCOMPARE(terminal.result->error, walletsigning::Error::None);
+            QVERIFY(terminal.result->signed_transaction);
+            CMutableTransaction signed_terms{*terminal.result->signed_transaction};
+            for (auto& input : signed_terms.vin) {
+                input.scriptSig.clear();
+                input.scriptWitness.SetNull();
+            }
+            QCOMPARE(MakeTransactionRef(std::move(signed_terms))->GetHash(), request.reviewed->GetHash());
+        }
+
+        terminal.result.reset();
+        snapshots.clear();
+        QVERIFY(owner->close());
+        f.commands.drain();
+        owner.reset();
+        f.opening->retire();
+        f.commands.drain(); f.retirement.drain(); f.commands.drain();
+        QVERIFY(f.commands.quiescent()); QVERIFY(f.retirement.quiescent());
+    }
+    void approvalOwnerRunsSignerAndDomainReceiptOffGuiWithoutBlocking_data()
+    {
+        QTest::addColumn<bool>("replace_review_while_device_is_held");
+        QTest::addColumn<bool>("close_while_device_is_held");
+        QTest::addColumn<bool>("incompatible_signer_result");
+        QTest::newRow("current-review-compatible") << false << false << false;
+        QTest::newRow("current-review-incompatible") << false << false << true;
+        QTest::newRow("replacement-review-compatible") << true << false << false;
+        QTest::newRow("replacement-review-incompatible") << true << false << true;
+        QTest::newRow("closed-compatible") << false << true << false;
+        QTest::newRow("closed-incompatible") << false << true << true;
+    }
+    void approvalOwnerRunsSignerAndDomainReceiptOffGuiWithoutBlocking()
+    {
+        QFETCH(bool, replace_review_while_device_is_held);
+        QFETCH(bool, close_while_device_is_held);
+        QFETCH(bool, incompatible_signer_result);
+        struct State {
+            QSemaphore entered, release, initial_review, replacement_review, cancelling, terminal, closed;
+            std::mutex mutex;
+            std::vector<walletsigning::ApprovalSnapshot> snapshots;
+            std::atomic<QThread*> notification_thread{nullptr};
+        };
+        ECC_Context ecc;
+        auto state = std::make_shared<State>();
+        BackendExecutor commands{execution::Limits::Bounded()}, retirement;
+        auto opening = std::make_shared<walletopening::Session>(commands.scheduler(), retirement.scheduler(),
+            std::make_shared<std::atomic_bool>(false), [] {});
+        auto wallet = std::make_shared<Wallet>();
+        wallet->signer = true;
+        wallet->before_sign = [state] {
+            state->entered.release();
+            state->release.acquire();
+        };
+        auto registered = opening->start(wallet);
+        QVERIFY(registered.borrower);
+        const auto request = VerifiedApprovalRequest(*wallet);
+        auto owner = std::make_shared<walletsigning::ApprovalOwner>(opening, [state](auto snapshot) {
+            state->notification_thread = QThread::currentThread();
+            {
+                std::lock_guard lock{state->mutex};
+                state->snapshots.push_back(snapshot);
+            }
+            if (snapshot.phase == walletsigning::ApprovalPhase::Cancelling && snapshot.in_flight) state->cancelling.release();
+            if (snapshot.phase == walletsigning::ApprovalPhase::Closed) state->closed.release();
+            if (snapshot.current_review == 51) state->initial_review.release();
+            if (snapshot.current_review == 52) state->replacement_review.release();
+            if (snapshot.attempt_id == 101 && !snapshot.in_flight) state->terminal.release();
+        });
+        QVERIFY(owner->reviewChanged(51, 3));
+        QVERIFY(state->initial_review.tryAcquire(1, 5000));
+        auto retained = walletopening::RetainValues<walletsigning::Request>(opening, [&] {
+            return std::make_unique<walletsigning::Request>(request);
+        });
+        QVERIFY(retained);
+        QVERIFY(owner->request(101, 51, 3, retained));
+        retained.reset();
+        registered.borrower.reset();
+
+        const auto gui_thread = QCoreApplication::instance()->thread();
+        QVERIFY(state->entered.tryAcquire(1, 5000));
+        QVERIFY(wallet->sign_thread.load());
+        QVERIFY(wallet->sign_thread.load() != gui_thread);
+
+        // Domain remains available while the physical signer call is held.
+        if (replace_review_while_device_is_held) {
+            QVERIFY(owner->reviewChanged(52, 4));
+            QVERIFY(state->replacement_review.tryAcquire(1, 5000));
+        }
+        if (close_while_device_is_held) {
+            QVERIFY(owner->close());
+            QVERIFY(state->cancelling.tryAcquire(1, 5000));
+            std::lock_guard lock{state->mutex};
+            const auto found = std::find_if(state->snapshots.rbegin(), state->snapshots.rend(), [](const auto& snapshot) {
+                return snapshot.attempt_id == 101 && snapshot.phase == walletsigning::ApprovalPhase::Cancelling;
+            });
+            QVERIFY(found != state->snapshots.rend());
+            QVERIFY(found->in_flight);
+            QVERIFY(!found->publishable);
+        }
+        QVERIFY(state->notification_thread.load());
+        QVERIFY(state->notification_thread.load() != gui_thread);
+        QCOMPARE(wallet->commits, 0);
+
+        if (incompatible_signer_result) {
+            auto invalid = *wallet->completed_document;
+            const auto incompatible = psbtfeefixture::Legacy(2, false);
+            for (size_t i = 0; i < invalid.inputs.size(); ++i)
+                invalid.inputs[i].final_script_sig = incompatible.inputs[i].final_script_sig;
+            // The wallet is held in before_sign; the semaphore handoff below
+            // makes this replacement response deterministic before it reads it.
+            wallet->completed_document = std::make_shared<const PartiallySignedTransaction>(std::move(invalid));
+        }
+
+        bool released{false};
+        const auto release_on_exit = qScopeGuard([&] { if (!released) state->release.release(); });
+        state->release.release();
+        released = true;
+        QVERIFY(state->terminal.tryAcquire(1, 5000));
+        {
+            std::lock_guard lock{state->mutex};
+            QVERIFY(!state->snapshots.empty());
+            const auto found = std::find_if(state->snapshots.rbegin(), state->snapshots.rend(), [](const auto& snapshot) {
+                return snapshot.attempt_id == 101 && !snapshot.in_flight;
+            });
+            QVERIFY(found != state->snapshots.rend());
+            QCOMPARE(found->current_review, uint64_t{replace_review_while_device_is_held ? 52U : 51U});
+            QCOMPARE(found->current_view, uint64_t{replace_review_while_device_is_held ? 4U : 3U});
+            if (close_while_device_is_held || replace_review_while_device_is_held) {
+                QVERIFY(!found->publishable);
+                QVERIFY(!found->result);
+                QCOMPARE(found->phase, close_while_device_is_held ? walletsigning::ApprovalPhase::Closed : walletsigning::ApprovalPhase::Idle);
+            } else {
+                QVERIFY(found->publishable);
+                QVERIFY(found->result);
+                if (incompatible_signer_result) {
+                    QCOMPARE(found->phase, walletsigning::ApprovalPhase::Failed);
+                    QCOMPARE(found->result->error, walletsigning::Error::InvalidSignature);
+                    QVERIFY(!found->result->signed_transaction);
+                    QCOMPARE(found->result->document->GetUnsignedTx()->GetHash(), request.document->GetUnsignedTx()->GetHash());
+                } else {
+                    QCOMPARE(found->phase, walletsigning::ApprovalPhase::Complete);
+                    QCOMPARE(found->result->error, walletsigning::Error::None);
+                    QVERIFY(found->result->signed_transaction);
+                    CMutableTransaction signed_terms{*found->result->signed_transaction};
+                    for (auto& input : signed_terms.vin) {
+                        input.scriptSig.clear();
+                        input.scriptWitness.SetNull();
+                    }
+                    QCOMPARE(MakeTransactionRef(std::move(signed_terms))->GetHash(), request.reviewed->GetHash());
+                }
+            }
+        }
+        QCOMPARE(wallet->signs, 1);
+        QCOMPARE(wallet->commits, 0);
+
+        if (!close_while_device_is_held) QVERIFY(owner->close());
+        QVERIFY(state->closed.tryAcquire(1, 5000));
+        owner.reset();
+        {
+            std::lock_guard lock{state->mutex};
+            state->snapshots.clear();
+        }
+        opening->retire();
+        wallet.reset();
+        commands.shutdown();
+        opening.reset();
+        QTRY_VERIFY(commands.isDrained());
+        retirement.shutdown();
+        QTRY_VERIFY(retirement.isDrained());
+    }
     void signerPreservesAuthenticatedOutputOnError_data()
     {
         QTest::addColumn<bool>("throws");
@@ -929,6 +1408,51 @@ private Q_SLOTS:
         QVERIFY(operation->start(SignedRequest())); f.commands.drain();
         QVERIFY(operation->result()->committed); QCOMPARE(operation->result()->error, Error::None); QCOMPARE(f.wallet->commits, 1);
         QVERIFY(operation->result()->publication_failed);
+    }
+    void localSignOnlyDoesNotInstallUnverifiedContributions_data()
+    {
+        QTest::addColumn<int>("kind");
+        QTest::addColumn<int>("outcome");
+        for (int kind = 0; kind < 3; ++kind) for (int outcome = 0; outcome < 3; ++outcome)
+            QTest::newRow(qPrintable(QStringLiteral("kind-%1-outcome-%2").arg(kind).arg(outcome))) << kind << outcome;
+    }
+    void localSignOnlyDoesNotInstallUnverifiedContributions()
+    {
+        QFETCH(int, kind);
+        QFETCH(int, outcome);
+        ECC_Context ecc;
+        const auto fixture = psbtfeefixture::Contribution(kind != 2, kind == 1);
+        Fixture f;
+        f.wallet->signing_response = [returned = fixture.returned, outcome](auto& document, bool& complete) -> std::optional<common::PSBTError> {
+            document = returned;
+            complete = false;
+            if (outcome == 2) throw std::runtime_error("signing outcome unavailable after contribution");
+            return outcome == 1 ? std::optional{common::PSBTError::EXTERNAL_SIGNER_FAILED} : std::nullopt;
+        };
+        walletsend::Request request;
+        request.intent = walletsend::Intent::SignOnly;
+        request.attempt_id = 88;
+        request.review_id = 34;
+        request.reviewed = MakeTransactionRef(*fixture.original.GetUnsignedTx());
+        request.psbt = std::make_shared<const PartiallySignedTransaction>(fixture.original);
+        request.proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(fixture.original));
+        request.approved_fee = 500;
+        const auto operation = f.operation();
+        QVERIFY(operation->start(std::move(request)));
+        f.commands.drain();
+        const auto result = operation->result();
+        QVERIFY(result);
+        QCOMPARE(f.wallet->signs, 1);
+        QCOMPARE(f.wallet->commits, 0);
+        QVERIFY(!result->committed);
+        if (kind == 0) {
+            QVERIFY(result->document);
+            QCOMPARE(result->document->inputs[0].partial_sigs, fixture.returned.inputs[0].partial_sigs);
+            QVERIFY(result->partial);
+        } else {
+            QVERIFY(!result->document || result->document->inputs[0].partial_sigs.empty());
+            QVERIFY(!result->partial);
+        }
     }
     void localSignOnlyPreservesTheCapturedDocumentAndNeverCommits_data()
     {

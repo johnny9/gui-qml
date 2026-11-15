@@ -62,6 +62,7 @@ QmlInitExecutor::QmlInitExecutor(interfaces::Node& node,SubscriptionFactory subs
             if(stopping.load()){result.cancelled=true;native->record(StartupOutcome::Cancelled);return result;}
             const auto error_seen=std::make_shared<std::atomic_bool>(false);
             auto error_handler=node->handleMessageBox([error_seen](const bilingual_str&,unsigned int style){if(style&CClientUIInterface::ICON_ERROR)*error_seen=true;});
+            if(!error_handler&&native->loss)*native->loss=true;
             result.attempted=true;
             result.success=node->appInitMain(&result.tip);
 #ifdef ENABLE_TEST_AUTOMATION

@@ -10,6 +10,7 @@
 #include <QScopeGuard>
 
 #include <set>
+#include <exception>
 
 namespace walletsend {
 namespace {
@@ -141,24 +142,18 @@ Result Execute(interfaces::Wallet& wallet, Request request)
             }
             const auto authenticated = AuthenticatedInputs(wallet, *request.psbt, *request.proof);
             if (!authenticated) { result.error = Error::InvalidFee; return result; }
-            PartiallySignedTransaction psbt{*request.psbt}; psbtfee::FillMissing(psbt, *authenticated);
+            if (request.assessed_complete && !request.assessment) { result.error = Error::ChangedTransaction; return result; }
+            if (request.assessed_complete) {
+                const auto terms = request.assessment->GetUnsignedTx();
+                if (!terms || !SameTransaction(*request.reviewed, *terms)) { result.error = Error::ChangedTransaction; return result; }
+                if (!psbtfee::MatchesReview(*request.assessment, *authenticated, request.approved_fee)) { result.error = Error::InvalidFee; return result; }
+            }
+            PartiallySignedTransaction psbt{request.assessed_complete ? *request.assessment : *request.psbt};
+            psbtfee::FillMissing(psbt, *authenticated);
             CMutableTransaction extracted;
             auto finalized = psbt;
             bool extracted_complete = FinalizeAndExtractPSBT(finalized, extracted);
-            if (!extracted_complete && request.assessed_complete) {
-                // The read-only assessment may have obtained redeem/witness
-                // scripts from the public wallet. Export retains the original
-                // document; recover that metadata only in this Native action.
-                bool complete{false};
-                result.signer_error = wallet.fillPSBT({.sign = false, .bip32_derivs = false}, nullptr, psbt, complete);
-                if (result.signer_error) { result.error = Error::Signer; return result; }
-                const auto returned = psbt.GetUnsignedTx();
-                if (!returned || !SameTransaction(*request.reviewed, *returned)) { result.error = Error::ChangedTransaction; return result; }
-                if (!psbtfee::MatchesReview(psbt, *authenticated, request.approved_fee)) { result.error = Error::InvalidFee; return result; }
-                finalized = psbt;
-                extracted_complete = FinalizeAndExtractPSBT(finalized, extracted);
-                if (!extracted_complete) { result.error = Error::Incomplete; return result; }
-            }
+            if (request.assessed_complete && !extracted_complete) { result.error = Error::Incomplete; return result; }
             if (!extracted_complete) {
                 if (wallet.privateKeysDisabled() && !wallet.hasExternalSigner()) { result.error = Error::CannotSign; return result; }
                 if (!wallet.privateKeysDisabled() && wallet.isCrypted() && wallet.isLocked()) {
@@ -177,6 +172,7 @@ Result Execute(interfaces::Wallet& wallet, Request request)
                 restore();
             }
             if (!SameTransaction(*request.reviewed, extracted)) { result.error = Error::ChangedTransaction; return result; }
+            if (request.assessed_complete && request.reviewed->GetWitnessHash() != MakeTransactionRef(extracted)->GetWitnessHash()) { result.error = Error::ChangedTransaction; return result; }
             if (!psbtfee::MatchesReview(psbt, *authenticated, request.approved_fee)) { result.error = Error::InvalidFee; return result; }
             if (!VerifiedSignatures(psbt)) { result.error = Error::InvalidSignature; return result; }
             transaction = MakeTransactionRef(std::move(extracted));
@@ -192,6 +188,12 @@ Result Execute(interfaces::Wallet& wallet, Request request)
         request.passphrase.reset();
         if (result.relock_failed) { result.error = Error::Uncertain; return result; }
         if (request.sweeps_wallet && !request.full_wallet_consent) { result.error = Error::Cancelled; return result; }
+        if (request.policy && request.approved_fee) {
+            const auto decision = psbtpolicy::Evaluate(request.policy(transaction, *request.approved_fee));
+            if (decision.state == psbtpolicy::State::Blocked) {
+                result.error = Error::NodePolicy; result.policy_error = decision.explanation; return result;
+            }
+        }
         // Core retains the supplied shared_ptr in wallet history. Its owner
         // must not be an app cleanup lease: that would make session retirement
         // wait for a transaction whose destruction waits for wallet retirement.
@@ -252,6 +254,7 @@ Result ExecuteSignOnly(interfaces::Wallet& wallet, Request request,
         const auto authenticated = AuthenticatedInputs(wallet, document, *request.proof);
         if (!authenticated) { result.error = Error::InvalidFee; return result; }
         psbtfee::FillMissing(document, *authenticated);
+        const auto approved = document;
 
         if (wallet.isCrypted() && wallet.isLocked()) {
             if (!request.passphrase) { result.error = Error::NeedsUnlock; return result; }
@@ -282,6 +285,26 @@ Result ExecuteSignOnly(interfaces::Wallet& wallet, Request request,
         if (!psbtsignatures::VerifyFinalizedInputs(document, complete)) {
             restore(); result.error = Error::InvalidSignature; return result;
         }
+        result.signature_status = complete ? psbtsignatures::Status::Valid
+            : psbtsignatures::VerifyContributions(approved, document);
+        if (result.signature_status != psbtsignatures::Status::Valid) {
+            if (result.signature_status == psbtsignatures::Status::Unknown) {
+                *document_owner = std::move(document);
+                result.quarantined_document = std::shared_ptr<const PartiallySignedTransaction>{document_owner, document_owner.get()};
+            }
+            restore();
+            result.error = result.relock_failed || signer_threw ? Error::Uncertain
+                : result.signature_status == psbtsignatures::Status::Invalid ? Error::InvalidSignature
+                : Error::UnverifiedSignatures;
+            result.signer_error = signer_error;
+            return result;
+        }
+        if (complete) {
+            auto analyzed = document;
+            CMutableTransaction extracted;
+            if (!FinalizeAndExtractPSBT(analyzed, extracted)) { restore(); result.error = Error::Incomplete; return result; }
+            result.signed_transaction = MakeTransactionRef(std::move(extracted));
+        }
         *document_owner = std::move(document);
         result.document = std::shared_ptr<const PartiallySignedTransaction>{document_owner, document_owner.get()};
         result.partial = !complete;
@@ -297,6 +320,11 @@ Result ExecuteSignOnly(interfaces::Wallet& wallet, Request request,
     return result;
 }
 } // namespace
+
+bool VerifyExternalTransaction(interfaces::Wallet& wallet, const CTransaction& transaction)
+{
+    return VerifiedExternalTransaction(wallet, transaction);
+}
 
 execution::Admission Operation::start(Request request, std::shared_ptr<const walletopening::Session::Action> action)
 {
@@ -380,12 +408,14 @@ void Operation::dispatchNative(secretinput::Captured passphrase)
         request.intent = m_request.intent;
         request.reviewed = m_request.reviewed;
         request.psbt = m_request.psbt;
+        request.assessment = m_request.assessment;
         request.assessed_complete = m_request.assessed_complete;
         request.proof = m_request.proof;
         request.approved_fee = m_request.approved_fee;
         request.passphrase = std::move(m_request.passphrase);
         request.captured_passphrase = passphrase ? std::move(passphrase) : std::move(m_request.captured_passphrase);
         request.consent = m_request.consent;
+        request.policy = m_request.policy;
         request.sweeps_wallet = m_request.sweeps_wallet;
         request.full_wallet_consent = m_request.full_wallet_consent;
         request.notes = m_request.notes;
@@ -404,6 +434,9 @@ void Operation::dispatchNative(secretinput::Captured passphrase)
             if (result.committed) {
                 *native_result = result.committed;
                 result.committed = CTransactionRef{native_result, native_result->get()};
+            } else if (result.signed_transaction) {
+                *native_result = result.signed_transaction;
+                result.signed_transaction = CTransactionRef{native_result, native_result->get()};
             }
             return result;
         }, [self](Result result) { self->nativeCompleted(std::move(result)); },
@@ -618,8 +651,13 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
                 psbtfee::MatchesReview(document, *authenticated, request.approved_fee) &&
                 psbtsignatures::VerifyFinalizedInputs(document, /*require_all=*/false)) {
-                result.document = std::make_shared<const PartiallySignedTransaction>(document);
-                result.partial = true;
+                result.signature_status = psbtsignatures::VerifyContributions(*approved, document);
+                if (result.signature_status == psbtsignatures::Status::Valid) {
+                    result.document = std::make_shared<const PartiallySignedTransaction>(document);
+                    result.partial = true;
+                } else if (result.signature_status == psbtsignatures::Status::Unknown) {
+                    result.quarantined_document = std::make_shared<const PartiallySignedTransaction>(document);
+                }
             }
             result.fill_error = error;
             result.error = *error == common::PSBTError::EXTERNAL_SIGNER_NOT_FOUND ? Error::SignerNotFound
@@ -644,6 +682,17 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
                 result.document = approved;
                 result.error = Error::InvalidSignature; return result;
             }
+            result.signature_status = psbtsignatures::Status::Valid;
+        } else {
+            result.signature_status = psbtsignatures::VerifyContributions(*approved, document);
+            if (result.signature_status != psbtsignatures::Status::Valid) {
+                result.document = approved;
+                result.error = result.signature_status == psbtsignatures::Status::Invalid
+                    ? Error::InvalidSignature : Error::UnverifiedSignatures;
+                if (result.signature_status == psbtsignatures::Status::Unknown)
+                    result.quarantined_document = std::make_shared<const PartiallySignedTransaction>(std::move(document));
+                return result;
+            }
         }
         result.document = std::make_shared<const PartiallySignedTransaction>(std::move(document));
         result.partial = !extracted;
@@ -655,8 +704,13 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
                 psbtfee::MatchesReview(document, *authenticated, request.approved_fee) &&
                 psbtsignatures::VerifyFinalizedInputs(document, /*require_all=*/false)) {
-                result.document = std::make_shared<const PartiallySignedTransaction>(document);
-                result.partial = true;
+                result.signature_status = psbtsignatures::VerifyContributions(*approved, document);
+                if (result.signature_status == psbtsignatures::Status::Valid) {
+                    result.document = std::make_shared<const PartiallySignedTransaction>(document);
+                    result.partial = true;
+                } else if (result.signature_status == psbtsignatures::Status::Unknown) {
+                    result.quarantined_document = std::make_shared<const PartiallySignedTransaction>(document);
+                }
             }
         } catch (...) {}
     }
@@ -678,7 +732,252 @@ Result ApproveInto(interfaces::Wallet& wallet, const Request& request, std::shar
     Result result = *owner;
     result.lifetime = owner;
     if (result.document) result.document = std::shared_ptr<const PartiallySignedTransaction>{owner, result.document.get()};
+    if (result.quarantined_document) result.quarantined_document = std::shared_ptr<const PartiallySignedTransaction>{owner, result.quarantined_document.get()};
     if (result.signed_transaction) result.signed_transaction = CTransactionRef{owner, result.signed_transaction.get()};
     return result;
+}
+
+struct ApprovalOwner::State {
+    uint64_t sequence{0};
+    uint64_t current_review{0}, current_view{0};
+    uint64_t attempt_id{0}, attempt_review{0}, attempt_view{0};
+    ApprovalPhase phase{ApprovalPhase::Idle};
+    Error error{Error::None};
+    bool signer_not_found{false}, in_flight{false}, publishable{false}, closed{false};
+    std::shared_ptr<Request> request;
+    std::shared_ptr<const walletopening::Session::Action> action;
+    std::shared_ptr<Result> output;
+    std::shared_ptr<const Result> result;
+};
+
+namespace {
+bool IsStaleApproval(uint64_t attempt_id, uint64_t attempt_review, uint64_t attempt_view,
+                     uint64_t current_review, uint64_t current_view)
+{
+    return attempt_id && (attempt_review != current_review || attempt_view != current_view);
+}
+
+Error ApprovalExecutionError(std::exception_ptr error)
+{
+    if (!error) return Error::Uncertain;
+    try { std::rethrow_exception(error); }
+    catch (const execution::NotStarted&) { return Error::Failed; }
+    catch (...) { return Error::Uncertain; }
+}
+}
+
+ApprovalOwner::ApprovalOwner(std::shared_ptr<walletopening::Session> opening, Notify notify)
+    : m_opening(std::move(opening)), m_notify(std::move(notify)), m_state(std::make_shared<State>())
+{
+}
+
+ApprovalSnapshot ApprovalOwner::project(const State& state)
+{
+    ApprovalSnapshot result;
+    result.sequence = state.sequence;
+    result.attempt_id = state.attempt_id;
+    result.attempt_review = state.attempt_review;
+    result.attempt_view = state.attempt_view;
+    result.current_review = state.current_review;
+    result.current_view = state.current_view;
+    result.phase = state.phase;
+    result.error = state.error;
+    result.signer_not_found = state.signer_not_found;
+    result.in_flight = state.in_flight;
+    result.publishable = state.publishable && !state.closed && !IsStaleApproval(state.attempt_id,
+        state.attempt_review, state.attempt_view, state.current_review, state.current_view);
+    result.result = state.result;
+    return result;
+}
+
+void ApprovalOwner::publish(const std::shared_ptr<State>& state, const Notify& notify)
+{
+    if (notify) notify(project(*state));
+}
+
+execution::Admission ApprovalOwner::reviewChanged(uint64_t review_id, uint64_t view_revision)
+{
+    if (!m_opening || m_close_requested.load()) return {{}, execution::Rejection::Closed};
+    const auto state = m_state;
+    const auto notify = m_notify;
+    return m_opening->postDomain([state, notify, review_id, view_revision] {
+        if (state->closed || (review_id < state->current_review) ||
+            (review_id == state->current_review && view_revision < state->current_view)) return;
+        if (state->current_review == review_id && state->current_view == view_revision) return;
+        state->current_review = review_id;
+        state->current_view = view_revision;
+        if (state->in_flight) {
+            if (IsStaleApproval(state->attempt_id, state->attempt_review, state->attempt_view,
+                                state->current_review, state->current_view)) {
+                state->phase = ApprovalPhase::Cancelling;
+                state->publishable = false;
+            }
+        } else if (IsStaleApproval(state->attempt_id, state->attempt_review, state->attempt_view,
+                                   state->current_review, state->current_view)) {
+            state->attempt_id = 0;
+            state->attempt_review = review_id;
+            state->attempt_view = view_revision;
+            state->phase = state->closed ? ApprovalPhase::Closed : ApprovalPhase::Idle;
+            state->error = Error::None;
+            state->signer_not_found = false;
+            state->publishable = false;
+            state->result.reset();
+            state->request.reset();
+            state->action.reset();
+            state->output.reset();
+        }
+        ++state->sequence;
+        publish(state, notify);
+    }, 512);
+}
+
+execution::Admission ApprovalOwner::request(uint64_t attempt_id, uint64_t review_id, uint64_t view_revision,
+                                             std::shared_ptr<Request> retained_request)
+{
+    if (!m_opening || m_close_requested.load() || attempt_id == 0 || !retained_request)
+        return {{}, execution::Rejection::Invalid};
+    const auto opening = m_opening;
+    const auto state = m_state;
+    const auto notify = m_notify;
+    return opening->postDomain([opening, state, notify, attempt_id, review_id, view_revision,
+                                retained_request = std::move(retained_request)]() mutable {
+        const auto reject = [&](Error error, ApprovalPhase phase = ApprovalPhase::Failed) {
+            state->attempt_id = attempt_id;
+            state->attempt_review = review_id;
+            state->attempt_view = view_revision;
+            state->phase = phase;
+            state->error = error;
+            state->signer_not_found = error == Error::SignerNotFound;
+            state->in_flight = false;
+            state->publishable = review_id == state->current_review && view_revision == state->current_view && !state->closed;
+            state->result.reset();
+            state->request.reset();
+            state->action.reset();
+            state->output.reset();
+            ++state->sequence;
+            publish(state, notify);
+        };
+        if (state->closed || !opening->available()) {
+            reject(Error::Failed, ApprovalPhase::Closed);
+            return;
+        }
+        if (state->in_flight || attempt_id <= state->attempt_id || state->phase == ApprovalPhase::Uncertain) {
+            retained_request.reset();
+            ++state->sequence;
+            publish(state, notify);
+            return;
+        }
+        if (state->current_review != review_id || state->current_view != view_revision) {
+            reject(Error::Failed);
+            return;
+        }
+        if (!retained_request->reviewed || !retained_request->proof || !retained_request->approved_fee) {
+            reject(Error::InvalidFee);
+            return;
+        }
+
+        state->attempt_id = attempt_id;
+        state->attempt_review = review_id;
+        state->attempt_view = view_revision;
+        state->phase = ApprovalPhase::Preparing;
+        state->error = Error::None;
+        state->signer_not_found = false;
+        state->in_flight = true;
+        state->publishable = false;
+        state->result.reset();
+        state->request = std::move(retained_request);
+        ++state->sequence;
+        publish(state, notify);
+
+        state->action = opening->startAction();
+        if (!state->action) {
+            reject(Error::Failed, opening->available() ? ApprovalPhase::Failed : ApprovalPhase::Closed);
+            return;
+        }
+        state->output = walletopening::RetainValues<Result>(opening, [] { return std::make_unique<Result>(); });
+        if (!state->output) {
+            reject(Error::Failed);
+            return;
+        }
+
+        state->phase = ApprovalPhase::WaitingDevice;
+        ++state->sequence;
+        publish(state, notify);
+
+        const auto action = state->action;
+        const auto request = state->request;
+        const auto output = state->output;
+        const auto finish = [opening, state, notify, attempt_id](Result value) {
+            if (state->attempt_id != attempt_id) return;
+            state->phase = ApprovalPhase::Verifying;
+            ++state->sequence;
+            publish(state, notify);
+            if (state->closed || !opening->observationOpen() || IsStaleApproval(state->attempt_id,
+                    state->attempt_review, state->attempt_view, state->current_review, state->current_view)) {
+                state->phase = state->closed || !opening->observationOpen() ? ApprovalPhase::Closed : ApprovalPhase::Idle;
+                state->error = Error::None;
+                state->signer_not_found = false;
+                state->in_flight = false;
+                state->publishable = false;
+                state->result.reset();
+                state->request.reset();
+                state->action.reset();
+                state->output.reset();
+                ++state->sequence;
+                publish(state, notify);
+                return;
+            }
+            state->result = std::make_shared<const Result>(std::move(value));
+            state->error = state->result->error;
+            state->signer_not_found = state->error == Error::SignerNotFound;
+            state->in_flight = false;
+            state->publishable = true;
+            state->phase = state->error == Error::Uncertain ? ApprovalPhase::Uncertain
+                : state->result->quarantined_document ? ApprovalPhase::Unverified
+                : state->error != Error::None ? ApprovalPhase::Failed
+                : state->result->partial ? ApprovalPhase::Partial : ApprovalPhase::Complete;
+            state->request.reset();
+            state->action.reset();
+            state->output.reset();
+            ++state->sequence;
+            publish(state, notify);
+        };
+        const auto failed = [finish](std::exception_ptr error) {
+            Result value;
+            value.error = ApprovalExecutionError(std::move(error));
+            finish(std::move(value));
+        };
+        const auto admission = opening->perform(action, [request, output](interfaces::Wallet& wallet) {
+            return ApproveInto(wallet, *request, output);
+        }, finish, failed);
+        if (!admission) {
+            Result value;
+            value.error = Error::Failed;
+            finish(std::move(value));
+        }
+    }, 1024);
+}
+
+execution::Admission ApprovalOwner::close()
+{
+    if (m_close_requested.exchange(true)) return {{}, execution::Rejection::Invalid};
+    if (!m_opening) return {{}, execution::Rejection::Closed};
+    const auto state = m_state;
+    const auto notify = m_notify;
+    return m_opening->postDomain([state, notify] {
+        if (state->closed) return;
+        state->closed = true;
+        state->publishable = false;
+        if (state->in_flight) state->phase = ApprovalPhase::Cancelling;
+        else state->phase = ApprovalPhase::Closed;
+        state->result.reset();
+        if (!state->in_flight) {
+            state->request.reset();
+            state->action.reset();
+            state->output.reset();
+        }
+        ++state->sequence;
+        publish(state, notify);
+    }, 256);
 }
 } // namespace walletsigning

@@ -120,6 +120,7 @@ struct Store::AddressWork {
     StoredAddress stored;
     CTxDestination candidate;
     bool owned{false}, used{false}, paid{false}, force_reuse{false}, fresh{false};
+    bool preference_attempted{false}, preference_saved{false};
     std::string label;
     std::set<interfaces::WalletTx> history;
     std::set<interfaces::WalletTx>::const_iterator transaction;
@@ -128,7 +129,7 @@ struct Store::AddressWork {
 
 bool Store::currentAddressIntent(const std::shared_ptr<const AddressIntent>& intent)
 {
-    if (!intent || intent->opening != m_opening->identity()) return false;
+    if (!intent || intent->revoked->load() || intent->opening != m_opening->identity()) return false;
     std::lock_guard lock{m_mutex};
     const auto found = m_latest_address_intent.find(intent->view);
     return found != m_latest_address_intent.end() && found->second == intent->token;
@@ -189,7 +190,7 @@ void Store::reserve(Queued queued)
     }
     QString candidate = intent->draft.address;
     if (const auto previous = m_reservations.find(intent->view); previous != m_reservations.end()) {
-        if ((resume && previous->second.intent == intent && !previous->second.address.persisted) ||
+        if ((resume && previous->second.intent == intent) ||
             (!intent->next && candidate.isEmpty())) {
             candidate = previous->second.address.address;
             work->force_reuse = resume;
@@ -210,9 +211,11 @@ void Store::reserve(Queued queued)
         Capture capture;
         if (!self->m_opening->available()) { capture.error = Error::Closed; return capture; }
         if (!self->currentAddressIntent(work->intent)) { capture.error = Error::Changed; return capture; }
-        capture.type = work->requested_type.value_or(wallet.getDefaultAddressType());
-        if (!work->intent->create && !work->intent->select && (!wallet.canGetAddresses() ||
-            (capture.type == OutputType::BECH32M && !wallet.taprootEnabled()))) { capture.error = Error::Unsupported; return capture; }
+        capture.type = work->requested_type ? *work->requested_type : self->m_opening->preferredReceiveType(wallet);
+        // Aggregate keypool availability is not per-type support. The actual
+        // requested generation may need unlocking; never classify it as an
+        // unsupported descriptor merely from canGetAddresses().
+        if (!work->intent->create && !work->intent->select && capture.type == OutputType::BECH32M && !wallet.taprootEnabled()) { capture.error = Error::Unsupported; return capture; }
         if (work->intent->create) capture.stored.address = candidate;
         else if (self->m_storage.read) capture.stored = self->m_storage.read(wallet, candidate);
         else { capture.error = Error::Unsupported; return capture; }
@@ -291,12 +294,13 @@ void Store::allocateAddress(const std::shared_ptr<AddressWork>& work, bool reuse
         bool relock{false};
         try {
             const bool has_secret = secret || captured_secret;
+            const bool originally_locked = wallet.isCrypted() && wallet.isLocked();
             SecureString materialized;
             if (captured_secret) {
                 materialized = secretinput::Materialize(captured_secret);
                 captured_secret.reset();
             }
-            if (has_secret && wallet.isCrypted() && wallet.isLocked()) {
+            if (has_secret && originally_locked) {
                 relock = true;
                 const auto unlocked = wallet.unlock(secret ? *secret : materialized);
                 if (!unlocked) {
@@ -313,7 +317,9 @@ void Store::allocateAddress(const std::shared_ptr<AddressWork>& work, bool reuse
             else {
                 const auto destination = wallet.getNewDestination(work->type, label);
                 if (destination) generated.destination = *destination;
-                else generated.error = wallet.isCrypted() && wallet.isLocked() ? Error::NeedsUnlock : Error::AddressCreation;
+                // An already successful authorization cannot turn a later
+                // key/storage failure into another password requirement.
+                else generated.error = !has_secret && originally_locked ? Error::LockedAttemptFailed : Error::AddressCreation;
             }
         } catch (const secretinput::Failure&) { generated.error = Error::Rejected; }
         catch (...) { generated.error = Error::Uncertain; }
@@ -324,8 +330,13 @@ void Store::allocateAddress(const std::shared_ptr<AddressWork>& work, bool reuse
     }, [self, work, reuse](Generated generated) {
         self->m_opening->refreshMetadata();
         if (!generated.destination || !IsValidDestination(*generated.destination)) { self->addressReady(work, {}, generated.error == Error::None ? Error::AddressCreation : generated.error); return; }
+        auto address_type = QString::fromStdString(FormatOutputType(work->type));
+        if (reuse) {
+            const auto actual = DestinationType(*generated.destination);
+            address_type = actual ? QString::fromStdString(FormatOutputType(*actual)) : QString{};
+        }
         ReservedAddress address{*generated.destination, QString::fromStdString(EncodeDestination(*generated.destination)),
-            QString::fromStdString(FormatOutputType(work->type)),
+            std::move(address_type),
             reuse ? QString::fromStdString(work->label) : QString{}, work->intent->create};
         if (generated.error != Error::None || work->intent->create) { self->addressReady(work, std::move(address), generated.error); return; }
         const auto admitted = self->m_opening->perform(work->queued.action, [self, address](interfaces::Wallet& wallet) {
@@ -346,7 +357,7 @@ void Store::addressReady(const std::shared_ptr<AddressWork>& work, ReservedAddre
     const bool current = currentAddressIntent(intent) && !m_closed.load();
     const bool has_address = !address.address.isEmpty();
     if (error == Error::Uncertain) m_uncertain = true;
-    if (current && (error == Error::NeedsUnlock || error == Error::IncorrectPassphrase || error == Error::ReservationPersistence)) {
+    if (current && (error == Error::NeedsUnlock || error == Error::LockedAttemptFailed || error == Error::IncorrectPassphrase || error == Error::ReservationPersistence || error == Error::PreferencePersistence)) {
         m_address_questions[intent->view] = intent;
     } else if (current) m_address_questions.erase(intent->view);
     if (has_address && current && !intent->create) {
@@ -365,7 +376,17 @@ void Store::addressReady(const std::shared_ptr<AddressWork>& work, ReservedAddre
         queued.prepared_address = std::move(address);
         planMutation(std::move(queued)); return;
     }
+    if (current && has_address && address.persisted && error == Error::None && intent->remember_type && !work->preference_attempted) {
+        work->preference_attempted = true;
+        const auto self = shared_from_this();
+        const auto admitted = m_opening->setReceivePreference(address.address_type.toStdString(), work->queued.action,
+            [self, work, address](bool saved) { work->preference_saved = saved; self->addressReady(work, address, saved ? Error::None : Error::PreferencePersistence); });
+        if (admitted) return;
+        error = Error::PreferencePersistence;
+        m_address_questions[intent->view] = intent;
+    }
     Result result; result.error = error;
+    result.preference_requested = work->preference_attempted; result.preference_saved = work->preference_saved;
     if (has_address) result.address = std::move(address);
     finish(work->queued.operation, std::move(result));
 }

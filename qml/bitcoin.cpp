@@ -27,6 +27,7 @@
 #include <qml/applicationmodels.h>
 #include <qml/backendexecutor.h>
 #include <qml/models/imageexportoperation.h>
+#include <qml/components/ownedqrimage.h>
 #include <qml/quithandler.h>
 #include <qml/shutdowncoordinator.h>
 #include <qml/startupdialog.h>
@@ -86,9 +87,11 @@
 #include <util/threadnames.h>
 #include <util/translation.h>
 #ifdef ENABLE_WALLET
+#include <qml/receivetyperegistration.h>
 #include <qml/models/activitydetailmodel.h>
 #include <wallet/wallet.h>
 #include <qml/models/activityfilterproxymodel.h>
+#include <qml/models/activityexportoperation.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/models/bumptransactionmodel.h>
 #include <qml/models/paymentrequest.h>
@@ -339,6 +342,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<FileExportOperationModel>("org.bitcoincore.qt", 1, 0, "FileExportOperationModel", "Owned by a file export request");
     qmlRegisterType<QmlFileDialog>("org.bitcoincore.qt", 1, 0, "AppFileDialog");
     qmlRegisterType<BlockClockDial>("org.bitcoincore.qt", 1, 0, "BlockClockDial");
+    qmlRegisterType<OwnedQrImage>("org.bitcoincore.qt", 1, 0, "OwnedQrImage");
     qmlRegisterType<AppPreferences>("org.bitcoincore.qt", 1, 0, "AppPreferences");
     qmlRegisterUncreatableType<UiPreferencesStore>("org.bitcoincore.qt", 1, 0, "UiPreferencesStore", "Owned by the application engine");
     qmlRegisterType<LineGraph>("org.bitcoincore.qt", 1, 0, "LineGraph");
@@ -368,6 +372,8 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<TextEditClosePrompt>("org.bitcoincore.qt", 1, 0, "TextEditClosePrompt", "Owned by an editor");
     qRegisterMetaType<TextEditError>(); qRegisterMetaType<TextEditSaveResult>(); qRegisterMetaType<TextEditConflict>(); qRegisterMetaType<QList<TextEditConflict>>();
 #ifdef ENABLE_WALLET
+    qRegisterMetaType<ActivityExportResult>();
+    qmlRegisterUncreatableType<ActivityExportOperation>("org.bitcoincore.qt", 1, 0, "ActivityExportOperation", "Owned by the original export action");
     qmlRegisterType<ActivityFilterProxyModel>("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel");
     qmlRegisterUncreatableType<TransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Owned by WalletQmlModel");
     qmlRegisterUncreatableType<ActivityDetailModel>("org.bitcoincore.qt", 1, 0, "ActivityDetailModel", "Owned by an Activity view");
@@ -387,6 +393,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<WalletProvisioningCheck>("org.bitcoincore.qt", 1, 0, "WalletProvisioningCheck", "Owned by the wallet controller");
     qmlRegisterUncreatableType<WalletSelectionModel>("org.bitcoincore.qt", 1, 0, "WalletSelectionModel", "Owned by a window");
     qmlRegisterType<PaymentRequest>("org.bitcoincore.qt", 1, 0, "PaymentRequest");
+    RegisterReceiveTypes();
     qmlRegisterUncreatableType<ReceiveRequestOperation>("org.bitcoincore.qt", 1, 0, "ReceiveRequestOperation", "Owned by a receive request command");
     qmlRegisterUncreatableType<Transaction>("org.bitcoincore.qt", 1, 0, "Transaction", "");
     qmlRegisterUncreatableType<FeeSelectionModel>("org.bitcoincore.qt", 1, 0, "FeeSelectionModel", "");
@@ -404,6 +411,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<WalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel",
                                                 "WalletListModel cannot be instantiated from QML");
 #else
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ActivityExportOperation", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ActivityDetailModel", "Wallet support is not compiled");
@@ -411,6 +419,8 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "MessageSigningPrompt", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "AddressListModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "PaymentRequest", "Wallet support is not compiled");
+    for (const auto* type : {"WalletReceiveModel", "PaymentRequestEditorModel", "ReceiveReservationModel", "ReceiveAuthorizationPrompt", "RequestSharingModel", "ShareOperationModel", "RequestImageExportOperation", "ReceiveError", "ReceiveTypeStatus", "SharingError", "RequestImageExportError"})
+        qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, type, "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ReceiveRequestOperation", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "Transaction", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "FeeSelectionModel", "Wallet support is not compiled");
@@ -894,6 +904,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         if (wallet_enabled) {
             wallet_controller = std::make_unique<WalletQmlController>(*node, walletopening::ChainPreferences(*chain),
                 walletopening::FeePolicy{[chain = chain.get()] { return chain->relayMinFee().GetFeePerK(); }});
+            wallet_controller->setPsbtPolicyRead(psbtpolicy::ReadNode(node.get(), chain.get()));
             wallet_controller->setSignerDiscoveryPorts(signerdiscovery::PublicPorts(*node, gArgs));
             QObject::connect(
                 &init_executor, &QmlInitExecutor::initializeResult, wallet_controller.get(),

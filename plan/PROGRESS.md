@@ -1,5 +1,13 @@
 # Implementation progress
 
+Current correctness follow-up (2026-11-15): the R24 contributed-signature audit
+reproduced the same unfinished-signature installation gap in local SignOnly and
+standalone PSBT Sign. The R21/R22 signing-result components are reopened while
+shared typed validity/quarantine handling is propagated. Their previously
+qualified export/admission behavior retains its evidence; whole-order completion
+must not be inferred from those earlier receipts. See
+[the follow-up record](SIGNATURE_CONTRIBUTION_FOLLOWUP_20261115.md).
+
 The [approved cadence](QT6_VALIDATION_CADENCE_20261114.md) separates implementation
 progress from final qualification. The copied CSV registers in `tracking/`
 retain their historical provenance; this file records later branch-local
@@ -23,13 +31,18 @@ progress without changing shared finding or schedule registers.
 | R29 | Focused checkpoint integrated:255 distinct worker bodies (135 native,95 QML,25 Core); parent25 executes20 intended failures and5 controls. Pinned static/QML/app lint pass. Combined122 native/Core bodies pass with R21; R42 remains pending |
 | R33 | Focused checkpoint integrated at3806a197:272 distinct worker Qt bodies plus2process scenarios with explicit source carry. Merged246 bodies,12pinnedstatic,app/QMLlint and startup failure/recovery pass;30scopes reconciled, R42 pending |
 | R20 | Focused conditional checkpoint integrated at644abba:139worker distinct bodies; merged387-body/31-static gate, app/QML lint and2IPC process scenarios pass. Receipt reason precision is user-deferred upstream; no disabled/rejected/relay inference. R42 pending |
-| R21 | Focused checkpoint integrated atffe3637d:270 R21 bodies plus122 R29 composition bodies pass (392 distinct combined);16 pinned static entries,app/QML lint pass. Scope095 held; R24 lifecycle and R42 remain open |
-| R24 | Compatibility guard and error-return repair integrated: prior157 bodies plus later focused33-body/10-static/actualCoreHWI gates pass at recorded inputs. Six new held-device schedules pass again in merged246. Whole R24 Domain/lifetime/partial/timeout gate remains open |
-| R22 | Focused checkpoint integrated at644abba:198worker distinct bodies; merged387-body/31-static gate and2IPC scenarios pass. Sign-only and PSBT export use captured data with Native cleanup. R42 pending |
-| R30 | Reservation/request editor work active; exact receive-type capability filtering007 is user-deferred as an upstream improvement; other implementation/gates remain |
+| R21 | Focused acceptance restored after signing-contribution repair:374 component bodies at55a,17 static and4 process checks; composed229-body/14-static gate at a218 passes with app/QML lint. Scope095 remains a reconciled held allegation. R42 pending |
+| R24 | Focused acceptance satisfied:177 contribution-verification identities with explicit source carries, shared374-body follow-up and composed229 at a218 pass. Unknown partial results remain separately recoverable; R09 device/Core limits and R42 stay explicit |
+| R22 | Focused acceptance restored: prior158 export/admission cases retained; shared signing-contribution repair qualified at55a and composed229-body/14-static gate at a218 passes, app/QML lint and3processes. Existing two WalletOpening failures remain explicit baseline debt. R42 pending |
+| R30 | Focused conditional checkpoint integrated at9c71709:317 current worker bodies plus explicit earlier-source carries, original025 parent failure and independent QR decoding; merged294-body/20-static/lint/QML and2actualIPC pass. Capability007 stays user-deferred upstream; R42 pending |
 | R34 | Focused checkpoint integrated at644abba:119worker Qt bodies plus3X11 geometry scenarios; merged387-body/31-static gate and2IPC scenarios pass. Five scopes reconciled, known Qt/upstream limits retained; R42 pending |
-| R35 | Whole M18 implementation active in isolated source;2parent source-retention failures and1preview control recorded; no acceptance claim |
-| R23, R25–R27, R31–R32, R36–R40 | Authorized according to actual prerequisites; remaining implementation/gates pending |
+| R35 | Public-only helper source15 passes27 focused tests on Linux and macOS, parent2 failures reproduced, affected2 Linux GUI cases and9 pinned static/app-lint checks pass; earlier exact protocol/process/Core carries retained. Delivery and integration pending; no Core/private exception |
+| R31 | Focused checkpoint integrated at6200e8c6:196 current Native/QML/Core bodies plus52 byte-verified earlier-source carries and the original two-process restart scenario pass. Pinned15-entry tidy, app/QML lint and original reorg parent failure recorded; R42 pending |
+| R36 | Independent original071 exit-status slice integrated at032f374f:37 Native bodies and2 actual process checks pass, including real Core failure returning exit1. Pinned static and app/QML lint pass. Whole M19/M20/M21 extraction and the R35 prerequisite remain open |
+| R23 | Focused acceptance satisfied with R22 restored at e3508980. Public Node admission-read adapter at51c40864 has29 passing bodies/11 static entries/app lint. Combined626 distinct passing identities use explicit source carries; no required Core API gap. R42 remains open |
+| R25 | Focused accepted at a218:127 isolated ordinary bodies including5 real Core/RPC cases;15 current static plus2 explicit CPP carries, app/QML lint and3processes; composed229-body/14-static gate passes. Nineteen assigned scopes reconciled. R42 pending |
+| R32 | Focused accepted/integrated:194 current worker bodies plus205 explicit old-source carries; composed159 at799 and targeted229 at a218 pass. Pinned static/app/QML lint green. R42 pending |
+| R26–R27, R37–R40 | R26 typed source/target/consumer implemented, manual/real-thread gates active; R39 typed peer command/selection implemented awaiting frozen gate; independent R38/R40 preparation. Prerequisite composition still required |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
@@ -76,3 +89,7 @@ partial-signature or physical-device lifecycle guarantee.
 The [R20/R30 API decision](API_DEFERRALS_20261115.md) records the user-approved
 upstream remainders and the required truthful app behavior. These narrow
 deferrals do not authorize Core changes or waive other acceptance gates.
+
+The [parallel implementation strategy](PARALLEL_IMPLEMENTATION_20261115.md)
+keeps three workers on related families while the coordinator integrates and
+dispatches frozen candidates. Each build tree retains one writer.

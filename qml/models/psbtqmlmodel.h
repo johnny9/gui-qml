@@ -33,6 +33,7 @@ class PsbtQmlModel : public QObject
     Q_PROPERTY(bool canBroadcast READ canBroadcast NOTIFY changed)
     Q_PROPERTY(bool complete READ complete NOTIFY changed)
     Q_PROPERTY(bool signaturesVerified READ signaturesVerified NOTIFY changed)
+    Q_PROPERTY(NodeReadiness nodeReadiness READ nodeReadiness NOTIFY changed)
     Q_PROPERTY(int unsignedInputCount READ unsignedInputCount NOTIFY changed)
     Q_PROPERTY(int couldSignInputCount READ couldSignInputCount NOTIFY changed)
     Q_PROPERTY(QString matchedTxid READ matchedTxid NOTIFY changed)
@@ -44,9 +45,12 @@ class PsbtQmlModel : public QObject
     Q_PROPERTY(QString submittedTxid READ submittedTxid NOTIFY changed)
     Q_PROPERTY(bool submitted READ submitted NOTIFY changed)
     Q_PROPERTY(bool saved READ saved NOTIFY changed)
+    Q_PROPERTY(QString unverifiedResultToken READ unverifiedResultToken NOTIFY changed)
 public:
-    enum class Phase { Idle, Pending, Ready, Failed, NeedsUnlock, Uncertain, Stale, Closed };
+    enum class Phase { Idle, Pending, Ready, Failed, NeedsUnlock, Uncertain, Stale, Closed, Unverified };
     Q_ENUM(Phase)
+    enum class NodeReadiness { Unknown, NoKnownObstacle, Blocked };
+    Q_ENUM(NodeReadiness)
     // A raw Wallet argument records the expected context only. Wallet work is
     // rejected until composition supplies the retained opening below. Node must
     // outlive this model's configured scheduler drain (the app-wide Node service).
@@ -67,6 +71,7 @@ public:
     QString summaryError() const { return m_summary_error; }
     bool canSign() const { return !busy() && !m_closed && m_phase != Phase::Uncertain && !m_signing_blocked && m_snapshot && m_snapshot->can_sign; }
     bool canBroadcast() const { return !busy() && !m_closed && m_snapshot && m_snapshot->can_broadcast && !m_broadcast_blocked; }
+    NodeReadiness nodeReadiness() const { return m_snapshot ? static_cast<NodeReadiness>(m_snapshot->node_state) : NodeReadiness::Unknown; }
     bool complete() const { return m_snapshot && m_snapshot->complete; }
     bool signaturesVerified() const { return m_snapshot && m_snapshot->signature_state == psbtwork::SignatureState::Verified; }
     int unsignedInputCount() const { return m_snapshot ? m_snapshot->unsigned_inputs : 0; }
@@ -82,6 +87,8 @@ public:
     bool saved() const;
     Q_INVOKABLE quint64 requestLoadFromFile(const QString& path);
     Q_INVOKABLE quint64 requestSaveToFile(const QString& path);
+    Q_INVOKABLE quint64 requestSaveUnverifiedResult(const QString& token, const QString& path);
+    QString unverifiedResultToken() const;
     Q_INVOKABLE quint64 requestSign();
     Q_INVOKABLE quint64 requestSignWithPassphrase(const QString& passphrase);
     Q_INVOKABLE quint64 requestBroadcast();
@@ -112,6 +119,7 @@ private:
     quint64 start(psbtwork::Request request);
     void publish(quint64 operation, quint64 generation);
     void releaseSnapshot();
+    void releaseQuarantine();
     void retireDocumentOwner();
     void ensureServices();
     void prepareSummaryPaging();
@@ -138,6 +146,9 @@ private:
     bool m_wallet_expected{false}, m_closed{false};
     std::shared_ptr<Operation> m_active;
     std::optional<execution::ResourceLease> m_active_lease, m_snapshot_lease;
+    std::optional<execution::ResourceLease> m_quarantine_lease;
+    std::shared_ptr<const PartiallySignedTransaction> m_quarantined_document;
+    quint64 m_quarantined_operation{0}, m_quarantined_generation{0};
     std::shared_ptr<const psbtwork::Snapshot> m_snapshot;
     std::shared_ptr<SummaryRequestState> m_summary_request_state;
     std::shared_ptr<execution::SnapshotQuery<psbtwork::SummaryPage>> m_summary_query;

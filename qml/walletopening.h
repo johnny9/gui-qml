@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QML_WALLETOPENING_H
 #define BITCOIN_QML_WALLETOPENING_H
 
+#include <qml/sourceepoch.h>
+
 #include <qml/execution.h>
 #include <qml/walletopeningstate.h>
 
@@ -121,14 +123,24 @@ public:
         Opening identity() const { return m_identity; }
     private:
         friend class Session;
-        Action(Opening identity, std::shared_ptr<execution::Scheduler> scope, std::shared_ptr<interfaces::Wallet> wallet)
-            : m_identity(std::move(identity)), m_scope(std::move(scope)), m_wallet(std::move(wallet)) {}
+        Action(Opening identity, std::shared_ptr<execution::Scheduler> scope, execution::ResourceKey work_key,
+               std::shared_ptr<interfaces::Wallet> wallet)
+            : m_identity(std::move(identity)), m_scope(std::move(scope)), m_work_key(work_key), m_wallet(std::move(wallet)) {}
         const Opening m_identity;
         const std::shared_ptr<execution::Scheduler> m_scope; // Released after its original wallet borrower.
+        const execution::ResourceKey m_work_key;
         const std::shared_ptr<interfaces::Wallet> m_wallet;
     };
     // App-side admission/lifetime only, not a Core/RPC authorization lease.
     std::shared_ptr<const Action> startAction();
+    // File/export continuation work does not access Wallet. It shares the
+    // opening's admission lifetime but uses a private action key so a
+    // pre-reserved Native retirement receipt can run after queue pressure.
+    execution::Admission submitActionWork(const std::shared_ptr<const Action>& action,
+                                         std::function<void()> work, size_t payload_bytes = 256);
+    execution::Admission reserveActionCleanup(const std::shared_ptr<const Action>& action,
+                                              std::function<void()> work);
+    bool activateActionCleanup(const std::shared_ptr<const Action>& action, execution::TaskId id);
     void requestClose();
     void refreshMetadata() { ingress(4); }
     void retryNotifications() { scheduleRefresh(); }
@@ -141,13 +153,17 @@ public:
     // lease gates cleanup through rejection/closure, without a GUI completion.
     execution::BorrowAdmission holdValues(std::function<void()> cleanup);
     uint64_t transactionRevision() const;
+    // Captured atomic facts only: no Session/Wallet lifetime or GUI Core read.
+    std::function<bool()> observationGuard() const;
     execution::Admission planAction(const std::shared_ptr<const Action>& action,
                                     std::function<void()> work, size_t payload_bytes = 256);
     using Transactions = std::function<void(uint64_t, std::map<Txid, ChangeType>, bool)>;
     // Install the opening's backend receipt consumer, not a GUI subscription.
     // Its callback is invoked on Domain; it must retain only a weak owner.
     void onTransactions(Transactions consumer);
-    execution::Admission setReceivePreference(std::string type);
+    execution::Admission setReceivePreference(std::string type, std::shared_ptr<const Action> original = {}, std::function<void(bool)> done = {});
+    // Native-only preference read; selecting a template never writes it.
+    OutputType preferredReceiveType(interfaces::Wallet& wallet) const;
     uint64_t preferenceRevision() const { return m_preference_revision.load(); }
     void answerClose(Question question, bool accept);
     void retire(bool remove_wallet = false);
@@ -203,6 +219,7 @@ private:
     const Preferences m_preferences;
     const Clock m_clock;
     const NativeEvents m_native_events;
+    const std::shared_ptr<SourceEpoch> m_source_epoch{std::make_shared<SourceEpoch>()};
     std::shared_ptr<Resources> m_resources;
     State m_state{m_identity}; // Shared command Domain only
     std::atomic<uint64_t> m_preference_revision{0};

@@ -7,22 +7,47 @@
 #include <QPointer>
 
 #include <atomic>
+#include <exception>
 #include <utility>
 
 namespace backup {
 struct OperationState {
     QString raw;
     Services services;
+    execution::ResourceKey serial;
     Snapshot current;
     enum class Admission { Open, Writing, Retired };
     std::atomic<Admission> admission{Admission::Open};
+    std::atomic_bool started{false};
+    std::atomic_bool admitted{false};
+    std::atomic_bool retire_if_confirmation_requested{false};
+    std::atomic<uint64_t> prompt_retirement_task{0};
+    std::atomic_bool prompt_retirement_activated{false};
+    std::atomic_bool prompt_retirement_submitted{false};
     std::function<void(Snapshot)> publish;
+
+    void activatePromptRetirement() noexcept
+    {
+        const auto task = prompt_retirement_task.load();
+        if (!task || prompt_retirement_activated.exchange(true)) return;
+        bool activated{false};
+        try {
+            activated = services.activate_prompt_retirement
+                ? services.activate_prompt_retirement(execution::TaskId{task})
+                : services.scheduler && services.scheduler->activateCleanup(execution::TaskId{task});
+        } catch (...) { }
+        // This continuation was admitted before Start. Its bounded transport
+        // is retained through close, so activation cannot be a best-effort
+        // queue submission.
+        if (!activated) std::terminate();
+    }
 
     Decision advance(Event event, const Proposal& proposal = {}, WriteResult result = {})
     {
         auto decision = Advance(current, event, proposal, result);
         if (!decision.accepted) return decision;
         current = decision.snapshot;
+        if (!Pending(current.phase)) activatePromptRetirement();
         // GUI transport cannot own the outcome or interrupt an admitted write.
         try { publish(current); } catch (...) { }
         if (!Pending(current.phase) && services.outcome) services.outcome(current);
@@ -49,6 +74,10 @@ struct OperationState {
                     return;
                 }
                 advance(Event::Inspected, proposal);
+                if (current.phase == Phase::AwaitingConfirmation && retire_if_confirmation_requested.load()) {
+                    advance(Event::Retire);
+                    return;
+                }
             }
             if (current.phase == Phase::Ready) {
                 if (services.available && !services.available()) {
@@ -76,77 +105,208 @@ struct OperationState {
         return {bytes.constData(), static_cast<size_t>(bytes.size())};
     }
 };
+
+namespace {
+void RequestPromptRetirement(const std::shared_ptr<OperationState>& state)
+{
+    state->retire_if_confirmation_requested.store(true);
+    if (state->prompt_retirement_task.load()) {
+        state->activatePromptRetirement();
+        return;
+    }
+    // Older backup consumers use the generic operation without the reserved
+    // continuation receipt. Preserve their existing best-effort retirement
+    // path; the PSBT continuation adapter supplies the reservation below.
+    if (!state->admitted.load() || !state->services.scheduler ||
+        state->prompt_retirement_submitted.exchange(true)) return;
+    const auto retire_prompt = [state] {
+        if (state->current.phase == Phase::AwaitingConfirmation) state->advance(Event::Retire);
+    };
+    try {
+        if (state->services.submit) state->services.submit(retire_prompt);
+        else execution::Submit(*state->services.scheduler, retire_prompt, [] {});
+    } catch (...) { }
+}
+} // namespace
 } // namespace backup
 
+backup::Operation::Operation(QString raw, Services services, Publish publish)
+    : m_state{std::make_shared<OperationState>()}
+{
+    m_state->raw = std::move(raw);
+    m_state->services = std::move(services);
+    if (m_state->services.scheduler && !m_state->services.submit) m_state->serial = m_state->services.scheduler->allocateKey();
+    m_state->publish = std::move(publish);
+}
+
+bool backup::Operation::start()
+{
+    auto state = m_state;
+    if (!state) return false;
+    bool expected{false};
+    if (!state->started.compare_exchange_strong(expected, true)) return false;
+    const auto& services = state->services;
+    if (!services.scheduler || !services.post || !services.wallet_name || !services.inspect || !services.write ||
+        (!services.submit && state->serial == execution::ResourceKey{})) {
+        failBeforeStart(Error::Transport);
+        return false;
+    }
+    if (bool(services.reserve_prompt_retirement) != bool(services.activate_prompt_retirement)) {
+        failBeforeStart(Error::Transport);
+        return false;
+    }
+    // The generic backup adapter predates accepted continuations and only
+    // supplies submit(). Reserve this receipt only for callers that opt in.
+    if (!services.reserve_prompt_retirement) return submit(Event::Start);
+    const auto retirement = [state] {
+        if (state->current.phase == Phase::AwaitingConfirmation) state->advance(Event::Retire);
+    };
+    execution::Admission reservation;
+    try {
+        reservation = services.reserve_prompt_retirement(retirement);
+    } catch (...) {
+        failBeforeStart(Error::Transport);
+        return false;
+    }
+    if (!reservation) {
+        failBeforeStart(Error::Transport);
+        return false;
+    }
+    state->prompt_retirement_task.store(reservation.id.value);
+    return submit(Event::Start);
+}
+
+bool backup::Operation::submit(Event event)
+{
+    const auto state = m_state;
+    if (!state || !state->services.scheduler) return false;
+    const auto work = [state, event] { state->consume(event); };
+    const auto admission = state->services.submit ? state->services.submit(work)
+        : execution::Submit(*state->services.scheduler, work, [] {}, {}, {execution::Lane::Core, 512, state->serial, execution::WorkClass::Action});
+    if (event == Event::Start) {
+        state->admitted.store(bool(admission));
+        if (!admission) failBeforeStart(Error::Transport);
+        else if (state->retire_if_confirmation_requested.load()) RequestPromptRetirement(state);
+    }
+    return bool(admission);
+}
+
+bool backup::Operation::approve()
+{
+    const auto state = m_state;
+    return state && state->started.load() && state->admission.load() != OperationState::Admission::Retired
+        && submit(Event::Approve);
+}
+
+bool backup::Operation::refuse()
+{
+    const auto state = m_state;
+    return state && state->started.load() && state->admission.load() != OperationState::Admission::Retired
+        && submit(Event::Refuse);
+}
+
+void backup::Operation::retire()
+{
+    const auto state = m_state;
+    if (!state || !state->admitted.load()) return;
+    auto expected = OperationState::Admission::Open;
+    if (!state->admission.compare_exchange_strong(expected, OperationState::Admission::Retired)) return;
+    const auto work = [state] { state->consume(Event::Retire); };
+    if (state->services.submit) state->services.submit(work);
+    else execution::Submit(*state->services.scheduler, work, [] {}, {}, {execution::Lane::Core, 256, state->serial, execution::WorkClass::Action});
+}
+
+bool backup::Operation::retiredBeforeWrite() const
+{
+    const auto state = m_state;
+    return state && state->admission.load() == OperationState::Admission::Retired;
+}
+
+void backup::Operation::retireIfAwaitingConfirmation()
+{
+    const auto state = m_state;
+    if (!state || !state->started.load() || !state->services.scheduler) return;
+    RequestPromptRetirement(state);
+}
+
+void backup::Operation::failBeforeStart(Error error)
+{
+    const auto state = m_state;
+    if (!state) return;
+    auto decision = Advance(state->current, Event::Fault, {}, {error});
+    if (!decision.accepted) return;
+    state->current = decision.snapshot;
+    state->activatePromptRetirement();
+    // A rejected start has no admitted domain operation and therefore no
+    // terminal domain receipt. Publish the local failure projection and let
+    // the request release its pre-reserved values through Cleanup.
+    try { state->publish(state->current); } catch (...) { }
+    state->admission.store(OperationState::Admission::Retired);
+    if (state->services.abandon) {
+        try { state->services.abandon(); } catch (...) { }
+    }
+}
+
+void backup::Operation::abandonBeforeStart()
+{
+    const auto state = m_state;
+    if (!state) return;
+    bool expected{false};
+    if (!state->started.compare_exchange_strong(expected, true)) return;
+    state->admission.store(OperationState::Admission::Retired);
+    if (state->services.abandon) {
+        try { state->services.abandon(); } catch (...) { }
+    }
+}
+
 BackupFileOperation::BackupFileOperation(QString raw, backup::Services services, QObject* parent)
-    : QObject(parent), m_backend(std::make_shared<backup::OperationState>())
+    : QObject(parent)
 {
     static_assert(static_cast<int>(Phase::Retired) == static_cast<int>(backup::Phase::Retired));
-    m_backend->raw = std::move(raw);
-    m_backend->services = std::move(services);
     const QPointer<BackupFileOperation> observer{this};
-    m_backend->publish = [post = m_backend->services.post, observer](backup::Snapshot projection) {
-        post([observer, projection = std::move(projection)]() mutable {
+    const auto post = services.post;
+    m_backend = std::make_shared<backup::Operation>(std::move(raw), std::move(services), [post, observer](backup::Snapshot projection) {
+        if (post) post([observer, projection = std::move(projection)]() mutable {
             if (observer) observer->apply(std::move(projection));
         });
-    };
+    });
 }
 
 BackupFileOperation::~BackupFileOperation()
 {
-    retire();
+    if (m_retire_on_destroy) retire();
 }
 
 bool BackupFileOperation::start()
 {
     if (m_started) return false;
     m_started = true;
-    const auto& services = m_backend->services;
-    if (!services.scheduler || !services.post || !services.wallet_name || !services.inspect || !services.write) {
+    if (!m_backend->start()) {
         m_projection.phase = backup::Phase::Failed;
         m_projection.error = backup::Error::Transport;
         ++m_projection.sequence;
         Q_EMIT changed();
         return false;
     }
-    return submit(backup::Event::Start);
-}
-
-bool BackupFileOperation::submit(backup::Event event)
-{
-    const auto state = m_backend;
-    const auto work = [state, event] { state->consume(event); };
-    const auto admission = state->services.submit ? state->services.submit(work)
-        : execution::Submit(*state->services.scheduler, work, [] {});
-    if (event == backup::Event::Start && admission) m_admitted = true;
-    if (!admission && event == backup::Event::Start) {
-        m_projection.phase = backup::Phase::Failed;
-        m_projection.error = backup::Error::Transport;
-        ++m_projection.sequence;
-        Q_EMIT changed();
-    }
-    return bool(admission);
+    return true;
 }
 
 bool BackupFileOperation::approve()
 {
-    return m_started && m_backend->admission.load() != backup::OperationState::Admission::Retired && submit(backup::Event::Approve);
+    return m_backend && m_backend->approve();
 }
 
 bool BackupFileOperation::refuse()
 {
-    return m_started && m_backend->admission.load() != backup::OperationState::Admission::Retired && submit(backup::Event::Refuse);
+    return m_backend && m_backend->refuse();
 }
 
 void BackupFileOperation::retire()
 {
-    if (!m_admitted || !backup::Pending(m_projection.phase)) return;
-    const auto state = m_backend;
-    auto expected = backup::OperationState::Admission::Open;
-    if (!state->admission.compare_exchange_strong(expected, backup::OperationState::Admission::Retired)) return;
-    // Logical retirement is visible to an already queued Native task. Do not
-    // require new action admission from an opening that is already closing.
-    execution::Submit(*state->services.scheduler, [state] { state->consume(backup::Event::Retire); }, [] {});
+    if (!backup::Pending(m_projection.phase)) return;
+    // Logical retirement is visible to an already queued worker task. The
+    // handle remains valid if this QObject presentation is destroyed.
+    if (m_backend) m_backend->retire();
 }
 
 void BackupFileOperation::apply(backup::Snapshot projection)

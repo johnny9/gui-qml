@@ -75,6 +75,52 @@ private Q_SLOTS:
         QCOMPARE(psbtwork::SerializeRaw(*facts->document), original);
     }
 
+    void nodePolicyIsIndependentFromVerifiedCompletion_data()
+    {
+        QTest::addColumn<int>("scenario");
+        QTest::addColumn<bool>("expected_broadcast");
+        QTest::addColumn<int>("expected_state");
+        for (const auto& [name, value] : {std::pair{"unknown", 0}, {"no-known-obstacle", 1},
+                 {"missing-or-spent", 2}, {"immature", 3}, {"nonfinal", 4}, {"below-relay", 5}, {"chain-limits", 6}}) {
+            QTest::newRow(name) << value << (value < 2) << (value == 0 ? int(psbtpolicy::State::Unknown)
+                : value == 1 ? int(psbtpolicy::State::NoKnownObstacle) : int(psbtpolicy::State::Blocked));
+        }
+        QTest::newRow("node-admission-allowed-without-chain-snapshot") << 7 << true << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("node-admission-rejected-without-chain-snapshot") << 8 << false << int(psbtpolicy::State::Blocked);
+        QTest::newRow("known-chain-blocker-takes-precedence") << 9 << false << int(psbtpolicy::State::Blocked);
+    }
+    void nodePolicyIsIndependentFromVerifiedCompletion()
+    {
+        QFETCH(int, scenario);
+        QFETCH(bool, expected_broadcast);
+        QFETCH(int, expected_state);
+        auto snapshot = Analysis();
+        auto document = *snapshot->document;
+        document.inputs[0].final_script_sig = CScript{} << std::vector<unsigned char>{};
+        snapshot->document = std::make_shared<const PartiallySignedTransaction>(document);
+        snapshot->assessment = snapshot->document;
+        snapshot->complete = true;
+        snapshot->node_facts.observed = (scenario != 0 && scenario < 7) || scenario == 9;
+        snapshot->node_facts.missing_inputs = scenario == 2 || scenario == 9;
+        snapshot->node_facts.immature_inputs = scenario == 3;
+        snapshot->node_facts.final = scenario != 4;
+        snapshot->node_facts.sufficient_fee = scenario != 5;
+        snapshot->node_facts.chain_limits = scenario != 6;
+        if (scenario == 7) snapshot->node_facts.admission = psbtpolicy::Admission::Allowed;
+        if (scenario == 8 || scenario == 9) snapshot->node_facts.admission = psbtpolicy::Admission::Rejected;
+        if (scenario == 8) snapshot->node_facts.admission_error = QStringLiteral("txn-mempool-conflict");
+        const auto raw = psbtwork::SerializeRaw(document);
+        psbtdocument::Qualify(*snapshot);
+        QVERIFY(snapshot->complete);
+        QCOMPARE(snapshot->signature_state, psbtwork::SignatureState::Verified);
+        QCOMPARE(snapshot->can_broadcast, expected_broadcast);
+        QCOMPARE(static_cast<int>(snapshot->node_state), expected_state);
+        if (scenario == 8) QVERIFY(snapshot->status.contains(QStringLiteral("txn-mempool-conflict")));
+        if (scenario == 9) QVERIFY(snapshot->status.contains(QStringLiteral("spent")));
+        QVERIFY(!snapshot->status.isEmpty());
+        QCOMPARE(psbtwork::SerializeRaw(*snapshot->document), raw);
+    }
+
     void loadFailureClearsOneCoherentTuple()
     {
         psbtdocument::Owner owner{9};

@@ -93,6 +93,7 @@ psbtwork::Request Request(psbtwork::Kind kind, PartiallySignedTransaction docume
     psbtwork::Request request;
     request.kind = kind;
     request.document = std::make_shared<const PartiallySignedTransaction>(std::move(document));
+    request.assessment = request.document;
     request.proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(*request.document));
     request.approved_fee = FEE;
     return request;
@@ -480,6 +481,35 @@ private Q_SLOTS:
         else QVERIFY(result.error.isEmpty());
     }
 
+    void standaloneSignDoesNotInstallUnverifiedContributions_data()
+    {
+        QTest::addColumn<int>("kind");
+        QTest::addColumn<int>("outcome");
+        for (int kind = 0; kind < 3; ++kind) for (int outcome = 0; outcome < 3; ++outcome)
+            QTest::newRow(qPrintable(QStringLiteral("kind-%1-outcome-%2").arg(kind).arg(outcome))) << kind << outcome;
+    }
+    void standaloneSignDoesNotInstallUnverifiedContributions()
+    {
+        QFETCH(int, kind);
+        QFETCH(int, outcome);
+        const auto fixture = psbtfeefixture::Contribution(kind != 2, kind == 1);
+        WorkWallet wallet;
+        wallet.sign_effect = [returned = fixture.returned, outcome](auto& document) {
+            document = returned;
+            if (outcome == 2) throw std::runtime_error("signing outcome unavailable after contribution");
+        };
+        if (outcome == 1) wallet.sign_error = common::PSBTError::EXTERNAL_SIGNER_FAILED;
+        const auto result = psbtwork::Execute(&wallet, Request(psbtwork::Kind::Sign, fixture.original), {});
+        QCOMPARE(wallet.sign_calls, 1);
+        QVERIFY(!result.submitted);
+        QVERIFY(!result.transaction);
+        if (kind == 0) {
+            QVERIFY(result.snapshot);
+            QCOMPARE(result.snapshot->document->inputs[0].partial_sigs, fixture.returned.inputs[0].partial_sigs);
+        } else {
+            QVERIFY(!result.snapshot || result.snapshot->document->inputs[0].partial_sigs.empty());
+        }
+    }
     void successfulSigningRetainsFinalizedDocument()
     {
         auto fixture = psbtfeefixture::SignedWithoutScripts(false);
@@ -984,71 +1014,52 @@ private Q_SLOTS:
         }
     }
 
-    void broadcastMetadataFill_data()
+    void broadcastUsesOnlyCapturedAssessment_data()
     {
         QTest::addColumn<int>("mode"); QTest::addColumn<int>("expected");
-        QTest::newRow("native-witness-metadata") << 0 << int(psbtwork::Error::None);
-        QTest::newRow("nested-witness-metadata") << 1 << int(psbtwork::Error::None);
-        QTest::newRow("metadata-error") << 2 << int(psbtwork::Error::Core);
-        QTest::newRow("metadata-changes-output") << 3 << int(psbtwork::Error::Changed);
-        QTest::newRow("metadata-incompatible-time-locks") << 4 << int(psbtwork::Error::Changed);
-        QTest::newRow("metadata-conflicts-with-fee") << 5 << int(psbtwork::Error::Fee);
-        QTest::newRow("metadata-still-incomplete") << 6 << int(psbtwork::Error::Invalid);
-        QTest::newRow("metadata-throws") << 7 << int(psbtwork::Error::Uncertain);
-        QTest::newRow("incomplete-without-wallet") << 8 << int(psbtwork::Error::Invalid);
+        QTest::newRow("native-witness-assessment") << 0 << int(psbtwork::Error::None);
+        QTest::newRow("nested-witness-assessment") << 1 << int(psbtwork::Error::None);
+        QTest::newRow("missing-assessment") << 2 << int(psbtwork::Error::Changed);
+        QTest::newRow("changed-output") << 3 << int(psbtwork::Error::Changed);
+        QTest::newRow("incompatible-time-locks") << 4 << int(psbtwork::Error::Changed);
+        QTest::newRow("conflicting-fee") << 5 << int(psbtwork::Error::Fee);
+        QTest::newRow("incomplete-assessment") << 6 << int(psbtwork::Error::Invalid);
+        QTest::newRow("invalid-final-signature") << 7 << int(psbtwork::Error::Invalid);
+        QTest::newRow("complete-without-wallet") << 8 << int(psbtwork::Error::None);
     }
-    void broadcastMetadataFill()
+    void broadcastUsesOnlyCapturedAssessment()
     {
         QFETCH(int, mode); QFETCH(int, expected);
         const auto fixture = psbtfeefixture::SignedWithoutScripts(mode == 1);
-        auto complete_document = fixture.document;
-        complete_document.inputs[0].witness_script = fixture.witness;
-        complete_document.inputs[0].redeem_script = fixture.redeem;
+        auto assessed = fixture.document;
+        assessed.inputs[0].witness_script = fixture.witness;
+        assessed.inputs[0].redeem_script = fixture.redeem;
         CMutableTransaction expected_transaction;
-        QVERIFY(FinalizeAndExtractPSBT(complete_document, expected_transaction));
+        QVERIFY(FinalizeAndExtractPSBT(assessed, expected_transaction));
         auto request = Request(psbtwork::Kind::Broadcast, fixture.document);
         const auto source = request.document; const auto original = Bytes(*source);
-        WorkWallet wallet;
-        if (mode == 2) wallet.inspect_error = common::PSBTError::EXTERNAL_SIGNER_FAILED;
-        wallet.throw_inspect = mode == 7;
-        wallet.inspect_effect = [fixture, mode](auto& document) {
-            // Leave the contradictory result incomplete. Finalization with
-            // the full, correct parent would normalize witness_utxo back to
-            // that parent; that no longer represents a changed fee.
-            if (mode != 5 && mode != 6) {
-                document.inputs[0].witness_script = fixture.witness;
-                document.inputs[0].redeem_script = fixture.redeem;
-            }
-            if (mode == 3) document.outputs[0].amount = 1'499;
-            if (mode == 4) IncompatibleTimeLocks(document);
-            if (mode == 5) document.inputs[0].witness_utxo = CTxOut{1'999,
-                fixture.document.inputs[0].non_witness_utxo->vout[0].scriptPubKey};
-        };
+        if (mode == 3) assessed.outputs[0].amount = 1'499;
+        if (mode == 4) IncompatibleTimeLocks(assessed);
+        if (mode == 5) assessed.inputs[0].witness_utxo.nValue = 1'999;
+        if (mode == 6) assessed = fixture.document;
+        if (mode == 7) { QVERIFY(assessed.inputs[0].final_script_witness.stack.size() > 1); assessed.inputs[0].final_script_witness.stack[1][0] ^= 1; }
+        request.assessment = mode == 2 ? nullptr : std::make_shared<const PartiallySignedTransaction>(std::move(assessed));
+        WorkWallet wallet; wallet.throw_inspect = true;
         int broadcasts{0}; CTransactionRef submitted;
         const auto result = psbtwork::Execute(mode == 8 ? nullptr : &wallet, std::move(request), {{}, [&](auto transaction) {
             ++broadcasts; submitted = std::move(transaction); return psbtwork::BroadcastResult{true, {}};
         }});
         QCOMPARE(result.code, static_cast<psbtwork::Error>(expected));
-        QCOMPARE(wallet.sign_calls, 0); QCOMPARE(wallet.inspect_calls, mode == 8 ? 0 : 1);
-        if (mode != 8) { QCOMPARE(wallet.options.size(), size_t{1}); QVERIFY(!wallet.options[0].first); QVERIFY(!wallet.options[0].second); }
-        const bool accepted = mode <= 1;
+        QCOMPARE(wallet.sign_calls, 0); QCOMPARE(wallet.inspect_calls, 0);
+        QVERIFY(wallet.options.empty());
+        const bool accepted = mode <= 1 || mode == 8;
         QCOMPARE(broadcasts, accepted ? 1 : 0); QCOMPARE(result.submitted, accepted);
         QCOMPARE(bool(result.transaction), accepted); QVERIFY(!result.snapshot);
         QCOMPARE(Bytes(*source), original);
         if (accepted) {
-            QVERIFY(submitted); QCOMPARE(submitted->GetHash(), expected_transaction.GetHash());
-            QCOMPARE(submitted->vin[0].prevout, expected_transaction.vin[0].prevout);
-            QVERIFY(submitted->vout == expected_transaction.vout);
+            QVERIFY(submitted); QCOMPARE(submitted->GetWitnessHash(), MakeTransactionRef(expected_transaction)->GetWitnessHash());
             QCOMPARE(result.txid, QString::fromStdString(expected_transaction.GetHash().ToString()));
-        } else {
-            QVERIFY(!submitted); QVERIFY(result.txid.isEmpty());
-            if (mode == 2) QCOMPARE(result.error, QString::fromStdString(
-                common::PSBTErrorString(common::PSBTError::EXTERNAL_SIGNER_FAILED).translated));
-            if (mode == 3 || mode == 4) QCOMPARE(result.error, QString{"The reviewed transaction changed after review."});
-            if (mode == 5) QCOMPARE(result.error, QString{"The transaction fee changed after review."});
-            if (mode == 6 || mode == 8) QCOMPARE(result.error, QString{"PSBT is not complete and cannot be broadcast."});
-            if (mode == 7) QCOMPARE(result.error, QString{"The PSBT action ended without a confirmed outcome. Reconcile before retrying."});
-        }
+        } else { QVERIFY(!submitted); QVERIFY(result.txid.isEmpty()); QVERIFY(!result.error.isEmpty()); }
     }
 
     void broadcastEffectOutcome_data()
@@ -1234,7 +1245,7 @@ private Q_SLOTS:
         QCOMPARE(proof->amount, std::optional<CAmount>{500});
         psbtwork::Request request;
         request.kind = psbtwork::Kind::Broadcast;
-        request.document = source; request.proof = proof; request.approved_fee = 500;
+        request.document = source; request.assessment = source; request.proof = proof; request.approved_fee = 500;
         int submissions{0};
         CTransactionRef submitted;
         psbtwork::Context context;
@@ -1282,7 +1293,7 @@ private Q_SLOTS:
         const auto source = std::make_shared<const PartiallySignedTransaction>(std::move(original));
         const auto bytes = Bytes(*source);
         psbtwork::Request request;
-        request.kind = psbtwork::Kind(kind); request.document = source;
+        request.kind = psbtwork::Kind(kind); request.document = source; request.assessment = source;
         request.proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(*source));
         request.approved_fee = request.proof->amount;
         WorkWallet wallet;

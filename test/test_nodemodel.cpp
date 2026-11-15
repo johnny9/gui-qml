@@ -36,6 +36,8 @@
 #include <vector>
 
 #include <QVariantMap>
+#include <QDateTime>
+#include <QLocale>
 #include <QEventLoop>
 #include <QScopeGuard>
 #include <QSemaphore>
@@ -345,6 +347,8 @@ private Q_SLOTS:
     }
 
     void initTestCase() { SelectParams(ChainType::REGTEST); }
+    void localizedInformationDatesUseTheCapturedSystemConvention_data();
+    void localizedInformationDatesUseTheCapturedSystemConvention();
     void acceptedNetworkActionOutlivesFacade();
     void originalAdmissionIsCountedBeforeQuietClose_data();
     void originalAdmissionIsCountedBeforeQuietClose();
@@ -558,6 +562,32 @@ void NodeModelTests::manualOriginalActionScopeOwnsLateStagesAndNativeCleanup()
     value.reset(); env.drain(); env.publishAll(); QCOMPARE(retired, 1); QVERIFY(!model.isDrained());
     original.reset(); env.drain(); env.publishAll();
     QTRY_VERIFY_WITH_TIMEOUT(model.isDrained(), ASYNC_TIMEOUT_MS);
+}
+
+void NodeModelTests::localizedInformationDatesUseTheCapturedSystemConvention_data()
+{
+    QTest::addColumn<QString>("name"); QTest::newRow("de-DE-24-hour") << QStringLiteral("de_DE"); QTest::newRow("en-US-12-hour") << QStringLiteral("en_US");
+}
+void NodeModelTests::localizedInformationDatesUseTheCapturedSystemConvention()
+{
+    QFETCH(QString, name); const QLocale previous; const QLocale locale{name}; QLocale::setDefault(locale);
+    const auto restore_locale = qScopeGuard([&] { QLocale::setDefault(previous); });
+    MockNode node; ConfigureNodeModelDefaults(node); MempoolState mempool; ConfigureMempoolGetters(node, mempool);
+    const auto timestamp = QDateTime(QDate{2026, 11, 15}, QTime{18, 30}).toSecsSinceEpoch();
+    node.get_header_tip_fn = [timestamp](int& height, int64_t& time) { height = 1; time = timestamp; return true; };
+    node.get_num_blocks_fn = [] { return 1; }; node.get_last_block_time_fn = [timestamp] { return timestamp; };
+    ManualExecutionEnvironment env; NodeModel::Services services;
+    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
+    services.schedule = [](auto, auto, auto) {}; services.cancel = [](auto) {};
+    NodeModel model{node, false, std::move(services)};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    env.drain(); env.publishAll(); model.initializeResult(true, {}, false, false);
+    // Diagnostics publication schedules the subsequent native status read.
+    for (int turn{0}; turn < 16 && (!env.turnsIdle() || !env.publicationsIdle()); ++turn) { env.drain(); env.publishAll(); }
+    QVERIFY(env.turnsIdle()); QVERIFY(env.publicationsIdle()); QVERIFY(node.calls.getHeaderTip.load() > 0);
+    const auto expected = locale.toString(QDateTime::fromSecsSinceEpoch(timestamp), QLocale::ShortFormat);
+    QCOMPARE(InformationValue(model, "Header time"), expected); QCOMPARE(InformationValue(model, "Last block time"), expected);
+    const auto startup = InformationValue(model, "Startup time"); QVERIFY(!startup.isEmpty()); QVERIFY(locale.toDateTime(startup, QLocale::ShortFormat).isValid());
 }
 
 void NodeModelTests::manualInitializationWaitsForNativeSubscriptionAndPublication()

@@ -6,6 +6,8 @@
 #define BITCOIN_QML_PSBTWORKTYPES_H
 
 #include <qml/models/psbtfee.h>
+#include <qml/psbtpolicy.h>
+#include <qml/psbtsignatures.h>
 #include <QBitArray>
 #include <QString>
 #include <QStringList>
@@ -15,7 +17,7 @@
 // The Native effect API stays in psbtwork.h and does not enter the owner.
 namespace psbtwork {
 enum class Kind { Inspect, Load, Sign, Broadcast, Save, Clipboard };
-enum class Error { None, Invalid, Unavailable, NeedsUnlock, IncorrectPassphrase, Changed, Fee, Core, Uncertain, Relock };
+enum class Error { None, Invalid, Unavailable, NeedsUnlock, IncorrectPassphrase, Changed, Fee, Core, Uncertain, Relock, UnverifiedSignatures };
 struct InspectionFacts {
     bool wallet_available{false}, signer_available{false};
     QString requested_status;
@@ -56,12 +58,16 @@ struct Snapshot {
     int unsigned_inputs{0}, could_sign{0};
     InspectionFacts facts;
     SignatureState signature_state{SignatureState::Unverified};
+    psbtpolicy::Facts node_facts;
+    psbtpolicy::State node_state{psbtpolicy::State::Unknown};
 };
 struct Result {
     Error code{Error::None};
     QString error, path, txid, clipboard;
     CTransactionRef transaction;
     std::shared_ptr<const Snapshot> snapshot;
+    std::shared_ptr<const PartiallySignedTransaction> quarantined_document;
+    psbtsignatures::Status signature_status{psbtsignatures::Status::Unknown};
     bool submitted{false}, saved{false}, relock_failed{false};
 };
 } // namespace psbtwork

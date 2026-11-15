@@ -3,10 +3,15 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/psbtfeeservices.h>
+#include <qml/psbtpolicy.h>
+#include <qml/psbtwork.h>
+#include <test/mocks/psbtfeefixture.h>
 #include <test/mocks/mocknode.h>
 #include <test/mocks/manualexecutionenvironment.h>
+#include <test/mocks/feepreviewchain.h>
 #include <test/qt_test_registry.h>
 
+#include <core_io.h>
 #include <key.h>
 #include <script/script.h>
 #include <script/solver.h>
@@ -36,6 +41,56 @@ PartiallySignedTransaction Witness(const CScript& script)
     psbt.inputs[0].non_witness_utxo = nullptr;
     psbt.inputs[0].witness_utxo = CTxOut{2000, script};
     return psbt;
+}
+
+class AdmissionNode : public MockNode
+{
+public:
+    int change_tip_on_read{0};
+    int best_hash_reads{0};
+
+    uint256 getBestBlockHash() override
+    {
+        ++best_hash_reads;
+        return change_tip_on_read > 0 && best_hash_reads >= change_tip_on_read ? uint256{} : uint256::ONE;
+    }
+};
+
+class AdmissionChain : public FeePreviewChain
+{
+public:
+    bool input_spent{false};
+    bool unavailable_tip{false};
+
+    bool findBlock(const uint256&, const interfaces::FoundBlock& block = {}) override
+    {
+        if (unavailable_tip) return false;
+        if (block.m_height) *block.m_height = 200;
+        if (block.m_mtp_time) *block.m_mtp_time = 1'000;
+        if (block.m_in_active_chain) *block.m_in_active_chain = true;
+        block.found = true;
+        return true;
+    }
+
+    void findCoins(std::map<COutPoint, Coin>& coins) override
+    {
+        for (auto& [outpoint, coin] : coins) {
+            coin = input_spent ? Coin{} : Coin{CTxOut{2'000, CScript{} << OP_TRUE}, 1, false};
+        }
+    }
+
+    CFeeRate mempoolMinFee() override { return CFeeRate{0}; }
+    CFeeRate relayMinFee() override { return CFeeRate{0}; }
+};
+
+UniValue AdmissionResult(const CTransaction& transaction, bool allowed, std::string reason = {})
+{
+    UniValue result{UniValue::VOBJ};
+    result.pushKV("txid", transaction.GetHash().ToString());
+    result.pushKV("wtxid", transaction.GetWitnessHash().ToString());
+    result.pushKV("allowed", allowed);
+    if (!allowed) result.pushKV("reject-reason", std::move(reason));
+    return result;
 }
 } // namespace
 
@@ -113,6 +168,40 @@ private Q_SLOTS:
         document.inputs[1].time_locktime = 500000001;
         QVERIFY(!psbtfee::MatchesReview(document, proof, CAmount{1000}));
     }
+    void resolvedProofOwnsTheMatchingAssessmentAndRawCandidate_data()
+    {
+        QTest::addColumn<int>("scenario");
+        QTest::newRow("verified-legacy") << 0;
+        QTest::newRow("invalid-finalized-key") << 1;
+        QTest::newRow("unavailable-output-proof") << 2;
+    }
+    void resolvedProofOwnsTheMatchingAssessmentAndRawCandidate()
+    {
+        QFETCH(int, scenario);
+        ECC_Context ecc;
+        auto source = psbtfeefixture::Legacy(2, false);
+        auto expected = source;
+        CMutableTransaction transaction; QVERIFY(FinalizeAndExtractPSBT(expected, transaction));
+        psbtfee::Outputs outputs;
+        for (auto& input : source.inputs) {
+            outputs.emplace(input.GetOutPoint(), input.non_witness_utxo->vout[input.prev_out]);
+            input.non_witness_utxo = nullptr; input.witness_utxo.SetNull();
+        }
+        if (scenario == 1) source.inputs[0].final_script_sig = psbtfeefixture::Legacy(2, false).inputs[0].final_script_sig;
+        const auto raw = psbtwork::SerializeRaw(source);
+        const auto result = psbtfee::Resolve(source, {}, [&](const COutPoint& outpoint) -> std::optional<CTxOut> {
+            return scenario == 2 ? std::nullopt : std::optional<CTxOut>{outputs.at(outpoint)};
+        });
+        QVERIFY(result.analysis); QVERIFY(result.analysis->assessment);
+        QCOMPARE(result.proof->amount.has_value(), scenario != 2);
+        QCOMPARE(result.analysis->signature_state, scenario == 0 ? psbtwork::SignatureState::Verified
+            : scenario == 1 ? psbtwork::SignatureState::Invalid : psbtwork::SignatureState::Unverified);
+        QCOMPARE(result.analysis->can_broadcast, scenario == 0);
+        QCOMPARE(bool(result.transaction), scenario == 0);
+        if (scenario == 0) QCOMPARE(result.transaction->GetWitnessHash(), MakeTransactionRef(transaction)->GetWitnessHash());
+        QCOMPARE(psbtwork::SerializeRaw(source), raw);
+    }
+
     void readerReusesIndependentProofAndSkipsUnnecessaryLookups()
     {
         const auto document = Amounts({2000, 2000}, {3000});
@@ -160,6 +249,112 @@ private Q_SLOTS:
         QVERIFY(!lookup(outpoint)); state = 2;
         QCOMPARE(lookup(outpoint)->nValue, CAmount{2000});
         QCOMPARE(node.calls.getUnspentOutput.load(), 3);
+    }
+
+    void finalizedTransactionAdmissionUsesExactPublicNodeRpc_data()
+    {
+        QTest::addColumn<int>("scenario");
+        QTest::addColumn<int>("expected_admission");
+        QTest::addColumn<int>("expected_state");
+        QTest::newRow("allowed-exact-candidate") << 0 << int(psbtpolicy::Admission::Allowed) << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("bounded-rejection-reason") << 1 << int(psbtpolicy::Admission::Rejected) << int(psbtpolicy::State::Blocked);
+        QTest::newRow("empty-response-is-unknown") << 2 << int(psbtpolicy::Admission::Unknown) << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("multiple-results-is-unknown") << 3 << int(psbtpolicy::Admission::Unknown) << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("wrong-txid-is-unknown") << 4 << int(psbtpolicy::Admission::Unknown) << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("wrong-wtxid-is-unknown") << 5 << int(psbtpolicy::Admission::Unknown) << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("unfinished-result-is-unknown") << 6 << int(psbtpolicy::Admission::Unknown) << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("malformed-reason-is-unknown") << 7 << int(psbtpolicy::Admission::Unknown) << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("rpc-exception-is-unknown") << 8 << int(psbtpolicy::Admission::Unknown) << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("tip-changes-before-admission-clears-chain-facts") << 9 << int(psbtpolicy::Admission::Allowed) << int(psbtpolicy::State::NoKnownObstacle);
+        QTest::newRow("known-chain-blocker-precedes-admission") << 10 << int(psbtpolicy::Admission::Allowed) << int(psbtpolicy::State::Blocked);
+        QTest::newRow("unavailable-chain-and-admission-stay-unknown") << 11 << int(psbtpolicy::Admission::Unknown) << int(psbtpolicy::State::Unknown);
+        QTest::newRow("reorg-during-admission-clears-both-observations") << 12 << int(psbtpolicy::Admission::Unknown) << int(psbtpolicy::State::Unknown);
+    }
+    void finalizedTransactionAdmissionUsesExactPublicNodeRpc()
+    {
+        QFETCH(int, scenario);
+        QFETCH(int, expected_admission);
+        QFETCH(int, expected_state);
+
+        CMutableTransaction mutable_transaction;
+        const COutPoint outpoint{Txid::FromUint256(uint256::ONE), 4};
+        mutable_transaction.vin.emplace_back(outpoint);
+        mutable_transaction.vout.emplace_back(1'000, CScript{} << OP_TRUE);
+        const auto transaction = MakeTransactionRef(std::move(mutable_transaction));
+
+        AdmissionNode node;
+        AdmissionChain chain;
+        chain.input_spent = scenario == 9 || scenario == 10;
+        chain.unavailable_tip = scenario == 11;
+        node.change_tip_on_read = scenario == 9 ? 3 : scenario == 12 ? 4 : 0;
+        std::string method, uri;
+        UniValue parameters;
+        node.execute_rpc_fn = [&](const std::string& called_method, const UniValue& called_parameters, const std::string& called_uri) {
+            method = called_method; parameters = called_parameters; uri = called_uri;
+            if (scenario == 8) throw std::runtime_error("RPC unavailable");
+            if (scenario == 2 || scenario == 11) return UniValue{UniValue::VARR};
+            UniValue result = AdmissionResult(*transaction, scenario != 1 && scenario != 7,
+                scenario == 1 ? std::string(1'500, 'r') : "policy-rejected");
+            if (scenario == 3) {
+                UniValue response{UniValue::VARR};
+                response.push_back(result); response.push_back(result);
+                return response;
+            }
+            if (scenario == 4 || scenario == 5) {
+                UniValue wrong{UniValue::VOBJ};
+                wrong.pushKV("txid", scenario == 4 ? uint256{}.ToString() : transaction->GetHash().ToString());
+                wrong.pushKV("wtxid", scenario == 5 ? uint256{}.ToString() : transaction->GetWitnessHash().ToString());
+                wrong.pushKV("allowed", true);
+                UniValue response{UniValue::VARR}; response.push_back(std::move(wrong));
+                return response;
+            }
+            if (scenario == 6) {
+                UniValue unfinished{UniValue::VOBJ};
+                unfinished.pushKV("txid", transaction->GetHash().ToString());
+                unfinished.pushKV("wtxid", transaction->GetWitnessHash().ToString());
+                UniValue response{UniValue::VARR}; response.push_back(std::move(unfinished));
+                return response;
+            }
+            if (scenario == 7) {
+                UniValue malformed{UniValue::VOBJ};
+                malformed.pushKV("txid", transaction->GetHash().ToString());
+                malformed.pushKV("wtxid", transaction->GetWitnessHash().ToString());
+                malformed.pushKV("allowed", false);
+                malformed.pushKV("reject-reason", 17);
+                UniValue response{UniValue::VARR}; response.push_back(std::move(malformed));
+                return response;
+            }
+            UniValue response{UniValue::VARR}; response.push_back(std::move(result));
+            return response;
+        };
+
+        const auto facts = psbtpolicy::ReadNode(&node, &chain)(transaction, CAmount{1'000});
+        QCOMPARE(method, std::string("testmempoolaccept"));
+        QCOMPARE(uri, std::string{});
+        QCOMPARE(parameters.size(), size_t{2});
+        QVERIFY(parameters[0].isArray());
+        QCOMPARE(parameters[0].size(), size_t{1});
+        QCOMPARE(parameters[0][0].get_str(), EncodeHexTx(*transaction));
+        QVERIFY(parameters[1].isNum());
+        QCOMPARE(parameters[1].getValStr(), std::string("0"));
+        QCOMPARE(static_cast<int>(facts.admission), expected_admission);
+        QCOMPARE(static_cast<int>(psbtpolicy::Evaluate(facts).state), expected_state);
+        QCOMPARE(node.calls.executeRpc.load(), 1);
+        QCOMPARE(node.best_hash_reads, scenario == 11 ? 3 : 4);
+        if (scenario == 1) QCOMPARE(facts.admission_error.size(), 1024);
+        if (scenario == 9) {
+            QVERIFY(!facts.observed);
+            QVERIFY(!facts.missing_inputs);
+            QCOMPARE(facts.admission, psbtpolicy::Admission::Allowed);
+        }
+        if (scenario == 10) {
+            QVERIFY(facts.observed);
+            QVERIFY(facts.missing_inputs);
+            QCOMPARE(facts.admission, psbtpolicy::Admission::Allowed);
+            QVERIFY(psbtpolicy::Evaluate(facts).explanation.contains("spent"));
+        }
+        if (scenario == 11 || scenario == 12) QVERIFY(!facts.observed);
+        if (scenario == 12) QCOMPARE(facts.admission, psbtpolicy::Admission::Unknown);
     }
     void missingServicePortsRejectAdmission()
     {

@@ -36,6 +36,7 @@
 #include <qml/models/transactionactivitymodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/models/walletbalancereader.h>
+#include <qml/models/walletreceivemodel.h>
 
 #include <consensus/amount.h>
 #include <interfaces/handler.h>
@@ -68,7 +69,7 @@ class Node;
 } // namespace interfaces
 
 namespace walletsend { class Operation; class CommitConsent; }
-namespace walletsigning { struct Result; }
+namespace walletsigning { class ApprovalOwner; struct ApprovalSnapshot; }
 namespace walletprepare { struct Request; struct Result; }
 
 class PsbtQmlModel;
@@ -83,8 +84,8 @@ public:
     Q_ENUM(SendSubmission)
     enum class SendRecord { SendRecordUnknown, SendRecordAbsentAtObservation, SendRecordRecorded };
     Q_ENUM(SendRecord)
-    enum class SendState { SendIdle, SendPending, SendNeedsConfirmation, SendNeedsUnlock, SendFailed, SendCommitted, SendSignedOnly, SendPartiallySigned, SendUncertain, SendClosed };
-    enum class ApprovalState { ApprovalInitial, ApprovalWaiting, ApprovalSigned, ApprovalPartiallySigned, ApprovalFailed, ApprovalClosed, ApprovalOtherReview, ApprovalUncertain };
+    enum class SendState { SendIdle, SendPending, SendNeedsConfirmation, SendNeedsUnlock, SendFailed, SendCommitted, SendSignedOnly, SendPartiallySigned, SendUncertain, SendClosed, SendUnverified };
+    enum class ApprovalState { ApprovalInitial, ApprovalWaiting, ApprovalSigned, ApprovalPartiallySigned, ApprovalFailed, ApprovalClosed, ApprovalOtherReview, ApprovalUncertain, ApprovalUnverified };
     Q_ENUM(ApprovalState)
     Q_ENUM(SendState)
     enum class PreparationState { PreparationIdle, PreparationPending, PreparationNeedsUnlock, PreparationReady, PreparationFailed, PreparationStale, PreparationClosed, PreparationUncertain };
@@ -205,6 +206,7 @@ private:
     Q_PROPERTY(quint64 preparationId READ preparationId NOTIFY preparationChanged)
     Q_PROPERTY(bool preparationBusy READ preparationBusy NOTIFY preparationChanged)
     Q_PROPERTY(ApprovalState signerApprovalState READ signerApprovalState NOTIFY signerApprovalChanged)
+    Q_PROPERTY(QString signerUnverifiedResultToken READ signerUnverifiedResultToken NOTIFY unverifiedSigningResultChanged)
     Q_PROPERTY(quint64 signerApprovalId READ signerApprovalId NOTIFY signerApprovalChanged)
     Q_PROPERTY(QString signerApprovalError READ signerApprovalError NOTIFY signerApprovalChanged)
     Q_PROPERTY(bool signerApprovalSignerNotFound READ signerApprovalSignerNotFound NOTIFY signerApprovalChanged)
@@ -223,6 +225,7 @@ private:
     Q_PROPERTY(BackupFileOperation* backupOperation READ backupOperation NOTIFY backupOperationChanged)
     Q_PROPERTY(QString settingsError READ settingsError NOTIFY settingsErrorChanged)
     Q_PROPERTY(WalletSecurityModel* security READ security CONSTANT)
+    Q_PROPERTY(WalletReceiveModel* receive READ receive CONSTANT)
     Q_PROPERTY(SecurityState securityState READ securityState NOTIFY securityOperationChanged)
     Q_PROPERTY(bool securityBusy READ securityBusy NOTIFY securityOperationChanged)
     Q_PROPERTY(QString securityError READ securityError NOTIFY securityOperationChanged)
@@ -273,6 +276,7 @@ public:
     Q_INVOKABLE void requestClose();
     Q_INVOKABLE void answerClose(const QString& token, bool accept);
     std::shared_ptr<walletopening::Session> opening() const { return m_opening; }
+    WalletReceiveModel* receive() const { return m_receive; }
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequest();
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequestWithPassphrase(const QString& passphrase);
     Q_INVOKABLE void reloadReceiveRequests();
@@ -298,8 +302,8 @@ public:
     PaymentRequest* detailPaymentRequest() const { return m_detail_payment_request; }
     ReceiveRequestHistoryModel* receiveRequests() const { return m_receive_requests; }
     bool receiveRequestReconciliationPending() const;
-    QString receiveRequestReconciliationError() const { return m_receive_reconciliation_error; }
-    bool receiveRequestReconciliationApplying() const { return m_receive_reconciliation_applying; }
+    QString receiveRequestReconciliationError() const { return m_receipt_projection ? m_receipt_projection->errorText() : QString{}; }
+    bool receiveRequestReconciliationApplying() const { return m_receipt_projection && m_receipt_projection->applying(); }
     WalletQmlModelTransaction* currentTransaction() const { return m_current_transaction; }
     QVariantMap currentTransactionFlow() const;
     QVariantMap currentTransactionFlowPreview() const;
@@ -345,6 +349,7 @@ public:
     quint64 sendOperationId() const { return m_send_request_id; }
     std::shared_ptr<walletsend::Operation> sendOperation() const { return m_send_operation; }
     Q_INVOKABLE quint64 requestBroadcastCurrentTransaction();
+    Q_INVOKABLE quint64 requestRecheckCurrentTransaction();
     Q_INVOKABLE QVariantList availableReceiveAddressTypes() const;
     Q_INVOKABLE QString defaultReceiveAddressType() const;
     Q_INVOKABLE QString estimatedFeeForTarget(unsigned int target_blocks) const;
@@ -366,7 +371,9 @@ public:
     Q_INVOKABLE bool setDefaultReceiveAddressType(const QString& address_type);
     Q_INVOKABLE QString receiveAddressTypeLabel(const QString& address_type) const;
     Q_INVOKABLE quint64 requestImportPsbtFromFile(const QString& path);
+    std::shared_ptr<backup::InstallCoordinator> fileInstallCoordinator() const { return m_backup_services.coordinator; }
     Q_INVOKABLE quint64 requestSaveCurrentTransactionAsPsbt(const QString& path);
+    Q_INVOKABLE quint64 requestSaveUnverifiedSignerResult(const QString& token, const QString& path);
     PsbtActionState psbtActionState() const { return m_psbt_action_state; }
     quint64 psbtActionId() const { return m_psbt_action_id; }
     bool psbtActionBusy() const { return m_psbt_action_state == PsbtActionState::PsbtPending; }
@@ -387,9 +394,11 @@ public:
     bool observationsAllowed() const { return !m_stopping && !m_admission_closed; }
     bool available() const { return m_wallet && !m_admission_closed && !m_unload_requested->load() && (!m_opening_native_events.unloaded || !m_opening_native_events.unloaded->load()); }
     ApprovalState signerApprovalState() const;
+    QString signerUnverifiedResultToken() const;
+    bool signerApprovalBusy() const;
     quint64 signerApprovalId() const { return m_approval_id; }
-    QString signerApprovalError() const { return m_approval_error; }
-    bool signerApprovalSignerNotFound() const { return m_approval_signer_not_found; }
+    QString signerApprovalError() const;
+    bool signerApprovalSignerNotFound() const;
     void closeAdmission();
     void registerReview(WalletQmlModelTransaction* review) override;
     void setReviewRetirementPostForTesting(std::function<void(std::function<void()>)> post);
@@ -483,6 +492,7 @@ Q_SIGNALS:
     void receivingAddressStateChanged();
     void externalSignerApprovalSucceeded();
     void signerApprovalChanged();
+    void unverifiedSigningResultChanged();
     void preparationChanged();
     void coinSelectionChanged();
     void psbtActionChanged();
@@ -581,7 +591,7 @@ private:
     void setTransactionStatus(const QString& error, bool needs_unlock = false);
     void setSettingsError(const QString& error);
     QString persistedReceiveAddressTypeKey() const;
-    enum class PsbtActionKind { Import, Save, Broadcast };
+    enum class PsbtActionKind { Import, Recheck, Save, Broadcast };
     struct PsbtReceipt { std::mutex mutex; QString path, txid; bool saved{false}, submitted{false}; };
     struct PsbtActionValue {
         std::shared_ptr<const void> lifetime;
@@ -591,7 +601,10 @@ private:
         QString error;
     };
     using PsbtAction = execution::OwnedCommand<PsbtActionValue>;
-    quint64 startPsbtAction(PsbtActionKind kind, const QString& path = {});
+    quint64 startPsbtAction(PsbtActionKind kind, const QString& path = {},
+                            std::shared_ptr<const PartiallySignedTransaction> export_document = {});
+    std::shared_ptr<FileExportRequest> preparePsbtFileExport(quint64 action_id, const QString& path,
+                                                             const std::shared_ptr<PsbtReceipt>& receipt);
     void startPsbtFileExport(quint64 action_id, const QString& path,
                              std::shared_ptr<const PartiallySignedTransaction> document,
                              const std::shared_ptr<PsbtReceipt>& receipt);
@@ -603,6 +616,7 @@ private:
     PsbtActionKind m_psbt_action_kind{PsbtActionKind::Import};
     PsbtImportResult m_psbt_import_result{PsbtImportResult::PsbtUnsupported};
     quint64 m_psbt_action_id{0};
+    quint64 m_psbt_file_export_action_id{0};
     quint64 m_psbt_view_epoch{0}, m_psbt_action_view_epoch{0};
     std::weak_ptr<const PartiallySignedTransaction> m_psbt_action_document;
     bool m_psbt_action_had_document{false};
@@ -630,6 +644,7 @@ private:
     QString m_name, m_rpc_name;
     bool m_canonical_identity{false};
     bool m_can_get_addresses{false}, m_taproot{false}, m_receive_preference_pending{false};
+    QSet<QString> m_proven_receive_types;
     QString m_receive_preference, m_receive_preference_error;
     bool m_metadata_known{false}, m_private_keys_disabled{false}, m_external_signer{false}, m_opening_drained{true};
     std::shared_ptr<BackendExecutor> m_backend_executor{std::make_shared<BackendExecutor>(execution::Limits::Bounded())};
@@ -656,15 +671,12 @@ private:
     ReceiveRequestHistoryModel* m_receive_requests{nullptr};
     std::shared_ptr<walletreceipts::Reader> m_receipts;
     std::shared_ptr<walletrequests::Store> m_request_store;
+    WalletReceiveModel* m_receive{nullptr};
     bool m_request_storage_loaded{false}, m_request_storage_busy{false};
     QString m_request_storage_error;
     bool m_receiving_address_ready{false}, m_receiving_address_pending{false};
     std::shared_ptr<const walletrequests::AddressIntent> m_receiving_intent;
-    std::shared_ptr<const walletreceipts::Snapshot> m_receipt_snapshot;
-    QTimer m_receive_payment_poll_timer;
-    bool m_receive_reconciliation_pending{false}, m_receive_reconciliation_applying{false};
-    bool m_receipt_projection_again{false}, m_receipt_needs_poll{false};
-    QString m_receive_reconciliation_error;
+    ReceiptReconciliationModel* m_receipt_projection{nullptr};
     void publishReceipts();
     WalletQmlModelTransaction* m_current_transaction{nullptr};
     wallet::CCoinControl m_coin_control;
@@ -694,6 +706,7 @@ private:
     bool m_custom_psbt_lookup{false};
     std::shared_ptr<const psbtfee::RequestIdentity> m_psbt_fee_request;
     std::shared_ptr<const psbtfee::Analysis> m_psbt_fee_proof;
+    bool m_psbt_requires_recheck{false};
     bool m_psbt_fee_pending{false};
     bool m_psbt_key_can_send{false};
     bool m_psbt_can_commit_complete{false};
@@ -702,7 +715,11 @@ private:
     ApprovalState m_approval_state{ApprovalState::ApprovalInitial};
     QString m_approval_error;
     bool m_approval_signer_not_found{false};
-    std::shared_ptr<execution::OwnedCommand<walletsigning::Result>> m_approval;
+    bool m_approval_local_pending{false};
+    bool m_approval_command_admitted{false};
+    std::shared_ptr<walletsigning::ApprovalOwner> m_signer_approval_operation;
+    std::shared_ptr<const walletsigning::ApprovalSnapshot> m_approval_projection;
+    quint64 m_approval_attempt_review{0}, m_approval_attempt_view{0};
     std::shared_ptr<execution::OwnedCommand<walletprepare::Result>> m_preparation;
     std::shared_ptr<transactionattempt::Owner> m_transaction_attempt;
     transactionattempt::Snapshot m_preparation_projection;
@@ -710,9 +727,7 @@ private:
     quint64 m_next_preparation_id{0};
     quint64 m_gui_preparation_intent_revision{0};
     quint64 m_current_review_identity{0};
-    QPointer<WalletQmlModelTransaction> m_approval_review;
-    CTransactionRef m_approval_transaction;
-    void publishApproval();
+    void publishApproval(walletsigning::ApprovalSnapshot snapshot);
     struct SendFacts {
         CAmount available{0}, selected{0}, dust{0}, minimum_relay{0};
         QHash<unsigned int, CAmount> target_rates;

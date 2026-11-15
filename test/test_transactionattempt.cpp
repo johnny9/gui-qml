@@ -231,6 +231,100 @@ private Q_SLOTS:
         QVERIFY(transport.quiescent());
     }
 
+    void rejectedRequestCannotReplaceTheOriginalAttemptMetadata_data()
+    {
+        QTest::addColumn<bool>("ordinary");
+        QTest::newRow("replacement-replay") << false;
+        QTest::newRow("ordinary-request-replay") << true;
+    }
+    void rejectedRequestCannotReplaceTheOriginalAttemptMetadata()
+    {
+        QFETCH(bool, ordinary);
+        ManualRoutedExecution transport;
+        transactionattempt::Owner owner{transport.scheduler};
+        const auto opening = NewOpening();
+        const QString original{64, QLatin1Char{'a'}};
+        transactionattempt::ReplacementStart input{7, 3, {opening, 0, true}, original};
+        transactionattempt::Result started, rejected;
+        QVERIFY(owner.beginReplacement(input, [&](auto value) { started = std::move(value); }));
+        transport.drain();
+        if (ordinary) {
+            transactionattempt::StartInput replay;
+            replay.id = 7; replay.intent_revision = 3; replay.facts = input.facts;
+            QVERIFY(owner.begin(replay, [&](auto value) { rejected = std::move(value); }));
+        } else {
+            input.original_txid = QString(64, QLatin1Char{'b'});
+            QVERIFY(owner.beginReplacement(input, [&](auto value) { rejected = std::move(value); }));
+        }
+        transport.drain();
+        QVERIFY(rejected.transition == transactionattempt::Transition::Ignored);
+        QCOMPARE(rejected.snapshot.ticket, started.snapshot.ticket);
+        QCOMPARE(rejected.snapshot.phase, started.snapshot.phase);
+        QCOMPARE(rejected.snapshot.kind, transactionattempt::Kind::Replacement);
+        QCOMPARE(rejected.snapshot.original_txid, original);
+        QVERIFY(transport.quiescent());
+    }
+    void replacementOwnerRetainsOriginalAndApprovedCandidateAcrossTransitions()
+    {
+        ManualRoutedExecution transport;
+        transactionattempt::Owner owner{transport.scheduler};
+        const auto opening = NewOpening();
+        const QString original_txid{QString(64, QLatin1Char{'a'})};
+        transactionattempt::ReplacementStart input{1, 1, {opening, 0, true}, original_txid};
+        transactionattempt::Result begun_result;
+        bool did_begin{false};
+        QVERIFY(owner.beginReplacement(input, [&](auto result) { did_begin = true; begun_result = std::move(result); }));
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(!did_begin);
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(did_begin);
+        QVERIFY(begun_result.snapshot.kind == transactionattempt::Kind::Replacement);
+        QCOMPARE(begun_result.snapshot.original_txid, original_txid);
+        QVERIFY(begun_result.snapshot.phase == transactionattempt::Phase::Preparing);
+
+        auto candidate = std::make_shared<const walletreview::Snapshot>();
+        transactionattempt::Result installed;
+        bool installed_value{false};
+        QVERIFY(owner.install(begun_result.snapshot.ticket, input.facts, candidate, 9,
+            [&](auto result) { installed_value = true; installed = std::move(result); }));
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(installed_value);
+        QVERIFY(installed.snapshot.phase == transactionattempt::Phase::Reviewing);
+        QVERIFY(installed.snapshot.candidate == candidate);
+        QCOMPARE(installed.snapshot.candidate_review, transactionattempt::ReviewId{9});
+
+        transactionattempt::Result submitting;
+        bool submitting_value{false};
+        const transactionattempt::CurrentFacts reviewed{opening, 9, true};
+        QVERIFY(owner.advance(installed.snapshot.ticket, reviewed, transactionattempt::Phase::Reviewing,
+            transactionattempt::Phase::Submitting,
+            [&](auto result) { submitting_value = true; submitting = std::move(result); }));
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(submitting_value);
+        QVERIFY(submitting.snapshot.phase == transactionattempt::Phase::Submitting);
+        QCOMPARE(submitting.snapshot.original_txid, original_txid);
+        QVERIFY(submitting.snapshot.candidate == candidate);
+
+        transactionattempt::Result stale;
+        bool stale_value{false};
+        QVERIFY(owner.advance(submitting.snapshot.ticket, {opening, 9, false}, transactionattempt::Phase::Submitting,
+            transactionattempt::Phase::NeedsRevalidation,
+            [&](auto result) { stale_value = true; stale = std::move(result); }));
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(stale_value);
+        QVERIFY(stale.snapshot.phase == transactionattempt::Phase::NeedsRevalidation);
+        QCOMPARE(stale.snapshot.original_txid, original_txid);
+        QVERIFY(!stale.snapshot.candidate);
+        QVERIFY(!stale.snapshot.candidate_current);
+        QVERIFY(owner.close());
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(transport.quiescent());
+    }
+
     void ownerTransitionsAndOutcomeRunOffGuiOnProductionDomainLane()
     {
         BackendExecutor executor{execution::Limits::Bounded()};

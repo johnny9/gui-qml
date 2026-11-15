@@ -8,55 +8,155 @@
 #include <qml/retainedvalue.h>
 
 #include <QFile>
+
+#include <atomic>
 #include <mutex>
 #include <utility>
 
 namespace {
 constexpr qsizetype MAX_PSBT_EXPORT_BYTES{100 * 1024 * 1024};
-
 } // namespace
 
-struct FileExportOperationModel::Source {
-    std::mutex mutex;
-    std::shared_ptr<std::shared_ptr<const PartiallySignedTransaction>> document;
+struct FileExportRequest::State {
+    struct Source {
+        mutable std::mutex mutex;
+        std::shared_ptr<std::shared_ptr<const PartiallySignedTransaction>> document;
 
-    std::shared_ptr<const PartiallySignedTransaction> take()
-    {
-        std::lock_guard lock{mutex};
-        return document ? std::exchange(*document, {}) : std::shared_ptr<const PartiallySignedTransaction>{};
-    }
-    void clear()
-    {
-        // Releasing this alias only activates its reserved Cleanup turn. The
-        // retained PSBT itself is destroyed by the scheduler, never here.
-        std::shared_ptr<std::shared_ptr<const PartiallySignedTransaction>> retired;
+        bool set(std::shared_ptr<const PartiallySignedTransaction> value)
         {
             std::lock_guard lock{mutex};
-            retired = std::move(document);
+            if (!document || !value || *document) return false;
+            *document = std::move(value);
+            return true;
         }
-        retired.reset();
-    }
+        bool hasDocument() const
+        {
+            std::lock_guard lock{mutex};
+            return document && bool(*document);
+        }
+        std::shared_ptr<const PartiallySignedTransaction> take()
+        {
+            std::lock_guard lock{mutex};
+            return document ? std::exchange(*document, {}) : std::shared_ptr<const PartiallySignedTransaction>{};
+        }
+        void clear()
+        {
+            // Releasing this alias only activates its reserved Cleanup turn.
+            // The retained PSBT itself is destroyed by the scheduler.
+            std::shared_ptr<std::shared_ptr<const PartiallySignedTransaction>> retired;
+            {
+                std::lock_guard lock{mutex};
+                retired = std::move(document);
+            }
+            retired.reset();
+        }
+    };
+
+    std::shared_ptr<Source> source{std::make_shared<Source>()};
+    std::shared_ptr<backup::Operation> operation;
+    std::atomic_bool started{false};
+    std::shared_ptr<std::atomic_bool> continuation{std::make_shared<std::atomic_bool>(false)};
 };
 
-FileExportOperationModel::FileExportOperationModel(QString rawPath,
-    const std::shared_ptr<const PartiallySignedTransaction>& document, backup::Services services, QObject* parent)
+FileExportRequest::FileExportRequest(std::shared_ptr<State> state) : m_state{std::move(state)} {}
+
+FileExportRequest::~FileExportRequest()
+{
+    const auto state = m_state;
+    // Once an accepted continuation has started, its operation owns the
+    // retained source and cleanup path even if its last GUI-facing handle is
+    // released with the facade.
+    if (state && state->started.load() && state->continuation->load()) return;
+    abandon();
+}
+
+bool FileExportRequest::prepare(std::shared_ptr<const PartiallySignedTransaction> document)
+{
+    const auto state = m_state;
+    return state && state->source->set(std::move(document));
+}
+
+bool FileExportRequest::startPrepared()
+{
+    const auto state = m_state;
+    if (!state || !state->operation) return false;
+    bool expected{false};
+    if (!state->started.compare_exchange_strong(expected, true)) return false;
+    if (!state->source->hasDocument()) {
+        state->operation->failBeforeStart(backup::Error::CoreBackup);
+        return false;
+    }
+    return state->operation->start();
+}
+
+bool FileExportRequest::start(std::shared_ptr<const PartiallySignedTransaction> document)
+{
+    const auto state = m_state;
+    if (!state || state->started.load()) return false;
+    const bool prepared = prepare(std::move(document));
+    if (!prepared && !state->source->hasDocument()) {
+        bool expected{false};
+        if (state->started.compare_exchange_strong(expected, true)) state->operation->failBeforeStart(backup::Error::Transport);
+        return false;
+    }
+    return startPrepared();
+}
+
+void FileExportRequest::retainAcceptedContinuation()
+{
+    if (m_state) m_state->continuation->store(true);
+}
+
+void FileExportRequest::abandon()
+{
+    const auto state = m_state;
+    if (!state) return;
+    state->continuation->store(false);
+    if (state->started.load()) state->operation->retire();
+    else if (state->operation) state->operation->abandonBeforeStart();
+    state->source->clear();
+}
+
+void FileExportRequest::retireFromProjection()
+{
+    const auto state = m_state;
+    if (!state) return;
+    // A pre-start continuation is still waiting for the accepted PSBT
+    // preparation result and must survive loss of its GUI projection. Once
+    // file export has started, accepted continuations only retire if the
+    // inspected destination requires confirmation. A fresh-path save remains
+    // the accepted effect; an already admitted write is also preserved.
+    if (!state->started.load() && state->continuation->load()) return;
+    if (state->started.load() && state->operation) {
+        if (state->continuation->load()) state->operation->retireIfAwaitingConfirmation();
+        else state->operation->retire();
+    } else {
+        abandon();
+    }
+}
+
+FileExportOperationModel::FileExportOperationModel(QString rawPath, backup::Services services, QObject* parent)
     : QObject(parent)
 {
-    if (!document) {
-        m_start_error = tr("No captured PSBT is available to export.");
-        return;
-    }
-    auto retained_document = execution::RetainValues<std::shared_ptr<const PartiallySignedTransaction>>(
-        services.scheduler, [&document] { return std::make_unique<std::shared_ptr<const PartiallySignedTransaction>>(document); });
-    if (!retained_document) {
+    auto state = std::make_shared<FileExportRequest::State>();
+    const auto scheduler = services.scheduler;
+    if (!scheduler) {
         m_start_error = tr("PSBT export cleanup capacity is unavailable.");
-        return;
+    } else {
+        auto retained_document = execution::RetainValues<std::shared_ptr<const PartiallySignedTransaction>>(
+            scheduler, [] { return std::make_unique<std::shared_ptr<const PartiallySignedTransaction>>(); });
+        if (!retained_document) m_start_error = tr("PSBT export cleanup capacity is unavailable.");
+        else state->source->document = std::move(retained_document);
     }
-    m_source = std::make_shared<Source>();
-    m_source->document = std::move(retained_document);
+    const auto previous_available = std::move(services.available);
+    const auto continuation = state->continuation;
+    services.available = [continuation, previous_available] {
+        if (continuation->load()) return true;
+        return !previous_available || previous_available();
+    };
     if (!services.coordinator) services.coordinator = std::make_shared<backup::InstallCoordinator>();
     const auto coordinator = services.coordinator;
-    const auto source = m_source;
+    const auto source = state->source;
     services.wallet_name = [] { return std::string{"transaction"}; };
     services.inspect = [](const std::string& raw, const std::string&) {
         return backup::Inspect(raw, "transaction", ".psbt");
@@ -73,16 +173,41 @@ FileExportOperationModel::FileExportOperationModel(QString rawPath,
             return file.write(bytes) == bytes.size() && file.flush();
         }, *coordinator);
     };
+    const auto previous_outcome = std::move(services.outcome);
+    services.outcome = [source, continuation, previous_outcome](backup::Snapshot snapshot) {
+        if (previous_outcome) previous_outcome(snapshot);
+        if (!backup::Pending(snapshot.phase) && continuation->load()) source->clear();
+    };
+    const auto previous_abandon = std::move(services.abandon);
+    services.abandon = [source, previous_abandon] {
+        source->clear();
+        if (previous_abandon) previous_abandon();
+    };
     m_operation = new BackupFileOperation(std::move(rawPath), std::move(services), this);
+    state->operation = m_operation->backend();
+    m_request = std::shared_ptr<FileExportRequest>{new FileExportRequest{std::move(state)}};
     connect(m_operation, &BackupFileOperation::changed, this, [this] {
-        if (!m_operation->pending() && m_source) m_source->clear();
+        if (m_operation && !m_operation->pending() && m_request) m_request->m_state->source->clear();
         Q_EMIT changed();
     });
+}
+
+FileExportOperationModel::FileExportOperationModel(QString rawPath,
+    const std::shared_ptr<const PartiallySignedTransaction>& document, backup::Services services, QObject* parent)
+    : FileExportOperationModel(std::move(rawPath), std::move(services), parent)
+{
+    if (!document) {
+        m_start_error = tr("No captured PSBT is available to export.");
+        return;
+    }
+    const auto state = m_request->m_state;
+    if (!state || !state->source->set(document)) m_start_error = tr("PSBT export cleanup capacity is unavailable.");
 }
 
 FileExportOperationModel::~FileExportOperationModel()
 {
     retire();
+    if (m_operation) m_operation->detachRetirement();
 }
 
 bool FileExportOperationModel::pending() const
@@ -134,16 +259,30 @@ QString FileExportOperationModel::errorText() const
 bool FileExportOperationModel::start()
 {
     if (std::exchange(m_started, true)) return false;
-    if (!m_operation) {
+    if (!m_start_error.isEmpty() || !m_request) {
         Q_EMIT changed();
         return false;
     }
+    const auto state = m_request->m_state;
+    if (!state || !state->source->hasDocument()) {
+        if (state && state->operation) state->operation->failBeforeStart(backup::Error::CoreBackup);
+        Q_EMIT changed();
+        return false;
+    }
+    bool expected{false};
+    if (!state->started.compare_exchange_strong(expected, true)) return false;
     const bool admitted = m_operation->start();
-    if (!admitted && !m_operation->pending()) {
-        if (m_source) m_source->clear();
+    if (!admitted && !pending()) {
+        state->source->clear();
         Q_EMIT changed();
     }
     return admitted;
+}
+
+std::shared_ptr<FileExportRequest> FileExportOperationModel::requestForAcceptedContinuation()
+{
+    if (m_request) m_request->retainAcceptedContinuation();
+    return m_request;
 }
 
 bool FileExportOperationModel::approve()
@@ -158,6 +297,5 @@ bool FileExportOperationModel::refuse()
 
 void FileExportOperationModel::retire()
 {
-    if (m_operation) m_operation->retire();
-    if (m_source && (!m_operation || !m_operation->pending())) m_source->clear();
+    if (m_request) m_request->retireFromProjection();
 }

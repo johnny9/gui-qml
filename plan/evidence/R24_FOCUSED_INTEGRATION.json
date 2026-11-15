@@ -1,0 +1,77 @@
+{
+  "app_tested": "e3373af66b2aa05430bdf162e36ce96994dd6c4d",
+  "app_merge": "0224c4c0f2fa919990a21f723da589a6bef87803",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "status": "R24 focused implementation qualified/integrated; final order acceptance awaits reopened R22 prerequisite",
+  "body_counts": [
+    {
+      "id": "wallet-send-domain-and-real-thread-owner",
+      "bodies": 111,
+      "passed": 111,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    {
+      "id": "wallet-model-signer-view-and-replacement",
+      "bodies": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    {
+      "id": "activity-list-model-identity",
+      "bodies": 58,
+      "passed": 58,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    {
+      "id": "watchonly-wallet-signer-integration",
+      "bodies": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    }
+  ],
+  "total_bodies": 196,
+  "static": {
+    "pinned_tidy_entries": 11,
+    "qml_lint": "focused-03/qml-lint.exit=0",
+    "app_lint": "lint-01/RESULT.json=0 at exact candidate; isolated branch/head rechecked"
+  },
+  "actual_processes": {
+    "signer-substitution-send": "pass14.722s",
+    "signer-substitution-speed-up": "pass16.268s",
+    "bridge-protocol": "pass exit0",
+    "runtime-block-write-failure-exit-status": "pass actual fatal Core status1",
+    "outer_stderr_bytes": {
+      "signer": 0,
+      "lifecycle": 0
+    },
+    "binaries": "final-01/BINARIES.sha256"
+  },
+  "worker_evidence": "../approval/evidence/FINAL_HANDOFF.md",
+  "source_review_guard": "Added immediate ownership check before accessing projection after reentrant Domain admission; same existing schedule now includes accepted-Domain-delete",
+  "retained_failures": [
+    "focused-01 expected107 but actual111 allpass after composition; original manifest receipt kept",
+    "worker focused13/tidy01 stale MOC setup",
+    "worker external signer process10-13 actual failures; Qt reuse workaround and later positives retained"
+  ],
+  "limits": [
+    "Original R09 HWI deadline/lock/cancellation Core limitations retained; no physical hardware tested",
+    "R22 close-at-prompt backpressure followup pending",
+    "R42 exhaustive coverage/platform/configuration/sanitizers pending"
+  ],
+  "commands": {
+    "focused": "QT6_VALIDATION_BUILD_ROOT=/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113 QT6_VALIDATION_BUILD_PROFILE=tidy python3 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R14/run_red.py /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R24/integration/source /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R24/integration/focused-03 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R24/integration/focused-03.json --qml-lint",
+    "final": "python3 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R24/integration/final-01/run_host.py",
+    "lint": "python3 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R24/integration/lint-01/run.py"
+  },
+  "Core_changed": false,
+  "Qt_changed": false,
+  "no_push": true
+}

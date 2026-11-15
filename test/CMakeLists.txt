@@ -122,6 +122,7 @@ endif()
 
 if(ENABLE_WALLET)
   target_sources(bitcoinqml_unit_tests PRIVATE
+    test_activityexportoperation.cpp
     test_profileinspectionowner.cpp
     test_activityfilterproxymodel.cpp
     test_addresslistmodel.cpp
@@ -136,6 +137,9 @@ if(ENABLE_WALLET)
     test_psbtdocument.cpp
     test_receiverequesthistorymodel.cpp
     test_receiverequestoperation.cpp
+    test_paymentrequesteditormodel.cpp
+    test_requestsharingmodel.cpp
+    test_walletreceivemodel.cpp
     test_sendrecipientslistmodel.cpp
     test_sendrecipient.cpp
     test_feeselection.cpp
@@ -252,11 +256,35 @@ endif()
 add_executable(bitcoinqml_qmltests
   qml/qml_tests_main.cpp
   qmlcoverage.cpp
+  mocks/receiveqmlfixture.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/messagesigningprompt.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/exacttextdocument.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/exacttextdocument.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/texteditsessionmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/texteditsessionmodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/paymentrequesteditormodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/paymentrequesteditormodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/receiptreconciliationmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/receiptreconciliationmodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/receivereservationmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/receivereservationmodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/walletreceivemodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/walletreceivemodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestsharingmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestsharingmodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestimageexportoperation.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestimageexportoperation.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/activityexportoperation.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/activityexportoperation.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/backuppolicyoperation.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/backuppolicyoperation.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/backuppolicy.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/walletrequesterror.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/walletrequesterror.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/requestsharing.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/requestsharing.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/components/ownedqrimage.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/components/ownedqrimage.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/feeselectionmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/signerdiscovery.cpp

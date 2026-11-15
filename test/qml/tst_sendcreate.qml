@@ -29,6 +29,7 @@ TestCase {
     }
 
     function init() {
+        testWalletTransaction.setNodePolicyStatusForTest("")
         testSetup.failOnWarnings()
         BitcoinUri.releasePublications()
         BitcoinUri.resetRequestControlsForTest()
@@ -180,6 +181,25 @@ TestCase {
         testWalletModel.setCurrentTransactionNeedsRevalidationForTest(false)
         tryCompare(sendButton, "visible", true)
         tryCompare(sendButton, "enabled", true)
+    }
+
+    function test_imported_review_explains_policy_and_rechecks_without_sending() {
+        testWalletModel.currentTransactionIsImportedPsbt = true
+        testWalletModel.currentTransactionCanSend = false
+        testWalletModel.currentTransactionCanBroadcast = false
+        testWalletTransaction.setNodePolicyStatusForTest("An input is already spent. Recheck before submitting.")
+        const calls = testWalletModel.recheckTransactionCalls()
+        const review = createTemporaryObject(reviewComponent, testCase.Window.window.contentItem, {width: 1000, height: 900})
+        const explanation = findChild(review, "sendReviewNodePolicy")
+        const recheck = findChild(review, "sendReviewRecheck")
+        verify(explanation.visible)
+        compare(explanation.text, "An input is already spent. Recheck before submitting.")
+        verify(recheck.visible)
+        verify(recheck.enabled)
+        recheck.clicked()
+        compare(testWalletModel.recheckTransactionCalls(), calls + 1)
+        compare(testWalletModel.sendTransactionCalls, 0)
+        compare(testWalletModel.broadcastCurrentTransactionCalls, 0)
     }
 
     function test_local_sign_only_is_a_separate_non_send_command() {
@@ -705,6 +725,34 @@ TestCase {
         compare(testWalletModel.lastSavedPsbtPath, "file:///tmp/review-test.psbt")
         compare(popup.opened, true)
         popup.close()
+    }
+
+    function test_unverified_signer_export_keeps_the_review_and_captured_result() {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem)
+        page.width = testCase.width
+        page.height = testCase.height
+        page.visible = true
+        page.openTransactionReview()
+        const popup = findChild(page, "transactionReviewPopup")
+        tryCompare(popup, "opened", true)
+        const original = testWalletModel.currentTransaction
+        testWalletModel.signerUnverifiedResultToken = "original-approval:review:view"
+        try {
+            const review = popup.contentItem
+            const path = findChild(review, "sendTransactionReviewSavePsbtPathField")
+            const button = findChild(review, "sendTransactionReviewExportUnverifiedSignerButton")
+            verify(button !== null)
+            tryCompare(button, "visible", true)
+            path.text = "file:///tmp/unverified-signer-test.psbt"
+            button.clicked()
+            tryCompare(testWalletModel, "psbtActionBusy", false)
+            compare(testWalletModel.lastSavedPsbtPath, "file:///tmp/unverified-signer-test.psbt")
+            compare(testWalletModel.currentTransaction, original)
+            compare(popup.opened, true)
+        } finally {
+            testWalletModel.signerUnverifiedResultToken = ""
+            popup.close()
+        }
     }
 
     function test_psbt_save_error_remains_visible_in_review() {

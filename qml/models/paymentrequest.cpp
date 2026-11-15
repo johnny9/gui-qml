@@ -214,10 +214,19 @@ void PaymentRequest::setPayloadPreparer(PayloadPreparer prepare)
 
 void PaymentRequest::setPreparedPayload(QString payload)
 {
+    if (payload.isEmpty() && m_prepare_payload && !m_payment_received) { refreshPayload(); return; }
     ++m_payload_revision; // Retire any in-flight formatter of earlier fields.
     m_prepared_payload = std::move(payload);
     m_payload_current = true;
     Q_EMIT qrPayloadChanged();
+}
+void PaymentRequest::setStoredRevision(uint64_t revision)
+{
+    m_stored_revision = revision; m_stored_edit_revision = m_revision; m_stored_payload_revision = m_payload_revision;
+}
+bool PaymentRequest::matchesStoredRevision(uint64_t revision) const
+{
+    return revision != 0 && m_stored_revision == revision && m_stored_edit_revision == m_revision && m_stored_payload_revision == m_payload_revision;
 }
 
 void PaymentRequest::refreshPayload()

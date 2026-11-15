@@ -12,7 +12,9 @@ import "../../components"
 Page {
     id: root
     objectName: "activityDetailsPage"
-    property var wallet: null
+    property WalletQmlModel wallet: null
+    readonly property bool actionContextAvailable: root.visible && root.wallet !== null && root.wallet.available
+    onActionContextAvailableChanged: if (!actionContextAvailable) root.retireDialogs()
     property string transactionId: ""
     readonly property ActivityDetailModel activityModel: wallet ? wallet.transactionActivityModel.createDetailView(root) : null
     Binding { target: root.activityModel; property: "transactionId"; value: root.transactionId; when: root.activityModel !== null }
@@ -23,7 +25,7 @@ Page {
     Binding { target: root.transactionLinks; property: "txid"; value: root.txid }
     property int outputIndex: -1
     property bool detailsExpanded: false
-    onTxidChanged: { detailsExpanded = false; entryPopup.close() }
+    onTxidChanged: { detailsExpanded = false; root.retireDialogs() }
     readonly property string txid: transactionData.txid || ""
     readonly property bool detailsLoading: !!transactionData.detailsLoading
     readonly property string detailsError: transactionData.detailsError || ""
@@ -114,7 +116,8 @@ Page {
         if (requestId) paymentRequestModal.openRequest(requestId)
     }
 
-    PaymentRequestModal { id: paymentRequestModal; objectName: "transactionPaymentRequestModal"; wallet: root.wallet }
+    property bool walletViewActive: true
+    RequestDetailsHost { id: paymentRequestModal; objectName: "transactionPaymentRequestModal"; wallet: root.wallet; contextActive: root.walletViewActive }
 
     function openExternalLink(link) {
         externalLinkPopup.link = link
@@ -153,7 +156,7 @@ Page {
                     amount: root.amount
                     amountColor: root.inactive ? Theme.color.neutral7 : root.incoming ? Theme.color.green : Theme.color.neutral9
                     subtitle: root.actionLabel + (root.transactionData.timestamp
-                        ? " · " + Qt.formatDateTime(new Date(root.transactionData.timestamp * 1000), "MMM d, h:mm AP") : "")
+                        ? " · " + Qt.formatDateTime(new Date(root.transactionData.timestamp * 1000), Qt.locale(), Locale.ShortFormat) : "")
                     iconComponent: ActivityIcon {
                         objectName: "transactionDetailIcon"
                         iconSize: 48
@@ -359,26 +362,40 @@ Page {
             TextButton { text: qsTr("Close"); onClicked: entryPopup.close() }
         }
     }
-    onVisibleChanged: if (!visible) entryPopup.close()
-    onWalletChanged: entryPopup.close()
+    function retireDialogs() {
+        if (entryPopup) entryPopup.close()
+        if (speedUpOverlay) speedUpOverlay.close()
+        if (speedUpComplete) speedUpComplete.close()
+    }
+    onWalletChanged: root.retireDialogs()
 
     SpeedUpOverlay {
         id: speedUpOverlay
         txid: root.txid
         bumpModel: root.wallet ? root.wallet.bumpModel : null
         onBumpSucceeded: function(newTxid, walletRecordState, walletSubmissionState) {
+            if (!root.actionContextAvailable) return
+            speedUpComplete.contextWallet = root.wallet
             speedUpComplete.txid = newTxid
             speedUpComplete.walletRecordState = walletRecordState
             speedUpComplete.walletSubmissionState = walletSubmissionState
             speedUpComplete.open()
         }
+        onViewNewTransaction: function(txid) {
+            if (root.actionContextAvailable) root.showTransaction(txid)
+        }
     }
 
     SpeedUpComplete {
         id: speedUpComplete
-        onClosed: if (root.wallet) root.wallet.transactionActivityModel.reload()
+        property WalletQmlModel contextWallet: null
+        onClosed: contextWallet = null
         onDone: close()
         onViewNewTransaction: function(txid) {
+            if (!root.actionContextAvailable || contextWallet !== root.wallet) {
+                close()
+                return
+            }
             close()
             root.showTransaction(txid)
         }

@@ -33,12 +33,15 @@ void psbtdocument::Qualify(psbtwork::Snapshot& snapshot)
         : snapshot.complete ? psbtwork::SignatureState::Verified : psbtwork::SignatureState::Incomplete;
     const bool authorized = amounts_verified && !snapshot.metadata_failed;
     snapshot.can_sign = authorized && !snapshot.complete && snapshot.facts.signer_available && snapshot.could_sign > 0;
-    snapshot.can_broadcast = authorized && snapshot.signature_state == psbtwork::SignatureState::Verified;
+    const auto node = psbtpolicy::Evaluate(snapshot.node_facts);
+    snapshot.node_state = node.state;
+    snapshot.can_broadcast = authorized && snapshot.signature_state == psbtwork::SignatureState::Verified
+        && node.state != psbtpolicy::State::Blocked;
     if (!authorized) {
         if (!amounts_verified && snapshot.error.isEmpty()) snapshot.error = Tr("The transaction fee is missing or invalid.");
         snapshot.status = snapshot.error;
     } else if (!snapshot.facts.requested_status.isEmpty()) snapshot.status = snapshot.facts.requested_status;
-    else if (snapshot.complete) snapshot.status = Tr("Transaction is fully signed and ready for broadcast.");
+    else if (snapshot.complete) snapshot.status = node.explanation;
     else if (!snapshot.facts.wallet_available) snapshot.status = Tr("No wallet is loaded. You can inspect, copy, or save this PSBT.");
     else if (!snapshot.facts.signer_available) snapshot.status = Tr("This wallet cannot sign transactions because private keys are disabled.");
     else if (snapshot.could_sign) snapshot.status = Tr("This wallet can sign %n input(s).", nullptr, snapshot.could_sign);
@@ -51,6 +54,7 @@ psbtwork::Result psbtdocument::Owner::consume(std::uint64_t operation, psbtwork:
         // A completed effect keeps its scalar receipt. Structural data from a
         // retired generation is released here, without entering GUI delivery.
         result.snapshot.reset();
+        result.quarantined_document.reset();
         return result;
     }
     m_snapshot.operation = operation;

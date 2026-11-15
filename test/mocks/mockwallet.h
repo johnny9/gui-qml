@@ -161,6 +161,8 @@ public:
     std::function<CoinsList()> list_coins_fn;
     std::function<OutputType()> get_default_address_type_fn;
     std::function<std::unique_ptr<interfaces::Handler>(TransactionChangedFn)> handle_transaction_changed_fn;
+    std::function<CTransactionRef(const Txid&)> get_tx_fn;
+    std::function<std::vector<interfaces::WalletTxOut>(const std::vector<COutPoint>&)> get_coins_fn;
     std::function<bool(const Txid&)> transaction_can_be_bumped_fn;
     std::function<bool(const Txid&, const wallet::CCoinControl&, std::vector<bilingual_str>&, CAmount&, CAmount&, CMutableTransaction&)> create_bump_transaction_fn;
     std::function<bool(CMutableTransaction&)> sign_bump_transaction_fn;
@@ -304,6 +306,16 @@ public:
     {
         ++calls.commitBumpTransaction;
         return commit_bump_transaction_fn ? commit_bump_transaction_fn(txid, std::move(mtx), errors, bumped_txid) : false;
+    }
+
+    CTransactionRef getTx(const Txid& txid) override
+    {
+        return get_tx_fn ? get_tx_fn(txid) : StubWallet::getTx(txid);
+    }
+
+    std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>& outpoints) override
+    {
+        return get_coins_fn ? get_coins_fn(outpoints) : StubWallet::getCoins(outpoints);
     }
 
 private:

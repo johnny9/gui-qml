@@ -111,8 +111,20 @@ backup::Proposal backup::Inspect(const std::string& raw, const std::string& sugg
     return InspectTarget(raw, suggested_name, QString::fromLatin1(suffix.data(), static_cast<qsizetype>(suffix.size())), false);
 }
 
+backup::Proposal backup::InspectPng(const std::string& raw)
+{
+    if (raw.empty() || raw.size() > 32'768 || raw.find('\0') != std::string::npos) return {{}, {}, false, false, Error::InvalidPath};
+    const QUrl url{QString::fromUtf8(raw.data(), static_cast<qsizetype>(raw.size())), QUrl::StrictMode};
+    if (!url.isValid() || !url.isLocalFile() || !QDir::isAbsolutePath(url.toLocalFile())) return {{}, {}, false, false, Error::InvalidPath};
+    QString path = QDir::cleanPath(url.toLocalFile());
+    if (path.contains(QChar{0}) || QFileInfo{path}.isDir()) return {{}, {}, false, false, Error::InvalidPath};
+    const QString selected = path;
+    if (!path.endsWith(QStringLiteral(".png"), Qt::CaseInsensitive)) path += QStringLiteral(".png");
+    auto result = ReadTarget(path); result.renamed = path != selected; return result;
+}
+
 backup::WriteResult backup::Write(const Proposal& approved, bool destination_approved, const Producer& producer,
-                                  InstallCoordinator& coordinator)
+                                  InstallCoordinator& coordinator, std::function<bool()> admission)
 {
     if (approved.error != Error::None || approved.path.empty() || ((approved.exists || approved.renamed) && !destination_approved)) return {Error::Changed};
     const QString final_path = QString::fromUtf8(approved.path.data(), static_cast<qsizetype>(approved.path.size()));
@@ -129,6 +141,9 @@ backup::WriteResult backup::Write(const Proposal& approved, bool destination_app
     const auto current = ReadTarget(final_path);
     if (current.error != Error::None) return {current.error};
     if (current.exists != approved.exists || current.version != approved.version) return {Error::Changed};
+    // Rendering/staging is not external-effect admission. Request sharing can
+    // revoke a source during those stages without modifying the final file.
+    if (admission && !admission()) return {Error::Changed};
     bool installed{false};
     if (approved.exists) {
         installed = RenameOver(fs::PathFromString(Utf8(staged_path)), fs::PathFromString(approved.path));

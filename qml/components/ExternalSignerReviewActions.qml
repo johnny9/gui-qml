@@ -23,6 +23,7 @@ Item {
         case WalletQmlModel.ApprovalPartiallySigned: return "partiallySigned"
         case WalletQmlModel.ApprovalFailed: return "error"
         case WalletQmlModel.ApprovalUncertain: return "uncertain"
+        case WalletQmlModel.ApprovalUnverified: return "unverified"
         default: return "initial"
         }
     }
@@ -35,16 +36,16 @@ Item {
                 ? root.wallet.currentTransactionReviewMessage
                 : qsTr("Signed on external signer. More signatures are required.")
         }
+        if ((reviewState === "error" || reviewState === "uncertain" || reviewState === "unverified")) return errorMessage
         if (!canSend) return ""
         if (reviewState === "busy") return qsTr("Finishing the previous external signer request.")
         if (reviewState === "signed") return qsTr("Signed on external signer. Ready to send.")
         if (reviewState === "waiting") return qsTr("Waiting for approval on external signer.")
-        if ((reviewState === "error" || reviewState === "uncertain")) return errorMessage
         return qsTr("Approve on external signer to broadcast this transaction.")
     }
     readonly property color statusColor: {
         if (reviewState === "signed") return Theme.color.green
-        if ((reviewState === "error" || reviewState === "uncertain")) return Theme.color.red
+        if ((reviewState === "error" || reviewState === "uncertain" || reviewState === "unverified")) return Theme.color.red
         return Theme.color.neutral7
     }
     readonly property string buttonText: {
@@ -52,6 +53,7 @@ Item {
         if (reviewState === "partiallySigned") return qsTr("More signatures required")
         if (reviewState === "waiting") return qsTr("Waiting for approval...")
         if (reviewState === "busy") return qsTr("External signer busy")
+        if (reviewState === "unverified") return qsTr("Unverified signer result")
         if (reviewState === "error" && root.wallet && root.wallet.signerApprovalSignerNotFound) return qsTr("Retry after connecting signer")
         if ((reviewState === "error" || reviewState === "uncertain")) return qsTr("Retry external signer")
         return qsTr("Approve on external signer")
@@ -89,7 +91,7 @@ Item {
             objectName: root.buttonObjectName
             Layout.fillWidth: true
             text: root.buttonText
-            enabled: root.canSend && root.reviewState !== "waiting" && root.reviewState !== "busy" && root.reviewState !== "partiallySigned" && root.reviewState !== "uncertain"
+            enabled: root.canSend && root.reviewState !== "waiting" && root.reviewState !== "busy" && root.reviewState !== "partiallySigned" && root.reviewState !== "uncertain" && root.reviewState !== "unverified"
             onClicked: {
                 if (root.reviewState === "signed") {
                     root.sendRequested()
