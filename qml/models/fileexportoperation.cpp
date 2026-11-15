@@ -5,6 +5,7 @@
 #include <qml/models/fileexportoperation.h>
 
 #include <qml/psbtwork.h>
+#include <qml/retainedvalue.h>
 
 #include <QFile>
 #include <mutex>
@@ -17,30 +18,42 @@ constexpr qsizetype MAX_PSBT_EXPORT_BYTES{100 * 1024 * 1024};
 
 struct FileExportOperationModel::Source {
     std::mutex mutex;
-    std::shared_ptr<const PartiallySignedTransaction> document;
+    std::shared_ptr<std::shared_ptr<const PartiallySignedTransaction>> document;
 
     std::shared_ptr<const PartiallySignedTransaction> take()
     {
         std::lock_guard lock{mutex};
-        return std::exchange(document, {});
+        return document ? std::exchange(*document, {}) : std::shared_ptr<const PartiallySignedTransaction>{};
     }
     void clear()
     {
-        std::lock_guard lock{mutex};
-        document.reset();
+        // Releasing this alias only activates its reserved Cleanup turn. The
+        // retained PSBT itself is destroyed by the scheduler, never here.
+        std::shared_ptr<std::shared_ptr<const PartiallySignedTransaction>> retired;
+        {
+            std::lock_guard lock{mutex};
+            retired = std::move(document);
+        }
+        retired.reset();
     }
 };
 
 FileExportOperationModel::FileExportOperationModel(QString rawPath,
-    std::shared_ptr<const PartiallySignedTransaction> document, backup::Services services, QObject* parent)
+    const std::shared_ptr<const PartiallySignedTransaction>& document, backup::Services services, QObject* parent)
     : QObject(parent)
 {
     if (!document) {
         m_start_error = tr("No captured PSBT is available to export.");
         return;
     }
+    auto retained_document = execution::RetainValues<std::shared_ptr<const PartiallySignedTransaction>>(
+        services.scheduler, [&document] { return std::make_unique<std::shared_ptr<const PartiallySignedTransaction>>(document); });
+    if (!retained_document) {
+        m_start_error = tr("PSBT export cleanup capacity is unavailable.");
+        return;
+    }
     m_source = std::make_shared<Source>();
-    m_source->document = std::move(document);
+    m_source->document = std::move(retained_document);
     if (!services.coordinator) services.coordinator = std::make_shared<backup::InstallCoordinator>();
     const auto coordinator = services.coordinator;
     const auto source = m_source;

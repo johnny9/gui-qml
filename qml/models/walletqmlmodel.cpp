@@ -3284,7 +3284,7 @@ void WalletQmlModel::startPsbtFileExport(quint64 action_id, const QString& path,
         m_file_export_operation->retire();
         m_file_export_operation->deleteLater();
     }
-    auto* export_operation = new FileExportOperationModel(path, std::move(document), std::move(services), this);
+    auto* export_operation = new FileExportOperationModel(path, document, std::move(services), this);
     m_file_export_operation = export_operation;
     const QPointer<FileExportOperationModel> export_guard{export_operation};
     connect(export_operation, &FileExportOperationModel::changed, this,

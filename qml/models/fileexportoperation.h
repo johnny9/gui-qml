@@ -24,7 +24,7 @@ class FileExportOperationModel final : public QObject
     Q_PROPERTY(QString finalPath READ finalPath NOTIFY changed)
     Q_PROPERTY(QString errorText READ errorText NOTIFY changed)
 public:
-    FileExportOperationModel(QString rawPath, std::shared_ptr<const PartiallySignedTransaction> document,
+    FileExportOperationModel(QString rawPath, const std::shared_ptr<const PartiallySignedTransaction>& document,
                              backup::Services services, QObject* parent = nullptr);
     ~FileExportOperationModel() override;
 

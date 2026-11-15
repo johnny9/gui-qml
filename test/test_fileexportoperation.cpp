@@ -23,6 +23,8 @@ struct Fixture {
     ManualRoutedExecution execution;
     std::deque<std::function<void()>> gui_posts;
 
+    explicit Fixture(execution::Limits limits = execution::Limits::Bounded()) : execution{limits} {}
+
     backup::Services services()
     {
         backup::Services result;
@@ -40,6 +42,18 @@ struct Fixture {
         }
     }
 };
+struct DeletionState {
+    std::atomic<bool> destroyed{false};
+    std::atomic<bool> destroyed_on_gui{false};
+};
+std::shared_ptr<const PartiallySignedTransaction> TrackedDocument(const std::shared_ptr<DeletionState>& state)
+{
+    return {new PartiallySignedTransaction{psbtfeefixture::Legacy(2, false)}, [state](const PartiallySignedTransaction* value) {
+        state->destroyed_on_gui = QThread::currentThread() == qApp->thread();
+        delete value;
+        state->destroyed = true;
+    }};
+}
 QByteArray ReadFile(const QString& path)
 {
     QFile file{path};
@@ -124,6 +138,138 @@ private Q_SLOTS:
         QCOMPARE(outcome_phase.load(), static_cast<int>(backup::Phase::Succeeded));
         QVERIFY(off_gui.load());
 
+        executor.shutdown();
+        QTRY_VERIFY(executor.isDrained());
+    }
+
+    void retiringBeforeInspectionReleasesPsbtThroughCleanup()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString path = directory.filePath(QStringLiteral("retired.psbt"));
+        auto state = std::make_shared<DeletionState>();
+        auto document = TrackedDocument(state);
+        Fixture fixture;
+        FileExportOperationModel operation{path, document, fixture.services()};
+        document.reset();
+
+        QVERIFY(operation.start());
+        QVERIFY(operation.pending());
+        operation.retire();
+        QVERIFY(!state->destroyed);
+
+        fixture.execution.drain();
+        fixture.deliverGui();
+        QVERIFY(!operation.pending());
+        QVERIFY(!QFile::exists(path));
+        QVERIFY(!state->destroyed);
+        QCOMPARE(fixture.execution.queuedCountIf([](const auto& turn) {
+            return turn.lane == execution::Lane::Cleanup && turn.phase == execution::Phase::Queued;
+        }), 1);
+        QVERIFY(fixture.execution.step(execution::Lane::Cleanup));
+        QVERIFY(state->destroyed);
+        fixture.execution.drain();
+        QVERIFY(fixture.execution.quiescent());
+    }
+
+    void refusalReleasesPsbtThroughCleanup()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString path = directory.filePath(QStringLiteral("existing.psbt"));
+        const QByteArray original{"keep the existing file"};
+        {
+            QFile file{path};
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(original), qint64(original.size()));
+        }
+        auto state = std::make_shared<DeletionState>();
+        auto document = TrackedDocument(state);
+        Fixture fixture;
+        FileExportOperationModel operation{path, document, fixture.services()};
+        document.reset();
+
+        QVERIFY(operation.start());
+        fixture.execution.drain();
+        fixture.deliverGui();
+        QVERIFY(operation.confirmationRequired());
+        QVERIFY(!state->destroyed);
+        QVERIFY(operation.refuse());
+        fixture.execution.drain();
+        fixture.deliverGui();
+
+        QVERIFY(!operation.pending());
+        QVERIFY(operation.errorText().contains(QStringLiteral("cancelled"), Qt::CaseInsensitive));
+        QCOMPARE(ReadFile(path), original);
+        QVERIFY(!state->destroyed);
+        QCOMPARE(fixture.execution.queuedCountIf([](const auto& turn) {
+            return turn.lane == execution::Lane::Cleanup && turn.phase == execution::Phase::Queued;
+        }), 1);
+        QVERIFY(fixture.execution.step(execution::Lane::Cleanup));
+        QVERIFY(state->destroyed);
+        fixture.execution.drain();
+        QVERIFY(fixture.execution.quiescent());
+    }
+
+    void rejectedStartAdmissionReleasesPsbtThroughCleanup()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        auto state = std::make_shared<DeletionState>();
+        auto document = TrackedDocument(state);
+        Fixture fixture;
+        FileExportOperationModel operation{directory.filePath(QStringLiteral("rejected.psbt")), document, fixture.services()};
+        document.reset();
+        fixture.execution.rejectLane(execution::Lane::Core);
+
+        QVERIFY(!operation.start());
+        QVERIFY(!operation.pending());
+        QVERIFY(operation.errorText().contains(QStringLiteral("scheduled"), Qt::CaseInsensitive));
+        QVERIFY(!state->destroyed);
+        QCOMPARE(fixture.execution.queuedCountIf([](const auto& turn) {
+            return turn.lane == execution::Lane::Cleanup && turn.phase == execution::Phase::Queued;
+        }), 1);
+        QVERIFY(fixture.execution.step(execution::Lane::Cleanup));
+        QVERIFY(state->destroyed);
+        fixture.execution.drain();
+        QVERIFY(fixture.execution.quiescent());
+    }
+
+    void realWorkerRefusalDestroysCapturedPsbtOffGui()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString path = directory.filePath(QStringLiteral("existing.psbt"));
+        const QByteArray original{"do not replace after refusal"};
+        {
+            QFile file{path};
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(original), qint64(original.size()));
+        }
+        auto state = std::make_shared<DeletionState>();
+        auto document = TrackedDocument(state);
+        BackendExecutor executor;
+        QObject gui;
+        backup::Services services;
+        services.scheduler = executor.scheduler();
+        services.post = [&gui](auto publication) {
+            if (!QMetaObject::invokeMethod(&gui, std::move(publication), Qt::QueuedConnection)) {
+                throw std::runtime_error("GUI publication could not be queued");
+            }
+        };
+        services.available = [] { return true; };
+        FileExportOperationModel operation{path, document, std::move(services)};
+        document.reset();
+
+        QVERIFY(operation.start());
+        QTRY_VERIFY_WITH_TIMEOUT(operation.confirmationRequired(), 5'000);
+        QVERIFY(!state->destroyed);
+        QVERIFY(operation.refuse());
+        QTRY_VERIFY_WITH_TIMEOUT(!operation.pending(), 5'000);
+        QTRY_VERIFY_WITH_TIMEOUT(state->destroyed.load(), 5'000);
+
+        QVERIFY(!state->destroyed_on_gui.load());
+        QCOMPARE(ReadFile(path), original);
         executor.shutdown();
         QTRY_VERIFY(executor.isDrained());
     }
