@@ -54,6 +54,7 @@ struct Wallet : StubWallet {
     std::shared_ptr<const PartiallySignedTransaction> completed_document;
     std::function<void()> after_unlock,before_commit,before_sign;
     std::function<void(PartiallySignedTransaction&, bool&)> metadata;
+    std::function<std::optional<common::PSBTError>(PartiallySignedTransaction&, bool&)> signing_response;
     std::optional<common::PSBTError> metadata_error;
     std::vector<std::pair<bool, bool>> fill_options;
     int metadata_reads{0};
@@ -82,6 +83,7 @@ struct Wallet : StubWallet {
         }
         if (before_sign) before_sign();
         ++signs;
+        if (signing_response) return signing_response(psbt, complete);
         if (report_sign_error || mutate_then_throw) {
             psbt.inputs[0].final_script_sig = CScript{} << OP_TRUE;
             if (mutate_then_throw) throw std::runtime_error{"unknown signer result after partial output"};
@@ -1381,6 +1383,51 @@ private Q_SLOTS:
         QVERIFY(operation->start(SignedRequest())); f.commands.drain();
         QVERIFY(operation->result()->committed); QCOMPARE(operation->result()->error, Error::None); QCOMPARE(f.wallet->commits, 1);
         QVERIFY(operation->result()->publication_failed);
+    }
+    void localSignOnlyDoesNotInstallUnverifiedContributions_data()
+    {
+        QTest::addColumn<int>("kind");
+        QTest::addColumn<int>("outcome");
+        for (int kind = 0; kind < 3; ++kind) for (int outcome = 0; outcome < 3; ++outcome)
+            QTest::newRow(qPrintable(QStringLiteral("kind-%1-outcome-%2").arg(kind).arg(outcome))) << kind << outcome;
+    }
+    void localSignOnlyDoesNotInstallUnverifiedContributions()
+    {
+        QFETCH(int, kind);
+        QFETCH(int, outcome);
+        ECC_Context ecc;
+        const auto fixture = psbtfeefixture::Contribution(kind != 2, kind == 1);
+        Fixture f;
+        f.wallet->signing_response = [returned = fixture.returned, outcome](auto& document, bool& complete) -> std::optional<common::PSBTError> {
+            document = returned;
+            complete = false;
+            if (outcome == 2) throw std::runtime_error("signing outcome unavailable after contribution");
+            return outcome == 1 ? std::optional{common::PSBTError::EXTERNAL_SIGNER_FAILED} : std::nullopt;
+        };
+        walletsend::Request request;
+        request.intent = walletsend::Intent::SignOnly;
+        request.attempt_id = 88;
+        request.review_id = 34;
+        request.reviewed = MakeTransactionRef(*fixture.original.GetUnsignedTx());
+        request.psbt = std::make_shared<const PartiallySignedTransaction>(fixture.original);
+        request.proof = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(fixture.original));
+        request.approved_fee = 500;
+        const auto operation = f.operation();
+        QVERIFY(operation->start(std::move(request)));
+        f.commands.drain();
+        const auto result = operation->result();
+        QVERIFY(result);
+        QCOMPARE(f.wallet->signs, 1);
+        QCOMPARE(f.wallet->commits, 0);
+        QVERIFY(!result->committed);
+        if (kind == 0) {
+            QVERIFY(result->document);
+            QCOMPARE(result->document->inputs[0].partial_sigs, fixture.returned.inputs[0].partial_sigs);
+            QVERIFY(result->partial);
+        } else {
+            QVERIFY(!result->document || result->document->inputs[0].partial_sigs.empty());
+            QVERIFY(!result->partial);
+        }
     }
     void localSignOnlyPreservesTheCapturedDocumentAndNeverCommits_data()
     {

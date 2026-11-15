@@ -47,6 +47,23 @@ inline WithheldScripts SignedWithoutScripts(bool nested)
     return {std::move(document), witness, nested ? program : CScript{}};
 }
 inline constexpr CAmount ACTUAL_FEE{500'000};
+struct UnfinishedContribution {
+    PartiallySignedTransaction original, returned;
+};
+inline UnfinishedContribution Contribution(bool include_scripts, bool corrupt)
+{
+    const auto fixture = SignedWithoutScripts(false);
+    auto original = fixture.document;
+    original.inputs[0].partial_sigs.clear();
+    auto returned = fixture.document;
+    returned.inputs[0].partial_sigs.erase(std::next(returned.inputs[0].partial_sigs.begin()));
+    if (include_scripts) {
+        original.inputs[0].witness_script = fixture.witness;
+        returned.inputs[0].witness_script = fixture.witness;
+    }
+    if (corrupt) returned.inputs[0].partial_sigs.begin()->second.second[5] ^= 1;
+    return {std::move(original), std::move(returned)};
+}
 inline PartiallySignedTransaction Legacy(uint32_t version, bool forged, bool with_change = false)
 {
     CKey first, second;
