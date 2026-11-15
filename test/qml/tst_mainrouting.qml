@@ -379,6 +379,33 @@ TestCase {
         compare(findChild(window, "createWalletWizard"), null)
     }
 
+    function test_shell_round_trip_retains_the_original_dirty_settings_context_data() {
+        return [{tag: "wallet-shell", wallet: true}, {tag: "node-shell", wallet: false}]
+    }
+    function test_shell_round_trip_retains_the_original_dirty_settings_context(data) {
+        optionsModel.resetSettingsEditorsForTest()
+        const window = createMain(data.wallet)
+        const actions = findChild(window, "desktopMenuActions")
+        actions.settings.trigger()
+        tryVerify(function() { return findChild(window, "settingsView") !== null })
+        const original = findChild(window, "settingsView")
+        original.selectSection("connection")
+        tryCompare(original.settingsEditor, "fresh", true)
+        const editor = original.settingsEditor
+        editor.entry("proxy").editText("127.0.0.1:9251")
+        tryCompare(editor, "dirty", true)
+        actions.nodeView.trigger()
+        if (data.wallet) compare(findChild(window, "blockClockTabButton").checked, true)
+        else tryVerify(function() { return findChild(window, "nodeRunner").visible })
+        actions.settings.trigger()
+        tryCompare(original, "visible", true)
+        compare(findChild(window, "settingsView"), original)
+        compare(original.settingsEditor, editor)
+        compare(editor.entry("proxy").text, "127.0.0.1:9251")
+        compare(editor.dirty, true)
+        compare(optionsModel.settingsWritesForTest(), 0)
+    }
+
     function test_add_wallet_completion_returns_to_activity() {
         const window = createMain(true)
         findChild(window, "desktopMenuActions").createWallet.trigger()
