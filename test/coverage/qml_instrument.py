@@ -62,11 +62,11 @@ TypeOfExpression VoidExpression TildeExpression NewExpression
 NewMemberExpression RegExpLiteral ThisExpression UiArrayBinding UiArrayMemberList
 UiEnumDeclaration UiEnumMemberList UiPragma UiAnnotation UiRequired UiInlineComponent
 SwitchStatement CaseBlock CaseClause CaseClauses DefaultClause ForEachStatement
-TemplateLiteral Catch
+TemplateLiteral Catch TypeAnnotation DeleteExpression
 """.split())
 UNSUPPORTED = {
     "WithStatement", "LabelledStatement", "YieldExpression",
-    "AwaitExpression", "TaggedTemplate", "DeleteExpression",
+    "AwaitExpression", "TaggedTemplate",
     "ClassDeclaration", "ClassExpression", "SuperLiteral", "ImportDeclaration",
     "ExportDeclaration", "OptionalExpression", "OptionalChain",
 }
@@ -210,7 +210,7 @@ def locate(tree, text):
 
 
 class Instrumenter:
-    def __init__(self, path, original, tree, first_id):
+    def __init__(self, path, original, tree, first_id, metadata_only=False):
         self.path = path
         self.original = original
         self.tree = tree
@@ -225,6 +225,7 @@ class Instrumenter:
         self.wrappers = []
         self.insertions = defaultdict(list)
         self.histogram = Counter(node.kind for node in walk(tree) if node.kind != "Node")
+        self.metadata_only = metadata_only
 
     def slice(self, span):
         return self.data[2 * span[0]:2 * span[1]].decode("utf-16-le")
@@ -365,6 +366,58 @@ class Instrumenter:
         identifier = self.point(kind, node.span, role)
         self.wrap(node.span, f"{HOOK}.{kind}({identifier},(", "))")
 
+    def parameter_decisions(self, function, offset):
+        """Map the supported trailing scalar default without rewriting bindings.
+
+        Non-simple JS parameter lists have an unmapped arguments object. The
+        initializer records the default arm before evaluation (also on throw);
+        function entry records the supplied arm. Only one trailing default is
+        supported, so no later initializer can throw before that supplied-arm
+        probe. Arrows, rest/destructuring and arguments shadowing fail closed.
+        """
+        def belongs_to_function(node):
+            owner = parent(node)
+            while owner and owner.kind not in {"FunctionDeclaration", "FunctionExpression"}:
+                owner = parent(owner)
+            return owner is function
+
+        # qmldom represents each link as a distinct FormalParameterList, not
+        # one node containing every argument. Do not reset the index per link.
+        elements = [element for node in walk(function)
+                    if node.kind == "FormalParameterList" and belongs_to_function(node)
+                    for element in children(node)]
+        elements.sort(key=lambda element: element.span[0])
+        require(all(element.kind == "PatternElement" and element.attrs.get("bindingIdentifier")
+                    for element in elements), "Destructuring/rest parameters need independent mapping")
+        defaults = [(index, element, [part for part in children(element) if part.kind != "TypeAnnotation"])
+                    for index, element in enumerate(elements)]
+        defaults = [entry for entry in defaults if entry[2]]
+        if not defaults:
+            return
+        require(len(defaults) == 1 and defaults[0][0] == len(elements) - 1,
+                "Only one trailing default parameter has complete decision mapping")
+        require(function.attrs.get("isArrowFunction") == "false",
+                "Arrow default parameters need independent original-argument mapping")
+        require(not any(node.attrs.get("bindingIdentifier") == "arguments"
+                        or node.kind in {"FunctionDeclaration", "FunctionExpression"} and node.attrs.get("name") == "arguments"
+                        for node in walk(function)), "Shadowed arguments prevents original-parameter mapping")
+        index, element, expressions = defaults[0]
+        require(len(expressions) == 1, "Unmapped default parameter initializer")
+        initializer = expressions[0]
+        # These cover the current literal/reference initializers. Arbitrary
+        # parameter expressions could mutate arguments or introduce additional
+        # default/destructuring decisions; do not claim those are mapped.
+        require(all(node.kind in {"Node", "IdentifierExpression", "FieldMemberExpression", "NumericLiteral",
+                                  "StringLiteral", "TrueLiteral", "FalseLiteral", "NullExpression",
+                                  "UnaryMinusExpression", "UnaryPlusExpression"} for node in walk(initializer)),
+                "Complex default initializers need independent argument/abrupt-completion mapping")
+        require(not any(node.attrs.get("name") in {"arguments", "caller", "callee"} for node in walk(initializer)),
+                "Reflective parameter initializers prevent original-argument mapping")
+        identifier = self.point("truth", initializer.span, "trailing-default-parameter")
+        self.wrap(initializer.span, f"({HOOK}.truth({identifier},true),(", "))")
+        self.insertions[offset].append(f";if(arguments[{index}]!==void 0){{" +
+                                       self.probe_statement(f"{HOOK}.truth({identifier},false)") + "}")
+
     def directives(self):
         result = set()
         for node in walk(self.tree):
@@ -391,6 +444,19 @@ class Instrumenter:
         require("?." not in self.original, "Optional chaining is not completely represented by the pinned AST dump")
         unknown = sorted(set(self.histogram) - KNOWN)
         require(not unknown, f"Unsupported AST kinds in {self.path}: {', '.join(unknown)}")
+        if self.metadata_only:
+            allowed = {"Node", "UiProgram", "UiHeaderItemList", "UiImport", "UiObjectDefinition", "UiObjectInitializer",
+                       "UiObjectMemberList", "UiPublicMember", "UiQualifiedId", "UiRequired"}
+            require(all(node.kind in allowed for node in walk(self.tree)),
+                    "Explicit metadata-only file contains executable or unreviewed AST syntax")
+            require(all(node.attrs.get("type") == "Property" and node.attrs.get("isRequired") == "true"
+                        and not node.attrs.get("colonToken")
+                        and all(child.kind == "UiQualifiedId" and not children(child) for child in children(node))
+                        for node in walk(self.tree) if node.kind == "UiPublicMember"),
+                    "Explicit metadata-only property contains a value or unreviewed child")
+            self.metadata.append({"kind": "explicit-reviewed-metadata-only-file", "start_utf16": 0,
+                                  "end_utf16": len(self.data) // 2, "source_sha256": digest(self.original.encode("utf-8"))})
+            return self.original
         self.check_binding_completions()
         directives = self.directives()
         contexts, concise_returns = {}, set()
@@ -404,7 +470,18 @@ class Instrumenter:
             kind, parts, ancestor = node.kind, children(node), parent(node)
             if kind == "IdentifierExpression":
                 require(node.attrs.get("name") not in {"eval", "Function"}, "Runtime-generated JavaScript needs an independent source map")
-            if kind == "SwitchStatement":
+            if kind == "TypeAnnotation":
+                require(all(part.kind in {"Node", "TypeAnnotation", "Type", "UiQualifiedId"} for part in walk(node)),
+                        "Executable or unreviewed syntax in type annotation")
+                self.metadata.append({"kind": "qml-type-annotation", "start_utf16": node.span[0],
+                                      "end_utf16": node.span[1], "source": self.slice(node.span)})
+            elif kind == "DeleteExpression":
+                # A delete operand must remain a Reference. Wrapping a member
+                # operand as a comma expression changes deletion semantics.
+                # The enclosing statement/binding owns its entry point and
+                # traversal still maps decisions inside the original operand.
+                require(len(parts) == 1, "Unmapped delete operand")
+            elif kind == "SwitchStatement":
                 require(len(parts) == 2 and parts[1].kind == "CaseBlock", "Unmapped switch")
                 identifier = contexts[id(node)]
                 self.wrap(parts[0].span, f"{HOOK}.switchValue({identifier},(", "))")
@@ -490,16 +567,13 @@ class Instrumenter:
                 require(concise or self.slice((opening[0], opening[0] + opening[1])) == "{", "Unmapped function opening brace")
                 offset = opening[0] + opening[1]
                 for body in parts:
-                    if body.kind == "FormalParameterList":
-                        for element in walk(body):
-                            if element.kind == "PatternElement" and children(element):
-                                raise MappingError("Default/destructuring function parameters need independent branch mapping")
                     if body.kind == "StatementList":
                         for statement in children(body):
                             if id(statement) in directives:
                                 offset = statement.span[1]
                             else:
                                 break
+                self.parameter_decisions(node, offset)
                 if concise:
                     bodies = [body for body in parts if body.kind == "StatementList"]
                     require(len(bodies) == 1, "Unmapped concise arrow body")
@@ -719,12 +793,17 @@ def main():
     parser.add_argument("--qmlformat", required=True, help="Parser-only check; formatted stdout is discarded, never written to source")
     parser.add_argument("--rcc", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--metadata-only", action="append", default=[],
+                        help="Explicit reviewed scope path containing only declarative metadata; source SHA is still required")
     args = parser.parse_args()
     root, output = args.source_root.resolve(), args.output_dir.resolve()
     require(not output.exists(), "Output directory already exists; use a fresh directory")
     scope_bytes = args.scope.read_bytes()
     scope = json.loads(scope_bytes)
     require(set(scope) == {"files"} and isinstance(scope["files"], list) and scope["files"], "Empty or invalid explicit scope")
+    require(all(isinstance(entry, dict) for entry in scope["files"]), "Invalid explicit scope entry")
+    require(len(args.metadata_only) == len(set(args.metadata_only)), "Duplicate metadata-only disposition")
+    require(set(args.metadata_only) <= {entry.get("path") for entry in scope["files"]}, "Metadata-only disposition outside scope")
     aliases = read_qrc(root, args.resource)
     version = run_tool([args.qmldom, "--version"]).strip()
     qt_version = run_tool([args.qtpaths, "--qt-version"]).strip()
@@ -762,7 +841,7 @@ def main():
                     if node.kind == "UiSourceElement":
                         require(len(children(node)) == 1 and children(node)[0].kind == "FunctionDeclaration",
                                 "Top-level JavaScript must contain only function declarations")
-            tool = Instrumenter(entry["path"], parse_text, tree, len(points))
+            tool = Instrumenter(entry["path"], parse_text, tree, len(points), entry["path"] in args.metadata_only)
             transformed = tool.run()
             if script:
                 transformed = unwrap_script(transformed, tool, text, *script[1:])
@@ -803,6 +882,7 @@ def main():
         manifest = {"schema": 1, "contract": CONTRACT, "mapping_complete": True,
                     "direct_function_binding_policy": "preserve-root-function-expression; declaration-line-site-measures-invocation-only",
                     "tool_qualified": False, "unsupported": [], "scope_sha256": digest(scope_bytes),
+                    "explicit_metadata_only": args.metadata_only,
                     "instrumenter_sha256": digest(Path(__file__).read_bytes()),
                     "qmldom_version": version, "qt_version": qt_version,
                     "qmldom_sha256": digest(Path(args.qmldom).read_bytes()),
@@ -812,6 +892,7 @@ def main():
                                    "Direct function-valued QML binding initialization/allocation (invocation only is measured)",
                                    "Textual lines without AST entry sites", "Implicit exception edges",
                                    "Pinned-Qt nested for-in/of and empty try/catch binding completion contexts (rejected)",
+                                   "Arrow, nontrailing/multiple, reflective/complex or destructuring parameter defaults (rejected)",
                                    "Qt/native/generated implementation", "Native component internals"]}
         (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({"sources": len(sources), "points": len(points), "aliases": len(aliases),
