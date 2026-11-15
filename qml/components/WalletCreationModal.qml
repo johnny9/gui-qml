@@ -4,13 +4,14 @@
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import org.bitcoincore.qt 1.0
 import "../controls"
 import "../pages/wallet"
 
 Popup {
     id: root
     objectName: "walletCreationModal"
-    signal finished(bool openActivity, var wallet)
+    signal finished(bool openActivity, WalletQmlModel wallet)
     property bool onboardingEntry: false
 
     function openForOnboarding() {

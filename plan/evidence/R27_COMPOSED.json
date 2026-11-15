@@ -1,0 +1,84 @@
+{
+  "app": "01248cc3d341ef7925b3f1dfeec3a26a4871b9eb",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "bodies": [
+    {
+      "id": "r26-owner",
+      "bodies": 54,
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "id": "uri-parser-carry",
+      "bodies": 35,
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "id": "picker-menu-composition",
+      "bodies": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "id": "picker-view-retirement",
+      "bodies": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "id": "validation-is-not-intent",
+      "bodies": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "id": "core-typedExplicitImportPreservesPrivateNoteAndPublicMetadata",
+      "bodies": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "id": "core-lockedWalletImportsOnlyLocalDraftValues",
+      "bodies": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "total": 98,
+  "static": {
+    "CPP": 1,
+    "freshMOC": 7,
+    "passed": 8
+  },
+  "qml_lint": "259 per variant; logs retained, zero warnings/errors",
+  "app_lint": {
+    "command": [
+      "python3",
+      "ci/lint.py",
+      "--scope",
+      "app",
+      "--no-build",
+      "--image",
+      "qt6-r17-linter-core449:20261114"
+    ],
+    "exit": 0,
+    "seconds": 2.2849309670273215,
+    "app": "01248cc3d341ef7925b3f1dfeec3a26a4871b9eb",
+    "branch": "",
+    "status": "",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "Core_status": ""
+  },
+  "worker_carry": "423 distinct source-qualified bodies at f275; exact R27 production Source/target and affected-test bytes retained except shared R36 inherited enabled-property normalization and composed shared mocks; no final423 replay",
+  "Core_UI_processes": "R27 actual IPC2 retained as worker evidence; composed R36/R39 actual GUI/RPC2 evidence separate, no new process replay here",
+  "R42_pending": true,
+  "canonical_registers_changed": false
+}

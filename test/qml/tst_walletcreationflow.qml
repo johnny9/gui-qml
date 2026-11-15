@@ -245,6 +245,39 @@ TestCase {
         }
     }
 
+    function test_recreated_view_projects_the_retained_terminal_result_without_signal_replay() {
+        walletController.holdCreation = true
+        let flow = createInputFlow(false)
+        try {
+            findChild(flow, "walletTypeViewOnly").clicked()
+            tryCompare(flow.currentItem, "objectName", "createWalletFormPage")
+            const form = flow.currentItem
+            testSetup.replaceText(findChild(form, "createWalletNameInput"), "Original retained operation")
+            testSetup.replaceText(findChild(form, "watchOnlyXpubInput"), validXpub)
+            tryCompare(form, "canCreate", true)
+            clickVisible(findChild(form, "createWalletFormCreateButton"))
+            const original = flow.operation
+            verify(original !== null)
+            flow.visible = false
+            flow.destroy()
+            testSetup.processDeferredDeletes()
+            flow = null
+            walletController.finishCreation()
+            tryCompare(original, "phase", WalletOperationModel.Succeeded)
+            // The replacement subscribes after completion. Its initial read
+            // carries the exact result; no success signal is emitted again.
+            const replacement = createTemporaryObject(flowComponent, this, {operation: original})
+            verify(replacement !== null)
+            tryVerify(function() { return findChild(replacement, "walletCreationReadyPage") !== null })
+            compare(replacement.operation, original)
+            compare(replacement.completedWallet, original.resultWallet)
+            compare(original.submittedName, "Original retained operation")
+            compare(walletController.creationCalls, 1)
+        } finally {
+            if (flow) flow.destroy()
+        }
+    }
+
     function test_operation_errors_use_bounded_summaries_and_virtual_full_details() {
         const original = "Original operation error: " + "z".repeat(6000)
         const createFields = createTemporaryObject(boundedCreateFieldsComponent, this)

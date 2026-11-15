@@ -44,6 +44,7 @@ ApplicationWindow {
     readonly property bool desktopWalletMode: walletAvailableForUi && appModeDesktopForUi
     readonly property bool waitForPostOnboardingWalletRoute: preInitOnboardingRanForUi && desktopWalletMode
     property bool postOnboardingWalletRouteResolved: false
+    property bool onboardingWalletPresentationPending: false
     property bool shutdownInProgress: false
     footer: DesktopRequestsBar {
         mailbox: ApplicationModels.desktopIntentModel
@@ -61,17 +62,62 @@ ApplicationWindow {
     }
     readonly property var menuEditTarget: appWindow.editTarget(appWindow.activeFocusItem)
     readonly property var menuWalletController: appWindow.desktopWalletMode ? ApplicationModels.walletController : null
+    readonly property DesktopWallets desktopShell: main.currentItem as DesktopWallets
+    readonly property NodeShell nodeShell: main.currentItem as NodeShell
+    // Native menus do not participate in Qt Quick's popup pointer grab. The
+    // same bounded presentation gate also rejects a delayed direct route.
+    readonly property bool modalNavigationBlocked: (walletCreationModal.item !== null
+            && (walletCreationModal.item as WalletCreationHost).modalVisible)
+        || ApplicationModels.nodeModel.runtimeDialogVisible
+        || (appWindow.desktopShell !== null && appWindow.desktopShell.modalNavigationBlocked)
+        || (appWindow.nodeShell !== null && appWindow.nodeShell.modalNavigationBlocked)
+        || (appWindow.menuWalletController !== null
+            && appWindow.menuWalletController.closeTarget !== null
+            && appWindow.menuWalletController.closeTarget.closeQuestionToken.length > 0)
     readonly property bool menuNavigationEnabled: main.depth === 1
         && (!appWindow.waitForPostOnboardingWalletRoute || appWindow.postOnboardingWalletRouteResolved)
+        && !appWindow.modalNavigationBlocked
+        && !appWindow.shutdownInProgress && !ApplicationModels.nodeModel.fatalException
+    readonly property bool onboardingWalletPresentationAdmitted: appWindow.onboardingWalletPresentationPending
+        && appWindow.desktopWalletMode && appWindow.menuNavigationEnabled
+        && walletCreationModal.item !== null && ApplicationModels.walletController.noWalletsFound
 
-    function routeToShell(method, argument) {
-        const shell = main.depth === 1 ? main.currentItem : null
-        if (shell && typeof shell[method] === "function") {
-            if (argument === undefined) {
-                shell[method]()
-            } else {
-                shell[method](argument)
+    onDesktopWalletModeChanged: {
+        if (!appWindow.desktopWalletMode) appWindow.onboardingWalletPresentationPending = false
+    }
+
+    enum NavigationRoute { RouteCloseWallet, RouteBackup, RouteImportUri, RouteSignMessage,
+        RouteVerifyMessage, RouteImportPsbt, RouteNode, RouteActivity, RouteSend,
+        RouteReceive, RouteConsole, RouteNetworkTraffic, RoutePeers }
+
+    function routeToShell(route: int) {
+        if (!appWindow.menuNavigationEnabled) return
+        const desktop = appWindow.desktopShell
+        if (desktop !== null) {
+            switch (route) {
+            case MainWindow.RouteCloseWallet: desktop.requestCloseWallet(); break
+            case MainWindow.RouteBackup: desktop.startWalletBackup(); break
+            case MainWindow.RouteImportUri: desktop.openUriImporter(); break
+            case MainWindow.RouteSignMessage: desktop.openSignVerifyMessage(SignVerifyMessage.SignTab); break
+            case MainWindow.RouteVerifyMessage: desktop.openSignVerifyMessage(SignVerifyMessage.VerifyTab); break
+            case MainWindow.RouteImportPsbt: desktop.openPsbtImporter(); break
+            case MainWindow.RouteNode: desktop.openNode(); break
+            case MainWindow.RouteActivity: desktop.openActivity(); break
+            case MainWindow.RouteSend: desktop.openSend(); break
+            case MainWindow.RouteReceive: desktop.openReceive(); break
+            case MainWindow.RouteConsole: desktop.openConsole(); break
+            case MainWindow.RouteNetworkTraffic: desktop.openNetworkTraffic(); break
+            case MainWindow.RoutePeers: desktop.openPeers(); break
             }
+            return
+        }
+        const node = appWindow.nodeShell
+        if (node === null) return
+        switch (route) {
+        case MainWindow.RouteNode: node.openNode(); break
+        case MainWindow.RouteConsole: node.openConsole(); break
+        case MainWindow.RouteNetworkTraffic: node.openNetworkTraffic(); break
+        case MainWindow.RoutePeers: node.openPeers(); break
         }
     }
 
@@ -102,15 +148,26 @@ ApplicationWindow {
         target[method]()
     }
 
-    function openSettings(section) {
-        appWindow.routeToShell("openSettings", section)
+    function openSettings(section: string) {
+        if (!appWindow.menuNavigationEnabled) return
+        if (appWindow.desktopShell !== null) appWindow.desktopShell.openSettings(section)
+        else if (appWindow.nodeShell !== null) appWindow.nodeShell.openSettings(section)
     }
 
     function openWalletCreation() {
         if (!appWindow.desktopWalletMode || !appWindow.menuNavigationEnabled) {
             return
         }
+        appWindow.onboardingWalletPresentationPending = false
         walletCreationModal.open()
+    }
+
+    // This consumes the exact retained operation result. Popup exit animation
+    // is presentation only and cannot turn its completion into a fresh route.
+    function presentCreatedWallet(wallet: WalletQmlModel) {
+        if (appWindow.shutdownInProgress || ApplicationModels.nodeModel.fatalException) return
+        const shell = main.depth === 1 ? main.currentItem as DesktopWallets : null
+        if (shell !== null) shell.openWallet(wallet)
     }
 
     function resolvePostOnboardingWalletRoute() {
@@ -125,8 +182,30 @@ ApplicationWindow {
         }
         appWindow.postOnboardingWalletRouteResolved = true
         if (ApplicationModels.walletController.noWalletsFound) {
-            appWindow.routeToShell("openNode")
-            Qt.callLater(function() { walletCreationModal.openForOnboarding() })
+            appWindow.onboardingWalletPresentationPending = true
+        }
+    }
+
+    Timer {
+        id: onboardingWalletResolution
+        interval: 0
+        repeat: false
+        onTriggered: appWindow.resolvePostOnboardingWalletRoute()
+    }
+
+    Timer {
+        id: onboardingWalletPresentation
+        interval: 0
+        repeat: false
+        running: appWindow.onboardingWalletPresentationAdmitted
+        onTriggered: {
+            if (!appWindow.onboardingWalletPresentationAdmitted) return
+            appWindow.routeToShell(MainWindow.RouteNode)
+            // Navigation can synchronously publish another owned modal or
+            // stopping state. Retain this presentation until it is admitted.
+            if (!appWindow.onboardingWalletPresentationAdmitted) return
+            appWindow.onboardingWalletPresentationPending = false
+            walletCreationModal.openForOnboarding()
         }
     }
 
@@ -214,12 +293,12 @@ ApplicationWindow {
         isMacOs: Qt.platform.os === "osx"
 
         onCreateWalletRequested: appWindow.openWalletCreation()
-        onCloseWalletRequested: appWindow.routeToShell("requestCloseWallet")
-        onBackupWalletRequested: appWindow.routeToShell("startWalletBackup")
-        onOpenUriRequested: appWindow.routeToShell("openUriImporter")
-        onSignMessageRequested: appWindow.routeToShell("openSignVerifyMessage", SignVerifyMessage.SignTab)
-        onVerifyMessageRequested: appWindow.routeToShell("openSignVerifyMessage", SignVerifyMessage.VerifyTab)
-        onLoadPsbtRequested: appWindow.routeToShell("openPsbtImporter")
+        onCloseWalletRequested: appWindow.routeToShell(MainWindow.RouteCloseWallet)
+        onBackupWalletRequested: appWindow.routeToShell(MainWindow.RouteBackup)
+        onOpenUriRequested: appWindow.routeToShell(MainWindow.RouteImportUri)
+        onSignMessageRequested: appWindow.routeToShell(MainWindow.RouteSignMessage)
+        onVerifyMessageRequested: appWindow.routeToShell(MainWindow.RouteVerifyMessage)
+        onLoadPsbtRequested: appWindow.routeToShell(MainWindow.RouteImportPsbt)
         onExitRequested: ApplicationModels.nodeModel.requestShutdown()
         onSettingsRequested: appWindow.openSettings("display")
         onUndoRequested: appWindow.invokeEditCommand("undo")
@@ -237,14 +316,14 @@ ApplicationWindow {
             }
         }
         onMainWindowRequested: ApplicationModels.desktopTrayIconController.showMainWindow()
-        onNodeRequested: appWindow.routeToShell("openNode")
-        onActivityRequested: appWindow.routeToShell("openActivity")
-        onSendRequested: appWindow.routeToShell("openSend")
-        onReceiveRequested: appWindow.routeToShell("openReceive")
+        onNodeRequested: appWindow.routeToShell(MainWindow.RouteNode)
+        onActivityRequested: appWindow.routeToShell(MainWindow.RouteActivity)
+        onSendRequested: appWindow.routeToShell(MainWindow.RouteSend)
+        onReceiveRequested: appWindow.routeToShell(MainWindow.RouteReceive)
         onInformationRequested: menuInformationPopup.open()
-        onConsoleRequested: appWindow.routeToShell("openConsole")
-        onNetworkTrafficRequested: appWindow.routeToShell("openNetworkTraffic")
-        onPeersRequested: appWindow.routeToShell("openPeers")
+        onConsoleRequested: appWindow.routeToShell(MainWindow.RouteConsole)
+        onNetworkTrafficRequested: appWindow.routeToShell(MainWindow.RouteNetworkTraffic)
+        onPeersRequested: appWindow.routeToShell(MainWindow.RoutePeers)
         onRpcDocumentationRequested: Qt.openUrlExternally("https://bitcoincore.org/en/doc/")
         onAboutRequested: appWindow.openSettings("about")
     }
@@ -318,7 +397,7 @@ ApplicationWindow {
         objectName: "mainPageStack"
         enabled: !appWindow.shutdownInProgress && !ApplicationModels.nodeModel.fatalException
         visible: !appWindow.shutdownInProgress
-        initialItem: appWindow.desktopWalletMode ? "qrc:/qml/pages/wallet/DesktopWallets.qml" : node
+        initialItem: appWindow.desktopWalletMode ? "qrc:/qml/pages/wallet/DesktopWallets.qml" : nodeShellComponent
         anchors.fill: parent
         focus: true
         Keys.onReleased: (event) => {
@@ -333,11 +412,13 @@ ApplicationWindow {
         target: ApplicationModels.nodeModel
         function onFatalExceptionChanged() {
             if (!ApplicationModels.nodeModel.fatalException) return
+            appWindow.onboardingWalletPresentationPending = false
             appWindow.showNormal()
             appWindow.raise()
             appWindow.requestActivate()
         }
         function onRequestedShutdown() {
+            appWindow.onboardingWalletPresentationPending = false
             appWindow.shutdownInProgress = true
         }
     }
@@ -366,6 +447,7 @@ ApplicationWindow {
             appWindow.resolvePostOnboardingWalletRoute()
         }
         function onNoWalletsFoundChanged() {
+            if (!ApplicationModels.walletController.noWalletsFound) appWindow.onboardingWalletPresentationPending = false
             appWindow.resolvePostOnboardingWalletRoute()
         }
     }
@@ -380,7 +462,7 @@ ApplicationWindow {
     Connections {
         target: appWindow.desktopWalletMode && !appWindow.shutdownInProgress && main.depth === 1
             ? main.currentItem : null
-        function onAddWallet() { walletCreationModal.open() }
+        function onAddWallet() { appWindow.openWalletCreation() }
     }
 
     Loader {
@@ -394,7 +476,7 @@ ApplicationWindow {
     Connections {
         target: walletCreationModal.item
         function onFinished(openActivity, wallet) {
-            if (openActivity) appWindow.routeToShell("openWallet", wallet)
+            if (openActivity) appWindow.presentCreatedWallet(wallet)
         }
     }
 
@@ -424,80 +506,25 @@ ApplicationWindow {
         if (appWindow.desktopWalletMode) {
             ApplicationModels.nodeModel.startNodeInitializionThread()
             if (appWindow.waitForPostOnboardingWalletRoute) {
-                Qt.callLater(appWindow.resolvePostOnboardingWalletRoute)
+                onboardingWalletResolution.restart()
             }
         }
     }
 
     Component {
-        id: node
-        PageStack {
-            id: nodeStack
-            vertical: true
-            initialItem: node
-
-            function resetToRoot() {
-                ApplicationModels.peerTableModel.stopAutoRefresh()
-                if (nodeStack.depth > 1) {
-                    nodeStack.pop(null, StackView.Immediate)
-                }
+        id: nodeShellComponent
+        NodeShell {
+            id: nodeShellItem
+            navigationAdmitted: appWindow.nodeShell === nodeShellItem && appWindow.menuNavigationEnabled
+            stopping: appWindow.shutdownInProgress || ApplicationModels.nodeModel.fatalException
+            settingsComponent: SettingsView {
+                wallet: typeof walletController !== "undefined" && ApplicationModels.walletController.isWalletLoaded
+                    ? ApplicationModels.walletController.selectedWallet : null
+                activeWalletName: wallet ? wallet.name : ""
+                onDoneClicked: nodeShellItem.closeSettings()
             }
-
-            function openSettings(section) {
-                nodeStack.resetToRoot()
-                const page = nodeStack.push(settingsPage, {}, StackView.Immediate)
-                if (section && page) {
-                    page.selectSection(section)
-                }
-            }
-
-            function openNode() {
-                nodeStack.resetToRoot()
-            }
-
-            function openPeers() {
-                nodeStack.resetToRoot()
-                ApplicationModels.peerTableModel.startAutoRefresh()
-                nodeStack.push(peersPage, {}, StackView.Immediate)
-            }
-
-            function openConsole() {
-                nodeStack.openSettings("rpc-console")
-            }
-
-            function openNetworkTraffic() {
-                nodeStack.openSettings("network-traffic")
-            }
-            Component {
-                id: node
-                NodeRunner {
-                    onSettingsClicked: {
-                        nodeStack.push(settingsPage)
-                    }
-                    onPeersClicked: {
-                        ApplicationModels.peerTableModel.startAutoRefresh()
-                        nodeStack.push(peersPage)
-                    }
-                }
-            }
-            Component {
-                id: settingsPage
-                SettingsView {
-                    wallet: typeof walletController !== "undefined" && ApplicationModels.walletController.isWalletLoaded
-                        ? ApplicationModels.walletController.selectedWallet : null
-                    activeWalletName: wallet ? wallet.name : ""
-                    onDoneClicked: nodeStack.pop()
-                }
-            }
-            Component {
-                id: peersPage
-                PeersView {
-                    onBack: {
-                        nodeStack.pop()
-                        ApplicationModels.peerTableModel.stopAutoRefresh()
-                    }
-                }
-            }
+            onSettingsRequested: (section) => appWindow.openSettings(section)
+            onPeersRequested: appWindow.routeToShell(MainWindow.RoutePeers)
         }
     }
 }

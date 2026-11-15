@@ -32,7 +32,7 @@ Item {
     readonly property alias navigationBar: navigationBar
     readonly property bool walletDiscoveryReady: ApplicationModels.walletController.initialized
         && (!waitForWalletDiscovery || ApplicationModels.walletListModel.walletDirLoaded)
-    signal finished(bool openActivity, var wallet)
+    signal finished(bool openActivity, WalletQmlModel wallet)
 
     function showingCompletion() {
         const page = root.currentItem ? root.currentItem.objectName : ""
