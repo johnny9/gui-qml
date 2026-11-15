@@ -60,3 +60,6 @@ every newly contributed unfinalized signature is authenticated. The signing
 worker is checking an independent counterexample and pinned public Core/value
 helpers. Keep this as an open acceptance audit, preserve supported multisig
 PSBT retention, and do not infer a Core API requirement before that check.
+
+
+R24 contributed-signature follow-up: the controlled three-path partial-map counterexample at `bbbb27f092b` reopens signer review installation. The public-value verifier and explicit unverified-result quarantine/export implementation are pending focused qualification. The approved review remains separate from returned Unknown bytes; no verified-Partial or submit authority is inferred from exact unsigned terms alone. See [upstream contract and adapter limits](QT6_UPSTREAM_IMPROVEMENTS.md#r24-verified-partial-signing-outcomes--app-verification-and-quarantine).

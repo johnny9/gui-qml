@@ -134,6 +134,19 @@ TestCase {
         compare(wallet.approveCalls, 0)
     }
 
+    function test_unverified_result_blocks_approval_and_remains_visible() {
+        const wallet = createTemporaryObject(walletComponent, this)
+        wallet.signerApprovalState = WalletQmlModel.ApprovalUnverified
+        wallet.signerApprovalError = "Export unverified result to reconcile it."
+        const review = createTemporaryObject(reviewComponent, this, {wallet: wallet, canSend: false})
+        compare(review.reviewState, "unverified")
+        compare(review.statusText, wallet.signerApprovalError)
+        const button = findObjectByName(review, "externalSignerApproveButton")
+        verify(!button.enabled)
+        mouseClick(button)
+        compare(wallet.approveCalls, 0)
+    }
+
     function test_partial_success_shows_more_signatures_message() {
         const wallet = createTemporaryObject(walletComponent, this)
         verify(wallet !== null)

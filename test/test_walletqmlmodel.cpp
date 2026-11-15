@@ -4147,6 +4147,7 @@ private Q_SLOTS:
         QTest::newRow("invalid-locktimes-direct-send") << -1 << true << true << false;
     }
     void signerApprovalRetainsValidPartialSignatures();
+    void signerUnverifiedResultIsSeparateAndExportUsesOriginalToken();
     void signerSubstitutionIsRejected();
     void initTestCase();
     void coreApiFeePreviews_data();
@@ -8259,6 +8260,66 @@ void WalletQmlModelTests::signerSubstitutionIsRejected()
     QCOMPARE(load_error, QString{});
     QVERIFY(saved_tx);
     QCOMPARE(saved_tx->GetHash(), original);
+}
+
+void WalletQmlModelTests::signerUnverifiedResultIsSeparateAndExportUsesOriginalToken()
+{
+    auto [wallet, model] = MakeConfiguredPasswordWalletModel([](FakePasswordWallet& original) {
+        original.private_keys_disabled = true;
+        original.external_signer = true;
+    });
+    wallet->txin_is_mine_fn = [](const CTxIn&) { return true; };
+    const auto fixture = psbtfeefixture::SignedWithoutScripts(false);
+    auto reviewed = fixture.document;
+    reviewed.inputs[0].partial_sigs.clear();
+    auto unverified = fixture.document;
+    unverified.inputs[0].partial_sigs.erase(std::next(unverified.inputs[0].partial_sigs.begin()));
+    int calls{0};
+    wallet->fill_psbt_fn = [unverified, &calls](const common::PSBTFillOptions& options, size_t*,
+                                               PartiallySignedTransaction& result, bool& complete) {
+        complete = false;
+        if (options.sign) { ++calls; result = unverified; }
+        return std::optional<common::PSBTError>{};
+    };
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto original_path = WritePsbt(reviewed, directory, "original.psbt");
+    QCOMPARE(AwaitPsbtImport(*model, original_path), WalletQmlModel::PsbtImportResult::WalletCannotSign);
+    const auto original_review = model->currentTransaction();
+    QSignalSpy accepted{model.get(), &WalletQmlModel::externalSignerApprovalPartiallySucceeded};
+    QSignalSpy failed{model.get(), &WalletQmlModel::externalSignerApprovalFailed};
+    QVERIFY(AwaitSignerApprovalOutcome(*model));
+    QCOMPARE(model->signerApprovalState(), WalletQmlModel::ApprovalState::ApprovalUnverified);
+    QCOMPARE(accepted.count(), 0);
+    QCOMPARE(failed.count(), 1);
+    QCOMPARE(calls, 1);
+    QCOMPARE(model->currentTransaction(), original_review);
+    QVERIFY(!model->currentTransactionCanSend());
+    QVERIFY(!model->currentTransactionCanBroadcast());
+    QVERIFY(!model->approveExternalSignerTransaction());
+    const auto token = model->signerUnverifiedResultToken();
+    QVERIFY(!token.isEmpty());
+    const auto rejected_path = directory.filePath("stale.psbt");
+    QVERIFY(!model->requestSaveUnverifiedSignerResult(token + "-stale", rejected_path));
+    QVERIFY(!QFile::exists(rejected_path));
+    const auto exported_path = directory.filePath("unverified.psbt");
+    QVERIFY(model->requestSaveUnverifiedSignerResult(token, exported_path));
+    QTRY_VERIFY(!model->psbtActionBusy());
+    QCOMPARE(model->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtSaved);
+    PartiallySignedTransaction exported{CMutableTransaction{}, 2};
+    QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(exported_path, exported), QString{});
+    QCOMPARE(psbtwork::SerializeRaw(exported), psbtwork::SerializeRaw(unverified));
+    const auto reviewed_path = directory.filePath("approved-review.psbt");
+    QCOMPARE(AwaitPsbtSaveError(*model, reviewed_path), QString{});
+    PartiallySignedTransaction saved_review{CMutableTransaction{}, 2};
+    QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(reviewed_path, saved_review), QString{});
+    QCOMPARE(psbtwork::SerializeRaw(saved_review), psbtwork::SerializeRaw(reviewed));
+    QCOMPARE(AwaitPsbtImport(*model, original_path), WalletQmlModel::PsbtImportResult::WalletCannotSign);
+    QVERIFY(model->signerUnverifiedResultToken().isEmpty());
+    QVERIFY(!model->requestSaveUnverifiedSignerResult(token, rejected_path));
+    QVERIFY(!QFile::exists(rejected_path));
+    QCOMPARE(calls, 1);
+    QCOMPARE(wallet->commit_calls, 0);
 }
 
 void WalletQmlModelTests::signerApprovalRetainsValidPartialSignatures()
