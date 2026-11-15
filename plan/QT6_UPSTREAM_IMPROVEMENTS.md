@@ -391,3 +391,32 @@ same guarantees and its regression tests cover invalid signatures, unchanged
 terms, added-input spends, original confirmation/abandonment, independent RPC
 writers and explicit failure/uncertainty. R42 platform/sanitizer qualification
 remains pending.
+
+
+### R25 public timing controls and abandoned-original observation
+
+The R25 adapter passes the original version, locktime and every original input's
+sequence through public `CCoinControl`/`PreselectedInput` controls. This avoids
+reconstructing transaction timing in the app or changing Core. The public
+controls are sufficient; a future Core default that preserves original timing
+would remove this policy adaptation. Script-enforced timing remains subject to
+Core's script/eligibility validation; the unit controls do not claim exhaustive
+script timelock qualification.
+
+The pinned `transactionCanBeBumped` predicate checks depth, descendants, prior
+replacement and input ownership, but does not reject an abandoned original.
+The app additionally reads public `tryGetTxStatus` before and after signing.
+Abandoned/confirmed/conflicted originals require fresh preparation; unavailable
+status is explicitly unknown, with no commit attempted. An improved public
+predicate/typed eligibility result should include abandonment and document its
+observation time. Separate observations still cannot reserve a later commit
+against an independent RPC writer.
+
+Evidence: the four timing/abandonment unit controls fail on `e273df15d5d` and
+pass after `926dea96ca9`. Actual Core/RPC controls at `e817de97fbe` preserve a
+future lock in the prepared review, independently abandon the original, and
+independently spend the exact added input in another payment; both stale
+confirmations refuse commit. The separate unrelated payment remains in the
+mempool. These app-only adapters remain owned by the original opening and
+recorded in the R25 checkpoint; retire them only when the public Core behavior
+and its corresponding independent-writer/timing tests supply the same contract.
