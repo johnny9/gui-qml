@@ -183,6 +183,7 @@
         <file>pages/node/CommandConsole.qml</file>
         <file>pages/node/NetworkTraffic.qml</file>
         <file>pages/node/NodeRunner.qml</file>
+        <file>pages/node/NodeShell.qml</file>
         <file>pages/node/Peers.qml</file>
         <file>pages/node/PeersView.qml</file>
         <file>pages/node/PeerDetails.qml</file>

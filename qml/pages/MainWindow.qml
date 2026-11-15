@@ -383,7 +383,7 @@ ApplicationWindow {
         objectName: "mainPageStack"
         enabled: !appWindow.shutdownInProgress && !ApplicationModels.nodeModel.fatalException
         visible: !appWindow.shutdownInProgress
-        initialItem: appWindow.desktopWalletMode ? "qrc:/qml/pages/wallet/DesktopWallets.qml" : node
+        initialItem: appWindow.desktopWalletMode ? "qrc:/qml/pages/wallet/DesktopWallets.qml" : nodeShellComponent
         anchors.fill: parent
         focus: true
         Keys.onReleased: (event) => {
@@ -497,110 +497,20 @@ ApplicationWindow {
         }
     }
 
-    Component { id: node; NodeShell {} }
-
-    component NodeShell: PageStack {
-        id: nodeStack
-        vertical: true
-        property bool settingsInstantiated: false
-        property bool settingsPresentationPending: false
-        property string settingsPresentationSection: ""
-        readonly property SettingsView settingsView: nodeSettings.item as SettingsView
-        readonly property bool modalNavigationBlocked: settingsView !== null
-            && settingsView.visible
-            && (settingsView.settingsNavigationPending
-                || (settingsView.settingsEditor !== null && settingsView.settingsEditor.closeQuestion))
-        initialItem: node
-
-        function resetToRoot() {
-            nodeStack.settingsPresentationPending = false
-            ApplicationModels.peerTableModel.stopAutoRefresh()
-            if (nodeStack.depth > 1) {
-                nodeStack.pop(null, StackView.Immediate)
-            }
-        }
-
-        function openSettings(section) {
-            nodeStack.resetToRoot()
-            nodeStack.settingsPresentationSection = section || ""
-            nodeStack.settingsPresentationPending = true
-            nodeStack.settingsInstantiated = true
-            nodeStack.presentSettingsIfReady()
-        }
-
-        function presentSettingsIfReady() {
-            const page = nodeStack.settingsView
-            if (!nodeStack.settingsPresentationPending || page === null
-                    || appWindow.nodeShell !== nodeStack || !appWindow.menuNavigationEnabled) return
-            const section = nodeStack.settingsPresentationSection
-            nodeStack.settingsPresentationPending = false
-            nodeStack.push(page, {}, StackView.Immediate)
-            if (section && nodeStack.currentItem === page && appWindow.nodeShell === nodeStack
-                    && appWindow.menuNavigationEnabled && nodeStack.settingsPresentationSection === section) {
-                page.selectSection(section)
-            }
-        }
-
-        Timer {
-            interval: 0
-            repeat: false
-            running: nodeStack.settingsPresentationPending && nodeStack.settingsView !== null
-                && appWindow.nodeShell === nodeStack && appWindow.menuNavigationEnabled
-            onTriggered: nodeStack.presentSettingsIfReady()
-        }
-
-        function openNode() {
-            nodeStack.resetToRoot()
-        }
-
-        function openPeers() {
-            nodeStack.resetToRoot()
-            ApplicationModels.peerTableModel.startAutoRefresh()
-            nodeStack.push(peersPage, {}, StackView.Immediate)
-        }
-
-        function openConsole() {
-            nodeStack.openSettings("rpc-console")
-        }
-
-        function openNetworkTraffic() {
-            nodeStack.openSettings("network-traffic")
-        }
-        // StackView only hides this externally owned page on pop. The shell
-        // retains its editor/draft, just as the desktop wallet shell does.
-        Loader {
-            id: nodeSettings
-            active: nodeStack.settingsInstantiated
-            visible: false
-            width: nodeStack.width
-            height: nodeStack.height
-            sourceComponent: settingsPage
-            onLoaded: nodeStack.presentSettingsIfReady()
-        }
-        Component {
-            id: node
-            NodeRunner {
-                onSettingsClicked: appWindow.openSettings("")
-                onPeersClicked: appWindow.routeToShell(MainWindow.RoutePeers)
-            }
-        }
-        Component {
-            id: settingsPage
-            SettingsView {
+    Component {
+        id: nodeShellComponent
+        NodeShell {
+            id: nodeShellItem
+            navigationAdmitted: appWindow.nodeShell === nodeShellItem && appWindow.menuNavigationEnabled
+            stopping: appWindow.shutdownInProgress || ApplicationModels.nodeModel.fatalException
+            settingsComponent: SettingsView {
                 wallet: typeof walletController !== "undefined" && ApplicationModels.walletController.isWalletLoaded
                     ? ApplicationModels.walletController.selectedWallet : null
                 activeWalletName: wallet ? wallet.name : ""
-                onDoneClicked: nodeStack.pop()
+                onDoneClicked: nodeShellItem.closeSettings()
             }
-        }
-        Component {
-            id: peersPage
-            PeersView {
-                onBack: {
-                    nodeStack.pop()
-                    ApplicationModels.peerTableModel.stopAutoRefresh()
-                }
-            }
+            onSettingsRequested: (section) => appWindow.openSettings(section)
+            onPeersRequested: appWindow.routeToShell(MainWindow.RoutePeers)
         }
     }
 }

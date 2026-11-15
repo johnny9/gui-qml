@@ -10,6 +10,7 @@
 #include <QSignalSpy>
 #include <QScopeGuard>
 
+#include <memory>
 #include <utility>
 
 class NavigationIntegrationTests : public QObject
@@ -36,8 +37,27 @@ private Q_SLOTS:
         QPointer<QObject> clock{qmltest::Find(m_app, "blockClock")};
         QVERIFY(clock);
         QSignalSpy warnings{&m_app.engine(), &QQmlEngine::warnings};
+        std::unique_ptr<QSignalSpy> settings_requested;
+        if (!m_app.window()->property("desktopWalletMode").toBool()) {
+            auto* runner = qmltest::Find(m_app, "nodeRunner");
+            QVERIFY(runner);
+            settings_requested = std::make_unique<QSignalSpy>(runner, SIGNAL(settingsClicked()));
+            QVERIFY(settings_requested->isValid());
+        }
         QVERIFY(qmltest::OpenSettings(m_app));
-        QTRY_VERIFY(qmltest::Find(m_app, "settingsView"));
+        if (settings_requested) QTRY_COMPARE(settings_requested->count(), 1);
+        const auto route_state = [&] {
+            auto* stack = qmltest::Find(m_app, "mainPageStack");
+            auto* item = stack ? stack->property("currentItem").value<QObject*>() : nullptr;
+            auto* shell = m_app.window()->property("nodeShell").value<QObject*>();
+            return QStringLiteral("nodeShell=%1 currentItem=%2 navigation=%3 pending=%4 instantiated=%5")
+                .arg(shell ? QString::fromLatin1(shell->metaObject()->className()) : QStringLiteral("null"),
+                     item ? QString::fromLatin1(item->metaObject()->className()) : QStringLiteral("null"),
+                     m_app.window()->property("menuNavigationEnabled").toString(),
+                     shell ? shell->property("settingsPresentationPending").toString() : QStringLiteral("unavailable"),
+                     shell ? shell->property("settingsInstantiated").toString() : QStringLiteral("unavailable"));
+        };
+        QTRY_VERIFY2(qmltest::Find(m_app, "settingsView"), qPrintable(route_state()));
         auto* settings = qmltest::Find(m_app, "settingsView");
         QTRY_VERIFY(settings->property("visible").toBool());
         QTRY_VERIFY(qmltest::TransitionsFinished(m_app.window()));
