@@ -5,6 +5,7 @@
 #include <qml/walletsend.h>
 #include <qml/retainedvalue.h>
 #include <qml/models/signertransaction.h>
+#include <qml/psbtsignatures.h>
 
 #include <QScopeGuard>
 
@@ -274,8 +275,11 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
         if (!error && !complete) error = wallet.fillPSBT({.sign = true, .bip32_derivs = true}, nullptr, document, complete);
         if (error) {
             const auto returned = document.GetUnsignedTx();
+            // An error can still carry useful partial work. Finalized fields
+            // must verify against the captured inputs before retaining them.
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
-                psbtfee::MatchesReview(document, *authenticated, request.approved_fee)) {
+                psbtfee::MatchesReview(document, *authenticated, request.approved_fee) &&
+                psbtsignatures::VerifyFinalizedInputs(document, /*require_all=*/false)) {
                 result.document = std::make_shared<const PartiallySignedTransaction>(document);
                 result.partial = true;
             }
@@ -311,7 +315,8 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
         try {
             const auto returned = document.GetUnsignedTx();
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
-                psbtfee::MatchesReview(document, *authenticated, request.approved_fee)) {
+                psbtfee::MatchesReview(document, *authenticated, request.approved_fee) &&
+                psbtsignatures::VerifyFinalizedInputs(document, /*require_all=*/false)) {
                 result.document = std::make_shared<const PartiallySignedTransaction>(document);
                 result.partial = true;
             }
