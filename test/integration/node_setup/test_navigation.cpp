@@ -101,7 +101,7 @@ private Q_SLOTS:
         QVERIFY(modal);
         const auto close_modal = qScopeGuard([&] {
             if (modal) QMetaObject::invokeMethod(modal, "close");
-            QTest::qWaitFor([&] { return !modal || !modal->property("visible").toBool(); });
+            QVERIFY(QTest::qWaitFor([&] { return !modal || !modal->property("visible").toBool(); }));
         });
         QVERIFY(qmltest::Click(m_app, "walletTypeRegular"));
         auto* form = qmltest::WaitForVisible(m_app, "createWalletFormPage");
