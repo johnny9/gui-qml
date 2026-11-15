@@ -22,6 +22,8 @@ These local notes retain changes that could simplify the application or remove a
 
 Add a note whenever a discovered Core interface limitation, ordering hazard or missing guarantee complicates the app solution, including when an app-only workaround succeeds. Use a stable local note ID and record:
 
+User amendment `wallet-adapter-upstream-notes-20261115` makes this mandatory for every new or materially changed app adapter compensating for missing public Wallet/WalletLoader functionality. Link the adapter implementation and its focused acceptance receipt to the appropriate note before accepting the work order. Successful public-RPC or isolated-process workarounds still need notes. State whether the upstream improvement is optional or required, and when the workaround can be retired. Keep these updates branch-local; do not overwrite shared planning/evidence registers or imply authorization to change Core or submit upstream.
+
 - Affected work orders and existing scope IDs, exact app/Core revisions and source locations.
 - Confirmed behavior, the required guarantee, assumptions still needing verification, and reproduction/regression evidence.
 - The app-only workaround, its lifecycle, performance or maintenance costs, and remaining limitations.
