@@ -92,6 +92,45 @@ class BumpTransactionModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void externalReplacementRequiresVerifiedSignatures_data() {
+        QTest::addColumn<bool>("valid");
+        QTest::newRow("valid-original-input-signatures") << true;
+        QTest::newRow("invalid-unchanged-unsigned-terms") << false;
+    }
+    void externalReplacementRequiresVerifiedSignatures() {
+        QFETCH(bool, valid);
+        struct ExternalWallet : MockWallet { bool hasExternalSigner() override { return true; } };
+        auto wallet = std::make_shared<ExternalWallet>();
+        ConfigureBumpableWallet(*wallet);
+        const auto funding = signerfixture::Review().inputs.front().non_witness_utxo;
+        wallet->get_tx_fn = [funding](const Txid& id) {
+            return id == TEST_ORIGINAL->GetHash() ? TEST_ORIGINAL
+                : id == funding->GetHash() ? funding : CTransactionRef{};
+        };
+        wallet->get_coins_fn = [funding](const std::vector<COutPoint>& inputs) {
+            std::vector<interfaces::WalletTxOut> result;
+            for (const auto& input : inputs) {
+                interfaces::WalletTxOut coin{};
+                if (input.hash == funding->GetHash() && input.n < funding->vout.size())
+                    coin.txout = funding->vout[input.n];
+                result.push_back(std::move(coin));
+            }
+            return result;
+        };
+        wallet->sign_bump_transaction_fn = [valid](CMutableTransaction& transaction) {
+            for (auto& input : transaction.vin) input.scriptSig = valid ? CScript{} << OP_0 : CScript{};
+            return true;
+        };
+        wallet->commit_bump_transaction_fn = [](const Txid&, CMutableTransaction&& tx, std::vector<bilingual_str>&, Txid& id) {
+            id = tx.GetHash(); return true;
+        };
+        Fixture fixture{wallet};
+        QVERIFY(fixture.model->requestPrepareFeeBump(TEST_TXID, 1)); fixture.finish();
+        QVERIFY(fixture.model->requestConfirmFeeBump()); fixture.finish();
+        QCOMPARE(wallet->calls.signBumpTransaction.load(), 1);
+        QCOMPARE(wallet->calls.commitBumpTransaction.load(), valid ? 1 : 0);
+        QCOMPARE(fixture.model->state(), valid ? BumpTransactionModel::Succeeded : BumpTransactionModel::Failed);
+    }
     void quietCloseRetiresPreparedReviewBeforeFacadeDestruction_data() {
         QTest::addColumn<int>("stage");
         QTest::newRow("before-native")<<0;QTest::newRow("held-outcome")<<1;QTest::newRow("published-review")<<2;
