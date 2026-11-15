@@ -398,9 +398,11 @@ void UiPreferencesTests::failedStorageRetainsTheLastConfirmedValues()
     view.set_dark(false); QVERIFY(Settle(transport, gui)); QVERIFY(!view.dark());
     QVERIFY(QFile::remove(path)); QVERIFY(QDir().mkdir(path));
     view.set_dark(true); const auto receipt = store.lastWriteReceipt(); QVERIFY(receipt);
-    transport.drain(); QCOMPARE(receipt->load(), UiPreferencesStore::Uncertain);
+    // Opening/syncing a directory fails before any setValue call. This is a
+    // known no-write failure, separately from a post-write sync uncertainty.
+    transport.drain(); QCOMPARE(receipt->load(), UiPreferencesStore::Failed);
     QVERIFY(!view.dark()); QVERIFY(Settle(transport, gui)); QVERIFY(!view.dark());
-    QVERIFY(!store.pending()); QVERIFY(store.error().contains("uncertain")); QVERIFY(QFileInfo(path).isDir());
+    QVERIFY(!store.pending()); QVERIFY(store.error().contains("rejected")); QVERIFY(QFileInfo(path).isDir());
     store.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
 }
 

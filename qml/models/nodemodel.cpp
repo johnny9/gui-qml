@@ -324,8 +324,16 @@ void NodeModel::closeAdmission()
 
 void NodeModel::beginShutdown()
 {
-    if (m_workers_stopping) return;
     const QPointer<NodeModel> observer{this};
+    if (m_workers_stopping) {
+        // An original admitted lifecycle operation may publish its fatal
+        // diagnostic after worker shutdown. A repeated terminal close must
+        // also retire that newly retained presentation while the facade lives.
+        if (m_startup_diagnostics) m_startup_diagnostics->closeAdmission();
+        if (!observer) return;
+        if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->closeAdmission();
+        return;
+    }
     m_workers_stopping = true;
     if(m_network_model){
         if(m_destroying)m_network_model->retire();

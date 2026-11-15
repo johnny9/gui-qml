@@ -111,6 +111,34 @@ struct ManualSnapshotGraph {
 
     bool step(execution::Lane lane) { return transport.step(lane); }
 
+    // Follow the exact admitted task rather than counting unrelated Domain
+    // cleanup receipts produced by retained snapshots in the same schedule.
+    std::optional<execution::TaskId> finishQueuedWork(execution::Lane lane)
+    {
+        std::optional<execution::TaskId> target;
+        transport.queuedCountIf([&](const auto& turn) {
+            if (!target && turn.lane == lane && turn.phase == execution::Phase::Queued) target = turn.id;
+            return false;
+        });
+        if (!target) return {};
+        for (size_t turn = 0; turn < 1024; ++turn) {
+            const auto next = transport.dispatchNext(lane);
+            if (!next || !transport.finishWork(*next)) return {};
+            if (*next == *target) return target;
+        }
+        return {};
+    }
+
+    bool deliverTaskOutcome(execution::TaskId target)
+    {
+        for (size_t turn = 0; turn < 1024; ++turn) {
+            const auto next = transport.dispatchNext(execution::Lane::Domain);
+            if (!next || !transport.finishWork(*next)) return false;
+            if (*next == target) return true;
+        }
+        return false;
+    }
+
     size_t queued(execution::Lane lane) const
     {
         return transport.queuedCountIf([lane](const auto& turn) { return turn.lane == lane; });
@@ -247,8 +275,8 @@ private Q_SLOTS:
         QCoreApplication::setOrganizationName(m_original_organization);
         QCoreApplication::setApplicationName(m_original_application);
     }
-    void proxyDisabledRemovesKey();
-    void torDisabledRemovesKey();
+    void proxyDisabledPersistsDisabledOverride();
+    void torDisabledPersistsDisabledOverride();
     void proxyEnabledWritesAddress();
     void proxyDirtySetAtRuntime();
     void proxyDirtyResetWhenReverted();
@@ -351,29 +379,29 @@ private Q_SLOTS:
     void displayUnitUsesQtCompatibleSettingsKey();
     void displayUnitUsesLegacyQtFallback();
     void displayUnitPrefersQmlSettingOverLegacyQtFallback();
-    void sharedCoreSettingHelpersDeduplicateOverrides();
+    void sharedCoreSettingHelpersPreserveExplicitOverrides();
     void parameterInteractionOverridesPersistExplicitValues();
     void coreSettingsLegacyNumericOverridesWriteStrings();
     void coreSettingsModelEntryMutatesRuntimeModel();
     void coreSettingsSessionCommandLineSettingDoesNotWrite();
     void coreSettingsSessionDoesNotCopyUntouchedConfig();
     void coreSettingsSessionWritesTouchedConfigOverride();
-    void coreSettingsSessionRevertingToDefaultDeletesOverride();
+    void coreSettingsSessionRevertingToDefaultPersistsExplicitOverride();
     void coreSettingsSessionPruneDisabledPreservesPreviousValue();
     void coreSettingsSessionPruneEnabledClearsPreviousValue();
     void coreSettingsSessionProxyDisabledPreservesPreviousValue();
     void coreSettingsLoadPersistentPrunePreviousValue();
     void coreSettingsSessionPreviewRefreshPreservesTouchedValues();
     void coreSettingsSessionChangeReportsFieldDiffs();
-    void coreSettingsSessionProxyCommitAcceptsUnchangedAddressWithoutValueChange();
+    void coreSettingsSessionProxyCommitAcceptsUnchangedAddressAsExplicitIntent();
     void coreSettingStatusTracksSourcePrecedence();
     void runtimeCoreSettingStatusesRefreshAfterWrite();
     void commandLineOverriddenSettingDoesNotWrite();
     void runtimeCommandLineOverridesDisplayEffectiveValues();
     void runtimeParameterInteractionsDisplayEffectiveValues();
     void commandLineOverriddenSettingsPreservePersistentValues();
-    void revertingToConfigValueDeletesRwOverride();
-    void revertingToDefaultValueDeletesRwOverride();
+    void revertingToConfigValuePersistsExplicitOverride();
+    void revertingToDefaultValuePersistsExplicitOverride();
     void languageCommandLineOverrideDoesNotPersist();
     void legacyQtSettingsMigrateToCoreSettings();
     void knownSavedProfileFinishesOnlyRemainingDirectoryAndCleanup();
@@ -644,7 +672,7 @@ static void PrepareRuntimePersistence(MockNode& node, ArgsManager& args, const Q
     InstallPersistentSettings(node, args);
 }
 
-void OptionsModelTests::proxyDisabledRemovesKey()
+void OptionsModelTests::proxyDisabledPersistsDisabledOverride()
 {
     MockNode node;
     const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
@@ -660,17 +688,18 @@ void OptionsModelTests::proxyDisabledRemovesKey()
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(model.proxyEnabled());
 
-    // Disabling a proxy removes the override instead of storing an empty string.
+    // Disabling is an explicit false override; removing it is a separate editor intent.
     model.setProxyEnabled(false);
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(!model.proxyEnabled());
     QVERIFY(QFile::exists(model_settings_dir.filePath(QStringLiteral("runtime-settings.json"))));
     QVERIFY(!model.settingsPending());
     const auto proxy_write = ReadRwSetting(model_args, "proxy");
-    QVERIFY(proxy_write.isNull());
+    QVERIFY(proxy_write.isBool());
+    QVERIFY(!proxy_write.get_bool());
 }
 
-void OptionsModelTests::torDisabledRemovesKey()
+void OptionsModelTests::torDisabledPersistsDisabledOverride()
 {
     MockNode node;
     const auto drain_node_owner=DrainExecutorsBeforeNativeOwnerDestruction();
@@ -691,7 +720,8 @@ void OptionsModelTests::torDisabledRemovesKey()
     QVERIFY(QFile::exists(model_settings_dir.filePath(QStringLiteral("runtime-settings.json"))));
     QVERIFY(!model.settingsPending());
     const auto onion_write = ReadRwSetting(model_args, "onion");
-    QVERIFY(onion_write.isNull());
+    QVERIFY(onion_write.isBool());
+    QVERIFY(!onion_write.get_bool());
 }
 
 void OptionsModelTests::proxyEnabledWritesAddress()
@@ -1325,7 +1355,8 @@ void OptionsModelTests::pruneDisabledPreservesPreviousValue()
     QVERIFY(previous_write.isStr());
     QCOMPARE(previous_write.get_str(), util::ToString(QmlCoreSettings::PruneGBToMiB(10)));
     const auto prune_write = ReadRwSetting(model_args, "prune");
-    QVERIFY(prune_write.isNull());
+    QVERIFY(prune_write.isStr());
+    QCOMPARE(prune_write.get_str(), std::string{"0"});
 }
 
 void OptionsModelTests::developerDirtyTracksRestartSettings()
@@ -1440,7 +1471,8 @@ void OptionsModelTests::proxyDisabledPreservesPreviousValue()
     QVERIFY(previous_write.isStr());
     QCOMPARE(previous_write.get_str(), std::string{"127.0.0.1:9050"});
     const auto proxy_write = ReadRwSetting(model_args, "proxy");
-    QVERIFY(proxy_write.isNull());
+    QVERIFY(proxy_write.isBool());
+    QVERIFY(!proxy_write.get_bool());
 }
 
 void OptionsModelTests::customDataDirValidationRejectsFile()
@@ -2914,10 +2946,10 @@ void OptionsModelTests::onboardingStorageCheckDoesNotPublishStalePath()
 
         // The first queued Core task is the stale-path disk result. Its outcome
         // must not publish while the replacement path is being previewed.
-        QVERIFY(graph.step(execution::Lane::Core));
+        const auto disk = graph.finishQueuedWork(execution::Lane::Core);
+        QVERIFY(disk);
         QVERIFY(graph.posts.empty());
-        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
-        QVERIFY(graph.step(execution::Lane::Domain));
+        QVERIFY(graph.deliverTaskOutcome(*disk));
         QCOMPARE(graph.posts.size(), size_t{1});
         QVERIFY(graph.deliverOnePost());
         QVERIFY(model.validationPending());
@@ -2926,10 +2958,10 @@ void OptionsModelTests::onboardingStorageCheckDoesNotPublishStalePath()
         QCOMPARE(storage_changed.size(), changes_before_stale_result);
 
         QVERIFY(DriveToStorageCheck(graph, model, latest_path));
-        QVERIFY(graph.step(execution::Lane::Core));
+        const auto successor_disk = graph.finishQueuedWork(execution::Lane::Core);
+        QVERIFY(successor_disk);
         QVERIFY(graph.posts.empty());
-        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
-        QVERIFY(graph.step(execution::Lane::Domain));
+        QVERIFY(graph.deliverTaskOutcome(*successor_disk));
         QCOMPARE(graph.posts.size(), size_t{1});
         QVERIFY(graph.deliverOnePost());
         QVERIFY(graph.drainLive());
@@ -2973,23 +3005,22 @@ void OptionsModelTests::onboardingStorageProjectionCoalescesPublicPruneChoice()
         QSignalSpy can_finish_changed{&model, &OnboardingOptionsModel::canFinishChanged};
         QVERIFY(model.selectCustomDataDir(selected_path));
         QVERIFY(DriveToStorageCheck(graph, model, selected_path));
-        QVERIFY(graph.step(execution::Lane::Core));
+        const auto disk = graph.finishQueuedWork(execution::Lane::Core);
+        QVERIFY(disk);
         QVERIFY(graph.posts.empty());
-        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
-        QVERIFY(graph.step(execution::Lane::Domain));
+        QVERIFY(graph.deliverTaskOutcome(*disk));
         QCOMPARE(graph.posts.size(), size_t{1});
         QVERIFY(graph.deliverOnePost());
         // The disk read is complete, but its derived presentation is pending.
         QVERIFY(model.storageCheckPending());
         QVERIFY(graph.posts.empty());
-        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
 
-        // Run the old immutable projection but hold its presentation. A user prune
-        // choice arrives before that projection can update the public properties.
-        QVERIFY(graph.step(execution::Lane::Domain));
+        // Run the exact queued immutable projection but hold its presentation.
+        // Snapshot cleanup outcomes may share Domain without being this work.
+        const auto projection = graph.finishQueuedWork(execution::Lane::Domain);
+        QVERIFY(projection);
         QVERIFY(graph.posts.empty());
-        QCOMPARE(graph.queued(execution::Lane::Domain), size_t{1});
-        QVERIFY(graph.step(execution::Lane::Domain));
+        QVERIFY(graph.deliverTaskOutcome(*projection));
         QVERIFY(model.storageCheckPending());
         QCOMPARE(graph.posts.size(), size_t{1});
         auto old_projection = std::move(graph.posts.front());
@@ -3383,7 +3414,7 @@ void OptionsModelTests::displayUnitPrefersQmlSettingOverLegacyQtFallback()
     QCOMPARE(model.displayUnitLabel(), QStringLiteral("mBTC"));
 }
 
-void OptionsModelTests::sharedCoreSettingHelpersDeduplicateOverrides()
+void OptionsModelTests::sharedCoreSettingHelpersPreserveExplicitOverrides()
 {
     ArgsManager args;
     args.SelectConfigNetwork("main");
@@ -3400,7 +3431,8 @@ void OptionsModelTests::sharedCoreSettingHelpersDeduplicateOverrides()
     args.LockSettings([&](common::Settings& settings) {
         has_listen_override = settings.rw_settings.contains("listen");
     });
-    QVERIFY(!has_listen_override);
+    QVERIFY(has_listen_override);
+    QVERIFY(!SettingToBool(args.GetPersistentSetting("listen")).value_or(true));
 
     QVERIFY(QmlCoreSettings::WriteCoreSettingOverride(args, QStringLiteral("listen"), common::SettingsValue{true}));
     common::SettingsValue listen_override;
@@ -3415,7 +3447,8 @@ void OptionsModelTests::sharedCoreSettingHelpersDeduplicateOverrides()
     args.LockSettings([&](common::Settings& settings) {
         has_mempool_override = settings.rw_settings.contains("maxmempool");
     });
-    QVERIFY(!has_mempool_override);
+    QVERIFY(has_mempool_override);
+    QCOMPARE(SettingTo<int64_t>(args.GetPersistentSetting("maxmempool")).value_or(-1), int64_t{DEFAULT_MAX_MEMPOOL_SIZE_MB});
 }
 
 void OptionsModelTests::parameterInteractionOverridesPersistExplicitValues()
@@ -3437,7 +3470,8 @@ void OptionsModelTests::parameterInteractionOverridesPersistExplicitValues()
     listen_args.LockSettings([&](common::Settings& settings) {
         has_listen_override = settings.rw_settings.contains("listen");
     });
-    QVERIFY(!has_listen_override);
+    QVERIFY(has_listen_override);
+    QVERIFY(!SettingToBool(listen_args.GetPersistentSetting("listen")).value_or(true));
 
     ArgsManager mempool_args;
     mempool_args.SelectConfigNetwork("main");
@@ -3593,7 +3627,7 @@ void OptionsModelTests::coreSettingsSessionWritesTouchedConfigOverride()
     QVERIFY(listen_override.get_bool());
 }
 
-void OptionsModelTests::coreSettingsSessionRevertingToDefaultDeletesOverride()
+void OptionsModelTests::coreSettingsSessionRevertingToDefaultPersistsExplicitOverride()
 {
     ArgsManager args;
     args.SelectConfigNetwork("main");
@@ -3611,7 +3645,8 @@ void OptionsModelTests::coreSettingsSessionRevertingToDefaultDeletesOverride()
     args.LockSettings([&](common::Settings& settings) {
         has_listen_override = settings.rw_settings.contains("listen");
     });
-    QVERIFY(!has_listen_override);
+    QVERIFY(has_listen_override);
+    QCOMPARE(SettingToBool(args.GetPersistentSetting("listen")).value_or(!DEFAULT_LISTEN), DEFAULT_LISTEN);
 }
 
 void OptionsModelTests::coreSettingsSessionPruneDisabledPreservesPreviousValue()
@@ -3634,7 +3669,8 @@ void OptionsModelTests::coreSettingsSessionPruneDisabledPreservesPreviousValue()
     });
     QVERIFY(prune_prev.isStr());
     QCOMPARE(QString::fromStdString(prune_prev.get_str()), QString::number(QmlCoreSettings::PruneGBToMiB(10)));
-    QVERIFY(!has_prune_override);
+    QVERIFY(has_prune_override);
+    QCOMPARE(SettingTo<int64_t>(args.GetPersistentSetting("prune")).value_or(-1), int64_t{0});
 }
 
 void OptionsModelTests::coreSettingsSessionPruneEnabledClearsPreviousValue()
@@ -3682,7 +3718,8 @@ void OptionsModelTests::coreSettingsSessionProxyDisabledPreservesPreviousValue()
         has_proxy_override = settings.rw_settings.contains("proxy");
     });
     QCOMPARE(QString::fromStdString(proxy_prev.get_str()), QStringLiteral("10.0.0.2:9050"));
-    QVERIFY(!has_proxy_override);
+    QVERIFY(has_proxy_override);
+    QVERIFY(!SettingToBool(args.GetPersistentSetting("proxy")).value_or(true));
 }
 
 void OptionsModelTests::coreSettingsLoadPersistentPrunePreviousValue()
@@ -3731,7 +3768,7 @@ void OptionsModelTests::coreSettingsSessionChangeReportsFieldDiffs()
     QVERIFY(session.isTouched(QStringLiteral("listen")));
 }
 
-void OptionsModelTests::coreSettingsSessionProxyCommitAcceptsUnchangedAddressWithoutValueChange()
+void OptionsModelTests::coreSettingsSessionProxyCommitAcceptsUnchangedAddressAsExplicitIntent()
 {
     QmlCoreSettings::Session session;
     const QString address = session.defaultProxyAddress();
@@ -3742,7 +3779,8 @@ void OptionsModelTests::coreSettingsSessionProxyCommitAcceptsUnchangedAddressWit
     QCOMPARE(change.setting_name, QStringLiteral("proxy"));
     QVERIFY(!QmlCoreSettings::ValuesChanged(change));
     QVERIFY(!QmlCoreSettings::ProxyAddressChanged(change));
-    QVERIFY(!session.isTouched(QStringLiteral("proxy")));
+    QVERIFY(session.isTouched(QStringLiteral("proxy")));
+    QVERIFY(change.force_write);
 }
 
 void OptionsModelTests::coreSettingStatusTracksSourcePrecedence()
@@ -3998,13 +4036,14 @@ void OptionsModelTests::runtimeParameterInteractionsDisplayEffectiveValues()
     QVERIFY(!proxy_model.listen());
     QVERIFY(QFile::exists(proxy_model_settings_dir.filePath(QStringLiteral("runtime-settings.json"))));
     const auto disabled_write = ReadRwSetting(proxy_args, "listen");
-    QVERIFY(disabled_write.isNull());
+    QVERIFY(disabled_write.isBool());
+    QVERIFY(!disabled_write.get_bool());
 
     bool has_listen_override{true};
     proxy_args.LockSettings([&](common::Settings& settings) {
         has_listen_override = settings.rw_settings.contains("listen");
     });
-    QVERIFY(!has_listen_override);
+    QVERIFY(has_listen_override);
 
     } // Retire the first facade before its borrowed Node's global drain.
     std::vector<std::string> blocksonly_argv = TestArgv();
@@ -4097,7 +4136,7 @@ void OptionsModelTests::commandLineOverriddenSettingsPreservePersistentValues()
     QVERIFY(!QFile::exists(model_settings_dir.filePath(QStringLiteral("runtime-settings.json"))));
 }
 
-void OptionsModelTests::revertingToConfigValueDeletesRwOverride()
+void OptionsModelTests::revertingToConfigValuePersistsExplicitOverride()
 {
 
     ArgsManager args;
@@ -4125,10 +4164,11 @@ void OptionsModelTests::revertingToConfigValueDeletesRwOverride()
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(QFile::exists(model_settings_dir.filePath(QStringLiteral("runtime-settings.json"))));
     const auto listen_write = ReadRwSetting(args, "listen");
-    QVERIFY(listen_write.isNull());
+    QVERIFY(listen_write.isBool());
+    QVERIFY(listen_write.get_bool());
 }
 
-void OptionsModelTests::revertingToDefaultValueDeletesRwOverride()
+void OptionsModelTests::revertingToDefaultValuePersistsExplicitOverride()
 {
 
     ArgsManager args;
@@ -4155,7 +4195,8 @@ void OptionsModelTests::revertingToDefaultValueDeletesRwOverride()
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(QFile::exists(model_settings_dir.filePath(QStringLiteral("runtime-settings.json"))));
     const auto mempool_write = ReadRwSetting(args, "maxmempool");
-    QVERIFY(mempool_write.isNull());
+    QVERIFY(mempool_write.isStr());
+    QCOMPARE(mempool_write.get_str(), util::ToString(DEFAULT_MAX_MEMPOOL_SIZE_MB));
 }
 
 void OptionsModelTests::languageCommandLineOverrideDoesNotPersist()

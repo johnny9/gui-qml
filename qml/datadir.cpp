@@ -286,26 +286,24 @@ bool ResetGuiSettings(ArgsManager& args, QString* error)
     }
 
     fs::path settings_path;
-    if (!args.GetSettingsPath(&settings_path) || !fs::exists(settings_path)) {
-        return QmlLegacySettings::ClearLegacyGuiSettings(QString::fromStdString(args.GetChainTypeString()), error);
-    }
-
-    std::vector<std::string> settings_errors;
-    if (!args.ReadSettingsFile(&settings_errors)) {
-        if (error) *error = QString::fromStdString(settings_errors.empty() ? std::string{"Settings file could not be read."} : settings_errors.front());
-        return false;
-    }
-    if (!args.WriteSettingsFile(&settings_errors, /*backup=*/true)) {
-        if (error) *error = QString::fromStdString(settings_errors.empty() ? std::string{"Settings file backup could not be written."} : settings_errors.front());
-        return false;
-    }
-    args.LockSettings([](common::Settings& settings) {
-        settings.rw_settings.clear();
-    });
-    settings_errors.clear();
-    if (!args.WriteSettingsFile(&settings_errors)) {
-        if (error) *error = QString::fromStdString(settings_errors.empty() ? std::string{"Settings file could not be written."} : settings_errors.front());
-        return false;
+    if (args.GetSettingsPath(&settings_path) && fs::exists(settings_path)) {
+        std::vector<std::string> settings_errors;
+        if (!args.ReadSettingsFile(&settings_errors)) {
+            if (error) *error = QString::fromStdString(settings_errors.empty() ? std::string{"Settings file could not be read."} : settings_errors.front());
+            return false;
+        }
+        if (!args.WriteSettingsFile(&settings_errors, /*backup=*/true)) {
+            if (error) *error = QString::fromStdString(settings_errors.empty() ? std::string{"Settings file backup could not be written."} : settings_errors.front());
+            return false;
+        }
+        args.LockSettings([](common::Settings& settings) {
+            settings.rw_settings.clear();
+        });
+        settings_errors.clear();
+        if (!args.WriteSettingsFile(&settings_errors)) {
+            if (error) *error = QString::fromStdString(settings_errors.empty() ? std::string{"Settings file could not be written."} : settings_errors.front());
+            return false;
+        }
     }
     QSettings settings;
     settings.clear();

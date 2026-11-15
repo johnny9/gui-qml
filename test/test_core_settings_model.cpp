@@ -424,8 +424,9 @@ void CoreSettingsModelTests::manualTypedEntryValues()
     QCOMPARE(model.userRevision(), revision + (typed ? 1 : 0));
     QVERIFY(Settle(transport, gui));
     QCOMPARE(entry->value(), expected); QCOMPARE(effect.calls, typed ? 1 : 0);
-    const bool changed = old_value != expected;
-    QCOMPARE(effect.writes, typed && accepted && changed ? 1 : 0);
+    // An accepted typed user command owns explicit override intent even when
+    // its scalar equals the current/default value (R33 scopes073/176/177).
+    QCOMPARE(effect.writes, typed && accepted ? 1 : 0);
     QCOMPARE(outcomes.size(), typed ? 1 : 0);
     if (typed) {
         QCOMPARE(outcomes[0][0].toULongLong(), model.operationId());
@@ -455,14 +456,14 @@ void CoreSettingsModelTests::manualEntryEnabledGroups()
     entry->setEnabled(true); QCOMPARE(effect.writes, 0); QVERIFY(!entry->enabled());
     QVERIFY(Settle(transport, gui)); QVERIFY(entry->enabled()); QCOMPARE(effect.writes, 1); QCOMPARE(enabled.size(), 1);
     entry->setEnabled(true); QVERIFY(Settle(transport, gui));
-    QCOMPARE(effect.calls, 2); QCOMPARE(effect.writes, 1); QCOMPARE(enabled.size(), 1);
+    QCOMPARE(effect.calls, 2); QCOMPARE(effect.writes, 2); QCOMPARE(enabled.size(), 1);
     if (key == QStringLiteral("proxy") || key == QStringLiteral("onion")) {
         QCOMPARE(entry->defaultAddress(), QStringLiteral("127.0.0.1:9050"));
         QCOMPARE(entry->address(), QStringLiteral("127.0.0.1:9050"));
         const auto address = key == QStringLiteral("proxy") ? QStringLiteral("192.0.2.9:9050") : QStringLiteral("[::1]:9150");
         entry->setAddress(QStringLiteral(" ") + address + QStringLiteral(" "));
         QVERIFY(Settle(transport, gui)); QCOMPARE(entry->address(), address); QCOMPARE(entry->value().toString(), address);
-        QCOMPARE(effect.calls, 3); QCOMPARE(effect.writes, 2);
+        QCOMPARE(effect.calls, 3); QCOMPARE(effect.writes, 3);
     } else {
         QVERIFY(entry->address().isEmpty()); QCOMPARE(entry->requestAddress(QStringLiteral("127.0.0.1:9050")), quint64{0});
         QCOMPARE(effect.calls, 2); QCOMPARE(effect.writes, 1);
