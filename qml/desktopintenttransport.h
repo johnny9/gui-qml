@@ -7,7 +7,9 @@
 #include <qml/desktopintentowner.h>
 
 #include <functional>
+#include <atomic>
 #include <memory>
+#include <vector>
 
 namespace desktopintent::transport {
 enum class StartStatus { Primary, Forwarded, Rejected, Unknown };
@@ -30,14 +32,18 @@ public:
     ~Service();
     execution::Admission start(QString profile_directory, QString network, std::vector<Input> inputs,
                                std::function<void(StartResult)> completed);
+    // Synchronous admission fence only; no signals, I/O or drain work.
+    void closeAdmission();
     // Admission means stop was requested. retired is delivered only after
     // Native sockets/server/lock are physically gone. Destruction also stops.
     execution::Admission stop(std::function<void()> retired = {});
     bool retired() const;
 private:
     struct State;
+    struct Flags;
     explicit Service(std::shared_ptr<State> state);
-    const std::shared_ptr<State> m_state;
+    std::atomic<std::shared_ptr<State>> m_state;
+    const std::shared_ptr<Flags> m_flags;
 };
 } // namespace desktopintent::transport
 #endif // BITCOIN_QML_DESKTOPINTENTTRANSPORT_H
