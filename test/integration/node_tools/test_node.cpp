@@ -198,7 +198,7 @@ private Q_SLOTS:
         QVERIFY(console);
         const auto tip = qmltest::Call(m_app, &interfaces::Node::executeRpc, "getbestblockhash", UniValue{UniValue::VARR}, "").get_str();
         // Keep the RPC active until cleanup mines a block, even if the GUI is slow.
-        QVERIFY(console->submitCommand(QString::fromStdString("waitfornewblock 0 " + tip)));
+        QVERIFY(console->submitNodeCommand(QString::fromStdString("waitfornewblock 0 " + tip)));
         const auto finish_rpc = qScopeGuard([&] {
             UniValue params{UniValue::VARR};
             params.push_back(1);

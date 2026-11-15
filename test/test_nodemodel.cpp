@@ -37,6 +37,7 @@
 #include <vector>
 
 #include <QVariantMap>
+#include <QMetaProperty>
 #include <QDateTime>
 #include <QLocale>
 #include <QEventLoop>
@@ -46,6 +47,17 @@
 
 namespace {
 constexpr int ASYNC_TIMEOUT_MS{5'000};
+
+template <typename T>
+concept HasLegacyPeerCommands = requires(T& model) { model.requestDisconnectPeer(qint64{1}); }
+    || requires(T& model) { model.requestBanPeer(QString{}, int64_t{3600}); }
+    || requires(T& model) { model.disconnectPeer(qint64{1}); }
+    || requires(T& model) { model.banPeer(QString{}, int64_t{3600}); };
+template <typename T>
+concept HasLegacyTrafficGetters = requires(T& model) { model.getTotalBytesReceived(); }
+    || requires(T& model) { model.getTotalBytesSent(); };
+static_assert(!HasLegacyPeerCommands<NodeModel>);
+static_assert(!HasLegacyTrafficGetters<NodeModel>);
 
 void DrainNodeModel(NodeModel& model)
 {
@@ -187,6 +199,24 @@ class NodeModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void featureOwnersReplaceTheLegacyNodeSchema()
+    {
+        const auto& meta = NodeModel::staticMetaObject;
+        QCOMPARE(meta.indexOfProperty("peerActionPending"), -1);
+        QCOMPARE(meta.indexOfMethod("peerActionChanged()"), -1);
+        QCOMPARE(meta.indexOfMethod("requestDisconnectPeer(qint64)"), -1);
+        QCOMPARE(meta.indexOfMethod("getTotalBytesReceived()"), -1);
+        const auto peer = meta.property(meta.indexOfProperty("peerCommands"));
+        QVERIFY(peer.isValid()); QVERIFY(peer.isConstant());
+        QCOMPARE(peer.metaType().id(), qMetaTypeId<PeerCommandModel*>());
+        for (const char* name : {"pause", "faulted"}) {
+            const auto property = meta.property(meta.indexOfProperty(name));
+            QVERIFY(property.isValid()); QVERIFY(property.hasNotifySignal()); QVERIFY(!property.isWritable());
+        }
+
+        const auto pending = PeerCommandModel::staticMetaObject.property(PeerCommandModel::staticMetaObject.indexOfProperty("pending"));
+        QVERIFY(pending.hasNotifySignal()); QCOMPARE(pending.notifySignal().name(), QByteArray{"changed"});
+    }
     void manualStartupWarningAdmissionRejectionCanDeleteTheObserver()
     {
         MockNode node;
@@ -682,8 +712,8 @@ void NodeModelTests::manualPollingCachesFactsAndRejectsStaleDeadlines()
 {
     MockNode node; ConfigureNodeModelDefaults(node);
     MempoolState mempool; ConfigureMempoolGetters(node, mempool); mempool.count = 7;
-    node.get_total_bytes_recv_fn = [] { return int64_t{123}; };
-    node.get_total_bytes_sent_fn = [] { return int64_t{456}; };
+    node.ExpectNoCalls(node.calls.getTotalBytesRecv);
+    node.ExpectNoCalls(node.calls.getTotalBytesSent);
     ManualExecutionEnvironment env;
     std::map<NodeModel::Poll, std::function<void()>> deadlines;
     std::map<NodeModel::Poll, std::chrono::milliseconds> delays;
@@ -702,9 +732,10 @@ void NodeModelTests::manualPollingCachesFactsAndRejectsStaleDeadlines()
     model.setMempoolInfoPollingActive(true);
     QCOMPARE(delays.at(NodeModel::Poll::Mempool).count(), int64_t{3000});
     env.drain();
-    QCOMPARE(model.mempoolTransactionCount(), 0); QCOMPARE(model.getTotalBytesReceived(), 0.0f);
+    QCOMPARE(model.mempoolTransactionCount(), 0);
     env.publishAll();
-    QCOMPARE(model.mempoolTransactionCount(), 7); QCOMPARE(model.getTotalBytesReceived(), 123.0f); QCOMPARE(model.getTotalBytesSent(), 456.0f);
+    QCOMPARE(model.mempoolTransactionCount(), 7);
+    QCOMPARE(node.calls.getTotalBytesRecv.load(), 0); QCOMPARE(node.calls.getTotalBytesSent.load(), 0);
     const int calls = node.calls.getMempoolSize.load();
     mempool.count = 19;
     auto deadline = deadlines.at(NodeModel::Poll::Mempool); deadline();
@@ -896,15 +927,15 @@ void NodeModelTests::disconnectPeerReturnsNodeResult()
         return id == 7;
     };
     node.ExpectExactly(node.calls.disconnectById, 2);
-    QSignalSpy outcomes{&model, &NodeModel::peerActionFinished};
-    const auto first = model.requestDisconnectPeer(7); QVERIFY(first);
+    QSignalSpy outcomes{model.peerCommands(), &PeerCommandModel::finished};
+    const auto first = model.peerCommands()->requestDisconnectPeer(7); QVERIFY(first);
     QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 1, ASYNC_TIMEOUT_MS);
     QCOMPARE(outcomes.at(0).at(0).toULongLong(), first);
-    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Succeeded));
-    const auto second = model.requestDisconnectPeer(8); QVERIFY(second); QVERIFY(second != first);
+    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(PeerCommandOperation::Outcome::Succeeded));
+    const auto second = model.peerCommands()->requestDisconnectPeer(8); QVERIFY(second); QVERIFY(second != first);
     QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 2, ASYNC_TIMEOUT_MS);
     QCOMPARE(outcomes.at(1).at(0).toULongLong(), second);
-    QCOMPARE(outcomes.at(1).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Rejected));
+    QCOMPARE(outcomes.at(1).at(1).toInt(), static_cast<int>(PeerCommandOperation::Outcome::Rejected));
     QCOMPARE(disconnected_ids, std::vector<NodeId>({7, 8}));
 }
 
@@ -924,13 +955,13 @@ void NodeModelTests::banPeerRejectsInvalidInputs()
     node.ExpectNoCalls(node.calls.ban);
     node.ExpectNoCalls(node.calls.disconnectByAddress);
 
-    QSignalSpy outcomes{&model, &NodeModel::peerActionFinished};
-    const auto ticket = model.requestBanPeer(QStringLiteral("not an address"), 3600); QVERIFY(ticket);
+    QSignalSpy outcomes{model.peerCommands(), &PeerCommandModel::finished};
+    const auto ticket = model.peerCommands()->requestBanPeer(QStringLiteral("not an address"), 3600); QVERIFY(ticket);
     QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 1, ASYNC_TIMEOUT_MS);
     QCOMPARE(outcomes.at(0).at(0).toULongLong(), ticket);
-    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Rejected));
-    QVERIFY(!model.requestBanPeer(QStringLiteral("127.0.0.1"), 0));
-    QVERIFY(!model.requestBanPeer(QStringLiteral("127.0.0.1"), -1));
+    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(PeerCommandOperation::Outcome::Rejected));
+    QVERIFY(!model.peerCommands()->requestBanPeer(QStringLiteral("127.0.0.1"), 0));
+    QVERIFY(!model.peerCommands()->requestBanPeer(QStringLiteral("127.0.0.1"), -1));
     QCOMPARE(outcomes.size(), 1);
 }
 
@@ -955,11 +986,11 @@ void NodeModelTests::banPeerReturnsFalseWithoutDisconnectWhenBackendFails()
     node.ExpectExactly(node.calls.ban, 1);
     node.ExpectNoCalls(node.calls.disconnectByAddress);
 
-    QSignalSpy outcomes{&model, &NodeModel::peerActionFinished};
-    const auto ticket = model.requestBanPeer(QStringLiteral("127.0.0.1"), 3600); QVERIFY(ticket);
+    QSignalSpy outcomes{model.peerCommands(), &PeerCommandModel::finished};
+    const auto ticket = model.peerCommands()->requestBanPeer(QStringLiteral("127.0.0.1"), 3600); QVERIFY(ticket);
     QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 1, ASYNC_TIMEOUT_MS);
     QCOMPARE(outcomes.at(0).at(0).toULongLong(), ticket);
-    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Rejected));
+    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(PeerCommandOperation::Outcome::Rejected));
     QVERIFY(received_expected_ban);
 }
 
@@ -989,11 +1020,11 @@ void NodeModelTests::banPeerDisconnectsAddressAfterSuccessfulBan()
     node.ExpectExactly(node.calls.ban, 1);
     node.ExpectExactly(node.calls.disconnectByAddress, 1);
 
-    QSignalSpy outcomes{&model, &NodeModel::peerActionFinished};
-    const auto ticket = model.requestBanPeer(QStringLiteral("127.0.0.1"), 3600); QVERIFY(ticket);
+    QSignalSpy outcomes{model.peerCommands(), &PeerCommandModel::finished};
+    const auto ticket = model.peerCommands()->requestBanPeer(QStringLiteral("127.0.0.1"), 3600); QVERIFY(ticket);
     QTRY_COMPARE_WITH_TIMEOUT(outcomes.size(), 1, ASYNC_TIMEOUT_MS);
     QCOMPARE(outcomes.at(0).at(0).toULongLong(), ticket);
-    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(NodeModel::PeerActionOutcome::Succeeded));
+    QCOMPARE(outcomes.at(0).at(1).toInt(), static_cast<int>(PeerCommandOperation::Outcome::Succeeded));
     QVERIFY(received_expected_ban);
     QVERIFY(received_expected_disconnect);
 }
@@ -1076,7 +1107,7 @@ void NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation()
     QVERIFY(!model.peerCommands()->canStart());
     quint64 original{0};
     bool captured{false};
-    QSignalSpy terminal{&model, &NodeModel::peerActionFinished};
+    QSignalSpy terminal{model.peerCommands(), &PeerCommandModel::finished};
     connect(&model, &NodeModel::networkBackendAvailabilityChanged, &receiver, [&] {
         if (captured || !model.networkBackendAvailable()) return;
         captured = true;
@@ -1086,15 +1117,15 @@ void NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation()
         QVERIFY(!model.networkModel()->known());
         QVERIFY(!model.networkActionReady());
         QVERIFY(model.peerCommands()->canStart());
-        original = model.requestDisconnectPeer(7);
+        original = model.peerCommands()->requestDisconnectPeer(7);
         QVERIFY(original);
-        QVERIFY(model.peerActionPending());
+        QVERIFY(model.peerCommands()->pending());
         QCOMPARE(effects, 0);
         if (shutdown) model.beginShutdown();
         else model.closeAdmission();
         QVERIFY(!model.networkBackendAvailable());
         QVERIFY(!model.peerCommands()->canStart());
-        QCOMPARE(model.requestDisconnectPeer(8), quint64{0});
+        QCOMPARE(model.peerCommands()->requestDisconnectPeer(8), quint64{0});
         QCOMPARE(effects, 0);
     });
     model.initializeResult(true, {}, false, false);
@@ -1102,14 +1133,14 @@ void NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation()
     QVERIFY(captured);
     QVERIFY(original);
     QCOMPARE(effects, 0);
-    QVERIFY(model.peerActionPending());
+    QVERIFY(model.peerCommands()->pending());
     env.drain(); // The original action capability survives the parent fence.
     QCOMPARE(effects, 1);
     QCOMPARE(node.calls.disconnectById.load(), 1);
-    QVERIFY(model.peerActionPending()); // Its GUI receipt is still held.
+    QVERIFY(model.peerCommands()->pending()); // Its GUI receipt is still held.
     QCOMPARE(terminal.count(), 0);
     env.publishAll();
-    QVERIFY(!model.peerActionPending());
+    QVERIFY(!model.peerCommands()->pending());
     const auto result = model.peerCommands()->lastResult();
     QVERIFY(result.present);
     QVERIFY(result.outcomeKnown);
@@ -1118,7 +1149,7 @@ void NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation()
     QCOMPARE(result.nodeIdText, QStringLiteral("7"));
     QCOMPARE(result.outcome, PeerCommandOperation::Outcome::Succeeded);
     QVERIFY(!model.peerCommands()->canStart());
-    QCOMPARE(model.requestDisconnectPeer(8), quint64{0});
+    QCOMPARE(model.peerCommands()->requestDisconnectPeer(8), quint64{0});
     env.drain(); env.publishAll();
     QCOMPARE(effects, 1);
     QCOMPARE(terminal.count(), 0); // Closed views stay quiet; actual result remains.

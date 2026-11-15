@@ -155,7 +155,6 @@ struct NodeModel::StatusSnapshot {
     uint64_t generation{0}, network_generation{0};
     uint64_t tip_generation{0};
     bool chain_known{false};
-    quint64 received{0}, sent{0};
     QString startup_time, user_agent;
     QStringList warning_list;
     QString local_addresses, data_dir, blocks_dir, network;
@@ -264,14 +263,9 @@ NodeModel::NodeModel(interfaces::Node& node, bool backend_ready, Services servic
     m_peer_actions = new PeerCommandModel(node, {m_query_scheduler, post}, [this] {
         return networkBackendAvailable();
     }, this);
-    connect(m_peer_actions, &PeerCommandModel::changed, this, &NodeModel::peerActionChanged);
     connect(this, &NodeModel::networkBackendAvailabilityChanged, m_peer_actions, [this] {
         if (m_admission_closed || m_workers_stopping || m_shutdown_requested) m_peer_actions->closeAdmission();
         else m_peer_actions->readinessChanged();
-    });
-    connect(m_peer_actions, &PeerCommandModel::finished, this, [this](quint64 ticket, PeerCommandOperation::Outcome outcome, const QString& error) {
-        if (!m_admission_closed && !m_workers_stopping && !m_shutdown_requested)
-            Q_EMIT peerActionFinished(ticket, static_cast<PeerActionOutcome>(outcome), error);
     });
     m_retirement_scheduler = std::make_shared<TrackedScheduler>(m_services.execution.scheduler, m_work_ledger);
     m_notifications->scheduler = m_query_scheduler;
@@ -540,7 +534,6 @@ void NodeModel::refreshStatus()
                 result.network = QString::fromStdString(Params().GetChainTypeString());
                 result.startup_time = QLocale{}.toString(QDateTime::currentDateTime().addSecs(-TicksSeconds(GetUptime())), QLocale::ShortFormat);
                 result.user_agent = QString::fromStdString(strSubVersion);
-                result.received = std::max(int64_t{0}, node->getTotalBytesRecv()); result.sent = std::max(int64_t{0}, node->getTotalBytesSent());
                 if (ready) {
                     result.chain_known = node->getHeaderTip(result.header_height, result.header_time) && !presync;
                     result.block_height = node->getNumBlocks(); result.block_time = node->getLastBlockTime();
@@ -576,7 +569,6 @@ void NodeModel::publishStatus()
         chain_current = snapshot.tip_generation == m_notifications->tip_generation;
         total = m_notifications->last_peer_total;
     }
-    m_status_ready = true;
     m_information_local_addresses = snapshot.local_addresses;
     m_information_data_dir = snapshot.data_dir; m_information_blocks_dir = snapshot.blocks_dir;
     m_information_network = snapshot.network; m_information_startup_time = snapshot.startup_time;
@@ -606,7 +598,6 @@ void NodeModel::publishStatus()
         if (!current()) return;
         if (time_changed) { Q_EMIT blockTipTimeChanged(m_block_tip_time); if (!current()) return; }
     }
-    m_total_bytes_received = snapshot.received; m_total_bytes_sent = snapshot.sent;
     setNumInboundPeers(snapshot.inbound); if (!current()) return;
     setNumOutboundPeers(snapshot.outbound); if (!current()) return;
     setNumPeers(total.value_or(snapshot.inbound + snapshot.outbound));
@@ -1233,16 +1224,6 @@ void NodeModel::initializeSubscriptions()
     // from running until installation and the original owner have finished.
     m_query_scheduler->activateCleanup(cleanup.id);
     if (!admission) done(false, tr("Node notification installation could not be scheduled."));
-}
-
-quint64 NodeModel::requestDisconnectPeer(qint64 node_id)
-{
-    return m_peer_actions ? m_peer_actions->requestDisconnectPeer(node_id) : 0;
-}
-
-quint64 NodeModel::requestBanPeer(const QString& raw_address, int64_t duration)
-{
-    return m_peer_actions ? m_peer_actions->requestBanPeer(raw_address, duration) : 0;
 }
 
 QVariantList NodeModel::nodeInformationRows()

@@ -134,7 +134,6 @@ public:
     Q_INVOKABLE QString validateCustomDataDir(const QString& path) const;
     Q_INVOKABLE bool selectCustomDataDir(const QString& path);
     Q_INVOKABLE void useDefaultDataDir();
-    Q_INVOKABLE bool setCustomDataDirArgs(QString path) { return selectCustomDataDir(path); }
 
     QString pruneTargetText()const{return m_core_settings.pruneTargetText();}
     QString pruneTargetError()const{return m_core_settings.pruneTargetError();}
@@ -254,7 +253,6 @@ private:
     bool m_backend_drained{false}, m_preparation_ledger_drained{false}, m_preparation_success{false}, m_terminal_scheduled{false};
     QString m_preparation_error;
     UiPreferencesNamespace m_settings_namespace;
-    CommitPort m_commit_port;
     std::shared_ptr<std::atomic<int>> m_setup_commit{std::make_shared<std::atomic<int>>(SetupIdle)};
     QString m_setup_error;
     QString m_unprune_consent;

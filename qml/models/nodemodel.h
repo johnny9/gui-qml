@@ -68,11 +68,10 @@ class NodeModel : public QObject
     Q_PROPERTY(bool networkBackendAvailable READ networkBackendAvailable NOTIFY networkBackendAvailabilityChanged)
     Q_PROPERTY(bool networkActionReady READ networkActionReady NOTIFY networkActionReadyChanged)
     Q_PROPERTY(bool networkActionPending READ networkActionPending NOTIFY networkActionPendingChanged)
-    Q_PROPERTY(bool peerActionPending READ peerActionPending NOTIFY peerActionChanged)
     Q_PROPERTY(PeerCommandModel* peerCommands READ peerCommands CONSTANT)
     Q_PROPERTY(QString networkActionError READ networkActionError NOTIFY networkActionErrorChanged)
-    Q_PROPERTY(bool pause READ pause WRITE setPause NOTIFY pauseChanged)
-    Q_PROPERTY(bool faulted READ errorState WRITE setErrorState NOTIFY errorStateChanged)
+    Q_PROPERTY(bool pause READ pause NOTIFY pauseChanged)
+    Q_PROPERTY(bool faulted READ errorState NOTIFY errorStateChanged)
     Q_PROPERTY(QString startupError READ startupError NOTIFY startupErrorChanged)
     Q_PROPERTY(QAbstractItemModel* startupDiagnostics READ startupDiagnostics CONSTANT)
     Q_PROPERTY(QAbstractItemModel* runtimeDialogDiagnostics READ runtimeDialogDiagnostics NOTIFY runtimeDialogChanged)
@@ -127,10 +126,7 @@ public:
     bool networkBackendAvailable() const { return m_backend_queries_ready && m_subscriptions_ready && !m_admission_closed && !m_shutdown_requested && !m_workers_stopping; }
     // Command readiness additionally requires an actual current observation.
     bool networkActionReady() const { return networkBackendAvailable() && m_network_model && m_network_model->ready(); }
-    bool peerActionPending() const { return m_peer_actions && m_peer_actions->pending(); }
     PeerCommandModel* peerCommands() const { return m_peer_actions; }
-    enum class PeerActionOutcome { Succeeded, Rejected, PartiallyApplied, Uncertain };
-    Q_ENUM(PeerActionOutcome)
     bool networkActionPending() const { return m_network_action_pending; }
     QString networkActionError() const { return m_network_action_error; }
 
@@ -183,8 +179,6 @@ public:
     unsigned int runtimeDialogButtons() const { return m_runtime_dialog_buttons; }
     bool runtimeDialogQuestion() const { return m_runtime_dialog_question; }
 
-    Q_INVOKABLE float getTotalBytesReceived() const { return float(m_total_bytes_received); }
-    Q_INVOKABLE float getTotalBytesSent() const { return float(m_total_bytes_sent); }
     Q_INVOKABLE void refreshMempoolInfo();
 
     Q_INVOKABLE void startNodeInitializionThread();
@@ -193,10 +187,6 @@ public:
     void startShutdownPolling();
     void stopShutdownPolling();
 
-    bool disconnectPeer(qint64 nodeId) { return requestDisconnectPeer(nodeId) != 0; }
-    bool banPeer(const QString& rawAddress, int64_t banDuration) { return requestBanPeer(rawAddress, banDuration) != 0; }
-    Q_INVOKABLE quint64 requestDisconnectPeer(qint64 nodeId);
-    Q_INVOKABLE quint64 requestBanPeer(const QString& rawAddress, int64_t banDuration);
     Q_INVOKABLE QVariantList nodeInformationRows();
     Q_INVOKABLE void answerRuntimeDialog(unsigned int button);
 #ifdef ENABLE_TEST_AUTOMATION
@@ -209,8 +199,6 @@ public Q_SLOTS:
 
 Q_SIGNALS:
     void startupDiagnosticsChanged();
-    void peerActionChanged();
-    void peerActionFinished(quint64 ticket, NodeModel::PeerActionOutcome outcome, const QString& error);
     void workDrained();
     void observationErrorChanged();
     void notificationsReadyChanged();
@@ -268,7 +256,6 @@ private:
     std::shared_ptr<execution::SnapshotQuery<StatusSnapshot>> m_status_query;
     std::shared_ptr<execution::SnapshotQuery<ShutdownSnapshot>> m_shutdown_query;
     QString m_status_error, m_mempool_error, m_shutdown_error;
-    bool m_status_ready{false};
     bool m_admission_closed{false};
     PeerCommandModel* m_peer_actions{nullptr};
     QString m_information_local_addresses;
@@ -321,7 +308,6 @@ private:
     int m_num_outbound_peers{0};
     static constexpr int m_max_num_outbound_peers{MAX_OUTBOUND_FULL_RELAY_CONNECTIONS + MAX_BLOCK_RELAY_ONLY_CONNECTIONS};
     std::shared_ptr<execution::SnapshotQuery<MempoolInfo>> m_mempool_query;
-    quint64 m_total_bytes_received{0}, m_total_bytes_sent{0};
     QString m_information_startup_time, m_information_user_agent;
     int m_mempool_transaction_count{0};
     double m_mempool_usage_mb{0.0};

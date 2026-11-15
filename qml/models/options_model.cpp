@@ -313,7 +313,7 @@ OptionsQmlModel::OptionsQmlModel(interfaces::Node& node, ArgsManager& args, exec
         const auto context=std::static_pointer_cast<const NativeSettingsWrite>(opaque);
         if(!result.error.isEmpty()){observer->setError(result.error);if(!observer||observer->m_stopping)return;}
         if(!context||context->revision!=observer->m_command_revision)return;
-        if(result.presentation)observer->applySnapshot(*std::static_pointer_cast<const Snapshot>(result.presentation),true,false);
+        if(result.presentation)observer->applySnapshot(*std::static_pointer_cast<const Snapshot>(result.presentation),true);
         if(!observer||observer->m_stopping)return;
         if(observer&&!observer->m_stopping)Q_EMIT observer->settingsOperationChanged();
         if(observer&&!observer->m_stopping)observer->finishPreferenceRefresh();
@@ -389,14 +389,14 @@ void OptionsQmlModel::setPending(bool pending)
     Q_EMIT settingsPendingChanged();
 }
 
-void OptionsQmlModel::applySnapshot(Snapshot snapshot,bool core_adopted,bool notify_core)
+void OptionsQmlModel::applySnapshot(Snapshot snapshot,bool core_adopted)
 {
     const QPointer<OptionsQmlModel> observer{this};
     if(!core_adopted){
         const auto expected=m_core_settings.userRevision();const auto revision=m_command_revision;
         m_core_settings.applyPreviewValuesPreservingTouched(snapshot.core,snapshot.entry_statuses,
             [observer,snapshot,revision](bool accepted){if(!observer||observer->m_stopping||revision!=observer->m_command_revision)return;
-                if(accepted||observer->m_ready)observer->applySnapshot(snapshot,true,accepted);else observer->setError(tr("The Core settings snapshot could not be adopted."));},true,expected);
+                if(accepted||observer->m_ready)observer->applySnapshot(snapshot,true);else observer->setError(tr("The Core settings snapshot could not be adopted."));},true,expected);
         return;
     }
     const bool initial = !m_ready;
@@ -415,9 +415,6 @@ void OptionsQmlModel::applySnapshot(Snapshot snapshot,bool core_adopted,bool not
     const bool transaction_urls_changed = m_third_party_transaction_urls != snapshot.transaction_urls;
     const bool money_font_changed = m_money_font_choice != snapshot.money_font;
     m_core_setting_statuses = std::move(snapshot.statuses);m_entry_statuses=std::move(snapshot.entry_statuses);
-    m_applying_snapshot = true;
-    const auto change = m_core_settings.publishedChange();
-    m_applying_snapshot = false;
     m_dbcache_size_mib = snapshot.dbcache;
     m_max_mempool_size_mb = snapshot.mempool;
     m_script_threads = snapshot.threads;m_min_script_threads=snapshot.min_threads;
@@ -441,8 +438,6 @@ void OptionsQmlModel::applySnapshot(Snapshot snapshot,bool core_adopted,bool not
         m_initial_max_mempool_size_mb = snapshot.effective_mempool;
     }
     if(initial)Q_EMIT availableLanguagesChanged();
-    if(!observer||m_stopping)return;
-    Q_UNUSED(notify_core);Q_UNUSED(change);
     if(!observer||m_stopping)return;
     if (dbcache_changed) Q_EMIT dbcacheSizeMiBChanged(m_dbcache_size_mib);
     if(!observer||m_stopping)return;
@@ -914,11 +909,6 @@ QString OptionsQmlModel::getDefaultDataDirString()
 QUrl OptionsQmlModel::getDefaultDataDirectory()
 {
     return m_default_data_directory;
-}
-
-bool OptionsQmlModel::setCustomDataDirArgs(QString path)
-{
-    return selectCustomDataDir(path);
 }
 
 QString OptionsQmlModel::getCustomDataDirString(){return m_custom_datadir_display;}

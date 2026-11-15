@@ -185,7 +185,6 @@ public:
     void setDataDir(QString new_data_dir);
     QString getDefaultDataDirString();
     QUrl getDefaultDataDirectory();
-    Q_INVOKABLE bool setCustomDataDirArgs(QString path);
     Q_INVOKABLE QString getCustomDataDirString();
     Q_INVOKABLE QString validateCustomDataDir(const QString& path) const;
     Q_INVOKABLE bool selectCustomDataDir(const QString& path);
@@ -241,11 +240,6 @@ public:
     QString moneyFontChoice() const { return m_money_font_choice; }
     void setMoneyFontChoice(const QString& choice);
     QFont moneyFont() const;
-
-public Q_SLOTS:
-    void setCustomDataDirString(const QString &new_custom_datadir_string) {
-        m_custom_datadir_string = new_custom_datadir_string;
-    }
 
 Q_SIGNALS:
     void settingsReadyChanged();
@@ -315,7 +309,7 @@ private:
     std::unique_ptr<execution::OwnedWork> m_work;
     struct Snapshot;
     static Snapshot readSnapshot(interfaces::Node& node, ArgsManager& args);
-    void applySnapshot(Snapshot snapshot,bool core_adopted=false,bool notify_core=true);
+    void applySnapshot(Snapshot snapshot,bool core_adopted=false);
     void runCommand(std::function<QString(interfaces::Node&, ArgsManager&)> command,size_t payload_bytes=256);
     void setPending(bool pending);
     void setError(const QString& error);
@@ -333,7 +327,6 @@ private:
     preferences::Watch m_preference_watch{[this] { refreshDisplaySettings(); }};
     void finishPreferenceRefresh();
     bool m_shutdown_started{false};
-    bool m_applying_snapshot{false};
     bool m_validation_pending{false};
     bool m_signer_validation_pending{false};
     bool m_signer_validation_in_flight{false};

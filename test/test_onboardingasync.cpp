@@ -52,6 +52,14 @@ class OnboardingAsyncTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void directorySelectionHasOneValidatedCommand()
+    {
+        const auto& meta = OnboardingOptionsModel::staticMetaObject;
+        QCOMPARE(meta.indexOfMethod("setCustomDataDirArgs(QString)"), -1);
+        QCOMPARE(meta.indexOfMethod("setCustomDataDirString(QString)"), -1);
+        QVERIFY(meta.indexOfMethod("selectCustomDataDir(QString)") >= 0);
+        QVERIFY(meta.indexOfMethod("useDefaultDataDir()") >= 0);
+    }
     void manualPreparationOwnershipAndSignalOrder_data();
     void manualPreparationOwnershipAndSignalOrder();
     void manualSelectionAndDefaultGettersAreOwned();

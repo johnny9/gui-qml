@@ -161,7 +161,7 @@ private Q_SLOTS:
         peers.refresh();
         bans.refresh();
         model.setPause(true);
-        QVERIFY(!model.disconnectPeer(1));
+        QVERIFY(!model.peerCommands()->requestDisconnectPeer(1));
         model.initializeResult(false, {});
         QVERIFY(model.nodeInformationRows().isEmpty());
         settle();
@@ -272,7 +272,7 @@ private Q_SLOTS:
         QCOMPARE(drained.size(), 0);
         QVERIFY(!gui_call.load());
         QVERIFY(model.nodeInformationRows().isEmpty());
-        QVERIFY(!model.disconnectPeer(1));
+        QVERIFY(!model.peerCommands()->requestDisconnectPeer(1));
         release.release();
         QTRY_COMPARE(drained.size(), 1);
     }

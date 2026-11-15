@@ -249,8 +249,7 @@ void OnboardingOptionsModel::configureSettingsCommit(ArgsManager& args)
 }
 void OnboardingOptionsModel::setSettingsCommitPort(CommitPort port)
 {
-    m_commit_port = std::move(port);
-    m_profile_ports.write = [port=m_commit_port](const auto& request) {
+    m_profile_ports.write = [port=std::move(port)](const auto& request) {
         const auto [success,error] = port(request);
         QmlOnboardingSettings::ProfileResult result;
         result.completed=success;result.replacement_written=success;result.directory_saved=success;result.cleanup_completed=success;result.error=error;

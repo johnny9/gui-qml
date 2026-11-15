@@ -245,10 +245,11 @@ void NetworkTrafficTowerTests::manualSamplesAndActivationFence()
     }), 0); // Native cleanup and its ledger completion are independent.
     QVERIFY(publish()); // Explicit guarded successor admits the original sample.
     QCOMPARE(node.calls.getTotalBytesRecv.load(),0);
-    QVERIFY(complete());QCOMPARE(tower.totalBytesReceived(),quint64{100});
+    QCOMPARE(tower.totalBytesReceived(), quint64{0}); QCOMPARE(tower.totalBytesSent(), quint64{0});
+    QVERIFY(complete());QCOMPARE(tower.totalBytesReceived(),quint64{100}); QCOMPARE(tower.totalBytesSent(),quint64{200});
     QCOMPARE(node.calls.getTotalBytesRecv.load(),1);
     received=140;sent=260;timer->advance();QVERIFY(transport.step(execution::Lane::Core));
-    QCOMPARE(tower.totalBytesReceived(),quint64{100});QVERIFY(transport.step(execution::Lane::Domain));
+    QCOMPARE(tower.totalBytesReceived(),quint64{100}); QCOMPARE(tower.totalBytesSent(),quint64{200}); QVERIFY(transport.step(execution::Lane::Domain));
     tower.setActive(false);QVERIFY(publish());QCOMPARE(tower.totalBytesReceived(),quint64{100});
     QCOMPARE(node.calls.getTotalBytesRecv.load(),2);
     QCOMPARE(gui.size(),size_t{1});

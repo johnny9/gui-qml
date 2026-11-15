@@ -153,14 +153,14 @@ private:
     QString m_last_uri;
 };
 
-// submitCommand() now refuses a new command while one is in flight (matching Qt
+// submitNodeCommand() refuses a new command while one is in flight (matching Qt
 // Widgets), so the asynchronous worker round-trip must complete before the next
 // submit. The stub node's executeRpc() returns instantly, so this settles on the
 // first event-loop pass; a rejected/idle command leaves executing() false and the
 // wait returns immediately.
 static void submitAndSettle(RpcConsoleModel& model, const QString& command)
 {
-    model.submitCommand(command);
+    model.submitNodeCommand(command);
     QTRY_VERIFY(!model.executing());
 }
 
@@ -194,6 +194,14 @@ class RpcConsoleModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void explicitTargetsReplaceAmbiguousConsoleIngress()
+    {
+        const auto& meta = RpcConsoleModel::staticMetaObject;
+        QCOMPARE(meta.indexOfMethod("submitCommand(QString,QString)"), -1);
+        QVERIFY(meta.indexOfMethod("submitNodeCommand(QString)") >= 0);
+        QVERIFY(meta.indexOfMethod("submitWalletCommand(QString,QString)") >= 0);
+        QVERIFY(meta.indexOfMethod("submitInput(QString,bool,QString,bool)") >= 0);
+    }
     void constructorReservationKeepsOriginalParentLifetime();
     void cleanup() {
         bool done{false}; BackendExecutor::shutdownAll(this, [&] { done = true; });
@@ -295,7 +303,7 @@ void RpcConsoleModelTests::manualExecutionSeparatesEffectOutcomeAndPublication()
     ManualExecutionEnvironment env;
     RpcConsoleModel model{node, {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }}};
     const auto settle = qScopeGuard([&] { env.drain(); env.publishAll(); });
-    QVERIFY(model.submitCommand("getblockcount"));
+    QVERIFY(model.submitNodeCommand("getblockcount"));
     QCOMPARE(node.effects, 0); QVERIFY(model.executing()); QCOMPARE(model.outputModel()->rowCount(), 0);
     QVERIFY(env.step());
     QCOMPARE(node.effects, 1); QVERIFY(model.executing()); QCOMPARE(model.outputModel()->rowCount(), 0);
@@ -314,7 +322,7 @@ void RpcConsoleModelTests::acceptedCommandSurvivesObserverLoss()
     } node;
     ManualExecutionEnvironment env;
     auto model = std::make_unique<RpcConsoleModel>(node, execution::SnapshotServices{env.scheduler, [&](auto callback) { env.post(std::move(callback)); }});
-    QVERIFY(model->submitCommand("getblockcount"));
+    QVERIFY(model->submitNodeCommand("getblockcount"));
     model.reset(); // No nested GUI loop or cancellation of the accepted effect.
     QCOMPARE(node.effects, 0);
     env.drain(); env.publishAll();
@@ -333,10 +341,10 @@ void RpcConsoleModelTests::sharedSchedulerClosureWaitsForActualNativeRetirement(
     std::deque<std::function<void()>> gui;
     RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { gui.push_back(std::move(turn)); }}};
     QSignalSpy drained{&model, &RpcConsoleModel::drained};
-    QVERIFY(model.submitCommand("getblockcount")); QCOMPARE(node.effects, 0);
+    QVERIFY(model.submitNodeCommand("getblockcount")); QCOMPARE(node.effects, 0);
     env.scheduler->closeAdmission();
     model.beginShutdown();
-    QVERIFY(!model.submitCommand("getblockcount")); QCOMPARE(drained.size(), 0);
+    QVERIFY(!model.submitNodeCommand("getblockcount")); QCOMPARE(drained.size(), 0);
     QVERIFY(env.step(execution::Lane::Core)); QCOMPARE(node.effects, 1); QCOMPARE(drained.size(), 0);
     QVERIFY(env.step(execution::Lane::Domain));
     while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
@@ -385,7 +393,7 @@ void RpcConsoleModelTests::historyNavigationOldestToNewest()
     RpcTestStubNode mock;
     RpcConsoleModel model{mock};
 
-    // Each command must settle before the next, since submitCommand() refuses a
+    // Each command must settle before the next, since submitNodeCommand() refuses a
     // new command while one is executing.
     submitAndSettle(model, "cmd_a");
     submitAndSettle(model, "cmd_b");
@@ -481,12 +489,12 @@ void RpcConsoleModelTests::submitRefusedWhileExecuting()
     RpcConsoleModel model{mock};
 
     // First command occupies the worker thread and blocks there.
-    QVERIFY(model.submitCommand("waitfornewblock"));
+    QVERIFY(model.submitNodeCommand("waitfornewblock"));
     QVERIFY(model.executing());
 
     // A second, non-"stop" command must be refused while one is in flight, so
     // keyboard Enter cannot queue commands behind the disabled Run button.
-    QVERIFY(!model.submitCommand("getblockcount"));
+    QVERIFY(!model.submitNodeCommand("getblockcount"));
 
     // Let the worker finish and the model settle.
     mock.release();
@@ -503,12 +511,12 @@ void RpcConsoleModelTests::stopRunsIndependentlyWhileExecuting()
     RpcConsoleModel model{mock};
 
     // A long-running command blocks the worker thread.
-    QVERIFY(model.submitCommand("waitfornewblock"));
+    QVERIFY(model.submitNodeCommand("waitfornewblock"));
     QVERIFY(model.executing());
 
     // Stop is admitted independently of the blocked command. Admission does
     // not claim that Core has already executed the shutdown request.
-    QVERIFY(model.submitCommand("stop"));
+    QVERIFY(model.submitNodeCommand("stop"));
     QTRY_VERIFY(mock.stopExecuted());
     QVERIFY(!mock.stopOnGui());
 
@@ -522,12 +530,12 @@ void RpcConsoleModelTests::walletNameScopesRpcToWalletUri()
     RpcConsoleModel model{mock};
 
     // A non-empty wallet name is percent-encoded into a /wallet/<name> endpoint.
-    model.submitCommand("getwalletinfo", "my wallet");
+    model.submitWalletCommand("getwalletinfo", "my wallet");
     QTRY_VERIFY(!model.executing());
     QCOMPARE(mock.lastUri(), QString("/wallet/my%20wallet"));
 
     // An empty wallet name runs the command without a wallet endpoint.
-    model.submitCommand("getblockcount", "");
+    model.submitNodeCommand("getblockcount");
     QTRY_VERIFY(!model.executing());
     QCOMPARE(mock.lastUri(), QString());
 }
@@ -566,7 +574,7 @@ void RpcConsoleModelTests::outputRowsExposeCategoryAndRawTimestamp()
     QVERIFY(content_role != -1);
     QVERIFY(category_role != -1);
 
-    QVERIFY(model.submitCommand("getblockcount"));
+    QVERIFY(model.submitNodeCommand("getblockcount"));
     QTRY_VERIFY(out->rowCount() >= 1);
 
     const QModelIndex request_index = out->index(0, 0);
@@ -835,7 +843,7 @@ void RpcConsoleModelTests::unavailableInputKeepsIndependentStop()
 void RpcConsoleModelTests::publicOutputAppendCannotExceedBudgets()
 {
     RpcOutputListModel out;
-    out.appendRow("00:00:00", QString(RpcOutputListModel::kMaxCharacters + 1, 'x'), RpcConsoleModel::CMD_REPLY);
+    out.appendRows({{"00:00:00", QString(RpcOutputListModel::kMaxCharacters + 1, 'x'), RpcConsoleModel::CMD_REPLY}}, 0, 1);
     QCOMPARE(out.rowCount(), 1);
     QVERIFY(out.data(out.index(0), RpcOutputListModel::ContentRole).toString().size() < 8192);
     RpcOutputListModel::Batch batch;
@@ -857,7 +865,7 @@ void RpcConsoleModelTests::outputTruncatedWhenResultTooLong()
     QVERIFY(out != nullptr);
     QSignalSpy spy{out, &QAbstractItemModel::rowsInserted};
 
-    QVERIFY(model.submitCommand("getblockcount"));
+    QVERIFY(model.submitNodeCommand("getblockcount"));
     QTRY_VERIFY(!model.executing());
     QVERIFY(out->rowCount() > 2);
     for (int i = 0; i < out->rowCount(); ++i) {
@@ -892,7 +900,7 @@ void RpcConsoleModelTests::jsonReplyKeyColoringSkipsStringsContainingColons()
     QVERIFY(out != nullptr);
     QSignalSpy spy{out, &QAbstractItemModel::rowsInserted};
 
-    model.submitCommand("getsomething");
+    model.submitNodeCommand("getsomething");
     QTRY_VERIFY(!model.executing());
     QVERIFY(out->rowCount() > 2);
 
@@ -1073,7 +1081,7 @@ void RpcConsoleModelTests::secretRequestsAreNotRetained()
         std::pair<std::string, std::string> received() { const QMutexLocker lock{&mutex}; return {called_method, called_arguments}; }
     } node;
     RpcConsoleModel model{node};
-    QVERIFY(model.submitCommand(method + " " + arguments));
+    QVERIFY(model.submitNodeCommand(method + " " + arguments));
     QTRY_VERIFY(!model.executing());
     const auto received = node.received();
     QCOMPARE(received.first, method.toStdString());

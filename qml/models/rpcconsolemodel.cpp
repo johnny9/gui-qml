@@ -67,11 +67,6 @@ QHash<int, QByteArray> RpcOutputListModel::roleNames() const
     };
 }
 
-void RpcOutputListModel::appendRow(const QString& timestamp, const QString& contentHtml, int category)
-{
-    appendRows({Row{timestamp, contentHtml, category}}, 0, 1);
-}
-
 void RpcOutputListModel::appendRows(const Batch& rows, int offset, int count)
 {
     if (offset < 0 || offset >= rows.size()) return;
@@ -117,11 +112,6 @@ std::shared_ptr<const RpcOutputListModel::Batch> RpcOutputListModel::releaseRows
     m_characters = 0;
     if (notify) { endResetModel(); Q_EMIT countChanged(); }
     return rows;
-}
-
-void RpcOutputListModel::resetAll()
-{
-    releaseRows();
 }
 
 // ---------------------------------------------------------------------------
@@ -420,16 +410,6 @@ void RpcConsoleModel::retireOutput(std::shared_ptr<const void> value)
     // release cannot be admitted. Never put large captures in a rejected task.
     execution::Submit(*m_services.scheduler, [anchor] { anchor->releaseRetired(); }, [] {}, {},
         {execution::Lane::Cleanup, 256, {}, execution::WorkClass::Action});
-}
-
-bool RpcConsoleModel::submitCommand(const QString& command, const QString& wallet_name)
-{
-    // Preserve the original string-only API for existing callers. New UI code
-    // uses submitNodeCommand() or submitWalletCommand() so an unnamed wallet is
-    // distinct from the node target.
-    const auto context = wallet_name.isEmpty() ? RpcCommandContext::ForNode()
-                                               : RpcCommandContext::ForWallet(wallet_name);
-    return submitCommandForContext(command, context);
 }
 
 bool RpcConsoleModel::submitNodeCommand(const QString& command)

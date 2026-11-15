@@ -70,9 +70,7 @@ public:
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
 
-    void appendRow(const QString& timestamp, const QString& contentHtml, int category);
     void appendRows(const Batch& rows, int offset, int count);
-    void resetAll();
     std::shared_ptr<const Batch> releaseRows(bool notify = true);
 
 Q_SIGNALS:
@@ -108,7 +106,8 @@ using RpcCommandReceipt = execution::OwnedCommand<RpcCommandResult>;
  *        emitted rows keep their baked-in colours, which is intentional).
  *
  * Invokable from QML:
- *  - submitCommand(command, walletName) → bool (false if rejected, e.g. empty or
+ *  - submitInput(command, walletContext, walletName, targetAvailable) → bool
+ *        (false if rejected, e.g. empty or
  *        refused while another command is executing)
  *  - browseHistory(direction, currentText) → QString
  *  - resetHistoryNavigation()
@@ -159,7 +158,6 @@ public:
     QStringList availableCommands() const { return m_available_commands; }
     RpcOutputListModel* outputModel() { return &m_output_model; }
 
-    Q_INVOKABLE bool submitCommand(const QString& command, const QString& wallet_name = {});
     Q_INVOKABLE bool submitNodeCommand(const QString& command);
     Q_INVOKABLE bool submitWalletCommand(const QString& command, const QString& wallet_name);
     Q_INVOKABLE bool submitInput(const QString& command, bool wallet_context,

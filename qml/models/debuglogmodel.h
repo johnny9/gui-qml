@@ -253,7 +253,7 @@ private:
     bool m_warnings_and_errors_only{false};
     int  m_load_limit{1000};
     bool m_has_more_lines{false};
-    //! Tail capacity represented by m_all_lines. Kept separate from rowCount
+    //! Native tail capacity. Kept separate from rowCount
     //! so empty/short logs and interrupted loadMore requests are unambiguous.
     int m_loaded_limit{0};
     QString m_open_error;

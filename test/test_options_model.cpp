@@ -226,6 +226,14 @@ private:
     QString m_original_organization;
     QString m_original_application;
 private Q_SLOTS:
+    void directorySelectionHasOneValidatedCommand()
+    {
+        const auto& meta = OptionsQmlModel::staticMetaObject;
+        QCOMPARE(meta.indexOfMethod("setCustomDataDirArgs(QString)"), -1);
+        QCOMPARE(meta.indexOfMethod("setCustomDataDirString(QString)"), -1);
+        QVERIFY(meta.indexOfMethod("selectCustomDataDir(QString)") >= 0);
+        QVERIFY(meta.indexOfMethod("useDefaultDataDir()") >= 0);
+    }
     void initTestCase()
     {
         SelectParams(ChainType::REGTEST);
