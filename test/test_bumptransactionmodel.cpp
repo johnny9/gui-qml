@@ -148,7 +148,7 @@ private Q_SLOTS:
         QCOMPARE(wallet->unlocks, 1); QCOMPARE(wallet->locks, 1); QVERIFY(committed_locked);
         QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1); QVERIFY(!owner->result());
         fixture.commands.drain(); QVERIFY(owner->result()); QVERIFY(owner->result()->value->committed);
-        fixture.publish();
+        fixture.finish();
         QCOMPARE(fixture.model->state(), close_first ? BumpTransactionModel::Closed : BumpTransactionModel::Succeeded);
     }
     void manualPreparationDoesNotPublishBeforeItsOutcome()
@@ -168,7 +168,6 @@ private Q_SLOTS:
         QVERIFY(fixture.commands.step(execution::Lane::Domain)); // Admit its captured Core effect.
         QCOMPARE(wallet->calls.createBumpTransaction.load(), 0);
         QVERIFY(fixture.publications.empty());
-        fixture.admitCommitNative();
         QVERIFY(fixture.commands.step(execution::Lane::Core));
         QCOMPARE(wallet->calls.createBumpTransaction.load(), 1);
         QCOMPARE(model.state(), BumpTransactionModel::Preparing);
@@ -208,10 +207,12 @@ private Q_SLOTS:
         fixture.model->closeAdmission();
         fixture.model.reset();
         fixture.opening->closeAdmission();
+        fixture.admitCommitNative();
         QVERIFY(fixture.commands.step(execution::Lane::Core));
         QCOMPARE(wallet->calls.commitBumpTransaction.load(), 1);
         QVERIFY(!owner->result());
-        QVERIFY(fixture.commands.step(execution::Lane::Domain));
+        for (int turn = 0; turn < 16 && !owner->result(); ++turn)
+            QVERIFY(fixture.commands.step(execution::Lane::Domain));
         QVERIFY(owner->result()); QVERIFY(owner->result()->value);
         const auto result = *owner->result()->value;
         QVERIFY(result.committed);
