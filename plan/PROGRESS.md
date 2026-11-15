@@ -44,7 +44,8 @@ progress without changing shared finding or schedule registers.
 | R32 | Focused accepted/integrated:194 current worker bodies plus205 explicit old-source carries; composed159 at799 and targeted229 at a218 pass. Pinned static/app/QML lint green. R42 pending |
 | R26 | Focused accepted/integrated with cancellation correction520c6ef5:194 actual bodies pass after2 new queued-publication parent failures;10 affected pinned static entries/lint/IPC pass, earlier22-unit union and259QML carry retained. App/test/CMake/Core bytes match tested829; R27/R40 follow-ups andR42 remain separate |
 | R39 | Focused accepted/integrated at2e85390c:100Native+68QML current bodies,2actualGUI/publicRPC scenarios,11pinnedstatic entries and app/QML lint pass. Original302 reproduced;098 remains source-refuted/HOLD. Core/interface observation limits andR42 retained |
-| R27, R37, R38, R40 | R27 focused423-body qualification is being packaged; R37 final Linux navigation check/repair andR38 corrected fixture gate continue; R40 Native ingress/startup/QML integration remains active. R42 final qualification remains open |
+| R27 | Focused accepted/integrated at01248cc3:423 distinct component bodies with explicit source carries; composed98 actual bodies,8pinnedstatic entries and app/QML lint pass. Chooser/clipboard/drop retain original Sources and targets; R40 desktop ingress remains separate. R42 pending |
+| R37, R38, R40 | R37 final Linux/Mac navigation checks andR38 corrected fixture gate continue; R40 Native ingress/startup/QML integration remains active. R42 final qualification remains open |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
