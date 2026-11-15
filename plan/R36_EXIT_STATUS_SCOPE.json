@@ -1,0 +1,81 @@
+{
+  "status": "focused_original071_accepted_ready_for_coordinator_integration",
+  "scope": "draft-071-D071 actual final Core exit status only; not full R36",
+  "parent": "9c71709c629b4b07029c7afd2aabe6f2eec5b0c0",
+  "original_oracle_parent": "98b463b9def6c22fb9015b0db5025680709a230d",
+  "tested_head": "bc10ec6ac9b9a1817e38cfd90504fef29a6cf22f",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "Core_changes": false,
+  "tested_changed_file_hashes": {
+    "qml/bitcoin.cpp": "e9bbd00ad2705be18e5cb83512b5433205877860cf4e5d39085fc9c343e0a435",
+    "qml/initexecutor.cpp": "316bdb22c4837291a555bb2b089202906bbd2036f6523a5d8b4a3385431796b7",
+    "qml/initexecutor.h": "0f282e26004a5fb0a32f397ecab606218eae3822ab68a12716631df4145a2060",
+    "test/functional/interface_qml_startup.py": "19884da2cd910b2963c85b243edeae1fa55d72fb948e11378e56c427a04eeeb6",
+    "test/test_qmlinitexecutor_api.cpp": "db8cd07481aed68a5190ad5ef196a1f74c8836e71cf34f63d095eae86090ce64"
+  },
+  "original_negative": {
+    "artifact": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R36/exit-status/bazzite-01/artifacts/red",
+    "actual": "real AbortNode Failed to write block; public RPC rejects block; ordinary teardown app_exit=0; required1 assertion fails",
+    "setup_failure": false
+  },
+  "positive": {
+    "artifact": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R36/exit-status/bazzite-02/diagnostic-read",
+    "native": [
+      {
+        "id": "native-exit-status-owned-before-GUI",
+        "count": 5,
+        "pass": 5,
+        "fail": 0,
+        "skip": 0,
+        "exit": 0
+      },
+      {
+        "id": "existing-lifecycle-and-ordered-drain-controls",
+        "count": 32,
+        "pass": 32,
+        "fail": 0,
+        "skip": 0,
+        "exit": 0
+      }
+    ],
+    "process_cases": 2,
+    "fatal_app_exit": 1,
+    "normal_app_exit": 0,
+    "outer_stderr_bytes": 0,
+    "source_matches_manifest": true,
+    "ordinary_image": "sha256:c30ab6d0d2e86a1f39853a9e95d4c8ed5899de39a9fb70664050e6a34a1c9076",
+    "job_seconds": 10.283048784011044
+  },
+  "static": {
+    "image": "sha256:a4c62a2056bc0171ce1071ea18515507bc3183770b033516a548c6c080bf391b",
+    "clang_tidy": "23 with pinned Core Bitcoin plugin/check definitions",
+    "unique_cpp": 5,
+    "MOC_aggregates": 7,
+    "local01": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R36/exit-status/local-01",
+    "final_test_only_followup": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R36/exit-status/local-02",
+    "followup_checks": 8,
+    "qml_files_per_variant": {
+      "qt62": 259,
+      "qt65": 259
+    },
+    "app_lint": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R36/exit-status/lint-02",
+    "app_lint_exit": 0
+  },
+  "failures_retained": {
+    "bazzite01": "5 original strict fixture unexpected getExitStatus failures; new5Native and bothprocess positives already passed",
+    "repair": "Explicit normal status/readcount/order/same Native lane expectations in four strict fixtures account for five rows; no unexpected-call checking disabled",
+    "preflight": "syntax-only receipts never count as feature execution"
+  },
+  "qualification_limits": [
+    "Full R36 extraction and its R35 prerequisite remain held; this slice depends only on accepted main9c717.",
+    "No exception for inherited proposed-wallet-directory classifier; no Core/Qt change.",
+    "R42 owns exhaustive coverage, full suites, platform/configuration matrices and sanitizer qualification.",
+    "IPC enabled startup/runtime failure/normal shutdown process cases were inspected; not a new full interface_gui or sanitizer matrix claim."
+  ],
+  "commands": {
+    "native": "python3 test/run_focused.py --build-dir /review/build --manifest /incoming/green.json --output-dir /out/results --timeout 180",
+    "process": "env -u QT_MESSAGE_PATTERN BITCOIN_CORE_APP=/review/build/bin/bitcoin-core-app python3 test/functional/interface_qml_startup.py --case runtime-block-write-failure-exit-status --case bridge-protocol",
+    "tidy": "python3 ci/clang_tidy.py --build-dir /review/build --output /task/tidy --plugin /review/build/bitcoin-tidy/libbitcoin-tidy.so --jobs 2 --files qml/bitcoin.cpp qml/initexecutor.cpp qml/shutdowncoordinator.cpp test/test_nodemodel.cpp test/test_qmlinitexecutor_api.cpp",
+    "lint": "COMMIT_RANGE=9c71709c629b4b07029c7afd2aabe6f2eec5b0c0..bc10ec6ac9b9a1817e38cfd90504fef29a6cf22f python3 ci/lint.py --no-build --scope app --image qt6-r17-linter-core449:20261114"
+  }
+}

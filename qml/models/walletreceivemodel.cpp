@@ -62,6 +62,7 @@ PaymentRequestEditorModel* WalletReceiveModel::makeEditor(int64_t id, bool erase
     m_editors.removeIf([](const auto& editor) { return editor.isNull(); });
     if (m_closed || m_editors.size() >= 16) { refuse(QStringLiteral("editor"), {TextEditError::Refused, tr("Close another request editor before opening a new one.")}); return nullptr; }
     auto* editor = new PaymentRequestEditorModel(id, m_view, erase, m_ports.editor, std::move(initial), this);
+    editor->setReceiptReconciler(m_ports.receipts);
     QQmlEngine::setObjectOwnership(editor, QQmlEngine::JavaScriptOwnership);
     m_editors.push_back(editor);
     connect(editor, &PaymentRequestEditorModel::persisted, this, &WalletReceiveModel::requestPersisted);
@@ -311,6 +312,23 @@ RequestSharingModel* WalletReceiveModel::sharing(PaymentRequestEditorModel* edit
     if (view) m_sharing_views.push_back({view, editor, context, editor->requestId()});
     connect(editor, &PaymentRequestEditorModel::changed, context, &RequestSharingModel::refresh);
     connect(editor, &QObject::destroyed, context, &RequestSharingModel::retire);
+    return context;
+}
+RequestSharingModel* WalletReceiveModel::sharingRequest(const QString& id, QObject* view)
+{
+    const auto parsed = RequestId(id);
+    if (m_closed || !parsed || !view) return nullptr;
+    m_sharing.removeIf([](const auto& context) { return context.isNull(); });
+    m_sharing_views.removeIf([](const auto& value) { return value.context.isNull(); });
+    for (auto& old : m_sharing_views) if (old.view == view) {
+        if (!old.editor && old.id == id && old.context && old.context->phase() != RequestSharingModel::Closed) return old.context;
+        if (old.context) { old.context->retire(); old.context->setParent(nullptr); }
+        old.view = nullptr;
+    }
+    if (m_sharing.size() >= 16) return nullptr;
+    auto* context = new RequestSharingModel(*parsed, m_ports.sharing, {}, view);
+    QQmlEngine::setObjectOwnership(context, QQmlEngine::JavaScriptOwnership);
+    m_sharing.push_back(context); m_sharing_views.push_back({view, {}, context, id});
     return context;
 }
 void WalletReceiveModel::refresh()

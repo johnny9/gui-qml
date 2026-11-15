@@ -16,8 +16,11 @@
 #include <QSemaphore>
 #include <QScopeGuard>
 #include <QtTest/QtTest>
+#include <algorithm>
 #include <array>
+#include <mutex>
 #include <string_view>
+#include <vector>
 
 namespace {
 using walletsend::Error;
@@ -48,7 +51,7 @@ struct Wallet : StubWallet {
     int commits{0}, signs{0}, unlocks{0}, locks{0}, labels{0}, status_reads{0};
     CTransactionRef last_transaction;
     std::shared_ptr<const PartiallySignedTransaction> completed_document;
-    std::function<void()> after_unlock,before_commit;
+    std::function<void()> after_unlock,before_commit,before_sign;
     std::function<void(PartiallySignedTransaction&, bool&)> metadata;
     std::optional<common::PSBTError> metadata_error;
     std::vector<std::pair<bool, bool>> fill_options;
@@ -76,6 +79,7 @@ struct Wallet : StubWallet {
             metadata(psbt, complete);
             return metadata_error;
         }
+        if (before_sign) before_sign();
         ++signs;
         if (report_sign_error || mutate_then_throw) {
             psbt.inputs[0].final_script_sig = CScript{} << OP_TRUE;
@@ -776,6 +780,242 @@ private Q_SLOTS:
         QVERIFY(command->result()->value->signed_transaction);
         command.reset(); output.reset(); action.reset();
         f.commands.drain();
+    }
+    void approvalOwnerPreservesTheCapturedReviewAcrossManualTurns_data()
+    {
+        QTest::addColumn<bool>("review_changes_while_device_is_held");
+        QTest::newRow("current-review") << false;
+        QTest::newRow("replacement-review") << true;
+    }
+    void approvalOwnerPreservesTheCapturedReviewAcrossManualTurns()
+    {
+        QFETCH(bool, review_changes_while_device_is_held);
+        ECC_Context ecc;
+        Fixture f;
+        f.wallet->signer = true;
+        const auto request = VerifiedApprovalRequest(*f.wallet);
+        std::vector<walletsigning::ApprovalSnapshot> snapshots;
+        auto owner = std::make_shared<walletsigning::ApprovalOwner>(f.opening, [&snapshots](auto snapshot) {
+            snapshots.push_back(std::move(snapshot));
+        });
+
+        constexpr uint64_t review = 71, view = 4, attempt = 91;
+        QVERIFY(owner->reviewChanged(review, view));
+        QVERIFY(f.commands.step(Lane::Domain));
+        QCOMPARE(snapshots.back().current_review, review);
+        QCOMPARE(snapshots.back().current_view, view);
+        auto retained = walletopening::RetainValues<walletsigning::Request>(f.opening, [&] {
+            return std::make_unique<walletsigning::Request>(request);
+        });
+        QVERIFY(retained);
+        QVERIFY(owner->request(attempt, review, view, retained));
+        retained.reset();
+        for (int turn = 0; snapshots.back().phase != walletsigning::ApprovalPhase::WaitingDevice && turn < 8; ++turn)
+            QVERIFY(f.commands.step(Lane::Domain)); // Drain the owner command's Domain receipts, never the held Core effect.
+        QCOMPARE(snapshots.back().phase, walletsigning::ApprovalPhase::WaitingDevice);
+        QCOMPARE(snapshots.back().attempt_id, attempt);
+        QCOMPARE(snapshots.back().attempt_review, review);
+        QCOMPARE(snapshots.back().attempt_view, view);
+        QCOMPARE(f.wallet->signs, 0);
+        QCOMPARE(f.wallet->commits, 0);
+
+        if (review_changes_while_device_is_held) {
+            QVERIFY(owner->reviewChanged(review + 1, view + 1));
+            for (int turn = 0; snapshots.back().current_review != review + 1 && turn < 8; ++turn)
+                QVERIFY(f.commands.step(Lane::Domain));
+            QCOMPARE(snapshots.back().phase, walletsigning::ApprovalPhase::Cancelling);
+            QVERIFY(snapshots.back().in_flight);
+            QVERIFY(!snapshots.back().publishable);
+        }
+        QVERIFY(f.commands.step(Lane::Core)); // The captured signer request is the only device effect.
+        QCOMPARE(f.wallet->signs, 1);
+        QCOMPARE(f.wallet->commits, 0);
+        for (int turn = 0; snapshots.back().in_flight && turn < 8; ++turn)
+            QVERIFY(f.commands.step(Lane::Domain)); // Consume the exact native result on Domain.
+        QVERIFY(!snapshots.back().in_flight);
+        auto terminal = snapshots.back();
+        QCOMPARE(terminal.attempt_id, attempt);
+        QCOMPARE(terminal.attempt_review, review);
+        QCOMPARE(terminal.attempt_view, view);
+        QCOMPARE(terminal.current_review, review_changes_while_device_is_held ? review + 1 : review);
+        QCOMPARE(terminal.current_view, review_changes_while_device_is_held ? view + 1 : view);
+        QVERIFY(!terminal.in_flight);
+        QCOMPARE(terminal.publishable, !review_changes_while_device_is_held);
+        if (review_changes_while_device_is_held) {
+            QCOMPARE(terminal.phase, walletsigning::ApprovalPhase::Idle);
+            QVERIFY(!terminal.result);
+        } else {
+            QCOMPARE(terminal.phase, walletsigning::ApprovalPhase::Complete);
+            QVERIFY(terminal.result);
+            QCOMPARE(terminal.result->error, walletsigning::Error::None);
+            QVERIFY(terminal.result->signed_transaction);
+            CMutableTransaction signed_terms{*terminal.result->signed_transaction};
+            for (auto& input : signed_terms.vin) {
+                input.scriptSig.clear();
+                input.scriptWitness.SetNull();
+            }
+            QCOMPARE(MakeTransactionRef(std::move(signed_terms))->GetHash(), request.reviewed->GetHash());
+        }
+
+        terminal.result.reset();
+        snapshots.clear();
+        QVERIFY(owner->close());
+        f.commands.drain();
+        owner.reset();
+        f.opening->retire();
+        f.commands.drain(); f.retirement.drain(); f.commands.drain();
+        QVERIFY(f.commands.quiescent()); QVERIFY(f.retirement.quiescent());
+    }
+    void approvalOwnerRunsSignerAndDomainReceiptOffGuiWithoutBlocking_data()
+    {
+        QTest::addColumn<bool>("replace_review_while_device_is_held");
+        QTest::addColumn<bool>("close_while_device_is_held");
+        QTest::addColumn<bool>("incompatible_signer_result");
+        QTest::newRow("current-review-compatible") << false << false << false;
+        QTest::newRow("current-review-incompatible") << false << false << true;
+        QTest::newRow("replacement-review-compatible") << true << false << false;
+        QTest::newRow("replacement-review-incompatible") << true << false << true;
+        QTest::newRow("closed-compatible") << false << true << false;
+        QTest::newRow("closed-incompatible") << false << true << true;
+    }
+    void approvalOwnerRunsSignerAndDomainReceiptOffGuiWithoutBlocking()
+    {
+        QFETCH(bool, replace_review_while_device_is_held);
+        QFETCH(bool, close_while_device_is_held);
+        QFETCH(bool, incompatible_signer_result);
+        struct State {
+            QSemaphore entered, release, initial_review, replacement_review, cancelling, terminal, closed;
+            std::mutex mutex;
+            std::vector<walletsigning::ApprovalSnapshot> snapshots;
+            std::atomic<QThread*> notification_thread{nullptr};
+        };
+        ECC_Context ecc;
+        auto state = std::make_shared<State>();
+        BackendExecutor commands{execution::Limits::Bounded()}, retirement;
+        auto opening = std::make_shared<walletopening::Session>(commands.scheduler(), retirement.scheduler(),
+            std::make_shared<std::atomic_bool>(false), [] {});
+        auto wallet = std::make_shared<Wallet>();
+        wallet->signer = true;
+        wallet->before_sign = [state] {
+            state->entered.release();
+            state->release.acquire();
+        };
+        auto registered = opening->start(wallet);
+        QVERIFY(registered.borrower);
+        const auto request = VerifiedApprovalRequest(*wallet);
+        auto owner = std::make_shared<walletsigning::ApprovalOwner>(opening, [state](auto snapshot) {
+            state->notification_thread = QThread::currentThread();
+            {
+                std::lock_guard lock{state->mutex};
+                state->snapshots.push_back(snapshot);
+            }
+            if (snapshot.phase == walletsigning::ApprovalPhase::Cancelling && snapshot.in_flight) state->cancelling.release();
+            if (snapshot.phase == walletsigning::ApprovalPhase::Closed) state->closed.release();
+            if (snapshot.current_review == 51) state->initial_review.release();
+            if (snapshot.current_review == 52) state->replacement_review.release();
+            if (snapshot.attempt_id == 101 && !snapshot.in_flight) state->terminal.release();
+        });
+        QVERIFY(owner->reviewChanged(51, 3));
+        QVERIFY(state->initial_review.tryAcquire(1, 5000));
+        auto retained = walletopening::RetainValues<walletsigning::Request>(opening, [&] {
+            return std::make_unique<walletsigning::Request>(request);
+        });
+        QVERIFY(retained);
+        QVERIFY(owner->request(101, 51, 3, retained));
+        retained.reset();
+        registered.borrower.reset();
+
+        const auto gui_thread = QCoreApplication::instance()->thread();
+        QVERIFY(state->entered.tryAcquire(1, 5000));
+        QVERIFY(wallet->sign_thread.load());
+        QVERIFY(wallet->sign_thread.load() != gui_thread);
+
+        // Domain remains available while the physical signer call is held.
+        if (replace_review_while_device_is_held) {
+            QVERIFY(owner->reviewChanged(52, 4));
+            QVERIFY(state->replacement_review.tryAcquire(1, 5000));
+        }
+        if (close_while_device_is_held) {
+            QVERIFY(owner->close());
+            QVERIFY(state->cancelling.tryAcquire(1, 5000));
+            std::lock_guard lock{state->mutex};
+            const auto found = std::find_if(state->snapshots.rbegin(), state->snapshots.rend(), [](const auto& snapshot) {
+                return snapshot.attempt_id == 101 && snapshot.phase == walletsigning::ApprovalPhase::Cancelling;
+            });
+            QVERIFY(found != state->snapshots.rend());
+            QVERIFY(found->in_flight);
+            QVERIFY(!found->publishable);
+        }
+        QVERIFY(state->notification_thread.load());
+        QVERIFY(state->notification_thread.load() != gui_thread);
+        QCOMPARE(wallet->commits, 0);
+
+        if (incompatible_signer_result) {
+            auto invalid = *wallet->completed_document;
+            const auto incompatible = psbtfeefixture::Legacy(2, false);
+            for (size_t i = 0; i < invalid.inputs.size(); ++i)
+                invalid.inputs[i].final_script_sig = incompatible.inputs[i].final_script_sig;
+            // The wallet is held in before_sign; the semaphore handoff below
+            // makes this replacement response deterministic before it reads it.
+            wallet->completed_document = std::make_shared<const PartiallySignedTransaction>(std::move(invalid));
+        }
+
+        bool released{false};
+        const auto release_on_exit = qScopeGuard([&] { if (!released) state->release.release(); });
+        state->release.release();
+        released = true;
+        QVERIFY(state->terminal.tryAcquire(1, 5000));
+        {
+            std::lock_guard lock{state->mutex};
+            QVERIFY(!state->snapshots.empty());
+            const auto found = std::find_if(state->snapshots.rbegin(), state->snapshots.rend(), [](const auto& snapshot) {
+                return snapshot.attempt_id == 101 && !snapshot.in_flight;
+            });
+            QVERIFY(found != state->snapshots.rend());
+            QCOMPARE(found->current_review, uint64_t{replace_review_while_device_is_held ? 52U : 51U});
+            QCOMPARE(found->current_view, uint64_t{replace_review_while_device_is_held ? 4U : 3U});
+            if (close_while_device_is_held || replace_review_while_device_is_held) {
+                QVERIFY(!found->publishable);
+                QVERIFY(!found->result);
+                QCOMPARE(found->phase, close_while_device_is_held ? walletsigning::ApprovalPhase::Closed : walletsigning::ApprovalPhase::Idle);
+            } else {
+                QVERIFY(found->publishable);
+                QVERIFY(found->result);
+                if (incompatible_signer_result) {
+                    QCOMPARE(found->phase, walletsigning::ApprovalPhase::Failed);
+                    QCOMPARE(found->result->error, walletsigning::Error::InvalidSignature);
+                    QVERIFY(!found->result->signed_transaction);
+                    QCOMPARE(found->result->document->GetUnsignedTx()->GetHash(), request.document->GetUnsignedTx()->GetHash());
+                } else {
+                    QCOMPARE(found->phase, walletsigning::ApprovalPhase::Complete);
+                    QCOMPARE(found->result->error, walletsigning::Error::None);
+                    QVERIFY(found->result->signed_transaction);
+                    CMutableTransaction signed_terms{*found->result->signed_transaction};
+                    for (auto& input : signed_terms.vin) {
+                        input.scriptSig.clear();
+                        input.scriptWitness.SetNull();
+                    }
+                    QCOMPARE(MakeTransactionRef(std::move(signed_terms))->GetHash(), request.reviewed->GetHash());
+                }
+            }
+        }
+        QCOMPARE(wallet->signs, 1);
+        QCOMPARE(wallet->commits, 0);
+
+        if (!close_while_device_is_held) QVERIFY(owner->close());
+        QVERIFY(state->closed.tryAcquire(1, 5000));
+        owner.reset();
+        {
+            std::lock_guard lock{state->mutex};
+            state->snapshots.clear();
+        }
+        opening->retire();
+        wallet.reset();
+        commands.shutdown();
+        opening.reset();
+        QTRY_VERIFY(commands.isDrained());
+        retirement.shutdown();
+        QTRY_VERIFY(retirement.isDrained());
     }
     void signerPreservesAuthenticatedOutputOnError_data()
     {

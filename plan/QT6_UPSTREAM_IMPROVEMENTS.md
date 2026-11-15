@@ -327,3 +327,24 @@ type receive capability discovery (R30 scope007) to upstream Core improvements.
 The app must preserve truthful Unknown outcomes, Core broadcast policy and
 stale-reservation invalidation. These remainders do not block independent
 steps or authorize Core internals/subtree changes. Other focused gates remain.
+
+## R23 read-only transaction observations
+
+The [PSBT checkpoint](R23_PSBT_ELIGIBILITY_CHECKPOINT.md) records the typed
+Node/Chain observations. Public `Node::executeRpc("testmempoolaccept", ...)`
+also supplies a current read-only consensus/policy verdict for the finalized
+transaction, including conflicts/replacement/relative locks. The Native adapter
+is implemented, focused-qualified at7a2ee232 and integrated at51c40864; this
+capability does not require Core changes. Keep existing reviewed fee limits
+and actual submission ownership.
+A future typed observation would simplify RPC adaptation, but cannot reserve
+later admission against independent changes. It is an optional improvement.
+
+## R35 proposed wallet-directory inspection — decision pending
+
+The [boundary audit](R35_WALLET_DIRECTORY_BOUNDARY.md) identifies the preexisting
+direct `wallet::ListDatabases(proposed_path)` helper. Public WalletLoader directory
+enumeration reads global configuration and cannot inspect that proposed path.
+A typed explicit-path read-only public inspector would preserve the existing
+wallet-versus-junk distinction without changing global state. The affected
+piece is held pending user input; no temporary exception is assumed.

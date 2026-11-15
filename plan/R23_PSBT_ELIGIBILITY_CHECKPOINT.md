@@ -13,8 +13,12 @@ GUI models project retained values and narrow commands.
 
 Read-only public Node/Chain observations cover missing or spent chain inputs,
 coinbase maturity, absolute finality, advertised minimum fee and chain limits.
-These observations are advisory: the public interfaces cannot supply an atomic
-mempool admission/conflict/replacement/relative-lock snapshot. The UI states
+These observations are advisory. Public Node RPC `testmempoolaccept` can also
+provide the current consensus/policy verdict without wallet access, mempool
+submission, key consumption or broadcast. The Native adapter was qualified at
+7a2ee2323b31d83dae1743bcb90584dbfaf24d54 and integrated at51c40864. It checks
+the exact finalized bytes and returned transaction identities, with explicit
+unknown/rejected outcomes. No Core change is required for that capability. The UI states
 that submission checks current policy; the actual Node broadcast result owns
 acceptance or rejection. An explicit Recheck refreshes the original review.
 Rejected or successful attempts cannot silently rearm through a late fee echo.
@@ -50,9 +54,17 @@ the intended failed process exit1/markerfalse and recovered CoreReady/550MiB/
 markertrue/exit0, inspects GUI stderr, and has empty outer stderr in both scenarios.
 `FOCUSED_QUALIFICATION.json` records exact commands, scopes, artifacts and limits.
 
-Future upstream improvement: expose a typed, revisioned, read-only finalized
-transaction eligibility observation, including mempool spender/replacement and
-relative-lock facts, without mutation or key consumption. Submission must still
-validate current state. This note authorizes no Core changes and grants no new
-acceptance exception. Full coverage, matrices, native Windows and sanitizers
-remain pending at R42.
+The admission follow-up executes29 passing bodies:13 exact-public-RPC cases,
+10 independent document/policy cases and6 actual Core cases, including rejected
+replacement and relative locks that become admissible after a block. All11
+pinned static entries and exact-head app lint pass. The source-pinned
+`FINAL_ADMISSION_FOCUSED_UNION.json` records626 distinct passing identities,
+replacing overlaps in the earlier609-body union. This is an explicit carry
+across tested sources, not one final-ELF/full-suite result. R23's final order
+acceptance still waits for the reopened R22 overwrite-retirement prerequisite.
+
+Future optional upstream improvement: expose a typed, revisioned, read-only
+finalized transaction eligibility observation to simplify the Node RPC adapter.
+Submission must still validate current state. This note authorizes no Core
+changes and grants no new acceptance exception. Full coverage, matrices, native
+Windows and sanitizers remain pending at R42.

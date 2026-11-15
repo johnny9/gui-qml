@@ -23,6 +23,42 @@ struct Fixture {
 class WalletReceiveModelTests : public QObject {
     Q_OBJECT
 private Q_SLOTS:
+    void activitySharingKeepsTheSavedIdentityWithoutReplacingTheCreationDraft()
+    {
+        Fixture f; f.ready(); f.receive->editor()->message()->edit("Unrelated unsaved creation draft"); f.ports.drain();
+        const auto creation = f.receive->editor()->editorId(); QObject view;
+        auto* sharing = f.receive->sharingRequest("17", &view); QVERIFY(sharing); sharing->setActive(true); f.ports.drain();
+        QVERIFY(sharing->canCopyUri());
+        auto operation = std::unique_ptr<ShareOperationModel>{sharing->copyUri()}; f.ports.drain();
+        QVERIFY(operation->result().performed); QCOMPARE(operation->result().requestId, QStringLiteral("17"));
+        QCOMPARE(f.ports.clipboard, 1); QCOMPARE(f.ports.writes, 0);
+        QCOMPARE(f.receive->editor()->editorId(), creation); QCOMPARE(f.receive->editor()->message()->text(), QStringLiteral("Unrelated unsaved creation draft"));
+        QVERIFY(f.receive->editor()->dirty());
+    }
+    void paymentUseDuringAnActivityCopyRevokesTheOriginalQueuedHandoff()
+    {
+        Fixture f; QObject view;
+        auto* sharing = f.receive->sharingRequest("17", &view); QVERIFY(sharing); sharing->setActive(true); f.ports.drain();
+        auto operation = std::unique_ptr<ShareOperationModel>{sharing->copyUri()};
+        f.ports.execution.drain(); // Hold GUI delivery after source preparation.
+        f.ports.useSaved(17); f.receive->refresh(); f.ports.drain();
+        QVERIFY(!operation->result().performed); QVERIFY(!operation->result().admitted);
+        QCOMPARE(f.ports.clipboard, 0); QCOMPARE(operation->result().requestId, QStringLiteral("17"));
+        QVERIFY(!sharing->canCopyUri()); QVERIFY(!sharing->canCopyQr());
+    }
+    void activityMenuSuccessorCannotReuseAnOriginalSharingGrant()
+    {
+        Fixture f; QObject view;
+        auto second = f.ports.records.at(17); second.id = 29; second.address = "another-original-address"; f.ports.records.emplace(29, second);
+        auto* first = f.receive->sharingRequest("17", &view); QVERIFY(first); first->setActive(true); f.ports.drain();
+        auto operation = std::unique_ptr<ShareOperationModel>{first->copyUri()}; f.ports.execution.drain();
+        auto* successor = f.receive->sharingRequest("29", &view); QVERIFY(successor); QVERIFY(successor != first);
+        successor->setActive(true); f.ports.drain();
+        QCOMPARE(first->phase(), RequestSharingModel::Closed); QVERIFY(!operation->result().performed);
+        QCOMPARE(operation->result().requestId, QStringLiteral("17")); QCOMPARE(f.ports.clipboard, 0);
+        QCOMPARE(successor->requestId(), QStringLiteral("29"));
+        QCOMPARE(f.receive->sharingRequest("29", &view), successor); QCOMPARE(f.ports.writes, 0);
+    }
     void openReceiptWaitsForTheActualEditorsOriginalSourceProjection()
     {
         Fixture f; QSignalSpy ready{f.receive.get(), &WalletReceiveModel::requestViewReady};

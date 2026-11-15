@@ -6,6 +6,7 @@
 
 #include <qml/bitcoinamount.h>
 #include <qml/models/texteditsessionmodel.h>
+#include <qml/models/receiptreconciliationmodel.h>
 #include <qml/walletrequests.h>
 
 namespace requestedit {
@@ -98,6 +99,7 @@ class PaymentRequestEditorModel final : public QObject
     Q_PROPERTY(QString reservationId READ reservationId NOTIFY changed)
     Q_PROPERTY(QString paymentUri READ paymentUri NOTIFY changed)
     Q_PROPERTY(bool historicallyUsed READ historicallyUsed NOTIFY changed)
+    Q_PROPERTY(RequestReceiptModel* receipts READ receipts CONSTANT)
 public:
     enum Phase { Loading, Editing, Checking, Saving, Conflict, Uncertain, Retiring, Closed };
     Q_ENUM(Phase)
@@ -140,6 +142,8 @@ public:
     QString reservationId() const;
     QString paymentUri() const;
     bool historicallyUsed() const;
+    RequestReceiptModel* receipts() { return &m_receipts; }
+    void setReceiptReconciler(ReceiptReconciliationModel* reader) { m_receipts.setReader(reader); }
     std::shared_ptr<std::atomic_bool> sharingInputGuard() const { return m_sharing_input; }
     std::shared_ptr<SourceEpoch> sharingInputEpoch() const { return m_sharing_epoch; }
     Q_INVOKABLE void save();
@@ -170,6 +174,7 @@ private:
     execution::SnapshotServices m_execution;
     TextEditInput m_label{this}, m_message{this}, m_note{this};
     BitcoinAmount m_amount{this};
+    RequestReceiptModel m_receipts{this};
     std::weak_ptr<State> m_state;
     std::shared_ptr<std::shared_ptr<State>> m_owner;
     std::shared_ptr<Mailbox> m_mailbox;

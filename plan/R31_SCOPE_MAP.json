@@ -1,0 +1,406 @@
+{
+  "candidate": "3bd03717f408cc36d3da5136b850256e3960536f",
+  "accepted_base": "9c71709c629b4b07029c7afd2aabe6f2eec5b0c0",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "status": "focused gate passed; final series qualification remains R42",
+  "primary_count": 11,
+  "rows": [
+    {
+      "scope": "099-RC73",
+      "disposition": "bounded/shared consumer; existing R28/R30 bounds preserved",
+      "selectors": [
+        "WalletReceiptsTests::largeReceiptProjectionRetiresItsSharedInventoryWithoutAnotherCoreRead",
+        "TransactionActivityModelTests::sharesAddressAssociationsWithoutDuplicatingParents",
+        "TransactionActivityModelTests::fullActionModelRetainsRowsBeyondBoundedActivityPreview"
+      ],
+      "oracle_and_limit": "No per-action receipt map copy or Core rescan; input/preview bounds remain R30. Hostile-chain OOM is an inferred shape, not a newly claimed runtime crash.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "WalletReceiptsTests::largeReceiptProjectionRetiresItsSharedInventoryWithoutAnotherCoreRead": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "TransactionActivityModelTests::sharesAddressAssociationsWithoutDuplicatingParents": [
+          {
+            "selection": "activity-request-association-and-replacement-parity",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/activity-request-association-and-replacement-parity/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "TransactionActivityModelTests::fullActionModelRetainsRowsBeyondBoundedActivityPreview": [
+          {
+            "selection": "activity-request-association-and-replacement-parity",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/activity-request-association-and-replacement-parity/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "100-RC69",
+      "disposition": "incremental accepted aggregates and receipt current-consumer parity",
+      "selectors": [
+        "ActivityFilterProxyModelTests::availableMaximumUsesUnfilteredTransactionsAndUpdates",
+        "ActivityFilterProxyModelTests::refiltersWhenSourceAmountChanges",
+        "WalletReceiptsTests::largeUnchangedPollYieldsAndReadsEveryOriginalExactlyOnce"
+      ],
+      "oracle_and_limit": "Keep R28 aggregate/filter ownership; deterministic read/row/work counts, not a wall-clock benchmark.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "ActivityFilterProxyModelTests::availableMaximumUsesUnfilteredTransactionsAndUpdates": [
+          {
+            "selection": "accepted-aggregate-filter-consumers",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/accepted-aggregate-filter-consumers/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "ActivityFilterProxyModelTests::refiltersWhenSourceAmountChanges": [
+          {
+            "selection": "accepted-aggregate-filter-consumers",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/accepted-aggregate-filter-consumers/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletReceiptsTests::largeUnchangedPollYieldsAndReadsEveryOriginalExactlyOnce": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "100-RC79",
+      "disposition": "off-GUI receipt source/cache preserved",
+      "selectors": [
+        "WalletReceiptsTests::realWorkersReconcileAndDrainIndependentlyOfAClosedReceiptView",
+        "WalletReceiptsTests::noticeDuringLargePollRechecksAnAlreadyConsumedOriginal",
+        "WalletReceiptsTests::nativeIngressDoesNotDependOnGuiDelivery"
+      ],
+      "oracle_and_limit": "Existing Core128/notice256 bounded batches, Domain ledger and shared snapshots remain; GUI bounded address projections only.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "WalletReceiptsTests::realWorkersReconcileAndDrainIndependentlyOfAClosedReceiptView": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletReceiptsTests::noticeDuringLargePollRechecksAnAlreadyConsumedOriginal": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletReceiptsTests::nativeIngressDoesNotDependOnGuiDelivery": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "101-RC14",
+      "disposition": "held positive-underpayment design claim",
+      "selectors": [
+        "WalletReceiptsTests::currentCreditProjectionKeepsPositiveUnderpaymentSeparateFromHistoricalUse",
+        "ReceiveIntegrationTests::replacementAndConfirmedPaymentsDoNotDoubleCountReceipts"
+      ],
+      "oracle_and_limit": "Positive partial receipt reports exact credit and observed use, never claims paid-in-full.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "WalletReceiptsTests::currentCreditProjectionKeepsPositiveUnderpaymentSeparateFromHistoricalUse": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "ReceiveIntegrationTests::replacementAndConfirmedPaymentsDoNotDoubleCountReceipts": [
+          {
+            "selection": "replacementAndConfirmedPaymentsDoNotDoubleCountReceipts",
+            "path": "gameboy/run-02/artifacts-worker-collection/integration/replacementAndConfirmedPaymentsDoNotDoubleCountReceipts/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "123-RC14",
+      "disposition": "held positive-underpayment; zero-after-cancel distinct",
+      "selectors": [
+        "TypedReceive::test_current_credit_is_distinct_from_historical_use",
+        "WalletReceiptsTests::cancelledPaymentReturnsToAwaitingWithoutErasingHistoricalUse"
+      ],
+      "oracle_and_limit": "Do not promote positive payment into a new defect. Zero cancellation is represented by current credit plus independent historical protection.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "TypedReceive::test_current_credit_is_distinct_from_historical_use": [
+          {
+            "selection": "typed-current-receipt-ui",
+            "path": "gameboy/run-02/artifacts-worker-collection/qml/typed-current-receipt-ui/result.json",
+            "owner": "b3ce02"
+          },
+          {
+            "selection": "typed-current-receipt-ui",
+            "path": "gameboy/run-02/artifacts-worker-collection/qml/typed-current-receipt-ui/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletReceiptsTests::cancelledPaymentReturnsToAwaitingWithoutErasingHistoricalUse": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "125-RC13",
+      "disposition": "typed current-credit status independent of historical use",
+      "selectors": [
+        "ReceiveIntegrationTests::originalReorgRepaintsTheOpenRequestFromActualCurrentCredit",
+        "ReceiveIntegrationTests::typedCurrentCreditSurvivesReorgAndWalletReload",
+        "WalletReceiptsTests::cancelledPaymentReturnsToAwaitingWithoutErasingHistoricalUse"
+      ],
+      "oracle_and_limit": "Awaiting at current0; historical use remains true. Parent-original universal UI/Core comparison retains original stale paid label oracle.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "ReceiveIntegrationTests::originalReorgRepaintsTheOpenRequestFromActualCurrentCredit": [
+          {
+            "selection": "originalReorgRepaintsTheOpenRequestFromActualCurrentCredit",
+            "path": "gameboy/run-02/artifacts-worker-collection/integration/originalReorgRepaintsTheOpenRequestFromActualCurrentCredit/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "ReceiveIntegrationTests::typedCurrentCreditSurvivesReorgAndWalletReload": [
+          {
+            "selection": "typedCurrentCreditSurvivesReorgAndWalletReload",
+            "path": "gameboy/run-02/artifacts-worker-collection/integration/typedCurrentCreditSurvivesReorgAndWalletReload/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletReceiptsTests::cancelledPaymentReturnsToAwaitingWithoutErasingHistoricalUse": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "126-RC13",
+      "disposition": "sharing consequence of zero credit, not a separate settlement failure",
+      "selectors": [
+        "WalletReceiveModelTests::paymentUseDuringAnActivityCopyRevokesTheOriginalQueuedHandoff",
+        "ActivityList::test_typed_request_copy_owns_its_receipt_and_final_use_guard",
+        "TypedReceive::test_current_credit_is_distinct_from_historical_use"
+      ],
+      "oracle_and_limit": "A resurrected awaiting row cannot offer a silent empty/cached URI copy; production actions use captured Source/View/Grant. No automatic rearm after credit decreases.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "WalletReceiveModelTests::paymentUseDuringAnActivityCopyRevokesTheOriginalQueuedHandoff": [
+          {
+            "selection": "receive-original-editor-and-row-sharing",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/receive-original-editor-and-row-sharing/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "ActivityList::test_typed_request_copy_owns_its_receipt_and_final_use_guard": [
+          {
+            "selection": "activity-owned-copy-and-use-guard-ui",
+            "path": "gameboy/run-02/artifacts-worker-collection/qml/activity-owned-copy-and-use-guard-ui/result.json",
+            "owner": "b3ce02"
+          },
+          {
+            "selection": "activity-owned-copy-and-use-guard-ui",
+            "path": "gameboy/run-02/artifacts-worker-collection/qml/activity-owned-copy-and-use-guard-ui/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "TypedReceive::test_current_credit_is_distinct_from_historical_use": [
+          {
+            "selection": "typed-current-receipt-ui",
+            "path": "gameboy/run-02/artifacts-worker-collection/qml/typed-current-receipt-ui/result.json",
+            "owner": "b3ce02"
+          },
+          {
+            "selection": "typed-current-receipt-ui",
+            "path": "gameboy/run-02/artifacts-worker-collection/qml/typed-current-receipt-ui/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "167-D167",
+      "disposition": "source candidate unpromoted; extraction/publication parity",
+      "selectors": [
+        "WalletReceiptsTests::committedReceiptNotificationEndsTheLegacyPublicationGuard",
+        "WalletQmlModelTests::reconciliationBatchesActivityRebuilds",
+        "WalletQmlModelTests::reconciliationPreservesPaymentNotifiedDuringScan"
+      ],
+      "oracle_and_limit": "No current head runtime rebuild-bypass defect claimed solely from the old inventory. Coherent snapshot publication and separate committed signal preserve the existing guard.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "WalletReceiptsTests::committedReceiptNotificationEndsTheLegacyPublicationGuard": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletQmlModelTests::reconciliationBatchesActivityRebuilds": [
+          {
+            "selection": "legacy-receipt-consumer-and-reentrant-publication",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/legacy-receipt-consumer-and-reentrant-publication/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletQmlModelTests::reconciliationPreservesPaymentNotifiedDuringScan": [
+          {
+            "selection": "legacy-receipt-consumer-and-reentrant-publication",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/legacy-receipt-consumer-and-reentrant-publication/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "275-RC13",
+      "disposition": "live reorg/readiness/current credit",
+      "selectors": [
+        "ReceiveIntegrationTests::originalReorgRepaintsTheOpenRequestFromActualCurrentCredit",
+        "ReceiveIntegrationTests::typedCurrentCreditSurvivesReorgAndWalletReload"
+      ],
+      "oracle_and_limit": "Real disconnected/reconsidered coinbase receipt updates an open view without a forced wallet reload; independent process restart separately selected.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "ReceiveIntegrationTests::originalReorgRepaintsTheOpenRequestFromActualCurrentCredit": [
+          {
+            "selection": "originalReorgRepaintsTheOpenRequestFromActualCurrentCredit",
+            "path": "gameboy/run-02/artifacts-worker-collection/integration/originalReorgRepaintsTheOpenRequestFromActualCurrentCredit/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "ReceiveIntegrationTests::typedCurrentCreditSurvivesReorgAndWalletReload": [
+          {
+            "selection": "typedCurrentCreditSurvivesReorgAndWalletReload",
+            "path": "gameboy/run-02/artifacts-worker-collection/integration/typedCurrentCreditSurvivesReorgAndWalletReload/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "276-RC13",
+      "disposition": "zero-credit/history/UI consequence",
+      "selectors": [
+        "TypedReceive::test_held_receipt_reconciliation_preserves_amount_without_claiming_freshness",
+        "TypedReceive::test_receipt_failure_does_not_paint_a_zero_payment_as_current",
+        "ReceiveIntegrationTests::typedCurrentCreditSurvivesReorgAndWalletReload"
+      ],
+      "oracle_and_limit": "Current0 paints Awaiting while the original immutable address-use prohibition survives. No stale amount or read error is presented as current.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "TypedReceive::test_held_receipt_reconciliation_preserves_amount_without_claiming_freshness": [
+          {
+            "selection": "typed-current-receipt-ui",
+            "path": "gameboy/run-02/artifacts-worker-collection/qml/typed-current-receipt-ui/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "TypedReceive::test_receipt_failure_does_not_paint_a_zero_payment_as_current": [
+          {
+            "selection": "typed-current-receipt-ui",
+            "path": "gameboy/run-02/artifacts-worker-collection/qml/typed-current-receipt-ui/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "ReceiveIntegrationTests::typedCurrentCreditSurvivesReorgAndWalletReload": [
+          {
+            "selection": "typedCurrentCreditSurvivesReorgAndWalletReload",
+            "path": "gameboy/run-02/artifacts-worker-collection/integration/typedCurrentCreditSurvivesReorgAndWalletReload/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    },
+    {
+      "scope": "279-RC60",
+      "disposition": "actual Core observation wins over collapsed notice tag",
+      "selectors": [
+        "WalletReceiptsTests::changedNoticeReconcilesActualLiveStateEvenWhenLastNoticeSaysDeleted",
+        "WalletReceiptsTests::newerNativeNoticePreventsReadyBeforeReaderIngress",
+        "WalletReceiptsTests::noticesDuringReadSurviveTheOlderSnapshot",
+        "WalletReceiptsTests::deletedNoticeRemovesCreditOnlyWhenOriginalWalletReadConfirmsAbsence"
+      ],
+      "oracle_and_limit": "UPDATED followed by DELETED must read actual current transaction status; never erase a live receipt solely from an overwritten tag.",
+      "runtime_executed": true,
+      "runtime_evidence": {
+        "WalletReceiptsTests::changedNoticeReconcilesActualLiveStateEvenWhenLastNoticeSaysDeleted": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletReceiptsTests::newerNativeNoticePreventsReadyBeforeReaderIngress": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletReceiptsTests::noticesDuringReadSurviveTheOlderSnapshot": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ],
+        "WalletReceiptsTests::deletedNoticeRemovesCreditOnlyWhenOriginalWalletReadConfirmsAbsence": [
+          {
+            "selection": "single-reader-and-current-credit-projection",
+            "path": "gameboy/run-02/artifacts-worker-collection/native/single-reader-and-current-credit-projection/result.json",
+            "owner": "b3ce02"
+          }
+        ]
+      }
+    }
+  ],
+  "functional": {
+    "scenario": "interface_qml_wallet_activity.py --case typed-current-receipt-reorg-restart",
+    "actual_process_restart": true,
+    "checked_exits_and_raw_GUI_outputs": true,
+    "runtime_executed": true,
+    "path": "gameboy/run-03/artifacts-worker-collection/functional",
+    "exit": 0,
+    "scenario_seconds": 5.814,
+    "host_seconds": 11.227043703955133,
+    "actual_GUI_processes": 2
+  },
+  "cross287": "Original request/address/opening typed owner is immutable; original sharing context/operation cannot retarget same-address successor. R30 already owns its source/view epoch protocol.",
+  "R42": "Exhaustive coverage/full config/platform/compatibility matrices and sanitizers deferred by explicit user cadence. No pass claimed.",
+  "production_qualified": "b3ce4c05ab9cb5bb4d4ca53a0aed7d3a42288493",
+  "original_parent": {
+    "app": "e08b4a022ef74b4635c0437a0a43fd3e3c3c8b12",
+    "production_base": "a2af8d230547e1f333becf8e1a4ad2bc4cb5955a",
+    "path": "red-parent-01/artifacts",
+    "bodies": 2,
+    "passed": 1,
+    "original_reorg_expected_failure": 1,
+    "skip_or_infrastructure": 0,
+    "identical_current_oracle_passed": 2
+  }
+}

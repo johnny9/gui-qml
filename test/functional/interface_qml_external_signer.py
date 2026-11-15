@@ -132,7 +132,10 @@ def export_review(harness, name="reviewed"):
 
 
 def matching_signed_review(harness):
-    psbt, approved = export_review(harness)
+    # Keep this validation export independent from the original approval file.
+    # Reusing "reviewed.psbt" requires a separate interactive overwrite
+    # confirmation and leaves the typed save action pending in this flow.
+    psbt, approved = export_review(harness, name="matching")
     processed = rpc_call(harness.gui_rpc_port, "walletprocesspsbt", [psbt, True, "ALL", True, True], wallet="mock")
     assert processed["complete"] is True
     decoded = rpc_call(harness.gui_rpc_port, "decoderawtransaction", [processed["hex"]])
@@ -730,13 +733,34 @@ def substitution_journey(args, replacement):
             gui = harness.driver
             gui.click("activityTabButton")
             gui.set_text("activitySearchField", expected)
+            gui.wait_for_property("activityFilterProxyModel", "busy", False, timeout_ms=30000)
             gui.wait_for_property("activityFilterProxyModel", "count", 1, timeout_ms=30000)
+            gui.wait_for_property("activityListView", "count", 1, timeout_ms=30000)
+            def matches_filtered_txid():
+                return gui.get_model_row("activityListView", "model", row=0, role="txid",
+                                         expected_rows=1)["value"] == expected
+            try:
+                wait_until(matches_filtered_txid, timeout=30, description="filtered Activity model identity")
+            except AssertionError:
+                print("[diagnostic] expected Activity row:", expected)
+                print("[diagnostic] actual Activity row:", gui.get_model_row(
+                    "activityListView", "model", row=0, role="txid", expected_rows=1)["value"])
+                print("[diagnostic] filter text:", gui.get_property("activityFilterProxyModel", "searchText"))
+                print("[diagnostic] filter count:", gui.get_property("activityFilterProxyModel", "count"))
+                raise
             gui.click_list_item("activityListView", 0, "activityRowOpenButton")
             gui.wait_for_page("activityDetailsPage")
+            gui.wait_for_property("activityDetailsPage", "transactionId", expected, timeout_ms=30000)
             gui.wait_for_property("activityDetailsPage", "detailsLoading", False, timeout_ms=30000)
+            gui.wait_for_property("activityDetailsPage", "canBump", True, timeout_ms=30000)
             gui.click("speedUpBannerPrimaryButton")
             gui.wait_for_property("speedUpOverlay", "opened", True)
-            gui.wait_for_property("updateTransactionButton", "enabled", True, timeout_ms=30000)
+            try:
+                gui.wait_for_property("updateTransactionButton", "enabled", True, timeout_ms=30000)
+            except QmlDriverError:
+                print("[diagnostic] speed-up state:", gui.get_property("speedUpOverlay", "bumpState"))
+                print("[diagnostic] speed-up error:", gui.get_property("speedUpOverlay", "bumpErrorText"))
+                raise
             gui.click("updateTransactionButton")
             gui.wait_for_property("speedUpErrorText", "text", "Signer changed the reviewed replacement transaction.")
             assert set(rpc_call(harness.gui_rpc_port, "getrawmempool")) == {expected}

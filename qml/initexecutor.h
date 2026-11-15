@@ -30,10 +30,13 @@ class QmlInitExecutor : public QObject
 public:
     enum class StartupOutcome {Ready,Failed,Cancelled,Uncertain};
     using StartupOutcomePort=std::function<void(StartupOutcome)>;
+    // Native receipt, before GUI delivery and while the Node interface lives.
+    using ShutdownOutcomePort=std::function<void(int)>;
     using SubscriptionFactory = std::function<std::unique_ptr<interfaces::Handler>()>;
 
     explicit QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe = {},
-                             std::shared_ptr<std::atomic_bool> diagnostic_loss = {}, StartupOutcomePort outcome = {});
+                             std::shared_ptr<std::atomic_bool> diagnostic_loss = {}, StartupOutcomePort outcome = {},
+                             ShutdownOutcomePort shutdown_outcome = {});
     ~QmlInitExecutor();
     // Available during direct runawayException receipt delivery only.
     std::shared_ptr<execution::Scheduler> fatalDiagnosticScheduler() const { return m_fatal_diagnostic_scheduler; }

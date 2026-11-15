@@ -102,6 +102,62 @@ TestCase {
         mouseClick(item, item.width / 2, item.height / 2)
     }
     function edit(view, name, text) { verify(testSetup.replaceText(field(view, name), text)); view.control.settle() }
+    function test_current_credit_is_distinct_from_historical_use_data() {
+        return [{tag: "zero-after-cancel", current: 0, status: "Awaiting payment"},
+                {tag: "positive-underpayment", current: 546, status: "Payment received"}]
+    }
+    function test_current_credit_is_distinct_from_historical_use(data) {
+        const view = makeView(true)
+        view.control.publishCredit(1000, true)
+        view.control.settle()
+        compare(view.card.editor.receipts.receivedAmountSatoshi, 1000)
+        compare(field(view, "savedRequestReceiptStatus").text, "Payment received")
+        verify(!field(view, "savedRequestCopyUriButton").enabled)
+        view.control.publishCredit(data.current, true)
+        view.control.settle()
+        compare(view.card.editor.receipts.receivedAmountSatoshi, data.current)
+        verify(view.card.editor.receipts.fresh)
+        verify(view.card.editor.receipts.historicallyUsed)
+        compare(field(view, "savedRequestReceiptStatus").text, data.status)
+        compare(field(view, "savedRequestHistoricalUseNotice").visible, data.current === 0)
+        verify(!field(view, "savedRequestCopyUriButton").enabled)
+        compare(view.control.clipboardWrites, 0)
+        compare(view.control.writes, 0)
+        compare(view.card.editor.requestId, "17")
+        if (data.current > 0) verify(field(view, "savedRequestReceivedAmount").text.indexOf("0.00000546") >= 0)
+    }
+    function test_held_receipt_reconciliation_preserves_amount_without_claiming_freshness() {
+        const view = makeView(true)
+        view.control.publishCredit(1000, true)
+        view.control.settle()
+        view.control.invalidateCredit()
+        verify(!view.card.editor.receipts.fresh)
+        compare(view.card.editor.receipts.receivedAmountSatoshi, 1000)
+        compare(field(view, "savedRequestReceiptStatus").text, "Checking payments…")
+        verify(!field(view, "savedRequestReceivedAmount").visible)
+        view.control.publishCredit(0, true)
+        view.control.settle()
+        verify(view.card.editor.receipts.fresh)
+        compare(field(view, "savedRequestReceiptStatus").text, "Awaiting payment")
+        verify(!field(view, "savedRequestCopyUriButton").enabled)
+        compare(view.control.clipboardWrites, 0)
+    }
+    function test_receipt_failure_does_not_paint_a_zero_payment_as_current() {
+        const view = makeView(true)
+        view.control.publishCredit(546, true)
+        view.control.settle()
+        view.control.failCredit()
+        verify(!view.card.editor.receipts.fresh)
+        compare(view.card.editor.receipts.receivedAmountSatoshi, 546)
+        compare(field(view, "savedRequestReceiptStatus").text, view.card.editor.receipts.errorText)
+        verify(field(view, "savedRequestRetryPaymentsButton").visible)
+        view.control.publishCredit(546, true)
+        view.control.settle()
+        verify(view.card.editor.receipts.fresh)
+        compare(field(view, "savedRequestReceiptStatus").text, "Payment received")
+        verify(!field(view, "savedRequestRetryPaymentsButton").visible)
+        compare(view.control.writes, 0)
+    }
     function test_physical_input_is_the_captured_saved_request() {
         const view = makeView(false)
         edit(view, "receiveMessageInput", "a public message")

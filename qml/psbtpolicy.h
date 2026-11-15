@@ -15,10 +15,13 @@ namespace psbtpolicy {
 // Advisory observations are separate from signature verification and the
 // authoritative submit outcome. No snapshot promises mempool acceptance.
 enum class State { Unknown, NoKnownObstacle, Blocked };
+enum class Admission { Unknown, Allowed, Rejected };
 struct Facts {
     bool observed{false}, missing_inputs{false}, immature_inputs{false};
     bool final{true}, sufficient_fee{true}, chain_limits{true};
+    Admission admission{Admission::Unknown};
     QString tip, chain_error;
+    QString admission_error;
 };
 struct Decision { State state{State::Unknown}; QString explanation; };
 using Read = std::function<Facts(CTransactionRef, CAmount)>;
