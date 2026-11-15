@@ -6,6 +6,7 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <qml/desktopintentowner.h>
 #include <qml/snapshotquery.h>
+#include <qml/atomicsharedptr.h>
 #include <QObject>
 #include <QPointer>
 #ifdef ENABLE_WALLET
@@ -38,7 +39,8 @@ public:
     std::shared_ptr<desktopintent::Owner> owner() const { return m_owner; }
     State state() const { return static_cast<State>(m_snapshot.phase); }
     int pendingCount() const { return static_cast<int>(m_snapshot.pending); }
-    bool canInspect() const { return !m_closed && m_wallet_enabled && m_sink && m_snapshot.phase == desktopintent::Phase::Ready && !hasInspection(); }
+    bool canInspect() const { return !m_closed && m_ready && m_wallet_enabled && m_sink && m_snapshot.pending && !m_snapshot.active && !hasInspection()
+        && (m_snapshot.phase == desktopintent::Phase::Ready || m_snapshot.error == desktopintent::Error::TargetUnavailable); }
     bool canDismiss() const { return !m_closed && !m_snapshot.active && (m_snapshot.pending || m_snapshot.error != desktopintent::Error::None || !m_ingress_error.isEmpty()); }
     bool canReconcile() const { return m_snapshot.phase == desktopintent::Phase::ReconcilingDelivery; }
     QString error() const;
@@ -49,6 +51,7 @@ public:
     void installFileOpenHandler();
     void setWalletEnabled(bool enabled);
     void setReady(bool ready);
+    void setAdmissionGate(std::shared_ptr<const std::atomic_bool> closed) { m_parent_admission->store(std::move(closed)); }
     void closeAdmission();
 #ifdef ENABLE_WALLET
     void setFactory(BitcoinUriModel* factory);
@@ -70,6 +73,7 @@ private:
     const execution::SnapshotServices m_services;
     bool m_wallet_enabled;
     const std::shared_ptr<std::atomic_bool> m_closed_gate{std::make_shared<std::atomic_bool>(false)};
+    const std::shared_ptr<ownership::AtomicSharedPtr<const std::atomic_bool>> m_parent_admission{std::make_shared<ownership::AtomicSharedPtr<const std::atomic_bool>>()};
     std::shared_ptr<desktopintent::Owner> m_owner;
     std::shared_ptr<const desktopintent::Sink> m_sink;
     desktopintent::Snapshot m_snapshot;

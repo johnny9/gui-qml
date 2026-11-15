@@ -124,6 +124,11 @@ execution::Admission Owner::review(std::shared_ptr<const Sink> sink)
         if (self->m_closed->load() || !sink || !sink->identity || !sink->inspect || !sink->query) return;
         const auto delivery = state.queue.deliver(sink->identity);
         if (!delivery) return;
+        try {
+            if (self->m_services.available && !self->m_services.available()) {
+                state.queue.rejected(delivery->ticket); return;
+            }
+        } catch (...) { state.queue.rejected(delivery->ticket); return; }
         std::shared_ptr<ReplyCell> cell;
         try { cell = self->reserve(ReplyKind::Inspect, delivery->ticket); } catch (...) {}
         if (!cell) { state.queue.rejected(delivery->ticket); return; }

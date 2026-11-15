@@ -79,6 +79,35 @@ private Q_SLOTS:
         QVERIFY(!desktopintent::ParseArguments(2, arguments, QStringLiteral("process"), QStringLiteral("/captured")).error.isEmpty());
     }
 #ifdef ENABLE_WALLET
+    void nativeAdmissionFenceBeatsAHeldReadyProjection()
+    {
+        ManualRoutedExecution commands;
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel factory; factory.setServices({commands.scheduler, post});
+        DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
+        const auto native_closed = std::make_shared<std::atomic_bool>(false);
+        model.setAdmissionGate(native_closed);
+        QVERIFY(model.owner()->admit({Input(1)}, {})); model.setReady(true); drain();
+        QVERIFY(model.canInspect());
+        native_closed->store(true); // The terminal phase's GUI notification is deliberately held.
+        model.inspectNext(); drain();
+        QVERIFY(!model.hasInspection()); QCOMPARE(model.pendingCount(), 1);
+        QVERIFY(model.state() == DesktopIntentModel::State::WaitingReady);
+        model.inspectNext(); drain(); // An explicit retry still cannot bypass Native admission.
+        QVERIFY(!model.hasInspection());
+        QObject control_view;
+        auto* control = factory.requestImport({paymentimport::Input::Kind::Text, QStringLiteral("bitcoin:control")}, {}, &control_view);
+        QVERIFY(control); QCOMPARE(control->requestId(), quint64{1}); // Neither rejected handoff called the Source factory.
+        delete control; model.closeAdmission(); factory.closeAdmission(); drain();
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
     void retainedFacadeDoesNotHoldPhysicalShutdownAfterStop()
     {
         ManualRoutedExecution commands;

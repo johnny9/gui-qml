@@ -24,6 +24,7 @@ DesktopIntentModel::DesktopIntentModel(execution::SnapshotServices services, boo
     const auto post = m_services.post;
     const auto timer = presentation::MakeGuiObject();
     desktopintent::Services ports; ports.scheduler = m_services.scheduler;
+    ports.available = [gate = m_parent_admission] { const auto parent = gate->load(); return !parent || !parent->load(); };
     ports.wake = [post, timer](auto delay, auto callback) {
         post([timer, delay, callback = std::move(callback)] { QTimer::singleShot(delay, timer.get(), callback); });
     };
@@ -155,7 +156,12 @@ void DesktopIntentModel::closeAdmission()
     if (m_inspection) m_inspection->closeAdmission();
 #endif
 }
-void DesktopIntentModel::inspectNext() { if (canInspect() && m_owner) m_owner->review(m_sink); }
+void DesktopIntentModel::inspectNext()
+{
+    if (!canInspect() || !m_owner) return;
+    setReady(m_ready); // Explicit retry after a known refusal; Unknown cannot enter this path.
+    m_owner->review(m_sink);
+}
 void DesktopIntentModel::dismiss()
 {
     if (!canDismiss() || !m_owner) return;

@@ -38,6 +38,7 @@ public:
     // Constructed/Initializing may accept bounded intents for later readiness.
     // A stop/failure closes ingress immediately; it never reopens this owner.
     bool admissionOpen() const { return !m_admission_closed->load(); }
+    std::shared_ptr<const std::atomic_bool> admissionClosedGate() const { return m_admission_closed; }
     const std::optional<nodelifecycle::NativeInitialization>& initializationOutcome() const { return m_initialization; }
     bool initializationAttempted() const { return m_initialization && m_initialization->attempted; }
     bool initializationSucceeded() const { return m_initialization && m_initialization->success; }

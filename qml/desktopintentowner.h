@@ -35,6 +35,8 @@ struct Services {
     std::function<Time()> now{std::chrono::steady_clock::now};
     std::function<void(std::chrono::milliseconds, std::function<void()>)> wake;
     std::chrono::milliseconds receipt_timeout{250};
+    // Native authority fences a terminal parent before GUI phase publication.
+    std::function<bool()> available{};
 };
 
 /** Process-lifetime Domain owner. Native/GUI entry points only submit owned
