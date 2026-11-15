@@ -43,9 +43,10 @@ def unicode_startup_profile():
         with gui_process(tmpdir=str(profile), no_listen_arg=False,
                          extra_args=["-nolisten", f"-rpcuser={RPC_USER}", f"-rpcpassword={RPC_PASS}"]) as harness:
             wait_for_rpc(harness.rpc_port)
-            actual = Path(rpc_call(harness.rpc_port, "getwalletdir")["walletdir"]).resolve()
+            actual = Path(rpc_call(harness.rpc_port, "getrpcinfo")["logpath"]).resolve()
             assert actual.is_relative_to(Path(harness.datadir).resolve()), actual
             assert profile.name in actual.parts, actual
+            assert actual.is_file(), actual
             assert rpc_call(harness.rpc_port, "getblockchaininfo")["chain"] == "regtest"
 
 
