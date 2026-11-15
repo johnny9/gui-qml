@@ -15,6 +15,8 @@
 
 #include <stdexcept>
 #include <atomic>
+#include <cstdint>
+#include <iterator>
 #include <thread>
 
 namespace {
@@ -144,6 +146,123 @@ struct Fixture {
     bool capture_failure{false}, registration_missing{false}, invalid_snapshot{false};
 };
 
+// The generator chooses only a currently posted lane head. Production
+// TaskQueue, not this fixture, determines keyed admission and runnable work.
+// A recorded turn includes the original task and phase, so replay cannot
+// silently substitute a successor or execute an illegal FIFO permutation.
+struct ScheduleRun {
+    QJsonArray script;
+    QString error;
+    int ready{0}, failed{0}, retired{0}, registrations{0}, disconnects{0};
+    std::vector<int> effects, outcomes;
+    bool quiescent{false}, backend_off_gui{true};
+    std::vector<std::string> transport;
+};
+
+ScheduleRun RunLifecycleSchedule(uint32_t seed, bool inline_callback, bool capture_failure,
+                                 const std::optional<QJsonArray>& replay = {})
+{
+    Fixture f;
+    ScheduleRun result;
+    const auto finish = qScopeGuard([&] { f.owner->retire(); f.env.scheduler->closeAdmission(); f.drain(); });
+    f.catalog = {"DO_NOT_TRACE_schedule_wallet"};
+    f.capture_failure = capture_failure;
+    if (inline_callback) f.during_registration = [&] { f.notify("DO_NOT_TRACE_inline_callback"); };
+    if (!f.owner->start()) { result.error = QStringLiteral("initial admission refused"); return result; }
+    const auto key = f.env.scheduler->allocateKey();
+    for (int value : {1, 2}) {
+        if (!execution::Submit(*f.env.scheduler, [&, value] { result.effects.push_back(value); return value; },
+                               [&](int value) { result.outcomes.push_back(value); }, {}, {Lane::Core, 8, key})) {
+            result.error = QStringLiteral("independent keyed admission refused"); return result;
+        }
+    }
+    if (!execution::Submit(*f.env.scheduler, [] {}, [] {}, {}, {Lane::Control, 8}) ||
+        !execution::Submit(*f.env.scheduler, [] {}, [] {}, {}, {Lane::Cleanup, 8})) {
+        result.error = QStringLiteral("independent control/cleanup admission refused"); return result;
+    }
+    std::unique_ptr<walletlife::LoadSubscription::Handoff> handoff;
+    bool closed{false}, claimed{false}, notified{false};
+    // This guard releases a retained handoff BEFORE Fixture's destructor drains.
+    const auto release = qScopeGuard([&] { handoff.reset(); });
+    const auto candidates = [&] {
+        std::vector<QJsonObject> choices;
+        std::vector<Lane> lanes;
+        f.env.queuedCountIf([&](const auto& turn) {
+            if (std::find(lanes.begin(), lanes.end(), turn.lane) == lanes.end()) {
+                lanes.push_back(turn.lane);
+                choices.push_back({{"kind", "turn"}, {"lane", static_cast<int>(turn.lane)},
+                                   {"phase", static_cast<int>(turn.phase)}, {"task", QString::number(static_cast<qulonglong>(turn.id.value))}});
+            }
+            return false;
+        });
+        if (!closed) {
+            choices.push_back({{"kind", "close"}});
+            if (f.callback && !notified) choices.push_back({{"kind", "notify"}});
+            if (!claimed && f.count(Publication::Ready)) choices.push_back({{"kind", "claim"}});
+        }
+        if (handoff) choices.push_back({{"kind", "release"}});
+        return choices;
+    };
+    constexpr size_t MAX_STEPS{96};
+    for (size_t step{0}; step < MAX_STEPS; ++step) {
+        if (closed && !handoff && f.env.quiescent()) break;
+        auto choices = candidates();
+        if (choices.empty()) { result.error = QStringLiteral("nonquiescent state has no legal turn"); break; }
+        QJsonObject action;
+        if (replay) {
+            if (step >= static_cast<size_t>(replay->size()) || !replay->at(static_cast<qsizetype>(step)).isObject()) {
+                result.error = QStringLiteral("record ends before physical quiescence"); break;
+            }
+            action = replay->at(static_cast<qsizetype>(step)).toObject();
+            if (std::find(choices.begin(), choices.end(), action) == choices.end()) {
+                result.error = QStringLiteral("recorded action is not currently legal"); break;
+            }
+        } else {
+            // Stable arithmetic is specified here, independent of library RNGs.
+            seed = static_cast<uint32_t>((uint64_t{seed} * 1664525 + 1013904223) & 0xffffffffULL);
+            action = choices[(seed >> 8) % choices.size()];
+            // Bound external lifetime without inventing a backend deadline.
+            if (step == 32 && !closed) action = {{"kind", "close"}};
+        }
+        result.script.append(action);
+        const auto kind = action.value("kind").toString();
+        if (kind == "turn") {
+            if (!f.step(static_cast<Lane>(action.value("lane").toInt()))) {
+                result.error = QStringLiteral("selected legal turn did not execute"); break;
+            }
+        } else if (kind == "close") {
+            closed = true;
+            f.owner->retire();
+            f.env.scheduler->closeAdmission();
+        } else if (kind == "notify") {
+            notified = true;
+            f.notify("DO_NOT_TRACE_queued_callback");
+        } else if (kind == "claim") {
+            claimed = true;
+            handoff = f.owner->takeInitial();
+            if (!handoff) { result.error = QStringLiteral("ready original handoff was unavailable"); break; }
+        } else if (kind == "release") {
+            handoff.reset();
+        }
+        if (closed && handoff && !f.probe->disconnects.empty()) {
+            result.error = QStringLiteral("parent disconnected before original presentation lease retired"); break;
+        }
+    }
+    if (result.error.isEmpty() && replay && result.script.size() != replay->size())
+        result.error = QStringLiteral("record contains actions after quiescence");
+    result.quiescent = closed && !handoff && f.env.quiescent();
+    if (result.error.isEmpty() && !result.quiescent) result.error = QStringLiteral("bounded schedule did not quiesce");
+    result.ready = f.count(Publication::Ready); result.failed = f.count(Publication::Failed);
+    result.retired = f.count(Publication::Retired);
+    result.registrations = static_cast<int>(f.probe->registrations.size());
+    result.disconnects = static_cast<int>(f.probe->disconnects.size());
+    for (const auto& entry : f.probe->destroyed)
+        result.backend_off_gui &= entry.second == Lane::Core || entry.second == Lane::Cleanup;
+    for (const auto& lane : f.probe->disconnects) result.backend_off_gui &= lane == Lane::Cleanup;
+    result.transport = f.env.traceSnapshot();
+    return result;
+}
+
 struct PhysicalProbe {
     QThread* gui{QThread::currentThread()};
     QSemaphore entered, release, ready, retired, initial_disposed, changed;
@@ -178,6 +297,102 @@ class WalletLifecycleTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void generatedLegalSchedulesReplayOriginalLifetimeOracles_data()
+    {
+        QTest::addColumn<uint32_t>("seed"); QTest::addColumn<bool>("inline_callback");
+        for (uint32_t seed : {1U, 2U, 3U, 5U, 8U, 13U, 21U, 34U}) {
+            for (bool callback : {false, true}) {
+                const QByteArray tag = QByteArray::number(seed) + (callback ? "-registration-callback" : "-snapshot");
+                QTest::newRow(tag.constData()) << seed << callback;
+            }
+        }
+    }
+    void generatedLegalSchedulesReplayOriginalLifetimeOracles()
+    {
+        QFETCH(uint32_t, seed); QFETCH(bool, inline_callback);
+        const auto first = RunLifecycleSchedule(seed, inline_callback, false);
+        qInfo().noquote() << QJsonDocument{QJsonObject{{"seed", static_cast<qint64>(seed)},
+            {"inline_callback", inline_callback}, {"script", first.script}}}.toJson(QJsonDocument::Compact);
+        QVERIFY2(first.error.isEmpty(), qPrintable(first.error)); QVERIFY(first.quiescent);
+        QCOMPARE(first.retired, 1); QCOMPARE(first.disconnects, first.registrations);
+        QVERIFY(first.backend_off_gui); QCOMPARE(first.failed, 0); QVERIFY(first.ready <= 1);
+        QCOMPARE(first.effects, std::vector<int>({1, 2})); QCOMPARE(first.outcomes, std::vector<int>({1, 2}));
+        for (const auto& event : first.transport) QVERIFY(event.find("DO_NOT_TRACE") == std::string::npos);
+        // Replay uses the saved actions, not the seed, and checks every task/phase.
+        const auto recorded = QJsonDocument::fromJson(QJsonDocument{first.script}.toJson(QJsonDocument::Compact)).array();
+        QCOMPARE(recorded, first.script);
+        const auto again = RunLifecycleSchedule(0, inline_callback, false, recorded);
+        QVERIFY2(again.error.isEmpty(), qPrintable(again.error)); QCOMPARE(again.script, first.script);
+        QCOMPARE(again.transport, first.transport); QCOMPARE(again.ready, first.ready);
+        QCOMPARE(again.retired, 1); QCOMPARE(again.disconnects, first.disconnects);
+        QCOMPARE(again.effects, first.effects); QCOMPARE(again.outcomes, first.outcomes);
+        QVERIFY(again.backend_off_gui); QVERIFY(again.quiescent);
+    }
+    void recordedProducerFailureReplaysTheSameIndependentOracle()
+    {
+        // This is the existing real capture-port exception, not a fake ledger or
+        // an injected post-state. Search bounded legal schedules that reach
+        // capture before retirement, recording production-queue choices.
+        std::optional<ScheduleRun> failure;
+        for (uint32_t seed{1}; seed <= 64; ++seed) {
+            auto candidate = RunLifecycleSchedule(seed, false, true);
+            if (candidate.error.isEmpty() && candidate.failed == 1) { failure = std::move(candidate); break; }
+        }
+        QVERIFY(failure); QVERIFY(failure->quiescent); QCOMPARE(failure->ready, 0);
+        QCOMPARE(failure->retired, 1); QCOMPARE(failure->disconnects, failure->registrations);
+        QVERIFY(failure->backend_off_gui);
+        qInfo().noquote() << QJsonDocument{QJsonObject{{"producer", "capture-exception"},
+            {"failed_oracle", "ready-count-equals-one"}, {"script", failure->script}}}.toJson(QJsonDocument::Compact);
+        const auto recorded = QJsonDocument::fromJson(QJsonDocument{failure->script}.toJson(QJsonDocument::Compact)).array();
+        QCOMPARE(recorded, failure->script);
+        const auto replay = RunLifecycleSchedule(0, false, true, recorded);
+        QVERIFY2(replay.error.isEmpty(), qPrintable(replay.error)); QCOMPARE(replay.transport, failure->transport);
+        // Independent original captureFailureOwnsOneTerminalFailureAndDisconnect
+        // oracle: no Ready, one Failed, one Retired, all handlers released.
+        QCOMPARE(replay.ready, 0); QCOMPARE(replay.failed, 1); QCOMPARE(replay.retired, 1);
+        QCOMPARE(replay.disconnects, replay.registrations); QVERIFY(replay.backend_off_gui); QVERIFY(replay.quiescent);
+        // Negative control: removing the actual producer fault cannot reproduce
+        // this failed readiness oracle with the identical recorded schedule.
+        const auto healthy = RunLifecycleSchedule(0, false, false, failure->script);
+        QVERIFY(!healthy.error.isEmpty() || healthy.failed != replay.failed || healthy.ready != replay.ready);
+    }
+    void replayRejectsUnrecordedOrIllegalTurns_data()
+    {
+        QTest::addColumn<QString>("mutation");
+        for (const auto& mutation : {"unknown-task", "wrong-phase", "later-key-turn", "truncated", "extra-turn"})
+            QTest::newRow(mutation) << QString::fromLatin1(mutation);
+    }
+    void replayRejectsUnrecordedOrIllegalTurns()
+    {
+        QFETCH(QString, mutation);
+        const auto original = RunLifecycleSchedule(8, true, false);
+        QVERIFY2(original.error.isEmpty(), qPrintable(original.error)); QVERIFY(!original.script.isEmpty());
+        auto altered = original.script;
+        if (mutation == "truncated") altered.removeAt(altered.size() - 1);
+        else if (mutation == "extra-turn") altered.append(QJsonObject{{"kind", "close"}});
+        else if (mutation == "later-key-turn") {
+            auto first = std::find_if(altered.begin(), altered.end(), [](const auto& value) {
+                const auto turn = value.toObject();
+                return turn.value("kind") == "turn" && turn.value("lane").toInt() == static_cast<int>(Lane::Core);
+            });
+            QVERIFY(first != altered.end());
+            auto later = std::find_if(std::next(first), altered.end(), [&](const auto& value) {
+                const auto turn = value.toObject();
+                return turn.value("kind") == "turn" && turn.value("lane").toInt() == static_cast<int>(Lane::Core)
+                    && turn.value("task") != first->toObject().value("task");
+            });
+            QVERIFY(later != altered.end());
+            *first = *later;
+        } else {
+            auto turn = std::find_if(altered.begin(), altered.end(), [](const auto& value) { return value.toObject().value("kind") == "turn"; });
+            QVERIFY(turn != altered.end()); auto action = turn->toObject();
+            if (mutation == "unknown-task") action.insert("task", QStringLiteral("18446744073709551615"));
+            else action.insert("phase", -1);
+            *turn = action;
+        }
+        const auto replay = RunLifecycleSchedule(0, true, false, altered);
+        QVERIFY2(!replay.error.isEmpty(), "a changed or incomplete trace must never silently generate a replacement schedule");
+    }
     void delayedOlderNativeCallbackCannotReplaceANewerHandle()
     {
         QSemaphore first_entered, release_first;
