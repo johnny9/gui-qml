@@ -22,7 +22,7 @@ Item {
     // ── Style ────────────────────────────────────────────────────────────
 
     property int   fontPixelSize:    12
-    property string fontFamily:      "monospace"
+    property string fontFamily:      Theme.text.monoFamily
     property string fontStyleName:   ""
     property int   textLineHeight:   0
     property int   contentTextFormat: Text.PlainText
