@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 namespace paymentimport {
 enum class SourceField { WholeRequest, Address, Amount, PrivateNote };
@@ -27,7 +28,8 @@ struct BatchResult {
 
 /** Prepare the complete revisioned input batch on Domain. The target actor
  * guards its opening/draft revision and commits this value as one ledger entry;
- * it then runs ordinary recipient validation. GUI only projects the result.
+ * it then runs ordinary recipient validation and applies the existing explicit
+ * Fixed/Maximum command where amount_changed is true. GUI projects the result.
  * No absent URI field can silently replace a private note or Maximum intent. */
 inline BatchResult PreparePaymentBatch(const senddraft::Recipient& current, const PaymentBatch& batch)
 {
