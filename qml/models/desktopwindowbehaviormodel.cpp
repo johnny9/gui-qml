@@ -36,8 +36,10 @@ DesktopWindowBehaviorModel::DesktopWindowBehaviorModel(bool desktop_platform, ex
     }
     if (!m_services.post) m_services.post = presentation::QueuedPost();
     m_key = m_services.scheduler->allocateKey();
+    const bool public_store = !m_store.read && !m_store.write && !m_store.write_fields;
     if (!m_store.read) m_store.read = [] {
         QSettings settings;
+        settings.sync();
         Values values{!settings.value(KEY_HIDE_TRAY_ICON, false).toBool(),
             settings.value(KEY_MINIMIZE_TO_TRAY, false).toBool(), settings.value(KEY_MINIMIZE_ON_CLOSE, false).toBool()};
         if (!values.show_tray && values.minimize_tray) {
@@ -48,14 +50,19 @@ DesktopWindowBehaviorModel::DesktopWindowBehaviorModel(bool desktop_platform, ex
         if (settings.status() != QSettings::NoError) throw std::runtime_error("Desktop preferences could not be read");
         return values;
     };
-    if (!m_store.write) m_store.write = [](Values values) {
+    if (!m_store.write && !m_store.write_fields) m_store.write_fields = [](Values values, unsigned fields) {
         QSettings settings;
-        settings.setValue(KEY_HIDE_TRAY_ICON, !values.show_tray);
-        settings.setValue(KEY_MINIMIZE_TO_TRAY, values.minimize_tray);
-        settings.setValue(KEY_MINIMIZE_ON_CLOSE, values.minimize_close);
+        settings.sync();
+        if (settings.status() != QSettings::NoError) throw std::runtime_error("Desktop preferences could not be read before saving");
+        if (fields & 1) settings.setValue(KEY_HIDE_TRAY_ICON, !values.show_tray);
+        if (fields & 2) settings.setValue(KEY_MINIMIZE_TO_TRAY, values.minimize_tray);
+        if (fields & 4) settings.setValue(KEY_MINIMIZE_ON_CLOSE, values.minimize_close);
         settings.sync();
         if (settings.status() != QSettings::NoError) throw std::runtime_error("Desktop preferences could not be saved");
+        return Values{!settings.value(KEY_HIDE_TRAY_ICON, false).toBool(),
+            settings.value(KEY_MINIMIZE_TO_TRAY, false).toBool(), settings.value(KEY_MINIMIZE_ON_CLOSE, false).toBool()};
     };
+    if (!m_store.watch_paths) m_store.watch_paths = [public_store] { if (!public_store) return preferences::WatchPaths{}; QSettings settings; return preferences::Paths(settings); };
     if (!desktop_platform) apply({false, false, false});
     submit({}, true);
 }
@@ -74,15 +81,28 @@ void DesktopWindowBehaviorModel::retryPersistence()
         if (!guard || m_stopping) return;
     }
     if (!m_operations.empty() || (count > 0 && m_error.isEmpty())) return;
-    submit({m_show_tray_icon, m_minimize_to_tray, m_minimize_on_close}, !m_ready);
+    refreshSettings();
+}
+void DesktopWindowBehaviorModel::refreshSettings()
+{
+    if (m_stopping) return;
+    m_refresh_requested = true;
+    finishRefresh();
+}
+void DesktopWindowBehaviorModel::finishRefresh()
+{
+    if (m_stopping || !m_operations.empty() || !m_refresh_requested) return;
+    m_refresh_requested = false;
+    submit({}, true);
 }
 void DesktopWindowBehaviorModel::closeAdmission()
 {
     if (std::exchange(m_stopping, true)) return;
+    m_watch.stop();
     // Accepted writes own their captured values and finish independently.
     if (m_executor) m_executor->shutdown();
 }
-bool DesktopWindowBehaviorModel::submit(Values values, bool load)
+bool DesktopWindowBehaviorModel::submit(Values values, bool load, unsigned fields)
 {
     if (m_stopping) return false;
     const auto id = ++m_next_id;
@@ -92,13 +112,17 @@ bool DesktopWindowBehaviorModel::submit(Values values, bool load)
         Q_EMIT settingsStateChanged(); return false;
     }
     const QPointer<DesktopWindowBehaviorModel> observer{this};
-    auto operation = std::make_shared<execution::OwnedCommand<Values>>(m_services.scheduler,
+    auto operation = std::make_shared<execution::OwnedCommand<Result>>(m_services.scheduler,
         [post = m_services.post, observer, id, load] {
             post([observer, id, load] { if (observer && !observer->m_stopping) observer->publish(id, load); });
         });
-    const auto admitted = operation->start([store = m_store, values, load] {
-        if (load) return store.read();
-        store.write(values); return values;
+    const auto admitted = operation->start([store = m_store, values, load, fields] {
+        const auto watch = store.watch_paths();
+        Values actual;
+        if (load) actual = store.read();
+        else if (store.write_fields) actual = store.write_fields(values, fields);
+        else { store.write(values); actual = values; }
+        return Result{actual, watch};
     }, {execution::Lane::Core, 128, m_key, execution::WorkClass::Action});
     if (!admitted) {
         m_error = tr("Desktop preferences could not be queued.");
@@ -124,13 +148,13 @@ void DesktopWindowBehaviorModel::publish(quint64 id, bool load)
         if (result->error || !result->value) m_error = load ? tr("Desktop preferences could not be read.") : tr("Desktop preferences could not be saved.");
         else {
             m_error.clear();
-            if (load) {
-                m_ready = true;
-                apply(m_desktop_platform ? *result->value : Values{false, false, false});
-            }
+            m_watch.update(result->value->watch);
+            if (load) m_ready = true;
+            apply(m_desktop_platform ? result->value->values : Values{false, false, false});
         }
     }
     if (guard) Q_EMIT settingsStateChanged();
+    if (guard && !m_stopping) finishRefresh();
 }
 void DesktopWindowBehaviorModel::apply(Values values)
 {
@@ -156,17 +180,17 @@ bool DesktopWindowBehaviorModel::minimizeOnClose() const { return m_minimize_on_
 void DesktopWindowBehaviorModel::setShowTrayIcon(bool show)
 {
     if (!m_ready || !m_desktop_platform || m_show_tray_icon == show) return;
-    submit({show, show && m_minimize_to_tray, m_minimize_on_close}, false);
+    submit({show, show && m_minimize_to_tray, m_minimize_on_close}, false, show ? 1 : 3);
 }
 void DesktopWindowBehaviorModel::setMinimizeToTray(bool minimize)
 {
     if (!m_ready || !m_desktop_platform || (!m_show_tray_icon && minimize) || m_minimize_to_tray == minimize) return;
-    submit({m_show_tray_icon, minimize, m_minimize_on_close}, false);
+    submit({m_show_tray_icon, minimize, m_minimize_on_close}, false, 2);
 }
 void DesktopWindowBehaviorModel::setMinimizeOnClose(bool minimize)
 {
     if (!m_ready || !m_desktop_platform || m_minimize_on_close == minimize) return;
-    submit({m_show_tray_icon, m_minimize_to_tray, minimize}, false);
+    submit({m_show_tray_icon, m_minimize_to_tray, minimize}, false, 4);
 }
 bool DesktopWindowBehaviorModel::shouldHideToTrayOnMinimize() const { return m_desktop_platform && m_show_tray_icon && m_minimize_to_tray; }
 bool DesktopWindowBehaviorModel::shouldMinimizeWindowOnClose() const { return m_desktop_platform && m_minimize_on_close; }

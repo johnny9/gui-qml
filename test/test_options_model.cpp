@@ -317,6 +317,16 @@ private Q_SLOTS:
     void onboardingStorageProjectionCoalescesPublicPruneChoice();
     void thirdPartyTransactionLinksParseValidUrls();
     void moneyFontChoicePersists();
+    void rejectedDisplayRefreshDoesNotReenterItsFailure();
+    void databaseCacheMatchesCoreDefaultAndRange();
+    void unavailableLanguageDoesNotPersist_data();
+    void unavailableLanguageDoesNotPersist();
+    void displayReadbackRepairsInvalidStoredUnit_data();
+    void displayReadbackRepairsInvalidStoredUnit();
+    void languageReadbackRejectsUnavailablePersistedTag();
+    void invalidCoreLanguageDoesNotEraseAnIndependentGuiPreference();
+    void manualDisplayRefreshWaitsForPendingWrite();
+    void externalDisplayWriterIsObservedWithoutUserEdit();
     void displayUnitUsesQtCompatibleSettingsKey();
     void displayUnitUsesLegacyQtFallback();
     void displayUnitPrefersQmlSettingOverLegacyQtFallback();
@@ -3046,6 +3056,161 @@ void OptionsModelTests::moneyFontChoicePersists()
     }
 }
 
+
+
+void OptionsModelTests::rejectedDisplayRefreshDoesNotReenterItsFailure()
+{
+    SavedGuiDataDirSettings saved;MockNode node;ArgsManager args;QTemporaryDir directory;QVERIFY(directory.isValid());PrepareRuntimePersistence(node,args,directory);ManualSnapshotGraph graph;
+    {OptionsQmlModel model{node,args,graph.services()};bool delivering{false},reentered{false};int notices{0};
+     const auto finish=qScopeGuard([&]{disconnect(&model,nullptr,this,nullptr);model.beginShutdown();graph.drainLive();});
+     QVERIFY(graph.drainLive());graph.transport.scheduler->closeOrdinaryAdmission();
+     const auto original=model.settingsOperationId();
+     connect(&model,&OptionsQmlModel::settingsErrorChanged,this,[&]{reentered|=delivering;delivering=true;if(++notices<=2)model.refreshDisplaySettings();delivering=false;});
+     model.refreshDisplaySettings();QVERIFY(!reentered);QCOMPARE(notices,1);QCOMPARE(model.settingsOperationId(),original+1);QVERIFY(!model.settingsPending());QVERIFY(!model.settingsError().isEmpty());
+     QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsFailed);
+    }
+    QVERIFY(graph.drainLive());QVERIFY(graph.transport.quiescent());
+}
+
+void OptionsModelTests::databaseCacheMatchesCoreDefaultAndRange()
+{
+    SavedGuiDataDirSettings saved;
+    MockNode node;
+    const auto drain = DrainExecutorsBeforeNativeOwnerDestruction();
+    ArgsManager args; QTemporaryDir directory; QVERIFY(directory.isValid());
+    PrepareRuntimePersistence(node, args, directory);
+    OptionsQmlModel model{node, args};
+    QTRY_VERIFY(model.settingsReady()); QTRY_VERIFY(!model.settingsPending());
+    // Core's public default is an independent oracle; the 8 MiB coins
+    // sub-cache is not the total -dbcache bound.
+    const auto expected = node::GetDefaultDBCache() / 1_MiB;
+    QCOMPARE(model.dbcacheSizeMiB(), int(expected));
+    QVERIFY(model.maxDbcacheSizeMiB() >= model.dbcacheSizeMiB());
+    QVERIFY(model.maxDbcacheSizeMiB() >= 1636);
+    QCOMPARE(SettingTo<int64_t>(QmlCoreSettings::DefaultCoreSettingValue(QStringLiteral("dbcache"))).value_or(-1), int64_t(expected));
+    model.setDbcacheSizeMiB(1636);
+    QTRY_VERIFY(!model.settingsPending());
+    QCOMPARE(SettingTo<int64_t>(args.GetPersistentSetting("dbcache")).value_or(-1), int64_t{1636});
+}
+void OptionsModelTests::unavailableLanguageDoesNotPersist_data()
+{
+    QTest::addColumn<QString>("literal");
+    QTest::newRow("not-installed") << QStringLiteral("not_an_installed_translation");
+    QTest::newRow("over-budget") << QString(65, QLatin1Char('x'));
+    QTest::newRow("embedded-null") << QString{QChar::Null};
+}
+void OptionsModelTests::unavailableLanguageDoesNotPersist()
+{
+    QFETCH(QString, literal);
+    SavedGuiDataDirSettings saved; QSettings settings;
+    settings.setValue(SettingsKeys::LANGUAGE, QString{}); settings.sync();
+    MockNode node; ArgsManager args; QTemporaryDir directory; QVERIFY(directory.isValid());
+    PrepareRuntimePersistence(node, args, directory);
+    ManualSnapshotGraph graph;
+    { OptionsQmlModel model{node, args, graph.services()};
+      const auto finish = qScopeGuard([&] { model.beginShutdown(); graph.drainLive(); });
+      QVERIFY(graph.drainLive()); QCOMPARE(model.language(), QString{});
+      model.setLanguage(literal); QVERIFY(graph.drainLive());
+      QCOMPARE(model.language(), QString{});
+      QVERIFY(!model.settingsError().isEmpty());
+      QVERIFY(args.GetPersistentSetting("lang").isNull());
+      settings.sync(); QCOMPARE(settings.value(SettingsKeys::LANGUAGE).toString(), QString{});
+    }
+    QVERIFY(graph.drainLive()); QVERIFY(graph.transport.quiescent());
+}
+void OptionsModelTests::displayReadbackRepairsInvalidStoredUnit_data()
+{
+    QTest::addColumn<QVariant>("stored"); QTest::addColumn<int>("expected");
+    QTest::newRow("negative") << QVariant{-1} << 0;
+    QTest::newRow("above-catalog") << QVariant{99} << 0;
+    QTest::newRow("text") << QVariant{QStringLiteral("not-a-unit")} << 0;
+    QTest::newRow("integer-overflow") << QVariant{QStringLiteral("99999999999999999999")} << 0;
+    QTest::newRow("fractional") << QVariant{1.5} << 0;
+    QTest::newRow("valid-sat") << QVariant{3} << 3;
+}
+void OptionsModelTests::displayReadbackRepairsInvalidStoredUnit()
+{
+    QFETCH(QVariant, stored); QFETCH(int, expected);
+    SavedGuiDataDirSettings saved; QSettings settings;
+    settings.setValue(SettingsKeys::DISPLAY_UNIT, stored); settings.sync();
+    MockNode node; const auto drain = DrainExecutorsBeforeNativeOwnerDestruction();
+    ArgsManager args; QTemporaryDir directory; QVERIFY(directory.isValid());
+    PrepareRuntimePersistence(node, args, directory);
+    OptionsQmlModel model{node, args};
+    QTRY_VERIFY(model.settingsReady()); QTRY_VERIFY(!model.settingsPending());
+    QCOMPARE(model.displayUnit(), expected);
+    settings.sync(); QCOMPARE(settings.value(SettingsKeys::DISPLAY_UNIT).toInt(), expected);
+    bool valid{false}; settings.value(SettingsKeys::DISPLAY_UNIT).toInt(&valid); QVERIFY(valid);
+    // A second independent model/restart sees the same canonical persisted unit.
+    OptionsQmlModel restarted{node, args}; QTRY_VERIFY(restarted.settingsReady());
+    QTRY_VERIFY(!restarted.settingsPending()); QCOMPARE(restarted.displayUnit(), expected);
+}
+void OptionsModelTests::languageReadbackRejectsUnavailablePersistedTag()
+{
+    SavedGuiDataDirSettings saved; QSettings settings;
+    settings.setValue(SettingsKeys::LANGUAGE, QStringLiteral("invalid_locale_that_has_no_translation")); settings.sync();
+    MockNode node; const auto drain = DrainExecutorsBeforeNativeOwnerDestruction();
+    ArgsManager args; QTemporaryDir directory; QVERIFY(directory.isValid());
+    PrepareRuntimePersistence(node, args, directory);
+    OptionsQmlModel model{node, args}; QTRY_VERIFY(model.settingsReady()); QTRY_VERIFY(!model.settingsPending());
+    QVERIFY(model.availableLanguages().contains(model.language()));
+    QCOMPARE(model.language(), QString{});
+    settings.sync(); QCOMPARE(settings.value(SettingsKeys::LANGUAGE).toString(), QString{});
+    QVERIFY(args.GetPersistentSetting("lang").isNull());
+}
+
+void OptionsModelTests::invalidCoreLanguageDoesNotEraseAnIndependentGuiPreference()
+{
+    SavedGuiDataDirSettings saved;QSettings settings;settings.setValue(SettingsKeys::LANGUAGE,QStringLiteral("de"));settings.sync();
+    MockNode node;const auto drain=DrainExecutorsBeforeNativeOwnerDestruction();ArgsManager args;QTemporaryDir directory;QVERIFY(directory.isValid());PrepareRuntimePersistence(node,args,directory);
+    args.LockSettings([](common::Settings& values){values.rw_settings["lang"]=std::string{"unavailable_external_core_language"};});
+    OptionsQmlModel model{node,args};QTRY_VERIFY(model.settingsReady());QTRY_VERIFY(!model.settingsPending());
+    settings.sync();QCOMPARE(settings.value(SettingsKeys::LANGUAGE).toString(),QStringLiteral("de"));
+    QCOMPARE(model.language(),QStringLiteral("unavailable_external_core_language"));QVERIFY(model.languageSummary().contains(QStringLiteral("Unavailable translation")));
+    QCOMPARE(SettingToString(args.GetPersistentSetting("lang")).value_or(""),std::string{"unavailable_external_core_language"});
+    model.setLanguage({});QTRY_VERIFY(!model.settingsPending());QCOMPARE(model.language(),QString{});
+}
+
+void OptionsModelTests::manualDisplayRefreshWaitsForPendingWrite()
+{
+    SavedGuiDataDirSettings saved; QSettings settings;
+    settings.setValue(SettingsKeys::DISPLAY_UNIT, 0); settings.sync();
+    MockNode node; ArgsManager args; QTemporaryDir directory; QVERIFY(directory.isValid());
+    PrepareRuntimePersistence(node, args, directory); ManualSnapshotGraph graph;
+    { OptionsQmlModel model{node, args, graph.services()};
+      const auto finish = qScopeGuard([&] { model.beginShutdown(); graph.drainLive(); });
+      QVERIFY(graph.drainLive()); model.setDisplayUnit(3);
+      // Finish background work, retain its GUI outcome, then change the store.
+      graph.transport.drain(); QVERIFY(model.settingsPending());
+      settings.setValue(SettingsKeys::DISPLAY_UNIT, 1); settings.sync();
+      QVERIFY(QMetaObject::invokeMethod(&model, "refreshDisplaySettings", Qt::DirectConnection));
+      QVERIFY(QMetaObject::invokeMethod(&model, "refreshDisplaySettings", Qt::DirectConnection));
+      QCOMPARE(model.displayUnit(), 3); QVERIFY(model.settingsPending());
+      QVERIFY(graph.drainLive()); QCOMPARE(model.displayUnit(), 1); QVERIFY(!model.settingsPending());
+      settings.sync(); QCOMPARE(settings.value(SettingsKeys::DISPLAY_UNIT).toInt(), 1);
+      model.beginShutdown(); QVERIFY(graph.drainLive());
+      const auto pending = graph.transport.scheduler->pending();
+      QVERIFY(QMetaObject::invokeMethod(&model, "refreshDisplaySettings", Qt::DirectConnection));
+      QCOMPARE(graph.transport.scheduler->pending(), pending);
+    }
+    QVERIFY(graph.drainLive()); QVERIFY(graph.transport.quiescent());
+}
+void OptionsModelTests::externalDisplayWriterIsObservedWithoutUserEdit()
+{
+    SavedGuiDataDirSettings saved; QSettings settings;
+    settings.setValue(SettingsKeys::DISPLAY_UNIT, 0); settings.sync();
+    MockNode node; const auto drain = DrainExecutorsBeforeNativeOwnerDestruction();
+    ArgsManager args; QTemporaryDir directory; QVERIFY(directory.isValid());
+    PrepareRuntimePersistence(node, args, directory);
+    OptionsQmlModel model{node, args}; QTRY_VERIFY(model.settingsReady()); QTRY_VERIFY(!model.settingsPending());
+    QSignalSpy changes{&model, &OptionsQmlModel::displayUnitChanged};
+    { QSettings external; external.setValue(SettingsKeys::DISPLAY_UNIT, 2); external.sync(); }
+    QTRY_COMPARE(model.displayUnit(), 2); QTRY_VERIFY(!model.settingsPending()); QVERIFY(!changes.empty());
+    { QSettings external; external.remove(SettingsKeys::DISPLAY_UNIT); external.sync(); }
+    // Legacy fallback remains supported; removing a key is observed too.
+    QTRY_COMPARE(model.displayUnit(), QmlLegacySettings::ReadLegacyGuiDisplayUnit(QString::fromStdString(args.GetChainTypeString()), 0));
+}
+
 void OptionsModelTests::displayUnitUsesQtCompatibleSettingsKey()
 {
 
@@ -4364,7 +4529,7 @@ void OptionsModelTests::onboardingApplyWritesTouchedParameterInteractionOverride
 void OptionsModelTests::coreApiHistoricalCacheMigration_data()
 {
     QTest::addColumn<int>("version"); QTest::addColumn<int>("cache"); QTest::addColumn<qlonglong>("expected"); QTest::addColumn<bool>("persisted");
-    QTest::newRow("old-default") << 120000 << 100 << qlonglong{DEFAULT_KERNEL_CACHE / 1_MiB} << false;
+    QTest::newRow("old-default") << 120000 << 100 << static_cast<qlonglong>(node::GetDefaultDBCache() / 1_MiB) << false;
     QTest::newRow("old-custom") << 120000 << 101 << qlonglong{101} << true;
     QTest::newRow("new-custom") << 130000 << 100 << qlonglong{100} << true;
 }

@@ -46,6 +46,11 @@ private Q_SLOTS:
     // QSettings persistence
     void loadSettings_clampsMinimizeToTrayWhenTrayHidden();
     void settings_persistAcrossInstances();
+    void manualRetryQueriesWithoutReplayingAWrite_data();
+    void manualRetryQueriesWithoutReplayingAWrite();
+    void externalWriterRefreshesExistingModel();
+    void manualRefreshWaitsForWriteAndCoalesces();
+    void nativeWritePreservesUnrelatedExternalPreference();
     void manualPreferencesOwnOutcomesAfterClose();
     void manualPreferencesRejectAndRetryLoad();
     void manualPreferencesReportWriteFailure();
@@ -334,6 +339,58 @@ void DesktopWindowBehaviorModelTests::manualPreferencesReportWriteFailure()
     QVERIFY(model.persistencePending()); QVERIFY(model.persistenceError().isEmpty());
     gui.drain(); QCOMPARE(writes, 1); QVERIFY(!model.persistencePending());
     QVERIFY(!model.persistenceError().isEmpty()); QVERIFY(model.minimizeOnClose());
+}
+
+
+
+void DesktopWindowBehaviorModelTests::manualRetryQueriesWithoutReplayingAWrite_data()
+{
+    QTest::addColumn<bool>("saved");QTest::newRow("failure-before-write")<<false;QTest::newRow("exception-after-write")<<true;
+}
+void DesktopWindowBehaviorModelTests::manualRetryQueriesWithoutReplayingAWrite()
+{
+    QFETCH(bool,saved);using Model=DesktopWindowBehaviorModel;ManualRoutedExecution env;ManualGuiDispatcher gui;int reads{0},writes{0};Model::Values persisted;
+    Model model{true,{env.scheduler,[&](auto turn){gui.post(std::move(turn));}},
+        {[&]{++reads;return persisted;},[&](auto value){++writes;if(saved)persisted=value;throw std::runtime_error("write completion unavailable");}}};
+    env.drain();gui.drain();model.setMinimizeOnClose(true);env.drain();gui.drain();
+    QCOMPARE(writes,1);QVERIFY(!model.persistenceError().isEmpty());
+    model.retryPersistence();env.drain();gui.drain();
+    QCOMPARE(writes,1);QCOMPARE(reads,2);QCOMPARE(model.minimizeOnClose(),saved);QVERIFY(!model.persistencePending());
+    model.closeAdmission();env.drain();gui.drain();
+}
+
+void DesktopWindowBehaviorModelTests::externalWriterRefreshesExistingModel()
+{
+    DesktopWindowBehaviorModel model{true};QTRY_VERIFY(model.settingsReady());QTRY_VERIFY(!model.persistencePending());
+    QSignalSpy changes{&model,&DesktopWindowBehaviorModel::settingsStateChanged};
+    {QSettings external;external.setValue("fHideTrayIcon",true);external.setValue("fMinimizeOnClose",true);external.sync();}
+    QTRY_VERIFY(!model.showTrayIcon());QTRY_VERIFY(model.minimizeOnClose());QTRY_VERIFY(!model.persistencePending());QVERIFY(!changes.empty());
+    {QSettings external;external.remove("fHideTrayIcon");external.remove("fMinimizeOnClose");external.sync();}
+    QTRY_VERIFY(model.showTrayIcon());QTRY_VERIFY(!model.minimizeOnClose());
+}
+void DesktopWindowBehaviorModelTests::manualRefreshWaitsForWriteAndCoalesces()
+{
+    using Model=DesktopWindowBehaviorModel;ManualRoutedExecution env;ManualGuiDispatcher gui;int reads{0},writes{0};Model::Values persisted;
+    Model model{true,{env.scheduler,[&](auto turn){gui.post(std::move(turn));}},
+        {[&]{++reads;return persisted;},[&](auto value){++writes;persisted=value;}}};
+    env.drain();gui.drain();QVERIFY(model.settingsReady());QCOMPARE(reads,1);
+    model.setMinimizeOnClose(true);env.drain();QCOMPARE(writes,1);QVERIFY(model.persistencePending());
+    persisted.show_tray=false;model.refreshSettings();model.refreshSettings();QCOMPARE(reads,1);
+    gui.drain();env.drain();gui.drain();QCOMPARE(reads,2);QCOMPARE(writes,1);QVERIFY(!model.showTrayIcon());QVERIFY(model.minimizeOnClose());QVERIFY(!model.persistencePending());
+    model.closeAdmission();model.refreshSettings();env.drain();gui.drain();QCOMPARE(reads,2);
+}
+void DesktopWindowBehaviorModelTests::nativeWritePreservesUnrelatedExternalPreference()
+{
+    ManualRoutedExecution env;ManualGuiDispatcher gui;
+    DesktopWindowBehaviorModel model{true,{env.scheduler,[&](auto turn){gui.post(std::move(turn));}}};
+    env.drain();gui.drain();QVERIFY(!model.minimizeOnClose());
+    // The external write happens after the GUI snapshot and before the app's
+    // independent tray intent. This is a real QSettings stale-base schedule.
+    {QSettings external;external.setValue("fMinimizeOnClose",true);external.sync();}
+    model.setShowTrayIcon(false);env.drain();gui.drain();
+    QSettings actual;actual.sync();QVERIFY(actual.value("fMinimizeOnClose").toBool());QVERIFY(actual.value("fHideTrayIcon").toBool());
+    QVERIFY(model.minimizeOnClose());QVERIFY(!model.showTrayIcon());
+    model.closeAdmission();env.drain();gui.drain();
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

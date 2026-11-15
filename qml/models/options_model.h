@@ -4,6 +4,9 @@
 
 #ifndef BITCOIN_QML_MODELS_OPTIONS_MODEL_H
 #define BITCOIN_QML_MODELS_OPTIONS_MODEL_H
+#include <qml/preferenceswatch.h>
+#include <limits>
+#include <algorithm>
 
 #include <common/args.h>
 #include <txdb.h>
@@ -133,6 +136,7 @@ class OptionsQmlModel : public QObject
 public:
     explicit OptionsQmlModel(interfaces::Node& node, ArgsManager& args = gArgs, execution::SnapshotServices services = {});
 
+    Q_INVOKABLE void refreshDisplaySettings();
     ~OptionsQmlModel() override;
     bool presentationOpen() const {return !m_stopping;}
     enum SettingsOperationState {SettingsIdle,SettingsPending,SettingsApplied,SettingsFailed,SettingsUncertain};
@@ -324,6 +328,10 @@ private:
     int m_pending_commands{0};
     quint64 m_command_revision{0};
     bool m_stopping{false};
+    bool m_preference_refresh_requested{false};
+    size_t m_submitting_commands{0};
+    preferences::Watch m_preference_watch{[this] { refreshDisplaySettings(); }};
+    void finishPreferenceRefresh();
     bool m_shutdown_started{false};
     bool m_applying_snapshot{false};
     bool m_validation_pending{false};
@@ -345,7 +353,7 @@ private:
     // Properties that are exposed to QML.
     int m_dbcache_size_mib{DEFAULT_KERNEL_CACHE / 1_MiB};
     const int m_min_dbcache_size_mib{MIN_DBCACHE_BYTES / 1_MiB};
-    const int m_max_dbcache_size_mib{MAX_COINS_DB_CACHE / 1_MiB};
+    const int m_max_dbcache_size_mib{int(std::min<uint64_t>(MAX_DBCACHE_BYTES / 1_MiB, std::numeric_limits<int>::max()))};
     int m_max_mempool_size_mb{DEFAULT_MAX_MEMPOOL_SIZE_MB};
     const int m_min_max_mempool_size_mb{
         static_cast<int>((DEFAULT_CLUSTER_SIZE_LIMIT_KVB * 1000 * 40 + 999999) / 1000000)

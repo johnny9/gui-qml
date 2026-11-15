@@ -14,6 +14,7 @@ SettingsPage {
     objectName: "displaySettingsPage"
     title: qsTranslate("SettingsDisplay", "Display")
     showBackButton: false
+    onVisibleChanged: if (visible) ApplicationModels.optionsModel.refreshDisplaySettings()
 
     FormSection {
         Layout.fillWidth: true

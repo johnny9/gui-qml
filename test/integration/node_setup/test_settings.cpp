@@ -7,6 +7,11 @@
 #include <qml/models/core_settings_model.h>
 #include <qml/models/settingseditormodel.h>
 #include <qml/models/desktopwindowbehaviormodel.h>
+#include <qml/models/options_model.h>
+#include <qml/models/settings_keys.h>
+#include <node/caches.h>
+#include <common/settings.h>
+#include <util/byte_units.h>
 
 #include <QSettings>
 #include <QDesktopServices>
@@ -75,6 +80,38 @@ private Q_SLOTS:
             QVERIFY(about && about->property("visible").toBool());
             QVERIFY(m_opened_urls.isEmpty());
         }
+    }
+
+
+    void databaseCacheUsesCoreDefaultAndKeepsExplicitOverride()
+    {
+        auto* options=qmltest::Model<OptionsQmlModel>(m_app,"optionsModel");QVERIFY(options);QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(!options->settingsPending());
+        const auto expected=node::GetDefaultDBCache()/1_MiB;
+        QCOMPARE(options->dbcacheSizeMiB(),int(expected));QVERIFY(options->maxDbcacheSizeMiB()>=1636);
+        QVERIFY(qmltest::Call(m_app,&interfaces::Node::getPersistentSetting,"dbcache").isNull());
+        QVERIFY(qmltest::SelectSettings(m_app,"storage"));auto* editor=settingsEditor();QVERIFY(editor);QTRY_VERIFY(editor->fresh());
+        QCOMPARE(editor->entry(QStringLiteral("dbcache"))->effectiveText(),QString::number(expected));
+        QVERIFY(qmltest::SetText(m_app,"dbcacheSettingInput","450"));QTRY_VERIFY(editor->canSave());
+        QVERIFY(qmltest::Click(m_app,"settingsSaveBatchButton"));QTRY_VERIFY(editor->lastSavePersisted()&&!editor->busy());
+        const auto saved=qmltest::Call(m_app,&interfaces::Node::getPersistentSetting,"dbcache");
+        QCOMPARE(SettingTo<int64_t>(saved).value_or(-1),int64_t{450});
+        QCOMPARE(editor->entry(QStringLiteral("dbcache"))->effectiveText(),QString::number(expected));
+        QCOMPARE(editor->entry(QStringLiteral("dbcache"))->nextStartText(),QStringLiteral("450"));
+        QVERIFY(editor->saveResult().actualValues.contains(QStringLiteral("dbcache = 450")));
+    }
+
+    void externalPreferencesRefreshTheOpenDisplayAndWindowModels()
+    {
+        auto* options=qmltest::Model<OptionsQmlModel>(m_app,"optionsModel");
+        auto* behavior=qmltest::Model<DesktopWindowBehaviorModel>(m_app,"desktopWindowBehaviorModel");QVERIFY(options);QVERIFY(behavior);
+        QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(behavior->settingsReady());
+        QVERIFY(qmltest::SelectSettings(m_app,"display"));auto* picker=qmltest::WaitForVisible(m_app,"displayUnitPicker");QVERIFY(picker);
+        {QSettings external;external.setValue(SettingsKeys::DISPLAY_UNIT,2);external.setValue("fHideTrayIcon",true);external.sync();QCOMPARE(external.status(),QSettings::NoError);}
+        QTRY_COMPARE(picker->property("currentValue").toInt(),2);QTRY_COMPARE(options->displayUnit(),2);QTRY_VERIFY(!behavior->showTrayIcon());
+        QVERIFY(qmltest::SelectSettings(m_app,"window-behavior"));QVERIFY(qmltest::WaitForVisible(m_app,"windowBehaviorSettingsPage"));
+        QTRY_VERIFY(!qmltest::Find(m_app,"showTrayIconSwitch")->property("checked").toBool());
+        {QSettings external;external.remove("fHideTrayIcon");external.setValue(SettingsKeys::DISPLAY_UNIT,0);external.sync();}
+        QTRY_VERIFY(behavior->showTrayIcon());QTRY_COMPARE(options->displayUnit(),0);
     }
 
     void displayControlsUpdateUnitsAndTranslations()
