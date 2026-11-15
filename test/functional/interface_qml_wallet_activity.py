@@ -4,7 +4,10 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Sign, browse addresses, receive a payment and reopen its receipt after restart."""
 
+import json
+import os
 from pathlib import Path
+from qml_process_checks import check_gui_exit
 from qml_scenarios import run_scenarios
 from qml_smoke_lib import (
     create_request,
@@ -125,6 +128,22 @@ def receive_smoke(harness, checkpoint):
 
 def typed_receipt_restart(harness, checkpoint):
     """Keep current credit and durable address-use distinct across real restart."""
+    def checked_stop(phase):
+        process = harness.gui_process
+        harness.stop_gui()
+        assert process is not None
+        stdout, stderr = process.communicate()
+        if os.getenv("QML_TEST_ARTIFACTS"):
+            output = Path(os.environ["QML_TEST_ARTIFACTS"]) / "typed-current-receipt-reorg-restart" / "processes"
+            output.mkdir(parents=True, exist_ok=True)
+            (output / f"{phase}.stdout").write_bytes(stdout)
+            (output / f"{phase}.stderr").write_bytes(stderr)
+            (output / f"{phase}.json").write_text(json.dumps({
+                "pid": process.pid, "command": process.args,
+                "exit": process.returncode, "socket_path": harness.socket_path,
+            }, indent=2) + "\n", encoding="utf-8")
+        check_gui_exit(process.returncode, stderr.decode("utf-8", errors="replace"), socket_path=harness.socket_path)
+
     harness.start_gui()
     create_wallet(harness, "receipt-restart", "receipt password")
     gui = harness.driver
@@ -162,7 +181,7 @@ def typed_receipt_restart(harness, checkpoint):
 
     # Stop with the original view still open; no dialog dismissal or GUI
     # destruction is required for native shutdown and persisted receipt facts.
-    stop_gui_checked(harness)
+    checked_stop("before-restart")
     harness.start_gui()
     gui = harness.driver
     open_wallet_selector(gui)
@@ -190,6 +209,7 @@ def typed_receipt_restart(harness, checkpoint):
     assert gui.get_property("paymentRequestModal", "openedEditor.requestId") == request_id
     gui.wait_for_property("savedRequestCopyUriButton", "enabled", False)
     checkpoint("reconsidered receipt updates the retained original view")
+    checked_stop("after-restart")
 
 
 if __name__ == "__main__":
