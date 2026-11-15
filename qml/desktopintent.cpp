@@ -96,7 +96,7 @@ void Queue::readiness(uint64_t revision, bool ready)
 
 std::optional<Delivery> Queue::deliver(uint64_t target)
 {
-    if (m_stopping || !m_ready || m_active || m_pending.empty() || target == 0 ||
+    if (m_stopping || !m_ready || !m_receiver_capacity || m_active || m_pending.empty() || target == 0 ||
         m_route_sequence == std::numeric_limits<uint64_t>::max()) return {};
     m_active = Ticket{m_pending.front(), ++m_route_sequence, target};
     m_error = Error::None;
@@ -104,6 +104,7 @@ std::optional<Delivery> Queue::deliver(uint64_t target)
     updatePhase();
     return Delivery{*m_active, find(m_active->delivery)->input};
 }
+void Queue::receiverCapacity(bool available) { m_receiver_capacity = available; updatePhase(); }
 
 void Queue::settle(Disposition disposition, uint64_t inspection)
 {
@@ -170,7 +171,7 @@ void Queue::updatePhase()
     if (m_stopping) m_phase = m_active ? Phase::Stopping : Phase::Stopped;
     else if (m_forwarding) m_phase = Phase::Forwarding;
     else if (m_active) m_phase = m_unknown ? Phase::ReconcilingDelivery : Phase::Delivering;
-    else m_phase = m_ready ? Phase::Ready : Phase::WaitingReady;
+    else m_phase = m_ready && m_receiver_capacity ? Phase::Ready : Phase::WaitingReady;
 }
 
 Snapshot Queue::snapshot() const { return {m_phase, m_error, m_pending.size(), m_active}; }

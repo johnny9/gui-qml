@@ -200,8 +200,9 @@ void DesktopIntentModel::setFactory(BitcoinUriModel* factory)
     const auto records = std::make_shared<Creations>();
     const auto post = m_services.post;
     const auto closed = m_closed_gate;
+    const auto weak_owner = std::weak_ptr<desktopintent::Owner>{m_owner};
     auto sink = std::make_shared<desktopintent::Sink>(); sink->identity = 1;
-    sink->inspect = [self, original, records, post, closed](auto delivery, auto done) {
+    sink->inspect = [self, original, records, post, closed, weak_owner](auto delivery, auto done) {
         std::shared_ptr<Creation> creation;
         {
             std::lock_guard lock{records->mutex};
@@ -218,7 +219,7 @@ void DesktopIntentModel::setFactory(BitcoinUriModel* factory)
                 records->records.emplace(delivery.ticket, creation);
             }
         }
-        post([self, original, creation, delivery = std::move(delivery), done = std::move(done), closed]() mutable {
+        post([self, original, creation, delivery = std::move(delivery), done = std::move(done), closed, weak_owner]() mutable {
             if (closed->load() || !self || !original) creation->receipt->withdraw();
             if (creation->receipt->state() == paymentimport::CreationReceipt::State::Reserved) {
                 try {
@@ -228,10 +229,20 @@ void DesktopIntentModel::setFactory(BitcoinUriModel* factory)
                 } catch (...) { creation->receipt->notAccepted(); }
                 if (self && creation->operation && !closed->load()) {
                     self->m_inspection = creation->operation;
+                    self->m_inspection_ticket = delivery.ticket;
                     QObject::connect(creation->operation, &PaymentImportOperation::changed, self, &DesktopIntentModel::inspectionChanged);
+                    QObject::connect(creation->operation, &QObject::destroyed, self, [self, weak_owner, ticket = delivery.ticket] {
+                        if (!self || self->m_inspection_ticket != ticket) return;
+                        self->m_inspection = nullptr; self->m_inspection_ticket.reset();
+                        if (const auto owner = weak_owner.lock()) owner->releasePresentation(ticket);
+                        Q_EMIT self->inspectionChanged(); if (self) Q_EMIT self->changed();
+                    });
                     Q_EMIT self->inspectionChanged();
                     if (self) Q_EMIT self->changed();
                 }
+            }
+            if ((!self || !creation->operation || closed->load()) && ReadCreation(*creation).knowledge == desktopintent::Knowledge::Accepted) {
+                if (const auto owner = weak_owner.lock()) owner->releasePresentation(delivery.ticket);
             }
             done(ReadCreation(*creation));
         });
@@ -253,6 +264,7 @@ void DesktopIntentModel::setFactory(BitcoinUriModel* factory)
         post([creation] { if (creation->operation) creation->operation->cancel(); });
     };
     m_sink = std::move(sink);
+    if (m_owner) m_owner->registerReceiver(m_sink);
     setReady(m_ready);
 }
 PaymentImportOperation* DesktopIntentModel::takeInspection(QObject* receiver)
@@ -260,9 +272,11 @@ PaymentImportOperation* DesktopIntentModel::takeInspection(QObject* receiver)
     if (m_closed || !receiver || !m_inspection) return nullptr;
     const QPointer<DesktopIntentModel> self{this};
     const QPointer<PaymentImportOperation> operation{m_inspection};
+    const auto ticket = std::exchange(m_inspection_ticket, {}); const auto owner = m_owner;
     m_inspection = nullptr;
     QObject::disconnect(operation, nullptr, this, nullptr);
     operation->setParent(receiver);
+    if (ticket && owner) owner->releasePresentation(*ticket);
     if (self) { Q_EMIT self->inspectionChanged(); if (self) Q_EMIT self->changed(); }
     return operation;
 }
@@ -270,9 +284,11 @@ void DesktopIntentModel::closeInspection()
 {
     const QPointer<DesktopIntentModel> self{this};
     const QPointer<PaymentImportOperation> operation{m_inspection};
+    const auto ticket = std::exchange(m_inspection_ticket, {}); const auto owner = m_owner;
     m_inspection = nullptr;
     if (operation) QObject::disconnect(operation, nullptr, this, nullptr);
     if (operation) { operation->cancel(); if (operation) operation->deleteLater(); }
+    if (ticket && owner) owner->releasePresentation(*ticket);
     if (self) { Q_EMIT self->inspectionChanged(); if (self) Q_EMIT self->changed(); }
 }
 #else

@@ -138,10 +138,10 @@ private Q_SLOTS:
         DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
         const auto native_closed = std::make_shared<std::atomic_bool>(false);
         model.setAdmissionGate(native_closed);
-        QVERIFY(model.owner()->admit({Input(1)}, {})); model.setReady(true); drain();
-        QVERIFY(model.canInspect());
+        model.setReady(true); drain();
+        QVERIFY(model.state() == DesktopIntentModel::State::Ready);
         native_closed->store(true); // The terminal phase's GUI notification is deliberately held.
-        model.inspectNext(); drain();
+        QVERIFY(model.owner()->admit({Input(1)}, {})); drain();
         QVERIFY(!model.hasInspection()); QCOMPARE(model.pendingCount(), 1);
         QVERIFY(model.state() == DesktopIntentModel::State::WaitingReady);
         model.inspectNext(); drain(); // An explicit retry still cannot bypass Native admission.
@@ -210,8 +210,7 @@ private Q_SLOTS:
         QVERIFY(model.owner()->admit({Input(1)}, {})); drain();
         QCOMPARE(model.pendingCount(), 1); QVERIFY(!model.canInspect()); model.inspectNext(); drain();
         QVERIFY(!model.inspection());
-        model.setReady(true); drain(); QVERIFY(model.canInspect());
-        model.inspectNext(); drain(); QVERIFY(model.inspection()); QCOMPARE(model.pendingCount(), 0);
+        model.setReady(true); drain(); QVERIFY(model.inspection()); QCOMPARE(model.pendingCount(), 0);
         const auto original = model.inspection()->requestId();
         QObject recipient_view;
         auto* operation = model.takeInspection(&recipient_view); QVERIFY(operation); QCOMPARE(operation->requestId(), original);
@@ -221,6 +220,44 @@ private Q_SLOTS:
         std::optional<desktopintent::Receipt> receipt;
         QVERIFY(original_owner->lookup(QStringLiteral("1"), [&](auto value) { receipt = value; })); drain();
         QVERIFY(receipt); QCOMPARE(receipt->inspection, static_cast<uint64_t>(original));
+    }
+    void automaticInspectionKeepsOneOwnedPresentation_data()
+    {
+        QTest::addColumn<bool>("before_ack");
+        QTest::newRow("close-after-receipt") << false;
+        QTest::newRow("close-reentrantly-before-receipt") << true;
+    }
+    void automaticInspectionKeepsOneOwnedPresentation()
+    {
+        QFETCH(bool, before_ack);
+        ManualRoutedExecution commands;
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel factory; factory.setServices({commands.scheduler, post});
+        DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
+        bool retired_first{false}; quint64 first{0};
+        if (before_ack) QObject::connect(&model, &DesktopIntentModel::inspectionChanged, &model, [&] {
+            if (!retired_first && model.inspection()) {
+                retired_first = true; first = model.inspection()->requestId(); model.closeInspection();
+            }
+        });
+        QVERIFY(model.owner()->admit({Input(1), Input(2)}, {})); model.setReady(true); drain();
+        if (!before_ack) {
+            QVERIFY(model.inspection()); first = model.inspection()->requestId();
+            QCOMPARE(model.pendingCount(), 1); model.inspectNext(); drain();
+            QCOMPARE(model.inspection()->requestId(), first);
+            model.closeInspection(); drain();
+        }
+        QCOMPARE(first, quint64{1}); QVERIFY(model.inspection());
+        QCOMPARE(model.inspection()->requestId(), quint64{2}); QCOMPARE(model.pendingCount(), 0);
+        model.closeAdmission(); factory.closeAdmission(); drain();
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
     }
 #endif
     void failedBatchHasNoAcceptedPrefixOrConsumedIdentity()

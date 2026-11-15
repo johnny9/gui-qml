@@ -50,6 +50,8 @@ public:
     execution::Admission prepareForwarding(std::vector<Input> arguments, std::function<void(ForwardingSnapshot)> done);
     execution::Admission readiness(uint64_t revision, bool ready);
     execution::Admission review(std::shared_ptr<const Sink> sink);
+    execution::Admission registerReceiver(std::shared_ptr<const Sink> sink);
+    execution::Admission releasePresentation(Ticket ticket);
     execution::Admission reconcile();
     execution::Admission dismiss();
     execution::Admission lookup(QString producer_key, std::function<void(std::optional<Receipt>)> done);
@@ -65,6 +67,8 @@ private:
     std::shared_ptr<ReplyCell> reserve(ReplyKind kind, Ticket ticket);
     void received(uint64_t reply, ReplyKind kind, Ticket ticket, InspectionReceipt receipt);
     void query();
+    void deliver(std::shared_ptr<const Sink> sink);
+    void pump();
     void retireObsolete();
     void wake();
     void publish();

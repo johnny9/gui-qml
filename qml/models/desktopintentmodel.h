@@ -83,6 +83,7 @@ private:
     bool m_ready{false}, m_closed{false};
 #ifdef ENABLE_WALLET
     QPointer<PaymentImportOperation> m_inspection;
+    std::optional<desktopintent::Ticket> m_inspection_ticket;
 #endif
 };
 #endif // BITCOIN_QML_MODELS_DESKTOPINTENTMODEL_H

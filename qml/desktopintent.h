@@ -62,6 +62,7 @@ public:
     Admission admit(const std::vector<Input>& inputs);
     ForwardingSnapshot prepareForwarding(const std::vector<Input>& arguments);
     void readiness(uint64_t revision, bool ready);
+    void receiverCapacity(bool available);
     std::optional<Delivery> deliver(uint64_t target);
     bool accepted(Ticket ticket, uint64_t inspection);
     bool rejected(Ticket ticket);
@@ -83,6 +84,7 @@ private:
     Phase m_phase{Phase::WaitingReady};
     Error m_error{Error::None};
     bool m_ready{false}, m_stopping{false}, m_unknown{false}, m_forwarding{false};
+    bool m_receiver_capacity{true};
 };
 } // namespace desktopintent
 #endif // BITCOIN_QML_DESKTOPINTENT_H

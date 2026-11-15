@@ -31,6 +31,8 @@ struct Owner::ReplyCell {
 struct Owner::State {
     Queue queue;
     std::shared_ptr<const Sink> sink;
+    std::shared_ptr<const Sink> receiver;
+    std::optional<Ticket> presented;
     std::map<uint64_t, std::shared_ptr<ReplyCell>> replies;
     uint64_t sequence{0}, query_reply{0}, publication{0};
     bool wake_pending{false};
@@ -55,7 +57,7 @@ std::shared_ptr<Owner> Owner::Create(Services services, Notify notify)
 execution::Admission Owner::submit(std::function<void()> decision, size_t payload_bytes)
 {
     return execution::Submit(*m_scope, [self = shared_from_this(), decision = std::move(decision)] {
-        decision(); self->retireObsolete(); self->publish();
+        decision(); self->retireObsolete(); self->pump(); self->publish();
     }, [] {}, {}, {execution::Lane::Domain, payload_bytes, m_key});
 }
 
@@ -145,26 +147,49 @@ std::shared_ptr<Owner::ReplyCell> Owner::reserve(ReplyKind kind, Ticket ticket)
 
 execution::Admission Owner::review(std::shared_ptr<const Sink> sink)
 {
+    return submit([self = shared_from_this(), sink = std::move(sink)] { self->deliver(sink); });
+}
+execution::Admission Owner::registerReceiver(std::shared_ptr<const Sink> sink)
+{
     return submit([self = shared_from_this(), sink = std::move(sink)] {
-        auto& state = *self->m_state;
-        if (self->m_closed->load() || self->m_forwarding_closed.load() || !sink || !sink->identity || !sink->inspect || !sink->query) return;
-        const auto delivery = state.queue.deliver(sink->identity);
-        if (!delivery) return;
-        try {
-            if (self->m_services.available && !self->m_services.available()) {
-                state.queue.rejected(delivery->ticket); return;
-            }
-        } catch (...) { state.queue.rejected(delivery->ticket); return; }
-        std::shared_ptr<ReplyCell> cell;
-        try { cell = self->reserve(ReplyKind::Inspect, delivery->ticket); } catch (...) {}
-        if (!cell) { state.queue.rejected(delivery->ticket); return; }
-        state.sink = sink;
-        try {
-            if (!sink->inspect(*delivery, [cell](InspectionReceipt reply) { cell->complete(reply); }))
-                cell->complete({Knowledge::NotAccepted, 0});
-        } catch (...) { cell->complete({}); }
-        self->wake();
+        if (!self->m_closed->load() && sink && sink->identity && sink->inspect && sink->query) self->m_state->receiver = sink;
     });
+}
+execution::Admission Owner::releasePresentation(Ticket ticket)
+{
+    return submit([self = shared_from_this(), ticket] {
+        if (self->m_state->presented != ticket) return;
+        self->m_state->presented.reset();
+        self->m_state->queue.receiverCapacity(true);
+        if (self->m_state->queue.snapshot().active != ticket) self->m_state->sink.reset();
+    });
+}
+void Owner::pump()
+{
+    const auto snapshot = m_state->queue.snapshot();
+    if (m_state->receiver && !m_state->presented && snapshot.phase == Phase::Ready && snapshot.pending) deliver(m_state->receiver);
+}
+void Owner::deliver(std::shared_ptr<const Sink> sink)
+{
+    auto& state = *m_state;
+    if (m_closed->load() || m_forwarding_closed.load() || state.presented || !sink || !sink->identity || !sink->inspect || !sink->query) return;
+    const auto delivery = state.queue.deliver(sink->identity);
+    if (!delivery) return;
+    try {
+        if (m_services.available && !m_services.available()) {
+            state.queue.rejected(delivery->ticket); return;
+        }
+    } catch (...) { state.queue.rejected(delivery->ticket); return; }
+    std::shared_ptr<ReplyCell> cell;
+    try { cell = reserve(ReplyKind::Inspect, delivery->ticket); } catch (...) {}
+    if (!cell) { state.queue.rejected(delivery->ticket); return; }
+    state.sink = sink;
+    if (state.receiver && state.receiver->identity == sink->identity) { state.presented = delivery->ticket; state.queue.receiverCapacity(false); }
+    try {
+        if (!sink->inspect(*delivery, [cell](InspectionReceipt reply) { cell->complete(reply); }))
+            cell->complete({Knowledge::NotAccepted, 0});
+    } catch (...) { cell->complete({}); }
+    wake();
 }
 void Owner::received(uint64_t reply, ReplyKind kind, Ticket ticket, InspectionReceipt receipt)
 {
@@ -175,17 +200,18 @@ void Owner::received(uint64_t reply, ReplyKind kind, Ticket ticket, InspectionRe
     switch (receipt.knowledge) {
     case Knowledge::Accepted:
         if (!receipt.inspection) state.queue.unknown(ticket);
-        else { state.queue.accepted(ticket, receipt.inspection); state.sink.reset(); }
+        else { state.queue.accepted(ticket, receipt.inspection); if (state.presented != ticket) state.sink.reset(); }
         break;
     case Knowledge::NotAccepted:
         state.queue.rejected(ticket); state.sink.reset();
+        if (state.presented == ticket) { state.presented.reset(); state.queue.receiverCapacity(true); }
         break;
     case Knowledge::Unknown:
         state.queue.unknown(ticket);
         break;
     }
     (void)kind;
-    retireObsolete(); wake(); publish();
+    retireObsolete(); wake(); pump(); publish();
 }
 
 void Owner::query()
@@ -255,10 +281,14 @@ execution::Admission Owner::stop()
     return submit([self = shared_from_this()] {
         auto& state = *self->m_state;
         const auto active = state.queue.snapshot().active;
+        const auto presented = state.presented;
         state.queue.stop();
-        if (active && state.sink && state.sink->retire) {
-            try { state.sink->retire(*active); } catch (...) {}
+        const auto retire = active ? active : presented;
+        state.presented.reset(); state.receiver.reset();
+        if (retire && state.sink && state.sink->retire) {
+            try { state.sink->retire(*retire); } catch (...) {}
         }
+        if (!active) state.sink.reset();
         self->query();
     });
 }
