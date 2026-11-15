@@ -7,6 +7,7 @@
 
 #include <qml/core_settings.h>
 #include <qml/settingsnamespace.h>
+#include <qml/profileinspection.h>
 
 #include <QSet>
 #include <QString>
@@ -89,8 +90,10 @@ struct OnboardingStartupStatus {
 
 bool PrepareArgs(ArgsManager& args, const std::vector<std::string>& argv, bool can_listen_ipc, std::string& error);
 OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc, const UiPreferencesNamespace* identity = nullptr);
-PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir, const ApplyRequest* intent = nullptr);
-PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir);
+PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir, const ApplyRequest* intent = nullptr,
+    const profileinspection::Port& inspect = {}, const profileinspection::Cancellation& cancelled = {});
+PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir,
+    const profileinspection::Port& inspect = {}, const profileinspection::Cancellation& cancelled = {});
 bool SetQmlOnboarded(ArgsManager& args,bool completed,QString* error=nullptr);
 bool MarkQmlOnboarded(ArgsManager& args, QString* error = nullptr);
 bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error = nullptr, bool accept_redownload = false, bool mark_completed = true, ProfileResult* receipt = nullptr, const UiPreferencesNamespace* identity = nullptr);

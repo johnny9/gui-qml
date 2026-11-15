@@ -83,7 +83,8 @@ class OnboardingOptionsModel : public QObject
     Q_PROPERTY(bool storageEnoughForCustom READ storageEnoughForCustom NOTIFY storageStatusChanged)
 
 public:
-    explicit OnboardingOptionsModel(std::vector<std::string> argv, bool can_listen_ipc, QObject* parent = nullptr, execution::SnapshotServices services = {});
+    explicit OnboardingOptionsModel(std::vector<std::string> argv, bool can_listen_ipc, QObject* parent = nullptr, execution::SnapshotServices services = {},
+        profileinspection::Port inspect = {});
     ~OnboardingOptionsModel() override;
 
     enum PreparationState {PreparationIdle,PreparationPending,PreparationSucceeded,PreparationFailed,PreparationUncertain};
@@ -237,6 +238,7 @@ private:
     void startStorageProjection();
     void publishShutdown();
     void setPreviewError(const QString& error);
+    void invalidateInspection();
 
     struct FlowMailbox;
     std::shared_ptr<FlowMailbox> m_flow_mailbox;
@@ -254,6 +256,8 @@ private:
     QString m_unprune_consent;
     std::unique_ptr<BackendExecutor> m_executor;
     execution::SnapshotServices m_services;
+    const profileinspection::Port m_inspect;
+    profileinspection::Cancellation m_inspection_cancel{std::make_shared<std::atomic_bool>(false)};
     std::unique_ptr<execution::OwnedWork> m_work,m_preparation_work;
     QString m_default_data_dir;
     QUrl m_default_data_directory;
@@ -268,6 +272,7 @@ private:
     bool m_stopping{false};
     bool m_shutdown_requested{false};
     bool m_preview_pending{true};
+    bool m_path_pending{false};
     bool m_preview_in_flight{false};
     uint64_t m_preview_request_id{0};
     std::shared_ptr<const std::vector<std::string>> m_argv;

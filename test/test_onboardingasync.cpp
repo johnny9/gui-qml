@@ -25,6 +25,7 @@
 #include <QUrl>
 
 #include <atomic>
+#include <future>
 #include <stdexcept>
 #include <thread>
 
@@ -274,7 +275,9 @@ void OnboardingAsyncTests::previewReadsOwnNetworkWithoutChangingGlobalParams()
     QVERIFY(QDir(directory.path()).mkpath("regtest"));
     QVERIFY(WriteFile(directory.filePath("settings.json"), R"({"listen":true})"));
     QVERIFY(WriteFile(directory.filePath("regtest/settings.json"), R"({"listen":false})"));
-    const auto preview = QmlOnboardingSettings::Preview(Arguments(directory.path()), false, directory.path());
+    const auto preview = std::async(std::launch::async, [&] {
+        return QmlOnboardingSettings::Preview(Arguments(directory.path()), false, directory.path());
+    }).get();
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(!preview.values.listen);
     QVERIFY(preview.profile.has_settings_file);

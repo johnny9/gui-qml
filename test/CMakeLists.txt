@@ -98,6 +98,8 @@ add_executable(bitcoinqml_unit_tests
   test_onboarding_storage.cpp
   test_onboardingasync.cpp
   test_onboardingflow.cpp
+  test_profileinspection.cpp
+  test_profileinspectionprocess.cpp
   test_banlistmodel.cpp
   test_display_settings.cpp
   test_qtinfolog.cpp
@@ -115,6 +117,7 @@ endif()
 
 if(ENABLE_WALLET)
   target_sources(bitcoinqml_unit_tests PRIVATE
+    test_profileinspectionowner.cpp
     test_activityfilterproxymodel.cpp
     test_addresslistmodel.cpp
     test_bumptransactionmodel.cpp
@@ -382,3 +385,8 @@ if(qt_lib_type STREQUAL "STATIC_LIBRARY")
 endif()
 
 add_subdirectory(integration)
+
+if(TARGET bitcoin-core-profile-inspector)
+  add_dependencies(bitcoinqml_unit_tests bitcoin-core-profile-inspector)
+  add_dependencies(bitcoinqml_integration_tests bitcoin-core-profile-inspector)
+endif()

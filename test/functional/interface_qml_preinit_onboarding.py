@@ -8,8 +8,10 @@ This test intentionally launches bitcoin-core-app without -datadir so
 RunPreInitOnboarding() is observable through the pre-init test bridge.
 """
 
+import hashlib
 import json
 import os
+import sqlite3
 import subprocess
 import time
 from qml_test_harness import cleanup_test_directory, create_test_directory
@@ -25,6 +27,7 @@ from qml_test_harness import (
     click_onboarding_button,
     complete_preinit_onboarding,
     dump_qml_tree,
+    find_gui_binary,
     setup_datadir,
 )
 from qml_wallet_test_lib import (
@@ -196,6 +199,85 @@ def prepare_existing_profile_with_explicit_walletdir(tmpdir, wallet_name):
         stop_bitcoind(bitcoind, rpc_port)
 
     return datadir, rpc_port, walletdir
+
+
+def run_public_wallet_directory_helper_protocol():
+    """Public Core recognition stays read-only and uses the proposed network."""
+    tmpdir = create_test_directory(prefix="qml_profile_inspector_", dir="/tmp")
+    helper = os.path.join(os.path.dirname(find_gui_binary()), "bitcoin-core-profile-inspector" + (".exe" if os.name == "nt" else ""))
+    assert os.path.isfile(helper), helper
+    results = []
+
+    def snapshot(path):
+        files = {}
+        for directory, _, names in os.walk(path):
+            for name in names:
+                filename = os.path.join(directory, name)
+                data = os.stat(filename)
+                with open(filename, "rb") as stream:
+                    digest = hashlib.sha256(stream.read()).hexdigest()
+                files[os.path.relpath(filename, path)] = (digest, data.st_size, data.st_mode, data.st_mtime_ns, data.st_ctime_ns)
+        return files
+
+    def inspect(name, directory, chain, expected, challenge=None):
+        request = {"directory": directory, "chain": chain, "signet_challenge": challenge}
+        # This independent JSON encoder checks the documented canonical wire
+        # tag; wallet recognition itself comes exclusively from public Core.
+        tag = hashlib.sha256(json.dumps(request, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        command = [helper, "--protocol", "1", "--request-tag", tag, "--walletdir", directory, "--chain", chain]
+        if challenge is not None:
+            command += ["--signetchallenge", challenge]
+        before = snapshot(tmpdir)
+        child = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=False)
+        value = json.loads(child.stdout)
+        assert child.returncode == 0, (name, child.returncode, value, child.stderr)
+        assert not child.stderr, (name, child.stderr)
+        assert value == {"protocol": 1, "request_tag": tag, "ok": True, "has_wallet_data": expected}, (name, value)
+        assert snapshot(tmpdir) == before, name
+        results.append({"case": name, "exit": child.returncode, "stderr_bytes": len(child.stderr), "has_wallet_data": expected, "target_unchanged": True})
+
+    try:
+        _, _, walletdir = prepare_existing_profile_with_explicit_walletdir(tmpdir, "original-wallet")
+        inspect("named-wallet", walletdir, "regtest", True)
+        inspect("wrong-network", walletdir, "main", False)
+        root_wallet = os.path.join(tmpdir, "root-wallet")
+        os.makedirs(root_wallet)
+        with open(os.path.join(walletdir, "original-wallet", "wallet.dat"), "rb") as source:
+            with open(os.path.join(root_wallet, "wallet.dat"), "wb") as target:
+                target.write(source.read())
+        inspect("empty-wallet-identity", root_wallet, "regtest", True)
+        junk = os.path.join(tmpdir, "junk")
+        os.makedirs(junk)
+        with open(os.path.join(junk, "wallet.dat"), "w", encoding="utf8") as target:
+            target.write("An ordinary file is not wallet evidence.\n")
+        with sqlite3.connect(os.path.join(junk, "ordinary.sqlite")) as connection:
+            connection.execute("CREATE TABLE ordinary(value TEXT)")
+        inspect("junk-and-generic-sqlite", junk, "regtest", False)
+
+        custom_data = os.path.join(tmpdir, "custom-node")
+        custom_wallets = os.path.join(tmpdir, "custom-wallets")
+        port = pick_unused_port()
+        write_datadir(custom_data, port, pick_unused_port())
+        os.makedirs(custom_wallets)
+        config_path = os.path.join(custom_data, "bitcoin.conf")
+        with open(config_path, encoding="utf8") as config:
+            configuration = config.read().replace("regtest=1\n", "signet=1\nsignetchallenge=51\n", 1).replace("[regtest]\n", "[signet]\n", 1)
+        with open(config_path, "w", encoding="utf8") as config:
+            config.write(configuration)
+        process = subprocess.Popen([find_bitcoind(), f"-datadir={custom_data}", f"-walletdir={custom_wallets}", "-networkactive=0"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            wait_for_rpc(port)
+            rpc_call(port, "createwallet", {"wallet_name": "custom", "disable_private_keys": True,
+                                          "blank": True, "descriptors": True, "load_on_startup": False})
+        finally:
+            stop_bitcoind(process, port)
+        assert process.returncode == 0, process.communicate()
+        inspect("exact-custom-signet", custom_wallets, "signet", True, "51")
+        inspect("default-signet-is-different", custom_wallets, "signet", False)
+        print("Public wallet-directory helper controls: " + json.dumps(results, sort_keys=True), flush=True)
+    finally:
+        cleanup_test_directory(tmpdir)
 
 
 def assert_saved_connection_settings_visible(gui):
@@ -603,6 +685,7 @@ def run_reset_retains_original_backup_through_finish():
 
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('Pre-init onboarding engine and persisted configuration boundaries', [
+        scenario("public-wallet-directory-helper", 2, run_public_wallet_directory_helper_protocol),
         scenario("wallet-onboarding", 4, run_wallet_enabled_flow),
         scenario("node-onboarding", 2, run_wallet_disabled_flow),
         scenario("reset-retains-original-backup", 2, run_reset_retains_original_backup_through_finish),

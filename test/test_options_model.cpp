@@ -40,13 +40,25 @@
 #include <array>
 #include <deque>
 #include <functional>
+#include <future>
 #include <stdexcept>
+
+#include <utility>
 
 #ifndef BITCOINQML_NO_TEST_MAIN
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 #endif
 
 namespace {
+// Preview owns real Core/filesystem/process effects; this fixture waits for
+// the original Native read without moving those effects onto the GUI lane.
+template<typename... Args>
+auto PreviewOnNative(Args&&... args)
+{
+    return std::async(std::launch::async, [&] {
+        return QmlOnboardingSettings::Preview(std::forward<Args>(args)...);
+    }).get();
+}
 template<typename Model>
 QString CheckedProxyLiteral(Model& owner,const QString& literal)
 {
@@ -1866,7 +1878,7 @@ void OptionsModelTests::resetGuiSettingsPreviewIgnoresSelectedCustomDataDirSetti
     std::vector<std::string> preview_argv = TestArgv();
     preview_argv.emplace_back("-resetguisettings");
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(preview_argv, /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(preview_argv, /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.values.listen);
@@ -1969,7 +1981,7 @@ void OptionsModelTests::resetGuiSettingsPreservesCommandLineOverrides()
     QVERIFY2(QmlDataDir::ResetGuiSettings(args, &reset_error), qPrintable(reset_error));
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(argv, /*can_listen_ipc=*/false, QmlDataDir::DefaultDataDirString())
+        PreviewOnNative(argv, /*can_listen_ipc=*/false, QmlDataDir::DefaultDataDirString())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.values.proxy_enabled);
@@ -2012,7 +2024,7 @@ void OptionsModelTests::resetGuiSettingsPreservesBitcoinConfOverrides()
     std::vector<std::string> preview_argv = TestArgv();
     preview_argv.emplace_back("-resetguisettings");
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(preview_argv, /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(preview_argv, /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.values.server);
@@ -2215,7 +2227,7 @@ void OptionsModelTests::configuredDatadirPreviewKeepsConfigSource()
     QVERIFY(status.data_dir_source == QmlOnboardingSettings::DataDirSource::Config);
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(
+        PreviewOnNative(
             argv,
             /*can_listen_ipc=*/false,
             QmlOnboardingSettings::DataDirSelection{status.active_data_dir, status.data_dir_source})
@@ -2256,7 +2268,7 @@ void OptionsModelTests::configuredDatadirApplyDoesNotPersistGuiDataDir()
     QVERIFY(status.data_dir_source == QmlOnboardingSettings::DataDirSource::Config);
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(
+        PreviewOnNative(
             argv,
             /*can_listen_ipc=*/false,
             QmlOnboardingSettings::DataDirSelection{status.active_data_dir, status.data_dir_source})
@@ -2528,7 +2540,7 @@ void OptionsModelTests::existingCoreProfileShowsFullOnboardingWithCurrentSetting
     QCOMPARE(status.active_data_dir, data_dir.path());
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(argv, /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(argv, /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.values.server);
@@ -2545,7 +2557,7 @@ void OptionsModelTests::freshExplicitDatadirPreviewReportsFreshProfile()
     QVERIFY(data_dir.isValid());
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(!preview.profile.existing_profile);
@@ -2574,7 +2586,7 @@ void OptionsModelTests::onboardingPreviewDetectsSettingsJsonProfile()
     QVERIFY2(write_args.WriteSettingsFile(&settings_errors), settings_errors.empty() ? "" : settings_errors.front().c_str());
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.profile.existing_profile);
@@ -2600,7 +2612,7 @@ void OptionsModelTests::onboardingPreviewDetectsChainDataWithoutCreatingBlocksDi
     QVERIFY(!QFileInfo::exists(blocks_dir));
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.profile.existing_profile);
@@ -2619,7 +2631,7 @@ void OptionsModelTests::onboardingPreviewDetectsRootWalletProfile()
     WriteSqliteWalletMarker(wallet_dir);
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.profile.existing_profile);
@@ -2642,7 +2654,7 @@ void OptionsModelTests::onboardingPreviewDetectsExplicitWalletDirProfile()
     std::vector<std::string> argv{TestArgvWithDataDir(data_dir.path())};
     argv.push_back("-walletdir=" + wallet_dir.path().toStdString());
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(argv, /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(argv, /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.profile.existing_profile);
@@ -2664,7 +2676,7 @@ void OptionsModelTests::onboardingPreviewIgnoresEmptyExplicitWalletDir()
     std::vector<std::string> argv{TestArgvWithDataDir(data_dir.path())};
     argv.push_back("-walletdir=" + wallet_dir.path().toStdString());
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(argv, /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(argv, /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(!preview.profile.existing_profile);
@@ -2688,7 +2700,7 @@ void OptionsModelTests::onboardingPreviewIgnoresUnrecognizedWalletsEntry()
     junk_file.close();
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(!preview.profile.existing_profile);
@@ -2818,7 +2830,7 @@ void OptionsModelTests::onboardingPreviewAppliesParameterInteractions()
     conf.close();
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(TestArgv(), /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(TestArgv(), /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.values.proxy_enabled);
@@ -4333,7 +4345,7 @@ void OptionsModelTests::legacyQtSettingsPreviewDoesNotRemoveQSettings()
     QTemporaryDir data_dir;
     QVERIFY(data_dir.isValid());
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(TestArgvWithDataDir(data_dir.path()), /*can_listen_ipc=*/false, data_dir.path())
     };
 
     QVERIFY2(preview.ok, qPrintable(preview.error));
@@ -4474,7 +4486,7 @@ void OptionsModelTests::onboardingPreviewHelperReadsSelectedDatadirConfig()
     conf.close();
 
     const QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(TestArgv(), /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(TestArgv(), /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QCOMPARE(preview.core_setting_statuses.value(QStringLiteral("listen")).toMap().value(QStringLiteral("source")).toString(), QStringLiteral("bitcoin_conf"));
@@ -4545,7 +4557,7 @@ void OptionsModelTests::onboardingApplyWritesTouchedConfigOverride()
 
     const std::vector<std::string> argv = TestArgv();
     QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(argv, /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(argv, /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(!preview.values.listen);
@@ -4580,7 +4592,7 @@ void OptionsModelTests::onboardingApplyWritesTouchedParameterInteractionOverride
 
     const std::vector<std::string> argv = TestArgv();
     QmlOnboardingSettings::PreviewResult preview{
-        QmlOnboardingSettings::Preview(argv, /*can_listen_ipc=*/false, data_dir.path())
+        PreviewOnNative(argv, /*can_listen_ipc=*/false, data_dir.path())
     };
     QVERIFY2(preview.ok, qPrintable(preview.error));
     QVERIFY(preview.values.proxy_enabled);
