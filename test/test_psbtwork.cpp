@@ -1098,6 +1098,69 @@ private Q_SLOTS:
         }
     }
 
+    void importedLegacyIdentityUsesFinalizedTransaction()
+    {
+        WorkWallet wallet;
+        const auto source = std::make_shared<const PartiallySignedTransaction>(psbtfeefixture::Legacy(2, false));
+        const auto original = Bytes(*source);
+        auto extracted = *source;
+        CMutableTransaction finalized;
+        QVERIFY(FinalizeAndExtractPSBT(extracted, finalized));
+        const auto unsigned_tx = source->GetUnsignedTx();
+        QVERIFY(unsigned_tx);
+        QVERIFY(finalized.GetHash() != unsigned_tx->GetHash());
+        const auto recorded = MakeTransactionRef(finalized);
+        wallet.transaction_read = [recorded](const Txid& txid) {
+            return txid == recorded->GetHash() ? recorded : CTransactionRef{};
+        };
+        const auto result = psbtwork::PrepareReview(wallet, source, {});
+        QCOMPARE(Bytes(*source), original);
+        QCOMPARE(wallet.sign_calls, 0);
+        QCOMPARE(wallet.unlock_calls, 0);
+        QCOMPARE(result.disposition, psbtwork::ImportResult::Disposition::Known);
+        QCOMPARE(result.txid, QString::fromStdString(recorded->GetHash().ToString()));
+        QVERIFY(!result.review);
+    }
+
+    void ownedOutputReviewDoesNotDependOnSigning_data()
+    {
+        QTest::addColumn<bool>("owned_inputs");
+        QTest::addColumn<bool>("keys_disabled");
+        QTest::addColumn<bool>("complete");
+        QTest::newRow("self-transfer-signable") << true << false << false;
+        QTest::newRow("self-transfer-watch-only-incomplete") << true << true << false;
+        QTest::newRow("self-transfer-watch-only-complete") << true << true << true;
+        QTest::newRow("owned-recipient-foreign-input") << false << false << false;
+    }
+    void ownedOutputReviewDoesNotDependOnSigning()
+    {
+        QFETCH(bool, owned_inputs);
+        QFETCH(bool, keys_disabled);
+        QFETCH(bool, complete);
+        WorkWallet wallet;
+        wallet.owned_inputs = owned_inputs;
+        wallet.owned_outputs = true;
+        wallet.keys_disabled = keys_disabled;
+        auto document = Document(complete);
+        const auto destination = DecodeDestination("1BoatSLRHtKNngkdXEeobR76b53LETtpyT");
+        document.outputs[0].script = GetScriptForDestination(destination);
+        const auto source = std::make_shared<const PartiallySignedTransaction>(std::move(document));
+        const auto original = Bytes(*source);
+        const auto result = psbtwork::PrepareReview(wallet, source, {});
+        QCOMPARE(Bytes(*source), original);
+        QCOMPARE(wallet.sign_calls, 0);
+        QCOMPARE(result.disposition, psbtwork::ImportResult::Disposition::Review);
+        QVERIFY(result.review);
+        QCOMPARE(result.review->recipients.size(), 1);
+        QCOMPARE(result.review->recipients.front().amount, CAmount{1'500});
+        QCOMPARE(result.review->amount, CAmount{1'500});
+        QCOMPARE(result.review->destinations, QSet<QString>{QString::fromStdString(EncodeDestination(destination))});
+        const auto outputs = result.review->flow.value(QStringLiteral("outputs")).toList();
+        QCOMPARE(outputs.size(), 1);
+        QCOMPARE(outputs.front().toMap().value(QStringLiteral("ownership")).toString(), QStringLiteral("wallet"));
+        QVERIFY(!outputs.front().toMap().value(QStringLiteral("isChange")).toBool());
+    }
+
     void importReviewPreservesAuthorityAndOriginal_data()
     {
         QTest::addColumn<int>("mode");
