@@ -43,7 +43,7 @@ struct Fixture {
     std::shared_ptr<paymentimport::Owner> owner;
     std::shared_ptr<paymentimport::TargetPort> port{std::make_shared<paymentimport::TargetPort>()};
     paymentimport::Target facts{Target()};
-    int reads{0}, analyses{0}, writes{0}, queries{0}, acks{0}, retired{0};
+    int reads{0}, analyses{0}, writes{0}, dispatches{0}, queries{0}, acks{0}, retired{0};
     bool lose_reply{false}, unknown_query{false}, reject_ack{false}, read_fail{false};
     std::optional<paymentimport::ChildReply> result;
     Fixture() {
@@ -53,7 +53,11 @@ struct Fixture {
         };
         port->dispatch = [this](auto, auto child, auto, auto done, auto failed) {
             return execution::Submit(*target.scheduler, [this, child] {
-                ++writes; result = paymentimport::ChildReply{{child, paymentimport::Outcome::Applied, 8, 8}, {}, {}, {}}; return *result;
+                ++dispatches;
+                if (!facts.available) result = paymentimport::ChildReply{{child, paymentimport::Outcome::Rejected, 0, facts.revision}, facts, {}, {}};
+                else if (child.target.revision != facts.revision) result = paymentimport::ChildReply{{child, paymentimport::Outcome::Stale, 0, facts.revision}, facts, {}, {}};
+                else { ++writes; result = paymentimport::ChildReply{{child, paymentimport::Outcome::Applied, facts.revision + 1, facts.revision + 1}, {}, {}, {}}; }
+                return *result;
             }, [this, done](auto reply) { if (!lose_reply) done(std::move(reply)); }, std::move(failed), {execution::Lane::Domain, 512});
         };
         port->query = [this](auto, auto child, auto done, auto failed) {
@@ -144,6 +148,36 @@ private Q_SLOTS:
         f.owner->replace(old); f.drain(); QCOMPARE(f.writes, 0);
         f.owner->apply(); f.drain(); QVERIFY(f.snapshot.prompt->id != old);
         f.owner->replace(f.snapshot.prompt->id); f.drain(); QCOMPARE(f.writes, 1);
+    }
+    void changedTargetRetiresOldReplacementAndRequiresFreshConsent() {
+        Fixture f; f.facts.conflicts = true; f.inspect(); f.owner->apply(); f.drain();
+        QVERIFY(f.snapshot.prompt); const auto old = f.snapshot.prompt->id;
+        f.facts.revision = 8; f.owner->replace(old); f.drain();
+        QCOMPARE(f.writes, 0); QCOMPARE(f.dispatches, 1); QCOMPARE(f.snapshot.phase, paymentimport::Phase::AwaitingReplacement);
+        QVERIFY(f.snapshot.prompt); QVERIFY(f.snapshot.prompt->id != old); QCOMPARE(f.snapshot.prompt->target.revision, uint64_t{8});
+        f.owner->replace(old); f.drain(); QCOMPARE(f.dispatches, 1); QCOMPARE(f.writes, 0);
+        f.owner->replace(f.snapshot.prompt->id); f.drain(); QCOMPARE(f.writes, 1); QCOMPARE(f.dispatches, 2);
+    }
+    void lostReviewFactoryAcknowledgmentQueriesOriginalResultWithoutReplay() {
+        Fixture f; int creates{0}, projections{0};
+        paymentimport::ReviewServices services; services.scheduler = f.target.scheduler; services.view = 7; services.current = [] { return true; };
+        services.prepare = [&](auto, auto done, auto failed) {
+            return execution::Submit(*f.target.scheduler, [&, done] {
+                ++creates; psbtwork::ImportResult result; result.review = std::make_shared<const walletreview::Snapshot>(); result.document = Document(); done(result);
+            }, [] {}, std::move(failed), {execution::Lane::Core, 512});
+        };
+        services.present = [&](auto, auto, auto, auto) { ++projections; };
+        const auto factory = paymentimport::WithReviewFactory(f.port, services); QVERIFY(factory);
+        auto lossy = std::make_shared<paymentimport::TargetPort>(*factory);
+        lossy->dispatch = [factory](auto key, auto child, auto source, auto, auto failed) {
+            return factory->dispatch(key, child, std::move(source), [](auto) {}, std::move(failed));
+        };
+        f.owner->inspect({paymentimport::Input::Kind::Text, QString::fromLatin1(psbtwork::SerializeRaw(*Document()).toBase64())});
+        f.owner->chooseTarget(lossy); f.drain(); QVERIFY(f.snapshot.can_review);
+        f.owner->openReview(); f.drain(); QCOMPARE(creates, 1); QCOMPARE(projections, 1);
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::CreatingReview);
+        f.advance(); QCOMPARE(f.snapshot.phase, paymentimport::Phase::ReviewOpened); QCOMPARE(creates, 1); QVERIFY(!f.snapshot.pending);
+        QVERIFY(f.snapshot.child_result && f.snapshot.child_result->review); f.owner->openReview(); f.drain(); QCOMPARE(creates, 1);
     }
     void lostApplyAcknowledgmentQueriesWithoutRepeatingMutation() {
         Fixture f; f.lose_reply = true; f.inspect(); f.owner->apply(); f.drain(); QCOMPARE(f.writes, 1);
@@ -344,6 +378,7 @@ private Q_SLOTS:
         QTest::newRow("original") << 0;
         QTest::newRow("discard-before-gui-adoption") << 1;
         QTest::newRow("source-close-after-receipt-before-adoption") << 2;
+        QTest::newRow("target-close-before-native-read") << 3;
     }
     void realTypedConsumerUsesPublicReviewFactoryAndOriginalView() {
         QFETCH(int, boundary);
@@ -369,9 +404,13 @@ private Q_SLOTS:
         QVERIFY(operation);
         QVERIFY(QTest::qWaitFor([&] { pump(); return operation->canReview() || operation->state() == PaymentImportOperation::State::Failed; }, 5000));
         QCOMPARE(operation->state(), PaymentImportOperation::State::Inspecting); QVERIFY(operation->canReview());
-        operation->openReview(); sources.drain(); commands.drain();
+        operation->openReview(); sources.drain();
+        if (boundary == 3) model.closeAdmission();
+        commands.drain();
         QVERIFY(!model.currentTransaction()); // The Native factory is separate from GUI adoption.
-        sources.drain(); publish(source_gui); QCOMPARE(operation->state(), PaymentImportOperation::State::ReviewOpened);
+        sources.drain(); publish(source_gui);
+        QCOMPARE(operation->state(), boundary == 3 ? PaymentImportOperation::State::Inspecting : PaymentImportOperation::State::ReviewOpened);
+        if (boundary == 3) { QVERIFY(!operation->canReview()); QVERIFY(!operation->error().isEmpty()); }
         if (boundary == 1) model.discardCurrentTransaction();
         if (boundary == 2) { operation->cancel(); sources.drain(); }
         publish(target_gui);
