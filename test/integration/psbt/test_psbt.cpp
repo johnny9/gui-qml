@@ -9,6 +9,7 @@
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
 #include <qml/models/psbtqmlmodel.h>
+#include <qml/psbtwork.h>
 #include <core_io.h>
 #include <key.h>
 #include <key_io.h>
@@ -203,6 +204,81 @@ private Q_SLOTS:
         QCOMPARE(qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + final_txid + "\"]"), wallet->name()).find_value("fee").getValStr(), std::string{"-0.00010000"});
     }
 
+    void nodeReadinessAndIndependentSpend_data()
+    {
+        QTest::addColumn<int>("scenario");
+        QTest::newRow("confirmed-spend-before-review") << 0;
+        QTest::newRow("nonfinal-locktime") << 1;
+        QTest::newRow("below-advertised-relay-fee") << 2;
+        QTest::newRow("mempool-replacement-rejection") << 3;
+        QTest::newRow("confirmed-spend-after-review") << 4;
+    }
+    void nodeReadinessAndIndependentSpend()
+    {
+        QFETCH(int, scenario);
+        auto* wallet = qmltest::CreateWallet(m_app, "policy-review"); QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        const auto mining = qmltest::NewAddress(m_app, wallet->name());
+        const auto destination = qmltest::NewAddress(m_app, wallet->name());
+        const auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name());
+        QVERIFY(!coins.empty());
+        const auto coin = coins[0];
+        const auto value = ParseMoney(coin.find_value("amount").getValStr()); QVERIFY(value);
+        const auto input = "[{\"txid\":\"" + coin.find_value("txid").get_str() + "\",\"vout\":"
+            + coin.find_value("vout").getValStr() + ",\"sequence\":4294967293}]";
+        const auto make_signed = [&](CAmount fee, int locktime) {
+            const auto outputs = "[{\"" + destination.toStdString() + "\":" + FormatMoney(*value - fee) + "}]";
+            const auto created = qmltest::Rpc(m_app, "createpsbt", qmltest::Json("[" + input + "," + outputs + "," + util::ToString(locktime) + "]"));
+            const auto signed_value = qmltest::Rpc(m_app, "walletprocesspsbt", qmltest::Json("[\"" + created.get_str() + "\",true,\"ALL\",false]"), wallet->name());
+            return signed_value.find_value("psbt").get_str();
+        };
+        const auto encoded = make_signed(scenario == 2 ? 1 : 1'000, scenario == 1 ? 200 : 0);
+        const auto finalized = qmltest::Rpc(m_app, "finalizepsbt", qmltest::Json("[\"" + encoded + "\"]"));
+        QVERIFY(finalized.find_value("complete").get_bool());
+        const auto raw = finalized.find_value("hex").get_str();
+        std::string competing;
+        const auto independent_spend = [&](bool confirm) {
+            const auto signed_other = make_signed(2'000, 0);
+            const auto other = qmltest::Rpc(m_app, "finalizepsbt", qmltest::Json("[\"" + signed_other + "\"]"));
+            competing = qmltest::Rpc(m_app, "sendrawtransaction", qmltest::Json("[\"" + other.find_value("hex").get_str() + "\"]")).get_str();
+            if (confirm) qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
+        };
+        if (scenario == 0 || scenario == 3) independent_spend(scenario == 0);
+        const auto imported = qmltest::Call(m_app, [encoded](interfaces::Node*) {
+            const auto parsed = DecodeBase64PSBT(encoded);
+            if (!parsed) throw std::runtime_error("signed policy fixture");
+            return psbtwork::SerializeRaw(*parsed);
+        });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("reviewed.psbt");
+        QFile file{path}; QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(imported), imported.size()); file.close();
+        auto* model = wallet->importedPsbt(); QVERIFY(model);
+        QVERIFY(model->requestLoadFromFile(path));
+        QVERIFY(QTest::qWaitFor([&] { return !model->busy(); }, 5'000));
+        QVERIFY(model->loaded()); QVERIFY(model->complete()); QVERIFY(model->signaturesVerified());
+        if (scenario < 3) {
+            QVERIFY(!model->canBroadcast());
+            const auto status = model->status().toLower();
+            QVERIFY2(status.contains(scenario == 0 ? "spent" : scenario == 1 ? "lock time" : "minimum"), qPrintable(status));
+        } else {
+            QVERIFY(model->canBroadcast());
+            if (scenario == 4) independent_spend(true);
+            QVERIFY(model->requestBroadcast());
+            QVERIFY(QTest::qWaitFor([&] { return !model->busy(); }, 5'000));
+            QVERIFY(!model->submitted()); QVERIFY(!model->error().isEmpty());
+            QVERIFY(!model->canBroadcast()); QVERIFY(!model->requestBroadcast());
+        }
+        const auto verdict = qmltest::Rpc(m_app, "testmempoolaccept", qmltest::Json("[[\"" + raw + "\"]]"))[0];
+        QVERIFY(!verdict.find_value("allowed").get_bool());
+        const auto reason = verdict.find_value("reject-reason").get_str();
+        QVERIFY2(!reason.empty(), verdict.write().c_str());
+        if (scenario == 1) QVERIFY2(reason.find("non-final") != std::string::npos, reason.c_str());
+        if (scenario == 2) QVERIFY2(reason.find("fee") != std::string::npos, reason.c_str());
+        const auto pool = qmltest::Rpc(m_app, "getrawmempool");
+        QCOMPARE(pool.size(), scenario == 3 ? 1U : 0U);
+        if (scenario == 3) QCOMPARE(pool[0].get_str(), competing);
+        QCOMPARE(qmltest::Call(m_app, [document = model->psbt()](interfaces::Node*) { return psbtwork::SerializeRaw(*document); }), imported);
+    }
     void watchOnlySignedScriptsSurviveOriginalExport_data()
     {
         QTest::addColumn<bool>("nested"); QTest::addColumn<bool>("send");
