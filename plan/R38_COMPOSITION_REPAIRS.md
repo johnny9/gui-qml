@@ -112,3 +112,33 @@ Settings window, with all ancestor clipping checks. All persistence/pending/
 indicator/effect-count/original-path assertions remain. Other original signer
 rows and the controlled Done rows are selected with it; no production, Cpp,
 watchdog or animation change is required for this fixture repair.
+
+
+## Actual review-to-write capacity cause
+
+Physical readiness did not resolve the failure and is not its established
+cause. Diagnostic04 proves one native press/release/click in both isolated and
+full-file runs. The isolated save succeeds; full-file saves can return a known
+rejection before any write. Diagnostic05 records review admission success and
+write admission `Capacity`, with no caught exception; proxy/mempool saves expose
+the same cause under the original complete-file order.
+
+The scheduler correctly keeps a delivering review packet's two-MiB charge until
+its callback returns. Submitting the next two-MiB write inline can consume the
+entire four-MiB ordinary budget before unrelated small work is counted. The
+application now crosses one non-inline native Domain turn on the original
+admitted action scope after the guarded validation transition. The existing
+State/session retains the immutable accepted Save; the handoff captures only
+scope, exact token, close/redownload flag and completion owner. It does not copy
+a large Save into an allegedly small packet. The original write is dispatched
+after the completed review releases its charge. Existing payload charges and
+executor limits are unchanged; this is no retry, GUI wait or new capability.
+
+A genuinely rejected handoff records known no-write outcome and preserves the
+original draft. Four manual controls cover a held unrelated one-KiB Core task,
+later edit, parent close/facade retirement with GUI publication held, and actual
+handoff transport rejection with no retry. Existing real-thread and independent
+Core settings/UI consumers remain part of the focused gate. Diagnostic-only
+logging sources remain separate, immutable and unqualified; the final candidate
+contains none of those probes. This is an app scheduler composition issue and
+requires no missing Wallet/WalletLoader capability or Core change.

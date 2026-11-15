@@ -82,16 +82,32 @@ struct SettingsEditorModel::State:std::enable_shared_from_this<State> {
             self->redownload=checked.validation.requires_redownload;
             self->redownload_attempt=self->redownload?std::make_optional(attempt):std::nullopt;
             if(!self->session.validated(attempt.attempt.token,checked.valid,checked.error,checked.validation.errors)){self->publish();owner(false);return;}
-            auto accepted=*self->session.active();accepted.batch.accept_redownload=attempt.batch.accept_redownload;
             self->publish();
-            const auto written=[self,accepted,action,owner](Result value){(void)action;self->receipt=value;self->finish(accepted,std::move(value),false,owner);};
-            const auto failed=[written](std::exception_ptr error){Result result;result.outcome=Outcome::Uncertain;result.error=Failure();
-                try{std::rethrow_exception(error);}catch(const execution::NotStarted&){result.outcome=Outcome::Rejected;}catch(...){}
-                written(std::move(result));};
-            if(!self->ports.write||!execution::Submit(*action,[write=self->ports.write,accepted]{return write(accepted);},written,failed,{execution::Lane::Core,2*1024*1024,self->io,execution::WorkClass::Action})){Result result;result.outcome=Outcome::Rejected;result.error=Failure();written(std::move(result));}
+            // The review packet remains charged until this callback returns.
+            // Continue on the original admitted scope after its budget is freed;
+            // keep the immutable accepted attempt in State rather than copying
+            // it into another queued packet or waiting for GUI publication.
+            const auto token=attempt.attempt.token;
+            const bool redownload=attempt.batch.accept_redownload;
+            if(!self->post(action,[action,token,redownload,owner](State& state){state.write(action,token,redownload,owner);})){
+                const auto accepted=*self->session.active();
+                Result rejected;rejected.outcome=Outcome::Rejected;rejected.error=Failure();
+                self->receipt=rejected;
+                self->finish(accepted,std::move(rejected),false,owner);
+            }
         };
         const auto failed=[done](std::exception_ptr){Check checked;checked.error=Failure();done(std::move(checked));};
         if(!ports.review||!execution::Submit(*action,[review=ports.review,attempt=*attempt]{return review(attempt);},done,failed,{execution::Lane::Core,2*1024*1024,io,execution::WorkClass::Action})){Check checked;checked.error=Failure();done(std::move(checked));}
+    }
+    void write(const std::shared_ptr<execution::Scheduler>& action,uint64_t token,bool redownload,std::function<void(bool)> owner){
+        if(!session.active()||session.active()->attempt.token!=token){publish();owner(false);return;}
+        auto accepted=*session.active();accepted.batch.accept_redownload=redownload;
+        const auto self=shared_from_this();
+        const auto written=[self,accepted,action,owner](Result value){(void)action;self->receipt=value;self->finish(accepted,std::move(value),false,owner);};
+        const auto failed=[written](std::exception_ptr error){Result result;result.outcome=Outcome::Uncertain;result.error=Failure();
+            try{std::rethrow_exception(error);}catch(const execution::NotStarted&){result.outcome=Outcome::Rejected;}catch(...){}
+            written(std::move(result));};
+        if(!ports.write||!execution::Submit(*action,[write=ports.write,accepted]{return write(accepted);},written,failed,{execution::Lane::Core,2*1024*1024,io,execution::WorkClass::Action})){Result result;result.outcome=Outcome::Rejected;result.error=Failure();written(std::move(result));}
     }
     void finish(const settingsedit::Save& attempt,Result result,bool query,std::function<void(bool)> owner={}){
         if(mailbox->retired.load())retire();
