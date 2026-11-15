@@ -18,9 +18,10 @@
 #include <deque>
 #include <future>
 #include <optional>
+#include <utility>
 
 namespace {
-std::vector<std::string> Arguments(const QString& path) { return {"bitcoin-core-app", "-regtest", "-datadir=" + path.toStdString()}; }
+std::vector<std::string> EditableArguments() { return {"bitcoin-core-app", "-regtest", "-resetguisettings"}; }
 profileinspection::Result Found(bool found)
 {
     profileinspection::Result result;
@@ -36,11 +37,14 @@ struct ManualOwner {
     std::vector<profileinspection::Cancellation> cancellations;
     QString failure;
     std::unique_ptr<OnboardingOptionsModel> model;
-    ManualOwner()
+    bool initial_selected{false};
+    explicit ManualOwner(bool explicit_directory = false)
     {
         QDir(first.path()).mkpath(QStringLiteral("regtest"));
         QDir(second.path()).mkpath(QStringLiteral("regtest"));
-        model = std::make_unique<OnboardingOptionsModel>(Arguments(first.path()), false, nullptr,
+        auto argv=EditableArguments();
+        if(explicit_directory)argv.push_back("-datadir="+first.path().toStdString());
+        model = std::make_unique<OnboardingOptionsModel>(std::move(argv), false, nullptr,
             execution::SnapshotServices{execution.scheduler, [this](auto turn) { gui.emplace_back(std::move(turn)); }},
             [this](const auto& request, const auto& cancelled) {
                 requests.push_back(request); cancellations.push_back(cancelled);
@@ -49,6 +53,9 @@ struct ManualOwner {
                 }
                 return Found(requests.size() == 1);
             });
+        // Editable chooser tests must not carry an immutable CLI -datadir.
+        // Admit the original selection before any GUI startup publication.
+        initial_selected=model->selectCustomDataDir(first.path());
     }
     bool publish()
     {
@@ -61,7 +68,7 @@ struct ManualOwner {
             if (execution.stepNext()) continue;
             if (!publish()) return false;
         }
-        return requests.size() == 1;
+        return initial_selected && requests.size() == 1;
     }
     bool settle()
     {
@@ -157,6 +164,23 @@ private Q_SLOTS:
         QVERIFY(fixture.settle());
         QVERIFY(fixture.execution.quiescent());
     }
+    void explicitCommandLineDirectoryRemainsAuthoritativeWhenChooserProjectionChanges()
+    {
+        ManualOwner fixture{true};
+        QVERIFY(fixture.initial_selected);
+        QVERIFY(fixture.settle());
+        const auto reads=fixture.requests.size();
+        QVERIFY(reads>0);
+        QVERIFY(fixture.model->selectCustomDataDir(fixture.second.path()));
+        QVERIFY(fixture.settle());
+        QCOMPARE(fixture.model->dataDir(),fixture.second.path());
+        QVERIFY(fixture.requests.size()>reads);
+        for(size_t i=reads;i<fixture.requests.size();++i)
+            QCOMPARE(QDir(fixture.requests[i].directory).canonicalPath(),QDir(fixture.first.filePath(QStringLiteral("regtest"))).canonicalPath());
+        fixture.model->beginShutdown();
+        QVERIFY(fixture.settle());
+        QVERIFY(fixture.execution.quiescent());
+    }
     void retirementReleasesTheOriginalNativeReaderWithGuiDeliveryHeld()
     {
         ManualOwner fixture;
@@ -192,13 +216,15 @@ private Q_SLOTS:
         QSemaphore entered, release;
         profileinspection::Cancellation original;
         std::atomic_int calls{0};
-        std::atomic_bool native_only{true};
+        std::atomic_bool native_only{true}, successor_target_exact{true};
+        const auto successor_directory=QDir(second.filePath(QStringLiteral("regtest"))).canonicalPath();
         bool heartbeat{false};
         const auto drain = DrainExecutorsBeforeNativeOwnerDestruction();
-        OnboardingOptionsModel model{Arguments(first.path()), false, nullptr, {}, [&](const auto& request, const auto& cancelled) {
+        OnboardingOptionsModel model{EditableArguments(), false, nullptr, {}, [&](const auto& request, const auto& cancelled) {
             if (QThread::currentThread() == QCoreApplication::instance()->thread()) native_only = false;
             const int count = ++calls;
             if (count == 1) { original = cancelled; entered.release(); release.acquire(); }
+            else if(QDir(request.directory).canonicalPath()!=successor_directory)successor_target_exact=false;
             if (cancelled && cancelled->load()) {
                 profileinspection::Result result; result.outcome = profileinspection::Outcome::Cancelled;
                 result.error = QStringLiteral("Original read cancelled after physical completion"); return result;
@@ -207,6 +233,7 @@ private Q_SLOTS:
             return Found(false);
         }};
         const auto unblock = qScopeGuard([&] { release.release(); });
+        QVERIFY(model.selectCustomDataDir(first.path()));
         QSignalSpy stopped{&model, &OnboardingOptionsModel::shutdownFinished};
         QTRY_VERIFY(entered.available() > 0);
         entered.acquire();
@@ -228,6 +255,7 @@ private Q_SLOTS:
         }
         QTRY_COMPARE(stopped.size(), 1);
         QVERIFY(native_only.load());
+        QVERIFY(successor_target_exact.load());
         if (shutdown) QCOMPARE(calls.load(), 1);
     }
 };
