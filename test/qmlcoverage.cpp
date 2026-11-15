@@ -28,7 +28,7 @@
 #include <memory>
 #include <vector>
 
-namespace {
+namespace QmlCoverage {
 constexpr qsizetype MAX_MANIFEST_BYTES{32 * 1024 * 1024};
 constexpr qsizetype MAX_POINTS{200000};
 constexpr qsizetype MAX_ENGINES{64};
