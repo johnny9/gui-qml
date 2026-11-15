@@ -443,7 +443,7 @@ public:
     bool currentTransactionCanSend() const { return m_current_transaction && m_current_transaction_can_send; }
     bool currentTransactionCanSignOnly() const
     {
-        return available() && m_current_transaction && m_current_psbt && m_current_transaction_can_send
+        return available() && m_current_transaction && m_current_psbt && m_current_transaction_can_send && m_psbt_key_can_send
             && m_metadata_known && !m_private_keys_disabled && !currentTransactionNeedsRevalidation();
     }
     bool currentTransactionNeedsRevalidation() const;
