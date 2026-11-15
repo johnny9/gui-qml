@@ -41,6 +41,10 @@ struct Context {
     Materialize materialize{secretinput::Materialize};
     Save save{SaveFile};
 };
+struct InspectionFacts {
+    bool wallet_available{false}, signer_available{false};
+    QString requested_status;
+};
 struct Snapshot {
     std::shared_ptr<const PartiallySignedTransaction> document;
     std::shared_ptr<const psbtfee::Analysis> proof;
@@ -49,6 +53,7 @@ struct Snapshot {
     bool can_sign{false}, can_broadcast{false}, complete{false};
     bool metadata_failed{false};
     int unsigned_inputs{0}, could_sign{0};
+    InspectionFacts facts;
 };
 struct Request {
     Kind kind{Kind::Inspect};

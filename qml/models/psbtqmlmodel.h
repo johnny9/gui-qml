@@ -14,6 +14,7 @@
 #include <QStringList>
 
 class BackendExecutor;
+namespace psbtdocument { class Owner; }
 namespace interfaces { class Node; class Wallet; }
 
 class PsbtQmlModel : public QObject
@@ -104,6 +105,7 @@ private:
     quint64 start(psbtwork::Request request);
     void publish(quint64 operation, quint64 generation);
     void releaseSnapshot();
+    void retireDocumentOwner();
     void ensureServices();
     void updateSummaryWindow();
     using Operation = execution::OwnedCommand<psbtwork::Result>;
@@ -127,6 +129,7 @@ private:
     std::shared_ptr<Operation> m_active;
     std::optional<execution::ResourceLease> m_active_lease, m_snapshot_lease;
     std::shared_ptr<const psbtwork::Snapshot> m_snapshot;
+    std::shared_ptr<psbtdocument::Owner> m_document_owner;
     quint64 m_operation_id{0}, m_generation{0}, m_active_generation{0};
     psbtwork::Kind m_active_kind{psbtwork::Kind::Inspect};
     Phase m_phase{Phase::Idle};

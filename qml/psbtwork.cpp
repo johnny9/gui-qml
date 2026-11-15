@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/psbtwork.h>
+#include <qml/psbtdocument.h>
 #include <qml/models/signertransaction.h>
 #include <qml/models/transactionflow.h>
 #include <qml/flowpresentation.h>
@@ -282,20 +283,11 @@ std::shared_ptr<const Snapshot> Inspect(interfaces::Wallet* wallet, std::shared_
     snapshot->complete = complete;
     snapshot->could_sign = could_sign;
     snapshot->unsigned_inputs = CountPSBTUnsignedInputs(candidate);
-    const bool signer = wallet && (!wallet->privateKeysDisabled() || wallet->hasExternalSigner());
+    snapshot->facts = {wallet != nullptr, wallet && (!wallet->privateKeysDisabled() || wallet->hasExternalSigner()), status};
     if (snapshot->error.isEmpty()) snapshot->error = fill_error ? ErrorText(*fill_error)
         : !snapshot->proof->amount ? Tr("The transaction fee is missing or invalid.") : QString{};
-    const bool authorized = !snapshot->metadata_failed && snapshot->proof->amount.has_value();
-    snapshot->can_sign = authorized && !complete && signer && could_sign > 0;
-    snapshot->can_broadcast = authorized && complete;
     snapshot->summary = Summary(candidate, *snapshot->proof, wallet);
-    if (!authorized) snapshot->status = snapshot->error;
-    else if (!status.isEmpty()) snapshot->status = status;
-    else if (complete) snapshot->status = Tr("Transaction is fully signed and ready for broadcast.");
-    else if (!wallet) snapshot->status = Tr("No wallet is loaded. You can inspect, copy, or save this PSBT.");
-    else if (!signer) snapshot->status = Tr("This wallet cannot sign transactions because private keys are disabled.");
-    else if (could_sign) snapshot->status = Tr("This wallet can sign %n input(s).", nullptr, could_sign);
-    else snapshot->status = Tr("This wallet does not have the right keys to sign this PSBT.");
+    psbtdocument::Qualify(*snapshot);
     if (assessment) *assessment = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
     return snapshot;
 }
@@ -548,8 +540,14 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         if (!original || original->vin.empty() || original->vout.empty() || document->inputs.size() != original->vin.size() || document->outputs.size() != original->vout.size()) {
             result.message = Tr("The PSBT is malformed."); return result;
         }
-        result.txid = QString::fromStdString(original->GetHash().ToString());
-        if (wallet.getTx(original->GetHash())) { result.disposition = ImportResult::Disposition::Known; return result; }
+        // Legacy scriptSig data changes the final transaction identity. Inspect
+        // a copy so the known-status query cannot finalize the imported value.
+        auto identity_document = *document;
+        CMutableTransaction finalized;
+        const auto identity = FinalizeAndExtractPSBT(identity_document, finalized)
+            ? finalized.GetHash() : original->GetHash();
+        result.txid = QString::fromStdString(identity.ToString());
+        if (wallet.getTx(identity)) { result.disposition = ImportResult::Disposition::Known; return result; }
         std::shared_ptr<const PartiallySignedTransaction> assessment;
         const auto snapshot = Inspect(&wallet, document, {}, context, {}, &assessment);
         if (!snapshot->document || !assessment || !snapshot->proof || !snapshot->proof->outputs_valid) {
@@ -560,6 +558,11 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         if (snapshot->metadata_failed) { result.message = snapshot->error; return result; }
         const auto tx = assessment->GetUnsignedTx();
         if (!tx || !MatchesUnsignedTransaction(*original, *tx)) { result.message = Tr("The wallet changed the reviewed transaction."); return result; }
+        auto completed_assessment = *assessment;
+        if (FinalizeAndExtractPSBT(completed_assessment, finalized) && finalized.GetHash() != identity) {
+            result.txid = QString::fromStdString(finalized.GetHash().ToString());
+            if (wallet.getTx(finalized.GetHash())) { result.disposition = ImportResult::Disposition::Known; return result; }
+        }
         const bool owned_inputs = std::all_of(tx->vin.begin(), tx->vin.end(), [&](const CTxIn& input) { return wallet.txinIsMine(input); });
         std::optional<std::pair<int, int>> multisig;
         if (!snapshot->complete) for (size_t i = 0; i < assessment->inputs.size(); ++i) if ((multisig = Multisig(*assessment, i))) break;
@@ -580,11 +583,13 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
                 if (output.nValue == 0 && output.scriptPubKey.IsUnspendable()) continue;
                 result.message = Tr("Only PSBTs with standard address outputs are supported right now."); return result;
             }
-            if (may_send && wallet.txoutIsMine(output)) continue;
+            // Imported documents do not provide authoritative change intent.
+            // Ownership alone cannot distinguish a self-transfer recipient
+            // from change, and signing capability must not alter the review.
             const auto address = QString::fromStdString(EncodeDestination(destination));
             std::string label;
             wallet.getAddress(destination, &label, nullptr);
-            if (!MoneyRange(output.nValue) || !MoneyRange(review->amount + output.nValue)) { result.message = Tr("The PSBT contains invalid amounts."); return result; }
+            if (!MoneyRange(output.nValue) || output.nValue > MAX_MONEY - review->amount) { result.message = Tr("The PSBT contains invalid amounts."); return result; }
             review->amount += output.nValue;
             review->recipients.append({address, QString::fromStdString(label), output.nValue, false});
             review->destinations.insert(address);

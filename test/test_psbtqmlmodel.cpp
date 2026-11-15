@@ -168,6 +168,52 @@ class PsbtQmlModelTests : public QObject
     std::unique_ptr<ECC_Context> m_ecc_context;
 
 private Q_SLOTS:
+    void documentOwnerRetiresWithoutGuiDelivery_data()
+    {
+        QTest::addColumn<int>("when");
+        QTest::newRow("native-held") << 0;
+        QTest::newRow("analysis-owned-gui-held") << 1;
+        QTest::newRow("published-document") << 2;
+    }
+    void documentOwnerRetiresWithoutGuiDelivery()
+    {
+        QFETCH(int, when);
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        PsbtQmlModel model{nullptr, nullptr};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto path = directory.filePath("retained-document.psbt");
+        QCOMPARE(psbtwork::SaveFile(MakeCompletePsbt(), path), QString{});
+        const auto ticket = model.requestLoadFromFile(path);
+        QVERIFY(ticket);
+        if (when) {
+            QVERIFY(transport.step(execution::Lane::Core));
+            QVERIFY(transport.step(execution::Lane::Domain));
+            QCOMPARE(publications.size(), size_t{1});
+            QVERIFY(!model.loaded());
+            if (when == 2) {
+                auto publish = std::move(publications.front()); publications.pop_front(); publish();
+                QVERIFY(model.loaded());
+            }
+        }
+        model.closeAdmission();
+        transport.drain();
+        // The facade and its queued GUI callback are still alive. Neither may
+        // retain the document owner's cleanup reservation or its Native value.
+        QVERIFY(transport.quiescent());
+        QVERIFY(!model.loaded());
+        QVERIFY(!model.canSign());
+        QVERIFY(!model.canBroadcast());
+        while (!publications.empty()) {
+            auto publish = std::move(publications.front()); publications.pop_front(); publish();
+        }
+        QCOMPARE(model.phase(), PsbtQmlModel::Phase::Closed);
+        QCOMPARE(model.requestLoadFromFile(path), quint64{0});
+        QVERIFY(transport.quiescent());
+    }
+
     void manualReadRetainsOriginalDocumentAndPresentation_data()
     {
         QTest::addColumn<int>("change");

@@ -1210,7 +1210,10 @@ private Q_SLOTS:
             if (mode == 6) candidate.inputs[0].witness_utxo = CTxOut{1'999,
                 candidate.inputs[0].non_witness_utxo->vout[0].scriptPubKey};
         };
-        const auto known = document.GetUnsignedTx();
+        auto known_document = document;
+        CMutableTransaction known_transaction;
+        const auto known = FinalizeAndExtractPSBT(known_document, known_transaction)
+            ? std::optional<CMutableTransaction>{std::move(known_transaction)} : document.GetUnsignedTx();
         wallet.transaction_read = [mode, known](const Txid& txid) -> CTransactionRef {
             if (mode == 18) throw std::runtime_error{"original transaction query failed"};
             return mode == 3 && known && txid == known->GetHash() ? MakeTransactionRef(*known) : CTransactionRef{};
@@ -1228,7 +1231,7 @@ private Q_SLOTS:
         if (source) QCOMPARE(Bytes(*source), original);
         QCOMPARE(wallet.sign_calls, 0); QCOMPARE(wallet.unlock_calls, 0); QCOMPARE(wallet.lock_calls, 0);
         QCOMPARE(lookups, mode == 17 ? 1 : 0);
-        const bool review = mode == 6 || mode == 9 || (mode >= 13 && mode <= 20 && mode != 18);
+        const bool review = mode == 6 || mode == 9 || mode == 10 || (mode >= 13 && mode <= 20 && mode != 18);
         const auto disposition = mode == 3 ? psbtwork::ImportResult::Disposition::Known
             : review ? psbtwork::ImportResult::Disposition::Review : psbtwork::ImportResult::Disposition::Unsupported;
         QCOMPARE(result.disposition, disposition);
@@ -1245,16 +1248,16 @@ private Q_SLOTS:
             QCOMPARE(result.review->recipients[0].amount, CAmount{1'500});
             QCOMPARE(result.review->recipients[0].label, QStringLiteral("Original review label"));
             QCOMPARE(result.review->amount, CAmount{1'500}); QCOMPARE(result.review->fee, mode == 6 ? CAmount{0} : FEE);
-            QCOMPARE(result.review->can_send, mode == 14 || mode == 16);
+            QCOMPARE(result.review->can_send, mode == 10 || mode == 14 || mode == 16);
             QCOMPARE(result.key_can_send, mode == 14);
-            QCOMPARE(result.can_commit_complete, mode == 14 || mode == 15 || mode == 16 || mode == 19);
-            QCOMPARE(result.key_can_broadcast, mode == 6 || mode == 9 || mode == 16);
+            QCOMPARE(result.can_commit_complete, mode == 10 || mode == 14 || mode == 15 || mode == 16 || mode == 19);
+            QCOMPARE(result.key_can_broadcast, mode == 6 || mode == 9 || mode == 10 || mode == 16);
             if (mode == 6) {
                 QVERIFY(!result.review->can_send); QVERIFY(!result.key_can_send); QVERIFY(!result.can_commit_complete);
                 QCOMPARE(result.review->proof->state, psbtfee::State::Invalid);
                 QCOMPARE(result.message, QStringLiteral("The transaction fee is missing or invalid. Add valid input information before broadcasting."));
             } else if (mode == 20) QCOMPARE(result.message, QStringLiteral("This transaction requires 2 of 2 signatures."));
-            else if (mode == 9 || mode == 14 || mode == 16) QVERIFY(result.message.isEmpty());
+            else if (mode == 9 || mode == 10 || mode == 14 || mode == 16) QVERIFY(result.message.isEmpty());
             else QCOMPARE(result.message, QStringLiteral("This wallet does not have the keys to sign this transaction."));
             QVERIFY(!result.review->presentation.empty()); QVERIFY(!result.review->flow.empty());
         } else {
@@ -1266,7 +1269,6 @@ private Q_SLOTS:
             else if (mode == 5) expected=QStringLiteral("The wallet changed the reviewed transaction.");
             else if (mode == 6 || mode == 7) expected=QStringLiteral("The transaction fee is missing or invalid.");
             else if (mode == 8 || mode == 22) expected=QStringLiteral("Only PSBTs with standard address outputs are supported right now.");
-            else if (mode == 10) expected=QStringLiteral("The PSBT does not have any recipient outputs to review.");
             else if (mode == 11) expected=QStringLiteral("The PSBT has more recipients than this send flow supports.");
             else if (mode == 12) expected=QStringLiteral("The PSBT does not send a positive amount.");
             else expected=QStringLiteral("The PSBT could not be reviewed.");

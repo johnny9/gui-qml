@@ -7,6 +7,8 @@
 #include <qml/util.h>
 #include <qml/ownedwork.h>
 #include <qml/guipresentation.h>
+#include <qml/psbtdocument.h>
+#include <qml/retainedvalue.h>
 #include <limits>
 #include <QClipboard>
 #include <QGuiApplication>
@@ -48,6 +50,7 @@ void PsbtQmlModel::configureSession(std::shared_ptr<walletopening::Session> open
 void PsbtQmlModel::setFeeServices(psbtfee::Services services)
 {
     // In-flight work retains its original services and Native lifetime.
+    retireDocumentOwner();
     m_services = std::move(services);
     m_services.post=presentation::ReliablePost(std::move(m_services.post));
     if (!m_services.scheduler && m_opening) m_services.scheduler = m_opening->scheduler();
@@ -64,11 +67,16 @@ void PsbtQmlModel::ensureServices()
             QMetaObject::invokeMethod(bridge.get(), std::move(turn), Qt::QueuedConnection);
         };
     }
+    if (!m_document_owner) {
+        m_document_owner = execution::RetainValues<psbtdocument::Owner>(m_services.scheduler,
+            [generation = m_generation] { return std::make_unique<psbtdocument::Owner>(generation); });
+    }
 }
 void PsbtQmlModel::setNode(interfaces::Node* node)
 {
     if (m_node == node) return;
     m_node = node;
+    retireDocumentOwner();
     ++m_generation; // Late results from the old public Node context cannot publish.
     if (!busy() && m_snapshot && !m_closed) refreshState();
 }
@@ -76,6 +84,7 @@ void PsbtQmlModel::closeAdmission()
 {
     m_closed = true;
     m_phase = Phase::Closed;
+    retireDocumentOwner();
     // Closing GUI delivery cannot hold the service drain hostage. Native work
     // retains its own operation and bounded scalar receipt through its outcome.
     releaseSnapshot();
@@ -94,8 +103,14 @@ void PsbtQmlModel::releaseSnapshot()
     m_summary_window.clear();
     m_snapshot_lease.reset();
 }
+void PsbtQmlModel::retireDocumentOwner()
+{
+    if (m_document_owner) m_document_owner->withdraw();
+    m_document_owner.reset();
+}
 void PsbtQmlModel::clear()
 {
+    retireDocumentOwner();
     ++m_generation;
     releaseSnapshot();
     m_matched_txid.clear();
@@ -105,6 +120,7 @@ void PsbtQmlModel::clear()
 }
 void PsbtQmlModel::setError(const QString& error)
 {
+    retireDocumentOwner();
     ++m_generation;
     releaseSnapshot();
     m_matched_txid.clear();
@@ -142,6 +158,7 @@ quint64 PsbtQmlModel::requestLoadFromFile(const QString& path)
         // is retired on Native/Domain and cannot publish into the new document.
         m_active.reset(); m_active_lease.reset();
     }
+    retireDocumentOwner();
     ++m_generation;
     releaseSnapshot();
     psbtwork::Request request; request.kind = psbtwork::Kind::Load; request.path = path;
@@ -157,6 +174,9 @@ quint64 PsbtQmlModel::requestSignWithPassphrase(const QString& passphrase)
 {
     if(busy()||m_closed||!canSign())return 0;
     ensureServices();
+    if (!m_document_owner) {
+        m_phase = Phase::Failed; m_error = tr("PSBT result capacity is unavailable."); Q_EMIT changed(); return 0;
+    }
     const auto captured=secretinput::Capture(m_services.scheduler,passphrase);
     if(!captured){m_phase=Phase::Failed;m_error=tr("The signing password could not be admitted for background execution.");Q_EMIT changed();return 0;}
     psbtwork::Request request;request.kind=psbtwork::Kind::Sign;request.captured_passphrase=captured.input;
@@ -182,6 +202,9 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
         m_phase = Phase::Failed; m_error = tr("The wallet session is unavailable."); Q_EMIT changed(); return ticket;
     }
     ensureServices();
+    if (!m_document_owner) {
+        m_phase = Phase::Failed; m_error = tr("PSBT result capacity is unavailable. Close an unused document and retry."); Q_EMIT changed(); return ticket;
+    }
     if (m_snapshot) {
         request.document = m_snapshot->document;
         request.proof = m_snapshot->proof;
@@ -230,22 +253,32 @@ quint64 PsbtQmlModel::start(psbtwork::Request request)
     m_active = operation; m_active_generation = generation; m_active_kind = request.kind;
     psbtwork::Context context{m_services.lookup ? m_services.lookup : psbtfee::NodeLookup(m_node), psbtwork::NodeBroadcast(m_node)};
     auto input = std::make_shared<psbtwork::Request>(std::move(request));
+    const auto consume = [owner = m_document_owner, ticket, kind = input->kind](auto done) {
+        // Opening/Submit deliver Native outcomes on Domain. Analysis ownership
+        // is resolved there before OwnedCommand posts its GUI notification.
+        return [owner, ticket, kind, done = std::move(done)](psbtwork::Result result) mutable {
+            done(owner->consume(ticket, kind, std::move(result)));
+        };
+    };
     execution::Admission admission;
     if (m_opening) {
         const bool observation = input->kind == psbtwork::Kind::Load || input->kind == psbtwork::Kind::Inspect;
         const auto action = observation ? nullptr : m_opening->startAction();
-        if (observation) admission = operation->startWith([opening = m_opening, input, context,capture_bytes](auto done, auto failed) {
+        if (observation) admission = operation->startWith([opening = m_opening, input, context,capture_bytes,consume](auto done, auto failed) {
             return opening->read([input, context](interfaces::Wallet& wallet) {
                 return psbtwork::Execute(&wallet, std::move(*input), context);
-            }, std::move(done), std::move(failed),execution::WorkClass::Observation,capture_bytes);
+            }, consume(std::move(done)), std::move(failed),execution::WorkClass::Observation,capture_bytes);
         });
-        else if (action) admission = operation->startWith([opening = m_opening, action, input, context,capture_bytes](auto done, auto failed) {
+        else if (action) admission = operation->startWith([opening = m_opening, action, input, context,capture_bytes,consume](auto done, auto failed) {
             return opening->perform(action, [input, context](interfaces::Wallet& wallet) {
                 return psbtwork::Execute(&wallet, std::move(*input), context);
-            }, std::move(done), std::move(failed),capture_bytes);
+            }, consume(std::move(done)), std::move(failed),capture_bytes);
         });
         else admission = {{}, execution::Rejection::Closed};
-    } else admission = operation->start([input, context] { return psbtwork::Execute(nullptr, std::move(*input), context); },{execution::Lane::Core,capture_bytes});
+    } else admission = operation->startWith([scheduler = m_services.scheduler, input, context, capture_bytes, consume](auto done, auto failed) {
+        return execution::Submit(*scheduler, [input, context] { return psbtwork::Execute(nullptr, std::move(*input), context); },
+            consume(std::move(done)), std::move(failed), {execution::Lane::Core, capture_bytes});
+    });
     if (!admission) {
         m_active.reset(); m_active_lease.reset();
         m_phase = Phase::Failed; m_error = tr("The PSBT action could not be queued."); Q_EMIT changed(); return ticket;
