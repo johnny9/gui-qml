@@ -19,7 +19,7 @@ enum class Notice { SweepConsentRequired, CredentialsRequired, Finished, Notes }
 enum class Stage { Idle, AwaitingSweepConsent, AwaitingCredentials, SigningOnly, Submitting, Finished };
 enum class Record { Unknown, AbsentAtObservation, Recorded };
 enum class Relay { Unknown };
-enum class Error { None, Rejected, InvalidStructure, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled, NeedsSignerApproval, InvalidSignature, NodePolicy };
+enum class Error { None, Rejected, InvalidStructure, CannotSign, NeedsUnlock, IncorrectPassphrase, InvalidFee, ChangedTransaction, Incomplete, Signer, Uncertain, Cancelled, NeedsSignerApproval, InvalidSignature, NodePolicy, UnverifiedSignatures };
 /** Explicit review withdrawal may win before the irreversible commit boundary.
  * Observer destruction does not withdraw an already admitted action. */
 class CommitConsent {
@@ -60,6 +60,8 @@ struct Result {
     // SignOnly returns the captured document even when the wallet can add only
     // a subset of signatures. It never returns a committed transaction.
     std::shared_ptr<const PartiallySignedTransaction> document;
+    std::shared_ptr<const PartiallySignedTransaction> quarantined_document;
+    psbtsignatures::Status signature_status{psbtsignatures::Status::Unknown};
     size_t signed_inputs{0};
     bool partial{false};
     Record record{Record::Unknown};

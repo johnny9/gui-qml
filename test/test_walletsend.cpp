@@ -557,6 +557,7 @@ private Q_SLOTS:
         QTest::addColumn<int>("kind");
         for (bool script_path : {false, true}) for (int kind = 0; kind < 3; ++kind)
             QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(script_path ? "script" : "key").arg(kind))) << script_path << kind;
+        QTest::newRow("script-unused-pushed-key") << true << 3;
     }
     void unfinishedTaprootSignatureValueVerification()
     {
@@ -567,7 +568,8 @@ private Q_SLOTS:
         key.MakeNewKey(true);
         const XOnlyPubKey internal{key.GetPubKey()};
         TaprootBuilder builder;
-        const CScript script = CScript{} << std::vector<unsigned char>{internal.begin(), internal.end()} << OP_CHECKSIG;
+        CScript script = CScript{} << std::vector<unsigned char>{internal.begin(), internal.end()} << (kind == 3 ? OP_DROP : OP_CHECKSIG);
+        if (kind == 3) script << OP_TRUE;
         if (script_path) builder.Add(0, script, TAPROOT_LEAF_TAPSCRIPT);
         builder.Finalize(internal);
         CMutableTransaction parent;
@@ -599,6 +601,29 @@ private Q_SLOTS:
         }
         QCOMPARE(psbtsignatures::VerifyPartialInputs(document), kind == 0 ? psbtsignatures::Status::Valid
             : kind == 1 ? psbtsignatures::Status::Invalid : psbtsignatures::Status::Unknown);
+    }
+    void mathematicallyValidUnrelatedKeyDoesNotVerifyPolicyContribution()
+    {
+        ECC_Context ecc;
+        const auto fixture = psbtfeefixture::SignedWithoutScripts(false);
+        auto document = fixture.document;
+        document.inputs[0].partial_sigs.clear();
+        document.inputs[0].witness_script = fixture.witness;
+        CKey unrelated;
+        unrelated.MakeNewKey(true);
+        FillableSigningProvider provider;
+        QVERIFY(provider.AddKey(unrelated));
+        const auto transaction = document.GetUnsignedTx();
+        const auto data = PrecomputePSBTData(document);
+        QVERIFY(transaction); QVERIFY(data);
+        MutableTransactionSignatureCreator creator{*transaction, 0, 2000, &*data, {.sighash_type = SIGHASH_ALL}};
+        std::vector<unsigned char> signature;
+        QVERIFY(creator.CreateSig(provider, signature, unrelated.GetPubKey().GetID(), fixture.witness, SigVersion::WITNESS_V0));
+        const auto key = unrelated.GetPubKey();
+        MutableTransactionSignatureChecker checker{&*transaction, 0, 2000, *data, MissingDataBehavior::FAIL};
+        QVERIFY(checker.CheckECDSASignature(signature, {key.begin(), key.end()}, fixture.witness, SigVersion::WITNESS_V0));
+        document.inputs[0].partial_sigs[key.GetID()] = {key, signature};
+        QCOMPARE(psbtsignatures::VerifyPartialInputs(document), psbtsignatures::Status::Invalid);
     }
     void approvalQuarantinesMissingSignatureContext_data()
     {

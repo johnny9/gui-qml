@@ -7,6 +7,7 @@
 #include <psbt.h>
 #include <addresstype.h>
 #include <script/interpreter.h>
+#include <script/solver.h>
 #include <script/verify_flags.h>
 
 #include <algorithm>
@@ -25,6 +26,19 @@ bool HasCodeSeparator(const CScript& script)
 }
 
 struct EcdsaContext { CScript script; SigVersion version{SigVersion::BASE}; };
+std::optional<bool> ContainsSigningKey(const CScript& script, const CPubKey& key)
+{
+    std::vector<std::vector<unsigned char>> solutions;
+    const auto type = Solver(script, solutions);
+    const std::vector<unsigned char> bytes{key.begin(), key.end()};
+    if (type == TxoutType::PUBKEY) return solutions.front() == bytes;
+    if (type == TxoutType::PUBKEYHASH) {
+        const auto id = key.GetID();
+        return solutions.front() == std::vector<unsigned char>{id.begin(), id.end()};
+    }
+    if (type == TxoutType::MULTISIG) return std::find(solutions.begin() + 1, solutions.end() - 1, bytes) != solutions.end() - 1;
+    return {};
+}
 std::optional<EcdsaContext> GetEcdsaContext(const PSBTInput& input, const CTxOut& utxo)
 {
     EcdsaContext result{utxo.scriptPubKey};
@@ -56,14 +70,13 @@ bool HasTapleafContext(const PSBTInput& input, const std::vector<unsigned char>&
         if (version != TAPROOT_LEAF_TAPSCRIPT || ComputeTapleafHash(version, bytes) != leaf) continue;
         const CScript script{bytes.begin(), bytes.end()};
         if (HasCodeSeparator(script)) continue;
-        bool key_present{false};
+        // Partial verification does not execute a script. Recognize one
+        // unambiguous signing policy and quarantine other script forms.
         auto cursor = script.begin();
         opcodetype opcode;
         std::vector<unsigned char> push;
-        while (cursor != script.end() && script.GetOp(cursor, opcode, push)) {
-            if (push.size() == 32 && std::equal(push.begin(), push.end(), key.begin())) key_present = true;
-        }
-        if (!key_present) continue;
+        if (!script.GetOp(cursor, opcode, push) || push.size() != 32 || !std::equal(push.begin(), push.end(), key.begin()) ||
+            !script.GetOp(cursor, opcode) || opcode != OP_CHECKSIG || cursor != script.end()) continue;
         for (const auto& control : controls) {
             if (control.size() < TAPROOT_CONTROL_BASE_SIZE || control.size() > TAPROOT_CONTROL_MAX_SIZE ||
                 (control.size() - TAPROOT_CONTROL_BASE_SIZE) % TAPROOT_CONTROL_NODE_SIZE != 0 ||
@@ -94,6 +107,9 @@ psbtsignatures::Status psbtsignatures::VerifyPartialInputs(const PartiallySigned
             if (!key.IsFullyValid() || key.GetID() != id ||
                 !CheckSignatureEncoding(bytes, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_STRICTENC | SCRIPT_VERIFY_LOW_S, nullptr) || bytes.empty()) return Status::Invalid;
             if (!context) { result = Status::Unknown; continue; }
+            const auto member = ContainsSigningKey(context->script, key);
+            if (!member) { result = Status::Unknown; continue; }
+            if (!*member) return Status::Invalid;
             if (
                 (context->version == SigVersion::WITNESS_V0 && !key.IsCompressed()) ||
                 !checker.CheckECDSASignature(bytes, {key.begin(), key.end()}, context->script, context->version)) return Status::Invalid;
@@ -129,6 +145,32 @@ psbtsignatures::Status psbtsignatures::VerifyPartialInputs(const PartiallySigned
         if (!input.m_musig2_partial_sigs.empty()) result = Status::Unknown;
     }
     return result;
+}
+
+psbtsignatures::Status psbtsignatures::VerifyContributions(const PartiallySignedTransaction& original,
+                                                        const PartiallySignedTransaction& returned)
+{
+    if (original.inputs.size() != returned.inputs.size()) return Status::Invalid;
+    auto contributions = returned;
+    const auto remove_unchanged = [](auto& values, const auto& prior) {
+        std::erase_if(values, [&prior](const auto& entry) {
+            const auto found = prior.find(entry.first);
+            return found != prior.end() && found->second == entry.second;
+        });
+    };
+    for (size_t i = 0; i < contributions.inputs.size(); ++i) {
+        auto& input = contributions.inputs[i];
+        const auto& prior = original.inputs[i];
+        remove_unchanged(input.partial_sigs, prior.partial_sigs);
+        remove_unchanged(input.m_tap_script_sigs, prior.m_tap_script_sigs);
+        if (input.m_tap_key_sig == prior.m_tap_key_sig) input.m_tap_key_sig.clear();
+        for (auto& [group, values] : input.m_musig2_partial_sigs) {
+            const auto found = prior.m_musig2_partial_sigs.find(group);
+            if (found != prior.m_musig2_partial_sigs.end()) remove_unchanged(values, found->second);
+        }
+        std::erase_if(input.m_musig2_partial_sigs, [](const auto& group) { return group.second.empty(); });
+    }
+    return VerifyPartialInputs(contributions);
 }
 
 bool psbtsignatures::VerifyFinalizedInputs(const PartiallySignedTransaction& document, bool require_all)

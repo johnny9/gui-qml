@@ -471,6 +471,18 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
                 result.error = Tr("The signer returned invalid signatures for the reviewed transaction.");
                 return finish();
             }
+            result.signature_status = complete ? psbtsignatures::Status::Valid
+                : psbtsignatures::VerifyContributions(*request.document, candidate);
+            if (result.signature_status != psbtsignatures::Status::Valid) {
+                result.code = result.signature_status == psbtsignatures::Status::Invalid ? Error::Invalid
+                    : signer_threw ? Error::Uncertain : Error::UnverifiedSignatures;
+                result.error = result.signature_status == psbtsignatures::Status::Invalid
+                    ? Tr("The signer returned invalid signatures for the reviewed transaction.")
+                    : Tr("The returned PSBT needs more verification information. The original document is unchanged; export the unverified result to reconcile it.");
+                if (result.signature_status == psbtsignatures::Status::Unknown)
+                    result.quarantined_document = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
+                return finish();
+            }
             request.document = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
             // Retain legitimate partial signatures even when the signer reports
             // an error or a later presentation read fails. Never adopt changed

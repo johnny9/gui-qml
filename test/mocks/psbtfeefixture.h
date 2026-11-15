@@ -11,6 +11,7 @@
 #include <script/solver.h>
 
 #include <stdexcept>
+#include <iterator>
 #include <utility>
 #include <vector>
 
