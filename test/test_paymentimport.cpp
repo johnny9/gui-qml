@@ -72,7 +72,12 @@ struct Fixture {
         services.now = [this] { return now; }; services.wake = [this](auto, auto wake) { wakes.push_back(std::move(wake)); };
         owner = paymentimport::Owner::Create(42, services, [this](auto value) { snapshot = std::move(value); }, [this](auto) { ++retired; });
     }
-    ~Fixture() { owner->close(); drain(); owner.reset(); drain(); }
+    ~Fixture() {
+        owner->close(); drain();
+        // Release clock callbacks and published Native aliases before the final
+        // manual transport drain; its queued cleanup must outlive the fixture.
+        wakes.clear(); owner.reset(); snapshot = {}; port.reset(); result.reset(); drain();
+    }
     void drain() { for (size_t n{0}; n < 20 && (!source.queuedIdle() || !target.queuedIdle()); ++n) { source.drain(); target.drain(); } }
     void inspect() { owner->inspect({paymentimport::Input::Kind::Text, Uri()}); owner->chooseTarget(port); drain(); }
     void advance() { now += std::chrono::milliseconds{100}; auto pending = std::exchange(wakes, {}); for (auto& wake : pending) wake(); drain(); }
