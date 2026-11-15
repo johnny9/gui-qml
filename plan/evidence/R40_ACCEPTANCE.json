@@ -1,0 +1,656 @@
+{
+  "version": 1,
+  "audit_utc": "2026-11-15T19:57:40.796751+00:00",
+  "mode": "Read-only audit of existing artifacts/exact source; no code, build or SSH mutation by this audit",
+  "candidate_app": "491d8cdbbfe14d7ef3e20f67f0ecbdc82488868c",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "final_delivery": "461516a35388e0acf83b6c06a3ad5b06afcd73ff",
+  "delivery_equivalence": "git diff491..461 contains only test/functional/interface_qml_startup.py; production bytes/ELFs at491 remain authoritative, script-only rerun binds exact461 script",
+  "status": "Focused collected R40 evidence verified; Root owns final branch acceptance/register publication",
+  "pending_external_gate": null,
+  "bazzite03": {
+    "exit": 0,
+    "source_matches_manifest": true,
+    "archive_sha256": "ee138389db81e1e89ecee8f3ab9a703d35ba24924e13f060fae8212901f609fd",
+    "binaries": {
+      "bitcoinqml_unit_tests": "04d135bd693ffc15a89c0f486a0c31911924b7b93635973f4746ab7250a61466",
+      "bitcoinqml_qmltests": "956361089727098cd49b0b6c4aa235024086af92fd24ed99e9722388c6b2add9",
+      "bitcoin-core-profile-inspector": "df18ebdbed1c581640b3c650128647e90636fad76cf0ba6cc7afdf8fb0c4195a",
+      "bitcoind": "a086d71621f7e2d59d9a00248718f1b4dc3d5474d650cb4f87f701c2405ba921",
+      "bitcoin-core-app": "21eb1410154a89edeecaa30d7513a30c2dc0ac2df7d755bdd60268dc2d917689"
+    },
+    "focused_actual_passed": 52,
+    "failed_or_skipped": 0,
+    "selections": [
+      {
+        "id": "desktop-queue-manual-clock-native-fence-and-fileopen",
+        "actual": 18,
+        "identities": [
+          "forwardingSnapshotMergesEarlyInputsWithoutAnAcceptedPrefix",
+          "forwardingFenceOrdersEarlierAdmissionsAndRefusesLateCapture",
+          "stopUsesReservedCleanupWhenOrdinaryAdmissionIsFull",
+          "actualQtFileOpenQueuesBeforeReadinessAndFencesLateEvents",
+          "actualArgumentsKeepCoreOptionsBeforeRequestsOnly",
+          "argumentFilesUseCapturedDirectoryAndRejectRemoteAndInvalidUtf8",
+          "nativeAdmissionFenceBeatsAHeldReadyProjection:before-domain-handoff",
+          "nativeAdmissionFenceBeatsAHeldReadyProjection:after-domain-before-gui-factory",
+          "retainedFacadeDoesNotHoldPhysicalShutdownAfterStop",
+          "creationReceiptSurvivesProjectionLossAndCannotCreateTwice",
+          "facadeDefersInspectionUntilReadyAndRetainsOriginalFactoryReceipt",
+          "automaticInspectionKeepsOneOwnedPresentation:close-after-receipt",
+          "automaticInspectionKeepsOneOwnedPresentation:close-reentrantly-before-receipt",
+          "presentationReleaseSurvivesOrdinaryDomainRejection",
+          "failedBatchHasNoAcceptedPrefixOrConsumedIdentity",
+          "unaccountedDeliverySurvivesReadinessAndStop",
+          "byteBudgetAndOldReadinessCannotAuthorizeDelivery",
+          "lostFactoryAcknowledgmentQueriesOnlyTheOriginalSink"
+        ],
+        "command": [
+          "/review/build/bin/bitcoinqml_unit_tests",
+          "-platform",
+          "minimal",
+          "--test-class=DesktopIntentTests",
+          "-o",
+          "/out/results/desktop-queue-manual-clock-native-fence-and-fileopen/results.xml,xml",
+          "-o",
+          "/out/results/desktop-queue-manual-clock-native-fence-and-fileopen/results.txt,txt"
+        ]
+      },
+      {
+        "id": "picker-menu-composition",
+        "actual": 1,
+        "identities": [
+          "MainRouting::test_menu_psbt_completion_cannot_cross_selected_opening"
+        ],
+        "command": [
+          "/review/build/bin/bitcoinqml_qmltests",
+          "-platform",
+          "minimal",
+          "-input",
+          ":/test/qml/tst_mainrouting.qml",
+          "MainRouting::test_menu_psbt_completion_cannot_cross_selected_opening",
+          "-o",
+          "/out/results/picker-menu-composition/results.xml,xml",
+          "-o",
+          "/out/results/picker-menu-composition/results.txt,txt"
+        ]
+      },
+      {
+        "id": "picker-view-retirement",
+        "actual": 3,
+        "identities": [
+          "WalletViews::test_deferred_opens_are_dropped_once_their_wallet_is_hidden",
+          "WalletViews::test_leaving_wallet_pages_closes_their_dialogs",
+          "WalletViews::test_unloading_a_wallet_destroys_its_view"
+        ],
+        "command": [
+          "/review/build/bin/bitcoinqml_qmltests",
+          "-platform",
+          "minimal",
+          "-input",
+          ":/test/qml/tst_walletviews.qml",
+          "WalletViews::test_deferred_opens_are_dropped_once_their_wallet_is_hidden",
+          "WalletViews::test_leaving_wallet_pages_closes_their_dialogs",
+          "WalletViews::test_unloading_a_wallet_destroys_its_view",
+          "-o",
+          "/out/results/picker-view-retirement/results.xml,xml",
+          "-o",
+          "/out/results/picker-view-retirement/results.txt,txt"
+        ]
+      },
+      {
+        "id": "validation-is-not-intent",
+        "actual": 3,
+        "identities": [
+          "SendCreate::test_review_sweep_alert_closes_when_draft_is_replaced",
+          "SendCreate::test_validation_echo_preserves_original_import_intent:explicit-derived-total",
+          "SendCreate::test_validation_echo_preserves_original_import_intent:paste-validation-revision"
+        ],
+        "command": [
+          "/review/build/bin/bitcoinqml_qmltests",
+          "-platform",
+          "minimal",
+          "-input",
+          ":/test/qml/tst_sendcreate.qml",
+          "SendCreate::test_validation_echo_preserves_original_import_intent",
+          "SendCreate::test_review_sweep_alert_closes_when_draft_is_replaced",
+          "-o",
+          "/out/results/validation-is-not-intent/results.xml,xml",
+          "-o",
+          "/out/results/validation-is-not-intent/results.txt,txt"
+        ]
+      },
+      {
+        "id": "typed-desktop-source-continuation-consumer",
+        "actual": 3,
+        "identities": [
+          "SendCreate::test_desktop_inspection_uses_one_original_source:accepted",
+          "SendCreate::test_desktop_inspection_uses_one_original_source:selection-during-handoff",
+          "SendCreate::test_desktop_inspection_uses_one_original_source:hidden-before-handoff"
+        ],
+        "command": [
+          "/review/build/bin/bitcoinqml_qmltests",
+          "-platform",
+          "minimal",
+          "-input",
+          ":/test/qml/tst_sendcreate.qml",
+          "SendCreate::test_desktop_inspection_uses_one_original_source",
+          "-o",
+          "/out/results/typed-desktop-source-continuation-consumer/results.xml,xml",
+          "-o",
+          "/out/results/typed-desktop-source-continuation-consumer/results.txt,txt"
+        ]
+      },
+      {
+        "id": "native-endpoint-clock-ack-and-physical-retirement",
+        "actual": 19,
+        "identities": [
+          "admissionFenceDoesNotDrainAndRetainedFacadeReleasesScope",
+          "missingProfileIsNotCreatedAndPhysicalStopUsesBackgroundDomain",
+          "secondaryForwardsEarlyFileOpenAndArgumentsAndDoesNotStealEmptyEndpoint:early-open-only-empty-argv",
+          "secondaryForwardsEarlyFileOpenAndArgumentsAndDoesNotStealEmptyEndpoint:early-open-and-arguments",
+          "reusedLocalProducerKeyFromAnotherServiceIsASeparateDelivery",
+          "capacityRejectsWholeRemoteBatchWithoutConsumingIdentity",
+          "lostAcknowledgmentQueriesOriginalReceiptWithoutReadmission",
+          "lateOwnerReplyDoesNotHoldPhysicalNativeRetirement",
+          "backwardClockDoesNotAuthorizeReplayOrLateAcknowledgment",
+          "invalidDeadlineConfigurationDoesNotReserveResources",
+          "missingProbeLeavesOriginalQueueAndLaterFinalProfileStartUntouched",
+          "existingProbeForwardsOriginalEarlyInputsAndNeverFallsThrough:early-open-only",
+          "existingProbeForwardsOriginalEarlyInputsAndNeverFallsThrough:early-open-plus-argv",
+          "rejectedExistingProbeCannotAcquireAnotherPrimary:no-input",
+          "rejectedExistingProbeCannotAcquireAnotherPrimary:peer-capacity",
+          "unknownProbeTransferRetainsOriginalKeysAndCannotReplay",
+          "stopBeforeProbeNativeTurnRetiresWithoutLookupOrPrimary",
+          "expiredProbeClockCannotForwardOrGrantPrimary:expired",
+          "expiredProbeClockCannotForwardOrGrantPrimary:rollback"
+        ],
+        "command": [
+          "/review/build/bin/bitcoinqml_unit_tests",
+          "-platform",
+          "minimal",
+          "--test-class=DesktopIntentTransportTests",
+          "-o",
+          "/out/results/native-endpoint-clock-ack-and-physical-retirement/results.xml,xml",
+          "-o",
+          "/out/results/native-endpoint-clock-ack-and-physical-retirement/results.txt,txt"
+        ]
+      },
+      {
+        "id": "source-close-full-budget-and-original-outcome",
+        "actual": 5,
+        "identities": [
+          "fullOrdinaryBudgetCannotStrandRetainedTypedSourceFacades:operation-then-factory",
+          "fullOrdinaryBudgetCannotStrandRetainedTypedSourceFacades:factory-then-operation",
+          "closeWithFullOrdinaryBudgetKeepsOriginalOwnerUntilDomainRetirement",
+          "closeReservationFailureAndUnusedActorCannotRetainScope",
+          "throwingRetireKeepsOriginalChildOutcomeAndDoesNotDispatchAgain"
+        ],
+        "command": [
+          "/review/build/bin/bitcoinqml_unit_tests",
+          "-platform",
+          "minimal",
+          "--test-class=PaymentImportTests",
+          "fullOrdinaryBudgetCannotStrandRetainedTypedSourceFacades",
+          "closeWithFullOrdinaryBudgetKeepsOriginalOwnerUntilDomainRetirement",
+          "closeReservationFailureAndUnusedActorCannotRetainScope",
+          "throwingRetireKeepsOriginalChildOutcomeAndDoesNotDispatchAgain",
+          "-o",
+          "/out/results/source-close-full-budget-and-original-outcome/results.xml,xml",
+          "-o",
+          "/out/results/source-close-full-budget-and-original-outcome/results.txt,txt"
+        ]
+      }
+    ],
+    "process_cases": [
+      [
+        "PASS",
+        "bridge-protocol"
+      ],
+      [
+        "PASS",
+        "desktop-intent-primary-arguments"
+      ],
+      [
+        "PASS",
+        "desktop-intent-secondary-forwarding"
+      ],
+      [
+        "PASS",
+        "desktop-intent-secondary-forwarding-wallet-enabled"
+      ],
+      [
+        "PASS",
+        "desktop-intent-profile-isolation"
+      ],
+      [
+        "PASS",
+        "onboarding"
+      ],
+      [
+        "PASS",
+        "reset-onboarding-connection"
+      ]
+    ],
+    "behavioral_cases_passed": 7,
+    "actual_application_launches": 11,
+    "original_exit_stderr_checked_cases": 6,
+    "original_reset_case_two_children_uninspected": true,
+    "driver_stderr_bytes": 0,
+    "secondary_original_transfers": [
+      {
+        "producer_keys": [
+          "arguments:0b896dff-2f7b-4fd9-b6e3-6fd5e06e7e2d:0",
+          "arguments:0b896dff-2f7b-4fd9-b6e3-6fd5e06e7e2d:1"
+        ],
+        "receipts": [
+          {
+            "delivery": "1",
+            "disposition": 0,
+            "inspection": "0"
+          },
+          {
+            "delivery": "2",
+            "disposition": 0,
+            "inspection": "0"
+          }
+        ],
+        "status": "forwarded",
+        "version": 1
+      },
+      {
+        "producer_keys": [
+          "arguments:0f380284-89a5-4089-b897-920f0445b161:0",
+          "arguments:0f380284-89a5-4089-b897-920f0445b161:1"
+        ],
+        "receipts": [
+          {
+            "delivery": "1",
+            "disposition": 0,
+            "inspection": "0"
+          },
+          {
+            "delivery": "2",
+            "disposition": 0,
+            "inspection": "0"
+          }
+        ],
+        "status": "forwarded",
+        "version": 1
+      }
+    ],
+    "secondary_seconds": [
+      0.634,
+      0.69
+    ],
+    "secondary_assertions_verified_in_exact_source": [
+      "Individual exit0 and expected stderr",
+      "Original ordered keys/receipts1,2 preserved",
+      "Secondary automation bridge/settings/pid/debug log absent",
+      "Seeded default and regtest QSettings byte-identical despite reset flag",
+      "Primary Core settings/config byte-identical; original regtest RPC remains live",
+      "Original Source metadata, NoOutcome, no Apply/Review/Continue and empty wallets/mempool",
+      "Wallet-disabled primary retains two queued inputs without Source creation"
+    ],
+    "command_files": [
+      "bazzite-03/dispatch.py",
+      "bazzite-03/artifacts/green/COMMAND.json",
+      "bazzite-03/artifacts/green/results/report.json"
+    ],
+    "configuration": {
+      "actual_cache": {
+        "BUILD_CLI": "OFF",
+        "BUILD_DAEMON": "ON",
+        "ENABLE_IPC": "ON",
+        "ENABLE_TEST_AUTOMATION": "ON",
+        "ENABLE_WALLET": "ON",
+        "CMAKE_CXX_COMPILER": "/usr/bin/clang++-23",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3",
+        "APP_UNIT_TEST_CLASSES": "DesktopIntentTests;DesktopIntentTransportTests;PaymentImportTests",
+        "WITH_CCACHE": "ON",
+        "ENABLE_QML_LINT": "OFF"
+      },
+      "optional_CLI": "Preserved actual configuration; no CLI test selected. Python RPC supplies the selected GUI/Core process controls. No skipped body counts as a pass.",
+      "required_executable_targets": [
+        "bitcoin-core-app",
+        "bitcoin-core-profile-inspector",
+        "bitcoinqml_unit_tests",
+        "bitcoinqml_qmltests",
+        "bitcoind"
+      ],
+      "Core_source_or_instrumentation_change": false
+    },
+    "Core_command_proof": {
+      "exact_before_after_equal": true,
+      "count": 345,
+      "sha256": "ebe8be745b839ade6576ed08c9aecc11e14b3ae3f7af28208c288f97ea0a2eae"
+    },
+    "input_reuse": {
+      "previous_actual_state": "R40 desktop01 actual green input state",
+      "SHA_identical_mtimes_reused": 4370,
+      "changed_inputs_forced_dirty": [
+        "doc/console-log-models.md",
+        "plan/PROGRESS.md",
+        "plan/R38_COMPOSITION_REPAIRS.md",
+        "plan/R38_FIXTURE_REPAIR.md",
+        "plan/R38_FOCUSED_ACCEPTANCE.md",
+        "plan/R38_INTERFACE_NOTES.md",
+        "plan/R38_PRIMARY_SCOPE_MAP.json",
+        "plan/R40_EXISTING_PEER_PROBE.md",
+        "plan/R40_STARTUP_PREPARATION_ADAPTER.md",
+        "plan/evidence/R40_EXISTING_PEER_PROBE.json",
+        "plan/evidence/R40_PARENT_DELIVERY.json",
+        "qml/bitcoin.cpp",
+        "qml/components/SettingsView.qml",
+        "qml/desktopintenttransport.cpp",
+        "qml/desktopintenttransport.h",
+        "qml/models/debuglogmodel.cpp",
+        "qml/models/debuglogmodel.h",
+        "qml/models/nodemodel.cpp",
+        "qml/models/nodemodel.h",
+        "qml/models/rpccommandexecutor.cpp",
+        "qml/models/rpccommandexecutor.h",
+        "qml/models/rpcconsolemodel.cpp",
+        "qml/models/rpcconsolemodel.h",
+        "qml/models/settingseditormodel.cpp",
+        "qml/onboarding_settings.cpp",
+        "qml/onboarding_settings.h",
+        "qml/pages/node/CommandConsole.qml",
+        "qml/pages/settings/SettingsRpcConsoleView.qml",
+        "qml/pages/wallet/DesktopWallets.qml",
+        "test/CMakeLists.txt",
+        "test/functional/interface_qml_console.py",
+        "test/functional/interface_qml_startup.py",
+        "test/integration/node_tools/test_console.cpp",
+        "test/integration/node_tools/test_node.cpp",
+        "test/qml/qml_tests_main.cpp",
+        "test/qml/tst_settingsnavigation.qml",
+        "test/test_debuglogmodel.cpp",
+        "test/test_desktopintenttransport.cpp",
+        "test/test_nodemodel.cpp",
+        "test/test_rpccommandexecutor.cpp",
+        "test/test_rpcconsolemodel.cpp",
+        "test/test_settingseditormodel.cpp",
+        "test/test_startuproleprofile.cpp"
+      ],
+      "Core_changed": false
+    },
+    "Core_CPP_rebuilt": 0,
+    "cache": {
+      "cacheable_calls": 18,
+      "hits": 0,
+      "misses": 18,
+      "new_compile_failures": 0,
+      "new_cleanup_evictions": 0,
+      "compiler_check": "content",
+      "max_size": "32.0 GB (31250000 KiB)",
+      "size_after_kibibyte": 316860,
+      "interpretation": "Changed/new app/generated first-time misses; unchanged Core and other objects reused without recompilation. No cache enlargement/reset needed."
+    }
+  },
+  "Native19f58_carry": {
+    "tested_app": "f58c1edd6772ee9a61cfbc0f4af7573b0710b470",
+    "actual_passed": 19,
+    "pinned_static": 9,
+    "app_lint": "passed",
+    "normal_fatal_IPC_cases": 2,
+    "exits": [
+      0,
+      1
+    ],
+    "files_byte_identical_to_candidate": {
+      "qml/desktopintenttransport.h": "a4e6ccdb7d0ad902d8431ebed29b8cc24f044fdf6048627ec1e7474214dbcbaa",
+      "qml/desktopintenttransport.cpp": "feca228e3f538dcbc68c22af42a5784599dcd2732bf419e5aabeec177995f7a7",
+      "test/test_desktopintenttransport.cpp": "182cdca2dd5d6354c48fb3ae68f75c4d5d2832feea15d4826ae5ee779b574fe9"
+    },
+    "evidence": "PROBE_COMPONENT_ACCEPTANCE.json"
+  },
+  "Mac31cb3_carry": {
+    "tested_app": "cb3cb5945f635ade70054da965333da00ef27812",
+    "actual_passed": 31,
+    "counts": {
+      "Owner": 18,
+      "Native": 10,
+      "QML": 3
+    },
+    "unchanged_Owner_Source_QML_files": {
+      "qml/desktopintent.h": "f849f99b87fcfc2d310269ca10580fab4bd34fd7d46b13dc07134c69377fb0c5",
+      "qml/desktopintent.cpp": "a7904e5a2f8fa4566453c401cd7be9cea582397755c354eb8f0f01ad06196132",
+      "qml/desktopintentowner.h": "9a6f0d637eb4cea5af916c522c69ace7503ee039836da1f480e06f23932e94fd",
+      "qml/desktopintentowner.cpp": "8529f3bfcacd9b612ef7a4c5e3f0f6e8c630ef7d813a1d02677a7261393c5a11",
+      "qml/models/desktopintentmodel.h": "0caf8fda942ee76234b6c65eeff70e769f84b5b5ff648f21281245fd834fb7a1",
+      "qml/models/desktopintentmodel.cpp": "3f3dc38e82e96683594a4ce493590c2763afa4a87aec70dbe6e339939686159c",
+      "qml/components/DesktopRequestsBar.qml": "61a57e006fd512662bd59f703a1a91a04c956a78dd6a037c48af50ac1b2edc03",
+      "test/test_desktopintent.cpp": "3ad0291b849fdb621d4c64e4275aba00535a4640e96203e25ce6124a3d193f45",
+      "test/qml/tst_sendcreate.qml": "7c1571382622cee4eb5d62534a82bb7384d282ee1a4372bc5e2594fff4d79287",
+      "qml/models/bitcoinurimodel.cpp": "47ad06b45d747c4d037e152d19c04367076f1cde6918495097dda456de9a51be"
+    },
+    "old_ten_transport_test_bodies_exact_unchanged": true,
+    "configuration": {
+      "preserved_Core_toolchain": {
+        "ENABLE_IPC": "ON",
+        "ENABLE_WALLET": "ON",
+        "ENABLE_EXTERNAL_SIGNER": "ON",
+        "BUILD_DAEMON": "ON",
+        "BUILD_CLI": "OFF",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_COMPILER": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+        "CMAKE_CXX_COMPILER": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++",
+        "CMAKE_C_FLAGS": "",
+        "CMAKE_CXX_FLAGS": "",
+        "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3",
+        "CMAKE_OSX_ARCHITECTURES": "",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": ""
+      },
+      "APP_UNIT_TEST_CLASSES": "DesktopIntentTests;DesktopIntentTransportTests",
+      "ccache_maxsize": "24GiB",
+      "jobs": 3,
+      "native_transport": "Qt local-socket adapter independent of Core IPC flag; actual existing ENABLE_IPC is recorded and preserved. No full IPC GUI process or installed OS association claim."
+    },
+    "limitations": [
+      "Historical Darwin platform evidence; no final491 Mac execution claimed",
+      "New probe/shared begin changed and new nine probe rows are not certified on Mac by this carry",
+      "No installed OS association or full GUI process claim"
+    ]
+  },
+  "independent_parent02": {
+    "parent_app": "c5b9cdfb28304617e7d418ac089098c2a5897559",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "app_sha256": "05ea044a0d228df06fd963c87eb8a4fc647ecf9da767d9cdc6b9714a18495107",
+    "processes_executed": 1,
+    "wallet_enabled": true,
+    "uri": "bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.01000000&label=parent-uri&message=explicit-inspection-only",
+    "main_window_ready": true,
+    "intended_delivery_red": true,
+    "normal_quit_requested": true,
+    "forced_termination": false,
+    "forced_kill": false,
+    "limitation": "A direct argv URI only; no installed native association/platform claim",
+    "current_page": "desktopWalletsPage",
+    "mailbox_state_observation": {
+      "error": "get_enum_property('desktopRequestsBar', 'mailbox.state') failed: Enum property owner is unavailable"
+    },
+    "delivery_wait": {
+      "error": "wait_for_property('desktopRequestsBar', 'visible') timed out; last value: False",
+      "seconds": 3.012600880989339
+    },
+    "before": {
+      "objectName": "desktopRequestsBar",
+      "visible": false,
+      "mailbox": null
+    },
+    "after": {
+      "objectName": "desktopRequestsBar",
+      "visible": false,
+      "mailbox": null
+    },
+    "no_wallet_or_mempool_effects": true,
+    "app_exit": 0,
+    "exit_and_stderr_check": "passed",
+    "established_parent_delivery_failure": true
+  },
+  "reset04": {
+    "app": "491d8cdbbfe14d7ef3e20f67f0ecbdc82488868c",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "image": "sha256:c30ab6d0d2e86a1f39853a9e95d4c8ed5899de39a9fb70664050e6a34a1c9076",
+    "exit": 1,
+    "seconds": 7.1555886730056955,
+    "functional_script": {
+      "commit": "61b4af492ab09ab1873295bcf3ba043d4f6ec4b0",
+      "file": "checked_startup.py",
+      "sha256": "3833852726a84f3c76d556b857fe42dbdd2965c4735cd0ee17f50a800a8cd159",
+      "original_script_sha256": "e980fc4cc10cd29cf279bea4e6951bef1bbcc5f743ca7265fc4da8760d30ed9c"
+    },
+    "runtime_cases": [
+      [
+        "FAIL",
+        "reset-onboarding-connection"
+      ]
+    ],
+    "exact_nonempty_no_skips": false,
+    "source_and_ELFs_unchanged": true,
+    "build_executed": false,
+    "child_exits": {},
+    "child_stderr_checker": "Existing check_gui_exit on each actual status/stderr/socket; no allowances added",
+    "scope": "R40 script-only reset-onboarding-connection rerun on exact already-qualified491 application/sidecar hashes. Both existing reset helpers now retain original child stdout/stderr/status and call existing check_gui_exit after unchanged stop/cleanup semantics. Existing behavioral assertions and timeouts retained. No configure/build/source replacement or app/Core/Qt changes. Prior52 focused and other6 process cases retain Bazzite03 evidence; wholeR40 awaitsRoot Gameboy and this lifecycle result."
+  },
+  "reset05": {
+    "app": "491d8cdbbfe14d7ef3e20f67f0ecbdc82488868c",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "image": "sha256:c30ab6d0d2e86a1f39853a9e95d4c8ed5899de39a9fb70664050e6a34a1c9076",
+    "exit": 0,
+    "seconds": 7.084758626006078,
+    "functional_script": {
+      "commit": "461516a35388e0acf83b6c06a3ad5b06afcd73ff",
+      "file": "checked_startup.py",
+      "sha256": "f9c819e488025a2c5d4cce154d13fdf48bb35f7f60f8272390bba6e2e7a1a3bb",
+      "original_script_sha256": "e980fc4cc10cd29cf279bea4e6951bef1bbcc5f743ca7265fc4da8760d30ed9c"
+    },
+    "runtime_cases": [
+      [
+        "PASS",
+        "reset-onboarding-connection"
+      ]
+    ],
+    "exact_nonempty_no_skips": true,
+    "source_and_ELFs_unchanged": true,
+    "build_executed": false,
+    "child_exits": {
+      "First reset GUI exit": 0,
+      "Second reset GUI exit": 0
+    },
+    "child_stderr_checker": "Existing check_gui_exit on each actual status/stderr/socket; no allowances added",
+    "scope": "R40 script-only reset-onboarding lifecycle followup on unchanged qualified491 ELF/sidecars. Existing connected GUI request_quit plus bounded10s normal-exit wait runs before original stop(cleanup=False), then original child stdout/stderr/status retained and strict existing check_gui_exit. All behavioral assertions preserved; no timeout increase, harness/framework, stderr allowance, app/Core/Qt change or rebuild. Raw04 firstexit0/secondSIGTERM-15 preserved. If normal GUI quit fails, report productbug."
+  },
+  "reset_lifecycle_resolution": "Seven distinct behavioral cases retain Bazzite03 evidence. Six had checked child exits/stderr there; the existing reset case is rerun once in Bazzite05 with its two actual exits0 and strict existing stderr checks. Do not count the repeated reset or overlapping focused gates as new distinct scopes.",
+  "Gameboy_shared67": {
+    "candidate": "491d8cdbbfe14d7ef3e20f67f0ecbdc82488868c",
+    "counts": {
+      "native": 14,
+      "qml": 50,
+      "integration": 3
+    },
+    "actual_passed": 67,
+    "failed_or_skipped": 0,
+    "pinned_static_TUs": 11,
+    "full_QML_lint": "261 files in each qt65/qt62 variant, zero warnings/errors; expected compatibility notes retained",
+    "Core_commands": {
+      "Core_target_commands_identical": true,
+      "Core_target_count": 370,
+      "Core_target_command_sha256": "6aaa119cbc9c488af101a2adbfe6edaaed7e71e3a39ec67609e4bcf3937ff5e0",
+      "app_flag_changes": [],
+      "new_app_objects": [
+        "CMakeFiles/bitcoinqml.dir/qml/desktopintent.cpp.o",
+        "CMakeFiles/bitcoinqml.dir/qml/desktopintentargs.cpp.o",
+        "CMakeFiles/bitcoinqml.dir/qml/desktopintentowner.cpp.o",
+        "CMakeFiles/bitcoinqml.dir/qml/desktopintenttransport.cpp.o",
+        "CMakeFiles/bitcoinqml.dir/qml/models/desktopintentmodel.cpp.o",
+        "CMakeFiles/bitcoinqml.dir/qml/startuppreparation.cpp.o"
+      ],
+      "removed_app_objects": [],
+      "Core_source_compiled_in_app_targets": [],
+      "note": "Core-source utility TUs compiled by app targets follow their app target flags. Every actual Core target command is unchanged. The continuous wrapper remains unchanged and adds nothing when optional coverage is OFF. No cache option is ignored."
+    },
+    "evidence": "gameboy/shared-composition-01/artifacts/"
+  },
+  "delivery_lint": {
+    "exit": 0,
+    "seconds": 2.192672915989533,
+    "head": "461516a35388e0acf83b6c06a3ad5b06afcd73ff",
+    "branch": "",
+    "status": "",
+    "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "core_status": ""
+  },
+  "failure_history": [
+    {
+      "run": "parent-argv",
+      "result": "Invalid-command hypothesis unproven; URI opened bridge, SIGTERM exit0; not counted as a defect proof"
+    },
+    {
+      "run": "parent-argv-02",
+      "result": "Certified05ea/c5: wallet main window/RPC ready but mailbox null, typed owner unavailable and invisible request bar across3s; normal GUI quit0 and expected stderr establishes user-visible argv loss"
+    },
+    {
+      "run": "bazzite-01",
+      "result": "43 focused pass,3/5 process pass; both secondary30s watchdog failures; child pipes initially discarded"
+    },
+    {
+      "run": "bazzite-02",
+      "result": "Same cb3/ELFs, script-only diagnostics: same30s failures, bridge exists/no transfer/no Core effects, actual cleanup-15; watchdog unchanged"
+    },
+    {
+      "repair": "Native existing-peer probe plus independent read-only profile resolver before onboarding/settings/Core effects",
+      "result": "Both final Bazzite03 secondary flows finish normally below1s with original receipts and no local effects"
+    },
+    {
+      "run": "bazzite-04",
+      "result": "Strict child checking exposes first reset exit0 and second pre-init SIGTERM exit-15; correctly fails. Passing behavior did not certify lifecycle."
+    },
+    {
+      "repair": "461516a35388e0acf83b6c06a3ad5b06afcd73ff",
+      "result": "Existing connected driver requests normal GUI quit before bounded exit wait, original stop/drain and strict checker; no stderr allowances or weakened behavior assertions",
+      "rerun": "bazzite-05"
+    }
+  ],
+  "deferred": [
+    "Installed OS association/packaging",
+    "Exhaustive platforms/configurations/coverage/sanitizers/native Windows at R42"
+  ],
+  "artifact_sha256": {
+    "bazzite-03/SOURCE.json": "40cc04bebfc8ba6f2890978362c38497892853613094970d4ab7754de0d38174",
+    "bazzite-03/ROOT_DISPATCH.json": "c8917c124bfa06419b4034c5952708beb713c306d6c65265998405107349fb61",
+    "bazzite-03/artifacts/green/RESULT.json": "35be67829a192cbbb5e7aac817041300fdc06fa85c064064077cb32a26d2fd5f",
+    "bazzite-03/artifacts/green/results/report.json": "bfc86e964c01c0d385e701587d4e247be6c5c4384285014059e2e5026af82c26",
+    "bazzite-03/artifacts/green/PROCESS_SCOPE.json": "5f26ff10776a304a412e100d698e5d636827622d282098bb8291b9c3f347b34b",
+    "bazzite-03/artifacts/green/BINARY.sha256": "3e174931e0426091c67ced471ac5920c8733a6fc7921452326963e22a820a2fd",
+    "bazzite-03/artifacts/green/FLAGS_BEFORE.json": "bd32aa92e446b14c0d20c9021b6160f1f1664cf06564dc4451fff077bd87c8b3",
+    "bazzite-03/artifacts/green/FLAGS_AFTER.json": "bd32aa92e446b14c0d20c9021b6160f1f1664cf06564dc4451fff077bd87c8b3",
+    "bazzite-03/artifacts/green/startup.stdout": "9dffba97870fd7916bc8e7226d477cc1170f6bdc313c1a91c78341f1d739b1f3",
+    "bazzite-03/artifacts/green/startup.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bazzite-03/artifacts/green/cache-summary": "644beeb52866a0f5056da13f9cce10390aa350edbf03d3ec2fead6c8e14535b3",
+    "macos-01/artifacts/green/focused/report.json": "422aa2306eb70b382a85b7e7166381879c1aff902608bb83be55775f1f54743c",
+    "PROBE_COMPONENT_ACCEPTANCE.json": "d4d7d531c7ebfff91136278ce6c93684b0d08c2b42da7f5ce6b64c41e395dca0",
+    "parent-argv-02/results/RESULT.json": "8ebec1a371f77785cab05e1814e222464c662a0b8fe1e603f835944569110c11",
+    "bazzite-04/artifacts/RESULT.json": "235f2ab3b0e2e27bcf206bcaa67afc8afa60f3096533a06c7ac9b26f41ae29f1",
+    "bazzite-04/artifacts/startup.stdout": "2318864bb4041a190b0c85e8265d62f4a16d966fab5a39cfb197b632d6affddd",
+    "bazzite-04/artifacts/startup.stderr": "efb21b9dfeccbca25dd0cd7bf63d34a27ecb507b177c6ed9a587677ce3e4436b",
+    "bazzite-05/artifacts/RESULT.json": "d75e86816387a827ae3b535358e1719d7c421ba6a7d3675860decd599b8aead7",
+    "bazzite-05/artifacts/startup.stdout": "e169af3c75f02bfad28c1f0bb31014caf110ad6c8bc31856a1bf085f68e5ffb1",
+    "bazzite-05/artifacts/startup.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "reset-lifecycle-lint-02/RESULT.json": "1d718d577bdc04157f734def98c2c1d91b263a97fd4731e00bdf3fba26103ed7",
+    "gameboy/shared-composition-01/FINAL_INPUT_BINDING.json": "14258f0ba93e7617a1c384f570520b4ca45198cd75d18a4569f46aa2c9fb5812",
+    "gameboy/shared-composition-01/artifacts/native/report.json": "d924ec359c5dd7c1b7ad74869fc8b322de5387abef0ab3d192bde1fcf553f841",
+    "gameboy/shared-composition-01/artifacts/qml/report.json": "5199088aa9634f0fd21ade72c7a3842f294d12ed6f8b62ce107193eac205b2bd",
+    "gameboy/shared-composition-01/artifacts/integration/report.json": "e26b6476141264871c038d7fcf0c06c5ea8e6da312ba5149bd37ff32844a6194",
+    "gameboy/shared-composition-01/artifacts/FOCUSED_EXITS.json": "994ef21f9ef2989c52626d28394310dbeb008710ad330589090f97e50ac38a31",
+    "gameboy/shared-composition-01/artifacts/tidy/results.json": "313361f39b4e0588d31b472f95d906700c76033be6584de47ed375700c0bf8ac",
+    "gameboy/shared-composition-01/artifacts/ORDINARY_FLAG_PROOF.json": "926d2306ef9c341cb1081d1088026b3ed17d3afd89206bca402e363fb9d9c37b",
+    "gameboy/shared-composition-01/artifacts/qml-lint.stdout": "b3d68cc6756d4184e50926a2bb2f973b85ae2465324877aec32a13e7b9e6baa5"
+  },
+  "Root_acceptance": "R40 focused gate satisfied; requested R11-R40 complete; R41 not started; R42 pending",
+  "Root_integration_commit": "67a823ba1c8de31202c82103a6c7a54c858ecdf2",
+  "behavioral_source_equivalence": "Application/build/QML code identical to tested491d; only final functional lifecycle script461 differs."
+}

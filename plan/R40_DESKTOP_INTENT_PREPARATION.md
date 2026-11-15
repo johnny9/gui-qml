@@ -1,5 +1,9 @@
 # R40 desktop intent owner — component checkpoint
 
+This is a retained component checkpoint. The later
+[R40 focused acceptance](R40_FOCUSED_ACCEPTANCE.md) supersedes its remaining-work
+status and records the completed caller/process gate and retained limitations.
+
 Component implementation `69406815c90174d5cda351e2182e33a78f9d5270`, unchanged Core
 `44901d8f64cb617714707bd025ecd83f108353c2`. This is private component
 development, not R40 acceptance or completed production ingress wiring.

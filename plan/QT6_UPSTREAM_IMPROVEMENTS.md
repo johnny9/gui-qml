@@ -1,5 +1,9 @@
 # Upstream improvement notes for the Qt 6 refactor
 
+Current implementation acceptance is recorded in [progress](PROGRESS.md).
+The dated checkpoint statuses below retain their original evidence and do not
+override later user decisions or focused acceptance.
+
 Standing user policy `native-qt-defer-20261113`: [document and defer defects in native Qt components](QT6_TOTAL_REFACTOR_PLAN.md#native-qt-component-defects-document-and-defer); keep the component, do not implement our own replacement or change Qt. Record attribution, versions, reproducer, impact, affected unresolved checks and revisit condition. Continue independent application work.
 
 R10 final Qt picker decision (2026-11-13): user explicitly selected “Document and defer; keep the affected TSan result explicitly unresolved.” This supersedes the earlier app-owned chooser implementation direction and pending Qt-patch decision. Keep Qt/Core unchanged and retain the existing picker. Do not implement or integrate a replacement chooser for this dependency defect. Preserve the Qt-only race reproducer and original failing TSan journey, with the affected result explicitly unresolved; this is accepted deferral of a dependency risk, not a sanitizer pass or blanket R10 acceptance. Continue independent application, integration, coverage and platform checks. No evidence currently establishes application wallet-logic failure or application data corruption from this race; absence of that evidence does not establish harmlessness.
@@ -500,3 +504,15 @@ The [focused R26 receipt](evidence/R26_FOCUSED.json) qualifies the Source/target
 ## R27 native import consumers and broadcast record observation
 
 R27 adds no Wallet-internals exception. The existing public review adapter and optional typed immutable snapshot improvement remain in [R27 notes](R27_UPSTREAM_NOTES.md), with guarantees, limits, evidence and retirement. Node broadcast admission carries unknown wallet record until a separate original-transaction observation or future public receipt establishes it. This reuses the R20/R30 distinction and does not block correct completion presentation. Core/Qt stay unchanged; Qt-only picker internals stay documented/deferred.
+
+## R40 prepared startup configuration
+
+The app's read-only profile resolver and preparation adapter use public Core
+configuration APIs without changing Core. A future immutable prepared-config
+interface could expose one effective directory/network/configuration snapshot
+and consume it during initialization without rereading external files. Current
+inspection and `InitConfig` are not an atomic filesystem transaction; the app's
+post-config profile fence cannot undo writes performed inside `InitConfig`.
+This limitation does not authorize Core changes or a stronger atomicity claim.
+The [R40 adapter note](R40_STARTUP_PREPARATION_ADAPTER.md) records ownership,
+guarantees, limits, regression evidence and the upstream retirement capability.

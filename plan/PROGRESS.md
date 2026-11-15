@@ -4,11 +4,12 @@ Current progress (2026-11-15): R21/R22/R24 focused acceptance is restored after
 the shared contributed-signature repair and composed 229-body gate. The original
 failures and exact source qualifications remain in
 [the follow-up record](SIGNATURE_CONTRIBUTION_FOLLOWUP_20261115.md).
-R37/R38 focused acceptance is satisfied and integrated; R40 startup/process
-acceptance remains active. The R40 review found ordinary-queue
-exhaustion gaps in presentation release and shutdown. The desktop owner repairs
-pass 38 focused bodies; the related Source-owner repair and application wiring
-are being qualified independently. These component results do not accept R40.
+The requested R11–R40 batch now satisfies its focused acceptance gates. R40
+repairs ordinary-queue exhaustion in presentation release/shutdown and forwards
+to a confirmed existing instance before reset onboarding. Final52-body and
+67-body gates pass; the reset scenario's two GUI children also pass normal exit
+and stderr checks. See [R40 acceptance](R40_FOCUSED_ACCEPTANCE.md).
+R41 has not started; R42 final qualification remains pending.
 
 The [approved cadence](QT6_VALIDATION_CADENCE_20261114.md) separates implementation
 progress from final qualification. The copied CSV registers in `tracking/`
@@ -49,7 +50,7 @@ progress without changing shared finding or schedule registers.
 | R27 | Focused accepted/integrated at01248cc3:423 distinct component bodies with explicit source carries; composed98 actual bodies,8pinnedstatic entries and app/QML lint pass. Chooser/clipboard/drop retain original Sources and targets; R40 desktop ingress remains separate. R42 pending |
 | R37 | Focused accepted/integrated:51 distinct worker bodies with Linux/Mac qualification, pinned static/app/QML checks and original parent evidence; the shared disabled-node Settings Core route passes in R38 composition. R42 remains open |
 | R38 | Focused accepted/integrated:102 current Native/QML/public-Core bodies and2actualGUI scenarios pass at56812;188 distinct composition identities use86 explicit earlier-source carries. Worker296 overlaps and is not added. All17 primary scopes mapped; original pressure/header failures and pinned static/app/QML scope retained. See R38_FOCUSED_ACCEPTANCE.md. R42 remains open |
-| R40 | Native/desktop/Source and startup components qualified separately;97 composed owner/QML and97 startup bodies pass. Actual secondary process tests exposed forced-reset onboarding before role discovery; existing-peer-only probe and caller repair are being completed. Mac31 and ordinary primary/profile controls pass. R40 acceptance remains open |
+| R40 | Focused accepted/integrated:52 final owner/transport/QML bodies and7 behavioral process cases pass; shared67 bodies/pinned11/QMLlint pass. Reset lifecycle rerun checks both actual GUI exits0/stderr. Native19 and caller70 component gates, earlier preparation/Source carries and Mac31 remain explicitly source-qualified. D245 parent visible-delivery failure established. Final qualification R42 |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
