@@ -1,0 +1,687 @@
+{
+  "status": "Focused gate satisfied; documentation-only delivery commit preserves implementation source05 bytes.",
+  "implementation_head": "984dc5f20a62246521824fb2912d89b2eaf5aa45",
+  "base": "2df977a789f01db5b4f3079abaf2a96f34168e47",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "counts": {
+    "native": 135,
+    "qml": 95,
+    "integration": 25
+  },
+  "distinct_bodies": 255,
+  "selected_commands": [
+    {
+      "report": "gameboy/run-02/artifacts/native/report.json",
+      "sha256": "65e30b3aad34ddf1b588aebb2e33b74e26f7add305ab5715485386a5d49fff84",
+      "selections": [
+        {
+          "id": "persistent-editor-contract",
+          "bodies": 19,
+          "command": [
+            "/review/build/bin/bitcoinqml_unit_tests",
+            "-platform",
+            "minimal",
+            "--test-class=PersistentEditorTests",
+            "-o",
+            "/r29/artifacts/native/persistent-editor-contract/results.xml,xml",
+            "-o",
+            "/r29/artifacts/native/persistent-editor-contract/results.txt,txt"
+          ],
+          "environment": {
+            "BITCOIN_QML_TEST_CLASSES": "",
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 142,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "message-typed-original-authorization",
+          "bodies": 31,
+          "command": [
+            "/review/build/bin/bitcoinqml_unit_tests",
+            "-platform",
+            "minimal",
+            "--test-class=SignVerifyMessageModelTests",
+            "-o",
+            "/r29/artifacts/native/message-typed-original-authorization/results.xml,xml",
+            "-o",
+            "/r29/artifacts/native/message-typed-original-authorization/results.txt,txt"
+          ],
+          "environment": {
+            "BITCOIN_QML_TEST_CLASSES": "",
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 142,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "address-inventory-locale-editor-lifetime",
+          "bodies": 40,
+          "command": [
+            "/review/build/bin/bitcoinqml_unit_tests",
+            "-platform",
+            "minimal",
+            "--test-class=AddressListModelTests",
+            "-o",
+            "/r29/artifacts/native/address-inventory-locale-editor-lifetime/results.xml,xml",
+            "-o",
+            "/r29/artifacts/native/address-inventory-locale-editor-lifetime/results.txt,txt"
+          ],
+          "environment": {
+            "BITCOIN_QML_TEST_CLASSES": "",
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 1119,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "private-metadata-store-boundaries",
+          "bodies": 18,
+          "command": [
+            "/review/build/bin/bitcoinqml_unit_tests",
+            "-platform",
+            "minimal",
+            "--test-class=WalletRequestsTests",
+            "resultNotificationFailureDoesNotHoldTheOriginalActionOrErasePersistence",
+            "editorPreconditionChecksTheActualPublicLabelBeforeAnyWrite",
+            "untouchedCreatePrefillUsesCurrentMetadataWithoutWritingItBack",
+            "historyReadDecodeAndPublicationHaveIndependentTurns",
+            "createAdmissionDoesNotClaimPersistence",
+            "paymentBeforeEditFreezesPublicFieldsButAllowsPrivateNote",
+            "paymentDuringAcceptedEditIsMergedBeforeAnyLaterWriter",
+            "unchangedRowsKeepTheirStorageAcrossAnUnrelatedEdit",
+            "committedOutcomeAndHistoryRetainTheSameImmutableRow",
+            "realWorkersConsumeStorageOutcomeAndRetireWithoutGuiDelivery",
+            "labelPropagationYieldsAndReportsPartialPersistence",
+            "uncertainMutationFencesFurtherWritesUntilExplicitReload",
+            "closeBetweenLabelBatchesRetainsOriginalActionThroughAllEffects",
+            "ingressRejectsOversizeAndBoundsQueuedCommands",
+            "receiptsCannotReplayAConfirmedRequestWhileItsProjectionNeedsReload",
+            "-o",
+            "/r29/artifacts/native/private-metadata-store-boundaries/results.xml,xml",
+            "-o",
+            "/r29/artifacts/native/private-metadata-store-boundaries/results.txt,txt"
+          ],
+          "environment": {
+            "BITCOIN_QML_TEST_CLASSES": "",
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 142,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        }
+      ]
+    },
+    {
+      "report": "gameboy/run-05/artifacts-worker-collection/native/report.json",
+      "sha256": "2bbe13b60f768870f4da53789c045bb113da921d05051fd23dcb14083fe42295",
+      "selections": [
+        {
+          "id": "text-editor-retirement-and-owned-effects",
+          "bodies": 25,
+          "command": [
+            "/review/build/bin/bitcoinqml_unit_tests",
+            "-platform",
+            "minimal",
+            "--test-class=TextEditSessionModelTests",
+            "-o",
+            "/r29/artifacts/native/text-editor-retirement-and-owned-effects/results.xml,xml",
+            "-o",
+            "/r29/artifacts/native/text-editor-retirement-and-owned-effects/results.txt,txt"
+          ],
+          "environment": {
+            "BITCOIN_QML_TEST_CLASSES": "",
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 142,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "shared-portable-atomic-ownership",
+          "bodies": 2,
+          "command": [
+            "/review/build/bin/bitcoinqml_unit_tests",
+            "-platform",
+            "minimal",
+            "--test-class=AtomicSharedPtrTests",
+            "-o",
+            "/r29/artifacts/native/shared-portable-atomic-ownership/results.xml,xml",
+            "-o",
+            "/r29/artifacts/native/shared-portable-atomic-ownership/results.txt,txt"
+          ],
+          "environment": {
+            "BITCOIN_QML_TEST_CLASSES": "",
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 142,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        }
+      ]
+    },
+    {
+      "report": "gameboy/run-02/artifacts/qml/report.json",
+      "sha256": "9a98c21280f0bd7eab1644605976d82b63821385c8f3bd821446ee17a2628410",
+      "selections": [
+        {
+          "id": "message-native-text-authorization-consumers",
+          "bodies": 30,
+          "command": [
+            "/review/build/bin/bitcoinqml_qmltests",
+            "-platform",
+            "minimal",
+            "-input",
+            ":/test/qml/tst_signverifymessage.qml",
+            "-o",
+            "/r29/artifacts/qml/message-native-text-authorization-consumers/results.xml,xml",
+            "-o",
+            "/r29/artifacts/qml/message-native-text-authorization-consumers/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_MESSAGE_PATTERN": "[%{type}] %{category}: %{message}",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        }
+      ]
+    },
+    {
+      "report": "gameboy/run-03/artifacts/qml/report.json",
+      "sha256": "6fdb2397f200e5d09c98ccacff8bad886cc5374965c3b2821828267f8eab1fd6",
+      "selections": [
+        {
+          "id": "shared-native-field-controls",
+          "bodies": 34,
+          "command": [
+            "/review/build/bin/bitcoinqml_qmltests",
+            "-platform",
+            "minimal",
+            "-input",
+            ":/test/qml/tst_formcontrols.qml",
+            "-o",
+            "/r29/artifacts/qml/shared-native-field-controls/results.xml,xml",
+            "-o",
+            "/r29/artifacts/qml/shared-native-field-controls/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_MESSAGE_PATTERN": "[%{type}] %{category}: %{message}",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        }
+      ]
+    },
+    {
+      "report": "gameboy/run-05/artifacts-worker-collection/qml/report.json",
+      "sha256": "d7ad72a3ea78bca2e79a5be749f6499d06190fe0b8abe60c933ab93b3065c8be",
+      "selections": [
+        {
+          "id": "address-typed-editor-consumers",
+          "bodies": 31,
+          "command": [
+            "/review/build/bin/bitcoinqml_qmltests",
+            "-platform",
+            "minimal",
+            "-input",
+            ":/test/qml/tst_address_components.qml",
+            "-o",
+            "/r29/artifacts/qml/address-typed-editor-consumers/results.xml,xml",
+            "-o",
+            "/r29/artifacts/qml/address-typed-editor-consumers/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_MESSAGE_PATTERN": "[%{type}] %{category}: %{message}",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        }
+      ]
+    },
+    {
+      "report": "gameboy/run-02/artifacts/integration/report.json",
+      "sha256": "bc7cab5d3d2d1125ac36743dcc6e2253a715ad45f456e477848c6b19d4be42bc",
+      "selections": [
+        {
+          "id": "untouchedRequestPrefillUsesTheLatestPrivateMetadata",
+          "bodies": 4,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=untouchedRequestPrefillUsesTheLatestPrivateMetadata",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/untouchedRequestPrefillUsesTheLatestPrivateMetadata/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/untouchedRequestPrefillUsesTheLatestPrivateMetadata/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "nativeMessageEntryPreservesExactCryptoBytes",
+          "bodies": 4,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=nativeMessageEntryPreservesExactCryptoBytes",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/nativeMessageEntryPreservesExactCryptoBytes/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/nativeMessageEntryPreservesExactCryptoBytes/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "publishedNbspSignatureVerifiesThroughTheNativeEditor",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=publishedNbspSignatureVerifiesThroughTheNativeEditor",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/publishedNbspSignatureVerifiesThroughTheNativeEditor/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/publishedNbspSignatureVerifiesThroughTheNativeEditor/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature",
+          "bodies": 2,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "addressDraftSurvivesBackWithoutImplicitPersistence",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=addressDraftSurvivesBackWithoutImplicitPersistence",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/addressDraftSurvivesBackWithoutImplicitPersistence/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/addressDraftSurvivesBackWithoutImplicitPersistence/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "labelCommitPreservesTheNextRowsFocusedEditor",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=labelCommitPreservesTheNextRowsFocusedEditor",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/labelCommitPreservesTheNextRowsFocusedEditor/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/labelCommitPreservesTheNextRowsFocusedEditor/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "publicWatchOnlyWalletRefusesSigningWithoutPasswordPrompt",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=publicWatchOnlyWalletRefusesSigningWithoutPasswordPrompt",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/publicWatchOnlyWalletRefusesSigningWithoutPasswordPrompt/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/publicWatchOnlyWalletRefusesSigningWithoutPasswordPrompt/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "privateNotesSyncWithoutChangingPublicPaymentMetadata",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=privateNotesSyncWithoutChangingPublicPaymentMetadata",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/privateNotesSyncWithoutChangingPublicPaymentMetadata/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/privateNotesSyncWithoutChangingPublicPaymentMetadata/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "orderedRequestOwnerPersistsPublicInterfaceEffectsAndNativeReceipts",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=orderedRequestOwnerPersistsPublicInterfaceEffectsAndNativeReceipts",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/orderedRequestOwnerPersistsPublicInterfaceEffectsAndNativeReceipts/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/orderedRequestOwnerPersistsPublicInterfaceEffectsAndNativeReceipts/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "incrementalLabelPropagationPreservesUnrelatedCoreRecords",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=incrementalLabelPropagationPreservesUnrelatedCoreRecords",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/incrementalLabelPropagationPreservesUnrelatedCoreRecords/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/incrementalLabelPropagationPreservesUnrelatedCoreRecords/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "signingUnlocksOnlyForTheOperation",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=signingUnlocksOnlyForTheOperation",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/signingUnlocksOnlyForTheOperation/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/signingUnlocksOnlyForTheOperation/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "receivingUnlockCanBeCancelledRetriedAndRelocks",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=receivingUnlockCanBeCancelledRetriedAndRelocks",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/receivingUnlockCanBeCancelledRetriedAndRelocks/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/receivingUnlockCanBeCancelledRetriedAndRelocks/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        }
+      ]
+    },
+    {
+      "report": "gameboy/run-03/artifacts/integration/report.json",
+      "sha256": "c483629eca92fd684b0c462b8a1eb715a970add4614956cc5613c4fe40586fba",
+      "selections": [
+        {
+          "id": "unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "addressDetailsCloseRequiresExplicitDraftConsent",
+          "bodies": 3,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=addressDetailsCloseRequiresExplicitDraftConsent",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/addressDetailsCloseRequiresExplicitDraftConsent/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/addressDetailsCloseRequiresExplicitDraftConsent/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        },
+        {
+          "id": "addressDetailsCreateAndUpdateTheSamePaymentRequest",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=addressDetailsCreateAndUpdateTheSamePaymentRequest",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/addressDetailsCreateAndUpdateTheSamePaymentRequest/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/addressDetailsCreateAndUpdateTheSamePaymentRequest/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        }
+      ]
+    },
+    {
+      "report": "gameboy/run-05/artifacts-worker-collection/integration/report.json",
+      "sha256": "ba0be1c8521642398c99cc7e18f2c7f1970f3abcd69ba3258bd10f71fbb8afb5",
+      "selections": [
+        {
+          "id": "retiredLabelEditorCannotWriteToTheReopenedWallet",
+          "bodies": 1,
+          "command": [
+            "/review/build/bin/bitcoinqml_integration_tests",
+            "--module=receive",
+            "--wallet=enabled",
+            "--test=retiredLabelEditorCannotWriteToTheReopenedWallet",
+            "--profile-dir=/tmp/r29-integration",
+            "-o",
+            "/r29/artifacts/integration/retiredLabelEditorCannotWriteToTheReopenedWallet/results.xml,xml",
+            "-o",
+            "/r29/artifacts/integration/retiredLabelEditorCannotWriteToTheReopenedWallet/results.txt,txt"
+          ],
+          "environment": {
+            "QML_DISABLE_DISK_CACHE": "1",
+            "QT_QPA_PLATFORM": "minimal",
+            "QT_QUICK_BACKEND": "software"
+          },
+          "stderr_bytes": 0,
+          "stderr_disposition": "Existing exact debug-level drain messages; address fixture additionally has exactly five paired named QThread joins. QML/integration stderr empty. No warnings/sanitizer output ignored.",
+          "actual_exit": 0
+        }
+      ]
+    }
+  ],
+  "static": {
+    "app_lint": "lint-05-retry-01/RESULT.json: exit0; head/branch/Core clean",
+    "tidy": "01:16handwritten+7MOC;02:9affected+7MOC;05:2affected+7MOC allpass, exact source carries",
+    "qml_lint": "03 full unchanged target all compatibility variants/probes passed0; all productionQML remains byte-identical05",
+    "strict_compile_preflight": "10 changed2TUs+testMOC passed0/zeroWarnings"
+  },
+  "full_raw_evidence": "Workspace .validation/qt6-r11-r40-20261114/R29/; complete body ledger FINAL_FOCUSED_ROWS.json and actual XML/commands/logs under gameboy/run-{02,03,05} and red-parent-02.",
+  "optional_application_coverage": "OFF only for ordinary focus;370 Core target compile commands SHA6aaa119cbc9c488af101a2adbfe6edaaed7e71e3a39ec67609e4bcf3937ff5e0 unchanged; prior qualified instrumented binaries/config retained",
+  "deferred_to_R42": [
+    "sanitizers",
+    "exhaustive coverage",
+    "full platform/configuration/compatibility matrices"
+  ],
+  "original_parent_comparison": {
+    "test_only_head": "7545bc2748e1cd367ae09d35ebf7068950e20dcf",
+    "production_base": "2df977a789f01db5b4f3079abaf2a96f34168e47",
+    "native": {
+      "executed": 8,
+      "failed": 8,
+      "passed": 0
+    },
+    "Core": {
+      "executed": 17,
+      "failed": 12,
+      "passed": 5
+    },
+    "matching_head_rows": 25,
+    "actual_driver_exit": 1,
+    "seconds": 176.6906721360283,
+    "classification": "R29-original-comparison.json"
+  },
+  "diagnostics": "Unit outer stderr: exact existing debug drain lines, Address fixture five paired named worker joins. QML outer stderr empty. Integration outer stderr empty; child XML has exactly six known minimal-platform font warnings on each25 row, matching baseline positive controls and existing qml_process_checks.py contract. All raw retained; no warning/sanitizer suppression/policy change."
+}

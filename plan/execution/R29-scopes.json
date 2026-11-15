@@ -1,0 +1,30 @@
+{
+  "base": "2df977a789f01db5b4f3079abaf2a96f34168e47",
+  "status": "Focused R29 gate satisfied:255 distinct current-source bodies pass; original-parent comparison25 bodies has20 actual failures and5 controls, all matching head rows pass. Qualified dispositions/limits retained; full-series validation remains R42.",
+  "scope_count": 23,
+  "scopes": {
+    "8": "Carried incremental persistent-tree identity/row publication and new physical next-row focus oracle; no reset-based workaround.",
+    "22": "Native exact text adapter; physical NBSP/vector + ordinary/Unicode/literal-markup controls and independent RPC crypto checks.",
+    "40": "Actual dirty/base revision; no-op return-to-base followed by external RPC rename must display/persist external value.",
+    "43": "Sign authorization cancel clears only obsolete attempt error while actual native receipt remains.",
+    "57": "Literal en_US/de_DE expected DisplayAmount values across4units; no change to canonical balance role.",
+    "77": "Untouched request prefill re-read; rename/clear/explicit-edit/return-to-base Core-backed cases.",
+    "78": "Carried incremental row identity and fresh actual focus/pointer/no-reset oracle; no new algorithmic claim.",
+    "99": "Carried incremental/bounded address publication, plus32-editor cap/identity/admission/transport-length validation. Core bulk native allocation boundary remains explicit.",
+    "187": "Failed-save exact draft/error survives; corrected retry actual receipt; per-editor result identity.",
+    "188": "Unsupported independent trigger; consequences measured under40/77, no standalone fix claim.",
+    "189": "Typed details editor shared with row; explicit Save/Discard/KeepEditing and retained draft through teardown.",
+    "190": "Dirty/failed note cannot Create stale public request; save/discard required, no optimistic committed label projection.",
+    "191": "Back retains original model-owned draft without an implicit write; reopen recovers it; explicit discard restores current committed note.",
+    "192": "Physical A-save/B-focus public-Core regression retains actual B delegate/focus and zero model resets.",
+    "193": "Independent editor error/result persists while another address successfully saves.",
+    "194": "Wrong credential Cancel clears obsolete error/needsUnlock only; original receipt remains.",
+    "195": "Earlier valid signature survives same-input cancelled reauthorization; real encrypted Core wallet stays locked.",
+    "196": "Prompt retirement clears obsolete unlock latch; fresh authorization has fresh captured identity.",
+    "197": "Legal watch-only public capability refusal tested; encrypted watch-only premise not reproduced/forged.",
+    "198": "Typed original prompt capability and null/model/input/view invalidation controls replace unguarded current-model dereference.",
+    "199": "Already asynchronous R10 Core work; held actual/manual key effect and disabled intents remain tested, no newly solved synchronous-work claim.",
+    "283": "RPC unload with detached retained editor/dialog projection; no GUI close needed; same-name reopen has new opening, late original edits failClosed.",
+    "289": "Existing view/model/input-switch guards retained with typed prompt identity; stale credential cannot affect successor."
+  }
+}
