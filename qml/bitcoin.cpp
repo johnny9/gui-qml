@@ -33,11 +33,14 @@
 #include <qml/startupdialog.h>
 #include <qml/startupeffects.h>
 #include <qml/startuppolicy.h>
+#include <qml/startuppreparation.h>
 #include <qml/qtlogsink.h>
 #include <qml/bitcoinamount.h>
 #include <qml/buildinfo.h>
 #include <qml/clipboard.h>
 #include <qml/datadir.h>
+#include <qml/desktopintentargs.h>
+#include <qml/desktopintenttransport.h>
 #include <qml/guiargs.h>
 #include <qml/guipresentation.h>
 #include <qml/legacy_settings_migration.h>
@@ -58,6 +61,7 @@
 #include <qml/models/blockclockhistory.h>
 #include <qml/models/chainmodel.h>
 #include <qml/models/debuglogmodel.h>
+#include <qml/models/desktopintentmodel.h>
 #include <qml/models/flowdetailsmodel.h>
 #include <qml/models/networktraffictower.h>
 #include <qml/models/networkstatusmodel.h>
@@ -109,12 +113,14 @@
 #include <qml/walletqmlcontroller.h>
 #endif
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <atomic>
 #include <exception>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include <vector>
 
@@ -122,6 +128,7 @@
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QDir>
 #include <QEvent>
 #include <QEventLoop>
 #include <QFontDatabase>
@@ -130,6 +137,9 @@
 #include <QPixmap>
 #include <QGuiApplication>
 #include <QJSEngine>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -144,6 +154,7 @@
 #include <QTranslator>
 #include <QThread>
 #include <QUrl>
+#include <QUuid>
 #include <QVariant>
 
 QT_BEGIN_NAMESPACE
@@ -602,8 +613,45 @@ struct NativeApplicationInterfaces {
     std::unique_ptr<interfaces::Node> node;
     std::unique_ptr<interfaces::Chain> chain;
     bool can_listen_ipc{false};
-    void retire() { chain.reset(); node.reset(); init.reset(); }
+    std::vector<std::string> arguments;
+    std::vector<char*> argument_pointers;
+    void retire() { chain.reset(); node.reset(); init.reset(); argument_pointers.clear(); arguments.clear(); }
 };
+struct StartupArguments {
+    desktopintent::Arguments parsed;
+    std::vector<std::string> options;
+};
+// Plain bounded transport facts can cross to GUI. Saved-profile recovery and
+// the preparation owner's full Native Result never enter this DTO.
+struct StartupPreparationSummary {
+    startup::preparation::Disposition disposition{startup::preparation::Disposition::Failed};
+    bool closing{false},cancelled{false},request_dropped{false},error_reported{false};
+    QString error;
+    std::optional<desktopintent::transport::StartResult> transport;
+};
+#ifdef ENABLE_TEST_AUTOMATION
+bool PrintStartupTransfer(const desktopintent::transport::StartResult& result)
+{
+    using Status=desktopintent::transport::StartStatus;
+    QString status;
+    switch(result.status){
+    case Status::Primary:status=QStringLiteral("primary");break;
+    case Status::Forwarded:status=QStringLiteral("forwarded");break;
+    case Status::Rejected:status=QStringLiteral("rejected");break;
+    case Status::Unknown:status=QStringLiteral("unknown");break;
+    }
+    QJsonArray keys,receipts;
+    for(const auto& key:result.producer_keys)keys.append(key);
+    for(const auto& receipt:result.receipts)receipts.append(QJsonObject{
+        {QStringLiteral("delivery"),QString::number(receipt.delivery)},
+        {QStringLiteral("inspection"),QString::number(receipt.inspection)},
+        {QStringLiteral("disposition"),static_cast<int>(receipt.disposition)}});
+    const QJsonObject object{{QStringLiteral("version"),1},{QStringLiteral("status"),status},
+        {QStringLiteral("producer_keys"),keys},{QStringLiteral("receipts"),receipts}};
+    const QByteArray line=QByteArray{"R40_TRANSFER_JSON "}+QJsonDocument{object}.toJson(QJsonDocument::Compact)+'\n';
+    return std::fwrite(line.constData(),1,static_cast<size_t>(line.size()),stdout)==static_cast<size_t>(line.size())&&std::fflush(stdout)==0;
+}
+#endif
 }
 
 int BitcoinQmlApplication::run(int argc, char* argv[])
@@ -658,10 +706,34 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         });
         startup_executor.setObjectName(QStringLiteral("startup"));
         const execution::SnapshotServices startup_services{startup_executor.scheduler(), presentation::QueuedPost()};
+        // FileOpen can arrive in the very first startup::Run event loop.
+        // Capture owned values now; factory/readiness follow actual Core init.
+        DesktopIntentModel desktop_intent_model{startup_services,false};
+        desktop_intent_model.installFileOpenHandler();
+        std::shared_ptr<desktopintent::transport::Service> desktop_service;
+        std::shared_ptr<startup::preparation::Coordinator> startup_preparation;
+        std::shared_ptr<execution::OwnedCommand<StartupPreparationSummary>> preparation_summary;
+        const auto retire_startup_runtime=[&](std::function<void()> done){
+            desktop_intent_model.closeAdmission();
+            if(desktop_service)desktop_service->closeAdmission();
+            if(startup_preparation)startup_preparation->close();
+            // The coordinator may already own Service's one stop callback.
+            // Drain observes physical retirement without registering another.
+            if(desktop_service&&!desktop_service->stop()&&!desktop_service->retired())*lifecycle_failed=true;
+            startup_preparation.reset();desktop_service.reset();preparation_summary.reset();
+            startup_executor.whenDrained(&app,std::move(done));
+            startup_executor.shutdown();
+        };
+        const auto retire_startup_before_exit=qScopeGuard([&]{
+            QEventLoop retirement;bool drained{false};
+            retire_startup_runtime([&]{drained=true;retirement.quit();});
+            while(!drained)retirement.exec();
+        });
         BlockClockModel::setDefaultServices(startup_services);
         const auto reset_block_clock_services = qScopeGuard([] { BlockClockModel::setDefaultServices({}); });
         auto startup_warnings = startupdiagnostics::Create(startup_services.scheduler);
         if (!startup_warnings) { qCritical("Startup diagnostic retention capacity is unavailable"); return EXIT_FAILURE; }
+        const auto startup_error_reported=std::make_shared<std::atomic_bool>(false);
         bool startup_canceled{false};
         btcsignals::scoped_connection gui_startup_message_handler{::uiInterface.ThreadSafeMessageBox.connect(
             [&](const bilingual_str& message, unsigned int style) {
@@ -670,6 +742,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                 if (style & CClientUIInterface::ICON_WARNING) {
                     startup::RecordWarning(startup_warnings, message, origin, diagnostic_loss); return false;
                 }
+                startup_error_reported->store(true);
                 const auto error = startup::PrepareError(message, origin, {
                     [&] { return startupdiagnostics::Create(startup_services.scheduler); },
                     [](const QString& text) { qCritical().noquote() << text; }}, diagnostic_loss);
@@ -697,11 +770,27 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         app.setOrganizationDomain(QAPP_ORG_DOMAIN);
         app.setApplicationName(QAPP_APP_NAME_DEFAULT);
 
-        startup::Run(startup_services, [native_interfaces, argc, argv] {
-            native_interfaces->init = interfaces::MakeGuiInit(argc, argv);
+        auto command_line=startup::Run(startup_services, [native_interfaces, argc, argv] {
+            StartupArguments captured;
+            captured.parsed=desktopintent::ParseArguments(argc,argv,
+                QStringLiteral("arguments:")+QUuid::createUuid().toString(QUuid::WithoutBraces),QDir::currentPath());
+            if(!captured.parsed.error.isEmpty())return captured;
+            auto& options=native_interfaces->arguments;
+            options.reserve(static_cast<size_t>(captured.parsed.options_argc));
+            for(int i=0;i<captured.parsed.options_argc;++i)options.emplace_back(argv[i]);
+            auto& pointers=native_interfaces->argument_pointers;
+            pointers.reserve(options.size()+1);
+            for(auto& option:options)pointers.push_back(option.data());
+            pointers.push_back(nullptr);
+            native_interfaces->init = interfaces::MakeGuiInit(captured.parsed.options_argc,pointers.data());
             native_interfaces->can_listen_ipc = native_interfaces->init->canListenIpc();
-            return true;
+            captured.options=options;
+            return captured;
         });
+        if(!command_line.parsed.error.isEmpty()){
+            startup::Run(startup_services,[error=command_line.parsed.error]{return InitError(Untranslated(error.toStdString()));});
+            return EXIT_FAILURE;
+        }
         auto& init = native_interfaces->init;
         const bool can_listen_ipc = native_interfaces->can_listen_ipc;
 
@@ -732,7 +821,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             SetupServerArgs(gArgs, can_listen_ipc);
             SetupQmlGuiArgs(gArgs);
             std::string error;
-            const bool parsed = gArgs.ParseParameters(argc, argv, error);
+            const bool parsed = gArgs.ParseParameters(static_cast<int>(native_interfaces->arguments.size()),native_interfaces->argument_pointers.data(),error);
             return std::pair{parsed, QString::fromStdString(error)};
         });
         if (!parse_result.first) {
@@ -775,11 +864,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         if (quit_handler.isQuitRequested()) return EXIT_SUCCESS;
         install_language(startup_language);
 
-        std::vector<std::string> command_line_args;
-        command_line_args.reserve(argc);
-        for (int i = 0; i < argc; ++i) {
-            command_line_args.emplace_back(argv[i]);
-        }
+        const auto command_line_args=std::move(command_line.options);
 
         PreInitOnboardingContext pre_init_onboarding_context;
         const PreInitOnboardingStatus pre_init_onboarding_status{
@@ -801,7 +886,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         auto& node = native_interfaces->node;
         auto& chain = native_interfaces->chain;
         const auto qt_info = QmlUtil::CaptureQtInfo();
-        const auto prepare_node = [&, qt_info] {
+        const auto prepare_node = [&, qt_info](const startup::preparation::Profile& expected_profile) {
             const startup::PreparationPorts ports{
                 [] {
                     const auto configured = common::InitConfig(gArgs, [](const bilingual_str& message, const std::vector<std::string>& details) {
@@ -842,40 +927,117 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                         [&settings](const QString& key) { settings.remove(key); },
                         [&settings] { settings.sync(); return settings.status() == QSettings::NoError; }});
                 },
-                [](const bilingual_str& warning) { InitWarning(warning); }};
-            return startup::PrepareNode(ports) == startup::PreparationOutcome::Ready;
+                [](const bilingual_str& warning) { InitWarning(warning); },
+                [expected_profile] {
+                    const auto actual=startup::CurrentProfileIdentity(gArgs);
+                    return actual.directory==expected_profile.directory&&actual.network==expected_profile.network;
+                }};
+            return startup::PrepareNode(ports);
         };
 
-        bool prepared{false};
+        desktop_service=desktopintent::transport::Service::Create(startup_services.scheduler,desktop_intent_model.owner());
+        if(!desktop_service){
+            startup::Run(startup_services,[]{return InitError(Untranslated("Desktop request startup could not reserve its background owner."));});
+            return EXIT_FAILURE;
+        }
+        startup::preparation::Ports preparation_ports;
+        preparation_ports.read_profile=[]{
+            auto profile=startup::ReadProfileIdentity(gArgs);
+            return startup::preparation::Profile{std::move(profile.directory),std::move(profile.network)};
+        };
+        preparation_ports.start_transport=[service=desktop_service,inputs=std::move(command_line.parsed.intents)](auto profile,auto done)mutable{
+            return service->start(std::move(profile.directory),std::move(profile.network),std::move(inputs),std::move(done));
+        };
+        preparation_ports.prepare_native=prepare_node;
+        preparation_ports.retire_transport=[service=desktop_service](auto done){return service->stop(std::move(done));};
+        preparation_ports.transport_retired=[service=desktop_service]{return service->retired();};
+        startup_preparation=std::make_shared<startup::preparation::Coordinator>(startup_services,std::move(preparation_ports));
+        QEventLoop preparation_loop;
+        const QPointer<QEventLoop> preparation_observer{&preparation_loop};
+        preparation_summary=std::make_shared<execution::OwnedCommand<StartupPreparationSummary>>(startup_services.scheduler,
+            [post=presentation::ReliablePost(startup_services.post),preparation_observer]{
+                post([preparation_observer]{if(preparation_observer)preparation_observer->quit();});
+            });
+        const auto start_preparation=[weak_owner=std::weak_ptr{startup_preparation},weak_summary=std::weak_ptr{preparation_summary},startup_error_reported](startup::preparation::Context context,startup::preparation::CompleteResult complete){
+            const auto owner=weak_owner.lock();const auto summary=weak_summary.lock();
+            if(!owner||!summary)return execution::Admission{{},execution::Rejection::Closed};
+            return summary->startWith([owner,startup_error_reported,context=std::move(context),complete=std::move(complete)](auto done,auto)mutable{
+                try{
+                    const auto admitted=owner->start(std::move(context),[done,startup_error_reported,complete=std::move(complete)](auto actual){
+                        const bool dropped=actual->transport&&std::any_of(actual->transport->receipts.begin(),actual->transport->receipts.end(),
+                            [](const auto& receipt){return receipt.disposition==desktopintent::Disposition::DroppedOnStop;});
+                        done(StartupPreparationSummary{actual->disposition,actual->closing,actual->cancelled,dropped,startup_error_reported->load(),actual->error,actual->transport});
+                        if(complete)complete(std::move(actual));
+                    });
+                    if(!admitted)done(StartupPreparationSummary{startup::preparation::Disposition::Failed,false,admitted.rejection==execution::Rejection::Closed,false,startup_error_reported->load(),
+                        QStringLiteral("Startup preparation was not admitted. No preparation was repeated."),{}});
+                    return admitted;
+                }catch(...){
+                    done(StartupPreparationSummary{startup::preparation::Disposition::Uncertain,false,false,false,startup_error_reported->load(),
+                        QStringLiteral("The original startup handoff is uncertain. Check the running application before trying again."),{}});
+                    return execution::Admission{};
+                }
+            });
+        };
+        const auto startup_quit_connection=QObject::connect(&quit_handler,&QmlQuitHandler::quitRequested,&preparation_loop,
+            [weak=std::weak_ptr{startup_preparation}]{if(const auto owner=weak.lock())owner->close();});
+        if(startup_canceled||quit_handler.isQuitRequested())startup_preparation->close();
+        std::optional<StartupPreparationSummary> unstarted_preparation;
         if (pre_init_onboarding_status == PreInitOnboardingStatus::COMPLETED) {
             // The onboarding window stays visible until MainWindow is ready.
             // Its model owns the settings write, node preparation and worker cleanup.
             auto& context = pre_init_onboarding_context;
-            QEventLoop preparation_loop;
             bool preparation_finished{false};
-            QObject::connect(context.window, &QWindow::visibleChanged, &preparation_loop,
-                             [&](bool visible) { if (!visible) startup_canceled = true; });
-            QObject::connect(context.onboarding_options_model.get(), &OnboardingOptionsModel::nodePrepared,
-                             &preparation_loop, [&](bool success, const QString& error) {
-                if (!error.isEmpty()) startup::Run(startup_services, [error] { return InitError(Untranslated(error.toStdString())); });
-                prepared = success;
+            const auto visibility_connection=QObject::connect(context.window, &QWindow::visibleChanged, &preparation_loop,
+                             [&](bool visible) { if (!visible) {startup_canceled=true;startup_preparation->close();} });
+            const auto preparation_connection=QObject::connect(context.onboarding_options_model.get(), &OnboardingOptionsModel::nodePreparationFinished,
+                             &preparation_loop, [&](OnboardingOptionsModel::PreparationState outcome, const QString& error) {
+                // Rejection before the Flow reserves its external receiver
+                // legitimately never calls the stable preparation owner.
+                unstarted_preparation=StartupPreparationSummary{
+                    outcome==OnboardingOptionsModel::PreparationUncertain?startup::preparation::Disposition::Uncertain
+                        :startup::preparation::Disposition::Failed,
+                    startup_canceled||quit_handler.isQuitRequested(),
+                    outcome==OnboardingOptionsModel::PreparationFailed&&(startup_canceled||quit_handler.isQuitRequested()),false,startup_error_reported->load(),error,{}};
                 preparation_finished = true;
                 preparation_loop.quit();
             });
-            context.onboarding_options_model->prepareNode(gArgs, prepare_node);
+            context.onboarding_options_model->prepareNodeAsync(gArgs,{start_preparation,[owner=startup_preparation]{owner->close();}});
             while (!preparation_finished) preparation_loop.exec();
-            if (!prepared) return EXIT_FAILURE;
-            if (startup_canceled || quit_handler.isQuitRequested()) return EXIT_SUCCESS;
+            QObject::disconnect(visibility_connection);
+            QObject::disconnect(preparation_connection);
         } else {
-            prepared = startup::Run(startup_services, prepare_node);
+            start_preparation({},{});
         }
-        if (!prepared) return EXIT_FAILURE;
+        auto prepared=preparation_summary->result();
+        while(!prepared&&!unstarted_preparation){preparation_loop.exec();prepared=preparation_summary->result();}
+        QObject::disconnect(startup_quit_connection);
+        if(prepared&&!prepared->value)return EXIT_FAILURE;
+        const auto preparation=prepared?std::move(*prepared->value):std::move(*unstarted_preparation);
+#ifdef ENABLE_TEST_AUTOMATION
+        if(preparation.transport&&gArgs.IsArgSet("-test-automation")){
+            if(!startup::Run(startup_services,[transfer=*preparation.transport]{return PrintStartupTransfer(transfer);})) *lifecycle_failed=true;
+        }
+#endif
+        if(preparation.disposition==startup::preparation::Disposition::Forwarded){
+            if(preparation.request_dropped){
+                startup::Run(startup_services,[]{return InitError(Untranslated("The running application stopped before processing a desktop request. Check that application before trying again."));});
+                return EXIT_FAILURE;
+            }
+            return EXIT_SUCCESS;
+        }
+        if(preparation.disposition!=startup::preparation::Disposition::Ready){
+            if(preparation.cancelled&&(preparation.closing||startup_canceled||quit_handler.isQuitRequested()))return EXIT_SUCCESS;
+            if(!preparation.closing&&!preparation.error_reported&&!preparation.error.isEmpty())startup::Run(startup_services,[error=preparation.error]{return InitError(Untranslated(error.toStdString()));});
+            return EXIT_FAILURE;
+        }
+        if(preparation.closing||startup_canceled||quit_handler.isQuitRequested())return EXIT_SUCCESS;
         gui_startup_message_handler.disconnect();
         startup::Run(startup_services, [startup_warnings] { startup_warnings->seal(); return true; });
-        startup_executor.shutdown();
 
         const bool wallet_enabled = WalletEnabledFromArgs();
         app_mode.setWalletEnabled(wallet_enabled);
+        desktop_intent_model.setWalletEnabled(wallet_enabled);
 
         constexpr bool backend_ready{false};
         NodeModel::Services node_services;
@@ -886,6 +1048,9 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         BitcoinAddress::setDefaultServices({node_model.queryScheduler(), presentation_post});
         const auto reset_address_services = qScopeGuard([] { BitcoinAddress::setDefaultServices({}); });
         bitcoin_uri_model.setServices({node_model.queryScheduler(), presentation_post});
+#ifdef ENABLE_WALLET
+        if(wallet_enabled)desktop_intent_model.setFactory(&bitcoin_uri_model);
+#endif
         node_model.addStartupWarnings(std::move(startup_warnings));
         auto block_clock_history{std::make_shared<BlockClockHistory>()};
         QmlInitExecutor init_executor{*node, [history = block_clock_history, node = node.get(), chain = chain.get()] {
@@ -908,6 +1073,16 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         QPointer<QQuickWindow> main_window;
         bool shutdown_requested{false};
         bool shutdown_finished{false};
+        desktop_intent_model.setAdmissionGate(init_executor.admissionClosedGate());
+        const auto update_desktop_readiness=[&]{
+            desktop_intent_model.setReady(main_window&&!shutdown_requested&&init_executor.admissionOpen()
+                &&init_executor.phase()==nodelifecycle::Phase::Ready);
+        };
+        QObject::connect(&init_executor,&QmlInitExecutor::phaseChanged,&desktop_intent_model,update_desktop_readiness);
+        QObject::connect(&init_executor,&QmlInitExecutor::admissionChanged,&desktop_intent_model,update_desktop_readiness);
+        QObject::connect(&desktop_intent_model,&DesktopIntentModel::requestAttention,&app,[&]{
+            if(main_window&&!shutdown_requested){main_window->show();main_window->raise();main_window->requestActivate();}
+        });
         QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::finished, &app, [&] { shutdown_finished = true; });
         // Read the file the node actually writes, so -debuglogfile=<file> and
         // -nodebuglogfile are honoured rather than assuming <datadir>/debug.log.
@@ -932,10 +1107,15 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
         QObject::connect(&node_model, &NodeModel::requestedShutdown,
                          &shutdown_coordinator, &QmlShutdownCoordinator::requestShutdown);
+        shutdown_coordinator.addAdmissionFence([&] {
+            if(desktop_service)desktop_service->closeAdmission();
+            desktop_intent_model.closeAdmission();
+        });
         shutdown_coordinator.addAdmissionFence([&] { init_executor.closeAdmission(); });
         shutdown_coordinator.addAdmissionFence([&] { node_model.closeAdmission(); });
         shutdown_coordinator.addAdmissionFence([amount_admission] { *amount_admission = true; });
         shutdown_coordinator.addAdmissionFence([&] { bitcoin_uri_model.closeAdmission(); });
+        shutdown_coordinator.addBeforeInterruptTask(retire_startup_runtime);
         shutdown_coordinator.addAdmissionFence([] { BitcoinAddress::setDefaultServices({}); });
         MonospaceOutputModel::setDefaultServices({node_model.queryScheduler(),
             presentation_post, [&node_model](std::function<void()> work) { return node_model.retireValues(std::move(work)); }, {}});
@@ -1086,6 +1266,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         engine->rootContext()->setContextProperty("peerListModelProxy", &peer_model_sort_proxy);
         engine->rootContext()->setContextProperty("banListModel", &ban_list_model);
         engine->rootContext()->setContextProperty("debugLogModel", &debug_log_model);
+        engine->rootContext()->setContextProperty("desktopIntentModel", &desktop_intent_model);
 
         RpcConsoleModel rpc_console_model{*node, {node_model.queryScheduler(), presentation_post}};
         shutdown_coordinator.addParticipant(&rpc_console_model, &RpcConsoleModel::drained,
@@ -1214,6 +1395,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             shutdown_before_startup_return();
             return EXIT_FAILURE;
         }
+        update_desktop_readiness();
+        QObject::connect(main_window,&QObject::destroyed,&desktop_intent_model,[&]{desktop_intent_model.setReady(false);});
         desktop_tray_icon_controller.setMainWindow(main_window);
         if (pre_init_onboarding_context.window) {
             main_window->setGeometry(pre_init_onboarding_context.window->geometry());

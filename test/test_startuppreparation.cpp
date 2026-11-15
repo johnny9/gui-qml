@@ -44,7 +44,7 @@ struct Fixture {
     CompleteTransport duplicate_transport;
     Done duplicate_retire;
     bool endpoint_retired{false}, reject_start{false}, reject_retire{false}, throw_start{false}, throw_retire{false};
-    bool throw_read{false}, throw_prepare{false}, throw_completion{false}, post_summary{false};
+    bool throw_read{false}, throw_prepare{false}, cancel_from_prepare{false}, throw_completion{false}, post_summary{false};
     Disposition summary{Disposition::Failed};
     bool summary_native_started{false};
     int summary_deliveries{0};
@@ -75,6 +75,7 @@ struct Fixture {
         ports.prepare_native = [this](Profile original) {
             trace->call(QStringLiteral("prepare"), Lane::Core); ++preparations; observed_prepare = std::move(original);
             if (throw_prepare) throw std::runtime_error{"original preparation error"};
+            if (cancel_from_prepare) throw execution::NotStarted{execution::NotStarted::Cause::Cancelled};
             return native_outcome;
         };
         ports.retire_transport = [this](Done done) {
@@ -169,6 +170,7 @@ private Q_SLOTS:
         QCOMPARE(fixture.received->disposition, Disposition::Ready);
         QVERIFY(fixture.received->native); QCOMPARE(*fixture.received->native, startup::PreparationOutcome::Ready);
         QVERIFY(fixture.received->native_started); QVERIFY(!fixture.received->endpoint_retired);
+        QVERIFY(!fixture.received->cancelled);
         QVERIFY(fixture.received->saved_profile->completed);
         QCOMPARE(fixture.received->transport->receipts.front().inspection, uint64_t{37});
         QVERIFY(fixture.observed_prepare == fixture.profile);
@@ -205,17 +207,22 @@ private Q_SLOTS:
     }
     void savedPartialOrUnknownNeverStartsAnotherHandoff_data()
     {
-        QTest::addColumn<bool>("unknown"); QTest::newRow("known-partial") << false; QTest::newRow("unknown-original") << true;
+        QTest::addColumn<bool>("unknown"); QTest::addColumn<bool>("closing");
+        QTest::newRow("known-partial") << false << false; QTest::newRow("unknown-original") << true << false;
+        QTest::newRow("known-partial-before-close") << false << true; QTest::newRow("unknown-original-before-close") << true << true;
     }
     void savedPartialOrUnknownNeverStartsAnotherHandoff()
     {
-        QFETCH(bool, unknown);
+        QFETCH(bool, unknown); QFETCH(bool, closing);
         Fixture fixture; auto context = Saved(); context.saved_profile->completed = false; context.saved_profile->uncertain = unknown;
-        QVERIFY(fixture.start(context)); fixture.drain();
+        QVERIFY(fixture.start(context));
+        if (closing) fixture.coordinator->close();
+        fixture.drain();
         QCOMPARE(fixture.reads, 0); QCOMPARE(fixture.starts, 0); QCOMPARE(fixture.preparations, 0);
         QVERIFY(fixture.received); QCOMPARE(fixture.received->disposition, unknown ? Disposition::Uncertain : Disposition::Failed);
         QVERIFY(fixture.received->saved_profile->replacement_written);
         QCOMPARE(fixture.received->saved_profile->uncertain, unknown);
+        QCOMPARE(fixture.received->closing, closing); QVERIFY(!fixture.received->cancelled);
     }
     void failuresKeepKnownProfileAndTruthfulAttemptFacts_data()
     {
@@ -243,25 +250,29 @@ private Q_SLOTS:
         QVERIFY(fixture.received);
         QCOMPARE(fixture.received->disposition, failure == 2 || failure == 4 ? Disposition::Uncertain : Disposition::Failed);
         QCOMPARE(fixture.received->native_started, failure == 3 || failure == 4);
+        QVERIFY(!fixture.received->cancelled);
         QVERIFY(fixture.received->saved_profile->completed); QVERIFY(fixture.received->endpoint_retired);
         QCOMPARE(fixture.preparations, failure == 3 || failure == 4 ? 1 : 0);
         QVERIFY(!fixture.received->error.isEmpty()); QCOMPARE(fixture.completions, 1);
     }
     void closeBeforeOrAfterNativeReadNeverStartsTransport_data()
     {
-        QTest::addColumn<bool>("read_completed");
-        QTest::newRow("before-first-phase") << false; QTest::newRow("physical-read-before-domain-consumption") << true;
+        QTest::addColumn<int>("read_stage");
+        QTest::newRow("before-first-phase") << 0; QTest::newRow("physical-read-before-domain-consumption") << 2;
+        QTest::newRow("queued-native-read") << 1;
     }
     void closeBeforeOrAfterNativeReadNeverStartsTransport()
     {
-        QFETCH(bool, read_completed); Fixture fixture; QVERIFY(fixture.start(Saved()));
-        if (read_completed) { QVERIFY(fixture.step(Lane::Domain)); QVERIFY(fixture.step(Lane::Core)); }
+        QFETCH(int, read_stage); Fixture fixture; QVERIFY(fixture.start(Saved()));
+        if (read_stage > 0) QVERIFY(fixture.step(Lane::Domain));
+        if (read_stage == 2) QVERIFY(fixture.step(Lane::Core));
         fixture.coordinator->close(); fixture.drain();
         QVERIFY(fixture.received); QCOMPARE(fixture.received->disposition, Disposition::Failed);
         QVERIFY(fixture.received->closing); QVERIFY(fixture.received->endpoint_retired);
+        QVERIFY(fixture.received->cancelled);
         QVERIFY(fixture.received->saved_profile->completed); QVERIFY(!fixture.received->native_started);
-        QCOMPARE(fixture.reads, read_completed ? 1 : 0); QCOMPARE(fixture.starts, 0); QCOMPARE(fixture.preparations, 0);
-        if (read_completed) { QVERIFY(fixture.received->profile); QVERIFY(*fixture.received->profile == fixture.profile); }
+        QCOMPARE(fixture.reads, read_stage == 2 ? 1 : 0); QCOMPARE(fixture.starts, 0); QCOMPARE(fixture.preparations, 0);
+        if (read_stage == 2) { QVERIFY(fixture.received->profile); QVERIFY(*fixture.received->profile == fixture.profile); }
         QCOMPARE(fixture.completions, 1);
     }
     void closeFencesQueuedNativePreparationButRetainsLatePrimaryReceipt()
@@ -273,6 +284,7 @@ private Q_SLOTS:
         fixture.drain();
         QVERIFY(fixture.received); QCOMPARE(fixture.received->disposition, Disposition::Failed);
         QVERIFY(fixture.received->closing); QVERIFY(fixture.received->endpoint_retired);
+        QVERIFY(fixture.received->cancelled);
         QCOMPARE(fixture.received->transport->status, transport::StartStatus::Primary);
         QVERIFY(!fixture.received->native_started); QCOMPARE(fixture.preparations, 0);
     }
@@ -285,6 +297,7 @@ private Q_SLOTS:
         QVERIFY(fixture.received); QCOMPARE(fixture.received->disposition, Disposition::Failed);
         QCOMPARE(fixture.received->transport->receipts.size(), size_t{1});
         QVERIFY(fixture.received->saved_profile->completed); QCOMPARE(fixture.preparations, 0);
+        QVERIFY(fixture.received->cancelled);
     }
     void nativeReadyAfterCloseRemainsReadyAndDoesNotRetireAheadOfOutcome()
     {
@@ -298,7 +311,70 @@ private Q_SLOTS:
         fixture.drain();
         QVERIFY(fixture.received); QCOMPARE(fixture.received->disposition, Disposition::Ready);
         QVERIFY(fixture.received->native_started); QVERIFY(fixture.received->closing); QVERIFY(fixture.received->endpoint_retired);
+        QVERIFY(!fixture.received->cancelled);
         QCOMPARE(fixture.completions, 1);
+    }
+    void closeAfterNativeFailureBeforeDomainConsumptionIsNotCancellation_data()
+    {
+        QTest::addColumn<int>("failure");
+        QTest::newRow("known-native-failure") << 0;
+        QTest::newRow("entered-native-exception") << 1;
+        QTest::newRow("entered-port-throws-cancelled") << 2;
+    }
+    void closeAfterNativeFailureBeforeDomainConsumptionIsNotCancellation()
+    {
+        QFETCH(int, failure); Fixture fixture;
+        fixture.native_outcome = startup::PreparationOutcome::BaseInitializationFailed;
+        fixture.throw_prepare = failure == 1; fixture.cancel_from_prepare = failure == 2;
+        QVERIFY(fixture.start(Saved())); fixture.drain();
+        fixture.deliver(transport::StartStatus::Primary);
+        QVERIFY(fixture.step(Lane::Domain)); QVERIFY(fixture.step(Lane::Core));
+        QCOMPARE(fixture.preparations, 1); QCOMPARE(fixture.completions, 0);
+        fixture.coordinator->close(); fixture.drain();
+        QVERIFY(fixture.received);
+        QCOMPARE(fixture.received->disposition, failure == 0 ? Disposition::Failed : Disposition::Uncertain);
+        QVERIFY(fixture.received->closing); QVERIFY(!fixture.received->cancelled);
+        QVERIFY(fixture.received->native_started); QVERIFY(fixture.received->endpoint_retired);
+        QVERIFY(fixture.received->saved_profile->completed); QVERIFY(!fixture.received->error.isEmpty());
+        if (failure == 0) QCOMPARE(fixture.received->native, std::optional{startup::PreparationOutcome::BaseInitializationFailed});
+        else QVERIFY(!fixture.received->native);
+        QCOMPARE(fixture.received->transport->receipts.front().delivery, uint64_t{71});
+        QCOMPARE(fixture.completions, 1); QCOMPARE(fixture.preparations, 1);
+        fixture.dispose(); QVERIFY(fixture.execution.quiescent());
+    }
+    void authoritativeNotStartedCancellationRequiresClosing_data()
+    {
+        QTest::addColumn<int>("phase"); QTest::addColumn<bool>("closing");
+        QTest::newRow("domain-cancelled-while-closing") << 0 << true;
+        QTest::newRow("read-cancelled-while-closing") << 1 << true;
+        QTest::newRow("preparation-cancelled-while-closing") << 2 << true;
+        QTest::newRow("domain-cancelled-without-close") << 0 << false;
+        QTest::newRow("read-cancelled-without-close") << 1 << false;
+        QTest::newRow("preparation-cancelled-without-close") << 2 << false;
+    }
+    void authoritativeNotStartedCancellationRequiresClosing()
+    {
+        QFETCH(int, phase); QFETCH(bool, closing); Fixture fixture;
+        QVERIFY(fixture.start(Saved()));
+        if (phase == 1) QVERIFY(fixture.step(Lane::Domain));
+        if (phase == 2) {
+            fixture.drain(); fixture.deliver(transport::StartStatus::Primary);
+            QVERIFY(fixture.step(Lane::Domain));
+        }
+        // Cancel the actual admitted packet through its public ledger. The
+        // transport still owns its original physical dequeue and outcome.
+        const auto held = fixture.execution.dispatchNext(phase == 0 ? Lane::Domain : Lane::Core);
+        QVERIFY(held);
+        if (closing) fixture.coordinator->close();
+        QVERIFY(fixture.execution.scheduler->cancelQueued(*held));
+        QVERIFY(fixture.execution.finishWork(*held)); fixture.drain();
+        QVERIFY(fixture.received); QCOMPARE(fixture.received->disposition, Disposition::Failed);
+        QCOMPARE(fixture.received->closing, closing); QCOMPARE(fixture.received->cancelled, closing);
+        QVERIFY(!fixture.received->native_started); QVERIFY(!fixture.received->native);
+        QVERIFY(fixture.received->endpoint_retired); QVERIFY(fixture.received->saved_profile->completed);
+        QCOMPARE(fixture.reads, phase == 2 ? 1 : 0); QCOMPARE(fixture.starts, phase == 2 ? 1 : 0);
+        QCOMPARE(fixture.preparations, 0); QCOMPARE(fixture.completions, 1);
+        fixture.dispose(); QVERIFY(fixture.execution.quiescent());
     }
     void publishedReadyHasImmutableOriginalReceiptDuringLaterStop()
     {
@@ -308,6 +384,7 @@ private Q_SLOTS:
         fixture.coordinator->close(); fixture.drain();
         const auto stopped = fixture.coordinator->result(); QVERIFY(stopped);
         QCOMPARE(stopped->disposition, Disposition::Ready); QVERIFY(stopped->closing); QVERIFY(stopped->endpoint_retired);
+        QVERIFY(!original->cancelled); QVERIFY(!stopped->cancelled);
         QVERIFY(!original->closing); QVERIFY(!original->endpoint_retired);
         QCOMPARE(stopped->transport->receipts.front().inspection, original->transport->receipts.front().inspection);
         QCOMPARE(fixture.completions, 1); QCOMPARE(fixture.preparations, 1);
@@ -478,7 +555,7 @@ private Q_SLOTS:
                         && result->saved_profile->cleanup_completed && !result->saved_profile->uncertain
                         && result->saved_profile->error == QStringLiteral("original saved receipt");
                     trace->terminal_facts = result->disposition == Disposition::Failed && result->closing
-                        && result->endpoint_retired && !result->native_started && !result->transport && !result->native;
+                        && result->cancelled && result->endpoint_retired && !result->native_started && !result->transport && !result->native;
                     ++trace->completions;
                 });
                 start_returned.release();
@@ -527,6 +604,7 @@ private Q_SLOTS:
         QVERIFY(fixture.received); QCOMPARE(fixture.received->disposition, Disposition::Failed);
         QCOMPARE(fixture.reads, 0); QCOMPARE(fixture.starts, 0); QCOMPARE(fixture.preparations, 0);
         QVERIFY(!fixture.received->native_started); QCOMPARE(fixture.completions, 1);
+        QVERIFY(!fixture.received->cancelled);
     }
 };
 #ifdef BITCOINQML_NO_TEST_MAIN

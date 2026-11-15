@@ -14,6 +14,13 @@
 namespace startup::preparation {
 namespace {
 execution::Admission Rejected(execution::Rejection reason) { return {{}, reason}; }
+bool Cancelled(std::exception_ptr error)
+{
+    try { if (error) std::rethrow_exception(error); }
+    catch (const execution::NotStarted& stopped) { return stopped.cause == execution::NotStarted::Cause::Cancelled; }
+    catch (...) {}
+    return false;
+}
 QString Error(std::exception_ptr error, const QString& fallback)
 {
     try { if (error) std::rethrow_exception(error); }
@@ -130,19 +137,33 @@ struct Coordinator::State {
         if (disposition == Disposition::Ready && !closing) publishTerminal();
         else retire();
     }
+    void cancel(QString error)
+    {
+        if (decided) return;
+        value.cancelled = true;
+        settle(Disposition::Failed, std::move(error));
+    }
+    void failedBeforeNative(std::exception_ptr error, const QString& fallback)
+    {
+        if (decided) return;
+        value.cancelled = closing && !native_entered && Cancelled(error)
+            && (!value.saved_profile || (value.saved_profile->completed && !value.saved_profile->uncertain));
+        settle(Disposition::Failed, Error(error, fallback));
+    }
     void prepared(Prepared receipt)
     {
         preparing = false;
         if (decided) return;
         value.native_started = receipt.started;
         value.native = receipt.outcome;
+        value.cancelled = !receipt.started; // Only the closing fence returns an unstarted receipt.
         if (receipt.outcome == startup::PreparationOutcome::Ready) settle(Disposition::Ready);
         else settle(Disposition::Failed, receipt.started ? QStringLiteral("Native node preparation failed.")
             : QStringLiteral("Startup was closed before Native preparation started."));
     }
     void prepare()
     {
-        if (closing) { settle(Disposition::Failed, QStringLiteral("Startup was closed before Native preparation.")); return; }
+        if (closing) { cancel(QStringLiteral("Startup was closed before Native preparation.")); return; }
         preparing = true;
         stage(Phase::Preparing);
         const auto self = owner.lock();
@@ -159,6 +180,7 @@ struct Coordinator::State {
             self->preparing = false;
             if (self->decided) return;
             self->value.native_started = self->native_entered;
+            self->value.cancelled = self->closing && !self->value.native_started && Cancelled(error);
             self->settle(self->value.native_started ? Disposition::Uncertain : Disposition::Failed,
                 Error(error, QStringLiteral("The original Native preparation outcome is unavailable.")));
         };
@@ -187,7 +209,7 @@ struct Coordinator::State {
             || value.profile->network.isEmpty() || value.profile->network.size() > 64) {
             settle(Disposition::Failed, QStringLiteral("The resolved startup profile is invalid or too large.")); return;
         }
-        if (closing) { settle(Disposition::Failed, QStringLiteral("Startup was closed before transport admission.")); return; }
+        if (closing) { cancel(QStringLiteral("Startup was closed before transport admission.")); return; }
         stage(Phase::StartingTransport);
         const auto reply = std::make_shared<Reply>(Reply{owner.lock(), action.load()});
         try {
@@ -220,16 +242,17 @@ struct Coordinator::State {
     void begin()
     {
         consumeInput();
-        if (closing) { settle(Disposition::Failed, QStringLiteral("Startup was closed before profile inspection.")); return; }
+        // A later quit cannot hide an earlier partial or uncertain saved write.
         if (value.saved_profile && (!value.saved_profile->completed || value.saved_profile->uncertain)) {
             settle(value.saved_profile->uncertain ? Disposition::Uncertain : Disposition::Failed,
                 QStringLiteral("Resolve the original saved-profile handoff before startup.")); return;
         }
+        if (closing) { cancel(QStringLiteral("Startup was closed before profile inspection.")); return; }
         stage(Phase::Reading);
         const auto self = owner.lock();
         const auto scope = action.load();
         const auto failed = [self](std::exception_ptr error) {
-            self->settle(Disposition::Failed, Error(error, QStringLiteral("The startup profile could not be read.")));
+            self->failedBeforeNative(error, QStringLiteral("The startup profile could not be read."));
         };
         if (!scope || !execution::Submit(*scope, [self] {
                 if (self->closing) throw execution::NotStarted{execution::NotStarted::Cause::Cancelled};
@@ -248,7 +271,7 @@ struct Coordinator::State {
             // accounting cancellation. A rejected admission has no callback.
             if (input && (admission_pending || admission_accepted)) return;
         }
-        if (!started) { settle(Disposition::Failed, QStringLiteral("Startup was closed.")); return; }
+        if (!started) { cancel(QStringLiteral("Startup was closed.")); return; }
         // Keep the primary namespace until an admitted Native write/base call
         // has returned its factual outcome. Earlier phases can stop immediately.
         if (preparing) return;
@@ -288,7 +311,7 @@ execution::Admission Coordinator::start(Context context, CompleteResult complete
     if (action) {
         state->action.store(action);
         admitted = execution::Submit(*action, [state] { state->begin(); }, [] {},
-            [state](std::exception_ptr error) { state->consumeInput(); state->settle(Disposition::Failed, Error(error, QStringLiteral("Startup did not start."))); },
+            [state](std::exception_ptr error) { state->consumeInput(); state->failedBeforeNative(error, QStringLiteral("Startup did not start.")); },
             {execution::Lane::Domain, 512, state->domain, execution::WorkClass::Action});
     }
     bool close_requested{false};

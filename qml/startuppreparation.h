@@ -29,6 +29,9 @@ struct Result {
     std::optional<transport::StartResult> transport;
     std::optional<startup::PreparationOutcome> native;
     bool native_started{false}, closing{false}, endpoint_retired{false};
+    // Known cancellation before Native preparation entered, independent of a
+    // later close accompanying a real failure or an uncertain Native outcome.
+    bool cancelled{false};
     QString error;
     std::optional<QmlOnboardingSettings::ProfileResult> saved_profile;
 };
